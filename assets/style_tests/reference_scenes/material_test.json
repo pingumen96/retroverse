@@ -1,0 +1,51 @@
+// PBR look-development grid (plan step 6): 5 x 5 spheres, roughness 0.05 -> 1 along +X, metallic 0 -> 1 along +Y,
+// one warm key and one cool fill light over a neutral gray floor. inlineMaterial entries use the material
+// library format (assets/materials/base/materials.json).
+{
+  "schemaVersion": 1,
+  "name": "material_test",
+  "camera": {"position": [0.0, 2.35, 6.2], "yawDeg": 0.0, "pitchDeg": 0.0, "horizontalFovDeg": 75.0},
+  "environment": {
+    "clearColor": "#202224",
+    "ambientSky": "#FFFFFF",
+    "ambientGround": "#6E6E6E",
+    "ambientIntensity": 0.15,
+    "exposure": 1.0
+  },
+  "lights": [
+    {"name": "key", "type": "directional", "direction": [-0.45, -0.55, -0.7], "color": "#FFF3E0", "intensity": 2.5},
+    {"name": "fill", "type": "point", "position": [-3.5, 3.0, 3.0], "color": "#9DB8E8", "intensity": 10.0,
+     "range": 12.0}
+  ],
+  "objects": [
+    {"id": "floor", "primitive": "plane", "params": {"size": [14.0, 14.0], "uvTiling": [14.0, 14.0]},
+     "inlineMaterial": {"shading": "pbr", "baseColor": "#7A7A7A", "metallic": 0.0, "roughness": 0.85},
+     "castsShadows": false},
+
+    {"id": "sphere_m0_r0", "primitive": "sphere", "position": [-1.8, 0.55, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.0, "roughness": 0.05}},
+    {"id": "sphere_m0_r1", "primitive": "sphere", "position": [-0.9, 0.55, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.0, "roughness": 0.2875}},
+    {"id": "sphere_m0_r2", "primitive": "sphere", "position": [0.0, 0.55, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.0, "roughness": 0.525}},
+    {"id": "sphere_m0_r3", "primitive": "sphere", "position": [0.9, 0.55, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.0, "roughness": 0.7625}},
+    {"id": "sphere_m0_r4", "primitive": "sphere", "position": [1.8, 0.55, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.0, "roughness": 1.0}},
+    {"id": "sphere_m1_r0", "primitive": "sphere", "position": [-1.8, 1.45, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.25, "roughness": 0.05}},
+    {"id": "sphere_m1_r1", "primitive": "sphere", "position": [-0.9, 1.45, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.25, "roughness": 0.2875}},
+    {"id": "sphere_m1_r2", "primitive": "sphere", "position": [0.0, 1.45, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.25, "roughness": 0.525}},
+    {"id": "sphere_m1_r3", "primitive": "sphere", "position": [0.9, 1.45, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.25, "roughness": 0.7625}},
+    {"id": "sphere_m1_r4", "primitive": "sphere", "position": [1.8, 1.45, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.25, "roughness": 1.0}},
+    {"id": "sphere_m2_r0", "primitive": "sphere", "position": [-1.8, 2.35, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.5, "roughness": 0.05}},
+    {"id": "sphere_m2_r1", "primitive": "sphere", "position": [-0.9, 2.35, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.5, "roughness": 0.2875}},
+    {"id": "sphere_m2_r2", "primitive": "sphere", "position": [0.0, 2.35, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.5, "roughness": 0.525}},
+    {"id": "sphere_m2_r3", "primitive": "sphere", "position": [0.9, 2.35, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.5, "roughness": 0.7625}},
+    {"id": "sphere_m2_r4", "primitive": "sphere", "position": [1.8, 2.35, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.5, "roughness": 1.0}},
+    {"id": "sphere_m3_r0", "primitive": "sphere", "position": [-1.8, 3.25, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.75, "roughness": 0.05}},
+    {"id": "sphere_m3_r1", "primitive": "sphere", "position": [-0.9, 3.25, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.75, "roughness": 0.2875}},
+    {"id": "sphere_m3_r2", "primitive": "sphere", "position": [0.0, 3.25, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.75, "roughness": 0.525}},
+    {"id": "sphere_m3_r3", "primitive": "sphere", "position": [0.9, 3.25, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.75, "roughness": 0.7625}},
+    {"id": "sphere_m3_r4", "primitive": "sphere", "position": [1.8, 3.25, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 0.75, "roughness": 1.0}},
+    {"id": "sphere_m4_r0", "primitive": "sphere", "position": [-1.8, 4.15, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 1.0, "roughness": 0.05}},
+    {"id": "sphere_m4_r1", "primitive": "sphere", "position": [-0.9, 4.15, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 1.0, "roughness": 0.2875}},
+    {"id": "sphere_m4_r2", "primitive": "sphere", "position": [0.0, 4.15, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 1.0, "roughness": 0.525}},
+    {"id": "sphere_m4_r3", "primitive": "sphere", "position": [0.9, 4.15, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 1.0, "roughness": 0.7625}},
+    {"id": "sphere_m4_r4", "primitive": "sphere", "position": [1.8, 4.15, 0.0], "params": {"radius": 0.35, "segments": 48, "rings": 24}, "inlineMaterial": {"shading": "pbr", "baseColor": "#C24A3A", "metallic": 1.0, "roughness": 1.0}}
+  ]
+}
