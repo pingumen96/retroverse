@@ -5,7 +5,6 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
-#include <limits>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -90,11 +89,13 @@ Expected<float> readOptionalNumber(const Json& object, std::string_view field, f
     if (!it->is_number()) {
         return fail(ErrorCode::ParseError, "expected a number", at.child(field));
     }
-    const double value = it->get<double>();
-    if (!std::isfinite(value) || std::abs(value) > static_cast<double>(std::numeric_limits<float>::max())) {
+    // Checked after rounding to float: 3.4028235e38, the shortest form of FLT_MAX written by toJson(), is above
+    // FLT_MAX as a double but rounds to it. Only values that round to infinity (or are not finite) are rejected.
+    const auto value = static_cast<float>(it->get<double>());
+    if (!std::isfinite(value)) {
         return fail(ErrorCode::ValidationFailed, "number out of range", at.child(field));
     }
-    return static_cast<float>(value);
+    return value;
 }
 
 Expected<Binding> parseBinding(const Json& entry, const JsonLocation& at) {
@@ -245,6 +246,16 @@ struct BindingWriter {
     }
 };
 
+/// core::readJsonFile without letting an exception out: core::parseJson converts nlohmann's parse_error only,
+/// while a number literal that overflows a double (1e400) throws out_of_range.
+Expected<Json> readJsonFileNoThrow(const std::filesystem::path& path, const std::string& context) {
+    try {
+        return core::readJsonFile(path);
+    } catch (const Json::exception& e) {
+        return makeError(ErrorCode::ParseError, e.what(), context);
+    }
+}
+
 } // namespace
 
 void ActionMap::bind(Action action, Binding binding) {
@@ -327,12 +338,8 @@ Expected<ActionMap> ActionMap::fromJson(const nlohmann::json& json, std::string_
     if (!json.is_object()) {
         return fail(ErrorCode::ParseError, "expected a JSON object with \"schemaVersion\" and \"bindings\"", root);
     }
-    for (const auto& item : json.items()) {
-        if (item.key() != kSchemaVersionField && item.key() != kBindingsField) {
-            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), root.child(item.key()));
-        }
-    }
 
+    // The version first: it defines which fields are known, so a newer document is Unsupported, not corrupt.
     const JsonLocation versionAt = root.child(kSchemaVersionField);
     const auto version = json.find(kSchemaVersionField);
     if (version == json.end()) {
@@ -346,6 +353,11 @@ Expected<ActionMap> ActionMap::fromJson(const nlohmann::json& json, std::string_
                     "unsupported schemaVersion " + version->dump() + " (expected " + std::to_string(kSchemaVersion) +
                         ")",
                     versionAt);
+    }
+    for (const auto& item : json.items()) {
+        if (item.key() != kSchemaVersionField && item.key() != kBindingsField) {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), root.child(item.key()));
+        }
     }
 
     const JsonLocation bindingsAt = root.child(kBindingsField);
@@ -401,11 +413,11 @@ nlohmann::json ActionMap::toJson() const {
 }
 
 Expected<ActionMap> ActionMap::loadFromFile(const std::filesystem::path& path) {
-    const auto document = core::readJsonFile(path);
+    const std::string context = core::pathToUtf8(path);
+    const auto document = readJsonFileNoThrow(path, context);
     if (!document) {
         return propagate(document.error());
     }
-    const std::string context = core::pathToUtf8(path);
     return fromJson(*document, context);
 }
 

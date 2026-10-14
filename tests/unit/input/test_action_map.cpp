@@ -225,6 +225,7 @@ TEST_CASE("input/action_map: default_bindings.json is equivalent to defaults()",
 }
 
 TEST_CASE("input/action_map: JSON round trip", "[input][action_map]") {
+    constexpr float kFloatMax = std::numeric_limits<float>::max();
     ActionMap custom;
     custom.bind(Action::MoveForward, KeyBinding{Key::Digit0, 0.1f});
     custom.bind(Action::MoveForward, KeyBinding{Key::Grave, -1.0f});
@@ -233,6 +234,10 @@ TEST_CASE("input/action_map: JSON round trip", "[input][action_map]") {
     custom.bind(Action::Interact, MouseButtonBinding{MouseButton::X2, 0.35f});
     custom.bind(Action::Menu, GamepadButtonBinding{GamepadButton::DpadRight, -1.0f});
     custom.bind(Action::Sprint, GamepadAxisBinding{GamepadAxis::LeftTrigger, 1.0f, 0.0f, 0.3f});
+    // Extreme finite values: FLT_MAX is written as 3.4028235e+38, slightly above FLT_MAX once read as a double.
+    custom.bind(Action::MoveRight, KeyBinding{Key::D, kFloatMax});
+    custom.bind(Action::MoveRight, KeyBinding{Key::A, -kFloatMax});
+    custom.bind(Action::LookY, GamepadAxisBinding{GamepadAxis::RightY, -kFloatMax, 0.0f, kFloatMax});
 
     for (const ActionMap& map : {ActionMap::defaults(), custom, ActionMap{}}) {
         const nlohmann::json json = map.toJson();
@@ -248,6 +253,14 @@ TEST_CASE("input/action_map: JSON round trip", "[input][action_map]") {
         CHECK(*reread == map);
         CHECK(reread->toJson() == json);
     }
+
+    // Numbers are range-checked once rounded to float, so the shortest form of FLT_MAX is accepted when written
+    // by hand too (the first decimal that rounds to infinity is an error case below).
+    const auto extreme = parseMap(withEntry(R"({"key": "w", "scale": 3.4028235e38},
+                                               {"key": "s", "scale": -3.4028235e38})"));
+    REQUIRE(extreme.has_value());
+    CHECK(bindingsOf(*extreme, Action::MoveForward) ==
+          std::vector<Binding>{KeyBinding{Key::W, kFloatMax}, KeyBinding{Key::S, -kFloatMax}});
 }
 
 TEST_CASE("input/action_map: toJson writes every action and every field", "[input][action_map]") {
@@ -329,6 +342,8 @@ TEST_CASE("input/action_map: errors name the failure and its JSON path", "[input
          "test.json:/schemaVersion", "integer"},
         {"schemaVersion mismatch", R"({"schemaVersion": 2, "bindings": {}})", ErrorCode::Unsupported,
          "test.json:/schemaVersion", "2"},
+        {"newer schemaVersion with new fields", R"({"schemaVersion": 2, "bindings": {}, "profiles": {}})",
+         ErrorCode::Unsupported, "test.json:/schemaVersion", "2"},
         {"missing bindings", R"({"schemaVersion": 1})", ErrorCode::ParseError, "test.json:/bindings", "bindings"},
         {"bindings of the wrong type", R"({"schemaVersion": 1, "bindings": []})", ErrorCode::ParseError,
          "test.json:/bindings", "object"},
@@ -372,6 +387,8 @@ TEST_CASE("input/action_map: errors name the failure and its JSON path", "[input
          "test.json:/bindings/move_forward/0/scale", "number"},
         {"scale overflows a float", withEntry(R"({"key": "w", "scale": 1e39})"), ErrorCode::ValidationFailed,
          "test.json:/bindings/move_forward/0/scale", "range"},
+        {"scale rounds to infinity as a float", withEntry(R"({"key": "w", "scale": -3.4028236e38})"),
+         ErrorCode::ValidationFailed, "test.json:/bindings/move_forward/0/scale", "range"},
         {"deadzone of 1", withEntry(R"({"padAxis": "left_y", "deadzone": 1})"), ErrorCode::ValidationFailed,
          "test.json:/bindings/move_forward/0/deadzone", "[0, 1)"},
         {"negative deadzone", withEntry(R"({"padAxis": "left_y", "deadzone": -0.1})"), ErrorCode::ValidationFailed,
@@ -393,6 +410,16 @@ TEST_CASE("input/action_map: errors name the failure and its JSON path", "[input
     // The context names the document as given by the caller.
     const rv::Error named = parseFailure(withEntry(R"({"key": "w"}, {"key": "kw"})"), "default_bindings.json");
     CHECK(named.context == "default_bindings.json:/bindings/move_forward/1/key");
+
+    // In-memory documents can hold numbers that JSON text cannot: infinity and NaN are out of range.
+    for (const double bad : {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+        nlohmann::json document = nlohmann::json::parse(withEntry(R"({"padAxis": "left_y"})"));
+        document["bindings"]["move_forward"][0]["exponent"] = bad;
+        const auto map = ActionMap::fromJson(document, "memory");
+        REQUIRE_FALSE(map.has_value());
+        CHECK(map.error().code == ErrorCode::ValidationFailed);
+        CHECK(map.error().context == "memory:/bindings/move_forward/0/exponent");
+    }
 }
 
 TEST_CASE("input/action_map: loadFromFile reports the file path", "[input][action_map]") {
@@ -419,6 +446,15 @@ TEST_CASE("input/action_map: loadFromFile reports the file path", "[input][actio
     REQUIRE_FALSE(broken.has_value());
     CHECK(broken.error().code == ErrorCode::ParseError);
     CHECK(broken.error().context == rv::core::pathToUtf8(malformed));
+
+    // A number that overflows a double is a parse error too, not an exception leaving the module.
+    const auto overflow = dir.file("overflow.json");
+    REQUIRE(rv::core::writeTextFileAtomic(overflow, withEntry(R"({"key": "w", "scale": 1e400})")).has_value());
+    const auto overflowed = ActionMap::loadFromFile(overflow);
+    REQUIRE_FALSE(overflowed.has_value());
+    CHECK(overflowed.error().code == ErrorCode::ParseError);
+    CHECK(overflowed.error().context == rv::core::pathToUtf8(overflow));
+    CHECK_THAT(overflowed.error().message, ContainsSubstring("1e400"));
 
     const auto missing = ActionMap::loadFromFile(dir.file("missing.json"));
     REQUIRE_FALSE(missing.has_value());

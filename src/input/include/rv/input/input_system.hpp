@@ -18,7 +18,9 @@ struct InputSettings {
     bool invertLookY = false;
     /// Multiplies LookDeltaX/LookDeltaY (mouse, unclamped).
     float mouseSensitivityScale = 1.0f;
-    /// Multiplies LookX/LookY after clamping, so they span [-stickSensitivityScale, stickSensitivityScale].
+    /// Gain on LookX/LookY, applied before their clamp so they stay rates in [-1, 1] (action.hpp): below 1 it
+    /// lowers the top rate, above 1 the stick reaches the top rate before full deflection. The turn speed at
+    /// rate 1 belongs to the consumer.
     float stickSensitivityScale = 1.0f;
 };
 
@@ -35,7 +37,7 @@ inline constexpr float kMinPressThreshold = 0.01f;
 ///  - gamepad axis: + shape(value) * scale (dead zone with rescaling, then response exponent keeping the sign).
 /// The sum is then post-processed per action:
 ///  - LookDeltaX / LookDeltaY: not clamped (mouse pixels), times mouseSensitivityScale;
-///  - LookX / LookY: clamped to [-1, 1], then times stickSensitivityScale;
+///  - LookX / LookY: times stickSensitivityScale, then clamped to [-1, 1] (rates, see action.hpp);
 ///  - every other action: clamped to [-1, 1];
 ///  - invertLookY negates LookY and LookDeltaY.
 /// MoveForward and MoveRight are resolved independently and the movement vector is NOT normalized here (W + D

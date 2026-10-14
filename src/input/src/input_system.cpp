@@ -112,7 +112,8 @@ void accumulate(const GamepadAxisBinding& binding, const RawInputFrame& frame, C
         break;
     case Action::LookX:
     case Action::LookY:
-        value = std::clamp(sum, -1.0f, 1.0f) * settings.stickSensitivityScale;
+        // Scaled before the clamp: these stay rates in [-1, 1] (action.hpp) whatever the sensitivity.
+        value = std::clamp(sum * settings.stickSensitivityScale, -1.0f, 1.0f);
         break;
     default:
         value = std::clamp(sum, -1.0f, 1.0f);

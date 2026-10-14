@@ -11,8 +11,5 @@ add_library(rv_input STATIC
 add_library(rv::input ALIAS rv_input)
 rv_set_target_defaults(rv_input)
 target_include_directories(rv_input PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(rv_input PUBLIC
-    rv_core
-    glm::glm
-    nlohmann_json::nlohmann_json)
+target_link_libraries(rv_input PUBLIC rv_core)
 rv_forbid_link(rv_input)

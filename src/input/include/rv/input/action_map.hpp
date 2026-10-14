@@ -56,8 +56,8 @@ public:
     /// Parses a binding document. Error contexts are "<context>:<JSON pointer>" (RFC 6901), for example
     /// "default_bindings.json:/bindings/move_forward/1/key"; just "<context>" when the document root is at fault.
     /// Error codes: ParseError (wrong JSON type, missing or unknown field, zero or several device fields),
-    /// ValidationFailed (unknown action or code name, number out of range, too many bindings), Unsupported
-    /// (schemaVersion other than kSchemaVersion).
+    /// ValidationFailed (unknown action or code name, number not finite once rounded to float, too many
+    /// bindings), Unsupported (schemaVersion other than kSchemaVersion, checked before any other field).
     [[nodiscard]] static Expected<ActionMap> fromJson(const nlohmann::json& json, std::string_view context);
 
     /// Serializes every action, unbound ones as empty arrays, with every field explicit and numbers in their
@@ -65,7 +65,8 @@ public:
     [[nodiscard]] nlohmann::json toJson() const;
 
     /// Reads a binding file (rv::core::readJsonFile, comments allowed) and parses it with the UTF-8 file path as
-    /// the error context.
+    /// the error context. Never throws on bad content: malformed JSON, including a number that overflows a
+    /// double, is a ParseError.
     [[nodiscard]] static Expected<ActionMap> loadFromFile(const std::filesystem::path& path);
 
     /// Same bindings in the same order for every action.

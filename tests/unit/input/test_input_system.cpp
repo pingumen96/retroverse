@@ -175,12 +175,21 @@ TEST_CASE("input/input_system: analog values are clamped to [-1, 1]", "[input][i
     scroll.mouseWheel = -6.0f;
     CHECK(wheel.resolve(scroll).axis(Action::MoveForward) == -1.0f);
 
-    // Look rates are clamped first, then scaled by the stick sensitivity.
+    // Look rates are scaled by the stick sensitivity, then clamped: they stay rates in [-1, 1] (action.hpp).
     InputSystem look(singleBinding(Action::LookX, GamepadAxisBinding{GamepadAxis::RightX, 2.0f, 0.0f, 1.0f}));
     look.setSettings(InputSettings{.stickSensitivityScale = 1.5f});
-    CHECK(look.resolve(padAxis(GamepadAxis::RightX, 1.0f)).axis(Action::LookX) == Approx(1.5f));
     CHECK(look.resolve(padAxis(GamepadAxis::RightX, 0.25f)).axis(Action::LookX) == Approx(0.75f));
-    CHECK(look.resolve(padAxis(GamepadAxis::RightX, -1.0f)).axis(Action::LookX) == Approx(-1.5f));
+    CHECK(look.resolve(padAxis(GamepadAxis::RightX, 1.0f)).axis(Action::LookX) == 1.0f);
+    CHECK(look.resolve(padAxis(GamepadAxis::RightX, -1.0f)).axis(Action::LookX) == -1.0f);
+    // The scale applies before the clamp: 2 * 0.5 is a full rate.
+    look.setSettings(InputSettings{.stickSensitivityScale = 0.5f});
+    CHECK(look.resolve(padAxis(GamepadAxis::RightX, 1.0f)).axis(Action::LookX) == 1.0f);
+    CHECK(look.resolve(padAxis(GamepadAxis::RightX, 0.5f)).axis(Action::LookX) == Approx(0.5f));
+    // A sensitivity below 1 lowers the top rate of a plain stick binding.
+    InputSystem slow;
+    slow.setSettings(InputSettings{.stickSensitivityScale = 0.5f});
+    CHECK(slow.resolve(padAxis(GamepadAxis::RightX, 1.0f)).axis(Action::LookX) == Approx(0.5f));
+    CHECK(slow.resolve(padAxis(GamepadAxis::RightY, -1.0f)).axis(Action::LookY) == Approx(-0.5f));
 }
 
 TEST_CASE("input/input_system: mouse deltas are unclamped and scaled by the mouse sensitivity",
