@@ -76,7 +76,13 @@ const std::map<std::string, std::set<std::string>> kParamKeys{
 
 const glm::vec3 kDefaultCartridgeSize(0.125f, 0.085f, 0.020f);
 
-/// Shelf slot layout from the shared parameter contract (defaults for missing keys).
+/// Back-panel thickness of rv_geometry's shelf builder. The shared contract centers slot items "in depth on the
+/// board" but leaves the back panel open; the boards start in front of it.
+constexpr float kShelfBackPanelThickness = 0.008f;
+
+/// Shelf slot layout from the shared parameter contract (defaults for missing keys). It replicates the slot
+/// formula because scene tests cannot call the shelf builder yet; once they can, compare the cartridges with the
+/// Slot_* sockets of the built shelf instead.
 struct ShelfLayout {
     float width = 1.2f;
     float height = 2.0f;
@@ -116,7 +122,7 @@ struct ShelfLayout {
             -0.5f * innerWidth() + slotMargin + 0.5f * slotSize.x + static_cast<float>(index) * (slotSize.x + slotGap);
         const float pitch = (height - boardThickness - plinthHeight) / static_cast<float>(levels);
         const float y = plinthHeight + boardThickness + static_cast<float>(level) * pitch;
-        const float z = back ? 0.5f * boardThickness : 0.0f;
+        const float z = back ? 0.5f * kShelfBackPanelThickness : 0.0f;
         return {x, y, z};
     }
 };
@@ -383,6 +389,13 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(translationOf(shelf->transform).z < -4.5f);
     CHECK(translationOf(cabinets[0]->transform).x == Approx(1.8f));
     CHECK(translationOf(crts[0]->transform).y == Approx(cabinets[0]->params.at("height").get<float>()));
+    // The CRT rests on the cabinet top entirely: no overhang at the front (0.1 mm tolerance for float rounding).
+    const Footprint cabinetTop = footprintOf(*cabinets[0]);
+    const Footprint crtBase = footprintOf(*crts[0]);
+    CHECK(crtBase.min.x >= cabinetTop.min.x - 1e-4f);
+    CHECK(crtBase.max.x <= cabinetTop.max.x + 1e-4f);
+    CHECK(crtBase.min.y >= cabinetTop.min.y - 1e-4f);
+    CHECK(crtBase.max.y <= cabinetTop.max.y + 1e-4f);
     CHECK(crts[0]->materialNameForRole("screen") == "MAT_Screen_Emissive");
     CHECK(crts[0]->texturesByRole.at("screen").pattern == "color_bars");
     CHECK(objectsOfKind(scene, "console_cartridge").size() == 1);
@@ -433,7 +446,7 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(scene.environment.ambientSky.r > scene.environment.ambientSky.b); // warm
 }
 
-TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit exactly in the shelf slots",
+TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit at the contract slot positions of the shelf",
           "[scene][reference_scenes][m0_testroom]") {
     const SceneDescription scene = loadReference("m0_testroom");
     const SceneObject* shelf = scene.findObject("shelf_main");

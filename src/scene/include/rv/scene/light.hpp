@@ -24,8 +24,11 @@ enum class LightType : std::uint8_t { Point, Spot, Directional };
 ///      attenuation = window(d) / max(d * d, 0.0001), window(d) = clamp(1 - (d / r)^4, 0, 1)^2,
 ///    i.e. inverse square multiplied by a smooth window that reaches exactly 0 at the range, so lights beyond
 ///    their range can be skipped without a visible cut.
-///  - Spot lights: spotFactor = smoothstep(cos(outer), cos(inner), dot(direction, normalize(p - position))),
-///    full intensity inside innerConeDeg and zero outside outerConeDeg (half-angles from the axis).
+///  - Spot lights: with x = dot(direction, normalize(p - position)), cosInner = cos(innerConeDeg) and
+///    cosOuter = cos(outerConeDeg),
+///      t = clamp((x - cosOuter) / max(cosInner - cosOuter, 1e-4), 0, 1),  spotFactor = t * t * (3 - 2 * t),
+///    i.e. full intensity inside innerConeDeg and zero outside outerConeDeg (half-angles from the axis). The
+///    max() keeps hard-edged cones (inner == outer, valid) defined: GLSL smoothstep is undefined for equal edges.
 ///  - Directional lights: attenuation = spotFactor = 1; light travels along `direction`; position and range are
 ///    ignored (position may serve as an anchor for shadow-map placement and debug drawing).
 struct Light {

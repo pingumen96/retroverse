@@ -9,6 +9,7 @@
 
 #include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
+#include <rv/core/text.hpp>
 #include <rv/scene/light.hpp>
 #include <rv/scene/scene_description.hpp>
 
@@ -117,6 +118,33 @@ TEST_CASE("scene/scene_description: camera, environment and lights", "[scene][sc
     CHECK(sun.type == LightType::Directional);
     CHECK(rv::core::nearlyEqual(sun.direction, glm::vec3(0.0f, -1.0f, 0.0f)));
     CHECK(sun.range == 0.0f); // ignored for directional lights, so not validated
+}
+
+TEST_CASE("scene/scene_description: light directions stay unit vectors at extreme coordinates",
+          "[scene][scene_description]") {
+    // The float dot products of these axes overflow to infinity: normalizing in float gave (0, 0, 0) and NaN.
+    const auto scene = parse(R"({"schemaVersion": 1, "name": "far", "lights": [
+        {"type": "directional", "direction": [1e20, 0, 0]},
+        {"type": "spot", "position": [-3e38, 0, 0], "target": [3e38, 0, 0]},
+        {"type": "spot", "position": [0, 0, 0], "direction": [3e38, -3e38, 0]}]})");
+    REQUIRE(scene.has_value());
+    REQUIRE(scene->lights.size() == 3);
+    CHECK(rv::core::nearlyEqual(scene->lights[0].direction, glm::vec3(1.0f, 0.0f, 0.0f)));
+    CHECK(rv::core::nearlyEqual(scene->lights[1].direction, glm::vec3(1.0f, 0.0f, 0.0f)));
+    CHECK(rv::core::nearlyEqual(scene->lights[2].direction, glm::normalize(glm::vec3(1.0f, -1.0f, 0.0f))));
+}
+
+TEST_CASE("scene/scene_description: spot cones may be hard-edged", "[scene][scene_description]") {
+    // inner == outer is valid (0 <= inner <= outer < 90); the renderer contract in light.hpp keeps it defined.
+    const auto scene = parse(R"({"schemaVersion": 1, "name": "hard", "lights": [
+        {"type": "spot", "position": [0, 3, 0], "direction": [0, -1, 0], "innerConeDeg": 30, "outerConeDeg": 30},
+        {"type": "spot", "position": [0, 3, 0], "direction": [0, -1, 0], "innerConeDeg": 0, "outerConeDeg": 0}]})");
+    REQUIRE(scene.has_value());
+    REQUIRE(scene->lights.size() == 2);
+    CHECK(scene->lights[0].innerConeDeg == 30.0f);
+    CHECK(scene->lights[0].outerConeDeg == 30.0f);
+    CHECK(scene->lights[1].innerConeDeg == 0.0f);
+    CHECK(scene->lights[1].outerConeDeg == 0.0f);
 }
 
 TEST_CASE("scene/scene_description: object sources, materials, textures and flags", "[scene][scene_description]") {
@@ -254,6 +282,8 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
         {"camera is an object", R"({"schemaVersion": 1, "name": "x", "camera": [0, 1, 2]})", "/camera"},
         {"near > 0", R"({"schemaVersion": 1, "name": "x", "camera": {"near": 0}})", "/camera/near"},
         {"far > near", R"({"schemaVersion": 1, "name": "x", "camera": {"near": 2, "far": 1}})", "/camera/far"},
+        {"near beyond the default far is reported at near",
+         R"({"schemaVersion": 1, "name": "x", "camera": {"near": 150}})", "/camera/near"},
         {"FOV range", R"({"schemaVersion": 1, "name": "x", "camera": {"horizontalFovDeg": 180}})",
          "/camera/horizontalFovDeg"},
         {"pitch range", R"({"schemaVersion": 1, "name": "x", "camera": {"pitchDeg": 95}})", "/camera/pitchDeg"},
@@ -269,6 +299,11 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
          "/environment/clearColor"},
         {"colors are strings", R"({"schemaVersion": 1, "name": "x", "environment": {"ambientSky": [1, 1, 1]}})",
          "/environment/ambientSky"},
+        {"colors have no alpha", R"({"schemaVersion": 1, "name": "x", "environment": {"clearColor": "#20222480"}})",
+         "/environment/clearColor"},
+        {"colors start with '#'",
+         R"({"schemaVersion": 1, "name": "x", "lights": [{"type": "point", "position": [0, 2, 0], "color": "FFC88A"}]})",
+         "/lights/0/color"},
         {"lights is an array", R"({"schemaVersion": 1, "name": "x", "lights": {}})", "/lights"},
         {"light type is required", R"({"schemaVersion": 1, "name": "x", "lights": [{"position": [0, 0, 0]}]})",
          "/lights/0/type"},
@@ -305,6 +340,9 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
         {"inner cone <= outer cone",
          R"({"schemaVersion": 1, "name": "x", "lights": [{"type": "spot", "position": [0, 2, 0], "direction": [0, -1, 0], "innerConeDeg": 40, "outerConeDeg": 35}]})",
          "/lights/0/innerConeDeg"},
+        {"outer cone narrower than the default inner cone is reported at outerConeDeg",
+         R"({"schemaVersion": 1, "name": "x", "lights": [{"type": "spot", "position": [0, 2, 0], "direction": [0, -1, 0], "outerConeDeg": 20}]})",
+         "/lights/0/outerConeDeg"},
         {"outer cone < 90",
          R"({"schemaVersion": 1, "name": "x", "lights": [{"type": "spot", "position": [0, 2, 0], "direction": [0, -1, 0], "outerConeDeg": 90}]})",
          "/lights/0/outerConeDeg"},
@@ -445,6 +483,21 @@ TEST_CASE("scene/scene_description: files load with their name as error context"
     const auto syntax = dir.file("syntax.json");
     REQUIRE(rv::core::writeTextFileAtomic(syntax, R"({"schemaVersion": 1,)").has_value());
     CHECK(rv::scene::loadSceneDescription(syntax).error().code == rv::ErrorCode::ParseError);
+
+    // A number literal that overflows a double makes nlohmann::json throw out_of_range instead of parse_error:
+    // still a ParseError with the file path, never an exception leaving the module.
+    const auto overflow = dir.file("overflow.json");
+    for (const std::string& literal : {std::string("1e400"), std::string(400, '9')}) {
+        INFO("literal of " << literal.size() << " characters");
+        REQUIRE(rv::core::writeTextFileAtomic(
+                    overflow, R"({"schemaVersion": 1, "name": "x", "camera": {"far": )" + literal + "}}")
+                    .has_value());
+        const auto overflowed = rv::scene::loadSceneDescription(overflow);
+        REQUIRE_FALSE(overflowed.has_value());
+        CHECK(overflowed.error().code == rv::ErrorCode::ParseError);
+        CHECK(overflowed.error().context == rv::core::pathToUtf8(overflow));
+        CHECK(overflowed.error().message.find("overflow") != std::string::npos);
+    }
 
     CHECK(rv::scene::loadSceneDescription(dir.file("missing.json")).error().code == rv::ErrorCode::NotFound);
 }

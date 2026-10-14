@@ -156,12 +156,16 @@ Expected<glm::vec3> readVec3(const json& value, const Location& at) {
     return result;
 }
 
-/// sRGB hex string -> linear RGB.
+/// "#RRGGBB" sRGB hex string -> linear RGB. The other forms core::hexToLinearRgb accepts (no '#', alpha digits)
+/// are rejected: scene colors are opaque and an alpha would be dropped silently.
 Expected<glm::vec3> readColor(const json& value, const Location& at) {
     if (!value.is_string()) {
         return fail(at, "expected an sRGB hex color string such as \"#FFC88A\"");
     }
     const auto& text = value.get_ref<const std::string&>();
+    if (text.size() != 7 || text.front() != '#') {
+        return fail(at, "invalid color \"" + text + "\": expected \"#RRGGBB\" (no alpha)");
+    }
     auto color = core::hexToLinearRgb(text);
     if (!color) {
         return fail(at, "invalid color \"" + text + "\": " + color.error().message);
@@ -319,7 +323,11 @@ Expected<CameraSetup> parseCamera(const json& value, const Location& at) {
     fields.optional("near", camera.lens.nearPlane, readNumber);
     fields.check(camera.lens.nearPlane > 0.0f, "near", "must be > 0");
     fields.optional("far", camera.lens.farPlane, readNumber);
-    fields.check(camera.lens.farPlane > camera.lens.nearPlane, "far", "must be greater than near");
+    // Cross-field errors name a key present in the file: a near plane beyond the default far plane is reported
+    // at "near".
+    fields.check(camera.lens.farPlane > camera.lens.nearPlane, fields.has("far") ? "far" : "near",
+                 "far (" + formatNumber(camera.lens.farPlane) + ") must be greater than near (" +
+                     formatNumber(camera.lens.nearPlane) + ")");
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -369,17 +377,20 @@ Expected<Light> parseLight(const json& value, const Location& at) {
     const bool hasDirection = fields.optional("direction", direction, readVec3);
     const bool hasTarget = fields.optional("target", target, readVec3);
     fields.check(!(hasDirection && hasTarget), "target", "\"direction\" and \"target\" are mutually exclusive");
+    // Double precision: components up to FLT_MAX overflow a float dot product, and normalizing in float would
+    // then give a zero or NaN direction.
+    const glm::dvec3 axis = hasTarget ? glm::dvec3(target) - glm::dvec3(light.position) : glm::dvec3(direction);
+    const double axisLength = glm::length(axis);
     if (hasTarget) {
-        direction = target - light.position;
-        fields.check(glm::length(direction) > 1e-6f, "target", "target must differ from the light position");
+        fields.check(axisLength > 1e-6, "target", "target must differ from the light position");
     } else if (hasDirection) {
-        fields.check(glm::length(direction) > 1e-6f, "direction", "direction must not be zero");
+        fields.check(axisLength > 1e-6, "direction", "direction must not be zero");
     } else {
         fields.check(light.type == LightType::Point, "direction",
                      std::string(toString(light.type)) + " lights need \"direction\" or \"target\"");
     }
     if (!fields.failed() && (hasDirection || hasTarget)) {
-        light.direction = glm::normalize(direction);
+        light.direction = glm::vec3(axis / axisLength);
     }
 
     fields.optional("color", light.color, readColor);
@@ -390,7 +401,9 @@ Expected<Light> parseLight(const json& value, const Location& at) {
     fields.optional("innerConeDeg", light.innerConeDeg, readNumber);
     fields.optional("outerConeDeg", light.outerConeDeg, readNumber);
     fields.check(light.innerConeDeg >= 0.0f, "innerConeDeg", "must be >= 0");
-    fields.check(light.innerConeDeg <= light.outerConeDeg, "innerConeDeg",
+    // An outer cone narrower than the default inner cone is reported at "outerConeDeg", the key in the file.
+    fields.check(light.innerConeDeg <= light.outerConeDeg,
+                 fields.has("innerConeDeg") ? "innerConeDeg" : "outerConeDeg",
                  "innerConeDeg (" + formatNumber(light.innerConeDeg) + ") must not exceed outerConeDeg (" +
                      formatNumber(light.outerConeDeg) + ")");
     fields.check(light.outerConeDeg < 90.0f, "outerConeDeg", "must be < 90");
@@ -638,6 +651,16 @@ Expected<SceneDescription> parseDocument(const json& document, const Location& r
     return scene;
 }
 
+/// core::readJsonFile without exceptions: core::parseJson converts nlohmann's parse_error only, while a number
+/// literal that overflows a double (1e400, a 400-digit integer) throws out_of_range.
+Expected<json> readJsonFileNoThrow(const std::filesystem::path& path) {
+    try {
+        return core::readJsonFile(path);
+    } catch (const std::exception& e) {
+        return makeError(ErrorCode::ParseError, e.what(), core::pathToUtf8(path));
+    }
+}
+
 } // namespace
 
 std::span<const glm::mat4> SceneObject::instanceTransforms() const noexcept {
@@ -670,7 +693,7 @@ Expected<SceneDescription> parseSceneDescription(const nlohmann::json& document,
 }
 
 Expected<SceneDescription> loadSceneDescription(const std::filesystem::path& path) {
-    auto document = core::readJsonFile(path);
+    auto document = readJsonFileNoThrow(path);
     if (!document) {
         return propagate(document.error());
     }

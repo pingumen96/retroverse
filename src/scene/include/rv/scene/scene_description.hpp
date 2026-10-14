@@ -22,9 +22,9 @@ namespace rv::scene {
 /// Scene description files (assets/style_tests/reference_scenes/*.json), schema version 1.
 ///
 /// Plain data for the application, which builds prefabs, primitives, models and materials from it. Lengths in
-/// meters, angles in degrees, colors are sRGB hex strings ("#RRGGBB") converted to linear RGB. Comments are
-/// allowed; unknown keys are errors everywhere (typos never pass silently). Optional keys take the defaults
-/// listed below, which are also the defaults of the structs.
+/// meters, angles in degrees, colors are opaque sRGB hex strings, exactly "#RRGGBB" (no alpha), converted to
+/// linear RGB. Comments are allowed; unknown keys are errors everywhere (typos never pass silently). Optional keys
+/// take the defaults listed below, which are also the defaults of the structs.
 ///
 ///   {
 ///     "schemaVersion": 1,                          required, must be 1
@@ -48,7 +48,7 @@ namespace rv::scene {
 ///                                                  normalized (the target must differ from the position)
 ///       "color": "#FFFFFF", "intensity": 1.0,      intensity >= 0
 ///       "range": 10.0,                             > 0 for point and spot lights
-///       "innerConeDeg": 25, "outerConeDeg": 35,    0 <= inner <= outer < 90
+///       "innerConeDeg": 25, "outerConeDeg": 35,    0 <= inner <= outer < 90 (inner == outer: hard edge)
 ///       "castsShadows": false
 ///     }],
 ///     "objects": [{                                optional
@@ -71,8 +71,10 @@ namespace rv::scene {
 /// then z. The whole scene may hold at most kMaxSceneInstances instances (an object without grid counts as 1).
 /// Asset paths (models, texture files) are relative, use '/' and never contain ".." or a drive/root.
 ///
-/// Every error is rv::ErrorCode::ValidationFailed (or the I/O and JSON syntax errors of rv::core::readJsonFile)
-/// and carries "<context>:<JSON pointer>" as context, e.g. "m0_testroom.json:/objects/3/params".
+/// Every validation error is rv::ErrorCode::ValidationFailed and carries "<context>:<JSON pointer>" as context,
+/// e.g. "m0_testroom.json:/objects/3/params"; a cross-field error (near/far, inner/outer cone) points at the key
+/// that is present in the file. loadSceneDescription also returns the I/O errors of rv::core::readJsonFile and
+/// ParseError (context = file path) for malformed JSON, including number literals that overflow a double.
 
 inline constexpr int kSceneSchemaVersion = 1;
 inline constexpr std::size_t kMaxSceneInstances = 100000;
