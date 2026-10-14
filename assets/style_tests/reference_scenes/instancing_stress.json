@@ -1,0 +1,29 @@
+// Instancing stress test (plan step 8): exactly 1000 boxes of ONE mesh in three materials (400 + 300 + 300),
+// stacked as a 10 x 10 x 10 block, plus a floor and one light. Expected plan: one batch per material for the boxes
+// and one for the floor.
+{
+  "schemaVersion": 1,
+  "name": "instancing_stress",
+  "camera": {"position": [7.6, 6.3, 9.4], "yawDeg": -38.96, "pitchDeg": -15.93, "horizontalFovDeg": 75.0},
+  "environment": {
+    "clearColor": "#202224",
+    "ambientSky": "#FFFFFF",
+    "ambientGround": "#5E5A55",
+    "ambientIntensity": 0.25,
+    "exposure": 1.0
+  },
+  "lights": [
+    {"name": "sun", "type": "directional", "direction": [-0.4, -0.8, -0.45], "color": "#FFF1DE", "intensity": 3.0}
+  ],
+  "objects": [
+    {"id": "floor", "primitive": "plane", "params": {"size": [40.0, 40.0], "uvTiling": [40.0, 40.0]},
+     "material": "MAT_Concrete_Warm", "castsShadows": false},
+    // Identical box params in all three grids, so they share one mesh. Box centers 0.6 m apart.
+    {"id": "boxes_walnut", "primitive": "box", "params": {"size": [0.3, 0.3, 0.3]}, "position": [-2.7, 0.15, -2.7],
+     "grid": {"counts": [10, 4, 10], "spacing": [0.6, 0.6, 0.6]}, "material": "MAT_Wood_Walnut"},
+    {"id": "boxes_plastic", "primitive": "box", "params": {"size": [0.3, 0.3, 0.3]}, "position": [-2.7, 2.55, -2.7],
+     "grid": {"counts": [10, 3, 10], "spacing": [0.6, 0.6, 0.6]}, "material": "MAT_Plastic_Gray"},
+    {"id": "boxes_metal", "primitive": "box", "params": {"size": [0.3, 0.3, 0.3]}, "position": [-2.7, 4.35, -2.7],
+     "grid": {"counts": [10, 3, 10], "spacing": [0.6, 0.6, 0.6]}, "material": "MAT_Metal_Brushed"}
+  ]
+}

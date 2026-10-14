@@ -1,0 +1,160 @@
+// M0 test room (plan 5.6, style 8.1): a minimal 16-bit console room in the spirit of the approved concept.
+// Room interior 9 x 10 m centered on the origin (x in [-4.5, 4.5], z in [-5, 5]); north wall = -Z (hero wall),
+// doorway in the south wall. Schema: src/scene/include/rv/scene/scene_description.hpp.
+{
+  "schemaVersion": 1,
+  "name": "m0_testroom",
+  "camera": {
+    // Just inside the doorway at eye height, looking north at the shelf, the TV corner and the lamp.
+    "position": [0.0, 1.65, 3.2],
+    "yawDeg": 0.0,
+    "pitchDeg": -6.0,
+    "horizontalFovDeg": 75.0,
+    "near": 0.05,
+    "far": 100.0
+  },
+  "environment": {
+    "clearColor": "#151311",
+    "ambientSky": "#FFD6A8",
+    "ambientGround": "#5A3F2E",
+    "ambientIntensity": 0.08,
+    "exposure": 1.0
+  },
+  "lights": [
+    {"name": "ceiling_tungsten", "type": "point", "position": [0.0, 2.75, -2.4], "color": "#FFC88A",
+     "intensity": 16.0, "range": 9.0},
+    // SNES / 16-bit preset (style 4.2): tungsten dominant with a light magenta accent on the TV corner.
+    {"name": "accent_magenta", "type": "spot", "position": [3.2, 2.85, -2.2], "target": [1.62, 1.0, -4.67],
+     "color": "#B34DCE", "intensity": 6.0, "range": 7.0, "innerConeDeg": 18.0, "outerConeDeg": 30.0},
+    // Bulb inside the floor lamp shade (LightSource socket height).
+    {"name": "floor_lamp_bulb", "type": "point", "position": [-4.05, 1.45, -4.55], "color": "#FFC88A",
+     "intensity": 4.0, "range": 5.0}
+  ],
+  "objects": [
+    {"id": "room", "prefab": "room_shell",
+     "params": {"size": [9.0, 10.0], "wallHeight": 3.0, "wallThickness": 0.15, "metersPerTile": 1.0, "ceiling": true,
+                "baseboardHeight": 0.1, "doorway": {"wall": "south", "offset": 0.0, "width": 1.6, "height": 2.3}},
+     "materials": {"floor": "MAT_Wood_Oak", "wall": "MAT_Wall_Painted", "ceiling": "MAT_Wood_Walnut",
+                   "trim": "MAT_Wood_Walnut"}},
+
+    // Collection wall: shelf against the north wall, 2.5 cm off the wall surface (baseboard).
+    {"id": "shelf_main", "prefab": "shelf", "position": [-1.5, 0.0, -4.8],
+     "params": {"width": 1.2, "height": 2.0, "depth": 0.35, "levels": 5, "boardThickness": 0.025, "back": true,
+                "plinthHeight": 0.08, "slotSize": [0.125, 0.085, 0.020], "slotGap": 0.004, "slotMargin": 0.03},
+     "materials": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished"}},
+
+    // 24 cartridges in shelf slots Slot_1_0 .. Slot_3_7 (8 slots per level); levels 0 and 4 stay empty for growth.
+    // Center = shelf position + slot bottom-center + (0, h / 2, 0), with the contract formula:
+    //   x = -innerWidth / 2 + slotMargin + w / 2 + index * (w + slotGap), innerWidth = width - 2 * boardThickness
+    //   y = plinthHeight + boardThickness + level * (height - boardThickness - plinthHeight) / levels
+    //   z = 0.004: the item is centered on the board depth and the boards start in front of the shelf builder's
+    //   8 mm back panel (the shared contract leaves the back-panel thickness open)
+    {"id": "cartridge_1_0", "prefab": "cartridge", "position": [-1.9825, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "RETRO RALLY 16", "seed": 101}}},
+    {"id": "cartridge_1_1", "prefab": "cartridge", "position": [-1.8535, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "PIXEL KNIGHT CHRONICLES", "seed": 138}}},
+    {"id": "cartridge_1_2", "prefab": "cartridge", "position": [-1.7245, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "NEON DRIFT RACER", "seed": 175}}},
+    {"id": "cartridge_1_3", "prefab": "cartridge", "position": [-1.5955, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "MOONLIT CASTLE QUEST", "seed": 212}}},
+    {"id": "cartridge_1_4", "prefab": "cartridge", "position": [-1.4665, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "STAR CORSAIR", "seed": 249}}},
+    {"id": "cartridge_1_5", "prefab": "cartridge", "position": [-1.3375, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "DRAGON VALLEY SAGA", "seed": 286}}},
+    {"id": "cartridge_1_6", "prefab": "cartridge", "position": [-1.2085, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "TURBO TORTOISE RALLY", "seed": 323}}},
+    {"id": "cartridge_1_7", "prefab": "cartridge", "position": [-1.0795, 0.5265, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "MYSTIC FOREST TALES", "seed": 360}}},
+    {"id": "cartridge_2_0", "prefab": "cartridge", "position": [-1.9825, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "ROBO RESCUE SQUAD", "seed": 397}}},
+    {"id": "cartridge_2_1", "prefab": "cartridge", "position": [-1.8535, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "ISLAND OF ECHOES", "seed": 434}}},
+    {"id": "cartridge_2_2", "prefab": "cartridge", "position": [-1.7245, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "GALAXY GARDENER", "seed": 471}}},
+    {"id": "cartridge_2_3", "prefab": "cartridge", "position": [-1.5955, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "THUNDER PADDLE", "seed": 508}}},
+    {"id": "cartridge_2_4", "prefab": "cartridge", "position": [-1.4665, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "CRYSTAL CAVERN", "seed": 545}}},
+    {"id": "cartridge_2_5", "prefab": "cartridge", "position": [-1.3375, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "HYPER HOVER LEAGUE", "seed": 582}}},
+    {"id": "cartridge_2_6", "prefab": "cartridge", "position": [-1.2085, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "LANTERN DETECTIVE", "seed": 619}}},
+    {"id": "cartridge_2_7", "prefab": "cartridge", "position": [-1.0795, 0.9055, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "BLOCK TOWER PANIC", "seed": 656}}},
+    {"id": "cartridge_3_0", "prefab": "cartridge", "position": [-1.9825, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "SKY PIRATE ARMADA", "seed": 693}}},
+    {"id": "cartridge_3_1", "prefab": "cartridge", "position": [-1.8535, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "FROST GIANT GATE", "seed": 730}}},
+    {"id": "cartridge_3_2", "prefab": "cartridge", "position": [-1.7245, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "BUBBLE SUB ODYSSEY", "seed": 767}}},
+    {"id": "cartridge_3_3", "prefab": "cartridge", "position": [-1.5955, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "SUPER PLACEHOLDER WORLD", "seed": 804}}},
+    {"id": "cartridge_3_4", "prefab": "cartridge", "position": [-1.4665, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "WIZARD OF THE WIRE", "seed": 841}}},
+    {"id": "cartridge_3_5", "prefab": "cartridge", "position": [-1.3375, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "DESERT COMET", "seed": 878}}},
+    {"id": "cartridge_3_6", "prefab": "cartridge", "position": [-1.2085, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "MIDNIGHT ARCADE HERO", "seed": 915}}},
+    {"id": "cartridge_3_7", "prefab": "cartridge", "position": [-1.0795, 1.2845, -4.796],
+     "materials": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Print"},
+     "textures": {"label": {"pattern": "cover", "title": "CLOCKWORK KINGDOM", "seed": 952}}},
+
+    // Hero corner: a 0.7 m cabinet puts the screen center near 1.0 m (style 6.2); the CRT sits left of center
+    // to leave room for the console on the top. The cabinet is 0.58 m deep so the 0.56 m CRT rests on it entirely.
+    {"id": "tv_cabinet", "prefab": "tv_cabinet", "position": [1.8, 0.0, -4.66],
+     "params": {"width": 1.2, "height": 0.7, "depth": 0.58, "drawers": 2, "legHeight": 0.08},
+     "materials": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished",
+                   "metal_trim": "MAT_Metal_Brushed"}},
+    {"id": "crt_tv", "prefab": "crt", "position": [1.62, 0.7, -4.67],
+     "params": {"width": 0.71, "height": 0.61, "depth": 0.56, "screenAspect": 1.3333333, "bezel": 0.06,
+                "screenInset": 0.012, "backTaper": 0.35},
+     "materials": {"plastic_body": "MAT_Plastic_AgedIvory", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_Emissive", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "color_bars"}}},
+    {"id": "console", "prefab": "console_cartridge", "position": [2.22, 0.7, -4.62], "rotationDeg": [0.0, -8.0, 0.0],
+     "params": {"width": 0.24, "height": 0.07, "depth": 0.2},
+     "materials": {"plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
+                   "plastic_accent": "MAT_Plastic_Accent"}},
+    {"id": "rug", "prefab": "rug", "position": [1.6, 0.0, -3.3],
+     "params": {"width": 2.4, "depth": 1.6, "thickness": 0.012},
+     "materials": {"fabric": "MAT_Carpet_Ornate"}, "castsShadows": false, "collides": false},
+
+    // Museum accents: two framed posters on the hero wall (back on the wall surface, 2 mm off to avoid z-fighting).
+    {"id": "poster_left", "prefab": "poster_frame", "position": [0.15, 1.55, -4.998],
+     "params": {"width": 0.5, "height": 0.7, "frameWidth": 0.03, "depth": 0.02},
+     "materials": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
+     "textures": {"picture": {"pattern": "cover", "title": "PIXEL PILOTS", "seed": 1201}}, "collides": false},
+    {"id": "poster_right", "prefab": "poster_frame", "position": [3.45, 1.55, -4.998],
+     "params": {"width": 0.5, "height": 0.7, "frameWidth": 0.03, "depth": 0.02},
+     "materials": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
+     "textures": {"picture": {"pattern": "cover", "title": "SUNSET SPEEDWAY", "seed": 1307}}, "collides": false},
+
+    // Practical light in the north-west corner; its bulb is the "floor_lamp_bulb" light.
+    {"id": "floor_lamp", "prefab": "floor_lamp", "position": [-4.05, 0.0, -4.55],
+     "params": {"height": 1.6, "baseRadius": 0.16, "shadeRadius": 0.22, "shadeHeight": 0.3},
+     "materials": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade"}}
+  ]
+}

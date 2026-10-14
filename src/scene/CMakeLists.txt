@@ -2,7 +2,12 @@
 # collision. GPU-free: the renderer consumes its plain data.
 
 add_library(rv_scene STATIC
-    src/scene_module.cpp
+    src/batch_planner.cpp
+    src/camera.cpp
+    src/collision.cpp
+    src/first_person_controller.cpp
+    src/light.cpp
+    src/scene_description.cpp
 )
 add_library(rv::scene ALIAS rv_scene)
 rv_set_target_defaults(rv_scene)
