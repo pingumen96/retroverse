@@ -214,3 +214,42 @@ TEST_CASE("scene/collision: box management and invalid input", "[scene][collisio
     world.clear();
     CHECK(world.boxes().empty());
 }
+
+TEST_CASE("scene/collision: nearestBlocking reports the closest box at the capsule's height", "[scene][collision]") {
+    CollisionWorld world;
+    world.addBox(Aabb::fromMinMax({1.0f, 0.0f, -5.0f}, {1.2f, 3.0f, 5.0f}), "wall_east");
+    world.addBox(Aabb::fromMinMax({-2.0f, 0.0f, -0.5f}, {-1.5f, 1.0f, 0.5f}), "cabinet");
+    world.addBox(Aabb::fromMinMax({-0.5f, 2.0f, -0.5f}, {0.5f, 3.0f, 0.5f}), "beam_overhead");
+    world.addBox(Aabb::fromMinMax({-10.0f, -0.1f, -10.0f}, {10.0f, 0.0f, 10.0f}), "floor_slab");
+
+    const auto nearest = world.nearestBlocking(glm::vec3(0.0f), kPlayer);
+    REQUIRE(nearest.has_value());
+    CHECK(world.boxes()[nearest->index].tag == "wall_east"); // the beam and the floor do not block at this height
+    CHECK(nearest->distance == Approx(1.0f));
+
+    // A capsule resting against the wall reports exactly its radius: zero clearance, no penetration.
+    const glm::vec3 resting = world.moveCapsule(glm::vec3(0.0f), glm::vec3(3.0f, 0.0f, 0.0f), kPlayer);
+    const auto touching = world.nearestBlocking(resting, kPlayer);
+    REQUIRE(touching.has_value());
+    CHECK(touching->distance == Approx(kPlayer.radius).margin(1e-5));
+
+    // Corners are measured radially; an axis inside a box is at distance 0.
+    const auto corner = world.nearestBlocking(glm::vec3(-1.2f, 0.0f, 0.9f), kPlayer);
+    REQUIRE(corner.has_value());
+    CHECK(world.boxes()[corner->index].tag == "cabinet");
+    CHECK(corner->distance == Approx(0.5f)); // (0.3, 0.4) from the corner (-1.5, 0.5)
+    const auto inside = world.nearestBlocking(glm::vec3(1.1f, 0.0f, 0.0f), kPlayer);
+    REQUIRE(inside.has_value());
+    CHECK(inside->distance == 0.0f);
+
+    // Ties keep the earliest box; nothing blocks above everything; invalid input gives nothing.
+    CollisionWorld twins;
+    twins.addBox(Aabb::fromMinMax({1.0f, 0.0f, -1.0f}, {2.0f, 2.0f, 1.0f}), "first");
+    twins.addBox(Aabb::fromMinMax({-2.0f, 0.0f, -1.0f}, {-1.0f, 2.0f, 1.0f}), "second");
+    const auto tie = twins.nearestBlocking(glm::vec3(0.0f), kPlayer);
+    REQUIRE(tie.has_value());
+    CHECK(tie->index == 0);
+    CHECK_FALSE(world.nearestBlocking(glm::vec3(0.0f, 10.0f, 0.0f), kPlayer).has_value());
+    CHECK_FALSE(world.nearestBlocking(glm::vec3(kNaN, 0.0f, 0.0f), kPlayer).has_value());
+    CHECK_FALSE(CollisionWorld{}.nearestBlocking(glm::vec3(0.0f), kPlayer).has_value());
+}

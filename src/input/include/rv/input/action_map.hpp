@@ -60,6 +60,12 @@ public:
     /// bindings), Unsupported (schemaVersion other than kSchemaVersion, checked before any other field).
     [[nodiscard]] static Expected<ActionMap> fromJson(const nlohmann::json& json, std::string_view context);
 
+    /// User overrides on top of this map: every action listed in the binding document (same format, validation and
+    /// errors as fromJson) gets the document's bindings, an empty list unbinding it; the actions the document leaves
+    /// out keep their current bindings, so a user file only names what it changes. Returns how many actions were
+    /// replaced. On error the map is unchanged.
+    [[nodiscard]] Expected<std::size_t> applyOverrides(const nlohmann::json& document, std::string_view context);
+
     /// Serializes every action, unbound ones as empty arrays, with every field explicit and numbers in their
     /// shortest exact form (0.15, not 0.15000000596046448). fromJson(toJson()) reproduces the map exactly.
     [[nodiscard]] nlohmann::json toJson() const;

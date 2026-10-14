@@ -149,6 +149,14 @@ void checkPrefab(const ProceduralPrefab& prefab) {
             CHECK(*s.meshIndex < prefab.parts.size());
         }
     }
+    // Colliders: solid, inside the prefab, uniquely named when there are several.
+    std::set<std::string> colliderNames;
+    for (const rv::geometry::PrefabCollider& collider : prefab.colliders) {
+        INFO("collider " << collider.name);
+        CHECK_FALSE(collider.box.isEmpty());
+        CHECK(prefab.bounds.inflated(1e-5f).contains(collider.box));
+        CHECK(colliderNames.insert(collider.name).second);
+    }
 }
 
 const std::vector<std::string_view> kExpectedKinds{
@@ -572,6 +580,76 @@ TEST_CASE("geometry/prefabs: room shell doorway stays open and interior faces po
         }
     }
     CHECK(northInterior == 4);
+}
+
+TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their walls",
+          "[geometry][prefabs][colliders]") {
+    for (const std::string_view kind : rv::geometry::prefabKinds()) {
+        if (kind == "room_shell" || kind == "rug") {
+            continue;
+        }
+        INFO(kind);
+        const ProceduralPrefab prefab = buildOk(kind);
+        REQUIRE(prefab.colliders.size() == 1);
+        CHECK(prefab.colliders[0].name.empty());
+        CHECK(prefab.colliders[0].box == prefab.bounds);
+    }
+    CHECK(buildOk("rug").colliders.empty()); // walked over
+
+    const auto byName = [](const ProceduralPrefab& prefab) {
+        std::map<std::string, Aabb> boxes;
+        for (const rv::geometry::PrefabCollider& collider : prefab.colliders) {
+            boxes.emplace(collider.name, collider.box);
+        }
+        return boxes;
+    };
+    // Defaults: interior 9 x 10 m, walls 0.15 m thick and 3 m tall, a 1.6 x 2.3 m doorway centered in the south wall.
+    const ProceduralPrefab room = buildOk("room_shell");
+    const std::map<std::string, Aabb> walls = byName(room);
+    REQUIRE(walls.size() == 6);
+    CHECK(closeTo(walls.at("north"), Aabb::fromMinMax({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, -5.0f})));
+    CHECK(closeTo(walls.at("east"), Aabb::fromMinMax({4.5f, 0.0f, -5.0f}, {4.65f, 3.0f, 5.0f})));
+    CHECK(closeTo(walls.at("west"), Aabb::fromMinMax({-4.65f, 0.0f, -5.0f}, {-4.5f, 3.0f, 5.0f})));
+    CHECK(closeTo(walls.at("south_west"), Aabb::fromMinMax({-4.65f, 0.0f, 5.0f}, {-0.8f, 3.0f, 5.15f})));
+    CHECK(closeTo(walls.at("south_east"), Aabb::fromMinMax({0.8f, 0.0f, 5.0f}, {4.65f, 3.0f, 5.15f})));
+    CHECK(closeTo(walls.at("south_above"), Aabb::fromMinMax({-0.8f, 2.3f, 5.0f}, {0.8f, 3.0f, 5.15f})));
+
+    // The interior and the door rectangle stay free (touching their faces only).
+    const Aabb interior = Aabb::fromMinMax({-4.5f, 0.0f, -5.0f}, {4.5f, 3.0f, 5.0f}).inflated(-1e-3f);
+    const Aabb door = Aabb::fromMinMax({-0.8f, 0.0f, 4.9f}, {0.8f, 2.3f, 5.3f}).inflated(-1e-3f);
+    for (const rv::geometry::PrefabCollider& collider : room.colliders) {
+        INFO(collider.name);
+        CHECK_FALSE(collider.box.intersects(interior));
+        CHECK_FALSE(collider.box.intersects(door));
+    }
+    // The ring is closed: points inside every wall slab, corners included, are covered.
+    const auto covered = [&](const glm::vec3& point) {
+        return std::any_of(room.colliders.begin(), room.colliders.end(),
+                           [&](const rv::geometry::PrefabCollider& collider) { return collider.box.contains(point); });
+    };
+    for (const glm::vec3 point :
+         {glm::vec3(0.0f, 1.0f, -5.07f), glm::vec3(4.57f, 1.0f, 0.0f), glm::vec3(-4.57f, 1.0f, 0.0f),
+          glm::vec3(2.0f, 1.0f, 5.07f), glm::vec3(-2.0f, 1.0f, 5.07f), glm::vec3(0.0f, 2.6f, 5.07f),
+          glm::vec3(4.6f, 1.0f, 5.1f), glm::vec3(-4.6f, 1.0f, -5.1f)}) {
+        INFO(point.x << ", " << point.y << ", " << point.z);
+        CHECK(covered(point));
+    }
+    CHECK_FALSE(covered(glm::vec3(0.0f, 1.0f, 5.07f))); // in the doorway
+
+    // A closed room has the four full walls; a doorway elsewhere splits that wall, named by direction.
+    const ProceduralPrefab closed = buildOk("room_shell", {{"doorway", nullptr}});
+    std::set<std::string> closedNames;
+    for (const auto& [name, box] : byName(closed)) {
+        closedNames.insert(name);
+    }
+    CHECK(closedNames == std::set<std::string>{"east", "north", "south", "west"});
+    const std::map<std::string, Aabb> east =
+        byName(buildOk("room_shell", {{"doorway", {{"wall", "east"}, {"offset", -2.0}}}}));
+    REQUIRE(east.size() == 6);
+    CHECK(closeTo(east.at("east_north"), Aabb::fromMinMax({4.5f, 0.0f, -5.0f}, {4.65f, 3.0f, -2.8f})));
+    CHECK(closeTo(east.at("east_south"), Aabb::fromMinMax({4.5f, 0.0f, -1.2f}, {4.65f, 3.0f, 5.0f})));
+    CHECK(closeTo(east.at("east_above"), Aabb::fromMinMax({4.5f, 2.3f, -2.8f}, {4.65f, 3.0f, -1.2f})));
+    CHECK(east.contains("south"));
 }
 
 TEST_CASE("geometry/prefabs: cartridge label sits in a recessed pocket", "[geometry][prefabs][cartridge]") {

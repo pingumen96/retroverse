@@ -1,6 +1,9 @@
 #include <array>
 #include <cmath>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <rv/geometry/prefabs.hpp>
 
@@ -69,6 +72,26 @@ struct Placement {
 
 [[nodiscard]] bool isAlongX(WallSide side) {
     return side == WallSide::North || side == WallSide::South;
+}
+
+[[nodiscard]] std::string_view wallName(WallSide side) {
+    switch (side) {
+    case WallSide::North:
+        return "north";
+    case WallSide::South:
+        return "south";
+    case WallSide::East:
+        return "east";
+    case WallSide::West:
+        return "west";
+    }
+    return "wall";
+}
+
+/// Directions in which the wall parts beside a doorway extend: towards -along and +along.
+[[nodiscard]] std::pair<std::string_view, std::string_view> sideNames(const Wall& wall) {
+    return wall.along == 0 ? std::pair<std::string_view, std::string_view>{"west", "east"}
+                           : std::pair<std::string_view, std::string_view>{"north", "south"};
 }
 
 Status validate(const RoomShellParams& p) {
@@ -144,6 +167,7 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
         {WallSide::East, 2, 0, 1.0f, halfX, -halfZ, halfZ},
         {WallSide::West, 2, 0, -1.0f, halfX, -halfZ, halfZ},
     }};
+    std::vector<PrefabCollider> colliders;
     for (const Wall& wall : sides) {
         const FaceMask endFaces = faceOf(wall.along, 1.0f) | faceOf(wall.along, -1.0f);
         // Wall bottoms rest on the floor; east and west walls end against the north and south walls.
@@ -157,6 +181,16 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
             }
             const Placement b = onWall(wall, a0, a1, y0, y1, wall.interior, wall.interior + thickness);
             walls.box(b.size, translation(b.center), BoxUv::WorldMeters, tile, faces);
+        };
+        // Solid volume of the wall for collision: the full slab, or the parts around the door rectangle.
+        const std::string wallId(wallName(wall.side));
+        const auto addSolid = [&](std::string name, float a0, float a1, float y0, float y1) {
+            if (a1 - a0 < kMinPiece || y1 - y0 < kMinPiece) {
+                return;
+            }
+            const Placement b = onWall(wall, a0, a1, y0, y1, wall.interior, wall.interior + thickness);
+            colliders.push_back(
+                PrefabCollider{std::move(name), core::Aabb::fromCenterHalfExtents(b.center, 0.5f * b.size)});
         };
         const auto addBaseboard = [&](float a0, float a1) {
             if (p.baseboardHeight < kMinPiece || a1 - a0 < kMinPiece) {
@@ -172,6 +206,7 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
 
         if (!p.doorway || p.doorway->wall != wall.side) {
             addWall(wall.start, wall.end, 0.0f, height, wallFaces);
+            addSolid(wallId, wall.start, wall.end, 0.0f, height);
             addBaseboard(boardStart, boardEnd);
             continue;
         }
@@ -187,6 +222,11 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
         addWall(wall.start, rough0, 0.0f, height, wallFaces & ~faceOf(wall.along, 1.0f));
         addWall(rough1, wall.end, 0.0f, height, wallFaces & ~faceOf(wall.along, -1.0f));
         addWall(rough0, rough1, roughTop, height, wallFaces & ~endFaces);
+        // The lining belongs to the solid parts: only the door rectangle stays passable.
+        const auto [lowSide, highSide] = sideNames(wall);
+        addSolid(wallId + "_" + std::string(lowSide), wall.start, open0, 0.0f, height);
+        addSolid(wallId + "_" + std::string(highSide), open1, wall.end, 0.0f, height);
+        addSolid(wallId + "_above", open0, open1, door.height, height);
 
         const float inner = wall.interior;
         const float outer = wall.interior + thickness;
@@ -226,6 +266,7 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
                       core::Aabb::fromMinMax(glm::vec3(-0.5f * door.width, 0.0f, -0.5f * thickness),
                                              glm::vec3(0.5f * door.width, door.height, 0.5f * thickness)));
     }
+    out.setColliders(std::move(colliders));
     return std::move(out).finish();
 }
 

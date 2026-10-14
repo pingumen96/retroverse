@@ -49,7 +49,49 @@ TEST_CASE("app/command_line: no arguments describe an interactive windowed run",
     CHECK_FALSE(options->screenshot.has_value());
     CHECK(options->screenshotWidth == 1920);
     CHECK(options->screenshotHeight == 1080);
+    CHECK_FALSE(options->inputScript.has_value());
+    CHECK_FALSE(options->fixedDeltaSeconds.has_value());
     CHECK_FALSE(options->model.has_value());
+}
+
+TEST_CASE("app/command_line: --input-script and --fixed-dt drive automated runs", "[app][command_line]") {
+    const auto options = parse({"--exit-after-frames", "--frames", "120", "--fixed-dt", "0.016667", "--input-script",
+                                "tests/input_scripts/walk forward.json"});
+    REQUIRE(options.has_value());
+    CHECK(options->inputScript == rv::core::pathFromUtf8("tests/input_scripts/walk forward.json"));
+    REQUIRE(options->fixedDeltaSeconds.has_value());
+    CHECK(*options->fixedDeltaSeconds == 0.016667);
+
+    // Neither needs a frame limit: a script may open an interactive session, a fixed step may pace one.
+    const auto interactive = parse({"--input-script=script.json", "--fixed-dt=1e-3"});
+    REQUIRE(interactive.has_value());
+    CHECK(interactive->inputScript == rv::core::pathFromUtf8("script.json"));
+    CHECK(interactive->fixedDeltaSeconds == 0.001);
+    const auto largest = parse({"--fixed-dt", "1"});
+    REQUIRE(largest.has_value());
+    CHECK(largest->fixedDeltaSeconds == CommandLineOptions::kMaxFixedDeltaSeconds);
+
+    const auto emptyScript = parse({"--input-script="});
+    REQUIRE_FALSE(emptyScript.has_value());
+    CHECK(emptyScript.error().code == ErrorCode::InvalidArgument);
+    CHECK(emptyScript.error().context == "--input-script");
+
+    for (const char* text : {"0", "-0.016", "1.5", "inf", "nan", "1e400"}) {
+        INFO(text);
+        const auto rejected = parse({"--fixed-dt", text});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().context.starts_with("--fixed-dt="));
+    }
+    for (const char* text : {"fast", "0.016s", "", "1/60"}) {
+        INFO(text);
+        const auto rejected = parse({"--fixed-dt", text});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == ErrorCode::ParseError);
+    }
+    const auto outOfRange = parse({"--fixed-dt", "2"});
+    REQUIRE_FALSE(outOfRange.has_value());
+    CHECK(outOfRange.error().code == ErrorCode::OutOfRange);
+    CHECK(outOfRange.error().context == "--fixed-dt=2");
 }
 
 TEST_CASE("app/command_line: --smoke renders three frames and never shows dialogs", "[app][command_line]") {
@@ -370,10 +412,11 @@ TEST_CASE("app/command_line: argc/argv overload skips the program name", "[app][
 
 TEST_CASE("app/command_line: help lists every option and the exit codes", "[app][command_line]") {
     const std::string help = rv::app::commandLineHelp();
-    for (const char* option : {"--version",     "--width",      "--height",     "--fullscreen",        "--hidden",
-                               "--no-vsync",    "--smoke",      "--frames",     "--exit-after-frames", "--exit",
-                               "--gl-selftest", "--asset-root", "--data-dir",   "--portable",          "--log-level",
-                               "--no-dialogs",  "--scene",      "--screenshot", "--screenshot-size",   "--model"}) {
+    for (const char* option : {"--version",      "--width",      "--height",     "--fullscreen",        "--hidden",
+                               "--no-vsync",     "--smoke",      "--frames",     "--exit-after-frames", "--exit",
+                               "--gl-selftest",  "--asset-root", "--data-dir",   "--portable",          "--log-level",
+                               "--no-dialogs",   "--scene",      "--screenshot", "--screenshot-size",   "--model",
+                               "--input-script", "--fixed-dt"}) {
         INFO(option);
         CHECK(helpListsOption(help, option));
     }

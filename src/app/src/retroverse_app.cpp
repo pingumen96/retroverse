@@ -1,13 +1,14 @@
 #include <rv/app/retroverse_app.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 
-#include <SDL3/SDL_events.h>
-#include <SDL3/SDL_keycode.h>
 #include <fmt/format.h>
 #include <glm/vec2.hpp>
 #include <spdlog/spdlog.h>
@@ -19,6 +20,8 @@
 #include <rv/core/frame_clock.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/input/action.hpp>
+#include <rv/input/input_script.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/shader_library.hpp>
@@ -26,6 +29,8 @@
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
 
+#include "app_input.hpp"
+#include "free_roam.hpp"
 #include "scene_view.hpp"
 
 namespace rv::app {
@@ -78,6 +83,29 @@ assets::MaterialLibrary loadMaterials(const core::Paths& paths) {
     return builtin;
 }
 
+/// Loads the --input-script file, if any, and reports what it will do.
+Expected<std::optional<input::InputScript>> loadInputScript(const CommandLineOptions& options) {
+    if (!options.inputScript) {
+        return std::optional<input::InputScript>{};
+    }
+    auto script = input::InputScript::loadFromFile(*options.inputScript);
+    if (!script) {
+        Error error = script.error();
+        error.message = "cannot load the input script: " + error.message;
+        return propagate(std::move(error));
+    }
+    spdlog::info("Input script {}: {} step(s) up to frame {}", core::pathToUtf8(*options.inputScript),
+                 script->steps().size(), script->lastFrame());
+    if (options.frameLimit && script->lastFrame() >= *options.frameLimit) {
+        spdlog::warn("Input script: the run stops after frame {} (--frames {}), so frames up to {} never run",
+                     *options.frameLimit - 1, *options.frameLimit, script->lastFrame());
+    }
+    if (!options.fixedDeltaSeconds) {
+        spdlog::warn("Input script without --fixed-dt: scripted movement depends on the measured frame times");
+    }
+    return std::optional<input::InputScript>(std::move(*script));
+}
+
 } // namespace
 
 struct RetroverseApp::State {
@@ -85,12 +113,29 @@ struct RetroverseApp::State {
     gl::ShaderHandle unlitShader;
     gl::UniformBuffer<gl::FrameUniforms> frameUniforms;
     SceneView scene;
+    std::optional<FreeRoam> freeRoam;
+    std::unique_ptr<AppInput> input;
     gl::Framebuffer windowTarget;
     gl::Framebuffer screenshotTarget;
     std::optional<glm::ivec2> failedWindowSize;
     std::optional<glm::ivec2> failedScreenshotSize;
-    bool screenshotRequested = false; ///< F12 pressed; captured during the next frame
+    bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
     bool lastFrameCaptured = false;   ///< --screenshot written
+
+    /// Logs the pose at the end of every input script step that ends on `frame`.
+    void logScriptProgress(std::uint64_t frame) const {
+        const input::InputScript* script = input->script();
+        if (script == nullptr) {
+            return;
+        }
+        const std::span<const input::InputScriptStep> steps = script->steps();
+        for (std::size_t index = 0; index < steps.size(); ++index) {
+            if (steps[index].toFrame == frame) {
+                spdlog::info("Input script step {} of {} (frames {}-{}) done: {}", index + 1, steps.size(),
+                             steps[index].fromFrame, steps[index].toFrame, freeRoam->describePose());
+            }
+        }
+    }
 
     void renderScene(AppContext& context, const gl::Framebuffer& target) {
         scene.render(context.device(), shaders->get(unlitShader), frameUniforms, target,
@@ -126,12 +171,17 @@ RetroverseApp::~RetroverseApp() = default;
 
 Status RetroverseApp::onInit(AppContext& context) {
     const core::Paths& paths = context.paths();
-    const std::filesystem::path scenePath = resolveScenePath(context.options().scene, paths.assetRoot());
+    const CommandLineOptions& options = context.options();
+    const std::filesystem::path scenePath = resolveScenePath(options.scene, paths.assetRoot());
     auto description = scene::loadSceneDescription(scenePath);
     if (!description) {
         Error error = description.error();
         error.message = "cannot load the scene: " + error.message;
         return propagate(std::move(error));
+    }
+    auto script = loadInputScript(options);
+    if (!script) {
+        return propagate(std::move(script.error()));
     }
 
     const assets::MaterialLibrary materials = loadMaterials(paths);
@@ -160,8 +210,14 @@ Status RetroverseApp::onInit(AppContext& context) {
     state->scene = SceneView::create(*description, geometry);
     spdlog::info("Scene view: {} mesh(es) on the GPU, {} draw call(s) per view", state->scene.meshCount(),
                  state->scene.drawCount());
+    state->freeRoam.emplace(*description, geometry);
 
-    const CommandLineOptions& options = context.options();
+    state->input = std::make_unique<AppInput>(context.window(), loadBindings(paths), std::move(*script));
+    // Frame-limited runs may be unattended: they never take the user's mouse (and stray motion never reaches them).
+    if (!options.frameLimit) {
+        state->input->captureMouseWhenFocused();
+    }
+
     if (options.screenshot) {
         spdlog::info("Screenshot of frame {} at {}x{} will be written to {}", options.frameLimit.value_or(0),
                      options.screenshotWidth, options.screenshotHeight, core::pathToUtf8(*options.screenshot));
@@ -171,22 +227,40 @@ Status RetroverseApp::onInit(AppContext& context) {
 }
 
 void RetroverseApp::onEvent(AppContext& /*context*/, const SDL_Event& event) {
-    if (!m_state || event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) {
-        return;
-    }
-    if (event.key.key == SDLK_F5) {
-        spdlog::info("F5 pressed, reloading shaders");
-        m_state->shaders->reloadAll();
-    } else if (event.key.key == SDLK_F12) {
-        m_state->screenshotRequested = true;
+    if (m_state) {
+        m_state->input->handleEvent(event);
     }
 }
 
-void RetroverseApp::onUpdate(AppContext& /*context*/, double /*deltaSeconds*/) {
-    if constexpr (kShaderHotReload) {
-        if (m_state) {
-            m_state->shaders->pollHotReload();
+void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
+    if (!m_state) {
+        return;
+    }
+    State& state = *m_state;
+    const std::uint64_t frame = context.frameIndex();
+    const input::ActionState actions = state.input->update(frame);
+
+    if (actions.pressed(input::Action::Back)) {
+        if (state.input->mouseCaptured()) {
+            state.input->releaseMouse("Back pressed; press it again to quit");
+        } else {
+            spdlog::info("Back pressed, quitting");
+            context.requestQuit();
         }
+    }
+    if (actions.pressed(input::Action::ReloadShaders)) {
+        spdlog::info("Reloading shaders");
+        state.shaders->reloadAll();
+    }
+    if (actions.pressed(input::Action::Screenshot)) {
+        state.screenshotRequested = true;
+    }
+
+    state.freeRoam->update(actions, static_cast<float>(deltaSeconds), state.scene.camera());
+    state.logScriptProgress(frame);
+
+    if constexpr (kShaderHotReload) {
+        state.shaders->pollHotReload();
     }
 }
 
@@ -228,6 +302,9 @@ void RetroverseApp::onRender(AppContext& context) {
 
 void RetroverseApp::onShutdown(AppContext& context) {
     const CommandLineOptions& options = context.options();
+    if (m_state && options.frameLimit) {
+        m_state->freeRoam->logFinalPose(context.frameIndex());
+    }
     // An unattended run must not pass when it could never draw its scene (its frames and screenshot show nothing).
     if (m_state && options.frameLimit && !m_state->shaders->get(m_state->unlitShader).valid()) {
         context.failRun(Error{ErrorCode::GraphicsError,

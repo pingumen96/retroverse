@@ -1,4 +1,5 @@
-# rv_app: composition root (application host, main loop, scenes, screenshots). Links every module.
+# rv_app: composition root (application host, main loop, input pipeline, free roam, scenes, screenshots). Links every
+# module.
 
 # GPU-free part of the application layer: command line options, scene selection, screenshot naming and the exit-code
 # policy. Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL.
@@ -16,7 +17,9 @@ rv_forbid_link(rv_app_cli)
 add_library(rv_app STATIC
     src/app.cpp
     src/app_host.cpp
+    src/app_input.cpp
     src/app_logic.cpp
+    src/free_roam.cpp
     src/retroverse_app.cpp
     src/scene_view.cpp
 )

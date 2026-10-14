@@ -33,6 +33,10 @@ void PrefabAssembler::addSocket(std::string id, SocketKind kind, const glm::mat4
     m_socketMeshRoles.emplace_back(meshRole);
 }
 
+void PrefabAssembler::setColliders(std::vector<PrefabCollider> colliders) {
+    m_colliders = std::move(colliders);
+}
+
 ProceduralPrefab PrefabAssembler::finish() && {
     ProceduralPrefab prefab;
     prefab.kind = m_kind;
@@ -57,6 +61,11 @@ ProceduralPrefab PrefabAssembler::finish() && {
         }
     }
     prefab.sockets = std::move(m_sockets);
+    if (m_colliders) {
+        prefab.colliders = std::move(*m_colliders);
+    } else if (!prefab.bounds.isEmpty()) {
+        prefab.colliders.push_back(PrefabCollider{{}, prefab.bounds});
+    }
     return prefab;
 }
 

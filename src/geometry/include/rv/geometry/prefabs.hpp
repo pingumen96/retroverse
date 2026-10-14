@@ -23,6 +23,15 @@ struct PrefabPart {
     std::string materialRole;
 };
 
+/// Solid box of a prefab for first-person collision (specification §14.3: furniture and rooms declare their
+/// volumes).
+struct PrefabCollider {
+    /// Names the piece when a prefab has several (room_shell walls); empty for a prefab that is one box.
+    std::string name;
+    /// Prefab-local box, meters.
+    core::Aabb box;
+};
+
 /// Procedural fallback prefab (style guide §7.3 tier C, §8 "Fallback" column): a few meshes, one per material role
 /// (one draw per role), plus sockets in prefab-local space. Built by pure deterministic functions; GPU-free.
 ///
@@ -37,6 +46,10 @@ struct ProceduralPrefab {
     std::vector<Socket> sockets;
     /// Union of the part bounds.
     core::Aabb bounds;
+    /// Volumes a walker must not enter, prefab-local. Furniture, electronics, media and decor are one unnamed box
+    /// equal to `bounds`; room_shell lists the solid part of each wall (see RoomShellParams), leaving the interior and
+    /// the door opening free; rug has none (it is walked over).
+    std::vector<PrefabCollider> colliders;
 };
 
 /// First part with the given material role, or nullptr.
@@ -69,6 +82,10 @@ struct DoorwayParams {
 /// Sockets: "Doorway" (Anchor) when a doorway exists: at the center of the opening at floor level (middle of the
 /// wall thickness), +Z pointing out of the room, +Y up; bounds = opening volume
 /// [-width/2, 0, -t/2] .. [width/2, height, t/2].
+/// Colliders: one box per wall over its full thickness and height, named "north", "south", "east", "west"; the
+/// wall with the doorway is split around the door rectangle into the parts beside the opening, named after the
+/// direction they extend to ("south_west" and "south_east" for the south wall, "east_north" and "east_south" for the
+/// east wall), and the part above it ("south_above"). Floor, ceiling and trim (less than 2 cm deep) have none.
 struct RoomShellParams {
     glm::vec2 size{9.0f, 10.0f}; ///< interior x and z, each [0.5, 200]
     float wallHeight = 3.0f;     ///< [1, 50]
@@ -183,7 +200,7 @@ struct PosterFrameParams {
 };
 
 /// "rug", pivot floor; bounds = width x thickness x depth. Role "fabric": uv 0..1 over the top face with (0, 0)
-/// at the -X/-Z corner; the edges continue the border of the image. No sockets.
+/// at the -X/-Z corner; the edges continue the border of the image. No sockets, no colliders.
 struct RugParams {
     float width = 2.4f;       ///< [0.1, 20]
     float depth = 1.6f;       ///< [0.1, 20]

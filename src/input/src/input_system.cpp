@@ -98,11 +98,6 @@ void accumulate(const GamepadAxisBinding& binding, const RawInputFrame& frame, C
     return contribution;
 }
 
-[[nodiscard]] bool isLookAction(Action action) noexcept {
-    return action == Action::LookX || action == Action::LookY || action == Action::LookDeltaX ||
-           action == Action::LookDeltaY;
-}
-
 [[nodiscard]] float finalizeValue(Action action, float sum, const InputSettings& settings) noexcept {
     float value = 0.0f;
     switch (action) {

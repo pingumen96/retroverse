@@ -4,6 +4,7 @@
 
 #include <deque>
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -39,7 +40,12 @@ public:
     void addSocket(std::string id, SocketKind kind, const glm::mat4& transform, const core::Aabb& bounds = {},
                    std::string_view meshRole = {});
 
-    /// Builds one mesh "<kind>/<role>" per non-empty role, the overall bounds and the socket mesh indices.
+    /// Declares the prefab's collision boxes; an empty list declares a prefab that never blocks. Without a call,
+    /// finish() makes the overall bounds the only collider.
+    void setColliders(std::vector<PrefabCollider> colliders);
+
+    /// Builds one mesh "<kind>/<role>" per non-empty role, the overall bounds, the socket mesh indices and the
+    /// colliders.
     [[nodiscard]] ProceduralPrefab finish() &&;
 
 private:
@@ -48,6 +54,8 @@ private:
     std::vector<Socket> m_sockets;
     /// Mesh role of each socket of m_sockets, empty when the socket is not mesh-backed.
     std::vector<std::string> m_socketMeshRoles;
+    /// Declared colliders; nothing declared means "the bounds".
+    std::optional<std::vector<PrefabCollider>> m_colliders;
 };
 
 [[nodiscard]] glm::mat4 translation(const glm::vec3& offset);

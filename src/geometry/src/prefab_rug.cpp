@@ -63,6 +63,7 @@ Expected<ProceduralPrefab> buildRug(const RugParams& params) {
     }
     detail::PrefabAssembler out(kKind, {"fabric"});
     out.part("fabric").append(rugMesh(params));
+    out.setColliders({}); // a rug is walked over
     return std::move(out).finish();
 }
 

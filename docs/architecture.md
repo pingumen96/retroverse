@@ -7,14 +7,14 @@ This document describes the code that exists today. The target architecture is i
 | Module | CMake target | Responsibility | May depend on |
 |---|---|---|---|
 | core | `rv_core` | Errors (`rv::Expected`), logging, paths, frame clock, AABB/ray math, sRGB color helpers, file I/O, file change polling (`FileWatchSet`), JSON, command line parsing | glm, spdlog, nlohmann-json, tl-expected |
-| geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex`), sockets, procedural mesh builder and procedural prefabs | core |
-| input | `rv_input` | Device-neutral codes, logical actions, action maps, per-frame `ActionState` | core |
+| geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex`), sockets, procedural mesh builder and procedural prefabs with their collision boxes | core |
+| input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets, shader source loading | core, geometry, fastgltf, stb |
-| scene | `rv_scene` | Camera, first-person controller, lights, render items and batching plan, scene description files, scene geometry assembly (`buildSceneGeometry`: meshes and resolved materials per object), collision | core, geometry, input, assets |
-| platform | `rv_platform` | SDL3 window, OpenGL context, event pump, gamepads, SDL -> input translation | core, input, SDL3 |
+| scene | `rv_scene` | Camera, first-person controller, lights, render items and batching plan, scene description files, scene geometry assembly (`buildSceneGeometry`: meshes, resolved materials and colliders per object), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
+| platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
 | render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary`, `GpuMesh`, uniform buffers, framebuffers | core, geometry, assets, scene, glad |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only) | platform, render, imgui |
-| app | `rv_app` | Composition root: application host, main loop, scene loading and the unlit scene view, screenshots | all of the above |
+| app | `rv_app` | Composition root: application host, main loop, input pipeline, FreeRoam walking, scene loading and the unlit scene view, screenshots | all of the above |
 
 Two GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
@@ -25,7 +25,9 @@ Two GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
 `core`, `geometry`, `input`, `assets`, `scene` and the two sub-targets are **GPU-free**: they never reach SDL3,
 glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
-a context. `render` receives the OpenGL function loader as a function pointer and never includes SDL. The header
+a context. `render` receives the OpenGL function loader as a function pointer and never includes SDL. The SDL side of
+`platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a hidden window) is tested
+by its own executable, `rv_platform_tests` (label `unit`, SDL but no OpenGL), so `rv_tests` stays SDL-free. The header
 `rv/render/uniform_blocks.hpp` (uniform binding table and std140 mirrors) is GPU-free too, so tests check it against
 the GLSL sources.
 
@@ -38,8 +40,8 @@ geometry, resolves the real materials and preprocesses the real shaders.
 - **Scene:** `--scene <name|file>` (default `m0_testroom`) is loaded with `scene::loadSceneDescription`;
   `scene::buildSceneGeometry` builds every prefab or primitive and resolves each part's material (library name,
   inline material, magenta fallback; placeholder cubes for unavailable geometry). The app uploads one `GpuMesh` per
-  part and, for now, draws every part instance separately with the unlit shader in its flat base color; batching,
-  textures and lighting replace this path in later steps.
+  part and, for now, draws every part instance separately with the unlit shader in its flat base color, from the
+  FreeRoam camera (see the input path); batching, textures and lighting replace this path in later steps.
 - **Frames:** every view is rendered into an offscreen `Framebuffer` (`GL_SRGB8_ALPHA8` color + depth24/stencil8)
   with `GL_FRAMEBUFFER_SRGB` enabled, so shaders output linear values and the target stores sRGB. The window frame
   uses a target of the window's size, copied to the default framebuffer with a raw blit (`GL_FRAMEBUFFER_SRGB`
@@ -56,6 +58,29 @@ geometry, resolves the real materials and preprocesses the real shaders.
   poll the files of every program, includes included, every 500 ms (after a failed assembly: the files it read and
   the one it could not read, so creating a missing include rebuilds the program). A failed rebuild keeps the
   previous program.
+
+## Input path (M0)
+
+One pass per frame on the main thread, in `RetroverseApp` (`src/app/src/app_input.*`, `free_roam.*`):
+
+- **Events:** `platform::MouseCapture` sees every SDL event first: a click into the focused window captures the mouse
+  (SDL relative mode) and is consumed, focus loss releases it. Interactive runs also capture at startup once the
+  window has focus; frame-limited runs never do, so unattended runs neither take the user's mouse nor pick up its
+  motion. Every other event goes to `platform::SdlInputCollector`: keys by scancode (layout-independent WASD), mouse
+  buttons, relative motion while captured, wheel, gamepad buttons and axes (SDL ranges to [-1, 1], +Y up, triggers
+  [0, 1]) of the pads `platform::GamepadManager` opened on hot-plug; the most recently used pad is reported. Focus
+  loss releases everything held. Joystick events never arrive in the background (`SdlPlatform` hint).
+- **Actions:** the collector's `RawInputFrame` is resolved by `input::InputSystem` with the bindings of
+  `<asset root>/config/default_bindings.json` (`ActionMap::defaults()` with a warning when unusable), overridden per
+  action by `<user data>/config/bindings.json` (`ActionMap::applyOverrides`). `--input-script` then replaces the
+  actions of the frames it covers (`input::InputScriptPlayer`, edges kept consistent).
+- **Use:** Back releases the captured mouse or quits, ReloadShaders and Screenshot are handled by the app, ToggleDevUI
+  is reserved for the developer overlay. `FreeRoam` drives `scene::FirstPersonController` with the actions and the
+  frame delta (`--fixed-dt` replaces it for reproducible runs): the walker starts at the scene camera (feet = camera
+  position - eye height) and collides with `scene::buildCollisionWorld()` of the scene geometry, built from the
+  colliders each prefab declares (one box per wall part around the doorway for `room_shell`, the bounds for
+  furniture, none for `rug`; objects with `"collides": false` have none). Frame-limited runs log the final feet
+  position, yaw and pitch, the distance walked and the nearest collider with its clearance.
 
 ## Threading (M0)
 

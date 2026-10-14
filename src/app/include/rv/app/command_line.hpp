@@ -33,6 +33,8 @@ struct CommandLineOptions {
     /// Largest screenshot side: the PNG encoder's limit (rv::assets::kMaxImageDimension), which every OpenGL 4.5
     /// implementation supports as a framebuffer size.
     static constexpr int kMaxScreenshotExtent = 16384;
+    /// Largest --fixed-dt step in seconds.
+    static constexpr double kMaxFixedDeltaSeconds = 1.0;
 
     bool showHelp = false;    ///< --help / -h
     bool showVersion = false; ///< --version
@@ -68,6 +70,12 @@ struct CommandLineOptions {
     int screenshotWidth = kDefaultScreenshotWidth;
     int screenshotHeight = kDefaultScreenshotHeight;
 
+    /// --input-script <json>: action values that replace the device input on chosen frames (rv::input::InputScript).
+    std::optional<std::filesystem::path> inputScript;
+    /// --fixed-dt <seconds>: time step of every frame's simulation (onUpdate) instead of the measured frame time, in
+    /// (0, kMaxFixedDeltaSeconds]. With --input-script it makes automated runs reproducible.
+    std::optional<double> fixedDeltaSeconds;
+
     /// --model <file>: accepted and kept for the step that implements it; the host logs that it is ignored.
     std::optional<std::filesystem::path> model;
 };
@@ -79,7 +87,9 @@ struct CommandLineOptions {
 ///    window), --screenshot without a frame limit (there would be no last frame to capture);
 ///  - --screenshot not ending in ".png"; --screenshot-size other than WIDTHxHEIGHT with sides in [1, 16384];
 ///  - --scene names with characters other than letters, digits, '_', '-' and '.', or starting with '.';
+///  - --fixed-dt that is not a number in (0, kMaxFixedDeltaSeconds];
 ///  - --log-level other than trace, debug, info, warn or error; empty paths or names.
+/// The --input-script file itself is read by the application (a bad script fails its initialization).
 /// With --help or --version the remaining options are not validated.
 [[nodiscard]] Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> arguments);
 /// Convenience overload for main(): skips argv[0].

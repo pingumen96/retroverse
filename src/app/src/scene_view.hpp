@@ -20,7 +20,7 @@ class ShaderProgram;
 
 namespace rv::app {
 
-/// Minimal scene path (M0 step 4): the meshes of a loaded scene on the GPU, drawn from the scene camera with one unlit
+/// Minimal scene path (M0 step 4): the meshes of a loaded scene on the GPU, drawn from the view camera with one unlit
 /// program in flat per-part colors (the base color factor of each part's material), one draw per part and instance.
 /// Textures, lighting and batching arrive with the scene renderer. Main thread only; destroy it while the GL context
 /// is current.
@@ -36,6 +36,10 @@ public:
     /// shader that never compiled) only the clear happens.
     void render(gl::GLDevice& device, const gl::ShaderProgram& program,
                 gl::UniformBuffer<gl::FrameUniforms>& frameUniforms, const gl::Framebuffer& target, float timeSeconds);
+
+    /// The view camera: created with the scene camera's lens and pose; the pose is the caller's to drive (free roam),
+    /// render() only sets the aspect ratio from the target.
+    [[nodiscard]] scene::Camera& camera() noexcept { return m_camera; }
 
     /// Draw calls issued by render().
     [[nodiscard]] std::size_t drawCount() const noexcept { return m_draws.size(); }

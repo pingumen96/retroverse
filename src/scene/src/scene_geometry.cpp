@@ -1,9 +1,11 @@
 #include <rv/scene/scene_geometry.hpp>
 
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -28,9 +30,15 @@ ScenePart placeholderPart(const assets::MaterialLibrary& materials) {
     return part;
 }
 
-/// Geometry of one object as (role, mesh) pairs, or the builder error.
-Expected<std::vector<std::pair<std::string, geometry::MeshData>>> buildObjectMeshes(const SceneObject& object) {
+/// Geometry of one object: (role, mesh) pairs and object-local colliders.
+struct ObjectShapes {
     std::vector<std::pair<std::string, geometry::MeshData>> meshes;
+    std::vector<geometry::PrefabCollider> colliders;
+};
+
+/// Builds the meshes and colliders of one object, or returns the builder error.
+Expected<ObjectShapes> buildObjectShapes(const SceneObject& object) {
+    ObjectShapes shapes;
     switch (object.source) {
     case SceneObject::Source::Prefab: {
         auto prefab = geometry::buildPrefab(object.kind, object.params);
@@ -38,22 +46,39 @@ Expected<std::vector<std::pair<std::string, geometry::MeshData>>> buildObjectMes
             return propagate(prefab.error());
         }
         for (geometry::PrefabPart& part : prefab->parts) {
-            meshes.emplace_back(std::move(part.materialRole), std::move(part.mesh));
+            shapes.meshes.emplace_back(std::move(part.materialRole), std::move(part.mesh));
         }
-        return meshes;
+        shapes.colliders = std::move(prefab->colliders);
+        return shapes;
     }
     case SceneObject::Source::Primitive: {
         auto mesh = geometry::buildPrimitive(object.kind, object.params);
         if (!mesh) {
             return propagate(mesh.error());
         }
-        meshes.emplace_back(object.kind, std::move(*mesh));
-        return meshes;
+        shapes.colliders.push_back(geometry::PrefabCollider{{}, mesh->bounds});
+        shapes.meshes.emplace_back(object.kind, std::move(*mesh));
+        return shapes;
     }
     case SceneObject::Source::Model:
         break;
     }
     return makeError(ErrorCode::Unsupported, "glTF models are not rendered yet", object.modelPath);
+}
+
+/// Collision tag of one world box, see buildCollisionWorld().
+std::string colliderTag(const SceneObjectGeometry& object, std::size_t instance, std::size_t index) {
+    std::string tag = object.id;
+    if (object.instances.size() > 1) {
+        tag += fmt::format("[{}]", instance);
+    }
+    const geometry::PrefabCollider& collider = object.colliders[index];
+    if (!collider.name.empty()) {
+        tag += "/" + collider.name;
+    } else if (object.colliders.size() > 1) {
+        tag += fmt::format("#{}", index);
+    }
+    return tag;
 }
 
 /// Resolves the materials of one object's parts; the inline material is parsed at most once.
@@ -166,22 +191,41 @@ SceneGeometry buildSceneGeometry(const SceneDescription& scene, const assets::Ma
         const std::span<const glm::mat4> transforms = object.instanceTransforms();
         built.instances.assign(transforms.begin(), transforms.end());
 
-        auto meshes = buildObjectMeshes(object);
-        if (!meshes) {
-            spdlog::warn("Scene object '{}' is drawn as a placeholder: {}", object.id, meshes.error().toString());
-            built.parts.push_back(placeholderPart(materials));
+        auto shapes = buildObjectShapes(object);
+        if (!shapes) {
+            spdlog::warn("Scene object '{}' is drawn as a placeholder: {}", object.id, shapes.error().toString());
+            ScenePart& placeholder = built.parts.emplace_back(placeholderPart(materials));
             built.placeholder = true;
+            if (object.collides) {
+                built.colliders.push_back(geometry::PrefabCollider{{}, placeholder.mesh.bounds});
+            }
             continue;
         }
         MaterialResolver resolver(object, index, scene.name, materials);
-        for (auto& [role, mesh] : *meshes) {
+        for (auto& [role, mesh] : shapes->meshes) {
             ScenePart& part = built.parts.emplace_back();
             part.mesh = std::move(mesh);
             part.role = std::move(role);
             resolver.resolve(part);
         }
+        if (object.collides) {
+            built.colliders = std::move(shapes->colliders);
+        }
     }
     return geometry;
+}
+
+CollisionWorld buildCollisionWorld(const SceneGeometry& geometry) {
+    CollisionWorld world;
+    for (const SceneObjectGeometry& object : geometry.objects) {
+        for (std::size_t instance = 0; instance < object.instances.size(); ++instance) {
+            for (std::size_t index = 0; index < object.colliders.size(); ++index) {
+                world.addBox(object.colliders[index].box.transformed(object.instances[instance]),
+                             colliderTag(object, instance, index));
+            }
+        }
+    }
+    return world;
 }
 
 } // namespace rv::scene

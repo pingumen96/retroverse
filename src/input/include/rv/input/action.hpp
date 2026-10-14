@@ -41,6 +41,13 @@ inline constexpr std::size_t kActionCount = static_cast<std::size_t>(Action::Cou
     return static_cast<std::size_t>(action);
 }
 
+/// LookX, LookY, LookDeltaX and LookDeltaY: camera rates and deltas, which analog motion never makes "held" (turning
+/// the camera presses nothing).
+[[nodiscard]] constexpr bool isLookAction(Action action) noexcept {
+    return action == Action::LookX || action == Action::LookY || action == Action::LookDeltaX ||
+           action == Action::LookDeltaY;
+}
+
 /// Stable lowercase identifiers used in JSON binding files: "move_forward", "look_delta_x", ...
 [[nodiscard]] std::string_view actionName(Action action) noexcept;
 [[nodiscard]] std::optional<Action> actionFromName(std::string_view name) noexcept;

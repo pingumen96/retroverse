@@ -10,6 +10,8 @@
 #include <rv/assets/material_desc.hpp>
 #include <rv/assets/material_library.hpp>
 #include <rv/geometry/mesh_data.hpp>
+#include <rv/geometry/prefabs.hpp>
+#include <rv/scene/collision.hpp>
 #include <rv/scene/scene_description.hpp>
 
 namespace rv::scene {
@@ -37,6 +39,10 @@ struct SceneObjectGeometry {
     std::string id;
     std::vector<ScenePart> parts;
     std::vector<glm::mat4> instances;
+    /// Collision boxes in object-local space, repeated at every instance: the prefab's colliders
+    /// (geometry::ProceduralPrefab::colliders), the mesh bounds of a primitive, the placeholder cube. Empty when the
+    /// object does not collide (SceneObject::collides is false).
+    std::vector<geometry::PrefabCollider> colliders;
     /// The object's own geometry is unavailable (builder error, glTF model): `parts` holds one placeholder cube.
     bool placeholder = false;
 };
@@ -66,7 +72,15 @@ struct SceneGeometry {
 /// Material of a part with role R: the library material named by SceneObject::materialNameForRole(R) (an unknown name
 /// gives the library fallback and is logged once by the library); without a name, the object's inlineMaterial parsed
 /// with assets::parseMaterialDesc (once per object; a parse error is logged and gives the fallback); without either,
-/// the fallback, logged. Never fails: missing or bad content becomes visible magenta (style §21).
+/// the fallback, logged. Colliders: see SceneObjectGeometry::colliders (a placeholder blocks like the furniture it
+/// stands in for). Never fails: missing or bad content becomes visible magenta (style §21).
 [[nodiscard]] SceneGeometry buildSceneGeometry(const SceneDescription& scene, const assets::MaterialLibrary& materials);
+
+/// Static collision world of a scene for first-person navigation: every collider of every object at every instance
+/// transform, as a world-space box (Aabb::transformed: exact for unrotated objects, conservative for rotated ones), in
+/// object order. Tags name the source: the object id, then "[<instance>]" for objects with several instances, then
+/// "/<collider name>" for named colliders or "#<index>" for unnamed ones of objects with several, e.g. "shelf_main",
+/// "room/north", "boxes_walnut[17]".
+[[nodiscard]] CollisionWorld buildCollisionWorld(const SceneGeometry& geometry);
 
 } // namespace rv::scene

@@ -1,11 +1,12 @@
-# rv_input: device-neutral input codes, action mapping and resolution. GPU-free and SDL-free
-# (the SDL event collector lives in rv_platform).
+# rv_input: device-neutral input codes, action mapping and resolution, scripted input for automated runs. GPU-free
+# and SDL-free (the SDL event collector lives in rv_platform).
 
 add_library(rv_input STATIC
     src/action.cpp
     src/action_map.cpp
     src/binding.cpp
     src/codes.cpp
+    src/input_script.cpp
     src/input_system.cpp
 )
 add_library(rv::input ALIAS rv_input)

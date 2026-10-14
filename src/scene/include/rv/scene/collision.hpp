@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -22,6 +24,15 @@ struct Capsule {
 struct ColliderBox {
     core::Aabb box;
     std::string tag;
+};
+
+/// How far a capsule is from one collider (CollisionWorld::nearestBlocking).
+struct ColliderDistance {
+    /// Index into CollisionWorld::boxes().
+    std::size_t index = 0;
+    /// Horizontal distance in meters from the capsule axis (feet.xz) to the box's XZ rectangle, 0 when the axis is
+    /// inside it. A capsule resting against the box is `radius` away; distance - radius is the clearance.
+    float distance = 0.0f;
 };
 
 /// Static collision geometry for first-person navigation (spec §14.3): capsule versus axis-aligned boxes.
@@ -48,6 +59,11 @@ public:
 
     /// True when the capsule standing at `feet` penetrates any collider by more than kContactTolerance.
     [[nodiscard]] bool overlaps(const glm::vec3& feet, const Capsule& capsule) const;
+
+    /// The nearest collider among those that block the capsule standing at `feet` at its height (the vertical rule of
+    /// moveCapsule); nothing when none does or `feet` is not finite. Ties keep the earliest box. For diagnostics, such
+    /// as reporting how close a walker stopped to a wall.
+    [[nodiscard]] std::optional<ColliderDistance> nearestBlocking(const glm::vec3& feet, const Capsule& capsule) const;
 
     /// Moves the capsule by `displacement` and returns the new feet position.
     ///

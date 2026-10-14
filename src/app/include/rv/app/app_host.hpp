@@ -17,9 +17,10 @@ class IAppLogic;
 /// configures logging (<user data>/logs/retroverse.log), initializes SDL, opens the window with an OpenGL 4.5 core
 /// context, creates the GL device (debug output in RV_GL_DEBUG builds) and drives an IAppLogic through the main loop.
 ///
-/// The host handles quit requests, window close, resizes (framebuffer size), Escape (quit) and Alt+Enter (borderless
-/// fullscreen), refreshes the window title with FPS and frame time once per second, and stops after
-/// CommandLineOptions::frameLimit frames in --smoke / --exit-after-frames runs. Exit codes: see ExitCode.
+/// The host handles quit requests, window close, resizes (framebuffer size) and Alt+Enter (borderless fullscreen),
+/// refreshes the window title with FPS and frame time once per second, passes the frame delta (or the
+/// CommandLineOptions::fixedDeltaSeconds step) to the logic, and stops after CommandLineOptions::frameLimit frames in
+/// --smoke / --exit-after-frames runs. Every other input, Escape included, is the logic's. Exit codes: see ExitCode.
 class AppHost {
 public:
     explicit AppHost(CommandLineOptions options);

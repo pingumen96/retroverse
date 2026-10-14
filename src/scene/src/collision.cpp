@@ -108,6 +108,27 @@ bool CollisionWorld::overlaps(const glm::vec3& feet, const Capsule& capsule) con
     return overlapsAny(feet, sanitized(capsule), m_boxes);
 }
 
+std::optional<ColliderDistance> CollisionWorld::nearestBlocking(const glm::vec3& feet, const Capsule& capsule) const {
+    if (!core::isFinite(feet)) {
+        return std::nullopt;
+    }
+    const Capsule shape = sanitized(capsule);
+    const glm::vec2 axis(feet.x, feet.z);
+    std::optional<ColliderDistance> nearest;
+    for (std::size_t index = 0; index < m_boxes.size(); ++index) {
+        const core::Aabb& box = m_boxes[index].box;
+        if (!blocksAtHeight(box, feet.y, shape.height)) {
+            continue;
+        }
+        const glm::vec2 closest = glm::clamp(axis, glm::vec2(box.min.x, box.min.z), glm::vec2(box.max.x, box.max.z));
+        const float distance = glm::length(axis - closest);
+        if (!nearest || distance < nearest->distance) {
+            nearest = ColliderDistance{index, distance};
+        }
+    }
+    return nearest;
+}
+
 glm::vec3 CollisionWorld::moveCapsule(const glm::vec3& feet, const glm::vec3& displacement,
                                       const Capsule& capsule) const {
     if (!core::isFinite(feet)) {

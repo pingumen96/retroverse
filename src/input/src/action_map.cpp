@@ -13,6 +13,8 @@
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
 
+#include "json_location.hpp"
+
 namespace rv::input {
 namespace {
 
@@ -34,50 +36,9 @@ constexpr std::string_view kScaleField = "scale";
 constexpr std::string_view kDeadzoneField = "deadzone";
 constexpr std::string_view kExponentField = "exponent";
 
-/// Location of a JSON value for error contexts: "<document>:<JSON pointer>" (RFC 6901 escaping).
-class JsonLocation {
-public:
-    explicit JsonLocation(std::string_view document) : m_document(document) {}
-
-    [[nodiscard]] JsonLocation child(std::string_view token) const {
-        JsonLocation result = *this;
-        result.m_pointer += '/';
-        for (const char c : token) {
-            if (c == '~') {
-                result.m_pointer += "~0";
-            } else if (c == '/') {
-                result.m_pointer += "~1";
-            } else {
-                result.m_pointer += c;
-            }
-        }
-        return result;
-    }
-
-    [[nodiscard]] JsonLocation child(std::size_t index) const { return child(std::to_string(index)); }
-
-    [[nodiscard]] std::string str() const {
-        if (m_pointer.empty()) {
-            return std::string(m_document);
-        }
-        if (m_document.empty()) {
-            return m_pointer;
-        }
-        return std::string(m_document) + ":" + m_pointer;
-    }
-
-private:
-    std::string_view m_document;
-    std::string m_pointer;
-};
-
-[[nodiscard]] tl::unexpected<Error> fail(ErrorCode code, std::string message, const JsonLocation& at) {
-    return makeError(code, std::move(message), at.str());
-}
-
-[[nodiscard]] std::string inQuotes(std::string_view text) {
-    return "\"" + std::string(text) + "\"";
-}
+using detail::fail;
+using detail::inQuotes;
+using detail::JsonLocation;
 
 /// Optional numeric field read as a finite float; `fallback` when the field is absent.
 Expected<float> readOptionalNumber(const Json& object, std::string_view field, float fallback,
@@ -395,6 +356,23 @@ Expected<ActionMap> ActionMap::fromJson(const nlohmann::json& json, std::string_
         }
     }
     return map;
+}
+
+Expected<std::size_t> ActionMap::applyOverrides(const nlohmann::json& document, std::string_view context) {
+    auto parsed = fromJson(document, context);
+    if (!parsed) {
+        return propagate(std::move(parsed.error()));
+    }
+    // fromJson accepted the document: "bindings" is an object whose keys are action names.
+    const auto bindings = document.find(kBindingsField);
+    std::size_t replaced = 0;
+    for (const auto& item : bindings->items()) {
+        if (const auto action = actionFromName(item.key())) {
+            m_bindings[toIndex(*action)] = std::move(parsed->m_bindings[toIndex(*action)]);
+            ++replaced;
+        }
+    }
+    return replaced;
 }
 
 nlohmann::json ActionMap::toJson() const {

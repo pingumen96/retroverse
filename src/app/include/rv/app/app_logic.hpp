@@ -90,9 +90,10 @@ public:
 
     /// Creates the logic's resources. An error aborts the run with ExitCode::InitializationFailed.
     [[nodiscard]] virtual Status onInit(AppContext& context) = 0;
-    /// Every SDL event, after the host has handled quit, close, resize, Escape and Alt+Enter.
+    /// Every SDL event, after the host has handled quit, close, resize and Alt+Enter.
     virtual void onEvent(AppContext& /*context*/, const SDL_Event& /*event*/) {}
-    /// Simulation step; `deltaSeconds` is the frame delta clamped to 0.1 s.
+    /// Simulation step; `deltaSeconds` is the frame delta clamped to 0.1 s, or the --fixed-dt step
+    /// (CommandLineOptions::fixedDeltaSeconds) when given.
     virtual void onUpdate(AppContext& context, double deltaSeconds) = 0;
     /// Renders the frame and leaves it in the default framebuffer, which the host presents afterwards (typically:
     /// GLDevice::beginPass on an offscreen Framebuffer, draws, Framebuffer::blitToDefault).

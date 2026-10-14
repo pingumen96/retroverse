@@ -74,6 +74,12 @@ std::string describeRunMode(const CommandLineOptions& options) {
     if (options.glSelfTest) {
         mode += ", GL self-test";
     }
+    if (options.fixedDeltaSeconds) {
+        mode += fmt::format(", fixed time step {} s", *options.fixedDeltaSeconds);
+    }
+    if (options.inputScript) {
+        mode += ", input script " + core::pathToUtf8(*options.inputScript);
+    }
     return mode;
 }
 
@@ -340,7 +346,7 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
         }
 
         clock.tick();
-        logic.onUpdate(context, clock.clampedDeltaSeconds());
+        logic.onUpdate(context, m_options.fixedDeltaSeconds.value_or(clock.clampedDeltaSeconds()));
         logic.onRender(context);
         if (auto presented = window.swap(); !presented) {
             return propagate(presented.error());
@@ -385,11 +391,7 @@ void AppHost::handleHostEvent(AppContext& context, const SDL_Event& event) const
         if (event.key.repeat) {
             break;
         }
-        if (event.key.key == SDLK_ESCAPE) {
-            spdlog::info("Escape pressed, quitting");
-            context.requestQuit();
-        } else if ((event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) &&
-                   (event.key.mod & SDL_KMOD_ALT) != 0) {
+        if ((event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) && (event.key.mod & SDL_KMOD_ALT) != 0) {
             if (auto toggled = window.toggleBorderlessFullscreen(); !toggled) {
                 spdlog::warn("Fullscreen toggle failed: {}", toggled.error().toString());
             } else {

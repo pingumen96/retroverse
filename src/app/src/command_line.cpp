@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -18,10 +19,14 @@ namespace {
 constexpr std::string_view kDescription =
     "Explorable 3D frontend for ES-DE game collections.\n"
     "\n"
-    "Keys: Esc quits, Alt+Enter toggles borderless fullscreen, F5 reloads the shaders,\n"
-    "      F12 saves a screenshot to <user data>/screenshots.\n"
+    "Controls: WASD or arrows walk, Left Shift sprints, the mouse looks around once a click into the window\n"
+    "          captures it; gamepad: left stick walks, right stick looks, left stick click sprints.\n"
+    "          Esc (gamepad B) releases the mouse, or quits when it is free. Alt+Enter toggles borderless\n"
+    "          fullscreen, F5 reloads the shaders, F12 saves a screenshot to <user data>/screenshots.\n"
+    "          Bindings: assets/config/default_bindings.json, overridden per action by\n"
+    "          <user data>/config/bindings.json.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
-    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file);\n"
+    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script);\n"
     "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built).";
 
 core::ArgParser makeParser() {
@@ -55,6 +60,14 @@ core::ArgParser makeParser() {
                 fmt::format("Resolution of --screenshot and F12 screenshots, independent of the window (default "
                             "{}x{}).",
                             CommandLineOptions::kDefaultScreenshotWidth, CommandLineOptions::kDefaultScreenshotHeight))
+        .option("input-script", "json",
+                "Replace the input of chosen frames with scripted action values, a JSON array of steps such as "
+                "[{\"fromFrame\": 0, \"toFrame\": 119, \"actions\": {\"move_forward\": 1}}] (frames count from 0, "
+                "both included).")
+        .option("fixed-dt", "seconds",
+                fmt::format("Advance the simulation by this time step every frame instead of the measured frame time "
+                            "(at most {} s), for reproducible automated runs, e.g. 0.016667.",
+                            CommandLineOptions::kMaxFixedDeltaSeconds))
         .option("model", "file", "glTF model to display (not implemented yet).");
     return parser;
 }
@@ -175,6 +188,24 @@ Expected<std::optional<std::filesystem::path>> pathValue(const core::ParsedArgs&
     return std::optional<std::filesystem::path>(core::pathFromUtf8(**text));
 }
 
+/// --fixed-dt <seconds>: a finite number in (0, kMaxFixedDeltaSeconds].
+Expected<std::optional<double>> fixedDeltaSeconds(const core::ParsedArgs& args) {
+    if (!args.has("fixed-dt")) {
+        return std::optional<double>{};
+    }
+    auto seconds = args.doubleValue("fixed-dt", 0.0);
+    if (!seconds) {
+        return propagate(seconds.error());
+    }
+    if (!std::isfinite(*seconds) || *seconds <= 0.0 || *seconds > CommandLineOptions::kMaxFixedDeltaSeconds) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("must be a number of seconds greater than 0 and at most {}",
+                                     CommandLineOptions::kMaxFixedDeltaSeconds),
+                         "--fixed-dt=" + args.value("fixed-dt").value_or(""));
+    }
+    return std::optional<double>(*seconds);
+}
+
 /// --frames, --smoke and --exit-after-frames together decide when the run stops; --hidden needs such a limit.
 Status applyRunLength(const core::ParsedArgs& args, CommandLineOptions& options) {
     if (args.has("frames")) {
@@ -283,12 +314,22 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (auto size = applyScreenshotSize(*args, options); !size) {
         return propagate(size.error());
     }
+    auto inputScript = pathValue(*args, "input-script");
+    if (!inputScript) {
+        return propagate(inputScript.error());
+    }
+    auto fixedDt = fixedDeltaSeconds(*args);
+    if (!fixedDt) {
+        return propagate(fixedDt.error());
+    }
     auto model = pathValue(*args, "model");
     if (!model) {
         return propagate(model.error());
     }
     options.scene = std::move(*scene);
     options.screenshot = std::move(*screenshot);
+    options.inputScript = std::move(*inputScript);
+    options.fixedDeltaSeconds = *fixedDt;
     options.model = std::move(*model);
     return options;
 }

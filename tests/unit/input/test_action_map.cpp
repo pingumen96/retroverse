@@ -460,3 +460,47 @@ TEST_CASE("input/action_map: loadFromFile reports the file path", "[input][actio
     REQUIRE_FALSE(missing.has_value());
     CHECK(missing.error().code == ErrorCode::NotFound);
 }
+
+TEST_CASE("input/action_map: user overrides replace only the actions they list", "[input][action_map]") {
+    ActionMap map = ActionMap::defaults();
+    const auto document = rv::core::parseJson(R"({
+        "schemaVersion": 1,
+        "bindings": {
+            "move_forward": [{"key": "i"}, {"key": "k", "scale": -1}],
+            "interact": []
+        }
+    })",
+                                              "user.json");
+    REQUIRE(document.has_value());
+    const auto replaced = map.applyOverrides(*document, "user.json");
+    REQUIRE(replaced.has_value());
+    CHECK(*replaced == 2);
+    CHECK(bindingsOf(map, Action::MoveForward) ==
+          std::vector<Binding>{KeyBinding{Key::I, 1.0f}, KeyBinding{Key::K, -1.0f}});
+    CHECK(map.bindings(Action::Interact).empty()); // an empty list unbinds
+    // Everything else keeps the defaults.
+    const ActionMap defaults = ActionMap::defaults();
+    for (const Action action : {Action::MoveRight, Action::LookDeltaX, Action::Back, Action::Screenshot}) {
+        INFO(rv::input::actionName(action));
+        CHECK(bindingsOf(map, action) == bindingsOf(defaults, action));
+    }
+
+    // A full document (toJson) replaces everything; an invalid one changes nothing.
+    ActionMap full = ActionMap::defaults();
+    ActionMap custom;
+    custom.bind(Action::Back, KeyBinding{Key::Backspace, 1.0f});
+    const auto all = full.applyOverrides(custom.toJson(), "custom.json");
+    REQUIRE(all.has_value());
+    CHECK(*all == rv::input::kActionCount);
+    CHECK(full == custom);
+
+    ActionMap untouched = ActionMap::defaults();
+    const auto invalid = rv::core::parseJson(
+        R"({"schemaVersion": 1, "bindings": {"move_forward": [{"key": "i"}], "back": [{"key": "nope"}]}})", "bad.json");
+    REQUIRE(invalid.has_value());
+    const auto rejected = untouched.applyOverrides(*invalid, "bad.json");
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error().code == ErrorCode::ValidationFailed);
+    CHECK(rejected.error().context == "bad.json:/bindings/back/0/key");
+    CHECK(untouched == ActionMap::defaults());
+}

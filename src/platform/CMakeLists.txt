@@ -1,10 +1,15 @@
-# rv_platform: SDL3 library lifetime, window and OpenGL context creation, event pump and dialogs. The only
-# first-party library (besides rv_app and rv_devui) allowed to include SDL.
+# rv_platform: SDL3 library lifetime, window and OpenGL context creation, event pump, dialogs, and input: SDL events
+# to rv::input frames, gamepad hot-plug, mouse capture. The only first-party library (besides rv_app and rv_devui)
+# allowed to include SDL.
 
 add_library(rv_platform STATIC
     src/dialogs.cpp
     src/event_pump.cpp
+    src/gamepad_manager.cpp
     src/graphics_window.cpp
+    src/mouse_capture.cpp
+    src/sdl_input_codes.cpp
+    src/sdl_input_collector.cpp
     src/sdl_platform.cpp
 )
 add_library(rv::platform ALIAS rv_platform)

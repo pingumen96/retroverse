@@ -6,15 +6,22 @@
 
 namespace rv::app {
 
-/// The Retroverse application logic. M0 step 4 content: loads the scene selected by --scene (default m0_testroom),
-/// builds its procedural geometry and draws it unlit, in flat per-part material colors, from the scene camera into an
-/// offscreen sRGB framebuffer that is copied to the window.
+/// The Retroverse application logic. M0 step 5 content: loads the scene selected by --scene (default m0_testroom),
+/// builds its procedural geometry and draws it unlit, in flat per-part material colors, into an offscreen sRGB
+/// framebuffer that is copied to the window, from a first-person camera walking the scene (FreeRoam: starts at the
+/// scene camera, collides with the walls and furniture).
 ///
-/// Keys: F5 reloads the shaders; F12 writes <user data>/screenshots/retroverse-<timestamp>.png at --screenshot-size.
+/// Input goes through the action map (assets/config/default_bindings.json, overridden per action by
+/// <user data>/config/bindings.json): Move/Look/Sprint drive the walker; Back (Esc, gamepad B) releases the captured
+/// mouse, or quits when the mouse is free; ReloadShaders (F5) reloads the shaders; Screenshot (F12) writes
+/// <user data>/screenshots/retroverse-<timestamp>.png at --screenshot-size. Interactive runs capture the mouse when the
+/// window has focus, and again on a click into it; frame-limited runs only on a click. --input-script replaces the
+/// actions of chosen frames (each finished step logs the pose); frame-limited runs log the final camera pose at exit.
 /// Developer builds (RV_DEV_ASSET_ROOT) also reload shaders automatically when their files change. A frame-limited
 /// run with --screenshot writes its last frame to that file (RGB: the window shows no alpha). A frame-limited run
 /// fails (exit code 3, AppContext::failRun) when that file is not written (write error, or the run ended before its
-/// last frame) or when the scene shader never built, so nothing was drawn.
+/// last frame) or when the scene shader never built, so nothing was drawn. A --input-script that cannot be loaded
+/// fails the initialization (exit code 2).
 class RetroverseApp final : public IAppLogic {
 public:
     RetroverseApp();
