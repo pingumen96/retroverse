@@ -1,0 +1,28 @@
+# Build outputs (CMake presets write to build/<preset>, vcpkg installs to build/vcpkg_installed)
+/build/
+/out/
+/install/
+CMakeUserPresets.json
+compile_commands.json
+/vcpkg_installed/
+
+# IDE state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Claude Code local state
+.claude/worktrees/
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Asset staging area: third-party downloads under evaluation. Never versioned, never packaged.
+/assets/staging/
+
+# Runtime artifacts
+*.log
+/screenshots/
+imgui.ini
+RetroverseData/

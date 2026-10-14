@@ -1,0 +1,11 @@
+# rv_scene: camera, first-person controller, lights, render items and batching plan, scene descriptions and
+# collision. GPU-free: the renderer consumes its plain data.
+
+add_library(rv_scene STATIC
+    src/scene_module.cpp
+)
+add_library(rv::scene ALIAS rv_scene)
+rv_set_target_defaults(rv_scene)
+target_include_directories(rv_scene PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(rv_scene PUBLIC rv_core rv_geometry rv_input rv_assets)
+rv_forbid_link(rv_scene)

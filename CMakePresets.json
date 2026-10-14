@@ -1,0 +1,149 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "toolset": {
+        "value": "host=x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_HOST_TRIPLET": "x64-windows",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "msvc-x64-debug",
+      "inherits": "base",
+      "displayName": "MSVC x64 Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RV_GL_DEBUG": "ON",
+        "RV_DEV_UI": "ON",
+        "RV_DEV_ASSET_ROOT": "ON"
+      }
+    },
+    {
+      "name": "msvc-x64-relwithdebinfo",
+      "inherits": "base",
+      "displayName": "MSVC x64 RelWithDebInfo",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "RV_GL_DEBUG": "ON",
+        "RV_DEV_UI": "ON",
+        "RV_DEV_ASSET_ROOT": "ON"
+      }
+    },
+    {
+      "name": "msvc-x64-release",
+      "inherits": "base",
+      "displayName": "MSVC x64 Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RV_GL_DEBUG": "OFF",
+        "RV_DEV_UI": "OFF",
+        "RV_DEV_ASSET_ROOT": "OFF"
+      }
+    },
+    {
+      "name": "msvc-x64-profile",
+      "inherits": "msvc-x64-relwithdebinfo",
+      "displayName": "MSVC x64 Profile (Tracy)",
+      "cacheVariables": {
+        "RV_ENABLE_TRACY": "ON",
+        "VCPKG_MANIFEST_FEATURES": "profiling"
+      }
+    },
+    {
+      "name": "msvc-x64-warm-video",
+      "inherits": "msvc-x64-debug",
+      "hidden": true,
+      "displayName": "Warm the vcpkg binary cache with FFmpeg",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_FEATURES": "video"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-x64-debug",
+      "configurePreset": "msvc-x64-debug"
+    },
+    {
+      "name": "msvc-x64-relwithdebinfo",
+      "configurePreset": "msvc-x64-relwithdebinfo"
+    },
+    {
+      "name": "msvc-x64-release",
+      "configurePreset": "msvc-x64-release"
+    },
+    {
+      "name": "msvc-x64-profile",
+      "configurePreset": "msvc-x64-profile"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "msvc-x64-debug",
+      "configurePreset": "msvc-x64-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "msvc-x64-debug-gpu",
+      "configurePreset": "msvc-x64-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "msvc-x64-release",
+      "configurePreset": "msvc-x64-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    }
+  ]
+}

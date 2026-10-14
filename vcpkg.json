@@ -1,0 +1,70 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "retroverse",
+  "version-string": "0.1.0",
+  "description": "Explorable 3D frontend for ES-DE game collections",
+  "license": "MIT",
+  "builtin-baseline": "44ccfd88b3eca6929d6d16398c7b19945c29a5f6",
+  "dependencies": [
+    "catch2",
+    "fastgltf",
+    "glm",
+    {
+      "name": "imgui",
+      "features": [
+        "docking-experimental",
+        "opengl3-binding",
+        "sdl3-binding"
+      ]
+    },
+    "nlohmann-json",
+    {
+      "name": "sdl3",
+      "default-features": false
+    },
+    "spdlog",
+    "stb",
+    "tl-expected"
+  ],
+  "features": {
+    "profiling": {
+      "description": "Tracy profiler client (preset msvc-x64-profile)",
+      "dependencies": [
+        {
+          "name": "tracy",
+          "default-features": false,
+          "features": [
+            "on-demand"
+          ]
+        }
+      ]
+    },
+    "video": {
+      "description": "FFmpeg decoding libraries for in-world video screens (iteration I1/I3)",
+      "dependencies": [
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": [
+            "avcodec",
+            "avformat",
+            "swresample",
+            "swscale",
+            "zlib"
+          ]
+        }
+      ]
+    },
+    "ui": {
+      "description": "RmlUi product UI (iteration I1 spike); backends are vendored in third_party",
+      "dependencies": [
+        {
+          "name": "rmlui",
+          "features": [
+            "freetype"
+          ]
+        }
+      ]
+    }
+  }
+}
