@@ -40,7 +40,7 @@ TEST_CASE("app/exit_code: numeric values are part of the command line contract",
     CHECK(rv::app::toString(ExitCode::Ok) == "ok");
     CHECK(rv::app::toString(ExitCode::SmokeCheckFailed) == "smoke check failed");
     CHECK(rv::app::toString(ExitCode::InitializationFailed) == "initialization failed");
-    CHECK(rv::app::toString(ExitCode::RuntimeFailure) == "unexpected runtime failure");
+    CHECK(rv::app::toString(ExitCode::RuntimeFailure) == "runtime failure");
 }
 
 TEST_CASE("app/exit_code: runs that are not smoke tests only log GL messages", "[app][exit_code]") {
@@ -132,4 +132,27 @@ TEST_CASE("app/exit_code: a failed self-test fails a smoke run", "[app][exit_cod
         CHECK(outcome.passed());
         CHECK(exitCodeForCompletedRun(summary) == ExitCode::Ok);
     }
+}
+
+TEST_CASE("app/exit_code: a failure reported by the application logic is a runtime failure", "[app][exit_code]") {
+    // --screenshot that could not be written, scene shader that never built: whatever the kind of run.
+    RunSummary smoke = smokeRun(0);
+    smoke.logicFailed = true;
+    CHECK(exitCodeForCompletedRun(smoke) == ExitCode::RuntimeFailure);
+
+    RunSummary exitAfterFrames;
+    exitAfterFrames.frameLimit = 5;
+    exitAfterFrames.framesRendered = 5;
+    exitAfterFrames.logicFailed = true;
+    CHECK(exitCodeForCompletedRun(exitAfterFrames) == ExitCode::RuntimeFailure);
+
+    RunSummary interactive;
+    interactive.logicFailed = true;
+    CHECK(exitCodeForCompletedRun(interactive) == ExitCode::RuntimeFailure);
+
+    // The logic failure wins over smoke-check failures: it is the more specific report.
+    RunSummary both = smokeRun(3);
+    both.framesRendered = 1;
+    both.logicFailed = true;
+    CHECK(exitCodeForCompletedRun(both) == ExitCode::RuntimeFailure);
 }

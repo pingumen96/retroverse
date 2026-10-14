@@ -7,12 +7,18 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include <spdlog/common.h>
 
 #include <rv/core/expected.hpp>
 
 namespace rv::app {
+
+/// Scene loaded when --scene is not given.
+inline constexpr std::string_view kDefaultSceneName = "m0_testroom";
+/// Directory of the scenes selected by name, relative to the asset root.
+inline constexpr std::string_view kSceneDirectory = "style_tests/reference_scenes";
 
 /// Validated retroverse.exe command line. Defaults describe an interactive run in a 1280x720 window.
 struct CommandLineOptions {
@@ -22,6 +28,11 @@ struct CommandLineOptions {
     static constexpr int kMaxWindowExtent = 16384;
     /// Frames rendered by --smoke and --exit-after-frames when --frames is not given.
     static constexpr std::uint32_t kDefaultFrameLimit = 3;
+    static constexpr int kDefaultScreenshotWidth = 1920;
+    static constexpr int kDefaultScreenshotHeight = 1080;
+    /// Largest screenshot side: the PNG encoder's limit (rv::assets::kMaxImageDimension), which every OpenGL 4.5
+    /// implementation supports as a framebuffer size.
+    static constexpr int kMaxScreenshotExtent = 16384;
 
     bool showHelp = false;    ///< --help / -h
     bool showVersion = false; ///< --version
@@ -48,17 +59,26 @@ struct CommandLineOptions {
     /// --exit-after-frames), which may be unattended: a modal message box would keep it from ever exiting.
     bool noDialogs = false;
 
-    // Accepted and kept for the steps that implement them; the host logs that they are not implemented yet.
-    std::optional<std::string> scene;                ///< --scene <name>
-    std::optional<std::filesystem::path> screenshot; ///< --screenshot <png>
-    std::optional<std::filesystem::path> model;      ///< --model <file>
+    /// --scene: a scene name (see isSceneName) or a path to a scene file; empty selects kDefaultSceneName. Resolve it
+    /// with resolveScenePath().
+    std::optional<std::string> scene;
+    /// --screenshot <png>: PNG of the last frame of a frame-limited run.
+    std::optional<std::filesystem::path> screenshot;
+    /// --screenshot-size WxH: resolution of --screenshot and F12 screenshots, independent of the window.
+    int screenshotWidth = kDefaultScreenshotWidth;
+    int screenshotHeight = kDefaultScreenshotHeight;
+
+    /// --model <file>: accepted and kept for the step that implements it; the host logs that it is ignored.
+    std::optional<std::filesystem::path> model;
 };
 
 /// Parses and validates arguments (UTF-8, program name excluded). Errors name the offending option:
 ///  - unknown options, missing values, malformed numbers;
 ///  - --width / --height outside [64, 16384]; --frames below 1;
 ///  - --frames without --smoke or --exit-after-frames, --hidden without a frame limit (nobody could close the
-///    window);
+///    window), --screenshot without a frame limit (there would be no last frame to capture);
+///  - --screenshot not ending in ".png"; --screenshot-size other than WIDTHxHEIGHT with sides in [1, 16384];
+///  - --scene names with characters other than letters, digits, '_', '-' and '.', or starting with '.';
 ///  - --log-level other than trace, debug, info, warn or error; empty paths or names.
 /// With --help or --version the remaining options are not validated.
 [[nodiscard]] Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> arguments);
@@ -67,5 +87,15 @@ struct CommandLineOptions {
 
 /// Usage text printed by --help, including the exit codes.
 [[nodiscard]] std::string commandLineHelp();
+
+/// True when a --scene value names a scene instead of a file: it has no directory separator ('/' or '\\'), no drive
+/// colon and no ".json" extension (letter case ignored).
+[[nodiscard]] bool isSceneName(std::string_view value) noexcept;
+
+/// Scene file selected by CommandLineOptions::scene: a name resolves to <assetRoot>/style_tests/reference_scenes/
+/// <name>.json, a path is used as given (a relative path is relative to the working directory), and no value selects
+/// kDefaultSceneName.
+[[nodiscard]] std::filesystem::path resolveScenePath(const std::optional<std::string>& scene,
+                                                     const std::filesystem::path& assetRoot);
 
 } // namespace rv::app

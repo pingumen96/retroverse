@@ -27,7 +27,7 @@ EmulationStation/RetroBat/Batocera adapters, VR, hardware video decoding, Linux,
 | 1 | Repository skeleton, CMake presets, vcpkg manifest, layering rules, scripts, docs | done |
 | 2 | `rv_core` (errors, logging, paths, frame clock, AABB, math/color, file I/O, JSON, CLI) + test infrastructure | done |
 | 3 | SDL3 window, OpenGL 4.5 core context, `GLDevice` with debug output, app host loop, `--smoke` | done |
-| 4 | Shaders with includes and hot reload, GPU meshes, framebuffer, offscreen `--screenshot` | CPU part done (shader source loader, image encoder) |
+| 4 | Shaders with includes and hot reload, GPU meshes, framebuffer, offscreen `--screenshot` | done: `ShaderLibrary` (hot reload, `core::FileWatchSet`), `GpuMesh`, `UniformBuffer` + `FrameUniforms`, `Framebuffer`, `--scene` / `--screenshot` / `--screenshot-size`, F5 / F12, scenes drawn unlit in flat material colors (`scene::buildSceneGeometry`) |
 | 5 | Input action mapping (keyboard, mouse, gamepad hot-plug) and first-person camera | CPU part done (action maps, input system, camera, controller) |
 | 6 | Textures, images, material presets, `PBR_Base` and `Unlit_Emissive` shaders, sRGB pipeline | CPU part done (image I/O, material library) |
 | 7 | glTF loader (fastgltf) with sockets, prefab manifests | CPU part done |

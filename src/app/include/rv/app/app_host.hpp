@@ -34,6 +34,9 @@ private:
     [[nodiscard]] ExitCode failInitialization(std::string_view summary, const Error& error) const;
     /// Logs an unexpected failure and, unless dialogs are disabled, tells the user where the log is.
     void reportUnexpectedFailure(std::string_view what) const noexcept;
+    /// Same for a failure the logic reported through AppContext::failRun.
+    void reportRunFailure(std::string_view what) const noexcept;
+    void reportFailure(std::string_view logPrefix, std::string_view headline, std::string_view what) const noexcept;
     /// Runs until quit or the frame limit; an error means presentation failed.
     [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context) const;
     void handleHostEvent(AppContext& context, const SDL_Event& event) const;

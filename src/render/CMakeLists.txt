@@ -14,9 +14,12 @@ rv_forbid_link(rv_render_debug_filter)
 
 add_library(rv_render STATIC
     src/buffer.cpp
+    src/framebuffer.cpp
     src/gl_device.cpp
     src/gl_object_label.cpp
+    src/gpu_mesh.cpp
     src/render_state_cache.cpp
+    src/shader_library.cpp
     src/shader_program.cpp
     src/vertex_array.cpp
 )

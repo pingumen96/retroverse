@@ -35,16 +35,33 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 
 `retroverse.exe --help` lists every option. Automated runs must always be frame-limited so no process is left
 behind: `--smoke` (render `--frames N`, default 3, then exit; any high-severity GL debug message fails the run) or
-`--exit-after-frames --frames N`. `--hidden` and `--frames` require one of them; frame-limited runs never show
-message boxes. Exit codes: 0 ok, 1 smoke check failed, 2 initialization failure (window, context, GL < 4.5,
-paths), 3 unexpected runtime failure. Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs
-out of `%LOCALAPPDATA%`).
+`--exit-after-frames --frames N`. `--hidden`, `--frames` and `--screenshot` require one of them; frame-limited runs
+never show message boxes. Exit codes: 0 ok, 1 smoke check failed, 2 initialization failure (window, context,
+GL < 4.5, paths, scene file), 3 runtime failure (unexpected error, `--screenshot` not written, scene shader never
+built). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs out of `%LOCALAPPDATA%`; use
+`--data-dir build/rvdata`).
+
+- `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
+  `m0_testroom`; also `material_test`, `instancing_stress`), anything with a path separator or `.json` is a file.
+- `--screenshot <file.png>` writes the last frame of a frame-limited run; `--screenshot-size WxH` (default
+  1920x1080, independent of the window) also applies to F12.
+- Keys: Esc quits, Alt+Enter toggles fullscreen, F5 reloads the shaders, F12 writes
+  `<user data>/screenshots/retroverse-<timestamp>.png`. Developer builds also reload a shader within ~0.5 s of
+  saving any of its files (`assets/shaders`); a broken edit logs `<file>:<line>: error ...` and the previous program
+  stays in use.
 
 ## Visual verification
 
-Rendering changes must be checked visually, not only compiled. The app renders offscreen and writes PNG files
-(`retroverse.exe --scene <name> --screenshot <file.png> --exit-after-frames --frames <n>`, available once M0 step 4
-lands). Open the PNG with the Read tool and compare it against `style.md` and `example.png`.
+Rendering changes must be checked visually, not only compiled. The app renders offscreen and writes PNG files:
+
+```powershell
+build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames --frames 5 `
+  --screenshot build/screenshots/m0_testroom.png --data-dir build/rvdata
+```
+
+Open the PNG with the Read tool and compare it against `style.md` and `example.png`. The PNG holds sRGB-encoded
+values exactly as the window shows them (a `#383735` wall reads back as `#383735`), so pixels can also be checked
+numerically. Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`).
 
 ## Layout and layering
 

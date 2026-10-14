@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -77,9 +78,11 @@ std::string programInfoLog(GLuint program) {
     return trimLog(std::move(log));
 }
 
-/// Compiles one stage. Returns the failure description ("<stage> shader ...:\n<log>") or nothing on success.
+/// Compiles one stage. Returns the failure description ("<stage> shader ...:\n<log>", the log rewritten by `mapLog`)
+/// or nothing on success.
 std::optional<std::string> compileStage(const ShaderObject& shader, GLenum stage, std::string_view source,
-                                        std::string_view debugName) {
+                                        std::string_view debugName,
+                                        const std::function<std::string(std::string_view)>& mapLog) {
     if (shader.id() == 0) {
         return fmt::format("{} shader: glCreateShader failed", stageName(stage));
     }
@@ -96,7 +99,7 @@ std::optional<std::string> compileStage(const ShaderObject& shader, GLenum stage
 
     GLint compiled = GL_FALSE;
     glGetShaderiv(shader.id(), GL_COMPILE_STATUS, &compiled);
-    const std::string log = shaderInfoLog(shader.id());
+    const std::string log = mapLog(shaderInfoLog(shader.id()));
     if (compiled == GL_FALSE) {
         return fmt::format("{} shader compilation failed:\n{}", stageName(stage), log.empty() ? "(empty log)" : log);
     }
@@ -141,12 +144,38 @@ void ShaderProgram::release() noexcept {
 
 Expected<ShaderProgram> ShaderProgram::build(std::string_view vertexSource, std::string_view fragmentSource,
                                              std::string_view debugName) {
+    const LogMapper unchanged = [](std::string_view log) {
+        return std::string(log);
+    };
+    return compileAndLink(vertexSource, fragmentSource, debugName, unchanged, unchanged, {});
+}
+
+Expected<ShaderProgram> ShaderProgram::build(const assets::ShaderSource& vertex, const assets::ShaderSource& fragment,
+                                             std::string_view debugName) {
+    const auto rootFile = [](const assets::ShaderSource& source) {
+        if (source.files.empty()) {
+            return std::string("<unnamed>");
+        }
+        const std::u8string name = source.files.front().generic_u8string(); // forward slashes, as in mapped logs
+        return std::string(reinterpret_cast<const char*>(name.data()), name.size());
+    };
+    return compileAndLink(
+        vertex.text, fragment.text, debugName,
+        [&vertex](std::string_view log) { return assets::mapCompilerLog(log, vertex); },
+        [&fragment](std::string_view log) { return assets::mapCompilerLog(log, fragment); },
+        fmt::format("{} + {}", rootFile(vertex), rootFile(fragment)));
+}
+
+Expected<ShaderProgram> ShaderProgram::compileAndLink(std::string_view vertexSource, std::string_view fragmentSource,
+                                                      std::string_view debugName, const LogMapper& mapVertexLog,
+                                                      const LogMapper& mapFragmentLog, std::string_view stageFiles) {
     // Both stages are compiled before reporting, so one error report covers every broken stage.
     const ShaderObject vertex(GL_VERTEX_SHADER);
     const ShaderObject fragment(GL_FRAGMENT_SHADER);
-    const std::optional<std::string> vertexError = compileStage(vertex, GL_VERTEX_SHADER, vertexSource, debugName);
+    const std::optional<std::string> vertexError =
+        compileStage(vertex, GL_VERTEX_SHADER, vertexSource, debugName, mapVertexLog);
     const std::optional<std::string> fragmentError =
-        compileStage(fragment, GL_FRAGMENT_SHADER, fragmentSource, debugName);
+        compileStage(fragment, GL_FRAGMENT_SHADER, fragmentSource, debugName, mapFragmentLog);
     if (vertexError || fragmentError) {
         std::string message = vertexError.value_or("");
         if (fragmentError) {
@@ -171,8 +200,9 @@ Expected<ShaderProgram> ShaderProgram::build(std::string_view vertexSource, std:
     glGetProgramiv(id, GL_LINK_STATUS, &linked);
     const std::string log = programInfoLog(id);
     if (linked == GL_FALSE) {
+        const std::string stages = stageFiles.empty() ? std::string() : fmt::format(" ({})", stageFiles);
         return makeError(ErrorCode::GraphicsError,
-                         fmt::format("program link failed:\n{}", log.empty() ? "(empty log)" : log),
+                         fmt::format("program link failed{}:\n{}", stages, log.empty() ? "(empty log)" : log),
                          std::string(debugName));
     }
     if (!log.empty()) {
@@ -215,37 +245,37 @@ Status ShaderProgram::bindUniformBlock(std::string_view blockName, GLuint bindin
     return ok();
 }
 
-void ShaderProgram::setInt(std::string_view name, int value) {
+void ShaderProgram::setInt(std::string_view name, int value) const {
     if (const GLint location = uniformLocation(name); location >= 0) {
         glProgramUniform1i(m_id, location, value);
     }
 }
 
-void ShaderProgram::setFloat(std::string_view name, float value) {
+void ShaderProgram::setFloat(std::string_view name, float value) const {
     if (const GLint location = uniformLocation(name); location >= 0) {
         glProgramUniform1f(m_id, location, value);
     }
 }
 
-void ShaderProgram::setVec2(std::string_view name, const glm::vec2& value) {
+void ShaderProgram::setVec2(std::string_view name, const glm::vec2& value) const {
     if (const GLint location = uniformLocation(name); location >= 0) {
         glProgramUniform2fv(m_id, location, 1, glm::value_ptr(value));
     }
 }
 
-void ShaderProgram::setVec3(std::string_view name, const glm::vec3& value) {
+void ShaderProgram::setVec3(std::string_view name, const glm::vec3& value) const {
     if (const GLint location = uniformLocation(name); location >= 0) {
         glProgramUniform3fv(m_id, location, 1, glm::value_ptr(value));
     }
 }
 
-void ShaderProgram::setVec4(std::string_view name, const glm::vec4& value) {
+void ShaderProgram::setVec4(std::string_view name, const glm::vec4& value) const {
     if (const GLint location = uniformLocation(name); location >= 0) {
         glProgramUniform4fv(m_id, location, 1, glm::value_ptr(value));
     }
 }
 
-void ShaderProgram::setMat4(std::string_view name, const glm::mat4& value) {
+void ShaderProgram::setMat4(std::string_view name, const glm::mat4& value) const {
     if (const GLint location = uniformLocation(name); location >= 0) {
         glProgramUniformMatrix4fv(m_id, location, 1, GL_FALSE, glm::value_ptr(value));
     }

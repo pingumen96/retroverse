@@ -40,6 +40,9 @@ public:
     /// Attaches `buffer` to binding point `bindingIndex`: vertices start at `offsetBytes` and are `strideBytes` apart.
     [[nodiscard]] Status setVertexBuffer(GLuint bindingIndex, const Buffer& buffer, std::size_t offsetBytes,
                                          std::size_t strideBytes);
+    /// Makes binding point `bindingIndex` advance once every `divisor` instances instead of once per vertex
+    /// (glVertexArrayBindingDivisor; 0 restores per-vertex data). Per-instance data uses divisor 1.
+    [[nodiscard]] Status setBindingDivisor(GLuint bindingIndex, GLuint divisor);
     /// Uses `buffer` as the index buffer of indexed draws.
     [[nodiscard]] Status setElementBuffer(const Buffer& buffer);
 

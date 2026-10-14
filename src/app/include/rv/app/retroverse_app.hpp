@@ -2,17 +2,18 @@
 
 #include <memory>
 
-#include <glm/vec4.hpp>
-
 #include <rv/app/app_logic.hpp>
 
 namespace rv::app {
 
-class TriangleDemo;
-
-/// The Retroverse application logic. M0 step 3 content: clears to the wall color of style §3 (#383735, converted to
-/// linear) and draws one rotating triangle that proves buffers, vertex arrays, shaders and the sRGB output path. The
-/// scene renderer replaces the triangle in later steps.
+/// The Retroverse application logic. M0 step 4 content: loads the scene selected by --scene (default m0_testroom),
+/// builds its procedural geometry and draws it unlit, in flat per-part material colors, from the scene camera into an
+/// offscreen sRGB framebuffer that is copied to the window.
+///
+/// Keys: F5 reloads the shaders; F12 writes <user data>/screenshots/retroverse-<timestamp>.png at --screenshot-size.
+/// Developer builds (RV_DEV_ASSET_ROOT) also reload shaders automatically when their files change. A frame-limited
+/// run with --screenshot writes its last frame to that file. A frame-limited run fails (exit code 3, AppContext::
+/// failRun) when that file cannot be written or when the scene shader never built, so nothing was drawn.
 class RetroverseApp final : public IAppLogic {
 public:
     RetroverseApp();
@@ -21,13 +22,15 @@ public:
     RetroverseApp& operator=(const RetroverseApp&) = delete;
 
     [[nodiscard]] Status onInit(AppContext& context) override;
+    void onEvent(AppContext& context, const SDL_Event& event) override;
     void onUpdate(AppContext& context, double deltaSeconds) override;
     void onRender(AppContext& context) override;
     void onShutdown(AppContext& context) override;
 
 private:
-    glm::vec4 m_clearColorLinear{0.0f, 0.0f, 0.0f, 1.0f};
-    std::unique_ptr<TriangleDemo> m_triangle;
+    struct State;
+
+    std::unique_ptr<State> m_state; ///< GPU resources and scene; empty before onInit and after onShutdown
 };
 
 } // namespace rv::app

@@ -11,7 +11,7 @@ std::string_view toString(ExitCode code) noexcept {
     case ExitCode::InitializationFailed:
         return "initialization failed";
     case ExitCode::RuntimeFailure:
-        return "unexpected runtime failure";
+        return "runtime failure";
     }
     return "unknown";
 }
@@ -21,6 +21,9 @@ bool SelfTestOutcome::passed() const noexcept {
 }
 
 ExitCode exitCodeForCompletedRun(const RunSummary& summary) noexcept {
+    if (summary.logicFailed) {
+        return ExitCode::RuntimeFailure;
+    }
     if (!summary.smoke) {
         return ExitCode::Ok;
     }

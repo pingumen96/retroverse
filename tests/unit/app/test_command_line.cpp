@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -45,6 +47,8 @@ TEST_CASE("app/command_line: no arguments describe an interactive windowed run",
     CHECK_FALSE(options->noDialogs);
     CHECK_FALSE(options->scene.has_value());
     CHECK_FALSE(options->screenshot.has_value());
+    CHECK(options->screenshotWidth == 1920);
+    CHECK(options->screenshotHeight == 1080);
     CHECK_FALSE(options->model.has_value());
 }
 
@@ -224,16 +228,112 @@ TEST_CASE("app/command_line: directories are UTF-8 paths", "[app][command_line]"
     }
 }
 
-TEST_CASE("app/command_line: options of later steps are parsed and kept", "[app][command_line]") {
-    const auto options = parse({"--scene", "m0_testroom", "--screenshot", "shots/G01.png", "--model", "crt.glb"});
+TEST_CASE("app/command_line: scene and screenshot options", "[app][command_line]") {
+    const auto options = parse({"--scene", "material_test", "--screenshot", "shots/G01.png", "--exit-after-frames",
+                                "--frames", "5", "--screenshot-size", "1280x720", "--model", "crt.glb"});
     REQUIRE(options.has_value());
-    CHECK(options->scene == "m0_testroom");
+    CHECK(options->scene == "material_test");
     CHECK(options->screenshot == rv::core::pathFromUtf8("shots/G01.png"));
-    CHECK(options->model == rv::core::pathFromUtf8("crt.glb"));
+    CHECK(options->screenshotWidth == 1280);
+    CHECK(options->screenshotHeight == 720);
+    CHECK(options->model == rv::core::pathFromUtf8("crt.glb")); // kept for the glTF step
 
     const auto emptyScene = parse({"--scene="});
     REQUIRE_FALSE(emptyScene.has_value());
     CHECK(emptyScene.error().context == "--scene");
+
+    // A scene file instead of a name: any path is accepted as given.
+    const auto file = parse({"--scene", "D:/Scene di prova/città.json"});
+    REQUIRE(file.has_value());
+    CHECK(file->scene == "D:/Scene di prova/città.json");
+}
+
+TEST_CASE("app/command_line: --screenshot needs a frame-limited run and a .png file", "[app][command_line]") {
+    const auto interactive = parse({"--screenshot", "shot.png"});
+    REQUIRE_FALSE(interactive.has_value());
+    CHECK(interactive.error().code == ErrorCode::InvalidArgument);
+    CHECK(interactive.error().context == "--screenshot");
+
+    for (const char* limit : {"--smoke", "--exit", "--exit-after-frames"}) {
+        INFO(limit);
+        const auto options = parse({limit, "--screenshot", "build/screenshots/shot.PNG"});
+        REQUIRE(options.has_value());
+        CHECK(options->screenshot == rv::core::pathFromUtf8("build/screenshots/shot.PNG"));
+    }
+    for (const char* name : {"shot.jpg", "shot", "png"}) {
+        INFO(name);
+        const auto rejected = parse({"--smoke", "--screenshot", name});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == ErrorCode::InvalidArgument);
+        CHECK(rejected.error().context == std::string("--screenshot=") + name);
+    }
+}
+
+TEST_CASE("app/command_line: --screenshot-size takes WIDTHxHEIGHT", "[app][command_line]") {
+    const std::vector<std::pair<std::string, std::pair<int, int>>> accepted{{"1920x1080", {1920, 1080}},
+                                                                            {"640X480", {640, 480}},
+                                                                            {"1x1", {1, 1}},
+                                                                            {"16384x16384", {16384, 16384}},
+                                                                            {"0320x0200", {320, 200}}};
+    for (const auto& [text, size] : accepted) {
+        INFO(text);
+        const auto options = parse({"--screenshot-size", text}); // also for F12 in interactive runs
+        REQUIRE(options.has_value());
+        CHECK(options->screenshotWidth == size.first);
+        CHECK(options->screenshotHeight == size.second);
+    }
+    for (const char* text : {"1920", "1920x", "x1080", "1920*1080", "1920 x 1080", "-1920x1080", "+1920x1080",
+                             "1920x1080x2", "wide x tall", "99999999999x1"}) {
+        INFO(text);
+        const auto rejected = parse({"--screenshot-size", text});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == ErrorCode::ParseError);
+        CHECK(rejected.error().context == std::string("--screenshot-size=") + text);
+    }
+    for (const char* text : {"0x1080", "1920x0", "16385x100", "100x16385"}) {
+        INFO(text);
+        const auto rejected = parse({"--screenshot-size", text});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == ErrorCode::OutOfRange);
+    }
+}
+
+TEST_CASE("app/command_line: scene names are restricted, scene paths are not", "[app][command_line]") {
+    for (const char* name : {"m0_testroom", "material_test", "instancing-stress", "room.v2", "Room2"}) {
+        INFO(name);
+        CHECK(rv::app::isSceneName(name));
+        CHECK(parse({"--scene", name}).has_value());
+    }
+    for (const char* path :
+         {"scenes/room.json", "scenes\\room", "C:room", "room.json", "ROOM.JSON", "../room", "./room"}) {
+        INFO(path);
+        CHECK_FALSE(rv::app::isSceneName(path));
+        CHECK(parse({"--scene", path}).has_value());
+    }
+    for (const char* name : {"my room", "room*", ".hidden", "..", "città"}) {
+        INFO(name);
+        REQUIRE(rv::app::isSceneName(name));
+        const auto rejected = parse({"--scene", name});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == ErrorCode::InvalidArgument);
+        CHECK(rejected.error().context == std::string("--scene=") + name);
+    }
+}
+
+TEST_CASE("app/command_line: scene names resolve under the asset root", "[app][command_line]") {
+    const std::filesystem::path assets = rv::core::pathFromUtf8("D:/Retroverse/assets");
+    const std::filesystem::path referenceScenes = assets / "style_tests" / "reference_scenes";
+
+    CHECK(rv::app::resolveScenePath(std::nullopt, assets) == referenceScenes / "m0_testroom.json");
+    CHECK(rv::app::resolveScenePath(std::string("material_test"), assets) == referenceScenes / "material_test.json");
+    CHECK(rv::app::resolveScenePath(std::string("room.v2"), assets) == referenceScenes / "room.v2.json");
+    CHECK(rv::app::resolveScenePath(std::nullopt, assets).native() ==
+          (referenceScenes / "m0_testroom.json").lexically_normal().native());
+    // Paths are used as given, relative to the working directory.
+    CHECK(rv::app::resolveScenePath(std::string("build/scenes/test.json"), assets) ==
+          rv::core::pathFromUtf8("build/scenes/test.json"));
+    CHECK(rv::app::resolveScenePath(std::string("E:/Scene di prova/città.json"), assets) ==
+          rv::core::pathFromUtf8("E:/Scene di prova/città.json"));
 }
 
 TEST_CASE("app/command_line: --help and --version skip the remaining validation", "[app][command_line]") {
@@ -270,10 +370,10 @@ TEST_CASE("app/command_line: argc/argv overload skips the program name", "[app][
 
 TEST_CASE("app/command_line: help lists every option and the exit codes", "[app][command_line]") {
     const std::string help = rv::app::commandLineHelp();
-    for (const char* option :
-         {"--version", "--width", "--height", "--fullscreen", "--hidden", "--no-vsync", "--smoke", "--frames",
-          "--exit-after-frames", "--exit", "--gl-selftest", "--asset-root", "--data-dir", "--portable", "--log-level",
-          "--no-dialogs", "--scene", "--screenshot", "--model"}) {
+    for (const char* option : {"--version",     "--width",      "--height",     "--fullscreen",        "--hidden",
+                               "--no-vsync",    "--smoke",      "--frames",     "--exit-after-frames", "--exit",
+                               "--gl-selftest", "--asset-root", "--data-dir",   "--portable",          "--log-level",
+                               "--no-dialogs",  "--scene",      "--screenshot", "--screenshot-size",   "--model"}) {
         INFO(option);
         CHECK(helpListsOption(help, option));
     }

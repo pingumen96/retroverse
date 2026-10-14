@@ -18,8 +18,10 @@ enum class ExitCode : int {
     /// message box unless dialogs are off (CommandLineOptions::noDialogs). An invalid command line also exits with
     /// this code; it is printed to stderr with the usage text, before logging starts and without a dialog.
     InitializationFailed = 2,
-    /// Unexpected failure after initialization (exception, failed presentation). Logged, shown in a message box unless
-    /// dialogs are off, never propagated.
+    /// Failure after initialization: an unexpected one (exception, failed presentation) or one the application logic
+    /// reported because it must not pass silently (AppContext::failRun: a --screenshot that could not be written, a
+    /// frame-limited run whose scene shader never built). Logged, shown in a message box unless dialogs are off, never
+    /// propagated.
     RuntimeFailure = 3,
 };
 
@@ -51,11 +53,14 @@ struct RunSummary {
     /// High-severity GL debug messages over the whole run, the self-test's included.
     std::uint64_t highSeverityGlMessages = 0;
     std::optional<SelfTestOutcome> selfTest;
+    /// The application logic reported a failure that ended the run (AppContext::failRun).
+    bool logicFailed = false;
 };
 
 /// Exit code of a run that initialized and left its main loop normally.
 ///
-/// Only --smoke runs can fail (ExitCode::SmokeCheckFailed), when:
+/// A failure reported by the application logic gives ExitCode::RuntimeFailure, whatever the kind of run. Otherwise
+/// only --smoke runs can fail (ExitCode::SmokeCheckFailed), when:
 ///  - fewer than frameLimit frames were rendered (the run was interrupted, so it proves nothing), or
 ///  - High-severity messages exceed the ones the self-test provoked itself (so `--smoke --gl-selftest` exits 0 when
 ///    the provoked GL_INVALID_ENUM was the only one), or

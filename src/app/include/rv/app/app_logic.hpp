@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <utility>
 
 #include <glm/vec2.hpp>
 
@@ -48,6 +50,17 @@ public:
     void requestQuit() noexcept { m_quitRequested = true; }
     [[nodiscard]] bool quitRequested() const noexcept { return m_quitRequested; }
 
+    /// Ends the main loop once the current frame is done and makes the run exit with ExitCode::RuntimeFailure, for
+    /// failures that must not pass silently, such as a --screenshot that could not be written. The host logs the
+    /// error; only the first one is kept.
+    void failRun(Error error) {
+        if (!m_failure) {
+            m_failure = std::move(error);
+        }
+        m_quitRequested = true;
+    }
+    [[nodiscard]] const std::optional<Error>& failure() const noexcept { return m_failure; }
+
 private:
     friend class AppHost;
 
@@ -63,6 +76,7 @@ private:
     std::uint64_t m_frameIndex = 0;
     glm::ivec2 m_framebufferSize{0};
     bool m_quitRequested = false;
+    std::optional<Error> m_failure;
 };
 
 /// Application behavior driven by AppHost. Call order: onInit once; then per frame onEvent for each pending event,
@@ -79,7 +93,8 @@ public:
     virtual void onEvent(AppContext& /*context*/, const SDL_Event& /*event*/) {}
     /// Simulation step; `deltaSeconds` is the frame delta clamped to 0.1 s.
     virtual void onUpdate(AppContext& context, double deltaSeconds) = 0;
-    /// Draws the frame into the default framebuffer (start with GLDevice::beginFrame).
+    /// Renders the frame and leaves it in the default framebuffer, which the host presents afterwards (typically:
+    /// GLDevice::beginPass on an offscreen Framebuffer, draws, Framebuffer::blitToDefault).
     virtual void onRender(AppContext& context) = 0;
     virtual void onShutdown(AppContext& /*context*/) {}
 };

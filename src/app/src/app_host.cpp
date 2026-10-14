@@ -89,12 +89,6 @@ void logStartupBanner(const core::Paths& paths, const CommandLineOptions& option
 }
 
 void warnAboutPendingFeatures(const CommandLineOptions& options) {
-    if (options.scene) {
-        spdlog::warn("--scene is not implemented yet; ignoring '{}'", *options.scene);
-    }
-    if (options.screenshot) {
-        spdlog::warn("--screenshot is not implemented yet; ignoring '{}'", core::pathToUtf8(*options.screenshot));
-    }
     if (options.model) {
         spdlog::warn("--model is not implemented yet; ignoring '{}'", core::pathToUtf8(*options.model));
     }
@@ -251,7 +245,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
 
     LogicShutdownGuard logicScope(logic, context);
     if (auto initialized = logic.onInit(context); !initialized) {
-        return failInitialization("Retroverse could not initialize its renderer.", initialized.error());
+        return failInitialization("Retroverse could not load its content.", initialized.error());
     }
     std::optional<SelfTestOutcome> selfTest;
     if (m_options.glSelfTest) {
@@ -264,6 +258,9 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     }
     // Release the logic's GPU resources now, so that messages they cause still count towards the result.
     logicScope.shutdown();
+    if (context.m_failure) {
+        reportRunFailure(context.m_failure->toString());
+    }
 
     RunSummary summary;
     summary.smoke = m_options.smoke;
@@ -271,6 +268,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     summary.framesRendered = context.m_frameIndex;
     summary.highSeverityGlMessages = (*device)->debugMessageCount(gl::DebugSeverity::High);
     summary.selfTest = selfTest;
+    summary.logicFailed = context.m_failure.has_value();
     const ExitCode exitCode = exitCodeForCompletedRun(summary);
     if (m_options.smoke) {
         const std::uint64_t provoked = selfTest ? selfTest->highSeverityCaptured : 0;
@@ -295,16 +293,23 @@ ExitCode AppHost::failInitialization(std::string_view summary, const Error& erro
 }
 
 void AppHost::reportUnexpectedFailure(std::string_view what) const noexcept {
+    reportFailure("Unexpected failure", "Retroverse stopped because of an unexpected error", what);
+}
+
+void AppHost::reportRunFailure(std::string_view what) const noexcept {
+    reportFailure("Run failed", "Retroverse stopped because of an error", what);
+}
+
+void AppHost::reportFailure(std::string_view logPrefix, std::string_view headline,
+                            std::string_view what) const noexcept {
     try {
-        spdlog::critical("Unexpected failure: {}", what);
+        spdlog::critical("{}: {}", logPrefix, what);
         if (!m_options.noDialogs) {
             const std::filesystem::path logFile = core::activeLogFile();
             const std::string logLocation =
                 logFile.empty() ? std::string("(file logging disabled)") : core::pathToUtf8(logFile);
             platform::showErrorDialog(
-                kDialogTitle,
-                fmt::format("Retroverse stopped because of an unexpected error:\n\n{}\n\nDetails are in the log: {}",
-                            what, logLocation));
+                kDialogTitle, fmt::format("{}:\n\n{}\n\nDetails are in the log: {}", headline, what, logLocation));
         }
     } catch (...) {
         // Reporting must not turn a failure into a crash.

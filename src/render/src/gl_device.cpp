@@ -15,6 +15,7 @@
 
 #include <rv/core/main_thread.hpp>
 #include <rv/core/math.hpp>
+#include <rv/render/framebuffer.hpp>
 
 namespace rv::gl {
 namespace {
@@ -47,8 +48,29 @@ std::string_view firstMissingEntryPoint() {
         {"glVertexArrayElementBuffer", glVertexArrayElementBuffer != nullptr},
         {"glVertexArrayAttribFormat", glVertexArrayAttribFormat != nullptr},
         {"glVertexArrayAttribBinding", glVertexArrayAttribBinding != nullptr},
+        {"glVertexArrayBindingDivisor", glVertexArrayBindingDivisor != nullptr},
         {"glEnableVertexArrayAttrib", glEnableVertexArrayAttrib != nullptr},
+        {"glDrawElementsInstancedBaseInstance", glDrawElementsInstancedBaseInstance != nullptr},
         {"glProgramUniformMatrix4fv", glProgramUniformMatrix4fv != nullptr},
+        {"glProgramUniform4fv", glProgramUniform4fv != nullptr},
+        {"glCreateTextures", glCreateTextures != nullptr},
+        {"glTextureStorage2D", glTextureStorage2D != nullptr},
+        {"glTextureParameteri", glTextureParameteri != nullptr},
+        {"glGetTextureParameteriv", glGetTextureParameteriv != nullptr},
+        {"glTextureView", glTextureView != nullptr},
+        {"glGetTextureImage", glGetTextureImage != nullptr},
+        {"glCreateRenderbuffers", glCreateRenderbuffers != nullptr},
+        {"glNamedRenderbufferStorage", glNamedRenderbufferStorage != nullptr},
+        {"glGetNamedRenderbufferParameteriv", glGetNamedRenderbufferParameteriv != nullptr},
+        {"glCreateFramebuffers", glCreateFramebuffers != nullptr},
+        {"glNamedFramebufferTexture", glNamedFramebufferTexture != nullptr},
+        {"glNamedFramebufferRenderbuffer", glNamedFramebufferRenderbuffer != nullptr},
+        {"glNamedFramebufferDrawBuffer", glNamedFramebufferDrawBuffer != nullptr},
+        {"glNamedFramebufferReadBuffer", glNamedFramebufferReadBuffer != nullptr},
+        {"glCheckNamedFramebufferStatus", glCheckNamedFramebufferStatus != nullptr},
+        {"glClearNamedFramebufferfv", glClearNamedFramebufferfv != nullptr},
+        {"glClearNamedFramebufferfi", glClearNamedFramebufferfi != nullptr},
+        {"glBlitNamedFramebuffer", glBlitNamedFramebuffer != nullptr},
         {"glGetNamedFramebufferAttachmentParameteriv", glGetNamedFramebufferAttachmentParameteriv != nullptr},
         {"glObjectLabel", glObjectLabel != nullptr},
         {"glPushDebugGroup", glPushDebugGroup != nullptr},
@@ -335,18 +357,16 @@ void GLDevice::applyDefaultState() {
     m_state.setPolygonMode(GL_FILL);
 }
 
-void GLDevice::beginFrame(glm::ivec2 framebufferSize, const glm::vec4& clearColorLinear) {
-    const glm::ivec2 size = glm::max(framebufferSize, glm::ivec2(0));
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+void GLDevice::beginPass(const Framebuffer& target, const glm::vec4& clearColorLinear) {
+    if (!target.valid()) {
+        return;
+    }
+    target.bind();
+    const glm::ivec2 size = target.size();
     m_state.setViewport(glm::ivec4(0, 0, size.x, size.y));
-    m_state.setFramebufferSrgb(m_caps.srgbDefaultFramebuffer);
+    m_state.setFramebufferSrgb(true);
     m_state.setDepthWrite(true);
-    const glm::vec3 linear(clearColorLinear);
-    const glm::vec3 color = m_caps.srgbDefaultFramebuffer ? linear : core::linearToSrgb(linear);
-    glClearColor(color.r, color.g, color.b, clearColorLinear.a);
-    glClearDepth(1.0);
-    glClearStencil(0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    target.clear(clearColorLinear);
 }
 
 std::uint64_t GLDevice::debugMessageCount(DebugSeverity atLeast) const noexcept {

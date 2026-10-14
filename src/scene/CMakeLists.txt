@@ -8,6 +8,7 @@ add_library(rv_scene STATIC
     src/first_person_controller.cpp
     src/light.cpp
     src/scene_description.cpp
+    src/scene_geometry.cpp
 )
 add_library(rv::scene ALIAS rv_scene)
 rv_set_target_defaults(rv_scene)

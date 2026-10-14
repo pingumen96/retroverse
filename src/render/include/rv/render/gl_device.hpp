@@ -7,7 +7,6 @@
 #include <string_view>
 
 #include <glad/gl.h>
-#include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 
 #include <rv/core/expected.hpp>
@@ -15,6 +14,8 @@
 #include <rv/render/render_state_cache.hpp>
 
 namespace rv::gl {
+
+class Framebuffer;
 
 /// OpenGL entry point loader: returns the address of the named function for the current context. Same signature as
 /// glad's GLADloadfunc; the platform layer provides one (rv::platform::GraphicsWindow::glLoader) so that this module
@@ -48,7 +49,8 @@ struct GLCapabilities {
     /// GL_FRAMEBUFFER_SRGB converts linear output written to the default framebuffer. Taken from the back buffer's
     /// GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING; when the driver reports GL_LINEAR (NVIDIA does even for sRGB-capable
     /// pixel formats), a one-pixel clear and readback at creation checks whether the conversion happens anyway.
-    /// When false, shaders writing to the default framebuffer must encode sRGB themselves.
+    /// Informational: frames are rendered into sRGB Framebuffers and copied to the window byte for byte
+    /// (Framebuffer::blitToDefault), which displays correctly either way.
     bool srgbDefaultFramebuffer = false;
 };
 
@@ -86,11 +88,11 @@ public:
     /// GLCapabilities::srgbDefaultFramebuffer.
     [[nodiscard]] RenderStateCache& state() noexcept { return m_state; }
 
-    /// Starts a frame on the default framebuffer: binds it, sets the viewport to (0, 0, framebufferSize), enables
-    /// GL_FRAMEBUFFER_SRGB when the back buffer is sRGB and clears color, depth (to 1) and stencil (to 0).
-    /// `clearColorLinear` is linear RGBA; it is encoded to sRGB here when the framebuffer cannot do it, so the color on
-    /// screen is the same either way. Depth writes are enabled because glClear honors the depth mask.
-    void beginFrame(glm::ivec2 framebufferSize, const glm::vec4& clearColorLinear);
+    /// Starts rendering into `target`: binds it, sets the viewport to (0, 0, target.size()), enables
+    /// GL_FRAMEBUFFER_SRGB (linear shader output is encoded to sRGB by sRGB color attachments) and clears color to
+    /// `clearColorLinear` (linear RGBA), depth to 1 and stencil to 0. Depth writes are enabled because clears honor
+    /// the depth mask. An empty target is left unbound.
+    void beginPass(const Framebuffer& target, const glm::vec4& clearColorLinear);
 
     /// True when the debug callback is installed (GLDeviceConfig::debugOutput).
     [[nodiscard]] bool debugOutputEnabled() const noexcept { return m_debugOutput; }

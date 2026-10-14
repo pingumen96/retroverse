@@ -90,6 +90,18 @@ Status VertexArray::setVertexBuffer(GLuint bindingIndex, const Buffer& buffer, s
     return ok();
 }
 
+Status VertexArray::setBindingDivisor(GLuint bindingIndex, GLuint divisor) {
+    if (m_id == 0) {
+        return makeError(ErrorCode::InvalidArgument, "vertex array is empty");
+    }
+    if (bindingIndex >= kMaxBindings) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("binding {} exceeds the OpenGL 4.5 minimum of {}", bindingIndex, kMaxBindings));
+    }
+    glVertexArrayBindingDivisor(m_id, bindingIndex, divisor);
+    return ok();
+}
+
 Status VertexArray::setElementBuffer(const Buffer& buffer) {
     if (m_id == 0 || !buffer.valid()) {
         return makeError(ErrorCode::InvalidArgument, "vertex array or index buffer is empty", buffer.debugName());

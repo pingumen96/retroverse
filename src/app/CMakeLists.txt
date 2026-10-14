@@ -1,10 +1,11 @@
 # rv_app: composition root (application host, main loop, scenes, screenshots). Links every module.
 
-# GPU-free part of the application layer: command line options and the exit-code policy. Kept apart from rv_app so that
-# rv_tests can unit-test it without SDL or OpenGL.
+# GPU-free part of the application layer: command line options, scene selection, screenshot naming and the exit-code
+# policy. Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL.
 add_library(rv_app_cli STATIC
     src/command_line.cpp
     src/exit_code.cpp
+    src/screenshot_name.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
@@ -17,7 +18,7 @@ add_library(rv_app STATIC
     src/app_host.cpp
     src/app_logic.cpp
     src/retroverse_app.cpp
-    src/triangle_demo.cpp
+    src/scene_view.cpp
 )
 add_library(rv::app ALIAS rv_app)
 rv_set_target_defaults(rv_app)
@@ -38,4 +39,8 @@ if(RV_DEV_UI)
 endif()
 if(RV_GL_DEBUG)
     target_compile_definitions(rv_app PUBLIC RV_GL_DEBUG=1)
+endif()
+# Developer builds read assets from the source tree: reload shaders as soon as their files change.
+if(RV_DEV_ASSET_ROOT)
+    target_compile_definitions(rv_app PRIVATE RV_DEV_ASSET_ROOT=1)
 endif()

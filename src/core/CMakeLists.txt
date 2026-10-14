@@ -8,6 +8,7 @@ add_library(rv_core STATIC
     src/arg_parser.cpp
     src/expected.cpp
     src/file_io.cpp
+    src/file_watch_set.cpp
     src/frame_clock.cpp
     src/json.cpp
     src/log.cpp

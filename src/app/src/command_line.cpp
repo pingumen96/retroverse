@@ -1,6 +1,8 @@
 #include <rv/app/command_line.hpp>
 
+#include <algorithm>
 #include <array>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -16,16 +18,17 @@ namespace {
 constexpr std::string_view kDescription =
     "Explorable 3D frontend for ES-DE game collections.\n"
     "\n"
-    "Keys: Esc quits, Alt+Enter toggles borderless fullscreen.\n"
+    "Keys: Esc quits, Alt+Enter toggles borderless fullscreen, F5 reloads the shaders,\n"
+    "      F12 saves a screenshot to <user data>/screenshots.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
-    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5); 3 unexpected failure.";
+    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file);\n"
+    "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built).";
 
 core::ArgParser makeParser() {
     core::ArgParser parser("retroverse", std::string(kDescription));
     parser.flag("version", "Print the version and exit.")
         .option("width", "pixels", "Initial window width.", std::to_string(CommandLineOptions::kDefaultWindowWidth))
-        .option("height", "pixels", "Initial window height.",
-                std::to_string(CommandLineOptions::kDefaultWindowHeight))
+        .option("height", "pixels", "Initial window height.", std::to_string(CommandLineOptions::kDefaultWindowHeight))
         .flag("fullscreen", "Start in borderless fullscreen.")
         .flag("hidden", "Never show the window; only with --smoke or --exit-after-frames.")
         .flag("no-vsync", "Disable vertical synchronization.")
@@ -44,10 +47,78 @@ core::ArgParser makeParser() {
         .option("log-level", "level", "One of trace, debug, info, warn, error.", "info")
         .flag("no-dialogs", "Never show message boxes; failures are only logged. Implied by --smoke and "
                             "--exit-after-frames.")
-        .option("scene", "name", "Scene to load (not implemented yet).")
-        .option("screenshot", "png", "Write a screenshot after the last frame (not implemented yet).")
+        .option("scene", "name|file",
+                fmt::format("Scene to load: a name from <asset root>/{} (default {}) or the path of a scene file.",
+                            kSceneDirectory, kDefaultSceneName))
+        .option("screenshot", "png", "Write a PNG of the last frame; only with --smoke or --exit-after-frames.")
+        .option("screenshot-size", "WxH",
+                fmt::format("Resolution of --screenshot and F12 screenshots, independent of the window (default "
+                            "{}x{}).",
+                            CommandLineOptions::kDefaultScreenshotWidth, CommandLineOptions::kDefaultScreenshotHeight))
         .option("model", "file", "glTF model to display (not implemented yet).");
     return parser;
+}
+
+bool isAsciiDigit(char c) noexcept {
+    return c >= '0' && c <= '9';
+}
+
+/// Strictly decimal, unsigned and without surrounding text; nothing on overflow.
+std::optional<int> parseDecimal(std::string_view text) noexcept {
+    if (text.empty() || text.size() > 9) {
+        return std::nullopt;
+    }
+    int value = 0;
+    for (const char c : text) {
+        if (!isAsciiDigit(c)) {
+            return std::nullopt;
+        }
+        value = value * 10 + (c - '0');
+    }
+    return value;
+}
+
+/// --screenshot-size WIDTHxHEIGHT (the 'x' may be uppercase), each side in [1, kMaxScreenshotExtent].
+Status applyScreenshotSize(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("screenshot-size")) {
+        return ok();
+    }
+    const std::string text = args.value("screenshot-size").value_or("");
+    const std::string context = "--screenshot-size=" + text;
+    const std::size_t separator = text.find_first_of("xX");
+    if (separator == std::string::npos) {
+        return makeError(ErrorCode::ParseError, "expected WIDTHxHEIGHT, e.g. 1920x1080", context);
+    }
+    const std::optional<int> width = parseDecimal(std::string_view(text).substr(0, separator));
+    const std::optional<int> height = parseDecimal(std::string_view(text).substr(separator + 1));
+    if (!width || !height) {
+        return makeError(ErrorCode::ParseError, "expected WIDTHxHEIGHT, e.g. 1920x1080", context);
+    }
+    const auto inRange = [](int extent) {
+        return extent >= 1 && extent <= CommandLineOptions::kMaxScreenshotExtent;
+    };
+    if (!inRange(*width) || !inRange(*height)) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("each side must be between 1 and {}", CommandLineOptions::kMaxScreenshotExtent),
+                         context);
+    }
+    options.screenshotWidth = *width;
+    options.screenshotHeight = *height;
+    return ok();
+}
+
+/// A --scene name becomes a file name under the asset root: keep it to a portable, harmless character set.
+Status validateSceneName(std::string_view name) {
+    const auto allowed = [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || isAsciiDigit(c) || c == '_' || c == '-' || c == '.';
+    };
+    if (name.front() == '.' || !std::all_of(name.begin(), name.end(), allowed)) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "scene names may only contain letters, digits, '_', '-' and '.' and must not start with '.'; "
+                         "pass a path to load another file",
+                         "--scene=" + std::string(name));
+    }
+    return ok();
 }
 
 Expected<int> windowExtent(const core::ParsedArgs& args, std::string_view name, int fallback) {
@@ -189,9 +260,28 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (!scene) {
         return propagate(scene.error());
     }
+    if (*scene && isSceneName(**scene)) {
+        if (auto name = validateSceneName(**scene); !name) {
+            return propagate(name.error());
+        }
+    }
     auto screenshot = pathValue(*args, "screenshot");
     if (!screenshot) {
         return propagate(screenshot.error());
+    }
+    if (*screenshot) {
+        // Only a frame-limited run has a last frame to capture.
+        if (!options.frameLimit) {
+            return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames",
+                             "--screenshot");
+        }
+        if (!core::equalsIgnoreCaseAscii(core::pathToUtf8((*screenshot)->extension()), ".png")) {
+            return makeError(ErrorCode::InvalidArgument, "screenshots are PNG files: use the .png extension",
+                             "--screenshot=" + core::pathToUtf8(**screenshot));
+        }
+    }
+    if (auto size = applyScreenshotSize(*args, options); !size) {
+        return propagate(size.error());
     }
     auto model = pathValue(*args, "model");
     if (!model) {
@@ -213,6 +303,25 @@ Expected<CommandLineOptions> parseCommandLine(int argc, const char* const* argv)
 
 std::string commandLineHelp() {
     return makeParser().helpText();
+}
+
+bool isSceneName(std::string_view value) noexcept {
+    if (value.find_first_of("/\\:") != std::string_view::npos) {
+        return false;
+    }
+    constexpr std::string_view kExtension = ".json";
+    return value.size() < kExtension.size() ||
+           !core::equalsIgnoreCaseAscii(value.substr(value.size() - kExtension.size()), kExtension);
+}
+
+std::filesystem::path resolveScenePath(const std::optional<std::string>& scene,
+                                       const std::filesystem::path& assetRoot) {
+    const std::string_view value = scene ? std::string_view(*scene) : kDefaultSceneName;
+    if (!isSceneName(value)) {
+        return core::pathFromUtf8(value);
+    }
+    return (assetRoot / core::pathFromUtf8(kSceneDirectory) / core::pathFromUtf8(std::string(value) + ".json"))
+        .lexically_normal();
 }
 
 } // namespace rv::app
