@@ -1,40 +1,42 @@
 #include <rv/app/app.hpp>
 
 #include <cstdio>
+#include <exception>
 
-#include <rv/core/arg_parser.hpp>
-#include <rv/core/log.hpp>
+#include <rv/app/app_host.hpp>
+#include <rv/app/command_line.hpp>
+#include <rv/app/exit_code.hpp>
+#include <rv/app/retroverse_app.hpp>
 #include <rv/core/main_thread.hpp>
 #include <rv/core/version.hpp>
 
 namespace rv::app {
 
 int run(int argc, char** argv) {
-    core::markMainThread();
-
-    core::ArgParser parser("retroverse", "Explorable 3D frontend for ES-DE game collections.");
-    parser.flag("version", "Print the version and exit.");
-    const auto args = parser.parse(argc, argv);
-    if (!args) {
-        std::fprintf(stderr, "%s\n\n%s", args.error().toString().c_str(), parser.helpText().c_str());
-        return 2;
+    try {
+        core::markMainThread();
+        const auto options = parseCommandLine(argc, argv);
+        if (!options) {
+            std::fprintf(stderr, "%s\n\n%s", options.error().toString().c_str(), commandLineHelp().c_str());
+            return toInt(ExitCode::InitializationFailed);
+        }
+        if (options->showHelp) {
+            std::printf("%s", commandLineHelp().c_str());
+            return toInt(ExitCode::Ok);
+        }
+        if (options->showVersion) {
+            std::printf("%s\n", core::versionBanner().c_str());
+            return toInt(ExitCode::Ok);
+        }
+        RetroverseApp app;
+        AppHost host(*options);
+        return host.run(app);
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "Unexpected failure: %s\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "Unexpected failure: unknown exception\n");
     }
-    if (args->has("help")) {
-        std::printf("%s", parser.helpText().c_str());
-        return 0;
-    }
-
-    const std::string banner = core::versionBanner();
-    std::printf("%s\n", banner.c_str());
-    if (args->has("version")) {
-        return 0;
-    }
-
-    core::LogConfig logConfig;
-    core::initLogging(logConfig);
-    spdlog::info("{} starting (renderer not implemented yet)", banner);
-    core::shutdownLogging();
-    return 0;
+    return toInt(ExitCode::RuntimeFailure);
 }
 
 } // namespace rv::app
