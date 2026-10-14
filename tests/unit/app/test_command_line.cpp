@@ -16,6 +16,12 @@ rv::Expected<CommandLineOptions> parse(const std::vector<std::string>& arguments
     return rv::app::parseCommandLine(arguments);
 }
 
+/// True when the help text has an entry for exactly `option` ("  --exit\n", "  --frames <n>\n"), so that an option
+/// is not reported as listed merely because a longer one starts with the same characters.
+bool helpListsOption(const std::string& help, const std::string& option) {
+    return help.find("  " + option + "\n") != std::string::npos || help.find("  " + option + " <") != std::string::npos;
+}
+
 } // namespace
 
 TEST_CASE("app/command_line: no arguments describe an interactive windowed run", "[app][command_line]") {
@@ -47,7 +53,7 @@ TEST_CASE("app/command_line: --smoke renders three frames and never shows dialog
     REQUIRE(options.has_value());
     CHECK(options->smoke);
     REQUIRE(options->frameLimit.has_value());
-    CHECK(*options->frameLimit == CommandLineOptions::kDefaultSmokeFrames);
+    CHECK(*options->frameLimit == CommandLineOptions::kDefaultFrameLimit);
     CHECK(*options->frameLimit == 3u);
     CHECK(options->noDialogs);
     CHECK_FALSE(options->hidden); // a smoke run still shows its window unless --hidden is given
@@ -61,13 +67,13 @@ TEST_CASE("app/command_line: --frames sets the limit of smoke and exit-after-fra
         CHECK(options->frameLimit == 5u);
         CHECK(options->glSelfTest);
     }
-    SECTION("exit after frames keeps dialogs enabled") {
+    SECTION("exit after frames never shows dialogs") {
         const auto options = parse({"--frames=120", "--exit-after-frames"});
         REQUIRE(options.has_value());
         CHECK(options->exitAfterFrames);
         CHECK_FALSE(options->smoke);
         CHECK(options->frameLimit == 120u);
-        CHECK_FALSE(options->noDialogs);
+        CHECK(options->noDialogs);
     }
     SECTION("--exit is an alias of --exit-after-frames") {
         const auto options = parse({"--exit", "--frames", "2"});
@@ -84,12 +90,6 @@ TEST_CASE("app/command_line: invalid frame limits are rejected with the option n
         CHECK(options.error().code == ErrorCode::InvalidArgument);
         CHECK(options.error().context == "--frames");
     }
-    SECTION("--exit-after-frames needs a count") {
-        const auto options = parse({"--exit-after-frames"});
-        REQUIRE_FALSE(options.has_value());
-        CHECK(options.error().code == ErrorCode::InvalidArgument);
-        CHECK(options.error().context == "--exit-after-frames");
-    }
     SECTION("zero and negative counts") {
         for (const char* count : {"0", "-2"}) {
             const auto options = parse({"--smoke", "--frames", count});
@@ -102,6 +102,45 @@ TEST_CASE("app/command_line: invalid frame limits are rejected with the option n
         const auto options = parse({"--smoke", "--frames", "three"});
         REQUIRE_FALSE(options.has_value());
         CHECK(options.error().code == ErrorCode::ParseError);
+    }
+}
+
+TEST_CASE("app/command_line: --exit-after-frames without --frames renders the default frame count",
+          "[app][command_line]") {
+    for (const char* exitOption : {"--exit-after-frames", "--exit"}) {
+        INFO(exitOption);
+        const auto options = parse({exitOption});
+        REQUIRE(options.has_value());
+        CHECK(options->exitAfterFrames);
+        CHECK_FALSE(options->smoke);
+        REQUIRE(options->frameLimit.has_value());
+        CHECK(*options->frameLimit == CommandLineOptions::kDefaultFrameLimit);
+    }
+    // The screenshot gate of later milestone steps passes --exit without --frames.
+    const auto gate = parse({"--scene", "m0_testroom", "--screenshot", "build/G01.png", "--exit"});
+    REQUIRE(gate.has_value());
+    CHECK(gate->exitAfterFrames);
+    CHECK(gate->frameLimit == CommandLineOptions::kDefaultFrameLimit);
+}
+
+TEST_CASE("app/command_line: --no-dialogs, and every frame-limited run, disable message boxes", "[app][command_line]") {
+    const auto interactive = parse({"--no-dialogs"});
+    REQUIRE(interactive.has_value());
+    CHECK(interactive->noDialogs);
+    CHECK_FALSE(interactive->smoke);
+    CHECK_FALSE(interactive->exitAfterFrames);
+    CHECK_FALSE(interactive->frameLimit.has_value());
+
+    // Runs that end on their own may be unattended: a modal box would keep them from exiting.
+    for (const auto& arguments : std::vector<std::vector<std::string>>{{"--smoke"},
+                                                                       {"--exit"},
+                                                                       {"--exit-after-frames", "--frames", "120"},
+                                                                       {"--hidden", "--exit-after-frames"},
+                                                                       {"--exit-after-frames", "--no-dialogs"}}) {
+        INFO(arguments.front() << " (" << arguments.size() << " argument(s))");
+        const auto options = parse(arguments);
+        REQUIRE(options.has_value());
+        CHECK(options->noDialogs);
     }
 }
 
@@ -236,7 +275,9 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
           "--exit-after-frames", "--exit", "--gl-selftest", "--asset-root", "--data-dir", "--portable", "--log-level",
           "--no-dialogs", "--scene", "--screenshot", "--model"}) {
         INFO(option);
-        CHECK(help.find(option) != std::string::npos);
+        CHECK(helpListsOption(help, option));
     }
+    CHECK_FALSE(helpListsOption(help, "--exi")); // a prefix of a listed option is not an entry
+    CHECK(help.find("  --exit\n      Same as --exit-after-frames.") != std::string::npos);
     CHECK(help.find("Exit codes") != std::string::npos);
 }

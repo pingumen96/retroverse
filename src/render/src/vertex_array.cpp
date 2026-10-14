@@ -51,8 +51,8 @@ Status VertexArray::setFloatAttribute(GLuint location, GLuint bindingIndex, int 
     }
     if (location >= kMaxAttributes || bindingIndex >= kMaxBindings) {
         return makeError(ErrorCode::OutOfRange,
-                         fmt::format("attribute location {} / binding {} exceeds the OpenGL 4.5 minimum of {}", location,
-                                     bindingIndex, kMaxAttributes));
+                         fmt::format("attribute location {} / binding {} exceeds the OpenGL 4.5 minimum of {}",
+                                     location, bindingIndex, kMaxAttributes));
     }
     if (componentCount < 1 || componentCount > 4) {
         return makeError(ErrorCode::InvalidArgument,

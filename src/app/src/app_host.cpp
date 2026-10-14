@@ -221,7 +221,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     logStartupBanner(*paths, m_options);
     warnAboutPendingFeatures(m_options);
 
-    // --- SDL, window, OpenGL context, GL device ------------------------------------------------------------------------
+    // --- SDL, window, OpenGL context, GL device ----------------------------------------------------------------------
     const platform::AppMetadata metadata{std::string(core::kProductName), std::string(core::kVersion),
                                          std::string(kAppIdentifier)};
     const auto sdl = platform::SdlPlatform::init(metadata);
@@ -244,7 +244,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
         return failInitialization(kOpenGlRequired, device.error());
     }
 
-    // --- Application logic --------------------------------------------------------------------------------------------
+    // --- Application logic -------------------------------------------------------------------------------------------
     core::FrameClock clock;
     AppContext context(m_options, *paths, *window, **device, clock);
     context.m_framebufferSize = window->drawableSize();
@@ -267,15 +267,21 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
 
     RunSummary summary;
     summary.smoke = m_options.smoke;
+    summary.frameLimit = m_options.frameLimit;
+    summary.framesRendered = context.m_frameIndex;
     summary.highSeverityGlMessages = (*device)->debugMessageCount(gl::DebugSeverity::High);
     summary.selfTest = selfTest;
     const ExitCode exitCode = exitCodeForCompletedRun(summary);
     if (m_options.smoke) {
         const std::uint64_t provoked = selfTest ? selfTest->highSeverityCaptured : 0;
+        const std::string glCheck =
+            (*device)->debugOutputEnabled()
+                ? fmt::format("{} high-severity GL debug message(s) ({} provoked by --gl-selftest)",
+                              summary.highSeverityGlMessages, provoked)
+                : std::string("OpenGL errors not checked (GL debug output is off in this build)");
         spdlog::log(exitCode == ExitCode::Ok ? spdlog::level::info : spdlog::level::err,
-                    "Smoke test {}: {} frame(s), {} high-severity GL debug message(s) ({} provoked by --gl-selftest)",
-                    exitCode == ExitCode::Ok ? "passed" : "FAILED", context.m_frameIndex,
-                    summary.highSeverityGlMessages, provoked);
+                    "Smoke test {}: {} of {} frame(s) rendered, {}", exitCode == ExitCode::Ok ? "passed" : "FAILED",
+                    summary.framesRendered, summary.frameLimit.value_or(0), glCheck);
     }
     return exitCode;
 }
@@ -293,10 +299,12 @@ void AppHost::reportUnexpectedFailure(std::string_view what) const noexcept {
         spdlog::critical("Unexpected failure: {}", what);
         if (!m_options.noDialogs) {
             const std::filesystem::path logFile = core::activeLogFile();
+            const std::string logLocation =
+                logFile.empty() ? std::string("(file logging disabled)") : core::pathToUtf8(logFile);
             platform::showErrorDialog(
                 kDialogTitle,
                 fmt::format("Retroverse stopped because of an unexpected error:\n\n{}\n\nDetails are in the log: {}",
-                            what, logFile.empty() ? std::string("(file logging disabled)") : core::pathToUtf8(logFile)));
+                            what, logLocation));
         }
     } catch (...) {
         // Reporting must not turn a failure into a crash.
@@ -318,8 +326,10 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
         if (context.m_quitRequested) {
             break;
         }
-        if (window.isMinimized()) {
-            // Nothing is visible: sleep until something happens instead of spinning on an unthrottled swap.
+        // Nothing is visible while minimized: an interactive run sleeps until something happens instead of spinning on
+        // an unthrottled swap. A frame-limited run keeps rendering (presenting to a minimized window is harmless), so
+        // that it always reaches its limit and exits.
+        if (!m_options.frameLimit && window.isMinimized()) {
             events.waitForEvents(kMinimizedWait);
             continue;
         }

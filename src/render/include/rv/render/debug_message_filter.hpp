@@ -45,7 +45,7 @@ class DebugMessageFilter {
 public:
     static constexpr std::uint32_t kDefaultRepeatLimit = 3;
 
-    /// Occurrences of one message beyond the repeat limit.
+    /// Occurrences of one message beyond the repeat limit: the StartSuppressing one plus every Suppress.
     struct SuppressedMessages {
         DebugMessageKey key;
         std::uint64_t count = 0;

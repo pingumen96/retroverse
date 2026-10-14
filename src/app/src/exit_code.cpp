@@ -24,6 +24,9 @@ ExitCode exitCodeForCompletedRun(const RunSummary& summary) noexcept {
     if (!summary.smoke) {
         return ExitCode::Ok;
     }
+    if (summary.frameLimit && summary.framesRendered < *summary.frameLimit) {
+        return ExitCode::SmokeCheckFailed;
+    }
     std::uint64_t provoked = 0;
     if (summary.selfTest) {
         if (!summary.selfTest->passed()) {

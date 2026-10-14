@@ -419,9 +419,9 @@ void GLDevice::handleDebugMessage(GLenum source, GLenum type, GLuint id, GLenum 
                     id, trimMessage(message));
         return;
     case DebugMessageAction::StartSuppressing:
-        spdlog::log(logLevelFor(level), "GL {} {} [{}] #{} repeated more than {} times, further occurrences suppressed: {}",
-                    sourceName(source), typeName(type), toString(level), id, m_debugFilter.repeatLimit(),
-                    trimMessage(message));
+        spdlog::log(
+            logLevelFor(level), "GL {} {} [{}] #{} repeated more than {} times, further occurrences suppressed: {}",
+            sourceName(source), typeName(type), toString(level), id, m_debugFilter.repeatLimit(), trimMessage(message));
         return;
     }
 }
@@ -432,9 +432,10 @@ void GLDevice::logDebugSummary() const {
     const std::uint64_t lowOrMore = m_debugFilter.count(DebugSeverity::Low);
     spdlog::info("GL debug output summary: {} high, {} medium, {} low severity message(s)", high, mediumOrMore - high,
                  lowOrMore - mediumOrMore);
+    // entry.count includes the occurrence that was logged with the "repeated more than N times" notice.
     for (const DebugMessageFilter::SuppressedMessages& entry : m_debugFilter.suppressed()) {
-        spdlog::info("GL {} {} #{}: {} further occurrence(s) suppressed", sourceName(entry.key.source),
-                     typeName(entry.key.type), entry.key.id, entry.count);
+        spdlog::info("GL {} {} #{}: {} occurrence(s) beyond the repeat limit of {}", sourceName(entry.key.source),
+                     typeName(entry.key.type), entry.key.id, entry.count, m_debugFilter.repeatLimit());
     }
 }
 

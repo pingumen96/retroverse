@@ -26,13 +26,14 @@ public:
     /// Allocates `sizeBytes` (> 0) of storage with undefined contents. `storageFlags` are glNamedBufferStorage flags
     /// (0 for static data, GL_DYNAMIC_STORAGE_BIT to allow update(), mapping bits...). `debugName` labels the object
     /// for debuggers and error messages.
-    [[nodiscard]] static Expected<Buffer> create(std::size_t sizeBytes, GLbitfield storageFlags, std::string_view debugName);
+    [[nodiscard]] static Expected<Buffer> create(std::size_t sizeBytes, GLbitfield storageFlags,
+                                                 std::string_view debugName);
     /// Allocates storage sized and initialized from `initialData` (non-empty), e.g. std::as_bytes(std::span(vertices)).
     [[nodiscard]] static Expected<Buffer> create(std::span<const std::byte> initialData, GLbitfield storageFlags,
                                                  std::string_view debugName);
 
-    /// Copies `bytes` to `offsetBytes` (glNamedBufferSubData). Fails, without touching GL, unless the buffer was created
-    /// with GL_DYNAMIC_STORAGE_BIT and the range lies inside it. An empty update is a no-op.
+    /// Copies `bytes` to `offsetBytes` (glNamedBufferSubData). Fails, without touching GL, unless the buffer was
+    /// created with GL_DYNAMIC_STORAGE_BIT and the range lies inside it. An empty update is a no-op.
     [[nodiscard]] Status update(std::size_t offsetBytes, std::span<const std::byte> bytes);
 
     [[nodiscard]] GLuint id() const noexcept { return m_id; }

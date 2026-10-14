@@ -17,7 +17,7 @@ constexpr std::string_view kDescription =
     "Explorable 3D frontend for ES-DE game collections.\n"
     "\n"
     "Keys: Esc quits, Alt+Enter toggles borderless fullscreen.\n"
-    "Exit codes: 0 success; 1 --smoke run with unexpected OpenGL errors or a failed --gl-selftest;\n"
+    "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
     "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5); 3 unexpected failure.";
 
 core::ArgParser makeParser() {
@@ -29,9 +29,11 @@ core::ArgParser makeParser() {
         .flag("fullscreen", "Start in borderless fullscreen.")
         .flag("hidden", "Never show the window; only with --smoke or --exit-after-frames.")
         .flag("no-vsync", "Disable vertical synchronization.")
-        .flag("smoke", "Render a few frames (see --frames) and exit; implies --no-dialogs; High-severity OpenGL "
-                       "debug messages make the exit code 1.")
-        .option("frames", "n", "Frames to render before exiting with --smoke (default 3) or --exit-after-frames.")
+        .flag("smoke", "Render a few frames (see --frames) and exit. The exit code is 1 when the run stops early or, "
+                       "in builds with GL debug output, when High-severity OpenGL debug messages occur.")
+        .option("frames", "n",
+                fmt::format("Frames to render before exiting with --smoke or --exit-after-frames (default {}).",
+                            CommandLineOptions::kDefaultFrameLimit))
         .flag("exit-after-frames", "Exit after the number of frames given by --frames.")
         .flag("exit", "Same as --exit-after-frames.")
         .flag("gl-selftest", "Provoke one GL_INVALID_ENUM after initialization to prove that OpenGL errors reach "
@@ -40,7 +42,8 @@ core::ArgParser makeParser() {
         .option("data-dir", "dir", "User data directory: config, cache and logs.")
         .flag("portable", "Keep user data next to the executable (RetroverseData).")
         .option("log-level", "level", "One of trace, debug, info, warn, error.", "info")
-        .flag("no-dialogs", "Never show message boxes; failures are only logged.")
+        .flag("no-dialogs", "Never show message boxes; failures are only logged. Implied by --smoke and "
+                            "--exit-after-frames.")
         .option("scene", "name", "Scene to load (not implemented yet).")
         .option("screenshot", "png", "Write a screenshot after the last frame (not implemented yet).")
         .option("model", "file", "glTF model to display (not implemented yet).");
@@ -115,10 +118,8 @@ Status applyRunLength(const core::ParsedArgs& args, CommandLineOptions& options)
             return makeError(ErrorCode::OutOfRange, "must be at least 1", fmt::format("--frames={}", *frames));
         }
         options.frameLimit = static_cast<std::uint32_t>(*frames);
-    } else if (options.smoke) {
-        options.frameLimit = CommandLineOptions::kDefaultSmokeFrames;
-    } else if (options.exitAfterFrames) {
-        return makeError(ErrorCode::InvalidArgument, "requires --frames <n>", "--exit-after-frames");
+    } else if (options.smoke || options.exitAfterFrames) {
+        options.frameLimit = CommandLineOptions::kDefaultFrameLimit;
     }
     // An invisible window cannot be closed by the user: such a run must end on its own.
     if (options.hidden && !options.frameLimit) {
@@ -181,7 +182,8 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
         return propagate(level.error());
     }
     options.logLevel = *level;
-    options.noDialogs = args->has("no-dialogs") || options.smoke;
+    // A frame-limited run may be unattended (scripts, agents): a modal message box would keep it from ever exiting.
+    options.noDialogs = args->has("no-dialogs") || options.frameLimit.has_value();
 
     auto scene = nonEmptyValue(*args, "scene");
     if (!scene) {

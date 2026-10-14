@@ -20,7 +20,8 @@ struct CommandLineOptions {
     static constexpr int kDefaultWindowHeight = 720;
     static constexpr int kMinWindowExtent = 64;
     static constexpr int kMaxWindowExtent = 16384;
-    static constexpr std::uint32_t kDefaultSmokeFrames = 3;
+    /// Frames rendered by --smoke and --exit-after-frames when --frames is not given.
+    static constexpr std::uint32_t kDefaultFrameLimit = 3;
 
     bool showHelp = false;    ///< --help / -h
     bool showVersion = false; ///< --version
@@ -31,9 +32,10 @@ struct CommandLineOptions {
     bool hidden = false;                     ///< --hidden: never show the window (frame-limited runs only)
     bool vsync = true;                       ///< cleared by --no-vsync
 
-    bool smoke = false;           ///< --smoke: render frameLimit frames, exit; GL errors fail the run
+    bool smoke = false;           ///< --smoke: render frameLimit frames, exit; GL errors or an early stop fail the run
     bool exitAfterFrames = false; ///< --exit-after-frames (alias --exit): stop after frameLimit frames
-    /// Frames to render before exiting: --frames, or 3 with --smoke. Empty: run until the user quits.
+    /// Frames to render before exiting: --frames, or kDefaultFrameLimit with --smoke / --exit-after-frames. Empty: run
+    /// until the user quits.
     std::optional<std::uint32_t> frameLimit;
     bool glSelfTest = false; ///< --gl-selftest: provoke one GL_INVALID_ENUM after initialization
 
@@ -42,7 +44,9 @@ struct CommandLineOptions {
     bool portable = false;                          ///< --portable
 
     spdlog::level::level_enum logLevel = spdlog::level::info; ///< --log-level
-    bool noDialogs = false; ///< --no-dialogs, implied by --smoke: report failures in the log only
+    /// --no-dialogs: report failures in the log only. Implied by every frame-limited run (--smoke,
+    /// --exit-after-frames), which may be unattended: a modal message box would keep it from ever exiting.
+    bool noDialogs = false;
 
     // Accepted and kept for the steps that implement them; the host logs that they are not implemented yet.
     std::optional<std::string> scene;                ///< --scene <name>
@@ -53,8 +57,8 @@ struct CommandLineOptions {
 /// Parses and validates arguments (UTF-8, program name excluded). Errors name the offending option:
 ///  - unknown options, missing values, malformed numbers;
 ///  - --width / --height outside [64, 16384]; --frames below 1;
-///  - --frames without --smoke or --exit-after-frames, --exit-after-frames without --frames, --hidden without a
-///    frame limit (nobody could close the window);
+///  - --frames without --smoke or --exit-after-frames, --hidden without a frame limit (nobody could close the
+///    window);
 ///  - --log-level other than trace, debug, info, warn or error; empty paths or names.
 /// With --help or --version the remaining options are not validated.
 [[nodiscard]] Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> arguments);

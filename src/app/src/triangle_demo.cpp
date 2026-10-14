@@ -92,7 +92,8 @@ Expected<std::unique_ptr<TriangleDemo>> TriangleDemo::create(bool encodeSrgbInSh
     }
     Status layout = vertexArray->setVertexBuffer(kVertexBinding, *buffer, 0, sizeof(TriangleVertex));
     if (layout) {
-        layout = vertexArray->setFloatAttribute(kPositionLocation, kVertexBinding, 2, offsetof(TriangleVertex, position));
+        layout =
+            vertexArray->setFloatAttribute(kPositionLocation, kVertexBinding, 2, offsetof(TriangleVertex, position));
     }
     if (layout) {
         layout = vertexArray->setFloatAttribute(kColorLocation, kVertexBinding, 3, offsetof(TriangleVertex, color));

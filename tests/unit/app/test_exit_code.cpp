@@ -20,9 +20,12 @@ SelfTestOutcome passingSelfTest(std::uint64_t highSeverity = 1) {
     return outcome;
 }
 
+/// A smoke run that rendered all its frames.
 RunSummary smokeRun(std::uint64_t highSeverityMessages) {
     RunSummary summary;
     summary.smoke = true;
+    summary.frameLimit = 3;
+    summary.framesRendered = 3;
     summary.highSeverityGlMessages = highSeverityMessages;
     return summary;
 }
@@ -50,6 +53,32 @@ TEST_CASE("app/exit_code: runs that are not smoke tests only log GL messages", "
     failed.errorFlagRaised = false;
     summary.selfTest = failed;
     CHECK(exitCodeForCompletedRun(summary) == ExitCode::Ok);
+}
+
+TEST_CASE("app/exit_code: a smoke run that stops before its frame limit fails", "[app][exit_code]") {
+    RunSummary summary = smokeRun(0);
+    summary.frameLimit = 5;
+    summary.framesRendered = 5;
+    CHECK(exitCodeForCompletedRun(summary) == ExitCode::Ok);
+
+    // Escape, a window close or Ctrl+C ended the run early: it proves nothing.
+    summary.framesRendered = 4;
+    CHECK(exitCodeForCompletedRun(summary) == ExitCode::SmokeCheckFailed);
+    summary.framesRendered = 0;
+    CHECK(exitCodeForCompletedRun(summary) == ExitCode::SmokeCheckFailed);
+
+    // A passing self-test that excuses every GL message does not excuse the missing frames.
+    summary.framesRendered = 1;
+    summary.highSeverityGlMessages = 1;
+    summary.selfTest = passingSelfTest(1);
+    CHECK(exitCodeForCompletedRun(summary) == ExitCode::SmokeCheckFailed);
+
+    // The user may end an --exit-after-frames run at any time.
+    RunSummary exitAfterFrames;
+    exitAfterFrames.smoke = false;
+    exitAfterFrames.frameLimit = 120;
+    exitAfterFrames.framesRendered = 10;
+    CHECK(exitCodeForCompletedRun(exitAfterFrames) == ExitCode::Ok);
 }
 
 TEST_CASE("app/exit_code: a smoke run fails on any High-severity GL message", "[app][exit_code]") {

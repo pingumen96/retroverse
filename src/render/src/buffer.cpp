@@ -69,7 +69,8 @@ Expected<Buffer> Buffer::allocate(std::size_t sizeBytes, const void* data, GLbit
     GLint immutable = GL_FALSE;
     glGetNamedBufferParameteriv(id, GL_BUFFER_IMMUTABLE_STORAGE, &immutable);
     if (immutable == GL_FALSE) {
-        return makeError(ErrorCode::GraphicsError, fmt::format("could not allocate {} bytes of buffer storage", sizeBytes),
+        return makeError(ErrorCode::GraphicsError,
+                         fmt::format("could not allocate {} bytes of buffer storage", sizeBytes),
                          std::string(debugName));
     }
     detail::setObjectLabel(GL_BUFFER, id, debugName);
@@ -85,8 +86,8 @@ Status Buffer::update(std::size_t offsetBytes, std::span<const std::byte> bytes)
     }
     if (offsetBytes > m_size || bytes.size() > m_size - offsetBytes) {
         return makeError(ErrorCode::OutOfRange,
-                         fmt::format("update of {} bytes at offset {} exceeds the buffer size of {} bytes", bytes.size(),
-                                     offsetBytes, m_size),
+                         fmt::format("update of {} bytes at offset {} exceeds the buffer size of {} bytes",
+                                     bytes.size(), offsetBytes, m_size),
                          m_debugName);
     }
     if (bytes.empty()) {
