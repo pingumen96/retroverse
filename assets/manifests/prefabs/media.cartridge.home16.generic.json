@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "media.cartridge.home16.generic",
+  "assetType": "physical_media",
+  "category": "cartridge",
+  "role": "collection_item",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cartridge",
+    "params": {},
+    "scaleMeters": [0.125, 0.085, 0.02],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "label": "Label"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["media", "cartridge", "16bit", "home_console", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

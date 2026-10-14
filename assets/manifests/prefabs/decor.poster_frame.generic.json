@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "decor.poster_frame.generic",
+  "assetType": "decor",
+  "category": "poster_frame",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "poster_frame",
+    "params": {},
+    "scaleMeters": [0.5, 0.7, 0.02],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "picture": "Picture"
+    },
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "poster", "frame", "wall", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

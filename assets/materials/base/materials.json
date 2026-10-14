@@ -1,0 +1,63 @@
+// Shared material presets (style.md section 3.2), loaded by rv::assets::MaterialLibrary.
+// Colors are sRGB hex art-direction starting points (style.md section 3), converted to linear on load.
+// Physical plausibility: dielectrics use metallic 0 and roughness 0.3-0.95; metals use metallic 0.9-1.0 and their
+// base color is the specular tint. Unlit materials are rendered as base color (times texture) scaled by
+// emissiveStrength (see rv/assets/material_library.hpp).
+{
+  "schemaVersion": 1,
+  "materials": {
+    "MAT_Wood_Walnut": { "baseColor": "#493024", "metallic": 0.0, "roughness": 0.62 },
+    "MAT_Wood_Oak": { "baseColor": "#76513A", "metallic": 0.0, "roughness": 0.58 },
+    "MAT_Wood_Varnished": { "baseColor": "#5B3A26", "metallic": 0.0, "roughness": 0.35 },
+
+    "MAT_Concrete_Warm": { "baseColor": "#857B70", "metallic": 0.0, "roughness": 0.92 },
+    "MAT_Wall_Painted": { "baseColor": "#383735", "metallic": 0.0, "roughness": 0.9 },
+    "MAT_Plaster_Used": { "baseColor": "#9A9081", "metallic": 0.0, "roughness": 0.95 },
+
+    // Painted or powder-coated structural steel (railings, uprights, cabinets): the coat is a dielectric, so the
+    // art-directed graphite stays visible. A bare metal this dark would reflect less than any dielectric.
+    "MAT_Metal_Graphite": { "baseColor": "#252A2E", "metallic": 0.0, "roughness": 0.45 },
+    "MAT_Metal_Brushed": { "baseColor": "#B9BBBE", "metallic": 1.0, "roughness": 0.35 },
+
+    "MAT_Plastic_Black": { "baseColor": "#1C1C1E", "metallic": 0.0, "roughness": 0.42 },
+    "MAT_Plastic_Gray": { "baseColor": "#9A9A96", "metallic": 0.0, "roughness": 0.5 },
+    "MAT_Plastic_AgedIvory": { "baseColor": "#D6CBAE", "metallic": 0.0, "roughness": 0.48 },
+    // Desaturated purple accent for console buttons.
+    "MAT_Plastic_Accent": { "baseColor": "#7D6E9E", "metallic": 0.0, "roughness": 0.4 },
+
+    // Display-case glass: thin, blended, visible from both sides.
+    "MAT_Glass_Display": {
+      "baseColor": "#DCE6EA",
+      "alpha": 0.18,
+      "alphaMode": "blend",
+      "doubleSided": true,
+      "metallic": 0.0,
+      "roughness": 0.3
+    },
+    // Face of a powered-off picture tube (anti-glare coated glass).
+    "MAT_Glass_CRT": { "baseColor": "#2A302E", "metallic": 0.0, "roughness": 0.3 },
+
+    "MAT_Fabric_Sofa": { "baseColor": "#683D42", "metallic": 0.0, "roughness": 0.9 },
+    "MAT_Carpet_Ornate": { "baseColor": "#6B3036", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Cardboard_Box": { "baseColor": "#A3825E", "metallic": 0.0, "roughness": 0.85 },
+    "MAT_Paper_Print": { "baseColor": "#EFEBE2", "metallic": 0.0, "roughness": 0.8 },
+
+    "MAT_Neon_Diffuser": { "shading": "unlit", "baseColor": "#B34DCE", "emissiveStrength": 1.5 },
+    // In-world screens: multiplied by the video or test pattern texture.
+    "MAT_Screen_Emissive": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 2.0 },
+    // Fabric shade lit from the inside by a warm tungsten bulb; seen from inside and outside.
+    "MAT_Lamp_Shade": {
+      "baseColor": "#E8D7B9",
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "emissive": "#FFC88A",
+      "emissiveStrength": 1.0,
+      "doubleSided": true
+    },
+    // Printed label, meant to be multiplied by a cover texture.
+    "MAT_Label_Print": { "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 0.6 },
+
+    // Returned for unknown material names (style.md section 21).
+    "MAT_Fallback_Magenta": { "shading": "unlit", "baseColor": "#FF00FF" }
+  }
+}

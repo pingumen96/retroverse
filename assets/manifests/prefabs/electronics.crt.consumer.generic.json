@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "electronics.crt.consumer.generic",
+  "assetType": "electronic_screen",
+  "category": "crt",
+  "role": "hero",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "crt",
+    "params": {},
+    "scaleMeters": [0.71, 0.61, 0.56],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "screen": "ScreenSurface",
+      "inspect": "ScreenLook",
+      "stand": "TV_Stand",
+      "power": "PowerButton"
+    },
+    "collision": "box",
+    "videoSurface": {
+      "aspectRatio": "4:3",
+      "meshNode": "ScreenSurface"
+    }
+  },
+  "tags": ["electronics", "crt", "tv", "4_3", "1990s", "console_room", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

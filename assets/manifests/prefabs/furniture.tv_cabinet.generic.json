@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "furniture.tv_cabinet.generic",
+  "assetType": "furniture",
+  "category": "tv_cabinet",
+  "role": "support",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "tv_cabinet",
+    "params": {},
+    "scaleMeters": [1.2, 0.55, 0.5],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "top": "Top",
+      "console": "ConsoleShelf"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "tv_cabinet", "console_room", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

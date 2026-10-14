@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "architecture.room_shell.generic",
+  "assetType": "architecture",
+  "category": "room_shell",
+  "role": "structure",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "room_shell",
+    "params": {},
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "walls",
+    "videoSurface": null
+  },
+  "tags": ["architecture", "room", "walls", "floor", "ceiling", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

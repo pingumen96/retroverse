@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "decor.rug.generic",
+  "assetType": "decor",
+  "category": "rug",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "rug",
+    "params": {},
+    "scaleMeters": [2.4, 0.012, 1.6],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "rug", "fabric", "floor", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}
