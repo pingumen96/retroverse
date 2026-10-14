@@ -31,6 +31,8 @@ constexpr float kFrontChamfer = 0.003f;
 constexpr float kReveal = 0.003f;
 constexpr float kMinDrawerHeight = 0.05f;
 constexpr float kMinCarcassHeight = 0.15f;
+/// Shorter legs are not built: the carcass rests on the floor instead.
+constexpr float kMinLegHeight = 1e-4f;
 constexpr float kLegInset = 0.045f;
 constexpr float kBar = 0.01f; ///< handle bar section
 
@@ -50,7 +52,7 @@ struct CabinetLayout {
 
 [[nodiscard]] CabinetLayout layoutOf(const TvCabinetParams& p) {
     CabinetLayout l;
-    l.carcassBottom = p.legHeight;
+    l.carcassBottom = p.legHeight > kMinLegHeight ? p.legHeight : 0.0f;
     l.carcassTop = p.height - kTopThickness;
     l.carcassFront = 0.5f * p.depth - kHandleRoom;
     l.carcassBack = -0.5f * p.depth;
@@ -174,11 +176,11 @@ ProceduralPrefab assemble(const TvCabinetParams& p) {
     addHandle(rightX0 + 0.04f, 0.5f * (y0 + y1), doorHandle, true);
 
     // Tapered round legs under the carcass corners.
-    if (p.legHeight > 1e-4f) {
+    if (l.carcassBottom > 0.0f) {
         for (const float x : {-l.sideX + kLegInset, l.sideX - kLegInset}) {
             for (const float z : {l.carcassBack + kLegInset, l.carcassFront - kLegInset}) {
-                metal.frustum(0.011f, 0.016f, p.legHeight, 16, false, false,
-                              translation(glm::vec3(x, 0.5f * p.legHeight, z)));
+                metal.frustum(0.011f, 0.016f, l.carcassBottom, 16, false, false,
+                              translation(glm::vec3(x, 0.5f * l.carcassBottom, z)));
             }
         }
     }

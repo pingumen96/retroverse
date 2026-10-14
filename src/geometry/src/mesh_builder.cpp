@@ -80,7 +80,8 @@ struct Affine {
 }
 
 /// Appends the complete, in-range triangles of `source` (and its vertices) placed by `affine`. Mirroring
-/// transforms swap two indices per triangle so front faces stay counter-clockwise.
+/// transforms swap two indices per triangle so front faces stay counter-clockwise. Nothing is appended when a
+/// placed position or a uv is not finite (non-finite source data or a placement beyond the float range).
 void appendMesh(std::vector<Vertex>& vertices, std::vector<std::uint32_t>& indices, const MeshData& source,
                 const Affine& affine) {
     const std::size_t sourceVertexCount = source.vertices.size();
@@ -111,7 +112,13 @@ void appendMesh(std::vector<Vertex>& vertices, std::vector<std::uint32_t>& indic
     }
     vertices.reserve(base + sourceVertexCount);
     for (const Vertex& v : source.vertices) {
-        vertices.push_back(affine.vertex(v));
+        const Vertex placed = affine.vertex(v);
+        if (!core::isFinite(placed.position) || !isFinite(placed.uv0)) {
+            vertices.resize(base);
+            indices.resize(firstIndex);
+            return;
+        }
+        vertices.push_back(placed);
     }
 }
 

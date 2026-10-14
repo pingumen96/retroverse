@@ -29,7 +29,8 @@ struct PrefabPart {
 /// Conventions (ADR-0002): meters, +Y up, the front faces +Z. Pivot "floor": origin at floor level (bounds.min.y
 /// = 0) in the middle of the footprint; pivot "center": origin at the bounding-box center. Socket transforms are
 /// rigid (rotation + translation) relative to the prefab root; Socket::bounds is expressed in the socket's own
-/// frame. Parts appear in the role order documented for each kind, and only when they contain geometry.
+/// frame; mesh-backed sockets (ScreenSurface) set Socket::meshIndex to the index of their mesh in `parts`. Parts
+/// appear in the role order documented for each kind, and only when they contain geometry.
 struct ProceduralPrefab {
     std::string kind;
     std::vector<PrefabPart> parts;
@@ -95,7 +96,9 @@ struct ShelfParams {
     int levels = 5;                ///< [1, 100]
     float boardThickness = 0.025f; ///< [0.005, 0.1]
     bool back = true;
-    float plinthHeight = 0.08f; ///< [0, 0.5]
+    /// [0, 0.5] and below height - 2 * boardThickness, so that one compartment fits (an excess is reported on
+    /// "plinthHeight", or on "boardThickness" without a plinth).
+    float plinthHeight = 0.08f;
     /// Item standing upright, front facing +Z: (w, h, d), each [0.005, 2]. Every level must hold at least one item:
     /// an item too tall for the compartments is reported on "levels" (on "slotSize" when even a single level
     /// could not hold it), a too wide or too deep item on "slotSize".
@@ -107,8 +110,8 @@ struct ShelfParams {
 /// "cartridge", pivot center, label on the front (+Z); bounds = size centered on the origin. A chamfered shell
 /// with a recessed label pocket and optional grip grooves below the label (generic family, no brand shapes).
 /// Roles: "plastic_shell", "label" (quad over the label area, uv (0, 0) top-left, `labelInset` below the front
-/// and 0.5 mm above the pocket floor). Sockets: "Label" (Other) at the label center facing +Z, bounds = label
-/// rectangle [-lw/2, -lh/2, 0] .. [lw/2, lh/2, 0].
+/// and 0.5 mm above the pocket floor, so the pocket is labelInset + 0.5 mm deep). Sockets: "Label" (Other) at the
+/// label center facing +Z, bounds = label rectangle [-lw/2, -lh/2, 0] .. [lw/2, lh/2, 0].
 struct CartridgeParams {
     glm::vec3 size{0.125f, 0.085f, 0.020f}; ///< (w, h, d): w, h in [0.02, 0.5], d in [0.004, 0.2]
     float chamfer = 0.002f;                 ///< [0, min(size) / 4]
@@ -125,17 +128,19 @@ struct CartridgeParams {
 /// screenAspect rectangle inside the bezel, uv 0..1 with (0, 0) top-left), "plastic_dark" (control strip,
 /// buttons, vents).
 /// Sockets: "ScreenSurface" (ScreenSurface) at the center of the screen rim plane facing +Z, bounds = screen
-/// rectangle (z from 0 to the bulge); "TV_Stand" (Anchor) at the origin; "ScreenLook" (Anchor) at
-/// (0, screen center y, depth/2 + 0.9) looking at the screen along its local -Z (glTF camera convention);
-/// "PowerButton" (Other) at the front center of the power button.
+/// rectangle (z from 0 to the bulge), meshIndex = index of the "screen" part; "TV_Stand" (Anchor) at the origin;
+/// "ScreenLook" (Anchor) at (0, screen center y, depth/2 + 0.9) looking at the screen along its local -Z (glTF
+/// camera convention); "PowerButton" (Other) at the front center of the power button.
 struct CrtParams {
     float width = 0.71f;             ///< [0.2, 2]
     float height = 0.61f;            ///< [0.2, 2]
     float depth = 0.56f;             ///< [0.15, 2]
     float screenAspect = 1.3333333f; ///< width / height, [0.5, 3]
     float bezel = 0.06f;             ///< minimum frame width around the screen, [0.01, min(width, height) / 4]
-    float screenInset = 0.012f;      ///< screen rim depth behind the bezel front, [0, 0.05]
-    float backTaper = 0.35f;         ///< rear face = (1 - backTaper) x the front section, [0, 0.8]
+    /// Screen rim depth behind the bezel front, [0, 0.05] and at most 0.38 * depth - 0.028: the bezel (8 mm
+    /// deeper than the inset, at least 2 cm) and 2 cm of front cabinet fill the front 38% of the depth.
+    float screenInset = 0.012f;
+    float backTaper = 0.35f; ///< rear face = (1 - backTaper) x the front section, [0, 0.8]
 };
 
 /// "tv_cabinet", pivot floor, front +Z; bounds = width x height x depth (handles included). A low media console on
@@ -145,11 +150,13 @@ struct CrtParams {
 /// legs). Sockets: "Top" (Anchor) at the center of the top surface; "ConsoleShelf" (Anchor) on the floor of the
 /// open compartment, centered, bounds = free compartment volume [-w/2, 0, -d/2] .. [w/2, h, d/2].
 struct TvCabinetParams {
-    float width = 1.2f;      ///< [0.4, 4]
-    float height = 0.55f;    ///< [0.2, 2]
-    float depth = 0.5f;      ///< [0.2, 1.5]
-    int drawers = 2;         ///< [0, 8]; each drawer front at least 5 cm tall
-    float legHeight = 0.08f; ///< [0, 0.5]; leaves a carcass of at least 15 cm
+    float width = 1.2f;   ///< [0.4, 4]
+    float height = 0.55f; ///< [0.2, 2]
+    float depth = 0.5f;   ///< [0.2, 1.5]
+    int drawers = 2;      ///< [0, 8]; each drawer front at least 5 cm tall
+    /// [0, 0.5]; leaves a carcass of at least 15 cm. Up to 0.1 mm no legs are built and the carcass rests on the
+    /// floor.
+    float legHeight = 0.08f;
 };
 
 /// "console_cartridge", pivot floor, front +Z; bounds = width x height x depth. Generic 16-bit cartridge console

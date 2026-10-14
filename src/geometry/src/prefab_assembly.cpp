@@ -1,5 +1,7 @@
 #include "prefab_assembly.hpp"
 
+#include <cstddef>
+#include <cstdint>
 #include <format>
 
 namespace rv::geometry::detail {
@@ -19,7 +21,8 @@ MeshBuilder& PrefabAssembler::part(std::string_view role) {
     return m_parts.emplace_back(std::string(role), MeshBuilder{}).second;
 }
 
-void PrefabAssembler::addSocket(std::string id, SocketKind kind, const glm::mat4& transform, const core::Aabb& bounds) {
+void PrefabAssembler::addSocket(std::string id, SocketKind kind, const glm::mat4& transform, const core::Aabb& bounds,
+                                std::string_view meshRole) {
     Socket socket;
     socket.nodeName = kind == SocketKind::Anchor ? "Anchor_" + id : id;
     socket.id = std::move(id);
@@ -27,6 +30,7 @@ void PrefabAssembler::addSocket(std::string id, SocketKind kind, const glm::mat4
     socket.transform = transform;
     socket.bounds = bounds;
     m_sockets.push_back(std::move(socket));
+    m_socketMeshRoles.emplace_back(meshRole);
 }
 
 ProceduralPrefab PrefabAssembler::finish() && {
@@ -41,6 +45,16 @@ ProceduralPrefab PrefabAssembler::finish() && {
         part.materialRole = role;
         prefab.bounds.expand(part.mesh.bounds);
         prefab.parts.push_back(std::move(part));
+    }
+    // Mesh indices refer to the final part list, after empty parts were dropped.
+    for (std::size_t i = 0; i < m_sockets.size(); ++i) {
+        const std::string& meshRole = m_socketMeshRoles[i];
+        for (std::size_t index = 0; !meshRole.empty() && index < prefab.parts.size(); ++index) {
+            if (prefab.parts[index].materialRole == meshRole) {
+                m_sockets[i].meshIndex = static_cast<std::uint32_t>(index);
+                break;
+            }
+        }
     }
     prefab.sockets = std::move(m_sockets);
     return prefab;

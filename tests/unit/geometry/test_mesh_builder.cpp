@@ -623,4 +623,31 @@ TEST_CASE("geometry/mesh_builder: invalid input is skipped without NaN", "[geome
     MeshBuilder dense;
     dense.cylinder(1.0f, 1.0f, 1000000, false);
     CHECK(std::move(dense).build("dense").vertices.size() == 2 * (1024 + 1));
+
+    // Appended meshes are checked once placed: a non-finite position or uv, even on an unused vertex, or a
+    // placement beyond the float range skips the whole mesh; a non-finite normal is replaced.
+    const glm::vec3 n(0.0f, 0.0f, 1.0f);
+    MeshData triangle;
+    triangle.vertices = {Vertex{{0.0f, 0.0f, 0.0f}, n, {}, {0.0f, 1.0f}},
+                         Vertex{{1.0f, 0.0f, 0.0f}, n, {}, {1.0f, 1.0f}},
+                         Vertex{{0.0f, 1.0f, 0.0f}, n, {}, {0.0f, 0.0f}}};
+    triangle.indices = {0, 1, 2};
+    MeshData nanPosition = triangle;
+    nanPosition.vertices[1].position.x = nan;
+    MeshData infUv = triangle;
+    infUv.vertices[2].uv0.y = inf;
+    MeshData unusedNan = triangle;
+    unusedNan.vertices.push_back(Vertex{{nan, 0.0f, 0.0f}, n, {}, {0.0f, 0.0f}});
+    MeshData far = triangle;
+    far.vertices[1].position.x = 1e30f;
+    MeshBuilder appended;
+    appended.append(nanPosition).append(infUv).append(unusedNan).append(far, scale(1e12f, 1e12f, 1e12f));
+    CHECK(appended.empty());
+    MeshData badNormal = triangle;
+    badNormal.vertices[0].normal = glm::vec3(nan);
+    appended.append(triangle).append(badNormal);
+    const MeshData kept = std::move(appended).build("kept");
+    CHECK(kept.vertices.size() == 6);
+    CHECK(kept.indices.size() == 6);
+    CHECK(rv::geometry::validateMesh(kept).has_value());
 }

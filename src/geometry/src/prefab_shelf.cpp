@@ -64,13 +64,21 @@ Status validate(const ShelfParams& p) {
         return status;
     }
     const ShelfLayout l = layoutOf(p);
+    // Height between the plinth top and the top board, and the free height of a single-level shelf.
+    const float span = p.height - p.boardThickness - p.plinthHeight;
+    const float singleLevel = span - p.boardThickness;
+    if (!(singleLevel > 0.0f)) {
+        // No compartment at all, whatever the item: blame the plinth, or the boards when there is none.
+        return outOfRange(kKind, p.plinthHeight > 0.0f ? "plinthHeight" : "boardThickness",
+                          "a " + formatNumber(p.plinthHeight) + " m plinth and two " + formatNumber(p.boardThickness) +
+                              " m boards leave no free height in a " + formatNumber(p.height) + " m tall shelf");
+    }
     if (p.slotSize.y > l.clearHeight) {
         // Blame the item when it is taller than a single compartment could be, the level count otherwise.
-        const float span = p.height - p.boardThickness - p.plinthHeight;
-        if (p.slotSize.y > span - p.boardThickness) {
+        if (p.slotSize.y > singleLevel) {
             return outOfRange(kKind, "slotSize",
                               "slot height " + formatNumber(p.slotSize.y) + " m exceeds the free height " +
-                                  formatNumber(span - p.boardThickness) + " m of a single-level shelf");
+                                  formatNumber(singleLevel) + " m of a single-level shelf");
         }
         const int fitting = static_cast<int>(std::floor(span / (p.slotSize.y + p.boardThickness)));
         return outOfRange(kKind, "levels",

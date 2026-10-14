@@ -61,8 +61,10 @@ enum class FaceMask : std::uint8_t {
 /// handedness, so faces stay counter-clockwise and outward.
 ///
 /// Bad input never crashes and never produces NaN: a primitive with a non-finite argument or a non-finite or
-/// singular transform is skipped (nothing is appended); negative sizes, radii and chamfers use their magnitude;
-/// segment and ring counts are clamped to [3, 1024] and [2, 512]; a non-positive metersPerTile is treated as 1.
+/// singular transform is skipped (nothing is appended), and so is one whose placed positions or uvs are not all
+/// finite (an appended mesh with non-finite data, a placement beyond the float range); negative sizes, radii and
+/// chamfers use their magnitude; segment and ring counts are clamped to [3, 1024] and [2, 512]; a non-positive
+/// metersPerTile is treated as 1.
 class MeshBuilder {
 public:
     /// Axis-aligned box centered on the origin, 4 vertices per face (24 vertices and 36 indices with all faces),
@@ -106,7 +108,8 @@ public:
                          const glm::mat4& transform = glm::mat4(1.0f));
 
     /// Appends an existing mesh (its triangles must reference valid vertices; incomplete or out-of-range
-    /// triangles are dropped).
+    /// triangles are dropped). A mesh with a non-finite position or uv on any vertex is skipped as a whole;
+    /// non-finite normals and tangents are replaced by valid ones.
     MeshBuilder& append(const MeshData& mesh, const glm::mat4& transform = glm::mat4(1.0f));
 
     /// Moves the accumulated geometry into a mesh named `name`, computes its bounds and recomputes tangents from

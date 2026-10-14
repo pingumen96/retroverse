@@ -143,6 +143,11 @@ void checkPrefab(const ProceduralPrefab& prefab) {
         CHECK(glm::determinant(rotation) == Approx(1.0f));
         CHECK(s.transform[0][3] == 0.0f);
         CHECK(s.transform[3][3] == 1.0f);
+        // Exactly the mesh-backed sockets name a part.
+        CHECK(s.meshIndex.has_value() == (s.kind == SocketKind::ScreenSurface || s.kind == SocketKind::ColliderProxy));
+        if (s.meshIndex) {
+            CHECK(*s.meshIndex < prefab.parts.size());
+        }
     }
 }
 
@@ -227,6 +232,8 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"tv_cabinet",
          {{"width", 1.6}, {"height", 0.45}, {"depth", 0.4}, {"legHeight", 0.0}},
          box({-0.8f, 0.0f, -0.2f}, {0.8f, 0.45f, 0.2f})},
+        // Legs too short to build: the carcass rests on the floor instead of floating.
+        {"tv_cabinet", {{"legHeight", 5e-5}}, box({-0.6f, 0.0f, -0.25f}, {0.6f, 0.55f, 0.25f})},
         {"console_cartridge", nullptr, box({-0.12f, 0.0f, -0.1f}, {0.12f, 0.07f, 0.1f})},
         {"console_cartridge",
          {{"width", 0.3}, {"height", 0.08}, {"depth", 0.25}},
@@ -300,9 +307,10 @@ TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry]
         int levels;
         glm::dvec3 item;
         bool back;
+        double depth;
     };
     const std::vector<Layout> layouts{
-        {nullptr, 1.2, 2.0, 0.025, 0.08, 0.03, 0.004, 5, {0.125, 0.085, 0.020}, true},
+        {nullptr, 1.2, 2.0, 0.025, 0.08, 0.03, 0.004, 5, {0.125, 0.085, 0.020}, true, 0.35},
         {{{"width", 0.8},
           {"height", 1.2},
           {"depth", 0.3},
@@ -321,7 +329,8 @@ TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry]
          0.002,
          3,
          {0.135, 0.19, 0.014},
-         false},
+         false,
+         0.3},
         // The slots fill the inner width exactly: (0.45 - 0.05 + 0.004) / 0.101 = 4.
         {{{"width", 0.5}, {"slotSize", {0.097, 0.085, 0.02}}, {"slotGap", 0.004}, {"slotMargin", 0.025}},
          0.5,
@@ -332,7 +341,8 @@ TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry]
          0.004,
          5,
          {0.097, 0.085, 0.02},
-         true},
+         true,
+         0.35},
     };
     for (const Layout& l : layouts) {
         INFO(l.params.dump());
@@ -345,6 +355,12 @@ TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry]
         CHECK(shelf.sockets.size() == static_cast<std::size_t>(l.levels * perLevel));
         CHECK(rv::geometry::findSocket(shelf.sockets, "Slot_" + std::to_string(l.levels) + "_0") == nullptr);
         CHECK(rv::geometry::findSocket(shelf.sockets, "Slot_0_" + std::to_string(perLevel)) == nullptr);
+        // The boards run from the 8 mm back panel (the back edge without one) to the front edge.
+        const double boardBack = -0.5 * l.depth + (l.back ? 0.008 : 0.0);
+        const double boardFront = 0.5 * l.depth;
+        if (l.back) {
+            CHECK(part(shelf, "wood_secondary").mesh.bounds.max.z == Approx(boardBack).margin(1e-6));
+        }
 
         const glm::vec3 item(l.item);
         const Aabb itemBounds =
@@ -361,20 +377,16 @@ TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry]
                 CHECK(p.x ==
                       Approx(-innerWidth / 2 + l.margin + index * (l.item.x + l.gap) + l.item.x / 2).margin(1e-5));
                 CHECK(p.y == Approx(l.plinth + level * pitch + l.board).margin(1e-5));
-                // Centered in the board depth: the whole depth without a back panel, in front of it otherwise.
-                if (l.back) {
-                    CHECK(p.z > 0.0f);
-                    CHECK(p.z < 0.01f);
-                } else {
-                    CHECK(p.z == Approx(0.0f).margin(1e-6));
-                }
+                // Centered in the board depth.
+                CHECK(p.z == Approx(0.5 * (boardBack + boardFront)).margin(1e-6));
                 const Aabb volume = s.bounds.transformed(s.transform);
-                // Inside the interior: between the side panels, under the next board, within the depth.
+                // Inside the interior: between the side panels, under the next board, on the board in front of
+                // the back panel.
                 CHECK(volume.min.x >= -innerWidth / 2 - 1e-5);
                 CHECK(volume.max.x <= innerWidth / 2 + 1e-5);
                 CHECK(volume.max.y <= l.plinth + (level + 1) * pitch + 1e-5);
-                CHECK(volume.max.z <= shelf.bounds.max.z + 1e-6f);
-                CHECK(volume.min.z >= shelf.bounds.min.z - 1e-6f);
+                CHECK(volume.max.z <= boardFront + 1e-6);
+                CHECK(volume.min.z >= boardBack - 1e-6);
                 volumes.push_back(volume.inflated(-1e-5f));
             }
         }
@@ -408,6 +420,10 @@ TEST_CASE("geometry/prefabs: crt screen keeps its aspect and faces +Z", "[geomet
         CHECK(surface.bounds.size().x == Approx(size.x));
         CHECK(surface.bounds.size().y == Approx(size.y));
         CHECK(surface.bounds.size().x / surface.bounds.size().y == Approx(aspect).epsilon(1e-4));
+        // Mesh-backed like a glTF ScreenSurface node: the socket names the screen part.
+        REQUIRE(surface.meshIndex.has_value());
+        REQUIRE(*surface.meshIndex < crt.parts.size());
+        CHECK(crt.parts[*surface.meshIndex].materialRole == "screen");
 
         const Socket& look = socket(crt, "ScreenLook");
         CHECK(closeTo(position(look), glm::vec3(0.0f, position(surface).y, 0.28f + 0.9f)));
@@ -435,6 +451,27 @@ TEST_CASE("geometry/prefabs: crt screen keeps its aspect and faces +Z", "[geomet
     CHECK(power.y < screen.bounds.min.y);
     CHECK(power.z > 0.25f);
     CHECK(power.z <= 0.28f);
+}
+
+TEST_CASE("geometry/prefabs: crt builds flat and nearly flat backs at any size", "[geometry][prefabs][crt]") {
+    // A rear section kept at full size (backTaper 0, or so small that 1 - taper rounds to 1) used to clamp its
+    // center between bounds that float rounding inverts for many sizes, these three among them: undefined
+    // behavior, an abort in debug builds.
+    for (const double taper : {0.0, 1e-7}) {
+        for (const glm::dvec2 size : {glm::dvec2(0.5, 0.45), glm::dvec2(0.45, 0.4), glm::dvec2(0.55, 0.48)}) {
+            const json params{{"width", size.x}, {"height", size.y}, {"backTaper", taper}};
+            INFO(params.dump());
+            const ProceduralPrefab crt = buildOk("crt", params);
+            checkPrefab(crt);
+            CHECK(closeTo(crt.bounds.size(), glm::vec3(glm::vec2(size), 0.56f)));
+        }
+    }
+    for (int centimeters = 30; centimeters <= 60; ++centimeters) {
+        const double height = centimeters / 100.0;
+        const json params{{"width", 0.5}, {"height", height}, {"backTaper", 0.0}};
+        INFO(params.dump());
+        CHECK(closeTo(buildOk("crt", params).bounds.size(), glm::vec3(0.5f, static_cast<float>(height), 0.56f)));
+    }
 }
 
 TEST_CASE("geometry/prefabs: room shell doorway stays open and interior faces point inward",
@@ -542,8 +579,6 @@ TEST_CASE("geometry/prefabs: cartridge label sits in a recessed pocket", "[geome
     const MeshData& label = part(cartridge, "label").mesh;
     REQUIRE(label.vertices.size() == 4);
     CHECK(label.indices.size() == 6);
-    const float front = 0.01f;
-    const float pocket = front - 0.001f;
     const float labelZ = label.vertices[0].position.z;
     for (const rv::geometry::Vertex& v : label.vertices) {
         CHECK(v.normal == glm::vec3(0.0f, 0.0f, 1.0f));
@@ -553,35 +588,53 @@ TEST_CASE("geometry/prefabs: cartridge label sits in a recessed pocket", "[geome
             CHECK(v.position.y > 0.0f);
         }
     }
-    CHECK(labelZ - pocket >= 0.0005f - 1e-7f);
-    CHECK(labelZ < front);
     CHECK(closeTo(label.bounds.size(), glm::vec3(0.125f - 0.024f, 0.085f - 0.024f, 0.0f)));
-
-    // The shell has the pocket floor and the raised border facing +Z, both clear of the label plane.
-    const MeshData& shell = part(cartridge, "plastic_shell").mesh;
-    bool pocketFloor = false;
-    bool border = false;
-    for (std::size_t t = 0; t < shell.triangleCount(); ++t) {
-        const rv::test::TriangleRef tri = rv::test::triangleAt(shell, t);
-        if (glm::normalize(tri.cross()).z > 0.999f) {
-            const float z = tri.v0.position.z;
-            pocketFloor = pocketFloor || std::fabs(z - pocket) < 1e-6f;
-            border = border || std::fabs(z - front) < 1e-6f;
-            CHECK(std::fabs(z - labelZ) >= 0.0005f - 1e-6f);
-        }
-    }
-    CHECK(pocketFloor);
-    CHECK(border);
 
     const Socket& s = socket(cartridge, "Label");
     CHECK(closeTo(position(s), glm::vec3(0.0f, 0.0f, labelZ)));
     CHECK(closeTo(axis(s, 2), glm::vec3(0.0f, 0.0f, 1.0f)));
     CHECK(closeTo(s.bounds.size(), label.bounds.size()));
 
+    // The label lies exactly labelInset behind the front, down to the smallest inset, and the pocket floor 0.5 mm
+    // deeper: every shell face looking +Z (pocket floor, raised border) stays at least 0.5 mm off the label plane.
+    struct Recess {
+        json params;
+        float front;
+        float inset;
+    };
+    for (const Recess& r : {Recess{nullptr, 0.01f, 0.001f}, Recess{{{"labelInset", 0.0005}}, 0.01f, 0.0005f},
+                            Recess{{{"labelInset", 0.005}, {"gripRidges", false}}, 0.01f, 0.005f},
+                            Recess{{{"size", {0.05, 0.04, 0.004}},
+                                    {"chamfer", 0.001},
+                                    {"labelMargin", {0.006, 0.006}},
+                                    {"labelInset", 0.001}},
+                                   0.002f,
+                                   0.001f}}) {
+        INFO(r.params.dump());
+        const ProceduralPrefab prefab = buildOk("cartridge", r.params);
+        checkPrefab(prefab);
+        const float z = part(prefab, "label").mesh.vertices[0].position.z;
+        CHECK(z == Approx(r.front - r.inset).margin(1e-7));
+        CHECK(position(socket(prefab, "Label")).z == z);
+        const float pocket = z - 0.0005f;
+        const MeshData& shell = part(prefab, "plastic_shell").mesh;
+        bool pocketFloor = false;
+        bool border = false;
+        for (std::size_t t = 0; t < shell.triangleCount(); ++t) {
+            const rv::test::TriangleRef tri = rv::test::triangleAt(shell, t);
+            if (glm::normalize(tri.cross()).z > 0.999f) {
+                const float faceZ = tri.v0.position.z;
+                pocketFloor = pocketFloor || std::fabs(faceZ - pocket) < 1e-6f;
+                border = border || std::fabs(faceZ - r.front) < 1e-6f;
+                CHECK(std::fabs(faceZ - z) >= 0.0005f - 1e-6f);
+            }
+        }
+        CHECK(pocketFloor);
+        CHECK(border);
+    }
+
     const ProceduralPrefab smooth = buildOk("cartridge", {{"gripRidges", false}});
-    CHECK(part(smooth, "plastic_shell").mesh.triangleCount() < shell.triangleCount());
-    const ProceduralPrefab deeper = buildOk("cartridge", {{"labelInset", 0.002}});
-    CHECK(part(deeper, "label").mesh.vertices[0].position.z == Approx(front - 0.002f + 0.0005f));
+    CHECK(part(smooth, "plastic_shell").mesh.triangleCount() < part(cartridge, "plastic_shell").mesh.triangleCount());
 }
 
 TEST_CASE("geometry/prefabs: furniture and decor sockets", "[geometry][prefabs][sockets]") {
@@ -601,6 +654,8 @@ TEST_CASE("geometry/prefabs: furniture and decor sockets", "[geometry][prefabs][
     CHECK(part(cabinet, "metal_trim").mesh.bounds.min.y == Approx(0.0f).margin(1e-6));
     const ProceduralPrefab noLegs = buildOk("tv_cabinet", {{"legHeight", 0.0}, {"drawers", 0}});
     CHECK(part(noLegs, "metal_trim").mesh.bounds.min.y > 0.05f);
+    // Legs too short to build leave no gap under the carcass either.
+    CHECK(buildOk("tv_cabinet", {{"legHeight", 5e-5}}).bounds.min.y == 0.0f);
     CHECK(part(noLegs, "wood_secondary").mesh.triangleCount() < part(cabinet, "wood_secondary").mesh.triangleCount());
 
     const ProceduralPrefab console = buildOk("console_cartridge");
@@ -771,6 +826,12 @@ TEST_CASE("geometry/prefabs: JSON errors name the parameter", "[geometry][prefab
         {"shelf", {{"slotSize", {0.125, 1.95, 0.02}}}, ErrorCode::OutOfRange, "shelf.slotSize"},
         {"shelf", {{"slotSize", {0.125, 0.085, 0.4}}}, ErrorCode::OutOfRange, "shelf.slotSize"},
         {"shelf", {{"slotSize", {1.5, 0.085, 0.02}}}, ErrorCode::OutOfRange, "shelf.slotSize"},
+        // No free height at all: the plinth is blamed, or the boards when there is no plinth.
+        {"shelf", {{"height", 0.3}, {"plinthHeight", 0.5}}, ErrorCode::OutOfRange, "shelf.plinthHeight"},
+        {"shelf",
+         {{"height", 0.2}, {"boardThickness", 0.1}, {"plinthHeight", 0.0}},
+         ErrorCode::OutOfRange,
+         "shelf.boardThickness"},
         {"crt", {{"screenAspect", 10.0}}, ErrorCode::OutOfRange, "crt.screenAspect"},
         {"crt", {{"depth", 0.15}, {"screenInset", 0.05}}, ErrorCode::OutOfRange, "crt.screenInset"},
         {"room_shell", {{"size", {9.0, 0.1}}}, ErrorCode::OutOfRange, "room_shell.size"},

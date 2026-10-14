@@ -235,12 +235,15 @@ struct Housing {
     const float startY = 0.5f * (start.y0 + start.y1);
     const float screenY = 0.5f * (l.screen.y0 + l.screen.y1);
     const float cut = kCornerCut * std::min(start.width(), start.height());
-    // Section scaled by `scale` around a center that moves from the cabinet center towards the screen height.
+    // Section scaled by `scale` around a center that moves from the cabinet center towards the screen height, as
+    // far as it stays inside the start section. The offset is clamped by a slack that is never negative: clamping
+    // the center to [start.y0 + halfHeight, start.y1 - halfHeight] inverts those bounds by one ulp for many sizes
+    // when scale rounds to 1 (undefined behavior in std::clamp).
     const auto section = [&](float scale, float towardsScreen, float z) {
         const float halfWidth = 0.5f * scale * start.width();
         const float halfHeight = 0.5f * scale * start.height();
-        const float y =
-            std::clamp(startY + towardsScreen * (screenY - startY), start.y0 + halfHeight, start.y1 - halfHeight);
+        const float slack = std::max(0.0f, 0.5f * (1.0f - scale) * start.height());
+        const float y = startY + std::clamp(towardsScreen * (screenY - startY), -slack, slack);
         return octagon(Rect{-halfWidth, y - halfHeight, halfWidth, y + halfHeight}, scale * cut, z);
     };
     housing.sections[0] = octagon(start, cut, zStart);
@@ -337,7 +340,8 @@ ProceduralPrefab assemble(const CrtParams& p) {
     const glm::vec2 screenCenter(0.5f * (l.screen.x0 + l.screen.x1), 0.5f * (l.screen.y0 + l.screen.y1));
     out.addSocket("ScreenSurface", SocketKind::ScreenSurface, translation(glm::vec3(screenCenter, l.zScreen)),
                   core::Aabb::fromMinMax(glm::vec3(-0.5f * l.screen.width(), -0.5f * l.screen.height(), 0.0f),
-                                         glm::vec3(0.5f * l.screen.width(), 0.5f * l.screen.height(), l.bulge)));
+                                         glm::vec3(0.5f * l.screen.width(), 0.5f * l.screen.height(), l.bulge)),
+                  "screen");
     out.addSocket("TV_Stand", SocketKind::Anchor, glm::mat4(1.0f));
     out.addSocket("ScreenLook", SocketKind::Anchor, translation(glm::vec3(screenCenter, l.zFront + kLookDistance)));
     return std::move(out).finish();

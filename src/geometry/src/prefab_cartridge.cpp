@@ -39,17 +39,21 @@ ProceduralPrefab assemble(const CartridgeParams& p) {
     const glm::vec3 half = 0.5f * p.size;
     const float c = p.chamfer;
     const float front = half.z;
-    const float pocket = front - p.labelInset; // label pocket floor = front face of the body
+    // The label lies labelInset behind the front; the pocket floor (front face of the body) another 0.5 mm deeper,
+    // so no shell face is coplanar with the label.
+    const float labelZ = front - p.labelInset;
+    const float pocketDepth = p.labelInset + detail::kDecalOffset;
+    const float pocket = front - pocketDepth;
 
     // Body: everything behind the pocket floor.
-    shell.chamferedBox(glm::vec3(p.size.x, p.size.y, p.size.z - p.labelInset), c,
-                       translation(glm::vec3(0.0f, 0.0f, -0.5f * p.labelInset)));
+    shell.chamferedBox(glm::vec3(p.size.x, p.size.y, p.size.z - pocketDepth), c,
+                       translation(glm::vec3(0.0f, 0.0f, -0.5f * pocketDepth)));
 
     // Raised border around the label pocket, on the flat part of the body's front face. Its back faces rest on
     // the body and are dropped.
     const FaceMask raised = FaceMask::All & ~FaceMask::NegZ;
     const auto addBorder = [&](float x0, float x1, float y0, float y1) {
-        shell.box(glm::vec3(x1 - x0, y1 - y0, p.labelInset),
+        shell.box(glm::vec3(x1 - x0, y1 - y0, pocketDepth),
                   translation(glm::vec3(0.5f * (x0 + x1), 0.5f * (y0 + y1), 0.5f * (pocket + front))), BoxUv::PerFace,
                   1.0f, raised);
     };
@@ -73,9 +77,8 @@ ProceduralPrefab assemble(const CartridgeParams& p) {
         addBorder(-labelX, labelX, -flatY, -labelY);
     }
 
-    // Label: just above the pocket floor and below the border top.
+    // Label: recessed by labelInset, 0.5 mm above the pocket floor.
     const glm::vec2 labelSize(2.0f * labelX, 2.0f * labelY);
-    const float labelZ = pocket + detail::kDecalOffset;
     out.part("label").quad(labelSize, translation(glm::vec3(0.0f, 0.0f, labelZ)));
     out.addSocket("Label", SocketKind::Other, translation(glm::vec3(0.0f, 0.0f, labelZ)),
                   core::Aabb::fromMinMax(glm::vec3(-labelX, -labelY, 0.0f), glm::vec3(labelX, labelY, 0.0f)));

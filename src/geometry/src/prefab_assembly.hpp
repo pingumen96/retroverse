@@ -34,15 +34,20 @@ public:
     MeshBuilder& part(std::string_view role);
 
     /// Adds a socket; the node name follows the glTF naming rules ("Anchor_<id>" for anchors, the id otherwise).
-    void addSocket(std::string id, SocketKind kind, const glm::mat4& transform, const core::Aabb& bounds = {});
+    /// A mesh-backed socket (ScreenSurface) names the role of its mesh in `meshRole`; finish() turns it into
+    /// Socket::meshIndex, the index of that role's part.
+    void addSocket(std::string id, SocketKind kind, const glm::mat4& transform, const core::Aabb& bounds = {},
+                   std::string_view meshRole = {});
 
-    /// Builds one mesh "<kind>/<role>" per non-empty role and the overall bounds.
+    /// Builds one mesh "<kind>/<role>" per non-empty role, the overall bounds and the socket mesh indices.
     [[nodiscard]] ProceduralPrefab finish() &&;
 
 private:
     std::string m_kind;
     std::deque<std::pair<std::string, MeshBuilder>> m_parts;
     std::vector<Socket> m_sockets;
+    /// Mesh role of each socket of m_sockets, empty when the socket is not mesh-backed.
+    std::vector<std::string> m_socketMeshRoles;
 };
 
 [[nodiscard]] glm::mat4 translation(const glm::vec3& offset);
