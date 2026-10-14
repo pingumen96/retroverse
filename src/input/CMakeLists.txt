@@ -3,6 +3,10 @@
 
 add_library(rv_input STATIC
     src/action.cpp
+    src/action_map.cpp
+    src/binding.cpp
+    src/codes.cpp
+    src/input_system.cpp
 )
 add_library(rv::input ALIAS rv_input)
 rv_set_target_defaults(rv_input)
