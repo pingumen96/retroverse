@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "bindings": {
+    "move_forward": [
+      { "key": "w", "scale": 1 },
+      { "key": "s", "scale": -1 },
+      { "key": "up", "scale": 1 },
+      { "key": "down", "scale": -1 },
+      { "padAxis": "left_y", "scale": 1, "deadzone": 0.15 }
+    ],
+    "move_right": [
+      { "key": "d", "scale": 1 },
+      { "key": "a", "scale": -1 },
+      { "key": "right", "scale": 1 },
+      { "key": "left", "scale": -1 },
+      { "padAxis": "left_x", "scale": 1, "deadzone": 0.15 }
+    ],
+    "look_x": [
+      { "padAxis": "right_x", "scale": 1, "deadzone": 0.15 }
+    ],
+    "look_y": [
+      { "padAxis": "right_y", "scale": 1, "deadzone": 0.15 }
+    ],
+    "look_delta_x": [
+      { "mouseAxis": "delta_x", "scale": 1 }
+    ],
+    "look_delta_y": [
+      { "mouseAxis": "delta_y", "scale": -1 }
+    ],
+    "sprint": [
+      { "key": "left_shift" },
+      { "padButton": "left_stick" }
+    ],
+    "interact": [
+      { "key": "e" },
+      { "mouseButton": "left" },
+      { "padButton": "south" }
+    ],
+    "back": [
+      { "key": "escape" },
+      { "padButton": "east" }
+    ],
+    "quick_catalog": [
+      { "key": "tab" },
+      { "padButton": "north" }
+    ],
+    "confirm": [
+      { "key": "enter" },
+      { "padButton": "start" }
+    ],
+    "map": [
+      { "key": "m" },
+      { "padButton": "back" }
+    ],
+    "menu": [
+      { "padButton": "start" }
+    ],
+    "toggle_dev_ui": [
+      { "key": "f1" }
+    ],
+    "reload_shaders": [
+      { "key": "f5" }
+    ],
+    "screenshot": [
+      { "key": "f12" }
+    ]
+  }
+}

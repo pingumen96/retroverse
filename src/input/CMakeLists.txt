@@ -3,9 +3,16 @@
 
 add_library(rv_input STATIC
     src/action.cpp
+    src/action_map.cpp
+    src/binding.cpp
+    src/codes.cpp
+    src/input_system.cpp
 )
 add_library(rv::input ALIAS rv_input)
 rv_set_target_defaults(rv_input)
 target_include_directories(rv_input PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(rv_input PUBLIC rv_core)
+target_link_libraries(rv_input PUBLIC
+    rv_core
+    glm::glm
+    nlohmann_json::nlohmann_json)
 rv_forbid_link(rv_input)
