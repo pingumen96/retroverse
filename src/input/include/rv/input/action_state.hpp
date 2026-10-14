@@ -13,7 +13,8 @@ class ActionState {
 public:
     /// Analog value: axes report their value, buttons report 1 while held and 0 otherwise.
     [[nodiscard]] float axis(Action action) const noexcept { return m_axes[toIndex(action)]; }
-    /// Button currently down (or axis magnitude above the press threshold).
+    /// A bound button is down, or the analog magnitude is at or above the press threshold. LookX, LookY,
+    /// LookDeltaX and LookDeltaY are never held from analog motion (see rv::input::InputSystem).
     [[nodiscard]] bool held(Action action) const noexcept { return (m_flags[toIndex(action)] & kHeld) != 0; }
     /// Went down this frame.
     [[nodiscard]] bool pressed(Action action) const noexcept { return (m_flags[toIndex(action)] & kPressed) != 0; }

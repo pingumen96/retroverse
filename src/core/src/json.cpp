@@ -30,7 +30,9 @@ Expected<nlohmann::json> parseJson(std::string_view text, std::string_view conte
     try {
         return nlohmann::json::parse(text.begin(), text.end(), /*callback*/ nullptr, /*allow_exceptions*/ true,
                                      /*ignore_comments*/ true);
-    } catch (const nlohmann::json::parse_error& e) {
+    } catch (const nlohmann::json::exception& e) {
+        // parse_error for syntax errors, but also out_of_range (406) for number literals that overflow a double:
+        // the DOM parser rethrows the latter as-is, so catching only parse_error would let it escape.
         return makeError(ErrorCode::ParseError, e.what(), std::string(context));
     }
 }

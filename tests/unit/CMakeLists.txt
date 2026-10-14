@@ -11,6 +11,8 @@ target_link_libraries(rv_tests PRIVATE
     rv_input
     rv_assets
     rv_scene
+    rv_app_cli             # GPU-free part of rv_app (command line, exit codes)
+    rv_render_debug_filter # GPU-free part of rv_render (GL debug message policy)
     rv_test_support
     Catch2::Catch2WithMain)
 target_compile_definitions(rv_tests PRIVATE

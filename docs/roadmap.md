@@ -26,16 +26,16 @@ EmulationStation/RetroBat/Batocera adapters, VR, hardware video decoding, Linux,
 | 0 | Toolchain: vcpkg updated to the pinned baseline, glad2 generated | done |
 | 1 | Repository skeleton, CMake presets, vcpkg manifest, layering rules, scripts, docs | done |
 | 2 | `rv_core` (errors, logging, paths, frame clock, AABB, math/color, file I/O, JSON, CLI) + test infrastructure | done |
-| 3 | SDL3 window, OpenGL 4.5 core context, `GLDevice` with debug output, app host loop, `--smoke` | |
-| 4 | Shaders with includes and hot reload, GPU meshes, framebuffer, offscreen `--screenshot` | |
-| 5 | Input action mapping (keyboard, mouse, gamepad hot-plug) and first-person camera | |
-| 6 | Textures, images, material presets, `PBR_Base` and `Unlit_Emissive` shaders, sRGB pipeline | |
-| 7 | glTF loader (fastgltf) with sockets, prefab manifests | |
-| 8 | Scene renderer with batching and instancing, debug drawing, scene description files | |
+| 3 | SDL3 window, OpenGL 4.5 core context, `GLDevice` with debug output, app host loop, `--smoke` | done |
+| 4 | Shaders with includes and hot reload, GPU meshes, framebuffer, offscreen `--screenshot` | CPU part done (shader source loader, image encoder) |
+| 5 | Input action mapping (keyboard, mouse, gamepad hot-plug) and first-person camera | CPU part done (action maps, input system, camera, controller) |
+| 6 | Textures, images, material presets, `PBR_Base` and `Unlit_Emissive` shaders, sRGB pipeline | CPU part done (image I/O, material library) |
+| 7 | glTF loader (fastgltf) with sockets, prefab manifests | CPU part done |
+| 8 | Scene renderer with batching and instancing, debug drawing, scene description files | CPU part done (batch planner, scene files) |
 | 9 | Dear ImGui developer overlay | |
-| 10 | M0 test room (procedural shell, shelf, cartridges, CRT, TV cabinet) -> **M0 Done** | |
+| 10 | M0 test room (procedural shell, shelf, cartridges, CRT, TV cabinet) -> **M0 Done** | CPU part done (prefab kit, `m0_testroom.json`) |
 | 11 | Shadow map for the key light | |
-| 12 | Capsule vs AABB collision | |
+| 12 | Capsule vs AABB collision | CPU part done (collision world) |
 | 13 | `retroverse-asset-preview` tool | |
 | 14 | GPU smoke test (offscreen render assertions) | |
 | 15 | Build matrix, docs, golden screenshot -> **Gate A (preliminary)** | |

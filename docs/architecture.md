@@ -16,9 +16,20 @@ This document describes the code that exists today. The target architecture is i
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only) | platform, render, imgui |
 | app | `rv_app` | Composition root: application host, main loop, scenes, screenshots | all of the above |
 
-`core`, `geometry`, `input`, `assets` and `scene` are **GPU-free**: they never reach SDL3, glad or ImGui
-(enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or a context.
-`render` receives the OpenGL function loader as a function pointer and never includes SDL.
+Two GPU-free sub-targets keep testable policy out of the GPU-side libraries:
+
+| Sub-target | Part of | Content |
+|---|---|---|
+| `rv_app_cli` | app | Command line options and validation, exit-code policy |
+| `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
+
+`core`, `geometry`, `input`, `assets`, `scene` and the two sub-targets are **GPU-free**: they never reach SDL3,
+glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
+a context. `render` receives the OpenGL function loader as a function pointer and never includes SDL.
+
+Cross-module contracts written by independent work streams (prefab parameters and sockets, material names, scene
+files, manifests) are pinned by `tests/unit/integration`, which builds the real geometry and resolves the real
+materials for every reference scene and manifest.
 
 ## Threading (M0)
 

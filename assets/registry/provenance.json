@@ -1,5 +1,21 @@
 {
   "schemaVersion": 1,
   "description": "Provenance and license of every original or third-party asset (style.md section 11.1): source URL, author, license and version, acquisition date, license snapshot file, attribution text, modifications, redistribution approval, private source path, runtime artifact. The Credits and Licenses screen is generated from this file.",
-  "records": []
+  "records": [
+    {
+      "id": "retroverse-original",
+      "title": "Retroverse original assets",
+      "author": "Retroverse contributors",
+      "url": "https://github.com/pingumen96/retroverse",
+      "license": "MIT",
+      "licenseSnapshot": null,
+      "acquiredAt": "2026-10-14",
+      "attributionRequired": false,
+      "attributionText": null,
+      "modifications": "Original work authored in this repository.",
+      "redistributionApproved": true,
+      "sourcePath": null,
+      "reviewBy": null
+    }
+  ]
 }

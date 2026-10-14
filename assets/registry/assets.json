@@ -1,5 +1,12 @@
 {
   "schemaVersion": 1,
   "description": "Every non-procedural runtime file under assets/models, assets/textures and assets/materials. Each entry points to a provenance record by id. The asset validator fails when a runtime file has no entry.",
-  "assets": []
+  "assets": [
+    {
+      "path": "materials/base/materials.json",
+      "kind": "material-library",
+      "provenance": "retroverse-original",
+      "notes": "Parametric PBR presets derived from the style guide palette (style.md section 3)."
+    }
+  ]
 }

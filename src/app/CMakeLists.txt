@@ -39,10 +39,3 @@ endif()
 if(RV_GL_DEBUG)
     target_compile_definitions(rv_app PUBLIC RV_GL_DEBUG=1)
 endif()
-
-if(RV_BUILD_TESTS)
-    # rv_tests (GPU-free, defined later in tests/unit) unit-tests rv_app_cli. tests/ is configured after src/, so the
-    # link is added once the whole project has been read; rv_forbid_link(rv_tests) still validates the result.
-    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
-        CALL target_link_libraries rv_tests PRIVATE rv_app_cli)
-endif()

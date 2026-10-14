@@ -31,11 +31,20 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
   `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"`.
 
+## Running the app
+
+`retroverse.exe --help` lists every option. Automated runs must always be frame-limited so no process is left
+behind: `--smoke` (render `--frames N`, default 3, then exit; any high-severity GL debug message fails the run) or
+`--exit-after-frames --frames N`. `--hidden` and `--frames` require one of them; frame-limited runs never show
+message boxes. Exit codes: 0 ok, 1 smoke check failed, 2 initialization failure (window, context, GL < 4.5,
+paths), 3 unexpected runtime failure. Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs
+out of `%LOCALAPPDATA%`).
+
 ## Visual verification
 
 Rendering changes must be checked visually, not only compiled. The app renders offscreen and writes PNG files
-(`retroverse.exe --scene <name> --screenshot <file.png> --frames <n> --exit`, available once M0 step 4 lands).
-Open the PNG with the Read tool and compare it against `style.md` and `example.png`.
+(`retroverse.exe --scene <name> --screenshot <file.png> --exit-after-frames --frames <n>`, available once M0 step 4
+lands). Open the PNG with the Read tool and compare it against `style.md` and `example.png`.
 
 ## Layout and layering
 

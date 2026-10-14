@@ -77,6 +77,13 @@ TEST_CASE("core/json: parsing with comments and typed vectors", "[core][json]") 
     CHECK(broken.error().code == rv::ErrorCode::ParseError);
     CHECK(broken.error().context == "broken.json");
 
+    // A number that overflows a double is reported by nlohmann as out_of_range, not parse_error: it must still come
+    // back as an error value instead of escaping as an exception.
+    const auto overflow = rv::core::parseJson(R"({"x": 1e999})", "overflow.json");
+    REQUIRE_FALSE(overflow.has_value());
+    CHECK(overflow.error().code == rv::ErrorCode::ParseError);
+    CHECK(overflow.error().context == "overflow.json");
+
     CHECK(rv::core::toJson(glm::vec3(1.0f, 2.0f, 3.0f)) == nlohmann::json::array({1.0f, 2.0f, 3.0f}));
 }
 

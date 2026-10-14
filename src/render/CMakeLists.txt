@@ -24,10 +24,3 @@ add_library(rv::render ALIAS rv_render)
 rv_set_target_defaults(rv_render)
 target_include_directories(rv_render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(rv_render PUBLIC rv_core rv_geometry rv_assets rv_scene rv_render_debug_filter rv::glad)
-
-if(RV_BUILD_TESTS)
-    # rv_tests (GPU-free, defined later in tests/unit) unit-tests the filter. tests/ is configured after src/, so the
-    # link is added once the whole project has been read; rv_forbid_link(rv_tests) still validates the result.
-    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
-        CALL target_link_libraries rv_tests PRIVATE rv_render_debug_filter)
-endif()
