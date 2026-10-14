@@ -51,8 +51,9 @@ public:
     [[nodiscard]] bool quitRequested() const noexcept { return m_quitRequested; }
 
     /// Ends the main loop once the current frame is done and makes the run exit with ExitCode::RuntimeFailure, for
-    /// failures that must not pass silently, such as a --screenshot that could not be written. The host logs the
-    /// error; only the first one is kept.
+    /// failures that must not pass silently, such as a --screenshot that was not written. Also honored from
+    /// IAppLogic::onShutdown when the main loop ended normally: the host calls it before deciding the exit code. The
+    /// host logs the error; only the first one is kept.
     void failRun(Error error) {
         if (!m_failure) {
             m_failure = std::move(error);

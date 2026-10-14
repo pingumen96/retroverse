@@ -7,5 +7,6 @@ uniform vec4 uBaseColor; // linear RGBA: the material's base color factor
 layout(location = 0) out vec4 oColor;
 
 void main() {
-    oColor = uBaseColor;
+    // Opaque pass (blending off): the stored alpha is 1 whatever the material's alpha, as the window shows it.
+    oColor = vec4(uBaseColor.rgb, 1.0);
 }

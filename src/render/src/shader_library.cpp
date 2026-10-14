@@ -19,10 +19,10 @@ std::filesystem::path absoluteFile(const std::filesystem::path& root, const std:
 }
 
 std::vector<std::filesystem::path> absoluteFiles(const std::filesystem::path& root,
-                                                 const assets::ShaderSource& source) {
+                                                 const std::vector<std::filesystem::path>& relativeFiles) {
     std::vector<std::filesystem::path> files;
-    files.reserve(source.files.size());
-    for (const std::filesystem::path& file : source.files) {
+    files.reserve(relativeFiles.size());
+    for (const std::filesystem::path& file : relativeFiles) {
         files.push_back(absoluteFile(root, file));
     }
     return files;
@@ -57,9 +57,6 @@ Expected<ShaderHandle> ShaderLibrary::load(const ShaderDesc& desc) {
 
     Entry entry;
     entry.desc = desc;
-    // Until a successful assembly lists the includes too, the root files are watched, so fixing them triggers a build.
-    entry.vertexFiles = {absoluteFile(m_root, core::pathFromUtf8(desc.vertexPath))};
-    entry.fragmentFiles = {absoluteFile(m_root, core::pathFromUtf8(desc.fragmentPath))};
     m_entries.push_back(std::move(entry));
     rebuild(m_entries.back(), false);
     updateWatchedFiles();
@@ -104,16 +101,14 @@ ShaderReloadSummary ShaderLibrary::pollHotReload() {
 }
 
 bool ShaderLibrary::rebuild(Entry& entry, bool reload) {
+    // Each stage watches the files its assembly read or tried to read, also when it failed: a missing include is
+    // watched until it is created, and an edit of any file read before the error can fix it.
     const assets::ShaderSourceLoader loader(m_root);
-    const auto vertex = loader.load(entry.desc.vertexPath, entry.desc.defines);
-    const auto fragment = loader.load(entry.desc.fragmentPath, entry.desc.defines);
-    // Keep watching the previous file list of a stage that could not be assembled (a missing include, say).
-    if (vertex) {
-        entry.vertexFiles = absoluteFiles(m_root, *vertex);
-    }
-    if (fragment) {
-        entry.fragmentFiles = absoluteFiles(m_root, *fragment);
-    }
+    std::vector<std::filesystem::path> dependencies;
+    const auto vertex = loader.load(entry.desc.vertexPath, entry.desc.defines, dependencies);
+    entry.vertexFiles = absoluteFiles(m_root, dependencies);
+    const auto fragment = loader.load(entry.desc.fragmentPath, entry.desc.defines, dependencies);
+    entry.fragmentFiles = absoluteFiles(m_root, dependencies);
 
     std::string failure;
     if (!vertex) {

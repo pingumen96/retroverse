@@ -43,8 +43,9 @@ built). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test r
 
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`), anything with a path separator or `.json` is a file.
-- `--screenshot <file.png>` writes the last frame of a frame-limited run; `--screenshot-size WxH` (default
-  1920x1080, independent of the window) also applies to F12.
+- `--screenshot <file.png>` writes the last frame of a frame-limited run; a run that ends before that frame (Esc,
+  window closed) exits 3 like a failed write. `--screenshot-size WxH` (default 1920x1080, independent of the
+  window) also applies to F12.
 - Keys: Esc quits, Alt+Enter toggles fullscreen, F5 reloads the shaders, F12 writes
   `<user data>/screenshots/retroverse-<timestamp>.png`. Developer builds also reload a shader within ~0.5 s of
   saving any of its files (`assets/shaders`); a broken edit logs `<file>:<line>: error ...` and the previous program
@@ -59,9 +60,13 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
   --screenshot build/screenshots/m0_testroom.png --data-dir build/rvdata
 ```
 
-Open the PNG with the Read tool and compare it against `style.md` and `example.png`. The PNG holds sRGB-encoded
-values exactly as the window shows them (a `#383735` wall reads back as `#383735`), so pixels can also be checked
-numerically. Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`).
+Open the PNG with the Read tool and compare it against `style.md` and `example.png`. The PNG (RGB, no alpha) holds
+sRGB-encoded values exactly as the window shows them (a `#383735` wall reads back as `#383735`), so pixels can also
+be checked numerically. Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`).
+
+To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
+developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),
+then edit or break the copy's shaders while it runs; the log shows each rebuild or `<file>:<line>: error ...`.
 
 ## Layout and layering
 

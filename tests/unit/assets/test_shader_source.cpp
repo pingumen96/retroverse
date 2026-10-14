@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <string>
@@ -9,6 +11,7 @@
 #include "support/temp_dir.hpp"
 #include <rv/assets/shader_source.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/file_watch_set.hpp>
 #include <rv/core/text.hpp>
 
 using rv::ErrorCode;
@@ -181,6 +184,72 @@ TEST_CASE("assets/shader_source: a missing include reports the including file an
     const auto root = tree.loader().load("does/not/exist.frag");
     REQUIRE_FALSE(root.has_value());
     CHECK(root.error().code == ErrorCode::NotFound);
+}
+
+TEST_CASE("assets/shader_source: dependencies list every file a load read or tried to read", "[assets][shader]") {
+    using Paths = std::vector<std::filesystem::path>;
+    ShaderTree tree;
+    tree.write("main.frag", "#version 450\n#include \"common/a.glsl\"\n#include \"common/b.glsl\"\n");
+    tree.write("common/a.glsl", "#include \"common/missing.glsl\"\n");
+    tree.write("common/b.glsl", "float b;\n");
+    Paths dependencies{"stale/entry.glsl"}; // replaced by every load
+
+    SECTION("a failed load lists the files read before the error and the one it could not read") {
+        const auto source = tree.loader().load("main.frag", {}, dependencies);
+        REQUIRE_FALSE(source.has_value());
+        CHECK(source.error().code == ErrorCode::NotFound);
+        // common/b.glsl comes after the error: the load never reached it.
+        CHECK(dependencies == Paths{"main.frag", "common/a.glsl", "common/missing.glsl"});
+    }
+    SECTION("a successful load lists exactly ShaderSource::files") {
+        tree.write("common/missing.glsl", "float m;\n");
+        const auto source = tree.loader().load("main.frag", {}, dependencies);
+        REQUIRE(source.has_value());
+        CHECK(dependencies == source->files);
+        CHECK(dependencies == Paths{"main.frag", "common/a.glsl", "common/missing.glsl", "common/b.glsl"});
+    }
+    SECTION("an error inside an included file lists that file") {
+        tree.write("common/a.glsl", "#version 450\n");
+        CHECK_FALSE(tree.loader().load("main.frag", {}, dependencies).has_value());
+        CHECK(dependencies == Paths{"main.frag", "common/a.glsl"});
+    }
+    SECTION("a missing root file lists itself") {
+        CHECK_FALSE(tree.loader().load("absent.frag", {}, dependencies).has_value());
+        CHECK(dependencies == Paths{"absent.frag"});
+    }
+    SECTION("a load rejected before any file is opened lists none") {
+        const std::vector<std::string> badDefines = {"1_NOT_AN_IDENTIFIER"};
+        CHECK_FALSE(tree.loader().load("main.frag", badDefines, dependencies).has_value());
+        CHECK(dependencies.empty());
+        dependencies = {"stale/entry.glsl"};
+        CHECK_FALSE(tree.loader().load("../main.frag", {}, dependencies).has_value());
+        CHECK(dependencies.empty());
+    }
+}
+
+TEST_CASE("assets/shader_source: watching the dependencies of a failed load notices a created include",
+          "[assets][shader]") {
+    // The policy of the renderer's hot reload (rv::gl::ShaderLibrary): watch shader root / dependency with
+    // core::FileWatchSet, also after a failed load, so creating the missing include triggers the rebuild.
+    ShaderTree tree;
+    tree.write("main.frag", "#version 450\n#include \"common/extra.glsl\"\nvoid main() {}\n");
+    std::vector<std::filesystem::path> dependencies;
+    REQUIRE_FALSE(tree.loader().load("main.frag", {}, dependencies).has_value());
+
+    auto now = rv::core::FileWatchSet::Clock::time_point(std::chrono::hours(1));
+    rv::core::FileWatchSet watch(rv::core::FileWatchSet::kDefaultInterval, [&now] { return now; });
+    for (const std::filesystem::path& dependency : dependencies) {
+        watch.add(tree.dir.path() / dependency);
+    }
+    now += rv::core::FileWatchSet::kDefaultInterval;
+    CHECK(watch.changed().empty());
+
+    tree.write("common/extra.glsl", "float extra() { return 1.0; }\n");
+    now += rv::core::FileWatchSet::kDefaultInterval;
+    const std::vector<std::filesystem::path> changed = watch.changed();
+    REQUIRE(changed.size() == 1);
+    CHECK(changed.front() == tree.dir.file("common/extra.glsl").lexically_normal());
+    CHECK(tree.loader().load("main.frag").has_value());
 }
 
 TEST_CASE("assets/shader_source: directive errors", "[assets][shader]") {

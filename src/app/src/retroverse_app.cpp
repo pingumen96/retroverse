@@ -8,6 +8,7 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keycode.h>
+#include <fmt/format.h>
 #include <glm/vec2.hpp>
 #include <spdlog/spdlog.h>
 
@@ -88,7 +89,7 @@ struct RetroverseApp::State {
     gl::Framebuffer screenshotTarget;
     std::optional<glm::ivec2> failedWindowSize;
     std::optional<glm::ivec2> failedScreenshotSize;
-    bool screenshotRequested = false; ///< F12 pressed; written after the next frame is rendered
+    bool screenshotRequested = false; ///< F12 pressed; captured during the next frame
     bool lastFrameCaptured = false;   ///< --screenshot written
 
     void renderScene(AppContext& context, const gl::Framebuffer& target) {
@@ -96,7 +97,7 @@ struct RetroverseApp::State {
                      static_cast<float>(context.clock().totalSeconds()));
     }
 
-    /// Renders the current view at --screenshot-size into the screenshot target and writes it as a PNG.
+    /// Renders the current view at --screenshot-size into the screenshot target and writes it as an RGB PNG.
     Status captureScreenshot(AppContext& context, const std::filesystem::path& path) {
         const CommandLineOptions& options = context.options();
         const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
@@ -104,12 +105,14 @@ struct RetroverseApp::State {
             return makeError(ErrorCode::GraphicsError, "no render target for the screenshot", core::pathToUtf8(path));
         }
         renderScene(context, screenshotTarget);
-        gl::Framebuffer::unbind(); // whatever draws next targets the window again
+        gl::Framebuffer::unbind(); // onRender leaves the default framebuffer bound, also when the window is not drawn
         auto image = screenshotTarget.readPixels();
         if (!image) {
             return propagate(image.error());
         }
-        if (auto written = assets::writePng(path, *image); !written) {
+        // The window is opaque: it shows the stored color whatever alpha the passes wrote (a material's alpha, say).
+        // Dropping the alpha channel makes the PNG show the same pixels.
+        if (auto written = assets::writePng(path, assets::convertChannels(*image, 3)); !written) {
             return propagate(written.error());
         }
         spdlog::info("Screenshot written: {} ({}x{})", core::pathToUtf8(path), size.x, size.y);
@@ -192,13 +195,8 @@ void RetroverseApp::onRender(AppContext& context) {
         return;
     }
     State& state = *m_state;
-    const glm::ivec2 windowSize = context.framebufferSize();
-    if (windowSize.x > 0 && windowSize.y > 0 &&
-        prepareTarget(state.windowTarget, windowSize, "WindowTarget", state.failedWindowSize)) {
-        state.renderScene(context, state.windowTarget);
-        state.windowTarget.blitToDefault(context.device().state(), windowSize);
-    }
-
+    // Screenshots are rendered before the window view, so the frame ends with the window blit and the state it
+    // documents (default framebuffer with the window's viewport, GL_FRAMEBUFFER_SRGB off) for whatever draws next.
     if (state.screenshotRequested) {
         state.screenshotRequested = false;
         const std::filesystem::path path =
@@ -219,6 +217,13 @@ void RetroverseApp::onRender(AppContext& context) {
             context.failRun(std::move(error));
         }
     }
+
+    const glm::ivec2 windowSize = context.framebufferSize();
+    if (windowSize.x > 0 && windowSize.y > 0 &&
+        prepareTarget(state.windowTarget, windowSize, "WindowTarget", state.failedWindowSize)) {
+        state.renderScene(context, state.windowTarget);
+        state.windowTarget.blitToDefault(context.device().state(), windowSize);
+    }
 }
 
 void RetroverseApp::onShutdown(AppContext& context) {
@@ -229,9 +234,13 @@ void RetroverseApp::onShutdown(AppContext& context) {
                               "the scene was never drawn: shader 'unlit' did not build (see the errors above)",
                               core::pathToUtf8(m_state->shaders->root())});
     }
+    // Nor when it ended (Esc, window closed, quit request) before the last frame, which --screenshot captures: a file
+    // left at that path by an earlier run must not pass for this run's result.
     if (m_state && options.screenshot && !m_state->lastFrameCaptured && !context.failure()) {
-        spdlog::warn("--screenshot: the run ended before its last frame, {} was not written",
-                     core::pathToUtf8(*options.screenshot));
+        context.failRun(Error{ErrorCode::ValidationFailed,
+                              fmt::format("--screenshot was not written: the run ended after {} of {} frame(s)",
+                                          context.frameIndex(), options.frameLimit.value_or(0)),
+                              core::pathToUtf8(*options.screenshot)});
     }
     m_state.reset();
 }

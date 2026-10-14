@@ -46,13 +46,16 @@ geometry, resolves the real materials and preprocesses the real shaders.
   disabled), so the window shows exactly the stored bytes whatever its own encoding.
 - **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view into a second
   target at `--screenshot-size` (default 1920x1080, independent of the window), read it back through an `RGBA8`
-  texture view (raw sRGB bytes on every driver), flip the rows to top-first (ADR-0002) and write a PNG.
+  texture view (raw sRGB bytes on every driver), flip the rows to top-first (ADR-0002) and write an RGB PNG (the
+  window is opaque, so the alpha channel is dropped).
 - **Uniforms:** binding points are listed once in `rv/render/uniform_blocks.hpp` (0 frame, 1 lights, 2 material,
   3+ reserved); `FrameUniforms` (view, projection, viewProjection, cameraPosition, time, exposure) mirrors the std140
   block in `assets/shaders/common/common.glsl`. Per-draw values (`uModel`, `uBaseColor`) are plain uniforms.
 - **Shaders:** `gl::ShaderLibrary` assembles GLSL from `<asset root>/shaders` (`#include`, defines, `#line`) and
   maps compiler messages to `<file>:<line>`. F5 rebuilds every program; developer builds (`RV_DEV_ASSET_ROOT`) also
-  poll the files of every program, includes included, every 500 ms. A failed rebuild keeps the previous program.
+  poll the files of every program, includes included, every 500 ms (after a failed assembly: the files it read and
+  the one it could not read, so creating a missing include rebuilds the program). A failed rebuild keeps the
+  previous program.
 
 ## Threading (M0)
 

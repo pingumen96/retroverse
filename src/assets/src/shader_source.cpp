@@ -165,7 +165,8 @@ Expected<std::string> formatDefine(std::string_view define) {
 
 class Preprocessor {
 public:
-    explicit Preprocessor(const std::filesystem::path& root) : m_root(root) {}
+    Preprocessor(const std::filesystem::path& root, std::vector<std::filesystem::path>& dependencies)
+        : m_root(root), m_dependencies(dependencies) {}
 
     Expected<ShaderSource> run(std::string_view rootPath, std::span<const std::string> defines) {
         for (const std::string& define : defines) {
@@ -193,8 +194,11 @@ public:
     }
 
 private:
-    Expected<std::string> readSource(const std::string& relative, const std::string& context) const {
-        auto text = core::readTextFile(m_root / core::pathFromUtf8(relative), kMaxShaderFileBytes);
+    /// Reads one file of the load. Every attempt is a dependency, a failed one too: creating or fixing that file
+    /// changes the outcome.
+    Expected<std::string> readSource(const std::string& relative, const std::string& context) {
+        m_dependencies.push_back(core::pathFromUtf8(relative));
+        auto text = core::readTextFile(m_root / m_dependencies.back(), kMaxShaderFileBytes);
         if (!text) {
             Error error = text.error();
             error.message = "cannot read \"" + relative + "\": " + error.message;
@@ -329,6 +333,7 @@ private:
     }
 
     const std::filesystem::path& m_root;
+    std::vector<std::filesystem::path>& m_dependencies; // every file opened or tried, in order
     std::vector<std::string> m_defineLines;
     ShaderSource m_source;
     std::vector<std::string> m_stack;              // files being expanded, root first (as spelled)
@@ -423,8 +428,15 @@ ShaderSourceLoader::ShaderSourceLoader(std::filesystem::path shaderRoot) : m_roo
 
 Expected<ShaderSource> ShaderSourceLoader::load(std::string_view relativePath,
                                                 std::span<const std::string> defines) const {
+    std::vector<std::filesystem::path> dependencies;
+    return load(relativePath, defines, dependencies);
+}
+
+Expected<ShaderSource> ShaderSourceLoader::load(std::string_view relativePath, std::span<const std::string> defines,
+                                                std::vector<std::filesystem::path>& dependencies) const {
+    dependencies.clear();
     try {
-        Preprocessor preprocessor(m_root);
+        Preprocessor preprocessor(m_root, dependencies);
         return preprocessor.run(relativePath, defines);
     } catch (const std::bad_alloc&) {
         return makeError(ErrorCode::OutOfRange, "out of memory while preprocessing the shader",

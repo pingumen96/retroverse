@@ -135,7 +135,7 @@ TEST_CASE("app/exit_code: a failed self-test fails a smoke run", "[app][exit_cod
 }
 
 TEST_CASE("app/exit_code: a failure reported by the application logic is a runtime failure", "[app][exit_code]") {
-    // --screenshot that could not be written, scene shader that never built: whatever the kind of run.
+    // --screenshot that was not written, scene shader that never built: whatever the kind of run.
     RunSummary smoke = smokeRun(0);
     smoke.logicFailed = true;
     CHECK(exitCodeForCompletedRun(smoke) == ExitCode::RuntimeFailure);
@@ -145,6 +145,15 @@ TEST_CASE("app/exit_code: a failure reported by the application logic is a runti
     exitAfterFrames.framesRendered = 5;
     exitAfterFrames.logicFailed = true;
     CHECK(exitCodeForCompletedRun(exitAfterFrames) == ExitCode::RuntimeFailure);
+
+    // An --exit-after-frames run passes when the user ends it early, unless the logic reports the early end as a
+    // failure: a --screenshot of the last frame was then never written.
+    RunSummary interrupted;
+    interrupted.frameLimit = 100;
+    interrupted.framesRendered = 37;
+    CHECK(exitCodeForCompletedRun(interrupted) == ExitCode::Ok);
+    interrupted.logicFailed = true;
+    CHECK(exitCodeForCompletedRun(interrupted) == ExitCode::RuntimeFailure);
 
     RunSummary interactive;
     interactive.logicFailed = true;

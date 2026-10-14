@@ -16,7 +16,8 @@ struct ShaderSource {
     std::string text;
     /// Files that make up `text`, relative to the shader root with forward slashes ("pbr/pbr_base.frag",
     /// "common/brdf.glsl"). The index is the GLSL source-string number used in the emitted `#line` directives;
-    /// files[0] is the root file. The renderer's hot reload watches root / files[i].
+    /// files[0] is the root file. The renderer's hot reload watches root / files[i] (see the `dependencies` overload of
+    /// ShaderSourceLoader::load for failed loads).
     std::vector<std::filesystem::path> files;
 };
 
@@ -52,6 +53,14 @@ public:
     /// UTF-8 form). Failures are returned, not thrown.
     [[nodiscard]] Expected<ShaderSource> load(std::string_view relativePath,
                                               std::span<const std::string> defines = {}) const;
+
+    /// Same as load(), and also replaces the contents of `dependencies` with the files that decide the outcome,
+    /// relative to the shader root with forward slashes, in the order they were opened: every file read and, when the
+    /// load failed because a file could not be read (a missing include, say), that file too. On success the list
+    /// equals ShaderSource::files; a load rejected before any file is opened (invalid define or root path) lists
+    /// none. The renderer's hot reload watches these files, so creating a missing include triggers a rebuild.
+    [[nodiscard]] Expected<ShaderSource> load(std::string_view relativePath, std::span<const std::string> defines,
+                                              std::vector<std::filesystem::path>& dependencies) const;
 
 private:
     std::filesystem::path m_root;

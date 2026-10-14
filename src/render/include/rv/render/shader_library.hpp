@@ -42,11 +42,12 @@ struct ShaderReloadSummary {
 /// ShaderProgram, whose compiler messages name "<file>:<line>" (rv::assets::mapCompilerLog).
 ///
 /// reloadAll() (F5) rebuilds every program; pollHotReload() checks the modification times of every file involved
-/// (root files and includes) at most every 500 ms and rebuilds only the programs that use a changed file. A failed
-/// build is logged with the mapped messages and leaves the previous working program in place, so rendering goes on;
-/// a program that never built is empty (ShaderProgram::valid() is false) until a later reload succeeds. Rebuilding
-/// replaces the GL program: uniform values set on the old one are lost, so callers set their uniforms before each
-/// draw. Main thread only; every call, destruction included, needs the GL context current.
+/// (root files and includes, also an include that is missing, so that creating it triggers the rebuild) at most every
+/// 500 ms and rebuilds only the programs that use a changed file. A failed build is logged with the mapped messages
+/// and leaves the previous working program in place, so rendering goes on; a program that never built is empty
+/// (ShaderProgram::valid() is false) until a later reload succeeds. Rebuilding replaces the GL program: uniform values
+/// set on the old one are lost, so callers set their uniforms before each draw. Main thread only; every call,
+/// destruction included, needs the GL context current.
 class ShaderLibrary {
 public:
     /// `shaderRoot` is usually <asset root>/shaders. Nothing is read until load().
@@ -57,9 +58,10 @@ public:
     /// a reload succeeds, so that fixing the file brings the program in without a restart.
     [[nodiscard]] Expected<ShaderHandle> load(const ShaderDesc& desc);
 
-    /// Current program of `handle`: the last successful build, or an empty program while it never built. Handles that
-    /// this library did not return also give an empty program. The reference stays valid until the next load() and
-    /// shows the new program after a rebuild.
+    /// Current program of `handle`: the last successful build, or an empty program while it never built. A default
+    /// handle, or one beyond the programs loaded, also gives an empty program; a handle is an index, so one returned
+    /// by another library is not detected. The reference stays valid until the next load() and shows the new program
+    /// after a rebuild.
     [[nodiscard]] const ShaderProgram& get(ShaderHandle handle) const noexcept;
 
     /// Rebuilds every program from its files (F5) and logs the outcome.
@@ -74,7 +76,8 @@ private:
     struct Entry {
         ShaderDesc desc;
         ShaderProgram program;
-        /// Absolute, lexically normal paths of the files the stages were last assembled from (root file first).
+        /// Absolute, lexically normal paths of the files each stage's last assembly read or tried to read (root file
+        /// first; a missing include too): the files hot reload watches for it.
         std::vector<std::filesystem::path> vertexFiles;
         std::vector<std::filesystem::path> fragmentFiles;
     };

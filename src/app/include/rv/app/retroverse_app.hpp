@@ -12,8 +12,9 @@ namespace rv::app {
 ///
 /// Keys: F5 reloads the shaders; F12 writes <user data>/screenshots/retroverse-<timestamp>.png at --screenshot-size.
 /// Developer builds (RV_DEV_ASSET_ROOT) also reload shaders automatically when their files change. A frame-limited
-/// run with --screenshot writes its last frame to that file. A frame-limited run fails (exit code 3, AppContext::
-/// failRun) when that file cannot be written or when the scene shader never built, so nothing was drawn.
+/// run with --screenshot writes its last frame to that file (RGB: the window shows no alpha). A frame-limited run
+/// fails (exit code 3, AppContext::failRun) when that file is not written (write error, or the run ended before its
+/// last frame) or when the scene shader never built, so nothing was drawn.
 class RetroverseApp final : public IAppLogic {
 public:
     RetroverseApp();
