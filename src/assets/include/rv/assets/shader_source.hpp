@@ -29,22 +29,27 @@ struct ShaderSource {
 ///   becomes `#define NAME VALUE`. Names must be identifiers and must not be reserved (`GL_` prefix, `__`).
 /// - `#include "path"` resolves relative to the shader root (not to the including file), with forward slashes;
 ///   ".." and absolute paths are rejected. Includes nest. Each file is included at most once per load (implicit
-///   include guard: later includes of the same path expand to an empty line); an include cycle is an error
-///   naming the chain. A missing include is an error with "<including file>:<line>" context.
+///   include guard: later includes of the same path expand to an empty line; paths are compared ignoring ASCII
+///   letter case, like Windows file names); an include cycle is an error naming the chain. A missing include is
+///   an error with "<including file>:<line>" context.
 /// - After every include boundary a `#line <n> <fileIndex>` directive is emitted (GLSL 3.30+ semantics: the
 ///   next line is line n), so compiler messages map back to the right file and line (see mapCompilerLog).
-/// - Directives inside block or line comments are ignored. Includes are expanded regardless of `#if`
-///   conditions. CRLF line endings and a UTF-8 byte-order mark are accepted; the output uses LF.
+/// - Directives inside block or line comments are ignored. A block comment may not stay open after the
+///   `#version` line, nor start or end on an `#include` line (those lines are rewritten). Includes are expanded
+///   regardless of `#if` conditions. CRLF line endings and a UTF-8 byte-order mark are accepted; the output
+///   uses LF.
 class ShaderSourceLoader {
 public:
     explicit ShaderSourceLoader(std::filesystem::path shaderRoot);
 
     [[nodiscard]] const std::filesystem::path& root() const noexcept { return m_root; }
 
-    /// Loads `relativePath` (relative to the shader root, forward slashes) and expands it. Errors: NotFound
-    /// (root file or include missing), InvalidArgument (bad path or define), ParseError (missing #version,
-    /// malformed #include, include cycle, unterminated block comment in an include), OutOfRange (file too large,
-    /// include nesting deeper than 32).
+    /// Loads `relativePath` (relative to the shader root, forward slashes, UTF-8) and expands it. Errors: NotFound
+    /// (root file or include missing), InvalidArgument (bad path, including text that is not UTF-8, or bad
+    /// define), ParseError (missing #version, malformed #include, include cycle, block comment crossing the
+    /// #version or an #include line, unterminated block comment in an include), OutOfRange (file too large,
+    /// include nesting deeper than 32, out of memory), Unknown (unexpected failure, such as a shader root without a
+    /// UTF-8 form). Failures are returned, not thrown.
     [[nodiscard]] Expected<ShaderSource> load(std::string_view relativePath,
                                               std::span<const std::string> defines = {}) const;
 

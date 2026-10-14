@@ -218,6 +218,82 @@ TEST_CASE("assets/shader_source: directive errors", "[assets][shader]") {
     CHECK(tree.loader().load("../escape.frag").error().code == ErrorCode::InvalidArgument);
 }
 
+TEST_CASE("assets/shader_source: block comments must not cross the #version or an #include line",
+          "[assets][shader]") {
+    ShaderTree tree;
+    // The injected defines and #line would land inside the comment opened on the #version line.
+    tree.write("version_open.frag", "#version 450 /* note\n   continued */\nvoid main() {}\n");
+    // Replacing the include line would drop the "*/" and leave the comment open over the included text.
+    tree.write("include_close.frag", "#version 450\n/* start\nend */ #include \"inc.glsl\"\nvoid main() {}\n");
+    tree.write("inc.glsl", "float inc() { return 1.0; }\n");
+    const std::vector<std::string> defines = {"USE_SHADOWS"};
+    for (const auto& [file, context] : {std::pair{"version_open.frag", "version_open.frag:1"},
+                                        std::pair{"include_close.frag", "include_close.frag:3"}}) {
+        CAPTURE(file);
+        const auto source = tree.loader().load(file, defines);
+        REQUIRE_FALSE(source.has_value());
+        CHECK(source.error().code == ErrorCode::ParseError);
+        CHECK(source.error().context == context);
+    }
+
+    // Comments closed on the same line, or before the directive, are fine.
+    tree.write("closed.frag", "/* header\n*/ #version 450 /* inline */\n#include \"inc.glsl\" /* inline */\n");
+    const auto closed = tree.loader().load("closed.frag", defines);
+    REQUIRE(closed.has_value());
+    CHECK(lines(closed->text) == std::vector<std::string>{"/* header", "*/ #version 450 /* inline */",
+                                                          "#define USE_SHADOWS", "#line 3 0", "#line 1 1",
+                                                          "float inc() { return 1.0; }", "#line 4 0"});
+}
+
+TEST_CASE("assets/shader_source: the include guard ignores letter case like Windows file names",
+          "[assets][shader]") {
+    ShaderTree tree;
+    tree.write("main.frag", "#version 450\n#include \"common/brdf.glsl\"\n#include \"common/BRDF.glsl\"\n"
+                            "void main() {}\n");
+    tree.write("common/brdf.glsl", "float brdf() { return 1.0; }\n");
+    const auto source = tree.loader().load("main.frag");
+    REQUIRE(source.has_value());
+    CHECK(source->text.find("float brdf()") == source->text.rfind("float brdf()")); // expanded once
+    REQUIRE(source->files.size() == 2);
+    CHECK(fileName(*source, 1) == "common/brdf.glsl");
+    CHECK(locate(*source, "void main()") == std::make_pair(std::string("main.frag"), 4));
+
+    // A cycle through another spelling of an open file is reported where it closes.
+    tree.write("cycle.frag", "#version 450\n#include \"a.glsl\"\n");
+    tree.write("a.glsl", "#include \"A.glsl\"\n");
+    const auto cycle = tree.loader().load("cycle.frag");
+    REQUIRE_FALSE(cycle.has_value());
+    CHECK(cycle.error().code == ErrorCode::ParseError);
+    CHECK(cycle.error().context == "a.glsl:1");
+    CHECK(cycle.error().message.find("cycle.frag -> a.glsl -> A.glsl") != std::string::npos);
+}
+
+TEST_CASE("assets/shader_source: paths that are not valid UTF-8 are errors, not exceptions", "[assets][shader]") {
+    ShaderTree tree;
+    tree.write("main.frag", "#version 450\n#include \"caf\xE9.glsl\"\nvoid main() {}\n"); // Latin-1, not UTF-8
+    const auto include = tree.loader().load("main.frag");
+    REQUIRE_FALSE(include.has_value());
+    CHECK(include.error().code == ErrorCode::InvalidArgument);
+    CHECK(include.error().context == "main.frag:2");
+    CHECK(include.error().message.find("caf\\xE9.glsl") != std::string::npos); // escaped: the message stays UTF-8
+
+    for (const std::string_view bad : {"caf\xE9.frag", "over\xC0\xAFlong.frag", "surrogate\xED\xA0\x80.frag",
+                                       "cut\xE2\x82.frag"}) {
+        CAPTURE(bad);
+        const auto root = tree.loader().load(bad);
+        REQUIRE_FALSE(root.has_value());
+        CHECK(root.error().code == ErrorCode::InvalidArgument);
+    }
+
+    // A shader root without a UTF-8 form (unpaired UTF-16 surrogate) fails cleanly as well.
+    const ShaderSourceLoader broken(tree.dir.path() / std::wstring(L"bad\xD800name"));
+    CHECK_FALSE(broken.load("main.frag").has_value());
+
+    // Valid UTF-8 names work.
+    tree.write("café.frag", "#version 450\nvoid main() {}\n");
+    CHECK(tree.loader().load("café.frag").has_value());
+}
+
 TEST_CASE("assets/shader_source: directives inside comments are ignored", "[assets][shader]") {
     ShaderTree tree;
     tree.write("main.frag", "#version 450\n// #include \"missing.glsl\"\n/*\n#include \"missing.glsl\"\n*/\n"

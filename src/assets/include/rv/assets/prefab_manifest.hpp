@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -38,7 +39,7 @@ struct VideoSurfaceInfo {
 /// How the prefab is produced at runtime. Exactly one of `model` and `generator` is set (validated, not parsed).
 struct RuntimeInfo {
     std::optional<std::string> model;                 ///< asset-relative .glb/.gltf path
-    std::optional<std::string> generator;             ///< procedural prefab kind of rv_geometry (e.g. "crt")
+    std::optional<std::string> generator;             ///< kProceduralPrefabKinds entry (e.g. "crt")
     nlohmann::json params = nlohmann::json::object(); ///< generator parameters (object, empty when absent)
     std::optional<glm::vec3> scaleMeters;             ///< nominal size in meters (x, y, z)
     std::vector<std::string> lods;                    ///< LOD model paths, highest detail first
@@ -76,6 +77,11 @@ struct PrefabManifest {
 /// Placeholder accepted (with a warning) until the build computes the real digest.
 inline constexpr std::string_view kPlaceholderHash = "sha256:TO_BE_GENERATED_BY_BUILD";
 
+/// Procedural prefab kinds of the shared geometry contract (the kinds rv::geometry::buildPrefab builds), the only
+/// values accepted for runtime.generator.
+inline constexpr std::array<std::string_view, 9> kProceduralPrefabKinds = {
+    "room_shell", "shelf", "cartridge", "crt", "tv_cabinet", "console_cartridge", "poster_frame", "rug", "floor_lamp"};
+
 /// Parses the structure of a manifest: JSON types, unknown keys (errors), required keys ("schemaVersion" = 1,
 /// "id", "assetType", "category", "source", "runtime"). Optional strings may be null. Semantic rules are checked by
 /// validatePrefabManifest(). Error contexts are JSON paths: "<context>:/runtime/scaleMeters".
@@ -94,19 +100,23 @@ struct ValidationIssue {
 /// Semantic checks (style §11, §26.3). Errors:
 /// - id matches ^[a-z0-9_]+([.][a-z0-9_]+)+$; assetType and category are not empty;
 /// - exactly one of runtime.model and runtime.generator; model and LOD paths are safe relative paths (model ends in
-///   .glb or .gltf); generator is a lowercase identifier;
+///   .glb or .gltf); generator is one of kProceduralPrefabKinds;
 /// - runtime.scaleMeters components are finite and > 0;
 /// - assetType "electronic_screen" requires runtime.sockets.screen and runtime.videoSurface;
 /// - videoSurface.aspectRatio is "<w>:<h>" with positive numbers and meshNode is not empty;
-/// - with `model` and/or `proceduralSockets`: every runtime.sockets value and videoSurface.meshNode names an
-///   existing socket (by id or node name), and the screen socket / meshNode is a ScreenSurface;
+/// - when socket sources are given: every runtime.sockets value and videoSurface.meshNode names an existing socket
+///   (by id or node name) of `model` or `proceduralSockets`, and the screen socket / meshNode is a ScreenSurface;
 /// - source.license is not empty; source.redistributionApproved is true unless source.kind is "user";
 /// - hash is "sha256:" followed by 64 hex digits (the kPlaceholderHash placeholder is only a warning);
 /// - fallbackPrefab, when present, is a valid id different from id.
 /// Warnings: placeholder hash, runtime.params given for a model prefab.
+///
+/// Socket sources: `model` (null when there is none) and `proceduralSockets`, the complete socket list of the
+/// procedural prefab (an empty list means the prefab has no sockets). Without either, socket names are not
+/// checked.
 [[nodiscard]] std::vector<ValidationIssue>
 validatePrefabManifest(const PrefabManifest& manifest, const ModelData* model = nullptr,
-                       std::span<const geometry::Socket> proceduralSockets = {});
+                       std::optional<std::span<const geometry::Socket>> proceduralSockets = std::nullopt);
 
 /// True when `issues` contains at least one error.
 [[nodiscard]] bool hasErrors(std::span<const ValidationIssue> issues) noexcept;

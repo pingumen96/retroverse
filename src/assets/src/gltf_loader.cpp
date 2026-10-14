@@ -7,6 +7,7 @@
 #include <initializer_list>
 #include <new>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <variant>
@@ -177,8 +178,9 @@ class Importer {
 public:
     Importer(std::span<const std::byte> bytes, std::filesystem::path baseDirectory, const GltfLoadOptions& options,
              std::string context)
-        : m_bytes(bytes), m_baseDirectory(std::move(baseDirectory)), m_options(options), m_context(std::move(context)) {
-    }
+        : m_bytes(bytes), m_baseDirectory(std::move(baseDirectory)), m_options(options), m_context(std::move(context)),
+          m_budget{static_cast<std::size_t>(options.maxFileBytes / 16),
+                   static_cast<std::size_t>(options.maxFileBytes / 4)} {}
 
     Expected<ModelData> run() {
         if (auto status = parse(); !status) {
@@ -351,7 +353,14 @@ private:
             const fg::Image& image = m_asset.images[i];
             const std::string what =
                 "image " + std::to_string(i) + (image.name.empty() ? "" : " \"" + toStdString(image.name) + "\"");
-            auto decoded = decodeOneImage(image, what);
+            // A failure, even an unexpected one, only costs this image (and the textures using it).
+            auto decoded = [&]() -> Expected<ImageData> {
+                try {
+                    return decodeOneImage(image, what);
+                } catch (const std::exception& e) {
+                    return fail(ErrorCode::Unknown, std::string("unexpected failure: ") + e.what());
+                }
+            }();
             if (!decoded) {
                 warn(what + " could not be loaded and was dropped: " + decoded.error().message);
                 continue;
@@ -519,8 +528,8 @@ private:
                 if (material && m_uvTransforms[*material]) {
                     conversion.uvTransform = &*m_uvTransforms[*material];
                 }
-                auto converted =
-                    detail::convertPrimitive(m_asset, m_buffers, primitive, conversion, label, m_model.warnings);
+                auto converted = detail::convertPrimitive(m_asset, m_buffers, primitive, conversion, m_budget, label,
+                                                          m_model.warnings);
                 if (!converted) {
                     return fail(converted.error().code, converted.error().message);
                 }
@@ -570,16 +579,6 @@ private:
                 m_model.nodes[child].parent = static_cast<int>(n);
             }
         }
-        for (std::size_t n = 0; n < count; ++n) {
-            std::size_t steps = 0;
-            for (int parent = m_model.nodes[n].parent; parent != -1;
-                 parent = m_model.nodes[static_cast<std::size_t>(parent)].parent) {
-                if (++steps > count) {
-                    return fail(ErrorCode::ParseError,
-                                "the node hierarchy contains a cycle (node " + std::to_string(n) + ")");
-                }
-            }
-        }
 
         for (std::size_t n = 0; n < count; ++n) {
             const fg::Node& source = m_asset.nodes[n];
@@ -599,7 +598,9 @@ private:
             }
         }
 
-        // Parents before children: depth-first from every root (the hierarchy is acyclic at this point).
+        // Parents before children: depth-first from every root. Every node has at most one parent, so the walk
+        // never enters a cycle, and the nodes it does not reach are exactly those on or below a cycle.
+        std::vector<char> reached(count, 0);
         std::vector<std::size_t> stack;
         for (std::size_t root = 0; root < count; ++root) {
             if (m_model.nodes[root].parent != -1) {
@@ -609,6 +610,7 @@ private:
             while (!stack.empty()) {
                 const std::size_t n = stack.back();
                 stack.pop_back();
+                reached[n] = 1;
                 ModelNode& node = m_model.nodes[n];
                 node.world = node.parent == -1
                                  ? node.local
@@ -620,6 +622,11 @@ private:
                     stack.push_back(child);
                 }
             }
+        }
+        if (const auto unreached = std::find(reached.begin(), reached.end(), 0); unreached != reached.end()) {
+            return fail(ErrorCode::ParseError, "the node hierarchy contains a cycle (node " +
+                                                   std::to_string(unreached - reached.begin()) +
+                                                   " is not below any root node)");
         }
         return ok();
     }
@@ -638,6 +645,7 @@ private:
         if (sceneIndex >= m_asset.scenes.size()) {
             return fail(ErrorCode::ParseError, "default scene " + std::to_string(sceneIndex) + " does not exist");
         }
+        std::vector<char> listed(m_model.nodes.size(), 0);
         for (const std::size_t n : m_asset.scenes[sceneIndex].nodeIndices) {
             if (n >= m_model.nodes.size()) {
                 return fail(ErrorCode::ParseError,
@@ -647,7 +655,8 @@ private:
                 return fail(ErrorCode::ParseError,
                             "scene root node " + std::to_string(n) + " is also the child of another node");
             }
-            if (std::find(roots.begin(), roots.end(), n) == roots.end()) {
+            if (listed[n] == 0) {
+                listed[n] = 1;
                 roots.push_back(n);
             }
         }
@@ -726,7 +735,7 @@ private:
         } else if (match->kind == geometry::SocketKind::ColliderProxy) {
             warn("ColliderProxy node \"" + node.name + "\" has no mesh; it defines no collision shape");
         }
-        if (geometry::findSocket(m_model.sockets, socket.id) != nullptr) {
+        if (!m_socketIds.insert(socket.id).second) {
             warn("duplicate socket id \"" + socket.id + "\" (node \"" + node.name + "\"); lookups return the first");
         }
         m_model.sockets.push_back(std::move(socket));
@@ -769,6 +778,7 @@ private:
     std::filesystem::path m_baseDirectory;
     GltfLoadOptions m_options;
     std::string m_context;
+    detail::GeometryBudget m_budget; // what the remaining primitives may still decode (see GltfLoadOptions)
 
     fg::Asset m_asset;
     std::vector<std::vector<std::byte>> m_externalData;             // owns external buffer files
@@ -777,6 +787,7 @@ private:
     std::vector<std::optional<detail::UvTransform>> m_uvTransforms; // per glTF material
     std::vector<MeshRange> m_meshRanges;                            // per glTF mesh -> ModelData::meshes
     std::vector<std::optional<std::uint32_t>> m_primitiveMaterials; // per ModelData::meshes entry
+    std::set<std::string, std::less<>> m_socketIds;                 // ids in ModelData::sockets
     ModelData m_model;
 };
 

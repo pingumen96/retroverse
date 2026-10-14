@@ -3,8 +3,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -47,6 +50,29 @@ GlbNode node(std::string name, glm::vec3 translation = glm::vec3(0.0f), std::opt
     result.translation = translation;
     result.mesh = mesh;
     return result;
+}
+
+/// `size` x `size` vertices in the XY plane (normals +Z), two triangles per cell.
+GlbMesh makeGridMesh(std::string name, int size) {
+    GlbMesh mesh;
+    mesh.name = std::move(name);
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            mesh.positions.emplace_back(0.01f * static_cast<float>(x), 0.01f * static_cast<float>(y), 0.0f);
+            mesh.normals.emplace_back(0.0f, 0.0f, 1.0f);
+            mesh.uvs.emplace_back(static_cast<float>(x) / static_cast<float>(size - 1),
+                                  static_cast<float>(y) / static_cast<float>(size - 1));
+        }
+    }
+    for (int y = 0; y + 1 < size; ++y) {
+        for (int x = 0; x + 1 < size; ++x) {
+            const auto corner = static_cast<std::uint32_t>(y * size + x);
+            const auto row = static_cast<std::uint32_t>(size);
+            mesh.indices.insert(mesh.indices.end(), {corner, corner + 1, corner + row + 1});
+            mesh.indices.insert(mesh.indices.end(), {corner, corner + row + 1, corner + row});
+        }
+    }
+    return mesh;
 }
 
 /// Root > Body, ScreenSurface, Anchor_TV_Stand, Anchor_ScreenLook, PowerButton, SpeakerLeft, ColliderProxy.
@@ -664,6 +690,18 @@ TEST_CASE("assets/gltf: invalid vertex data and references are errors", "[assets
         REQUIRE_FALSE(model.has_value());
         CHECK(model.error().code == ErrorCode::ParseError);
     }
+    SECTION("node hierarchy cycle next to a valid root") {
+        GlbDescription description;
+        GlbNode b = node("B");
+        b.children = {2};
+        GlbNode c = node("C");
+        c.children = {1};
+        description.nodes = {node("Root"), b, c};
+        const auto model = load(description);
+        REQUIRE_FALSE(model.has_value());
+        CHECK(model.error().code == ErrorCode::ParseError);
+        CHECK(model.error().message.find("cycle") != std::string::npos);
+    }
     SECTION("node with two parents") {
         GlbDescription description;
         GlbNode a = node("A");
@@ -737,6 +775,128 @@ TEST_CASE("assets/gltf: .gltf files with base64 and external buffers", "[assets]
 
     const auto missingBin = rv::assets::loadGltf(dir.file("missing/crt.gltf"));
     CHECK(missingBin.error().code == ErrorCode::NotFound);
+}
+
+TEST_CASE("assets/gltf: unreadable external image paths drop the texture, not the model", "[assets][gltf]") {
+    rv::assets::ImageData texel;
+    texel.width = 1;
+    texel.height = 1;
+    texel.channels = 4;
+    texel.pixels = {10, 20, 30, 255};
+    GlbDescription description;
+    GlbMaterial material;
+    material.name = "Cover";
+    material.baseColorImage = texel;
+    description.materials = {material};
+    GlbMesh quad = rv::test::makeQuadMesh("quad");
+    quad.material = 0;
+    description.meshes = {quad};
+    description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
+    rv::test::TempDir dir;
+
+    // The URI percent-decodes to Latin-1 bytes, which are not UTF-8.
+    description.patchJson = [](nlohmann::json& json) {
+        json["images"][0] = {{"uri", "covers/caf%E9.png"}};
+    };
+    const std::string latin1 = rv::test::buildGltfWithEmbeddedBuffer(description);
+    const auto model = rv::assets::loadGltfFromMemory(std::as_bytes(std::span(latin1)), dir.path());
+    REQUIRE(model.has_value());
+    CHECK(model->images.empty());
+    CHECK(model->materials[0].baseColorTexture.empty());
+    CHECK(hasWarning(*model, "image 0"));
+    CHECK(hasWarning(*model, "UTF-8"));
+    CHECK(model->drawItems.size() == 1);
+
+    // A model directory without a UTF-8 form (unpaired UTF-16 surrogate) cannot be read from either.
+    description.patchJson = [](nlohmann::json& json) {
+        json["images"][0] = {{"uri", "cover.png"}};
+    };
+    const std::string plain = rv::test::buildGltfWithEmbeddedBuffer(description);
+    const auto odd =
+        rv::assets::loadGltfFromMemory(std::as_bytes(std::span(plain)), dir.path() / std::wstring(L"bad\xD800-dir"));
+    REQUIRE(odd.has_value());
+    CHECK(odd->images.empty());
+    CHECK(hasWarning(*odd, "image 0"));
+
+    // Buffers are required, so a buffer path that is not UTF-8 fails the model with a clear code.
+    const rv::test::GltfFiles external = rv::test::buildGltfWithExternalBuffer(description, "caf%E9.bin");
+    const auto noBuffer = rv::assets::loadGltfFromMemory(std::as_bytes(std::span(external.json)), dir.path());
+    REQUIRE_FALSE(noBuffer.has_value());
+    CHECK(noBuffer.error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("assets/gltf: decoded geometry is bounded by the file size limit", "[assets][gltf]") {
+    GltfLoadOptions small;
+    small.maxFileBytes = 64 * 1024; // at most 4096 vertices and 16384 indices for the whole model
+
+    SECTION("primitives sharing accessors") {
+        GlbDescription description;
+        description.meshes.push_back(makeGridMesh("grid", 20)); // 400 vertices, 2166 indices
+        description.nodes = {node("Grid", glm::vec3(0.0f), 0)};
+        const auto single = load(description, small);
+        REQUIRE(single.has_value());
+        CHECK(single->stats.vertices == 400);
+
+        // The same primitive ten more times: a few more bytes of JSON, eleven copies of the geometry.
+        description.patchJson = [](nlohmann::json& json) {
+            nlohmann::json& primitives = json["meshes"][0]["primitives"];
+            const nlohmann::json primitive = primitives[0];
+            for (int i = 0; i < 10; ++i) {
+                primitives.push_back(primitive);
+            }
+        };
+        const std::vector<std::byte> glb = rv::test::buildGlb(description);
+        REQUIRE(glb.size() < small.maxFileBytes);
+        const auto shared = rv::assets::loadGltfFromMemory(glb, {}, small);
+        REQUIRE_FALSE(shared.has_value());
+        CHECK(shared.error().code == ErrorCode::OutOfRange);
+        CHECK(load(description).has_value()); // within the default limit
+    }
+    SECTION("flat normals expanding every index into a vertex") {
+        const auto triangleSoup = [](std::size_t triangles) {
+            GlbDescription description;
+            GlbMesh mesh;
+            mesh.name = "soup";
+            mesh.positions = {{0.0f, 0.0f, 0.0f}, {0.1f, 0.0f, 0.0f}, {0.0f, 0.1f, 0.0f}};
+            for (std::size_t t = 0; t < triangles; ++t) {
+                mesh.indices.insert(mesh.indices.end(), {0u, 1u, 2u});
+            }
+            description.meshes.push_back(mesh);
+            description.nodes = {node("Soup", glm::vec3(0.0f), 0)};
+            return description;
+        };
+        const auto fits = load(triangleSoup(1000), small);
+        REQUIRE(fits.has_value());
+        CHECK(fits->meshes[0].vertices.size() == 3000);
+
+        const auto expanded = load(triangleSoup(2000), small); // 6000 vertices from 3 positions
+        REQUIRE_FALSE(expanded.has_value());
+        CHECK(expanded.error().code == ErrorCode::OutOfRange);
+    }
+}
+
+TEST_CASE("assets/gltf: deep chains, many roots and many sockets", "[assets][gltf]") {
+    // Hierarchy, scene-root and socket checks run in linear time (quadratic versions took seconds here).
+    constexpr int kDepth = 5000;
+    constexpr int kRoots = 5000;
+    GlbDescription description;
+    for (int i = 0; i < kDepth; ++i) {
+        GlbNode link = node("SpeakerChain_" + std::to_string(i), glm::vec3(0.0f, 1.0f, 0.0f));
+        if (i + 1 < kDepth) {
+            link.children = {i + 1};
+        }
+        description.nodes.push_back(std::move(link));
+    }
+    for (int i = 0; i < kRoots; ++i) {
+        description.nodes.push_back(node("SpeakerRoot_" + std::to_string(i)));
+    }
+    const auto model = load(description);
+    REQUIRE(model.has_value());
+    REQUIRE(model->nodes.size() == static_cast<std::size_t>(kDepth + kRoots));
+    CHECK(model->nodes[kDepth - 1].parent == kDepth - 2);
+    CHECK(model->nodes[kDepth - 1].world[3].y == static_cast<float>(kDepth)); // integer sums are exact
+    CHECK(model->sockets.size() == static_cast<std::size_t>(kDepth + kRoots));
+    CHECK_FALSE(hasWarning(*model, "duplicate"));
 }
 
 TEST_CASE("assets/gltf: the test GLB builder writes an aligned two-chunk container", "[assets][gltf]") {

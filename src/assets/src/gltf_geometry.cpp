@@ -332,7 +332,8 @@ Expected<std::span<const std::byte>> bufferViewBytes(const fg::Asset& asset, Buf
 
 Expected<std::optional<geometry::MeshData>>
 convertPrimitive(const fg::Asset& asset, BufferSpans buffers, const fg::Primitive& primitive,
-                 const PrimitiveConversion& conversion, const std::string& label, std::vector<std::string>& warnings) {
+                 const PrimitiveConversion& conversion, GeometryBudget& budget, const std::string& label,
+                 std::vector<std::string>& warnings) {
     const fg::PrimitiveType type = primitive.type;
     if (type != fg::PrimitiveType::Triangles && type != fg::PrimitiveType::TriangleStrip &&
         type != fg::PrimitiveType::TriangleFan) {
@@ -342,6 +343,16 @@ convertPrimitive(const fg::Asset& asset, BufferSpans buffers, const fg::Primitiv
     if (!primitive.targets.empty()) {
         warnings.push_back(label + ": morph targets are ignored");
     }
+    const auto spend = [&budget, &label](std::size_t vertices, std::size_t indices) -> Status {
+        if (vertices > budget.vertices || indices > budget.indices) {
+            return makeError(ErrorCode::OutOfRange,
+                             label + ": the model decodes to more vertices or indices than its size limit allows "
+                                     "(maxFileBytes / 16 vertices, maxFileBytes / 4 indices)");
+        }
+        budget.vertices -= vertices;
+        budget.indices -= indices;
+        return ok();
+    };
 
     const auto positionAttribute = primitive.findAttribute("POSITION");
     if (positionAttribute == primitive.attributes.end()) {
@@ -352,6 +363,9 @@ convertPrimitive(const fg::Asset& asset, BufferSpans buffers, const fg::Primitiv
         return propagate(positions.error());
     }
     const std::size_t vertexCount = positions->size();
+    if (auto status = spend(vertexCount, 0); !status) {
+        return propagate(status.error());
+    }
     const auto sameCount = [&](std::size_t count, std::string_view attribute) -> Status {
         if (count != vertexCount) {
             return makeError(ErrorCode::ParseError, label + " " + std::string(attribute) + " has " +
@@ -422,6 +436,10 @@ convertPrimitive(const fg::Asset& asset, BufferSpans buffers, const fg::Primitiv
     if (triangles->empty()) {
         warnings.push_back(label + " has no triangles; skipped");
         return std::optional<geometry::MeshData>{};
+    }
+    // Flat normals give every triangle corner its own vertex.
+    if (auto status = spend(normals.empty() ? triangles->size() : 0, triangles->size()); !status) {
+        return propagate(status.error());
     }
 
     if (conversion.uvTransform != nullptr && !conversion.uvTransform->isIdentity()) {

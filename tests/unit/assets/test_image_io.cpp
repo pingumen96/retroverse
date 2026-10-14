@@ -3,6 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <initializer_list>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "support/temp_dir.hpp"
@@ -79,6 +82,38 @@ std::vector<std::byte> pngHeaderOnly(std::uint32_t width, std::uint32_t height) 
     appendBigEndian32(bytes, 0); // CRC
     return bytes;
 }
+
+/// Offset of the first `marker` segment (FF marker) of a JPEG, walking the header segment lengths from SOI.
+std::size_t jpegSegmentOffset(const std::vector<std::byte>& jpeg, int marker) {
+    std::size_t pos = 2;
+    while (pos + 4 <= jpeg.size() && jpeg[pos] == std::byte{0xFF} && std::to_integer<int>(jpeg[pos + 1]) != marker) {
+        pos += 2 + (std::to_integer<std::size_t>(jpeg[pos + 2]) << 8) + std::to_integer<std::size_t>(jpeg[pos + 3]);
+    }
+    REQUIRE(pos + 4 <= jpeg.size());
+    REQUIRE(jpeg[pos] == std::byte{0xFF});
+    REQUIRE(std::to_integer<int>(jpeg[pos + 1]) == marker);
+    return pos;
+}
+
+/// Offset just past the first `marker` segment.
+std::size_t jpegSegmentEnd(const std::vector<std::byte>& jpeg, int marker) {
+    const std::size_t pos = jpegSegmentOffset(jpeg, marker);
+    return pos + 2 + (std::to_integer<std::size_t>(jpeg[pos + 2]) << 8) + std::to_integer<std::size_t>(jpeg[pos + 3]);
+}
+
+std::vector<std::byte> inserted(const std::vector<std::byte>& bytes, std::size_t offset,
+                                std::initializer_list<int> values) {
+    std::vector<std::byte> result(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(offset));
+    for (const int value : values) {
+        result.push_back(static_cast<std::byte>(value));
+    }
+    result.insert(result.end(), bytes.begin() + static_cast<std::ptrdiff_t>(offset), bytes.end());
+    return result;
+}
+
+constexpr int kApp0 = 0xE0;
+constexpr int kStartOfFrame = 0xC0;
+constexpr int kStartOfScan = 0xDA;
 
 } // namespace
 
@@ -276,6 +311,46 @@ TEST_CASE("assets/image_io: corrupt and truncated data are clear errors", "[asse
     REQUIRE_FALSE(truncatedJpegResult.has_value());
     CHECK(truncatedJpegResult.error().code == ErrorCode::ParseError);
     CHECK(truncatedJpegResult.error().message.find("truncated") != std::string::npos);
+}
+
+TEST_CASE("assets/image_io: JPEG padding between header segments is skipped like stb_image does",
+          "[assets][image_io]") {
+    const auto jpeg = rv::assets::encodeJpeg(makeTopWhiteBottomBlack(32, 16), 90).value();
+    const auto reference = rv::assets::decodeImage(jpeg, 0, "cover.jpg");
+    REQUIRE(reference.has_value());
+
+    // Some encoders leave stray bytes after a segment (stb_image: "some files have extra padding after their
+    // blocks"); the image still decodes.
+    const auto padded = inserted(jpeg, jpegSegmentEnd(jpeg, kApp0), {0x00, 0x20});
+    const auto decoded = rv::assets::decodeImage(padded, 0, "padded.jpg");
+    REQUIRE(decoded.has_value());
+    CHECK(decoded->width == 32);
+    CHECK(decoded->pixels == reference->pixels);
+}
+
+TEST_CASE("assets/image_io: JPEG data that stb_image would decode as uninitialized pixels is rejected",
+          "[assets][image_io]") {
+    const auto jpeg = rv::assets::encodeJpeg(makeTopWhiteBottomBlack(32, 16), 90).value();
+    const std::size_t frameEnd = jpegSegmentEnd(jpeg, kStartOfFrame);
+
+    // No scan at all: the end-of-image marker follows the tables.
+    const auto scan = static_cast<std::ptrdiff_t>(jpegSegmentOffset(jpeg, kStartOfScan));
+    std::vector<std::byte> noScan(jpeg.begin(), jpeg.begin() + scan);
+    noScan.push_back(std::byte{0xFF});
+    noScan.push_back(std::byte{0xD9});
+    // Stray bytes, or a marker stb_image does not process, between the frame header and the first scan.
+    const auto strayByte = inserted(jpeg, frameEnd, {0x00});
+    const auto unknownMarker = inserted(jpeg, frameEnd, {0xFF, 0xF0, 0x00, 0x04, 0x12, 0x34});
+
+    for (const auto& [name, bytes] : {std::pair{"no scan", noScan}, std::pair{"stray byte", strayByte},
+                                      std::pair{"unknown marker", unknownMarker}}) {
+        CAPTURE(name);
+        const auto result = rv::assets::decodeImage(bytes, 0, "broken.jpg");
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error().code == ErrorCode::ParseError);
+        CHECK(result.error().message.find("JPEG") != std::string::npos);
+        CHECK(result.error().context == "broken.jpg");
+    }
 }
 
 TEST_CASE("assets/image_io: images larger than 16384 pixels per side are rejected", "[assets][image_io]") {

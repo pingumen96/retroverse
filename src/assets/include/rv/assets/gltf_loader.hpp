@@ -17,7 +17,9 @@ struct GltfLoadOptions {
     bool generateTangents = true;
     /// Keep "ColliderProxy*" nodes out of ModelData::drawItems (they are still reported as sockets).
     bool excludeColliderProxies = true;
-    /// Upper bound for the model file and for each external buffer or image it references.
+    /// Upper bound for the model file and for each external buffer or image it references. It also bounds the
+    /// geometry decoded for the whole model, whatever the accessor sharing or flat-normal expansion: at most
+    /// maxFileBytes / 16 vertices (48 bytes each) and maxFileBytes / 4 indices, i.e. 2^24 and 2^26 by default.
     std::uint64_t maxFileBytes = 256ull << 20;
 };
 
@@ -47,8 +49,11 @@ struct GltfLoadOptions {
 /// - Diagnostics (warnings): non-uniform or mirroring scale on a node with a mesh, model bounds larger than 20 m or
 ///   smaller than 5 mm (probably exported in centimeters or millimeters).
 ///
-/// Errors: NotFound / IoError (file), OutOfRange (size limits), ParseError (invalid glTF, GLB container or data),
-/// Unsupported (required extension, sparse accessors, unsupported attribute formats).
+/// Errors: NotFound / IoError (file or external buffer), InvalidArgument (unsafe or malformed external reference:
+/// "..", absolute path, text that is not UTF-8; or a path that is not a regular file), OutOfRange (file size
+/// limits, decoded geometry limit, out of memory), ParseError (invalid glTF, GLB container or data), Unsupported
+/// (GLB container version other than 2, URI schemes, required extension, sparse accessors, meshopt compression,
+/// unsupported attribute formats), Unknown (unexpected failure).
 [[nodiscard]] Expected<ModelData> loadGltf(const std::filesystem::path& path, const GltfLoadOptions& options = {});
 
 /// Same as loadGltf() for a file already in memory. External buffers and images resolve against

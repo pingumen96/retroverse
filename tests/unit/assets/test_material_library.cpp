@@ -12,6 +12,7 @@
 #include <rv/assets/material_library.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
+#include <rv/core/text.hpp>
 
 using Catch::Approx;
 using rv::ErrorCode;
@@ -22,7 +23,7 @@ using rv::assets::ShadingModel;
 
 namespace {
 
-const std::filesystem::path kLibraryPath = std::filesystem::path(RV_TEST_ASSET_DIR) / "materials/base/materials.json";
+const std::filesystem::path kLibraryPath = rv::core::pathFromUtf8(RV_TEST_ASSET_DIR) / "materials/base/materials.json";
 
 /// The shared material contract: scene files and procedural prefabs reference these names.
 const std::vector<std::string> kSharedNames = {
@@ -87,13 +88,16 @@ TEST_CASE("assets/materials: the shared library defines every contract material"
         if (material->shading != ShadingModel::Pbr) {
             continue;
         }
-        // Physically plausible presets: dielectrics vs metals.
+        // Physically plausible presets: dielectrics vs metals. A metal's base color is its reflectance at normal
+        // incidence, at least about 50% for real metals (linear luminance).
         if (material->metallicFactor == 0.0f) {
             CHECK(material->roughnessFactor >= 0.3f);
             CHECK(material->roughnessFactor <= 0.95f);
         } else {
             CHECK(material->metallicFactor >= 0.9f);
             CHECK(material->metallicFactor <= 1.0f);
+            const glm::vec4& color = material->baseColorFactor;
+            CHECK(0.2126f * color.r + 0.7152f * color.g + 0.0722f * color.b >= 0.4f);
         }
     }
     CHECK(library->size() == kSharedNames.size());

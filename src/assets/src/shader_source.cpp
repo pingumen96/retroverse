@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <exception>
+#include <new>
 #include <optional>
 #include <set>
 #include <utility>
@@ -182,7 +184,7 @@ public:
             return propagate(text.error());
         }
         m_source.files.push_back(core::pathFromUtf8(*path));
-        m_included.insert(*path);
+        m_included.insert(core::toLowerAscii(*path));
         m_stack.push_back(*path);
         if (auto status = expand(*path, *text, 0); !status) {
             return propagate(status.error());
@@ -227,6 +229,7 @@ private:
         for (std::size_t i = 0; i < lines.size(); ++i) {
             const std::size_t lineNumber = i + 1;
             const std::string location = relative + ":" + std::to_string(lineNumber);
+            const bool startsInBlockComment = inBlockComment;
             const std::string code = stripComments(lines[i], inBlockComment);
             const std::optional<Directive> directive = parseDirective(code);
 
@@ -239,6 +242,10 @@ private:
                     return makeError(ErrorCode::ParseError,
                                      "the root shader must start with a #version directive (only comments and "
                                      "blank lines may precede it)",
+                                     location);
+                }
+                if (inBlockComment) { // the injected defines and #line would be commented out
+                    return makeError(ErrorCode::ParseError, "a block comment must not start on the #version line",
                                      location);
                 }
                 emit(lines[i]);
@@ -261,8 +268,9 @@ private:
                 emit(lines[i]);
                 continue;
             }
-            if (inBlockComment) {
-                return makeError(ErrorCode::ParseError, "a block comment must not start on an #include line", location);
+            if (startsInBlockComment || inBlockComment) { // the include line is replaced, comment delimiters included
+                return makeError(ErrorCode::ParseError, "a block comment must not start or end on an #include line",
+                                 location);
             }
             if (auto status = include(directive->argument, location, lineNumber, fileIndex); !status) {
                 return status;
@@ -288,10 +296,13 @@ private:
         if (!path) {
             return propagate(path.error());
         }
-        if (std::find(m_stack.begin(), m_stack.end(), *path) != m_stack.end()) {
+        // Windows file names ignore letter case: "common/BRDF.glsl" and "common/brdf.glsl" are the same file.
+        const auto sameFile = [&path](const std::string& other) { return core::equalsIgnoreCaseAscii(other, *path); };
+        if (std::any_of(m_stack.begin(), m_stack.end(), sameFile)) {
             return makeError(ErrorCode::ParseError, "include cycle: " + includeChain(*path), location);
         }
-        if (m_included.contains(*path)) {
+        const std::string key = core::toLowerAscii(*path);
+        if (m_included.contains(key)) {
             emit(""); // already expanded once in this load; keep the line numbering of the parent
             return ok();
         }
@@ -306,7 +317,7 @@ private:
         }
         const std::size_t includedIndex = m_source.files.size();
         m_source.files.push_back(core::pathFromUtf8(*path));
-        m_included.insert(*path);
+        m_included.insert(key);
         m_stack.push_back(*path);
         emit("#line 1 " + std::to_string(includedIndex));
         if (auto status = expand(*path, *text, includedIndex); !status) {
@@ -320,8 +331,8 @@ private:
     const std::filesystem::path& m_root;
     std::vector<std::string> m_defineLines;
     ShaderSource m_source;
-    std::vector<std::string> m_stack;
-    std::set<std::string, std::less<>> m_included;
+    std::vector<std::string> m_stack;              // files being expanded, root first (as spelled)
+    std::set<std::string, std::less<>> m_included; // ASCII-lowercase paths of every expanded file
 };
 
 bool parseNumber(std::string_view text, std::size_t& pos, std::size_t& value) {
@@ -412,8 +423,17 @@ ShaderSourceLoader::ShaderSourceLoader(std::filesystem::path shaderRoot) : m_roo
 
 Expected<ShaderSource> ShaderSourceLoader::load(std::string_view relativePath,
                                                 std::span<const std::string> defines) const {
-    Preprocessor preprocessor(m_root);
-    return preprocessor.run(relativePath, defines);
+    try {
+        Preprocessor preprocessor(m_root);
+        return preprocessor.run(relativePath, defines);
+    } catch (const std::bad_alloc&) {
+        return makeError(ErrorCode::OutOfRange, "out of memory while preprocessing the shader",
+                         std::string(relativePath));
+    } catch (const std::exception& e) { // e.g. std::filesystem conversions of a shader root without a UTF-8 form
+        return makeError(ErrorCode::Unknown, std::string("unexpected failure while preprocessing the shader: ") +
+                                                 e.what(),
+                         std::string(relativePath));
+    }
 }
 
 std::string mapCompilerLog(std::string_view log, const ShaderSource& source) {

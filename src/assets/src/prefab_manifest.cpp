@@ -250,6 +250,15 @@ Expected<PrefabManifest> parseManifest(const nlohmann::json& document, std::stri
     return manifest;
 }
 
+std::string proceduralKindList() {
+    std::string list;
+    for (const std::string_view kind : kProceduralPrefabKinds) {
+        list += list.empty() ? "" : ", ";
+        list += kind;
+    }
+    return list;
+}
+
 const geometry::Socket* findSocketByName(std::string_view name, const ModelData* model,
                                          std::span<const geometry::Socket> proceduralSockets) {
     const auto matches = [name](const geometry::Socket& socket) {
@@ -322,8 +331,9 @@ bool hasErrors(std::span<const ValidationIssue> issues) noexcept {
     return false;
 }
 
-std::vector<ValidationIssue> validatePrefabManifest(const PrefabManifest& manifest, const ModelData* model,
-                                                    std::span<const geometry::Socket> proceduralSockets) {
+std::vector<ValidationIssue>
+validatePrefabManifest(const PrefabManifest& manifest, const ModelData* model,
+                       std::optional<std::span<const geometry::Socket>> proceduralSockets) {
     std::vector<ValidationIssue> issues;
     const auto error = [&issues](std::string_view field, std::string message) {
         issues.push_back({ValidationIssue::Severity::Error, std::string(field) + ": " + message});
@@ -359,8 +369,10 @@ std::vector<ValidationIssue> validatePrefabManifest(const PrefabManifest& manife
     }
     if (runtime.generator) {
         const std::string& kind = *runtime.generator;
-        if (kind.empty() || !std::all_of(kind.begin(), kind.end(), isLowerIdentifierChar)) {
-            error("runtime.generator", "\"" + kind + "\" is not a procedural prefab kind (lowercase identifier)");
+        if (std::find(kProceduralPrefabKinds.begin(), kProceduralPrefabKinds.end(), kind) ==
+            kProceduralPrefabKinds.end()) {
+            error("runtime.generator",
+                  "\"" + kind + "\" is not a procedural prefab kind (" + proceduralKindList() + ")");
         }
     }
     for (std::size_t i = 0; i < runtime.lods.size(); ++i) {
@@ -395,9 +407,10 @@ std::vector<ValidationIssue> validatePrefabManifest(const PrefabManifest& manife
         }
     }
 
-    if (model != nullptr || !proceduralSockets.empty()) {
+    if (model != nullptr || proceduralSockets.has_value()) {
+        const auto procedural = proceduralSockets.value_or(std::span<const geometry::Socket>{});
         const auto checkScreen = [&](std::string_view field, const std::string& name) {
-            const geometry::Socket* socket = findSocketByName(name, model, proceduralSockets);
+            const geometry::Socket* socket = findSocketByName(name, model, procedural);
             if (socket == nullptr) {
                 error(field, "socket \"" + name + "\" does not exist");
             } else if (socket->kind != geometry::SocketKind::ScreenSurface) {
@@ -409,7 +422,7 @@ std::vector<ValidationIssue> validatePrefabManifest(const PrefabManifest& manife
             const std::string field = "runtime.sockets." + role;
             if (role == "screen") {
                 checkScreen(field, name);
-            } else if (findSocketByName(name, model, proceduralSockets) == nullptr) {
+            } else if (findSocketByName(name, model, procedural) == nullptr) {
                 error(field, "socket \"" + name + "\" does not exist");
             }
         }

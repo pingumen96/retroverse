@@ -14,7 +14,9 @@
     "MAT_Wall_Painted": { "baseColor": "#383735", "metallic": 0.0, "roughness": 0.9 },
     "MAT_Plaster_Used": { "baseColor": "#9A9081", "metallic": 0.0, "roughness": 0.95 },
 
-    "MAT_Metal_Graphite": { "baseColor": "#252A2E", "metallic": 0.9, "roughness": 0.45 },
+    // Painted or powder-coated structural steel (railings, uprights, cabinets): the coat is a dielectric, so the
+    // art-directed graphite stays visible. A bare metal this dark would reflect less than any dielectric.
+    "MAT_Metal_Graphite": { "baseColor": "#252A2E", "metallic": 0.0, "roughness": 0.45 },
     "MAT_Metal_Brushed": { "baseColor": "#B9BBBE", "metallic": 1.0, "roughness": 0.35 },
 
     "MAT_Plastic_Black": { "baseColor": "#1C1C1E", "metallic": 0.0, "roughness": 0.42 },

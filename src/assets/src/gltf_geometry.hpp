@@ -41,10 +41,21 @@ struct PrimitiveConversion {
     const UvTransform* uvTransform = nullptr;
 };
 
+/// Vertices and indices the rest of the model may still produce. Accessors can be shared by any number of
+/// primitives and flat normals turn every index into a vertex, so per-accessor limits alone would let a small file
+/// expand into gigabytes.
+struct GeometryBudget {
+    std::size_t vertices = 0;
+    std::size_t indices = 0;
+};
+
 /// Converts one glTF primitive into an indexed triangle list that passes geometry::validateMesh. Returns an empty
 /// optional (after appending a warning) when the primitive is skipped: points or lines, or no triangle at all.
+/// Every POSITION vertex read and every vertex and index produced is taken from `budget` (the output before it is
+/// allocated); exceeding the budget is an OutOfRange error.
 [[nodiscard]] Expected<std::optional<geometry::MeshData>>
 convertPrimitive(const fastgltf::Asset& asset, BufferSpans buffers, const fastgltf::Primitive& primitive,
-                 const PrimitiveConversion& conversion, const std::string& label, std::vector<std::string>& warnings);
+                 const PrimitiveConversion& conversion, GeometryBudget& budget, const std::string& label,
+                 std::vector<std::string>& warnings);
 
 } // namespace rv::assets::detail

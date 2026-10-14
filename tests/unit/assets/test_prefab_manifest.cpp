@@ -20,11 +20,16 @@ using Severity = rv::assets::ValidationIssue::Severity;
 
 namespace {
 
-const std::filesystem::path kManifestDir = std::filesystem::path(RV_TEST_ASSET_DIR) / "manifests/prefabs";
+const std::filesystem::path kManifestDir = rv::core::pathFromUtf8(RV_TEST_ASSET_DIR) / "manifests/prefabs";
 
-/// Procedural prefab kinds of the shared geometry contract (rv::geometry::buildPrefab).
-const std::set<std::string> kGeneratorKinds = {
-    "room_shell", "shelf", "cartridge", "crt", "tv_cabinet", "console_cartridge", "poster_frame", "rug", "floor_lamp"};
+/// Procedural prefab kinds of the shared geometry contract.
+const std::set<std::string> kGeneratorKinds = [] {
+    std::set<std::string> kinds;
+    for (const std::string_view kind : rv::assets::kProceduralPrefabKinds) {
+        kinds.emplace(kind);
+    }
+    return kinds;
+}();
 
 /// The example manifest of style.md section 11, verbatim.
 constexpr std::string_view kStyleExample = R"({
@@ -171,6 +176,19 @@ TEST_CASE("assets/manifest: the procedural CRT manifest matches the contract soc
     CHECK(errors(issues) == std::vector<std::string>{"runtime.sockets.power: socket \"PowerButton\" does not exist"});
 }
 
+TEST_CASE("assets/manifest: an empty procedural socket list is still a socket source", "[assets][manifest]") {
+    auto rug = rv::assets::loadPrefabManifest(kManifestDir / "decor.rug.generic.json");
+    REQUIRE(rug.has_value());
+    const std::vector<rv::geometry::Socket> none; // the procedural rug has no sockets
+    CHECK(errors(rv::assets::validatePrefabManifest(*rug, nullptr, none)).empty());
+
+    rug->runtime.sockets["center"] = "Center";
+    CHECK(errors(rv::assets::validatePrefabManifest(*rug, nullptr, none)) ==
+          std::vector<std::string>{"runtime.sockets.center: socket \"Center\" does not exist"});
+    // Without a model or procedural sockets, socket names cannot be checked.
+    CHECK(errors(rv::assets::validatePrefabManifest(*rug)).empty());
+}
+
 TEST_CASE("assets/manifest: the style section 11 example parses", "[assets][manifest]") {
     const PrefabManifest manifest = example();
     CHECK(manifest.schemaVersion == 1);
@@ -264,6 +282,12 @@ TEST_CASE("assets/manifest: every validation rule has a failing case", "[assets]
          [](PrefabManifest& m) {
              m.runtime.model.reset();
              m.runtime.generator = "CRT TV";
+         },
+         "runtime.generator:"},
+        {"unknown generator kind",
+         [](PrefabManifest& m) {
+             m.runtime.model.reset();
+             m.runtime.generator = "crtt";
          },
          "runtime.generator:"},
         {"absolute LOD path", [](PrefabManifest& m) { m.runtime.lods = {"/lod1.glb"}; }, "runtime.lods[0]:"},

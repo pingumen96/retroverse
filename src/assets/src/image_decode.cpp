@@ -48,48 +48,72 @@ ImageFormat detectFormat(std::span<const std::byte> bytes) noexcept {
     return ImageFormat::Unknown;
 }
 
-/// stb_image decodes truncated JPEG entropy data as zeros instead of failing. Walk the marker segments up to the
-/// first start-of-scan (skipping APPn payloads such as EXIF thumbnails, which carry their own markers) and require
-/// an end-of-image marker after it.
-bool jpegHasEndOfImage(std::span<const std::byte> bytes) noexcept {
+/// Markers stb_image processes between the frame header and the first scan: DHT, DQT, DNL, DRI, APPn and COM.
+bool isTableOrMiscMarker(unsigned char marker) noexcept {
+    return marker == 0xC4 || marker == 0xDB || marker == 0xDC || marker == 0xDD || marker == 0xFE ||
+           (marker >= 0xE0 && marker <= 0xEF);
+}
+
+/// Checks what stb_image does not: it decodes truncated JPEG entropy data as zeros instead of failing, and it
+/// returns uninitialized pixels when no scan precedes the end of the image or when stray bytes or markers it does
+/// not process follow the frame header. Walks the marker segments up to the first start-of-scan (skipping APPn
+/// payloads such as EXIF thumbnails, which carry their own markers) and requires an end-of-image marker after it.
+/// Padding between the segments before the frame header is skipped, as stb_image does. Returns the problem, or
+/// nullptr when the structure is sound.
+const char* jpegStructureProblem(std::span<const std::byte> bytes) noexcept {
+    constexpr const char* kTruncated = "truncated JPEG data (no end-of-image marker)";
     const auto at = [&bytes](std::size_t i) {
         return static_cast<unsigned char>(bytes[i]);
     };
+    bool frameSeen = false;
     std::size_t pos = 2; // after SOI
     while (pos + 1 < bytes.size()) {
         if (at(pos) != 0xFF) {
-            return false;
+            if (frameSeen) {
+                return "corrupt JPEG data (unexpected bytes after the frame header)";
+            }
+            ++pos; // padding after a header segment
+            continue;
         }
         unsigned char marker = at(pos + 1);
         while (marker == 0xFF && pos + 2 < bytes.size()) { // fill bytes
             ++pos;
             marker = at(pos + 1);
         }
+        if (marker == 0xFF) {
+            return kTruncated;
+        }
         if (marker == 0xD9) {
-            return true;
+            return "corrupt JPEG data (end-of-image marker before any image data)";
+        }
+        if (frameSeen && marker != 0xDA && !isTableOrMiscMarker(marker)) {
+            return "corrupt JPEG data (unexpected marker after the frame header)";
         }
         if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) { // markers without a length field
             pos += 2;
             continue;
         }
         if (pos + 3 >= bytes.size()) {
-            return false;
+            return kTruncated;
         }
         const std::size_t length = (static_cast<std::size_t>(at(pos + 2)) << 8) | at(pos + 3);
         if (length < 2) {
-            return false;
+            return "corrupt JPEG data (invalid segment length)";
         }
         if (marker == 0xDA) { // start of scan: entropy-coded data follows the header
             for (std::size_t i = pos + 2 + length; i + 1 < bytes.size(); ++i) {
                 if (at(i) == 0xFF && at(i + 1) == 0xD9) {
-                    return true;
+                    return nullptr;
                 }
             }
-            return false;
+            return kTruncated;
+        }
+        if (marker >= 0xC0 && marker <= 0xC2) { // the frame types stb_image decodes (baseline, extended, progressive)
+            frameSeen = true;
         }
         pos += 2 + length;
     }
-    return false;
+    return kTruncated;
 }
 
 std::string failureReason() {
@@ -135,8 +159,10 @@ Expected<ImageData> decodeImage(std::span<const std::byte> bytes, int desiredCha
                              " pixels; the limit is " + std::to_string(kMaxImageDimension) + " per side",
                          where);
     }
-    if (format == ImageFormat::Jpeg && !jpegHasEndOfImage(bytes)) {
-        return makeError(ErrorCode::ParseError, "truncated JPEG data (no end-of-image marker)", where);
+    if (format == ImageFormat::Jpeg) {
+        if (const char* problem = jpegStructureProblem(bytes)) {
+            return makeError(ErrorCode::ParseError, problem, where);
+        }
     }
 
     try {
