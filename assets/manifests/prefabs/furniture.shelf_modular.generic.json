@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "furniture.shelf_modular.generic",
+  "assetType": "furniture",
+  "category": "shelf",
+  "role": "storage",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "shelf",
+    "params": {},
+    "scaleMeters": [1.2, 2.0, 0.35],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "shelf", "storage", "game_slots", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

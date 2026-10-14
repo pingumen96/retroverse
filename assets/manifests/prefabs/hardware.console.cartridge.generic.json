@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "hardware.console.cartridge.generic",
+  "assetType": "hardware",
+  "category": "console",
+  "role": "hero",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "console_cartridge",
+    "params": {},
+    "scaleMeters": [0.24, 0.07, 0.2],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "cartridge": "CartridgeSlot",
+      "front": "Front"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["hardware", "console", "cartridge_console", "16bit", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

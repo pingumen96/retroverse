@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "decor.lamp.floor.generic",
+  "assetType": "decor",
+  "category": "floor_lamp",
+  "role": "light",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-14",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "floor_lamp",
+    "params": {},
+    "scaleMeters": [0.44, 1.6, 0.44],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "light": "LightSource"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "lighting", "lamp", "tungsten", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}
