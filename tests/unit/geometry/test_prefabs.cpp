@@ -1,0 +1,1007 @@
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <set>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <nlohmann/json.hpp>
+
+#include <rv/core/aabb.hpp>
+#include <rv/core/math.hpp>
+#include <rv/geometry/mesh_data.hpp>
+#include <rv/geometry/prefabs.hpp>
+#include <rv/geometry/socket.hpp>
+
+#include "mesh_checks.hpp"
+
+using Catch::Approx;
+using nlohmann::json;
+using rv::core::Aabb;
+using rv::geometry::MeshData;
+using rv::geometry::PrefabPart;
+using rv::geometry::ProceduralPrefab;
+using rv::geometry::Socket;
+using rv::geometry::SocketKind;
+
+namespace {
+
+ProceduralPrefab buildOk(std::string_view kind, const json& params = nullptr) {
+    auto prefab = rv::geometry::buildPrefab(kind, params);
+    if (!prefab) {
+        FAIL(std::string(kind) + " " + params.dump() + ": " + prefab.error().toString());
+    }
+    return std::move(*prefab);
+}
+
+rv::Error buildError(std::string_view kind, const json& params) {
+    auto prefab = rv::geometry::buildPrefab(kind, params);
+    INFO(std::string(kind) + " " + params.dump());
+    REQUIRE_FALSE(prefab.has_value());
+    CHECK_FALSE(prefab.error().message.empty());
+    return prefab.error();
+}
+
+const PrefabPart& part(const ProceduralPrefab& prefab, std::string_view role) {
+    const PrefabPart* found = rv::geometry::findPart(prefab, role);
+    INFO(prefab.kind << " role " << role);
+    REQUIRE(found != nullptr);
+    return *found;
+}
+
+const Socket& socket(const ProceduralPrefab& prefab, std::string_view id) {
+    const Socket* found = rv::geometry::findSocket(prefab.sockets, id);
+    INFO(prefab.kind << " socket " << id);
+    REQUIRE(found != nullptr);
+    return *found;
+}
+
+glm::vec3 position(const Socket& s) {
+    return glm::vec3(s.transform[3]);
+}
+
+glm::vec3 axis(const Socket& s, int column) {
+    return glm::vec3(s.transform[column]);
+}
+
+std::vector<const MeshData*> meshes(const ProceduralPrefab& prefab) {
+    std::vector<const MeshData*> list;
+    for (const PrefabPart& p : prefab.parts) {
+        list.push_back(&p.mesh);
+    }
+    return list;
+}
+
+std::size_t rayHits(const ProceduralPrefab& prefab, const rv::core::Ray& ray, float maxDistance) {
+    std::size_t hits = 0;
+    for (const PrefabPart& p : prefab.parts) {
+        hits += rv::test::rayHits(p.mesh, ray, maxDistance);
+    }
+    return hits;
+}
+
+/// Distance to the closest surface along `ray` (unit direction), or +inf.
+float firstHit(const ProceduralPrefab& prefab, const rv::core::Ray& ray) {
+    float best = std::numeric_limits<float>::infinity();
+    for (const PrefabPart& p : prefab.parts) {
+        for (std::size_t t = 0; t < p.mesh.triangleCount(); ++t) {
+            const rv::test::TriangleRef tri = rv::test::triangleAt(p.mesh, t);
+            if (const auto hit = rv::test::intersect(ray, tri.v0.position, tri.v1.position, tri.v2.position)) {
+                best = std::min(best, *hit);
+            }
+        }
+    }
+    return best;
+}
+
+bool closeTo(const glm::vec3& a, const glm::vec3& b, float epsilon = 1e-5f) {
+    return rv::core::nearlyEqual(a, b, epsilon);
+}
+
+bool closeTo(const Aabb& a, const Aabb& b, float epsilon = 1e-5f) {
+    return closeTo(a.min, b.min, epsilon) && closeTo(a.max, b.max, epsilon);
+}
+
+/// Every invariant a procedural prefab must satisfy, whatever its parameters.
+void checkPrefab(const ProceduralPrefab& prefab) {
+    INFO(prefab.kind);
+    REQUIRE_FALSE(prefab.parts.empty());
+    Aabb unionOfParts;
+    std::set<std::string> roles;
+    for (const PrefabPart& p : prefab.parts) {
+        INFO(p.mesh.name);
+        CHECK(roles.insert(p.materialRole).second);
+        CHECK(p.mesh.name == prefab.kind + "/" + p.materialRole);
+        CHECK_FALSE(p.mesh.empty());
+        CHECK(rv::geometry::validateMesh(p.mesh).has_value());
+        CHECK(rv::test::nonUnitNormals(p.mesh) == 0);
+        CHECK(rv::test::windingMismatches(p.mesh) == 0);
+        CHECK(rv::test::badTangents(p.mesh) == 0);
+        CHECK(rv::test::tangentFrameMismatches(p.mesh) == 0);
+        unionOfParts.expand(p.mesh.bounds);
+    }
+    CHECK(prefab.bounds == unionOfParts);
+    std::set<std::string> ids;
+    for (const Socket& s : prefab.sockets) {
+        INFO(s.id);
+        CHECK(ids.insert(s.id).second);
+        CHECK(s.nodeName == (s.kind == SocketKind::Anchor ? "Anchor_" + s.id : s.id));
+        CHECK(rv::core::isFinite(s.transform));
+        // Rigid frame: orthonormal right-handed rotation plus translation.
+        const glm::mat3 rotation(s.transform);
+        CHECK(closeTo(glm::transpose(rotation) * rotation[0], glm::vec3(1.0f, 0.0f, 0.0f)));
+        CHECK(closeTo(glm::transpose(rotation) * rotation[1], glm::vec3(0.0f, 1.0f, 0.0f)));
+        CHECK(glm::determinant(rotation) == Approx(1.0f));
+        CHECK(s.transform[0][3] == 0.0f);
+        CHECK(s.transform[3][3] == 1.0f);
+    }
+}
+
+const std::vector<std::string_view> kExpectedKinds{
+    "room_shell", "shelf", "cartridge", "crt", "tv_cabinet", "console_cartridge", "poster_frame", "rug", "floor_lamp"};
+
+} // namespace
+
+TEST_CASE("geometry/prefabs: kind lists are complete and ordered", "[geometry][prefabs]") {
+    const auto kinds = rv::geometry::prefabKinds();
+    CHECK(std::vector<std::string_view>(kinds.begin(), kinds.end()) == kExpectedKinds);
+    const auto primitives = rv::geometry::primitiveKinds();
+    CHECK(std::vector<std::string_view>(primitives.begin(), primitives.end()) ==
+          std::vector<std::string_view>{"box", "plane", "quad", "sphere", "cylinder"});
+}
+
+TEST_CASE("geometry/prefabs: every kind builds with defaults into valid parts", "[geometry][prefabs]") {
+    for (const std::string_view kind : rv::geometry::prefabKinds()) {
+        for (const json& params : {json(nullptr), json::object()}) {
+            const ProceduralPrefab prefab = buildOk(kind, params);
+            CHECK(prefab.kind == kind);
+            checkPrefab(prefab);
+        }
+    }
+}
+
+TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[geometry][prefabs][roles]") {
+    const std::map<std::string_view, std::vector<std::string>> expected{
+        {"room_shell", {"floor", "wall", "ceiling", "trim"}},
+        {"shelf", {"wood_primary", "wood_secondary"}},
+        {"cartridge", {"plastic_shell", "label"}},
+        {"crt", {"plastic_body", "plastic_bezel", "screen", "plastic_dark"}},
+        {"tv_cabinet", {"wood_primary", "wood_secondary", "metal_trim"}},
+        {"console_cartridge", {"plastic_body", "plastic_dark", "plastic_accent"}},
+        {"poster_frame", {"frame", "picture"}},
+        {"rug", {"fabric"}},
+        {"floor_lamp", {"metal", "lamp_shade"}},
+    };
+    REQUIRE(expected.size() == kExpectedKinds.size());
+    for (const auto& [kind, roles] : expected) {
+        const ProceduralPrefab prefab = buildOk(kind);
+        std::vector<std::string> actual;
+        for (const PrefabPart& p : prefab.parts) {
+            actual.push_back(p.materialRole);
+        }
+        INFO(kind);
+        CHECK(actual == roles);
+    }
+    // Optional parts disappear with their geometry.
+    CHECK(rv::geometry::findPart(buildOk("shelf", {{"back", false}}), "wood_secondary") == nullptr);
+    CHECK(rv::geometry::findPart(buildOk("room_shell", {{"ceiling", false}}), "ceiling") == nullptr);
+    CHECK(rv::geometry::findPart(buildOk("room_shell", {{"doorway", nullptr}, {"baseboardHeight", 0.0}}), "trim") ==
+          nullptr);
+}
+
+TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots", "[geometry][prefabs][bounds]") {
+    struct Case {
+        std::string_view kind;
+        json params;
+        Aabb bounds;
+    };
+    const auto box = [](glm::vec3 min, glm::vec3 max) {
+        return Aabb::fromMinMax(min, max);
+    };
+    const std::vector<Case> cases{
+        // Pivot floor, interior exactly "size", walls outside.
+        {"room_shell", nullptr, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
+        {"room_shell",
+         {{"size", {4.0, 6.0}}, {"wallHeight", 2.6}, {"wallThickness", 0.2}},
+         box({-2.2f, 0.0f, -3.2f}, {2.2f, 2.6f, 3.2f})},
+        // Pivot floor.
+        {"shelf", nullptr, box({-0.6f, 0.0f, -0.175f}, {0.6f, 2.0f, 0.175f})},
+        {"shelf", {{"width", 0.9}, {"height", 1.8}, {"depth", 0.3}}, box({-0.45f, 0.0f, -0.15f}, {0.45f, 1.8f, 0.15f})},
+        // Pivot center.
+        {"cartridge", nullptr, box({-0.0625f, -0.0425f, -0.01f}, {0.0625f, 0.0425f, 0.01f})},
+        {"cartridge", {{"size", {0.14, 0.1, 0.022}}}, box({-0.07f, -0.05f, -0.011f}, {0.07f, 0.05f, 0.011f})},
+        {"crt", nullptr, box({-0.355f, 0.0f, -0.28f}, {0.355f, 0.61f, 0.28f})},
+        {"crt",
+         {{"width", 0.5}, {"height", 0.45}, {"depth", 0.45}},
+         box({-0.25f, 0.0f, -0.225f}, {0.25f, 0.45f, 0.225f})},
+        {"tv_cabinet", nullptr, box({-0.6f, 0.0f, -0.25f}, {0.6f, 0.55f, 0.25f})},
+        {"tv_cabinet",
+         {{"width", 1.6}, {"height", 0.45}, {"depth", 0.4}, {"legHeight", 0.0}},
+         box({-0.8f, 0.0f, -0.2f}, {0.8f, 0.45f, 0.2f})},
+        {"console_cartridge", nullptr, box({-0.12f, 0.0f, -0.1f}, {0.12f, 0.07f, 0.1f})},
+        {"console_cartridge",
+         {{"width", 0.3}, {"height", 0.08}, {"depth", 0.25}},
+         box({-0.15f, 0.0f, -0.125f}, {0.15f, 0.08f, 0.125f})},
+        // Pivot at the back center: z = 0 is the wall.
+        {"poster_frame", nullptr, box({-0.25f, -0.35f, 0.0f}, {0.25f, 0.35f, 0.02f})},
+        {"poster_frame",
+         {{"width", 0.6}, {"height", 0.9}, {"depth", 0.03}},
+         box({-0.3f, -0.45f, 0.0f}, {0.3f, 0.45f, 0.03f})},
+        {"rug", nullptr, box({-1.2f, 0.0f, -0.8f}, {1.2f, 0.012f, 0.8f})},
+        {"rug", {{"width", 3.0}, {"depth", 2.0}, {"thickness", 0.02}}, box({-1.5f, 0.0f, -1.0f}, {1.5f, 0.02f, 1.0f})},
+        {"floor_lamp", nullptr, box({-0.22f, 0.0f, -0.22f}, {0.22f, 1.6f, 0.22f})},
+        {"floor_lamp",
+         {{"height", 1.8}, {"baseRadius", 0.25}, {"shadeRadius", 0.2}},
+         box({-0.25f, 0.0f, -0.25f}, {0.25f, 1.8f, 0.25f})},
+    };
+    for (const Case& c : cases) {
+        const ProceduralPrefab prefab = buildOk(c.kind, c.params);
+        INFO(std::string(c.kind) + " " + c.params.dump());
+        CHECK(closeTo(prefab.bounds, c.bounds));
+    }
+}
+
+TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab", "[geometry][prefabs][sockets]") {
+    const std::map<std::string_view, std::vector<std::pair<std::string, SocketKind>>> expected{
+        {"room_shell", {{"Doorway", SocketKind::Anchor}}},
+        {"cartridge", {{"Label", SocketKind::Other}}},
+        {"crt",
+         {{"ScreenSurface", SocketKind::ScreenSurface},
+          {"TV_Stand", SocketKind::Anchor},
+          {"ScreenLook", SocketKind::Anchor},
+          {"PowerButton", SocketKind::Other}}},
+        {"tv_cabinet", {{"Top", SocketKind::Anchor}, {"ConsoleShelf", SocketKind::Anchor}}},
+        {"console_cartridge", {{"CartridgeSlot", SocketKind::Anchor}, {"Front", SocketKind::Other}}},
+        {"poster_frame", {{"Picture", SocketKind::Other}}},
+        {"rug", {}},
+        {"floor_lamp", {{"LightSource", SocketKind::Anchor}}},
+    };
+    for (const auto& [kind, sockets] : expected) {
+        const ProceduralPrefab prefab = buildOk(kind);
+        INFO(kind);
+        CHECK(prefab.sockets.size() == sockets.size());
+        for (const auto& [id, socketKind] : sockets) {
+            CHECK(socket(prefab, id).kind == socketKind);
+        }
+    }
+    for (const std::string_view kind : rv::geometry::prefabKinds()) {
+        const ProceduralPrefab prefab = buildOk(kind);
+        for (const Socket& s : prefab.sockets) {
+            if (s.id == "ScreenLook") {
+                continue; // a viewpoint in front of the screen, outside the set by definition
+            }
+            INFO(std::string(kind) + " " + s.id);
+            CHECK(prefab.bounds.inflated(1e-5f).contains(position(s)));
+            if (!s.bounds.isEmpty()) {
+                CHECK(prefab.bounds.inflated(1e-4f).contains(s.bounds.transformed(s.transform)));
+            }
+        }
+    }
+    const ProceduralPrefab shelf = buildOk("shelf");
+    for (const Socket& s : shelf.sockets) {
+        CHECK(s.kind == SocketKind::ShelfSlot);
+        CHECK(s.id.starts_with("Slot_"));
+    }
+}
+
+TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry][prefabs][shelf]") {
+    struct Layout {
+        json params;
+        double width, height, board, plinth, margin, gap;
+        int levels;
+        glm::dvec3 item;
+        bool back;
+    };
+    const std::vector<Layout> layouts{
+        {nullptr, 1.2, 2.0, 0.025, 0.08, 0.03, 0.004, 5, {0.125, 0.085, 0.020}, true},
+        {{{"width", 0.8},
+          {"height", 1.2},
+          {"depth", 0.3},
+          {"levels", 3},
+          {"boardThickness", 0.02},
+          {"back", false},
+          {"plinthHeight", 0.0},
+          {"slotSize", {0.135, 0.19, 0.014}},
+          {"slotGap", 0.002},
+          {"slotMargin", 0.02}},
+         0.8,
+         1.2,
+         0.02,
+         0.0,
+         0.02,
+         0.002,
+         3,
+         {0.135, 0.19, 0.014},
+         false},
+        // The slots fill the inner width exactly: (0.45 - 0.05 + 0.004) / 0.101 = 4.
+        {{{"width", 0.5}, {"slotSize", {0.097, 0.085, 0.02}}, {"slotGap", 0.004}, {"slotMargin", 0.025}},
+         0.5,
+         2.0,
+         0.025,
+         0.08,
+         0.025,
+         0.004,
+         5,
+         {0.097, 0.085, 0.02},
+         true},
+    };
+    for (const Layout& l : layouts) {
+        INFO(l.params.dump());
+        const ProceduralPrefab shelf = buildOk("shelf", l.params);
+        const double innerWidth = l.width - 2.0 * l.board;
+        const int perLevel =
+            static_cast<int>(std::floor((innerWidth - 2.0 * l.margin + l.gap) / (l.item.x + l.gap) + 1e-9));
+        const double pitch = (l.height - l.board - l.plinth) / l.levels;
+        REQUIRE(perLevel >= 1);
+        CHECK(shelf.sockets.size() == static_cast<std::size_t>(l.levels * perLevel));
+        CHECK(rv::geometry::findSocket(shelf.sockets, "Slot_" + std::to_string(l.levels) + "_0") == nullptr);
+        CHECK(rv::geometry::findSocket(shelf.sockets, "Slot_0_" + std::to_string(perLevel)) == nullptr);
+
+        const glm::vec3 item(l.item);
+        const Aabb itemBounds =
+            Aabb::fromMinMax({-0.5f * item.x, 0.0f, -0.5f * item.z}, {0.5f * item.x, item.y, 0.5f * item.z});
+        std::vector<Aabb> volumes;
+        for (int level = 0; level < l.levels; ++level) {
+            for (int index = 0; index < perLevel; ++index) {
+                const Socket& s = socket(shelf, "Slot_" + std::to_string(level) + "_" + std::to_string(index));
+                CHECK(s.nodeName == s.id);
+                CHECK(s.kind == SocketKind::ShelfSlot);
+                CHECK(closeTo(s.bounds, itemBounds));
+                const glm::vec3 p = position(s);
+                // Left-aligned from the inner side, bottom on the board of its level.
+                CHECK(p.x ==
+                      Approx(-innerWidth / 2 + l.margin + index * (l.item.x + l.gap) + l.item.x / 2).margin(1e-5));
+                CHECK(p.y == Approx(l.plinth + level * pitch + l.board).margin(1e-5));
+                // Centered in the board depth: the whole depth without a back panel, in front of it otherwise.
+                if (l.back) {
+                    CHECK(p.z > 0.0f);
+                    CHECK(p.z < 0.01f);
+                } else {
+                    CHECK(p.z == Approx(0.0f).margin(1e-6));
+                }
+                const Aabb volume = s.bounds.transformed(s.transform);
+                // Inside the interior: between the side panels, under the next board, within the depth.
+                CHECK(volume.min.x >= -innerWidth / 2 - 1e-5);
+                CHECK(volume.max.x <= innerWidth / 2 + 1e-5);
+                CHECK(volume.max.y <= l.plinth + (level + 1) * pitch + 1e-5);
+                CHECK(volume.max.z <= shelf.bounds.max.z + 1e-6f);
+                CHECK(volume.min.z >= shelf.bounds.min.z - 1e-6f);
+                volumes.push_back(volume.inflated(-1e-5f));
+            }
+        }
+        for (std::size_t i = 0; i < volumes.size(); ++i) {
+            for (std::size_t j = i + 1; j < volumes.size(); ++j) {
+                CHECK_FALSE(volumes[i].intersects(volumes[j]));
+            }
+        }
+    }
+}
+
+TEST_CASE("geometry/prefabs: crt screen keeps its aspect and faces +Z", "[geometry][prefabs][crt]") {
+    for (const double aspect : {1.3333333, 1.7777778, 1.25, 1.0, 2.2}) {
+        INFO(aspect);
+        const ProceduralPrefab crt = buildOk("crt", {{"screenAspect", aspect}});
+        const MeshData& screen = part(crt, "screen").mesh;
+        const glm::vec3 size = screen.bounds.size();
+        CHECK(size.x / size.y == Approx(aspect).epsilon(1e-4));
+        // Inside the bezel (6 cm) and behind the bezel front.
+        CHECK(screen.bounds.min.x >= -0.355f + 0.06f - 1e-5f);
+        CHECK(screen.bounds.max.x <= 0.355f - 0.06f + 1e-5f);
+        CHECK(screen.bounds.max.y <= 0.61f - 0.06f + 1e-5f);
+        CHECK(screen.bounds.max.z < 0.28f);
+
+        const Socket& surface = socket(crt, "ScreenSurface");
+        CHECK(closeTo(axis(surface, 2), glm::vec3(0.0f, 0.0f, 1.0f)));
+        CHECK(closeTo(axis(surface, 0), glm::vec3(1.0f, 0.0f, 0.0f)));
+        CHECK(position(surface).x == Approx(0.0f).margin(1e-6));
+        CHECK(position(surface).y == Approx(screen.bounds.center().y));
+        CHECK(position(surface).z == Approx(screen.bounds.min.z));
+        CHECK(surface.bounds.size().x == Approx(size.x));
+        CHECK(surface.bounds.size().y == Approx(size.y));
+        CHECK(surface.bounds.size().x / surface.bounds.size().y == Approx(aspect).epsilon(1e-4));
+
+        const Socket& look = socket(crt, "ScreenLook");
+        CHECK(closeTo(position(look), glm::vec3(0.0f, position(surface).y, 0.28f + 0.9f)));
+        CHECK(look.transform[0] == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+        CHECK(look.transform[2] == glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)); // looks along its -Z, at the screen
+    }
+
+    const ProceduralPrefab crt = buildOk("crt");
+    const MeshData& screen = part(crt, "screen").mesh;
+    // uv (0, 0) at the top-left corner of the screen, (1, 1) at the bottom-right corner.
+    for (const rv::geometry::Vertex& v : screen.vertices) {
+        if (v.uv0 == glm::vec2(0.0f, 0.0f)) {
+            CHECK(v.position.x == Approx(screen.bounds.min.x));
+            CHECK(v.position.y == Approx(screen.bounds.max.y));
+        }
+        if (v.uv0 == glm::vec2(1.0f, 1.0f)) {
+            CHECK(v.position.x == Approx(screen.bounds.max.x));
+            CHECK(v.position.y == Approx(screen.bounds.min.y));
+        }
+        CHECK(v.normal.z > 0.9f);
+    }
+    CHECK(socket(crt, "TV_Stand").transform == glm::mat4(1.0f));
+    const glm::vec3 power = position(socket(crt, "PowerButton"));
+    CHECK(power.x > 0.0f);
+    CHECK(power.y < screen.bounds.min.y);
+    CHECK(power.z > 0.25f);
+    CHECK(power.z <= 0.28f);
+}
+
+TEST_CASE("geometry/prefabs: room shell doorway stays open and interior faces point inward",
+          "[geometry][prefabs][room_shell]") {
+    const ProceduralPrefab room = buildOk("room_shell");
+    const Socket& doorway = socket(room, "Doorway");
+    CHECK(closeTo(position(doorway), glm::vec3(0.0f, 0.0f, 5.075f)));
+    CHECK(closeTo(axis(doorway, 2), glm::vec3(0.0f, 0.0f, 1.0f)));
+    CHECK(closeTo(doorway.bounds, Aabb::fromMinMax({-0.8f, 0.0f, -0.075f}, {0.8f, 2.3f, 0.075f})));
+
+    // Rays from the room center through the door rectangle reach the outside without touching anything.
+    const glm::vec3 out(0.0f, 0.0f, 1.0f);
+    for (const glm::vec2 xy : {glm::vec2(0.0f, 1.15f), glm::vec2(0.79f, 0.01f), glm::vec2(-0.79f, 2.29f)}) {
+        INFO(xy.x << ", " << xy.y);
+        CHECK(rayHits(room, rv::core::Ray{glm::vec3(xy, 0.0f), out}, 20.0f) == 0);
+    }
+    // Beside and above the door, the same rays hit the wall, its lining or its casing.
+    CHECK(rayHits(room, rv::core::Ray{glm::vec3(1.2f, 1.15f, 0.0f), out}, 20.0f) > 0);
+    CHECK(rayHits(room, rv::core::Ray{glm::vec3(0.0f, 2.6f, 0.0f), out}, 20.0f) > 0);
+
+    const ProceduralPrefab closed = buildOk("room_shell", {{"doorway", nullptr}});
+    CHECK(closed.sockets.empty());
+    CHECK(rayHits(closed, rv::core::Ray{glm::vec3(0.0f, 1.15f, 0.0f), out}, 20.0f) > 0);
+
+    // Doorways on the other walls; the offset runs along +X (north, south) or +Z (east, west).
+    struct Door {
+        std::string wall;
+        float offset;
+        glm::vec3 socketPosition;
+        glm::vec3 outward;
+    };
+    for (const Door& d : {Door{"north", 1.0f, {1.0f, 0.0f, -5.075f}, {0.0f, 0.0f, -1.0f}},
+                          Door{"east", -2.0f, {4.575f, 0.0f, -2.0f}, {1.0f, 0.0f, 0.0f}},
+                          Door{"west", 1.5f, {-4.575f, 0.0f, 1.5f}, {-1.0f, 0.0f, 0.0f}}}) {
+        INFO(d.wall);
+        const ProceduralPrefab r = buildOk("room_shell", {{"doorway", {{"wall", d.wall}, {"offset", d.offset}}}});
+        checkPrefab(r);
+        const Socket& s = socket(r, "Doorway");
+        CHECK(closeTo(position(s), d.socketPosition));
+        CHECK(closeTo(axis(s, 2), d.outward));
+        CHECK(closeTo(axis(s, 1), glm::vec3(0.0f, 1.0f, 0.0f)));
+        const glm::vec3 inside = d.socketPosition - 4.0f * d.outward + glm::vec3(0.0f, 1.15f, 0.0f);
+        CHECK(rayHits(r, rv::core::Ray{inside, d.outward}, 20.0f) == 0);
+        // The mirrored position on the same wall is solid.
+        const glm::vec3 along =
+            glm::abs(d.outward.x) > 0.5f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+        const glm::vec3 mirrored = inside - 2.0f * glm::dot(inside, along) * along;
+        CHECK(rayHits(r, rv::core::Ray{mirrored, d.outward}, 20.0f) > 0);
+    }
+
+    // Interior faces of the walls point into the room; floor up, ceiling down.
+    const MeshData& walls = part(room, "wall").mesh;
+    std::map<std::string, int> planes;
+    for (std::size_t t = 0; t < walls.triangleCount(); ++t) {
+        const rv::test::TriangleRef tri = rv::test::triangleAt(walls, t);
+        const glm::vec3 n = glm::normalize(tri.cross());
+        const auto onPlane = [&](int axisIndex, float value) {
+            return std::fabs(tri.v0.position[axisIndex] - value) < 1e-5f &&
+                   std::fabs(tri.v1.position[axisIndex] - value) < 1e-5f &&
+                   std::fabs(tri.v2.position[axisIndex] - value) < 1e-5f;
+        };
+        if (onPlane(2, 5.0f)) {
+            CHECK(n.z == Approx(-1.0f));
+            ++planes["south"];
+        } else if (onPlane(2, -5.0f)) {
+            CHECK(n.z == Approx(1.0f));
+            ++planes["north"];
+        } else if (onPlane(0, 4.5f)) {
+            CHECK(n.x == Approx(-1.0f));
+            ++planes["east"];
+        } else if (onPlane(0, -4.5f)) {
+            CHECK(n.x == Approx(1.0f));
+            ++planes["west"];
+        }
+    }
+    CHECK(planes.size() == 4);
+    for (const rv::geometry::Vertex& v : part(room, "floor").mesh.vertices) {
+        CHECK(v.normal == glm::vec3(0.0f, 1.0f, 0.0f));
+        CHECK(v.position.y == 0.0f);
+    }
+    for (const rv::geometry::Vertex& v : part(room, "ceiling").mesh.vertices) {
+        CHECK(v.normal == glm::vec3(0.0f, -1.0f, 0.0f));
+        CHECK(v.position.y == 3.0f);
+    }
+
+    // Floor and wall uvs are in meters / metersPerTile.
+    const ProceduralPrefab tiled = buildOk("room_shell", {{"metersPerTile", 2.0}});
+    for (const rv::geometry::Vertex& v : part(tiled, "floor").mesh.vertices) {
+        CHECK(v.uv0.x == Approx(v.position.x / 2.0f).margin(1e-5));
+        CHECK(v.uv0.y == Approx(v.position.z / 2.0f).margin(1e-5));
+    }
+    std::size_t northInterior = 0;
+    for (const rv::geometry::Vertex& v : part(tiled, "wall").mesh.vertices) {
+        if (closeTo(v.normal, glm::vec3(0.0f, 0.0f, 1.0f)) && std::fabs(v.position.z + 5.0f) < 1e-5f) {
+            ++northInterior;
+            CHECK(v.uv0.x == Approx(v.position.x / 2.0f).margin(1e-5));
+            CHECK(v.uv0.y == Approx(-v.position.y / 2.0f).margin(1e-5));
+        }
+    }
+    CHECK(northInterior == 4);
+}
+
+TEST_CASE("geometry/prefabs: cartridge label sits in a recessed pocket", "[geometry][prefabs][cartridge]") {
+    const ProceduralPrefab cartridge = buildOk("cartridge");
+    const MeshData& label = part(cartridge, "label").mesh;
+    REQUIRE(label.vertices.size() == 4);
+    CHECK(label.indices.size() == 6);
+    const float front = 0.01f;
+    const float pocket = front - 0.001f;
+    const float labelZ = label.vertices[0].position.z;
+    for (const rv::geometry::Vertex& v : label.vertices) {
+        CHECK(v.normal == glm::vec3(0.0f, 0.0f, 1.0f));
+        CHECK(v.position.z == labelZ);
+        if (v.uv0 == glm::vec2(0.0f, 0.0f)) {
+            CHECK(v.position.x < 0.0f);
+            CHECK(v.position.y > 0.0f);
+        }
+    }
+    CHECK(labelZ - pocket >= 0.0005f - 1e-7f);
+    CHECK(labelZ < front);
+    CHECK(closeTo(label.bounds.size(), glm::vec3(0.125f - 0.024f, 0.085f - 0.024f, 0.0f)));
+
+    // The shell has the pocket floor and the raised border facing +Z, both clear of the label plane.
+    const MeshData& shell = part(cartridge, "plastic_shell").mesh;
+    bool pocketFloor = false;
+    bool border = false;
+    for (std::size_t t = 0; t < shell.triangleCount(); ++t) {
+        const rv::test::TriangleRef tri = rv::test::triangleAt(shell, t);
+        if (glm::normalize(tri.cross()).z > 0.999f) {
+            const float z = tri.v0.position.z;
+            pocketFloor = pocketFloor || std::fabs(z - pocket) < 1e-6f;
+            border = border || std::fabs(z - front) < 1e-6f;
+            CHECK(std::fabs(z - labelZ) >= 0.0005f - 1e-6f);
+        }
+    }
+    CHECK(pocketFloor);
+    CHECK(border);
+
+    const Socket& s = socket(cartridge, "Label");
+    CHECK(closeTo(position(s), glm::vec3(0.0f, 0.0f, labelZ)));
+    CHECK(closeTo(axis(s, 2), glm::vec3(0.0f, 0.0f, 1.0f)));
+    CHECK(closeTo(s.bounds.size(), label.bounds.size()));
+
+    const ProceduralPrefab smooth = buildOk("cartridge", {{"gripRidges", false}});
+    CHECK(part(smooth, "plastic_shell").mesh.triangleCount() < shell.triangleCount());
+    const ProceduralPrefab deeper = buildOk("cartridge", {{"labelInset", 0.002}});
+    CHECK(part(deeper, "label").mesh.vertices[0].position.z == Approx(front - 0.002f + 0.0005f));
+}
+
+TEST_CASE("geometry/prefabs: furniture and decor sockets", "[geometry][prefabs][sockets]") {
+    const ProceduralPrefab cabinet = buildOk("tv_cabinet");
+    CHECK(socket(cabinet, "Top").transform == glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.55f, 0.0f)));
+    const Socket& shelfSocket = socket(cabinet, "ConsoleShelf");
+    const glm::vec3 floor = position(shelfSocket);
+    CHECK(floor.y > 0.08f);
+    CHECK(floor.y < 0.15f);
+    // The compartment is open at the front and holds a default console (0.24 x 0.07 x 0.2).
+    const glm::vec3 free = shelfSocket.bounds.size();
+    CHECK(free.x > 0.24f);
+    CHECK(free.y > 0.07f);
+    CHECK(free.z > 0.2f);
+    const rv::core::Ray probe{floor + glm::vec3(0.0f, 0.5f * free.y, 2.0f), glm::vec3(0.0f, 0.0f, -1.0f)};
+    CHECK(probe.origin.z - firstHit(cabinet, probe) <= floor.z + shelfSocket.bounds.min.z + 1e-4f);
+    CHECK(part(cabinet, "metal_trim").mesh.bounds.min.y == Approx(0.0f).margin(1e-6));
+    const ProceduralPrefab noLegs = buildOk("tv_cabinet", {{"legHeight", 0.0}, {"drawers", 0}});
+    CHECK(part(noLegs, "metal_trim").mesh.bounds.min.y > 0.05f);
+    CHECK(part(noLegs, "wood_secondary").mesh.triangleCount() < part(cabinet, "wood_secondary").mesh.triangleCount());
+
+    const ProceduralPrefab console = buildOk("console_cartridge");
+    const Socket& slot = socket(console, "CartridgeSlot");
+    CHECK(position(slot).y == Approx(0.07f));
+    CHECK(closeTo(axis(slot, 1), glm::vec3(0.0f, 1.0f, 0.0f)));
+    CHECK(slot.bounds.size().y == 0.0f);
+    CHECK(slot.bounds.size().x > 0.13f); // a default cartridge (0.125 x 0.020) fits
+    CHECK(slot.bounds.size().z > 0.025f);
+    const Socket& front = socket(console, "Front");
+    CHECK(closeTo(axis(front, 2), glm::vec3(0.0f, 0.0f, 1.0f)));
+    CHECK(position(front).z > 0.095f);
+
+    const ProceduralPrefab poster = buildOk("poster_frame");
+    const Socket& picture = socket(poster, "Picture");
+    const MeshData& image = part(poster, "picture").mesh;
+    REQUIRE(image.vertices.size() == 4);
+    CHECK(position(picture).z > 0.0f);
+    CHECK(position(picture).z < 0.02f);
+    CHECK(image.vertices[0].position.z == position(picture).z);
+    CHECK(closeTo(picture.bounds.size(), glm::vec3(0.5f - 0.06f, 0.7f - 0.06f, 0.0f)));
+    for (const rv::geometry::Vertex& v : image.vertices) {
+        CHECK(v.normal == glm::vec3(0.0f, 0.0f, 1.0f));
+        CHECK(v.uv0 == glm::vec2(v.position.x < 0.0f ? 0.0f : 1.0f, v.position.y > 0.0f ? 0.0f : 1.0f));
+    }
+
+    const ProceduralPrefab rug = buildOk("rug");
+    for (const rv::geometry::Vertex& v : part(rug, "fabric").mesh.vertices) {
+        CHECK(v.normal.y > -0.5f); // no bottom face
+        if (v.normal == glm::vec3(0.0f, 1.0f, 0.0f)) {
+            CHECK(v.uv0.x == Approx((v.position.x + 1.2f) / 2.4f).margin(1e-6));
+            CHECK(v.uv0.y == Approx((v.position.z + 0.8f) / 1.6f).margin(1e-6));
+        }
+    }
+
+    const ProceduralPrefab lamp = buildOk("floor_lamp");
+    const glm::vec3 bulb = position(socket(lamp, "LightSource"));
+    CHECK(bulb.x == 0.0f);
+    CHECK(bulb.z == 0.0f);
+    CHECK(bulb.y > 1.6f - 0.3f);
+    CHECK(bulb.y < 1.6f);
+    const MeshData& shade = part(lamp, "lamp_shade").mesh;
+    CHECK(shade.bounds.min.y == Approx(1.3f));
+    CHECK(shade.bounds.max.y == Approx(1.6f));
+    CHECK(closeTo(shade.bounds.max, glm::vec3(0.22f, 1.6f, 0.22f)));
+    // Visible from inside and outside: as many wall triangles face the axis as face away from it, and no two
+    // surfaces coincide, so the shade also renders correctly with culling disabled.
+    std::size_t inward = 0;
+    std::size_t outward = 0;
+    for (std::size_t t = 0; t < shade.triangleCount(); ++t) {
+        const rv::test::TriangleRef tri = rv::test::triangleAt(shade, t);
+        const glm::vec3 n = glm::normalize(tri.cross());
+        if (std::fabs(n.y) < 0.9f) {
+            if (glm::dot(n, glm::vec3(tri.centroid().x, 0.0f, tri.centroid().z)) < 0.0f) {
+                ++inward;
+            } else {
+                ++outward;
+            }
+        }
+    }
+    CHECK(inward > 0);
+    CHECK(inward == outward);
+    CHECK(rv::test::coplanarOverlaps({&shade}, 0.001f, true) == 0);
+}
+
+TEST_CASE("geometry/prefabs: no coincident surfaces face the same way", "[geometry][prefabs][zfighting]") {
+    const std::vector<std::pair<std::string_view, json>> variants{
+        {"room_shell", nullptr},
+        {"room_shell", {{"doorway", {{"wall", "east"}, {"offset", 2.0}}}}},
+        {"room_shell", {{"doorway", {{"wall", "north"}, {"offset", -3.0}, {"width", 1.0}}}, {"ceiling", false}}},
+        {"shelf", nullptr},
+        {"shelf", {{"back", false}, {"plinthHeight", 0.0}, {"levels", 3}}},
+        {"cartridge", nullptr},
+        {"cartridge", {{"gripRidges", false}, {"labelInset", 0.0005}}},
+        {"crt", nullptr},
+        {"crt", {{"screenInset", 0.0}, {"backTaper", 0.0}}},
+        {"crt", {{"width", 0.3}, {"height", 0.25}, {"depth", 0.15}, {"screenInset", 0.005}, {"backTaper", 0.8}}},
+        {"tv_cabinet", nullptr},
+        {"tv_cabinet", {{"drawers", 0}, {"legHeight", 0.0}}},
+        {"console_cartridge", nullptr},
+        {"poster_frame", nullptr},
+        {"rug", nullptr},
+        {"floor_lamp", nullptr},
+    };
+    for (const auto& [kind, params] : variants) {
+        INFO(std::string(kind) + " " + params.dump());
+        const ProceduralPrefab prefab = buildOk(kind, params);
+        CHECK(rv::test::coplanarOverlaps(meshes(prefab)) == 0);
+    }
+}
+
+TEST_CASE("geometry/prefabs: JSON overrides and nested defaults", "[geometry][prefabs][json]") {
+    // null, {} and the typed builder with default parameters give identical geometry.
+    const auto hashes = [](const ProceduralPrefab& prefab) {
+        std::vector<std::uint64_t> list;
+        for (const PrefabPart& p : prefab.parts) {
+            list.push_back(rv::geometry::hashMesh(p.mesh));
+        }
+        return list;
+    };
+    const std::vector<std::pair<std::string_view, rv::Expected<ProceduralPrefab>>> typed{
+        {"room_shell", rv::geometry::buildRoomShell()},
+        {"shelf", rv::geometry::buildShelf()},
+        {"cartridge", rv::geometry::buildCartridge()},
+        {"crt", rv::geometry::buildCrt()},
+        {"tv_cabinet", rv::geometry::buildTvCabinet()},
+        {"console_cartridge", rv::geometry::buildConsoleCartridge()},
+        {"poster_frame", rv::geometry::buildPosterFrame()},
+        {"rug", rv::geometry::buildRug()},
+        {"floor_lamp", rv::geometry::buildFloorLamp()},
+    };
+    for (const auto& [kind, prefab] : typed) {
+        INFO(kind);
+        REQUIRE(prefab.has_value());
+        CHECK(hashes(*prefab) == hashes(buildOk(kind, nullptr)));
+        CHECK(hashes(*prefab) == hashes(buildOk(kind, json::object())));
+    }
+
+    CHECK(buildOk("shelf", {{"levels", 3}}).sockets.size() == 3 * 8);
+    const ProceduralPrefab wide = buildOk("crt", {{"screenAspect", 16.0 / 9.0}});
+    const glm::vec3 screen = part(wide, "screen").mesh.bounds.size();
+    CHECK(screen.x / screen.y == Approx(16.0 / 9.0).epsilon(1e-4));
+
+    // Nested doorway: {} keeps every default, single keys override one value, null removes it.
+    const ProceduralPrefab defaults = buildOk("room_shell", {{"doorway", json::object()}});
+    CHECK(hashes(defaults) == hashes(buildOk("room_shell")));
+    const ProceduralPrefab narrow = buildOk("room_shell", {{"doorway", {{"wall", "west"}, {"width", 1.0}}}});
+    const Socket& door = socket(narrow, "Doorway");
+    CHECK(door.bounds.size().x == Approx(1.0f));
+    CHECK(door.bounds.size().y == Approx(2.3f));
+    CHECK(position(door).x < 0.0f);
+    CHECK(buildOk("room_shell", {{"doorway", nullptr}}).sockets.empty());
+    // Integers are accepted where numbers are expected.
+    CHECK(closeTo(buildOk("rug", {{"width", 3}, {"depth", 2}}).bounds.size(), glm::vec3(3.0f, 0.012f, 2.0f)));
+}
+
+TEST_CASE("geometry/prefabs: JSON errors name the parameter", "[geometry][prefabs][json]") {
+    using rv::ErrorCode;
+    struct Case {
+        std::string_view kind;
+        json params;
+        ErrorCode code;
+        std::string context;
+    };
+    const std::vector<Case> cases{
+        // Unknown keys (the first in key order is reported).
+        {"shelf", {{"bogus", 1}}, ErrorCode::InvalidArgument, "shelf.bogus"},
+        {"shelf", {{"zeta", 1}, {"alpha", 2}}, ErrorCode::InvalidArgument, "shelf.alpha"},
+        {"room_shell", {{"doorway", {{"color", "red"}}}}, ErrorCode::InvalidArgument, "room_shell.doorway.color"},
+        // Wrong types.
+        {"shelf", {{"levels", "five"}}, ErrorCode::InvalidArgument, "shelf.levels"},
+        {"shelf", {{"levels", 2.5}}, ErrorCode::InvalidArgument, "shelf.levels"},
+        {"shelf", {{"back", 1}}, ErrorCode::InvalidArgument, "shelf.back"},
+        {"shelf", {{"width", nullptr}}, ErrorCode::InvalidArgument, "shelf.width"},
+        {"shelf", {{"slotSize", {0.1, 0.2}}}, ErrorCode::InvalidArgument, "shelf.slotSize"},
+        {"shelf", {{"slotSize", {0.1, "a", 0.2}}}, ErrorCode::InvalidArgument, "shelf.slotSize"},
+        {"room_shell", {{"doorway", 5}}, ErrorCode::InvalidArgument, "room_shell.doorway"},
+        {"room_shell", {{"doorway", {{"wall", "up"}}}}, ErrorCode::InvalidArgument, "room_shell.doorway.wall"},
+        {"room_shell", {{"doorway", {{"wall", 3}}}}, ErrorCode::InvalidArgument, "room_shell.doorway.wall"},
+        {"shelf", json::array({1, 2}), ErrorCode::InvalidArgument, "shelf"},
+        {"crt", "big", ErrorCode::InvalidArgument, "crt"},
+        // Out of range or inconsistent values.
+        {"shelf", {{"levels", 0}}, ErrorCode::OutOfRange, "shelf.levels"},
+        {"shelf", {{"levels", 9999999999LL}}, ErrorCode::OutOfRange, "shelf.levels"},
+        {"shelf", {{"levels", 60}}, ErrorCode::OutOfRange, "shelf.levels"},
+        {"shelf", {{"width", -1.0}}, ErrorCode::OutOfRange, "shelf.width"},
+        {"shelf", {{"slotSize", {0.125, 0.5, 0.02}}}, ErrorCode::OutOfRange, "shelf.levels"},
+        {"shelf", {{"slotSize", {0.125, 1.95, 0.02}}}, ErrorCode::OutOfRange, "shelf.slotSize"},
+        {"shelf", {{"slotSize", {0.125, 0.085, 0.4}}}, ErrorCode::OutOfRange, "shelf.slotSize"},
+        {"shelf", {{"slotSize", {1.5, 0.085, 0.02}}}, ErrorCode::OutOfRange, "shelf.slotSize"},
+        {"crt", {{"screenAspect", 10.0}}, ErrorCode::OutOfRange, "crt.screenAspect"},
+        {"crt", {{"depth", 0.15}, {"screenInset", 0.05}}, ErrorCode::OutOfRange, "crt.screenInset"},
+        {"room_shell", {{"size", {9.0, 0.1}}}, ErrorCode::OutOfRange, "room_shell.size"},
+        {"room_shell", {{"doorway", {{"width", 8.9}}}}, ErrorCode::OutOfRange, "room_shell.doorway.width"},
+        {"room_shell", {{"doorway", {{"offset", 4.0}}}}, ErrorCode::OutOfRange, "room_shell.doorway.offset"},
+        {"room_shell", {{"doorway", {{"height", 2.95}}}}, ErrorCode::OutOfRange, "room_shell.doorway.height"},
+        {"cartridge", {{"labelMargin", {0.001, 0.012}}}, ErrorCode::OutOfRange, "cartridge.labelMargin"},
+        {"cartridge", {{"labelInset", 0.0}}, ErrorCode::OutOfRange, "cartridge.labelInset"},
+        {"tv_cabinet", {{"drawers", 8}}, ErrorCode::OutOfRange, "tv_cabinet.drawers"},
+        {"tv_cabinet", {{"legHeight", 0.45}}, ErrorCode::OutOfRange, "tv_cabinet.legHeight"},
+        {"console_cartridge", {{"height", 0.5}}, ErrorCode::OutOfRange, "console_cartridge.height"},
+        {"poster_frame", {{"frameWidth", 0.3}}, ErrorCode::OutOfRange, "poster_frame.frameWidth"},
+        {"rug", {{"thickness", 0.5}}, ErrorCode::OutOfRange, "rug.thickness"},
+        {"floor_lamp", {{"shadeHeight", 0.9}}, ErrorCode::OutOfRange, "floor_lamp.shadeHeight"},
+    };
+    for (const Case& c : cases) {
+        const rv::Error error = buildError(c.kind, c.params);
+        INFO(error.toString());
+        CHECK(error.code == c.code);
+        CHECK(error.context == c.context);
+    }
+
+    const auto unknown = rv::geometry::buildPrefab("spaceship", nullptr);
+    REQUIRE_FALSE(unknown.has_value());
+    CHECK(unknown.error().code == ErrorCode::NotFound);
+    CHECK(unknown.error().context == "spaceship");
+    CHECK(unknown.error().message.find("room_shell") != std::string::npos);
+}
+
+TEST_CASE("geometry/prefabs: typed builders reject invalid parameters", "[geometry][prefabs][robustness]") {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+
+    rv::geometry::ShelfParams shelf;
+    shelf.width = nan;
+    const auto badShelf = rv::geometry::buildShelf(shelf);
+    REQUIRE_FALSE(badShelf.has_value());
+    CHECK(badShelf.error().code == rv::ErrorCode::OutOfRange);
+    CHECK(badShelf.error().context == "shelf.width");
+
+    rv::geometry::CrtParams crt;
+    crt.depth = inf;
+    REQUIRE_FALSE(rv::geometry::buildCrt(crt).has_value());
+    CHECK(rv::geometry::buildCrt(crt).error().context == "crt.depth");
+
+    rv::geometry::RoomShellParams room;
+    room.doorway->wall = static_cast<rv::geometry::WallSide>(42);
+    REQUIRE_FALSE(rv::geometry::buildRoomShell(room).has_value());
+    CHECK(rv::geometry::buildRoomShell(room).error().context == "room_shell.doorway.wall");
+    room.doorway.reset();
+    room.size.x = nan;
+    CHECK(rv::geometry::buildRoomShell(room).error().context == "room_shell.size");
+
+    rv::geometry::CartridgeParams cartridge;
+    cartridge.labelMargin = {0.07f, 0.012f}; // wider than half the cartridge
+    CHECK(rv::geometry::buildCartridge(cartridge).error().context == "cartridge.labelMargin");
+
+    rv::geometry::FloorLampParams lamp;
+    lamp.baseRadius = 0.0f;
+    CHECK(rv::geometry::buildFloorLamp(lamp).error().context == "floor_lamp.baseRadius");
+}
+
+TEST_CASE("geometry/prefabs: identical parameters give identical prefabs", "[geometry][prefabs][determinism]") {
+    for (const std::string_view kind : rv::geometry::prefabKinds()) {
+        const ProceduralPrefab first = buildOk(kind);
+        const ProceduralPrefab second = buildOk(kind);
+        INFO(kind);
+        REQUIRE(first.parts.size() == second.parts.size());
+        for (std::size_t i = 0; i < first.parts.size(); ++i) {
+            CHECK(rv::geometry::hashMesh(first.parts[i].mesh) == rv::geometry::hashMesh(second.parts[i].mesh));
+        }
+        REQUIRE(first.sockets.size() == second.sockets.size());
+        for (std::size_t i = 0; i < first.sockets.size(); ++i) {
+            CHECK(first.sockets[i].id == second.sockets[i].id);
+            CHECK(first.sockets[i].transform == second.sockets[i].transform);
+            CHECK(first.sockets[i].bounds == second.sockets[i].bounds);
+        }
+        CHECK(first.bounds == second.bounds);
+    }
+}
+
+TEST_CASE("geometry/prefabs: parameter sweeps stay valid and keep their bounds", "[geometry][prefabs][sweep]") {
+    for (const double width : {0.4, 1.2, 2.5}) {
+        for (const int levels : {1, 4, 7}) {
+            for (const bool back : {true, false}) {
+                const json params{
+                    {"width", width}, {"levels", levels}, {"back", back}, {"plinthHeight", back ? 0.1 : 0.0}};
+                INFO(params.dump());
+                const ProceduralPrefab shelf = buildOk("shelf", params);
+                checkPrefab(shelf);
+                CHECK(closeTo(shelf.bounds.size(), glm::vec3(static_cast<float>(width), 2.0f, 0.35f)));
+                CHECK(shelf.sockets.size() % static_cast<std::size_t>(levels) == 0);
+            }
+        }
+    }
+    for (const double aspect : {1.0, 1.3333333, 2.4}) {
+        for (const double taper : {0.0, 0.35, 0.8}) {
+            for (const double inset : {0.0, 0.012, 0.03}) {
+                for (const json& size : {json{{"width", 0.71}, {"height", 0.61}, {"depth", 0.56}},
+                                         json{{"width", 0.36}, {"height", 0.31}, {"depth", 0.33}}}) {
+                    json params = size;
+                    params["screenAspect"] = aspect;
+                    params["backTaper"] = taper;
+                    params["screenInset"] = inset;
+                    INFO(params.dump());
+                    const ProceduralPrefab crt = buildOk("crt", params);
+                    checkPrefab(crt);
+                    const glm::vec3 expected(size["width"].get<float>(), size["height"].get<float>(),
+                                             size["depth"].get<float>());
+                    CHECK(closeTo(crt.bounds.size(), expected));
+                    const glm::vec3 screen = part(crt, "screen").mesh.bounds.size();
+                    CHECK(screen.x / screen.y == Approx(aspect).epsilon(1e-4));
+                }
+            }
+        }
+    }
+    for (const std::string wall : {"north", "south", "east", "west"}) {
+        for (const double offset : {-1.5, 0.0, 2.0}) {
+            const json params{{"size", {6.0, 7.0}}, {"doorway", {{"wall", wall}, {"offset", offset}}}};
+            INFO(params.dump());
+            const ProceduralPrefab room = buildOk("room_shell", params);
+            checkPrefab(room);
+            const Socket& door = socket(room, "Doorway");
+            const glm::vec3 outward = axis(door, 2);
+            const glm::vec3 inside = position(door) - 2.0f * outward + glm::vec3(0.0f, 1.0f, 0.0f);
+            CHECK(rayHits(room, rv::core::Ray{inside, outward}, 10.0f) == 0);
+        }
+    }
+    for (const int drawers : {0, 1, 3, 5}) {
+        for (const double legs : {0.0, 0.12}) {
+            const json params{{"drawers", drawers}, {"legHeight", legs}, {"height", 0.7}};
+            INFO(params.dump());
+            const ProceduralPrefab cabinet = buildOk("tv_cabinet", params);
+            checkPrefab(cabinet);
+            CHECK(closeTo(cabinet.bounds.size(), glm::vec3(1.2f, 0.7f, 0.5f)));
+        }
+    }
+    for (const json& params : {json{{"width", 0.12}, {"height", 0.03}, {"depth", 0.1}},
+                               json{{"width", 0.5}, {"height", 0.12}, {"depth", 0.1}},
+                               json{{"width", 1.0}, {"height", 0.3}, {"depth", 1.0}}}) {
+        INFO(params.dump());
+        const ProceduralPrefab console = buildOk("console_cartridge", params);
+        checkPrefab(console);
+        CHECK(rv::test::coplanarOverlaps(meshes(console)) == 0);
+        CHECK(closeTo(console.bounds.size(), glm::vec3(params["width"].get<float>(), params["height"].get<float>(),
+                                                       params["depth"].get<float>())));
+    }
+    for (const json& params : {json{{"height", 0.5}, {"shadeHeight", 0.05}, {"shadeRadius", 0.05}},
+                               json{{"height", 3.0}, {"shadeHeight", 1.0}, {"baseRadius", 1.0}}}) {
+        INFO(params.dump());
+        checkPrefab(buildOk("floor_lamp", params));
+    }
+}
+
+TEST_CASE("geometry/primitives: defaults, overrides and errors", "[geometry][primitives]") {
+    struct Expectation {
+        std::string_view kind;
+        glm::vec3 size;
+        std::size_t vertices;
+    };
+    for (const Expectation& e :
+         {Expectation{"box", {1.0f, 1.0f, 1.0f}, 24}, Expectation{"plane", {1.0f, 0.0f, 1.0f}, 4},
+          Expectation{"quad", {1.0f, 1.0f, 0.0f}, 4}, Expectation{"sphere", {1.0f, 1.0f, 1.0f}, 2 * 32 + 15 * 33},
+          Expectation{"cylinder", {1.0f, 1.0f, 1.0f}, 4 * 32 + 4}}) {
+        INFO(e.kind);
+        for (const json& params : {json(nullptr), json::object()}) {
+            const auto mesh = rv::geometry::buildPrimitive(e.kind, params);
+            REQUIRE(mesh.has_value());
+            CHECK(mesh->name == e.kind);
+            CHECK(mesh->vertices.size() == e.vertices);
+            CHECK(rv::geometry::validateMesh(*mesh).has_value());
+            CHECK(rv::test::windingMismatches(*mesh) == 0);
+            CHECK(closeTo(mesh->bounds.size(), e.size));
+            CHECK(closeTo(mesh->bounds.center(), glm::vec3(0.0f)));
+        }
+    }
+
+    const auto box =
+        rv::geometry::buildPrimitive("box", {{"size", {2.0, 3.0, 4.0}}, {"uv", "meters"}, {"metersPerTile", 0.5}});
+    REQUIRE(box.has_value());
+    CHECK(closeTo(box->bounds.size(), glm::vec3(2.0f, 3.0f, 4.0f)));
+    for (const rv::geometry::Vertex& v : box->vertices) {
+        if (v.normal == glm::vec3(0.0f, 0.0f, 1.0f)) {
+            CHECK(v.uv0.x == Approx(v.position.x / 0.5f));
+            CHECK(v.uv0.y == Approx(-v.position.y / 0.5f));
+        }
+    }
+    const auto plane = rv::geometry::buildPrimitive("plane", {{"size", {4.0, 2.0}}, {"uvTiling", {4.0, 2.0}}});
+    REQUIRE(plane.has_value());
+    float maxU = 0.0f;
+    for (const rv::geometry::Vertex& v : plane->vertices) {
+        CHECK(v.normal == glm::vec3(0.0f, 1.0f, 0.0f));
+        maxU = std::max(maxU, v.uv0.x);
+    }
+    CHECK(maxU == 4.0f);
+    const auto sphere = rv::geometry::buildPrimitive("sphere", {{"radius", 2.0}, {"segments", 8}, {"rings", 4}});
+    REQUIRE(sphere.has_value());
+    CHECK(sphere->vertices.size() == 2 * 8 + 3 * 9);
+    CHECK(sphere->bounds.max.y == Approx(2.0f));
+    const auto open = rv::geometry::buildPrimitive("cylinder", {{"capped", false}, {"segments", 12}});
+    REQUIRE(open.has_value());
+    CHECK(open->vertices.size() == 2 * 13);
+
+    struct Failure {
+        std::string_view kind;
+        json params;
+        rv::ErrorCode code;
+        std::string context;
+    };
+    for (const Failure& f : {
+             Failure{"box", {{"color", "red"}}, rv::ErrorCode::InvalidArgument, "box.color"},
+             Failure{"box", {{"uv", "planar"}}, rv::ErrorCode::InvalidArgument, "box.uv"},
+             Failure{"box", {{"size", {1.0, 1.0}}}, rv::ErrorCode::InvalidArgument, "box.size"},
+             Failure{"box", {{"size", {1.0, 0.0, 1.0}}}, rv::ErrorCode::OutOfRange, "box.size"},
+             Failure{"plane", {{"uvTiling", {0.0, 1.0}}}, rv::ErrorCode::OutOfRange, "plane.uvTiling"},
+             Failure{"quad", {{"size", "large"}}, rv::ErrorCode::InvalidArgument, "quad.size"},
+             Failure{"sphere", {{"segments", 8.5}}, rv::ErrorCode::InvalidArgument, "sphere.segments"},
+             Failure{"sphere", {{"segments", 2}}, rv::ErrorCode::OutOfRange, "sphere.segments"},
+             Failure{"sphere", {{"rings", 1000}}, rv::ErrorCode::OutOfRange, "sphere.rings"},
+             Failure{"cylinder", {{"radius", 0.0}}, rv::ErrorCode::OutOfRange, "cylinder.radius"},
+             Failure{"cylinder", {{"capped", "yes"}}, rv::ErrorCode::InvalidArgument, "cylinder.capped"},
+         }) {
+        const auto mesh = rv::geometry::buildPrimitive(f.kind, f.params);
+        INFO(std::string(f.kind) + " " + f.params.dump());
+        REQUIRE_FALSE(mesh.has_value());
+        CHECK(mesh.error().code == f.code);
+        CHECK(mesh.error().context == f.context);
+        CHECK_FALSE(mesh.error().message.empty());
+    }
+    const auto unknown = rv::geometry::buildPrimitive("torus", nullptr);
+    REQUIRE_FALSE(unknown.has_value());
+    CHECK(unknown.error().code == rv::ErrorCode::NotFound);
+    CHECK(unknown.error().context == "torus");
+}
