@@ -68,6 +68,10 @@ namespace rv::scene {
 ///     }]
 ///   }
 ///
+/// "model" objects are drawn with the materials and textures of their glTF file: their "material", "materials",
+/// "textures" and "inlineMaterial" keys are ignored, with a warning that names them; "params" (builder parameters)
+/// has no meaning for a model and is not read either.
+///
 /// Object transform = translate(position) * Ry * Rx * Rz * scale. A grid expands into nx * ny * nz instances
 /// transform * translate(ix * sx, iy * sy, iz * sz) (spacing in the object's local space), x fastest, then y,
 /// then z. The whole scene may hold at most kMaxSceneInstances instances (an object without grid counts as 1).

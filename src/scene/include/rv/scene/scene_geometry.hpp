@@ -98,7 +98,8 @@ struct SceneGeometry {
 
     /// Parts over all objects (model primitives not included).
     [[nodiscard]] std::size_t partCount() const noexcept;
-    /// Distinct meshes: distinct part mesh keys plus the meshes of every distinct model.
+    /// Distinct meshes a renderer uploads: distinct part mesh keys plus, for every distinct model, the meshes its draw
+    /// items use (not its ColliderProxy meshes, which are not drawn, nor meshes outside its active scene).
     [[nodiscard]] std::size_t uniqueMeshCount() const noexcept;
     /// Object instances (grid cells count one each).
     [[nodiscard]] std::size_t instanceCount() const noexcept;
@@ -120,7 +121,8 @@ struct SceneGeometry {
 ///    meshes are shared (ScenePart::mesh, ScenePart::meshKey).
 ///  - Model objects: `loadModel(modelPath)`, called once per distinct path; the object keeps the model (drawn with its
 ///    own materials: material, materials, textures and inlineMaterial of a model object are ignored, with a warning)
-///    and its sockets. Model warnings are logged once per model.
+///    and its sockets. Model warnings are logged once per model, also for a model that has nothing to draw (they say
+///    why: skipped primitives).
 ///  - Objects whose geometry is unavailable (builder error such as out-of-range parameters, model that cannot be
 ///    loaded or has nothing to draw, no `loadModel`): one kPlaceholderSize cube standing on the object origin, with
 ///    the fallback material. The reason is logged as a warning.

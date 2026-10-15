@@ -1,14 +1,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include <memory>
-#include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include <spdlog/sinks/ostream_sink.h>
-#include <spdlog/spdlog.h>
-
+#include "support/log_capture.hpp"
 #include <rv/assets/material_library.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
@@ -48,32 +45,6 @@ void checkColor(const glm::vec3& actual, const glm::vec3& expected) {
     CHECK(actual.g == Approx(expected.g).margin(1e-5));
     CHECK(actual.b == Approx(expected.b).margin(1e-5));
 }
-
-/// Captures what the default spdlog logger prints while alive.
-class LogCapture {
-public:
-    LogCapture() : m_previous(spdlog::default_logger()) {
-        auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(m_stream);
-        sink->set_pattern("%l %v");
-        spdlog::set_default_logger(std::make_shared<spdlog::logger>("rv-test-capture", sink));
-    }
-    ~LogCapture() { spdlog::set_default_logger(m_previous); }
-    LogCapture(const LogCapture&) = delete;
-    LogCapture& operator=(const LogCapture&) = delete;
-
-    [[nodiscard]] std::size_t count(std::string_view needle) const {
-        const std::string text = m_stream.str();
-        std::size_t found = 0;
-        for (std::size_t pos = text.find(needle); pos != std::string::npos; pos = text.find(needle, pos + 1)) {
-            ++found;
-        }
-        return found;
-    }
-
-private:
-    std::ostringstream m_stream;
-    std::shared_ptr<spdlog::logger> m_previous;
-};
 
 } // namespace
 
@@ -272,7 +243,7 @@ TEST_CASE("assets/materials: unknown names fall back to magenta and warn once pe
     CHECK(library->find("MAT_Unknown") == nullptr);
     CHECK(library->find("mat_wood_oak") == nullptr); // case-sensitive
 
-    LogCapture capture;
+    rv::test::LogCapture capture;
     const MaterialDesc& fallback = library->getOrFallback("MAT_Unknown");
     CHECK(fallback.name == "MAT_Fallback_Magenta");
     CHECK(fallback.shading == ShadingModel::Unlit);
@@ -280,7 +251,6 @@ TEST_CASE("assets/materials: unknown names fall back to magenta and warn once pe
     CHECK(&library->getOrFallback("MAT_Unknown") == &fallback);
     (void)library->getOrFallback("MAT_Other");
     CHECK(&library->getOrFallback("MAT_Wood_Oak") == library->find("MAT_Wood_Oak"));
-    spdlog::default_logger()->flush();
     CHECK(capture.count("MAT_Unknown") == 1);
     CHECK(capture.count("MAT_Other") == 1);
     CHECK(capture.count("warning") == 2);

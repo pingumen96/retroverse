@@ -8,8 +8,10 @@
 #include <glm/glm.hpp>
 
 #include <rv/app/model_viewer.hpp>
+#include <rv/assets/model_data.hpp>
 #include <rv/core/math.hpp>
 #include <rv/render/light_packing.hpp>
+#include <rv/render/tonemap.hpp>
 #include <rv/scene/camera.hpp>
 
 using Catch::Approx;
@@ -129,6 +131,43 @@ TEST_CASE("app/model_viewer: bounds that cannot be framed are treated as a 1 m c
         CHECK(rv::core::nearlyEqual(scene.camera.position, reference.camera.position));
         CHECK(rv::core::isFinite(scene.camera.position));
     }
+}
+
+TEST_CASE("app/model_viewer: the background sets off dark and light models alike", "[app][model_viewer]") {
+    const SceneDescription scene = rv::app::makeModelViewerScene("m.glb", Aabb{});
+    // The clear color is radiance: exposed and tonemapped like the surfaces, then encoded to sRGB.
+    const glm::vec3 shown =
+        rv::core::linearToSrgb(rv::gl::tonemap(scene.environment.clearColor, scene.environment.exposure)) * 255.0f;
+    INFO("background shown as " << shown.r << ", " << shown.g << ", " << shown.b);
+    // A neutral dark mid grey, about 61: under the rig the faces of black plastic (#1C1C1E) and graphite (#252A2E)
+    // show at 8-40, those of grey plastic (#9A9A96) at 83-169 (scripts/make_test_models.py, material_swatches.gltf),
+    // so dark silhouettes read as well as light ones.
+    for (int channel = 0; channel < 3; ++channel) {
+        CHECK(shown[channel] >= 55.0f);
+        CHECK(shown[channel] <= 68.0f);
+    }
+    CHECK(std::abs(shown.r - shown.b) < 8.0f);
+}
+
+TEST_CASE("app/model_viewer: the model summary names its size, or that it has none", "[app][model_viewer]") {
+    rv::assets::ModelData model;
+    model.stats.nodes = 3;
+    model.stats.meshes = 2;
+    model.stats.primitives = 2;
+    model.stats.triangles = 24;
+    model.stats.materials = 1;
+    model.bounds = Aabb::fromMinMax(glm::vec3(-0.3f, 0.0f, -0.25f), glm::vec3(0.3f, 0.4f, 0.25f));
+    CHECK(rv::app::describeModel("build/models/box.gltf", model) ==
+          "Model build/models/box.gltf: 3 node(s), 2 mesh(es) with 2 primitive(s), 24 triangle(s), 1 material(s), 0 "
+          "image(s); bounds 0.600 x 0.400 x 0.500 m from (-0.300, 0.000, -0.250) to (0.300, 0.400, 0.250)");
+
+    // Only LINES or POINTS primitives: nothing is drawn, and the empty box's sentinels are not printed.
+    rv::assets::ModelData lines;
+    lines.stats.nodes = 1;
+    lines.stats.meshes = 1;
+    CHECK(rv::app::describeModel("lines.gltf", lines) ==
+          "Model lines.gltf: 1 node(s), 1 mesh(es) with 0 primitive(s), 0 triangle(s), 0 material(s), 0 image(s); no "
+          "bounds (nothing to draw)");
 }
 
 TEST_CASE("app/model_viewer: the debug grid follows the size of the model", "[app][model_viewer]") {

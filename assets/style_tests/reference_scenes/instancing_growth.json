@@ -1,0 +1,40 @@
+// Instance buffer growth test (M0 steps 7-8): gl::SceneRenderer starts with regions of 1024 instance matrices and
+// writes only the instances that survive frustum culling. The start view sees 36 boxes and the floor; behind the
+// camera lies a field of 2304 boxes (48 x 48, one mesh) in three bands of 768: walnut, grey plastic and brushed metal
+// from near to far. Turning around in place (tests/input_scripts/turn_around.json, 18 degrees per frame) brings the
+// field into view, so the instance buffer grows mid-run and the meshes, attached to the first buffer since frame 0,
+// are attached to the new one:
+//   retroverse.exe --scene instancing_growth --exit-after-frames --frames 10 --fixed-dt 0.016667 --hidden
+//     --input-script tests/input_scripts/turn_around.json --screenshot build/screenshots/instancing_growth.png
+//     --data-dir build/rvdata
+// Expected: "Instance buffer 'SceneRenderer.Instances' grown to 3 regions of ..." in the log (not with --frames 1),
+// no GL debug message, and the screenshot shows the three bands in rows without gaps.
+{
+  "schemaVersion": 1,
+  "name": "instancing_growth",
+  "camera": {"position": [0.0, 3.0, 0.0], "yawDeg": 0.0, "pitchDeg": -15.0, "horizontalFovDeg": 75.0},
+  "environment": {
+    "clearColor": "#383A3C",
+    "ambientSky": "#FFFFFF",
+    "ambientGround": "#5E5A55",
+    "ambientIntensity": 0.6,
+    "exposure": 1.3
+  },
+  "lights": [
+    {"name": "sun", "type": "directional", "direction": [-0.4, -0.8, 0.45], "color": "#FFF1DE", "intensity": 3.0}
+  ],
+  "objects": [
+    {"id": "floor", "primitive": "plane", "params": {"size": [80.0, 80.0], "uvTiling": [80.0, 80.0]},
+     "material": "MAT_Concrete_Warm", "castsShadows": false},
+    // In the start view: 6 x 6 boxes 4 to 6.5 m ahead.
+    {"id": "boxes_start", "primitive": "box", "params": {"size": [0.25, 0.25, 0.25]}, "position": [-1.25, 0.125, -4.0],
+     "grid": {"counts": [6, 1, 6], "spacing": [0.5, 0.5, -0.5]}, "material": "MAT_Plastic_Accent"},
+    // Behind the start view: the field, 5 to 28.5 m away along +Z, 23.5 m wide. Same box parameters: one mesh.
+    {"id": "field_walnut", "primitive": "box", "params": {"size": [0.25, 0.25, 0.25]}, "position": [-11.75, 0.125, 5.0],
+     "grid": {"counts": [48, 1, 16], "spacing": [0.5, 0.5, 0.5]}, "material": "MAT_Wood_Walnut"},
+    {"id": "field_plastic", "primitive": "box", "params": {"size": [0.25, 0.25, 0.25]}, "position": [-11.75, 0.125, 13.0],
+     "grid": {"counts": [48, 1, 16], "spacing": [0.5, 0.5, 0.5]}, "material": "MAT_Plastic_Gray"},
+    {"id": "field_metal", "primitive": "box", "params": {"size": [0.25, 0.25, 0.25]}, "position": [-11.75, 0.125, 21.0],
+     "grid": {"counts": [48, 1, 16], "spacing": [0.5, 0.5, 0.5]}, "material": "MAT_Metal_Brushed"}
+  ]
+}

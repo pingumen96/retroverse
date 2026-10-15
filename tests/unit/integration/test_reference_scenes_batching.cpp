@@ -30,8 +30,8 @@ struct PlannedView {
     rv::scene::BatchPlan batches;
 };
 
-/// Plans the default view of a reference scene the way the application does.
-PlannedView planReferenceView(std::string_view name) {
+/// Plans the default view of a reference scene the way the application does, turned by `turnDeg` about +Y in place.
+PlannedView planReferenceView(std::string_view name, float turnDeg = 0.0f) {
     const std::filesystem::path assets = rv::core::pathFromUtf8(RV_TEST_ASSET_DIR);
     auto library = rv::assets::MaterialLibrary::loadFromFile(assets / "materials/base/materials.json");
     REQUIRE(library.has_value());
@@ -51,7 +51,7 @@ PlannedView planReferenceView(std::string_view name) {
     }
     rv::scene::Camera camera;
     camera.setLens(scene->camera.lens);
-    camera.setPose(scene->camera.position, rv::core::degreesToRadians(scene->camera.yawDeg),
+    camera.setPose(scene->camera.position, rv::core::degreesToRadians(scene->camera.yawDeg + turnDeg),
                    rv::core::degreesToRadians(scene->camera.pitchDeg));
     rv::scene::PlanOptions options;
     options.frustum = camera.frustum();
@@ -69,7 +69,8 @@ PlannedView planReferenceView(std::string_view name) {
 
 } // namespace
 
-TEST_CASE("integration/batching: instancing_stress draws 1000 boxes in three batches", "[integration][batching]") {
+TEST_CASE("integration/batching: instancing_stress draws 1000 boxes in three batches plus the floor",
+          "[integration][batching]") {
     const PlannedView view = planReferenceView("instancing_stress");
     CHECK(view.content.items.size() == 1001);
     CHECK(view.batches.culledItems == 0); // the whole block is in view
@@ -96,4 +97,20 @@ TEST_CASE("integration/batching: the test room draws fewer batches than parts", 
         largest = std::max<std::size_t>(largest, batch.instanceCount);
     }
     CHECK(largest == 24);
+}
+
+TEST_CASE("integration/batching: instancing_growth outgrows the initial instance regions when turned around",
+          "[integration][batching]") {
+    // gl::SceneRenderer::kInitialInstanceCapacity: matrices per region of the instance buffer at creation.
+    constexpr std::size_t kInitialInstanceCapacity = 1024;
+    // The start view writes few instances, so the meshes are attached to the first buffer at frame 0...
+    const PlannedView start = planReferenceView("instancing_growth");
+    CHECK(start.content.items.size() == 1 + 36 + 3 * 768);
+    CHECK(start.batches.instanceTransforms.size() < 100);
+    // ...and turning around (tests/input_scripts/turn_around.json) brings more than a region holds into view: the
+    // buffer grows mid-run and the meshes are attached to the new one.
+    const PlannedView turned = planReferenceView("instancing_growth", 180.0f);
+    CHECK(turned.batches.instanceTransforms.size() > kInitialInstanceCapacity);
+    // The field's three bands and the floor (the start boxes are behind the camera now).
+    CHECK(turned.batches.batches.size() == 4);
 }

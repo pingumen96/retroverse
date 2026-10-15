@@ -6,7 +6,7 @@ This document describes the code that exists today. The target architecture is i
 
 | Module | CMake target | Responsibility | May depend on |
 |---|---|---|---|
-| core | `rv_core` | Errors (`rv::Expected`), logging, paths, frame clock, AABB/ray math, sRGB color helpers, file I/O, file change polling (`FileWatchSet`), JSON, command line parsing | glm, spdlog, nlohmann-json, tl-expected |
+| core | `rv_core` | Errors (`rv::Expected`), logging (`FailureStreak`: which failures of an operation retried every frame to log), paths, frame clock, AABB/ray math, sRGB color helpers, file I/O, file change polling (`FileWatchSet`), JSON, command line parsing | glm, spdlog, nlohmann-json, tl-expected |
 | geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex` with glTF tangent space), sockets, procedural mesh builder and procedural prefabs with their collision boxes, uv scale of a surface, also as drawn with a transform (`uvMetersPerUnit`) | core |
 | input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets, shader source loading, procedural test patterns (sized to their surface: `patternSizeForAspect`) | core, geometry, fastgltf, stb |
@@ -20,7 +20,7 @@ Three GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
 | Sub-target | Part of | Content |
 |---|---|---|
-| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, self-check verdicts (`evaluateSrgbCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig; `modelViewerGrid`), the frame statistics log (`FrameStatsLog`) |
+| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, self-check verdicts (`evaluateSrgbCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
 | `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and environment packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, for the clear color), the renderer's frame statistics (`FrameStats`, header only) |
 
@@ -40,7 +40,8 @@ geometry, resolves the real materials and preprocesses the real shaders.
 
 - **Scene:** `--scene <name|file>` (default `m0_testroom`) is loaded with `scene::loadSceneDescription`; `--model
   <file>` instead builds the model viewer scene (`app::makeModelViewerScene`: the model at the origin, a camera framing
-  its bounds from the front right and above, a three-point light rig sized to it, a neutral environment).
+  its bounds from the front right and above, a three-point light rig sized to it, a neutral environment whose dark
+  mid-grey background, shown as about sRGB 61, sets off black plastic as well as ivory).
   `app::SceneInstance` (`rv/app/scene_instance.hpp`) turns the description into drawable content, the reusable step
   between a scene and the renderer: `scene::buildSceneGeometry` builds every prefab or primitive once per kind and
   parameters (the 24 cartridges of the test room share one shell mesh and one label mesh, `ScenePart::meshKey`),
@@ -58,22 +59,28 @@ geometry, resolves the real materials and preprocesses the real shaders.
   optional debug lines) per target. Per view it writes `FrameUniforms` and, when they changed, `LightsUniforms`;
   plans the items with `scene::BatchPlanner` (frustum culling against the registered mesh bounds; opaque batches, then
   alpha-masked ones, each sorted by shader, material and mesh; then alpha-blended items back to front by the distance
-  to their world bounds, consecutive ones with the same key merged); copies every instance matrix of the plan into the
-  `gl::InstanceBuffer` (persistently mapped, coherent, three regions used in turn, each guarded by a fence placed
+  to their world bounds, consecutive ones with the same key merged; the renderer keeps the planner and the plan, so
+  planning allocates nothing once they have grown to the largest view); copies every instance matrix of the plan into
+  the `gl::InstanceBuffer` (persistently mapped, coherent, three regions used in turn, each guarded by a fence placed
   after the draws that read it, grown and re-attached to the meshes when a view needs more) and issues one
   `glDrawElementsInstancedBaseInstance` per batch, binding the program and the material (uniform block range,
-  textures, samplers, blend, depth writes, culling) only when they change. Mesh shaders read the instance matrix at
-  vertex attribute locations 4..7 (divisor 1). A `gl::GpuTimer` (a ring of `GL_TIME_ELAPSED` queries read frames
-  later, never stalling) times each view. `gl::FrameStats` (items, culled items, batches, draw calls, instances,
-  triangles, shader and material switches, debug lines, GPU time) are kept per view; `app::FrameStatsLog` logs them
-  with the frame times once per second in developer builds (`RV_DEV_UI`) and for the whole run at the end of
-  frame-limited runs. The test room draws its 71 parts in 47 batches (23 meshes uploaded); `instancing_stress` draws
-  1001 items in 4.
-- **Debug lines:** `--debug-draw` adds `gl::DebugDraw` over the scene: `scene::DebugLines` (a world grid, every
-  object instance's bounds as an oriented box, the axes of every socket: shelf slots, the CRT screen surface, model
-  anchors) uploaded once and drawn as `GL_LINES` in one call with `debug/debug_lines.{vert,frag}` (linear colors, no
-  lighting or tonemapping; depth-tested without depth writes, each vertex pulled towards the eye by 0.2% of its
-  distance so that lines lying on surfaces do not flicker).
+  textures, samplers, blend, depth writes, culling) only when they change. A view whose instances cannot be written is
+  skipped; `core::FailureStreak` logs the failure once per cause and the recovery with the number of skipped views.
+  Mesh shaders read the instance matrix at vertex attribute locations 4..7 (divisor 1). A `gl::GpuTimer` (a ring of
+  `GL_TIME_ELAPSED` queries read frames later, never stalling) times each view. `gl::FrameStats` (items, culled items,
+  batches, draw calls, instances, triangles, shader and material switches, debug lines, GPU time) are kept per view;
+  `app::FrameStatsLog` logs them with the frame times once per second in developer builds (`RV_DEV_UI`) and for the
+  whole run at the end of frame-limited runs (frames that render no view, a minimized window, count their time only).
+  The test room draws its 71 parts in 47 batches (23 meshes uploaded); `instancing_stress` draws 1001 items in 4;
+  `instancing_growth` turned around draws about 2000 instances, more than the 1024 per region the instance buffer
+  starts with, so it grows mid-run.
+- **Debug lines:** `--debug-draw` adds `gl::DebugDraw` over the scene: `scene::DebugLines` (a world grid with its +Y
+  marker drawn first, so the floor axes show where they overlap it; every object instance's bounds as an oriented box;
+  the axes of every socket: shelf slots, the CRT screen surface, model anchors) uploaded once and drawn as `GL_LINES`
+  with `debug/debug_lines.{vert,frag}` (linear colors, no lighting or tonemapping; depth-tested without depth writes,
+  each vertex pulled towards the eye by 0.2% of its distance so that lines lying on surfaces do not flicker). Socket
+  axes are markers: a second draw shows their parts hidden by surfaces, dimmed (the complementary depth test), so a
+  socket under a surface, such as the CRT's screen plane under its bulged glass, still shows its origin.
 - **Materials:** one GPU material per material of the scene, and one more per object, role and pattern size with a
   scene texture, which becomes that instance's base color texture (cover patterns on cartridge labels and posters,
   color bars on the CRT screen; patterns are generated at the aspect ratio of their surface as drawn,

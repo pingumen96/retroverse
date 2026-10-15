@@ -94,11 +94,12 @@ private:
         if (!*model) {
             return makeError(ErrorCode::Unknown, "the model loader returned no model", path);
         }
-        if ((*model)->drawItems.empty()) {
-            return makeError(ErrorCode::ValidationFailed, "the model has no triangles to draw", path);
-        }
+        // Before the check below: the warnings of an empty model say why it is empty (skipped primitives).
         for (const std::string& warning : (*model)->warnings) {
             spdlog::warn("Model '{}': {}", path, warning);
+        }
+        if ((*model)->drawItems.empty()) {
+            return makeError(ErrorCode::ValidationFailed, "the model has no triangles to draw", path);
         }
         return std::move(*model);
     }
@@ -262,7 +263,14 @@ std::size_t SceneGeometry::uniqueMeshCount() const noexcept {
             meshKeys.insert(part.meshKey);
         }
         if (object.model && models.insert(object.modelPath).second) {
-            modelMeshes += object.model->meshes.size();
+            // Only the meshes the model draws: collider proxies and meshes outside its active scene are never uploaded.
+            std::vector<bool> drawn(object.model->meshes.size(), false);
+            for (const assets::ModelDrawItem& item : object.model->drawItems) {
+                if (item.meshIndex < drawn.size() && !drawn[item.meshIndex]) {
+                    drawn[item.meshIndex] = true;
+                    ++modelMeshes;
+                }
+            }
         }
     }
     return meshKeys.size() + modelMeshes;

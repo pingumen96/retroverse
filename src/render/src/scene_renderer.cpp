@@ -1,5 +1,6 @@
 #include <rv/render/scene_renderer.hpp>
 
+#include <cstddef>
 #include <cstring>
 #include <optional>
 #include <utility>
@@ -64,12 +65,27 @@ bool SceneRenderer::updateUniforms(const RenderView& view, const scene::Camera& 
     return true;
 }
 
-void SceneRenderer::drawBatches(GLDevice& device, const SceneShaders& shaders, const scene::BatchPlan& plan,
-                                std::uint32_t baseInstance, FrameStats& stats) const {
+Expected<std::uint32_t> SceneRenderer::uploadInstances() {
+    auto baseInstance = m_instances.write(m_plan.instanceTransforms);
+    if (!baseInstance) {
+        Error error = baseInstance.error();
+        error.message = "the instances cannot be written: " + error.message;
+        return propagate(std::move(error));
+    }
+    if (auto attached = m_meshes->attachInstanceBuffer(m_instances); !attached) {
+        Error error = attached.error();
+        error.message = "the meshes cannot read the instance buffer: " + error.message;
+        return propagate(std::move(error));
+    }
+    return *baseInstance;
+}
+
+void SceneRenderer::drawBatches(GLDevice& device, const SceneShaders& shaders, std::uint32_t baseInstance,
+                                FrameStats& stats) const {
     RenderStateCache& state = device.state();
     const ShaderProgram* currentProgram = nullptr;
     std::optional<scene::MaterialHandle> currentMaterial;
-    for (const scene::Batch& batch : plan.batches) {
+    for (const scene::Batch& batch : m_plan.batches) {
         if (!m_meshes->contains(batch.mesh) || batch.material.value >= m_materials->uploadedCount()) {
             continue;
         }
@@ -123,9 +139,9 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         options.passOf = [this](scene::MaterialHandle material) {
             return m_materials->pass(material);
         };
-        const scene::BatchPlan plan = m_planner.plan(view.items, options);
-        stats.culledItems = plan.culledItems;
-        stats.batches = plan.batches.size();
+        m_planner.plan(view.items, options, m_plan);
+        stats.culledItems = m_plan.culledItems;
+        stats.batches = m_plan.batches.size();
 
         RenderStateCache& state = device.state();
         state.setDepthTest(true);
@@ -133,14 +149,15 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         state.setPolygonMode(GL_FILL);
         state.setCullMode(GL_BACK);
         state.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        if (auto baseInstance = m_instances.write(plan.instanceTransforms); !baseInstance) {
-            spdlog::error("Scene instances cannot be written, the view is not drawn: {}",
+        if (auto baseInstance = uploadInstances(); baseInstance) {
+            if (const std::optional<std::size_t> skipped = m_uploadFailures.succeed()) {
+                spdlog::info("Scene views are drawn again after {} view(s) were skipped", *skipped);
+            }
+            drawBatches(device, shaders, *baseInstance, stats);
+        } else if (m_uploadFailures.fail(baseInstance.error().code)) {
+            // Logged once per cause: a persistent failure would otherwise flood the log at the frame rate.
+            spdlog::error("Scene views are not drawn until this failure stops (repeats are not logged): {}",
                           baseInstance.error().toString());
-        } else if (auto attached = m_meshes->attachInstanceBuffer(m_instances); !attached) {
-            spdlog::error("Meshes cannot read the instance buffer, the view is not drawn: {}",
-                          attached.error().toString());
-        } else {
-            drawBatches(device, shaders, plan, *baseInstance, stats);
         }
         m_instances.release(); // the draws that read this view's instances are issued
 

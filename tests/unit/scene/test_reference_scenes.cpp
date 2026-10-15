@@ -241,8 +241,8 @@ float gapBetween(const Footprint& a, const Footprint& b) {
 
 } // namespace
 
-TEST_CASE("scene/reference_scenes: the three reference scenes load", "[scene][reference_scenes]") {
-    for (const char* name : {"m0_testroom", "material_test", "instancing_stress"}) {
+TEST_CASE("scene/reference_scenes: the reference scenes load", "[scene][reference_scenes]") {
+    for (const char* name : {"m0_testroom", "material_test", "instancing_stress", "instancing_growth"}) {
         INFO("scene " << name);
         const SceneDescription scene = loadReference(name);
         CHECK(scene.name == name);

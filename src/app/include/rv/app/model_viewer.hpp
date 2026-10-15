@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include <rv/assets/model_data.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/scene/scene_description.hpp>
 
@@ -32,7 +33,8 @@ inline constexpr float kModelViewerMargin = 1.15f;
 ///  - Lights, a three-point rig sized to the bounds: a warm directional key light from the front left above, a cool
 ///    point fill light from the front right and a point rim light from behind above (their intensities scale with the
 ///    square of their distance, so the model receives the same light whatever its size).
-///  - Environment: neutral hemispheric ambient, exposure 1, a dark neutral background.
+///  - Environment: neutral hemispheric ambient, exposure 1, a neutral dark mid-grey background (shown as about sRGB
+///    61), against which dark models (black plastic, graphite) and light ones both stand out.
 /// Empty or non-finite bounds are framed as a 1 m cube standing on the origin.
 [[nodiscard]] scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::Aabb& bounds);
 
@@ -47,5 +49,10 @@ struct DebugGrid {
 /// cells, a 1 cm part 1 mm cells), and the grid reaches twice the model's horizontal distance from the origin, at least
 /// 20 cells. Empty or non-finite bounds are taken as a 1 m cube.
 [[nodiscard]] DebugGrid modelViewerGrid(const core::Aabb& bounds) noexcept;
+
+/// One-line summary of a loaded model for the log: "Model <path>: <n> node(s), <m> mesh(es) with <p> primitive(s), <t>
+/// triangle(s), <k> material(s), <i> image(s); bounds <x> x <y> x <z> m from (<min>) to (<max>)" (millimeter
+/// precision), or "...; no bounds (nothing to draw)" for a model without a drawn primitive.
+[[nodiscard]] std::string describeModel(std::string_view path, const assets::ModelData& model);
 
 } // namespace rv::app

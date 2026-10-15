@@ -56,13 +56,30 @@ struct PlanOptions {
 ///  - items with a non-finite model matrix are dropped, items outside PlanOptions::frustum are culled;
 ///  - batches come in pass order: opaque, alpha-masked, alpha-blended;
 ///  - opaque and masked items with the same (shader, material, mesh) form one batch; batches are ordered by that key,
-///    which minimizes program and material switches, and instances keep their submission order (stable sort);
+///    which minimizes program and material switches, and instances keep their submission order;
 ///  - blended items are drawn back to front: sorted by decreasing distance from PlanOptions::eye to the center of
 ///    their world bounds (ties in submission order); consecutive items with the same key share a batch, whose
 ///    instances are drawn in order, so the drawing order is exactly back to front.
+/// The planner keeps scratch space between calls: a renderer that keeps one planner and one BatchPlan plans every
+/// view without allocating once both have grown to its largest view (spec §14.4: no allocations in the hot loop).
 class BatchPlanner {
 public:
-    [[nodiscard]] BatchPlan plan(std::span<const RenderItem> items, const PlanOptions& options = {}) const;
+    /// Plans `items` into `out`, replacing its content. The vectors of `out` keep their capacity.
+    void plan(std::span<const RenderItem> items, const PlanOptions& options, BatchPlan& out);
+    /// Plans `items` into a new plan.
+    [[nodiscard]] BatchPlan plan(std::span<const RenderItem> items, const PlanOptions& options = {});
+
+private:
+    /// An item that takes part in the plan.
+    struct Candidate {
+        std::size_t index = 0; ///< into the items
+        DrawPass pass = DrawPass::Opaque;
+        /// Blended items: squared distance from the eye to the center of the world bounds.
+        float depth = 0.0f;
+    };
+
+    /// Finite items with their pass, then the ones that survive culling, in plan order.
+    std::vector<Candidate> m_candidates;
 };
 
 } // namespace rv::scene

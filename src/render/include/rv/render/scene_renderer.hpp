@@ -8,6 +8,7 @@
 #include <glm/vec4.hpp>
 
 #include <rv/core/expected.hpp>
+#include <rv/core/failure_streak.hpp>
 #include <rv/render/frame_stats.hpp>
 #include <rv/render/gpu_timer.hpp>
 #include <rv/render/instance_buffer.hpp>
@@ -54,10 +55,13 @@ struct RenderView {
 ///  - writes FrameUniforms (binding 0: camera, time) and, when they changed since the last view, LightsUniforms
 ///    (binding 1);
 ///  - plans the items with scene::BatchPlanner: frustum culling against the registered mesh bounds, opaque batches,
-///    then alpha-masked ones, each sorted by shader, material and mesh, then alpha-blended ones back to front;
+///    then alpha-masked ones, each sorted by shader, material and mesh, then alpha-blended ones back to front (the
+///    planner and the plan are kept from view to view, so planning allocates nothing once they have grown);
 ///  - writes every instance transform of the plan into its InstanceBuffer (persistently mapped, fenced regions) and
 ///    draws each batch with one glDrawElementsInstancedBaseInstance, binding the program and the material (uniform
-///    block range, textures, samplers, blend, depth writes and culling) only when they change;
+///    block range, textures, samplers, blend, depth writes and culling) only when they change. A view whose instances
+///    cannot be written (allocation failure, fence timeout) is not drawn: the failure is logged once, and again only
+///    when its cause changes, then the first view drawn again logs how many were skipped;
 ///  - draws the debug lines of the view, if any, over the scene;
 ///  - times the view on the GPU (GpuTimer) and records FrameStats.
 /// The registries must outlive the renderer. Main thread only; destroy it while the GL context is current.
@@ -83,9 +87,12 @@ private:
 
     /// Writes the frame and lights blocks and binds them; false when they could not be written.
     bool updateUniforms(const RenderView& view, const scene::Camera& camera);
-    /// Draws the batches of `plan`, whose instances start at `baseInstance` in the instance buffer.
-    void drawBatches(GLDevice& device, const SceneShaders& shaders, const scene::BatchPlan& plan,
-                     std::uint32_t baseInstance, FrameStats& stats) const;
+    /// Writes the instance transforms of m_plan into the instance buffer and attaches the meshes to it: the base
+    /// instance of the plan, or why the view cannot be drawn.
+    [[nodiscard]] Expected<std::uint32_t> uploadInstances();
+    /// Draws the batches of m_plan, whose instances start at `baseInstance` in the instance buffer.
+    void drawBatches(GLDevice& device, const SceneShaders& shaders, std::uint32_t baseInstance,
+                     FrameStats& stats) const;
 
     MeshRegistry* m_meshes = nullptr;
     const MaterialRegistry* m_materials = nullptr;
@@ -96,6 +103,10 @@ private:
     InstanceBuffer m_instances;
     GpuTimer m_timer;
     scene::BatchPlanner m_planner;
+    /// Plan of the current view; kept so that its vectors keep their capacity from view to view.
+    scene::BatchPlan m_plan;
+    /// Views not drawn because their instances could not be uploaded, for the log.
+    core::FailureStreak m_uploadFailures;
     FrameStats m_stats;
 };
 

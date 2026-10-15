@@ -42,13 +42,15 @@ shader never built, `--self-check` failed). Logs: `<user data>/logs/retroverse.l
 runs out of `%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
 
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
-  `m0_testroom`; also `material_test`, `instancing_stress`), anything with a path separator or `.json` is a file.
-  Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
+  `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
+  `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
 - `--model <file.gltf|.glb>` (not with `--scene`): model viewer, the model at the origin with a three-point light rig
-  and a camera framing its bounds from the front right and above; a file that cannot be loaded is shown as the magenta
-  placeholder (logged). `--debug-draw` draws debug lines over any scene or model: object bounds (amber), socket axes
-  (X red, Y green, Z blue) and a world grid on y = 0 (1 m cells in scenes; for a model, cells of the power of ten
-  that makes it span 2 to 20 of them: 10 cm for a 0.5 m model, 1 mm for a 1 cm part).
+  and a camera framing its bounds from the front right and above, on a dark mid-grey background (about sRGB 61, so
+  dark and light models both stand out); a file that cannot be loaded is shown as the magenta placeholder (logged).
+  `--debug-draw` draws debug lines over any scene or model: object bounds (amber), socket axes (X red, Y green, Z
+  blue; the parts hidden by surfaces dimmed, so a socket under a surface still shows its origin) and a world grid on
+  y = 0 (1 m cells in scenes; for a model, cells of the power of ten that makes it span 2 to 20 of them: 10 cm for a
+  0.5 m model, 1 mm for a 1 cm part).
 - Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, GPU time
   from a timer query, frame times) are logged once per second in developer builds and as `Frame stats of the run` at
   the end of every frame-limited run; measure frame times with `--no-vsync`.
@@ -91,8 +93,16 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 Open the PNG with the Read tool and compare it against `style.md` and `example.png`. The PNG (RGB, no alpha) holds
 sRGB-encoded values exactly as the window shows them (`--self-check srgb` proves the encoding), so pixels can also be
 checked numerically, e.g. with Python and Pillow. Check the log for GL debug messages (`GL debug output summary:
-0 high, 0 medium, ...`). The other reference scenes: `material_test` (roughness grows along X, metallic along Y) and
-`instancing_stress`.
+0 high, 0 medium, ...`). The other reference scenes: `material_test` (roughness grows along X, metallic along Y),
+`instancing_stress` (1000 boxes in 4 draw calls; frame times with `--no-vsync`) and `instancing_growth`, which grows
+the renderer's instance buffer mid-run: turned around, it shows about 2000 boxes, more than the 1024 the buffer starts
+with (the log reads `Instance buffer 'SceneRenderer.Instances' grown to ...`; with `--frames 1` it must not):
+
+```powershell
+build/msvc-x64-debug/bin/retroverse.exe --scene instancing_growth --exit-after-frames --frames 10 --fixed-dt 0.016667 `
+  --hidden --input-script tests/input_scripts/turn_around.json --screenshot build/screenshots/instancing_growth.png `
+  --data-dir build/rvdata
+```
 
 Other viewpoints and movement are scripted: `tests/input_scripts/*.json` (each file names its expected result; the
 unit tests in `tests/unit/integration/test_free_roam_navigation.cpp` play the same scripts):
@@ -107,10 +117,13 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 (a cartridge is about 50x30 px at 1920x1080). `turn_around.json` (`--frames 10`) faces the entrance half: the south
 wall and the doorway, which must read in free roam too.
 
-glTF models are checked with `--model` and a model written to `build/` (never commit third-party models; downloads
-go to the git-ignored `assets/staging`), e.g. a cube whose faces are labeled FRONT +Z, TOP +Y, RIGHT +X: in the
-default view FRONT faces the camera, TOP is up and every label reads unmirrored. Add `--debug-draw` for the grid
-(scale) and the socket axes:
+glTF models are checked with `--model` and models written to `build/` (never commit generated or third-party models;
+downloads go to the git-ignored `assets/staging`). `python -I scripts/make_test_models.py build/models` (Python 3 with
+Pillow >= 10.1) writes `orientation_cube.gltf`, a 0.5 m cube whose faces are labeled FRONT +Z, TOP +Y, RIGHT +X, ...:
+in the default view FRONT faces the camera, TOP is up and every label reads unmirrored; `orientation_cube_1cm.gltf`,
+the same cube 1 cm wide (framing, clip planes, the 1 mm grid); and `material_swatches.gltf`, four cubes from black
+plastic to aged ivory whose silhouettes must all stand out from the viewer's background. Add `--debug-draw` for the
+grid (scale) and the socket axes:
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --model build/models/orientation_cube.gltf --debug-draw --exit-after-frames `

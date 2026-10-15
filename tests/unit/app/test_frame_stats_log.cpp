@@ -72,6 +72,44 @@ TEST_CASE("app/frame_stats_log: a summary per interval of recorded frame time", 
     CHECK(run->starts_with("Run: 7 frame(s) in 2.25 s, frame time 375.00 ms (min 250.00, max 750.00), GPU 0.70 ms"));
 }
 
+TEST_CASE("app/frame_stats_log: frames without a view count their time only", "[app][frame_stats_log]") {
+    FrameStatsLog log(1.0);
+    log.record(0.25, viewStats(4, 2.0));
+    // A minimized window: three frames render nothing; the renderer's statistics still describe the view above.
+    for (int frame = 0; frame < 3; ++frame) {
+        log.recordWithoutView(0.25);
+    }
+    const std::optional<std::string> summary = log.takeIntervalSummary();
+    REQUIRE(summary.has_value());
+    INFO(*summary);
+    // Every frame counts towards the frame times; the GPU time is the one view's, not repeated for every frame.
+    CHECK(summary->starts_with(
+        "Frame stats: 4 frame(s) (3 without a view) in 1.00 s, frame time 250.00 ms (min 250.00, max 250.00), GPU 2.00 "
+        "ms; last view: 1001 item(s)"));
+
+    // Intervals without a view: no GPU time at all.
+    for (int frame = 0; frame < 4; ++frame) {
+        log.recordWithoutView(0.25);
+    }
+    const std::optional<std::string> idle = log.takeIntervalSummary();
+    REQUIRE(idle.has_value());
+    INFO(*idle);
+    CHECK(idle->starts_with("Frame stats: 4 frame(s) (4 without a view) in 1.00 s"));
+    CHECK(contains(*idle, "GPU n/a"));
+
+    // Intervals where every frame has a view do not mention it.
+    log.record(1.0, viewStats(4, 1.0));
+    const std::optional<std::string> drawn = log.takeIntervalSummary();
+    REQUIRE(drawn.has_value());
+    CHECK(drawn->starts_with("Frame stats: 1 frame(s) in 1.00 s"));
+
+    const std::optional<std::string> run = log.runSummary("Run");
+    REQUIRE(run.has_value());
+    INFO(*run);
+    CHECK(run->starts_with("Run: 9 frame(s) (7 without a view) in 3.00 s"));
+    CHECK(contains(*run, "GPU 1.50 ms"));
+}
+
 TEST_CASE("app/frame_stats_log: frames without a usable duration count but are not timed", "[app][frame_stats_log]") {
     FrameStatsLog log(0.0); // an invalid interval falls back to one second
     log.record(std::numeric_limits<double>::quiet_NaN(), viewStats(1));

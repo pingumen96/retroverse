@@ -318,6 +318,56 @@ TEST_CASE("scene/batch_planner: culling applies to every pass", "[scene][batch_p
     CHECK(tagsOf(plan) == std::vector<float>{0.0f, 1.0f});
 }
 
+TEST_CASE("scene/batch_planner: planning into a kept plan reuses its storage", "[scene][batch_planner]") {
+    rv::scene::Camera camera;
+    camera.setPose(glm::vec3(0.0f), 0.0f, 0.0f); // looking down -Z
+    PlanOptions options = culling(camera.frustum(), unitCube);
+    options.passOf = [](MaterialHandle material) {
+        return material.value == 9 ? DrawPass::Blend : DrawPass::Opaque;
+    };
+    // 1000 items in front of the camera over 3 materials and 2 meshes, one in 10 blended, one in 7 behind (culled).
+    std::vector<RenderItem> items;
+    for (std::uint32_t i = 0; i < 1000; ++i) {
+        const std::uint32_t material = i % 10 == 0 ? 9u : 1u + i % 3;
+        items.push_back(item(1 + i % 2, material, ShaderKind::Pbr, static_cast<float>(i % 40) - 20.0f,
+                             i % 7 == 0 ? 5.0f : -2.0f - static_cast<float>(i % 23)));
+    }
+
+    BatchPlanner planner;
+    BatchPlan kept;
+    planner.plan(items, options, kept);
+    const BatchPlan fresh = BatchPlanner{}.plan(items, options);
+    REQUIRE(kept.instanceTransforms.size() == fresh.instanceTransforms.size());
+    CHECK(kept.culledItems == fresh.culledItems);
+    CHECK(kept.culledItems > 0);
+    CHECK(kept.instanceTransforms == fresh.instanceTransforms);
+    checkContiguous(kept);
+
+    // Planning the same view again: same result, same storage (nothing reallocated).
+    const glm::mat4* transforms = kept.instanceTransforms.data();
+    const Batch* batches = kept.batches.data();
+    planner.plan(items, options, kept);
+    CHECK(kept.instanceTransforms.data() == transforms);
+    CHECK(kept.batches.data() == batches);
+    CHECK(kept.instanceTransforms == fresh.instanceTransforms);
+    CHECK(kept.culledItems == fresh.culledItems);
+    REQUIRE(kept.batches.size() == fresh.batches.size());
+    for (std::size_t i = 0; i < kept.batches.size(); ++i) {
+        CHECK(kept.batches[i].material == fresh.batches[i].material);
+        CHECK(kept.batches[i].mesh == fresh.batches[i].mesh);
+        CHECK(kept.batches[i].firstInstance == fresh.batches[i].firstInstance);
+        CHECK(kept.batches[i].instanceCount == fresh.batches[i].instanceCount);
+    }
+
+    // A smaller view replaces the whole content (counters included) within the same storage.
+    const std::vector<RenderItem> few{item(1, 1, ShaderKind::Pbr, 1.0f), item(1, 1, ShaderKind::Pbr, 2.0f)};
+    planner.plan(few, options, kept);
+    CHECK(kept.instanceTransforms.data() == transforms);
+    CHECK(kept.culledItems == 0);
+    REQUIRE(kept.batches.size() == 1);
+    CHECK(tagsOf(kept) == std::vector<float>{1.0f, 2.0f});
+}
+
 TEST_CASE("scene/batch_planner: draw passes follow the alpha modes", "[scene][batch_planner]") {
     CHECK(rv::scene::drawPassOf(rv::assets::AlphaMode::Opaque) == DrawPass::Opaque);
     CHECK(rv::scene::drawPassOf(rv::assets::AlphaMode::Mask) == DrawPass::Mask);

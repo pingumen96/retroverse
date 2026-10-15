@@ -120,13 +120,7 @@ struct SceneSource {
 };
 
 void logModel(const std::filesystem::path& file, const assets::ModelData& model) {
-    const glm::vec3 size = model.bounds.size();
-    spdlog::info("Model {}: {} node(s), {} mesh(es) with {} primitive(s), {} triangle(s), {} material(s), {} image(s); "
-                 "bounds {:.3f} x {:.3f} x {:.3f} m from ({:.3f}, {:.3f}, {:.3f}) to ({:.3f}, {:.3f}, {:.3f})",
-                 core::pathToUtf8(file), model.stats.nodes, model.stats.meshes, model.stats.primitives,
-                 model.stats.triangles, model.stats.materials, model.stats.images, size.x, size.y, size.z,
-                 model.bounds.min.x, model.bounds.min.y, model.bounds.min.z, model.bounds.max.x, model.bounds.max.y,
-                 model.bounds.max.z);
+    spdlog::info("{}", describeModel(core::pathToUtf8(file), model));
     for (const geometry::Socket& socket : model.sockets) {
         const glm::vec3 position(socket.transform[3]);
         spdlog::info("Model socket '{}' ({}, node '{}') at ({:.3f}, {:.3f}, {:.3f})", socket.id,
@@ -251,6 +245,7 @@ struct RetroverseApp::State {
     double simulatedSeconds = 0.0;
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
     bool lastFrameCaptured = false;   ///< --screenshot written
+    bool viewRendered = false;        ///< renderScene() ran during the current onRender (window or screenshot)
 
     /// Logs the pose at the end of every input script step that ends on `frame`.
     void logScriptProgress(std::uint64_t frame) const {
@@ -280,6 +275,7 @@ struct RetroverseApp::State {
         view.timeSeconds = static_cast<float>(simulatedSeconds);
         view.debugDraw = debugDraw ? &*debugDraw : nullptr;
         renderer->render(context.device(), programs, view, target);
+        viewRendered = true;
     }
 
     /// Name of a program the scene draws with that never built, or empty when all did.
@@ -480,6 +476,7 @@ void RetroverseApp::onRender(AppContext& context) {
         return;
     }
     State& state = *m_state;
+    state.viewRendered = false;
     // Screenshots are rendered before the window view, so the frame ends with the window blit and the state it
     // documents (default framebuffer with the window's viewport, GL_FRAMEBUFFER_SRGB off) for whatever draws next.
     if (state.screenshotRequested) {
@@ -511,7 +508,13 @@ void RetroverseApp::onRender(AppContext& context) {
     }
 
     // The statistics of the last view rendered this frame: the window's, or the screenshot's when the window is empty.
-    state.statsLog.record(context.clock().deltaSeconds(), state.renderer->stats());
+    // A frame that rendered no view (a minimized window) counts its time only: the renderer's statistics still
+    // describe an earlier view.
+    if (state.viewRendered) {
+        state.statsLog.record(context.clock().deltaSeconds(), state.renderer->stats());
+    } else {
+        state.statsLog.recordWithoutView(context.clock().deltaSeconds());
+    }
     if constexpr (kDeveloperBuild) {
         if (const std::optional<std::string> summary = state.statsLog.takeIntervalSummary()) {
             spdlog::info("{}", *summary);

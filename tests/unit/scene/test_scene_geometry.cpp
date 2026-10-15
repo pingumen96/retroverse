@@ -10,11 +10,13 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "support/glb_builder.hpp"
+#include "support/log_capture.hpp"
 #include <rv/assets/gltf_loader.hpp>
 #include <rv/assets/material_library.hpp>
 #include <rv/core/math.hpp>
@@ -538,8 +540,10 @@ TEST_CASE("scene/scene_geometry: glTF models load once per path and keep their s
 
     CHECK(geometry.modelObjectCount() == 2);
     CHECK(geometry.placeholderCount() == 1);
-    // Distinct meshes: the model's meshes once (both loaded, only the body is drawn), the placeholder and the box.
-    CHECK(geometry.uniqueMeshCount() == first.model->meshes.size() + 2);
+    // Distinct meshes as the renderer uploads them: the model's body once (its ColliderProxy mesh is loaded but never
+    // drawn), the placeholder and the box.
+    REQUIRE(first.model->meshes.size() == 2);
+    CHECK(geometry.uniqueMeshCount() == 1 + 2);
     // Three model instances of the body's 2 triangles, the placeholder cube and the box (12 each).
     CHECK(geometry.drawnTriangleCount() == 3 * 2 + 12 + 12);
     CHECK_FALSE(object(geometry, "box").castsShadows);
@@ -558,13 +562,23 @@ TEST_CASE("scene/scene_geometry: a model without anything to draw stands in as a
     })");
     const auto scene = rv::scene::parseSceneDescription(document, "empty_model.json");
     REQUIRE(scene.has_value());
+    // What the loader reports for a file with nothing but a LINES primitive.
     const rv::scene::ModelLoader loader = [](std::string_view) -> rv::Expected<SharedModel> {
-        return std::make_shared<const rv::assets::ModelData>();
+        rv::assets::ModelData model;
+        model.warnings.push_back("mesh 'lines' primitive 0: LINES primitives are not supported; skipped");
+        return std::make_shared<const rv::assets::ModelData>(std::move(model));
     };
+    const rv::test::LogCapture log;
     const SceneGeometry geometry = rv::scene::buildSceneGeometry(*scene, realMaterials(), loader);
     const SceneObjectGeometry& ghost = object(geometry, "ghost");
     CHECK(ghost.placeholder);
     CHECK(ghost.model == nullptr);
     REQUIRE(ghost.colliders.size() == 1);
     CHECK(ghost.colliders.front().box == rv::scene::placeholderBounds());
+    // The loader's warnings explain the placeholder, so they are logged too.
+    INFO(log.text());
+    CHECK(log.count("warning Model 'models/ghost.glb': mesh 'lines' primitive 0: LINES primitives are not "
+                    "supported; skipped") == 1);
+    CHECK(log.count("Scene object 'ghost' is drawn as a placeholder") == 1);
+    CHECK(geometry.uniqueMeshCount() == 1); // the placeholder cube
 }

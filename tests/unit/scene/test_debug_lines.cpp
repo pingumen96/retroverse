@@ -92,7 +92,11 @@ TEST_CASE("scene/debug_lines: axes are colored X red, Y green, Z blue and normal
                                            glm::vec3(4.0f));
     lines.addAxes(transform, 0.5f);
     REQUIRE(lines.lineCount() == 3);
-    const auto vertices = lines.vertices();
+    // Axes are markers (their hidden parts are drawn dimmed), not plain depth-tested lines.
+    CHECK(lines.vertices().empty());
+    CHECK_FALSE(lines.empty());
+    const auto vertices = lines.markerVertices();
+    REQUIRE(vertices.size() == 6);
     CHECK(vertices[0].color == colors::kAxisX);
     CHECK(vertices[2].color == colors::kAxisY);
     CHECK(vertices[4].color == colors::kAxisZ);
@@ -130,6 +134,9 @@ TEST_CASE("scene/debug_lines: the grid covers the extent with axis-colored cente
     CHECK(red == 1);
     CHECK(blue == 1);
     CHECK(green == 1);
+    // The +Y marker comes first, so the floor axes drawn after it show where they overlap it on screen.
+    CHECK(vertices[0].color == colors::kAxisY);
+    CHECK(grid.markerVertices().empty());
     const std::set<LineKey> keys = linesOf(grid);
     CHECK(keys.contains(keyOf({-2.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f})));   // the X axis
     CHECK(keys.contains(keyOf({0.0f, 0.0f, -2.0f}, {0.0f, 0.0f, 2.0f})));   // the Z axis
@@ -150,8 +157,16 @@ TEST_CASE("scene/debug_lines: the grid covers the extent with axis-colored cente
     both.append(grid);
     both.append(grid);
     CHECK(both.lineCount() == 22);
+    // Appending keeps each kind of line apart.
+    DebugLines axes;
+    axes.addAxes(glm::mat4(1.0f), 1.0f);
+    both.append(axes);
+    CHECK(both.lineCount() == 25);
+    CHECK(both.vertices().size() == 44);
+    CHECK(both.markerVertices().size() == 6);
     both.clear();
     CHECK(both.empty());
+    CHECK(both.lineCount() == 0);
 }
 
 TEST_CASE("scene/debug_lines: socket axes follow the size of the socket, else of its object", "[scene][debug_lines]") {
@@ -183,11 +198,16 @@ TEST_CASE("scene/debug_lines: scene lines are object bounds and socket axes at e
 
     DebugLines lines;
     rv::scene::addSceneDebugLines(geometry, lines);
-    std::size_t expected = 0;
+    std::size_t boxes = 0;
+    std::size_t axes = 0;
     for (const rv::scene::SceneObjectGeometry& object : geometry.objects) {
-        expected += object.instances.size() * (12 + 3 * object.sockets.size());
+        boxes += object.instances.size() * 12;
+        axes += object.instances.size() * 3 * object.sockets.size();
     }
-    CHECK(lines.lineCount() == expected);
+    CHECK(lines.lineCount() == boxes + axes);
+    // Bounds are plain lines, socket axes markers (the CRT screen surface lies under its bulged glass).
+    CHECK(lines.vertices().size() == 2 * boxes);
+    CHECK(lines.markerVertices().size() == 2 * axes);
 
     // The shelf's bounds sit at its position: 1.2 x 2.0 x 0.35 m standing on the floor at (-1.5, 0, -4.8).
     DebugLines shelfOnly;

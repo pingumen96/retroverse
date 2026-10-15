@@ -4,6 +4,7 @@
 #include <cmath>
 #include <utility>
 
+#include <fmt/format.h>
 #include <glm/glm.hpp>
 
 #include <rv/core/math.hpp>
@@ -69,8 +70,12 @@ scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::
     camera.lens.nearPlane = std::clamp(0.25f * (distance - radius), 0.001f, 0.05f);
     camera.lens.farPlane = std::max(100.0f, 4.0f * (distance + radius));
 
-    // Neutral environment: the model's own colors read as authored.
-    scene.environment.clearColor = srgb(42.0f, 44.0f, 46.0f);
+    // Neutral environment: the model's own colors read as authored. The background is a dark mid grey (radiance shown
+    // as about sRGB 61 after exposure and tonemapping), clear of the faces of the material presets under the rig: black
+    // plastic and graphite show at 8-40, grey plastic at 83-169, aged ivory at 118-207 (material_swatches.gltf of
+    // scripts/make_test_models.py), so the silhouette of a dark console or CRT body reads as well as that of a light
+    // one (style §2.1).
+    scene.environment.clearColor = srgb(90.0f, 92.0f, 95.0f);
     scene.environment.ambientSky = srgb(255.0f, 255.0f, 255.0f);
     scene.environment.ambientGround = srgb(90.0f, 86.0f, 80.0f);
     scene.environment.ambientIntensity = 0.35f;
@@ -107,6 +112,23 @@ DebugGrid modelViewerGrid(const core::Aabb& bounds) noexcept {
     const float reach = std::max(
         {std::abs(measured.min.x), std::abs(measured.max.x), std::abs(measured.min.z), std::abs(measured.max.z)});
     return DebugGrid{std::max(20.0f * spacing, std::ceil(2.0f * reach / spacing) * spacing), spacing};
+}
+
+std::string describeModel(std::string_view path, const assets::ModelData& model) {
+    std::string summary = fmt::format(
+        "Model {}: {} node(s), {} mesh(es) with {} primitive(s), {} triangle(s), {} material(s), {} image(s); ", path,
+        model.stats.nodes, model.stats.meshes, model.stats.primitives, model.stats.triangles, model.stats.materials,
+        model.stats.images);
+    // An empty box holds the +/-FLT_MAX sentinels: nothing to print.
+    if (model.bounds.isEmpty()) {
+        return summary + "no bounds (nothing to draw)";
+    }
+    const glm::vec3 size = model.bounds.size();
+    const glm::vec3& min = model.bounds.min;
+    const glm::vec3& max = model.bounds.max;
+    return summary + fmt::format("bounds {:.3f} x {:.3f} x {:.3f} m from ({:.3f}, {:.3f}, {:.3f}) to ({:.3f}, {:.3f}, "
+                                 "{:.3f})",
+                                 size.x, size.y, size.z, min.x, min.y, min.z, max.x, max.y, max.z);
 }
 
 } // namespace rv::app
