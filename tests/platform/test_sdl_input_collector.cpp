@@ -92,8 +92,6 @@ TEST_CASE("platform/sdl_input_collector: mouse buttons, captured motion and whee
     CHECK(collector.mouseCaptured());
     collector.handleEvent(rv::test::mouseMotionEvent(3.5f, 2.0f));
     collector.handleEvent(rv::test::mouseMotionEvent(-1.0f, 4.0f));
-    collector.handleEvent(rv::test::mouseWheelEvent(1.0f));
-    collector.handleEvent(rv::test::mouseWheelEvent(1.0f, SDL_MOUSEWHEEL_FLIPPED)); // natural scrolling undone
     collector.handleEvent(mouseButtonEvent(SDL_BUTTON_RIGHT, true));
     frame = collector.endFrame();
     CHECK(frame.mouseDelta == glm::vec2(2.5f, 6.0f)); // accumulated, +Y down as SDL reports it
@@ -104,6 +102,20 @@ TEST_CASE("platform/sdl_input_collector: mouse buttons, captured motion and whee
     frame = collector.endFrame();
     CHECK(frame.mouseDelta == glm::vec2(0.0f)); // per frame
     CHECK(frame.mouseButtonsDown[toIndex(MouseButton::Right)]);
+
+    // Wheel: +1 per notch away from the user; a flipped (natural scrolling) notch is undone; notches accumulate per
+    // frame, fractions (precise wheels, touchpads) included, captured or not.
+    collector.handleEvent(rv::test::mouseWheelEvent(1.0f));
+    CHECK(collector.endFrame().mouseWheel == 1.0f);
+    collector.handleEvent(rv::test::mouseWheelEvent(1.0f, SDL_MOUSEWHEEL_FLIPPED));
+    CHECK(collector.endFrame().mouseWheel == -1.0f);
+    collector.setMouseCaptured(false);
+    collector.handleEvent(rv::test::mouseWheelEvent(0.5f));
+    collector.handleEvent(rv::test::mouseWheelEvent(0.25f));
+    collector.handleEvent(rv::test::mouseWheelEvent(-2.0f));
+    collector.handleEvent(rv::test::mouseWheelEvent(0.5f, SDL_MOUSEWHEEL_FLIPPED));
+    CHECK(collector.endFrame().mouseWheel == -1.75f);
+    CHECK(collector.endFrame().mouseWheel == 0.0f); // per frame
     collector.handleEvent(mouseButtonEvent(SDL_BUTTON_RIGHT, false));
     collector.handleEvent(mouseButtonEvent(9, true)); // no rv::input code
     frame = collector.endFrame();

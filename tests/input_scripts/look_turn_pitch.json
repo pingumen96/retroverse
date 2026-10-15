@@ -3,7 +3,7 @@
 //   step 1, frames 0-9:     yaw += 10 * 20 * 0.0022 rad = 0.44 rad -> 25.21 degrees, pitch unchanged
 //   step 2, frames 10-109:  pitch += 11 rad -> clamped at +85 degrees
 //   step 3, frames 110-229: pitch -= 13.2 rad -> clamped at -85 degrees
-//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 230 --fixed-dt 0.016667
+//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 230 --fixed-dt 0.016667 --hidden
 //     --input-script tests/input_scripts/look_turn_pitch.json --data-dir build/rvdata
 [
   {"fromFrame": 0, "toFrame": 9, "actions": {"look_delta_x": 20.0}},

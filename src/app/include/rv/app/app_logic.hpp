@@ -90,7 +90,8 @@ public:
 
     /// Creates the logic's resources. An error aborts the run with ExitCode::InitializationFailed.
     [[nodiscard]] virtual Status onInit(AppContext& context) = 0;
-    /// Every SDL event, after the host has handled quit, close, resize and Alt+Enter.
+    /// Every SDL event, after the host has handled quit, close and resize, except the Alt+Enter press, which the host
+    /// consumes to toggle fullscreen (platform::isFullscreenToggle).
     virtual void onEvent(AppContext& /*context*/, const SDL_Event& /*event*/) {}
     /// Simulation step; `deltaSeconds` is the frame delta clamped to 0.1 s, or the --fixed-dt step
     /// (CommandLineOptions::fixedDeltaSeconds) when given.

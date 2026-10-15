@@ -17,7 +17,6 @@
 #include <rv/app/screenshot_name.hpp>
 #include <rv/assets/image_io.hpp>
 #include <rv/assets/material_library.hpp>
-#include <rv/core/frame_clock.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/input/action.hpp>
@@ -119,6 +118,8 @@ struct RetroverseApp::State {
     gl::Framebuffer screenshotTarget;
     std::optional<glm::ivec2> failedWindowSize;
     std::optional<glm::ivec2> failedScreenshotSize;
+    /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
+    double simulatedSeconds = 0.0;
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
     bool lastFrameCaptured = false;   ///< --screenshot written
 
@@ -139,7 +140,7 @@ struct RetroverseApp::State {
 
     void renderScene(AppContext& context, const gl::Framebuffer& target) {
         scene.render(context.device(), shaders->get(unlitShader), frameUniforms, target,
-                     static_cast<float>(context.clock().totalSeconds()));
+                     static_cast<float>(simulatedSeconds));
     }
 
     /// Renders the current view at --screenshot-size into the screenshot target and writes it as an RGB PNG.
@@ -218,9 +219,10 @@ Status RetroverseApp::onInit(AppContext& context) {
         state->input->captureMouseWhenFocused();
     }
 
-    if (options.screenshot) {
-        spdlog::info("Screenshot of frame {} at {}x{} will be written to {}", options.frameLimit.value_or(0),
-                     options.screenshotWidth, options.screenshotHeight, core::pathToUtf8(*options.screenshot));
+    if (options.screenshot && options.frameLimit) {
+        spdlog::info("Screenshot of the last frame (frame {}, counted from 0) at {}x{} will be written to {}",
+                     *options.frameLimit - 1, options.screenshotWidth, options.screenshotHeight,
+                     core::pathToUtf8(*options.screenshot));
     }
     m_state = std::move(state);
     return ok();
@@ -238,6 +240,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     }
     State& state = *m_state;
     const std::uint64_t frame = context.frameIndex();
+    state.simulatedSeconds += deltaSeconds;
     const input::ActionState actions = state.input->update(frame);
 
     if (actions.pressed(input::Action::Back)) {
@@ -303,7 +306,7 @@ void RetroverseApp::onRender(AppContext& context) {
 void RetroverseApp::onShutdown(AppContext& context) {
     const CommandLineOptions& options = context.options();
     if (m_state && options.frameLimit) {
-        m_state->freeRoam->logFinalPose(context.frameIndex());
+        m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
     }
     // An unattended run must not pass when it could never draw its scene (its frames and screenshot show nothing).
     if (m_state && options.frameLimit && !m_state->shaders->get(m_state->unlitShader).valid()) {

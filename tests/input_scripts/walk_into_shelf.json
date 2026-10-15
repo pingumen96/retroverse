@@ -1,7 +1,7 @@
 // M0 step 5 verification: strafe 1.5 m left to line up with the shelf (x = -1.5), then push into it for 300 frames.
 // Expected (--fixed-dt 0.016667): the walker stops one capsule radius (0.3 m) in front of the shelf front face
 // (z = -4.625), feet about (-1.5, 0, -4.325), instead of tunneling through it.
-//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 336 --fixed-dt 0.016667
+//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 336 --fixed-dt 0.016667 --hidden
 //     --input-script tests/input_scripts/walk_into_shelf.json --data-dir build/rvdata
 [
   {"fromFrame": 0, "toFrame": 35, "actions": {"move_right": -1.0}},

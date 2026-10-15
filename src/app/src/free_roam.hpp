@@ -26,9 +26,10 @@ public:
 
     /// "feet (x, y, z) m, yaw Y deg, pitch P deg", positions to 0.1 mm and angles to 0.01 degree.
     [[nodiscard]] std::string describePose() const;
-    /// Logs the pose reached after `frames` frames: feet and eye position, yaw and pitch, the horizontal distance from
-    /// the start, and the nearest collider at the walker's height with its clearance (distance - capsule radius).
-    void logFinalPose(std::uint64_t frames) const;
+    /// Logs the pose reached after `frames` frames and `simulatedSeconds` of simulated time: feet and eye position, yaw
+    /// and pitch, the horizontal distance from the start, and the nearest collider at the walker's height with its
+    /// clearance (distance - capsule radius).
+    void logFinalPose(std::uint64_t frames, double simulatedSeconds) const;
 
 private:
     scene::FirstPersonController m_controller;

@@ -1,7 +1,7 @@
 // M0 step 5 verification: walk north for 300 frames between the shelf and the TV corner, into the north wall.
 // Expected (--fixed-dt 0.016667): the walker stops one capsule radius (0.3 m) in front of the wall's interior face
 // (z = -5), feet about (0, 0, -4.7), after about 190 frames.
-//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 300 --fixed-dt 0.016667
+//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 300 --fixed-dt 0.016667 --hidden
 //     --input-script tests/input_scripts/walk_into_north_wall.json --data-dir build/rvdata
 [
   {"fromFrame": 0, "toFrame": 299, "actions": {"move_forward": 1.0}}

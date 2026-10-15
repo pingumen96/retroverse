@@ -25,7 +25,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
 
-- Outputs: `build/<preset>/bin` holds `retroverse.exe`, `rv_tests.exe` and the vcpkg DLLs.
+- Outputs: `build/<preset>/bin` holds `retroverse.exe`, `rv_tests.exe`, `rv_platform_tests.exe` and the vcpkg DLLs.
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`. The first
   configure in a fresh checkout or worktree restores packages from the local binary cache (a few minutes).
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
@@ -48,16 +48,20 @@ shader never built). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>`
   window) also applies to F12.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
-  gamepad sticks walk and look. Interactive runs capture the mouse when the window has focus and on a click into it;
-  frame-limited runs only on a click. Esc (gamepad B) releases the mouse, or quits when it is free. Alt+Enter toggles
-  fullscreen, F5 reloads the shaders, F12 writes `<user data>/screenshots/retroverse-<timestamp>.png`. Developer
-  builds also reload a shader within ~0.5 s of saving any of its files (`assets/shaders`); a broken edit logs
-  `<file>:<line>: error ...` and the previous program stays in use.
+  gamepad sticks walk and look; Esc (gamepad B) releases the mouse, or quits when it is free; F5 reloads the shaders,
+  F12 writes `<user data>/screenshots/retroverse-<timestamp>.png`. Interactive runs capture the mouse when the window
+  has focus and on a click into it; frame-limited runs only on a click. Alt+Enter toggles fullscreen: the host handles
+  it before the action map (fixed, not rebindable, never seen as Enter). The walker collides with walls and furniture
+  and can step into a doorway but not leave the room. Developer builds also reload a shader within ~0.5 s of saving
+  any of its files (`assets/shaders`); a broken edit logs `<file>:<line>: error ...` and the previous program stays
+  in use.
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,
-  both included) and logs the pose at the end of each step; `--fixed-dt <seconds>` replaces the measured frame time,
-  so scripted runs are reproducible. Frame-limited runs log the final camera (`Final camera after N frame(s): feet
-  ..., yaw ..., pitch ...`) and the nearest collider with its clearance.
+  both included) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window
+  with focus, keys and pads still drive the others, so automated runs add `--hidden`. `--fixed-dt <seconds>`
+  replaces the measured frame time, for the walker and the shader time alike, so scripted runs are reproducible.
+  Frame-limited runs log the final camera (`Final camera after N frame(s) (T s simulated): feet ..., yaw ..., pitch
+  ...`) and the nearest collider with its clearance.
 
 ## Visual verification
 
@@ -77,8 +81,12 @@ unit tests in `tests/unit/integration/test_free_roam_navigation.cpp` play the sa
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames --frames 120 --fixed-dt 0.016667 `
-  --input-script tests/input_scripts/walk_forward_2s.json --screenshot build/screenshots/walk.png --data-dir build/rvdata
+  --hidden --input-script tests/input_scripts/walk_forward_2s.json --screenshot build/screenshots/walk.png `
+  --data-dir build/rvdata
 ```
+
+`walk_forward_2s.json` ends 3.2 m from the hero wall: a close-up of the shelf, a poster and the TV on its cabinet
+(a cartridge is about 50x30 px at 1920x1080).
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),

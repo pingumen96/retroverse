@@ -4,6 +4,8 @@
 #include <utility>
 
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_video.h>
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -175,6 +177,11 @@ Status GraphicsWindow::setFullscreen(bool fullscreen) {
 
 Status GraphicsWindow::toggleBorderlessFullscreen() {
     return setFullscreen(!isFullscreen());
+}
+
+bool isFullscreenToggle(const SDL_Event& event) noexcept {
+    return event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+           (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) && (event.key.mod & SDL_KMOD_ALT) != 0;
 }
 
 bool GraphicsWindow::isFullscreen() const noexcept {

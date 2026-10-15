@@ -14,6 +14,9 @@ constexpr float kMinCapsuleSize = 0.01f;
 /// Gauss-Seidel passes over the boxes per sub-step. Perpendicular walls converge in one pass; a gap narrower
 /// than the capsule never converges and the sub-step is rejected.
 constexpr int kMaxResolvePasses = 8;
+/// Relative tolerance under which a placed box axis counts as exactly horizontal, vertical or along a world axis:
+/// about 0.0006 degrees, above the float error of a quarter turn and far below the contact tolerance at room sizes.
+constexpr float kAxisTolerance = 1e-5f;
 
 float sanitizedLength(float value, float fallback) noexcept {
     return std::isfinite(value) ? std::max(value, kMinCapsuleSize) : fallback;
@@ -24,16 +27,57 @@ Capsule sanitized(const Capsule& capsule) noexcept {
     return Capsule{sanitizedLength(capsule.radius, defaults.radius), sanitizedLength(capsule.height, defaults.height)};
 }
 
+bool usable(const core::Aabb& box) noexcept {
+    return !box.isEmpty() && core::isFinite(box.min) && core::isFinite(box.max);
+}
+
+/// Footprint of `box` placed by `transform` when the transform keeps the box upright and turns it by an angle that is
+/// not a multiple of 90 degrees. Nothing when the world box is already exact (no turn, quarter turns), or when the
+/// box is tilted or sheared and the world box is the conservative fallback.
+std::optional<TurnedFootprint> turnedFootprint(const core::Aabb& box, const glm::mat4& transform) noexcept {
+    const glm::vec3 axisX(transform[0]);
+    const glm::vec3 axisY(transform[1]);
+    const glm::vec3 axisZ(transform[2]);
+    const glm::vec2 flatX(axisX.x, axisX.z);
+    const glm::vec2 flatZ(axisZ.x, axisZ.z);
+    const float lengthX = glm::length(flatX);
+    const float lengthZ = glm::length(flatZ);
+    const bool upright = lengthX > 0.0f && lengthZ > 0.0f && std::abs(axisX.y) <= kAxisTolerance * lengthX &&
+                         std::abs(axisZ.y) <= kAxisTolerance * lengthZ &&
+                         glm::length(glm::vec2(axisY.x, axisY.z)) <= kAxisTolerance * std::abs(axisY.y);
+    if (!upright) {
+        return std::nullopt;
+    }
+    TurnedFootprint footprint;
+    footprint.axisX = flatX / lengthX;
+    footprint.axisZ = flatZ / lengthZ;
+    const bool sheared = std::abs(glm::dot(footprint.axisX, footprint.axisZ)) > kAxisTolerance;
+    const bool quarterTurn = std::min(std::abs(footprint.axisX.x), std::abs(footprint.axisX.y)) <= kAxisTolerance;
+    if (sheared || quarterTurn) {
+        return std::nullopt;
+    }
+    const glm::vec3 center(transform * glm::vec4(box.center(), 1.0f));
+    const glm::vec3 half = box.halfExtents();
+    footprint.center = glm::vec2(center.x, center.z);
+    footprint.halfExtents = glm::vec2(half.x * lengthX, half.z * lengthZ);
+    return footprint;
+}
+
+/// `point` (world x, z) in the frame of a turned footprint: relative to its center, along its axes.
+glm::vec2 toFootprint(const TurnedFootprint& footprint, const glm::vec2& point) noexcept {
+    const glm::vec2 offset = point - footprint.center;
+    return glm::vec2(glm::dot(offset, footprint.axisX), glm::dot(offset, footprint.axisZ));
+}
+
 bool blocksAtHeight(const core::Aabb& box, float feetY, float height) noexcept {
     return box.max.y > feetY + CollisionWorld::kVerticalTolerance &&
            box.min.y < feetY + height - CollisionWorld::kVerticalTolerance;
 }
 
-/// Minimum translation (x, z) that separates a circle from the XZ rectangle of `box`; zero when the circle
-/// penetrates by at most the contact tolerance.
-glm::vec2 separation(const glm::vec2& center, float radius, const core::Aabb& box) noexcept {
-    const glm::vec2 rectMin(box.min.x, box.min.z);
-    const glm::vec2 rectMax(box.max.x, box.max.z);
+/// Minimum translation that separates a circle from the rectangle [rectMin, rectMax] (same 2D frame); zero when the
+/// circle penetrates by at most the contact tolerance.
+glm::vec2 separation(const glm::vec2& center, float radius, const glm::vec2& rectMin,
+                     const glm::vec2& rectMax) noexcept {
     const glm::vec2 delta = center - glm::clamp(center, rectMin, rectMax);
     const float distanceSquared = glm::dot(delta, delta);
     if (distanceSquared > 0.0f) {
@@ -54,16 +98,40 @@ glm::vec2 separation(const glm::vec2& center, float radius, const core::Aabb& bo
     return nearest->second * (nearest->first + radius);
 }
 
-glm::vec2 separationAt(const glm::vec3& feet, const Capsule& capsule, const core::Aabb& box) noexcept {
-    if (!blocksAtHeight(box, feet.y, capsule.height)) {
+/// Minimum translation (world x, z) that separates a circle from the footprint of `collider` (see separation()).
+glm::vec2 separation(const glm::vec2& center, float radius, const ColliderBox& collider) noexcept {
+    if (!collider.turned) {
+        return separation(center, radius, glm::vec2(collider.box.min.x, collider.box.min.z),
+                          glm::vec2(collider.box.max.x, collider.box.max.z));
+    }
+    const TurnedFootprint& footprint = *collider.turned;
+    const glm::vec2 push =
+        separation(toFootprint(footprint, center), radius, -footprint.halfExtents, footprint.halfExtents);
+    return push.x * footprint.axisX + push.y * footprint.axisZ;
+}
+
+/// Horizontal distance from `point` (world x, z) to the footprint of `collider`, 0 inside it.
+float footprintDistance(const glm::vec2& point, const ColliderBox& collider) noexcept {
+    if (!collider.turned) {
+        const glm::vec2 closest = glm::clamp(point, glm::vec2(collider.box.min.x, collider.box.min.z),
+                                             glm::vec2(collider.box.max.x, collider.box.max.z));
+        return glm::length(point - closest);
+    }
+    const TurnedFootprint& footprint = *collider.turned;
+    const glm::vec2 local = toFootprint(footprint, point);
+    return glm::length(local - glm::clamp(local, -footprint.halfExtents, footprint.halfExtents));
+}
+
+glm::vec2 separationAt(const glm::vec3& feet, const Capsule& capsule, const ColliderBox& collider) noexcept {
+    if (!blocksAtHeight(collider.box, feet.y, capsule.height)) {
         return glm::vec2(0.0f);
     }
-    return separation(glm::vec2(feet.x, feet.z), capsule.radius, box);
+    return separation(glm::vec2(feet.x, feet.z), capsule.radius, collider);
 }
 
 bool overlapsAny(const glm::vec3& feet, const Capsule& capsule, std::span<const ColliderBox> boxes) noexcept {
     return std::any_of(boxes.begin(), boxes.end(), [&](const ColliderBox& collider) {
-        const glm::vec2 push = separationAt(feet, capsule, collider.box);
+        const glm::vec2 push = separationAt(feet, capsule, collider);
         return push.x != 0.0f || push.y != 0.0f;
     });
 }
@@ -74,7 +142,7 @@ bool resolve(glm::vec3& feet, const Capsule& capsule, std::span<const ColliderBo
     for (int pass = 0; pass < kMaxResolvePasses; ++pass) {
         bool moved = false;
         for (const ColliderBox& collider : boxes) {
-            const glm::vec2 push = separationAt(feet, capsule, collider.box);
+            const glm::vec2 push = separationAt(feet, capsule, collider);
             if (push.x != 0.0f || push.y != 0.0f) {
                 feet.x += push.x;
                 feet.z += push.y;
@@ -91,10 +159,19 @@ bool resolve(glm::vec3& feet, const Capsule& capsule, std::span<const ColliderBo
 } // namespace
 
 void CollisionWorld::addBox(const core::Aabb& box, std::string tag) {
-    if (box.isEmpty() || !core::isFinite(box.min) || !core::isFinite(box.max)) {
+    if (usable(box)) {
+        m_boxes.push_back(ColliderBox{box, std::move(tag), std::nullopt});
+    }
+}
+
+void CollisionWorld::addBox(const core::Aabb& box, const glm::mat4& transform, std::string tag) {
+    if (!usable(box)) {
         return;
     }
-    m_boxes.push_back(ColliderBox{box, std::move(tag)});
+    const core::Aabb world = box.transformed(transform);
+    if (usable(world)) {
+        m_boxes.push_back(ColliderBox{world, std::move(tag), turnedFootprint(box, transform)});
+    }
 }
 
 void CollisionWorld::clear() noexcept {
@@ -116,12 +193,10 @@ std::optional<ColliderDistance> CollisionWorld::nearestBlocking(const glm::vec3&
     const glm::vec2 axis(feet.x, feet.z);
     std::optional<ColliderDistance> nearest;
     for (std::size_t index = 0; index < m_boxes.size(); ++index) {
-        const core::Aabb& box = m_boxes[index].box;
-        if (!blocksAtHeight(box, feet.y, shape.height)) {
+        if (!blocksAtHeight(m_boxes[index].box, feet.y, shape.height)) {
             continue;
         }
-        const glm::vec2 closest = glm::clamp(axis, glm::vec2(box.min.x, box.min.z), glm::vec2(box.max.x, box.max.z));
-        const float distance = glm::length(axis - closest);
+        const float distance = footprintDistance(axis, m_boxes[index]);
         if (!nearest || distance < nearest->distance) {
             nearest = ColliderDistance{index, distance};
         }

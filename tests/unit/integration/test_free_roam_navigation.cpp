@@ -106,7 +106,7 @@ TEST_CASE("integration/free_roam: the M0 room spawn is free", "[integration][fre
     const TestRoomWalker walker;
     CHECK(rv::core::nearlyEqual(walker.controller.feetPosition(), glm::vec3(0.0f, 0.0f, 3.2f)));
     CHECK_FALSE(walker.world.overlaps(walker.controller.feetPosition(), walker.controller.settings().capsule));
-    CHECK(walker.world.boxes().size() == 35);
+    CHECK(walker.world.boxes().size() == 36);
 }
 
 TEST_CASE("integration/free_roam: walk_forward_2s.json walks 5 m north", "[integration][free_roam]") {
@@ -163,12 +163,27 @@ TEST_CASE("integration/free_roam: look_turn_pitch.json turns and clamps the pitc
     CHECK(rv::core::nearlyEqual(down.controller.feetPosition(), glm::vec3(0.0f, 0.0f, 3.2f)));
 }
 
+TEST_CASE("integration/free_roam: walk_back_into_doorway.json steps into the doorway but stays in the room",
+          "[integration][free_roam]") {
+    TestRoomWalker walker;
+    walker.play(loadScript("walk_back_into_doorway"), 120);
+    const glm::vec3 feet = walker.controller.feetPosition();
+    CHECK(feet.x == Approx(0.0f).margin(1e-5));
+    // One capsule radius before the stop in the opening's outer face (z = 5.15 - 0.02): farther than a wall lets the
+    // walker go (z = 5 - 0.3), so it stands in the doorway, but it never leaves the room.
+    CHECK(feet.z == Approx(5.13f - 0.3f).margin(1e-4));
+    CHECK(walker.nearestTag() == "room/south_doorway");
+    CHECK(walker.nearestDistance() >= 0.3f - rv::scene::CollisionWorld::kContactTolerance);
+}
+
 TEST_CASE("integration/free_roam: the doorway is passable, the walls are not", "[integration][free_roam]") {
-    // Out through the doorway (south, 1.6 m wide) into the void beyond the room.
+    // Into the doorway (south, 1.6 m wide) facing it, up to the stop in its outer face: never out of the room.
     TestRoomWalker outward;
     outward.controller.teleport(glm::vec3(0.0f, 0.0f, 3.2f), rv::core::kPi, 0.0f);
     outward.walk(120, kFixedDt);
-    CHECK(outward.controller.feetPosition().z == Approx(3.2f + 5.0f).margin(1e-3));
+    CHECK(outward.controller.feetPosition().x == Approx(0.0f).margin(1e-4));
+    CHECK(outward.controller.feetPosition().z == Approx(5.13f - 0.3f).margin(1e-4));
+    CHECK(outward.nearestTag() == "room/south_doorway");
 
     // Beside the doorway the south wall stops the walker; east and west walls too.
     TestRoomWalker beside;
@@ -196,7 +211,9 @@ TEST_CASE("integration/free_roam: sprinting with long frames never tunnels throu
         const glm::vec3 feet = walker.controller.feetPosition();
         const bool insideRoom = feet.x >= -4.5f + 0.3f - 1e-4f && feet.x <= 4.5f - 0.3f + 1e-4f &&
                                 feet.z >= -5.0f + 0.3f - 1e-4f && feet.z <= 5.0f - 0.3f + 1e-4f;
-        const bool leftThroughDoorway = feet.z > 5.0f && feet.x > -0.8f + 0.3f - 1e-4f && feet.x < 0.8f - 0.3f + 1e-4f;
-        CHECK((insideRoom || leftThroughDoorway));
+        // Stepped into the 1.6 m doorway, at most up to its stop (z = 5.13 - 0.3).
+        const bool inDoorway =
+            feet.x > -0.8f && feet.x < 0.8f && feet.z >= 5.0f - 0.3f && feet.z <= 5.13f - 0.3f + 1e-4f;
+        CHECK((insideRoom || inDoorway));
     }
 }

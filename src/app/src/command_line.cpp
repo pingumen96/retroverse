@@ -19,12 +19,12 @@ namespace {
 constexpr std::string_view kDescription =
     "Explorable 3D frontend for ES-DE game collections.\n"
     "\n"
-    "Controls: WASD or arrows walk, Left Shift sprints, the mouse looks around once a click into the window\n"
-    "          captures it; gamepad: left stick walks, right stick looks, left stick click sprints.\n"
-    "          Esc (gamepad B) releases the mouse, or quits when it is free. Alt+Enter toggles borderless\n"
-    "          fullscreen, F5 reloads the shaders, F12 saves a screenshot to <user data>/screenshots.\n"
-    "          Bindings: assets/config/default_bindings.json, overridden per action by\n"
-    "          <user data>/config/bindings.json.\n"
+    "Controls: WASD or arrows walk, Left Shift sprints, the mouse looks around while captured (at startup in\n"
+    "          interactive runs, or after a click into the window); gamepad: left stick walks, right stick\n"
+    "          looks, left stick click sprints. Esc (gamepad B) releases the mouse, or quits when it is free.\n"
+    "          F5 reloads the shaders, F12 saves a screenshot to <user data>/screenshots. These follow the\n"
+    "          bindings of assets/config/default_bindings.json, overridden per action by\n"
+    "          <user data>/config/bindings.json; Alt+Enter (borderless fullscreen) is fixed.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
     "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script);\n"
     "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built).";

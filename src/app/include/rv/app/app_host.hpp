@@ -17,10 +17,11 @@ class IAppLogic;
 /// configures logging (<user data>/logs/retroverse.log), initializes SDL, opens the window with an OpenGL 4.5 core
 /// context, creates the GL device (debug output in RV_GL_DEBUG builds) and drives an IAppLogic through the main loop.
 ///
-/// The host handles quit requests, window close, resizes (framebuffer size) and Alt+Enter (borderless fullscreen),
-/// refreshes the window title with FPS and frame time once per second, passes the frame delta (or the
-/// CommandLineOptions::fixedDeltaSeconds step) to the logic, and stops after CommandLineOptions::frameLimit frames in
-/// --smoke / --exit-after-frames runs. Every other input, Escape included, is the logic's. Exit codes: see ExitCode.
+/// The host handles quit requests, window close, resizes (framebuffer size) and Alt+Enter (borderless fullscreen; the
+/// key press is consumed, so it never reaches the logic's bindings), refreshes the window title with FPS and frame time
+/// once per second, passes the frame delta (or the CommandLineOptions::fixedDeltaSeconds step) to the logic, and stops
+/// after CommandLineOptions::frameLimit frames in --smoke / --exit-after-frames runs. Every other input, Escape
+/// included, is the logic's. Exit codes: see ExitCode.
 class AppHost {
 public:
     explicit AppHost(CommandLineOptions options);
@@ -40,7 +41,9 @@ private:
     void reportFailure(std::string_view logPrefix, std::string_view headline, std::string_view what) const noexcept;
     /// Runs until quit or the frame limit; an error means presentation failed.
     [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context) const;
-    void handleHostEvent(AppContext& context, const SDL_Event& event) const;
+    /// Handles quit, window close, resize and the fullscreen shortcut. Returns true when the event is consumed and must
+    /// not reach the logic: the Alt+Enter press (platform::isFullscreenToggle).
+    [[nodiscard]] bool handleHostEvent(AppContext& context, const SDL_Event& event) const;
 
     CommandLineOptions m_options;
 };

@@ -606,23 +606,25 @@ TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their wa
     // Defaults: interior 9 x 10 m, walls 0.15 m thick and 3 m tall, a 1.6 x 2.3 m doorway centered in the south wall.
     const ProceduralPrefab room = buildOk("room_shell");
     const std::map<std::string, Aabb> walls = byName(room);
-    REQUIRE(walls.size() == 6);
+    REQUIRE(walls.size() == 7);
     CHECK(closeTo(walls.at("north"), Aabb::fromMinMax({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, -5.0f})));
     CHECK(closeTo(walls.at("east"), Aabb::fromMinMax({4.5f, 0.0f, -5.0f}, {4.65f, 3.0f, 5.0f})));
     CHECK(closeTo(walls.at("west"), Aabb::fromMinMax({-4.65f, 0.0f, -5.0f}, {-4.5f, 3.0f, 5.0f})));
     CHECK(closeTo(walls.at("south_west"), Aabb::fromMinMax({-4.65f, 0.0f, 5.0f}, {-0.8f, 3.0f, 5.15f})));
     CHECK(closeTo(walls.at("south_east"), Aabb::fromMinMax({0.8f, 0.0f, 5.0f}, {4.65f, 3.0f, 5.15f})));
     CHECK(closeTo(walls.at("south_above"), Aabb::fromMinMax({-0.8f, 2.3f, 5.0f}, {0.8f, 3.0f, 5.15f})));
+    // Nothing lies beyond the opening: a 2 cm stop in the wall's outer face closes the door rectangle.
+    CHECK(closeTo(walls.at("south_doorway"), Aabb::fromMinMax({-0.8f, 0.0f, 5.13f}, {0.8f, 2.3f, 5.15f})));
 
-    // The interior and the door rectangle stay free (touching their faces only).
+    // The interior and the door rectangle up to the stop stay free (touching their faces only).
     const Aabb interior = Aabb::fromMinMax({-4.5f, 0.0f, -5.0f}, {4.5f, 3.0f, 5.0f}).inflated(-1e-3f);
-    const Aabb door = Aabb::fromMinMax({-0.8f, 0.0f, 4.9f}, {0.8f, 2.3f, 5.3f}).inflated(-1e-3f);
+    const Aabb door = Aabb::fromMinMax({-0.8f, 0.0f, 4.9f}, {0.8f, 2.3f, 5.13f}).inflated(-1e-3f);
     for (const rv::geometry::PrefabCollider& collider : room.colliders) {
         INFO(collider.name);
         CHECK_FALSE(collider.box.intersects(interior));
         CHECK_FALSE(collider.box.intersects(door));
     }
-    // The ring is closed: points inside every wall slab, corners included, are covered.
+    // The ring is closed: points inside every wall slab, corners and the doorway's outer face included, are covered.
     const auto covered = [&](const glm::vec3& point) {
         return std::any_of(room.colliders.begin(), room.colliders.end(),
                            [&](const rv::geometry::PrefabCollider& collider) { return collider.box.contains(point); });
@@ -630,7 +632,8 @@ TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their wa
     for (const glm::vec3 point :
          {glm::vec3(0.0f, 1.0f, -5.07f), glm::vec3(4.57f, 1.0f, 0.0f), glm::vec3(-4.57f, 1.0f, 0.0f),
           glm::vec3(2.0f, 1.0f, 5.07f), glm::vec3(-2.0f, 1.0f, 5.07f), glm::vec3(0.0f, 2.6f, 5.07f),
-          glm::vec3(4.6f, 1.0f, 5.1f), glm::vec3(-4.6f, 1.0f, -5.1f)}) {
+          glm::vec3(4.6f, 1.0f, 5.1f), glm::vec3(-4.6f, 1.0f, -5.1f), glm::vec3(0.0f, 1.0f, 5.14f),
+          glm::vec3(0.79f, 0.1f, 5.14f)}) {
         INFO(point.x << ", " << point.y << ", " << point.z);
         CHECK(covered(point));
     }
@@ -645,11 +648,15 @@ TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their wa
     CHECK(closedNames == std::set<std::string>{"east", "north", "south", "west"});
     const std::map<std::string, Aabb> east =
         byName(buildOk("room_shell", {{"doorway", {{"wall", "east"}, {"offset", -2.0}}}}));
-    REQUIRE(east.size() == 6);
+    REQUIRE(east.size() == 7);
     CHECK(closeTo(east.at("east_north"), Aabb::fromMinMax({4.5f, 0.0f, -5.0f}, {4.65f, 3.0f, -2.8f})));
     CHECK(closeTo(east.at("east_south"), Aabb::fromMinMax({4.5f, 0.0f, -1.2f}, {4.65f, 3.0f, 5.0f})));
     CHECK(closeTo(east.at("east_above"), Aabb::fromMinMax({4.5f, 2.3f, -2.8f}, {4.65f, 3.0f, -1.2f})));
+    CHECK(closeTo(east.at("east_doorway"), Aabb::fromMinMax({4.63f, 0.0f, -2.8f}, {4.65f, 2.3f, -1.2f})));
     CHECK(east.contains("south"));
+    // In the thinnest wall allowed the stop fills the depth of the opening, still inside the wall.
+    const std::map<std::string, Aabb> thin = byName(buildOk("room_shell", {{"wallThickness", 0.02}}));
+    CHECK(closeTo(thin.at("south_doorway"), Aabb::fromMinMax({-0.8f, 0.0f, 5.0f}, {0.8f, 2.3f, 5.02f})));
 }
 
 TEST_CASE("geometry/prefabs: cartridge label sits in a recessed pocket", "[geometry][prefabs][cartridge]") {

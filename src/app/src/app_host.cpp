@@ -8,7 +8,6 @@
 #include <utility>
 
 #include <SDL3/SDL_events.h>
-#include <SDL3/SDL_keycode.h>
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
@@ -331,8 +330,9 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
 
     while (!context.m_quitRequested) {
         events.poll([&](const SDL_Event& event) {
-            handleHostEvent(context, event);
-            logic.onEvent(context, event);
+            if (!handleHostEvent(context, event)) {
+                logic.onEvent(context, event);
+            }
         });
         if (context.m_quitRequested) {
             break;
@@ -368,8 +368,16 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
     return ok();
 }
 
-void AppHost::handleHostEvent(AppContext& context, const SDL_Event& event) const {
+bool AppHost::handleHostEvent(AppContext& context, const SDL_Event& event) const {
     platform::GraphicsWindow& window = context.m_window;
+    if (platform::isFullscreenToggle(event)) {
+        if (auto toggled = window.toggleBorderlessFullscreen(); !toggled) {
+            spdlog::warn("Fullscreen toggle failed: {}", toggled.error().toString());
+        } else {
+            spdlog::info("Switched to {}", window.isFullscreen() ? "borderless fullscreen" : "windowed mode");
+        }
+        return true; // Enter is also Confirm in the action map: the logic must not see this press
+    }
     switch (event.type) {
     case SDL_EVENT_QUIT:
         spdlog::info("Quit requested");
@@ -387,21 +395,10 @@ void AppHost::handleHostEvent(AppContext& context, const SDL_Event& event) const
             spdlog::debug("Framebuffer resized to {}x{}", context.m_framebufferSize.x, context.m_framebufferSize.y);
         }
         break;
-    case SDL_EVENT_KEY_DOWN:
-        if (event.key.repeat) {
-            break;
-        }
-        if ((event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) && (event.key.mod & SDL_KMOD_ALT) != 0) {
-            if (auto toggled = window.toggleBorderlessFullscreen(); !toggled) {
-                spdlog::warn("Fullscreen toggle failed: {}", toggled.error().toString());
-            } else {
-                spdlog::info("Switched to {}", window.isFullscreen() ? "borderless fullscreen" : "windowed mode");
-            }
-        }
-        break;
     default:
         break;
     }
+    return false;
 }
 
 } // namespace rv::app

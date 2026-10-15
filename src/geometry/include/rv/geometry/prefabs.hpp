@@ -46,9 +46,10 @@ struct ProceduralPrefab {
     std::vector<Socket> sockets;
     /// Union of the part bounds.
     core::Aabb bounds;
-    /// Volumes a walker must not enter, prefab-local. Furniture, electronics, media and decor are one unnamed box
-    /// equal to `bounds`; room_shell lists the solid part of each wall (see RoomShellParams), leaving the interior and
-    /// the door opening free; rug has none (it is walked over).
+    /// Volumes a walker must not enter, prefab-local, inside `bounds`. Furniture, electronics, media and decor are one
+    /// unnamed box equal to `bounds`; room_shell lists the solid part of each wall and a stop in the outer face of its
+    /// door opening (see RoomShellParams), leaving the interior and the rest of the opening free; rug has none (it is
+    /// walked over).
     std::vector<PrefabCollider> colliders;
 };
 
@@ -64,8 +65,8 @@ struct ProceduralPrefab {
 /// west = -X. JSON: "north", "south", "east", "west".
 enum class WallSide { North, South, East, West };
 
-/// Opening in a room_shell wall. The door rectangle (width x height, from the floor) stays completely open; its
-/// lining and casing are built outside it.
+/// Opening in a room_shell wall. The door rectangle (width x height, from the floor) stays completely open, without
+/// geometry (a walker is stopped in its outer face, see RoomShellParams); its lining and casing are built outside it.
 struct DoorwayParams {
     WallSide wall = WallSide::South;
     /// Opening center relative to the wall center, along world +X for north/south walls and +Z for east/west
@@ -85,7 +86,10 @@ struct DoorwayParams {
 /// Colliders: one box per wall over its full thickness and height, named "north", "south", "east", "west"; the
 /// wall with the doorway is split around the door rectangle into the parts beside the opening, named after the
 /// direction they extend to ("south_west" and "south_east" for the south wall, "east_north" and "east_south" for the
-/// east wall), and the part above it ("south_above"). Floor, ceiling and trim (less than 2 cm deep) have none.
+/// east wall), and the part above it ("south_above"). Nothing lies beyond a doorway, so "<wall>_doorway"
+/// ("south_doorway") closes the door rectangle with a 2 cm stop in the wall's outer face: a walker can step into the
+/// opening but not leave the room (a connection to another room will drop this one box). Floor, ceiling and trim
+/// (less than 2 cm deep) have none.
 struct RoomShellParams {
     glm::vec2 size{9.0f, 10.0f}; ///< interior x and z, each [0.5, 200]
     float wallHeight = 3.0f;     ///< [1, 50]

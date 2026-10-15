@@ -28,14 +28,14 @@ EmulationStation/RetroBat/Batocera adapters, VR, hardware video decoding, Linux,
 | 2 | `rv_core` (errors, logging, paths, frame clock, AABB, math/color, file I/O, JSON, CLI) + test infrastructure | done |
 | 3 | SDL3 window, OpenGL 4.5 core context, `GLDevice` with debug output, app host loop, `--smoke` | done |
 | 4 | Shaders with includes and hot reload, GPU meshes, framebuffer, offscreen `--screenshot` | done: `ShaderLibrary` (hot reload, `core::FileWatchSet`), `GpuMesh`, `UniformBuffer` + `FrameUniforms`, `Framebuffer`, `--scene` / `--screenshot` / `--screenshot-size`, F5 / F12, scenes drawn unlit in flat material colors (`scene::buildSceneGeometry`) |
-| 5 | Input action mapping (keyboard, mouse, gamepad hot-plug) and first-person camera | done: `platform::SdlInputCollector` (keys by scancode, captured mouse motion, wheel, gamepad buttons/axes with +Y up), `GamepadManager` (hot-plug, most recently used pad), `MouseCapture` (click to capture, Esc or focus loss releases), bindings from `default_bindings.json` + per-action user overrides, FreeRoam walker with capsule collision against the scene (`scene::buildCollisionWorld`: room walls around the doorway, furniture bounds), Back/F5/F12 through the action map, `--input-script` + `--fixed-dt` with the final pose logged, `rv_platform_tests` (virtual-joystick hot-plug) |
+| 5 | Input action mapping (keyboard, mouse, gamepad hot-plug) and first-person camera | done: `platform::SdlInputCollector` (keys by scancode, captured mouse motion, wheel, gamepad buttons/axes with +Y up), `GamepadManager` (hot-plug, most recently used pad), `MouseCapture` (click to capture, Esc or focus loss releases), bindings from `default_bindings.json` + per-action user overrides, FreeRoam walker with capsule collision against the scene (`scene::buildCollisionWorld`: room walls around the doorway and a stop in its outer face, so the walker stays in the room; furniture bounds; exact footprints for objects turned about +Y), Back/F5/F12 through the action map (Alt+Enter consumed by the host), `--input-script` + `--fixed-dt` (simulation and shader time) with the final pose logged, `rv_platform_tests` (virtual-joystick hot-plug) |
 | 6 | Textures, images, material presets, `PBR_Base` and `Unlit_Emissive` shaders, sRGB pipeline | CPU part done (image I/O, material library) |
 | 7 | glTF loader (fastgltf) with sockets, prefab manifests | CPU part done |
 | 8 | Scene renderer with batching and instancing, debug drawing, scene description files | CPU part done (batch planner, scene files) |
 | 9 | Dear ImGui developer overlay | |
 | 10 | M0 test room (procedural shell, shelf, cartridges, CRT, TV cabinet) -> **M0 Done** | CPU part done (prefab kit, `m0_testroom.json`) |
 | 11 | Shadow map for the key light | |
-| 12 | Capsule vs AABB collision | CPU part done (collision world); prefabs declare colliders and the app walks with them (step 5); `--spawn` pending |
+| 12 | Capsule vs AABB collision | CPU part done (collision world, boxes turned about +Y included); prefabs declare colliders and the app walks with them (step 5); `--spawn` pending |
 | 13 | `retroverse-asset-preview` tool | |
 | 14 | GPU smoke test (offscreen render assertions) | |
 | 15 | Build matrix, docs, golden screenshot -> **Gate A (preliminary)** | |

@@ -43,14 +43,15 @@ std::string FreeRoam::describePose() const {
                        core::radiansToDegrees(m_controller.yaw()), core::radiansToDegrees(m_controller.pitch()));
 }
 
-void FreeRoam::logFinalPose(std::uint64_t frames) const {
+void FreeRoam::logFinalPose(std::uint64_t frames, double simulatedSeconds) const {
     const scene::FirstPersonSettings& settings = m_controller.settings();
     const glm::vec3& feet = m_controller.feetPosition();
     const glm::vec3 eye = feet + glm::vec3(0.0f, settings.eyeHeight, 0.0f);
     const float walked = glm::length(glm::vec2(feet.x - m_startFeet.x, feet.z - m_startFeet.z));
-    spdlog::info("Final camera after {} frame(s): {}, eye ({:.4f}, {:.4f}, {:.4f}) m; {:.4f} m from the start "
-                 "({:.4f}, {:.4f}, {:.4f})",
-                 frames, describePose(), eye.x, eye.y, eye.z, walked, m_startFeet.x, m_startFeet.y, m_startFeet.z);
+    spdlog::info("Final camera after {} frame(s) ({:.4f} s simulated): {}, eye ({:.4f}, {:.4f}, {:.4f}) m; {:.4f} m "
+                 "from the start ({:.4f}, {:.4f}, {:.4f})",
+                 frames, simulatedSeconds, describePose(), eye.x, eye.y, eye.z, walked, m_startFeet.x, m_startFeet.y,
+                 m_startFeet.z);
     const auto nearest = m_collision.nearestBlocking(feet, settings.capsule);
     if (!nearest) {
         spdlog::info("Nearest collider: none at the walker's height");

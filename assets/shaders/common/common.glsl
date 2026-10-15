@@ -13,6 +13,6 @@ layout(std140, binding = 0) uniform FrameUniforms {
     mat4 uProjection;     // view -> clip
     mat4 uViewProjection; // world -> clip
     vec3 uCameraPosition; // eye position, world space
-    float uTime;          // seconds since the start of the run
+    float uTime;          // simulated seconds since the start of the run
     float uExposure;      // scene exposure, applied before tonemapping
 };

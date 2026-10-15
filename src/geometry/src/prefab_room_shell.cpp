@@ -27,6 +27,9 @@ constexpr float kCasingDepth = 0.018f;
 constexpr float kCasingChamfer = 0.004f;
 constexpr float kBaseboardDepth = 0.012f;
 constexpr float kBaseboardChamfer = 0.003f;
+constexpr float kMinWallThickness = 0.02f;
+/// Depth of the doorway stop collider, in the outer face of the opening: the thinnest wall, so it stays in the wall.
+constexpr float kDoorStopDepth = kMinWallThickness;
 /// Pieces thinner than this are left out instead of producing degenerate boxes.
 constexpr float kMinPiece = 1e-4f;
 
@@ -98,7 +101,7 @@ Status validate(const RoomShellParams& p) {
     if (Status status = firstError({
             checkRange(kKind, "size", p.size, glm::vec2(0.5f), glm::vec2(200.0f)),
             checkRange(kKind, "wallHeight", p.wallHeight, 1.0f, 50.0f),
-            checkRange(kKind, "wallThickness", p.wallThickness, 0.02f, 2.0f),
+            checkRange(kKind, "wallThickness", p.wallThickness, kMinWallThickness, 2.0f),
             checkRange(kKind, "metersPerTile", p.metersPerTile, 0.01f, 100.0f),
             checkRange(kKind, "baseboardHeight", p.baseboardHeight, 0.0f, 0.5f),
         });
@@ -230,6 +233,12 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
 
         const float inner = wall.interior;
         const float outer = wall.interior + thickness;
+        // Nothing lies beyond the opening (no floor): a thin stop in its outer face lets the walker step into the
+        // doorway but not out of the room. It is a box of its own, so connecting a room later removes only this one.
+        const Placement stop = onWall(wall, open0, open1, 0.0f, door.height, outer - kDoorStopDepth, outer);
+        colliders.push_back(
+            PrefabCollider{wallId + "_doorway", core::Aabb::fromCenterHalfExtents(stop.center, 0.5f * stop.size)});
+
         const FaceMask jambFaces = FaceMask::All & ~FaceMask::NegY & ~FaceMask::PosY;
         const Placement leftJamb = onWall(wall, rough0, open0, 0.0f, door.height, inner, outer);
         trim.box(leftJamb.size, translation(leftJamb.center), BoxUv::PerFace, 1.0f,

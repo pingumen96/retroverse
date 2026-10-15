@@ -17,5 +17,3 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
 - Consider `FlushFileBuffers` for atomic writes of critical state (world plans) in I2/I3.
 - Anti-aliasing before the Gate A golden screenshot (style §2.1): the M0 frames stair-step every slanted edge. Either
   an MSAA sample count in `gl::FramebufferDesc` with a resolve before present and readback, or a post-process pass.
-- A close-up reference view of the `m0_testroom` hero corner (camera 2-4 m from the north wall, framing the shelf and
-  the TV) for the step 6 texture and lighting screenshots: from the doorway camera a cartridge is about 20x12 px.

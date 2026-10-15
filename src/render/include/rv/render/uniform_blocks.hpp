@@ -38,7 +38,7 @@ struct FrameUniforms {
     glm::mat4 projection{1.0f};     ///< view -> clip (OpenGL clip space, depth in [-1, 1])
     glm::mat4 viewProjection{1.0f}; ///< projection * view
     glm::vec3 cameraPosition{0.0f}; ///< eye position in world space, meters
-    float time = 0.0f;              ///< seconds since the start of the run
+    float time = 0.0f;              ///< simulated seconds since the start of the run (the sum of the update steps)
     float exposure = 1.0f;          ///< exposure of the scene environment, applied before tonemapping (step 6)
     float padding[3] = {0.0f, 0.0f, 0.0f};
 };

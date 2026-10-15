@@ -10,6 +10,7 @@
 
 struct SDL_Window;
 struct SDL_GLContextState;
+union SDL_Event;
 
 namespace rv::platform {
 
@@ -118,5 +119,9 @@ private:
 /// and the window mode, and shows the window unless WindowDesc::hidden. Requires a live SdlPlatform; main thread only.
 /// Fails with GraphicsError (and SDL_GetError() in the message) when the requested context version is unavailable.
 [[nodiscard]] Expected<GraphicsWindow> createGraphicsWindow(const WindowDesc& window, const GlContextDesc& context);
+
+/// True for the press of the fullscreen shortcut, Alt+Enter: a key-down event (not a repeat) of the main or keypad
+/// Enter key with either Alt key held. Pure function of the event, no SDL call.
+[[nodiscard]] bool isFullscreenToggle(const SDL_Event& event) noexcept;
 
 } // namespace rv::platform

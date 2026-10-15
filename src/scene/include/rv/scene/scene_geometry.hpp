@@ -77,10 +77,10 @@ struct SceneGeometry {
 [[nodiscard]] SceneGeometry buildSceneGeometry(const SceneDescription& scene, const assets::MaterialLibrary& materials);
 
 /// Static collision world of a scene for first-person navigation: every collider of every object at every instance
-/// transform, as a world-space box (Aabb::transformed: exact for unrotated objects, conservative for rotated ones), in
-/// object order. Tags name the source: the object id, then "[<instance>]" for objects with several instances, then
-/// "/<collider name>" for named colliders or "#<index>" for unnamed ones of objects with several, e.g. "shelf_main",
-/// "room/north", "boxes_walnut[17]".
+/// transform (CollisionWorld::addBox with the transform: exact for objects turned about +Y by any angle, the
+/// conservative world box for tilted ones), in object order. Tags name the source: the object id, then "[<instance>]"
+/// for objects with several instances, then "/<collider name>" for named colliders or "#<index>" for unnamed ones of
+/// objects with several, e.g. "shelf_main", "room/north", "boxes_walnut[17]".
 [[nodiscard]] CollisionWorld buildCollisionWorld(const SceneGeometry& geometry);
 
 } // namespace rv::scene

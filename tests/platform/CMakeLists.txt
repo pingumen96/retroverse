@@ -1,6 +1,7 @@
 # rv_platform_tests: unit tests of the SDL3 platform layer (label "unit"): SDL -> rv::input translation tables, the
-# input collector fed with synthetic SDL events, gamepad hot-plug through SDL virtual joysticks and the mouse capture
-# policy on a hidden window. Links SDL through rv_platform but never OpenGL, which keeps rv_tests SDL-free.
+# input collector fed with synthetic SDL events, gamepad hot-plug through SDL virtual joysticks, the mouse capture
+# policy on a hidden window and the fullscreen shortcut. Links SDL through rv_platform but never OpenGL, which keeps
+# rv_tests SDL-free.
 # Sources are globbed like rv_tests.
 
 file(GLOB RV_PLATFORM_TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")

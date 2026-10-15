@@ -4,12 +4,16 @@
 #include <cmath>
 #include <limits>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <rv/core/aabb.hpp>
 #include <rv/core/math.hpp>
 #include <rv/scene/collision.hpp>
 
 using Catch::Approx;
 using rv::core::Aabb;
+using rv::core::degreesToRadians;
+using rv::core::nearlyEqual;
 using rv::scene::Capsule;
 using rv::scene::CollisionWorld;
 
@@ -17,12 +21,17 @@ namespace {
 
 constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
 const Capsule kPlayer{}; // radius 0.30 m, height 1.75 m
+const glm::vec3 kUp(0.0f, 1.0f, 0.0f);
 
 /// Wall occupying x in [1.0, 1.2], 3 m tall, 10 m long along Z.
 CollisionWorld eastWall() {
     CollisionWorld world;
     world.addBox(Aabb::fromMinMax({1.0f, 0.0f, -5.0f}, {1.2f, 3.0f, 5.0f}), "wall_east");
     return world;
+}
+
+bool nearlyEqual2(const glm::vec2& a, const glm::vec2& b, float epsilon = 1e-5f) {
+    return nearlyEqual(a.x, b.x, epsilon) && nearlyEqual(a.y, b.y, epsilon);
 }
 
 } // namespace
@@ -252,4 +261,101 @@ TEST_CASE("scene/collision: nearestBlocking reports the closest box at the capsu
     CHECK_FALSE(world.nearestBlocking(glm::vec3(0.0f, 10.0f, 0.0f), kPlayer).has_value());
     CHECK_FALSE(world.nearestBlocking(glm::vec3(kNaN, 0.0f, 0.0f), kPlayer).has_value());
     CHECK_FALSE(CollisionWorld{}.nearestBlocking(glm::vec3(0.0f), kPlayer).has_value());
+}
+
+TEST_CASE("scene/collision: a box turned about +Y blocks with its own footprint", "[scene][collision]") {
+    // A 2 m board, 0.2 m thick, turned by 45 degrees: its world box is a 1.56 m square around it.
+    const Aabb board = Aabb::fromMinMax({-1.0f, 0.0f, -0.1f}, {1.0f, 2.0f, 0.1f});
+    const glm::mat4 turn = glm::rotate(glm::mat4(1.0f), degreesToRadians(45.0f), kUp);
+    CollisionWorld world;
+    world.addBox(board, turn, "board");
+    REQUIRE(world.boxes().size() == 1);
+    const rv::scene::ColliderBox& collider = world.boxes()[0];
+    CHECK(collider.box == board.transformed(turn));
+    REQUIRE(collider.turned.has_value());
+    const glm::vec2 axisX = collider.turned->axisX;
+    const glm::vec2 axisZ = collider.turned->axisZ;
+    CHECK(nearlyEqual2(axisX, glm::vec2(std::sqrt(0.5f), -std::sqrt(0.5f))));
+    CHECK(nearlyEqual2(axisZ, glm::vec2(std::sqrt(0.5f), std::sqrt(0.5f))));
+    // A point or a move expressed along the board's own axes, in world space.
+    const auto along = [&](float x, float z) {
+        const glm::vec2 point = x * axisX + z * axisZ;
+        return glm::vec3(point.x, 0.0f, point.y);
+    };
+
+    // Inside the world box but 0.75 m from the board: free, where the world box alone would block.
+    CHECK_FALSE(world.overlaps(along(0.0f, 0.85f), kPlayer));
+    CollisionWorld worldBox;
+    worldBox.addBox(board.transformed(turn), "board");
+    CHECK(worldBox.overlaps(along(0.0f, 0.85f), kPlayer));
+    const auto nearest = world.nearestBlocking(along(0.0f, 0.85f), kPlayer);
+    REQUIRE(nearest.has_value());
+    CHECK(nearest->distance == Approx(0.75f).margin(1e-5));
+
+    // Walking straight at the board stops one radius before its face; at an angle the capsule slides along it.
+    CHECK(nearlyEqual(world.moveCapsule(along(0.0f, 2.0f), along(0.0f, -3.0f), kPlayer), along(0.0f, 0.4f), 1e-4f));
+    const glm::vec3 slid = world.moveCapsule(along(0.0f, 2.0f), along(0.5f, -3.0f), kPlayer);
+    CHECK(nearlyEqual(slid, along(0.5f, 0.4f), 1e-4f));
+    CHECK_FALSE(world.overlaps(slid, kPlayer));
+    const auto resting = world.nearestBlocking(slid, kPlayer);
+    REQUIRE(resting.has_value());
+    CHECK(resting->distance == Approx(kPlayer.radius).margin(1e-4));
+    // Around the end of the board the push is radial; from inside, the capsule leaves through the nearest face.
+    const glm::vec3 rounded = world.moveCapsule(along(1.1f, 0.15f), glm::vec3(0.0f), kPlayer);
+    CHECK(glm::length(glm::vec2(rounded.x, rounded.z) - glm::vec2(along(1.0f, 0.1f).x, along(1.0f, 0.1f).z)) ==
+          Approx(kPlayer.radius).margin(1e-4));
+    CHECK(nearlyEqual(world.moveCapsule(along(0.3f, 0.05f), glm::vec3(0.0f), kPlayer), along(0.3f, 0.4f), 1e-4f));
+
+    // No tunneling through it at sprint speed either.
+    glm::vec3 feet = along(0.0f, 1.0f);
+    for (int frame = 0; frame < 10; ++frame) {
+        feet = world.moveCapsule(feet, along(0.0f, -0.45f), kPlayer);
+    }
+    CHECK(nearlyEqual(feet, along(0.0f, 0.4f), 1e-4f));
+}
+
+TEST_CASE("scene/collision: placed boxes are exact when upright, conservative when tilted", "[scene][collision]") {
+    const Aabb crate = Aabb::fromMinMax({-0.5f, 0.0f, -0.25f}, {0.5f, 1.0f, 0.25f});
+    const glm::mat4 identity(1.0f);
+    const glm::mat4 turned = glm::translate(identity, glm::vec3(2.0f, 0.0f, 3.0f)) *
+                             glm::rotate(identity, degreesToRadians(30.0f), kUp) *
+                             glm::scale(identity, glm::vec3(2.0f, 1.0f, 0.5f));
+    const glm::mat4 tilted = glm::rotate(identity, degreesToRadians(30.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    CollisionWorld world;
+    world.addBox(crate, identity, "plain");
+    world.addBox(crate, glm::rotate(identity, degreesToRadians(90.0f), kUp), "quarter");
+    world.addBox(crate, turned, "turned");
+    world.addBox(crate, tilted, "tilted");
+    REQUIRE(world.boxes().size() == 4);
+
+    // Unturned and quarter-turned boxes are exact as world boxes.
+    CHECK(world.boxes()[0].box == crate);
+    CHECK_FALSE(world.boxes()[0].turned.has_value());
+    CHECK(nearlyEqual(world.boxes()[1].box.min, glm::vec3(-0.25f, 0.0f, -0.5f), 1e-6f));
+    CHECK(nearlyEqual(world.boxes()[1].box.max, glm::vec3(0.25f, 1.0f, 0.5f), 1e-6f));
+    CHECK_FALSE(world.boxes()[1].turned.has_value());
+
+    // Any other turn keeps the exact footprint, with the translation and the scale.
+    const rv::scene::ColliderBox& placed = world.boxes()[2];
+    CHECK(placed.tag == "turned");
+    CHECK(placed.box == crate.transformed(turned));
+    REQUIRE(placed.turned.has_value());
+    CHECK(nearlyEqual2(placed.turned->center, glm::vec2(2.0f, 3.0f)));
+    CHECK(nearlyEqual2(placed.turned->halfExtents, glm::vec2(1.0f, 0.125f)));
+    const float cos30 = std::cos(degreesToRadians(30.0f));
+    CHECK(nearlyEqual2(placed.turned->axisX, glm::vec2(cos30, -0.5f)));
+    CHECK(nearlyEqual2(placed.turned->axisZ, glm::vec2(0.5f, cos30)));
+
+    // A tilted box falls back to its world box.
+    CHECK(world.boxes()[3].box == crate.transformed(tilted));
+    CHECK_FALSE(world.boxes()[3].turned.has_value());
+
+    // Invalid input adds nothing.
+    CollisionWorld invalid;
+    invalid.addBox(Aabb{}, identity, "empty");
+    invalid.addBox(crate, glm::translate(identity, glm::vec3(kNaN)), "nan");
+    Aabb corrupted = crate;
+    corrupted.max.x = kNaN;
+    invalid.addBox(corrupted, identity, "corrupted");
+    CHECK(invalid.boxes().empty());
 }

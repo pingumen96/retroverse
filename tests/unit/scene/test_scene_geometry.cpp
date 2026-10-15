@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -221,7 +222,7 @@ bool closeTo(const rv::core::Aabb& box, const glm::vec3& min, const glm::vec3& m
 TEST_CASE("scene/scene_geometry: the collision world places every collider of every colliding object",
           "[scene][geometry][collision]") {
     const SceneGeometry geometry = rv::scene::buildSceneGeometry(referenceScene("m0_testroom"), realMaterials());
-    CHECK(object(geometry, "room").colliders.size() == 6);
+    CHECK(object(geometry, "room").colliders.size() == 7);
     CHECK(object(geometry, "shelf_main").colliders.size() == 1);
     CHECK(object(geometry, "crt_tv").colliders.size() == 1);
     // "collides": false (rug, posters) leaves no collider.
@@ -230,19 +231,29 @@ TEST_CASE("scene/scene_geometry: the collision world places every collider of ev
     CHECK(object(geometry, "poster_right").colliders.empty());
 
     const rv::scene::CollisionWorld world = rv::scene::buildCollisionWorld(geometry);
-    // Six wall parts, the shelf, 24 cartridges, the cabinet, the CRT, the console and the floor lamp.
-    CHECK(world.boxes().size() == 35);
+    // Six wall parts and the doorway stop, the shelf, 24 cartridges, the cabinet, the CRT, the console and the lamp.
+    CHECK(world.boxes().size() == 36);
     // Prefab bounds moved to the object position: the 1.2 x 2.0 x 0.35 m shelf at (-1.5, 0, -4.8).
     CHECK(closeTo(colliderBox(world, "shelf_main").box, {-2.1f, 0.0f, -4.975f}, {-0.9f, 2.0f, -4.625f}));
-    // The room's named walls; the doorway part above the opening stays out of the walker's way.
+    CHECK_FALSE(colliderBox(world, "shelf_main").turned.has_value());
+    // The room's named walls; the doorway part above the opening stays out of the walker's way and a stop in the
+    // outer face of the opening keeps the walker inside.
     CHECK(closeTo(colliderBox(world, "room/north").box, {-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, -5.0f}));
     CHECK(closeTo(colliderBox(world, "room/south_above").box, {-0.8f, 2.3f, 5.0f}, {0.8f, 3.0f, 5.15f}));
-    // The console is turned by -8 degrees: its world box is conservative, containing the turned footprint.
-    const rv::core::Aabb console = colliderBox(world, "console").box;
-    const glm::vec3 consoleSize = console.size();
-    CHECK(consoleSize.x > 0.24f);
-    CHECK(consoleSize.z > 0.2f);
-    CHECK(console.min.y == Catch::Approx(0.7f));
+    CHECK(closeTo(colliderBox(world, "room/south_doorway").box, {-0.8f, 0.0f, 5.13f}, {0.8f, 2.3f, 5.15f}));
+    // The console is turned by -8 degrees: it collides with its exact footprint, inside a larger world box.
+    const rv::scene::ColliderBox& console = colliderBox(world, "console");
+    CHECK(console.box.size().x > 0.24f);
+    CHECK(console.box.size().z > 0.2f);
+    CHECK(console.box.min.y == Catch::Approx(0.7f));
+    REQUIRE(console.turned.has_value());
+    CHECK(rv::core::nearlyEqual(glm::vec3(console.turned->center.x, 0.0f, console.turned->center.y),
+                                glm::vec3(2.22f, 0.0f, -4.62f)));
+    CHECK(rv::core::nearlyEqual(glm::vec3(console.turned->halfExtents.x, 0.0f, console.turned->halfExtents.y),
+                                glm::vec3(0.12f, 0.0f, 0.1f)));
+    const float turn = rv::core::degreesToRadians(-8.0f);
+    CHECK(rv::core::nearlyEqual(glm::vec3(console.turned->axisX.x, 0.0f, console.turned->axisX.y),
+                                glm::vec3(std::cos(turn), 0.0f, -std::sin(turn))));
 
     // Grids give one box per instance, tagged with the instance index.
     const SceneGeometry stress = rv::scene::buildSceneGeometry(referenceScene("instancing_stress"), realMaterials());
@@ -275,4 +286,47 @@ TEST_CASE("scene/scene_geometry: placeholders collide like the furniture they re
     CHECK(closeTo(colliderBox(world, "broken_shelf").box, {0.75f, 0.0f, 1.75f}, {1.25f, 0.5f, 2.25f}));
     CHECK(closeTo(colliderBox(world, "pair[1]").box, {0.645f, 0.0f, -0.28f}, {1.355f, 0.61f, 0.28f}));
     CHECK(colliderBox(world, "pair[0]").box.max.x == Catch::Approx(0.355f));
+}
+
+TEST_CASE("scene/scene_geometry: a room turned about +Y keeps its interior free and its doorway open",
+          "[scene][geometry][collision]") {
+    // The m0_testroom shell turned by 30 degrees: its walls collide with their own footprints, not with world boxes
+    // that would cover the interior.
+    const json document = json::parse(R"({
+        "schemaVersion": 1,
+        "name": "turned_room",
+        "objects": [
+            {"id": "room", "prefab": "room_shell", "rotationDeg": [0, 30, 0],
+             "params": {"size": [9.0, 10.0], "wallHeight": 3.0, "wallThickness": 0.15,
+                        "doorway": {"wall": "south", "offset": 0.0, "width": 1.6, "height": 2.3}},
+             "materials": {"floor": "MAT_Wood_Oak", "wall": "MAT_Wall_Painted", "ceiling": "MAT_Wood_Walnut",
+                           "trim": "MAT_Wood_Walnut"}}
+        ]
+    })");
+    const auto scene = rv::scene::parseSceneDescription(document, "turned_room.json");
+    REQUIRE(scene.has_value());
+    const rv::scene::CollisionWorld world =
+        rv::scene::buildCollisionWorld(rv::scene::buildSceneGeometry(*scene, realMaterials()));
+    REQUIRE(world.boxes().size() == 7);
+    for (const rv::scene::ColliderBox& wall : world.boxes()) {
+        INFO(wall.tag);
+        CHECK(wall.turned.has_value());
+    }
+
+    // The room's own +X (east) and +Z (south, towards the doorway) in world space.
+    const float yaw = rv::core::degreesToRadians(30.0f);
+    const glm::vec3 east(std::cos(yaw), 0.0f, -std::sin(yaw));
+    const glm::vec3 south(std::sin(yaw), 0.0f, std::cos(yaw));
+    const rv::scene::Capsule capsule;
+    const glm::vec3 center(0.0f);
+    CHECK_FALSE(world.overlaps(center, capsule));
+    // The walls stop the walker one capsule radius (0.3 m) before their interior faces, 4.5 and 5 m from the center.
+    CHECK(rv::core::nearlyEqual(world.moveCapsule(center, 10.0f * east, capsule), 4.2f * east, 1e-3f));
+    CHECK(rv::core::nearlyEqual(world.moveCapsule(center, -10.0f * east, capsule), -4.2f * east, 1e-3f));
+    CHECK(rv::core::nearlyEqual(world.moveCapsule(center, -10.0f * south, capsule), -4.7f * south, 1e-3f));
+    const glm::vec3 besideDoorway = 2.0f * east;
+    CHECK(rv::core::nearlyEqual(world.moveCapsule(besideDoorway, 10.0f * south, capsule), besideDoorway + 4.7f * south,
+                                1e-3f));
+    // Through the doorway up to the stop in its outer face: 5.15 - 0.02 - 0.3 m from the center.
+    CHECK(rv::core::nearlyEqual(world.moveCapsule(center, 10.0f * south, capsule), 4.83f * south, 1e-3f));
 }

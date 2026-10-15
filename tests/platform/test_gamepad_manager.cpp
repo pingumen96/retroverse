@@ -111,6 +111,26 @@ TEST_CASE("platform/gamepad_manager: hot-plugged pads report buttons and axes in
     collector.handleEvent(rv::test::keyEvent(SDL_SCANCODE_E, true));
     CHECK(collector.endFrame().lastActiveDevice == DeviceKind::KeyboardMouse);
 
+    // So do a wheel notch and captured mouse motion after the pad was used; the motion of a free cursor does not.
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_SOUTH, true));
+    pump(collector);
+    REQUIRE(collector.endFrame().lastActiveDevice == DeviceKind::Gamepad);
+    collector.handleEvent(rv::test::mouseWheelEvent(1.0f));
+    CHECK(collector.endFrame().lastActiveDevice == DeviceKind::KeyboardMouse);
+
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_SOUTH, false));
+    pump(collector);
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_SOUTH, true));
+    pump(collector);
+    REQUIRE(collector.endFrame().lastActiveDevice == DeviceKind::Gamepad);
+    collector.handleEvent(rv::test::mouseMotionEvent(5.0f, 0.0f));
+    CHECK(collector.endFrame().lastActiveDevice == DeviceKind::Gamepad);
+    collector.setMouseCaptured(true);
+    collector.handleEvent(rv::test::mouseMotionEvent(5.0f, 0.0f));
+    CHECK(collector.endFrame().lastActiveDevice == DeviceKind::KeyboardMouse);
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_SOUTH, false));
+    pump(collector);
+
     REQUIRE(SDL_DetachVirtualJoystick(id));
     pump(collector); // SDL_EVENT_GAMEPAD_REMOVED closes it
     CHECK_FALSE(collector.gamepads().isOpen(id));

@@ -26,10 +26,10 @@ Two GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 `core`, `geometry`, `input`, `assets`, `scene` and the two sub-targets are **GPU-free**: they never reach SDL3,
 glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
 a context. `render` receives the OpenGL function loader as a function pointer and never includes SDL. The SDL side of
-`platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a hidden window) is tested
-by its own executable, `rv_platform_tests` (label `unit`, SDL but no OpenGL), so `rv_tests` stays SDL-free. The header
-`rv/render/uniform_blocks.hpp` (uniform binding table and std140 mirrors) is GPU-free too, so tests check it against
-the GLSL sources.
+`platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a hidden window, the
+fullscreen shortcut) is tested by its own executable, `rv_platform_tests` (label `unit`, SDL but no OpenGL), so
+`rv_tests` stays SDL-free. The header `rv/render/uniform_blocks.hpp` (uniform binding table and std140 mirrors) is
+GPU-free too, so tests check it against the GLSL sources.
 
 Cross-module contracts written by independent work streams (prefab parameters and sockets, material names, scene
 files, manifests, shader sources and uniform blocks) are pinned by `tests/unit/integration`, which builds the real
@@ -63,24 +63,29 @@ geometry, resolves the real materials and preprocesses the real shaders.
 
 One pass per frame on the main thread, in `RetroverseApp` (`src/app/src/app_input.*`, `free_roam.*`):
 
-- **Events:** `platform::MouseCapture` sees every SDL event first: a click into the focused window captures the mouse
-  (SDL relative mode) and is consumed, focus loss releases it. Interactive runs also capture at startup once the
-  window has focus; frame-limited runs never do, so unattended runs neither take the user's mouse nor pick up its
-  motion. Every other event goes to `platform::SdlInputCollector`: keys by scancode (layout-independent WASD), mouse
-  buttons, relative motion while captured, wheel, gamepad buttons and axes (SDL ranges to [-1, 1], +Y up, triggers
-  [0, 1]) of the pads `platform::GamepadManager` opened on hot-plug; the most recently used pad is reported. Focus
-  loss releases everything held. Joystick events never arrive in the background (`SdlPlatform` hint).
+- **Events:** the host consumes the Alt+Enter press (`platform::isFullscreenToggle`, borderless fullscreen), so it
+  never reaches the bindings (Enter is Confirm). In the logic, `platform::MouseCapture` sees every other SDL event
+  first: a click into the focused window captures the mouse (SDL relative mode) and is consumed, focus loss releases
+  it. Interactive runs also capture at startup once the window has focus; frame-limited runs never do, so unattended
+  runs neither take the user's mouse nor pick up its motion. Every other event goes to `platform::SdlInputCollector`:
+  keys by scancode (layout-independent WASD), mouse buttons, relative motion while captured, wheel, gamepad buttons
+  and axes (SDL ranges to [-1, 1], +Y up, triggers [0, 1]) of the pads `platform::GamepadManager` opened on hot-plug;
+  the most recently used pad is reported. Focus loss releases everything held. Joystick events never arrive in the
+  background (`SdlPlatform` hint).
 - **Actions:** the collector's `RawInputFrame` is resolved by `input::InputSystem` with the bindings of
   `<asset root>/config/default_bindings.json` (`ActionMap::defaults()` with a warning when unusable), overridden per
   action by `<user data>/config/bindings.json` (`ActionMap::applyOverrides`). `--input-script` then replaces the
   actions of the frames it covers (`input::InputScriptPlayer`, edges kept consistent).
 - **Use:** Back releases the captured mouse or quits, ReloadShaders and Screenshot are handled by the app, ToggleDevUI
   is reserved for the developer overlay. `FreeRoam` drives `scene::FirstPersonController` with the actions and the
-  frame delta (`--fixed-dt` replaces it for reproducible runs): the walker starts at the scene camera (feet = camera
-  position - eye height) and collides with `scene::buildCollisionWorld()` of the scene geometry, built from the
-  colliders each prefab declares (one box per wall part around the doorway for `room_shell`, the bounds for
-  furniture, none for `rug`; objects with `"collides": false` have none). Frame-limited runs log the final feet
-  position, yaw and pitch, the distance walked and the nearest collider with its clearance.
+  frame delta (`--fixed-dt` replaces it for reproducible runs; the sum of the deltas is also the shader time): the
+  walker starts at the scene camera (feet = camera position - eye height) and collides with
+  `scene::buildCollisionWorld()` of the scene geometry, built from the colliders each prefab declares (for
+  `room_shell` one box per wall part around the doorway and a stop in the doorway's outer face, so the walker can
+  step into the opening but not leave the room; the bounds for furniture; none for `rug`; objects with
+  `"collides": false` have none). Objects turned about +Y collide with their exact footprints, tilted ones with their
+  world boxes. Frame-limited runs log the final feet position, yaw and pitch, the simulated time, the distance walked
+  and the nearest collider with its clearance.
 
 ## Threading (M0)
 

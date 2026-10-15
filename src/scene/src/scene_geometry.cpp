@@ -220,7 +220,7 @@ CollisionWorld buildCollisionWorld(const SceneGeometry& geometry) {
     for (const SceneObjectGeometry& object : geometry.objects) {
         for (std::size_t instance = 0; instance < object.instances.size(); ++instance) {
             for (std::size_t index = 0; index < object.colliders.size(); ++index) {
-                world.addBox(object.colliders[index].box.transformed(object.instances[instance]),
+                world.addBox(object.colliders[index].box, object.instances[instance],
                              colliderTag(object, instance, index));
             }
         }
