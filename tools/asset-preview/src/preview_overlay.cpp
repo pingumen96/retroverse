@@ -30,6 +30,12 @@ constexpr float kMarkerGap = 0.5f;
 constexpr float kMarkerTick = 0.1f;
 constexpr float kMinGridHalfExtent = 2.0f;
 constexpr float kMaxGridHalfExtent = 50.0f;
+/// The floor grid lies this share of the subject's diagonal below y = 0, within these bounds (meters). Debug lines are
+/// pulled towards the eye by 0.2% of their distance (debug/debug_lines.vert), which lifts a line under a floor by 0.2%
+/// of the eye's height above it; framed whole, the eye is at most 1.8 diagonals away, so 0.4% keeps the grid under.
+constexpr float kGridDropShare = 0.004f;
+constexpr float kMinGridDrop = 0.00001f;
+constexpr float kMaxGridDrop = 0.1f;
 
 /// The subject's bounds when they can be measured, else a 1 m cube standing on the origin.
 core::Aabb usableBounds(const core::Aabb& bounds) noexcept {
@@ -42,21 +48,31 @@ float largestExtent(const core::Aabb& bounds) noexcept {
     return std::max({size.x, size.y, size.z});
 }
 
-/// The floor grid: the minor lines first, then the major lines and the axes of DebugLines::addGrid over them.
-void addFloorGrid(float halfExtent, scene::DebugLines& lines) {
-    const int steps = static_cast<int>(std::lround(halfExtent / kGridMinorSpacing));
-    const int perMajor = static_cast<int>(std::lround(kGridMajorSpacing / kGridMinorSpacing));
-    for (int step = -steps; step <= steps; ++step) {
-        if (step % perMajor == 0) {
-            continue;
+/// The floor grid of a subject with `bounds` (usable): the minor lines first, for subjects small enough to show them
+/// apart, then the major lines and the axes of DebugLines::addGrid over them, all at gridHeight().
+void addFloorGrid(const core::Aabb& bounds, scene::DebugLines& lines) {
+    const float halfExtent = gridHalfExtent(bounds);
+    const float y = gridHeight(bounds);
+    if (glm::length(bounds.size()) <= kMaxMinorGridDiagonal) {
+        const int steps = static_cast<int>(std::lround(halfExtent / kGridMinorSpacing));
+        const int perMajor = static_cast<int>(std::lround(kGridMajorSpacing / kGridMinorSpacing));
+        for (int step = -steps; step <= steps; ++step) {
+            if (step % perMajor == 0) {
+                continue;
+            }
+            const float offset = static_cast<float>(step) * kGridMinorSpacing;
+            lines.addLine(glm::vec3(-halfExtent, y, offset), glm::vec3(halfExtent, y, offset),
+                          overlay_colors::kGridMinor);
+            lines.addLine(glm::vec3(offset, y, -halfExtent), glm::vec3(offset, y, halfExtent),
+                          overlay_colors::kGridMinor);
         }
-        const float offset = static_cast<float>(step) * kGridMinorSpacing;
-        lines.addLine(glm::vec3(-halfExtent, 0.0f, offset), glm::vec3(halfExtent, 0.0f, offset),
-                      overlay_colors::kGridMinor);
-        lines.addLine(glm::vec3(offset, 0.0f, -halfExtent), glm::vec3(offset, 0.0f, halfExtent),
-                      overlay_colors::kGridMinor);
     }
-    lines.addGrid(halfExtent, kGridMajorSpacing);
+    lines.addGrid(halfExtent, kGridMajorSpacing, y);
+}
+
+/// Where the 1.70 m marker stands beside the reference cube `cube`: left of it, centered on its depth.
+glm::vec3 markerFoot(const core::Aabb& cube) noexcept {
+    return glm::vec3(cube.min.x - kMarkerGap, 0.0f, cube.center().z);
 }
 
 /// The 1 m cube and the 1.70 m marker left of the subject.
@@ -65,7 +81,7 @@ void addScaleReferences(const core::Aabb& bounds, PreviewOverlay& overlay) {
     overlay.lines.addBox(cube, glm::mat4(1.0f), overlay_colors::kScaleReference);
     overlay.labels.push_back({glm::vec3(cube.center().x, cube.max.y, cube.max.z), "1 m cube", kReferenceLabel});
 
-    const glm::vec3 foot(cube.min.x - kMarkerGap, 0.0f, cube.center().z);
+    const glm::vec3 foot = markerFoot(cube);
     const glm::vec3 head = foot + glm::vec3(0.0f, kHumanHeight, 0.0f);
     overlay.lines.addLine(foot, head, overlay_colors::kScaleReference);
     for (const float height : {0.0f, 0.5f, 1.0f, 1.5f}) {
@@ -275,11 +291,40 @@ float gridHalfExtent(const core::Aabb& bounds) noexcept {
     return std::clamp(std::ceil(reach + 0.5f), kMinGridHalfExtent, kMaxGridHalfExtent);
 }
 
+float gridHeight(const core::Aabb& bounds) noexcept {
+    const float diagonal = glm::length(usableBounds(bounds).size());
+    return -std::clamp(kGridDropShare * diagonal, kMinGridDrop, kMaxGridDrop);
+}
+
+core::Aabb framingBounds(const PreviewSubject& subject, const OverlaySelection& selection, bool surroundings) {
+    const core::Aabb bounds = usableBounds(subject.bounds);
+    if (!surroundings) {
+        return bounds;
+    }
+    core::Aabb framed = bounds;
+    if (selection.sockets && subject.target) {
+        for (const geometry::Socket& socket : subject.sockets) {
+            const glm::vec3 origin(socket.transform[3]);
+            if (core::isFinite(origin)) {
+                framed.expand(origin);
+            }
+        }
+    }
+    if (selection.scaleReferences) {
+        const core::Aabb cube = referenceCubeBounds(bounds);
+        framed.expand(cube);
+        const glm::vec3 foot = markerFoot(cube);
+        framed.expand(foot - glm::vec3(kMarkerTick, 0.0f, 0.0f));
+        framed.expand(foot + glm::vec3(0.0f, kHumanHeight, 0.0f));
+    }
+    return framed;
+}
+
 PreviewOverlay buildPreviewOverlay(const PreviewSubject& subject, const OverlaySelection& selection) {
     PreviewOverlay overlay;
     const core::Aabb bounds = usableBounds(subject.bounds);
     if (selection.grid) {
-        addFloorGrid(gridHalfExtent(bounds), overlay.lines);
+        addFloorGrid(bounds, overlay.lines);
     }
     if (selection.scaleReferences) {
         addScaleReferences(bounds, overlay);
@@ -327,6 +372,42 @@ std::optional<glm::vec2> projectToViewport(const glm::mat4& viewProjection, cons
         return std::nullopt;
     }
     return glm::vec2((ndc.x + 1.0f) * 0.5f * size.x, (1.0f - ndc.y) * 0.5f * size.y);
+}
+
+void placeLabelPlates(std::span<const glm::vec2> anchors, std::span<const glm::vec2> textSizes,
+                      const LabelLayout& layout, std::vector<glm::vec4>& plates) {
+    plates.clear();
+    const std::size_t count = std::min(anchors.size(), textSizes.size());
+    const std::span<const glm::vec2> dots = anchors.first(count);
+    const auto overlap = [](const glm::vec4& a, const glm::vec4& b) {
+        return a.x < b.z && b.x < a.z && a.y < b.w && b.y < a.w;
+    };
+    const auto blocked = [&](const glm::vec4& plate) {
+        const bool coversDot = std::any_of(dots.begin(), dots.end(), [&](const glm::vec2& dot) {
+            return overlap(plate, glm::vec4(dot - layout.dotRadius, dot + layout.dotRadius));
+        });
+        return coversDot ||
+               std::any_of(plates.begin(), plates.end(), [&](const glm::vec4& other) { return overlap(plate, other); });
+    };
+    for (std::size_t index = 0; index < count; ++index) {
+        const glm::vec2 at = anchors[index];
+        const glm::vec2 text = textSizes[index];
+        const glm::vec4 home(at.x + layout.offset - layout.padding, at.y - layout.offset - text.y - layout.padding,
+                             at.x + layout.offset + text.x + layout.padding, at.y - layout.offset + layout.padding);
+        const float step = home.w - home.y + 1.0f;
+        // The home place, then one step down, one up, two down, two up, ...: the nearest free one.
+        glm::vec4 plate = home;
+        for (std::size_t attempt = 1; attempt <= 2 * count && blocked(plate); ++attempt) {
+            const float steps = static_cast<float>((attempt + 1) / 2) * (attempt % 2 == 1 ? 1.0f : -1.0f);
+            plate = home + glm::vec4(0.0f, steps * step, 0.0f, steps * step);
+        }
+        plates.push_back(plate);
+    }
+}
+
+bool plateMoved(const glm::vec4& plate, const glm::vec2& anchor, const LabelLayout& layout) noexcept {
+    const float line = anchor.y - layout.offset;
+    return !(plate.y < line && line < plate.w);
 }
 
 } // namespace rv::preview

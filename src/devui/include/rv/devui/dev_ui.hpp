@@ -34,6 +34,10 @@ public:
     [[nodiscard]] virtual const char* title() const noexcept = 0;
     /// Draws the window's contents; called between ImGui::Begin and ImGui::End while the window is shown.
     virtual void draw() = 0;
+    /// Called once per frame by DevUi::buildFrame() before any panel is drawn, also while this one is not (a tab behind
+    /// another, the overlay hidden): for what the panel must keep in step with the state it shows even unseen, such as
+    /// releasing the thumbnails of textures that are gone (TexturePreviews::sync). Nothing by default.
+    virtual void update() {}
 };
 
 /// Where the default layout docks a panel; the layout imgui.ini keeps replaces it once the user rearranges the panels.
@@ -57,8 +61,9 @@ struct DevUiConfig {
 /// OpenGL 3 renderer backends (GLSL "#version 450", docking enabled), and draws the dockable panels added to it over
 /// the scene, around a see-through central area (a dock space with a pass-through central node).
 ///
-///  - Visibility: hidden at creation; ToggleDevUI (F1) shows and hides it through setVisible(). While hidden it costs
-///    nothing: no ImGui frame is built and every event goes to the game.
+///  - Visibility: hidden at creation; ToggleDevUI (F1) shows and hides it through setVisible(). While hidden no panel
+///    is drawn and every event goes to the game; an ImGui frame is built only for the scene decoration, when one is set
+///    (setSceneDecoration), so that labels placed in the scene stay over it.
 ///  - Input: every SDL event goes through handleEvent(), which feeds Dear ImGui first and decides what the game still
 ///    gets (routeOverlayEvent): nothing the overlay wants (a click on a panel, keys while a text field or a dragged
 ///    widget is active, so Esc there never quits), but always the releases, and nothing at all while the game holds
@@ -90,8 +95,8 @@ public:
     /// Brings the panel titled `title` to the front of its dock node (selects its tab) when the next frame is built.
     void focusPanel(std::string_view title);
     /// Draws over the scene and under the panels in every frame built (Dear ImGui's background draw list), after the
-    /// panels: labels placed in the scene, such as the asset preview's socket names (sceneViewArea() is the part the
-    /// panels leave visible). Empty: nothing.
+    /// panels, also while the overlay is hidden (then over the scene alone): labels placed in the scene, such as the
+    /// asset preview's socket names (sceneViewArea() is the part the panels leave visible). Empty: nothing.
     void setSceneDecoration(std::function<void()> draw);
 
     [[nodiscard]] bool visible() const noexcept;
@@ -122,12 +127,13 @@ public:
     /// is docked over the center.
     [[nodiscard]] std::optional<scene::ViewArea> sceneViewArea() const noexcept;
 
-    /// Builds the overlay frame: the dock space and every panel (they may change the state they show). Nothing while
-    /// hidden. When this frame is also drawn into a screenshot of `captureSize` pixels, glyphs are rasterized for that
-    /// size so that the scaled-up text stays sharp.
+    /// Builds the overlay frame: Panel::update() of every panel, then the dock space and every panel shown (they may
+    /// change the state they show) and the scene decoration. While hidden only the updates and, when set, the scene
+    /// decoration. When this frame is also drawn into a screenshot of `captureSize` pixels, glyphs are rasterized for
+    /// that size so that the scaled-up text stays sharp.
     void buildFrame(std::optional<glm::ivec2> captureSize = std::nullopt);
     /// Draws the frame built last into the default framebuffer (the window); nothing when no frame was built since the
-    /// overlay was shown.
+    /// overlay was shown or hidden.
     void renderToWindow(gl::GLDevice& device);
     /// Draws the frame built last into `target` (screenshots), over what the target holds: scaled uniformly from the
     /// window to fit the target and centered, so that another aspect than the window's leaves bands of the target

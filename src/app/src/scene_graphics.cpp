@@ -210,8 +210,10 @@ struct SceneGraphics::State {
         gl::RenderView shown = view;
         shown.debugDraw = debugDraw && debugLinesShown ? &*debugDraw : nullptr;
         if (surfaceView != gl::SurfaceView::Lit) {
-            // The inspection programs write the colors to display: nothing may darken, shift or tonemap them.
+            // The inspection programs write the colors to display: nothing may darken, shift or tonemap them. The
+            // background is the one the lit view displays, so that switching views keeps the backdrop.
             shaderSet.inspection = &shaders->get(*inspectionShaders[inspectionIndex(surfaceView)]);
+            shown.clearColor = glm::vec4(gl::displayColor(glm::vec3(view.clearColor), view.post), view.clearColor.a);
             shown.post.tonemap = false;
             shown.ssao.enabled = false;
             shown.shadowSettings.enabled = false;
@@ -325,7 +327,7 @@ void SceneGraphics::clearContent() noexcept {
     // Materials first: they name the textures.
     m_state->materials.clear();
     m_state->meshes.clear();
-    m_state->textures->clear();
+    m_state->textures->clearContent();
 }
 
 gl::ShaderLibrary& SceneGraphics::shaders() noexcept {

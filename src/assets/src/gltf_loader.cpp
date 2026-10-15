@@ -260,8 +260,9 @@ private:
         return ok();
     }
 
-    /// Reads a file referenced by a relative URI next to the glTF (never outside `baseDirectory`).
-    Expected<std::vector<std::byte>> readExternal(const fg::URI& uri, const std::string& what) const {
+    /// Reads a file referenced by a relative URI next to the glTF (never outside `baseDirectory`), recording it in
+    /// ModelData::externalFiles, also when it cannot be read.
+    Expected<std::vector<std::byte>> readExternal(const fg::URI& uri, const std::string& what) {
         if (!uri.scheme().empty()) {
             return fail(ErrorCode::Unsupported,
                         what + ": only relative file references are supported (\"" + toStdString(uri.string()) + "\")");
@@ -274,7 +275,12 @@ private:
         if (!relative) {
             return fail(ErrorCode::InvalidArgument, what + ": " + relative.error().message);
         }
-        auto bytes = core::readBinaryFile(m_baseDirectory / core::pathFromUtf8(*relative), m_options.maxFileBytes);
+        const std::filesystem::path file = m_baseDirectory / core::pathFromUtf8(*relative);
+        std::vector<std::filesystem::path>& files = m_model.externalFiles;
+        if (std::find(files.begin(), files.end(), file) == files.end()) {
+            files.push_back(file);
+        }
+        auto bytes = core::readBinaryFile(file, m_options.maxFileBytes);
         if (!bytes) {
             return fail(bytes.error().code, what + " (\"" + *relative + "\"): " + bytes.error().message);
         }
@@ -316,7 +322,7 @@ private:
         return ok();
     }
 
-    Expected<ImageData> decodeOneImage(const fg::Image& image, const std::string& what) const {
+    Expected<ImageData> decodeOneImage(const fg::Image& image, const std::string& what) {
         const std::string context = m_context + " (" + what + ")";
         if (const auto* view = std::get_if<fg::sources::BufferView>(&image.data)) {
             auto bytes = detail::bufferViewBytes(m_asset, m_buffers, view->bufferViewIndex, what);

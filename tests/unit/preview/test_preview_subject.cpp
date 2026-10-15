@@ -1,8 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <string_view>
+
+#include <nlohmann/json.hpp>
 
 #include "support/temp_dir.hpp"
 #include <rv/assets/glb_writer.hpp>
@@ -99,6 +102,47 @@ TEST_CASE("preview/subject: a model loads with its sockets and the manifest that
     // The summary is about the manifest: the asset itself loaded cleanly.
     CHECK(checked.count(PreviewMessage::Severity::Warning, PreviewMessage::Topic::Manifest) == 1);
     CHECK(checked.count(PreviewMessage::Severity::Warning, PreviewMessage::Topic::Asset) == 0);
+}
+
+TEST_CASE("preview/subject: a .gltf model is watched with its buffer and its images", "[preview][subject]") {
+    rv::test::TempDir dir;
+    rv::assets::GlbDescription description = rv::preview::makeCrtFixture();
+    description.patchJson = [](nlohmann::json& json) {
+        json["images"][0] = {{"uri", "textures/plastic.png"}};
+    };
+    auto files = rv::assets::buildGltfWithExternalBuffer(description, "crt_fixture.bin");
+    REQUIRE(files.has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(dir.file("crt_fixture.gltf"), files->json).has_value());
+    REQUIRE(rv::core::writeFileAtomic(dir.file("crt_fixture.bin"), files->bin).has_value());
+
+    // The image is missing: its texture is dropped with a warning, and its file is watched, so adding it reloads.
+    const PreviewSubject subject =
+        rv::preview::loadPreviewSubject(fileTarget(dir.file("crt_fixture.gltf")), kAssetRoot);
+    REQUIRE(subject.model != nullptr);
+    CHECK(subject.count(PreviewMessage::Severity::Warning) > 0);
+    const auto watched = [&subject](const std::filesystem::path& file) {
+        return std::any_of(subject.watchedFiles.begin(), subject.watchedFiles.end(),
+                           [&file](const std::filesystem::path& path) { return path == file; });
+    };
+    CHECK(watched(dir.file("crt_fixture.gltf")));
+    CHECK(watched(dir.file("crt_fixture.bin")));
+    CHECK(watched(dir.file("textures/plastic.png")));
+    CHECK(watched(dir.file("crt_fixture.manifest.json")));
+    CHECK(subject.watchedFiles.size() == 5);
+}
+
+TEST_CASE("preview/subject: the Manifest panel comes forward for a manifest not shown before", "[preview][subject]") {
+    PreviewSubject plain;
+    PreviewSubject withManifest;
+    withManifest.manifest.emplace();
+    // A new target with a manifest; none without.
+    CHECK(rv::preview::bringsManifestForward(plain, withManifest, false));
+    CHECK(rv::preview::bringsManifestForward(withManifest, withManifest, false));
+    CHECK_FALSE(rv::preview::bringsManifestForward(withManifest, plain, false));
+    // Reloads: a manifest just created next to the model comes forward, one already shown leaves the tabs alone.
+    CHECK(rv::preview::bringsManifestForward(plain, withManifest, true));
+    CHECK_FALSE(rv::preview::bringsManifestForward(withManifest, withManifest, true));
+    CHECK_FALSE(rv::preview::bringsManifestForward(plain, plain, true));
 }
 
 TEST_CASE("preview/subject: a manifest with a broken socket name reports the error", "[preview][subject]") {

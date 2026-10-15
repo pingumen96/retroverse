@@ -6,6 +6,7 @@
 #include <cstddef>
 
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 #include <rv/render/uniform_blocks.hpp>
 #include <rv/scene/scene_description.hpp>
@@ -57,6 +58,13 @@ struct PostSettings {
 /// exposure becomes 1; the bloom strength (the bloom mix), the vignette and the dither amplitude are clamped to
 /// [0, 1], non-finite values becoming 0; the bloom threshold and knee are kBloomThreshold and kBloomKnee.
 [[nodiscard]] PostUniforms makePostUniforms(const PostSettings& settings) noexcept;
+
+/// The linear display value that a view post-processed with `settings` shows for a uniform scene radiance (its
+/// background, RenderView::clearColor), bloom, vignette and dithering aside: tonemap() with the exposure of
+/// makePostUniforms(); without the tonemap, the radiance itself clamped to [0, 1] (non-finite components as 0). The
+/// inspection views, drawn without the tonemap, clear to this value of the lit view's background, so that switching
+/// views keeps the backdrop.
+[[nodiscard]] glm::vec3 displayColor(const glm::vec3& radiance, const PostSettings& settings) noexcept;
 
 /// Weight of the wider level in each upsampling step of the bloom chain, level[i] = mix(level[i],
 /// upsampled(level[i + 1]), scatter), from the bloom radius: `radius` clamped to [0, 1], non-finite values becoming 0.

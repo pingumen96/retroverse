@@ -122,6 +122,18 @@ TEST_CASE("preview/scene: screen surfaces get a 4:3 test pattern", "[preview][sc
 
     // A prefab without a screen has none.
     CHECK(rv::preview::screenSurfaces(load("prefab:shelf")).empty());
+
+    // The screen's size as placed in the model: 48 x 36 cm on the fixture, a hundredth of it when the model's root is
+    // scaled down 100 times (a model exported in centimeters). The pattern keeps the aspect.
+    CHECK(rv::core::nearlyEqual(screens[0].size, glm::vec3(0.48f, 0.36f, 0.0f)));
+    rv::assets::GlbDescription centimeters = rv::preview::makeCrtFixture();
+    centimeters.nodes[0].scale = glm::vec3(0.01f);
+    const auto scaledFile = dir.file("crt_fixture_cm.glb");
+    REQUIRE(rv::assets::writeGlb(scaledFile, centimeters).has_value());
+    const auto scaled = rv::preview::screenSurfaces(load(rv::core::pathToUtf8(scaledFile)));
+    REQUIRE(scaled.size() == 1);
+    CHECK(rv::core::nearlyEqual(scaled[0].size, glm::vec3(0.0048f, 0.0036f, 0.0f), 1e-7f));
+    CHECK(scaled[0].bounds == screens[0].bounds); // the rectangle in the socket's own space is the same
 }
 
 TEST_CASE("preview/scene: view modes pick the surface view and wireframe", "[preview][scene]") {

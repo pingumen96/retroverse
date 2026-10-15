@@ -41,4 +41,9 @@ struct Socket {
 /// Linear lookup by id (prefabs carry a handful of sockets).
 [[nodiscard]] const Socket* findSocket(std::span<const Socket> sockets, std::string_view id) noexcept;
 
+/// Size of the socket's bounds in the prefab or model (meters): Socket::bounds is in the socket's own space, so a glTF
+/// node scaled by 0.01 (a model exported in centimeters) has bounds 100 times its size; each side is scaled by the
+/// length of the transform's axis along it. Zero for empty or non-finite bounds.
+[[nodiscard]] glm::vec3 socketSize(const Socket& socket) noexcept;
+
 } // namespace rv::geometry

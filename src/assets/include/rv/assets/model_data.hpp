@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -79,6 +80,10 @@ struct ModelData {
     ModelStats stats;
     /// Non-fatal problems (missing normals, dropped textures, suspicious scale, ...), one sentence each.
     std::vector<std::string> warnings;
+    /// The files next to the model that its buffers and images reference (a .gltf's .bin and textures), resolved
+    /// against its directory, each once, in the order they were first read; also those that could not be read (an
+    /// image missing now). With the model file, these are the files whose changes change the model.
+    std::vector<std::filesystem::path> externalFiles;
 };
 
 } // namespace rv::assets

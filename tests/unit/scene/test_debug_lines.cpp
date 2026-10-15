@@ -143,6 +143,17 @@ TEST_CASE("scene/debug_lines: the grid covers the extent with axis-colored cente
     CHECK(keys.contains(keyOf({-2.0f, 0.0f, -2.0f}, {2.0f, 0.0f, -2.0f}))); // the farthest line
     CHECK(keys.contains(keyOf({0.0f, 0.0f, 0.0f}, {0.0f, 0.2f, 0.0f})));    // +Y
 
+    // Another plane: every line at its height, the +Y marker rising from it.
+    DebugLines lowered;
+    lowered.addGrid(2.0f, 1.0f, -0.25f);
+    REQUIRE(lowered.lineCount() == 11);
+    const std::set<LineKey> loweredKeys = linesOf(lowered);
+    CHECK(loweredKeys.contains(keyOf({-2.0f, -0.25f, 0.0f}, {2.0f, -0.25f, 0.0f})));
+    CHECK(loweredKeys.contains(keyOf({0.0f, -0.25f, 0.0f}, {0.0f, -0.05f, 0.0f})));
+    for (std::size_t i = 2; i < lowered.vertices().size(); ++i) {
+        CHECK(lowered.vertices()[i].position.y == -0.25f);
+    }
+
     // A dense grid is thinned to at most 1000 lines each way; invalid sizes add nothing.
     DebugLines dense;
     dense.addGrid(100.0f, 0.001f);
@@ -185,6 +196,12 @@ TEST_CASE("scene/debug_lines: socket axes follow the size of the socket, else of
     CHECK(socketAxisLength(socket, crt) == Approx(0.001f));
     socket.bounds = Aabb::fromMinMax(glm::vec3(0.0f), glm::vec3(4.0f));
     CHECK(socketAxisLength(socket, crt) == Approx(0.5f));
+    // The bounds are in the socket's space: a screen on a node scaled down 100 times (a model exported in centimeters)
+    // gets axes for its size as placed, not for its 48 cm in the node.
+    socket.bounds = Aabb::fromMinMax(glm::vec3(-0.24f, -0.18f, 0.0f), glm::vec3(0.24f, 0.18f, 0.0f));
+    CHECK(socketAxisLength(socket, crt) == Approx(0.24f));
+    socket.transform = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f));
+    CHECK(socketAxisLength(socket, crt) == Approx(0.0024f));
 }
 
 TEST_CASE("scene/debug_lines: scene lines are object bounds and socket axes at every instance",

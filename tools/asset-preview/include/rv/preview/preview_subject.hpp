@@ -79,14 +79,22 @@ struct PreviewSubject {
     std::vector<PreviewMessage> messages;
     /// Nothing of the target could be loaded or built: the scene shows the magenta placeholder (style §21).
     bool placeholder = false;
-    /// Files whose changes reload the subject: the target, the manifest's model, the manifest files that would sit next
-    /// to a model (also those that do not exist yet, so that creating one is noticed).
+    /// Files whose changes reload the subject: the target, the manifest's model, the files a model references
+    /// (assets::ModelData::externalFiles: a .gltf's buffers and images), the manifest files that would sit next to a
+    /// model (also those that do not exist yet, so that creating one is noticed).
     std::vector<std::filesystem::path> watchedFiles;
 
     /// Messages of `severity`, of every topic or of `topic` only.
     [[nodiscard]] std::size_t count(PreviewMessage::Severity severity,
                                     std::optional<PreviewMessage::Topic> topic = std::nullopt) const noexcept;
 };
+
+/// Whether showing `loaded` in place of `previous` brings the Manifest panel forward: when `loaded` comes with a
+/// manifest that was not shown before, that is for a new target (`reload` false), or when the manifest appeared since
+/// the last load of the same target (created next to the model). A reload whose manifest was already shown leaves the
+/// tabs as the user arranged them.
+[[nodiscard]] bool bringsManifestForward(const PreviewSubject& previous, const PreviewSubject& loaded,
+                                         bool reload) noexcept;
 
 /// Manifest files that describe the model `model` when they sit next to it, in the order they are looked for:
 /// "<stem>.manifest.json", then "<stem>.json".

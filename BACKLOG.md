@@ -99,9 +99,12 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   a folder browser would help); the scene labels are drawn by the overlay, over the scene whatever is in front, and
   placed for the window's aspect, so a screenshot of another aspect than the window's misplaces them (draw them into
   the scene targets with a text renderer, depth-tested, once one exists); glTF Validator results (style §26.3) are not
-  shown. The framing fits the subject's bounds, so what lies beside them, the scale references and anchors outside the
-  model (the CRT's `Anchor_ScreenLook`, 0.9 m in front of the screen), stays under the side panels until the camera
-  zooms out: a second F could frame the subject with its sockets and references.
+  shown. The floor grid's 10 cm lines follow the subject's size (shown up to 6 m across), not the camera: zoomed far
+  out they crowd, zoomed into a room they are missing; a grid shader fading each level by its projected spacing would
+  suit any distance. Crowded labels stack in a column at their point and can leave the visible area when many share a
+  spot (a placement that also moves sideways would keep them in view). The panels settle over the first three frames,
+  so a screenshot needs `--frames 3`: building the default layout and its tab focus before the first frame would make
+  every frame complete.
 - Point-light shadows: point lights cast none (key lights should be spots, logged otherwise). A cube map or a
   dual-paraboloid map would shadow a bare bulb or a pendant.
 - Cascaded shadow maps for large directional areas: the directional map is fitted to all the shadow casters, which

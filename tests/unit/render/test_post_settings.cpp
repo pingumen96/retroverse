@@ -33,6 +33,19 @@ TEST_CASE("render/post_settings: a scene's environment gives the post-processing
     CHECK(settings.antialiasing);
 }
 
+TEST_CASE("render/post_settings: a uniform radiance is displayed as the post pass shows it", "[render][post]") {
+    PostSettings settings;
+    settings.exposure = 1.4f;
+    const glm::vec3 background(0.05f, 0.06f, 0.07f);
+    CHECK(rv::gl::displayColor(background, settings) == rv::gl::tonemap(background, 1.4f));
+    settings.exposure = 0.0f; // as in the post pass, an exposure that is not positive counts as 1
+    CHECK(rv::gl::displayColor(background, settings) == rv::gl::tonemap(background, 1.0f));
+    // Without the tonemap (the inspection views) the value is shown as it is, within the display range.
+    settings.tonemap = false;
+    CHECK(rv::gl::displayColor(glm::vec3(0.25f, 2.0f, -1.0f), settings) == glm::vec3(0.25f, 1.0f, 0.0f));
+    CHECK(rv::gl::displayColor(glm::vec3(std::numeric_limits<float>::quiet_NaN()), settings) == glm::vec3(0.0f));
+}
+
 TEST_CASE("render/post_settings: the default settings change nothing but the tonemap", "[render][post]") {
     // What the sRGB self-check relies on: exposure 1, no bloom, no vignette, no dithering, no anti-aliasing pass.
     CHECK_FALSE(PostSettings{}.antialiasing);

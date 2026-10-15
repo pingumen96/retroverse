@@ -38,7 +38,8 @@ struct GltfLoadOptions {
 ///   KHR_materials_emissive_strength are supported, KHR_materials_unlit is honored when present; any other entry
 ///   of "extensionsRequired" is an error naming the extension.
 /// - Images: from buffer views, data URIs or files relative to the glTF (no "..", no absolute paths), decoded with
-///   decodeImage(); failures become warnings and the affected textures are dropped.
+///   decodeImage(); failures become warnings and the affected textures are dropped. The files of external buffers
+///   and images are listed in ModelData::externalFiles.
 /// - Materials: glTF metallic-roughness factors (linear), alpha mode, cutoff, double-sided, texture references
 ///   through glTF textures to ModelData::images.
 /// - Sockets (style §9.2, node names in the active scene): "Anchor_<Id>" -> Anchor with id <Id>; "ScreenSurface"

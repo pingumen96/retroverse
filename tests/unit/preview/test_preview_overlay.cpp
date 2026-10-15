@@ -4,8 +4,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <initializer_list>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -37,6 +40,25 @@ bool hasLabel(const PreviewOverlay& overlay, std::string_view text) {
                        [text](const rv::preview::SceneLabel& label) { return label.text == text; });
 }
 
+/// Where the label `text` is placed in the scene.
+glm::vec3 labelPosition(const PreviewOverlay& overlay, std::string_view text) {
+    const auto found = std::find_if(overlay.labels.begin(), overlay.labels.end(),
+                                    [text](const rv::preview::SceneLabel& label) { return label.text == text; });
+    REQUIRE(found != overlay.labels.end());
+    return found->position;
+}
+
+/// `value` is one of `candidates` (within 0.01 mm).
+bool oneOf(float value, std::initializer_list<float> candidates) {
+    return std::any_of(candidates.begin(), candidates.end(),
+                       [value](float candidate) { return std::abs(value - candidate) < 1e-5f; });
+}
+
+/// Rectangles (x0, y0, x1, y1) that share some area.
+bool overlap(const glm::vec4& a, const glm::vec4& b) {
+    return a.x < b.z && b.x < a.z && a.y < b.w && b.y < a.w;
+}
+
 /// Every overlay off.
 OverlaySelection none() {
     return OverlaySelection{false, false, false, false, false, false, false};
@@ -57,12 +79,44 @@ TEST_CASE("preview/overlay: the fixture shows its dimensions in centimeters and 
         INFO(label);
         CHECK(hasLabel(overlay, label));
     }
+    // The dimensions sit at the middle of three edges of the bounds, the names at their sockets' origins.
+    const rv::core::Aabb& bounds = subject.bounds;
+    const glm::vec3 center = bounds.center();
+    CHECK(rv::core::nearlyEqual(labelPosition(overlay, "W 71.0 cm"), glm::vec3(center.x, bounds.min.y, bounds.max.z)));
+    CHECK(rv::core::nearlyEqual(labelPosition(overlay, "H 61.0 cm"), glm::vec3(bounds.max.x, center.y, bounds.max.z)));
+    CHECK(rv::core::nearlyEqual(labelPosition(overlay, "D 56.0 cm"), glm::vec3(bounds.max.x, bounds.min.y, center.z)));
+    CHECK(rv::core::nearlyEqual(labelPosition(overlay, "ScreenSurface"), glm::vec3(0.0f, 0.33f, 0.28f)));
+    CHECK(rv::core::nearlyEqual(labelPosition(overlay, "Anchor_ScreenLook"), glm::vec3(0.0f, 0.33f, 0.28f + 0.9f)));
+    CHECK(rv::core::nearlyEqual(labelPosition(overlay, "Anchor_TV_Stand"), glm::vec3(0.0f)));
+    CHECK(labelPosition(overlay, "pivot") == glm::vec3(0.0f));
+    const rv::core::Aabb cube = rv::preview::referenceCubeBounds(bounds);
+    CHECK(
+        rv::core::nearlyEqual(labelPosition(overlay, "1 m cube"), glm::vec3(cube.center().x, cube.max.y, cube.max.z)));
+    CHECK(labelPosition(overlay, "1.70 m").y == Approx(1.7f));
+    CHECK(labelPosition(overlay, "1.70 m").x < cube.min.x); // the marker stands left of the cube
+
     // Socket axes are markers; the collision proxy's box shows its 12 sides (not the diagonals of its faces).
     CHECK(overlay.lines.markerVertices().size() == 2 * 3 * (4 + 1)); // the four sockets and the pivot
     OverlaySelection socketsOnly = none();
     socketsOnly.sockets = true;
     const PreviewOverlay sockets = rv::preview::buildPreviewOverlay(subject, socketsOnly);
-    CHECK(sockets.lines.vertices().size() == 2 * (12 + 12)); // the screen's outline and the proxy's
+    REQUIRE(sockets.lines.vertices().size() == 2 * (12 + 12)); // the screen's outline and the proxy's
+    // The screen's outline is the 48 x 36 cm rectangle on the front of the bounds, centered 33 cm up.
+    for (std::size_t i = 0; i < 2 * 12; ++i) {
+        const glm::vec3 corner = sockets.lines.vertices()[i].position;
+        INFO("screen outline vertex " << i);
+        CHECK(oneOf(corner.x, {-0.24f, 0.24f}));
+        CHECK(oneOf(corner.y, {0.33f - 0.18f, 0.33f + 0.18f}));
+        CHECK(corner.z == Approx(0.28f));
+    }
+    // The proxy's outline runs along the edges of the body: 71 x 61 cm, 55 cm deep from the back of the bounds.
+    for (std::size_t i = 2 * 12; i < 2 * 24; ++i) {
+        const glm::vec3 corner = sockets.lines.vertices()[i].position;
+        INFO("proxy outline vertex " << i);
+        CHECK(oneOf(corner.x, {-0.355f, 0.355f}));
+        CHECK(oneOf(corner.y, {0.0f, 0.61f}));
+        CHECK(oneOf(corner.z, {-0.28f, 0.27f}));
+    }
 
     // Normals: one line per drawn vertex (the body's 24, the screen's 4), 3% of the largest extent long, pointing out
     // of the box.
@@ -70,7 +124,6 @@ TEST_CASE("preview/overlay: the fixture shows its dimensions in centimeters and 
     normalsOnly.normals = true;
     const PreviewOverlay normals = rv::preview::buildPreviewOverlay(subject, normalsOnly);
     REQUIRE(normals.lines.vertices().size() == 2 * 28);
-    const glm::vec3 center = subject.bounds.center();
     for (std::size_t i = 0; i < normals.lines.vertices().size(); i += 2) {
         const glm::vec3 from = normals.lines.vertices()[i].position;
         const glm::vec3 along = normals.lines.vertices()[i + 1].position - from;
@@ -129,6 +182,97 @@ TEST_CASE("preview/overlay: the floor grid has 10 cm and 1 m lines around the su
     // 61 lines each way every 10 cm out to 3 m, the 7 on whole meters drawn by the major grid with its +Y marker.
     CHECK(grid.lines.lineCount() == 2 * (61 - 7) + 1 + 2 * 7);
     CHECK(grid.labels.empty());
+    // Just below the floor, by 0.4% of the subject's diagonal (4.4 mm under the CRT): a surface at y = 0 hides it.
+    const float height = rv::preview::gridHeight(crt);
+    CHECK(height == Approx(-0.004f * glm::length(crt.size())));
+    std::size_t level = 0;
+    for (const rv::scene::DebugVertex& vertex : grid.lines.vertices()) {
+        level += vertex.position.y == height ? 1u : 0u;
+    }
+    CHECK(level == grid.lines.vertices().size() - 1); // all but the top of the +Y marker
+
+    // A room (9.3 x 3 x 10.3 m) gets the 1 m lines only: its 10 cm lines would be a few pixels apart. The grid lies
+    // 5.7 cm below its floor; the drop stops at 10 cm.
+    subject.bounds = rv::core::Aabb::fromMinMax(glm::vec3(-4.65f, 0.0f, -5.15f), glm::vec3(4.65f, 3.0f, 5.15f));
+    const float roomHalf = rv::preview::gridHalfExtent(subject.bounds);
+    const PreviewOverlay room = rv::preview::buildPreviewOverlay(subject, gridOnly);
+    CHECK(room.lines.lineCount() == 2 * (2 * static_cast<std::size_t>(roomHalf) + 1) + 1);
+    CHECK(rv::preview::gridHeight(subject.bounds) == Approx(-0.004f * glm::length(subject.bounds.size())));
+    CHECK(rv::preview::gridHeight(rv::core::Aabb::fromMinMax(glm::vec3(-50.0f), glm::vec3(50.0f))) == Approx(-0.1f));
+    CHECK(rv::preview::gridHeight(rv::core::Aabb::fromMinMax(glm::vec3(0.0f), glm::vec3(0.001f))) ==
+          Approx(-0.00001f)); // a millimeter part: a hundredth of a millimeter
+}
+
+TEST_CASE("preview/overlay: framing again takes in the sockets and the scale references", "[preview][overlay]") {
+    rv::test::TempDir dir;
+    const auto file = dir.file("crt_fixture.glb");
+    REQUIRE(rv::assets::writeGlb(file, rv::preview::makeCrtFixture()).has_value());
+    const PreviewSubject subject = load(rv::core::pathToUtf8(file));
+    const OverlaySelection all;
+
+    CHECK(rv::preview::framingBounds(subject, all, false) == subject.bounds);
+    const rv::core::Aabb around = rv::preview::framingBounds(subject, all, true);
+    CHECK(around.contains(subject.bounds));
+    CHECK(around.contains(glm::vec3(0.0f, 0.33f, 0.28f + 0.9f))); // Anchor_ScreenLook, in front of the screen
+    const rv::core::Aabb cube = rv::preview::referenceCubeBounds(subject.bounds);
+    CHECK(around.contains(cube));
+    CHECK(around.max.y == Approx(rv::preview::kHumanHeight)); // the marker's head
+    CHECK(around.min.x < cube.min.x - 0.5f);                  // the marker beside the cube
+    // Only what the overlays show counts.
+    CHECK(rv::preview::framingBounds(subject, none(), true) == subject.bounds);
+    OverlaySelection socketsOnly = none();
+    socketsOnly.sockets = true;
+    CHECK(rv::preview::framingBounds(subject, socketsOnly, true).max.z == Approx(0.28f + 0.9f));
+
+    // The empty preview: the references beside a 1 m cube standing on the origin.
+    const rv::core::Aabb empty = rv::preview::framingBounds(PreviewSubject{}, all, true);
+    CHECK(empty.contains(rv::core::Aabb::fromMinMax(glm::vec3(-0.5f, 0.0f, -0.5f), glm::vec3(0.5f, 1.0f, 0.5f))));
+    CHECK(empty.contains(rv::preview::referenceCubeBounds(rv::core::Aabb{})));
+    CHECK(empty.max.y == Approx(rv::preview::kHumanHeight));
+}
+
+TEST_CASE("preview/overlay: label plates keep apart and clear of every labelled point", "[preview][overlay]") {
+    const rv::preview::LabelLayout layout;
+    std::vector<glm::vec4> plates;
+    // Alone, a label sits above and right of its point.
+    const std::vector<glm::vec2> one{{100.0f, 100.0f}};
+    const std::vector<glm::vec2> text{{40.0f, 10.0f}};
+    rv::preview::placeLabelPlates(one, text, layout, plates);
+    REQUIRE(plates.size() == 1);
+    CHECK(plates[0] == glm::vec4(103.0f, 81.0f, 149.0f, 97.0f));
+
+    CHECK_FALSE(rv::preview::plateMoved(plates[0], one[0], layout));
+
+    // Three labels on one point: the second goes below the first, the third above it, a pixel apart.
+    const std::vector<glm::vec2> same{{100.0f, 100.0f}, {100.0f, 100.0f}, {100.0f, 100.0f}};
+    const std::vector<glm::vec2> texts{{40.0f, 10.0f}, {30.0f, 10.0f}, {35.0f, 10.0f}};
+    rv::preview::placeLabelPlates(same, texts, layout, plates);
+    REQUIRE(plates.size() == 3);
+    CHECK(plates[1].y == plates[0].w + 1.0f);
+    CHECK(plates[2].w + 1.0f == plates[0].y);
+    CHECK(rv::preview::plateMoved(plates[1], same[1], layout));
+    CHECK(rv::preview::plateMoved(plates[2], same[2], layout));
+
+    // A point under the first plate (the pivot's dot inside "W 71.0 cm") moves that plate off the dot; no plate covers
+    // a dot or another plate.
+    const std::vector<glm::vec2> crowded{{100.0f, 100.0f}, {110.0f, 90.0f}, {104.0f, 104.0f}};
+    const std::vector<glm::vec2> sizes{{40.0f, 10.0f}, {30.0f, 10.0f}, {20.0f, 10.0f}};
+    rv::preview::placeLabelPlates(crowded, sizes, layout, plates);
+    REQUIRE(plates.size() == 3);
+    for (std::size_t i = 0; i < plates.size(); ++i) {
+        for (const glm::vec2& dot : crowded) {
+            INFO("plate " << i << ", dot " << dot.x << ", " << dot.y);
+            CHECK_FALSE(overlap(plates[i], glm::vec4(dot - layout.dotRadius, dot + layout.dotRadius)));
+        }
+        for (std::size_t j = i + 1; j < plates.size(); ++j) {
+            INFO("plates " << i << " and " << j);
+            CHECK_FALSE(overlap(plates[i], plates[j]));
+        }
+    }
+    CHECK(rv::preview::plateMoved(plates[0], crowded[0], layout));
+    // Fewer sizes than points: one plate per pair.
+    rv::preview::placeLabelPlates(crowded, std::span<const glm::vec2>(sizes).first(2), layout, plates);
+    CHECK(plates.size() == 2);
 }
 
 TEST_CASE("preview/overlay: centimeters and projections for the labels", "[preview][overlay]") {

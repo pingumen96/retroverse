@@ -46,11 +46,15 @@ void TexturePreviews::thumbnail(const gl::Texture2D& texture, float side, std::s
     }
 }
 
-unsigned int TexturePreviews::displayId(const gl::Texture2D& texture) {
+void TexturePreviews::sync() {
     if (m_cache.revision() != m_revision) {
         m_views.clear(); // the textures they showed are gone
         m_revision = m_cache.revision();
     }
+}
+
+unsigned int TexturePreviews::displayId(const gl::Texture2D& texture) {
+    sync();
     if (!texture.valid()) {
         return 0;
     }

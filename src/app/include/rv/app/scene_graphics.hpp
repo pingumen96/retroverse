@@ -45,7 +45,7 @@ class AppContext;
 ///    post-processing; the debug lines and the inspection views of gl::SurfaceView when first used), reloaded by
 ///    reloadShaders() (F5) and, in developer builds (RV_DEV_ASSET_ROOT), by pollShaderReload() when their files change;
 ///  - the texture defaults and cache and the mesh and material registries that a SceneInstance registers its content
-///    in (resources()); clearContent() empties them for the next one;
+///    in (resources()); clearContent() empties them for the next one (the cache keeps its procedural surfaces);
 ///  - the renderer (gl::SceneRenderer) and the debug lines drawn over every view (setDebugLines());
 ///  - the render targets of the window and of the screenshots, each kept at its size (a failure to allocate them is
 ///    logged once per size), and the frame statistics log (FrameStatsLog: once per second in developer builds, and for
@@ -64,8 +64,9 @@ public:
     [[nodiscard]] const assets::MaterialLibrary& materialLibrary() const noexcept;
     /// Where a SceneInstance registers its content.
     [[nodiscard]] SceneResources resources() noexcept;
-    /// Releases every mesh, material and texture registered so far: the render items of the previous SceneInstance
-    /// must not be drawn any more. For new content in the same run (the asset preview loads another file).
+    /// Releases every mesh, material and texture registered so far except the procedural surface maps, which no
+    /// content changes (gl::TextureCache::clearContent): the render items of the previous SceneInstance must not be
+    /// drawn any more. For new content in the same run (the asset preview loads another file).
     void clearContent() noexcept;
 
     [[nodiscard]] gl::ShaderLibrary& shaders() noexcept;
@@ -84,8 +85,9 @@ public:
     /// buffer (no lines are drawn then).
     [[nodiscard]] Status setDebugLines(const scene::DebugLines& lines);
     /// What the surfaces of the views show from now on: their materials' shading (gl::SurfaceView::Lit), or an
-    /// inspection view, drawn with its program (loaded the first time) and shown without tonemapping, bloom, ambient
-    /// occlusion or shadows. Errors: the program description (the view is unchanged then).
+    /// inspection view, drawn with its program (loaded the first time) and shown without tonemapping, bloom,
+    /// anti-aliasing, ambient occlusion or shadows, on the background the lit view displays (gl::displayColor).
+    /// Errors: the program description (the view is unchanged then).
     [[nodiscard]] Status setSurfaceView(gl::SurfaceView view);
     [[nodiscard]] gl::SurfaceView surfaceView() const noexcept;
     /// Draws an overlay (the developer overlay) over every window frame (`window`, after the scene) and over the

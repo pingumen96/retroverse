@@ -272,7 +272,7 @@ struct DevUi::Impl {
     /// The dock space had no layout when the overlay was first shown (none loaded from an ini file): build the default
     /// one.
     std::optional<bool> needsDefaultLayout;
-    /// A frame was built since the overlay was shown: its draw data can be rendered.
+    /// A frame was built since the overlay was shown or hidden: its draw data can be rendered.
     bool frameReady = false;
     /// io.DisplayFramebufferScale of the window, before buildFrame() raised it for a screenshot.
     ImVec2 windowFramebufferScale{1.0f, 1.0f};
@@ -460,7 +460,10 @@ std::optional<scene::ViewArea> DevUi::sceneViewArea() const noexcept {
 
 void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
     Impl& impl = *m_impl;
-    if (!impl.visible) {
+    for (const Impl::DockedPanel& docked : impl.panels) {
+        docked.panel->update();
+    }
+    if (!impl.visible && !impl.sceneDecoration) {
         return;
     }
     ImGui_ImplOpenGL3_NewFrame();
@@ -475,6 +478,14 @@ void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
         }
     }
     ImGui::NewFrame();
+    if (!impl.visible) {
+        // Hidden: neither the dock space nor a panel is submitted (their windows stay docked), only the decoration over
+        // the scene. Dear ImGui gets no events meanwhile, and the overlay keeps wanting neither mouse nor keyboard.
+        impl.sceneDecoration();
+        ImGui::Render();
+        impl.frameReady = true;
+        return;
+    }
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImGuiID dockSpace = ImGui::GetID("RetroverseDockSpace");
@@ -516,7 +527,7 @@ void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
 void DevUi::renderToWindow(gl::GLDevice& device) {
     Impl& impl = *m_impl;
     ImDrawData* data = ImGui::GetDrawData();
-    if (!impl.visible || !impl.frameReady || data == nullptr || !data->Valid) {
+    if (!impl.frameReady || data == nullptr || !data->Valid) {
         return;
     }
     const gl::ScopedDebugGroup group(device, "DevUi");
@@ -533,8 +544,8 @@ void DevUi::renderToWindow(gl::GLDevice& device) {
 void DevUi::renderTo(gl::GLDevice& device, const gl::Framebuffer& target) {
     Impl& impl = *m_impl;
     ImDrawData* data = ImGui::GetDrawData();
-    if (!impl.visible || !impl.frameReady || data == nullptr || !data->Valid || !target.valid() ||
-        data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f) {
+    if (!impl.frameReady || data == nullptr || !data->Valid || !target.valid() || data->DisplaySize.x <= 0.0f ||
+        data->DisplaySize.y <= 0.0f) {
         return;
     }
     const gl::ScopedDebugGroup group(device, "DevUi.Capture");

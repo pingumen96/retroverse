@@ -114,8 +114,10 @@ const Texture2D& TextureCache::image(std::string_view key, const assets::ImageDa
     return insert(fullKey, upload(fullKey, image, colorSpace, wrap));
 }
 
-void TextureCache::clear() noexcept {
-    m_textures.clear();
+void TextureCache::clearContent() noexcept {
+    // The keys of procedural surface maps start with their source, "procedural:<surface>/<map>".
+    std::erase_if(m_textures,
+                  [](const auto& entry) { return !entry.first.starts_with(assets::kProceduralTexturePrefix); });
     ++m_revision;
 }
 

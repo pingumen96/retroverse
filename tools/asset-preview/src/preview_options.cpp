@@ -23,10 +23,12 @@ constexpr std::string_view kDescription =
     "        crt, tv_cabinet, console_cartridge, poster_frame, rug, floor_lamp, armchair) with --params.\n"
     "        A manifest next to a model (<model>.manifest.json or <model>.json) is checked with it.\n"
     "Controls: left drag orbits, middle or right drag pans, the wheel zooms; gamepad: right stick orbits, left stick\n"
-    "          pans, the triggers zoom. F frames the subject, R toggles the auto-rotation, 1 to 5 pick the view (lit,\n"
-    "          base color, normals, uv checker, wireframe). Drop a file on the window to preview it; the file is\n"
-    "          reloaded when it changes on disk. F1 hides the panels, F5 reloads the shaders, F12 saves a\n"
+    "          pans, the triggers zoom. F frames the subject (pressed again before the camera moves: with its sockets\n"
+    "          and scale references), R toggles the auto-rotation, 1 to 5 pick the view (lit, base color, normals,\n"
+    "          uv checker, wireframe). Drop a file on the window to preview it; the file is reloaded when it or a\n"
+    "          file it references changes on disk. F1 hides the panels, F5 reloads the shaders, F12 saves a\n"
     "          screenshot to <user data>/screenshots; Esc closes a popup, else hides the panels, else quits.\n"
+    "Screenshots: the panels settle over the first frames; --screenshot shows them laid out from --frames 3 on.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
     "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, --write-fixture not\n"
     "              written); 3 runtime failure (unexpected error, --screenshot not written, shader never built).";
@@ -100,7 +102,7 @@ Status applyWriteFixture(const core::ParsedArgs& args, PreviewOptions& options) 
 } // namespace
 
 std::string PreviewTarget::label() const {
-    return kind == Kind::Prefab ? std::string(kPrefabPrefix) + prefabKind : core::pathToUtf8(file);
+    return kind == Kind::Prefab ? std::string(kPrefabPrefix) + prefabKind : core::pathToGenericUtf8(file);
 }
 
 Expected<PreviewTarget> parsePreviewTarget(std::string_view text) {

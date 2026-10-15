@@ -30,8 +30,8 @@ namespace rv::gl {
 ///  - decoded images, such as the images of a glTF model: "<caller key>".
 /// Every texture has the full mip chain and the cache's anisotropy. A source that cannot be loaded or uploaded is
 /// logged as a warning once, and its key then always gives TextureDefaults::checker() (style §21: missing assets
-/// are visible, never fatal). Returned references stay valid as long as the cache (and the defaults) are alive.
-/// Main thread only.
+/// are visible, never fatal). Returned references stay valid as long as the cache (and the defaults) are alive, and
+/// until clearContent() releases them. Main thread only.
 class TextureCache {
 public:
     /// `assetRoot` resolves file paths; `defaults` must outlive the cache; `anisotropy` is already clamped to the
@@ -57,12 +57,14 @@ public:
     [[nodiscard]] const Texture2D& image(std::string_view key, const assets::ImageData& image, ColorSpace colorSpace,
                                          TextureWrap wrap);
 
-    /// Releases every texture and forgets every source (failed ones included, so they are tried and logged again):
-    /// references returned so far are no longer valid. For new content in the same renderer (the asset preview loads
-    /// another model, or the same file changed on disk: its images keep their keys).
-    void clear() noexcept;
-    /// Counts the calls of clear(): whoever keeps something derived from the cache's textures (the developer overlay's
-    /// thumbnail views) drops it when the revision changes.
+    /// Releases the textures of the content and forgets their sources (failed ones included, so they are tried and
+    /// logged again): files, patterns and decoded images. The procedural surface maps (procedural()) stay: no content
+    /// changes them, and generating them takes long (a room's surfaces about a second in a debug build). References
+    /// to the released textures are no longer valid. For new content in the same renderer (the asset preview loads
+    /// another subject, or the same file changed on disk: its images keep their keys).
+    void clearContent() noexcept;
+    /// Counts the calls of clearContent(): whoever keeps something derived from the cache's textures (the developer
+    /// overlay's thumbnail views) drops it when the revision changes.
     [[nodiscard]] std::uint64_t revision() const noexcept { return m_revision; }
 
     /// Textures uploaded so far (failed sources excluded).

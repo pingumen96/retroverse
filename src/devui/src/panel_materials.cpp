@@ -58,6 +58,8 @@ public:
 
     [[nodiscard]] const char* title() const noexcept override { return "Materials"; }
 
+    void update() override { m_previews.sync(); }
+
     void draw() override {
         gl::MaterialRegistry& materials = m_model.materials;
         countUsers();
@@ -98,6 +100,8 @@ private:
                                       ImGuiSelectableFlags_SpanAllColumns)) {
                     m_selected = index;
                 }
+                // The whole name, cut by a narrow column, and the key behind it (a glTF material's model path).
+                ImGui::SetItemTooltip("%s\n%s", material.name.c_str(), material.key.c_str());
                 ImGui::TableNextColumn();
                 ImGui::Text("%zu", m_users[index]);
                 ImGui::PopID();

@@ -14,6 +14,11 @@ std::string pathToUtf8(const std::filesystem::path& path) {
     return std::string(reinterpret_cast<const char*>(converted.data()), converted.size());
 }
 
+std::string pathToGenericUtf8(const std::filesystem::path& path) {
+    const std::u8string converted = path.generic_u8string();
+    return std::string(reinterpret_cast<const char*>(converted.data()), converted.size());
+}
+
 std::string toLowerAscii(std::string_view text) {
     std::string result(text);
     std::transform(result.begin(), result.end(), result.begin(), [](char c) {

@@ -24,8 +24,9 @@ class TextureCache;
 ///  - meshes in a MeshRegistry under "<key>#mesh<index>" (one per loaded primitive, shared by the nodes that
 ///    instance it and by every GpuModel created with the same key);
 ///  - materials in a MaterialRegistry under "<key>#material<index>", and "<key>#default" for primitives without one
-///    (the glTF default material: white, metallic 1, roughness 1); their images go through the TextureCache as
-///    "<key>#image<index>" (base color and emissive sRGB, the others linear, repeating like glTF's default sampler);
+///    (the glTF default material: white, metallic 1, roughness 1), named after the material, then the model file
+///    ("Fixture_Plastic (crt_fixture.glb#material0)"); their images go through the TextureCache as "<key>#image<index>"
+///    (base color and emissive sRGB, the others linear, repeating like glTF's default sampler);
 ///  - the draw items of the model's active scene with their model-space transforms (node world matrices), and its
 ///    sockets (style §9.2: anchors, screen surfaces, collider proxies) and bounds.
 /// The registries and the cache own the GPU objects: a GpuModel holds handles into them and stays valid while they

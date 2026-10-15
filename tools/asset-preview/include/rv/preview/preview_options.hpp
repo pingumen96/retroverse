@@ -20,6 +20,11 @@ namespace rv::preview {
 /// Prefix of the procedural prefab targets: "prefab:<kind>".
 inline constexpr std::string_view kPrefabPrefix = "prefab:";
 
+/// Frames the panels take to settle: the developer overlay docks them in its first frame, brings the first tab of each
+/// dock node forward in the second and the tabs asked for (--panel, Manifest) in the third, and the camera frames the
+/// subject in the area they leave from the second. A --screenshot of an earlier frame shows them unfinished.
+inline constexpr std::uint32_t kPanelsSettledFrames = 3;
+
 /// What the asset preview shows: a glTF model file, a prefab manifest (style §11) or a procedural prefab of the
 /// geometry kit.
 struct PreviewTarget {
@@ -33,7 +38,7 @@ struct PreviewTarget {
     /// Kind::Prefab: the builder parameters, an object (--params; empty: the kind's defaults).
     nlohmann::json params = nlohmann::json::object();
 
-    /// "<file>" for files, "prefab:<kind>" for prefabs.
+    /// "<file>" for files (with '/' separators), "prefab:<kind>" for prefabs.
     [[nodiscard]] std::string label() const;
 };
 

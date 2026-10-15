@@ -81,20 +81,20 @@ void DebugLines::addAxes(const glm::mat4& transform, float length) {
     }
 }
 
-void DebugLines::addGrid(float halfExtent, float spacing) {
+void DebugLines::addGrid(float halfExtent, float spacing, float height) {
     if (!std::isfinite(halfExtent) || !std::isfinite(spacing) || halfExtent <= 0.0f || spacing <= 0.0f) {
         return;
     }
     spacing = std::max(spacing, 2.0f * halfExtent / kMaxGridLinesPerAxis);
     // +Y first: the lines drawn later win where they coincide on screen, and the floor axes matter more.
-    addLine(glm::vec3(0.0f), glm::vec3(0.0f, 0.1f * halfExtent, 0.0f), debug_colors::kAxisY);
+    addLine(glm::vec3(0.0f, height, 0.0f), glm::vec3(0.0f, height + 0.1f * halfExtent, 0.0f), debug_colors::kAxisY);
     const int steps = static_cast<int>(std::floor(halfExtent / spacing));
     for (int step = -steps; step <= steps; ++step) {
         const float offset = static_cast<float>(step) * spacing;
         // Lines along X (constant z) and along Z (constant x); the ones through the origin are the axes.
-        addLine(glm::vec3(-halfExtent, 0.0f, offset), glm::vec3(halfExtent, 0.0f, offset),
+        addLine(glm::vec3(-halfExtent, height, offset), glm::vec3(halfExtent, height, offset),
                 step == 0 ? debug_colors::kAxisX : debug_colors::kGrid);
-        addLine(glm::vec3(offset, 0.0f, -halfExtent), glm::vec3(offset, 0.0f, halfExtent),
+        addLine(glm::vec3(offset, height, -halfExtent), glm::vec3(offset, height, halfExtent),
                 step == 0 ? debug_colors::kAxisZ : debug_colors::kGrid);
     }
 }
@@ -110,8 +110,9 @@ void DebugLines::clear() noexcept {
 }
 
 float socketAxisLength(const geometry::Socket& socket, const Aabb& objectBounds) noexcept {
-    if (const std::optional<float> socketSize = largestExtent(socket.bounds)) {
-        return std::clamp(0.5f * *socketSize, kMinSocketAxis, kMaxSocketAxis);
+    if (largestExtent(socket.bounds)) {
+        const glm::vec3 size = geometry::socketSize(socket); // as placed: the bounds are in the socket's own space
+        return std::clamp(0.5f * std::max({size.x, size.y, size.z}), kMinSocketAxis, kMaxSocketAxis);
     }
     if (const std::optional<float> objectSize = largestExtent(objectBounds)) {
         return std::clamp(0.25f * *objectSize, kMinSocketAxis, kMaxSocketAxis);

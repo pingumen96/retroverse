@@ -1,6 +1,5 @@
 #include "preview_app.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -20,6 +19,7 @@
 
 #include <rv/app/back_action.hpp>
 #include <rv/app/bindings.hpp>
+#include <rv/app/command_line.hpp>
 #include <rv/app/model_viewer.hpp>
 #include <rv/app/overlay_policy.hpp>
 #include <rv/app/scene_graphics.hpp>
@@ -59,10 +59,15 @@ namespace {
 /// Where the overlay keeps the preview's window layout, under <user data>/config (its panels are not the app's).
 constexpr std::string_view kLayoutFile = "asset-preview-imgui.ini";
 /// Labels of the scene: a dark plate behind the text, a dot on the labelled point.
-constexpr float kLabelPadding = 3.0f;
-constexpr float kLabelOffset = 6.0f;
-constexpr float kLabelDotRadius = 2.5f;
+constexpr LabelLayout kLabelLayout{};
 constexpr ImU32 kLabelPlate = IM_COL32(0, 0, 0, 170);
+
+/// Why a subject is loaded, which decides what the view keeps.
+enum class Load : std::uint8_t {
+    Start,  ///< the target of the command line: framed; its manifest comes forward unless --panel chose a tab
+    Open,   ///< another target (a dropped file): framed; its manifest comes forward
+    Reload, ///< the same target again (its files changed, the Reload button): the camera and the tabs stay
+};
 
 /// Width / height of a viewport, 16:9 for an empty one.
 float aspectOf(glm::ivec2 size) noexcept {
@@ -122,10 +127,17 @@ struct PreviewApp::State {
     scene::Camera camera;
     /// The camera of the frame being built, which the labels are placed with.
     glm::mat4 labelViewProjection{1.0f};
-    /// Screen rectangles (x0, y0, x1, y1) of the labels placed in the frame being built, so that none covers another.
-    std::vector<glm::vec4> labelRects;
+    /// The labels in view in the frame being built: their index in `labels`, screen point and text size, and their
+    /// plates (placeLabelPlates). Kept from frame to frame for their storage.
+    std::vector<std::size_t> shownLabels;
+    std::vector<glm::vec2> labelAnchors;
+    std::vector<glm::vec2> labelSizes;
+    std::vector<glm::vec4> labelPlates;
     /// The subject is to be framed (a new subject, F, the Frame button).
     bool framePending = false;
+    /// The framing takes in the sockets and scale references around the subject (F again, the empty studio), not the
+    /// subject's bounds alone (framingBounds).
+    bool frameSurroundings = false;
     /// The part of the view the camera was framed in while the user has not moved it since: the framing follows the
     /// panels' layout (which settles over the first frames and changes with the window) until the user takes the
     /// camera.
@@ -142,19 +154,24 @@ struct PreviewApp::State {
     bool reloadRequested = false;
     core::FileWatchSet watch;
     bool screenshotRequested = false;
+    /// --panel was given: the start shows that tab, not the Manifest one.
+    bool startPanelChosen = false;
 
     devui::FrameTimeHistory frameTimes;
     /// The panels. Declared last: destroyed first, before the state they refer to.
     std::unique_ptr<devui::DevUi> devUi;
 
-    /// Loads `target` and shows it; `frame` points the camera at it.
-    void load(const PreviewTarget& target, bool frame) {
+    /// Loads `target` and shows it.
+    void load(const PreviewTarget& target, Load kind) {
         spdlog::info("Previewing {}", target.label());
-        show(loadPreviewSubject(target, assetRoot), frame);
+        show(loadPreviewSubject(target, assetRoot), kind);
     }
 
-    /// Replaces the content with `loaded`.
-    void show(PreviewSubject loaded, bool frame) {
+    /// Replaces the content with `loaded`. A new subject is framed; its Manifest panel comes forward when it brings a
+    /// manifest that was not shown before (bringsManifestForward), except at a start that chose its tab (--panel).
+    void show(PreviewSubject loaded, Load kind) {
+        const bool manifestForward =
+            bringsManifestForward(subject, loaded, kind == Load::Reload) && !(kind == Load::Start && startPanelChosen);
         subject = std::move(loaded);
         ++subjectRevision;
         logMessages(subject);
@@ -175,10 +192,11 @@ struct PreviewApp::State {
         showScreenPatterns();
         shownOverlays.reset();
         watch.assign(subject.watchedFiles);
-        if (frame) {
+        if (kind != Load::Reload) {
             framePending = true;
+            frameSurroundings = false;
         }
-        if (subject.manifest && devUi) {
+        if (manifestForward && devUi) {
             devUi->focusPanel(kManifestPanelTitle);
         }
     }
@@ -199,7 +217,7 @@ struct PreviewApp::State {
                 &textures.pattern(kScreenPattern, "", 0, screen.patternSize, gl::ColorSpace::Srgb);
             const std::string key = "preview#" + screen.socketId;
             const scene::MaterialHandle material =
-                materials.add(key, fmt::format("{} ({})", key, screenMaterial.name), screenMaterial, slots);
+                materials.add(key, fmt::format("{} ({})", screenMaterial.name, key), screenMaterial, slots);
             for (const std::uint32_t mesh : screen.modelMeshes) {
                 if (const auto handle = graphics->meshes().find(gl::GpuModel::meshKey(modelKey, mesh))) {
                     replaced.emplace_back(*handle, material);
@@ -222,15 +240,24 @@ struct PreviewApp::State {
         spdlog::info("{}: {} screen surface(s) show the {} pattern", subject.title, screens.size(), kScreenPattern);
     }
 
+    /// F, the Frame button: frames the subject; pressed again while the camera still shows that framing, frames it with
+    /// its surroundings (its sockets and scale references), and back.
+    void requestFraming() {
+        frameSurroundings = autoFramedArea.has_value() && !framePending ? !frameSurroundings : false;
+        framePending = true;
+    }
+
     /// Points the camera at the subject from the front right and above (the model viewer's angles), framed in `area`,
-    /// the part of the view the panels leave visible.
+    /// the part of the view the panels leave visible. The empty studio frames its scale references.
     void frameSubject(glm::ivec2 viewport, const scene::ViewArea& area) {
-        orbit.frame(subject.bounds, -app::kModelViewerAzimuthDeg, -app::kModelViewerElevationDeg, camera.lens(),
-                    aspectOf(viewport), area);
+        const bool surroundings = frameSurroundings || !subject.target;
+        orbit.frame(framingBounds(subject, overlays, surroundings), -app::kModelViewerAzimuthDeg,
+                    -app::kModelViewerElevationDeg, camera.lens(), aspectOf(viewport), area);
         framePending = false;
         autoFramedArea = area;
-        spdlog::debug("Framed from {:.3f} m in the view area ({:.2f}, {:.2f}) to ({:.2f}, {:.2f})", orbit.distance(),
-                      area.min.x, area.min.y, area.max.x, area.max.y);
+        spdlog::debug("Framed {} from {:.3f} m in the view area ({:.2f}, {:.2f}) to ({:.2f}, {:.2f})",
+                      surroundings ? "the subject and its surroundings" : "the subject", orbit.distance(), area.min.x,
+                      area.min.y, area.max.x, area.max.y);
     }
 
     [[nodiscard]] scene::ViewArea visibleArea() const {
@@ -250,40 +277,43 @@ struct PreviewApp::State {
         }
     }
 
-    /// Draws the labels over the scene (the overlay's background draw list, under the panels): above and right of
-    /// their point, moved down below the labels placed before them that they would cover, with a leader line then.
+    /// Draws the labels over the scene (the overlay's background draw list, under the panels): each on a plate above
+    /// and right of its point, moved up or down clear of the plates before it and of every labelled point, with a
+    /// leader line then (placeLabelPlates); the dots last.
     void drawLabels() {
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
         const ImVec2 display = ImGui::GetIO().DisplaySize;
-        labelRects.clear();
-        for (const SceneLabel& label : labels) {
+        shownLabels.clear();
+        labelAnchors.clear();
+        labelSizes.clear();
+        for (std::size_t index = 0; index < labels.size(); ++index) {
             const std::optional<glm::vec2> at =
-                projectToViewport(labelViewProjection, label.position, glm::vec2(display.x, display.y));
-            if (!at) {
-                continue;
+                projectToViewport(labelViewProjection, labels[index].position, glm::vec2(display.x, display.y));
+            if (at) {
+                const ImVec2 size = ImGui::CalcTextSize(labels[index].text.c_str());
+                shownLabels.push_back(index);
+                labelAnchors.push_back(*at);
+                labelSizes.emplace_back(size.x, size.y);
             }
+        }
+        placeLabelPlates(labelAnchors, labelSizes, kLabelLayout, labelPlates);
+        for (std::size_t shown = 0; shown < shownLabels.size(); ++shown) {
+            const SceneLabel& label = labels[shownLabels[shown]];
+            const glm::vec2 at = labelAnchors[shown];
+            const glm::vec4& plate = labelPlates[shown];
             const ImU32 color =
                 ImGui::ColorConvertFloat4ToU32(ImVec4(label.color.r, label.color.g, label.color.b, label.color.a));
-            const ImVec2 size = ImGui::CalcTextSize(label.text.c_str());
-            glm::vec4 rect(at->x + kLabelOffset - kLabelPadding, at->y - kLabelOffset - size.y - kLabelPadding,
-                           at->x + kLabelOffset + size.x + kLabelPadding, at->y - kLabelOffset + kLabelPadding);
-            const float step = rect.w - rect.y + 1.0f;
-            const auto covers = [&rect](const glm::vec4& other) {
-                return rect.x < other.z && other.x < rect.z && rect.y < other.w && other.y < rect.w;
-            };
-            const glm::vec4 home = rect;
-            for (std::size_t tries = 0;
-                 tries < labels.size() && std::any_of(labelRects.begin(), labelRects.end(), covers); ++tries) {
-                rect.y += step;
-                rect.w += step;
+            if (plateMoved(plate, at, kLabelLayout)) {
+                draw->AddLine(ImVec2(at.x, at.y), ImVec2(plate.x, 0.5f * (plate.y + plate.w)), color);
             }
-            labelRects.push_back(rect);
-            if (rect != home) {
-                draw->AddLine(ImVec2(at->x, at->y), ImVec2(rect.x, rect.y + 0.5f * step), color);
-            }
-            draw->AddRectFilled(ImVec2(rect.x, rect.y), ImVec2(rect.z, rect.w), kLabelPlate, kLabelPadding);
-            draw->AddText(ImVec2(rect.x + kLabelPadding, rect.y + kLabelPadding), color, label.text.c_str());
-            draw->AddCircleFilled(ImVec2(at->x, at->y), kLabelDotRadius, color);
+            draw->AddRectFilled(ImVec2(plate.x, plate.y), ImVec2(plate.z, plate.w), kLabelPlate, kLabelLayout.padding);
+            draw->AddText(ImVec2(plate.x + kLabelLayout.padding, plate.y + kLabelLayout.padding), color,
+                          label.text.c_str());
+        }
+        for (std::size_t shown = 0; shown < shownLabels.size(); ++shown) {
+            const glm::vec4& color = labels[shownLabels[shown]].color;
+            draw->AddCircleFilled(ImVec2(labelAnchors[shown].x, labelAnchors[shown].y), kLabelLayout.dotRadius,
+                                  ImGui::ColorConvertFloat4ToU32(ImVec4(color.r, color.g, color.b, color.a)));
         }
     }
 
@@ -311,7 +341,7 @@ struct PreviewApp::State {
     }
 
     /// Creates the overlay with the preview's panels, visible from the start, drawn over the window and the
-    /// screenshots.
+    /// screenshots; the labels of the scene stay when the panels are hidden.
     Status createDevUi(app::AppContext& context) {
         devui::DevUiConfig config;
         if (!context.options().frameLimit) {
@@ -330,7 +360,8 @@ struct PreviewApp::State {
                                       overlays,
                                       orbit,
                                       graphics->textures(),
-                                      [this] { framePending = true; },
+                                      graphics->materials(),
+                                      [this] { requestFraming(); },
                                       [this] { reloadRequested = true; }};
         devUi->addPanel(makeAssetPanel(model), devui::DockSlot::Left);
         devUi->addPanel(makeModelPanel(model), devui::DockSlot::LeftBottom);
@@ -376,15 +407,21 @@ Status PreviewApp::onInit(app::AppContext& context) {
         error.message = "the panels of the asset preview cannot start: " + error.message;
         return propagate(std::move(error));
     }
-    state->viewMode = m_options.view;
-    if (m_options.panel) {
-        state->devUi->focusPanel(*m_options.panel);
+    const app::CommandLineOptions& run = context.options();
+    if (run.screenshot && run.frameLimit && *run.frameLimit < kPanelsSettledFrames) {
+        spdlog::warn("--screenshot of frame {}: the panels are laid out from frame {} on (--frames {} or more)",
+                     *run.frameLimit - 1, kPanelsSettledFrames - 1, kPanelsSettledFrames);
     }
+    state->viewMode = m_options.view;
+    state->startPanelChosen = m_options.panel.has_value();
     if (m_options.target) {
-        state->load(*m_options.target, true);
+        state->load(*m_options.target, Load::Start);
     } else {
         spdlog::info("No file to preview yet: drop a .glb, .gltf or manifest .json file on the window");
-        state->show(PreviewSubject{}, true);
+        state->show(PreviewSubject{}, Load::Start);
+    }
+    if (m_options.panel) {
+        state->devUi->focusPanel(*m_options.panel);
     }
     m_state = std::move(state);
     return ok();
@@ -441,21 +478,21 @@ void PreviewApp::onUpdate(app::AppContext& context, double deltaSeconds) {
     if (state.droppedFile) {
         const std::string file = std::exchange(state.droppedFile, std::nullopt).value();
         if (auto target = parsePreviewTarget(file)) {
-            state.load(*target, true);
+            state.load(*target, Load::Open);
         } else {
             spdlog::warn("Dropped file not previewed: {}", target.error().toString());
         }
     } else if (std::exchange(state.reloadRequested, false) && state.subject.target) {
-        state.load(*state.subject.target, false);
+        state.load(*state.subject.target, Load::Reload);
     } else if (const std::vector<std::filesystem::path> changed = state.watch.changed();
                !changed.empty() && state.subject.target) {
-        spdlog::info("Reloading {}: {} changed on disk", state.subject.title, core::pathToUtf8(changed.front()));
-        state.load(*state.subject.target, false);
+        spdlog::info("Reloading {}: {} changed on disk", state.subject.title, core::pathToGenericUtf8(changed.front()));
+        state.load(*state.subject.target, Load::Reload);
     }
 
     const PreviewShortcuts shortcuts = previewShortcutsFrom(raw);
     if (shortcuts.frameSubject) {
-        state.framePending = true;
+        state.requestFraming();
     }
     if (shortcuts.toggleAutoRotate) {
         state.orbit.setAutoRotate(!state.orbit.autoRotate());
@@ -481,10 +518,6 @@ void PreviewApp::onUpdate(app::AppContext& context, double deltaSeconds) {
     state.orbit.apply(state.camera, area);
     state.labelViewProjection = state.camera.viewProjection();
 
-    if (auto view = state.graphics->setSurfaceView(surfaceViewOf(state.viewMode)); !view) {
-        spdlog::error("View mode {} unavailable: {}", toString(state.viewMode), view.error().toString());
-        state.viewMode = ViewMode::Lit;
-    }
     state.syncOverlays();
     state.devUi->buildFrame(
         app::overlayCaptureSize(context.options(), context.frameIndex(), state.screenshotRequested));
@@ -496,6 +529,13 @@ void PreviewApp::onRender(app::AppContext& context) {
         return;
     }
     State& state = *m_state;
+    // The view mode as it stands after the panels were built (their radio buttons change it): the surfaces' program
+    // and the wireframe flag below come from the same mode.
+    if (auto surfaces = state.graphics->setSurfaceView(surfaceViewOf(state.viewMode)); !surfaces) {
+        spdlog::error("View mode {} unavailable: {}", toString(state.viewMode), surfaces.error().toString());
+        state.viewMode = ViewMode::Lit;
+        (void)state.graphics->setSurfaceView(gl::SurfaceView::Lit); // Lit loads no program: it cannot fail
+    }
     gl::RenderView view;
     if (state.scene) {
         view = app::makeRenderView(*state.scene, state.camera);

@@ -322,6 +322,23 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
     }
 }
 
+TEST_CASE("geometry/socket: the size of a socket follows the scale of its transform", "[geometry][sockets]") {
+    Socket screen;
+    screen.bounds = Aabb::fromMinMax(glm::vec3(-0.24f, -0.18f, 0.0f), glm::vec3(0.24f, 0.18f, 0.0f));
+    CHECK(rv::geometry::socketSize(screen) == glm::vec3(0.48f, 0.36f, 0.0f));
+    // A node exported in centimeters (scale 0.01), turned a quarter around Y: each side scales with its own axis.
+    screen.transform = glm::rotate(glm::scale(glm::mat4(1.0f), glm::vec3(0.01f, 0.02f, 0.01f)), glm::radians(90.0f),
+                                   glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::vec3 scaled = rv::geometry::socketSize(screen);
+    CHECK(scaled.x == Approx(0.0048f));
+    CHECK(scaled.y == Approx(0.0072f));
+    CHECK(scaled.z == Approx(0.0f).margin(1e-7f));
+    // Nothing to measure: an anchor, or bounds that are not finite.
+    CHECK(rv::geometry::socketSize(Socket{}) == glm::vec3(0.0f));
+    screen.bounds = Aabb::fromMinMax(glm::vec3(0.0f), glm::vec3(std::numeric_limits<float>::infinity()));
+    CHECK(rv::geometry::socketSize(screen) == glm::vec3(0.0f));
+}
+
 TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry][prefabs][shelf]") {
     struct Layout {
         json params;

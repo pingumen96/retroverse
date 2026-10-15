@@ -138,6 +138,7 @@ std::vector<ScreenSurface> screenSurfaces(const PreviewSubject& subject) {
         screen.nodeName = socket.nodeName;
         screen.bounds = socket.bounds;
         screen.transform = socket.transform;
+        screen.size = geometry::socketSize(socket);
         const std::uint32_t first = *socket.meshIndex;
         if (subject.model) {
             const assets::ModelData& model = *subject.model;

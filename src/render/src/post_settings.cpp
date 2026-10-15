@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <rv/render/tonemap.hpp>
+
 namespace rv::gl {
 namespace {
 
@@ -38,6 +40,13 @@ PostUniforms makePostUniforms(const PostSettings& settings) noexcept {
     uniforms.vignette = unitInterval(settings.vignette);
     uniforms.ditherAmplitude = unitInterval(settings.ditherAmplitude);
     return uniforms;
+}
+
+glm::vec3 displayColor(const glm::vec3& radiance, const PostSettings& settings) noexcept {
+    if (settings.tonemap) {
+        return tonemap(radiance, makePostUniforms(settings).exposure);
+    }
+    return glm::vec3(unitInterval(radiance.x), unitInterval(radiance.y), unitInterval(radiance.z));
 }
 
 float bloomScatter(float radius) noexcept {

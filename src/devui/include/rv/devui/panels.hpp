@@ -93,16 +93,17 @@ struct LightsPanelModel {
 };
 [[nodiscard]] std::unique_ptr<Panel> makeLightsPanel(LightsPanelModel model);
 
-/// "Materials": the materials of the registry with the number of render items that use each, and for the selected one
-/// its shading, alpha mode and textures (thumbnails, enlarged with their size, color space and memory in a tooltip:
-/// TexturePreviews), its base color (shown in sRGB, stored linear), metallic, roughness and emissive strength, applied
-/// to the GPU material at once (gl::MaterialRegistry::setFactors) and never saved; a revert button restores the
-/// registered values.
+/// "Materials": the materials of the registry with the number of render items that use each (the full name and the
+/// registry key in a tooltip), and for the selected one its shading, alpha mode and textures (thumbnails, enlarged with
+/// their size, color space and memory in a tooltip: TexturePreviews), its base color (shown in sRGB, stored linear),
+/// metallic, roughness and emissive strength, applied to the GPU material at once (gl::MaterialRegistry::setFactors)
+/// and never saved; a revert button restores the registered values.
 struct MaterialsPanelModel {
     gl::MaterialRegistry& materials;
     /// The items drawn, to count the users of each material; called every frame the panel is drawn.
     std::function<std::span<const scene::RenderItem>()> items;
-    /// The cache of the materials' textures (their thumbnails are dropped when it is cleared).
+    /// The cache of the materials' textures (their thumbnails are dropped when it releases its content, also while the
+    /// panel is not shown).
     const gl::TextureCache& textures;
 };
 [[nodiscard]] std::unique_ptr<Panel> makeMaterialsPanel(const MaterialsPanelModel& model);

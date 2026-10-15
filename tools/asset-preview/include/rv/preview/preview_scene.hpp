@@ -49,6 +49,9 @@ struct ScreenSurface {
     core::Aabb bounds;
     /// The socket's transform in the subject's space.
     glm::mat4 transform{1.0f};
+    /// Size of the screen rectangle in the subject's space, meters (geometry::socketSize: with the node's scale, so a
+    /// model exported in centimeters shows its real size).
+    glm::vec3 size{0.0f};
     /// Size of the pattern for the screen's aspect as drawn (app::patternSizeFor): the texture the scene shows on it.
     glm::ivec2 patternSize{0};
     /// glTF models: the primitives of the screen's node (indices into assets::ModelData::meshes), drawn with the screen

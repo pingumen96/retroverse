@@ -1,8 +1,11 @@
 #include "preview_panels.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,6 +18,7 @@
 #include <rv/core/text.hpp>
 #include <rv/devui/texture_previews.hpp>
 #include <rv/devui/widgets.hpp>
+#include <rv/render/material_registry.hpp>
 #include <rv/render/texture.hpp>
 #include <rv/render/texture_cache.hpp>
 
@@ -27,6 +31,9 @@ constexpr ImVec4 kOkColor{0.55f, 0.85f, 0.45f, 1.0f};
 constexpr ImVec4 kInfoColor{0.65f, 0.75f, 0.9f, 1.0f};
 /// Side of the screen's test pattern, in font sizes.
 constexpr float kPatternEms = 13.0f;
+
+/// "label: value" rows of a table, formatted once per subject.
+using Rows = std::vector<std::pair<std::string, std::string>>;
 
 const char* kindName(PreviewTarget::Kind kind) noexcept {
     switch (kind) {
@@ -73,13 +80,49 @@ std::string formatPosition(const glm::vec3& position) {
     return fmt::format("{:.3f}, {:.3f}, {:.3f} m", position.x, position.y, position.z);
 }
 
+/// The rows of `rows` in a value table with the given id.
+void drawRows(const char* id, const Rows& rows) {
+    if (devui::widgets::beginValueTable(id)) {
+        for (const auto& [label, value] : rows) {
+            devui::widgets::textRow(label.c_str(), value);
+        }
+        ImGui::EndTable();
+    }
+}
+
+/// Tracks the subject a panel last formatted its text for.
+class SubjectRevision {
+public:
+    explicit SubjectRevision(const std::uint64_t& current) noexcept : m_current(current) {}
+
+    /// True once per new subject: the panel formats what it shows of it again.
+    [[nodiscard]] bool changed() noexcept {
+        if (m_seen == m_current) {
+            return false;
+        }
+        m_seen = m_current;
+        return true;
+    }
+
+private:
+    const std::uint64_t& m_current;
+    std::uint64_t m_seen = 0; // subjects count from 1
+};
+
 class AssetPanel final : public devui::Panel {
 public:
-    explicit AssetPanel(PreviewPanelModel model) : m_model(std::move(model)) {}
+    explicit AssetPanel(PreviewPanelModel model) : m_model(std::move(model)), m_revision(m_model.subjectRevision) {
+        for (std::size_t index = 0; index < m_viewLabels.size(); ++index) {
+            m_viewLabels[index] = std::string(toString(kViewModes[index]));
+        }
+    }
 
     [[nodiscard]] const char* title() const noexcept override { return "Asset"; }
 
     void draw() override {
+        if (m_revision.changed()) {
+            m_targetLabel = m_model.subject.target ? m_model.subject.target->label() : std::string();
+        }
         drawSubject();
         drawView();
         drawOverlays();
@@ -87,8 +130,8 @@ public:
         ImGui::SeparatorText("Controls");
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("Left drag orbits, middle or right drag pans, the wheel zooms (gamepad: right stick, left "
-                            "stick, triggers). Drop a file on the window to preview it. F1 hides the panels, F12 saves "
-                            "a screenshot.");
+                            "stick, triggers). Drop a file on the window to preview it. F1 hides the panels (the "
+                            "labels stay), F12 saves a screenshot.");
         ImGui::PopTextWrapPos();
     }
 
@@ -103,7 +146,7 @@ private:
         }
         ImGui::TextUnformatted(subject.title.c_str());
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("%s: %s", kindName(subject.target->kind), subject.target->label().c_str());
+        ImGui::TextDisabled("%s: %s", kindName(subject.target->kind), m_targetLabel.c_str());
         ImGui::PopTextWrapPos();
         constexpr PreviewMessage::Topic kAsset = PreviewMessage::Topic::Asset;
         const std::size_t warnings = subject.count(PreviewMessage::Severity::Warning, kAsset);
@@ -137,17 +180,15 @@ private:
 
     void drawView() {
         ImGui::SeparatorText("View");
-        int key = 1;
-        for (const ViewMode mode : kViewModes) {
-            const std::string label = std::string(toString(mode));
-            if (ImGui::RadioButton(label.c_str(), m_model.viewMode == mode)) {
+        for (std::size_t index = 0; index < m_viewLabels.size(); ++index) {
+            const ViewMode mode = kViewModes[index];
+            if (ImGui::RadioButton(m_viewLabels[index].c_str(), m_model.viewMode == mode)) {
                 m_model.viewMode = mode;
             }
-            ImGui::SetItemTooltip("Key %d", key);
-            if (key % 2 == 1 && mode != ViewMode::Wireframe) {
+            ImGui::SetItemTooltip("Key %zu", index + 1);
+            if (index % 2 == 0 && index + 1 < m_viewLabels.size()) {
                 ImGui::SameLine(); // two per line
             }
-            ++key;
         }
     }
 
@@ -162,7 +203,8 @@ private:
             ImGui::Checkbox(label, &value);
             ImGui::SetItemTooltip("%s", tooltip);
         };
-        toggle("Floor grid", overlays.grid, "Lines every 10 cm, brighter every meter; X axis red, Z axis blue");
+        toggle("Floor grid", overlays.grid,
+               "Lines every 10 cm (on subjects up to 6 m across), brighter every meter; X axis red, Z axis blue");
         toggle("Scale", overlays.scaleReferences, "A 1 m cube and a 1.70 m human-height marker beside the subject");
         toggle("Bounds (cm)", overlays.bounds, "The subject's bounds with its width, height and depth");
         toggle("Node bounds", overlays.nodeBounds, "The bounds of every drawn node (prefab part)");
@@ -177,6 +219,8 @@ private:
         if (ImGui::Button("Frame (F)")) {
             m_model.frameSubject();
         }
+        ImGui::SetItemTooltip(
+            "Frame the subject; again, before the camera moves: with its sockets and scale references");
         ImGui::SameLine();
         bool rotate = m_model.orbit.autoRotate();
         if (ImGui::Checkbox("Auto-rotate (R)", &rotate)) {
@@ -186,15 +230,21 @@ private:
     }
 
     PreviewPanelModel m_model;
+    SubjectRevision m_revision;
+    std::array<std::string, std::size(kViewModes)> m_viewLabels;
+    std::string m_targetLabel;
 };
 
 class ModelPanel final : public devui::Panel {
 public:
-    explicit ModelPanel(PreviewPanelModel model) : m_model(std::move(model)) {}
+    explicit ModelPanel(PreviewPanelModel model) : m_model(std::move(model)), m_revision(m_model.subjectRevision) {}
 
     [[nodiscard]] const char* title() const noexcept override { return "Model"; }
 
     void draw() override {
+        if (m_revision.changed()) {
+            refresh();
+        }
         const PreviewSubject& subject = m_model.subject;
         if (subject.model) {
             drawModel(*subject.model);
@@ -206,33 +256,75 @@ public:
     }
 
 private:
-    /// The children of every node and the material of every mesh, rebuilt for each subject.
-    void refresh(const assets::ModelData& model) {
-        if (m_revision == m_model.subjectRevision) {
-            return;
-        }
-        m_revision = m_model.subjectRevision;
-        m_children.assign(model.nodes.size(), {});
+    /// The tree of the model (children of every node, labels with socket kinds, primitive lines with their materials)
+    /// or the prefab's part materials and socket positions, formatted for the new subject.
+    void refresh() {
+        const PreviewSubject& subject = m_model.subject;
+        m_children.clear();
         m_roots.clear();
+        m_nodeLabels.clear();
+        m_nodeOrigins.clear();
+        m_primitiveLines.clear();
+        m_partMaterials.clear();
+        m_socketPositions.clear();
+        if (subject.model) {
+            refreshModel(*subject.model);
+        } else if (subject.prefab) {
+            const auto materials = prefabRoleMaterials(subject.prefab->kind);
+            for (const geometry::PrefabPart& part : subject.prefab->parts) {
+                const auto found = materials.find(part.materialRole);
+                m_partMaterials.push_back(found != materials.end() ? found->second : std::string("-"));
+            }
+            for (const geometry::Socket& socket : subject.prefab->sockets) {
+                m_socketPositions.push_back(formatPosition(glm::vec3(socket.transform[3])));
+            }
+        }
+    }
+
+    void refreshModel(const assets::ModelData& model) {
+        m_children.assign(model.nodes.size(), {});
         for (std::size_t index = 0; index < model.nodes.size(); ++index) {
-            const int parent = model.nodes[index].parent;
+            const assets::ModelNode& node = model.nodes[index];
+            const int parent = node.parent;
             if (parent >= 0 && static_cast<std::size_t>(parent) < model.nodes.size()) {
                 m_children[static_cast<std::size_t>(parent)].push_back(index);
             } else {
                 m_roots.push_back(index);
             }
-        }
-        m_meshMaterials.assign(model.meshes.size(), std::nullopt);
-        for (const assets::ModelDrawItem& item : model.drawItems) {
-            if (item.meshIndex < m_meshMaterials.size()) {
-                m_meshMaterials[item.meshIndex] = item.material;
+            const geometry::Socket* socket = nullptr;
+            for (const geometry::Socket& candidate : m_model.subject.sockets) {
+                if (candidate.nodeName == node.name) {
+                    socket = &candidate;
+                    break;
+                }
             }
+            m_nodeLabels.push_back(
+                socket != nullptr ? fmt::format("{}  [{}]", node.name, geometry::toString(socket->kind)) : node.name);
+            m_nodeOrigins.push_back(formatPosition(glm::vec3(node.world[3])));
+        }
+        // The material each primitive is drawn with; primitives that are not drawn (a collision proxy's) have none.
+        std::vector<const assets::ModelDrawItem*> drawnAs(model.meshes.size(), nullptr);
+        for (const assets::ModelDrawItem& item : model.drawItems) {
+            if (item.meshIndex < drawnAs.size()) {
+                drawnAs[item.meshIndex] = &item;
+            }
+        }
+        for (std::size_t mesh = 0; mesh < model.meshes.size(); ++mesh) {
+            const geometry::MeshData& data = model.meshes[mesh];
+            std::string_view materialName = "not drawn";
+            if (const assets::ModelDrawItem* item = drawnAs[mesh]) {
+                materialName = item->material && *item->material < model.materials.size()
+                                   ? std::string_view(model.materials[*item->material].name)
+                                   : std::string_view("glTF default material");
+            }
+            m_primitiveLines.push_back(fmt::format("{}: {} tri, {} vert\n{}", data.name, data.triangleCount(),
+                                                   data.vertices.size(), materialName));
         }
     }
 
     void drawModel(const assets::ModelData& model) {
-        refresh(model);
         ImGui::Text("%zu node(s), %zu primitive(s)", model.nodes.size(), model.meshes.size());
+        ImGui::SetItemTooltip("Nodes, their primitives (triangles, vertices, material) and socket kinds");
         for (const std::size_t root : m_roots) {
             drawNode(model, root);
         }
@@ -240,29 +332,24 @@ private:
 
     void drawNode(const assets::ModelData& model, std::size_t index) {
         const assets::ModelNode& node = model.nodes[index];
-        const auto socket = std::find_if(m_model.subject.sockets.begin(), m_model.subject.sockets.end(),
-                                         [&node](const geometry::Socket& s) { return s.nodeName == node.name; });
-        std::string label = node.name;
-        if (socket != m_model.subject.sockets.end()) {
-            label += fmt::format("  [{}]", geometry::toString(socket->kind));
-        }
         const bool leaf = m_children[index].empty() && !node.mesh;
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
         if (leaf) {
             flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
         }
         ImGui::PushID(static_cast<int>(index));
-        const bool open = ImGui::TreeNodeEx("node", flags, "%s", label.c_str());
-        if (ImGui::BeginItemTooltip()) {
-            const glm::vec3 position(node.world[3]);
-            ImGui::Text("Origin %s", formatPosition(position).c_str());
-            ImGui::EndTooltip();
-        }
+        const bool open = ImGui::TreeNodeEx("node", flags, "%s", m_nodeLabels[index].c_str());
+        ImGui::SetItemTooltip("Origin %s", m_nodeOrigins[index].c_str());
         if (open && !leaf) {
             if (node.mesh) {
                 for (std::uint32_t mesh = *node.mesh; mesh < *node.mesh + node.meshCount && mesh < model.meshes.size();
                      ++mesh) {
-                    drawPrimitive(model, mesh);
+                    // The material on a line of its own; both wrap in a narrow column.
+                    ImGui::Bullet();
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextUnformatted(m_primitiveLines[mesh].c_str());
+                    ImGui::PopTextWrapPos();
+                    ImGui::SetItemTooltip("Primitive %u: %s", mesh, m_primitiveLines[mesh].c_str());
                 }
             }
             for (const std::size_t child : m_children[index]) {
@@ -273,19 +360,7 @@ private:
         ImGui::PopID();
     }
 
-    void drawPrimitive(const assets::ModelData& model, std::uint32_t mesh) {
-        const geometry::MeshData& data = model.meshes[mesh];
-        const std::optional<std::uint32_t> material =
-            mesh < m_meshMaterials.size() ? m_meshMaterials[mesh] : std::nullopt;
-        const std::string materialName = material && *material < model.materials.size()
-                                             ? model.materials[*material].name
-                                             : std::string("glTF default material");
-        ImGui::BulletText("%s: %zu tri, %zu vert", data.name.c_str(), data.triangleCount(), data.vertices.size());
-        ImGui::SetItemTooltip("Mesh %u, material %s", mesh, materialName.c_str());
-    }
-
     void drawPrefab(const geometry::ProceduralPrefab& prefab) {
-        const auto materials = prefabRoleMaterials(prefab.kind);
         ImGui::SeparatorText("Parts");
         constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp;
         if (ImGui::BeginTable("parts", 3, kFlags)) {
@@ -293,47 +368,59 @@ private:
             ImGui::TableSetupColumn("Triangles");
             ImGui::TableSetupColumn("Material");
             ImGui::TableHeadersRow();
-            for (const geometry::PrefabPart& part : prefab.parts) {
+            for (std::size_t index = 0; index < prefab.parts.size() && index < m_partMaterials.size(); ++index) {
+                const geometry::PrefabPart& part = prefab.parts[index];
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(part.materialRole.c_str());
                 ImGui::TableNextColumn();
                 ImGui::Text("%zu", part.mesh.triangleCount());
                 ImGui::TableNextColumn();
-                const auto found = materials.find(part.materialRole);
-                ImGui::TextUnformatted(found != materials.end() ? found->second.c_str() : "-");
+                ImGui::TextUnformatted(m_partMaterials[index].c_str());
+                ImGui::SetItemTooltip("%s", m_partMaterials[index].c_str());
             }
             ImGui::EndTable();
         }
         ImGui::SeparatorText("Sockets");
         if (ImGui::BeginTable("sockets", 2, kFlags)) {
-            for (const geometry::Socket& socket : prefab.sockets) {
+            for (std::size_t index = 0; index < prefab.sockets.size() && index < m_socketPositions.size(); ++index) {
+                const geometry::Socket& socket = prefab.sockets[index];
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(socket.nodeName.c_str());
                 ImGui::TableNextColumn();
                 const std::string_view kind = geometry::toString(socket.kind);
                 ImGui::TextDisabled("%.*s", static_cast<int>(kind.size()), kind.data());
-                ImGui::SetItemTooltip("%s", formatPosition(glm::vec3(socket.transform[3])).c_str());
+                ImGui::SetItemTooltip("%s", m_socketPositions[index].c_str());
             }
             ImGui::EndTable();
         }
     }
 
     PreviewPanelModel m_model;
-    std::uint64_t m_revision = 0;
+    SubjectRevision m_revision;
     std::vector<std::vector<std::size_t>> m_children;
     std::vector<std::size_t> m_roots;
-    std::vector<std::optional<std::uint32_t>> m_meshMaterials;
+    std::vector<std::string> m_nodeLabels;
+    std::vector<std::string> m_nodeOrigins;
+    /// Per primitive of the model (assets::ModelData::meshes).
+    std::vector<std::string> m_primitiveLines;
+    /// Per part and per socket of the prefab.
+    std::vector<std::string> m_partMaterials;
+    std::vector<std::string> m_socketPositions;
 };
 
 class StatisticsPanel final : public devui::Panel {
 public:
-    explicit StatisticsPanel(PreviewPanelModel model) : m_model(std::move(model)) {}
+    explicit StatisticsPanel(PreviewPanelModel model)
+        : m_model(std::move(model)), m_revision(m_model.subjectRevision) {}
 
     [[nodiscard]] const char* title() const noexcept override { return "Statistics"; }
 
     void draw() override {
+        if (m_revision.changed()) {
+            refresh();
+        }
         const AssetReport& report = m_model.report;
         if (!m_model.subject.target) {
             ImGui::TextDisabled("Nothing loaded");
@@ -343,7 +430,7 @@ public:
         if (report.size == glm::vec3(0.0f)) {
             ImGui::TextDisabled("None (placeholder)");
         } else {
-            ImGui::TextUnformatted(formatDimensions(report.size).c_str());
+            ImGui::TextUnformatted(m_dimensions.c_str());
             ImGui::SetItemTooltip("Width (x) x height (y) x depth (z)");
         }
         ImGui::SeparatorText("Geometry");
@@ -369,14 +456,41 @@ public:
     }
 
 private:
+    /// The size of the new subject, and for a prefab the textures its materials use (the registry holds the subject's
+    /// materials only; the texture cache also keeps the procedural surfaces of earlier subjects).
+    void refresh() {
+        m_dimensions = formatDimensions(m_model.report.size);
+        m_prefabTextures = 0;
+        m_prefabTextureBytes = 0;
+        if (!m_model.subject.prefab) {
+            return;
+        }
+        std::vector<const gl::Texture2D*> seen;
+        const gl::MaterialRegistry& materials = m_model.materials;
+        for (std::size_t index = 0; index < materials.size(); ++index) {
+            const gl::GpuMaterial& material =
+                materials.material(scene::MaterialHandle{static_cast<std::uint32_t>(index)});
+            for (const gl::Texture2D* texture : material.textureSources) {
+                if (texture != nullptr && std::find(seen.begin(), seen.end(), texture) == seen.end()) {
+                    seen.push_back(texture);
+                    m_prefabTextureBytes += texture->estimatedBytes();
+                }
+            }
+        }
+        m_prefabTextures = seen.size();
+    }
+
     void drawTextures(const AssetReport& report) {
         ImGui::SeparatorText("Textures");
-        if (!m_model.subject.model) {
-            // Prefabs draw procedural surfaces and patterns: what the cache holds.
-            ImGui::Text("%zu on the GPU, ", m_model.textures.textureCount());
+        if (m_model.subject.prefab) {
+            ImGui::Text("%zu on the GPU, ", m_prefabTextures);
             ImGui::SameLine(0.0f, 0.0f);
-            devui::widgets::bytes(m_model.textures.estimatedBytes());
+            devui::widgets::bytes(m_prefabTextureBytes);
             ImGui::TextDisabled("Procedural surfaces and patterns of the materials");
+            return;
+        }
+        if (!m_model.subject.model) {
+            ImGui::TextDisabled("None (not loaded)");
             return;
         }
         if (report.textures.empty()) {
@@ -408,16 +522,23 @@ private:
     }
 
     PreviewPanelModel m_model;
+    SubjectRevision m_revision;
+    std::string m_dimensions;
+    std::size_t m_prefabTextures = 0;
+    std::size_t m_prefabTextureBytes = 0;
 };
 
 class ManifestPanel final : public devui::Panel {
 public:
-    explicit ManifestPanel(PreviewPanelModel model) : m_model(std::move(model)) {}
+    explicit ManifestPanel(PreviewPanelModel model) : m_model(std::move(model)), m_revision(m_model.subjectRevision) {}
 
     [[nodiscard]] const char* title() const noexcept override { return kManifestPanelTitle; }
 
     void draw() override {
         const std::optional<ManifestCheck>& check = m_model.subject.manifest;
+        if (m_revision.changed()) {
+            refresh(check);
+        }
         if (!check) {
             ImGui::PushTextWrapPos(0.0f);
             ImGui::TextDisabled("No manifest. A manifest next to a model (<name>.manifest.json or <name>.json) is "
@@ -426,17 +547,22 @@ public:
             return;
         }
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("%s", core::pathToUtf8(check->path).c_str());
+        ImGui::TextDisabled("%s", m_path.c_str());
         ImGui::PopTextWrapPos();
         if (check->error) {
             ImGui::TextColored(kErrorColor, "Cannot be read");
             ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextUnformatted(check->error->toString().c_str());
+            ImGui::TextUnformatted(m_error.c_str());
             ImGui::PopTextWrapPos();
             return;
         }
         drawChecks(*check);
-        drawManifest(*check->manifest);
+        ImGui::SeparatorText("Identity");
+        drawRows("identity", m_identity);
+        ImGui::SeparatorText("Source and license");
+        drawRows("source", m_source);
+        ImGui::SeparatorText("Runtime");
+        drawRows("runtime", m_runtime);
     }
 
 private:
@@ -454,58 +580,64 @@ private:
         }
     }
 
-    void drawManifest(const assets::PrefabManifest& manifest) const {
-        using devui::widgets::textRow;
-        ImGui::SeparatorText("Identity");
-        if (devui::widgets::beginValueTable("identity")) {
-            textRow("Id", manifest.id);
-            textRow("Asset type", manifest.assetType);
-            textRow("Category", manifest.category);
-            textRow("Role", manifest.role);
-            textRow("Tags", join(manifest.tags));
-            textRow("Fallback", manifest.fallbackPrefab.empty() ? "-" : manifest.fallbackPrefab);
-            textRow("Hash", manifest.hash);
-            ImGui::EndTable();
+    /// The manifest's fields as rows, for the new subject.
+    void refresh(const std::optional<ManifestCheck>& check) {
+        m_path.clear();
+        m_error.clear();
+        m_identity.clear();
+        m_source.clear();
+        m_runtime.clear();
+        if (!check) {
+            return;
         }
-        ImGui::SeparatorText("Source and license");
+        m_path = core::pathToGenericUtf8(check->path);
+        if (check->error) {
+            m_error = check->error->toString();
+        }
+        if (!check->manifest) {
+            return;
+        }
+        const assets::PrefabManifest& manifest = *check->manifest;
+        m_identity = {{"Id", manifest.id},
+                      {"Asset type", manifest.assetType},
+                      {"Category", manifest.category},
+                      {"Role", manifest.role},
+                      {"Tags", join(manifest.tags)},
+                      {"Fallback", manifest.fallbackPrefab.empty() ? "-" : manifest.fallbackPrefab},
+                      {"Hash", manifest.hash}};
         const assets::SourceInfo& source = manifest.source;
-        if (devui::widgets::beginValueTable("source")) {
-            textRow("Kind", source.kind);
-            textRow("Author", source.author);
-            textRow("URL", source.url.empty() ? "-" : source.url);
-            textRow("License", source.license);
-            textRow("Snapshot", source.licenseSnapshot.empty() ? "-" : source.licenseSnapshot);
-            textRow("Acquired", source.acquiredAt);
-            textRow("Attribution", source.attributionRequired ? "required" : "not required");
-            textRow("Redistribution", source.redistributionApproved ? "approved" : "not approved");
-            ImGui::EndTable();
-        }
-        ImGui::SeparatorText("Runtime");
+        m_source = {{"Kind", source.kind},
+                    {"Author", source.author},
+                    {"URL", source.url.empty() ? "-" : source.url},
+                    {"License", source.license},
+                    {"Snapshot", source.licenseSnapshot.empty() ? "-" : source.licenseSnapshot},
+                    {"Acquired", source.acquiredAt},
+                    {"Attribution", source.attributionRequired ? "required" : "not required"},
+                    {"Redistribution", source.redistributionApproved ? "approved" : "not approved"}};
         const assets::RuntimeInfo& runtime = manifest.runtime;
-        if (devui::widgets::beginValueTable("runtime")) {
-            if (runtime.model) {
-                textRow("Model", *runtime.model);
-            }
-            if (runtime.generator) {
-                textRow("Generator", *runtime.generator);
-                textRow("Parameters", runtime.params.empty() ? std::string("defaults") : runtime.params.dump());
-            }
-            if (runtime.scaleMeters) {
-                textRow("Size (nominal)", formatDimensions(*runtime.scaleMeters));
-            }
-            if (m_model.report.size != glm::vec3(0.0f)) {
-                textRow("Size (measured)", formatDimensions(m_model.report.size));
-            }
-            for (const auto& [role, socket] : runtime.sockets) {
-                textRow(("Socket " + role).c_str(), socket);
-            }
-            if (runtime.videoSurface) {
-                textRow("Video surface", runtime.videoSurface->aspectRatio + " on " + runtime.videoSurface->meshNode);
-            }
-            textRow("Collision", runtime.collision.empty() ? "-" : runtime.collision);
-            textRow("LODs", runtime.lods.empty() ? "-" : join(runtime.lods));
-            ImGui::EndTable();
+        if (runtime.model) {
+            m_runtime.emplace_back("Model", *runtime.model);
         }
+        if (runtime.generator) {
+            m_runtime.emplace_back("Generator", *runtime.generator);
+            m_runtime.emplace_back("Parameters",
+                                   runtime.params.empty() ? std::string("defaults") : runtime.params.dump());
+        }
+        if (runtime.scaleMeters) {
+            m_runtime.emplace_back("Size (nominal)", formatDimensions(*runtime.scaleMeters));
+        }
+        if (m_model.report.size != glm::vec3(0.0f)) {
+            m_runtime.emplace_back("Size (measured)", formatDimensions(m_model.report.size));
+        }
+        for (const auto& [role, socket] : runtime.sockets) {
+            m_runtime.emplace_back("Socket " + role, socket);
+        }
+        if (runtime.videoSurface) {
+            m_runtime.emplace_back("Video surface",
+                                   runtime.videoSurface->aspectRatio + " on " + runtime.videoSurface->meshNode);
+        }
+        m_runtime.emplace_back("Collision", runtime.collision.empty() ? "-" : runtime.collision);
+        m_runtime.emplace_back("LODs", runtime.lods.empty() ? "-" : join(runtime.lods));
     }
 
     static std::string join(const std::vector<std::string>& values) {
@@ -518,44 +650,84 @@ private:
     }
 
     PreviewPanelModel m_model;
+    SubjectRevision m_revision;
+    std::string m_path;
+    std::string m_error;
+    Rows m_identity;
+    Rows m_source;
+    Rows m_runtime;
 };
 
 class ScreenPanel final : public devui::Panel {
 public:
-    explicit ScreenPanel(PreviewPanelModel model) : m_model(std::move(model)), m_previews(m_model.textures) {}
+    explicit ScreenPanel(PreviewPanelModel model)
+        : m_model(std::move(model)), m_revision(m_model.subjectRevision), m_previews(m_model.textures) {}
 
     [[nodiscard]] const char* title() const noexcept override { return "Screen"; }
 
+    void update() override { m_previews.sync(); }
+
     void draw() override {
-        if (m_model.screens.empty()) {
+        // The pattern textures belong to the cache, which releases them with the subject's content.
+        if (m_revision.changed() || m_cacheRevision != m_model.textures.revision()) {
+            refresh();
+        }
+        if (m_screens.empty()) {
             ImGui::TextDisabled("No ScreenSurface with a mesh");
             return;
         }
-        for (const ScreenSurface& screen : m_model.screens) {
-            ImGui::PushID(screen.socketId.c_str());
-            drawScreen(screen);
+        for (const Shown& screen : m_screens) {
+            ImGui::PushID(screen.id.c_str());
+            ImGui::SeparatorText(screen.name.c_str());
+            ImGui::TextUnformatted(screen.size.c_str());
+            ImGui::SetItemTooltip("The screen rectangle as placed in the subject, and its aspect ratio (width / height "
+                                  "%.3f)",
+                                  screen.aspect);
+            if (!screen.videoSurface.empty()) {
+                ImGui::TextColored(screen.videoSurfaceMatches ? kOkColor : kWarningColor, "%s",
+                                   screen.videoSurface.c_str());
+            }
+            if (screen.pattern != nullptr) {
+                m_previews.thumbnail(*screen.pattern, kPatternEms * ImGui::GetFontSize(), "Test pattern");
+            }
+            ImGui::TextDisabled("%s", screen.caption.c_str());
             ImGui::PopID();
         }
     }
 
 private:
-    void drawScreen(const ScreenSurface& screen) {
-        ImGui::SeparatorText(screen.nodeName.c_str());
-        const glm::vec3 size = screen.bounds.size();
-        const float aspect = size.y > 0.0f ? size.x / size.y : 0.0f;
-        ImGui::Text("%.1f x %.1f cm, %s", 100.0f * size.x, 100.0f * size.y, aspectRatioName(aspect).c_str());
-        ImGui::SetItemTooltip("The screen rectangle and its aspect ratio (width / height %.3f)", aspect);
-        drawVideoSurface(screen, aspect);
-        const gl::Texture2D& pattern =
-            m_model.textures.pattern(kScreenPattern, "", 0, screen.patternSize, gl::ColorSpace::Srgb);
-        m_previews.thumbnail(pattern, kPatternEms * ImGui::GetFontSize(), "Test pattern");
-        ImGui::TextDisabled("%.*s %d x %d on %.*s", static_cast<int>(kScreenPattern.size()), kScreenPattern.data(),
-                            screen.patternSize.x, screen.patternSize.y, static_cast<int>(kScreenMaterialName.size()),
-                            kScreenMaterialName.data());
+    /// A screen as the panel shows it, formatted once per subject.
+    struct Shown {
+        std::string id;
+        std::string name;
+        std::string size;
+        float aspect = 0.0f;
+        std::string videoSurface;
+        bool videoSurfaceMatches = false;
+        const gl::Texture2D* pattern = nullptr;
+        std::string caption;
+    };
+
+    void refresh() {
+        m_cacheRevision = m_model.textures.revision();
+        m_screens.clear();
+        for (const ScreenSurface& screen : m_model.screens) {
+            Shown shown;
+            shown.id = screen.socketId;
+            shown.name = screen.nodeName;
+            shown.aspect = screen.size.y > 0.0f ? screen.size.x / screen.size.y : 0.0f;
+            shown.size = fmt::format("{:.1f} x {:.1f} cm, {}", 100.0f * screen.size.x, 100.0f * screen.size.y,
+                                     aspectRatioName(shown.aspect));
+            describeVideoSurface(screen, shown);
+            shown.pattern = &m_model.textures.pattern(kScreenPattern, "", 0, screen.patternSize, gl::ColorSpace::Srgb);
+            shown.caption = fmt::format("{} {} x {} on {}", kScreenPattern, screen.patternSize.x, screen.patternSize.y,
+                                        kScreenMaterialName);
+            m_screens.push_back(std::move(shown));
+        }
     }
 
     /// The manifest's video surface on this screen, and whether its aspect ratio matches the mesh.
-    void drawVideoSurface(const ScreenSurface& screen, float aspect) const {
+    void describeVideoSurface(const ScreenSurface& screen, Shown& shown) const {
         const std::optional<ManifestCheck>& check = m_model.subject.manifest;
         if (!check || !check->manifest || !check->manifest->runtime.videoSurface) {
             return;
@@ -565,12 +737,16 @@ private:
             return;
         }
         const std::optional<float> declared = parseAspectRatio(surface.aspectRatio);
-        const bool matches = declared && aspect > 0.0f && std::abs(*declared - aspect) <= 0.015f * *declared;
-        ImGui::TextColored(matches ? kOkColor : kWarningColor, "Manifest video surface %s%s",
-                           surface.aspectRatio.c_str(), matches ? "" : ": the mesh's aspect differs");
+        shown.videoSurfaceMatches =
+            declared && shown.aspect > 0.0f && std::abs(*declared - shown.aspect) <= 0.015f * *declared;
+        shown.videoSurface = fmt::format("Manifest video surface {}{}", surface.aspectRatio,
+                                         shown.videoSurfaceMatches ? "" : ": the mesh's aspect differs");
     }
 
     PreviewPanelModel m_model;
+    SubjectRevision m_revision;
+    std::uint64_t m_cacheRevision = 0;
+    std::vector<Shown> m_screens;
     devui::TexturePreviews m_previews;
 };
 

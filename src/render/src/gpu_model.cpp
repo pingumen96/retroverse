@@ -23,6 +23,12 @@ assets::MaterialDesc defaultGltfMaterial() {
     return material;
 }
 
+/// What follows the last path separator of a registry key: "crt.glb#material0" of "models/crt.glb#material0".
+std::string_view fileNameOf(std::string_view key) noexcept {
+    const std::size_t separator = key.find_last_of("/\\");
+    return separator == std::string_view::npos ? key : key.substr(separator + 1);
+}
+
 } // namespace
 
 std::string GpuModel::meshKey(std::string_view key, std::uint32_t meshIndex) {
@@ -41,8 +47,9 @@ GpuModel GpuModel::create(std::string_view key, const assets::ModelData& model, 
     std::vector<bool> meshTried(model.meshes.size(), false);
     std::vector<std::optional<scene::MaterialHandle>> materialHandles(model.materials.size());
     std::optional<scene::MaterialHandle> defaultMaterial;
+    // Named after the glTF material first, so that the materials of one model read apart in lists that cut long names.
     const auto registerMaterial = [&](const std::string& materialKey, const assets::MaterialDesc& desc) {
-        return materials.add(materialKey, fmt::format("{} ({})", materialKey, desc.name), desc,
+        return materials.add(materialKey, fmt::format("{} ({})", desc.name, fileNameOf(materialKey)), desc,
                              resolveMaterialTextures(desc, textures, key, model.images));
     };
 

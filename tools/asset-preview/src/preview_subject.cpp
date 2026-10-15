@@ -33,13 +33,14 @@ std::string fileName(const std::filesystem::path& path) {
     return core::pathToUtf8(path.filename());
 }
 
-/// Loads the glTF model `file` into `subject`: the model, its sockets and bounds, its warnings as messages.
+/// Loads the glTF model `file` into `subject`: the model, its sockets and bounds, its warnings as messages, its
+/// external files (a .gltf's buffers and images) among the watched files.
 void loadModelInto(PreviewSubject& subject, const std::filesystem::path& file) {
     subject.modelFile = file;
     auto loaded = assets::loadGltf(file);
     if (!loaded) {
         addMessage(subject, Severity::Error,
-                   fmt::format("{} cannot be loaded: {}", core::pathToUtf8(file), loaded.error().toString()));
+                   fmt::format("{} cannot be loaded: {}", core::pathToGenericUtf8(file), loaded.error().toString()));
         subject.placeholder = true;
         return;
     }
@@ -47,6 +48,7 @@ void loadModelInto(PreviewSubject& subject, const std::filesystem::path& file) {
     for (const std::string& warning : model->warnings) {
         addMessage(subject, Severity::Warning, warning);
     }
+    subject.watchedFiles.insert(subject.watchedFiles.end(), model->externalFiles.begin(), model->externalFiles.end());
     subject.sockets = model->sockets;
     if (model->drawItems.empty()) {
         addMessage(subject, Severity::Error,
@@ -152,7 +154,7 @@ void loadManifestTarget(PreviewSubject& subject, const std::filesystem::path& fi
         } else {
             addMessage(subject, Severity::Error,
                        fmt::format("runtime.model \"{}\" is neither under the asset root ({}) nor next to the manifest",
-                                   *manifest.runtime.model, core::pathToUtf8(assetRoot)));
+                                   *manifest.runtime.model, core::pathToGenericUtf8(assetRoot)));
             subject.placeholder = true;
         }
     } else if (manifest.runtime.generator) {
@@ -176,6 +178,10 @@ std::size_t PreviewSubject::count(PreviewMessage::Severity severity,
     return static_cast<std::size_t>(std::count_if(messages.begin(), messages.end(), [&](const auto& message) {
         return message.severity == severity && (!topic || message.topic == *topic);
     }));
+}
+
+bool bringsManifestForward(const PreviewSubject& previous, const PreviewSubject& loaded, bool reload) noexcept {
+    return loaded.manifest.has_value() && (!reload || !previous.manifest.has_value());
 }
 
 std::array<std::filesystem::path, 2> sidecarManifestPaths(const std::filesystem::path& model) {

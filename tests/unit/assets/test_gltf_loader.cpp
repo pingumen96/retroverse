@@ -16,6 +16,7 @@
 #include "support/temp_dir.hpp"
 #include <rv/assets/glb_writer.hpp>
 #include <rv/assets/gltf_loader.hpp>
+#include <rv/assets/image_io.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
 
@@ -797,6 +798,49 @@ TEST_CASE("assets/gltf: .gltf files with base64 and external buffers", "[assets]
 
     const auto missingBin = rv::assets::loadGltf(dir.file("missing/crt.gltf"));
     CHECK(missingBin.error().code == ErrorCode::NotFound);
+
+    // The external buffer is one of the model's files; an embedded one is not a file of its own.
+    CHECK(fromEmbedded->externalFiles.empty());
+    REQUIRE(fromExternal->externalFiles.size() == 1);
+    CHECK(fromExternal->externalFiles[0] == dir.file("modèle/crt_è.bin"));
+}
+
+TEST_CASE("assets/gltf: the external files of a model are listed, also the missing ones", "[assets][gltf]") {
+    rv::assets::ImageData texel;
+    texel.width = 1;
+    texel.height = 1;
+    texel.channels = 4;
+    texel.pixels = {10, 20, 30, 255};
+    GlbDescription description;
+    GlbMaterial material;
+    material.name = "Cover";
+    material.baseColorImage = texel;
+    description.materials = {material};
+    GlbMesh quad = rv::assets::makeQuadMesh("quad");
+    quad.material = 0;
+    description.meshes = {quad};
+    description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
+    description.patchJson = [](nlohmann::json& json) {
+        json["images"][0] = {{"uri", "textures/cover.png"}};
+    };
+    const rv::assets::GltfFiles files = externalGltf(description, "quad.bin");
+    rv::test::TempDir dir;
+    REQUIRE(rv::core::writeTextFileAtomic(dir.file("quad.gltf"), files.json).has_value());
+    REQUIRE(rv::core::writeFileAtomic(dir.file("quad.bin"), files.bin).has_value());
+
+    // The image is missing: the texture is dropped, the file is still listed (it may be added later).
+    const auto withoutImage = rv::assets::loadGltf(dir.file("quad.gltf"));
+    REQUIRE(withoutImage.has_value());
+    CHECK(withoutImage->images.empty());
+    REQUIRE(withoutImage->externalFiles.size() == 2);
+    CHECK(withoutImage->externalFiles[0] == dir.file("quad.bin"));
+    CHECK(withoutImage->externalFiles[1] == dir.file("textures/cover.png"));
+
+    REQUIRE(rv::assets::writePng(dir.file("textures/cover.png"), texel).has_value());
+    const auto withImage = rv::assets::loadGltf(dir.file("quad.gltf"));
+    REQUIRE(withImage.has_value());
+    CHECK(withImage->images.size() == 1);
+    CHECK(withImage->externalFiles == withoutImage->externalFiles);
 }
 
 TEST_CASE("assets/gltf: unreadable external image paths drop the texture, not the model", "[assets][gltf]") {

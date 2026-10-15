@@ -72,6 +72,7 @@ scene::MaterialHandle MaterialRegistry::add(std::string_view key, std::string la
     }
     GpuMaterial material;
     material.name = std::move(label);
+    material.key = std::string(key);
     material.source = desc;
     material.shader = shaderKindOf(desc);
     material.alphaMode = desc.alphaMode;

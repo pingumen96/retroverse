@@ -44,12 +44,12 @@ public:
     /// Marker lines: the axes of `transform` from its origin, `length` meters long along each normalized basis vector:
     /// X red, Y green, Z blue (debug_colors). A degenerate basis vector adds no line.
     void addAxes(const glm::mat4& transform, float length);
-    /// Reference grid on the y = 0 plane: lines every `spacing` meters out to `halfExtent` along x and z. The lines
-    /// through the origin are the X axis (red) and the Z axis (blue), and a green line a tenth of `halfExtent` long
-    /// marks +Y at the origin. The +Y line comes first, so that the floor axes show where it covers them on screen
-    /// (from any eye on the x = 0 plane it overlaps the Z axis). A non-positive spacing or extent adds nothing; the
-    /// spacing is raised so that at most 1000 lines run each way.
-    void addGrid(float halfExtent, float spacing);
+    /// Reference grid on the y = `height` plane: lines every `spacing` meters out to `halfExtent` along x and z. The
+    /// lines through x = z = 0 are the X axis (red) and the Z axis (blue), and a green line a tenth of `halfExtent`
+    /// long marks +Y there. The +Y line comes first, so that the floor axes show where it covers them on screen (from
+    /// any eye on the x = 0 plane it overlaps the Z axis). A non-positive spacing or extent adds nothing; the spacing
+    /// is raised so that at most 1000 lines run each way.
+    void addGrid(float halfExtent, float spacing, float height = 0.0f);
     /// Appends every line of `other`, each to the lines of its kind.
     void append(const DebugLines& other);
     void clear() noexcept;
@@ -72,9 +72,9 @@ private:
 };
 
 /// Axis length used for a socket of an object with local bounds `objectBounds`, so that axes stay in proportion from a
-/// 1 cm model to a room: half the largest extent of the socket's bounds (a shelf slot, a screen), or for a socket
-/// without bounds (an anchor) a quarter of the object's largest extent, clamped to [1 mm, 0.5 m]; 0.1 m when neither
-/// has bounds.
+/// 1 cm model to a room: half the largest side of the socket's bounds as placed in the object (geometry::socketSize:
+/// a shelf slot, a screen, also on a scaled glTF node), or for a socket without bounds (an anchor) a quarter of the
+/// object's largest extent, clamped to [1 mm, 0.5 m]; 0.1 m when neither has bounds.
 [[nodiscard]] float socketAxisLength(const geometry::Socket& socket, const core::Aabb& objectBounds) noexcept;
 
 /// Adds the bounds of every instance of every object of `geometry` as plain lines: SceneObjectGeometry::bounds under

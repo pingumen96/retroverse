@@ -102,6 +102,10 @@ TEST_CASE("core/text: UTF-8 paths and string helpers", "[core][text]") {
     const auto path = rv::core::pathFromUtf8(utf8);
     CHECK(rv::core::pathToUtf8(path) == utf8);
     CHECK(path.filename() == "cover.png");
+    // Shown to people with one kind of separator, however the path was joined.
+    const auto joined = rv::core::pathFromUtf8("build/models") / rv::core::pathFromUtf8("\xC3\xA9t\xC3\xA9.gltf");
+    CHECK(rv::core::pathToGenericUtf8(joined) == "build/models/\xC3\xA9t\xC3\xA9.gltf");
+    CHECK(rv::core::pathToGenericUtf8(rv::core::pathFromUtf8("a\\b/c")) == "a/b/c");
 
     rv::test::TempDir dir;
     const auto unicodeFile = dir.path() / rv::core::pathFromUtf8("\xC3\xA9t\xC3\xA9.txt");

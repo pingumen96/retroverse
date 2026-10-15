@@ -45,7 +45,11 @@ using MaterialTextures = std::array<const Texture2D*, kMaterialTextureSlotCount>
 
 /// A material ready to draw.
 struct GpuMaterial {
+    /// The label it was added with, for logs and the developer overlay.
     std::string name;
+    /// The key it was registered under (MaterialRegistry::add): the full identity behind the name, such as the path
+    /// of the model a glTF material comes from.
+    std::string key;
     /// The description the material was registered with. Live edits (MaterialRegistry::setFactors) change `uniforms`
     /// only, so this is also what reverting them goes back to.
     assets::MaterialDesc source;

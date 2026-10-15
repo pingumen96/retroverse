@@ -29,6 +29,8 @@ TEST_CASE("preview/options: targets are models, manifests or procedural prefabs"
     CHECK(model->kind == PreviewTarget::Kind::Model);
     CHECK(model->label() == "build/preview/crt_fixture.glb");
     CHECK(rv::preview::parsePreviewTarget("C:\\Models\\Lamp.GLTF")->kind == PreviewTarget::Kind::Model);
+    // Shown with one kind of separator, as a dropped file's native path would not be.
+    CHECK(rv::preview::parsePreviewTarget("C:\\Models\\Lamp.GLTF")->label() == "C:/Models/Lamp.GLTF");
     CHECK(rv::preview::parsePreviewTarget("assets/manifests/prefabs/x.json")->kind == PreviewTarget::Kind::Manifest);
 
     const auto prefab = rv::preview::parsePreviewTarget("prefab:crt");
