@@ -40,6 +40,12 @@ Expected<ViewTargets> ViewTargets::create(glm::ivec2 size, std::string_view debu
         }
         targets.m_bloom[level] = std::move(*bloom);
     }
+    auto tonemapped = Framebuffer::create(FramebufferDesc{size, ColorFormat::Srgb8Alpha8, false},
+                                          targets.m_debugName + ".tonemapped");
+    if (!tonemapped) {
+        return propagate(tonemapped.error());
+    }
+    targets.m_tonemapped = std::move(*tonemapped);
     auto output =
         Framebuffer::create(FramebufferDesc{size, ColorFormat::Srgb8Alpha8, true}, targets.m_debugName + ".output");
     if (!output) {

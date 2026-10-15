@@ -149,16 +149,18 @@ TEST_CASE("integration/batching: instancing_stress's sun shadows the block throu
 
 TEST_CASE("integration/batching: the test room draws fewer batches than parts", "[integration][batching]") {
     const PlannedView view = planReferenceView("m0_testroom");
-    CHECK(view.content.items.size() == 71);
-    CHECK(view.batches.culledItems == 0);
-    // The 24 cartridge shells share one batch; each label has a cover material of its own, so it is a batch of one
-    // (texture arrays for covers are in the backlog); so are the two poster frames.
-    CHECK(view.batches.batches.size() == 47);
+    CHECK(view.content.items.size() == 231);
+    // The scene camera leaves out what lies behind it or beside the view: the south wall, the side posters.
+    CHECK(view.batches.culledItems == 6);
+    // The 96 cartridge shells share one batch; each label has a cover material of its own, so it is a batch of one
+    // (texture arrays for covers are in the backlog); so are the poster pictures and the sign's lettering.
+    CHECK(view.batches.batches.size() == 129);
+    CHECK(view.batches.batches.size() < view.content.items.size() - view.batches.culledItems);
     std::size_t largest = 0;
     for (const rv::scene::Batch& batch : view.batches.batches) {
         largest = std::max<std::size_t>(largest, batch.instanceCount);
     }
-    CHECK(largest == 24);
+    CHECK(largest == 96);
 }
 
 TEST_CASE("integration/batching: instancing_growth outgrows the initial instance regions when turned around",
@@ -205,13 +207,18 @@ TEST_CASE("integration/batching: the test room's key light shadows the furniture
         return std::find(plan.instanceTransforms.begin(), plan.instanceTransforms.end(), object.transform) !=
                plan.instanceTransforms.end();
     };
+    // The hero corner and the main shelf with its cartridges are in the key's map; the furniture farther along the
+    // north wall may fall outside it (lit by lights of its own).
+    const auto inHeroCorner = [](const rv::scene::SceneObject& object) {
+        return object.id == "shelf_main" || object.id == "tv_cabinet" || object.id == "crt_tv" ||
+               object.id == "console" || (object.kind == "cartridge" && !object.id.starts_with("cartridge_left_"));
+    };
     for (const rv::scene::SceneObject& object : reference.scene.objects) {
         INFO("object " << object.id);
         if (object.kind == "rug" || object.kind == "poster_frame") {
-            // castsShadows false: a flat rug would only shadow the floor under it, a poster is thin geometry
+            // castsShadows false: a flat rug would only shadow the floor under it, the frames are thin geometry
             CHECK_FALSE(casts(object));
-        } else if (object.kind == "shelf" || object.kind == "cartridge" || object.kind == "tv_cabinet" ||
-                   object.kind == "crt" || object.kind == "console_cartridge") {
+        } else if (inHeroCorner(object)) {
             CHECK(casts(object));
         }
     }
@@ -220,12 +227,12 @@ TEST_CASE("integration/batching: the test room's key light shadows the furniture
     const auto nonCasting =
         static_cast<std::size_t>(std::count_if(reference.items.begin(), reference.items.end(),
                                                [](const rv::scene::RenderItem& item) { return !item.castsShadow; }));
-    CHECK(nonCasting >= 5); // the rug and the two parts of each poster
+    CHECK(nonCasting >= 11); // the rug and the two parts of each of the five frames
     CHECK(plan.instanceTransforms.size() + plan.culledItems + nonCasting == reference.items.size());
-    // Batched like the view: the 24 cartridge shells share one draw.
+    // Batched like the view: the cartridge shells in the map (79 of the 96) share one draw.
     std::size_t largest = 0;
     for (const rv::scene::Batch& batch : plan.batches) {
         largest = std::max<std::size_t>(largest, batch.instanceCount);
     }
-    CHECK(largest == 24);
+    CHECK(largest == 79);
 }

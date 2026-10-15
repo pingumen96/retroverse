@@ -78,8 +78,11 @@ struct DoorwayParams {
 
 /// "room_shell", pivot floor. The interior rectangle is exactly `size` (x, z) centered on the origin; walls are
 /// built outside it, so bounds = [-x/2 - t, 0, -z/2 - t] .. [x/2 + t, wallHeight, z/2 + t].
-/// Roles: "floor", "wall", "ceiling", "trim" (baseboards, door lining and casing). Interior faces point into the
-/// room; floor, wall and ceiling uvs are in meters / metersPerTile (seamless across wall segments).
+/// Roles: "floor", "wall", "ceiling", "trim" (baseboards, door lining and casing), "wainscot" (when
+/// wainscotHeight > 0: vertical boards about 60 cm wide with 4 mm grooves between them above the baseboard, under a
+/// chair rail, along every wall and stopping at the door casing). Interior faces point into the room; floor, wall and
+/// ceiling uvs are in meters / metersPerTile (seamless across wall segments); trim and wainscot uvs are in meters along
+/// each piece (BoxUv::GrainMeters, 1 m per uv unit: the grain of wood follows the piece, up the boards).
 /// Sockets: "Doorway" (Anchor) when a doorway exists: at the center of the opening at floor level (middle of the
 /// wall thickness), +Z pointing out of the room, +Y up; bounds = opening volume
 /// [-width/2, 0, -t/2] .. [width/2, height, t/2].
@@ -97,12 +100,17 @@ struct RoomShellParams {
     float metersPerTile = 1.0f;  ///< [0.01, 100]
     bool ceiling = true;
     float baseboardHeight = 0.1f; ///< [0, 0.5]; 0 removes the baseboards
+    /// Height of the wainscot's rail top, [0, 3]; 0 builds none. Otherwise at least 5 cm of boards above the
+    /// baseboard under the 3.5 cm rail, and at most wallHeight - 0.2. The boards stand 1 cm proud of the wall, the rail
+    /// 2.2 cm: furniture against a wall leaves them room.
+    float wainscotHeight = 0.0f;
     /// nullopt (JSON null) builds a closed room.
     std::optional<DoorwayParams> doorway = DoorwayParams{};
 };
 
 /// "shelf", pivot floor, open side +Z; bounds = width x height x depth.
-/// Roles: "wood_primary" (sides, boards, top, plinth), "wood_secondary" (back panel, present when `back`).
+/// Roles: "wood_primary" (sides, boards, top, plinth), "wood_secondary" (back panel, present when `back`); every
+/// part has uvs in meters along its boards (BoxUv::GrainMeters, 1 m per uv unit), so wood grain keeps one scale.
 /// Sockets: "Slot_<level>_<index>" (ShelfSlot): level 0 is the lowest board, index 0 the leftmost (-X) slot.
 /// innerWidth = width - 2 * boardThickness; slotsPerLevel = floor((innerWidth - 2 * slotMargin + slotGap) /
 /// (slotSize.x + slotGap)) (1e-4 tolerance for exact fits); slots are left-aligned from x = -innerWidth / 2 +
@@ -168,8 +176,9 @@ struct CrtParams {
 /// legs: `drawers` stacked drawers on the left (a door when 0), an open compartment in the middle, a door on
 /// the right; the top overhangs the carcass.
 /// Roles: "wood_primary" (carcass and top), "wood_secondary" (drawer and door fronts), "metal_trim" (handles,
-/// legs). Sockets: "Top" (Anchor) at the center of the top surface; "ConsoleShelf" (Anchor) on the floor of the
-/// open compartment, centered, bounds = free compartment volume [-w/2, 0, -d/2] .. [w/2, h, d/2].
+/// legs); the wood has uvs in meters along its boards (BoxUv::GrainMeters, 1 m per uv unit).
+/// Sockets: "Top" (Anchor) at the center of the top surface; "ConsoleShelf" (Anchor) on the floor of the open
+/// compartment, centered, bounds = free compartment volume [-w/2, 0, -d/2] .. [w/2, h, d/2].
 struct TvCabinetParams {
     float width = 1.2f;   ///< [0.4, 4]
     float height = 0.55f; ///< [0.2, 2]
@@ -194,7 +203,8 @@ struct ConsoleCartridgeParams {
 
 /// "poster_frame", pivot at the back center (z = 0 is the wall surface), front +Z; bounds =
 /// [-width/2, -height/2, 0] .. [width/2, height/2, depth].
-/// Roles: "frame" (bars and backing board), "picture" (quad inside the frame, uv (0, 0) top-left). Sockets:
+/// Roles: "frame" (bars and backing board, uvs in meters along each bar: BoxUv::GrainMeters, 1 m per uv unit),
+/// "picture" (quad inside the frame, uv (0, 0) top-left). Sockets:
 /// "Picture" (Other) at the picture center facing +Z, bounds = picture rectangle.
 struct PosterFrameParams {
     float width = 0.5f;       ///< [0.05, 5]
@@ -222,6 +232,20 @@ struct FloorLampParams {
     float shadeHeight = 0.3f;  ///< [0.05, 1], at most height / 2
 };
 
+/// "armchair", pivot floor, front +Z; bounds = width x height x depth. An upholstered club armchair (original design):
+/// a back over the full width, two armrests, a base under the seat cushion, a back cushion leaning back against the
+/// back, on four short tapered legs.
+/// Roles: "fabric" (back, armrests, base, cushions), "wood" (legs, present when legHeight > 0.1 mm).
+/// Sockets: "Seat" (Anchor) at the middle of the seat cushion's top, +Y up.
+struct ArmchairParams {
+    float width = 0.82f;      ///< [0.5, 2.5]
+    float depth = 0.82f;      ///< [0.5, 1.5]
+    float height = 0.84f;     ///< [0.5, 1.4]: the top of the back; at least 5 cm above armHeight
+    float seatHeight = 0.44f; ///< [0.25, 0.7]: the top of the 12 cm seat cushion, at least 5 cm above the legs
+    float armHeight = 0.62f;  ///< [0.3, 1]: the top of the armrests; at least 5 cm above seatHeight
+    float legHeight = 0.1f;   ///< [0, 0.3]; up to 0.1 mm no legs are built
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -235,6 +259,7 @@ struct FloorLampParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildPosterFrame(const PosterFrameParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildRug(const RugParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildFloorLamp(const FloorLampParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildArmchair(const ArmchairParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -254,7 +279,7 @@ struct FloorLampParams {
 [[nodiscard]] Expected<MeshData> buildPrimitive(std::string_view kind, const nlohmann::json& params);
 
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
-/// console_cartridge, poster_frame, rug, floor_lamp.
+/// console_cartridge, poster_frame, rug, floor_lamp, armchair.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

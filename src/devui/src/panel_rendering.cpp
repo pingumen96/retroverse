@@ -43,6 +43,9 @@ public:
         ImGui::Checkbox("Wireframe", &m_model.wireframe);
         ImGui::SetItemTooltip("Draws the scene's triangles as edges (without ambient occlusion)");
         ImGui::SameLine();
+        ImGui::Checkbox("FXAA", &m_model.antialiasing);
+        ImGui::SetItemTooltip("Anti-aliasing: smooths the stair-steps of edges after the tonemap");
+        ImGui::SameLine();
         drawVsync();
 
         drawShadows();

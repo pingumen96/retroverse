@@ -20,13 +20,15 @@ class ViewTargets;
 
 /// Programs of the post-processing, each post/fullscreen.vert with a fragment stage. A null or empty program (a shader
 /// that never built) skips its pass: bloom needs the three bloom programs (the view is composited without bloom
-/// otherwise); without the post program the HDR scene is copied to the output as it is (clamped to [0, 1], neither
-/// exposed nor tonemapped), so that the scene stays visible.
+/// otherwise); without the anti-aliasing program the post pass writes straight into the output; without the post
+/// program the HDR scene is copied to the output as it is (clamped to [0, 1], neither exposed nor tonemapped), so that
+/// the scene stays visible.
 struct PostShaders {
     const ShaderProgram* bloomDownsampleFirst = nullptr; ///< post/bloom_downsample.frag with RV_BLOOM_KARIS
     const ShaderProgram* bloomDownsample = nullptr;      ///< post/bloom_downsample.frag
     const ShaderProgram* bloomUpsample = nullptr;        ///< post/bloom_upsample.frag
     const ShaderProgram* post = nullptr;                 ///< post/post.frag
+    const ShaderProgram* antialiasing = nullptr;         ///< post/fxaa.frag
 };
 
 /// The post-processing of a view (style §4.3, spec §14.2): from the HDR scene of a ViewTargets to its sRGB output, in
@@ -37,12 +39,15 @@ struct PostShaders {
 ///     level by level with the 13-tap filter, the first level with the Karis average against fireflies; then, from the
 ///     smallest level up, each level is mixed with the tent upsampling of the next smaller one by the fixed-function
 ///     blend: level = mix(level, upsampled, bloomScatter(bloomRadius)), the blend constant.
-///  2. The post pass (post/post.frag) into ViewTargets::output() with GL_FRAMEBUFFER_SRGB enabled: the share
-///     bloomStrength of the light that blooms replaced by its bloom (energy is moved, never added), the vignette,
-///     exposure and the ACES fitted curve, then dithering.
+///  2. The post pass (post/post.frag) with GL_FRAMEBUFFER_SRGB enabled: the share bloomStrength of the light that
+///     blooms replaced by its bloom (energy is moved, never added), the vignette, exposure and the ACES fitted curve,
+///     then dithering; the perceptual luma of each pixel goes into the alpha. It draws into ViewTargets::output(), or
+///     into ViewTargets::tonemapped() when the settings ask for anti-aliasing.
+///  3. Anti-aliasing, when the settings ask for it: the FXAA pass (post/fxaa.frag) from ViewTargets::tonemapped() into
+///     the output, which smooths the stair-steps of edges and copies every other pixel exactly.
 /// The parameters reach the shaders through the PostUniforms block (UniformBinding::Post, written per call); the
 /// sources are bound to the PostTextureUnit units with a bilinear sampler clamped to the edges. A GpuTimer measures
-/// both steps. When the block cannot be written, the view is shown without post-processing like without the post
+/// all the steps. When the block cannot be written, the view is shown without post-processing like without the post
 /// program (logged once, and again only when the cause changes). Nothing is allocated per call. Main thread only;
 /// destroy it while the GL context is current.
 class PostProcessor {

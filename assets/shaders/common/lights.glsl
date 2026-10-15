@@ -2,7 +2,7 @@
 // member for member (std140; src/render/include/rv/render/uniform_blocks.hpp), filled by rv::gl::packLights. Light
 // contract: rv::scene::Light (src/scene/include/rv/scene/light.hpp). Needs common/common.glsl.
 
-#define RV_MAX_PUNCTUAL_LIGHTS 8
+#define RV_MAX_PUNCTUAL_LIGHTS 16
 
 struct PunctualLight {
     vec3 position;    // world, meters
@@ -38,6 +38,21 @@ float distanceAttenuation(float distanceSquared, float range) {
 float spotFactor(PunctualLight light, vec3 L) {
     float t = clamp(dot(light.direction, -L) * light.spotScale + light.spotOffset, 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
+}
+
+// Radiance that punctual light `index` brings to `position` (color * intensity * attenuation * cone factor), with the
+// unit direction from the position towards the light in `L`; zero at or beyond its range, where `L` is left undefined.
+vec3 punctualLightRadiance(int index, vec3 position, out vec3 L) {
+    PunctualLight light = uPunctualLights[index];
+    vec3 toLight = light.position - position;
+    float distanceSquared = dot(toLight, toLight);
+    L = vec3(0.0, 0.0, 1.0);
+    if (distanceSquared >= light.range * light.range) {
+        return vec3(0.0); // the window is exactly 0 from the range on
+    }
+    L = toLight * inversesqrt(max(distanceSquared, 1e-8));
+    float attenuation = distanceAttenuation(distanceSquared, light.range) * spotFactor(light, L);
+    return light.color * (light.intensity * attenuation);
 }
 
 // Hemispherical ambient radiance arriving along the unit direction `n`: ground color below, sky color above.

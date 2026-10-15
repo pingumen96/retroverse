@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 
+#include <glm/vec3.hpp>
 #include <spdlog/common.h>
 
 #include <rv/app/self_check.hpp>
@@ -20,6 +21,29 @@ namespace rv::app {
 inline constexpr std::string_view kDefaultSceneName = "m0_testroom";
 /// Directory of the scenes selected by name, relative to the asset root.
 inline constexpr std::string_view kSceneDirectory = "style_tests/reference_scenes";
+
+/// Where --spawn places the walker at the start instead of the scene camera (a primitive teleport, plan step 12).
+struct SpawnPoint {
+    /// Largest |coordinate| accepted, meters.
+    static constexpr float kMaxCoordinate = 100000.0f;
+    /// Largest |pitch| accepted, degrees (the scene camera's limit; the walker clamps further, to its pitch limit).
+    static constexpr float kMaxPitchDeg = 89.0f;
+
+    /// The walker's feet, meters (the eye is the walker's eye height above): what the final camera pose of a
+    /// frame-limited run logs as "feet".
+    glm::vec3 feet{0.0f};
+    /// Degrees, the scene camera's yaw when absent (Camera conventions: 0 looks at -Z, positive turns right).
+    std::optional<float> yawDeg;
+    /// Degrees in [-kMaxPitchDeg, kMaxPitchDeg], the scene camera's pitch when absent.
+    std::optional<float> pitchDeg;
+
+    bool operator==(const SpawnPoint&) const = default;
+};
+
+/// Parses the value of --spawn: "x,y,z", "x,y,z,yawDeg" or "x,y,z,yawDeg,pitchDeg", decimal numbers (spaces around
+/// them allowed). Errors (context "--spawn=<text>"): ParseError for another count of values or a value that is not a
+/// number, OutOfRange for a coordinate beyond kMaxCoordinate, a non-finite angle or a pitch beyond kMaxPitchDeg.
+[[nodiscard]] Expected<SpawnPoint> parseSpawnPoint(std::string_view text);
 
 /// Validated retroverse.exe command line. Defaults describe an interactive run in a 1280x720 window.
 struct CommandLineOptions {
@@ -80,6 +104,8 @@ struct CommandLineOptions {
     /// --model <file>: a glTF model (.gltf or .glb) shown in the model viewer instead of a scene: at the origin, lit by
     /// a three-point light rig, with a camera framing it (makeModelViewerScene). Exclusive with --scene.
     std::optional<std::filesystem::path> model;
+    /// --spawn x,y,z[,yawDeg[,pitchDeg]]: the walker starts there instead of at the scene camera (parseSpawnPoint).
+    std::optional<SpawnPoint> spawn;
     /// --debug-draw: draw debug lines over the scene: the bounds of every object, the axes of its sockets and a world
     /// grid.
     bool debugDraw = false;
@@ -107,6 +133,7 @@ struct CommandLineOptions {
 ///  - --scene names with characters other than letters, digits, '_', '-' and '.', or starting with '.';
 ///  - --model not ending in ".gltf" or ".glb", or given together with --scene;
 ///  - --fixed-dt that is not a number in (0, kMaxFixedDeltaSeconds];
+///  - --spawn that parseSpawnPoint refuses;
 ///  - --log-level other than trace, debug, info, warn or error; empty paths or names.
 /// The --input-script file itself is read by the application (a bad script fails its initialization).
 /// With --help or --version the remaining options are not validated.

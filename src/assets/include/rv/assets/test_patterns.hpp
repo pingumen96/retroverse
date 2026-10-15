@@ -37,22 +37,40 @@ namespace rv::assets {
 /// Uniform color.
 [[nodiscard]] ImageData makeSolid(int width, int height, glm::u8vec4 color);
 
+/// Lettering of an illuminated room sign (style §17.1 room signage, with original themes such as "16-BIT CORNER" of
+/// §17.2): `text` in the built-in bitmap font, white on black, on at most 2 lines, scaled by the largest integer factor
+/// that leaves a margin of a twelfth of the shorter side and centered (folding and truncation as for
+/// makeCoverPlaceholder). Multiplied by an unlit material's color, the letters glow in that color on a dark panel.
+[[nodiscard]] ImageData makeSignLettering(int width, int height, std::string_view text);
+
 /// Pattern names shared with the scene description files (textures.<role>.pattern).
 inline constexpr std::string_view kPatternColorBars = "color_bars";
 inline constexpr std::string_view kPatternChecker = "checker";
 inline constexpr std::string_view kPatternCover = "cover";
+inline constexpr std::string_view kPatternSign = "sign";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
 
 /// Builds a pattern by name: "color_bars"; "checker" (8 x 8 cells, ivory #F4EFE6 and wall grey #383735);
-/// "cover" (uses `title` and `seed`). Errors: NotFound for an unknown name, InvalidArgument for a side outside
-/// [1, kMaxImageDimension].
+/// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering). Errors: NotFound for an unknown name,
+/// InvalidArgument for a side outside [1, kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);
 
-/// Longer side, in pixels, of the pattern images generated for scene surfaces (cartridge labels, posters, screens).
+/// Largest longer side, in pixels, of the pattern images generated for scene surfaces (cartridge labels, posters,
+/// screens).
 inline constexpr int kPatternLongSide = 512;
+/// Pixels per meter of surface pattern images are generated at, up to kPatternLongSide on their longer side (about
+/// 0.4 mm per pixel): a 10 cm cartridge label gets about 260 pixels, a poster or a screen the full kPatternLongSide.
+inline constexpr float kPatternPixelsPerMeter = 2560.0f;
+/// Smallest longer side of a pattern image, so that tiny surfaces still get a readable picture.
+inline constexpr int kMinPatternLongSide = 64;
+
+/// Longer side, in pixels, of the pattern image of a surface whose longer side is `meters` long: kPatternPixelsPerMeter
+/// per meter, rounded to the nearest pixel, clamped to [kMinPatternLongSide, kPatternLongSide] (kPatternLongSide for a
+/// non-finite or non-positive length).
+[[nodiscard]] int patternLongSideFor(float meters) noexcept;
 
 /// Pixel size of a pattern image shown on a surface whose width / height is `aspect` (for instance the ratio of
 /// rv::geometry::uvMetersPerUnit), so that the pattern is not stretched: the longer side gets `longSide` pixels

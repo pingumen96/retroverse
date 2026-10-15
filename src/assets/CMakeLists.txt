@@ -1,5 +1,5 @@
 # rv_assets: CPU-side asset loading (images, glTF models, prefab manifests, material presets, shader sources,
-# procedural test patterns). GPU-free: produces plain data consumed by the renderer.
+# procedural test patterns and surface textures). GPU-free: produces plain data consumed by the renderer.
 
 add_library(rv_assets STATIC
     src/gltf_geometry.cpp
@@ -11,7 +11,13 @@ add_library(rv_assets STATIC
     src/material_library.cpp
     src/path_util.cpp
     src/prefab_manifest.cpp
+    src/procedural_noise.cpp
     src/shader_source.cpp
+    src/surface_canvas.cpp
+    src/surface_finishes.cpp
+    src/surface_rug.cpp
+    src/surface_textures.cpp
+    src/surface_wood.cpp
     src/test_patterns.cpp
 )
 add_library(rv::assets ALIAS rv_assets)

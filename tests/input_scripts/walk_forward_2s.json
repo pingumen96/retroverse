@@ -1,7 +1,8 @@
-// M0 step 5 verification: walk forward for 120 frames (2 s with --fixed-dt 0.016667) from the m0_testroom camera.
+// M0 step 5 verification: walk forward for 120 frames (2 s with --fixed-dt 0.016667) from the start of the walk scripts
+// (--spawn 0,0,3.2,0,-6).
 // Expected: 2.5 m/s * 2 s = 5 m north, feet (0, 0, 3.2) -> (0, 0, -1.8), nothing in the way.
-//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 120 --fixed-dt 0.016667 --hidden
-//     --input-script tests/input_scripts/walk_forward_2s.json --data-dir build/rvdata
+//   retroverse.exe --scene m0_testroom --spawn 0,0,3.2,0,-6 --exit-after-frames --frames 120 --fixed-dt 0.016667
+//     --hidden --input-script tests/input_scripts/walk_forward_2s.json --data-dir build/rvdata
 [
   {"fromFrame": 0, "toFrame": 119, "actions": {"move_forward": 1.0}}
 ]

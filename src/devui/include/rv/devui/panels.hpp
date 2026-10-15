@@ -102,15 +102,18 @@ struct MaterialsPanelModel {
 };
 [[nodiscard]] std::unique_ptr<Panel> makeMaterialsPanel(const MaterialsPanelModel& model);
 
-/// "Rendering": the debug line kinds (world grid, object bounds, socket axes), wireframe for the scene pass, vsync, the
-/// key light's shadow (on or off, depth bias, normal offset), the ambient occlusion of the scene's environment (on or
-/// off, radius, intensity), its post-processing (exposure, bloom strength and radius, vignette; all live, never
-/// saved), and the shaders: a reload button (F5) and the build state of every program with its last compile error.
+/// "Rendering": the debug line kinds (world grid, object bounds, socket axes), wireframe for the scene pass, the
+/// anti-aliasing of the views, vsync, the key light's shadow (on or off, depth bias, normal offset), the ambient
+/// occlusion of the scene's environment (on or off, radius, intensity), its post-processing (exposure, bloom strength
+/// and radius, vignette; all live, never saved), and the shaders: a reload button (F5) and the build state of every
+/// program with its last compile error.
 struct RenderingPanelModel {
     bool& showGrid;
     bool& showBounds;
     bool& showSockets;
     bool& wireframe;
+    /// The FXAA pass of the views (gl::PostSettings::antialiasing).
+    bool& antialiasing;
     /// Its ambient occlusion, exposure, bloom and vignette are edited in place; the renderer reads them every view.
     scene::EnvironmentSetup& environment;
     /// Edited in place; the renderer reads it every view.

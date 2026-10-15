@@ -36,12 +36,14 @@ struct PlannedMaterial {
     assets::MaterialDesc material;
     scene::ShaderKind shader = scene::ShaderKind::Pbr; ///< gl::shaderKindOf(material)
     /// Instances only: the scene texture of the part (ScenePart::texture), which becomes the base color texture of the
-    /// material. It is a single picture (cartridge label, poster, CRT screen), so it is sampled clamped to its edges,
-    /// never repeated.
+    /// material. A file or a pattern is a single picture (cartridge label, poster, CRT screen), sampled clamped to its
+    /// edges; a procedural surface texture repeats like the surface it is.
     std::optional<scene::TextureSource> picture;
     /// Pattern pictures: the size to generate them at, in pixels, with the aspect ratio of the surface as drawn
     /// (geometry::uvMetersPerUnit with the instance transform, then assets::patternSizeForAspect), so that a cover is
-    /// not stretched on a label or on a poster scaled unevenly. (0, 0) otherwise.
+    /// not stretched on a label or on a poster scaled unevenly, and a resolution that follows the surface's size
+    /// (assets::patternLongSideFor its longer side: a cartridge label gets about half the pixels of a poster). (0, 0)
+    /// otherwise.
     glm::ivec2 patternSize{0};
 };
 

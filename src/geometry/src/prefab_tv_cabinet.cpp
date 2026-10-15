@@ -35,6 +35,9 @@ constexpr float kMinCarcassHeight = 0.15f;
 constexpr float kMinLegHeight = 1e-4f;
 constexpr float kLegInset = 0.045f;
 constexpr float kBar = 0.01f; ///< handle bar section
+/// Every wooden part: uv in meters along each board (detail::kWoodMetersPerTile).
+constexpr BoxUv kGrain = BoxUv::GrainMeters;
+constexpr float kWoodTile = detail::kWoodMetersPerTile;
 
 struct CabinetLayout {
     float carcassBottom = 0.0f;
@@ -113,24 +116,27 @@ ProceduralPrefab assemble(const TvCabinetParams& p) {
 
     // Top, overhanging the sides and reaching the front edge of the handles.
     carcass.chamferedBox(glm::vec3(p.width, kTopThickness, p.depth), kTopChamfer,
-                         translation(glm::vec3(0.0f, p.height - 0.5f * kTopThickness, 0.0f)));
+                         translation(glm::vec3(0.0f, p.height - 0.5f * kTopThickness, 0.0f)), kGrain, kWoodTile);
     // Sides, bottom, back and the two dividers.
     for (const float side : {-1.0f, 1.0f}) {
         carcass.chamferedBox(glm::vec3(kPanel, carcassHeight, carcassDepth), kPanelChamfer,
                              translation(glm::vec3(side * (l.sideX - 0.5f * kPanel),
-                                                   l.carcassBottom + 0.5f * carcassHeight, carcassMidZ)));
+                                                   l.carcassBottom + 0.5f * carcassHeight, carcassMidZ)),
+                             kGrain, kWoodTile);
     }
     const float innerWidth = 2.0f * (l.sideX - kPanel);
     carcass.chamferedBox(glm::vec3(innerWidth, kPanel, carcassDepth), kPanelChamfer,
-                         translation(glm::vec3(0.0f, l.carcassBottom + 0.5f * kPanel, carcassMidZ)));
+                         translation(glm::vec3(0.0f, l.carcassBottom + 0.5f * kPanel, carcassMidZ)), kGrain, kWoodTile);
     const float innerHeight = l.carcassTop - l.openingBottom;
     carcass.box(glm::vec3(innerWidth, innerHeight, kBackPanel),
-                translation(glm::vec3(0.0f, l.openingBottom + 0.5f * innerHeight, l.carcassBack + 0.5f * kBackPanel)));
+                translation(glm::vec3(0.0f, l.openingBottom + 0.5f * innerHeight, l.carcassBack + 0.5f * kBackPanel)),
+                kGrain, kWoodTile);
     const float dividerDepth = l.carcassFront - (l.carcassBack + kBackPanel);
     const float dividerZ = 0.5f * (l.carcassFront + l.carcassBack + kBackPanel);
     for (const float x : {l.bayLeft[1] + 0.5f * kPanel, l.bayCenter[1] + 0.5f * kPanel}) {
         carcass.chamferedBox(glm::vec3(kPanel, innerHeight, dividerDepth), kPanelChamfer,
-                             translation(glm::vec3(x, l.openingBottom + 0.5f * innerHeight, dividerZ)));
+                             translation(glm::vec3(x, l.openingBottom + 0.5f * innerHeight, dividerZ)), kGrain,
+                             kWoodTile);
     }
 
     // Fronts sit just inside the bay openings; handles reach the front edge of the top.
@@ -140,7 +146,7 @@ ProceduralPrefab assemble(const TvCabinetParams& p) {
     const float postLength = (0.5f * p.depth - kBar) - frontFace;
     const auto addFront = [&](float x0, float x1, float y0, float y1) {
         fronts.chamferedBox(glm::vec3(x1 - x0, y1 - y0, kFrontThickness), kFrontChamfer,
-                            translation(glm::vec3(0.5f * (x0 + x1), 0.5f * (y0 + y1), frontZ)));
+                            translation(glm::vec3(0.5f * (x0 + x1), 0.5f * (y0 + y1), frontZ)), kGrain, kWoodTile);
     };
     // Bar handle centered on (x, y), horizontal or vertical, on two posts.
     const auto addHandle = [&](float x, float y, float length, bool vertical) {

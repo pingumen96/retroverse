@@ -24,6 +24,10 @@ namespace rv::geometry::detail {
 /// apart in a 24-bit depth buffer at room distances.
 inline constexpr float kDecalOffset = 0.0005f;
 
+/// Meters per uv unit of wooden parts, laid out with BoxUv::GrainMeters (u along each board): wood textures repeat
+/// every meter at the same scale on every piece of furniture and trim.
+inline constexpr float kWoodMetersPerTile = 1.0f;
+
 /// Collects geometry per material role and the sockets of one prefab.
 class PrefabAssembler {
 public:

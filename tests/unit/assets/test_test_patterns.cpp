@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <string>
 #include <vector>
@@ -198,7 +200,7 @@ TEST_CASE("assets/test_patterns: cover titles change only the band", "[assets][p
 TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     const auto names = rv::assets::patternNames();
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
-          std::vector<std::string_view>{"color_bars", "checker", "cover"});
+          std::vector<std::string_view>{"color_bars", "checker", "cover", "sign"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());
@@ -213,10 +215,69 @@ TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     REQUIRE(cover.has_value());
     CHECK(cover->pixels == rv::assets::makeCoverPlaceholder(128, 96, "Title", 9).pixels);
 
+    const auto sign = rv::assets::makeNamedPattern("sign", 256, 48, "16-BIT CORNER", 9);
+    REQUIRE(sign.has_value());
+    CHECK(sign->pixels == rv::assets::makeSignLettering(256, 48, "16-BIT CORNER").pixels);
+
     const auto unknown = rv::assets::makeNamedPattern("plasma", 16, 16);
     REQUIRE_FALSE(unknown.has_value());
     CHECK(unknown.error().code == ErrorCode::NotFound);
     CHECK(rv::assets::makeNamedPattern("checker", 0, 16).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("assets/test_patterns: sign lettering is white text on black inside a margin", "[assets][patterns]") {
+    constexpr int kWidth = 512;
+    constexpr int kHeight = 100;
+    const ImageData sign = rv::assets::makeSignLettering(kWidth, kHeight, "16-bit corner");
+    REQUIRE(isRgba(sign, kWidth, kHeight));
+    const Rgba black(0, 0, 0, 255);
+    const Rgba white(255, 255, 255, 255);
+    const int margin = kHeight / 12;
+    int lit = 0;
+    int minX = kWidth;
+    int maxX = -1;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            const Rgba color = pixel(sign, x, y);
+            REQUIRE((color == black || color == white)); // two colors only: the material's color glows on black
+            if (color == white) {
+                ++lit;
+                minX = std::min(minX, x);
+                maxX = std::max(maxX, x);
+                CHECK(x >= margin);
+                CHECK(x < kWidth - margin);
+                CHECK(y >= margin);
+                CHECK(y < kHeight - margin);
+            }
+        }
+    }
+    CHECK(lit > 1000);
+    // One line, centered, filling most of the width at the largest integer scale (lowercase is uppercased).
+    CHECK(std::abs((minX + maxX) / 2 - kWidth / 2) <= 6);
+    CHECK(maxX - minX > kWidth / 2);
+    CHECK(sign.pixels == rv::assets::makeSignLettering(kWidth, kHeight, "16-BIT CORNER").pixels);
+    // Text too long for one line wraps onto at most two; an empty text leaves the panel dark.
+    CHECK(rv::assets::makeSignLettering(128, 64, "A LONGER ROOM NAME").isValid());
+    const ImageData dark = rv::assets::makeSignLettering(64, 32, "");
+    CHECK(std::all_of(dark.pixels.begin(), dark.pixels.end(), [](std::uint8_t value) {
+        return value == 0 || value == 255;
+    }));
+    CHECK(countColor(dark, 0, 32, Rgba(255, 255, 255, 255)) == 0);
+    CHECK_FALSE(rv::assets::makeSignLettering(0, 32, "X").isValid());
+}
+
+TEST_CASE("assets/test_patterns: pattern resolution follows the size of the surface", "[assets][patterns]") {
+    using rv::assets::patternLongSideFor;
+    CHECK(rv::assets::kPatternPixelsPerMeter == 2560.0f);
+    CHECK(patternLongSideFor(0.101f) == 259); // a cartridge label: about half a poster's pixels
+    CHECK(patternLongSideFor(0.44f) == rv::assets::kPatternLongSide);  // a poster picture
+    CHECK(patternLongSideFor(0.53f) == rv::assets::kPatternLongSide);  // a CRT screen
+    CHECK(patternLongSideFor(0.001f) == rv::assets::kMinPatternLongSide);
+    for (const float bad :
+         {0.0f, -1.0f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
+        INFO(bad);
+        CHECK(patternLongSideFor(bad) == rv::assets::kPatternLongSide);
+    }
 }
 
 TEST_CASE("assets/test_patterns: pattern images follow the aspect of their surface", "[assets][patterns]") {

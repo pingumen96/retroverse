@@ -233,6 +233,7 @@ struct ScenePrograms {
     gl::ShaderHandle bloomDownsample;
     gl::ShaderHandle bloomUpsample;
     gl::ShaderHandle post;
+    gl::ShaderHandle antialiasing;
 };
 
 /// Loads the programs of ScenePrograms. A program that does not build is logged and stays empty until a reload
@@ -252,6 +253,7 @@ Expected<ScenePrograms> loadScenePrograms(gl::ShaderLibrary& library) {
          {"bloom_downsample", "post/fullscreen.vert", "post/bloom_downsample.frag", {}}},
         {&ScenePrograms::bloomUpsample, {"bloom_upsample", "post/fullscreen.vert", "post/bloom_upsample.frag", {}}},
         {&ScenePrograms::post, {"post", "post/fullscreen.vert", "post/post.frag", {}}},
+        {&ScenePrograms::antialiasing, {"fxaa", "post/fullscreen.vert", "post/fxaa.frag", {}}},
     };
     for (const auto& [handle, description] : descriptions) {
         auto loaded = library.load(description);
@@ -270,6 +272,7 @@ gl::PostShaders postShadersOf(const gl::ShaderLibrary& library, const SceneProgr
     post.bloomDownsample = &library.get(programs.bloomDownsample);
     post.bloomUpsample = &library.get(programs.bloomUpsample);
     post.post = &library.get(programs.post);
+    post.antialiasing = &library.get(programs.antialiasing);
     return post;
 }
 
@@ -286,9 +289,10 @@ void runSrgbCheck(AppContext& context, const gl::TextureDefaults& defaults, cons
     const auto describe = [](const SrgbCheckResult& result) {
         return fmt::format("{}..{} in {} pixel(s)", result.minimum, result.maximum, result.pixelCount);
     };
-    const std::string summary = fmt::format(
-        "linear {} stored as {} without and {} with bloom and dithering, expected {} +- {}", kSrgbCheckLinearValue,
-        describe(results->plain), describe(results->postProcessed), results->plain.expected, kSrgbCheckTolerance);
+    const std::string summary =
+        fmt::format("linear {} stored as {} without and {} with bloom, dithering and anti-aliasing, expected {} +- {}",
+                    kSrgbCheckLinearValue, describe(results->plain), describe(results->postProcessed),
+                    results->plain.expected, kSrgbCheckTolerance);
     if (results->passed()) {
         spdlog::info("sRGB self-check passed: {}", summary);
     } else {
@@ -369,8 +373,10 @@ struct RetroverseApp::State {
     /// Debug lines wanted (--debug-draw, the developer overlay) and those debugDraw holds.
     DebugLineSelection debugLines;
     DebugLineSelection shownDebugLines;
-    /// Developer overlay toggles: the scene pass as wireframe, collision of the walker (off: noclip).
+    /// Developer overlay toggles: the scene pass as wireframe, anti-aliasing of the views, collision of the walker
+    /// (off: noclip).
     bool wireframe = false;
+    bool antialiasing = true;
     bool collision = true;
     /// How the key light's shadow map is drawn and read (renderer tuning; the developer overlay edits it live).
     gl::ShadowSettings shadowSettings;
@@ -434,6 +440,7 @@ struct RetroverseApp::State {
         view.ssao = environment.ssao;
         view.clearColor = glm::vec4(environment.clearColor, 1.0f);
         view.post = gl::postSettingsFor(environment);
+        view.post.antialiasing = antialiasing;
         view.timeSeconds = static_cast<float>(simulatedSeconds);
         view.debugDraw = debugDraw && shownDebugLines.any() ? &*debugDraw : nullptr;
         view.wireframe = wireframe;
@@ -628,7 +635,8 @@ struct RetroverseApp::State {
                                                }}),
                         devui::DockSlot::Right);
         devUi->addPanel(devui::makeRenderingPanel({debugLines.grid, debugLines.bounds, debugLines.sockets, wireframe,
-                                                   scene->environment(), shadowSettings, *shaders, window}),
+                                                   antialiasing, scene->environment(), shadowSettings, *shaders,
+                                                   window}),
                         devui::DockSlot::RightBottom);
         devUi->addPanel(devui::makeLogPanel(), devui::DockSlot::Bottom);
         return ok();
@@ -740,7 +748,7 @@ Status RetroverseApp::onInit(AppContext& context) {
     state->camera.setLens(camera.lens);
     state->camera.setPose(camera.position, core::degreesToRadians(camera.yawDeg),
                           core::degreesToRadians(camera.pitchDeg));
-    state->freeRoam.emplace(state->description, state->scene->collisionWorld());
+    state->freeRoam.emplace(state->description, state->scene->collisionWorld(), options.spawn);
 
     state->input = std::make_unique<AppInput>(context.window(), loadBindings(paths), std::move(*script));
 #if defined(RV_DEV_UI)

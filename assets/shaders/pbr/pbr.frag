@@ -75,18 +75,15 @@ void main() {
     vec3 radiance = vec3(0.0);
     int lightCount = min(uPunctualLightCount, RV_MAX_PUNCTUAL_LIGHTS);
     for (int i = 0; i < lightCount; ++i) {
-        PunctualLight light = uPunctualLights[i];
-        vec3 toLight = light.position - vWorldPosition;
-        float distanceSquared = dot(toLight, toLight);
-        if (distanceSquared >= light.range * light.range) {
-            continue; // the window is exactly 0 from the range on
+        vec3 L;
+        vec3 incoming = punctualLightRadiance(i, vWorldPosition, L);
+        if (incoming == vec3(0.0)) {
+            continue; // beyond the range or outside the cone
         }
-        vec3 L = toLight * inversesqrt(max(distanceSquared, 1e-8));
-        float attenuation = distanceAttenuation(distanceSquared, light.range) * spotFactor(light, L);
-        if (i == uShadowLightIndex && attenuation > 0.0) {
-            attenuation *= keyLightVisibility(vWorldPosition, shadowNormal);
+        if (i == uShadowLightIndex) {
+            incoming *= keyLightVisibility(vWorldPosition, shadowNormal);
         }
-        radiance += evaluateLight(surface, N, V, L, light.color * (light.intensity * attenuation));
+        radiance += evaluateLight(surface, N, V, L, incoming);
     }
     if (uDirectionalIntensity > 0.0) {
         float visibility =

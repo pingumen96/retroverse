@@ -27,6 +27,17 @@ constexpr float kCasingDepth = 0.018f;
 constexpr float kCasingChamfer = 0.004f;
 constexpr float kBaseboardDepth = 0.012f;
 constexpr float kBaseboardChamfer = 0.003f;
+/// Wainscot: vertical boards about kWainscotBoardWidth wide with a groove between them, under a chair rail. The boards
+/// stand less proud of the wall than the baseboard, the rail more.
+constexpr float kWainscotBoardWidth = 0.6f;
+constexpr float kWainscotGroove = 0.004f;
+constexpr float kWainscotBoardDepth = 0.01f;
+constexpr float kWainscotBoardChamfer = 0.002f;
+constexpr float kWainscotRailHeight = 0.035f;
+constexpr float kWainscotRailDepth = 0.022f;
+constexpr float kWainscotRailChamfer = 0.004f;
+/// Smallest wall height left above the wainscot.
+constexpr float kMinWallAboveWainscot = 0.2f;
 constexpr float kMinWallThickness = 0.02f;
 /// Depth of the doorway stop collider, in the outer face of the opening: the thinnest wall, so it stays in the wall.
 constexpr float kDoorStopDepth = kMinWallThickness;
@@ -104,9 +115,23 @@ Status validate(const RoomShellParams& p) {
             checkRange(kKind, "wallThickness", p.wallThickness, kMinWallThickness, 2.0f),
             checkRange(kKind, "metersPerTile", p.metersPerTile, 0.01f, 100.0f),
             checkRange(kKind, "baseboardHeight", p.baseboardHeight, 0.0f, 0.5f),
+            checkRange(kKind, "wainscotHeight", p.wainscotHeight, 0.0f, 3.0f),
         });
         !status) {
         return status;
+    }
+    if (p.wainscotHeight > 0.0f) {
+        if (p.wainscotHeight < p.baseboardHeight + kWainscotRailHeight + 0.05f) {
+            return outOfRange(kKind, "wainscotHeight",
+                              "a wainscot must reach at least 5 cm of boards above the " +
+                                  formatNumber(p.baseboardHeight) + " m baseboard and under its " +
+                                  formatNumber(kWainscotRailHeight) + " m rail");
+        }
+        if (p.wainscotHeight > p.wallHeight - kMinWallAboveWainscot) {
+            return outOfRange(kKind, "wainscotHeight",
+                              "the wainscot must leave at least " + formatNumber(kMinWallAboveWainscot) +
+                                  " m of the " + formatNumber(p.wallHeight) + " m wall above it");
+        }
     }
     if (!p.doorway) {
         return ok();
@@ -146,7 +171,7 @@ Status validate(const RoomShellParams& p) {
 }
 
 ProceduralPrefab assemble(const RoomShellParams& p) {
-    detail::PrefabAssembler out(kKind, {"floor", "wall", "ceiling", "trim"});
+    detail::PrefabAssembler out(kKind, {"floor", "wall", "ceiling", "trim", "wainscot"});
     MeshBuilder& floor = out.part("floor");
     MeshBuilder& walls = out.part("wall");
     MeshBuilder& trim = out.part("trim");
@@ -201,16 +226,51 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
             }
             const Placement b =
                 onWall(wall, a0, a1, 0.0f, p.baseboardHeight, wall.interior - kBaseboardDepth, wall.interior);
-            trim.chamferedBox(b.size, kBaseboardChamfer, translation(b.center));
+            trim.chamferedBox(b.size, kBaseboardChamfer, translation(b.center), BoxUv::GrainMeters,
+                              detail::kWoodMetersPerTile);
         };
         // North and south baseboards run the full interior width; east and west ones stop against them.
         const float boardStart = wall.along == 0 ? -halfX : -halfZ + kBaseboardDepth;
         const float boardEnd = wall.along == 0 ? halfX : halfZ - kBaseboardDepth;
+        // Wainscot over [a0, a1] (the baseboard's extent): whole boards with grooves between them, each taller than
+        // wide (so its grain runs up), and the rail on top; east and west pieces stop against the north and south ones.
+        const auto addWainscot = [&](float a0, float a1) {
+            if (p.wainscotHeight <= 0.0f) {
+                return;
+            }
+            const auto inset = [&](float depth) {
+                return wall.along == 0 ? 0.0f : depth;
+            };
+            const float boards0 = a0 + (a0 <= boardStart ? inset(kWainscotBoardDepth) - inset(kBaseboardDepth) : 0.0f);
+            const float boards1 = a1 - (a1 >= boardEnd ? inset(kWainscotBoardDepth) - inset(kBaseboardDepth) : 0.0f);
+            const float boardTop = p.wainscotHeight - kWainscotRailHeight;
+            const float span = boards1 - boards0;
+            if (span < kMinPiece) {
+                return;
+            }
+            const int count = std::max(1, static_cast<int>(std::lround(span / kWainscotBoardWidth)));
+            const float width = (span - static_cast<float>(count - 1) * kWainscotGroove) / static_cast<float>(count);
+            MeshBuilder& wainscot = out.part("wainscot");
+            for (int i = 0; i < count; ++i) {
+                const float b0 = boards0 + static_cast<float>(i) * (width + kWainscotGroove);
+                const Placement board = onWall(wall, b0, b0 + width, p.baseboardHeight, boardTop,
+                                               wall.interior - kWainscotBoardDepth, wall.interior);
+                wainscot.chamferedBox(board.size, kWainscotBoardChamfer, translation(board.center), BoxUv::GrainMeters,
+                                      detail::kWoodMetersPerTile);
+            }
+            const float rail0 = a0 + (a0 <= boardStart ? inset(kWainscotRailDepth) - inset(kBaseboardDepth) : 0.0f);
+            const float rail1 = a1 - (a1 >= boardEnd ? inset(kWainscotRailDepth) - inset(kBaseboardDepth) : 0.0f);
+            const Placement rail = onWall(wall, rail0, rail1, boardTop, p.wainscotHeight,
+                                          wall.interior - kWainscotRailDepth, wall.interior);
+            wainscot.chamferedBox(rail.size, kWainscotRailChamfer, translation(rail.center), BoxUv::GrainMeters,
+                                  detail::kWoodMetersPerTile);
+        };
 
         if (!p.doorway || p.doorway->wall != wall.side) {
             addWall(wall.start, wall.end, 0.0f, height, wallFaces);
             addSolid(wallId, wall.start, wall.end, 0.0f, height);
             addBaseboard(boardStart, boardEnd);
+            addWainscot(boardStart, boardEnd);
             continue;
         }
 
@@ -241,23 +301,26 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
 
         const FaceMask jambFaces = FaceMask::All & ~FaceMask::NegY & ~FaceMask::PosY;
         const Placement leftJamb = onWall(wall, rough0, open0, 0.0f, door.height, inner, outer);
-        trim.box(leftJamb.size, translation(leftJamb.center), BoxUv::PerFace, 1.0f,
+        trim.box(leftJamb.size, translation(leftJamb.center), BoxUv::GrainMeters, detail::kWoodMetersPerTile,
                  jambFaces & ~faceOf(wall.along, -1.0f));
         const Placement rightJamb = onWall(wall, open1, rough1, 0.0f, door.height, inner, outer);
-        trim.box(rightJamb.size, translation(rightJamb.center), BoxUv::PerFace, 1.0f,
+        trim.box(rightJamb.size, translation(rightJamb.center), BoxUv::GrainMeters, detail::kWoodMetersPerTile,
                  jambFaces & ~faceOf(wall.along, 1.0f));
         const Placement head = onWall(wall, rough0, rough1, door.height, roughTop, inner, outer);
-        trim.box(head.size, translation(head.center), BoxUv::PerFace, 1.0f,
+        trim.box(head.size, translation(head.center), BoxUv::GrainMeters, detail::kWoodMetersPerTile,
                  FaceMask::All & ~FaceMask::PosY & ~endFaces);
 
         const float casingFront = inner - kCasingDepth;
         const Placement leftStile = onWall(wall, open0 - kCasingWidth, open0, 0.0f, door.height, casingFront, inner);
-        trim.chamferedBox(leftStile.size, kCasingChamfer, translation(leftStile.center));
+        trim.chamferedBox(leftStile.size, kCasingChamfer, translation(leftStile.center), BoxUv::GrainMeters,
+                          detail::kWoodMetersPerTile);
         const Placement rightStile = onWall(wall, open1, open1 + kCasingWidth, 0.0f, door.height, casingFront, inner);
-        trim.chamferedBox(rightStile.size, kCasingChamfer, translation(rightStile.center));
+        trim.chamferedBox(rightStile.size, kCasingChamfer, translation(rightStile.center), BoxUv::GrainMeters,
+                          detail::kWoodMetersPerTile);
         const Placement casingHead = onWall(wall, open0 - kCasingWidth, open1 + kCasingWidth, door.height,
                                             door.height + kCasingWidth, casingFront, inner);
-        trim.chamferedBox(casingHead.size, kCasingChamfer, translation(casingHead.center));
+        trim.chamferedBox(casingHead.size, kCasingChamfer, translation(casingHead.center), BoxUv::GrainMeters,
+                          detail::kWoodMetersPerTile);
 
         // The floor continues through the opening (same world-meter uvs as the room floor).
         const Placement threshold = onWall(wall, open0, open1, 0.0f, 0.0f, inner, outer);
@@ -265,6 +328,8 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
 
         addBaseboard(boardStart, open0 - kCasingWidth);
         addBaseboard(open1 + kCasingWidth, boardEnd);
+        addWainscot(boardStart, open0 - kCasingWidth);
+        addWainscot(open1 + kCasingWidth, boardEnd);
 
         glm::vec3 outward(0.0f);
         outward[wall.outward] = wall.sign;

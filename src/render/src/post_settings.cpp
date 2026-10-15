@@ -25,6 +25,7 @@ PostSettings postSettingsFor(const scene::EnvironmentSetup& environment) noexcep
     settings.bloomRadius = environment.bloomRadius;
     settings.vignette = environment.vignette;
     settings.ditherAmplitude = kDitherAmplitude;
+    settings.antialiasing = true;
     return settings;
 }
 

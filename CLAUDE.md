@@ -56,27 +56,37 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
 - Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, the draw
   calls of the shadow map and of the depth pre-pass, GPU times from timer queries, `GPU shadow ... ms, depth ... ms,
   SSAO ... ms, scene ... ms, post ... ms`, frame times) are logged once per second in developer builds and as `Frame
-  stats of the run` at the end of every frame-limited run; measure frame times with `--no-vsync` (at 1920x1080 on the
-  reference GPU the test room's shadow map takes about 0.02 ms, its depth pre-pass 0.02 ms, the ambient occlusion
-  0.36 ms, the post-processing 0.3 ms: `--width 1920 --height 1080 --no-vsync --hidden --exit-after-frames --frames
-  600`).
+  stats of the run` at the end of every frame-limited run; measure frame times with `--no-vsync` in Release (at
+  1920x1080 on the reference GPU the test room's frame takes about 2.9 ms: shadow map 0.03 ms, depth pre-pass 0.04 ms,
+  ambient occlusion 0.4 ms, scene 0.4 ms, post-processing with FXAA 0.45 ms: `--width 1920 --height 1080 --no-vsync
+  --hidden --exit-after-frames --frames 600`).
 - `--screenshot <file.png>` writes the last frame of a frame-limited run; a run that ends before that frame (Esc,
   window closed) exits 3 like a failed write. `--screenshot-size WxH` (default 1920x1080, independent of the
   window) also applies to F12.
 - `--self-check <name>` (frame-limited runs only) checks the rendering after initialization with the programs the
   views use, else the run exits 3. `srgb`: an unlit grey quad of the radiance the tonemap shows as linear 0.5, drawn
   into an HDR target and taken through the post-processing into an sRGB target, must read back as 188 +- 2, without
-  and then with bloom and dithering. `bloom`: known patterns through the bloom chain: a lit square just below the
-  highlight threshold must not bloom, an emitter must keep its energy (+-5%), a single very bright pixel must glow
-  alike (+-20%) whatever its value and place. Use `retroverse.exe --self-check srgb --smoke --hidden --data-dir
+  and then with bloom, dithering and anti-aliasing. `bloom`: known patterns through the bloom chain: a lit square just
+  below the highlight threshold must not bloom, an emitter must keep its energy (+-5%), a single very bright pixel must
+  glow alike (+-20%) whatever its value and place. Use `retroverse.exe --self-check srgb --smoke --hidden --data-dir
   build/rvdata` (and `--self-check bloom`).
-- Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`)
-  and post-processed once per view: bloom of the light surfaces emit (screens, lamp shades, neon) and of the
-  highlights above a soft threshold (lit paper, wood and walls never bloom), vignette, exposure + ACES, dithering. The
-  look is tuned in the scene files (`environment` exposure, ambient and `clearColor`, which is background radiance
-  post-processed like the surfaces; `bloomStrength`, the share of that light moved into the glow, 0.06, `bloomRadius`
-  0.7 and `vignette` 0.05 by default; `lights`, at most 8 point/spot plus one directional), material presets in
-  `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit,depth,ssao,post}`.
+- Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`) and
+  post-processed once per view: bloom of the light surfaces emit (screens, lamp shades, neon) and of the highlights
+  above a soft threshold (lit paper, wood and walls never bloom), vignette, exposure + ACES, dithering, then FXAA (the
+  overlay's Rendering panel turns it off for comparisons). The look is tuned in the scene files (`environment` exposure,
+  ambient and `clearColor`, which is background radiance post-processed like the surfaces; `bloomStrength`, the share of
+  that light moved into the glow, 0.06, `bloomRadius` 0.7 and `vignette` 0.05 by default; `lights`, at most 16
+  point/spot plus one directional), material presets in `assets/materials/base/materials.json`, shaders in
+  `assets/shaders/{common,pbr,unlit,depth,ssao,post}`.
+- Surfaces are procedural, generated at startup (`rv/assets/surface_textures.hpp`, about 0.6 s in Release, 3 s in Debug,
+  logged per surface): `oak_planks`, `walnut`, `varnished_wood`, `oak`, `painted_plaster`, `ornate_rug`,
+  `brushed_metal`, `aged_plastic`, each with base color, metallic-roughness and (except the rug) normal maps. Materials
+  name a map as `"procedural:<surface>/<map>"` in a texture slot, scene files as `{"procedural": "<surface>/<map>"}` in
+  `textures`; they repeat, at the scale each surface's description gives (the furniture prefabs and the room shell map
+  their faces in meters along the grain). Never add downloaded textures: new looks are new generators or parameters. A
+  screen material with a `crt` block (`MAT_Screen_CRT`: line count, scanline and mask strength, curvature, vignette,
+  glass reflection) shows its picture as a CRT tube; the scanlines and the mask fade out below 4 pixels per period, so
+  at 1920x1080 they appear only within about 1 m of the TV.
 - Shadows and ambient occlusion: the first light with `"castsShadows": true` is the key light. A spot key light gets a
   perspective 2048x2048 shadow map over twice its cone, a directional one an orthographic map fitted to the shadow
   casters (objects with `castsShadows`, default true; blended ones cast nothing) and snapped to whole texels; point
@@ -121,6 +131,10 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   `--screenshot-include-ui` is given: the overlay is then drawn into `--screenshot` and F12 images too, scaled uniformly
   to fit `--screenshot-size` and centered (another aspect than the window's leaves bands of scene beside it). A
   frame-limited run given `--devui-open` or `--screenshot-include-ui` fails (exit 3) when the overlay cannot start.
+- `--spawn x,y,z[,yaw[,pitch]]` starts the walker with its feet at (x, y, z) meters (the eye 1.65 m above), looking
+  along yaw and pitch degrees (0 looks at -Z, positive yaw turns right; the scene camera's when left out), instead of at
+  the scene camera; the final camera that frame-limited runs log reads the same way. The walk scripts start at `--spawn
+  0,0,3.2,0,-6`, on the way in of the test room, so they do not depend on its scene camera.
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,
   both included) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window
@@ -143,23 +157,26 @@ sRGB-encoded values exactly as the window shows them (`--self-check srgb` proves
 checked numerically, e.g. with Python and Pillow; the post pass dithers the scene by one 8-bit step (the overlay is
 drawn after it and keeps its exact colors), so compare scene pixels with that tolerance, and crop and enlarge to judge
 the bloom, which is subtle by design (in the test room the CRT and the lamp shade glow softly onto the bezel and the
-wall). Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`). In the test room the
-ceiling key light (`ceiling_key`) grounds the furniture: each shelf board shades the compartment below it and the shelf
-a band of the wall to its left, the CRT, the console and the cabinet throw soft shadows on the wall and the floor to
-their right, the floor under the cabinet is dark; zoom in on contact lines for acne (speckles on lit surfaces) and
-peter-panning (a lit gap between an object and its shadow). The floor lamp shows no shadow: its own lights, which cast
-none (one light per view does), light its corner (a deviation from the step 11 plan, which lists the lamp; BACKLOG
-"More shadowed lights"). The CRT stays the brightest surface: the key's pool on the floor, the right poster under its
-picture light and the room's center under the pendant are lit well below it, in tungsten light with a light magenta
-accent. To judge one effect alone, render a scratch copy of the scene under `build/` (scene files are plain JSON with
-comments): the key light without `castsShadows`, `"ssao": {"enabled": false}`, or only a strong ambient (no lights) to
-see the ambient occlusion, then compare the two PNGs pixel by pixel. The other reference scenes: `material_test`
-(roughness grows along X, metallic along Y; the floor under the lowest spheres darkens a little), `instancing_stress`
-(1000 boxes in 4 draw calls; the sun casts the directional shadows, so each frame writes about 2000 instances, the
-view's and the shadow map's, and the instance buffer grows on the first frame; frame times with `--no-vsync`) and
-`instancing_growth`, without shadows, which grows the renderer's instance buffer mid-run: turned around, it shows about
-2000 boxes, more than the 1024 the buffer starts with (the log reads `Instance buffer 'SceneRenderer.Instances' grown to
-...`; for `instancing_growth` with `--frames 1` it must not):
+wall). Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`). The test room (Gate A,
+`docs/testing/gate-a.md`): the north wall holds the collection (two shelves of 96 cartridges, each shelf under its own
+spot) and the hero corner (the CRT on its cabinet with the console, the rug, an armchair turned towards it, a sideboard
+with a table lamp) under the magenta "16-BIT CORNER" sign; a varnished wainscot runs around the room. The ceiling key
+light (`ceiling_key`) grounds the hero wall: the shelf boards shade the compartments below them, the CRT, the console
+and the cabinet throw soft shadows on the wall and the floor; zoom in on contact lines for acne (speckles on lit
+surfaces) and peter-panning (a lit gap between an object and its shadow). The lamps show no shadow: their own lights
+cast none (one light per view does; BACKLOG "More shadowed lights"). The CRT and the sign are the most saturated
+elements, in tungsten light with a light magenta accent; the upper walls and the ceiling fall to black (no bounce
+light). Standing 1 m from the main shelf (`--spawn -1.5,0,-3.5,0,-14`) the titles around eye height must read at a
+glance, those of the lowest levels when enlarged; the CRT close-up is `--spawn 1.62,0,-4.0,0,-48`. To judge one effect
+alone, render a scratch copy of the scene under `build/` (scene files are plain JSON with comments): the key light
+without `castsShadows`, `"ssao": {"enabled": false}`, or only a strong ambient (no lights) to see the ambient occlusion,
+then compare the two PNGs pixel by pixel. The other reference scenes: `material_test` (roughness grows along X, metallic
+along Y; the floor under the lowest spheres darkens a little), `instancing_stress` (1000 boxes in 4 draw calls; the sun
+casts the directional shadows, so each frame writes about 2000 instances, the view's and the shadow map's, and the
+instance buffer grows on the first frame; frame times with `--no-vsync`) and `instancing_growth`, without shadows, which
+grows the renderer's instance buffer mid-run: turned around, it shows about 2000 boxes, more than the 1024 the buffer
+starts with (the log reads `Instance buffer 'SceneRenderer.Instances' grown to ...`; for `instancing_growth` with
+`--frames 1` it must not):
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --scene instancing_growth --exit-after-frames --frames 10 --fixed-dt 0.016667 `
@@ -171,17 +188,23 @@ Other viewpoints and movement are scripted: `tests/input_scripts/*.json` (each f
 unit tests in `tests/unit/integration/test_free_roam_navigation.cpp` play the same scripts):
 
 ```powershell
-build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames --frames 120 --fixed-dt 0.016667 `
-  --hidden --input-script tests/input_scripts/walk_forward_2s.json --screenshot build/screenshots/walk.png `
-  --data-dir build/rvdata
+build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --spawn 0,0,3.2,0,-6 --exit-after-frames --frames 120 `
+  --fixed-dt 0.016667 --hidden --input-script tests/input_scripts/walk_forward_2s.json `
+  --screenshot build/screenshots/walk.png --data-dir build/rvdata
 ```
 
-`walk_forward_2s.json` ends 3.2 m from the hero wall: a close-up of the shelf, a poster and the TV on its cabinet
-(a cartridge is about 50x30 px at 1920x1080). Two consecutive frames of it (`--frames 90` and `--frames 91`) show the
-shadows on the hero wall scaling with the wall and nothing else: walking straight at it, frame 90 magnified about the
-focus of expansion matches frame 91 on the wall within about one 8-bit step, shadow edges included (no shimmering).
-`turn_around.json` (`--frames 10`) faces the entrance half: the south wall and the doorway, which must read in free
-roam too.
+`walk_forward_2s.json` ends 3.2 m from the hero wall: a close-up of the sign, the main shelf, the left poster and the
+TV on its cabinet (a cartridge is about 50x30 px at 1920x1080). Two consecutive frames of it (`--frames 90` and
+`--frames 91`) show the shadows on the hero wall scaling with the wall and nothing else: walking straight at it, frame
+90 magnified about the focus of expansion matches frame 91 on the wall within about one 8-bit step, shadow edges
+included (no shimmering). `turn_around.json` (`--frames 10`) faces the entrance half: the south wall and the doorway,
+which must read in free roam too.
+
+The Gate A golden G01, `assets/style_tests/screenshots/m0_testroom_golden.png`, is the scene camera's 30th frame at
+1920x1080 from `msvc-x64-debug` on the reference machine; `m0_testroom_golden.json` beside it records the GPU, the
+driver, the commit and the SHA-256 of the scene file and of the image, and `docs/testing/gate-a.md` answers the
+checklist of style §26.2 for it. Regenerate it (the command is in its JSON) only when a change alters the look on
+purpose, and update the JSON and the page with it.
 
 The developer overlay is checked the same way. Its pixels must hold Dear ImGui's theme colors exactly (they are sRGB
 already: the title bar of the focused panel reads 41,74,122), neither washed out nor darkened, with readable text; the

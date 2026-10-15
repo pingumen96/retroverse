@@ -71,7 +71,8 @@ namespace rv::scene {
 ///       "scale": [1, 1, 1] or 1,                   components > 0 (mirroring would flip the winding)
 ///       "material": "MAT_x",                       material of every role without an entry in "materials"
 ///       "materials": {"<role>": "MAT_x"},          per-role materials
-///       "textures": {"<role>": {"pattern": "cover", "title": "...", "seed": 3} or {"file": "textures/x.png"}},
+///       "textures": {"<role>": {"pattern": "cover", "title": "...", "seed": 3} or {"file": "textures/x.png"} or
+///                    {"procedural": "<surface>/<map>"}},   a procedural texture of rv/assets/surface_textures.hpp
 ///       "inlineMaterial": {...},                   material-library entry kept verbatim; excludes "material"
 ///       "grid": {"counts": [nx, ny, nz], "spacing": [sx, sy, sz]},   counts >= 1, both keys required
 ///       "castsShadows": true, "collides": true
@@ -98,7 +99,7 @@ inline constexpr std::size_t kMaxSceneInstances = 100000;
 inline constexpr float kMaxSsaoRadius = 5.0f;
 inline constexpr float kMaxSsaoIntensity = 4.0f;
 /// Procedural texture patterns understood by the asset layer (assets::test patterns).
-inline constexpr std::array<std::string_view, 3> kTexturePatternNames{"color_bars", "checker", "cover"};
+inline constexpr std::array<std::string_view, 4> kTexturePatternNames{"color_bars", "checker", "cover", "sign"};
 
 /// Initial camera of the scene (Camera conventions, angles in degrees).
 struct CameraSetup {
@@ -146,20 +147,23 @@ struct EnvironmentSetup {
     SsaoSetup ssao;
 };
 
-/// Texture bound to one material role of an object (label of a cartridge, CRT screen, poster picture). The
-/// application uses it as the base color texture of the material assigned to that role.
+/// Texture bound to one material role of an object (label of a cartridge, CRT screen, poster picture, a surface). The
+/// application uses it as the base color texture of the material assigned to that role: files and patterns as single
+/// pictures (clamped to their edges), procedural textures as the tiling surfaces they are (repeated).
 struct TextureSource {
-    enum class Kind : std::uint8_t { File, Pattern };
+    enum class Kind : std::uint8_t { File, Pattern, Procedural };
 
     Kind kind = Kind::Pattern;
     /// Kind::File: asset-relative UTF-8 path.
     std::string path;
     /// Kind::Pattern: one of kTexturePatternNames.
     std::string pattern;
-    /// Text drawn by patterns that show one (the "cover" title); may be empty.
+    /// Text drawn by patterns that show one (the "cover" title, the "sign" lettering); may be empty.
     std::string title;
     /// Seed of the pattern's deterministic variations.
     std::uint32_t seed = 0;
+    /// Kind::Procedural: "<surface>/<map>" of the surface catalog (assets::parseProceduralTextureName).
+    std::string procedural;
 };
 
 /// One entry of "objects": a procedural prefab, a primitive or a glTF model, placed once or as a grid.

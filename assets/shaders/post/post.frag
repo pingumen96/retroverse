@@ -3,7 +3,9 @@
 // texel per fragment: the output target has its size) with the share uBloomMix of its light that blooms (bloomSource)
 // replaced by the bloom (the tent upsampling of the largest bloom level), the vignette, then exposure and the ACES
 // fitted curve (common/tonemap.glsl), dithered against banding. The output is linear; the sRGB target encodes it
-// (GL_FRAMEBUFFER_SRGB). The sRGB self-check takes a grey through this very pass (rv::app::runSrgbSelfCheck).
+// (GL_FRAMEBUFFER_SRGB). Its alpha is the perceptual luma of the pixel (the sRGB encoding of its luminance, before
+// dithering), which the anti-aliasing pass finds edges with (post/fxaa.frag). The sRGB self-check takes a grey through
+// this very pass (rv::app::runSrgbSelfCheck).
 #include "common/common.glsl"
 #include "common/post.glsl"
 #include "common/tonemap.glsl"
@@ -60,5 +62,5 @@ void main() {
     }
     radiance *= vignette(vUv);
     vec3 display = tonemap(radiance, uExposure);
-    oColor = vec4(dither(display, gl_FragCoord.xy), 1.0);
+    oColor = vec4(dither(display, gl_FragCoord.xy), linearToSrgb(vec3(luminance(display))).r);
 }

@@ -67,6 +67,19 @@ MaterialUniforms makeMaterialUniforms(const assets::MaterialDesc& material, std:
     if (material.doubleSided) {
         flags |= material_flags::kDoubleSided;
     }
+    if (material.crt) {
+        flags |= material_flags::kCrtScreen;
+        const assets::CrtEffect crtDefaults;
+        const assets::CrtEffect& crt = *material.crt;
+        block.crtLineCount = std::clamp(finiteOr(crt.lineCount, crtDefaults.lineCount), 1.0f, 4096.0f);
+        block.crtMaskTriadCount =
+            std::clamp(finiteOr(crt.maskTriadCount, crtDefaults.maskTriadCount), 1.0f, 8192.0f);
+        block.crtScanlineStrength = unitInterval(crt.scanlineStrength, crtDefaults.scanlineStrength);
+        block.crtMaskStrength = unitInterval(crt.maskStrength, crtDefaults.maskStrength);
+        block.crtCurvature = std::clamp(finiteOr(crt.curvature, crtDefaults.curvature), 0.0f, 0.5f);
+        block.crtVignette = unitInterval(crt.vignette, crtDefaults.vignette);
+        block.crtGlassReflection = unitInterval(crt.glassReflection, crtDefaults.glassReflection);
+    }
     block.flags = flags;
     return block;
 }

@@ -33,11 +33,17 @@ inline constexpr std::string_view kFallbackMaterialName = "MAT_Fallback_Magenta"
 ///   "emissiveStrength": >= 0, "normalScale": finite number
 ///   "alphaMode": "opaque" | "mask" | "blend", "alphaCutoff": [0, 1], "doubleSided": bool
 ///   "baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture":
-///       asset-relative paths with forward slashes (no "..", not absolute), stored in TextureRef::path.
+///       asset-relative paths with forward slashes (no "..", not absolute), stored in TextureRef::path, or a
+///       procedural texture "procedural:<surface>/<map>" of the surface catalog (rv/assets/surface_textures.hpp; the
+///       surface and the map must exist), stored in TextureRef::procedural as "<surface>/<map>".
+///   "crt": {"lineCount", "scanlineStrength", "maskTriadCount", "maskStrength", "curvature", "vignette",
+///       "glassReflection"}: the CRT_Subtle effect of an unlit screen (CrtEffect, its ranges; missing keys keep its
+///       defaults), only with "shading": "unlit".
 /// Defaults are those of MaterialDesc. Shared convention for "unlit" presets (screens, neon): the renderer outputs
 /// the base color (times its texture) scaled by emissiveStrength, so MAT_Screen_Emissive (white, strength 2)
 /// shows its video or test pattern at twice its nominal brightness.
-/// Errors: ParseError (type, unknown key or value), OutOfRange (number out of range), InvalidArgument (texture path).
+/// Errors: ParseError (type, unknown key or value, an unknown procedural texture, "crt" on a lit material),
+/// OutOfRange (number out of range), InvalidArgument (texture path).
 [[nodiscard]] Expected<MaterialDesc> parseMaterialDesc(const nlohmann::json& object, std::string_view name,
                                                        std::string_view context);
 

@@ -12,6 +12,14 @@ layout(std140, binding = 2) uniform MaterialUniforms {
     float uAlphaCutoff;        // with RV_MATERIAL_ALPHA_MASK
     float uEmissiveStrength;   // unlit materials: scales base color * texture
     uint uMaterialFlags;       // RV_MATERIAL_* bits
+    // The picture-tube look of an unlit screen, with RV_MATERIAL_CRT_SCREEN (common/crt.glsl); zero otherwise.
+    float uCrtLineCount;         // scanlines over the picture's height
+    float uCrtMaskTriadCount;    // phosphor triads across the picture's width
+    float uCrtScanlineStrength;  // [0, 1]
+    float uCrtMaskStrength;      // [0, 1]
+    float uCrtCurvature;         // [0, 0.5]
+    float uCrtVignette;          // [0, 1]
+    float uCrtGlassReflection;   // [0, 1]
 };
 
 // Bits of uMaterialFlags. Texture bits mark the slots that hold a material texture; the others hold neutral defaults
@@ -24,6 +32,7 @@ const uint RV_MATERIAL_EMISSIVE_TEXTURE = 16u;
 const uint RV_MATERIAL_ALPHA_MASK = 32u;
 const uint RV_MATERIAL_ALPHA_BLEND = 64u;
 const uint RV_MATERIAL_DOUBLE_SIDED = 128u;
+const uint RV_MATERIAL_CRT_SCREEN = 256u;
 
 layout(binding = 0) uniform sampler2D uBaseColorTexture;         // sRGB, multiplies uBaseColorFactor
 layout(binding = 1) uniform sampler2D uMetallicRoughnessTexture; // linear: G scales roughness, B scales metallic

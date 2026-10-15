@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include <glm/vec3.hpp>
 
+#include <rv/app/command_line.hpp>
 #include <rv/input/action_state.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/collision.hpp>
@@ -14,12 +16,14 @@
 namespace rv::app {
 
 /// FreeRoam mode (specification §12.2): first-person walking with capsule collision. The walker starts at the scene
-/// camera (feet = camera position - eye height, the camera's yaw, its pitch within the walker's pitch limit) and
-/// collides with the scene's collision world (SceneInstance::collisionWorld) unless collision is turned off (the
-/// developer overlay's noclip). GPU-free state; main thread.
+/// camera (feet = camera position - eye height, the camera's yaw, its pitch within the walker's pitch limit), or at the
+/// spawn point of --spawn (its feet, its yaw and pitch or the scene camera's), and collides with the scene's collision
+/// world (SceneInstance::collisionWorld) unless collision is turned off (the developer overlay's noclip). GPU-free
+/// state; main thread.
 class FreeRoam {
 public:
-    FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision);
+    FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision,
+             const std::optional<SpawnPoint>& spawn = std::nullopt);
 
     /// Advances the walker by one frame of `deltaSeconds` and writes the camera pose.
     void update(const input::ActionState& actions, float deltaSeconds, scene::Camera& camera);

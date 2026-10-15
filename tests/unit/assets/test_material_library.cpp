@@ -3,10 +3,12 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "support/log_capture.hpp"
 #include <rv/assets/material_library.hpp>
+#include <rv/assets/surface_textures.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
@@ -24,11 +26,25 @@ const std::filesystem::path kLibraryPath = rv::core::pathFromUtf8(RV_TEST_ASSET_
 
 /// The shared material contract: scene files and procedural prefabs reference these names.
 const std::vector<std::string> kSharedNames = {
-    "MAT_Wood_Walnut",       "MAT_Wood_Oak",       "MAT_Wood_Varnished",  "MAT_Concrete_Warm", "MAT_Wall_Painted",
-    "MAT_Plaster_Used",      "MAT_Metal_Graphite", "MAT_Metal_Brushed",   "MAT_Plastic_Black", "MAT_Plastic_Gray",
-    "MAT_Plastic_AgedIvory", "MAT_Plastic_Accent", "MAT_Glass_Display",   "MAT_Glass_CRT",     "MAT_Fabric_Sofa",
-    "MAT_Carpet_Ornate",     "MAT_Cardboard_Box",  "MAT_Paper_Print",     "MAT_Neon_Diffuser", "MAT_Screen_Emissive",
-    "MAT_Lamp_Shade",        "MAT_Label_Print",    "MAT_Fallback_Magenta"};
+    "MAT_Wood_Walnut",     "MAT_Wood_Oak",      "MAT_Wood_Varnished", "MAT_Floor_OakPlanks",
+    "MAT_Concrete_Warm",   "MAT_Wall_Painted",  "MAT_Plaster_Used",   "MAT_Metal_Graphite",
+    "MAT_Metal_Brushed",   "MAT_Plastic_Black", "MAT_Plastic_Gray",   "MAT_Plastic_AgedIvory",
+    "MAT_Plastic_Accent",  "MAT_Glass_Display", "MAT_Glass_CRT",      "MAT_Fabric_Sofa",
+    "MAT_Carpet_Ornate",   "MAT_Cardboard_Box", "MAT_Paper_Print",    "MAT_Neon_Diffuser",
+    "MAT_Screen_Emissive", "MAT_Screen_CRT",    "MAT_Lamp_Shade",     "MAT_Label_Print",
+    "MAT_Fallback_Magenta"};
+
+/// The procedural surface a "full" textured preset takes its albedo and roughness from
+/// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.
+const std::vector<std::pair<std::string, std::string>> kFullSurfaces = {
+    {"MAT_Wood_Walnut", "walnut"},
+    {"MAT_Wood_Oak", "oak"},
+    {"MAT_Wood_Varnished", "varnished_wood"},
+    {"MAT_Floor_OakPlanks", "oak_planks"},
+    {"MAT_Wall_Painted", "painted_plaster"},
+    {"MAT_Metal_Brushed", "brushed_metal"},
+    {"MAT_Carpet_Ornate", "ornate_rug"},
+};
 
 nlohmann::json parse(std::string_view text) {
     auto json = rv::core::parseJson(text, "test");
@@ -59,6 +75,17 @@ TEST_CASE("assets/materials: the shared library defines every contract material"
         if (material->shading != ShadingModel::Pbr) {
             continue;
         }
+        // Textured presets name procedural textures of the catalog; the "full" surfaces carry the albedo and
+        // roughness, so their factors are neutral (checked below) rather than plausible values of their own.
+        for (const rv::assets::TextureRef* texture : {&material->baseColorTexture, &material->metallicRoughnessTexture,
+                                                       &material->normalTexture}) {
+            if (!texture->procedural.empty()) {
+                CHECK(rv::assets::parseProceduralTextureName(texture->procedural).has_value());
+            }
+        }
+        if (!material->metallicRoughnessTexture.empty() && material->roughnessFactor == 1.0f) {
+            continue;
+        }
         // Physically plausible presets: dielectrics vs metals. A metal's base color is its reflectance at normal
         // incidence, at least about 50% for real metals (linear luminance).
         if (material->metallicFactor == 0.0f) {
@@ -75,12 +102,30 @@ TEST_CASE("assets/materials: the shared library defines every contract material"
     const auto names = library->names();
     CHECK(std::is_sorted(names.begin(), names.end()));
 
-    // Art-direction colors of style.md section 3, converted to linear.
-    checkColor(glm::vec3(library->find("MAT_Wood_Walnut")->baseColorFactor), linear("#493024"));
-    checkColor(glm::vec3(library->find("MAT_Wood_Oak")->baseColorFactor), linear("#76513A"));
-    checkColor(glm::vec3(library->find("MAT_Wall_Painted")->baseColorFactor), linear("#383735"));
+    // Art-direction colors of style.md section 3, converted to linear; the textured woods, walls, metal and rug carry
+    // theirs in their procedural surfaces (test_surface_textures.cpp checks the surfaces' averages), with neutral
+    // factors and all of their surface's maps.
     checkColor(glm::vec3(library->find("MAT_Metal_Graphite")->baseColorFactor), linear("#252A2E"));
     checkColor(glm::vec3(library->find("MAT_Fabric_Sofa")->baseColorFactor), linear("#683D42"));
+    for (const auto& [name, surface] : kFullSurfaces) {
+        CAPTURE(name);
+        const MaterialDesc& material = *library->find(name);
+        checkColor(glm::vec3(material.baseColorFactor), glm::vec3(1.0f));
+        CHECK(material.roughnessFactor == 1.0f);
+        CHECK(material.baseColorTexture.procedural == surface + "/baseColor");
+        CHECK(material.metallicRoughnessTexture.procedural == surface + "/metallicRoughness");
+        const rv::assets::ProceduralSurfaceInfo* info = rv::assets::findProceduralSurface(surface);
+        REQUIRE(info != nullptr);
+        CHECK(material.normalTexture.procedural == (info->hasNormalMap ? surface + "/normal" : std::string()));
+    }
+    // The plastics keep their style colors and roughness; the aged plastic detail modulates them.
+    for (const char* name : {"MAT_Plastic_Black", "MAT_Plastic_Gray", "MAT_Plastic_AgedIvory"}) {
+        CAPTURE(name);
+        const MaterialDesc& plastic = *library->find(name);
+        CHECK(plastic.baseColorTexture.procedural == "aged_plastic/baseColor");
+        CHECK(plastic.roughnessFactor < 0.6f);
+    }
+    checkColor(glm::vec3(library->find("MAT_Plastic_AgedIvory")->baseColorFactor), linear("#D6CBAE"));
 
     const MaterialDesc& glass = *library->find("MAT_Glass_Display");
     CHECK(glass.alphaMode == AlphaMode::Blend);
@@ -104,6 +149,18 @@ TEST_CASE("assets/materials: unlit presets", "[assets][materials]") {
     CHECK(screen.shading == ShadingModel::Unlit);
     checkColor(glm::vec3(screen.baseColorFactor), glm::vec3(1.0f));
     CHECK(screen.emissiveStrength == Approx(2.0f));
+    CHECK_FALSE(screen.crt.has_value());
+
+    // The picture tube: the same brightness, a subtle CRT effect (style 15.2: never hurting legibility).
+    const MaterialDesc& crt = *library->find("MAT_Screen_CRT");
+    CHECK(crt.shading == ShadingModel::Unlit);
+    CHECK(crt.emissiveStrength == screen.emissiveStrength);
+    REQUIRE(crt.crt.has_value());
+    CHECK(crt.crt->lineCount == 240.0f);
+    CHECK(crt.crt->scanlineStrength <= 0.5f);
+    CHECK(crt.crt->maskStrength <= 0.3f);
+    CHECK(crt.crt->curvature <= 0.1f);
+    CHECK(crt.crt->vignette <= 0.4f);
 
     const MaterialDesc& neon = *library->find("MAT_Neon_Diffuser");
     CHECK(neon.shading == ShadingModel::Unlit);
@@ -173,6 +230,87 @@ TEST_CASE("assets/materials: every key is parsed", "[assets][materials]") {
     CHECK(defaults->roughnessFactor == reference.roughnessFactor);
     CHECK(defaults->alphaMode == AlphaMode::Opaque);
     CHECK(defaults->baseColorTexture.empty());
+}
+
+TEST_CASE("assets/materials: texture slots name procedural textures", "[assets][materials][procedural]") {
+    const auto material = rv::assets::parseMaterialDesc(parse(R"({
+        "baseColorTexture": "procedural:walnut/baseColor",
+        "metallicRoughnessTexture": "procedural:walnut/metallicRoughness",
+        "normalTexture": "procedural:walnut/normal",
+        "emissiveTexture": "textures/glow.png"
+    })"),
+                                                        "MAT_Walnut", "inline");
+    REQUIRE(material.has_value());
+    CHECK(material->baseColorTexture.procedural == "walnut/baseColor");
+    CHECK(material->baseColorTexture.path.empty());
+    CHECK_FALSE(material->baseColorTexture.empty());
+    CHECK(material->metallicRoughnessTexture.procedural == "walnut/metallicRoughness");
+    CHECK(material->normalTexture.procedural == "walnut/normal");
+    CHECK(material->emissiveTexture.path == "textures/glow.png");
+    CHECK(material->emissiveTexture.procedural.empty());
+    CHECK(material->occlusionTexture.empty());
+
+    // Unknown surfaces and maps, a surface without a normal map, and malformed names are parse errors at the slot.
+    for (const char* reference : {"procedural:teak/baseColor", "procedural:walnut/albedo",
+                                  "procedural:ornate_rug/normal", "procedural:walnut", "procedural:"}) {
+        CAPTURE(reference);
+        const auto bad = rv::assets::parseMaterialDesc(nlohmann::json{{"baseColorTexture", reference}}, "MAT_X",
+                                                       "lib.json:/materials/MAT_X");
+        REQUIRE_FALSE(bad.has_value());
+        CHECK(bad.error().code == ErrorCode::ParseError);
+        CHECK(bad.error().context == "lib.json:/materials/MAT_X/baseColorTexture");
+    }
+}
+
+TEST_CASE("assets/materials: the CRT effect of unlit screens", "[assets][materials][crt]") {
+    const auto screen = rv::assets::parseMaterialDesc(parse(R"({
+        "shading": "unlit", "crt": {"lineCount": 480, "scanlineStrength": 0.5, "maskTriadCount": 640,
+                                    "maskStrength": 0.1, "curvature": 0.2, "vignette": 0.4, "glassReflection": 0.5}
+    })"),
+                                                      "MAT_Tube", "inline");
+    REQUIRE(screen.has_value());
+    REQUIRE(screen->crt.has_value());
+    CHECK(screen->crt->lineCount == 480.0f);
+    CHECK(screen->crt->scanlineStrength == 0.5f);
+    CHECK(screen->crt->maskTriadCount == 640.0f);
+    CHECK(screen->crt->maskStrength == Approx(0.1f));
+    CHECK(screen->crt->curvature == Approx(0.2f));
+    CHECK(screen->crt->vignette == Approx(0.4f));
+    CHECK(screen->crt->glassReflection == 0.5f);
+
+    // Missing keys keep the defaults; materials without the block have none.
+    const auto defaults =
+        rv::assets::parseMaterialDesc(parse(R"({"shading": "unlit", "crt": {}})"), "MAT_Tube", "inline");
+    REQUIRE(defaults.has_value());
+    CHECK(defaults->crt == rv::assets::CrtEffect{});
+    const auto plain = rv::assets::parseMaterialDesc(parse(R"({"shading": "unlit"})"), "MAT_Plain", "inline");
+    REQUIRE(plain.has_value());
+    CHECK_FALSE(plain->crt.has_value());
+
+    struct Case {
+        const char* json;
+        ErrorCode code;
+        const char* context;
+    };
+    const Case cases[] = {
+        {R"({"crt": {}})", ErrorCode::ParseError, "m:/crt"}, // a lit material
+        {R"({"shading": "unlit", "crt": []})", ErrorCode::ParseError, "m:/crt"},
+        {R"({"shading": "unlit", "crt": {"scanlines": 0.3}})", ErrorCode::ParseError, "m:/crt/scanlines"},
+        {R"({"shading": "unlit", "crt": {"lineCount": 8}})", ErrorCode::OutOfRange, "m:/crt/lineCount"},
+        {R"({"shading": "unlit", "crt": {"maskTriadCount": 5000}})", ErrorCode::OutOfRange, "m:/crt/maskTriadCount"},
+        {R"({"shading": "unlit", "crt": {"scanlineStrength": 1.5}})", ErrorCode::OutOfRange,
+         "m:/crt/scanlineStrength"},
+        {R"({"shading": "unlit", "crt": {"curvature": 0.6}})", ErrorCode::OutOfRange, "m:/crt/curvature"},
+        {R"({"shading": "unlit", "crt": {"glassReflection": -0.1}})", ErrorCode::OutOfRange,
+         "m:/crt/glassReflection"},
+    };
+    for (const Case& c : cases) {
+        CAPTURE(c.json);
+        const auto material = rv::assets::parseMaterialDesc(parse(c.json), "MAT_X", "m:");
+        REQUIRE_FALSE(material.has_value());
+        CHECK(material.error().code == c.code);
+        CHECK(material.error().context == c.context);
+    }
 }
 
 TEST_CASE("assets/materials: invalid material definitions are errors with a JSON path", "[assets][materials]") {

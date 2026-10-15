@@ -17,6 +17,9 @@ const Texture2D* slotTexture(const assets::TextureRef& reference, ColorSpace col
     if (reference.empty()) {
         return nullptr;
     }
+    if (!reference.procedural.empty()) {
+        return &textures.procedural(reference.procedural, colorSpace);
+    }
     if (!reference.path.empty()) {
         return &textures.file(reference.path, colorSpace, TextureWrap::Repeat);
     }

@@ -1,7 +1,7 @@
 // Free-roam navigation through the M0 test room (GPU-free): the scene's collision world (scene::buildCollisionWorld of
 // the real prefab geometry), the first-person controller and the verification input scripts of tests/input_scripts,
-// played frame by frame the way retroverse.exe plays them with --fixed-dt 0.016667. The app runs of those scripts must
-// log the same final poses.
+// played frame by frame the way retroverse.exe plays them with --spawn 0,0,3.2,0,-6 --fixed-dt 0.016667. The app runs
+// of those scripts must log the same final poses.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -31,6 +31,10 @@ using rv::input::Action;
 namespace {
 
 constexpr float kFixedDt = 0.016667f;
+/// Where the walk scripts start (retroverse.exe --spawn 0,0,3.2,0,-6): feet 3.2 m into the room from its center on the
+/// way in from the doorway, looking north at the hero wall, a little down.
+const glm::vec3 kScriptStart(0.0f, 0.0f, 3.2f);
+constexpr float kScriptPitchDeg = -6.0f;
 
 std::filesystem::path sourceDir() {
     return rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR);
@@ -45,7 +49,7 @@ rv::input::InputScript loadScript(std::string_view name) {
     return std::move(*script);
 }
 
-/// The M0 test room with a walker at the scene camera, as FreeRoam sets it up.
+/// The M0 test room with a walker at the start of the walk scripts, as FreeRoam sets it up with --spawn.
 struct TestRoomWalker {
     rv::scene::SceneDescription scene;
     rv::scene::CollisionWorld world;
@@ -61,9 +65,7 @@ struct TestRoomWalker {
             rv::assets::MaterialLibrary::loadFromFile(sourceDir() / "assets" / "materials" / "base" / "materials.json");
         REQUIRE(materials.has_value());
         world = rv::scene::buildCollisionWorld(rv::scene::buildSceneGeometry(scene, *materials));
-        controller.teleport(scene.camera.position - glm::vec3(0.0f, controller.settings().eyeHeight, 0.0f),
-                            rv::core::degreesToRadians(scene.camera.yawDeg),
-                            rv::core::degreesToRadians(scene.camera.pitchDeg));
+        controller.teleport(kScriptStart, 0.0f, rv::core::degreesToRadians(kScriptPitchDeg));
     }
 
     /// Plays frames [0, frames) of `script` over idle devices.
@@ -103,11 +105,17 @@ struct TestRoomWalker {
 
 } // namespace
 
-TEST_CASE("integration/free_roam: the M0 room spawn is free", "[integration][free_roam]") {
+TEST_CASE("integration/free_roam: the M0 room spawns are free", "[integration][free_roam]") {
     const TestRoomWalker walker;
-    CHECK(rv::core::nearlyEqual(walker.controller.feetPosition(), glm::vec3(0.0f, 0.0f, 3.2f)));
+    CHECK(rv::core::nearlyEqual(walker.controller.feetPosition(), kScriptStart));
     CHECK_FALSE(walker.world.overlaps(walker.controller.feetPosition(), walker.controller.settings().capsule));
-    CHECK(walker.world.boxes().size() == 36);
+    // The scene camera, where retroverse.exe starts without --spawn, stands free too.
+    const glm::vec3 sceneFeet =
+        walker.scene.camera.position - glm::vec3(0.0f, walker.controller.settings().eyeHeight, 0.0f);
+    CHECK_FALSE(walker.world.overlaps(sceneFeet, walker.controller.settings().capsule));
+    // The room's 7 wall boxes (the south wall split around the doorway and its stop), 2 shelves, 96 cartridges, the TV
+    // cabinet, the CRT, the console, the armchair, the sideboard, the table lamp and the floor lamp.
+    CHECK(walker.world.boxes().size() == 7 + 2 + 96 + 7);
 }
 
 TEST_CASE("integration/free_roam: walk_forward_2s.json walks 5 m north", "[integration][free_roam]") {

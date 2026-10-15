@@ -19,9 +19,11 @@ namespace rv::gl {
 
 /// The MaterialUniforms block of `material`. Factors are copied, emissive = emissiveFactor * emissiveStrength, the
 /// alpha mode and doubleSided become material_flags bits, and `textureFlags` adds the texture bits of the slots that
-/// hold one of the material's textures (non-texture bits of `textureFlags` are ignored). Values the shaders cannot
-/// use never reach them: non-finite numbers take the MaterialDesc defaults, metallic, roughness, occlusion strength
-/// and alpha cutoff are clamped to [0, 1], colors and emissive strength to >= 0.
+/// hold one of the material's textures (non-texture bits of `textureFlags` are ignored). A CRT effect
+/// (MaterialDesc::crt) sets material_flags::kCrtScreen and the crt* fields. Values the shaders cannot use never reach
+/// them: non-finite numbers take the MaterialDesc (or CrtEffect) defaults, metallic, roughness, occlusion strength,
+/// alpha cutoff and the CRT strengths are clamped to [0, 1], the curvature to [0, 0.5], line and triad counts to at
+/// least 1, colors and emissive strength to >= 0.
 [[nodiscard]] MaterialUniforms makeMaterialUniforms(const assets::MaterialDesc& material,
                                                     std::uint32_t textureFlags) noexcept;
 

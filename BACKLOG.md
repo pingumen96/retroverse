@@ -17,10 +17,12 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   (glTF tangent space, +Y towards decreasing v); file tangents and mirrored uv islands still need the sample.
 - Decide whether spdlog should be built with wide-character file names for non-ASCII log paths.
 - Consider `FlushFileBuffers` for atomic writes of critical state (world plans) in I2/I3.
-- Anti-aliasing before the Gate A golden screenshot (style §2.1): the M0 frames stair-step every slanted edge. Either
-  MSAA on the HDR scene target (a sample count in `gl::FramebufferDesc`, resolved before the bloom and the post pass)
-  or a post-process pass (FXAA/SMAA works on tonemapped values: it needs an LDR target between the post pass and the
-  output, or to run inside the post pass on the resolved image).
+- Anti-aliasing beyond FXAA: since M0 step 12 the views are anti-aliased by FXAA after the tonemap, which smooths the
+  stair-steps of edges within one frame but cannot rebuild geometry thinner than a pixel: shelf boards, frame moldings
+  and far cartridges still crawl a little in motion, and the sub-pixel blend softens small print near edges slightly
+  (kept at half strength for the labels). MSAA on the HDR scene target (a sample count in `gl::FramebufferDesc`,
+  resolved with a tonemapped average before the bloom) or a temporal pass (jittered projection, reprojection with the
+  depth; it would also feed the temporal accumulation of the ambient occlusion) would steady them.
 - Exposure per room or eye adaptation: the exposure is one value per scene (`environment.exposure`, the overlay's
   Rendering panel). Rooms of very different brightness (a dim arcade next to the lit hub, I4) need an exposure per room
   or an automatic one (a luminance histogram of the HDR target, adapted over a second or two).
@@ -36,18 +38,25 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   (`1 / (1 + luminance / k)`) or a lower highlight threshold; make them scene keys when such a room exists.
 - Bounce light for dark rooms: the hemispheric ambient cannot lift 4%-albedo walls out of the ACES toe, so the test room
   relies on direct light, and its ambient occlusion (M0 step 11), which darkens the ambient only, stays a subtle cue
-  there. It uses all 8 point/spot slots of the lights block (the ceiling key light, a pendant over the room's center, a
-  picture light on the right poster, the floor lamp's bulb and two shade cones, the magenta accent, the entrance
-  washer), and the upper walls and the ceiling far from them still fall to black. Candidates: light probes / IBL, a
-  hemisphere tinted by the lit floor (indoor bounce comes mostly from below), or the fake screen light of style §4.3 (a
-  point light near each TV with the slowly updated average screen color); real rooms will also need more than 8 lights
-  per view (per-room light lists or clustered shading).
-- Texture array (or atlas) for cartridge labels: the 24 labels of the test room share one mesh but each shows its own
-  cover, so each has a material instance of its own and is a batch of one (24 of the room's 47 draw calls, in each
-  of the three passes since M0 step 11: shadow map, depth pre-pass and lit pass; the shells are one batch of 24). Covers
-  in a texture array indexed per instance (an extra instance attribute or an SSBO next to the model matrix) would draw
-  every label in one batch; plan I3 already foresees covers in an LRU texture array. Meanwhile the depth passes could
-  merge consecutive opaque batches of one mesh whatever their materials (they bind none).
+  there. It uses 14 of the 16 point/spot slots of the lights block (M0 step 12: the ceiling key light, a pendant, a
+  picture light on the right poster, the floor lamp's bulb and two shade cones, the table lamp's bulb and shade cone,
+  the magenta accent, the sign's glow, the CRT's light on its cabinet, a spot per shelf, the entrance washer), and the
+  upper walls and the ceiling far from them still fall to black (golden G01, `docs/testing/gate-a.md`). Candidates:
+  light probes / IBL, a hemisphere tinted by the lit floor (indoor bounce comes mostly from below), or the fake screen
+  light of style §4.3 (the test room's `crt_glow` is a fixed one; a point light near each TV with the slowly updated
+  average screen color); real rooms will need more than 16 lights per view (per-room light lists or clustered
+  shading).
+- Texture array (or atlas) for cartridge labels: the 96 labels of the test room share one mesh but each shows its own
+  cover, so each has a material instance of its own and is a batch of one (96 of the room's 129 draw calls in the lit
+  pass and in the depth pre-pass, and those in the key light's frustum in the shadow map; the shells are one batch of
+  96). Covers in a texture array indexed per instance (an extra instance attribute or an SSBO next to the model matrix)
+  would draw every label in one batch; plan I3 already foresees covers in an LRU texture array. Meanwhile the depth
+  passes could merge consecutive opaque batches of one mesh whatever their materials (they bind none).
+- Procedural surfaces at startup: the maps of the eight surfaces of `assets::proceduralSurfaces()` are generated on
+  the main thread before the first frame (0.6 s in Release, 3 s in Debug; the rug alone a third of it) and take 80 MiB
+  of the test room's 105 MiB of textures (RGBA8 with mips). Once worker threads exist (I2), generate them off the main
+  thread while the room shows its flat material colors, or cache the encoded maps under `<user data>/cache` keyed by a
+  generator version; for the Low profile (style §20.1) halve them or compress them (BC7 for color, BC5 for normals).
 - glTF sampler state: the loader does not expose the samplers of a model yet, so `gl::GpuModel` samples every model
   image with repeat and trilinear filtering (the glTF default); honor clamp/mirror wrap modes and nearest filters.
 - Per-instance normal matrix: `pbr.vert` inverts the instance's 3x3 matrix per vertex; precompute it per instance (or

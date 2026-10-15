@@ -12,6 +12,7 @@
 
 #include <glm/ext/matrix_transform.hpp>
 
+#include <rv/assets/surface_textures.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
@@ -446,10 +447,27 @@ Expected<Light> parseLight(const json& value, const Location& at) {
 }
 
 Expected<TextureSource> parseTexture(const json& value, const Location& at) {
-    if (!value.is_object() || value.contains("file") == value.contains("pattern")) {
-        return fail(at, "expected an object with exactly one of \"pattern\" or \"file\"");
+    const int kinds = value.is_object() ? static_cast<int>(value.contains("file")) +
+                                              static_cast<int>(value.contains("pattern")) +
+                                              static_cast<int>(value.contains("procedural"))
+                                        : 0;
+    if (kinds != 1) {
+        return fail(at, "expected an object with exactly one of \"pattern\", \"file\" or \"procedural\"");
     }
     TextureSource texture;
+    if (value.contains("procedural")) {
+        Fields fields(value, at, {"procedural"});
+        texture.kind = TextureSource::Kind::Procedural;
+        fields.required("procedural", texture.procedural, readString);
+        if (!fields.failed()) {
+            const auto name = assets::parseProceduralTextureName(texture.procedural);
+            fields.check(name.has_value(), "procedural", name ? std::string() : name.error().toString());
+        }
+        if (fields.failed()) {
+            return propagate(fields.error());
+        }
+        return texture;
+    }
     if (value.contains("file")) {
         Fields fields(value, at, {"file"});
         texture.kind = TextureSource::Kind::File;
@@ -466,7 +484,8 @@ Expected<TextureSource> parseTexture(const json& value, const Location& at) {
         const bool known = std::find(kTexturePatternNames.begin(), kTexturePatternNames.end(), texture.pattern) !=
                            kTexturePatternNames.end();
         fields.check(known, "pattern",
-                     "unknown texture pattern \"" + texture.pattern + "\" (expected color_bars, checker or cover)");
+                     "unknown texture pattern \"" + texture.pattern +
+                         "\" (expected color_bars, checker, cover or sign)");
     }
     fields.optional("title", texture.title, readString);
     fields.optional("seed", texture.seed, readSeed);

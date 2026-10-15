@@ -187,13 +187,15 @@ private:
 Expected<ProceduralPrefab> roomShellFromJson(const Json& params) {
     RoomShellParams p;
     ParamReader r("room_shell", params,
-                  {"size", "wallHeight", "wallThickness", "metersPerTile", "ceiling", "baseboardHeight", "doorway"});
+                  {"size", "wallHeight", "wallThickness", "metersPerTile", "ceiling", "baseboardHeight",
+                   "wainscotHeight", "doorway"});
     r.read("size", p.size);
     r.read("wallHeight", p.wallHeight);
     r.read("wallThickness", p.wallThickness);
     r.read("metersPerTile", p.metersPerTile);
     r.read("ceiling", p.ceiling);
     r.read("baseboardHeight", p.baseboardHeight);
+    r.read("wainscotHeight", p.wainscotHeight);
     if (const Json* doorway = r.find("doorway")) {
         if (doorway->is_null()) {
             p.doorway.reset();
@@ -335,6 +337,21 @@ Expected<ProceduralPrefab> floorLampFromJson(const Json& params) {
     return buildFloorLamp(p);
 }
 
+Expected<ProceduralPrefab> armchairFromJson(const Json& params) {
+    ArmchairParams p;
+    ParamReader r("armchair", params, {"width", "depth", "height", "seatHeight", "armHeight", "legHeight"});
+    r.read("width", p.width);
+    r.read("depth", p.depth);
+    r.read("height", p.height);
+    r.read("seatHeight", p.seatHeight);
+    r.read("armHeight", p.armHeight);
+    r.read("legHeight", p.legHeight);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildArmchair(p);
+}
+
 // --- Primitives ----------------------------------------------------------------------------------------------
 
 constexpr float kMinLength = 0.001f;
@@ -463,7 +480,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 9> kPrefabs{{
+constexpr std::array<PrefabEntry, 10> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -473,6 +490,7 @@ constexpr std::array<PrefabEntry, 9> kPrefabs{{
     {"poster_frame", &posterFrameFromJson},
     {"rug", &rugFromJson},
     {"floor_lamp", &floorLampFromJson},
+    {"armchair", &armchairFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

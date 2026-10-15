@@ -129,7 +129,8 @@ constexpr int kGlyphWidth = 5;
 constexpr int kGlyphHeight = 7;
 constexpr int kGlyphAdvance = kGlyphWidth + 1; // in font pixels
 constexpr int kLineGap = 2;                    // in font pixels
-constexpr std::size_t kMaxTitleLines = 3;
+constexpr std::size_t kMaxCoverTitleLines = 3;
+constexpr std::size_t kMaxSignLines = 2;
 
 const Glyph* findGlyph(char c) noexcept {
     for (const Glyph& glyph : kFont) {
@@ -308,8 +309,9 @@ void drawText(ImageData& image, const std::vector<std::string>& lines, int scale
     }
 }
 
-/// Lays the title out in the band: largest integer scale with at most 3 lines, else scale 1 and truncation.
-void drawTitle(ImageData& image, std::string_view title, int x0, int y0, int x1, int y1, Rgba color) {
+/// Lays the title out in the band: largest integer scale with at most `maxLines` lines, else scale 1 and truncation.
+void drawTitle(ImageData& image, std::string_view title, int x0, int y0, int x1, int y1, Rgba color,
+               std::size_t maxLines) {
     const std::string text = normalizeTitle(title);
     const int availableWidth = x1 - x0;
     const int availableHeight = y1 - y0;
@@ -322,18 +324,18 @@ void drawTitle(ImageData& image, std::string_view title, int x0, int y0, int x1,
             continue;
         }
         const std::vector<std::string> lines = wrapWords(text, static_cast<std::size_t>(perLine));
-        if (lines.size() <= kMaxTitleLines && textBlockHeight(lines.size(), scale) <= availableHeight) {
+        if (lines.size() <= maxLines && textBlockHeight(lines.size(), scale) <= availableHeight) {
             drawText(image, lines, scale, x0, y0, x1, y1, color);
             return;
         }
     }
     // Does not fit even at scale 1: keep the lines that fit and mark the cut.
     const auto perLine = static_cast<std::size_t>((availableWidth + 1) / kGlyphAdvance);
-    const auto maxLines = std::min<std::size_t>(
-        kMaxTitleLines, static_cast<std::size_t>((availableHeight + kLineGap) / (kGlyphHeight + kLineGap)));
+    const auto fittingLines = std::min<std::size_t>(
+        maxLines, static_cast<std::size_t>((availableHeight + kLineGap) / (kGlyphHeight + kLineGap)));
     std::vector<std::string> lines = wrapWords(text, perLine);
-    if (lines.size() > maxLines) {
-        lines.resize(maxLines);
+    if (lines.size() > fittingLines) {
+        lines.resize(fittingLines);
         std::string& last = lines.back();
         constexpr std::string_view kEllipsis = "...";
         if (perLine > kEllipsis.size()) {
@@ -497,7 +499,17 @@ ImageData makeCoverPlaceholder(int width, int height, std::string_view title, st
     const int paddingX = std::max(1, innerWidth / 24);
     const int paddingY = std::max(1, (bandBottom - bandTop) / 8);
     drawTitle(image, title, border + paddingX, bandTop + paddingY, width - border - paddingX, bandBottom - paddingY,
-              kUiNeutral);
+              kUiNeutral, kMaxCoverTitleLines);
+    return image;
+}
+
+ImageData makeSignLettering(int width, int height, std::string_view text) {
+    ImageData image = makeSolid(width, height, Rgba(0, 0, 0, 255));
+    if (!image.isValid()) {
+        return image;
+    }
+    const int margin = std::max(1, std::min(width, height) / 12);
+    drawTitle(image, text, margin, margin, width - margin, height - margin, Rgba(255, 255, 255, 255), kMaxSignLines);
     return image;
 }
 
@@ -510,7 +522,8 @@ ImageData makeSolid(int width, int height, glm::u8vec4 color) {
 }
 
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 3> kNames = {kPatternColorBars, kPatternChecker, kPatternCover};
+    static constexpr std::array<std::string_view, 4> kNames = {kPatternColorBars, kPatternChecker, kPatternCover,
+                                                               kPatternSign};
     return kNames;
 }
 
@@ -531,8 +544,20 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternCover) {
         return makeCoverPlaceholder(width, height, title, seed);
     }
-    return makeError(ErrorCode::NotFound, "unknown test pattern (expected color_bars, checker or cover)",
+    if (name == kPatternSign) {
+        return makeSignLettering(width, height, title);
+    }
+    return makeError(ErrorCode::NotFound, "unknown test pattern (expected color_bars, checker, cover or sign)",
                      std::string(name));
+}
+
+int patternLongSideFor(float meters) noexcept {
+    if (!std::isfinite(meters) || meters <= 0.0f) {
+        return kPatternLongSide;
+    }
+    const double pixels = std::round(static_cast<double>(meters) * static_cast<double>(kPatternPixelsPerMeter));
+    return static_cast<int>(std::clamp(pixels, static_cast<double>(kMinPatternLongSide),
+                                       static_cast<double>(kPatternLongSide)));
 }
 
 glm::ivec2 patternSizeForAspect(float aspect, int longSide) noexcept {

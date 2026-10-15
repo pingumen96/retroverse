@@ -35,7 +35,7 @@ Visual Studio developer environment on each call; see [CLAUDE.md](CLAUDE.md) for
 | Path | Content |
 |---|---|
 | `src/` | Engine-free application code, one library per module (see [docs/architecture.md](docs/architecture.md)) |
-| `assets/` | Shaders, material presets, prefab manifests, asset registry, reference scenes |
+| `assets/` | Shaders, material presets, prefab manifests, asset registry, reference scenes and their golden screenshots |
 | `tests/` | Catch2 unit tests (GPU-free and SDL platform layer), test helpers, scripted input runs, GPU smoke tests |
 | `tools/` | Developer tools (asset preview) |
 | `third_party/` | Vendored code not available through vcpkg (generated glad loader) |

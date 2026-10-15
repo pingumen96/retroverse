@@ -26,11 +26,17 @@ namespace rv::app {
 namespace {
 
 /// Base color texture of a material instance from its picture (PlannedMaterial::picture): an asset file or a pattern
-/// generated at the planned size, both clamped to their edges (single pictures).
+/// generated at the planned size, both clamped to their edges (single pictures), or a procedural surface texture,
+/// repeating.
 const gl::Texture2D& pictureTexture(const PlannedMaterial& planned, gl::TextureCache& textures) {
     const scene::TextureSource& source = *planned.picture;
-    if (source.kind == scene::TextureSource::Kind::File) {
+    switch (source.kind) {
+    case scene::TextureSource::Kind::File:
         return textures.file(source.path, gl::ColorSpace::Srgb, gl::TextureWrap::ClampToEdge);
+    case scene::TextureSource::Kind::Procedural:
+        return textures.procedural(source.procedural, gl::ColorSpace::Srgb);
+    case scene::TextureSource::Kind::Pattern:
+        break;
     }
     return textures.pattern(source.pattern, source.title, source.seed, planned.patternSize, gl::ColorSpace::Srgb);
 }

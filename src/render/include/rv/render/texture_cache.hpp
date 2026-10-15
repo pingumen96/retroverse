@@ -26,6 +26,7 @@ namespace rv::gl {
 ///  - procedural patterns: "pattern:<name>:<title>:<seed>@<width>x<height>" (assets::patternKey; the size is part of
 ///    the key because patterns are generated at the aspect ratio of the surface that shows them), rendered with
 ///    assets::makeNamedPattern, always clamped to their edges (single pictures);
+///  - procedural surface textures: "procedural:<surface>/<map>" (assets/surface_textures.hpp), always repeating;
 ///  - decoded images, such as the images of a glTF model: "<caller key>".
 /// Every texture has the full mip chain and the cache's anisotropy. A source that cannot be loaded or uploaded is
 /// logged as a warning once, and its key then always gives TextureDefaults::checker() (style §21: missing assets
@@ -44,6 +45,12 @@ public:
     /// pixels (assets::patternSizeForAspect), clamped to its edges.
     [[nodiscard]] const Texture2D& pattern(std::string_view name, std::string_view title, std::uint32_t seed,
                                            glm::ivec2 size, ColorSpace colorSpace);
+    /// Texture of the procedural texture `name`, "<surface>/<map>" (assets::parseProceduralTextureName), repeating: the
+    /// surfaces tile. The first request of a surface generates all of its maps (assets::makeProceduralSurface, logged
+    /// with the time it took) and uploads each in its own color space (the base color sRGB, the others linear), so
+    /// the surface's other maps come from the cache afterwards; a request in another color space uploads that map
+    /// once more.
+    [[nodiscard]] const Texture2D& procedural(std::string_view name, ColorSpace colorSpace);
     /// Texture of a decoded image; `key` identifies the image among the cache's sources (for instance
     /// "<model path>#image<index>"), `wrap` is how the image's surfaces map it. file() and pattern() upload through
     /// it once their image is decoded or generated.

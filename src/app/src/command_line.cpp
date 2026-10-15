@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <optional>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -74,14 +76,19 @@ core::ArgParser makeParser() {
         .option("model", "file",
                 "glTF model (.gltf or .glb) to inspect instead of a scene: drawn at the origin with a three-point "
                 "light rig and a camera framing it. Not together with --scene.")
+        .option("spawn", "x,y,z[,yaw[,pitch]]",
+                "Start the walker with its feet at (x, y, z) meters instead of at the scene camera, looking along yaw "
+                "and pitch degrees (the scene camera's when left out; pitch within +-89), e.g. 0,0,3.2,0,-6: the "
+                "feet, yaw and pitch that frame-limited runs log as their final camera.")
         .flag("debug-draw", "Draw debug lines over the scene: object bounds, socket axes and a world grid.")
         .option("self-check", "name",
                 "Run a rendering check after initialization and fail the run (exit code 3) if it does not pass; "
                 "only with --smoke or --exit-after-frames. srgb: an unlit grey quad that the tonemap shows as linear "
-                "0.5, drawn into an HDR target and taken through the post-processing of the views (bloom, vignette "
-                "and dithering off, then bloom and dithering on), must be stored as sRGB 188 (+-2) by the sRGB output "
-                "target. bloom: a lit surface below the bloom threshold must not bloom, an emitter must keep its "
-                "energy (+-5%) and a single very bright pixel must glow alike (+-20%) wherever it falls.")
+                "0.5, drawn into an HDR target and taken through the post-processing of the views (bloom, vignette, "
+                "dithering and anti-aliasing off, then bloom, dithering and anti-aliasing on), must be stored as sRGB "
+                "188 (+-2) by the sRGB output target. bloom: a lit surface below the bloom threshold must not bloom, "
+                "an emitter must keep its energy (+-5%) and a single very bright pixel must glow alike (+-20%) "
+                "wherever it falls.")
         .flag("devui-open", "Show the developer overlay (F1) from the first frame; developer builds only. A "
                             "frame-limited run fails (exit code 3) when the overlay cannot start.")
         .flag("screenshot-include-ui",
@@ -223,6 +230,18 @@ Expected<std::optional<double>> fixedDeltaSeconds(const core::ParsedArgs& args) 
                          "--fixed-dt=" + args.value("fixed-dt").value_or(""));
     }
     return std::optional<double>(*seconds);
+}
+
+/// --spawn x,y,z[,yaw[,pitch]], when given.
+Expected<std::optional<SpawnPoint>> spawnValue(const core::ParsedArgs& args) {
+    if (!args.has("spawn")) {
+        return std::optional<SpawnPoint>{};
+    }
+    auto spawn = parseSpawnPoint(args.value("spawn").value_or(""));
+    if (!spawn) {
+        return propagate(spawn.error());
+    }
+    return std::optional<SpawnPoint>(*spawn);
 }
 
 /// --model <file>: a glTF file, shown instead of a scene.
@@ -384,6 +403,11 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (auto selfCheck = applySelfCheck(*args, options); !selfCheck) {
         return propagate(selfCheck.error());
     }
+    auto spawn = spawnValue(*args);
+    if (!spawn) {
+        return propagate(spawn.error());
+    }
+    options.spawn = *spawn;
     options.scene = std::move(*scene);
     options.screenshot = std::move(*screenshot);
     options.inputScript = std::move(*inputScript);
@@ -393,6 +417,50 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     options.devUiOpen = args->has("devui-open");
     options.screenshotIncludeUi = args->has("screenshot-include-ui");
     return options;
+}
+
+Expected<SpawnPoint> parseSpawnPoint(std::string_view text) {
+    const std::string context = "--spawn=" + std::string(text);
+    const std::vector<std::string_view> fields = core::split(text, ',');
+    if (fields.size() < 3 || fields.size() > 5) {
+        return makeError(ErrorCode::ParseError, "expected x,y,z, x,y,z,yaw or x,y,z,yaw,pitch", context);
+    }
+    std::array<float, 5> values{};
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        const std::string_view field = core::trim(fields[i]);
+        const char* end = field.data() + field.size();
+        const auto [ptr, ec] = std::from_chars(field.data(), end, values[i]);
+        if (!field.empty() && ptr == end && ec == std::errc::result_out_of_range) {
+            return makeError(ErrorCode::OutOfRange, fmt::format("value {} is out of range", i + 1), context);
+        }
+        if (field.empty() || ec != std::errc{} || ptr != end) {
+            return makeError(ErrorCode::ParseError,
+                             fmt::format("value {} (\"{}\") is not a decimal number", i + 1, field), context);
+        }
+        if (!std::isfinite(values[i])) {
+            return makeError(ErrorCode::OutOfRange, fmt::format("value {} is not finite", i + 1), context);
+        }
+    }
+    SpawnPoint spawn;
+    spawn.feet = glm::vec3(values[0], values[1], values[2]);
+    for (int axis = 0; axis < 3; ++axis) {
+        if (std::fabs(spawn.feet[axis]) > SpawnPoint::kMaxCoordinate) {
+            return makeError(ErrorCode::OutOfRange,
+                             fmt::format("coordinates must be within +-{:g} m", SpawnPoint::kMaxCoordinate), context);
+        }
+    }
+    if (fields.size() >= 4) {
+        spawn.yawDeg = values[3];
+    }
+    if (fields.size() == 5) {
+        if (std::fabs(values[4]) > SpawnPoint::kMaxPitchDeg) {
+            return makeError(ErrorCode::OutOfRange,
+                             fmt::format("the pitch must be within +-{:g} degrees", SpawnPoint::kMaxPitchDeg),
+                             context);
+        }
+        spawn.pitchDeg = values[4];
+    }
+    return spawn;
 }
 
 Expected<CommandLineOptions> parseCommandLine(int argc, const char* const* argv) {

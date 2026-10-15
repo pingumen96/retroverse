@@ -188,6 +188,52 @@ TEST_CASE("geometry/mesh_builder: world-meter uvs tile seamlessly across adjacen
     }
 }
 
+TEST_CASE("geometry/mesh_builder: grain-meter uvs run along the longer side of every face",
+          "[geometry][mesh_builder][uv]") {
+    // A tall board (0.3 m wide, 2 m tall, 2 cm deep) centered at (1, 1, 0). Its front face is taller than wide: u runs
+    // down it and v towards its left (the WorldMeters layout turned a quarter turn); its top face is wider than deep:
+    // the WorldMeters layout itself.
+    const glm::mat4 placement = translate(1.0f, 1.0f, 0.0f);
+    const MeshData board = buildBox({0.3f, 2.0f, 0.02f}, placement, BoxUv::GrainMeters, 0.5f,
+                                    FaceMask::PosZ | FaceMask::PosY);
+    REQUIRE(board.vertices.size() == 8);
+    for (const Vertex& v : board.vertices) {
+        INFO(v.position.x << " " << v.position.y << " " << v.position.z);
+        if (v.normal.z > 0.5f) {
+            CHECK(closeTo(v.uv0, glm::vec2(-v.position.y, -v.position.x) / 0.5f));
+        } else {
+            CHECK(closeTo(v.uv0, glm::vec2(v.position.x, v.position.z) / 0.5f));
+        }
+    }
+    // A quarter turn, never a mirror: the tangent frames stay consistent with the uvs.
+    CHECK(rv::test::tangentFrameMismatches(board) == 0);
+    CHECK(rv::test::badTangents(board) == 0);
+
+    // Chamfered boards map their flat faces the same way, one uv unit per metersPerTile, and their bevels lean on the
+    // faces' mapping; below the smallest chamfer they are the plain box with the same layout.
+    MeshBuilder chamfered;
+    chamfered.chamferedBox({0.3f, 2.0f, 0.02f}, 0.003f, placement, BoxUv::GrainMeters, 1.0f);
+    const MeshData bevelled = std::move(chamfered).build("bevelled");
+    for (const Vertex& v : bevelled.vertices) {
+        if (closeTo(v.normal, glm::vec3(0.0f, 0.0f, 1.0f))) {
+            CHECK(closeTo(v.uv0, glm::vec2(-v.position.y, -v.position.x)));
+        }
+    }
+    CHECK(rv::test::tangentFrameMismatches(bevelled) == 0);
+    MeshBuilder tiny;
+    tiny.chamferedBox({0.3f, 2.0f, 0.02f}, 1e-7f, placement, BoxUv::GrainMeters, 1.0f);
+    CHECK(rv::geometry::hashMesh(std::move(tiny).build("box")) ==
+          rv::geometry::hashMesh(buildBox({0.3f, 2.0f, 0.02f}, placement, BoxUv::GrainMeters, 1.0f)));
+    // World meters on a chamfered box follow the face axes too; per-face uvs stay the default.
+    MeshBuilder world;
+    world.chamferedBox({1.0f, 1.0f, 1.0f}, 0.05f, translate(2.0f, 0.0f, 0.0f), BoxUv::WorldMeters, 0.5f);
+    for (const Vertex& v : std::move(world).build("world").vertices) {
+        if (closeTo(v.normal, glm::vec3(0.0f, 0.0f, 1.0f))) {
+            CHECK(closeTo(v.uv0, glm::vec2(v.position.x, -v.position.y) / 0.5f));
+        }
+    }
+}
+
 TEST_CASE("geometry/mesh_builder: face mask drops faces", "[geometry][mesh_builder]") {
     const MeshData noBottom =
         buildBox({1.0f, 1.0f, 1.0f}, kIdentity, BoxUv::PerFace, 1.0f, FaceMask::All & ~FaceMask::NegY);

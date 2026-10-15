@@ -139,13 +139,20 @@ void PostProcessor::apply(GLDevice& device, const PostShaders& shaders, const Po
         if (uniforms.bloomMix > 0.0f) {
             bloom(device, shaders, bloomScatter(settings.bloomRadius), targets);
         }
-        const ScopedDebugGroup postGroup(device, "PostPass");
-        bindTarget(state, output);
-        state.setFramebufferSrgb(true);
-        targets.hdr().bindColorTexture(kSourceUnit);
-        targets.bloomLevels()[0].bindColorTexture(kBloomUnit);
-        shaders.post->use();
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        const bool antialiasing = settings.antialiasing && usable(shaders.antialiasing);
+        {
+            const ScopedDebugGroup postGroup(device, "PostPass");
+            bindTarget(state, antialiasing ? targets.tonemapped() : output);
+            state.setFramebufferSrgb(true);
+            targets.hdr().bindColorTexture(kSourceUnit);
+            targets.bloomLevels()[0].bindColorTexture(kBloomUnit);
+            shaders.post->use();
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+        }
+        if (antialiasing) {
+            const ScopedDebugGroup antialiasingGroup(device, "AntiAliasing");
+            drawPass(device, *shaders.antialiasing, targets.tonemapped(), output);
+        }
     } else {
         // The scene as it is, clamped and encoded by the output, so that it stays visible.
         state.setFramebufferSrgb(true);

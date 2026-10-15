@@ -202,11 +202,14 @@ TEST_CASE("scene/scene_description: object sources, materials, textures and flag
              "castsShadows": false, "collides": false},
             {"id": "ball", "primitive": "sphere", "inlineMaterial": {"shading": "pbr", "roughness": 0.25}},
             {"id": "tv", "model": "models/electronics/crt_generic.glb",
-             "textures": {"screen": {"file": "textures/test/bars.png"}, "dial": {"pattern": "checker"}}}
+             "textures": {"screen": {"file": "textures/test/bars.png"}, "dial": {"pattern": "checker"}}},
+            {"id": "panel", "primitive": "box", "material": "MAT_Wood_Walnut",
+             "textures": {"box": {"procedural": "oak_planks/baseColor"}}},
+            {"id": "sign", "prefab": "poster_frame", "textures": {"picture": {"pattern": "sign", "title": "ARCADE"}}}
         ]
     })");
     REQUIRE(scene.has_value());
-    REQUIRE(scene->objects.size() == 3);
+    REQUIRE(scene->objects.size() == 5);
 
     const SceneObject& cart = *scene->findObject("cart");
     CHECK(cart.source == SceneObject::Source::Prefab);
@@ -244,6 +247,16 @@ TEST_CASE("scene/scene_description: object sources, materials, textures and flag
     CHECK(tv.texturesByRole.at("screen").path == "textures/test/bars.png");
     CHECK(tv.texturesByRole.at("dial").pattern == "checker");
     CHECK(tv.texturesByRole.at("dial").seed == 0u);
+
+    // A procedural surface texture of the catalog, named "<surface>/<map>", and the sign lettering pattern.
+    const TextureSource& planks = scene->findObject("panel")->texturesByRole.at("box");
+    CHECK(planks.kind == TextureSource::Kind::Procedural);
+    CHECK(planks.procedural == "oak_planks/baseColor");
+    CHECK(planks.pattern.empty());
+    const TextureSource& lettering = scene->findObject("sign")->texturesByRole.at("picture");
+    CHECK(lettering.kind == TextureSource::Kind::Pattern);
+    CHECK(lettering.pattern == "sign");
+    CHECK(lettering.title == "ARCADE");
 }
 
 TEST_CASE("scene/scene_description: transforms compose translate * Ry * Rx * Rz * scale",
@@ -471,7 +484,7 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
         {"role keys are escaped in the JSON pointer",
          R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "materials": {"a/b~c": 3}}]})",
          "/objects/0/materials/a~1b~0c"},
-        {"textures need a pattern or a file",
+        {"textures need a pattern, a file or a procedural texture",
          R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "textures": {"label": {"title": "T"}}}]})",
          "/objects/0/textures/label"},
         {"textures have one source only",
@@ -483,6 +496,18 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
         {"texture seeds are non-negative integers",
          R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "textures": {"label": {"pattern": "cover", "seed": -1}}}]})",
          "/objects/0/textures/label/seed"},
+        {"textures name one procedural texture only",
+         R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "textures": {"label": {"procedural": "walnut/baseColor", "file": "t.png"}}}]})",
+         "/objects/0/textures/label"},
+        {"known procedural surfaces",
+         R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "textures": {"label": {"procedural": "teak/baseColor"}}}]})",
+         "/objects/0/textures/label/procedural"},
+        {"procedural textures name a map",
+         R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "textures": {"label": {"procedural": "walnut"}}}]})",
+         "/objects/0/textures/label/procedural"},
+        {"procedural textures take no title",
+         R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "textures": {"label": {"procedural": "walnut/baseColor", "title": "T"}}}]})",
+         "/objects/0/textures/label/title"},
         {"file textures take no title",
          R"({"schemaVersion": 1, "name": "x", "objects": [{"id": "a", "prefab": "cartridge", "textures": {"label": {"file": "t.png", "title": "T"}}}]})",
          "/objects/0/textures/label/title"},

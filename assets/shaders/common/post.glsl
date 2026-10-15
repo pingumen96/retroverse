@@ -19,9 +19,9 @@ layout(std140, binding = 3) uniform PostUniforms {
     float uDitherAmplitude; // [0, 1]: peak-to-peak noise added to the sRGB-encoded output (1/255: one 8-bit step)
 };
 
-// The image a pass filters: the radiance of the HDR scene or a bloom level (PostTextureUnit::Source). The post pass
-// also reads the bloom on unit 6 (post/post.frag); the bloom passes, which draw into the bloom levels, never declare
-// it.
+// The image a pass filters: the radiance of the HDR scene or a bloom level (PostTextureUnit::Source), or the tonemapped
+// image for the anti-aliasing pass (post/fxaa.frag). The post pass also reads the bloom on unit 6 (post/post.frag); the
+// bloom passes, which draw into the bloom levels, never declare it.
 layout(binding = 5) uniform sampler2D uSource;
 // The emitted part of the HDR scene's radiance (PostTextureUnit::Emission, rv::gl::SceneOutput::Emission), read with
 // it by the first bloom downsample and the post pass.

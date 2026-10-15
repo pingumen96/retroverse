@@ -217,11 +217,12 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
     // The programs of the application: pbr (PBR_Base), unlit_emissive (Unlit_Emissive) and the depth-only depth and
     // depth_masked (the shadow map, the depth pre-pass), which all share pbr.vert, debug_lines (--debug-draw), and the
     // fullscreen passes on post/fullscreen.vert: the ambient occlusion (ssao, ssao_blur) and the post-processing,
-    // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample and post.
+    // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample, post and fxaa.
     CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "depth/depth.frag",
                                              "pbr/pbr.frag", "pbr/pbr.vert", "post/bloom_downsample.frag",
-                                             "post/bloom_upsample.frag", "post/fullscreen.vert", "post/post.frag",
-                                             "ssao/ssao.frag", "ssao/ssao_blur.frag", "unlit/unlit_emissive.frag"});
+                                             "post/bloom_upsample.frag", "post/fullscreen.vert", "post/fxaa.frag",
+                                             "post/post.frag", "ssao/ssao.frag", "ssao/ssao_blur.frag",
+                                             "unlit/unlit_emissive.frag"});
 
     // The first bloom level is built with RV_BLOOM_KARIS, the depth program of alpha-masked batches with RV_ALPHA_TEST;
     // the self-checks use the programs of the views.
@@ -262,13 +263,14 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
         CHECK(includes(stage, "common/material.glsl"));
         CHECK(includes(stage, "common/scene_output.glsl"));
     }
-    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag"}) {
+    for (const char* stage :
+         {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag", "post/fxaa.frag"}) {
         INFO(stage);
         CHECK(includes(stage, "common/post.glsl"));
     }
     CHECK(includes("post/post.frag", "common/tonemap.glsl"));
     for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag", "post/bloom_downsample.frag",
-                              "post/bloom_upsample.frag", "debug/debug_lines.frag"}) {
+                              "post/bloom_upsample.frag", "post/fxaa.frag", "debug/debug_lines.frag"}) {
         INFO(stage);
         CHECK_FALSE(includes(stage, "common/tonemap.glsl"));
     }
@@ -304,11 +306,12 @@ TEST_CASE("integration/shaders: the material shaders write linear radiance for t
         CHECK_FALSE(std::regex_search(source, std::regex(R"(\btonemap\w*\s*\()")));
         CHECK_FALSE(std::regex_search(source, std::regex(R"(\buExposure\b)")));
     }
-    // The emitted part: the emissive term of a lit material, all of an unlit one's radiance.
+    // The emitted part: the emissive term of a lit material, all of an unlit one's light. An unlit CRT screen adds the
+    // reflection of its glass to the radiance only: reflected light, which must not bloom like the picture.
     CHECK(std::regex_search(glslWithoutComments("pbr/pbr.frag"),
                             std::regex(R"(writeSceneOutput\s*\(\s*radiance\s*,\s*emissive\s*,)")));
     CHECK(std::regex_search(glslWithoutComments("unlit/unlit_emissive.frag"),
-                            std::regex(R"(writeSceneOutput\s*\(\s*radiance\s*,\s*radiance\s*,)")));
+                            std::regex(R"(writeSceneOutput\s*\(\s*radiance\s*,\s*emitted\s*,)")));
 }
 
 TEST_CASE("integration/shaders: mesh and debug line stages read the vertex layouts the renderer uploads",
@@ -425,6 +428,13 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
                     {"float", "uAlphaCutoff", offsetof(MaterialUniforms, alphaCutoff)},
                     {"float", "uEmissiveStrength", offsetof(MaterialUniforms, emissiveStrength)},
                     {"uint", "uMaterialFlags", offsetof(MaterialUniforms, flags)},
+                    {"float", "uCrtLineCount", offsetof(MaterialUniforms, crtLineCount)},
+                    {"float", "uCrtMaskTriadCount", offsetof(MaterialUniforms, crtMaskTriadCount)},
+                    {"float", "uCrtScanlineStrength", offsetof(MaterialUniforms, crtScanlineStrength)},
+                    {"float", "uCrtMaskStrength", offsetof(MaterialUniforms, crtMaskStrength)},
+                    {"float", "uCrtCurvature", offsetof(MaterialUniforms, crtCurvature)},
+                    {"float", "uCrtVignette", offsetof(MaterialUniforms, crtVignette)},
+                    {"float", "uCrtGlassReflection", offsetof(MaterialUniforms, crtGlassReflection)},
                 },
                 sizeof(MaterialUniforms));
 
@@ -438,6 +448,7 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
         {"RV_MATERIAL_ALPHA_MASK", flags::kAlphaMask},
         {"RV_MATERIAL_ALPHA_BLEND", flags::kAlphaBlend},
         {"RV_MATERIAL_DOUBLE_SIDED", flags::kDoubleSided},
+        {"RV_MATERIAL_CRT_SCREEN", flags::kCrtScreen},
     };
     std::map<std::string, std::uint32_t> glslFlags;
     const std::regex flag("const\\s+uint\\s+(RV_MATERIAL_\\w+)\\s*=\\s*(\\d+)u\\s*;");
@@ -514,7 +525,7 @@ TEST_CASE("integration/shaders: the GLSL post block, texture units and filters m
                                                {"uEmission", rv::gl::toIndex(PostTextureUnit::Emission)}});
     CHECK(samplerUnits(glslWithoutComments("post/post.frag")) ==
           std::map<std::string, std::uint32_t>{{"uBloom", rv::gl::toIndex(PostTextureUnit::Bloom)}});
-    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag"}) {
+    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/fxaa.frag"}) {
         INFO(stage);
         CHECK(samplerUnits(glslWithoutComments(stage)).empty());
     }
@@ -579,7 +590,8 @@ TEST_CASE("integration/shaders: the post-processing passes draw a fullscreen tri
     CHECK(std::regex_search(vertex, std::regex(R"(\bgl_VertexID\b)")));
     // The fragment stages read the uv it writes at location 0.
     CHECK(std::regex_search(vertex, std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*out\s+vec2\s+vUv\s*;)")));
-    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag"}) {
+    for (const char* stage :
+         {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag", "post/fxaa.frag"}) {
         INFO(stage);
         CHECK(std::regex_search(glslWithoutComments(stage),
                                 std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*in\s+vec2\s+vUv\s*;)")));
@@ -897,4 +909,79 @@ TEST_CASE("integration/shaders: the lit shader shadows the key light and occlude
     }
     // The specular ambient is occluded through the specular occlusion of the ambient occlusion.
     CHECK(std::regex_search(main, std::regex(R"(specularOcclusion\s*\(\s*NoV\s*,\s*ambientVisibility\s*,)")));
+}
+
+TEST_CASE("integration/shaders: an unlit CRT screen emits its picture, its glass only reflects",
+          "[integration][shader]") {
+    // Everything an unlit material shows is emitted (it blooms), except the reflection of a CRT screen's glass: the
+    // radiance starts as the emitted light and only the glass reflection is added to it, never to the emission.
+    const std::string unlit = glslWithoutComments("unlit/unlit_emissive.frag");
+    CHECK(std::regex_search(unlit, std::regex(R"(vec3\s+radiance\s*=\s*emitted\s*;)")));
+    const auto bodies = functionBodies(unlit);
+    REQUIRE(bodies.contains("main"));
+    const std::vector<std::string> additions = statementsWith(bodies.at("main"), "radiance +=");
+    REQUIRE(additions.size() == 1);
+    CHECK(additions.front().find("crtGlassReflection") != std::string::npos);
+    CHECK(statementsWith(bodies.at("main"), "emitted +=").empty());
+
+    // The picture-tube look is computed before the alpha test: its scanline and mask fades use derivatives (fwidth),
+    // undefined after a discard taken by part of a 2x2 quad, like implicit texture derivatives.
+    const rv::assets::ShaderSourceLoader loader(shaderRoot());
+    const auto loaded = loader.load("unlit/unlit_emissive.frag");
+    REQUIRE(loaded.has_value());
+    const auto all = functionBodies(withoutComments(loaded->text));
+    REQUIRE(all.contains("main"));
+    const std::set<std::string> derivatives = functionsReaching(all, std::regex(R"(\bfwidth\s*\()"));
+    CHECK(derivatives.contains("crtPictureLight"));
+    const std::set<std::string> discarders = functionsReaching(all, std::regex(R"(\bdiscard\b)"));
+    const std::string& main = all.at("main");
+    const std::size_t discardAt = firstUse(main, std::regex(R"(\bdiscard\b)"), discarders);
+    REQUIRE(discardAt != std::string::npos);
+    CHECK(firstUse(main, std::regex(R"(\bfwidth\s*\()"), derivatives) < discardAt);
+    CHECK(firstUse(main.substr(discardAt), std::regex(R"(\bfwidth\s*\()"), derivatives) == std::string::npos);
+
+    // The glass reflects the scene's lights through the shared light evaluation of the lit shader.
+    CHECK(std::find(loaded->files.begin(), loaded->files.end(), fs::path("common/crt.glsl")) != loaded->files.end());
+    REQUIRE(all.contains("crtGlassReflection"));
+    CHECK(std::regex_search(all.at("crtGlassReflection"), std::regex(R"(\bpunctualLightRadiance\s*\()")));
+    CHECK(std::regex_search(all.at("crtGlassReflection"), std::regex(R"(\bevaluateLight\s*\()")));
+}
+
+TEST_CASE("integration/shaders: the anti-aliasing pass finds edges in the luma the post pass writes",
+          "[integration][shader]") {
+    // The post pass writes the perceptual luma of each pixel (the sRGB encoding of its luminance, before the dither)
+    // into the alpha of the tonemapped image; the anti-aliasing pass reads its edge tests from that alpha only, and
+    // writes an opaque output.
+    const std::string post = glslWithoutComments("post/post.frag");
+    const std::string displayLuma = R"(linearToSrgb\s*\(\s*vec3\s*\(\s*luminance\s*\(\s*display\s*\)\s*\)\s*\)\.r)";
+    CHECK(std::regex_search(post, std::regex(R"(oColor\s*=\s*vec4\s*\(\s*dither\s*\(\s*display\s*,[^;]*\)\s*,\s*)" +
+                                             displayLuma + R"(\s*\)\s*;)")));
+
+    const std::string fxaa = glslWithoutComments("post/fxaa.frag");
+    const auto bodies = functionBodies(fxaa);
+    REQUIRE(bodies.contains("main"));
+    REQUIRE(bodies.contains("lumaAt"));
+    CHECK(std::regex_search(bodies.at("lumaAt"), std::regex(R"(textureLod\s*\(\s*uSource\s*,[^;]*\)\.a\s*;)")));
+    const std::string& main = bodies.at("main");
+    // Every neighbor's luma is an alpha; the color is only read for the pixel itself and for the final blend.
+    const std::regex neighbor(R"(textureLodOffset\s*\(\s*uSource\s*,[^;]*\)\s*(\.\w+)?)");
+    std::size_t neighbors = 0;
+    for (auto it = std::sregex_iterator(main.begin(), main.end(), neighbor); it != std::sregex_iterator(); ++it) {
+        CHECK((*it)[1].str() == ".a");
+        ++neighbors;
+    }
+    CHECK(neighbors == 8);
+    const std::regex output(R"(oColor\s*=\s*vec4\s*\(([^;]*),\s*1\.0\s*\)\s*;)");
+    CHECK(std::distance(std::sregex_iterator(main.begin(), main.end(), output), std::sregex_iterator()) == 2);
+
+    // Thresholds and blend strengths in their ranges: the relative and absolute contrast of an edge, the strength of
+    // the sub-pixel blend, the share of the step across that ends the walk along an edge.
+    for (const char* name : {"RV_FXAA_RELATIVE_THRESHOLD", "RV_FXAA_ABSOLUTE_THRESHOLD", "RV_FXAA_SUBPIXEL",
+                             "RV_FXAA_END_SHARE"}) {
+        INFO(name);
+        const float value = glslFloatConstant(fxaa, name);
+        CHECK(value > 0.0f);
+        CHECK(value <= 1.0f);
+    }
+    CHECK(glslIntConstant(fxaa, "RV_FXAA_SEARCH_STEPS") > 0);
 }

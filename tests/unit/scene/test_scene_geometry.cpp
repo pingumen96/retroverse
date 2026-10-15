@@ -88,9 +88,12 @@ TEST_CASE("scene/scene_geometry: the M0 test room resolves every part to a libra
     CHECK(geometry.instanceCount() == scene.objects.size());
 
     const SceneObjectGeometry& room = object(geometry, "room");
-    CHECK(part(room, "floor").material.name == "MAT_Wood_Oak");
+    CHECK(part(room, "floor").material.name == "MAT_Floor_OakPlanks");
     CHECK(part(room, "wall").material.name == "MAT_Wall_Painted");
-    CHECK(rv::core::nearlyEqual(part(room, "wall").material.baseColorFactor, linear("#383735")));
+    // The wall's palette color (#383735) comes with its procedural surface; the factor is neutral.
+    CHECK(part(room, "wall").material.baseColorTexture.procedural == "painted_plaster/baseColor");
+    CHECK(rv::core::nearlyEqual(part(room, "wall").material.baseColorFactor, glm::vec4(1.0f)));
+    CHECK(part(room, "wainscot").material.name == "MAT_Wood_Varnished");
 
     const SceneObjectGeometry& cartridge = object(geometry, "cartridge_2_3");
     REQUIRE(cartridge.parts.size() == 2);
@@ -100,7 +103,8 @@ TEST_CASE("scene/scene_geometry: the M0 test room resolves every part to a libra
     CHECK(rv::core::nearlyEqual(cartridge.instances.front(), scene.findObject("cartridge_2_3")->transform));
 
     const SceneObjectGeometry& crt = object(geometry, "crt_tv");
-    CHECK(part(crt, "screen").material.name == "MAT_Screen_Emissive");
+    CHECK(part(crt, "screen").material.name == "MAT_Screen_CRT");
+    REQUIRE(part(crt, "screen").material.crt.has_value());
     CHECK(part(crt, "plastic_body").material.name == "MAT_Plastic_AgedIvory");
 
     std::size_t triangles = 0;
@@ -135,7 +139,7 @@ TEST_CASE("scene/scene_geometry: scene textures reach exactly the parts of their
             }
         }
     }
-    CHECK(textured == 24 + 1 + 2); // cartridge labels, the CRT screen, the two posters
+    CHECK(textured == 96 + 1 + 4 + 1); // cartridge labels, the CRT screen, the four posters, the sign
 
     const ScenePart& label = part(object(geometry, "cartridge_1_0"), "label");
     REQUIRE(label.texture.has_value());
@@ -279,14 +283,16 @@ TEST_CASE("scene/scene_geometry: the collision world places every collider of ev
     CHECK(object(geometry, "room").colliders.size() == 7);
     CHECK(object(geometry, "shelf_main").colliders.size() == 1);
     CHECK(object(geometry, "crt_tv").colliders.size() == 1);
-    // "collides": false (rug, posters) leaves no collider.
+    // "collides": false (rug, posters, sign) leaves no collider.
     CHECK(object(geometry, "rug").colliders.empty());
     CHECK(object(geometry, "poster_left").colliders.empty());
     CHECK(object(geometry, "poster_right").colliders.empty());
+    CHECK(object(geometry, "room_sign").colliders.empty());
 
     const rv::scene::CollisionWorld world = rv::scene::buildCollisionWorld(geometry);
-    // Six wall parts and the doorway stop, the shelf, 24 cartridges, the cabinet, the CRT, the console and the lamp.
-    CHECK(world.boxes().size() == 36);
+    // Six wall parts and the doorway stop, the two shelves, 96 cartridges, the TV cabinet, the CRT, the console, the
+    // armchair, the sideboard, the table lamp and the floor lamp.
+    CHECK(world.boxes().size() == 7 + 2 + 96 + 7);
     // Prefab bounds moved to the object position: the 1.2 x 2.0 x 0.35 m shelf at (-1.5, 0, -4.8).
     CHECK(closeTo(colliderBox(world, "shelf_main").box, {-2.1f, 0.0f, -4.975f}, {-0.9f, 2.0f, -4.625f}));
     CHECK_FALSE(colliderBox(world, "shelf_main").turned.has_value());
@@ -388,7 +394,7 @@ TEST_CASE("scene/scene_geometry: a room turned about +Y keeps its interior free 
 TEST_CASE("scene/scene_geometry: objects with the same kind and parameters share their meshes", "[scene][geometry]") {
     const SceneGeometry geometry = rv::scene::buildSceneGeometry(referenceScene("m0_testroom"), realMaterials());
 
-    // The 24 cartridges have the same (default) parameters: one shell mesh and one label mesh for all of them.
+    // The 96 cartridges have the same (default) parameters: one shell mesh and one label mesh for all of them.
     std::set<const rv::geometry::MeshData*> shells;
     std::set<std::string> shellKeys;
     std::size_t cartridges = 0;
@@ -399,7 +405,7 @@ TEST_CASE("scene/scene_geometry: objects with the same kind and parameters share
             shellKeys.insert(part(built, "plastic_shell").meshKey);
         }
     }
-    CHECK(cartridges == 24);
+    CHECK(cartridges == 96);
     CHECK(shells.size() == 1);
     REQUIRE(shellKeys.size() == 1);
     CHECK(shellKeys.begin()->starts_with("prefab:cartridge:"));
@@ -407,14 +413,22 @@ TEST_CASE("scene/scene_geometry: objects with the same kind and parameters share
     const ScenePart& firstLabel = part(object(geometry, "cartridge_1_0"), "label");
     CHECK(firstLabel.mesh == part(object(geometry, "cartridge_3_7"), "label").mesh);
     CHECK(firstLabel.meshKey != *shellKeys.begin());
-    // So do the two posters; the shelf and the cabinet, other kinds, do not share theirs.
-    CHECK(part(object(geometry, "poster_left"), "frame").mesh == part(object(geometry, "poster_right"), "frame").mesh);
+    // So do the four posters; the sign (a frame of other dimensions), the left shelf (narrower), the sideboard (a
+    // cabinet of other dimensions) and the shelf and the cabinet, other kinds, do not share theirs.
+    CHECK(part(object(geometry, "poster_left"), "frame").mesh == part(object(geometry, "poster_east"), "frame").mesh);
+    CHECK(part(object(geometry, "shelf_main"), "wood_primary").meshKey !=
+          part(object(geometry, "shelf_left"), "wood_primary").meshKey);
+    CHECK(part(object(geometry, "room_sign"), "frame").meshKey !=
+          part(object(geometry, "poster_left"), "frame").meshKey);
+    CHECK(part(object(geometry, "sideboard"), "wood_primary").meshKey !=
+          part(object(geometry, "tv_cabinet"), "wood_primary").meshKey);
     CHECK(part(object(geometry, "shelf_main"), "wood_primary").meshKey !=
           part(object(geometry, "tv_cabinet"), "wood_primary").meshKey);
 
-    // 71 parts, 23 distinct meshes: room 4, shelf 2, cartridge 2, cabinet 3, CRT 4, console 3, rug 1, poster 2, lamp 2.
-    CHECK(geometry.partCount() == 71);
-    CHECK(geometry.uniqueMeshCount() == 23);
+    // 231 parts, 35 distinct meshes: room 5 (with the wainscot), the two shelves 2 + 2, cartridge 2, TV cabinet 3,
+    // sideboard 3, CRT 4, console 3, rug 1, armchair 2, floor lamp 2, table lamp 2, poster 2, sign 2.
+    CHECK(geometry.partCount() == 231);
+    CHECK(geometry.uniqueMeshCount() == 35);
     // Parts with equal keys always share the mesh object itself.
     std::map<std::string, const rv::geometry::MeshData*> byKey;
     for (const SceneObjectGeometry& built : geometry.objects) {
@@ -423,7 +437,7 @@ TEST_CASE("scene/scene_geometry: objects with the same kind and parameters share
             CHECK(entry->second == builtPart.mesh.get());
         }
     }
-    CHECK(byKey.size() == 23);
+    CHECK(byKey.size() == 35);
 }
 
 TEST_CASE("scene/scene_geometry: prefab sockets, bounds and shadow flags reach the objects", "[scene][geometry]") {
@@ -432,7 +446,7 @@ TEST_CASE("scene/scene_geometry: prefab sockets, bounds and shadow flags reach t
     const SceneObjectGeometry& shelf = object(geometry, "shelf_main");
     CHECK(std::count_if(shelf.sockets.begin(), shelf.sockets.end(), [](const rv::geometry::Socket& socket) {
               return socket.kind == rv::geometry::SocketKind::ShelfSlot;
-          }) == 40); // 5 levels of 8 slots
+          }) == 64); // 8 levels of 8 slots
     CHECK(rv::core::nearlyEqual(shelf.bounds.size(), glm::vec3(1.2f, 2.0f, 0.35f)));
 
     const SceneObjectGeometry& crt = object(geometry, "crt_tv");

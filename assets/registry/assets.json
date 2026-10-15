@@ -6,7 +6,7 @@
       "path": "materials/base/materials.json",
       "kind": "material-library",
       "provenance": "retroverse-original",
-      "notes": "Parametric PBR presets derived from the style guide palette (style.md section 3)."
+      "notes": "Parametric PBR presets derived from the style guide palette (style.md section 3); their textures are procedural surfaces generated in code (src/assets/include/rv/assets/surface_textures.hpp), no image files."
     }
   ]
 }

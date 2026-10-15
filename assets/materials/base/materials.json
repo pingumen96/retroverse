@@ -3,25 +3,84 @@
 // Physical plausibility: dielectrics use metallic 0 and roughness 0.3-0.95; metals use metallic 0.9-1.0 and their
 // base color is the specular tint. Unlit materials are rendered as base color (times texture) scaled by
 // emissiveStrength (see rv/assets/material_library.hpp).
+// Procedural textures ("procedural:<surface>/<map>", rv/assets/surface_textures.hpp, generated at startup): the "full"
+// surfaces carry the material's albedo and roughness themselves, tuned around its style section 3 color (named in each
+// entry's comment), so their materials use a white base color and roughness and metallic factors of 1 (0 for
+// dielectrics' metallic); the aged plastic "detail" surface modulates the plastics' own colors and roughness around 1.
+// Furniture and room uvs are in meters (wood: 1 m per repeat along the board; floor and walls: room_shell
+// metersPerTile 2, the 2 m repeat of the floor planks and the plaster).
 {
   "schemaVersion": 1,
   "materials": {
-    "MAT_Wood_Walnut": { "baseColor": "#493024", "metallic": 0.0, "roughness": 0.62 },
-    "MAT_Wood_Oak": { "baseColor": "#76513A", "metallic": 0.0, "roughness": 0.58 },
-    "MAT_Wood_Varnished": { "baseColor": "#5B3A26", "metallic": 0.0, "roughness": 0.35 },
+    // Walnut #493024: dark grain with lighter streaks and flat-sawn arches, satin finish.
+    "MAT_Wood_Walnut": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:walnut/baseColor",
+      "metallicRoughnessTexture": "procedural:walnut/metallicRoughness",
+      "normalTexture": "procedural:walnut/normal"
+    },
+    // Medium oak #76513A: open grain, satin finish (frames, trim).
+    "MAT_Wood_Oak": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:oak/baseColor",
+      "metallicRoughnessTexture": "procedural:oak/metallicRoughness",
+      "normalTexture": "procedural:oak/normal"
+    },
+    // Varnished reddish-brown wood #5B3A26: straight close grain under a glossy varnish (fronts, back panels).
+    "MAT_Wood_Varnished": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:varnished_wood/baseColor",
+      "metallicRoughnessTexture": "procedural:varnished_wood/metallicRoughness",
+      "normalTexture": "procedural:varnished_wood/normal"
+    },
+    // Oak floor planks #76513A: per-plank tint, joints with a dark gap and a micro-bevel, satin varnish.
+    "MAT_Floor_OakPlanks": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:oak_planks/baseColor",
+      "metallicRoughnessTexture": "procedural:oak_planks/metallicRoughness",
+      "normalTexture": "procedural:oak_planks/normal"
+    },
 
     "MAT_Concrete_Warm": { "baseColor": "#857B70", "metallic": 0.0, "roughness": 0.92 },
-    "MAT_Wall_Painted": { "baseColor": "#383735", "metallic": 0.0, "roughness": 0.9 },
+    // Smoky grey-brown paint #383735 over troweled plaster, matte.
+    "MAT_Wall_Painted": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:painted_plaster/baseColor",
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
     "MAT_Plaster_Used": { "baseColor": "#9A9081", "metallic": 0.0, "roughness": 0.95 },
 
     // Painted or powder-coated structural steel (railings, uprights, cabinets): the coat is a dielectric, so the
     // art-directed graphite stays visible. A bare metal this dark would reflect less than any dielectric.
     "MAT_Metal_Graphite": { "baseColor": "#252A2E", "metallic": 0.0, "roughness": 0.45 },
-    "MAT_Metal_Brushed": { "baseColor": "#B9BBBE", "metallic": 1.0, "roughness": 0.35 },
+    // Brushed steel #B9BBBE: streaks along the brushing direction.
+    "MAT_Metal_Brushed": {
+      "baseColor": "#FFFFFF", "metallic": 1.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:brushed_metal/baseColor",
+      "metallicRoughnessTexture": "procedural:brushed_metal/metallicRoughness",
+      "normalTexture": "procedural:brushed_metal/normal"
+    },
 
-    "MAT_Plastic_Black": { "baseColor": "#1C1C1E", "metallic": 0.0, "roughness": 0.42 },
-    "MAT_Plastic_Gray": { "baseColor": "#9A9A96", "metallic": 0.0, "roughness": 0.5 },
-    "MAT_Plastic_AgedIvory": { "baseColor": "#D6CBAE", "metallic": 0.0, "roughness": 0.48 },
+    // Plastics with the aged plastic detail: faint yellowing and speckle, smoother handled patches, orange peel.
+    "MAT_Plastic_Black": {
+      "baseColor": "#1C1C1E", "metallic": 0.0, "roughness": 0.42,
+      "baseColorTexture": "procedural:aged_plastic/baseColor",
+      "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
+      "normalTexture": "procedural:aged_plastic/normal"
+    },
+    "MAT_Plastic_Gray": {
+      "baseColor": "#9A9A96", "metallic": 0.0, "roughness": 0.5,
+      "baseColorTexture": "procedural:aged_plastic/baseColor",
+      "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
+      "normalTexture": "procedural:aged_plastic/normal"
+    },
+    "MAT_Plastic_AgedIvory": {
+      "baseColor": "#D6CBAE", "metallic": 0.0, "roughness": 0.48,
+      "baseColorTexture": "procedural:aged_plastic/baseColor",
+      "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
+      "normalTexture": "procedural:aged_plastic/normal"
+    },
     // Desaturated purple accent for console buttons.
     "MAT_Plastic_Accent": { "baseColor": "#7D6E9E", "metallic": 0.0, "roughness": 0.4 },
 
@@ -38,13 +97,27 @@
     "MAT_Glass_CRT": { "baseColor": "#2A302E", "metallic": 0.0, "roughness": 0.3 },
 
     "MAT_Fabric_Sofa": { "baseColor": "#683D42", "metallic": 0.0, "roughness": 0.9 },
-    "MAT_Carpet_Ornate": { "baseColor": "#6B3036", "metallic": 0.0, "roughness": 0.95 },
+    // Ornamental medallion rug in the style palette (bordeaux #683D42 family, navy, cream, muted gold): a picture over
+    // the rug's top face (uv 0..1), designed for the rug prefab's default 2.4 x 1.6 m.
+    "MAT_Carpet_Ornate": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:ornate_rug/baseColor",
+      "metallicRoughnessTexture": "procedural:ornate_rug/metallicRoughness"
+    },
     "MAT_Cardboard_Box": { "baseColor": "#A3825E", "metallic": 0.0, "roughness": 0.85 },
     "MAT_Paper_Print": { "baseColor": "#EFEBE2", "metallic": 0.0, "roughness": 0.8 },
 
     "MAT_Neon_Diffuser": { "shading": "unlit", "baseColor": "#B34DCE", "emissiveStrength": 1.5 },
     // In-world screens: multiplied by the video or test pattern texture.
     "MAT_Screen_Emissive": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 2.0 },
+    // The picture tube of a CRT television (style 15.2, CRT_Subtle of style 25): a 240-line picture with a light
+    // aperture grille, a slight barrel curvature with dark rounded corners and a soft vignette, behind glass that
+    // reflects the room's lights a little. Scanlines and grille fade out below a few pixels: legible at any distance.
+    "MAT_Screen_CRT": {
+      "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 2.0,
+      "crt": {"lineCount": 240, "scanlineStrength": 0.35, "maskTriadCount": 320, "maskStrength": 0.25,
+              "curvature": 0.06, "vignette": 0.3, "glassReflection": 1.0}
+    },
     // Fabric shade lit from the inside by a warm tungsten bulb; seen from inside and outside.
     "MAT_Lamp_Shade": {
       "baseColor": "#E8D7B9",

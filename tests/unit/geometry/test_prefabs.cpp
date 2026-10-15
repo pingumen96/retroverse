@@ -159,8 +159,9 @@ void checkPrefab(const ProceduralPrefab& prefab) {
     }
 }
 
-const std::vector<std::string_view> kExpectedKinds{
-    "room_shell", "shelf", "cartridge", "crt", "tv_cabinet", "console_cartridge", "poster_frame", "rug", "floor_lamp"};
+const std::vector<std::string_view> kExpectedKinds{"room_shell",        "shelf",        "cartridge", "crt",
+                                                    "tv_cabinet",        "console_cartridge", "poster_frame", "rug",
+                                                    "floor_lamp",        "armchair"};
 
 } // namespace
 
@@ -193,6 +194,7 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"poster_frame", {"frame", "picture"}},
         {"rug", {"fabric"}},
         {"floor_lamp", {"metal", "lamp_shade"}},
+        {"armchair", {"fabric", "wood"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -209,6 +211,11 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
     CHECK(rv::geometry::findPart(buildOk("room_shell", {{"ceiling", false}}), "ceiling") == nullptr);
     CHECK(rv::geometry::findPart(buildOk("room_shell", {{"doorway", nullptr}, {"baseboardHeight", 0.0}}), "trim") ==
           nullptr);
+    CHECK(rv::geometry::findPart(buildOk("armchair", {{"legHeight", 0.0}}), "wood") == nullptr);
+    // The wainscot is optional, after the contract roles.
+    const ProceduralPrefab paneled = buildOk("room_shell", {{"wainscotHeight", 1.0}});
+    REQUIRE(paneled.parts.size() == 5);
+    CHECK(paneled.parts.back().materialRole == "wainscot");
 }
 
 TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots", "[geometry][prefabs][bounds]") {
@@ -257,6 +264,12 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"floor_lamp",
          {{"height", 1.8}, {"baseRadius", 0.25}, {"shadeRadius", 0.2}},
          box({-0.25f, 0.0f, -0.25f}, {0.25f, 1.8f, 0.25f})},
+        {"armchair", nullptr, box({-0.41f, 0.0f, -0.41f}, {0.41f, 0.84f, 0.41f})},
+        {"armchair",
+         {{"width", 1.6}, {"depth", 0.9}, {"height", 0.95}, {"legHeight", 0.0}},
+         box({-0.8f, 0.0f, -0.45f}, {0.8f, 0.95f, 0.45f})},
+        // A wainscot lies inside the walls' interior: the bounds stay the shell's.
+        {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
     for (const Case& c : cases) {
         const ProceduralPrefab prefab = buildOk(c.kind, c.params);
@@ -279,6 +292,7 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"poster_frame", {{"Picture", SocketKind::Other}}},
         {"rug", {}},
         {"floor_lamp", {{"LightSource", SocketKind::Anchor}}},
+        {"armchair", {{"Seat", SocketKind::Anchor}}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -582,6 +596,76 @@ TEST_CASE("geometry/prefabs: room shell doorway stays open and interior faces po
     CHECK(northInterior == 4);
 }
 
+TEST_CASE("geometry/prefabs: wooden parts have uvs in meters along their boards", "[geometry][prefabs][uv]") {
+    // One uv unit per meter (BoxUv::GrainMeters): a wood texture keeps one scale on every board, its grain along u
+    // following the board's length: the u extent of each flat face is its longer side, in meters.
+    const auto checkGrain = [](const PrefabPart& wood) {
+        INFO(wood.mesh.name);
+        std::size_t faces = 0;
+        for (std::size_t t = 0; t < wood.mesh.triangleCount(); ++t) {
+            const rv::test::TriangleRef tri = rv::test::triangleAt(wood.mesh, t);
+            const glm::vec3 e1 = tri.v1.position - tri.v0.position;
+            const glm::vec3 e2 = tri.v2.position - tri.v0.position;
+            const glm::vec2 d1 = tri.v1.uv0 - tri.v0.uv0;
+            const glm::vec2 d2 = tri.v2.uv0 - tri.v0.uv0;
+            // Meters per uv unit: the triangle's area over its uv area.
+            const glm::vec3 cross = glm::cross(e1, e2);
+            const float area = 0.5f * glm::length(cross);
+            const float uvArea = 0.5f * std::fabs(d1.x * d2.y - d2.x * d1.y);
+            // Flat faces only: the 45-degree bevels of chamfered edges reuse the uvs of the face they lean towards.
+            const glm::vec3 n = glm::abs(cross) / std::max(2.0f * area, 1e-12f);
+            if (area < 1e-6f || uvArea < 1e-12f || std::max({n.x, n.y, n.z}) < 0.999f) {
+                continue;
+            }
+            CHECK(std::sqrt(area / uvArea) == Approx(1.0f).epsilon(1e-3));
+            ++faces;
+        }
+        CHECK(faces > 0);
+    };
+    checkGrain(part(buildOk("shelf"), "wood_primary"));
+    checkGrain(part(buildOk("shelf"), "wood_secondary"));
+    checkGrain(part(buildOk("tv_cabinet"), "wood_primary"));
+    checkGrain(part(buildOk("tv_cabinet"), "wood_secondary"));
+    checkGrain(part(buildOk("poster_frame"), "frame"));
+    checkGrain(part(buildOk("room_shell"), "trim"));
+    checkGrain(part(buildOk("room_shell", {{"wainscotHeight", 1.0}}), "wainscot"));
+
+    // The tall side panel of a shelf: u runs up the board (its longer side), v across it.
+    const ProceduralPrefab shelf = buildOk("shelf");
+    float uMin = 1e9f;
+    float uMax = -1e9f;
+    for (const rv::geometry::Vertex& v : part(shelf, "wood_primary").mesh.vertices) {
+        if (closeTo(v.normal, glm::vec3(-1.0f, 0.0f, 0.0f)) && v.position.x < -0.59f) {
+            uMin = std::min(uMin, v.uv0.x);
+            uMax = std::max(uMax, v.uv0.x);
+        }
+    }
+    CHECK(uMax - uMin == Approx(2.0f).margin(0.01f));
+}
+
+TEST_CASE("geometry/prefabs: the wainscot lines the walls and stops at the doorway", "[geometry][prefabs][wainscot]") {
+    const ProceduralPrefab room = buildOk("room_shell", {{"wainscotHeight", 1.0}});
+    const PrefabPart& wainscot = part(room, "wainscot");
+    // On the walls' interior faces, from the baseboard to the rail top, never deeper than the rail.
+    CHECK(wainscot.mesh.bounds.min.y == Approx(0.1f).margin(1e-5));
+    CHECK(wainscot.mesh.bounds.max.y == Approx(1.0f).margin(1e-5));
+    CHECK(closeTo(glm::vec3(wainscot.mesh.bounds.min.x, 0.0f, wainscot.mesh.bounds.min.z),
+                  glm::vec3(-4.5f, 0.0f, -5.0f)));
+    for (const rv::geometry::Vertex& v : wainscot.mesh.vertices) {
+        const float fromWall = std::min({v.position.x + 4.5f, 4.5f - v.position.x, v.position.z + 5.0f,
+                                         5.0f - v.position.z});
+        CHECK(fromWall <= 0.022f + 1e-5f);
+    }
+    // The door stays clear: nothing of the wainscot crosses the opening (south wall, 1.6 m wide, with its casing).
+    for (const rv::geometry::Vertex& v : wainscot.mesh.vertices) {
+        if (v.position.z > 4.9f) {
+            CHECK(std::fabs(v.position.x) >= 0.8f + 0.07f - 1e-5f);
+        }
+    }
+    // Colliders are unchanged: the wainscot is thin trim the walker brushes past.
+    CHECK(room.colliders.size() == buildOk("room_shell").colliders.size());
+}
+
 TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their walls",
           "[geometry][prefabs][colliders]") {
     for (const std::string_view kind : rv::geometry::prefabKinds()) {
@@ -824,6 +908,10 @@ TEST_CASE("geometry/prefabs: no coincident surfaces face the same way", "[geomet
         {"poster_frame", nullptr},
         {"rug", nullptr},
         {"floor_lamp", nullptr},
+        {"armchair", nullptr},
+        {"armchair", {{"legHeight", 0.0}, {"width", 1.4}}},
+        {"room_shell", {{"wainscotHeight", 1.0}}},
+        {"room_shell", {{"wainscotHeight", 0.9}, {"baseboardHeight", 0.0}, {"doorway", {{"wall", "east"}}}}},
     };
     for (const auto& [kind, params] : variants) {
         INFO(std::string(kind) + " " + params.dump());
@@ -931,6 +1019,14 @@ TEST_CASE("geometry/prefabs: JSON errors name the parameter", "[geometry][prefab
         {"poster_frame", {{"frameWidth", 0.3}}, ErrorCode::OutOfRange, "poster_frame.frameWidth"},
         {"rug", {{"thickness", 0.5}}, ErrorCode::OutOfRange, "rug.thickness"},
         {"floor_lamp", {{"shadeHeight", 0.9}}, ErrorCode::OutOfRange, "floor_lamp.shadeHeight"},
+        {"armchair", {{"seat", 0.4}}, ErrorCode::InvalidArgument, "armchair.seat"},
+        {"armchair", {{"width", 3.0}}, ErrorCode::OutOfRange, "armchair.width"},
+        {"armchair", {{"seatHeight", 0.6}, {"armHeight", 0.62}}, ErrorCode::OutOfRange, "armchair.armHeight"},
+        {"armchair", {{"armHeight", 0.82}}, ErrorCode::OutOfRange, "armchair.height"},
+        {"armchair", {{"seatHeight", 0.3}, {"legHeight", 0.2}}, ErrorCode::OutOfRange, "armchair.legHeight"},
+        {"room_shell", {{"wainscotHeight", -0.5}}, ErrorCode::OutOfRange, "room_shell.wainscotHeight"},
+        {"room_shell", {{"wainscotHeight", 0.15}}, ErrorCode::OutOfRange, "room_shell.wainscotHeight"},
+        {"room_shell", {{"wainscotHeight", 2.9}}, ErrorCode::OutOfRange, "room_shell.wainscotHeight"},
     };
     for (const Case& c : cases) {
         const rv::Error error = buildError(c.kind, c.params);
@@ -977,6 +1073,10 @@ TEST_CASE("geometry/prefabs: typed builders reject invalid parameters", "[geomet
     rv::geometry::FloorLampParams lamp;
     lamp.baseRadius = 0.0f;
     CHECK(rv::geometry::buildFloorLamp(lamp).error().context == "floor_lamp.baseRadius");
+
+    rv::geometry::ArmchairParams chair;
+    chair.depth = nan;
+    CHECK(rv::geometry::buildArmchair(chair).error().context == "armchair.depth");
 }
 
 TEST_CASE("geometry/prefabs: identical parameters give identical prefabs", "[geometry][prefabs][determinism]") {
@@ -1068,6 +1168,18 @@ TEST_CASE("geometry/prefabs: parameter sweeps stay valid and keep their bounds",
                                json{{"height", 3.0}, {"shadeHeight", 1.0}, {"baseRadius", 1.0}}}) {
         INFO(params.dump());
         checkPrefab(buildOk("floor_lamp", params));
+    }
+    for (const json& params : {json{{"width", 0.5}, {"depth", 0.5}, {"height", 0.5}, {"seatHeight", 0.3},
+                                     {"armHeight", 0.4}, {"legHeight", 0.05}},
+                               json{{"width", 2.5}, {"depth", 1.5}, {"height", 1.4}, {"seatHeight", 0.7},
+                                     {"armHeight", 1.0}, {"legHeight", 0.3}}}) {
+        INFO(params.dump());
+        const ProceduralPrefab chair = buildOk("armchair", params);
+        checkPrefab(chair);
+        CHECK(rv::test::coplanarOverlaps(meshes(chair)) == 0);
+        CHECK(closeTo(chair.bounds.size(), glm::vec3(params["width"].get<float>(), params["height"].get<float>(),
+                                                     params["depth"].get<float>())));
+        CHECK(position(socket(chair, "Seat")).y == Approx(params["seatHeight"].get<float>()));
     }
 }
 

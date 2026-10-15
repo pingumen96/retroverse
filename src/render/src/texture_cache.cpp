@@ -1,11 +1,13 @@
 #include <rv/render/texture_cache.hpp>
 
+#include <chrono>
 #include <utility>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/assets/image_io.hpp>
+#include <rv/assets/surface_textures.hpp>
 #include <rv/assets/test_patterns.hpp>
 #include <rv/core/text.hpp>
 
@@ -67,6 +69,40 @@ const Texture2D& TextureCache::pattern(std::string_view name, std::string_view t
         return insert(key, propagate(generated.error()));
     }
     return image(source, *generated, colorSpace, kWrap);
+}
+
+const Texture2D& TextureCache::procedural(std::string_view name, ColorSpace colorSpace) {
+    constexpr TextureWrap kWrap = TextureWrap::Repeat;
+    const auto sourceOf = [](std::string_view textureName) {
+        return fmt::format("{}{}", assets::kProceduralTexturePrefix, textureName);
+    };
+    const std::string source = sourceOf(name);
+    const std::string key = cacheKey(source, colorSpace, kWrap);
+    if (const Texture2D* cached = lookup(key)) {
+        return *cached;
+    }
+    auto parsed = assets::parseProceduralTextureName(name);
+    if (!parsed) {
+        return insert(key, propagate(parsed.error()));
+    }
+    const auto start = std::chrono::steady_clock::now();
+    auto surface = assets::makeProceduralSurface(parsed->surface);
+    if (!surface) {
+        return insert(key, propagate(surface.error()));
+    }
+    spdlog::info("Procedural surface '{}' generated in {:.0f} ms ({}x{})", parsed->surface,
+                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(),
+                 surface->baseColor.width, surface->baseColor.height);
+    // Generating the surface is the expensive part: every map goes up now, each in its own color space.
+    for (const assets::SurfaceMap map :
+         {assets::SurfaceMap::BaseColor, assets::SurfaceMap::MetallicRoughness, assets::SurfaceMap::Normal}) {
+        if (surface->map(map).isValid()) {
+            const ColorSpace space = map == assets::SurfaceMap::BaseColor ? ColorSpace::Srgb : ColorSpace::Linear;
+            (void)image(sourceOf(assets::ProceduralTextureName{parsed->surface, map}.toString()), surface->map(map),
+                        space, kWrap);
+        }
+    }
+    return image(source, surface->map(parsed->map), colorSpace, kWrap);
 }
 
 const Texture2D& TextureCache::image(std::string_view key, const assets::ImageData& image, ColorSpace colorSpace,

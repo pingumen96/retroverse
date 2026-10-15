@@ -46,7 +46,7 @@ struct SceneShaders {
     const ShaderProgram* depthMasked = nullptr;
     const ShaderProgram* debugLines = nullptr; ///< debug/debug_lines.vert + debug/debug_lines.frag
     SsaoShaders ssao;                          ///< the ambient occlusion passes
-    PostShaders post;                          ///< bloom and the post pass
+    PostShaders post;                          ///< bloom, the post pass and the anti-aliasing
 };
 
 /// One view of the scene for SceneRenderer::render().
@@ -67,7 +67,8 @@ struct RenderView {
     scene::SsaoSetup ssao;
     /// Background: linear radiance where nothing is drawn, post-processed like the surfaces (exposed and tonemapped).
     glm::vec4 clearColor{0.0f, 0.0f, 0.0f, 1.0f};
-    /// Bloom, exposure, vignette and dithering of the view (postSettingsFor() of the scene's environment).
+    /// Bloom, exposure, vignette, dithering and anti-aliasing of the view (postSettingsFor() of the scene's
+    /// environment).
     PostSettings post;
     /// FrameUniforms::time: simulated seconds.
     float timeSeconds = 0.0f;

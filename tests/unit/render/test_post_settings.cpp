@@ -27,13 +27,15 @@ TEST_CASE("render/post_settings: a scene's environment gives the post-processing
     CHECK(settings.bloomStrength == 0.08f);
     CHECK(settings.bloomRadius == 0.6f);
     CHECK(settings.vignette == 0.1f);
-    // Views go to 8-bit targets: one quantization step of dither noise.
+    // Views go to 8-bit targets: one quantization step of dither noise; their edges are anti-aliased.
     CHECK(settings.ditherAmplitude == rv::gl::kDitherAmplitude);
     CHECK(rv::gl::kDitherAmplitude == Approx(1.0f / 255.0f));
+    CHECK(settings.antialiasing);
 }
 
 TEST_CASE("render/post_settings: the default settings change nothing but the tonemap", "[render][post]") {
-    // What the sRGB self-check relies on: exposure 1, no bloom, no vignette, no dithering.
+    // What the sRGB self-check relies on: exposure 1, no bloom, no vignette, no dithering, no anti-aliasing pass.
+    CHECK_FALSE(PostSettings{}.antialiasing);
     const PostUniforms uniforms = rv::gl::makePostUniforms(PostSettings{});
     CHECK(uniforms.exposure == 1.0f);
     CHECK(uniforms.bloomMix == 0.0f);

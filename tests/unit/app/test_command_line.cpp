@@ -56,6 +56,7 @@ TEST_CASE("app/command_line: no arguments describe an interactive windowed run",
     CHECK_FALSE(options->selfCheck.has_value());
     CHECK_FALSE(options->devUiOpen);
     CHECK_FALSE(options->screenshotIncludeUi);
+    CHECK_FALSE(options->spawn.has_value());
 }
 
 TEST_CASE("app/command_line: --input-script and --fixed-dt drive automated runs", "[app][command_line]") {
@@ -96,6 +97,48 @@ TEST_CASE("app/command_line: --input-script and --fixed-dt drive automated runs"
     REQUIRE_FALSE(outOfRange.has_value());
     CHECK(outOfRange.error().code == ErrorCode::OutOfRange);
     CHECK(outOfRange.error().context == "--fixed-dt=2");
+}
+
+TEST_CASE("app/command_line: --spawn places the walker", "[app][command_line][spawn]") {
+    // Feet only: the scene camera's yaw and pitch.
+    const auto feet = parse({"--spawn", "1.5,0,-3.25"});
+    REQUIRE(feet.has_value());
+    REQUIRE(feet->spawn.has_value());
+    CHECK(feet->spawn->feet == glm::vec3(1.5f, 0.0f, -3.25f));
+    CHECK_FALSE(feet->spawn->yawDeg.has_value());
+    CHECK_FALSE(feet->spawn->pitchDeg.has_value());
+
+    // With a yaw, then a yaw and a pitch; negative values and spaces around them; any yaw (it wraps).
+    const auto turned = parse({"--spawn", "-1.5, 0 ,-3.8,90"});
+    REQUIRE(turned.has_value());
+    CHECK(turned->spawn->feet == glm::vec3(-1.5f, 0.0f, -3.8f));
+    CHECK(turned->spawn->yawDeg == 90.0f);
+    CHECK_FALSE(turned->spawn->pitchDeg.has_value());
+    const auto full = parse({"--spawn=0,0,3.2,-720,-6", "--exit-after-frames"});
+    REQUIRE(full.has_value());
+    CHECK(full->spawn == rv::app::SpawnPoint{glm::vec3(0.0f, 0.0f, 3.2f), -720.0f, -6.0f});
+    CHECK(rv::app::parseSpawnPoint("0,0,0,0,89").has_value());
+    CHECK(rv::app::parseSpawnPoint("1e2,2.5e-1,-0").has_value());
+
+    struct Case {
+        const char* text;
+        ErrorCode code;
+    };
+    for (const Case& c : {Case{"", ErrorCode::ParseError}, Case{"1,2", ErrorCode::ParseError},
+                          Case{"1,2,3,4,5,6", ErrorCode::ParseError}, Case{"1,,3", ErrorCode::ParseError},
+                          Case{"1,2,three", ErrorCode::ParseError}, Case{"1,2,3x", ErrorCode::ParseError},
+                          Case{"+1,2,3", ErrorCode::ParseError}, Case{"1;2;3", ErrorCode::ParseError},
+                          Case{"nan,0,0", ErrorCode::OutOfRange}, Case{"0,0,inf", ErrorCode::OutOfRange},
+                          Case{"1e6,0,0", ErrorCode::OutOfRange}, Case{"0,0,0,0,90", ErrorCode::OutOfRange},
+                          Case{"0,0,0,0,-89.5", ErrorCode::OutOfRange}, Case{"0,0,0,1e40", ErrorCode::OutOfRange}}) {
+        INFO(c.text);
+        const auto rejected = parse({"--spawn", c.text});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == c.code);
+        CHECK(rejected.error().context == std::string("--spawn=") + c.text);
+    }
+    // The value is required.
+    CHECK_FALSE(parse({"--spawn"}).has_value());
 }
 
 TEST_CASE("app/command_line: --smoke renders three frames and never shows dialogs", "[app][command_line]") {
@@ -503,6 +546,7 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
     }
     CHECK(helpListsOption(help, "--devui-open"));
     CHECK(helpListsOption(help, "--screenshot-include-ui"));
+    CHECK(helpListsOption(help, "--spawn"));
     CHECK_FALSE(helpListsOption(help, "--exi")); // a prefix of a listed option is not an entry
     CHECK(help.find("  --exit\n      Same as --exit-after-frames.") != std::string::npos);
     CHECK(help.find("Exit codes") != std::string::npos);

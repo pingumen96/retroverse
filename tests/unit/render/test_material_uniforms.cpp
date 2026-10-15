@@ -143,3 +143,53 @@ TEST_CASE("render/material_uniforms: live factor edits match a material with tho
     CHECK(clamped.emissiveStrength == 0.0f);
     CHECK(clamped.emissive == glm::vec3(0.0f));
 }
+
+TEST_CASE("render/material_uniforms: a CRT screen carries its picture-tube parameters", "[render][materials][crt]") {
+    MaterialDesc screen;
+    screen.shading = rv::assets::ShadingModel::Unlit;
+    // Without the effect the CRT fields stay zero and the flag is off.
+    rv::gl::MaterialUniforms block = rv::gl::makeMaterialUniforms(screen, flags::kBaseColorTexture);
+    CHECK((block.flags & flags::kCrtScreen) == 0u);
+    CHECK(block.crtLineCount == 0.0f);
+    CHECK(block.crtGlassReflection == 0.0f);
+
+    rv::assets::CrtEffect crt;
+    crt.lineCount = 240.0f;
+    crt.scanlineStrength = 0.35f;
+    crt.maskTriadCount = 320.0f;
+    crt.maskStrength = 0.25f;
+    crt.curvature = 0.06f;
+    crt.vignette = 0.3f;
+    crt.glassReflection = 0.8f;
+    screen.crt = crt;
+    block = rv::gl::makeMaterialUniforms(screen, flags::kBaseColorTexture);
+    CHECK(block.flags == (flags::kBaseColorTexture | flags::kCrtScreen));
+    CHECK(block.crtLineCount == 240.0f);
+    CHECK(block.crtScanlineStrength == 0.35f);
+    CHECK(block.crtMaskTriadCount == 320.0f);
+    CHECK(block.crtMaskStrength == 0.25f);
+    CHECK(block.crtCurvature == 0.06f);
+    CHECK(block.crtVignette == 0.3f);
+    CHECK(block.crtGlassReflection == 0.8f);
+    CHECK(flags::kCrtScreen == 256u);
+
+    // Values the shader cannot use never reach it: defaults for non-finite numbers, clamped ranges.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    screen.crt->lineCount = nan;
+    screen.crt->maskTriadCount = -5.0f;
+    screen.crt->scanlineStrength = 3.0f;
+    screen.crt->curvature = 2.0f;
+    screen.crt->glassReflection = nan;
+    block = rv::gl::makeMaterialUniforms(screen, 0);
+    CHECK(block.crtLineCount == rv::assets::CrtEffect{}.lineCount);
+    CHECK(block.crtMaskTriadCount == 1.0f);
+    CHECK(block.crtScanlineStrength == 1.0f);
+    CHECK(block.crtCurvature == 0.5f);
+    CHECK(block.crtGlassReflection == rv::assets::CrtEffect{}.glassReflection);
+
+    // Live factor edits keep the CRT parameters.
+    const rv::gl::MaterialUniforms edited =
+        rv::gl::withFactors(block, rv::gl::materialFactors(screen), screen.emissiveFactor);
+    CHECK(edited.crtCurvature == block.crtCurvature);
+    CHECK(edited.flags == block.flags);
+}

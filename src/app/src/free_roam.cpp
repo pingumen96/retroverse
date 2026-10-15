@@ -10,19 +10,27 @@
 
 namespace rv::app {
 
-FreeRoam::FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision)
+FreeRoam::FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision,
+                   const std::optional<SpawnPoint>& spawn)
     : m_collision(std::move(collision)) {
     const scene::FirstPersonSettings& settings = m_controller.settings();
-    teleportToCamera(scene.camera);
+    if (spawn) {
+        m_controller.teleport(spawn->feet, core::degreesToRadians(spawn->yawDeg.value_or(scene.camera.yawDeg)),
+                              core::degreesToRadians(spawn->pitchDeg.value_or(scene.camera.pitchDeg)));
+    } else {
+        teleportToCamera(scene.camera);
+    }
     m_startFeet = m_controller.feetPosition();
-    spdlog::info("Free roam: {} collider box(es); start {}", m_collision.boxes().size(), describePose());
+    spdlog::info("Free roam: {} collider box(es); start {}{}", m_collision.boxes().size(), describePose(),
+                 spawn ? " (--spawn)" : "");
     spdlog::info("Free roam: walk {} m/s, sprint {} m/s, eye height {} m, capsule radius {} m and height {} m, pitch "
                  "limit {} deg",
                  settings.walkSpeed, settings.sprintSpeed, settings.eyeHeight, settings.capsule.radius,
                  settings.capsule.height, settings.pitchLimitDeg);
     if (m_collision.overlaps(m_startFeet, settings.capsule)) {
         const auto nearest = m_collision.nearestBlocking(m_startFeet, settings.capsule);
-        spdlog::warn("The scene camera starts inside collider '{}': the walker is pushed out on its first step",
+        spdlog::warn("The {} starts inside collider '{}': the walker is pushed out on its first step",
+                     spawn ? "spawn point" : "scene camera",
                      nearest ? m_collision.boxes()[nearest->index].tag : std::string("?"));
     }
 }

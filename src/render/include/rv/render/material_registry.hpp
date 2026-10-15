@@ -33,6 +33,7 @@ class TextureCache;
 using MaterialTextures = std::array<const Texture2D*, kMaterialTextureSlotCount>;
 
 /// The textures `material` names, by slot (base color and emissive in sRGB, the data slots linear), from `textures`:
+///  - TextureRef::procedural: a procedural surface texture (TextureCache::procedural), repeating;
 ///  - TextureRef::path: an asset file, repeating like the surfaces such textures tile;
 ///  - TextureRef::imageIndex: `images[index]`, a decoded image of a glTF model, cached under the key
 ///    "<imageKeyPrefix>#image<index>" and repeating like glTF's default sampler. An index without such an image is

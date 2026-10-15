@@ -24,9 +24,12 @@ namespace rv::gl {
 ///  - ambientOcclusion(): GL_R8 at size(): the blurred ambient occlusion the lit shader reads, 1 where nothing occludes
 ///    (SsaoPass).
 ///  - bloomLevels(): kBloomLevelCount GL_RGBA16F targets of bloomLevelSizes(size()), the bloom chain (PostProcessor).
-///  - output(): GL_SRGB8_ALPHA8 color + depth24/stencil8. The post pass writes the tonemapped image into it, debug
-///    lines and overlays are drawn over it; it is what the window shows (Framebuffer::blitToDefault) and what
-///    screenshots read (Framebuffer::readPixels).
+///  - tonemapped(): GL_SRGB8_ALPHA8 at size(), no depth: the tonemapped image with the perceptual luma of each pixel in
+///    its alpha, which the post pass writes into it when the anti-aliasing pass follows (PostProcessor).
+///  - output(): GL_SRGB8_ALPHA8 color + depth24/stencil8. The post pass (or the anti-aliasing pass after it) writes the
+///    tonemapped image into it, debug lines and overlays are drawn over it; it is what the window shows
+///    (Framebuffer::blitToDefault) and what screenshots read (Framebuffer::readPixels). Its alpha is not meant to be
+///    shown: 1, or the luma the post pass writes when no anti-aliasing follows.
 /// Allocated once per size: resize() reallocates them only when the size changes, so drawing allocates nothing.
 /// Move-only; a default-constructed ViewTargets is empty. Main thread only.
 class ViewTargets {
@@ -34,8 +37,8 @@ public:
     ViewTargets() noexcept = default;
 
     /// Allocates every target for an output of `size` pixels, labeled "<debugName>.hdr", "<debugName>.ssaoRaw",
-    /// "<debugName>.ssao", "<debugName>.bloom<i>" and "<debugName>.output". Errors: those of Framebuffer::create (a
-    /// size outside the limits, an allocation failure).
+    /// "<debugName>.ssao", "<debugName>.bloom<i>", "<debugName>.tonemapped" and "<debugName>.output". Errors: those of
+    /// Framebuffer::create (a size outside the limits, an allocation failure).
     [[nodiscard]] static Expected<ViewTargets> create(glm::ivec2 size, std::string_view debugName);
 
     /// Reallocates every target at `size`; their contents are undefined afterwards. No-op for the current size. On
@@ -52,6 +55,8 @@ public:
     [[nodiscard]] const Framebuffer& ambientOcclusion() const noexcept { return m_ambientOcclusion; }
     /// The bloom chain, largest level first.
     [[nodiscard]] std::span<const Framebuffer, kBloomLevelCount> bloomLevels() const noexcept { return m_bloom; }
+    /// The tonemapped image before anti-aliasing.
+    [[nodiscard]] const Framebuffer& tonemapped() const noexcept { return m_tonemapped; }
     [[nodiscard]] const Framebuffer& output() const noexcept { return m_output; }
 
 private:
@@ -59,6 +64,7 @@ private:
     Framebuffer m_ambientOcclusionRaw;
     Framebuffer m_ambientOcclusion;
     std::array<Framebuffer, kBloomLevelCount> m_bloom;
+    Framebuffer m_tonemapped;
     Framebuffer m_output;
     std::string m_debugName;
 };

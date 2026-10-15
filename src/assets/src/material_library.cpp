@@ -4,10 +4,12 @@
 #include <limits>
 #include <mutex>
 #include <set>
+#include <tuple>
 #include <utility>
 
 #include <spdlog/spdlog.h>
 
+#include <rv/assets/surface_textures.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
@@ -83,12 +85,55 @@ Status readTexture(const nlohmann::json& object, std::string_view key, std::stri
     if (!text) {
         return propagate(text.error());
     }
+    if (text->starts_with(kProceduralTexturePrefix)) {
+        auto name = parseProceduralTextureName(std::string_view(*text).substr(kProceduralTexturePrefix.size()));
+        if (!name) {
+            return makeError(ErrorCode::ParseError, name.error().message + ": \"" + *text + "\"", where);
+        }
+        out.procedural = name->toString();
+        return ok();
+    }
     auto path = detail::normalizeRelativePath(*text, false, where);
     if (!path) {
         return propagate(path.error());
     }
     out.path = std::move(*path);
     return ok();
+}
+
+/// The "crt" block of an unlit screen material (CrtEffect).
+Expected<CrtEffect> readCrt(const nlohmann::json& value, const std::string& context) {
+    if (auto status = detail::requireObject(value, context); !status) {
+        return propagate(status.error());
+    }
+    if (auto status = detail::rejectUnknownKeys(value,
+                                                {"lineCount", "scanlineStrength", "maskTriadCount", "maskStrength",
+                                                 "curvature", "vignette", "glassReflection"},
+                                                context);
+        !status) {
+        return propagate(status.error());
+    }
+    CrtEffect crt;
+    const auto inRange = [](float minValue, float maxValue) {
+        return [minValue, maxValue](const nlohmann::json& number, const std::string& where) {
+            return detail::readNumberInRange(number, minValue, maxValue, where);
+        };
+    };
+    const std::tuple<std::string_view, float*, float, float> fields[] = {
+        {"lineCount", &crt.lineCount, 16.0f, 2048.0f},
+        {"scanlineStrength", &crt.scanlineStrength, 0.0f, 1.0f},
+        {"maskTriadCount", &crt.maskTriadCount, 16.0f, 4096.0f},
+        {"maskStrength", &crt.maskStrength, 0.0f, 1.0f},
+        {"curvature", &crt.curvature, 0.0f, 0.5f},
+        {"vignette", &crt.vignette, 0.0f, 1.0f},
+        {"glassReflection", &crt.glassReflection, 0.0f, 1.0f},
+    };
+    for (const auto& [key, field, minValue, maxValue] : fields) {
+        if (auto status = detail::readOptional(value, key, context, inRange(minValue, maxValue), *field); !status) {
+            return propagate(status.error());
+        }
+    }
+    return crt;
 }
 
 using detail::readOptional;
@@ -101,7 +146,8 @@ Expected<MaterialDesc> parseMaterial(const nlohmann::json& object, std::string_v
             object,
             {"shading", "baseColor", "baseColorLinear", "alpha", "metallic", "roughness", "emissive",
              "emissiveStrength", "normalScale", "occlusionStrength", "alphaMode", "alphaCutoff", "doubleSided",
-             "baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture"},
+             "baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture",
+             "crt"},
             context);
         !status) {
         return propagate(status.error());
@@ -203,6 +249,18 @@ Expected<MaterialDesc> parseMaterial(const nlohmann::json& object, std::string_v
         if (auto status = readTexture(object, key, context, *texture); !status) {
             return propagate(status.error());
         }
+    }
+    if (const auto it = object.find("crt"); it != object.end()) {
+        const std::string where = detail::pointerChild(context, "crt");
+        if (material.shading != ShadingModel::Unlit) {
+            return makeError(ErrorCode::ParseError,
+                             "the CRT effect belongs to unlit screen materials: add \"shading\": \"unlit\"", where);
+        }
+        auto crt = readCrt(*it, where);
+        if (!crt) {
+            return propagate(crt.error());
+        }
+        material.crt = *crt;
     }
     return material;
 }

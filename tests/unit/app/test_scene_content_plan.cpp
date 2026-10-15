@@ -202,14 +202,14 @@ TEST_CASE("app/scene_content_plan: materials keep their shader kind; items keep 
     CHECK_FALSE(plan.items[1].castsShadow);
 }
 
-TEST_CASE("app/scene_content_plan: the test room uploads 23 meshes for its 71 parts", "[app][scene_content_plan]") {
+TEST_CASE("app/scene_content_plan: the test room uploads 35 meshes for its 231 parts", "[app][scene_content_plan]") {
     const SceneGeometry geometry = referenceGeometry("m0_testroom");
     const SceneContentPlan plan = rv::app::planSceneContent(geometry);
-    CHECK(plan.items.size() == 71);
-    CHECK(plan.meshes.size() == 23);
+    CHECK(plan.items.size() == 231);
+    CHECK(plan.meshes.size() == 35);
     CHECK(plan.modelInstances.empty());
 
-    // Every mesh key is distinct, and the 24 cartridges point at the same two meshes.
+    // Every mesh key is distinct, and the 96 cartridges point at the same two meshes.
     std::set<std::string> keys;
     for (const rv::app::PlannedMesh& mesh : plan.meshes) {
         keys.insert(mesh.key);
@@ -227,11 +227,44 @@ TEST_CASE("app/scene_content_plan: the test room uploads 23 meshes for its 71 pa
         }
     }
     CHECK(cartridgeMeshes.size() == 2);
-    // Each label shows its own cover: 24 material instances (a texture array is a backlog item).
-    CHECK(labelMaterials.size() == 24);
-    // 39 materials: 12 by name, 24 labels, 2 posters and the CRT screen.
-    CHECK(plan.materials.size() == 39);
-    CHECK(plan.pictureMaterialCount() == 27);
+    // Each label shows its own cover: 96 material instances (a texture array is a backlog item).
+    CHECK(labelMaterials.size() == 96);
+    // 116 materials: 14 by name, 96 labels, 4 posters, the sign's lettering and the CRT screen.
+    CHECK(plan.materials.size() == 116);
+    CHECK(plan.pictureMaterialCount() == 102);
+}
+
+TEST_CASE("app/scene_content_plan: procedural pictures repeat, patterns follow the size of their surface",
+          "[app][scene_content_plan]") {
+    // A procedural surface texture repeats at its own scale: its instance is keyed without a size.
+    ScenePart panel = quadPart("box", material("MAT_Wood_Walnut"), 2.0f, 2.0f);
+    panel.texture = TextureSource{TextureSource::Kind::Procedural, {}, {}, {}, 0, "oak_planks/baseColor"};
+    // Pattern pictures get about 2.56 pixels per millimeter of their surface, up to 512 on the longer side.
+    ScenePart small = quadPart("label", material("MAT_Label_Print"), 0.1f, 0.06f);
+    small.texture = cover("SMALL");
+    ScenePart large = quadPart("label", material("MAT_Label_Print"), 0.5f, 0.3f);
+    large.texture = cover("LARGE");
+
+    SceneGeometry geometry;
+    geometry.objects.push_back(object("panel", {panel}));
+    geometry.objects.push_back(object("small", {small}));
+    geometry.objects.push_back(object("large", {large}));
+    const SceneContentPlan plan = rv::app::planSceneContent(geometry);
+    REQUIRE(plan.materials.size() == 3);
+
+    const PlannedMaterial& planks = materialOf(plan, 0, 0);
+    CHECK(planks.key == "panel/box");
+    REQUIRE(planks.picture.has_value());
+    CHECK(planks.picture->kind == TextureSource::Kind::Procedural);
+    CHECK(planks.picture->procedural == "oak_planks/baseColor");
+    CHECK(planks.patternSize == glm::ivec2(0));
+
+    const glm::ivec2 smallSize = rv::assets::patternSizeForAspect(0.1f / 0.06f, rv::assets::patternLongSideFor(0.1f));
+    CHECK(smallSize == glm::ivec2(256, 154));
+    CHECK(materialOf(plan, 1, 0).patternSize == smallSize);
+    CHECK(materialOf(plan, 1, 0).key == "small/label@256x154");
+    CHECK(materialOf(plan, 1, 0).picture->kind == TextureSource::Kind::Pattern);
+    CHECK(materialOf(plan, 2, 0).patternSize == glm::ivec2(512, 307));
 }
 
 TEST_CASE("app/scene_content_plan: instancing_stress shares one box mesh over three grids",

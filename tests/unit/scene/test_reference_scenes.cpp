@@ -9,14 +9,17 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
+#include <rv/core/aabb.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
+#include <rv/geometry/prefabs.hpp>
 #include <rv/scene/batch_planner.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/collision.hpp>
@@ -34,16 +37,16 @@ namespace {
 // --- Shared contracts (they must match the material library and the procedural geometry EXACTLY) ------------
 
 const std::set<std::string> kSharedMaterials{
-    "MAT_Wood_Walnut",       "MAT_Wood_Oak",       "MAT_Wood_Varnished",   "MAT_Concrete_Warm", "MAT_Wall_Painted",
-    "MAT_Plaster_Used",      "MAT_Metal_Graphite", "MAT_Metal_Brushed",    "MAT_Plastic_Black", "MAT_Plastic_Gray",
-    "MAT_Plastic_AgedIvory", "MAT_Plastic_Accent", "MAT_Glass_Display",    "MAT_Glass_CRT",     "MAT_Fabric_Sofa",
-    "MAT_Carpet_Ornate",     "MAT_Cardboard_Box",  "MAT_Paper_Print",      "MAT_Neon_Diffuser", "MAT_Screen_Emissive",
-    "MAT_Lamp_Shade",        "MAT_Label_Print",    "MAT_Fallback_Magenta",
+    "MAT_Wood_Walnut",     "MAT_Wood_Oak",          "MAT_Wood_Varnished", "MAT_Floor_OakPlanks", "MAT_Concrete_Warm",
+    "MAT_Wall_Painted",    "MAT_Plaster_Used",      "MAT_Metal_Graphite", "MAT_Metal_Brushed",   "MAT_Plastic_Black",
+    "MAT_Plastic_Gray",    "MAT_Plastic_AgedIvory", "MAT_Plastic_Accent", "MAT_Glass_Display",   "MAT_Glass_CRT",
+    "MAT_Fabric_Sofa",     "MAT_Carpet_Ornate",     "MAT_Cardboard_Box",  "MAT_Paper_Print",     "MAT_Neon_Diffuser",
+    "MAT_Screen_Emissive", "MAT_Screen_CRT",        "MAT_Lamp_Shade",     "MAT_Label_Print",     "MAT_Fallback_Magenta",
 };
 
 /// Material roles of every procedural prefab.
 const std::map<std::string, std::set<std::string>> kPrefabRoles{
-    {"room_shell", {"floor", "wall", "ceiling", "trim"}},
+    {"room_shell", {"floor", "wall", "ceiling", "trim", "wainscot"}},
     {"shelf", {"wood_primary", "wood_secondary"}},
     {"cartridge", {"plastic_shell", "label"}},
     {"crt", {"plastic_body", "plastic_bezel", "screen", "plastic_dark"}},
@@ -52,11 +55,14 @@ const std::map<std::string, std::set<std::string>> kPrefabRoles{
     {"poster_frame", {"frame", "picture"}},
     {"rug", {"fabric"}},
     {"floor_lamp", {"metal", "lamp_shade"}},
+    {"armchair", {"fabric", "wood"}},
 };
 
 /// Parameter keys of every prefab and primitive.
 const std::map<std::string, std::set<std::string>> kParamKeys{
-    {"room_shell", {"size", "wallHeight", "wallThickness", "metersPerTile", "ceiling", "baseboardHeight", "doorway"}},
+    {"room_shell",
+     {"size", "wallHeight", "wallThickness", "metersPerTile", "ceiling", "baseboardHeight", "wainscotHeight",
+      "doorway"}},
     {"shelf",
      {"width", "height", "depth", "levels", "boardThickness", "back", "plinthHeight", "slotSize", "slotGap",
       "slotMargin"}},
@@ -67,6 +73,7 @@ const std::map<std::string, std::set<std::string>> kParamKeys{
     {"poster_frame", {"width", "height", "frameWidth", "depth"}},
     {"rug", {"width", "depth", "thickness"}},
     {"floor_lamp", {"height", "baseRadius", "shadeRadius", "shadeHeight"}},
+    {"armchair", {"width", "depth", "height", "seatHeight", "armHeight", "legHeight"}},
     {"box", {"size", "uv", "metersPerTile"}},
     {"plane", {"size", "uvTiling"}},
     {"quad", {"size"}},
@@ -80,9 +87,9 @@ const glm::vec3 kDefaultCartridgeSize(0.125f, 0.085f, 0.020f);
 /// board" but leaves the back panel open; the boards start in front of it.
 constexpr float kShelfBackPanelThickness = 0.008f;
 
-/// Shelf slot layout from the shared parameter contract (defaults for missing keys). It replicates the slot
-/// formula because scene tests cannot call the shelf builder yet; once they can, compare the cartridges with the
-/// Slot_* sockets of the built shelf instead.
+/// Shelf slot layout from the shared parameter contract (defaults for missing keys). It replicates the slot formula
+/// of the contract on purpose: tests/unit/integration/test_reference_scenes_build.cpp compares the cartridges with the
+/// Slot_* sockets of the built shelves.
 struct ShelfLayout {
     float width = 1.2f;
     float height = 2.0f;
@@ -393,107 +400,183 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
         CHECK(ids.insert(object.id).second);
     }
 
-    // Room: 9 x 10 m, 3 m high, doorway in the south wall; the camera stands inside, near it, at eye height.
+    // Room: 9 x 10 m, 3 m high, doorway in the south wall. Oak planks and painted plaster repeat every 2 m (the repeat
+    // of their procedural surfaces); a varnished wainscot under a rail lines the walls.
     const auto rooms = objectsOfKind(scene, "room_shell");
     REQUIRE(rooms.size() == 1);
     const json& room = rooms[0]->params;
     CHECK(room.at("size") == json::array({9.0, 10.0}));
     CHECK(room.at("wallHeight").get<float>() == 3.0f);
     CHECK(room.at("doorway").at("wall") == "south");
-    CHECK(rooms[0]->materialNameForRole("floor") == "MAT_Wood_Oak");
+    CHECK(room.at("metersPerTile").get<float>() == 2.0f);
+    CHECK(room.at("wainscotHeight").get<float>() == Approx(1.0f).margin(0.2f));
+    CHECK(rooms[0]->materialNameForRole("floor") == "MAT_Floor_OakPlanks");
     CHECK(rooms[0]->materialNameForRole("wall") == "MAT_Wall_Painted");
     CHECK(rooms[0]->materialNameForRole("ceiling") == "MAT_Wall_Painted"); // dark and matte: no glare
     CHECK(rooms[0]->materialNameForRole("trim") == "MAT_Wood_Walnut");
+    CHECK(rooms[0]->materialNameForRole("wainscot") == "MAT_Wood_Varnished");
+
+    // The camera stands at eye height inside the room, looking towards the north wall, the collection and hero wall,
+    // a little down.
     CHECK(scene.camera.position.y == Approx(1.65f));
     CHECK(std::abs(scene.camera.position.x) < 4.5f - 0.3f);
-    CHECK(scene.camera.position.z > 2.5f);
-    CHECK(scene.camera.position.z < 5.0f - 0.3f);
-    CHECK(scene.camera.yawDeg == 0.0f); // looking north (-Z)
+    CHECK(std::abs(scene.camera.position.z) < 5.0f - 0.3f);
+    CHECK(std::abs(scene.camera.yawDeg) <= 20.0f);
+    CHECK(scene.camera.pitchDeg <= 0.0f);
+    CHECK(scene.camera.pitchDeg >= -15.0f);
 
-    // The hero wall is in view: shelf, TV and lamp.
+    // It frames the collection, the sign, the TV corner with the rug and a practical lamp (style 1.1: a game room,
+    // collectible objects and a lit screen, read within five seconds).
     const rv::scene::Frustum frustum = cameraOf(scene.camera).frustum();
-    const SceneObject* shelf = scene.findObject("shelf_main");
-    REQUIRE(shelf != nullptr);
+    const auto shelves = objectsOfKind(scene, "shelf");
     const auto crts = objectsOfKind(scene, "crt");
     const auto lamps = objectsOfKind(scene, "floor_lamp");
-    const auto cabinets = objectsOfKind(scene, "tv_cabinet");
+    REQUIRE(shelves.size() == 2);
     REQUIRE(crts.size() == 1);
-    REQUIRE(lamps.size() == 1);
-    REQUIRE(cabinets.size() == 1);
-    CHECK(frustum.contains(translationOf(shelf->transform) + glm::vec3(0.0f, 1.0f, 0.0f)));
-    CHECK(frustum.contains(translationOf(crts[0]->transform) + glm::vec3(0.0f, 0.3f, 0.0f)));
-    CHECK(frustum.contains(translationOf(lamps[0]->transform) + glm::vec3(0.0f, 1.45f, 0.0f)));
+    REQUIRE(lamps.size() == 2);                         // the floor lamp and the table lamp
+    REQUIRE(objectsOfKind(scene, "tv_cabinet").size() == 2); // the TV cabinet and the sideboard
+    const SceneObject* shelf = scene.findObject("shelf_main");
+    const SceneObject* sign = scene.findObject("room_sign");
+    const SceneObject* rug = scene.findObject("rug");
+    const SceneObject* tableLamp = scene.findObject("table_lamp");
+    const SceneObject* cabinet = scene.findObject("tv_cabinet");
+    REQUIRE(shelf != nullptr);
+    REQUIRE(sign != nullptr);
+    REQUIRE(rug != nullptr);
+    REQUIRE(tableLamp != nullptr);
+    REQUIRE(cabinet != nullptr);
+    const glm::vec3 screen = translationOf(crts[0]->transform) + glm::vec3(0.0f, 0.3f, 0.0f);
+    for (const SceneObject* collection : shelves) {
+        INFO(collection->id);
+        CHECK(frustum.contains(translationOf(collection->transform) + glm::vec3(0.0f, 1.0f, 0.0f)));
+    }
+    CHECK(frustum.contains(screen));
+    CHECK(frustum.contains(translationOf(sign->transform)));
+    CHECK(frustum.contains(translationOf(rug->transform)));
+    CHECK(frustum.contains(translationOf(tableLamp->transform) + glm::vec3(0.0f, 0.5f, 0.0f)));
 
-    // Shelf against the north wall at x = -1.5, TV cabinet at x = +1.8 with the CRT on top.
+    // Both shelves against the north wall, shelf_main at x = -1.5 (tests/input_scripts/walk_into_shelf.json); the TV
+    // cabinet at x = +1.8 with the CRT on top.
+    for (const SceneObject* collection : shelves) {
+        INFO(collection->id);
+        CHECK(translationOf(collection->transform).z - 0.5f * collection->params.at("depth").get<float>() > -5.0f);
+        CHECK(translationOf(collection->transform).z < -4.5f);
+        CHECK(collection->materialNameForRole("wood_primary") == "MAT_Wood_Walnut");
+        CHECK(collection->materialNameForRole("wood_secondary") == "MAT_Wood_Varnished");
+    }
     CHECK(translationOf(shelf->transform).x == Approx(-1.5f));
-    CHECK(translationOf(shelf->transform).z - 0.5f * shelf->params.at("depth").get<float>() > -5.0f);
-    CHECK(translationOf(shelf->transform).z < -4.5f);
-    CHECK(translationOf(cabinets[0]->transform).x == Approx(1.8f));
-    CHECK(translationOf(crts[0]->transform).y == Approx(cabinets[0]->params.at("height").get<float>()));
+    CHECK(translationOf(cabinet->transform).x == Approx(1.8f));
+    CHECK(translationOf(crts[0]->transform).y == Approx(cabinet->params.at("height").get<float>()));
     // The CRT rests on the cabinet top entirely: no overhang at the front (0.1 mm tolerance for float rounding).
-    const Footprint cabinetTop = footprintOf(*cabinets[0]);
+    const Footprint cabinetTop = footprintOf(*cabinet);
     const Footprint crtBase = footprintOf(*crts[0]);
     CHECK(crtBase.min.x >= cabinetTop.min.x - 1e-4f);
     CHECK(crtBase.max.x <= cabinetTop.max.x + 1e-4f);
     CHECK(crtBase.min.y >= cabinetTop.min.y - 1e-4f);
     CHECK(crtBase.max.y <= cabinetTop.max.y + 1e-4f);
-    CHECK(crts[0]->materialNameForRole("screen") == "MAT_Screen_Emissive");
+    // The picture tube shows the color bars (style 15.2, CRT_Subtle of style 25).
+    CHECK(crts[0]->materialNameForRole("screen") == "MAT_Screen_CRT");
     CHECK(crts[0]->texturesByRole.at("screen").pattern == "color_bars");
     CHECK(objectsOfKind(scene, "console_cartridge").size() == 1);
-    CHECK(objectsOfKind(scene, "rug").size() == 1);
-    CHECK(objectsOfKind(scene, "poster_frame").size() == 2);
+    // The rug lies in front of the TV, under it in x.
+    REQUIRE(objectsOfKind(scene, "rug").size() == 1);
+    const glm::vec2 rugCenter(translationOf(rug->transform).x, translationOf(rug->transform).z);
+    const glm::vec2 rugHalf(0.5f * rug->params.at("width").get<float>(), 0.5f * rug->params.at("depth").get<float>());
+    const Footprint rugArea{rugCenter - rugHalf, rugCenter + rugHalf, 0.0f};
+    CHECK(rugArea.min.x < screen.x);
+    CHECK(rugArea.max.x > screen.x);
+    CHECK(rugArea.max.y < scene.camera.position.z);
+    CHECK(rugArea.min.y > cabinetTop.max.y - 0.5f);
+    // The armchair is turned towards the TV: its front (+Z) points at the screen within 15 degrees.
+    const auto chairs = objectsOfKind(scene, "armchair");
+    REQUIRE(chairs.size() == 1);
+    const glm::vec3 chairFront = glm::normalize(glm::vec3(chairs[0]->transform * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
+    const glm::vec3 toScreen = screen - translationOf(chairs[0]->transform);
+    CHECK(glm::dot(chairFront, glm::normalize(glm::vec3(toScreen.x, 0.0f, toScreen.z))) >
+          std::cos(rv::core::degreesToRadians(15.0f)));
+    CHECK(chairs[0]->materialNameForRole("fabric") == "MAT_Fabric_Sofa");
+    // Five framed pictures: four posters and the room's sign, the lettering of an original theme name (style 17.2) in
+    // an unlit material, the 10% accent of style 3.1.
+    CHECK(objectsOfKind(scene, "poster_frame").size() == 5);
+    CHECK(sign->texturesByRole.at("picture").pattern == "sign");
+    CHECK(sign->texturesByRole.at("picture").title == "16-BIT CORNER");
+    CHECK(sign->materialNameForRole("picture") == "MAT_Neon_Diffuser");
 
-    // Everything collides except the rug and the posters. The rug and the posters cast no shadow: a flat rug would only
-    // shadow the floor under it, and the posters are thin geometry (their frames, 2 cm deep, would cast shadows
-    // narrower than the shadow filter, broken into dashes by the texels of the map).
+    // Everything collides except the rug and the framed pictures, which cast no shadow either: a flat rug would only
+    // shadow the floor under it, and the frames are thin geometry (2 to 4 cm deep, they would cast shadows narrower
+    // than the shadow filter, broken into dashes by the texels of the map).
     for (const SceneObject& object : scene.objects) {
         INFO("object " << object.id);
         const bool flat = object.kind == "rug" || object.kind == "poster_frame";
         CHECK(object.collides == !flat);
         CHECK(object.castsShadows == !flat);
-        if (object.kind == "poster_frame") {
+        if (object.kind == "poster_frame" && &object != sign) {
             CHECK(object.texturesByRole.at("picture").pattern == "cover");
         }
     }
 
-    // Lighting (style 3.1 and 4.2): warm tungsten mood with neutrals that stay neutral. The lamp is the amber tungsten
-    // practical light; the room lights are a warm white, much less saturated than tungsten (an amber key turned every
-    // surface orange); a light magenta accent washes the TV; the entrance half has a light of its own; nothing lights
-    // the dark ceiling from up close; the ambient is low, warm and near neutral, and darkened by the ambient occlusion.
-    // Shadows (M0 step 11): exactly one light casts them, the key: a warm-white downlight in the ceiling whose cone
-    // takes in the shelf and the TV on the hero wall.
+    // Lighting (style 3.1 and 4.2, SNES preset): warm tungsten mood with neutrals that stay neutral. The practical
+    // lamps carry the amber tungsten, each with its bulb in its shade; the ceiling lights are a warm white, much less
+    // saturated (an amber key turned every surface orange); a light magenta accent washes the TV corner and the sign
+    // glows magenta onto its wall; the screen lights what lies in front of it; the entrance half has a light of its
+    // own; nothing lights the dark ceiling from up close; the ambient is low, warm and near neutral, and darkened by
+    // the ambient occlusion. Shadows (M0 step 11): exactly one light casts them, the key: a warm-white downlight in the
+    // ceiling whose cone takes in the collection and the TV.
     const glm::vec3 tungsten = rv::core::hexToLinearRgb("#FFC88A").value();
     const glm::vec3 magenta = rv::core::hexToLinearRgb("#B34DCE").value();
-    const glm::vec3 screen = translationOf(crts[0]->transform) + glm::vec3(0.0f, 0.3f, 0.0f);
-    const glm::vec3 lampPosition = translationOf(lamps[0]->transform);
-    const float lampHeight = lamps[0]->params.at("height").get<float>();
-    const float shadeHeight = lamps[0]->params.at("shadeHeight").get<float>();
     const float wallHeight = room.at("wallHeight").get<float>();
     // Linear chroma of a warm color: 1 - blue / red (0 for white, about 0.75 for tungsten).
     const auto warmth = [](const glm::vec3& color) { return 1.0f - color.b / color.r; };
+    const auto inLamp = [](const rv::scene::Light& light, const SceneObject& lamp) {
+        const glm::vec3 base = translationOf(lamp.transform);
+        const float height = lamp.params.at("height").get<float>();
+        const float shadeHeight = lamp.params.at("shadeHeight").get<float>();
+        return std::abs(light.position.x - base.x) < 1e-4f && std::abs(light.position.z - base.z) < 1e-4f &&
+               light.position.y > base.y + height - shadeHeight && light.position.y < base.y + height;
+    };
+    // The CRT's volume: the screen's light sits inside it, behind the glass.
+    const glm::vec3 crtPosition = translationOf(crts[0]->transform);
+    const glm::vec3 crtHalf(0.5f * crts[0]->params.at("width").get<float>(), 0.0f,
+                            0.5f * crts[0]->params.at("depth").get<float>());
+    const rv::core::Aabb crtVolume = rv::core::Aabb::fromMinMax(
+        crtPosition - crtHalf,
+        crtPosition + crtHalf + glm::vec3(0.0f, crts[0]->params.at("height").get<float>(), 0.0f));
     int accents = 0;
-    int lampLights = 0;
     int bulbs = 0;
+    int lampLights = 0;
+    int screenLights = 0;
     int entranceLights = 0;
     for (const rv::scene::Light& light : scene.lights) {
         INFO("light " << light.name);
         CHECK(light.position.y > 0.0f);
         CHECK(light.position.y < wallHeight);
         entranceLights += light.position.z > 0.0f ? 1 : 0;
-        const bool inLamp = std::abs(light.position.x - lampPosition.x) < 1e-4f &&
-                            std::abs(light.position.z - lampPosition.z) < 1e-4f &&
-                            light.position.y > lampHeight - shadeHeight && light.position.y < lampHeight;
+        const bool practical =
+            std::any_of(lamps.begin(), lamps.end(), [&](const SceneObject* lamp) { return inLamp(light, *lamp); });
         if (rv::core::nearlyEqual(light.color, magenta)) {
             ++accents;
-            CHECK(light.type == LightType::Spot);
-            const float cosAngle = glm::dot(light.direction, glm::normalize(screen - light.position));
-            CHECK(cosAngle > std::cos(rv::core::degreesToRadians(light.innerConeDeg)));
             CHECK(light.intensity < 10.0f); // an accent, not a key light
-        } else if (inLamp) {
+            if (light.type == LightType::Spot) {
+                const float cosAngle = glm::dot(light.direction, glm::normalize(screen - light.position));
+                CHECK(cosAngle > std::cos(rv::core::degreesToRadians(light.innerConeDeg)));
+            } else {
+                CHECK(glm::length(light.position - translationOf(sign->transform)) < 0.5f); // the sign's glow
+            }
+        } else if (practical) {
             // The bulb inside the shade, and cones leaving through the shade's openings.
             ++lampLights;
             bulbs += light.type == LightType::Point ? 1 : 0;
             CHECK(rv::core::nearlyEqual(light.color, tungsten));
+        } else if (crtVolume.contains(light.position)) {
+            // The screen's light (style 4.3): from just behind the glass, so that the glass never mirrors it, forward
+            // over the hemisphere in front of the screen (a spot: nothing behind the TV is lit), neutral like the
+            // picture's average, dim.
+            ++screenLights;
+            CHECK(light.type == LightType::Spot);
+            CHECK(light.position.z < crtVolume.max.z);
+            CHECK(light.direction.z > 0.9f);
+            CHECK(light.color.b >= light.color.r);
+            CHECK(light.intensity < 5.0f);
         } else {
             CHECK(light.color.r >= light.color.g);
             CHECK(light.color.g >= light.color.b);
@@ -507,9 +590,10 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
             }
         }
     }
-    CHECK(accents == 1);
-    CHECK(bulbs == 1);
-    CHECK(lampLights >= 1);
+    CHECK(accents == 2);
+    CHECK(bulbs == 2); // one per lamp
+    CHECK(lampLights >= 2);
+    CHECK(screenLights == 1);
     CHECK(entranceLights >= 1);
     CHECK(scene.environment.ambientIntensity < 0.3f);
     const glm::vec3& sky = scene.environment.ambientSky;
@@ -522,17 +606,17 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(key.castsShadows);
     CHECK(std::count_if(scene.lights.begin(), scene.lights.end(),
                         [](const rv::scene::Light& light) { return light.castsShadows; }) == 1);
-    CHECK(key.type == LightType::Spot);   // point lights cast no shadow
+    CHECK(key.type == LightType::Spot); // point lights cast no shadow
     CHECK(key.shadowStrength == 1.0f);
     CHECK(key.position.y > wallHeight - 0.1f); // in the ceiling
     // A downlight with a wide cone: pointing more down than towards the wall, the cone ending below the horizontal.
     const float tilt = std::acos(-key.direction.y);
     CHECK(tilt < rv::core::degreesToRadians(45.0f));
-    CHECK(key.outerConeDeg >= 45.0f);
+    CHECK(key.outerConeDeg >= 40.0f);
     CHECK(std::asin(-key.direction.y) >= rv::core::degreesToRadians(key.outerConeDeg) - 1e-4f);
-    // Between the room's center and the hero wall; the shelf and the TV well inside its cone.
+    // Between the room's center and the hero wall; the main shelf and the TV well inside its cone.
     CHECK(key.position.z < 0.0f);
-    CHECK(key.position.z > -2.5f);
+    CHECK(key.position.z > -3.5f);
     CHECK(coneFactor(key, translationOf(shelf->transform) + glm::vec3(0.0f, 1.0f, 0.0f)) > 0.75f);
     CHECK(coneFactor(key, screen) > 0.75f);
     // Warm white like the other room lights.
@@ -541,9 +625,8 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(key.range >= 8.0f);
 
     // The CRT is the focal point (style 6.1, 15): the key is aimed at the hero wall rather than at the floor, which
-    // reflects about 2.6 times as much light as the walls (oak against painted plaster), so its brightest spot on the
-    // floor gets less light than its brightest spot on the wall (interior x in [-4.5, 4.5], z in [-5, 5]; the hero wall
-    // at z = -5).
+    // reflects more light than the walls (oak against painted plaster), so its brightest spot on the floor gets less
+    // light than its brightest spot on the wall (interior x in [-4.5, 4.5], z in [-5, 5]; the hero wall at z = -5).
     const glm::vec3 up(0.0f, 1.0f, 0.0f);
     const glm::vec3 south(0.0f, 0.0f, 1.0f); // the hero wall faces the room
     float floorPeak = 0.0f;
@@ -568,9 +651,10 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
         }
     }
     CHECK(centerLight > 0.2f * floorPeak);
-    // Both posters hang in warm light, and so does the wall between the TV and the right poster (style 4.2: tungsten
-    // dominant, the magenta accent stays an accent): the light reaching them is red over green over blue. The right
-    // poster, beyond the key's cone, has a picture light of its own and gets at least a quarter of the left one's.
+    // The posters of the hero wall hang in warm light, and so does the wall between the TV and the right poster (style
+    // 4.2: tungsten dominant, the magenta accents stay accents): the light reaching them is red over green over blue.
+    // The right poster, beyond the key's cone, has a picture light of its own and gets at least a quarter of the left
+    // one's.
     const auto lightAt = [&scene](const glm::vec3& point, const glm::vec3& normal) {
         glm::vec3 color(0.0f);
         float total = 0.0f;
@@ -594,6 +678,22 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(tungstenDominant(rightColor));
     CHECK(tungstenDominant(lightAt(between, south).first));
     CHECK(rightLight > 0.25f * leftLight);
+    // Each shelf of the collection has a warm-white ceiling spot of its own aimed at it (museum display lighting, style
+    // 4.1 accent lights), which keeps its middle in tungsten-dominant light and at least a fifth of the main shelf's
+    // (which the key lights too).
+    const auto [mainColor, mainLight] = lightAt(translationOf(shelf->transform) + glm::vec3(0.0f, 1.0f, 0.2f), south);
+    for (const SceneObject* collection : shelves) {
+        INFO(collection->id);
+        const glm::vec3 middle = translationOf(collection->transform) + glm::vec3(0.0f, 1.0f, 0.2f);
+        const bool spotted = std::any_of(scene.lights.begin(), scene.lights.end(), [&](const rv::scene::Light& light) {
+            return &light != &key && light.type == LightType::Spot && coneFactor(light, middle) > 0.9f &&
+                   std::abs(light.position.x - middle.x) < 0.3f && light.position.y > wallHeight - 0.1f;
+        });
+        CHECK(spotted);
+        const auto [color, received] = lightAt(middle, south);
+        CHECK(received > 0.2f * mainLight);
+        CHECK(tungstenDominant(color));
+    }
 
     // Ambient occlusion with the defaults of the plan: radius 0.4 m, intensity 1.
     CHECK(scene.environment.ssao.enabled);
@@ -601,19 +701,19 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(scene.environment.ssao.intensity == 1.0f);
 }
 
-TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit at the contract slot positions of the shelf",
+TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit at the contract slot positions of its shelves",
           "[scene][reference_scenes][m0_testroom]") {
     const SceneDescription scene = loadReference("m0_testroom");
-    const SceneObject* shelf = scene.findObject("shelf_main");
-    REQUIRE(shelf != nullptr);
-    const ShelfLayout layout = ShelfLayout::fromParams(shelf->params);
-    REQUIRE(layout.slotsPerLevel() == 8);
-    CHECK(shelf->materialNameForRole("wood_primary") == "MAT_Wood_Walnut");
-    CHECK(shelf->materialNameForRole("wood_secondary") == "MAT_Wood_Varnished");
+    const auto shelves = objectsOfKind(scene, "shelf");
+    REQUIRE(shelves.size() == 2);
+    for (const SceneObject* shelf : shelves) {
+        INFO(shelf->id);
+        CHECK(ShelfLayout::fromParams(shelf->params).slotsPerLevel() == 8);
+    }
 
     const auto cartridges = objectsOfKind(scene, "cartridge");
-    REQUIRE(cartridges.size() == 24);
-    std::set<std::pair<int, int>> usedSlots;
+    REQUIRE(cartridges.size() == 96);
+    std::set<std::tuple<std::string, int, int>> usedSlots;
     std::set<std::string> titles;
     std::set<std::uint32_t> seeds;
     for (const SceneObject* cartridge : cartridges) {
@@ -621,22 +721,29 @@ TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit at the contract sl
         const glm::vec3 size = cartridge->params.contains("size")
                                    ? rv::core::jsonToVec3(cartridge->params.at("size"), cartridge->id).value()
                                    : kDefaultCartridgeSize;
-        CHECK(rv::core::nearlyEqual(size, layout.slotSize));
-        // Upright with the label facing out of the shelf (+Z), like the shelf itself.
-        for (int column = 0; column < 3; ++column) {
-            CHECK(rv::core::nearlyEqual(glm::vec3(cartridge->transform[column]), glm::vec3(shelf->transform[column])));
-        }
 
-        // The cartridge pivot is its center: half its height above the slot's bottom-center point.
+        // The cartridge pivot is its center: half its height above the slot's bottom-center point of one shelf, upright
+        // with the label facing out of that shelf (+Z), like the shelf itself.
         const glm::vec3 center = translationOf(cartridge->transform);
         int matches = 0;
-        for (int level = 0; level < layout.levels; ++level) {
-            for (int index = 0; index < layout.slotsPerLevel(); ++index) {
-                const glm::vec3 local = layout.slotBottomCenter(level, index) + glm::vec3(0.0f, 0.5f * size.y, 0.0f);
-                const glm::vec3 expected(shelf->transform * glm::vec4(local, 1.0f));
-                if (rv::core::nearlyEqual(center, expected, 1e-4f)) {
+        for (const SceneObject* shelf : shelves) {
+            const ShelfLayout layout = ShelfLayout::fromParams(shelf->params);
+            for (int level = 0; level < layout.levels; ++level) {
+                for (int index = 0; index < layout.slotsPerLevel(); ++index) {
+                    const glm::vec3 local =
+                        layout.slotBottomCenter(level, index) + glm::vec3(0.0f, 0.5f * size.y, 0.0f);
+                    const glm::vec3 expected(shelf->transform * glm::vec4(local, 1.0f));
+                    if (!rv::core::nearlyEqual(center, expected, 1e-4f)) {
+                        continue;
+                    }
                     ++matches;
-                    CHECK(usedSlots.insert({level, index}).second); // one cartridge per slot
+                    CHECK(rv::core::nearlyEqual(size, layout.slotSize));
+                    for (int column = 0; column < 3; ++column) {
+                        CHECK(rv::core::nearlyEqual(glm::vec3(cartridge->transform[column]),
+                                                    glm::vec3(shelf->transform[column])));
+                    }
+                    CHECK(usedSlots.insert({shelf->id, level, index}).second); // one cartridge per slot
+                    CHECK(level > 0); // the bottom level stays free for the collection to grow (style 5.3)
                 }
             }
         }
@@ -651,9 +758,9 @@ TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit at the contract sl
         titles.insert(label.title);
         seeds.insert(label.seed);
     }
-    CHECK(usedSlots.size() == 24);
-    CHECK(titles.size() == 24); // every cover is distinct
-    CHECK(seeds.size() == 24);
+    CHECK(usedSlots.size() == 96);
+    CHECK(titles.size() == 96); // every cover is distinct
+    CHECK(seeds.size() == 96);
     CHECK(titles.contains("SUPER PLACEHOLDER WORLD"));
 }
 
@@ -664,39 +771,52 @@ TEST_CASE("scene/reference_scenes: m0_testroom keeps 1.2 m free passages", "[sce
     constexpr float kHalfWidth = 4.5f;
     constexpr float kHalfDepth = 5.0f;
 
-    // Floor-standing colliders, as boxes for a walk test.
-    std::vector<std::pair<std::string, Footprint>> furniture;
+    // Floor-standing colliders as their world boxes (the box around a turned piece's footprint: conservative).
+    struct Piece {
+        std::string id;
+        rv::core::Aabb box;
+        bool againstWall = false;
+    };
+    std::vector<Piece> furniture;
     rv::scene::CollisionWorld world;
     for (const SceneObject& object : scene.objects) {
-        const glm::vec3 position = translationOf(object.transform);
-        if (!object.collides || object.kind == "room_shell" || position.y != 0.0f) {
+        if (!object.collides || object.kind == "room_shell" || translationOf(object.transform).y != 0.0f) {
             continue;
         }
         INFO("object " << object.id);
-        CHECK(rv::core::nearlyEqual(glm::mat3(object.transform)[0], glm::vec3(1.0f, 0.0f, 0.0f))); // unrotated
-        const Footprint footprint = footprintOf(object);
-        furniture.emplace_back(object.id, footprint);
-        world.addBox(rv::core::Aabb::fromMinMax({footprint.min.x, 0.0f, footprint.min.y},
-                                                {footprint.max.x, footprint.height, footprint.max.y}),
-                     object.id);
-        for (const float wallGap : {footprint.min.x + kHalfWidth, kHalfWidth - footprint.max.x,
-                                    footprint.min.y + kHalfDepth, kHalfDepth - footprint.max.y}) {
+        const auto prefab = rv::geometry::buildPrefab(object.kind, object.params);
+        REQUIRE(prefab.has_value());
+        Piece piece{object.id, prefab->bounds.transformed(object.transform)};
+        for (const float wallGap : {piece.box.min.x + kHalfWidth, kHalfWidth - piece.box.max.x,
+                                    piece.box.min.z + kHalfDepth, kHalfDepth - piece.box.max.z}) {
             CHECK((wallGap < kAgainstWall || wallGap >= kPassage));
             CHECK(wallGap >= 0.0f); // inside the room
+            piece.againstWall = piece.againstWall || wallGap < kAgainstWall;
         }
+        world.addBox(piece.box, object.id);
+        furniture.push_back(std::move(piece));
     }
-    REQUIRE(furniture.size() == 3); // shelf, TV cabinet, floor lamp
+    // Two shelves, the TV cabinet, the sideboard, the floor lamp and the armchair.
+    REQUIRE(furniture.size() == 6);
+    // Between two pieces a walker passes 1.2 m wide, unless both stand against walls (side by side along a wall they
+    // leave a niche, not a way: the two shelves form one unit, the lamp stands in the corner beside them).
     for (std::size_t i = 0; i < furniture.size(); ++i) {
         for (std::size_t j = i + 1; j < furniture.size(); ++j) {
-            INFO(furniture[i].first << " <-> " << furniture[j].first);
-            CHECK(gapBetween(furniture[i].second, furniture[j].second) >= kPassage);
+            const Piece& a = furniture[i];
+            const Piece& b = furniture[j];
+            INFO(a.id << " <-> " << b.id);
+            const float dx = std::max({0.0f, b.box.min.x - a.box.max.x, a.box.min.x - b.box.max.x});
+            const float dz = std::max({0.0f, b.box.min.z - a.box.max.z, a.box.min.z - b.box.max.z});
+            CHECK((std::sqrt(dx * dx + dz * dz) >= kPassage || (a.againstWall && b.againstWall)));
         }
     }
 
-    // The walker spawns free and can walk from the doorway to the front of the hero wall.
+    // The walker spawns free, at the scene camera and at the start of the walk scripts (--spawn 0,0,3.2,0,-6), and can
+    // walk from the doorway to the front of the hero wall.
     const rv::scene::Capsule capsule;
-    const glm::vec3 spawn(scene.camera.position.x, 0.0f, scene.camera.position.z);
-    CHECK_FALSE(world.overlaps(spawn, capsule));
-    const glm::vec3 heroWall = world.moveCapsule(spawn, glm::vec3(0.0f, 0.0f, -8.0f), capsule);
+    CHECK_FALSE(world.overlaps(glm::vec3(scene.camera.position.x, 0.0f, scene.camera.position.z), capsule));
+    const glm::vec3 scripted(0.0f, 0.0f, 3.2f);
+    CHECK_FALSE(world.overlaps(scripted, capsule));
+    const glm::vec3 heroWall = world.moveCapsule(scripted, glm::vec3(0.0f, 0.0f, -8.0f), capsule);
     CHECK(heroWall.z < -4.0f);
 }

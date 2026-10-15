@@ -14,7 +14,7 @@
 
 const int RV_NO_SHADOW_LIGHT = -1;
 // uShadowLightIndex of the directional light; the point and spot lights are 0 .. RV_MAX_PUNCTUAL_LIGHTS - 1.
-const int RV_DIRECTIONAL_SHADOW_LIGHT = 8;
+const int RV_DIRECTIONAL_SHADOW_LIGHT = 16;
 
 layout(std140, binding = 4) uniform ShadowUniforms {
     mat4 uShadowViewProjection; // world -> clip space of the shadow map

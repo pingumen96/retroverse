@@ -167,6 +167,28 @@ struct FaceFrame {
     return {0.5f + glm::dot(p, face.right) / (2.0f * halfWidth), 0.5f - glm::dot(p, face.up) / (2.0f * halfHeight)};
 }
 
+/// Uv of the box-local point `p` mapped through `face` of a box with half extents `half` placed by `affine`, in the
+/// layout `uv` (BoxUv); meter layouts divide by `tile`.
+[[nodiscard]] glm::vec2 faceUv(const glm::vec3& p, const glm::vec3& half, const FaceFrame& face, const Affine& affine,
+                               BoxUv uv, float tile) {
+    if (uv == BoxUv::PerFace) {
+        return projectedUv(p, half, face);
+    }
+    // Face-plane coordinates in builder space: right and down axes of the transformed face.
+    const glm::vec3 right = detail::normalizeOr(affine.linear * face.right, face.right);
+    const glm::vec3 down = detail::normalizeOr(affine.linear * -face.up, -face.up);
+    const glm::vec3 placed = affine.point(p);
+    glm::vec2 meters(glm::dot(placed, right), glm::dot(placed, down));
+    if (uv == BoxUv::GrainMeters) {
+        const float width = glm::length(affine.linear * face.right) * glm::dot(glm::abs(face.right), half);
+        const float height = glm::length(affine.linear * face.up) * glm::dot(glm::abs(face.up), half);
+        if (height > width) {
+            meters = glm::vec2(meters.y, -meters.x); // u down the face, v towards its left: a quarter turn
+        }
+    }
+    return meters / tile;
+}
+
 /// Rectangle corners in the order top-left, bottom-left, bottom-right, top-right.
 using Corners = std::array<glm::vec3, 4>;
 using CornerUvs = std::array<glm::vec2, 4>;
@@ -300,13 +322,9 @@ MeshBuilder& MeshBuilder::box(const glm::vec3& size, const glm::mat4& transform,
         const Corners corners = rectCorners(face.normal * glm::dot(glm::abs(face.normal), half), face.right, face.up,
                                             glm::dot(glm::abs(face.right), half), glm::dot(glm::abs(face.up), half));
         CornerUvs uvs{glm::vec2(0.0f, 0.0f), glm::vec2(0.0f, 1.0f), glm::vec2(1.0f, 1.0f), glm::vec2(1.0f, 0.0f)};
-        if (uv == BoxUv::WorldMeters) {
-            // Face-plane coordinates in builder space: right and down axes of the transformed face.
-            const glm::vec3 right = detail::normalizeOr(affine->linear * face.right, face.right);
-            const glm::vec3 down = detail::normalizeOr(affine->linear * -face.up, -face.up);
+        if (uv != BoxUv::PerFace) {
             for (std::size_t i = 0; i < corners.size(); ++i) {
-                const glm::vec3 p = affine->point(corners[i]);
-                uvs[i] = glm::vec2(glm::dot(p, right), glm::dot(p, down)) / tile;
+                uvs[i] = faceUv(corners[i], half, face, *affine, uv, tile);
             }
         }
         addRect(local, corners, uvs, face.normal, face.right);
@@ -315,16 +333,18 @@ MeshBuilder& MeshBuilder::box(const glm::vec3& size, const glm::mat4& transform,
     return *this;
 }
 
-MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, const glm::mat4& transform) {
+MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, const glm::mat4& transform, BoxUv uv,
+                                       float metersPerTile) {
     const std::optional<Affine> affine = makeAffine(transform);
-    if (!affine || !core::isFinite(size) || !std::isfinite(chamfer)) {
+    if (!affine || !core::isFinite(size) || !std::isfinite(chamfer) || !std::isfinite(metersPerTile)) {
         return *this;
     }
     const glm::vec3 half = glm::abs(size) * 0.5f;
+    const float tile = metersPerTile > 0.0f ? metersPerTile : 1.0f;
     const float smallest = 2.0f * std::min({half.x, half.y, half.z});
     const float c = std::min(std::fabs(chamfer), kMaxChamferFraction * smallest);
     if (c < kMinChamfer) {
-        return box(size, transform);
+        return box(size, transform, uv, tile);
     }
 
     // Vertex of the bevelled box lying on the face perpendicular to `axis`, in the octant given by `signs`.
@@ -339,7 +359,7 @@ MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, con
     const auto emit = [&](std::size_t count, const glm::vec3& outward) {
         const FaceFrame& face = projectionFace(outward);
         for (std::size_t i = 0; i < count; ++i) {
-            uvs[i] = projectedUv(points[i], half, face);
+            uvs[i] = faceUv(points[i], half, face, *affine, uv, tile);
         }
         detail::addFlatPolygon(local, std::span<const glm::vec3>(points.data(), count),
                                std::span<const glm::vec2>(uvs.data(), count), outward);

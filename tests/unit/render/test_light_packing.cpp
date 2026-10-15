@@ -109,7 +109,8 @@ TEST_CASE("render/light_packing: the cone parameters follow the smoothstep contr
     }
 }
 
-TEST_CASE("render/light_packing: one directional light, at most eight point and spot lights", "[render][lights]") {
+TEST_CASE("render/light_packing: one directional light, at most kMaxPunctualLights point and spot lights",
+          "[render][lights]") {
     std::vector<Light> lights;
     Light sun;
     sun.name = "sun";
@@ -118,9 +119,11 @@ TEST_CASE("render/light_packing: one directional light, at most eight point and 
     sun.color = glm::vec3(1.0f, 0.95f, 0.9f);
     sun.intensity = 3.0f;
     lights.push_back(sun);
-    for (int i = 0; i < 10; ++i) {
-        lights.push_back(
-            pointLight(i == 9 ? "" : "bulb" + std::to_string(i), glm::vec3(static_cast<float>(i), 2.0f, 0.0f)));
+    constexpr auto kCapacity = static_cast<int>(rv::gl::kMaxPunctualLights);
+    const int bulbs = kCapacity + 2;
+    for (int i = 0; i < bulbs; ++i) {
+        lights.push_back(pointLight(i == bulbs - 1 ? "" : "bulb" + std::to_string(i),
+                                    glm::vec3(static_cast<float>(i), 2.0f, 0.0f)));
     }
     Light moon = sun;
     moon.name = "moon";
@@ -129,16 +132,17 @@ TEST_CASE("render/light_packing: one directional light, at most eight point and 
     const PackedLights packed = rv::gl::packLights(lights, rv::scene::EnvironmentSetup{});
     const LightsUniforms& block = packed.uniforms;
     CHECK(block.punctualLightCount == static_cast<std::int32_t>(rv::gl::kMaxPunctualLights));
-    CHECK(block.punctualLights[7].position.x == 7.0f); // list order
+    CHECK(block.punctualLights[kCapacity - 1].position.x == static_cast<float>(kCapacity - 1)); // list order
     CHECK(block.directionalIntensity == 3.0f);
     CHECK(block.directionalColor == sun.color);
     CHECK(glm::length(block.directionalDirection) == Approx(1.0f));
     CHECK(rv::core::nearlyEqual(block.directionalDirection, glm::normalize(sun.direction)));
 
-    // The ninth and tenth bulbs (the tenth is unnamed: index 10 in the list) and the second directional light.
+    // The two bulbs beyond the capacity (the last is unnamed: its index in the list after the sun) and the second
+    // directional light.
     REQUIRE(packed.dropped.size() == 3);
-    CHECK(packed.dropped[0].name == "bulb8");
-    CHECK(packed.dropped[1].name == "#10");
+    CHECK(packed.dropped[0].name == "bulb" + std::to_string(kCapacity));
+    CHECK(packed.dropped[1].name == "#" + std::to_string(bulbs));
     CHECK(packed.dropped[2].name == "moon");
     for (const auto& dropped : packed.dropped) {
         CHECK_FALSE(dropped.reason.empty());
@@ -245,15 +249,15 @@ TEST_CASE("render/light_packing: a point or dropped key light casts no shadow an
 
     // Nor does one beyond the capacity of the block.
     std::vector<Light> crowded;
-    for (int i = 0; i < 8; ++i) {
+    for (std::uint32_t i = 0; i < rv::gl::kMaxPunctualLights; ++i) {
         crowded.push_back(pointLight("bulb" + std::to_string(i), glm::vec3(static_cast<float>(i), 2.0f, 0.0f)));
     }
-    Light ninth = spot;
-    ninth.name = "ninth";
-    crowded.push_back(ninth);
+    Light beyond = spot;
+    beyond.name = "beyond";
+    crowded.push_back(beyond);
     packed = rv::gl::packLights(crowded, rv::scene::EnvironmentSetup{});
     CHECK_FALSE(packed.shadowLight.casts());
-    CHECK(packed.shadowNote.find("'ninth'") != std::string::npos);
+    CHECK(packed.shadowNote.find("'beyond'") != std::string::npos);
 }
 
 TEST_CASE("render/light_packing: a directional key light without shadow casters casts no shadow and says why",

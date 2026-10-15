@@ -16,6 +16,8 @@
 
 #include <rv/assets/material_library.hpp>
 #include <rv/assets/prefab_manifest.hpp>
+#include <rv/assets/surface_textures.hpp>
+#include <rv/assets/test_patterns.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
 #include <rv/geometry/prefabs.hpp>
@@ -47,7 +49,7 @@ glm::vec3 translationOf(const glm::mat4& m) {
     return glm::vec3(m[3]);
 }
 
-constexpr std::array<std::string_view, 3> kPatterns = {"color_bars", "checker", "cover"};
+constexpr std::array<std::string_view, 4> kPatterns = {"color_bars", "checker", "cover", "sign"};
 
 /// Checks that an object's material roles, textures and geometry resolve against the real modules.
 void checkObject(const SceneObject& object, const rv::assets::MaterialLibrary& library) {
@@ -76,10 +78,18 @@ void checkObject(const SceneObject& object, const rv::assets::MaterialLibrary& l
         for (const auto& [role, texture] : object.texturesByRole) {
             INFO("textures." << role);
             CHECK(rv::geometry::findPart(*prefab, role) != nullptr);
-            if (texture.kind == rv::scene::TextureSource::Kind::Pattern) {
+            switch (texture.kind) {
+            case rv::scene::TextureSource::Kind::Pattern:
                 CHECK(std::find(kPatterns.begin(), kPatterns.end(), texture.pattern) != kPatterns.end());
-            } else {
+                CHECK(std::find(rv::assets::patternNames().begin(), rv::assets::patternNames().end(),
+                                texture.pattern) != rv::assets::patternNames().end());
+                break;
+            case rv::scene::TextureSource::Kind::Procedural:
+                CHECK(rv::assets::parseProceduralTextureName(texture.procedural).has_value());
+                break;
+            case rv::scene::TextureSource::Kind::File:
                 CHECK(fs::is_regular_file(assetDir() / rv::core::pathFromUtf8(texture.path)));
+                break;
             }
         }
         break;
@@ -119,16 +129,20 @@ TEST_CASE("integration/m0_testroom: cartridges sit exactly in shelf slots", "[in
         rv::scene::loadSceneDescription(assetDir() / "style_tests/reference_scenes/m0_testroom.json");
     REQUIRE(scene.has_value());
 
-    const SceneObject* shelf = nullptr;
+    // The collection wall's shelves, built: their Slot_* sockets are where cartridges may stand.
+    struct BuiltShelf {
+        const SceneObject* object = nullptr;
+        rv::geometry::ProceduralPrefab prefab;
+    };
+    std::vector<BuiltShelf> shelves;
     for (const SceneObject& object : scene->objects) {
         if (object.source == SceneObject::Source::Prefab && object.kind == "shelf") {
-            REQUIRE(shelf == nullptr); // the M0 room has a single shelf
-            shelf = &object;
+            auto prefab = rv::geometry::buildPrefab("shelf", object.params);
+            REQUIRE(prefab.has_value());
+            shelves.push_back(BuiltShelf{&object, std::move(*prefab)});
         }
     }
-    REQUIRE(shelf != nullptr);
-    const auto shelfPrefab = rv::geometry::buildPrefab("shelf", shelf->params);
-    REQUIRE(shelfPrefab.has_value());
+    REQUIRE(shelves.size() == 2);
 
     std::set<std::string> usedSlots;
     int cartridges = 0;
@@ -144,30 +158,31 @@ TEST_CASE("integration/m0_testroom: cartridges sit exactly in shelf slots", "[in
         const glm::vec3 position = translationOf(object.transform);
 
         std::optional<std::string> matched;
-        for (const auto& socket : shelfPrefab->sockets) {
-            if (socket.kind != rv::geometry::SocketKind::ShelfSlot) {
-                continue;
-            }
-            const glm::mat4 slotWorld = shelf->transform * socket.transform;
-            const glm::vec3 expected = glm::vec3(slotWorld * glm::vec4(0.0f, halfHeight, 0.0f, 1.0f));
-            if (glm::length(expected - position) < 1e-4f) {
-                matched = socket.id;
-                // Same orientation as the slot (front facing the shelf's +Z).
-                CHECK(rv::core::nearlyEqual(glm::mat3(object.transform)[0], glm::mat3(slotWorld)[0], 1e-4f));
-                CHECK(rv::core::nearlyEqual(glm::mat3(object.transform)[2], glm::mat3(slotWorld)[2], 1e-4f));
-                // The item fits the slot volume.
-                const glm::vec3 slotSize = socket.bounds.size();
-                const glm::vec3 itemSize = cartridge->bounds.size();
-                CHECK(itemSize.x <= slotSize.x + 1e-5f);
-                CHECK(itemSize.y <= slotSize.y + 1e-5f);
-                CHECK(itemSize.z <= slotSize.z + 1e-5f);
-                break;
+        for (const BuiltShelf& shelf : shelves) {
+            for (const auto& socket : shelf.prefab.sockets) {
+                if (socket.kind != rv::geometry::SocketKind::ShelfSlot) {
+                    continue;
+                }
+                const glm::mat4 slotWorld = shelf.object->transform * socket.transform;
+                const glm::vec3 expected = glm::vec3(slotWorld * glm::vec4(0.0f, halfHeight, 0.0f, 1.0f));
+                if (glm::length(expected - position) < 1e-4f) {
+                    matched = shelf.object->id + "/" + socket.id;
+                    // Same orientation as the slot (front facing the shelf's +Z).
+                    CHECK(rv::core::nearlyEqual(glm::mat3(object.transform)[0], glm::mat3(slotWorld)[0], 1e-4f));
+                    CHECK(rv::core::nearlyEqual(glm::mat3(object.transform)[2], glm::mat3(slotWorld)[2], 1e-4f));
+                    // The item fits the slot volume.
+                    const glm::vec3 slotSize = socket.bounds.size();
+                    const glm::vec3 itemSize = cartridge->bounds.size();
+                    CHECK(itemSize.x <= slotSize.x + 1e-5f);
+                    CHECK(itemSize.y <= slotSize.y + 1e-5f);
+                    CHECK(itemSize.z <= slotSize.z + 1e-5f);
+                }
             }
         }
         REQUIRE(matched.has_value());
         CHECK(usedSlots.insert(*matched).second); // one cartridge per slot
     }
-    CHECK(cartridges == 24);
+    CHECK(cartridges == 96);
 }
 
 TEST_CASE("integration/reference scenes: every light reaches the shaders' lights block", "[integration][scene]") {
@@ -182,31 +197,33 @@ TEST_CASE("integration/reference scenes: every light reaches the shaders' lights
     }
 }
 
-TEST_CASE("integration/m0_testroom: the lamp light sits at the lamp's LightSource socket", "[integration][scene]") {
+TEST_CASE("integration/m0_testroom: every lamp's bulb light sits at its LightSource socket", "[integration][scene]") {
     const auto scene =
         rv::scene::loadSceneDescription(assetDir() / "style_tests/reference_scenes/m0_testroom.json");
     REQUIRE(scene.has_value());
 
-    const SceneObject* lamp = nullptr;
-    for (const SceneObject& object : scene->objects) {
-        if (object.source == SceneObject::Source::Prefab && object.kind == "floor_lamp") {
-            lamp = &object;
+    int lamps = 0;
+    for (const SceneObject& lamp : scene->objects) {
+        if (lamp.source != SceneObject::Source::Prefab || lamp.kind != "floor_lamp") {
+            continue;
         }
-    }
-    REQUIRE(lamp != nullptr);
-    const auto prefab = rv::geometry::buildPrefab("floor_lamp", lamp->params);
-    REQUIRE(prefab.has_value());
-    const auto* source = rv::geometry::findSocket(prefab->sockets, "LightSource");
-    REQUIRE(source != nullptr);
-    const glm::vec3 bulb = translationOf(lamp->transform * source->transform);
+        INFO("lamp " << lamp.id);
+        ++lamps;
+        const auto prefab = rv::geometry::buildPrefab("floor_lamp", lamp.params);
+        REQUIRE(prefab.has_value());
+        const auto* source = rv::geometry::findSocket(prefab->sockets, "LightSource");
+        REQUIRE(source != nullptr);
+        const glm::vec3 bulb = translationOf(lamp.transform * source->transform);
 
-    float nearest = std::numeric_limits<float>::max();
-    for (const auto& light : scene->lights) {
-        if (light.type == rv::scene::LightType::Point) {
-            nearest = std::min(nearest, glm::length(light.position - bulb));
+        float nearest = std::numeric_limits<float>::max();
+        for (const auto& light : scene->lights) {
+            if (light.type == rv::scene::LightType::Point) {
+                nearest = std::min(nearest, glm::length(light.position - bulb));
+            }
         }
+        CHECK(nearest < 0.02f);
     }
-    CHECK(nearest < 0.02f);
+    CHECK(lamps == 2); // the floor lamp and the table lamp
 }
 
 TEST_CASE("integration/manifests: procedural prefab manifests name real sockets", "[integration][assets]") {

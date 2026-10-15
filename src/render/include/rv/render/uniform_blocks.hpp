@@ -63,7 +63,7 @@ static_assert(offsetof(FrameUniforms, time) == 204);
 static_assert(sizeof(FrameUniforms) == 208, "std140 block sizes are multiples of 16 bytes");
 
 /// Point and spot lights the shaders evaluate per fragment (RV_MAX_PUNCTUAL_LIGHTS in common/lights.glsl).
-inline constexpr std::uint32_t kMaxPunctualLights = 8;
+inline constexpr std::uint32_t kMaxPunctualLights = 16;
 
 /// One point or spot light: struct `PunctualLight` of common/lights.glsl. Contract of rv::scene::Light (radiance =
 /// color * intensity * attenuation * cone factor); the cone is precomputed so that one formula serves both kinds:
@@ -107,15 +107,15 @@ struct LightsUniforms {
 };
 
 static_assert(offsetof(LightsUniforms, punctualLights) == 0);
-static_assert(offsetof(LightsUniforms, directionalDirection) == 512);
-static_assert(offsetof(LightsUniforms, directionalIntensity) == 524);
-static_assert(offsetof(LightsUniforms, directionalColor) == 528);
-static_assert(offsetof(LightsUniforms, punctualLightCount) == 540);
-static_assert(offsetof(LightsUniforms, ambientSky) == 544);
-static_assert(offsetof(LightsUniforms, ambientIntensity) == 556);
-static_assert(offsetof(LightsUniforms, ambientGround) == 560);
-static_assert(offsetof(LightsUniforms, padding) == 572);
-static_assert(sizeof(LightsUniforms) == 576, "std140 block sizes are multiples of 16 bytes");
+static_assert(offsetof(LightsUniforms, directionalDirection) == 1024);
+static_assert(offsetof(LightsUniforms, directionalIntensity) == 1036);
+static_assert(offsetof(LightsUniforms, directionalColor) == 1040);
+static_assert(offsetof(LightsUniforms, punctualLightCount) == 1052);
+static_assert(offsetof(LightsUniforms, ambientSky) == 1056);
+static_assert(offsetof(LightsUniforms, ambientIntensity) == 1068);
+static_assert(offsetof(LightsUniforms, ambientGround) == 1072);
+static_assert(offsetof(LightsUniforms, padding) == 1084);
+static_assert(sizeof(LightsUniforms) == 1088, "std140 block sizes are multiples of 16 bytes");
 
 /// Texture units of a material: `layout(binding = N) uniform sampler2D` in common/material.glsl. Units from
 /// kMaterialTextureSlotCount on belong to other passes (PostTextureUnit).
@@ -146,6 +146,8 @@ inline constexpr std::uint32_t kAlphaMask = 1u << 5;
 inline constexpr std::uint32_t kAlphaBlend = 1u << 6;
 /// Both faces are drawn; back faces shade with the flipped normal.
 inline constexpr std::uint32_t kDoubleSided = 1u << 7;
+/// An unlit screen shown as a picture tube (the crt* fields of MaterialUniforms; assets::CrtEffect).
+inline constexpr std::uint32_t kCrtScreen = 1u << 8;
 
 /// Flag of the texture in `slot`.
 [[nodiscard]] constexpr std::uint32_t textureBit(MaterialTextureSlot slot) noexcept {
@@ -154,7 +156,9 @@ inline constexpr std::uint32_t kDoubleSided = 1u << 7;
 } // namespace material_flags
 
 /// Per-material parameters at UniformBinding::Material: block `MaterialUniforms` of common/material.glsl. Built from
-/// an assets::MaterialDesc by rv::gl::makeMaterialUniforms (material_uniforms.hpp). Colors are linear.
+/// an assets::MaterialDesc by rv::gl::makeMaterialUniforms (material_uniforms.hpp). Colors are linear. The crt* fields
+/// describe the picture-tube look of an unlit screen (material_flags::kCrtScreen, assets::CrtEffect: common/crt.glsl);
+/// they are zero for every other material.
 struct MaterialUniforms {
     glm::vec4 baseColorFactor{1.0f};
     glm::vec3 emissive{0.0f}; ///< emissive factor * emissive strength (PBR)
@@ -165,7 +169,14 @@ struct MaterialUniforms {
     float alphaCutoff = 0.5f;      ///< used with material_flags::kAlphaMask
     float emissiveStrength = 1.0f; ///< unlit materials: scales base color * texture
     std::uint32_t flags = 0;       ///< material_flags bits
-    float padding[2] = {0.0f, 0.0f};
+    float crtLineCount = 0.0f;     ///< scanlines over the picture's height
+    float crtMaskTriadCount = 0.0f; ///< phosphor triads across the picture's width
+    float crtScanlineStrength = 0.0f;
+    float crtMaskStrength = 0.0f;
+    float crtCurvature = 0.0f;
+    float crtVignette = 0.0f;
+    float crtGlassReflection = 0.0f;
+    float padding[3] = {0.0f, 0.0f, 0.0f};
 };
 
 static_assert(offsetof(MaterialUniforms, baseColorFactor) == 0);
@@ -177,7 +188,14 @@ static_assert(offsetof(MaterialUniforms, occlusionStrength) == 40);
 static_assert(offsetof(MaterialUniforms, alphaCutoff) == 44);
 static_assert(offsetof(MaterialUniforms, emissiveStrength) == 48);
 static_assert(offsetof(MaterialUniforms, flags) == 52);
-static_assert(sizeof(MaterialUniforms) == 64, "std140 block sizes are multiples of 16 bytes");
+static_assert(offsetof(MaterialUniforms, crtLineCount) == 56);
+static_assert(offsetof(MaterialUniforms, crtMaskTriadCount) == 60);
+static_assert(offsetof(MaterialUniforms, crtScanlineStrength) == 64);
+static_assert(offsetof(MaterialUniforms, crtMaskStrength) == 68);
+static_assert(offsetof(MaterialUniforms, crtCurvature) == 72);
+static_assert(offsetof(MaterialUniforms, crtVignette) == 76);
+static_assert(offsetof(MaterialUniforms, crtGlassReflection) == 80);
+static_assert(sizeof(MaterialUniforms) == 96, "std140 block sizes are multiples of 16 bytes");
 
 /// Fragment outputs of the scene shaders (`layout(location = N) out` in common/scene_output.glsl), written into the
 /// color attachments of the HDR scene target with the same numbers (gl::ViewTargets::hdr()).
@@ -229,7 +247,8 @@ static_assert(sizeof(PostUniforms) == 32, "std140 block sizes are multiples of 1
 /// Texture units of the post-processing passes: `layout(binding = N) uniform sampler2D` in common/post.glsl (Source,
 /// Emission) and post/post.frag (Bloom). They follow the material units, so that no pass rebinds a material texture.
 enum class PostTextureUnit : std::uint32_t {
-    /// The image a pass filters: the radiance of the HDR scene (first bloom downsample, post pass) or a bloom level.
+    /// The image a pass filters: the radiance of the HDR scene (first bloom downsample, post pass), a bloom level, or
+    /// the tonemapped image (the anti-aliasing pass).
     Source = kMaterialTextureSlotCount,
     /// The bloom of the view (the largest bloom level), read by the post pass.
     Bloom = kMaterialTextureSlotCount + 1,

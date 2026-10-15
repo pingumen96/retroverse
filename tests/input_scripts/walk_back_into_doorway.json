@@ -1,8 +1,9 @@
-// M0 step 5 verification: walk backwards for 120 frames from the m0_testroom camera, towards the south doorway.
+// M0 step 5 verification: walk backwards for 120 frames from the start of the walk scripts (--spawn 0,0,3.2,0,-6),
+// towards the south doorway.
 // Expected (--fixed-dt 0.016667): the walker steps into the doorway and stops one capsule radius (0.3 m) before the
 // stop in the opening's outer face (z = 5.13), feet about (0, 0, 4.83), still in the room (1.63 m in ~40 frames).
-//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 120 --fixed-dt 0.016667 --hidden
-//     --input-script tests/input_scripts/walk_back_into_doorway.json --data-dir build/rvdata
+//   retroverse.exe --scene m0_testroom --spawn 0,0,3.2,0,-6 --exit-after-frames --frames 120 --fixed-dt 0.016667
+//     --hidden --input-script tests/input_scripts/walk_back_into_doorway.json --data-dir build/rvdata
 [
   {"fromFrame": 0, "toFrame": 119, "actions": {"move_forward": -1.0}}
 ]

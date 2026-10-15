@@ -4,6 +4,7 @@ add_library(rv_geometry STATIC
     src/mesh_builder.cpp
     src/mesh_data.cpp
     src/mesh_detail.cpp
+    src/prefab_armchair.cpp
     src/prefab_assembly.cpp
     src/prefab_cartridge.cpp
     src/prefab_console_cartridge.cpp

@@ -39,13 +39,15 @@ ProceduralPrefab assemble(const PosterFrameParams& p) {
     // Top and bottom bars run the full width; the side bars fit between them.
     for (const float side : {-1.0f, 1.0f}) {
         frame.chamferedBox(glm::vec3(p.width, bar, p.depth), chamfer,
-                           translation(glm::vec3(0.0f, side * (halfHeight - 0.5f * bar), 0.5f * p.depth)));
+                           translation(glm::vec3(0.0f, side * (halfHeight - 0.5f * bar), 0.5f * p.depth)),
+                           BoxUv::GrainMeters, detail::kWoodMetersPerTile);
         frame.chamferedBox(glm::vec3(bar, picture.y, p.depth), chamfer,
-                           translation(glm::vec3(side * (halfWidth - 0.5f * bar), 0.0f, 0.5f * p.depth)));
+                           translation(glm::vec3(side * (halfWidth - 0.5f * bar), 0.0f, 0.5f * p.depth)),
+                           BoxUv::GrainMeters, detail::kWoodMetersPerTile);
     }
     // Backing board closing the frame behind the picture (its front is hidden by the picture).
     frame.box(glm::vec3(picture, kBackingThickness), translation(glm::vec3(0.0f, 0.0f, 0.5f * kBackingThickness)),
-              BoxUv::PerFace, 1.0f, FaceMask::All & ~FaceMask::PosZ);
+              BoxUv::GrainMeters, detail::kWoodMetersPerTile, FaceMask::All & ~FaceMask::PosZ);
 
     // Picture recessed behind the frame front, well clear of the backing board.
     const float pictureZ = std::max(kBackingThickness + 0.001f, 0.45f * p.depth);

@@ -22,6 +22,9 @@ constexpr float kPlinthRecess = 0.012f;
 constexpr float kMaxChamfer = 0.003f;
 /// Absorbs float rounding when the slots fill the inner width exactly.
 constexpr float kFitTolerance = 1e-4f;
+/// Every wooden part: uv in meters along each board (detail::kWoodMetersPerTile).
+constexpr BoxUv kGrain = BoxUv::GrainMeters;
+constexpr float kWoodTile = detail::kWoodMetersPerTile;
 
 struct ShelfLayout {
     float innerWidth = 0.0f;
@@ -113,29 +116,30 @@ ProceduralPrefab assemble(const ShelfParams& p) {
     // Side panels: full height and depth, they define the silhouette.
     for (const float side : {-1.0f, 1.0f}) {
         wood.chamferedBox(glm::vec3(board, p.height, p.depth), chamfer,
-                          translation(glm::vec3(side * (halfWidth - 0.5f * board), 0.5f * p.height, 0.0f)));
+                          translation(glm::vec3(side * (halfWidth - 0.5f * board), 0.5f * p.height, 0.0f)), kGrain,
+                          kWoodTile);
     }
     // Top board between the sides, over the back panel.
     wood.chamferedBox(glm::vec3(l.innerWidth, board, p.depth), chamfer,
-                      translation(glm::vec3(0.0f, p.height - 0.5f * board, 0.0f)));
+                      translation(glm::vec3(0.0f, p.height - 0.5f * board, 0.0f)), kGrain, kWoodTile);
     // Level boards, the lowest one resting on the plinth.
     for (int level = 0; level < p.levels; ++level) {
         const float bottom = p.plinthHeight + static_cast<float>(level) * l.pitch;
         wood.chamferedBox(glm::vec3(l.innerWidth, board, l.boardDepth()), chamfer,
-                          translation(glm::vec3(0.0f, bottom + 0.5f * board, l.boardCenterZ())));
+                          translation(glm::vec3(0.0f, bottom + 0.5f * board, l.boardCenterZ())), kGrain, kWoodTile);
     }
     // Recessed kick board under the lowest board.
     if (p.plinthHeight > 1e-4f) {
         wood.box(glm::vec3(l.innerWidth, p.plinthHeight, board),
-                 translation(glm::vec3(0.0f, 0.5f * p.plinthHeight, halfDepth - kPlinthRecess - 0.5f * board)),
-                 BoxUv::PerFace, 1.0f, FaceMask::All & ~FaceMask::NegY);
+                 translation(glm::vec3(0.0f, 0.5f * p.plinthHeight, halfDepth - kPlinthRecess - 0.5f * board)), kGrain,
+                 kWoodTile, FaceMask::All & ~FaceMask::NegY);
     }
     // Back panel between the sides, from the floor to the top board.
     if (p.back) {
         const float top = p.height - board;
         out.part("wood_secondary")
             .box(glm::vec3(l.innerWidth, top, kBackThickness),
-                 translation(glm::vec3(0.0f, 0.5f * top, -halfDepth + 0.5f * kBackThickness)), BoxUv::PerFace, 1.0f,
+                 translation(glm::vec3(0.0f, 0.5f * top, -halfDepth + 0.5f * kBackThickness)), kGrain, kWoodTile,
                  FaceMask::All & ~FaceMask::NegY);
     }
 

@@ -28,8 +28,8 @@ inline constexpr float kBloomThreshold = 4.0f;
 inline constexpr float kBloomKnee = 1.0f;
 
 /// What the post-processing does to the HDR scene of a view (gl::PostProcessor): bloom, exposure, vignette, the ACES
-/// fitted tonemap and dithering. The defaults change nothing but the tonemap: exposure 1, no bloom, no vignette, no
-/// dithering.
+/// fitted tonemap, dithering and anti-aliasing. The defaults change nothing but the tonemap: exposure 1, no bloom, no
+/// vignette, no dithering, no anti-aliasing.
 struct PostSettings {
     /// > 0: multiplies the scene radiance before tonemapping.
     float exposure = 1.0f;
@@ -42,10 +42,12 @@ struct PostSettings {
     float vignette = 0.0f;
     /// [0, 1]: peak-to-peak noise added to the sRGB-encoded output (kDitherAmplitude for 8-bit targets).
     float ditherAmplitude = 0.0f;
+    /// Smooths the stair-steps of edges after the tonemap (FXAA, post/fxaa.frag): one more fullscreen pass.
+    bool antialiasing = false;
 };
 
 /// The post-processing a scene's environment asks for: its exposure, bloom strength and radius and vignette, dithered
-/// with kDitherAmplitude.
+/// with kDitherAmplitude and anti-aliased.
 [[nodiscard]] PostSettings postSettingsFor(const scene::EnvironmentSetup& environment) noexcept;
 
 /// The PostUniforms block of `settings` with every value in its documented range: a non-finite or non-positive
