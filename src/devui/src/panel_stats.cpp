@@ -34,12 +34,8 @@ private:
     void drawFrameTimes() const {
         const FrameTimeHistory& history = m_model.frameTimes;
         const FrameTimeHistory::Summary summary = history.summary();
-        char gpu[24] = "n/a";
-        if (m_model.renderStats.gpuMilliseconds) {
-            std::snprintf(gpu, sizeof(gpu), "%.2f ms", *m_model.renderStats.gpuMilliseconds);
-        }
-        ImGui::Text("%.0f FPS  %.2f ms  GPU %s", summary.framesPerSecond, summary.averageMilliseconds, gpu);
-        ImGui::SetItemTooltip("Average frame time of the frames in the graph; GPU time of the scene view");
+        ImGui::Text("%.0f FPS  %.2f ms", summary.framesPerSecond, summary.averageMilliseconds);
+        ImGui::SetItemTooltip("Average frame time of the frames in the graph; GPU times: Last view");
         char caption[64];
         std::snprintf(caption, sizeof(caption), "%.2f to %.2f ms, %zu frames", summary.minMilliseconds,
                       summary.maxMilliseconds, history.size());
@@ -53,6 +49,8 @@ private:
         ImGui::SeparatorText("Last view");
         const gl::FrameStats& stats = m_model.renderStats;
         if (widgets::beginValueTable("view")) {
+            widgets::millisecondsRow("GPU scene", stats.sceneGpuMilliseconds);
+            widgets::millisecondsRow("GPU post", stats.postGpuMilliseconds);
             widgets::valueRow("Draw calls", stats.drawCalls);
             widgets::valueRow("Batches", stats.batches);
             widgets::valueRow("Instances", stats.instances);

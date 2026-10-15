@@ -77,8 +77,9 @@ core::ArgParser makeParser() {
         .flag("debug-draw", "Draw debug lines over the scene: object bounds, socket axes and a world grid.")
         .option("self-check", "name",
                 "Run a rendering check after initialization and fail the run (exit code 3) if it does not pass; "
-                "only with --smoke or --exit-after-frames. srgb: an unlit linear 0.5 grey quad must be stored as "
-                "sRGB 188 (+-2) by the sRGB render targets.")
+                "only with --smoke or --exit-after-frames. srgb: an unlit linear 0.5 grey quad, drawn into an HDR "
+                "target and taken through the post pass (bloom, vignette and dithering off, no tonemap curve), must "
+                "be stored as sRGB 188 (+-2) by the sRGB output target.")
         .flag("devui-open", "Show the developer overlay (F1) from the first frame; developer builds only. A "
                             "frame-limited run fails (exit code 3) when the overlay cannot start.")
         .flag("screenshot-include-ui",

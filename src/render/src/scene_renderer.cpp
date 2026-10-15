@@ -13,6 +13,7 @@
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/shader_program.hpp>
+#include <rv/render/view_targets.hpp>
 
 namespace rv::gl {
 
@@ -34,10 +35,15 @@ Expected<SceneRenderer> SceneRenderer::create(MeshRegistry& meshes, const Materi
     if (!timer) {
         return propagate(timer.error());
     }
+    auto post = PostProcessor::create();
+    if (!post) {
+        return propagate(post.error());
+    }
     renderer.m_frameUniforms = std::move(*frame);
     renderer.m_lightsUniforms = std::move(*lights);
     renderer.m_instances = std::move(*instances);
     renderer.m_timer = std::move(*timer);
+    renderer.m_post = std::move(*post);
     return renderer;
 }
 
@@ -116,20 +122,21 @@ void SceneRenderer::drawBatches(GLDevice& device, const SceneShaders& shaders, s
 }
 
 void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const RenderView& view,
-                           const Framebuffer& target) {
-    if (!target.valid()) {
+                           const ViewTargets& targets) {
+    if (!targets.valid()) {
         return;
     }
     const ScopedDebugGroup group(device, "SceneRenderer");
     m_timer.begin();
-    device.beginPass(target, view.clearColor);
+    device.beginPass(targets.hdr(), view.clearColor);
 
     FrameStats stats;
     stats.items = view.items.size();
     scene::Camera camera = view.camera;
-    const glm::ivec2 size = target.size();
+    const glm::ivec2 size = targets.size();
     camera.setAspect(static_cast<float>(size.x) / static_cast<float>(size.y));
-    if (updateUniforms(view, camera)) {
+    const bool uniformsReady = updateUniforms(view, camera);
+    if (uniformsReady) {
         scene::PlanOptions options;
         options.frustum = camera.frustum();
         options.eye = camera.position();
@@ -161,18 +168,30 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         }
         m_instances.release(); // the draws that read this view's instances are issued
         state.setPolygonMode(GL_FILL);
-
-        if (view.debugDraw != nullptr && shaders.debugLines != nullptr && shaders.debugLines->valid()) {
-            view.debugDraw->draw(*shaders.debugLines, state);
-            stats.debugLines = view.debugDraw->lineCount();
-        }
-        // Leave the default fixed-function state for whatever draws next (overlays, the next pass).
+        // Leave the default fixed-function state for the passes that follow.
         state.setBlend(false);
         state.setDepthWrite(true);
         state.setCullFace(true);
     }
     m_timer.end();
-    stats.gpuMilliseconds = m_timer.latestMilliseconds();
+
+    m_post.apply(device, shaders.post, view.post, targets);
+
+    if (uniformsReady && view.debugDraw != nullptr && shaders.debugLines != nullptr && shaders.debugLines->valid()) {
+        // Over the tonemapped image, in their own colors (encoded by the sRGB output), hidden where the scene is in
+        // front of them.
+        const ScopedDebugGroup lines(device, "DebugLines");
+        const Framebuffer& output = targets.output();
+        targets.hdr().copyDepthStencilTo(output);
+        output.bind();
+        RenderStateCache& state = device.state();
+        state.setViewport(glm::ivec4(0, 0, size.x, size.y));
+        state.setFramebufferSrgb(true);
+        view.debugDraw->draw(*shaders.debugLines, state);
+        stats.debugLines = view.debugDraw->lineCount();
+    }
+    stats.sceneGpuMilliseconds = m_timer.latestMilliseconds();
+    stats.postGpuMilliseconds = m_post.latestGpuMilliseconds();
     m_stats = stats;
 }
 

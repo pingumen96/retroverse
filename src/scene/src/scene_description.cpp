@@ -334,8 +334,14 @@ Expected<CameraSetup> parseCamera(const json& value, const Location& at) {
     return camera;
 }
 
+bool isUnitInterval(float value) noexcept {
+    return value >= 0.0f && value <= 1.0f;
+}
+
 Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& at) {
-    Fields fields(value, at, {"clearColor", "ambientSky", "ambientGround", "ambientIntensity", "exposure"});
+    Fields fields(value, at,
+                  {"clearColor", "ambientSky", "ambientGround", "ambientIntensity", "exposure", "bloomStrength",
+                   "bloomRadius", "vignette"});
     EnvironmentSetup environment;
     fields.optional("clearColor", environment.clearColor, readColor);
     fields.optional("ambientSky", environment.ambientSky, readColor);
@@ -344,6 +350,12 @@ Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& a
     fields.check(environment.ambientIntensity >= 0.0f, "ambientIntensity", "must be >= 0");
     fields.optional("exposure", environment.exposure, readNumber);
     fields.check(environment.exposure > 0.0f, "exposure", "must be > 0");
+    fields.optional("bloomStrength", environment.bloomStrength, readNumber);
+    fields.check(isUnitInterval(environment.bloomStrength), "bloomStrength", "must be within [0, 1]");
+    fields.optional("bloomRadius", environment.bloomRadius, readNumber);
+    fields.check(isUnitInterval(environment.bloomRadius), "bloomRadius", "must be within [0, 1]");
+    fields.optional("vignette", environment.vignette, readNumber);
+    fields.check(isUnitInterval(environment.vignette), "vignette", "must be within [0, 1]");
     if (fields.failed()) {
         return propagate(fields.error());
     }

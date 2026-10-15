@@ -40,8 +40,9 @@ struct SceneDescription;
 // DevUi it is added to).
 namespace rv::devui {
 
-/// "Stats": frame rate and times with a graph of the last FrameTimeHistory::kCapacity frames, GPU time, what the
-/// renderer's last view drew (gl::FrameStats) and the GPU resources of the registries and the texture cache.
+/// "Stats": frame rate and times with a graph of the last FrameTimeHistory::kCapacity frames, the GPU times of the
+/// scene pass and of the post-processing, what the renderer's last view drew (gl::FrameStats) and the GPU resources of
+/// the registries and the texture cache.
 struct StatsPanelModel {
     const FrameTimeHistory& frameTimes;
     /// gl::SceneRenderer::stats(): the last view rendered.
@@ -69,8 +70,8 @@ struct CameraPanelModel {
 [[nodiscard]] std::unique_ptr<Panel> makeCameraPanel(CameraPanelModel model);
 
 /// "Lights": every scene light (position, direction, color shown in sRGB and stored linear, intensity, range, cone
-/// angles, shadow flag) and the environment (ambient sky, ground and intensity, exposure, background radiance), edited
-/// live; the lights the renderer leaves out are listed with the reason.
+/// angles, shadow flag) and the environment (background radiance, ambient sky, ground and intensity), edited live; the
+/// lights the renderer leaves out are listed with the reason. The exposure is the Rendering panel's.
 struct LightsPanelModel {
     /// The scene's lights as described (linear colors), edited in place.
     std::span<scene::Light> lights;
@@ -93,13 +94,16 @@ struct MaterialsPanelModel {
 };
 [[nodiscard]] std::unique_ptr<Panel> makeMaterialsPanel(const MaterialsPanelModel& model);
 
-/// "Rendering": the debug line kinds (world grid, object bounds, socket axes), wireframe for the scene pass, vsync,
-/// and the shaders: a reload button (F5) and the build state of every program with its last compile error.
+/// "Rendering": the debug line kinds (world grid, object bounds, socket axes), wireframe for the scene pass, vsync, the
+/// post-processing of the scene's environment (exposure, bloom strength and radius, vignette; live, never saved), and
+/// the shaders: a reload button (F5) and the build state of every program with its last compile error.
 struct RenderingPanelModel {
     bool& showGrid;
     bool& showBounds;
     bool& showSockets;
     bool& wireframe;
+    /// Its exposure, bloom and vignette are edited in place; the renderer reads them every view.
+    scene::EnvironmentSetup& environment;
     gl::ShaderLibrary& shaders;
     /// Its swap interval (vsync).
     platform::GraphicsWindow& window;

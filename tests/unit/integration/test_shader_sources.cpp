@@ -2,7 +2,9 @@
 // with rv::assets::ShaderSourceLoader, and the std140 uniform blocks, material flags and texture units declared in
 // GLSL match their C++ mirrors in rv/render/uniform_blocks.hpp (binding points, member types, offsets, sizes), so a
 // change on one side cannot silently skew the other. The same holds for the display transform (tonemap.glsl and
-// rv/render/tonemap.hpp); fragment stages are checked to sample their textures before they may discard.
+// rv/render/tonemap.hpp); the material shaders are checked to write linear radiance (exposure and tonemapping are the
+// post pass's), fragment stages to sample their textures before they may discard, the post-processing passes to draw
+// without vertex buffers and the bloom filters to keep the energy of the image.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,6 +23,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/geometry/mesh_data.hpp>
 #include <rv/core/text.hpp>
+#include <rv/render/post_settings.hpp>
 #include <rv/render/tonemap.hpp>
 #include <rv/render/uniform_blocks.hpp>
 #include <rv/scene/debug_lines.hpp>
@@ -206,15 +209,18 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
         }
     }
     std::sort(stages.begin(), stages.end());
-    // The programs of the application: pbr (PBR_Base), unlit_emissive (Unlit_Emissive), which shares pbr.vert, and
-    // debug_lines (--debug-draw).
+    // The programs of the application: pbr (PBR_Base), unlit_emissive (Unlit_Emissive), which shares pbr.vert,
+    // debug_lines (--debug-draw), and the post-processing, every pass on post/fullscreen.vert: bloom_downsample (also
+    // with RV_BLOOM_KARIS for the first level), bloom_upsample and post.
     CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "pbr/pbr.frag",
-                                             "pbr/pbr.vert", "unlit/unlit_emissive.frag"});
+                                             "pbr/pbr.vert", "post/bloom_downsample.frag", "post/bloom_upsample.frag",
+                                             "post/fullscreen.vert", "post/post.frag", "unlit/unlit_emissive.frag"});
 
-    // The sRGB self-check builds the unlit program with RV_UNLIT_LINEAR_OUTPUT.
-    const std::vector<std::string> selfCheckDefines{"RV_UNLIT_LINEAR_OUTPUT"};
+    // The first bloom level is built with RV_BLOOM_KARIS, the sRGB self-check's post pass with RV_POST_LINEAR_OUTPUT.
+    const std::vector<std::string> karisDefines{"RV_BLOOM_KARIS"};
+    const std::vector<std::string> selfCheckDefines{"RV_POST_LINEAR_OUTPUT"};
     for (const std::string& stage : stages) {
-        for (const std::vector<std::string>& defines : {std::vector<std::string>{}, selfCheckDefines}) {
+        for (const std::vector<std::string>& defines : {std::vector<std::string>{}, karisDefines, selfCheckDefines}) {
             INFO(stage << " with " << defines.size() << " define(s)");
             const auto source = loader.load(stage, defines);
             REQUIRE(source.has_value());
@@ -224,14 +230,42 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
                   source->files.end());
         }
     }
-    // Both fragment stages read the lights block (exposure) and the material block.
-    for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag"}) {
-        INFO(stage);
+    // The blocks and helpers each stage reads: the material shaders their material (and the lit one its lights), the
+    // post-processing passes the post block, and only the post pass the display transform.
+    const auto includes = [&loader](const char* stage, const char* include) {
         const auto source = loader.load(stage);
         REQUIRE(source.has_value());
-        for (const char* include : {"common/lights.glsl", "common/tonemap.glsl", "common/material.glsl"}) {
-            CHECK(std::find(source->files.begin(), source->files.end(), fs::path(include)) != source->files.end());
-        }
+        return std::find(source->files.begin(), source->files.end(), fs::path(include)) != source->files.end();
+    };
+    CHECK(includes("pbr/pbr.frag", "common/lights.glsl"));
+    CHECK(includes("pbr/pbr.frag", "common/material.glsl"));
+    CHECK(includes("unlit/unlit_emissive.frag", "common/material.glsl"));
+    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag"}) {
+        INFO(stage);
+        CHECK(includes(stage, "common/post.glsl"));
+    }
+    CHECK(includes("post/post.frag", "common/tonemap.glsl"));
+    for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag", "post/bloom_downsample.frag",
+                              "post/bloom_upsample.frag", "debug/debug_lines.frag"}) {
+        INFO(stage);
+        CHECK_FALSE(includes(stage, "common/tonemap.glsl"));
+    }
+}
+
+TEST_CASE("integration/shaders: the material shaders write linear radiance for the post pass",
+          "[integration][shader]") {
+    // Exposure and tonemapping happen once, in the post pass: a material shader that applied them again would darken
+    // and flatten its surfaces, and the bloom would see display values instead of radiance.
+    const rv::assets::ShaderSourceLoader loader(shaderRoot());
+    for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag"}) {
+        INFO(stage);
+        const auto loaded = loader.load(stage);
+        REQUIRE(loaded.has_value());
+        const std::string source = withoutComments(loaded->text);
+        CHECK_FALSE(std::regex_search(source, std::regex(R"(\btonemap\w*\s*\()")));
+        CHECK_FALSE(std::regex_search(source, std::regex(R"(\buExposure\b)")));
+        // The output is the radiance itself, with the material's alpha.
+        CHECK(std::regex_search(source, std::regex(R"(oColor\s*=\s*vec4\s*\()")));
     }
 }
 
@@ -326,7 +360,6 @@ TEST_CASE("integration/shaders: the GLSL LightsUniforms block matches rv::gl::Li
                     {"vec3", "uAmbientSky", offsetof(LightsUniforms, ambientSky)},
                     {"float", "uAmbientIntensity", offsetof(LightsUniforms, ambientIntensity)},
                     {"vec3", "uAmbientGround", offsetof(LightsUniforms, ambientGround)},
-                    {"float", "uExposure", offsetof(LightsUniforms, exposure)},
                 },
                 sizeof(LightsUniforms));
 }
@@ -386,6 +419,88 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
     }
     CHECK(glslUnits == expectedUnits);
     CHECK(expectedUnits.size() == rv::gl::kMaterialTextureSlotCount);
+}
+
+namespace {
+
+/// Value of `const float <name> = <literal>;` in a comment-free GLSL source.
+float glslFloatConstant(const std::string& source, const std::string& name) {
+    std::smatch match;
+    REQUIRE(std::regex_search(source, match, std::regex(R"(const\s+float\s+)" + name + R"(\s*=\s*(-?\d+\.\d+)\s*;)")));
+    return std::stof(match[1].str());
+}
+
+/// Texture units of `layout(binding = N) uniform sampler2D <name>;` declarations: name -> unit.
+std::map<std::string, std::uint32_t> samplerUnits(const std::string& source) {
+    std::map<std::string, std::uint32_t> units;
+    const std::regex sampler(R"(layout\s*\(\s*binding\s*=\s*(\d+)\s*\)\s*uniform\s+sampler2D\s+(\w+)\s*;)");
+    for (auto it = std::sregex_iterator(source.begin(), source.end(), sampler); it != std::sregex_iterator(); ++it) {
+        units[(*it)[2].str()] = static_cast<std::uint32_t>(std::stoul((*it)[1].str()));
+    }
+    return units;
+}
+
+} // namespace
+
+TEST_CASE("integration/shaders: the GLSL post block, texture units and filters match their C++ mirrors",
+          "[integration][shader]") {
+    const std::string source = glslWithoutComments("common/post.glsl");
+    const auto defines = parseDefines(source);
+    int binding = -1;
+    const std::vector<Member> members = parseBlock(source, "PostUniforms", binding, defines);
+    CHECK(binding == static_cast<int>(rv::gl::toIndex(rv::gl::UniformBinding::Post)));
+    using rv::gl::PostUniforms;
+    checkLayout(members, {},
+                {
+                    {"float", "uExposure", offsetof(PostUniforms, exposure)},
+                    {"float", "uBloomMix", offsetof(PostUniforms, bloomMix)},
+                    {"float", "uBloomThreshold", offsetof(PostUniforms, bloomThreshold)},
+                    {"float", "uBloomKnee", offsetof(PostUniforms, bloomKnee)},
+                    {"float", "uVignette", offsetof(PostUniforms, vignette)},
+                    {"float", "uDitherAmplitude", offsetof(PostUniforms, ditherAmplitude)},
+                },
+                sizeof(PostUniforms));
+    CHECK(rv::gl::kFirstReservedUniformBinding == rv::gl::toIndex(rv::gl::UniformBinding::Post) + 1);
+
+    // Every pass samples its source on PostTextureUnit::Source; only the post pass reads the bloom, so the bloom
+    // passes, which draw into the bloom levels, never sample one of them by accident.
+    using rv::gl::PostTextureUnit;
+    CHECK(samplerUnits(source) ==
+          std::map<std::string, std::uint32_t>{{"uSource", rv::gl::toIndex(PostTextureUnit::Source)}});
+    CHECK(samplerUnits(glslWithoutComments("post/post.frag")) ==
+          std::map<std::string, std::uint32_t>{{"uBloom", rv::gl::toIndex(PostTextureUnit::Bloom)}});
+    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag"}) {
+        INFO(stage);
+        CHECK(samplerUnits(glslWithoutComments(stage)).empty());
+    }
+    // The material units come first.
+    CHECK(rv::gl::toIndex(PostTextureUnit::Source) >= rv::gl::kMaterialTextureSlotCount);
+
+    // Energy-conserving filters: the 13-tap downsample (a central box and four corner boxes) and the 3 x 3 tent.
+    const float center = glslFloatConstant(source, "RV_BLOOM_CENTER_BOX_WEIGHT");
+    const float corner = glslFloatConstant(source, "RV_BLOOM_CORNER_BOX_WEIGHT");
+    CHECK(center + 4.0f * corner == 1.0f);
+    const float tentCenter = glslFloatConstant(source, "RV_TENT_CENTER_WEIGHT");
+    const float tentEdge = glslFloatConstant(source, "RV_TENT_EDGE_WEIGHT");
+    const float tentCorner = glslFloatConstant(source, "RV_TENT_CORNER_WEIGHT");
+    CHECK(tentCenter + 4.0f * tentEdge + 4.0f * tentCorner == 1.0f);
+    // The HDR targets are half floats: radiance is limited where the CPU mirror of the tonemap limits it.
+    CHECK(glslFloatConstant(source, "RV_MAX_RADIANCE") == rv::gl::kTonemapInputLimit);
+}
+
+TEST_CASE("integration/shaders: the post-processing passes draw a fullscreen triangle without vertex buffers",
+          "[integration][shader]") {
+    // PostProcessor binds an empty vertex array and draws three vertices: the vertex stage reads no attribute.
+    const std::string vertex = glslWithoutComments("post/fullscreen.vert");
+    CHECK_FALSE(std::regex_search(vertex, std::regex(R"(\bin\s+\w+\s+\w+\s*;)")));
+    CHECK(std::regex_search(vertex, std::regex(R"(\bgl_VertexID\b)")));
+    // The fragment stages read the uv it writes at location 0.
+    CHECK(std::regex_search(vertex, std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*out\s+vec2\s+vUv\s*;)")));
+    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag"}) {
+        INFO(stage);
+        CHECK(std::regex_search(glslWithoutComments(stage),
+                                std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*in\s+vec2\s+vUv\s*;)")));
+    }
 }
 
 namespace {

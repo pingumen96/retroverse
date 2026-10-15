@@ -6,18 +6,20 @@
 
 namespace rv::app {
 
-/// The Retroverse application logic. M0 step 9 content: loads the scene selected by --scene (default m0_testroom), or
+/// The Retroverse application logic. M0 step 10 content: loads the scene selected by --scene (default m0_testroom), or
 /// with --model one glTF model in the model viewer (makeModelViewerScene: the model at the origin, a three-point light
 /// rig, a camera framing it), turns it into drawable content (SceneInstance: deduplicated meshes and materials, glTF
 /// models, render items, lights, collision world) and draws it with the batched, instanced gl::SceneRenderer (PBR and
 /// unlit emissive materials, scene textures such as cartridge covers and CRT color bars, the scene's lights and
-/// hemispheric ambient, exposure and ACES tonemapping) into an offscreen sRGB framebuffer that is copied to the window,
-/// from a first-person camera walking the scene (FreeRoam: starts at the scene camera, collides with the walls and
-/// furniture). --debug-draw adds debug lines over the scene: object bounds, socket axes and a world grid.
+/// hemispheric ambient) as linear radiance into an HDR target, post-processed (bloom, exposure, vignette, ACES
+/// tonemapping, dithering: the post-processing of the scene's environment) into an sRGB target that is copied to the
+/// window, from a first-person camera walking the scene (FreeRoam: starts at the scene camera, collides with the walls
+/// and furniture). The window and the screenshots each have their own gl::ViewTargets. --debug-draw adds debug lines
+/// over the scene: object bounds, socket axes and a world grid.
 ///
 /// Frame statistics (gl::FrameStats: draw calls, instances, triangles, batches, shader switches, culled items, GPU
-/// time) and frame times are logged once per second in developer builds (RV_DEV_UI), and for the whole run when a
-/// frame-limited run ends.
+/// time of the scene pass and of the post-processing) and frame times are logged once per second in developer builds
+/// (RV_DEV_UI), and for the whole run when a frame-limited run ends.
 ///
 /// Input goes through the action map (assets/config/default_bindings.json, overridden per action by
 /// <user data>/config/bindings.json): Move/Look/Sprint drive the walker; Back (Esc, gamepad B) leaves one level
@@ -29,14 +31,16 @@ namespace rv::app {
 /// shaders automatically when their files change. A frame-limited run with --screenshot writes its last frame to that
 /// file (RGB: the window shows no alpha); --self-check srgb checks the sRGB output pipeline after initialization
 /// (runSrgbSelfCheck). A frame-limited run fails (exit code 3, AppContext::failRun) when that file is not written
-/// (write error, or the run ended before its last frame), when a scene shader never built, so surfaces were never
-/// drawn, or when the self-check fails. A --input-script that cannot be loaded fails the initialization (exit code 2).
+/// (write error, or the run ended before its last frame), when a scene or post-processing shader never built, so
+/// frames were never drawn completely, or when the self-check fails. A --input-script that cannot be loaded fails the
+/// initialization (exit code 2).
 ///
 /// Developer builds (RV_DEV_UI) add the Dear ImGui developer overlay (devui::DevUi), toggled by ToggleDevUI (F1) and
 /// open from the start with --devui-open: dockable panels for frame statistics, the camera and walker, the lights and
-/// environment, the materials, rendering switches (debug lines, wireframe, vsync, shader reload), the log and the scene
-/// objects ("go to"). It sees every event first and keeps what it uses; opening it frees a captured mouse for its
-/// panels and closing it captures the mouse again. It is drawn last into the window, and into screenshots only with
+/// environment, the materials, rendering switches (debug lines, wireframe, vsync, exposure, bloom and vignette, shader
+/// reload), the log and the scene objects ("go to"). It sees every event first and keeps what it uses; opening it frees
+/// a captured mouse for its panels and closing it captures the mouse again. It is drawn last into the window, and into
+/// screenshots only with
 /// --screenshot-include-ui. --debug-draw starts with every kind of debug line on; the overlay toggles each kind.
 class RetroverseApp final : public IAppLogic {
 public:

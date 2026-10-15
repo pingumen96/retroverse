@@ -14,7 +14,7 @@
 namespace rv::gl {
 
 /// Shader family that draws `material`: ShaderKind::Unlit for assets::ShadingModel::Unlit (screens, neon, the magenta
-/// fallback: base color * texture * emissiveStrength, tonemapped like lit surfaces), ShaderKind::Pbr otherwise.
+/// fallback: base color * texture * emissiveStrength, post-processed like lit surfaces), ShaderKind::Pbr otherwise.
 [[nodiscard]] scene::ShaderKind shaderKindOf(const assets::MaterialDesc& material) noexcept;
 
 /// The MaterialUniforms block of `material`. Factors are copied, emissive = emissiveFactor * emissiveStrength, the

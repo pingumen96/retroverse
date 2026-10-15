@@ -4,8 +4,6 @@
 #include <string>
 #include <vector>
 
-#include <glm/vec4.hpp>
-
 #include <rv/assets/material_library.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -45,10 +43,11 @@ struct SceneResources {
 ///    missing ones are drawn as the checker. Model objects register their meshes, materials and images through one
 ///    gl::GpuModel per distinct model.
 ///  - Render items: one per part and object instance, and one per model primitive and model instance.
-///  - Lights and background: the scene lights and environment packed into the lights block (gl::packLights; lights
-///    beyond its capacity are logged and left out) and the clear color exposed and tonemapped like the surfaces
-///    (gl::tonemap), so the void beyond a doorway sits on the scale of the lit room. The developer overlay edits the
-///    lights and the environment in place (sceneLights(), environment()) and repacks them with applyLighting().
+///  - Lights and environment: the scene lights and ambient packed into the lights block (gl::packLights; lights
+///    beyond its capacity are logged and left out). The environment also holds the background radiance and the
+///    post-processing (exposure, bloom, vignette), which the renderer reads per view (gl::postSettingsFor). The
+///    developer overlay edits the lights and the environment in place (sceneLights(), environment()) and repacks the
+///    lights with applyLighting().
 ///  - Collision: scene::buildCollisionWorld of the content, for first-person navigation.
 ///  - Debug lines: the bounds of every object instance (scene::addSceneBoundsLines) and the axes of its sockets
 ///    (scene::addSceneSocketLines), kept apart so that each kind can be shown on its own.
@@ -66,8 +65,6 @@ public:
     [[nodiscard]] const std::string& name() const noexcept { return m_name; }
     [[nodiscard]] std::span<const scene::RenderItem> renderItems() const noexcept { return m_items; }
     [[nodiscard]] const gl::LightsUniforms& lights() const noexcept { return m_lights; }
-    /// Linear display value of the background (exposed and tonemapped), encoded by the sRGB targets.
-    [[nodiscard]] const glm::vec4& clearColor() const noexcept { return m_clearColor; }
     [[nodiscard]] const scene::CollisionWorld& collisionWorld() const noexcept { return m_collision; }
     /// The bounds of every object instance (plain lines), in world space.
     [[nodiscard]] const scene::DebugLines& boundsLines() const noexcept { return m_boundsLines; }
@@ -80,10 +77,10 @@ public:
     /// The scene's lights as described (linear colors): the source of lights(). Edited in place by the developer
     /// overlay, then applyLighting().
     [[nodiscard]] std::span<scene::Light> sceneLights() noexcept { return m_sceneLights; }
-    /// The scene's environment: the source of the ambient and exposure of lights() and of clearColor().
+    /// The scene's environment: the source of the ambient of lights(), the background radiance and the
+    /// post-processing of every view, edited in place by the developer overlay.
     [[nodiscard]] scene::EnvironmentSetup& environment() noexcept { return m_environment; }
-    /// Packs sceneLights() and environment() into lights() and tonemaps the clear color again; the lights left out
-    /// are droppedLights().
+    /// Packs sceneLights() and the ambient of environment() into lights(); the lights left out are droppedLights().
     void applyLighting();
     /// Scene lights that the last packing left out, with the reason.
     [[nodiscard]] const std::vector<gl::DroppedLight>& droppedLights() const noexcept { return m_droppedLights; }
@@ -95,7 +92,6 @@ private:
     scene::EnvironmentSetup m_environment;
     gl::LightsUniforms m_lights;
     std::vector<gl::DroppedLight> m_droppedLights;
-    glm::vec4 m_clearColor{0.0f, 0.0f, 0.0f, 1.0f};
     scene::CollisionWorld m_collision;
     scene::DebugLines m_boundsLines;
     scene::DebugLines m_socketLines;

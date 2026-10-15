@@ -52,19 +52,25 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   blue; the parts hidden by surfaces dimmed, so a socket under a surface still shows its origin) and a world grid on
   y = 0 (1 m cells in scenes; for a model, cells of the power of ten that makes it span 2 to 20 of them: 10 cm for a
   0.5 m model, 1 mm for a 1 cm part).
-- Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, GPU time
-  from a timer query, frame times) are logged once per second in developer builds and as `Frame stats of the run` at
-  the end of every frame-limited run; measure frame times with `--no-vsync`.
+- Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, GPU times
+  of the scene pass and of the post-processing from timer queries, `GPU scene ... ms, post ... ms`, frame times) are
+  logged once per second in developer builds and as `Frame stats of the run` at the end of every frame-limited run;
+  measure frame times with `--no-vsync` (at 1920x1080 on the reference GPU the post-processing takes about 0.2 ms:
+  `--width 1920 --height 1080 --no-vsync --hidden --exit-after-frames --frames 600`).
 - `--screenshot <file.png>` writes the last frame of a frame-limited run; a run that ends before that frame (Esc,
   window closed) exits 3 like a failed write. `--screenshot-size WxH` (default 1920x1080, independent of the
   window) also applies to F12.
-- `--self-check srgb` (frame-limited runs only) checks the sRGB output pipeline after initialization: an unlit linear
-  0.5 grey quad drawn into an sRGB render target must read back as 188 +- 2, else the run exits 3. Use
-  `retroverse.exe --self-check srgb --smoke --hidden --data-dir build/rvdata`.
-- Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient, exposure + ACES): the look is
-  tuned in the scene files (`environment` exposure, ambient and `clearColor`, which is background radiance exposed and
-  tonemapped like the surfaces; `lights`, at most 8 point/spot plus one directional), material presets in
-  `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit}`.
+- `--self-check srgb` (frame-limited runs only) checks the output path after initialization: an unlit linear 0.5 grey
+  quad drawn into an HDR target and taken through the post pass (bloom, vignette and dithering off, exposure 1, the
+  ACES curve replaced by a clamp: `RV_POST_LINEAR_OUTPUT`) into an sRGB target must read back as 188 +- 2, else the run
+  exits 3. Use `retroverse.exe --self-check srgb --smoke --hidden --data-dir build/rvdata`.
+- Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`)
+  and post-processed once per view: bloom of the light above a soft threshold (screens, lamp shades, neon and
+  highlights glow, the lit room stays crisp), vignette, exposure + ACES, dithering. The look is tuned in the scene files
+  (`environment` exposure, ambient and `clearColor`, which is background radiance post-processed like the surfaces;
+  `bloomStrength` 0.06, `bloomRadius` 0.7 and `vignette` 0.05 by default; `lights`, at most 8 point/spot plus one
+  directional), material presets in `assets/materials/base/materials.json`, shaders in
+  `assets/shaders/{common,pbr,unlit,post}`.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Esc (gamepad B) leaves one level: it closes a popup of the developer overlay (a
@@ -75,24 +81,24 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   walker collides with walls and furniture and can step into a doorway but not leave the room. Developer builds also
   reload a shader within ~0.5 s of saving any of its files (`assets/shaders`); a broken edit logs
   `<file>:<line>: error ...` and the previous program stays in use.
-- Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about
-  the two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation,
-  screenshots). Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU time, what the
-  last view drew, GPU resources), Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision off =
-  noclip, reset to the scene camera), Lights (every scene light and the environment, live), Materials (base color,
-  metallic, roughness, emissive strength, live and never saved), Rendering (debug line kinds, wireframe, vsync, shader
-  reload with the last compile errors), Log (level filter, autoscroll) and Scene (the objects, with "go to", which
-  frames the object in the part of the view the panels leave visible). The default layout widens its side columns
-  with the display scale (at least 18 and 22 font sizes). Interactive runs keep the layout in
+- Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about the
+  two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation, screenshots).
+  Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the scene pass and of
+  the post-processing, what the last view drew, GPU resources), Camera (feet, yaw, pitch, FOV, speeds, mouse
+  sensitivity, invert Y, collision off = noclip, reset to the scene camera), Lights (every scene light, the background
+  and the ambient, live), Materials (base color, metallic, roughness, emissive strength, live and never saved),
+  Rendering (debug line kinds, wireframe, vsync, post-processing: exposure, bloom strength and radius, vignette, live
+  and never saved; shader reload with the last compile errors), Log (level filter, autoscroll) and Scene (the objects,
+  with "go to", which frames the object in the part of the view the panels leave visible). The default layout widens its
+  side columns with the display scale (at least 18 and 22 font sizes). Interactive runs keep the layout in
   `<user data>/config/imgui.ini` (delete it for the default layout); frame-limited runs always start from the default
   layout and save nothing, so overlay screenshots never depend on earlier runs. The overlay sees every event first and
-  keeps what it uses (a click on a panel, keys while a value is edited, so Esc in a text field never quits). Opening
-  it frees a captured mouse for the panels; a click into the scene captures it again, Esc releases it, and closing the
+  keeps what it uses (a click on a panel, keys while a value is edited, so Esc in a text field never quits). Opening it
+  frees a captured mouse for the panels; a click into the scene captures it again, Esc releases it, and closing the
   overlay gives back the capture it took and closes its popups. Screenshots show the scene only unless
-  `--screenshot-include-ui` is given: the overlay is then drawn into `--screenshot` and F12 images too, scaled
-  uniformly to fit `--screenshot-size` and centered (another aspect than the window's leaves bands of scene beside
-  it). A frame-limited run given `--devui-open` or `--screenshot-include-ui` fails (exit 3) when the overlay cannot
-  start.
+  `--screenshot-include-ui` is given: the overlay is then drawn into `--screenshot` and F12 images too, scaled uniformly
+  to fit `--screenshot-size` and centered (another aspect than the window's leaves bands of scene beside it). A
+  frame-limited run given `--devui-open` or `--screenshot-include-ui` fails (exit 3) when the overlay cannot start.
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,
   both included) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window
@@ -112,11 +118,14 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 
 Open the PNG with the Read tool and compare it against `style.md` and `example.png`. The PNG (RGB, no alpha) holds
 sRGB-encoded values exactly as the window shows them (`--self-check srgb` proves the encoding), so pixels can also be
-checked numerically, e.g. with Python and Pillow. Check the log for GL debug messages (`GL debug output summary:
-0 high, 0 medium, ...`). The other reference scenes: `material_test` (roughness grows along X, metallic along Y),
-`instancing_stress` (1000 boxes in 4 draw calls; frame times with `--no-vsync`) and `instancing_growth`, which grows
-the renderer's instance buffer mid-run: turned around, it shows about 2000 boxes, more than the 1024 the buffer starts
-with (the log reads `Instance buffer 'SceneRenderer.Instances' grown to ...`; with `--frames 1` it must not):
+checked numerically, e.g. with Python and Pillow; the post pass dithers the scene by one 8-bit step (the overlay is
+drawn after it and keeps its exact colors), so compare scene pixels with that tolerance, and crop and enlarge to judge
+the bloom, which is subtle by design (in the test room the CRT and the lamp shade glow softly onto the bezel and the
+wall). Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`). The other reference
+scenes: `material_test` (roughness grows along X, metallic along Y), `instancing_stress` (1000 boxes in 4 draw calls;
+frame times with `--no-vsync`) and `instancing_growth`, which grows the renderer's instance buffer mid-run: turned
+around, it shows about 2000 boxes, more than the 1024 the buffer starts with (the log reads
+`Instance buffer 'SceneRenderer.Instances' grown to ...`; with `--frames 1` it must not):
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --scene instancing_growth --exit-after-frames --frames 10 --fixed-dt 0.016667 `

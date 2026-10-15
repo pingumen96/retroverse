@@ -2,11 +2,12 @@
 //
 // Uniform buffer binding points (single table: src/render/include/rv/render/uniform_blocks.hpp):
 //   0 FrameUniforms (below), 1 LightsUniforms (common/lights.glsl), 2 MaterialUniforms (common/material.glsl),
-//   3+ reserved.
+//   3 PostUniforms (common/post.glsl), 4+ reserved.
 // Vertex attribute locations (rv::geometry::VertexLayout::standard(), rv::gl::GpuMesh):
 //   0 position, 1 normal, 2 tangent (w = bitangent sign), 3 uv0, 4..7 per-instance model matrix columns.
 // Conventions (ADR-0002): meters, +Y up, right-handed, counter-clockwise front faces, uv (0, 0) at the top-left of
-// the image, linear-space shading written to an sRGB framebuffer (GL_FRAMEBUFFER_SRGB encodes the output).
+// the image, linear-space shading. Scene shaders write linear radiance into an HDR target; the post pass
+// (post/post.frag) tonemaps it into an sRGB target, which encodes its linear output (GL_FRAMEBUFFER_SRGB).
 
 const float RV_PI = 3.14159265358979;
 

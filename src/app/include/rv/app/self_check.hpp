@@ -13,9 +13,10 @@ namespace rv::app {
 /// Rendering checks a frame-limited run performs after initialization (--self-check <name>). A failed check fails
 /// the run (ExitCode::RuntimeFailure).
 enum class SelfCheck : std::uint8_t {
-    /// sRGB output pipeline: an unlit quad of linear 0.5 grey, drawn with the unlit shader (exposure and tonemapping
-    /// skipped) into an sRGB render target like the window and screenshot targets, must read back as the sRGB
-    /// encoding of 0.5, 188, in every pixel and channel within kSrgbCheckTolerance.
+    /// sRGB output pipeline: an unlit quad of linear 0.5 grey, drawn with the unlit shader into the HDR target of view
+    /// targets like the window's and the screenshots', then taken through the post pass to their sRGB output (bloom,
+    /// vignette and dithering off, exposure 1, the ACES curve replaced by a clamp), must read back as the sRGB encoding
+    /// of 0.5, 188, in every pixel and channel within kSrgbCheckTolerance.
     Srgb,
 };
 

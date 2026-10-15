@@ -2,6 +2,7 @@
 
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -14,27 +15,30 @@
 #include <rv/render/gl_device.hpp>
 #include <rv/render/gpu_mesh.hpp>
 #include <rv/render/material_registry.hpp>
+#include <rv/render/post_processor.hpp>
+#include <rv/render/post_settings.hpp>
 #include <rv/render/shader_program.hpp>
 #include <rv/render/texture_defaults.hpp>
 #include <rv/render/uniform_buffer.hpp>
+#include <rv/render/view_targets.hpp>
 
 namespace rv::app {
 namespace {
 
 constexpr int kTargetSize = 8;
 
-Expected<gl::ShaderProgram> buildLinearUnlitProgram(const std::filesystem::path& shaderRoot) {
-    const assets::ShaderSourceLoader loader(shaderRoot);
-    const std::string defines[] = {"RV_UNLIT_LINEAR_OUTPUT"};
-    auto vertex = loader.load("pbr/pbr.vert", defines);
+Expected<gl::ShaderProgram> buildProgram(const assets::ShaderSourceLoader& loader, std::string_view vertexPath,
+                                         std::string_view fragmentPath, std::span<const std::string> defines,
+                                         std::string_view debugName) {
+    auto vertex = loader.load(vertexPath, defines);
     if (!vertex) {
         return propagate(vertex.error());
     }
-    auto fragment = loader.load("unlit/unlit_emissive.frag", defines);
+    auto fragment = loader.load(fragmentPath, defines);
     if (!fragment) {
         return propagate(fragment.error());
     }
-    return gl::ShaderProgram::build(*vertex, *fragment, "SrgbSelfCheck");
+    return gl::ShaderProgram::build(*vertex, *fragment, debugName);
 }
 
 } // namespace
@@ -42,9 +46,15 @@ Expected<gl::ShaderProgram> buildLinearUnlitProgram(const std::filesystem::path&
 Expected<SrgbCheckResult> runSrgbSelfCheck(gl::GLDevice& device, const gl::TextureDefaults& defaults,
                                            const std::filesystem::path& shaderRoot) {
     const gl::ScopedDebugGroup group(device, "SrgbSelfCheck");
-    auto program = buildLinearUnlitProgram(shaderRoot);
-    if (!program) {
-        return propagate(program.error());
+    const assets::ShaderSourceLoader loader(shaderRoot);
+    auto unlit = buildProgram(loader, "pbr/pbr.vert", "unlit/unlit_emissive.frag", {}, "SrgbSelfCheck.unlit");
+    if (!unlit) {
+        return propagate(unlit.error());
+    }
+    const std::string linearOutput[] = {"RV_POST_LINEAR_OUTPUT"};
+    auto post = buildProgram(loader, "post/fullscreen.vert", "post/post.frag", linearOutput, "SrgbSelfCheck.post");
+    if (!post) {
+        return propagate(post.error());
     }
 
     // A 2 x 2 quad facing +Z through identity matrices covers the whole target: one instance with the identity model
@@ -89,13 +99,17 @@ Expected<SrgbCheckResult> runSrgbSelfCheck(gl::GLDevice& device, const gl::Textu
     if (auto updated = frameUniforms->update(gl::FrameUniforms{}); !updated) { // identity view and projection
         return propagate(updated.error());
     }
-
-    auto target = gl::Framebuffer::create(
-        gl::FramebufferDesc{glm::ivec2(kTargetSize), gl::ColorFormat::Srgb8Alpha8, true}, "SrgbSelfCheck.target");
-    if (!target) {
-        return propagate(target.error());
+    auto targets = gl::ViewTargets::create(glm::ivec2(kTargetSize), "SrgbSelfCheck.targets");
+    if (!targets) {
+        return propagate(targets.error());
     }
-    device.beginPass(*target, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    auto postProcessor = gl::PostProcessor::create();
+    if (!postProcessor) {
+        return propagate(postProcessor.error());
+    }
+
+    // The scene pass: linear radiance into the HDR target.
+    device.beginPass(targets->hdr(), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
     gl::RenderStateCache& state = device.state();
     state.setDepthTest(true);
     state.setDepthFunc(GL_LESS);
@@ -105,10 +119,15 @@ Expected<SrgbCheckResult> runSrgbSelfCheck(gl::GLDevice& device, const gl::Textu
     state.setPolygonMode(GL_FILL);
     frameUniforms->bind(gl::UniformBinding::Frame);
     materials->bind(material);
-    program->use();
+    unlit->use();
     mesh->drawInstanced(1);
 
-    auto pixels = target->readPixels();
+    // The post pass to the sRGB output: exposure 1, no bloom, vignette or dithering (gl::PostSettings defaults).
+    gl::PostShaders postShaders;
+    postShaders.post = &*post;
+    postProcessor->apply(device, postShaders, gl::PostSettings{}, *targets);
+
+    auto pixels = targets->output().readPixels();
     gl::Framebuffer::unbind();
     if (!pixels) {
         return propagate(pixels.error());

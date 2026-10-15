@@ -53,7 +53,7 @@ TEST_CASE("render/light_packing: point and spot lights keep their order and the 
     environment.ambientSky = glm::vec3(1.0f, 0.8f, 0.6f);
     environment.ambientGround = glm::vec3(0.1f, 0.05f, 0.02f);
     environment.ambientIntensity = 0.08f;
-    environment.exposure = 1.4f;
+    environment.exposure = 1.4f; // belongs to the post-processing, not to the lights block
     const PackedLights packed = rv::gl::packLights(lights, environment);
     CHECK(packed.dropped.empty());
     const LightsUniforms& block = packed.uniforms;
@@ -79,12 +79,13 @@ TEST_CASE("render/light_packing: point and spot lights keep their order and the 
     CHECK(coneFactor(accent, 30.1f) == 0.0f);
     CHECK(coneFactor(accent, 90.0f) == 0.0f);
 
-    // No directional light; the environment is copied as is.
+    // No directional light; the ambient is copied as is and the padding stays zero (the renderer compares blocks
+    // byte for byte).
     CHECK(block.directionalIntensity == 0.0f);
     CHECK(block.ambientSky == environment.ambientSky);
     CHECK(block.ambientGround == environment.ambientGround);
     CHECK(block.ambientIntensity == 0.08f);
-    CHECK(block.exposure == 1.4f);
+    CHECK(block.padding == 0.0f);
     // Unused entries stay dark.
     for (std::uint32_t i = 2; i < rv::gl::kMaxPunctualLights; ++i) {
         CHECK(block.punctualLights[i].intensity == 0.0f);

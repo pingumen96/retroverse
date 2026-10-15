@@ -114,7 +114,6 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
     block.ambientSky = environment.ambientSky;
     block.ambientGround = environment.ambientGround;
     block.ambientIntensity = environment.ambientIntensity;
-    block.exposure = environment.exposure;
     return packed;
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -29,6 +30,8 @@ void labelAbove(const char* label);
 
 /// A "label: value" row of a two-column table started with beginValueTable().
 void valueRow(const char* label, std::size_t value);
+/// A "label: <value> ms" row of such a table, "n/a" without a value (a GPU timer before its first result).
+void millisecondsRow(const char* label, const std::optional<double>& milliseconds);
 /// Starts a compact two-column table (labels, values) with the given id; end it with ImGui::EndTable() when it returns
 /// true.
 bool beginValueTable(const char* id);

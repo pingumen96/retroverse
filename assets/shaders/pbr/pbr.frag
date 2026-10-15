@@ -1,12 +1,11 @@
 #version 450 core
 // PBR_Base (style §25): metallic-roughness materials lit by the scene's point, spot and directional lights
 // (common/lights.glsl) and a hemispherical sky/ground ambient, with optional base color, metallic-roughness, normal,
-// occlusion and emissive textures. Output: exposure and the ACES fitted curve (common/tonemap.glsl), linear, encoded
-// by the sRGB framebuffer.
+// occlusion and emissive textures. Output: linear scene radiance into the HDR target; exposure, bloom and tonemapping
+// belong to the post pass (post/post.frag).
 #include "common/common.glsl"
 #include "common/lights.glsl"
 #include "common/brdf.glsl"
-#include "common/tonemap.glsl"
 #include "common/material.glsl"
 
 layout(location = 0) in vec3 vWorldPosition;
@@ -91,5 +90,5 @@ void main() {
                 environmentBrdf(surface.f0, surface.perceptualRoughness, NoV) * occlusion;
     radiance += emissive;
 
-    oColor = vec4(tonemap(radiance, uExposure), materialOutputAlpha(baseColor.a));
+    oColor = vec4(radiance, materialOutputAlpha(baseColor.a));
 }

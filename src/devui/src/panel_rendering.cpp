@@ -8,12 +8,17 @@
 #include <rv/devui/panels.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/render/shader_library.hpp>
+#include <rv/scene/scene_description.hpp>
+
+#include "widgets.hpp"
 
 namespace rv::devui {
 namespace {
 
 constexpr ImVec4 kOkColor{0.55f, 0.85f, 0.45f, 1.0f};
 constexpr ImVec4 kErrorColor{1.0f, 0.45f, 0.4f, 1.0f};
+constexpr float kMinExposure = 0.01f;
+constexpr float kMaxExposure = 16.0f;
 
 class RenderingPanel final : public Panel {
 public:
@@ -38,6 +43,8 @@ public:
         ImGui::SameLine();
         drawVsync();
 
+        drawPostProcessing();
+
         ImGui::SeparatorText("Shaders");
         if (ImGui::Button("Reload shaders (F5)")) {
             spdlog::info("Reloading shaders (developer overlay)");
@@ -47,6 +54,25 @@ public:
     }
 
 private:
+    /// The post-processing of the scene's environment (the scene file's values until edited).
+    void drawPostProcessing() {
+        ImGui::SeparatorText("Post-processing");
+        scene::EnvironmentSetup& environment = m_model.environment;
+        widgets::pushLabelWidth("Bloom strength"); // the widest label of the section
+        ImGui::DragFloat("Exposure", &environment.exposure, 0.01f, kMinExposure, kMaxExposure, "%.3f",
+                         ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+        ImGui::SetItemTooltip("Multiplies the scene radiance before the ACES tonemap");
+        ImGui::SliderFloat("Bloom strength", &environment.bloomStrength, 0.0f, 1.0f, "%.3f",
+                           ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+        ImGui::SetItemTooltip(
+            "Glow of the light above the bloom threshold: screens, lamp shades, highlights (0: none)");
+        ImGui::SliderFloat("Bloom radius", &environment.bloomRadius, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("How far the glow spreads: from a few pixels (0) to most of the view (1)");
+        ImGui::SliderFloat("Vignette", &environment.vignette, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("Darkening of the corners (0: none)");
+        ImGui::PopItemWidth();
+    }
+
     void drawVsync() {
         platform::GraphicsWindow& window = m_model.window;
         bool vsync = window.vsync() != platform::VsyncMode::Off;

@@ -1,7 +1,6 @@
-// Scene lights and environment at uniform binding 1. Mirrors rv::gl::LightsUniforms and
-// rv::gl::PunctualLightUniforms member for member (std140; src/render/include/rv/render/uniform_blocks.hpp), filled
-// by rv::gl::packLights. Light contract: rv::scene::Light (src/scene/include/rv/scene/light.hpp).
-// Needs common/common.glsl.
+// Scene lights and ambient at uniform binding 1. Mirrors rv::gl::LightsUniforms and rv::gl::PunctualLightUniforms
+// member for member (std140; src/render/include/rv/render/uniform_blocks.hpp), filled by rv::gl::packLights. Light
+// contract: rv::scene::Light (src/scene/include/rv/scene/light.hpp). Needs common/common.glsl.
 
 #define RV_MAX_PUNCTUAL_LIGHTS 8
 
@@ -24,7 +23,6 @@ layout(std140, binding = 1) uniform LightsUniforms {
     vec3 uAmbientSky;            // linear RGB of the upper hemisphere (+Y)
     float uAmbientIntensity;
     vec3 uAmbientGround;         // linear RGB of the lower hemisphere
-    float uExposure;             // multiplies the linear color before tonemapping
 };
 
 // Inverse-square falloff times a window that reaches exactly 0 at the range:

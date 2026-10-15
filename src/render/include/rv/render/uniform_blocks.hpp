@@ -15,17 +15,19 @@ namespace rv::gl {
 /// Uniform buffer binding points: the single table for C++ and GLSL. Shaders declare their blocks with the same
 /// numbers, `layout(std140, binding = N) uniform <Block> { ... };`:
 ///   0   Frame     FrameUniforms, per rendered view (assets/shaders/common/common.glsl)
-///   1   Lights    LightsUniforms, scene lights and environment (assets/shaders/common/lights.glsl)
+///   1   Lights    LightsUniforms, scene lights and ambient (assets/shaders/common/lights.glsl)
 ///   2   Material  MaterialUniforms, per material (assets/shaders/common/material.glsl)
-///   3+  reserved: new blocks are added to this table first, then to the shaders.
+///   3   Post      PostUniforms, post-processing of a view (assets/shaders/common/post.glsl)
+///   4+  reserved: new blocks are added to this table first, then to the shaders.
 enum class UniformBinding : std::uint32_t {
     Frame = 0,
     Lights = 1,
     Material = 2,
+    Post = 3,
 };
 
 /// First binding point that is not assigned yet.
-inline constexpr std::uint32_t kFirstReservedUniformBinding = 3;
+inline constexpr std::uint32_t kFirstReservedUniformBinding = 4;
 
 [[nodiscard]] constexpr std::uint32_t toIndex(UniformBinding binding) noexcept {
     return static_cast<std::uint32_t>(binding);
@@ -83,7 +85,7 @@ static_assert(offsetof(PunctualLightUniforms, spotScale) == 44);
 static_assert(offsetof(PunctualLightUniforms, spotOffset) == 48);
 static_assert(sizeof(PunctualLightUniforms) == 64, "std140 struct sizes are multiples of 16 bytes");
 
-/// Scene lights and environment at UniformBinding::Lights: block `LightsUniforms` of common/lights.glsl. Built by
+/// Scene lights and ambient at UniformBinding::Lights: block `LightsUniforms` of common/lights.glsl. Built by
 /// rv::gl::packLights (light_packing.hpp).
 struct LightsUniforms {
     /// The first punctualLightCount entries are used; the rest are zero.
@@ -95,7 +97,8 @@ struct LightsUniforms {
     glm::vec3 ambientSky{0.0f};    ///< linear RGB of the hemisphere above (+Y)
     float ambientIntensity = 0.0f; ///< scales the hemispheric sky/ground ambient
     glm::vec3 ambientGround{0.0f}; ///< linear RGB of the hemisphere below
-    float exposure = 1.0f;         ///< multiplies the linear color before tonemapping
+    /// std140 pads the block to 16 bytes after ambientGround; the GLSL block declares nothing here.
+    float padding = 0.0f;
 };
 
 static_assert(offsetof(LightsUniforms, punctualLights) == 0);
@@ -106,11 +109,11 @@ static_assert(offsetof(LightsUniforms, punctualLightCount) == 540);
 static_assert(offsetof(LightsUniforms, ambientSky) == 544);
 static_assert(offsetof(LightsUniforms, ambientIntensity) == 556);
 static_assert(offsetof(LightsUniforms, ambientGround) == 560);
-static_assert(offsetof(LightsUniforms, exposure) == 572);
+static_assert(offsetof(LightsUniforms, padding) == 572);
 static_assert(sizeof(LightsUniforms) == 576, "std140 block sizes are multiples of 16 bytes");
 
 /// Texture units of a material: `layout(binding = N) uniform sampler2D` in common/material.glsl. Units from
-/// kMaterialTextureSlotCount on are free for other passes.
+/// kMaterialTextureSlotCount on belong to other passes (PostTextureUnit).
 enum class MaterialTextureSlot : std::uint32_t {
     BaseColor = 0,         ///< sRGB; multiplies baseColorFactor
     MetallicRoughness = 1, ///< linear; G scales roughness, B scales metallic (glTF)
@@ -170,5 +173,49 @@ static_assert(offsetof(MaterialUniforms, alphaCutoff) == 44);
 static_assert(offsetof(MaterialUniforms, emissiveStrength) == 48);
 static_assert(offsetof(MaterialUniforms, flags) == 52);
 static_assert(sizeof(MaterialUniforms) == 64, "std140 block sizes are multiples of 16 bytes");
+
+/// Post-processing parameters of a view at UniformBinding::Post: block `PostUniforms` of common/post.glsl, read by the
+/// bloom passes and the post pass. Built from a PostSettings by rv::gl::makePostUniforms (post_settings.hpp), which
+/// keeps every value in the range documented here. Brightness is exposed radiance, the input scale of the tonemap.
+struct PostUniforms {
+    /// > 0: multiplies the scene radiance (bloom included) before tonemapping.
+    float exposure = 1.0f;
+    /// [0, 1]: share of the light above the bloom threshold that the bloom spreads: radiance + bloomMix * (bloom -
+    /// excess), with excess the light above the threshold and bloom its blur, so the energy is kept. 0 leaves the
+    /// bloom texture unread.
+    float bloomMix = 0.0f;
+    /// > 0: exposed brightness (largest component) above which light counts towards the bloom in full.
+    float bloomThreshold = 1.0f;
+    /// [0, bloomThreshold]: half width of the soft knee around the threshold, where the counted share rises
+    /// quadratically from 0 (Kino / Unity quadratic threshold).
+    float bloomKnee = 0.5f;
+    /// [0, 1]: darkening of the corners, radiance * (1 - vignette * r^4), r = 0 at the center and 1 in the corners.
+    float vignette = 0.0f;
+    /// [0, 1]: peak-to-peak noise added to the sRGB-encoded output before the target quantizes it (1/255: one 8-bit
+    /// step), against banding in smooth gradients.
+    float ditherAmplitude = 0.0f;
+    float padding[2] = {0.0f, 0.0f};
+};
+
+static_assert(offsetof(PostUniforms, exposure) == 0);
+static_assert(offsetof(PostUniforms, bloomMix) == 4);
+static_assert(offsetof(PostUniforms, bloomThreshold) == 8);
+static_assert(offsetof(PostUniforms, bloomKnee) == 12);
+static_assert(offsetof(PostUniforms, vignette) == 16);
+static_assert(offsetof(PostUniforms, ditherAmplitude) == 20);
+static_assert(sizeof(PostUniforms) == 32, "std140 block sizes are multiples of 16 bytes");
+
+/// Texture units of the post-processing passes: `layout(binding = N) uniform sampler2D` in common/post.glsl (Source)
+/// and post/post.frag (Bloom). They follow the material units, so that no pass rebinds a material texture.
+enum class PostTextureUnit : std::uint32_t {
+    /// The image a pass filters: the HDR scene (first bloom downsample, post pass) or a bloom level.
+    Source = kMaterialTextureSlotCount,
+    /// The bloom of the view (the largest bloom level), read by the post pass.
+    Bloom = kMaterialTextureSlotCount + 1,
+};
+
+[[nodiscard]] constexpr std::uint32_t toIndex(PostTextureUnit unit) noexcept {
+    return static_cast<std::uint32_t>(unit);
+}
 
 } // namespace rv::gl

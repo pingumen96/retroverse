@@ -8,10 +8,11 @@
 
 namespace rv::gl {
 
-/// CPU mirror of the display transform of the shaders (assets/shaders/common/tonemap.glsl): exposure, then the ACES
-/// fitted curve (Stephen Hill, BakingLab). The renderer applies it to the colors it writes without a shader, such as
-/// the clear color, so that they sit on the same scale as the shaded surfaces. The constants below are pinned against
-/// the GLSL by tests/unit/integration/test_shader_sources.cpp.
+/// CPU mirror of the display transform of the post pass (assets/shaders/common/tonemap.glsl, applied by
+/// post/post.frag): exposure, then the ACES fitted curve (Stephen Hill, BakingLab). It tells on the CPU how a scene
+/// radiance is displayed (bloom, vignette and dithering aside), as the tests of the colors a view must show do (the
+/// model viewer's background). The constants below are pinned against the GLSL by
+/// tests/unit/integration/test_shader_sources.cpp.
 
 /// Linear sRGB -> ACES AP1-like space (RRT saturation included): RV_ACES_INPUT, column by column as in the GLSL mat3
 /// constructor.
@@ -41,8 +42,8 @@ inline constexpr float kTonemapInputLimit = 65504.0f;
 [[nodiscard]] glm::vec3 tonemapAcesFitted(const glm::vec3& color) noexcept;
 
 /// tonemap() of tonemap.glsl: linear scene radiance -> linear display value. `radiance` * `exposure` with negative and
-/// NaN components as 0 and larger ones limited to kTonemapInputLimit, then tonemapAcesFitted(). An sRGB framebuffer
-/// encodes the result like the output of the shaders.
+/// NaN components as 0 and larger ones limited to kTonemapInputLimit, then tonemapAcesFitted(). The sRGB output target
+/// encodes the result like the output of the post pass.
 [[nodiscard]] glm::vec3 tonemap(const glm::vec3& radiance, float exposure) noexcept;
 
 } // namespace rv::gl

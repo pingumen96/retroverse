@@ -20,12 +20,18 @@
   // lamp corner, the ceiling and the entrance each get a light of their own; the ambient is low and near neutral. The
   // exposure (1.5) also scales the emissive CRT screen, whose 75% bars keep their colors. The background (clear
   // color) is exposed and tonemapped like the room: a dark corridor beyond the doorway, darker than the lit walls.
+  // Post-processing (M0 step 10, style 4.3 and 15.2): a bloom a little above the default strength makes the hero CRT
+  // and the lamp shade glow softly onto the bezel and the wall (only light above the bloom threshold spreads, so the
+  // lit room and the cartridge labels stay crisp); the vignette is the minimal one of style 18.2.
   "environment": {
     "clearColor": "#221E1A",
     "ambientSky": "#E6E2DC",
     "ambientGround": "#4A4642",
     "ambientIntensity": 0.19,
-    "exposure": 1.5
+    "exposure": 1.5,
+    "bloomStrength": 0.08,
+    "bloomRadius": 0.7,
+    "vignette": 0.05
   },
   "lights": [
     // Key: two ceiling-mounted wall washers on the hero wall (the collection and the TV corner), as in a gallery. Their

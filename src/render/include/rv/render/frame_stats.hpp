@@ -7,7 +7,7 @@
 
 namespace rv::gl {
 
-/// What one SceneRenderer::render() call drew (one view of the scene).
+/// What one SceneRenderer::render() call drew (one view of the scene) and how long the GPU took.
 struct FrameStats {
     std::size_t items = 0;            ///< render items submitted
     std::size_t culledItems = 0;      ///< items outside the view frustum, not drawn
@@ -18,9 +18,13 @@ struct FrameStats {
     std::size_t shaderSwitches = 0;   ///< programs bound (the first one included)
     std::size_t materialSwitches = 0; ///< materials bound (the first one included)
     std::size_t debugLines = 0;       ///< debug lines drawn after the scene
-    /// GPU time of the most recent view whose timer query has completed, in milliseconds: results arrive a frame or two
-    /// late, so this usually measures an earlier view. Empty until the first result.
-    std::optional<double> gpuMilliseconds;
+    /// GPU time of the scene pass (clear and batches into the HDR target) of the most recent view whose timer query has
+    /// completed, in milliseconds: results arrive a frame or two late, so this usually measures an earlier view. Empty
+    /// until the first result.
+    std::optional<double> sceneGpuMilliseconds;
+    /// GPU time of the post-processing (bloom chain and post pass into the output target) of the most recent view whose
+    /// timer query has completed, in milliseconds, like sceneGpuMilliseconds. Debug lines are not timed.
+    std::optional<double> postGpuMilliseconds;
 };
 
 } // namespace rv::gl

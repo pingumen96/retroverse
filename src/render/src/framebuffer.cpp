@@ -199,6 +199,28 @@ void Framebuffer::clear(const glm::vec4& colorLinear) const {
     }
 }
 
+void Framebuffer::bindColorTexture(GLuint unit) const {
+    glBindTextureUnit(unit, m_color.id());
+}
+
+void Framebuffer::copyDepthStencilTo(const Framebuffer& destination) const {
+    if (!m_depthStencil.valid() || !destination.m_depthStencil.valid() || m_desc.size != destination.m_desc.size) {
+        return;
+    }
+    glBlitNamedFramebuffer(m_framebuffer.id(), destination.m_framebuffer.id(), 0, 0, m_desc.size.x, m_desc.size.y, 0, 0,
+                           m_desc.size.x, m_desc.size.y, GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+}
+
+void Framebuffer::copyColorTo(const Framebuffer& destination) const {
+    if (!valid() || !destination.valid()) {
+        return;
+    }
+    const glm::ivec2 target = destination.m_desc.size;
+    const GLenum filter = target == m_desc.size ? GL_NEAREST : GL_LINEAR;
+    glBlitNamedFramebuffer(m_framebuffer.id(), destination.m_framebuffer.id(), 0, 0, m_desc.size.x, m_desc.size.y, 0, 0,
+                           target.x, target.y, GL_COLOR_BUFFER_BIT, filter);
+}
+
 void Framebuffer::blitToDefault(RenderStateCache& state, glm::ivec2 windowSize) const {
     if (!valid() || windowSize.x <= 0 || windowSize.y <= 0) {
         return;

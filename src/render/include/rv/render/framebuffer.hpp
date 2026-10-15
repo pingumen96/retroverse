@@ -20,7 +20,7 @@ enum class ColorFormat : std::uint8_t {
     /// GL_SRGB8_ALPHA8: with GL_FRAMEBUFFER_SRGB enabled, linear shader output is encoded to sRGB on write, so the
     /// stored bytes are display-ready (window presentation, screenshots).
     Srgb8Alpha8,
-    /// GL_RGBA16F: linear values beyond [0, 1] for HDR rendering before tonemapping (later steps).
+    /// GL_RGBA16F: linear values beyond [0, 1] (up to 65504), the HDR scene and its bloom before tonemapping.
     Rgba16F,
 };
 
@@ -38,9 +38,10 @@ struct FramebufferDesc {
 
 /// Move-only offscreen render target (DSA): a color texture with immutable storage (one mip level, linear filtering,
 /// clamped to edge) at GL_COLOR_ATTACHMENT0, which is both its draw and read buffer, and an optional depth24/stencil8
-/// renderbuffer. Rendering into it starts with GLDevice::beginPass(); blitToDefault() presents it in the window and
-/// readPixels() returns its pixels for screenshots. Its pixel rows are bottom-first like every OpenGL framebuffer.
-/// A default-constructed or moved-from Framebuffer is empty. Main thread only.
+/// renderbuffer. Rendering into it starts with GLDevice::beginPass(); later passes sample its color texture
+/// (bindColorTexture()); blitToDefault() presents it in the window and readPixels() returns its pixels for screenshots.
+/// Its pixel rows are bottom-first like every OpenGL framebuffer. A default-constructed or moved-from Framebuffer is
+/// empty. Main thread only.
 class Framebuffer {
 public:
     Framebuffer() noexcept = default;
@@ -63,6 +64,19 @@ public:
     /// GL_FRAMEBUFFER_SRGB is enabled), depth to 1 and stencil to 0. Like glClear it honors the color, depth and
     /// stencil write masks, which GLDevice::beginPass() enables.
     void clear(const glm::vec4& colorLinear) const;
+
+    /// Binds the color texture to texture unit `unit` (glBindTextureUnit) for a later pass to sample; the sampler
+    /// bound to that unit, if any, decides how. Do not sample it while this framebuffer is bound for drawing.
+    void bindColorTexture(GLuint unit) const;
+
+    /// Copies the depth and stencil values into `destination`'s (glBlitNamedFramebuffer, exact), so that what is drawn
+    /// there afterwards is depth-tested against this framebuffer's scene. Does nothing unless both have the same size
+    /// and a depth/stencil buffer.
+    void copyDepthStencilTo(const Framebuffer& destination) const;
+    /// Copies the color attachment into `destination`'s, stretched to its size: the values are converted to its
+    /// format (clamped to [0, 1] for Srgb8Alpha8, and encoded to sRGB while GL_FRAMEBUFFER_SRGB is enabled). Does
+    /// nothing for an empty framebuffer.
+    void copyColorTo(const Framebuffer& destination) const;
 
     /// Copies the color attachment to the default framebuffer, stretched over (0, 0)-(windowSize), then binds the
     /// default framebuffer with a matching viewport for overlays. GL_FRAMEBUFFER_SRGB is disabled first, so the stored

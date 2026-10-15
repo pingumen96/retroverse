@@ -12,7 +12,7 @@ This document describes the code that exists today. The target architecture is i
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets, shader source loading, procedural test patterns (sized to their surface: `patternSizeForAspect`) | core, geometry, fastgltf, stb |
 | scene | `rv_scene` | Camera, first-person controller and viewpoints (`frontViewpoint`: where a walker stands to look at an object, framed in a part of the view, `ViewArea`), lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneBoundsLines`, `addSceneSocketLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
 | platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
-| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe), debug lines (`DebugDraw`) | core, geometry, assets, scene, glad |
+| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe), the render targets of an output (`ViewTargets`: HDR scene target, bloom chain, sRGB output), bloom and the post pass (`PostProcessor`), debug lines (`DebugDraw`) | core, geometry, assets, scene, glad |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, popups closed by Back, dock space and its see-through scene area, rendering into the window or a screenshot) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials, Rendering, Log, Scene) | core, input, scene, platform, render, imgui |
 | app | `rv_app` | Composition root: application host, main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the model viewer (`--model`), screenshots, the sRGB self-check, the developer overlay's panels wired to the app state (developer builds) | all of the above |
 
@@ -23,7 +23,7 @@ Four GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 | `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else release the mouse, else close the overlay, else quit), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
 | `rv_devui_model` | devui | Built in every configuration: the frame time history of the Stats panel (`FrameTimeHistory`), the overlay's input routing (`routeOverlayEvent`) and mouse capture hand-over (`CaptureHandover`), the Log panel's copy of the log (`LogView`), where the overlay lands in a screenshot (`fitOverlayCapture`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
-| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and environment packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, for the clear color), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
+| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and ambient packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the post-processing of a view (`post_settings.hpp`: `PostSettings` from the scene environment, `postSettingsFor`; its `PostUniforms` block, `makePostUniforms`; the bloom strength per level, `bloomMix`, the radius as the upsampling scatter, `bloomScatter`, the threshold and knee, the bloom level sizes, `bloomLevelSizes`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, which tests use to predict displayed colors), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
 
 `core`, `geometry`, `input`, `assets`, `scene` and the four sub-targets are **GPU-free**: they never reach SDL3,
 glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
@@ -31,7 +31,7 @@ a context. `render` receives the OpenGL function loader as a function pointer an
 `platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a hidden window, the
 fullscreen shortcut) is tested by its own executable, `rv_platform_tests` (label `unit`, SDL but no OpenGL), so
 `rv_tests` stays SDL-free. Because `rv_render_uniforms` is GPU-free, tests check its std140 mirrors, material flags,
-texture units and tonemapping constants against the GLSL sources.
+texture units, tonemapping constants and bloom filter weights against the GLSL sources.
 
 Cross-module contracts written by independent work streams (prefab parameters and sockets, material names, scene
 files, manifests, shader sources and uniform blocks) are pinned by `tests/unit/integration`, which builds the real
@@ -54,10 +54,13 @@ geometry, resolves the real materials and preprocesses the real shaders.
   the `gl::MeshRegistry` and `gl::MaterialRegistry` (deduplicated by key), uploads every distinct model as a
   `gl::GpuModel` (meshes `<path>#mesh<i>`, materials `<path>#material<i>`, images through the `TextureCache` as
   `<path>#image<i>`, the draw items with their node transforms, the sockets) and adds one render item per model
-  primitive and model instance. It also packs the lights, tonemaps the clear color, builds the collision world and the
-  debug lines (bounds of every object instance, axes of every socket).
-- **Renderer:** `gl::SceneRenderer` draws a `gl::RenderView` (camera, render items, lights, clear color, time,
-  optional debug lines) per target. Per view it writes `FrameUniforms` and, when they changed, `LightsUniforms`;
+  primitive and model instance. It also packs the lights, builds the collision world and the debug lines (bounds of
+  every object instance, axes of every socket), and keeps the environment (background radiance, ambient,
+  post-processing) that the overlay edits and every view reads.
+- **Renderer:** `gl::SceneRenderer` draws a `gl::RenderView` (camera, render items, lights, background radiance,
+  post-processing settings, time, optional debug lines) through the `gl::ViewTargets` of an output: the scene pass
+  into its HDR target, then the post-processing into its sRGB output (below). Per view it writes `FrameUniforms` and,
+  when they changed, `LightsUniforms`;
   plans the items with `scene::BatchPlanner` (frustum culling against the registered mesh bounds; opaque batches, then
   alpha-masked ones, each sorted by shader, material and mesh; then alpha-blended items back to front by the distance
   to their world bounds, consecutive ones with the same key merged; the renderer keeps the planner and the plan, so
@@ -67,23 +70,25 @@ geometry, resolves the real materials and preprocesses the real shaders.
   `glDrawElementsInstancedBaseInstance` per batch, binding the program and the material (uniform block range,
   textures, samplers, blend, depth writes, culling) only when they change. A view whose instances cannot be written is
   skipped; `core::FailureStreak` logs the failure once per cause and the recovery with the number of skipped views.
-  Mesh shaders read the instance matrix at vertex attribute locations 4..7 (divisor 1). A `gl::GpuTimer` (a ring of
-  `GL_TIME_ELAPSED` queries read frames later, never stalling) times each view. `gl::FrameStats` (items, culled items,
-  batches, draw calls, instances, triangles, shader and material switches, debug lines, GPU time) are kept per view;
+  Mesh shaders read the instance matrix at vertex attribute locations 4..7 (divisor 1). `gl::GpuTimer`s (rings of
+  `GL_TIME_ELAPSED` queries read frames later, never stalling) time the scene pass and the post-processing of each
+  view. `gl::FrameStats` (items, culled items, batches, draw calls, instances, triangles, shader and material switches,
+  debug lines, GPU time of the scene pass and of the post-processing) are kept per view;
   `app::FrameStatsLog` logs them with the frame times once per second in developer builds (`RV_DEV_UI`) and for the
   whole run at the end of frame-limited runs (frames that render no view, a minimized window, count their time only).
   The test room draws its 71 parts in 47 batches (23 meshes uploaded); `instancing_stress` draws 1001 items in 4;
   `instancing_growth` turned around draws about 2000 instances, more than the 1024 per region the instance buffer
   starts with, so it grows mid-run.
-- **Debug lines:** `--debug-draw` adds `gl::DebugDraw` over the scene: `scene::DebugLines` (a world grid with its +Y
-  marker drawn first, so the floor axes show where they overlap it; every object instance's bounds as an oriented box;
-  the axes of every socket: shelf slots, the CRT screen surface, model anchors; the overlay's Rendering panel toggles
-  each kind, `app::composeDebugLines`, and the program and buffer are created when lines are first shown) uploaded when
-  the selection changes and drawn as `GL_LINES` with `debug/debug_lines.{vert,frag}` (linear colors, no lighting or
-  tonemapping; depth-tested without depth writes, each vertex pulled towards the eye by 0.2% of its distance so that
-  lines lying on surfaces do not flicker). Socket axes are markers: a second draw shows their parts hidden by surfaces,
-  dimmed (the complementary depth test), so a socket under a surface, such as the CRT's screen plane under its bulged
-  glass, still shows its origin.
+- **Debug lines:** `--debug-draw` adds `gl::DebugDraw` over the post-processed output, depth-tested against the scene
+  (its depth is copied from the HDR target first): `scene::DebugLines` (a world grid with its +Y marker drawn first, so
+  the floor axes show where they overlap it; every object instance's bounds as an oriented box; the axes of every
+  socket: shelf slots, the CRT screen surface, model anchors; the overlay's Rendering panel toggles each kind,
+  `app::composeDebugLines`, and the program and buffer are created when lines are first shown) uploaded when the
+  selection changes and drawn as `GL_LINES` with `debug/debug_lines.{vert,frag}` (linear colors encoded by the sRGB
+  output, neither lit, tonemapped nor bloomed; depth-tested without depth writes, each vertex pulled towards the eye by
+  0.2% of its distance so that lines lying on surfaces do not flicker). Socket axes are markers: a second draw shows
+  their parts hidden by surfaces, dimmed (the complementary depth test), so a socket under a surface, such as the CRT's
+  screen plane under its bulged glass, still shows its origin.
 - **Materials:** one GPU material per material of the scene, and one more per object, role and pattern size with a
   scene texture, which becomes that instance's base color texture (cover patterns on cartridge labels and posters,
   color bars on the CRT screen; patterns are generated at the aspect ratio of their surface as drawn,
@@ -97,39 +102,65 @@ geometry, resolves the real materials and preprocesses the real shaders.
   slots hold a texture and the alpha mode; fragment stages sample every texture before an alpha-mask discard
   (derivatives are undefined after it).
   Shader families (`scene::ShaderKind`): `Pbr` (`pbr/pbr.vert` + `pbr/pbr.frag`) and `Unlit` (`pbr/pbr.vert` +
-  `unlit/unlit_emissive.frag`: base color * texture * emissive strength).
+  `unlit/unlit_emissive.frag`: base color * texture * emissive strength). Both write linear scene radiance, neither
+  exposed nor tonemapped: the post pass does that once for the whole view.
 - **Textures:** `TextureCache` uploads each source once (asset files, `pattern:<name>:<title>:<seed>@WxH` patterns,
   decoded model images; keys include the color space and the wrap mode) as immutable `GL_RGBA8` / `GL_SRGB8_ALPHA8`
   textures with full mip chains. A missing or broken source is logged once and drawn as the checker (style §21).
 - **Lighting:** `gl::packLights` turns the scene lights (contract of `scene::Light`) and environment into
   `LightsUniforms`: up to 8 point/spot lights (inverse square with a smooth window reaching 0 at the range, smoothstep
-  spot cones) and one directional light, the hemispherical sky/ground ambient and the exposure. `pbr.frag`: GGX NDF,
+  spot cones) and one directional light, and the hemispherical sky/ground ambient. `pbr.frag`: GGX NDF,
   height-correlated Smith visibility, Schlick Fresnel, Lambert diffuse, metallic workflow, normal maps in the glTF
   tangent space (ADR-0002), occlusion, emissive; the ambient lights the diffuse lobe from the hemisphere around the
   normal and the specular lobe from the hemisphere around the reflection (analytic environment BRDF), so that metals
-  reflect the room. Lit and unlit surfaces share exposure + ACES fitted (Hill) tonemapping (`common/tonemap.glsl`);
-  the environment's clear color is background radiance and goes through the same transform on the CPU
-  (`gl::tonemap`), so the void beyond a doorway sits on the scale of the lit room.
-- **Frames:** every view is rendered into an offscreen `Framebuffer` (`GL_SRGB8_ALPHA8` color + depth24/stencil8) with
-  `GL_FRAMEBUFFER_SRGB` enabled, so shaders output linear values and the target stores sRGB. The window frame uses a
-  target of the window's size, copied to the default framebuffer with a raw blit (`GL_FRAMEBUFFER_SRGB` disabled), so
-  the window shows exactly the stored bytes whatever its own encoding. The developer overlay is drawn last, into the
-  default framebuffer, with `GL_FRAMEBUFFER_SRGB` disabled (Dear ImGui's colors are sRGB already); the backend changes
-  GL state behind the `RenderStateCache`, which is invalidated afterwards. A frame whose window target cannot be
-  allocated clears the window to black (`Framebuffer::clearDefault`) and still draws the overlay over it, so its log
-  shows why. `RenderView::wireframe` draws the scene pass with `glPolygonMode(GL_LINE)`. `--self-check srgb` proves
-  the encoding: an unlit linear 0.5 grey quad (the unlit program built with `RV_UNLIT_LINEAR_OUTPUT`, so without
-  tonemapping) drawn into such a target must read back as 188 +- 2.
-- **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view into a second target
-  at `--screenshot-size` (default 1920x1080, independent of the window), read it back through an `RGBA8` texture view
+  reflect the room. The environment's clear color is background radiance, cleared into the HDR target and
+  post-processed like the surfaces, so the void beyond a doorway sits on the scale of the lit room.
+- **Post-processing (M0 step 10, style §4.3, spec §14.2):** `gl::PostProcessor` takes the HDR scene of a
+  `gl::ViewTargets` to its sRGB output with the `gl::PostSettings` of the view (`gl::postSettingsFor` the scene's
+  environment: exposure, `bloomStrength`, `bloomRadius`, `vignette`, and one 8-bit step of dither noise), in passes
+  that draw one fullscreen triangle each without a vertex buffer (`post/fullscreen.vert`, an empty vertex array, the
+  sources on texture units 5 and 6, `gl::PostTextureUnit`, with a bilinear sampler clamped to the edges; parameters in
+  `PostUniforms` at binding 3, `common/post.glsl`). Bloom (Jimenez 2014), when its strength is above 0: the light of
+  the scene above a soft threshold (exposed brightness 1, knee 0.5, `bloomExcess`: lit walls and wood stay out,
+  screens, lamp shades, neon and highlights bloom) is downsampled into 6 levels of half, a quarter, ... of the view
+  with the 13-tap filter, the first level with the Karis average against fireflies (`RV_BLOOM_KARIS`); then, from
+  the smallest level up, the 3 x 3 tent upsampling of each level is mixed into the next larger one by the
+  fixed-function blend (constant alpha `bloomScatter(bloomRadius)`). Filters and blend keep the energy of the image.
+  The post pass (`post/post.frag`) replaces the share `bloomMix(bloomStrength)` of the light above the threshold by
+  its bloom (each of the 6 levels takes the strength, so 0.06 moves about 31% of that light: the usual strengths of
+  0.04 to 0.08 of chains that sum their levels give the same soft glow, but energy is moved, never added), applies the
+  vignette, the exposure and the ACES fitted curve (`common/tonemap.glsl`, mirrored on the CPU by `gl::tonemap`), and
+  dithers the result with interleaved gradient noise in its sRGB encoding against banding. A program that never built
+  falls back: without the bloom programs the view is composited without bloom, without the post program the HDR scene
+  is copied to the output as it is (clamped, neither exposed nor tonemapped). At 1920x1080 the post-processing takes
+  about 0.2 ms on the reference GPU.
+- **Frames:** every view is rendered through a `gl::ViewTargets`, the targets of one output, all of its size: the HDR
+  scene target (`GL_RGBA16F` color + depth24/stencil8), the 6 bloom levels (`GL_RGBA16F`, `gl::bloomLevelSizes`) and
+  the output (`GL_SRGB8_ALPHA8` color + depth24/stencil8), which the post pass writes with `GL_FRAMEBUFFER_SRGB`
+  enabled, so shaders output linear values and the target stores sRGB. The window and the screenshots each keep their
+  own `ViewTargets`, reallocated only when their size changes (a complete new set first, so a failure keeps the old
+  one). The window frame's output is copied to the default framebuffer with a raw blit (`GL_FRAMEBUFFER_SRGB`
+  disabled), so the window shows exactly the stored bytes whatever its own encoding. The developer overlay is drawn
+  last, into the default framebuffer, with `GL_FRAMEBUFFER_SRGB` disabled (Dear ImGui's colors are sRGB already); the
+  backend changes GL state behind the `RenderStateCache`, which is invalidated afterwards. A frame whose window targets
+  cannot be allocated clears the window to black (`Framebuffer::clearDefault`) and still draws the overlay over it, so
+  its log shows why. `RenderView::wireframe` draws the scene pass with `glPolygonMode(GL_LINE)`. `--self-check srgb`
+  proves the output path: an unlit linear 0.5 grey quad drawn with the scene's unlit program into the HDR target of
+  8x8 `ViewTargets`, taken by the `PostProcessor` to the output with bloom, vignette and dithering off, exposure 1 and
+  the post program built with `RV_POST_LINEAR_OUTPUT` (a clamp instead of the ACES curve), must read back as
+  188 +- 2.
+- **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view through a second
+  `ViewTargets` at `--screenshot-size` (default 1920x1080, independent of the window; the bloom levels scale with it,
+  so the glow covers the same share of the image), read the output back through an `RGBA8` texture view
   (raw sRGB bytes on every driver), flip the rows to top-first (ADR-0002) and write an RGB PNG (the window is opaque, so
   the alpha channel is dropped). They show the scene alone; with `--screenshot-include-ui` the open overlay is drawn
   over them too, from the frame's draw data scaled uniformly from the window to fit the screenshot and centered
   (`devui::fitOverlayCapture`: another aspect than the window's leaves bands of scene beside it instead of stretching
   the panels; that frame's glyphs are rasterized for the screenshot's density, so the text stays sharp).
 - **Uniforms:** binding points are listed once in `rv/render/uniform_blocks.hpp` (0 frame, 1 lights, 2 material,
-  3+ reserved) with the std140 mirrors `FrameUniforms` (view, projection, viewProjection, cameraPosition, time:
-  `common/common.glsl`), `LightsUniforms` (`common/lights.glsl`) and `MaterialUniforms` (`common/material.glsl`).
+  3 post, 4+ reserved) with the std140 mirrors `FrameUniforms` (view, projection, viewProjection, cameraPosition, time:
+  `common/common.glsl`), `LightsUniforms` (`common/lights.glsl`), `MaterialUniforms` (`common/material.glsl`) and
+  `PostUniforms` (exposure, bloom mix, threshold and knee, vignette, dither amplitude: `common/post.glsl`).
   Model matrices are per-instance vertex attributes (locations 4..7), not uniforms.
 - **Shaders:** `gl::ShaderLibrary` assembles GLSL from `<asset root>/shaders` (`#include`, defines, `#line`) and
   maps compiler messages to `<file>:<line>`. F5 rebuilds every program; developer builds (`RV_DEV_ASSET_ROOT`) also
@@ -180,16 +211,18 @@ after the scene and adds the panels (`rv/devui/panels.hpp`), thin views that hol
 edit in place:
 
 - Stats: `devui::FrameTimeHistory` (the last 240 wall-clock frame times, recorded every frame), the renderer's
-  `gl::FrameStats`, mesh, material and texture counts and bytes from the registries and the `TextureCache`.
+  `gl::FrameStats` (the GPU times of the scene pass and of the post-processing first), mesh, material and texture counts
+  and bytes from the registries and the `TextureCache`.
 - Camera: the walker (`scene::FirstPersonController` of `FreeRoam`: feet, yaw and pitch teleport it; speeds), the view
   camera's lens (FOV), the input settings (mouse sensitivity, invert Y), the app's collision flag (noclip), and a reset
   to the scene camera.
-- Lights: `SceneInstance::sceneLights()` and `environment()`, edited in place and repacked (`applyLighting`:
-  `gl::packLights`, the clear color tonemapped again); colors are edited as sRGB and stored linear.
+- Lights: `SceneInstance::sceneLights()` and `environment()` (background radiance and ambient), edited in place and
+  repacked (`applyLighting`: `gl::packLights`); colors are edited as sRGB and stored linear.
 - Materials: `gl::MaterialRegistry` (`setFactors`: base color, metallic, roughness, emissive strength; never saved; a
   revert goes back to `GpuMaterial::source`).
-- Rendering: the app's debug line selection and wireframe flag, the window's vsync, `ShaderLibrary` (reload, build
-  state and last error of every program).
+- Rendering: the app's debug line selection and wireframe flag, the window's vsync, the post-processing of
+  `SceneInstance::environment()` (exposure, bloom strength and radius, vignette; read by every view, so edits show at
+  once), `ShaderLibrary` (reload, build state and last error of every program).
 - Log: `devui::LogView`, a ring of the recent log lines (time, level, message) refreshed only when
   `core::loggedMessageCount()` changes.
 - Scene: the objects of the scene description (id, then kind and source on a line of their own, so a narrow column

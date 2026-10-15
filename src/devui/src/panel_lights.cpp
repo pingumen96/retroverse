@@ -22,8 +22,6 @@ constexpr float kMaxRange = 100.0f;
 /// Spot cones stay below 90 degrees (scene::Light).
 constexpr float kMaxConeDeg = 89.9f;
 constexpr float kMaxAmbientIntensity = 10.0f;
-constexpr float kMinExposure = 0.01f;
-constexpr float kMaxExposure = 16.0f;
 /// Indent of a light's editor under its name, in font sizes: narrow, the docked column has little width to spare.
 constexpr float kLightIndentEms = 0.5f;
 constexpr ImVec4 kWarningColor{1.0f, 0.75f, 0.3f, 1.0f};
@@ -62,10 +60,9 @@ private:
         }
         scene::EnvironmentSetup& environment = m_model.environment;
         widgets::pushLabelWidth("Background"); // the widest label of the section
-        bool changed = ImGui::DragFloat("Exposure", &environment.exposure, 0.01f, kMinExposure, kMaxExposure, "%.3f",
-                                        ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
-        changed |= widgets::linearColor("Background", environment.clearColor);
-        ImGui::SetItemTooltip("Radiance where nothing is drawn, exposed and tonemapped like the surfaces");
+        bool changed = widgets::linearColor("Background", environment.clearColor);
+        ImGui::SetItemTooltip(
+            "Radiance where nothing is drawn, post-processed like the surfaces (exposure: Rendering)");
         ImGui::SeparatorText("Ambient");
         changed |= widgets::linearColor("Sky", environment.ambientSky);
         ImGui::SetItemTooltip("Hemispheric ambient: the color from above");

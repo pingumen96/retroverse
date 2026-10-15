@@ -1,13 +1,14 @@
 # rv_render: OpenGL 4.5 core renderer (device, shaders, buffers, textures, mesh and material registries, glTF models,
-# the batched and instanced scene renderer, debug lines, framebuffers). Receives the GL function loader as a function
-# pointer and never includes SDL.
+# the batched and instanced scene renderer, HDR view targets, bloom and the post pass, debug lines, framebuffers).
+# Receives the GL function loader as a function pointer and never includes SDL.
 
 # GPU-free policy pieces of the renderer, so rv_tests can unit-test them without a context. Their headers include no
 # OpenGL header.
 #   rv_render_debug_filter  which GL debug messages are logged, dropped or de-duplicated
 #   rv_render_uniforms      std140 uniform block mirrors (uniform_blocks.hpp) and their packing from scene lights,
-#                           the environment and materials; the CPU mirror of the display transform (tonemap.hpp);
-#                           the renderer's frame statistics (frame_stats.hpp, header only)
+#                           the environment and materials; the post-processing settings, their block and the bloom
+#                           chain's level sizes (post_settings.hpp); the CPU mirror of the display transform
+#                           (tonemap.hpp); the renderer's frame statistics (frame_stats.hpp, header only)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -20,6 +21,7 @@ rv_forbid_link(rv_render_debug_filter)
 add_library(rv_render_uniforms STATIC
     src/light_packing.cpp
     src/material_uniforms.cpp
+    src/post_settings.cpp
     src/tonemap.cpp
 )
 add_library(rv::render_uniforms ALIAS rv_render_uniforms)
@@ -40,6 +42,7 @@ add_library(rv_render STATIC
     src/instance_buffer.cpp
     src/material_registry.cpp
     src/mesh_registry.cpp
+    src/post_processor.cpp
     src/render_state_cache.cpp
     src/sampler.cpp
     src/scene_renderer.cpp
@@ -49,6 +52,7 @@ add_library(rv_render STATIC
     src/texture_cache.cpp
     src/texture_defaults.cpp
     src/vertex_array.cpp
+    src/view_targets.cpp
 )
 add_library(rv::render ALIAS rv_render)
 rv_set_target_defaults(rv_render)

@@ -10,6 +10,17 @@ namespace rv::app {
 FrameStatsLog::FrameStatsLog(double intervalSeconds)
     : m_intervalSeconds(std::isfinite(intervalSeconds) && intervalSeconds > 0.0 ? intervalSeconds : 1.0) {}
 
+void FrameStatsLog::GpuTime::add(const std::optional<double>& sample) {
+    if (sample && std::isfinite(*sample)) {
+        milliseconds += *sample;
+        ++samples;
+    }
+}
+
+std::string FrameStatsLog::GpuTime::format() const {
+    return samples == 0 ? std::string("n/a") : fmt::format("{:.2f} ms", milliseconds / static_cast<double>(samples));
+}
+
 void FrameStatsLog::Window::add(double frameSeconds, const gl::FrameStats* stats) {
     ++frames;
     if (std::isfinite(frameSeconds) && frameSeconds > 0.0) {
@@ -20,9 +31,9 @@ void FrameStatsLog::Window::add(double frameSeconds, const gl::FrameStats* stats
     }
     if (stats == nullptr) {
         ++framesWithoutView;
-    } else if (stats->gpuMilliseconds && std::isfinite(*stats->gpuMilliseconds)) {
-        gpuMilliseconds += *stats->gpuMilliseconds;
-        ++gpuSamples;
+    } else {
+        sceneGpu.add(stats->sceneGpuMilliseconds);
+        postGpu.add(stats->postGpuMilliseconds);
     }
 }
 
@@ -62,16 +73,13 @@ std::string FrameStatsLog::format(std::string_view label, const Window& window) 
                                       : fmt::format("{:.2f} ms (min {:.2f}, max {:.2f})",
                                                     1000.0 * window.seconds / static_cast<double>(window.timedFrames),
                                                     1000.0 * window.minSeconds, 1000.0 * window.maxSeconds);
-    const std::string gpuTime =
-        window.gpuSamples == 0
-            ? std::string("n/a")
-            : fmt::format("{:.2f} ms", window.gpuMilliseconds / static_cast<double>(window.gpuSamples));
-    std::string summary = fmt::format("{}: {} in {:.2f} s, frame time {}, GPU {}; last view: {} item(s), {} culled, {} "
-                                      "batch(es), {} draw call(s), {} instance(s), {} triangle(s), {} shader "
-                                      "switch(es), {} material switch(es)",
-                                      label, frames, window.seconds, frameTime, gpuTime, m_last.items,
-                                      m_last.culledItems, m_last.batches, m_last.drawCalls, m_last.instances,
-                                      m_last.triangles, m_last.shaderSwitches, m_last.materialSwitches);
+    std::string summary =
+        fmt::format("{}: {} in {:.2f} s, frame time {}, GPU scene {}, post {}; last view: {} item(s), {} "
+                    "culled, {} batch(es), {} draw call(s), {} instance(s), {} triangle(s), {} "
+                    "shader switch(es), {} material switch(es)",
+                    label, frames, window.seconds, frameTime, window.sceneGpu.format(), window.postGpu.format(),
+                    m_last.items, m_last.culledItems, m_last.batches, m_last.drawCalls, m_last.instances,
+                    m_last.triangles, m_last.shaderSwitches, m_last.materialSwitches);
     if (m_last.debugLines > 0) {
         summary += fmt::format(", {} debug line(s)", m_last.debugLines);
     }

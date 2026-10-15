@@ -62,6 +62,10 @@ TEST_CASE("scene/scene_description: omitted sections take the documented default
     CHECK(rv::core::nearlyEqual(scene->environment.ambientGround, linear("#808080")));
     CHECK(scene->environment.ambientIntensity == 0.2f);
     CHECK(scene->environment.exposure == 1.0f);
+    // Post-processing: a subtle bloom and a minimal vignette (style §4.3, §18.2).
+    CHECK(scene->environment.bloomStrength == 0.06f);
+    CHECK(scene->environment.bloomRadius == 0.7f);
+    CHECK(scene->environment.vignette == 0.05f);
     CHECK(scene->lights.empty());
     CHECK(scene->objects.empty());
     CHECK(scene->findObject("anything") == nullptr);
@@ -73,7 +77,8 @@ TEST_CASE("scene/scene_description: camera, environment and lights", "[scene][sc
         // Comments are allowed in scene files.
         "camera": {"position": [1, 1.6, 4], "yawDeg": -30, "pitchDeg": 5, "horizontalFovDeg": 80, "near": 0.1, "far": 60},
         "environment": {"clearColor": "#000000", "ambientSky": "#FFC88A", "ambientGround": "#202020",
-                        "ambientIntensity": 0.3, "exposure": 1.5},
+                        "ambientIntensity": 0.3, "exposure": 1.5, "bloomStrength": 0.0, "bloomRadius": 1.0,
+                        "vignette": 0.25},
         "lights": [
             {"type": "point", "position": [0, 2.5, -3]},
             {"name": "accent", "type": "spot", "position": [2, 3, 0], "target": [2, 0, -4], "color": "#B34DCE",
@@ -92,6 +97,9 @@ TEST_CASE("scene/scene_description: camera, environment and lights", "[scene][sc
     CHECK(rv::core::nearlyEqual(scene->environment.ambientSky, linear("#FFC88A")));
     CHECK(scene->environment.ambientIntensity == 0.3f);
     CHECK(scene->environment.exposure == 1.5f);
+    CHECK(scene->environment.bloomStrength == 0.0f);
+    CHECK(scene->environment.bloomRadius == 1.0f);
+    CHECK(scene->environment.vignette == 0.25f);
 
     REQUIRE(scene->lights.size() == 3);
     const auto& point = scene->lights[0];
@@ -293,6 +301,18 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
          "/camera/position/1"},
         {"exposure > 0", R"({"schemaVersion": 1, "name": "x", "environment": {"exposure": 0}})",
          "/environment/exposure"},
+        {"bloom strength >= 0", R"({"schemaVersion": 1, "name": "x", "environment": {"bloomStrength": -0.01}})",
+         "/environment/bloomStrength"},
+        {"bloom strength <= 1", R"({"schemaVersion": 1, "name": "x", "environment": {"bloomStrength": 1.5}})",
+         "/environment/bloomStrength"},
+        {"bloom radius within [0, 1]", R"({"schemaVersion": 1, "name": "x", "environment": {"bloomRadius": 2}})",
+         "/environment/bloomRadius"},
+        {"bloom radius is a number", R"({"schemaVersion": 1, "name": "x", "environment": {"bloomRadius": "wide"}})",
+         "/environment/bloomRadius"},
+        {"vignette within [0, 1]", R"({"schemaVersion": 1, "name": "x", "environment": {"vignette": -0.05}})",
+         "/environment/vignette"},
+        {"unknown environment key", R"({"schemaVersion": 1, "name": "x", "environment": {"bloomThreshold": 1}})",
+         "/environment/bloomThreshold"},
         {"ambient intensity >= 0", R"({"schemaVersion": 1, "name": "x", "environment": {"ambientIntensity": -1}})",
          "/environment/ambientIntensity"},
         {"colors are hex strings", R"({"schemaVersion": 1, "name": "x", "environment": {"clearColor": "#12345"}})",

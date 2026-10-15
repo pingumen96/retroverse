@@ -40,7 +40,10 @@ namespace rv::scene {
 ///                                                  tonemapped like an unlit surface)
 ///       "ambientSky": "#FFFFFF", "ambientGround": "#808080",
 ///       "ambientIntensity": 0.2,                   >= 0, scales the hemispheric sky/ground ambient
-///       "exposure": 1.0                            > 0, applied before tonemapping
+///       "exposure": 1.0,                           > 0, applied before tonemapping
+///       "bloomStrength": 0.06,                     [0, 1], glow of the light above the bloom threshold (0: none)
+///       "bloomRadius": 0.7,                        [0, 1], how far the glow spreads (0: a few pixels)
+///       "vignette": 0.05                           [0, 1], darkening of the view's corners (0: none)
 ///     },
 ///     "lights": [{                                 optional
 ///       "name": "ceiling",                         optional
@@ -96,7 +99,7 @@ struct CameraSetup {
     CameraLens lens;
 };
 
-/// Linear-RGB environment terms for the renderer.
+/// Linear-RGB environment terms and the post-processing of the view for the renderer.
 struct EnvironmentSetup {
     /// "#383735". Radiance of the background, seen where no surface is drawn: the renderer exposes and tonemaps it
     /// like the surfaces, so it reads on the same scale as the lit scene.
@@ -105,6 +108,15 @@ struct EnvironmentSetup {
     glm::vec3 ambientGround{0.2158605f}; ///< "#808080"
     float ambientIntensity = 0.2f;
     float exposure = 1.0f;
+    /// How much of the light above the renderer's bloom threshold (screens, lamp shades, neon, highlights) spreads into
+    /// a soft glow around it: the share each of the bloom levels takes, about a third of that light in all for the
+    /// default, which is subtle (style §4.3: localized bloom). The lit room below the threshold stays as it is.
+    float bloomStrength = 0.06f;
+    /// How far the glow spreads: the weight the bloom chain gives its wider levels, from a few pixels around a bright
+    /// surface (0) to most of the view (1).
+    float bloomRadius = 0.7f;
+    /// Darkening of the view's corners (style §18.2 postprocess_vignette): 0.05 takes 5% of the radiance there.
+    float vignette = 0.05f;
 };
 
 /// Texture bound to one material role of an object (label of a cartridge, CRT screen, poster picture). The

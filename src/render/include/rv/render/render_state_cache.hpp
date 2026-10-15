@@ -25,6 +25,8 @@ public:
     void setBlend(bool enabled);
     /// glBlendFunc factors, applied to color and alpha.
     void setBlendFunc(GLenum sourceFactor, GLenum destinationFactor);
+    /// glBlendColor: the constant of the GL_CONSTANT_COLOR and GL_CONSTANT_ALPHA blend factors (RGBA).
+    void setBlendColor(const glm::vec4& color);
     /// GL_FRAMEBUFFER_SRGB: linear shader output is encoded to sRGB when the bound color buffer is sRGB.
     void setFramebufferSrgb(bool enabled);
     /// GL_FILL, GL_LINE or GL_POINT, for both faces (core profile).
@@ -43,6 +45,7 @@ private:
     std::optional<GLenum> m_cullMode;
     std::optional<bool> m_blend;
     std::optional<std::pair<GLenum, GLenum>> m_blendFunc;
+    std::optional<glm::vec4> m_blendColor;
     std::optional<bool> m_framebufferSrgb;
     std::optional<GLenum> m_polygonMode;
     std::optional<glm::ivec4> m_viewport;

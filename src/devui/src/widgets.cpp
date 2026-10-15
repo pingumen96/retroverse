@@ -64,6 +64,18 @@ void valueRow(const char* label, std::size_t value) {
     ImGui::Text("%zu", value);
 }
 
+void millisecondsRow(const char* label, const std::optional<double>& milliseconds) {
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(label);
+    ImGui::TableNextColumn();
+    if (milliseconds) {
+        ImGui::Text("%.2f ms", *milliseconds);
+    } else {
+        ImGui::TextUnformatted("n/a");
+    }
+}
+
 void bytes(std::size_t bytes) {
     constexpr double kKiB = 1024.0;
     const auto value = static_cast<double>(bytes);

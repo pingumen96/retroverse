@@ -18,9 +18,18 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
 - Decide whether spdlog should be built with wide-character file names for non-ASCII log paths.
 - Consider `FlushFileBuffers` for atomic writes of critical state (world plans) in I2/I3.
 - Anti-aliasing before the Gate A golden screenshot (style §2.1): the M0 frames stair-step every slanted edge. Either
-  an MSAA sample count in `gl::FramebufferDesc` with a resolve before present and readback, or a post-process pass.
-- Localized bloom on emissive surfaces (style §4.3, §15.2): the CRT screen and the lamp shade glow only by
-  brightness in M0.
+  MSAA on the HDR scene target (a sample count in `gl::FramebufferDesc`, resolved before the bloom and the post pass)
+  or a post-process pass (FXAA/SMAA works on tonemapped values: it needs an LDR target between the post pass and the
+  output, or to run inside the post pass on the resolved image).
+- Exposure per room or eye adaptation: the exposure is one value per scene (`environment.exposure`, the overlay's
+  Rendering panel). Rooms of very different brightness (a dim arcade next to the lit hub, I4) need an exposure per room
+  or an automatic one (a luminance histogram of the HDR target, adapted over a second or two).
+- Cheaper HDR targets for the Low profile (style §20.1): the scene and bloom targets are `GL_RGBA16F` (8 bytes per
+  pixel); `GL_R11F_G11F_B10F` would halve their bandwidth on integrated GPUs (no alpha, fewer mantissa bits: check the
+  dark gradients for banding first).
+- Bloom threshold per theme: the soft threshold is fixed (`gl::kBloomThreshold`, `gl::kBloomKnee`: exposed brightness 1,
+  knee 0.5). A neon-heavy theme pack (`ArcadeAfterDark`, style §14.4) may want it lower or a stronger strength; make
+  them scene keys when such a room exists.
 - Bounce light for dark rooms: the hemispheric ambient cannot lift 4%-albedo walls out of the ACES toe, so the
   test room relies on direct light. It uses all 8 point/spot slots of the lights block (two wall washers, a pendant
   fill, the floor lamp's bulb and two shade cones, the magenta accent, the entrance washer), and the upper walls and

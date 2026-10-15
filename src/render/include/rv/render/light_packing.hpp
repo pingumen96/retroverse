@@ -30,7 +30,8 @@ struct PackedLights {
 /// Builds the lights block of a scene (contract of rv::scene::Light, layout of LightsUniforms):
 ///  - point and spot lights in list order, up to kMaxPunctualLights; later ones are dropped;
 ///  - the first directional light; later ones are dropped (a scene without one gets directionalIntensity 0);
-///  - the environment's ambient sky, ground, intensity and exposure.
+///  - the environment's ambient sky, ground and intensity (its exposure belongs to the post-processing:
+///    postSettingsFor() in post_settings.hpp).
 /// Lights with a non-finite or negative value (position, direction, color, intensity, range, cone) are dropped
 /// instead of reaching the shaders; ranges below 1 mm count as 1 mm and directions are normalized. The scene loader
 /// already rejects such lights, so this only guards hand-made input. Unused entries stay zero (intensity 0).

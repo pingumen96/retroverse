@@ -16,7 +16,6 @@
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/texture_cache.hpp>
-#include <rv/render/tonemap.hpp>
 
 namespace rv::app {
 namespace {
@@ -31,13 +30,15 @@ const gl::Texture2D& pictureTexture(const PlannedMaterial& planned, gl::TextureC
     return textures.pattern(source.pattern, source.title, source.seed, planned.patternSize, gl::ColorSpace::Srgb);
 }
 
-void logLights(std::string_view scene, const gl::LightsUniforms& block, std::span<const gl::DroppedLight> dropped) {
+void logLights(std::string_view scene, const gl::LightsUniforms& block, std::span<const gl::DroppedLight> dropped,
+               const scene::EnvironmentSetup& environment) {
     for (const gl::DroppedLight& light : dropped) {
         spdlog::warn("Scene '{}': light '{}' is not drawn: {}", scene, light.name, light.reason);
     }
-    spdlog::info("Scene lights: {} point/spot, {} directional; ambient intensity {:g}, exposure {:g}",
+    spdlog::info("Scene lights: {} point/spot, {} directional; ambient intensity {:g}; exposure {:g}, bloom strength "
+                 "{:g}, bloom radius {:g}, vignette {:g}",
                  block.punctualLightCount, block.directionalIntensity > 0.0f ? 1 : 0, block.ambientIntensity,
-                 block.exposure);
+                 environment.exposure, environment.bloomStrength, environment.bloomRadius, environment.vignette);
 }
 
 } // namespace
@@ -109,7 +110,7 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
     instance.m_sceneLights = description.lights;
     instance.m_environment = description.environment;
     instance.applyLighting();
-    logLights(description.name, instance.m_lights, instance.m_droppedLights);
+    logLights(description.name, instance.m_lights, instance.m_droppedLights, instance.m_environment);
     instance.m_collision = scene::buildCollisionWorld(geometry);
     scene::addSceneBoundsLines(geometry, instance.m_boundsLines);
     scene::addSceneSocketLines(geometry, instance.m_socketLines);
@@ -137,8 +138,6 @@ void SceneInstance::applyLighting() {
     gl::PackedLights packed = gl::packLights(m_sceneLights, m_environment);
     m_lights = packed.uniforms;
     m_droppedLights = std::move(packed.dropped);
-    // The background is scene radiance like any surface: exposure and tonemapping apply before the sRGB encoding.
-    m_clearColor = glm::vec4(gl::tonemap(m_environment.clearColor, m_environment.exposure), 1.0f);
 }
 
 } // namespace rv::app

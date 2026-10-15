@@ -65,6 +65,12 @@ void RenderStateCache::setBlendFunc(GLenum sourceFactor, GLenum destinationFacto
     }
 }
 
+void RenderStateCache::setBlendColor(const glm::vec4& color) {
+    if (changes(m_blendColor, color)) {
+        glBlendColor(color.r, color.g, color.b, color.a);
+    }
+}
+
 void RenderStateCache::setFramebufferSrgb(bool enabled) {
     if (changes(m_framebufferSrgb, enabled)) {
         setCapability(GL_FRAMEBUFFER_SRGB, enabled);
@@ -91,6 +97,7 @@ void RenderStateCache::invalidate() noexcept {
     m_cullMode.reset();
     m_blend.reset();
     m_blendFunc.reset();
+    m_blendColor.reset();
     m_framebufferSrgb.reset();
     m_polygonMode.reset();
     m_viewport.reset();
