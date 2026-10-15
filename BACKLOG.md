@@ -37,6 +37,10 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   restrict instances to rotation + uniform scale) once vertex work matters.
 - Saving the developer overlay's edits: light, environment and material tweaks are live only (M0 step 9). Writing them
   back to a scene file or to `materials.json` needs a JSON writer that keeps the files' comments and layout.
+- Hints that name keys: log lines and overlay labels name the default keys ("F1 hides it", "Reload shaders (F5)",
+  "Esc releases it"), which are wrong once `<user data>/config/bindings.json` rebinds those actions. Format the bound
+  keys from the active `input::ActionMap` (a display name per key and pad button) when the controls settings screen
+  arrives (I7).
 - Log copy with worker threads: the overlay's `devui::LogView` reads `core::loggedMessageCount()` and then the newest
   lines, so a line logged by another thread in between can show twice. Once workers log (I2), let `rv::core` return
   the lines and the count under one lock.

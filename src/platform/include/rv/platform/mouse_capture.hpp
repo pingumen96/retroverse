@@ -15,7 +15,8 @@ namespace rv::platform {
 ///  - a click into the window while it has input focus and the mouse is free captures the mouse, and that click is
 ///    consumed (handleEvent returns true): it must not also act in the scene;
 ///  - losing focus releases the mouse (back in the window, a click captures it again);
-///  - captureWhenFocused() captures at once when the window has focus, otherwise at its next focus gain (startup);
+///  - captureWhenFocused() captures at once when the window has focus, otherwise at its next focus gain (startup, the
+///    developer overlay giving the mouse back);
 ///  - the application releases it explicitly (setCaptured(false), on Back).
 /// Every change is logged. Destruction releases a captured mouse.
 class MouseCapture {
@@ -28,7 +29,9 @@ public:
     /// Applies the policy to one event. Returns true when the event was consumed (the click that captured).
     [[nodiscard]] bool handleEvent(const SDL_Event& event);
     /// Captures now if the window has input focus, otherwise when it next gains focus (cancelled by setCaptured()).
-    void captureWhenFocused();
+    /// `reason` completes the log line of an immediate capture ("Mouse captured (<reason>)"); a deferred one is logged
+    /// as caused by the focus gain.
+    void captureWhenFocused(std::string_view reason);
     /// Captures or releases the mouse and returns the resulting state (unchanged when SDL refuses, logged). `reason`
     /// completes the log line ("Mouse released (<reason>)").
     bool setCaptured(bool captured, std::string_view reason = "requested");

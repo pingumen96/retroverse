@@ -21,15 +21,16 @@ constexpr std::string_view kDescription =
     "\n"
     "Controls: WASD or arrows walk, Left Shift sprints, the mouse looks around while captured (at startup in\n"
     "          interactive runs, or after a click into the window); gamepad: left stick walks, right stick\n"
-    "          looks, left stick click sprints. Esc (gamepad B) releases the mouse, else closes the developer\n"
-    "          overlay, else quits. F1 toggles the developer overlay (developer builds), F5 reloads the shaders,\n"
-    "          F12 saves a screenshot to <user data>/screenshots. These follow the bindings of\n"
-    "          assets/config/default_bindings.json, overridden per action by <user data>/config/bindings.json;\n"
-    "          Alt+Enter (borderless fullscreen) is fixed.\n"
+    "          looks, left stick click sprints. Esc (gamepad B) leaves one level: it closes a popup of the\n"
+    "          developer overlay, else releases the mouse, else closes the overlay, else quits. F1 toggles the\n"
+    "          developer overlay (developer builds), F5 reloads the shaders, F12 saves a screenshot to\n"
+    "          <user data>/screenshots. These follow the bindings of assets/config/default_bindings.json,\n"
+    "          overridden per action by <user data>/config/bindings.json; Alt+Enter (borderless fullscreen)\n"
+    "          is fixed.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
     "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script);\n"
     "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built,\n"
-    "              --self-check failed).";
+    "              --self-check failed, developer overlay asked for by a frame-limited run unable to start).";
 
 core::ArgParser makeParser() {
     core::ArgParser parser("retroverse", std::string(kDescription));
@@ -78,10 +79,12 @@ core::ArgParser makeParser() {
                 "Run a rendering check after initialization and fail the run (exit code 3) if it does not pass; "
                 "only with --smoke or --exit-after-frames. srgb: an unlit linear 0.5 grey quad must be stored as "
                 "sRGB 188 (+-2) by the sRGB render targets.")
-        .flag("devui-open", "Show the developer overlay (F1) from the first frame; developer builds only.")
+        .flag("devui-open", "Show the developer overlay (F1) from the first frame; developer builds only. A "
+                            "frame-limited run fails (exit code 3) when the overlay cannot start.")
         .flag("screenshot-include-ui",
               "Draw the developer overlay, when open, into --screenshot and F12 screenshots too (they show the scene "
-              "only by default).");
+              "only by default), scaled uniformly to fit the screenshot and centered. A frame-limited run fails (exit "
+              "code 3) when the overlay cannot start.");
     return parser;
 }
 

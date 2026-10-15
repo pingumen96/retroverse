@@ -78,8 +78,8 @@ input::ActionState AppInput::update(std::uint64_t frameIndex) {
     return actions;
 }
 
-void AppInput::captureMouseWhenFocused() {
-    m_capture.captureWhenFocused();
+void AppInput::captureMouseWhenFocused(std::string_view reason) {
+    m_capture.captureWhenFocused(reason);
     m_collector.setMouseCaptured(m_capture.captured());
 }
 

@@ -46,8 +46,8 @@ public:
     /// the script's values on the frames it covers.
     [[nodiscard]] input::ActionState update(std::uint64_t frameIndex);
 
-    /// See platform::MouseCapture::captureWhenFocused().
-    void captureMouseWhenFocused();
+    /// See platform::MouseCapture::captureWhenFocused(); `reason` completes the log line.
+    void captureMouseWhenFocused(std::string_view reason);
     /// Releases the mouse; `reason` completes the log line.
     void releaseMouse(std::string_view reason);
     [[nodiscard]] bool mouseCaptured() const noexcept { return m_capture.captured(); }

@@ -1,5 +1,6 @@
 #include <rv/devui/dev_ui.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cfloat>
 #include <cstdint>
@@ -22,6 +23,7 @@
 
 #include <rv/core/main_thread.hpp>
 #include <rv/core/text.hpp>
+#include <rv/devui/overlay_capture.hpp>
 #include <rv/devui/overlay_input.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/render/framebuffer.hpp>
@@ -40,6 +42,22 @@ constexpr float kRightColumnShare = 0.30f;
 constexpr float kBottomRowShare = 0.24f;
 constexpr float kLeftBottomShare = 0.39f;
 constexpr float kRightBottomShare = 0.40f;
+/// Narrowest side columns, in font sizes, so that the panels stay readable when fonts scale up with the display
+/// (left: the Stats lines; right: the tab bar, three values in a row, the debug line toggles). In a 1280 x 720 window
+/// they take over from the shares above beyond display scales of about 1.03 (right) and 1.26 (left).
+constexpr float kLeftColumnEms = 18.0f;
+constexpr float kRightColumnEms = 22.0f;
+/// Widest side columns, as shares: the scene keeps at least 0.7 x 0.6 = 42% of the width.
+constexpr float kMaxLeftColumnShare = 0.30f;
+constexpr float kMaxRightColumnShare = 0.40f;
+
+/// The share of `available` units a column takes: `share`, widened to `ems` font sizes, at most `maxShare`.
+float columnShare(float share, float ems, float maxShare, float available) noexcept {
+    if (available <= 0.0f) {
+        return share;
+    }
+    return std::clamp(ems * ImGui::GetFontSize() / available, share, maxShare);
+}
 
 /// SDL hints the SDL3 backend changes for its own sake when it initializes (focus click-through, no automatic mouse
 /// capture during drags, the style of borderless windows). They are restored afterwards, so that the game's input and
@@ -110,11 +128,31 @@ void releaseMouseButtons(std::uint32_t windowId) {
     }
 }
 
-/// Scale from `displaySize` (window coordinates) to `pixels`, nudged up by half a pixel so that the backend's
-/// (int)(size * scale) truncation lands on the pixel size exactly.
-ImVec2 scaleTo(const ImVec2& displaySize, const glm::ivec2& pixels) noexcept {
-    return ImVec2((static_cast<float>(pixels.x) + 0.5f) / displaySize.x,
-                  (static_cast<float>(pixels.y) + 0.5f) / displaySize.y);
+/// Where the overlay of `displaySize` window units lands in a target of `pixels` (fitOverlayCapture).
+CaptureFit fitInto(const ImVec2& displaySize, const glm::ivec2& pixels) noexcept {
+    return fitOverlayCapture(glm::vec2(displaySize.x, displaySize.y), pixels);
+}
+
+/// Part of a pixel added to the area handed to the OpenGL 3 backend, so that its (int)(size * scale) truncation lands
+/// on the target's pixel size exactly instead of one pixel short; it moves the far edge by that fraction at most.
+constexpr float kTruncationNudge = 1.0f / 64.0f;
+
+/// Any popup of the current context is open.
+bool anyPopupOpen() {
+    return ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+}
+
+/// The see-through central node of `dockSpace` in normalized device coordinates of `viewport` (x right, y up), or
+/// nullopt when it has none or a panel is docked into it.
+std::optional<scene::ViewArea> centralArea(ImGuiID dockSpace, const ImGuiViewport& viewport) {
+    const ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dockSpace);
+    if (central == nullptr || !central->IsEmpty() || viewport.Size.x <= 0.0f || viewport.Size.y <= 0.0f) {
+        return std::nullopt;
+    }
+    const auto ndcX = [&viewport](float x) { return (x - viewport.Pos.x) / viewport.Size.x * 2.0f - 1.0f; };
+    const auto ndcY = [&viewport](float y) { return 1.0f - (y - viewport.Pos.y) / viewport.Size.y * 2.0f; };
+    return scene::ViewArea{glm::vec2(ndcX(central->Pos.x), ndcY(central->Pos.y + central->Size.y)),
+                           glm::vec2(ndcX(central->Pos.x + central->Size.x), ndcY(central->Pos.y))};
 }
 
 } // namespace
@@ -161,8 +199,11 @@ struct DevUi::Impl {
         ImGui::DockBuilderAddNode(dockSpace, flags);
         ImGui::DockBuilderSetNodeSize(dockSpace, size);
         ImGuiID center = dockSpace;
-        ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, kLeftColumnShare, nullptr, &center);
-        ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, kRightColumnShare, nullptr, &center);
+        const float leftShare = columnShare(kLeftColumnShare, kLeftColumnEms, kMaxLeftColumnShare, size.x);
+        ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, leftShare, nullptr, &center);
+        const float rightShare =
+            columnShare(kRightColumnShare, kRightColumnEms, kMaxRightColumnShare, size.x * (1.0f - leftShare));
+        ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, rightShare, nullptr, &center);
         const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, kBottomRowShare, nullptr, &center);
         const ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, kLeftBottomShare, nullptr, &left);
         const ImGuiID rightBottom =
@@ -203,10 +244,15 @@ struct DevUi::Impl {
 
     bool visible = false;
     bool mouseCaptured = false;
-    /// io.WantCaptureMouse and io.WantCaptureKeyboard of the last frame built while visible.
+    /// io.WantCaptureMouse and io.WantCaptureKeyboard of the last frame built while visible, and whether it left a
+    /// popup open.
     bool wantsMouse = false;
     bool wantsKeyboard = false;
-    /// The dock space had no layout when the overlay was first shown (no imgui.ini yet): build the default one.
+    bool popupOpen = false;
+    /// The see-through center of the frame being built or built last (sceneViewArea()).
+    std::optional<scene::ViewArea> sceneArea;
+    /// The dock space had no layout when the overlay was first shown (none loaded from an ini file): build the default
+    /// one.
     std::optional<bool> needsDefaultLayout;
     /// A frame was built since the overlay was shown: its draw data can be rendered.
     bool frameReady = false;
@@ -292,6 +338,8 @@ void DevUi::setVisible(bool visible) {
     impl.frameReady = false;
     impl.wantsMouse = false;
     impl.wantsKeyboard = false;
+    impl.popupOpen = false;
+    impl.sceneArea.reset();
     ImGuiIO& io = ImGui::GetIO();
     if (visible) {
         // Keys and buttons may have been released while hidden, without Dear ImGui seeing it.
@@ -304,8 +352,9 @@ void DevUi::setVisible(bool visible) {
         }
         spdlog::info("Developer overlay shown (F1 hides it)");
     } else {
-        // Leave nothing of the overlay behind: buttons it saw held (and the OS mouse capture of a drag), text input,
-        // its cursor shape.
+        // Leave nothing of the overlay behind: its popups (they would be open again when it is shown), buttons it saw
+        // held (and the OS mouse capture of a drag), text input, its cursor shape.
+        ImGui::ClosePopupsExceptModals();
         releaseMouseButtons(impl.window.id());
         SDL_CaptureMouse(false);
         SDL_Window* handle = impl.window.handle();
@@ -361,6 +410,28 @@ bool DevUi::hasKeyboard() const noexcept {
     return m_impl->visible && m_impl->wantsKeyboard;
 }
 
+bool DevUi::popupOpen() const noexcept {
+    return m_impl->visible && m_impl->popupOpen;
+}
+
+void DevUi::closePopup() {
+    Impl& impl = *m_impl;
+    const ImGuiContext& context = *ImGui::GetCurrentContext();
+    if (!impl.visible || context.OpenPopupStack.Size == 0) {
+        return;
+    }
+    // As Dear ImGui's keyboard navigation does on Escape (it is off: it would take the game's keys).
+    const ImGuiWindow* top = context.OpenPopupStack.back().Window;
+    if (top != nullptr && (top->Flags & ImGuiWindowFlags_Modal) == 0) {
+        ImGui::ClosePopupToLevel(context.OpenPopupStack.Size - 1, true);
+    }
+    impl.popupOpen = anyPopupOpen();
+}
+
+std::optional<scene::ViewArea> DevUi::sceneViewArea() const noexcept {
+    return m_impl->visible ? m_impl->sceneArea : std::nullopt;
+}
+
 void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
     Impl& impl = *m_impl;
     if (!impl.visible) {
@@ -371,10 +442,10 @@ void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
     ImGuiIO& io = ImGui::GetIO();
     impl.windowFramebufferScale = io.DisplayFramebufferScale;
     if (captureSize && io.DisplaySize.x > 0.0f && io.DisplaySize.y > 0.0f) {
-        // Glyphs are rasterized at the density of the frame: a screenshot larger than the window gets its own.
-        const ImVec2 captureScale = scaleTo(io.DisplaySize, *captureSize);
-        if (captureScale.x > io.DisplayFramebufferScale.x) {
-            io.DisplayFramebufferScale = captureScale;
+        // Glyphs are rasterized at the density of the frame: a screenshot that enlarges the overlay gets its own.
+        const float captureScale = fitInto(io.DisplaySize, *captureSize).scale;
+        if (captureScale > io.DisplayFramebufferScale.x) {
+            io.DisplayFramebufferScale = ImVec2(captureScale, captureScale);
         }
     }
     ImGui::NewFrame();
@@ -389,6 +460,7 @@ void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
         impl.needsDefaultLayout = false;
     }
     ImGui::DockSpaceOverViewport(dockSpace, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
+    impl.sceneArea = centralArea(dockSpace, *viewport); // laid out now: the panels below may ask for it
     for (const Impl::DockedPanel& docked : impl.panels) {
         if (ImGui::Begin(docked.panel->title())) {
             docked.panel->draw();
@@ -398,6 +470,7 @@ void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
     ImGui::Render();
     impl.wantsMouse = io.WantCaptureMouse && !impl.mouseCaptured;
     impl.wantsKeyboard = io.WantCaptureKeyboard;
+    impl.popupOpen = anyPopupOpen();
     impl.frameReady = true;
 }
 
@@ -430,9 +503,21 @@ void DevUi::renderTo(gl::GLDevice& device, const gl::Framebuffer& target) {
     // The target is sRGB: with GL_FRAMEBUFFER_SRGB off the overlay's sRGB colors are stored as they are, and blend
     // like they do in the window.
     device.state().setFramebufferSrgb(false);
+    // The backend maps DisplayPos..DisplayPos + DisplaySize onto its viewport, the whole target at FramebufferScale
+    // pixels per unit: widened around the window's area so that the overlay lands at the fit's offset, at one scale on
+    // both axes (another aspect than the window's leaves bands of scene).
+    const glm::ivec2 pixels = target.size();
+    const CaptureFit fit = fitInto(data->DisplaySize, pixels);
+    const ImVec2 framePos = data->DisplayPos;
+    const ImVec2 frameSize = data->DisplaySize;
     const ImVec2 frameScale = data->FramebufferScale;
-    data->FramebufferScale = scaleTo(data->DisplaySize, target.size());
+    data->FramebufferScale = ImVec2(fit.scale, fit.scale);
+    data->DisplayPos = ImVec2(framePos.x - fit.offset.x / fit.scale, framePos.y - fit.offset.y / fit.scale);
+    data->DisplaySize = ImVec2((static_cast<float>(pixels.x) + kTruncationNudge) / fit.scale,
+                               (static_cast<float>(pixels.y) + kTruncationNudge) / fit.scale);
     ImGui_ImplOpenGL3_RenderDrawData(data);
+    data->DisplayPos = framePos;
+    data->DisplaySize = frameSize;
     data->FramebufferScale = frameScale;
     device.state().invalidate();
 }

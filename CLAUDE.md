@@ -38,8 +38,9 @@ behind: `--smoke` (render `--frames N`, default 3, then exit; any high-severity 
 `--exit-after-frames --frames N`. `--hidden`, `--frames` and `--screenshot` require one of them; frame-limited runs
 never show message boxes. Exit codes: 0 ok, 1 smoke check failed, 2 initialization failure (window, context,
 GL < 4.5, paths, scene file, input script), 3 runtime failure (unexpected error, `--screenshot` not written, scene
-shader never built, `--self-check` failed). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test
-runs out of `%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
+shader never built, `--self-check` failed, developer overlay asked for by a frame-limited run unable to start). Logs:
+`<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs out of `%LOCALAPPDATA%`; use
+`--data-dir build/rvdata`).
 
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
@@ -66,25 +67,32 @@ runs out of `%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
   `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit}`.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
-  gamepad sticks walk and look; Esc (gamepad B) leaves one level: it releases the mouse, else closes the developer
-  overlay, else quits; F1 toggles the developer overlay; F5 reloads the shaders, F12 writes
-  `<user data>/screenshots/retroverse-<timestamp>.png`. Interactive runs capture the mouse when the window has focus
-  and on a click into it; frame-limited runs only on a click. Alt+Enter toggles fullscreen: the host handles it before
-  the action map (fixed, not rebindable, never seen as Enter). The walker collides with walls and furniture and can
-  step into a doorway but not leave the room. Developer builds also reload a shader within ~0.5 s of saving any of its
-  files (`assets/shaders`); a broken edit logs `<file>:<line>: error ...` and the previous program stays in use.
+  gamepad sticks walk and look; Esc (gamepad B) leaves one level: it closes a popup of the developer overlay (a
+  combo's list, a color picker), else releases the mouse, else closes the overlay, else quits; F1 toggles the
+  overlay; F5 reloads the shaders, F12 writes `<user data>/screenshots/retroverse-<timestamp>.png`. Interactive runs
+  capture the mouse when the window has focus and on a click into it; frame-limited runs only on a click. Alt+Enter
+  toggles fullscreen: the host handles it before the action map (fixed, not rebindable, never seen as Enter). The
+  walker collides with walls and furniture and can step into a doorway but not leave the room. Developer builds also
+  reload a shader within ~0.5 s of saving any of its files (`assets/shaders`); a broken edit logs
+  `<file>:<line>: error ...` and the previous program stays in use.
 - Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about
   the two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation,
   screenshots). Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU time, what the
   last view drew, GPU resources), Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision off =
   noclip, reset to the scene camera), Lights (every scene light and the environment, live), Materials (base color,
   metallic, roughness, emissive strength, live and never saved), Rendering (debug line kinds, wireframe, vsync, shader
-  reload with the last compile errors), Log (level filter, autoscroll) and Scene (the objects, with "go to"). The
-  layout is kept in `<user data>/config/imgui.ini` (delete it for the default layout). The overlay sees every event
-  first and keeps what it uses (a click on a panel, keys while a value is edited, so Esc in a text field never quits).
-  Opening it frees a captured mouse for the panels; a click into the scene captures it again, Esc releases it, and
-  closing the overlay gives back the capture it took. Screenshots show the scene only unless `--screenshot-include-ui`
-  is given: the overlay is then drawn into `--screenshot` and F12 images too, scaled to `--screenshot-size`.
+  reload with the last compile errors), Log (level filter, autoscroll) and Scene (the objects, with "go to", which
+  frames the object in the part of the view the panels leave visible). The default layout widens its side columns
+  with the display scale (at least 18 and 22 font sizes). Interactive runs keep the layout in
+  `<user data>/config/imgui.ini` (delete it for the default layout); frame-limited runs always start from the default
+  layout and save nothing, so overlay screenshots never depend on earlier runs. The overlay sees every event first and
+  keeps what it uses (a click on a panel, keys while a value is edited, so Esc in a text field never quits). Opening
+  it frees a captured mouse for the panels; a click into the scene captures it again, Esc releases it, and closing the
+  overlay gives back the capture it took and closes its popups. Screenshots show the scene only unless
+  `--screenshot-include-ui` is given: the overlay is then drawn into `--screenshot` and F12 images too, scaled
+  uniformly to fit `--screenshot-size` and centered (another aspect than the window's leaves bands of scene beside
+  it). A frame-limited run given `--devui-open` or `--screenshot-include-ui` fails (exit 3) when the overlay cannot
+  start.
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,
   both included) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window

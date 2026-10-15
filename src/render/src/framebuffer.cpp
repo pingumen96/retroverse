@@ -1,6 +1,7 @@
 #include <rv/render/framebuffer.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <utility>
@@ -210,6 +211,17 @@ void Framebuffer::blitToDefault(RenderStateCache& state, glm::ivec2 windowSize) 
                            GL_COLOR_BUFFER_BIT, filter);
     unbind();
     state.setViewport(glm::ivec4(0, 0, windowSize.x, windowSize.y));
+}
+
+void Framebuffer::clearDefault(RenderStateCache& state, glm::ivec2 windowSize) {
+    if (windowSize.x <= 0 || windowSize.y <= 0) {
+        return;
+    }
+    state.setFramebufferSrgb(false); // as after blitToDefault(); black is black in either encoding
+    unbind();
+    state.setViewport(glm::ivec4(0, 0, windowSize.x, windowSize.y));
+    constexpr std::array<GLfloat, 4> kOpaqueBlack{0.0f, 0.0f, 0.0f, 1.0f};
+    glClearNamedFramebufferfv(0, GL_COLOR, 0, kOpaqueBlack.data());
 }
 
 Expected<assets::ImageData> Framebuffer::readPixels() const {

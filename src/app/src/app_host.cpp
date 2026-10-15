@@ -85,11 +85,14 @@ std::string describeRunMode(const CommandLineOptions& options) {
     if (options.debugDraw) {
         mode += ", debug lines";
     }
-    if (options.devUiOpen) {
-        mode += ", developer overlay open";
-    }
-    if (options.screenshotIncludeUi) {
-        mode += ", overlay in screenshots";
+    // Builds without the overlay ignore both options (and warn about them).
+    if constexpr (kDevUi) {
+        if (options.devUiOpen) {
+            mode += ", developer overlay open";
+        }
+        if (options.screenshotIncludeUi) {
+            mode += ", overlay in screenshots";
+        }
     }
     return mode;
 }

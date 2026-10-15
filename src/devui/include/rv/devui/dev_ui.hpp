@@ -8,6 +8,7 @@
 #include <glm/vec2.hpp>
 
 #include <rv/core/expected.hpp>
+#include <rv/scene/viewpoint.hpp>
 
 union SDL_Event;
 
@@ -59,13 +60,16 @@ struct DevUiConfig {
 ///  - Input: every SDL event goes through handleEvent(), which feeds Dear ImGui first and decides what the game still
 ///    gets (routeOverlayEvent): nothing the overlay wants (a click on a panel, keys while a text field or a dragged
 ///    widget is active, so Esc there never quits), but always the releases, and nothing at all while the game holds
-///    the mouse for first-person look (setMouseCaptured). Gamepads are left to the game.
+///    the mouse for first-person look (setMouseCaptured). Gamepads are left to the game. Keyboard navigation is off
+///    (it would take the game's keys), so Dear ImGui leaves Esc alone: the game's Back closes the topmost popup
+///    (closePopup()) before it closes the overlay.
 ///  - Scale: fonts and sizes follow the content scale of the window's display (SDL_GetWindowDisplayScale), also when
 ///    the window moves to another display. The font is Dear ImGui's scalable default (ProggyForever).
 ///  - Rendering: buildFrame() builds the frame (once per frame, before the scene renders, so that edits apply at
-///    once), renderToWindow() draws it last into the default framebuffer, renderTo() into a screenshot target scaled
-///    to its size. GL_FRAMEBUFFER_SRGB is disabled while Dear ImGui draws (its colors are sRGB already) and the
-///    RenderStateCache is invalidated afterwards, since the backend changes GL state behind it.
+///    once), renderToWindow() draws it last into the default framebuffer, renderTo() into a screenshot target, scaled
+///    uniformly to fit it and centered (fitOverlayCapture). GL_FRAMEBUFFER_SRGB is disabled while Dear ImGui draws
+///    (its colors are sRGB already) and the RenderStateCache is invalidated afterwards, since the backend changes GL
+///    state behind it.
 /// Only one DevUi exists at a time (Dear ImGui's current context). Main thread only; create and destroy it while the
 /// OpenGL context is current. Destruction shuts the backends down and saves the layout.
 class DevUi {
@@ -84,7 +88,8 @@ public:
 
     [[nodiscard]] bool visible() const noexcept;
     /// Shows or hides the overlay. Showing it forgets the keys and buttons Dear ImGui last saw held (they may have been
-    /// released while it was hidden); hiding it ends text input and puts the default mouse cursor back.
+    /// released while it was hidden); hiding it closes its popups, ends text input and puts the default mouse cursor
+    /// back.
     void setVisible(bool visible);
 
     /// Routes one SDL event, also while hidden; `mouseCaptured` tells whether the game holds the mouse for first-person
@@ -97,6 +102,17 @@ public:
 
     /// A widget of the visible overlay has the keyboard (a text field being edited, a value being dragged).
     [[nodiscard]] bool hasKeyboard() const noexcept;
+    /// A popup of the visible overlay is open (a combo's list, a color picker, a dock tab menu) in the frame built last.
+    [[nodiscard]] bool popupOpen() const noexcept;
+    /// Closes the topmost popup of the visible overlay unless it is modal (Back: one level at a time, as Dear ImGui's
+    /// keyboard navigation does on Escape). Call it between frames, not from a panel.
+    void closePopup();
+
+    /// The part of the window the visible overlay leaves see-through over the scene (the central node of its dock
+    /// space), in normalized device coordinates, as laid out by the frame being built or built last: panels drawing
+    /// in buildFrame() see the current layout. Nullopt while hidden, before the first frame is built and when a panel
+    /// is docked over the center.
+    [[nodiscard]] std::optional<scene::ViewArea> sceneViewArea() const noexcept;
 
     /// Builds the overlay frame: the dock space and every panel (they may change the state they show). Nothing while
     /// hidden. When this frame is also drawn into a screenshot of `captureSize` pixels, glyphs are rasterized for that
@@ -105,8 +121,9 @@ public:
     /// Draws the frame built last into the default framebuffer (the window); nothing when no frame was built since the
     /// overlay was shown.
     void renderToWindow(gl::GLDevice& device);
-    /// Draws the frame built last into `target`, scaled from the window to the target's size (screenshots), over what
-    /// the target holds.
+    /// Draws the frame built last into `target` (screenshots), over what the target holds: scaled uniformly from the
+    /// window to fit the target and centered, so that another aspect than the window's leaves bands of the target
+    /// uncovered instead of stretching the panels (fitOverlayCapture).
     void renderTo(gl::GLDevice& device, const gl::Framebuffer& target);
 
 private:

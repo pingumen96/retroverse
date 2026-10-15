@@ -19,9 +19,13 @@ bool linearColor(const char* label, glm::vec4& linear);
 /// would make it zero or non-finite is undone. True when edited.
 bool direction(const char* label, glm::vec3& direction);
 
-/// Narrows the following widgets so that labels up to `labelEms` font sizes wide fit on their right, also in narrow
-/// docked panels. Undo with ImGui::PopItemWidth().
-void pushLabelWidth(float labelEms = 8.0f);
+/// Narrows the following widgets so that a label as wide as `widestLabel` fits on their right, at any font size, and
+/// the widgets get the rest of the panel's width. Undo with ImGui::PopItemWidth().
+void pushLabelWidth(const char* widestLabel);
+
+/// Starts a field too wide for a label on its right in narrow docked panels (a vector of three values): `label` on a
+/// line of its own and the next widget as wide as the panel. Give that widget a hidden label ("##position").
+void labelAbove(const char* label);
 
 /// A "label: value" row of a two-column table started with beginValueTable().
 void valueRow(const char* label, std::size_t value);

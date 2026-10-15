@@ -129,7 +129,7 @@ private:
                             textureFlag(material, gl::material_flags::kEmissiveTexture, " emissive"),
                             (material.uniforms.flags & kTextureBits) == 0 ? " none" : "");
         gl::MaterialFactors factors = currentFactors(material.uniforms);
-        widgets::pushLabelWidth(9.0f);
+        widgets::pushLabelWidth("Base color"); // the widest label below
         bool changed = widgets::linearColor("Base color", factors.baseColor);
         changed |= ImGui::SliderFloat("Metallic", &factors.metallic, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
         changed |=

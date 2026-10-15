@@ -29,7 +29,7 @@ public:
     [[nodiscard]] const char* title() const noexcept override { return "Camera"; }
 
     void draw() override {
-        widgets::pushLabelWidth();
+        widgets::pushLabelWidth("Speed (m/s)"); // the widest label of the panel
         drawPose();
         drawLens();
         drawWalker();

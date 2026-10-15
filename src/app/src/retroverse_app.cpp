@@ -19,6 +19,7 @@
 #include <rv/app/debug_line_selection.hpp>
 #include <rv/app/frame_stats_log.hpp>
 #include <rv/app/model_viewer.hpp>
+#include <rv/app/overlay_policy.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/screenshot_name.hpp>
 #include <rv/app/self_check.hpp>
@@ -421,13 +422,18 @@ struct RetroverseApp::State {
 #endif
     }
 
-    /// A text field or a dragged value of the overlay has the keyboard.
-    [[nodiscard]] bool overlayHasKeyboard() const noexcept {
+    /// What Back can leave (backAction).
+    [[nodiscard]] BackState backState() const noexcept {
+        BackState levels;
+        levels.mouseCaptured = input->mouseCaptured();
 #if defined(RV_DEV_UI)
-        return devUi && devUi->hasKeyboard();
-#else
-        return false;
+        if (devUi) {
+            levels.overlayVisible = devUi->visible();
+            levels.overlayHasKeyboard = devUi->hasKeyboard();
+            levels.overlayPopupOpen = devUi->popupOpen();
+        }
 #endif
+        return levels;
     }
 
     /// ToggleDevUI (F1).
@@ -457,7 +463,7 @@ struct RetroverseApp::State {
                 input->releaseMouse("developer overlay opened; F1 or Esc closes it");
             }
         } else if (captureHandover.close(input->mouseCaptured())) {
-            input->captureMouseWhenFocused();
+            input->captureMouseWhenFocused("developer overlay closed");
         }
         devUi->setVisible(visible);
         devUi->setMouseCaptured(input->mouseCaptured());
@@ -466,8 +472,13 @@ struct RetroverseApp::State {
 
     /// Back (Esc, gamepad B): leaves one level (backAction).
     void back(AppContext& context) {
-        switch (backAction(input->mouseCaptured(), overlayVisible(), overlayHasKeyboard())) {
+        switch (backAction(backState())) {
         case BackAction::Ignore:
+            break;
+        case BackAction::ClosePopup:
+#if defined(RV_DEV_UI)
+            devUi->closePopup();
+#endif
             break;
         case BackAction::ReleaseMouse:
             input->releaseMouse(overlayVisible() ? "Back pressed; press it again to close the developer overlay"
@@ -484,15 +495,17 @@ struct RetroverseApp::State {
     }
 
 #if defined(RV_DEV_UI)
-    /// Creates the developer overlay and its panels. When it cannot start, the error is logged and the run goes on
-    /// without it.
-    void createDevUi(AppContext& context) {
+    /// Creates the developer overlay and its panels; the error tells why it cannot start (the run goes on without it).
+    /// Interactive runs keep the layout in <user data>/config/imgui.ini; frame-limited runs always start from the
+    /// default layout and save nothing, so that their screenshots never depend on earlier runs.
+    Status createDevUi(AppContext& context) {
         devui::DevUiConfig config;
-        config.iniFile = context.paths().configDir() / core::pathFromUtf8(kOverlayLayoutFile);
+        if (!context.options().frameLimit) {
+            config.iniFile = context.paths().configDir() / core::pathFromUtf8(kOverlayLayoutFile);
+        }
         auto created = devui::DevUi::create(context.window(), config);
         if (!created) {
-            spdlog::error("Developer overlay unavailable: {}", created.error().toString());
-            return;
+            return propagate(created.error());
         }
         devUi = std::move(*created);
         platform::GraphicsWindow& window = context.window();
@@ -506,14 +519,17 @@ struct RetroverseApp::State {
                                                 [this] { scene->applyLighting(); }}),
                         devui::DockSlot::Right);
         devUi->addPanel(devui::makeMaterialsPanel({materials, scene->renderItems()}), devui::DockSlot::Right);
-        devUi->addPanel(
-            devui::makeScenePanel(
-                {description, [this, &window](std::size_t index) { goTo(index, aspectOf(window.drawableSize())); }}),
-            devui::DockSlot::Right);
+        devUi->addPanel(devui::makeScenePanel({description,
+                                               [this, &window](std::size_t index) {
+                                                   goTo(index, aspectOf(window.drawableSize()),
+                                                        devUi->sceneViewArea().value_or(scene::ViewArea{}));
+                                               }}),
+                        devui::DockSlot::Right);
         devUi->addPanel(devui::makeRenderingPanel(
                             {debugLines.grid, debugLines.bounds, debugLines.sockets, wireframe, *shaders, window}),
                         devui::DockSlot::RightBottom);
         devUi->addPanel(devui::makeLogPanel(), devui::DockSlot::Bottom);
+        return ok();
     }
 
     /// Records the frame time and builds the overlay frame; its panels edit the state the frame then simulates and
@@ -524,18 +540,7 @@ struct RetroverseApp::State {
             return;
         }
         devUi->setMouseCaptured(input->mouseCaptured());
-        devUi->buildFrame(overlayCaptureSize(context));
-    }
-
-    /// Size of the screenshot the overlay is drawn into this frame (--screenshot-include-ui), if any.
-    [[nodiscard]] std::optional<glm::ivec2> overlayCaptureSize(const AppContext& context) const {
-        const CommandLineOptions& options = context.options();
-        const bool lastFrameShot =
-            options.screenshot && options.frameLimit && context.frameIndex() + 1 == *options.frameLimit;
-        if (!options.screenshotIncludeUi || (!screenshotRequested && !lastFrameShot)) {
-            return std::nullopt;
-        }
-        return glm::ivec2(options.screenshotWidth, options.screenshotHeight);
+        devUi->buildFrame(overlayCaptureSize(context.options(), context.frameIndex(), screenshotRequested));
     }
 
     /// The overlay's "reset to scene camera": the walker and the lens as the scene starts them.
@@ -546,8 +551,8 @@ struct RetroverseApp::State {
     }
 
     /// The overlay's "go to": the walker stands in front of objects[index], looking at it (scene::frontViewpoint over
-    /// the bounds of all its instances, for a view of `aspect`).
-    void goTo(std::size_t index, float aspect) {
+    /// the bounds of all its instances, framed in `area` of a view of `aspect`: the part the overlay leaves visible).
+    void goTo(std::size_t index, float aspect, const scene::ViewArea& area) {
         if (index >= description.objects.size() || index >= scene->objectBounds().size()) {
             return;
         }
@@ -560,7 +565,7 @@ struct RetroverseApp::State {
         scene::FirstPersonController& walker = freeRoam->controller();
         const scene::WalkerPose pose =
             scene::frontViewpoint(bounds, scene::frontDirection(object.transform), walker.feetPosition().y,
-                                  walker.settings().eyeHeight, camera.lens(), aspect);
+                                  walker.settings().eyeHeight, camera.lens(), aspect, area);
         walker.teleport(pose.feet, pose.yaw, pose.pitch);
         spdlog::info("Go to '{}': {}", object.id, freeRoam->describePose());
     }
@@ -643,8 +648,17 @@ Status RetroverseApp::onInit(AppContext& context) {
 
     state->input = std::make_unique<AppInput>(context.window(), loadBindings(paths), std::move(*script));
 #if defined(RV_DEV_UI)
-    state->createDevUi(context);
-    if (state->devUi && options.devUiOpen) {
+    if (auto created = state->createDevUi(context); !created) {
+        spdlog::error("Developer overlay unavailable: {}", created.error().toString());
+        // An unattended run that shows the overlay must not pass with screenshots of the scene alone.
+        if (overlayRequired(options)) {
+            Error error = created.error();
+            error.message = "the developer overlay asked for by --devui-open or --screenshot-include-ui could not "
+                            "start: " +
+                            error.message;
+            context.failRun(std::move(error));
+        }
+    } else if (options.devUiOpen) {
         state->devUi->setVisible(true);
     }
 #else
@@ -655,7 +669,7 @@ Status RetroverseApp::onInit(AppContext& context) {
     // Frame-limited runs may be unattended: they never take the user's mouse (and stray motion never reaches them).
     // With the overlay open from the start, the mouse stays free for its panels.
     if (!options.frameLimit && !state->overlayVisible()) {
-        state->input->captureMouseWhenFocused();
+        state->input->captureMouseWhenFocused("startup");
     }
 
     if (options.screenshot && options.frameLimit) {
@@ -751,10 +765,14 @@ void RetroverseApp::onRender(AppContext& context) {
     }
 
     const glm::ivec2 windowSize = context.framebufferSize();
-    if (windowSize.x > 0 && windowSize.y > 0 &&
-        prepareTarget(state.windowTarget, windowSize, "WindowTarget", state.failedWindowSize)) {
-        state.renderScene(context, state.windowTarget);
-        state.windowTarget.blitToDefault(context.device().state(), windowSize);
+    if (windowSize.x > 0 && windowSize.y > 0) {
+        if (prepareTarget(state.windowTarget, windowSize, "WindowTarget", state.failedWindowSize)) {
+            state.renderScene(context, state.windowTarget);
+            state.windowTarget.blitToDefault(context.device().state(), windowSize);
+        } else {
+            // No scene this frame (logged): a black window, with the overlay and its log still over it.
+            gl::Framebuffer::clearDefault(context.device().state(), windowSize);
+        }
 #if defined(RV_DEV_UI)
         // Last, over the scene in the window: the screenshots above show the scene alone unless asked otherwise.
         if (state.devUi) {

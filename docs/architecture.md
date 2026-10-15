@@ -10,18 +10,18 @@ This document describes the code that exists today. The target architecture is i
 | geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex` with glTF tangent space), sockets, procedural mesh builder and procedural prefabs with their collision boxes, uv scale of a surface, also as drawn with a transform (`uvMetersPerUnit`) | core |
 | input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets, shader source loading, procedural test patterns (sized to their surface: `patternSizeForAspect`) | core, geometry, fastgltf, stb |
-| scene | `rv_scene` | Camera, first-person controller and viewpoints (`frontViewpoint`: where a walker stands to look at an object), lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneBoundsLines`, `addSceneSocketLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
+| scene | `rv_scene` | Camera, first-person controller and viewpoints (`frontViewpoint`: where a walker stands to look at an object, framed in a part of the view, `ViewArea`), lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneBoundsLines`, `addSceneSocketLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
 | platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
-| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers, textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe), debug lines (`DebugDraw`) | core, geometry, assets, scene, glad |
-| devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, dock space, rendering into the window or a screenshot) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials, Rendering, Log, Scene) | core, input, scene, platform, render, imgui |
+| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe), debug lines (`DebugDraw`) | core, geometry, assets, scene, glad |
+| devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, popups closed by Back, dock space and its see-through scene area, rendering into the window or a screenshot) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials, Rendering, Log, Scene) | core, input, scene, platform, render, imgui |
 | app | `rv_app` | Composition root: application host, main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the model viewer (`--model`), screenshots, the sRGB self-check, the developer overlay's panels wired to the app state (developer builds) | all of the above |
 
 Four GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
 | Sub-target | Part of | Content |
 |---|---|---|
-| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction`: release the mouse, else close the overlay, else quit), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
-| `rv_devui_model` | devui | Built in every configuration: the frame time history of the Stats panel (`FrameTimeHistory`), the overlay's input routing (`routeOverlayEvent`) and mouse capture hand-over (`CaptureHandover`), the Log panel's copy of the log (`LogView`) |
+| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else release the mouse, else close the overlay, else quit), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
+| `rv_devui_model` | devui | Built in every configuration: the frame time history of the Stats panel (`FrameTimeHistory`), the overlay's input routing (`routeOverlayEvent`) and mouse capture hand-over (`CaptureHandover`), the Log panel's copy of the log (`LogView`), where the overlay lands in a screenshot (`fitOverlayCapture`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
 | `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and environment packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, for the clear color), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
 
@@ -115,16 +115,18 @@ geometry, resolves the real materials and preprocesses the real shaders.
   target of the window's size, copied to the default framebuffer with a raw blit (`GL_FRAMEBUFFER_SRGB` disabled), so
   the window shows exactly the stored bytes whatever its own encoding. The developer overlay is drawn last, into the
   default framebuffer, with `GL_FRAMEBUFFER_SRGB` disabled (Dear ImGui's colors are sRGB already); the backend changes
-  GL state behind the `RenderStateCache`, which is invalidated afterwards. `RenderView::wireframe` draws the scene pass
-  with `glPolygonMode(GL_LINE)`. `--self-check srgb` proves the encoding: an unlit linear 0.5 grey quad (the unlit
-  program built with `RV_UNLIT_LINEAR_OUTPUT`, so without tonemapping) drawn into such a target must read back as
-  188 +- 2.
+  GL state behind the `RenderStateCache`, which is invalidated afterwards. A frame whose window target cannot be
+  allocated clears the window to black (`Framebuffer::clearDefault`) and still draws the overlay over it, so its log
+  shows why. `RenderView::wireframe` draws the scene pass with `glPolygonMode(GL_LINE)`. `--self-check srgb` proves
+  the encoding: an unlit linear 0.5 grey quad (the unlit program built with `RV_UNLIT_LINEAR_OUTPUT`, so without
+  tonemapping) drawn into such a target must read back as 188 +- 2.
 - **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view into a second target
   at `--screenshot-size` (default 1920x1080, independent of the window), read it back through an `RGBA8` texture view
   (raw sRGB bytes on every driver), flip the rows to top-first (ADR-0002) and write an RGB PNG (the window is opaque, so
   the alpha channel is dropped). They show the scene alone; with `--screenshot-include-ui` the open overlay is drawn
-  over them too, from the frame's draw data scaled from the window to the screenshot size (that frame's glyphs are
-  rasterized for the screenshot's density, so the text stays sharp).
+  over them too, from the frame's draw data scaled uniformly from the window to fit the screenshot and centered
+  (`devui::fitOverlayCapture`: another aspect than the window's leaves bands of scene beside it instead of stretching
+  the panels; that frame's glyphs are rasterized for the screenshot's density, so the text stays sharp).
 - **Uniforms:** binding points are listed once in `rv/render/uniform_blocks.hpp` (0 frame, 1 lights, 2 material,
   3+ reserved) with the std140 mirrors `FrameUniforms` (view, projection, viewProjection, cameraPosition, time:
   `common/common.glsl`), `LightsUniforms` (`common/lights.glsl`) and `MaterialUniforms` (`common/material.glsl`).
@@ -155,9 +157,10 @@ One pass per frame on the main thread, in `RetroverseApp` (`src/app/src/app_inpu
   `<asset root>/config/default_bindings.json` (`ActionMap::defaults()` with a warning when unusable), overridden per
   action by `<user data>/config/bindings.json` (`ActionMap::applyOverrides`). `--input-script` then replaces the
   actions of the frames it covers (`input::InputScriptPlayer`, edges kept consistent).
-- **Use:** Back leaves one level (`app::backAction`: releases the captured mouse, else closes the overlay, else quits;
-  ignored while the overlay has the keyboard), ToggleDevUI shows or hides the overlay (`devui::CaptureHandover`: opening
-  it frees a captured mouse, closing it captures the mouse again), ReloadShaders and Screenshot are handled by the app.
+- **Use:** Back leaves one level (`app::backAction`: ignored while the overlay has the keyboard, else closes the
+  overlay's topmost popup, else releases the captured mouse, else closes the overlay, else quits), ToggleDevUI shows
+  or hides the overlay (`devui::CaptureHandover`: opening it frees a captured mouse, closing it captures the mouse
+  again), ReloadShaders and Screenshot are handled by the app.
   `FreeRoam` drives `scene::FirstPersonController` with the actions and the frame delta (`--fixed-dt` replaces it for
   reproducible runs; the sum of the deltas is also the shader time): the walker starts at the scene camera (feet =
   camera position - eye height) and collides with the collision world of the `SceneInstance`
@@ -189,14 +192,24 @@ edit in place:
   state and last error of every program).
 - Log: `devui::LogView`, a ring of the recent log lines (time, level, message) refreshed only when
   `core::loggedMessageCount()` changes.
-- Scene: the objects of the scene description; "go to" places the walker with `scene::frontViewpoint` in front of the
-  object's world bounds (all its instances), facing its front (+Z), or at the center of a room-sized object.
+- Scene: the objects of the scene description (id, then kind and source on a line of their own, so a narrow column
+  shows them whole); "go to" places the walker with `scene::frontViewpoint` in front of the object's world bounds
+  (all its instances), facing its front (+Z) and framing it in the area the panels leave see-through
+  (`DevUi::sceneViewArea`, the dock space's central node, as a `scene::ViewArea` in normalized device coordinates),
+  or at the center of an object larger than 4 m along both x and z (a room); long furniture is looked at.
 
 Each frame the app records the frame time and, while the overlay is visible, builds its frame in `onUpdate` before
 the walker moves, so edits apply to the frame being rendered; `onRender` draws it after the window blit. While hidden
 no ImGui frame is built. The default layout (Stats and Camera on the left, Lights/Materials/Scene tabs and Rendering on
-the right, Log under the scene, a see-through central node) is built with the dock builder when
-`<user data>/config/imgui.ini` holds none; fonts and sizes follow `SDL_GetWindowDisplayScale`. Release builds compile
+the right, Log under the scene, a see-through central node) is built with the dock builder when no saved layout
+exists; its side columns are at least 18 and 22 font sizes wide (at most 30% and 40% of the width they split), so
+the panels stay readable as fonts and sizes follow `SDL_GetWindowDisplayScale`. Interactive runs load and save the
+layout in `<user data>/config/imgui.ini`; frame-limited runs always use the default layout and save nothing, so their
+screenshots never depend on earlier runs. Panels reserve exactly their widest label beside the widgets
+(`widgets::pushLabelWidth`) and put vectors of three values on a line of their own (`widgets::labelAbove`).
+Keyboard navigation stays off (it would take the game's keys), so Dear ImGui never closes a popup on Escape: Back
+does (`DevUi::closePopup`, one level at a time), and hiding the overlay closes every popup. A frame-limited run that
+asks for the overlay (`app::overlayRequired`) fails with exit code 3 when it cannot start. Release builds compile
 neither `rv_devui` nor ImGui.
 
 ## Threading (M0)

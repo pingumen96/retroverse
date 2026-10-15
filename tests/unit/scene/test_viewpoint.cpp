@@ -18,6 +18,7 @@ using rv::core::degreesToRadians;
 using rv::scene::CameraLens;
 using rv::scene::frontDirection;
 using rv::scene::frontViewpoint;
+using rv::scene::ViewArea;
 using rv::scene::WalkerPose;
 
 namespace {
@@ -30,6 +31,17 @@ glm::vec3 forwardOf(const WalkerPose& pose) {
     rv::scene::Camera camera;
     camera.setPose(glm::vec3(0.0f), pose.yaw, pose.pitch);
     return camera.forward();
+}
+
+/// Where `point` appears in the view of a walker at `pose` (eye kEyeHeight above the feet), in normalized device
+/// coordinates.
+glm::vec2 ndcOf(const WalkerPose& pose, const CameraLens& lens, const glm::vec3& point) {
+    rv::scene::Camera camera;
+    camera.setLens(lens);
+    camera.setAspect(kAspect);
+    camera.setPose(pose.feet + glm::vec3(0.0f, kEyeHeight, 0.0f), pose.yaw, pose.pitch);
+    const glm::vec4 clip = camera.viewProjection() * glm::vec4(point, 1.0f);
+    return glm::vec2(clip) / clip.w;
 }
 
 } // namespace
@@ -115,4 +127,72 @@ TEST_CASE("scene/viewpoint: a room is entered at its center, looking from its fr
     // Empty bounds count as a point at the origin.
     const WalkerPose nothing = frontViewpoint(Aabb{}, glm::vec3(0, 0, 1), 0.0f, kEyeHeight, CameraLens{}, kAspect);
     CHECK(nothing.feet == glm::vec3(0.0f, 0.0f, rv::scene::kMinViewDistance));
+}
+
+TEST_CASE("scene/viewpoint: objects long in one direction only are looked at, not entered", "[scene][viewpoint]") {
+    // A 4.5 m shelf against a wall, facing +Z: wider than kLargeObjectExtent, but only 0.35 m deep.
+    const Aabb longShelf = Aabb::fromMinMax(glm::vec3(-2.25f, 0.0f, -4.975f), glm::vec3(2.25f, 2.0f, -4.625f));
+    const WalkerPose pose = frontViewpoint(longShelf, glm::vec3(0, 0, 1), 0.0f, kEyeHeight, CameraLens{}, kAspect);
+    CHECK(pose.feet.x == Approx(0.0f).margin(1e-5));
+    CHECK(pose.feet.z > -4.625f + rv::scene::kMinViewDistance - 1e-4f);
+    CHECK(pose.feet.z <= -4.625f + rv::scene::kMaxViewDistance + 1e-4f);
+    CHECK(forwardOf(pose).z < 0.0f);
+
+    // The same counter turned to face +X: long along z only.
+    const Aabb turned = Aabb::fromMinMax(glm::vec3(3.9f, 0.0f, -2.25f), glm::vec3(4.25f, 1.0f, 2.25f));
+    const WalkerPose side = frontViewpoint(turned, glm::vec3(-1, 0, 0), 0.0f, kEyeHeight, CameraLens{}, kAspect);
+    CHECK(side.feet.x < 3.9f - rv::scene::kMinViewDistance + 1e-4f);
+    CHECK(side.feet.z == Approx(0.0f).margin(1e-5));
+}
+
+TEST_CASE("scene/viewpoint: the object is framed in the part of the view the overlay leaves visible",
+          "[scene][viewpoint]") {
+    const Aabb shelf = Aabb::fromMinMax(glm::vec3(-2.1f, 0.0f, -4.975f), glm::vec3(-0.9f, 2.0f, -4.625f));
+    const CameraLens lens;
+    // The see-through center of the overlay's default layout in a 1280 x 720 window: the side columns and the log row
+    // under the scene cover the rest.
+    const ViewArea visible{glm::vec2(-0.54f, -0.52f), glm::vec2(0.54f, 1.0f)};
+    const WalkerPose pose = frontViewpoint(shelf, glm::vec3(0, 0, 1), 0.0f, kEyeHeight, lens, kAspect, visible);
+
+    // The center of the shelf appears at the center of that area, and every corner inside it.
+    const glm::vec2 center = ndcOf(pose, lens, shelf.center());
+    CHECK(center.x == Approx(0.0f).margin(1e-3));
+    CHECK(center.y == Approx(0.24f).margin(1e-3));
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 point((corner & 1) != 0 ? shelf.max.x : shelf.min.x, (corner & 2) != 0 ? shelf.max.y : shelf.min.y,
+                              (corner & 4) != 0 ? shelf.max.z : shelf.min.z);
+        const glm::vec2 ndc = ndcOf(pose, lens, point);
+        CHECK(ndc.x > visible.min.x);
+        CHECK(ndc.x < visible.max.x);
+        CHECK(ndc.y > visible.min.y);
+        CHECK(ndc.y < visible.max.y);
+    }
+    // A smaller area needs more distance than the whole view.
+    const WalkerPose whole = frontViewpoint(shelf, glm::vec3(0, 0, 1), 0.0f, kEyeHeight, lens, kAspect);
+    CHECK(pose.feet.z > whole.feet.z);
+    CHECK(pose.feet.x == Approx(whole.feet.x));
+}
+
+TEST_CASE("scene/viewpoint: an area off to one side turns the walker away from the object", "[scene][viewpoint]") {
+    // The right 60% of the view: the object must appear right of the view's center, so the walker looks left of it.
+    const Aabb cube = Aabb::fromMinMax(glm::vec3(-0.3f, 0.6f, -0.3f), glm::vec3(0.3f, 1.2f, 0.3f));
+    const CameraLens lens;
+    const ViewArea right{glm::vec2(-0.2f, -1.0f), glm::vec2(1.0f, 1.0f)};
+    const WalkerPose pose = frontViewpoint(cube, glm::vec3(0, 0, 1), 0.0f, kEyeHeight, lens, kAspect, right);
+    const glm::vec2 center = ndcOf(pose, lens, cube.center());
+    CHECK(center.x == Approx(0.4f).margin(1e-3));
+    CHECK(center.y == Approx(0.0f).margin(1e-3));
+    CHECK(pose.yaw < 0.0f); // turned left of -Z
+
+    // Empty, inverted or non-finite areas count as the whole view.
+    const WalkerPose whole = frontViewpoint(cube, glm::vec3(0, 0, 1), 0.0f, kEyeHeight, lens, kAspect);
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    for (const ViewArea& unusable : {ViewArea{glm::vec2(0.5f), glm::vec2(0.5f)},
+                                     ViewArea{glm::vec2(1.0f, 1.0f), glm::vec2(-1.0f, -1.0f)},
+                                     ViewArea{glm::vec2(nan, -1.0f), glm::vec2(1.0f, 1.0f)}}) {
+        const WalkerPose fallback = frontViewpoint(cube, glm::vec3(0, 0, 1), 0.0f, kEyeHeight, lens, kAspect, unusable);
+        CHECK(fallback.feet == whole.feet);
+        CHECK(fallback.yaw == whole.yaw);
+        CHECK(fallback.pitch == whole.pitch);
+    }
 }

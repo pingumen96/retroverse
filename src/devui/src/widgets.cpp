@@ -1,5 +1,6 @@
 #include "widgets.hpp"
 
+#include <cfloat>
 #include <cmath>
 
 #include <glm/glm.hpp>
@@ -41,8 +42,14 @@ bool direction(const char* label, glm::vec3& direction) {
     return true;
 }
 
-void pushLabelWidth(float labelEms) {
-    ImGui::PushItemWidth(-labelEms * ImGui::GetFontSize());
+void pushLabelWidth(const char* widestLabel) {
+    // A negative width leaves that much room on the right: the label and its gap from the widget.
+    ImGui::PushItemWidth(-(ImGui::CalcTextSize(widestLabel).x + ImGui::GetStyle().ItemInnerSpacing.x));
+}
+
+void labelAbove(const char* label) {
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-FLT_MIN);
 }
 
 bool beginValueTable(const char* id) {

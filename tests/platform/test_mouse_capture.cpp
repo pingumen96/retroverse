@@ -69,7 +69,7 @@ TEST_CASE("platform/mouse_capture: startup capture waits for the focus", "[platf
     const SDL_WindowID id = sdl.id();
     {
         MouseCapture capture(sdl.window());
-        capture.captureWhenFocused();
+        capture.captureWhenFocused("startup");
         CHECK_FALSE(capture.captured());
         CHECK_FALSE(capture.handleEvent(windowEvent(SDL_EVENT_WINDOW_FOCUS_GAINED, id)));
         CHECK(capture.captured());
@@ -84,7 +84,7 @@ TEST_CASE("platform/mouse_capture: startup capture waits for the focus", "[platf
 
     // An explicit release cancels a pending startup capture.
     MouseCapture cancelled(sdl.window());
-    cancelled.captureWhenFocused();
+    cancelled.captureWhenFocused("startup");
     CHECK_FALSE(cancelled.setCaptured(false));
     CHECK_FALSE(cancelled.handleEvent(windowEvent(SDL_EVENT_WINDOW_FOCUS_GAINED, id)));
     CHECK_FALSE(cancelled.captured());
@@ -92,6 +92,6 @@ TEST_CASE("platform/mouse_capture: startup capture waits for the focus", "[platf
     // A focused window captures at once.
     MouseCapture immediate(sdl.window());
     CHECK_FALSE(immediate.handleEvent(windowEvent(SDL_EVENT_WINDOW_FOCUS_GAINED, id)));
-    immediate.captureWhenFocused();
+    immediate.captureWhenFocused("startup");
     CHECK(immediate.captured());
 }

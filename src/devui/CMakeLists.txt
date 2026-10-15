@@ -3,10 +3,12 @@
 # scene). Never part of the product UI.
 
 # GPU-free part, always built so that rv_tests covers it in every configuration: the frame time history, the input
-# routing and mouse capture hand-over policies, the overlay's copy of the log. No SDL, OpenGL or ImGui.
+# routing and mouse capture hand-over policies, the overlay's copy of the log, where the overlay lands in a
+# screenshot. No SDL, OpenGL or ImGui.
 add_library(rv_devui_model STATIC
     src/frame_time_history.cpp
     src/log_view.cpp
+    src/overlay_capture.cpp
     src/overlay_input.cpp
 )
 add_library(rv::devui_model ALIAS rv_devui_model)

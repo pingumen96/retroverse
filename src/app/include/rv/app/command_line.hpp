@@ -88,11 +88,12 @@ struct CommandLineOptions {
     std::optional<SelfCheck> selfCheck;
 
     /// --devui-open: show the developer overlay (F1) from the first frame, for automation and screenshots. Builds
-    /// without the overlay (RV_DEV_UI off) accept it and log that it does nothing.
+    /// without the overlay (RV_DEV_UI off) accept it and log that it does nothing; in developer builds a frame-limited
+    /// run fails when the overlay cannot start (overlayRequired).
     bool devUiOpen = false;
     /// --screenshot-include-ui: --screenshot and F12 screenshots also show the developer overlay when it is open,
-    /// drawn over the scene as in the window (scaled to the screenshot size). Without it screenshots show the scene
-    /// only.
+    /// drawn over the scene as in the window, scaled uniformly to fit the screenshot size and centered
+    /// (devui::fitOverlayCapture). Without it screenshots show the scene only.
     bool screenshotIncludeUi = false;
 };
 

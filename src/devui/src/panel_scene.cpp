@@ -33,19 +33,12 @@ public:
         ImGui::Text("%zu objects", description.objects.size());
         ImGui::SetItemTooltip("Scene '%s': %zu objects, %zu lights", description.name.c_str(),
                               description.objects.size(), description.lights.size());
-        // Narrow panels scroll sideways; the "go to" buttons and the header stay in view.
-        constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
-                                           ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
-                                           ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit;
-        if (!ImGui::BeginTable("objects", 4, kFlags)) {
+        // One row per object on two lines, "go to" and the id, then the kind and the source: each line has the
+        // panel's whole width, so a narrow docked column still shows all of them.
+        constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
+        if (!ImGui::BeginTable("objects", 1, kFlags)) {
             return;
         }
-        ImGui::TableSetupScrollFreeze(1, 1);
-        ImGui::TableSetupColumn("##go");
-        ImGui::TableSetupColumn("Id");
-        ImGui::TableSetupColumn("Kind");
-        ImGui::TableSetupColumn("Source");
-        ImGui::TableHeadersRow();
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(description.objects.size()));
         while (clipper.Step()) {
@@ -58,18 +51,18 @@ public:
                 if (ImGui::SmallButton("Go to")) {
                     m_model.goTo(index);
                 }
-                ImGui::TableNextColumn();
+                ImGui::SetItemTooltip("Stand in front of '%s', looking at it", object.id.c_str());
+                ImGui::SameLine();
                 ImGui::TextUnformatted(object.id.c_str());
-                ImGui::TableNextColumn();
-                ImGui::TextUnformatted(object.source == scene::SceneObject::Source::Model ? object.modelPath.c_str()
-                                                                                          : object.kind.c_str());
-                ImGui::TableNextColumn();
+                const char* kind =
+                    object.source == scene::SceneObject::Source::Model ? object.modelPath.c_str() : object.kind.c_str();
                 const std::size_t instances = object.instanceTransforms().size();
                 if (instances > 1) {
-                    ImGui::Text("%s x%zu", sourceName(object.source), instances);
+                    ImGui::TextDisabled("%s (%s, %zu instances)", kind, sourceName(object.source), instances);
                 } else {
-                    ImGui::TextUnformatted(sourceName(object.source));
+                    ImGui::TextDisabled("%s (%s)", kind, sourceName(object.source));
                 }
+                ImGui::SetItemTooltip("Kind %s, source %s", kind, sourceName(object.source));
                 ImGui::PopID();
             }
         }

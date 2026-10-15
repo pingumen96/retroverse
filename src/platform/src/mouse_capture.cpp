@@ -48,9 +48,9 @@ bool MouseCapture::handleEvent(const SDL_Event& event) {
     }
 }
 
-void MouseCapture::captureWhenFocused() {
+void MouseCapture::captureWhenFocused(std::string_view reason) {
     if (m_focused) {
-        apply(true, "startup");
+        apply(true, reason);
     } else {
         m_captureOnFocus = true;
     }

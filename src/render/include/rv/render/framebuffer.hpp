@@ -69,6 +69,10 @@ public:
     /// bytes are copied verbatim: the window shows the same pixels as readPixels() returns, whether or not the
     /// window's framebuffer is sRGB-capable. Does nothing for an empty framebuffer or an empty window.
     void blitToDefault(RenderStateCache& state, glm::ivec2 windowSize) const;
+    /// Clears the default framebuffer to opaque black and binds it with a viewport of (0, 0)-(windowSize), the state
+    /// blitToDefault() leaves: the window of a frame that has no view to show, under the overlays drawn next. Does
+    /// nothing for an empty window.
+    static void clearDefault(RenderStateCache& state, glm::ivec2 windowSize);
 
     /// Reads the color attachment back as RGBA8 with the top row first (rows flipped once, ADR-0002). Srgb8Alpha8
     /// returns the stored sRGB-encoded bytes, read through a GL_RGBA8 view of the texture so that no driver converts

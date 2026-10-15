@@ -2,14 +2,17 @@
 
 namespace rv::app {
 
-BackAction backAction(bool mouseCaptured, bool overlayVisible, bool overlayHasKeyboard) noexcept {
-    if (overlayVisible && overlayHasKeyboard) {
+BackAction backAction(const BackState& state) noexcept {
+    if (state.overlayVisible && state.overlayHasKeyboard) {
         return BackAction::Ignore;
     }
-    if (mouseCaptured) {
+    if (state.overlayVisible && state.overlayPopupOpen) {
+        return BackAction::ClosePopup;
+    }
+    if (state.mouseCaptured) {
         return BackAction::ReleaseMouse;
     }
-    if (overlayVisible) {
+    if (state.overlayVisible) {
         return BackAction::CloseOverlay;
     }
     return BackAction::Quit;

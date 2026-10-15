@@ -18,6 +18,13 @@ float yawLookingAlong(const glm::vec3& forward) noexcept {
     return std::atan2(forward.x, -forward.z);
 }
 
+/// `area` when it is a finite rectangle with some extent, else the whole view.
+ViewArea usableArea(const ViewArea& area) noexcept {
+    const bool usable =
+        core::isFinite(glm::vec4(area.min, area.max)) && area.max.x > area.min.x && area.max.y > area.min.y;
+    return usable ? area : ViewArea{};
+}
+
 } // namespace
 
 glm::vec3 frontDirection(const glm::mat4& transform) noexcept {
@@ -31,32 +38,50 @@ glm::vec3 frontDirection(const glm::mat4& transform) noexcept {
 }
 
 WalkerPose frontViewpoint(const core::Aabb& bounds, const glm::vec3& front, float floorY, float eyeHeight,
-                          const CameraLens& lens, float aspect) noexcept {
+                          const CameraLens& lens, float aspect, const ViewArea& area) noexcept {
     const bool usable = !bounds.isEmpty() && core::isFinite(bounds.min) && core::isFinite(bounds.max);
     const glm::vec3 center = usable ? bounds.center() : glm::vec3(0.0f);
     const glm::vec3 halfExtents = usable ? bounds.halfExtents() : glm::vec3(0.0f);
 
     WalkerPose pose;
-    pose.yaw = yawLookingAlong(-front);
-    if (2.0f * std::max(halfExtents.x, halfExtents.z) > kLargeObjectExtent) {
+    const float yawToObject = yawLookingAlong(-front);
+    pose.yaw = yawToObject;
+    if (2.0f * std::min(halfExtents.x, halfExtents.z) > kLargeObjectExtent) {
         pose.feet = glm::vec3(center.x, floorY, center.z);
         return pose;
     }
 
-    // Fit the object's width (across the view) and height in the view, measured from its front side.
+    // Fit the object's width (across the view) and height in the area, measured from its front side.
+    const ViewArea frame = usableArea(area);
+    const glm::vec2 areaCenter = 0.5f * (frame.min + frame.max);
+    const glm::vec2 areaHalf = 0.5f * (frame.max - frame.min);
     const glm::vec3 across(-front.z, 0.0f, front.x);
     const float horizontalFov = core::degreesToRadians(lens.horizontalFovDeg);
     const float tanHalfHorizontal = std::tan(0.5f * horizontalFov);
     const float tanHalfVertical = std::tan(0.5f * Camera::verticalFovRadians(horizontalFov, aspect));
-    const float fit =
-        std::max(halfExtentAlong(halfExtents, across) / tanHalfHorizontal, halfExtents.y / tanHalfVertical);
+    const float fit = std::max(halfExtentAlong(halfExtents, across) / (tanHalfHorizontal * areaHalf.x),
+                               halfExtents.y / (tanHalfVertical * areaHalf.y));
     const float distance = std::clamp(fit * kViewMargin, kMinViewDistance, kMaxViewDistance);
     const glm::vec3 standOn = center + front * (halfExtentAlong(halfExtents, front) + distance);
     pose.feet = glm::vec3(standOn.x, floorY, standOn.z);
 
+    // Aim so that the direction to the center, at elevation `elevation` and straight along -front, is the view ray of
+    // the area's center: (a, b, -1) in view space, which a camera pitched by p sees in the walker's yaw frame as
+    // a * right + b * up + forward = (a, b cos p + sin p, b sin p - cos p). With k = sqrt(1 + b^2) and q = p + atan(b),
+    // its elevation gives cos^2 q = cos^2 elevation - a^2 sin^2 elevation / k^2, and it lies atan2(a, k cos q) to the
+    // right of the view's yaw. With the whole view (a = b = 0) the walker simply looks at the center.
     const glm::vec3 eye = pose.feet + glm::vec3(0.0f, eyeHeight, 0.0f);
     const glm::vec3 toCenter = center - eye;
-    pose.pitch = std::atan2(toCenter.y, glm::length(glm::vec2(toCenter.x, toCenter.z)));
+    const float elevation = std::atan2(toCenter.y, glm::length(glm::vec2(toCenter.x, toCenter.z)));
+    const float a = areaCenter.x * tanHalfHorizontal;
+    const float b = areaCenter.y * tanHalfVertical;
+    const float k = std::sqrt(1.0f + b * b);
+    const float sinElevation = std::sin(elevation);
+    const float cosElevation = std::cos(elevation);
+    const float cosSquaredQ = std::max(cosElevation * cosElevation - a * a * sinElevation * sinElevation / (k * k), 0.0f);
+    const float q = std::copysign(std::acos(std::min(std::sqrt(cosSquaredQ), 1.0f)), elevation);
+    pose.pitch = q - std::atan(b);
+    pose.yaw = yawToObject - std::atan2(a, k * std::cos(q));
     return pose;
 }
 
