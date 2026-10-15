@@ -10,14 +10,17 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I2 | M1 ES-DE catalog (discovery, gamelist/media/es_systems parsing, SQLite + FTS5, stable IDs) + Windows launcher + `retroverse-cli` | M1 Done: reads a real ES-DE collection without moving ROMs, launches an emulator and returns |
 | I3 | M2 SNES vertical slice: single-room generator, instanced cartridges with real covers, inspect, play, CRT video, incremental update | Gate B: already looks like the concept with one room; deterministic WorldPlan snapshot |
 | I4 | M3 multi-room world: hub, room graph, PS1 room, theme packs, streaming, overrides/pins, map and teleport | Gate C: different rooms, same world |
-| I5 | M4 screens and media: decoder scheduler, audio, CRT shader, playlists, local media manager | Every room has working TVs within the decoder budget |
+| I5 | M4 screens and media: decoder scheduler, audio, CRT shader, playlists, fallbacks for missing videos | Every room has working TVs within the decoder budget |
 | I6 | Arcade and handheld rooms | Gate D |
-| I7 | M5 part 1: wizard, emulator management, settings, statistics, file watcher, scraper framework | 30-minute controller-only session |
+| I7 | M5 part 1: wizard, emulator management, settings, statistics, file watcher (games and media added in ES-DE appear without a restart), media coverage report per system | 30-minute controller-only session |
 | I8 | Performance, Blender hero assets, license audit, golden screenshots, fault injection | Gate E + style §28 DoD |
 | I9 | Installer, portable build, release | M5 Done |
 
-Deferred beyond v1: ScreenScraper live scraping (needs developer credentials), gamelist write-back, legacy
-EmulationStation/RetroBat/Batocera adapters, VR, hardware video decoding, Linux, an OpenGL 3.3 fallback.
+Removed from scope: the integrated scraper (spec §10, FR-021 to FR-023). ES-DE stays the scraping tool; Retroverse
+reads its metadata and media in place and uses generated labels and screenshots where media are missing (ADR-0003).
+
+Deferred beyond v1: gamelist write-back, legacy EmulationStation/RetroBat/Batocera adapters, VR, hardware video
+decoding, Linux, an OpenGL 3.3 fallback.
 
 ## I0 / M0 step checklist
 

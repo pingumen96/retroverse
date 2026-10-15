@@ -2,9 +2,13 @@
 
 Ideas and deferred work that is out of scope for the current iteration. Pull items into the roadmap deliberately.
 
+## Removed from scope (decided)
+
+- Integrated scraper (spec §10, FR-021 to FR-023): ES-DE stays the scraping tool, Retroverse reads its metadata and
+  media in place and falls back on generated labels and screenshots for what is missing (ADR-0003).
+
 ## Deferred beyond v1 (decided)
 
-- ScreenScraper live scraping: requires developer credentials from the ScreenScraper project (spec §10.2).
 - Writing back to `gamelist.xml` (spec §4.6): read-only until a round-trip test suite exists.
 - Legacy EmulationStation, RetroBat and Batocera library adapters.
 - VR, Linux build, hardware video decoding (D3D11VA), OpenGL 3.3 fallback.
