@@ -78,9 +78,12 @@ void addScaleReferences(const core::Aabb& bounds, PreviewOverlay& overlay) {
     overlay.labels.push_back({head, "1.70 m", kReferenceLabel});
 }
 
-/// The bounds box and its dimensions at the middle of three of its edges.
-void addBounds(const core::Aabb& bounds, PreviewOverlay& overlay) {
+/// The bounds box and, with `dimensions`, its dimensions at the middle of three of its edges.
+void addBounds(const core::Aabb& bounds, bool dimensions, PreviewOverlay& overlay) {
     overlay.lines.addBox(bounds, glm::mat4(1.0f), scene::debug_colors::kObjectBounds);
+    if (!dimensions) {
+        return;
+    }
     const glm::vec3 size = bounds.size();
     const glm::vec3 center = bounds.center();
     overlay.labels.push_back(
@@ -290,7 +293,7 @@ PreviewOverlay buildPreviewOverlay(const PreviewSubject& subject, const OverlayS
         }
     }
     if (selection.bounds) {
-        addBounds(bounds, overlay);
+        addBounds(bounds, !subject.placeholder, overlay);
     }
     if (selection.normals) {
         addNormals(subject, bounds, overlay);

@@ -70,8 +70,9 @@ inline constexpr std::size_t kMaxColliderEdges = 20000;
 [[nodiscard]] float gridHalfExtent(const core::Aabb& bounds) noexcept;
 
 /// The lines and labels of `selection` for `subject` (world space = the subject's space). Labels: the dimensions at the
-/// middle of three edges of the bounds ("71.0 cm"), the socket names at their origins (shelf slots, too many to name,
-/// show their axes only), "pivot", "1 m" and "1.70 m" on the scale references.
+/// middle of three edges of the bounds ("W 71.0 cm"; none on the magenta placeholder, whose size is not the asset's),
+/// the socket names at their origins (shelf slots, too many to name, show their axes only), "pivot", "1 m cube" and
+/// "1.70 m" on the scale references.
 [[nodiscard]] PreviewOverlay buildPreviewOverlay(const PreviewSubject& subject, const OverlaySelection& selection);
 
 /// "71.0 cm": meters as centimeters with one decimal.

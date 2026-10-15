@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -63,15 +64,36 @@ TEST_CASE("preview/overlay: the fixture shows its dimensions in centimeters and 
     const PreviewOverlay sockets = rv::preview::buildPreviewOverlay(subject, socketsOnly);
     CHECK(sockets.lines.vertices().size() == 2 * (12 + 12)); // the screen's outline and the proxy's
 
-    // Normals: one line per drawn vertex (the body's 24, the screen's 4).
+    // Normals: one line per drawn vertex (the body's 24, the screen's 4), 3% of the largest extent long, pointing out
+    // of the box.
     OverlaySelection normalsOnly = none();
     normalsOnly.normals = true;
-    CHECK(rv::preview::buildPreviewOverlay(subject, normalsOnly).lines.lineCount() == 28);
+    const PreviewOverlay normals = rv::preview::buildPreviewOverlay(subject, normalsOnly);
+    REQUIRE(normals.lines.vertices().size() == 2 * 28);
+    const glm::vec3 center = subject.bounds.center();
+    for (std::size_t i = 0; i < normals.lines.vertices().size(); i += 2) {
+        const glm::vec3 from = normals.lines.vertices()[i].position;
+        const glm::vec3 along = normals.lines.vertices()[i + 1].position - from;
+        CHECK(glm::length(along) == Approx(0.03f * 0.71f));
+        CHECK(glm::dot(along, from - center) > 0.0f);
+    }
     // Node bounds: one box per drawn node.
     OverlaySelection nodesOnly = none();
     nodesOnly.nodeBounds = true;
     CHECK(rv::preview::buildPreviewOverlay(subject, nodesOnly).lines.lineCount() == 2 * 12);
     CHECK(rv::preview::buildPreviewOverlay(subject, none()).lines.empty());
+}
+
+TEST_CASE("preview/overlay: the placeholder shows its box without dimensions", "[preview][overlay]") {
+    rv::test::TempDir dir;
+    const PreviewSubject missing = load(rv::core::pathToUtf8(dir.file("missing.glb")));
+    REQUIRE(missing.placeholder);
+    OverlaySelection boundsOnly = none();
+    boundsOnly.bounds = true;
+    const PreviewOverlay overlay = rv::preview::buildPreviewOverlay(missing, boundsOnly);
+    CHECK(overlay.lines.lineCount() == 12);
+    CHECK(overlay.labels.empty());
+    CHECK(hasLabel(rv::preview::buildPreviewOverlay(missing, OverlaySelection{}), "pivot"));
 }
 
 TEST_CASE("preview/overlay: shelf slots show their axes without names", "[preview][overlay]") {
