@@ -2,6 +2,7 @@
 
 option(RV_BUILD_TESTS "Build unit tests (GPU-free) and GPU smoke tests" ON)
 option(RV_BUILD_TOOLS "Build developer tools such as retroverse-asset-preview (requires RV_DEV_UI)" ON)
+option(RV_BUILD_SPIKES "Build the risk-spike measurement executables under spikes/ (docs/roadmap.md, I1)" ON)
 option(RV_DEV_UI "Build the Dear ImGui developer overlay" ON)
 option(RV_GL_DEBUG "Request a debug OpenGL context and route GL_DEBUG_OUTPUT to the log" ON)
 option(RV_ENABLE_TRACY "Enable Tracy profiler instrumentation" OFF)

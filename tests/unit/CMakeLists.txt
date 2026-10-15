@@ -23,6 +23,9 @@ target_link_libraries(rv_tests PRIVATE
     rv_devui_model         # GPU-free part of rv_devui (frame times, input routing, log view)
     rv_render_debug_filter # GPU-free part of rv_render (GL debug message policy)
     rv_render_uniforms     # GPU-free part of rv_render (std140 blocks, light and material packing, tonemap)
+    rv_media               # video decoding with FFmpeg (CPU frames)
+    rv_launcher            # emulator launch policy
+    rv_ui_model            # GPU-free part of the product UI (navigation and focus)
     rv_test_support
     Catch2::Catch2WithMain)
 if(TARGET rv_preview_core)

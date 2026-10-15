@@ -66,16 +66,19 @@ M0 is done (spec §22: the app starts, the camera is controllable, rendering is 
 phase A of style §27 (an empty but credible room, its style and light recognizable): the style §26.2 checklist for
 golden G01 and the remaining gaps are in [testing/gate-a.md](testing/gate-a.md); deferred work is in `BACKLOG.md`.
 
-## Next: I1 risk spikes
+## I1: risk spikes (in progress)
 
-Three throwaway executables under `spikes/`, each ending with measurements and an ADR in `docs/decisions/` (success
-criteria met, or the fallback taken); none touches the product modules until its ADR is accepted:
+Each spike delivers the first version of the module it de-risks, kept out of the app's main flow until a later
+iteration wires it in, plus a measurement executable under `spikes/` with its own tests, a report in `docs/spikes/` and
+an ADR in `docs/decisions/` (success criteria met, or the fallback taken). Every preset enables the vcpkg features
+`video` (FFmpeg: avformat, avcodec, swscale, swresample; LGPL components only, linked as DLLs) and `ui` (RmlUi with
+FreeType).
 
-| Spike | What it proves | Success criterion | Fallback |
-|---|---|---|---|
-| (c) FFmpeg to an OpenGL texture | A decoder worker per file (demux, decode, `sws_scale` to RGBA, a 4-frame queue by PTS), the render thread presenting the latest due frame through a ring of 3 persistently mapped PBOs with fences | Two 720p videos at 60 FPS for 60 s: p99 frame time at most 16.7 ms, upload under 2 ms, fewer than 1% late frames, drift within 2%, stable memory; a truncated file falls back without a crash | YUV planes converted in the shader, 480p or a single decoder, prebuilt LGPL FFmpeg binaries pinned by SHA-256 |
-| (d) RmlUi with gamepad navigation | RmlUi 6.x on SDL3 + OpenGL 3 with the backends vendored on our glad; a document with a list, buttons and a text field navigated by D-pad and stick | A whole screen usable with the pad alone, stable focus, the overlay under 1 ms, correct resizing, within 2 sessions | The product UI in Dear ImGui with gamepad navigation, always behind C++ view models |
-| (f) Return from the emulator | `CreateProcessW` (suspended, a Job Object without kill-on-close, a completion port), waiting strategies, restoring the borderless fullscreen window after RetroArch and DuckStation | 5 of 5 RetroArch launches back in the foreground, fullscreen, with pad input and 60 FPS within 1 s of the emulator's exit; wrappers wait for the process tree; crashes reported; never a kill | `AllowSetForegroundWindow` before the launch, a minimized window with a notification, a direct process with a "return" confirmation |
+| Spike | Modules | Success criterion | Fallback | ADR |
+|---|---|---|---|---|
+| (c) Video on a texture | `rv_media` (FFmpeg demux and decode on a worker thread, a bounded frame queue, a presentation clock driven by timestamps), `gl::VideoTexture` (ring of persistently mapped PBOs with fences), `spikes/video` | Two 720p videos at 60 FPS for 60 s: p99 frame time at most 16.7 ms, upload under 2 ms, fewer than 1% late frames, drift within 2%, stable memory; a truncated or corrupt file falls back without a crash | YUV planes converted in the shader, 480p or a single decoder, prebuilt LGPL FFmpeg binaries pinned by SHA-256 | ADR-0004 |
+| (d) Product UI | `rv_ui` (RmlUi 6.3 on SDL3 and OpenGL 3, backends vendored on our glad, an OFL font), `rv_ui_model` (navigation and focus from the action map), `spikes/ui` | A quick-catalog mock screen usable with the pad alone, stable focus, the UI pass under 1 ms, correct resizing | The product UI in Dear ImGui with gamepad navigation, behind C++ view models | ADR-0005 |
+| (f) Return from the emulator | `rv_launcher` (Windows command-line quoting, waiting strategies, launch session state machine, outcome classification), the Win32 process runner and the window hand-over in `rv_platform`, a fake emulator, `spikes/launch` | 5 of 5 RetroArch launches back in the foreground, fullscreen, with pad input and 60 FPS within 1 s of the emulator's exit; wrappers wait for the process tree; crashes reported; never a kill | `AllowSetForegroundWindow` before the launch, a minimized window with a notification, a direct process with a "return" confirmation | ADR-0006 |
 
-The FFmpeg spike needs the vcpkg feature `video` (a long first build: warm the binary cache in the background first).
-Then I2 (M1): the ES-DE catalog, SQLite with FTS5 and the Windows launcher.
+Then I2 (M1): the ES-DE catalog (gamelists can hold two top-level elements, `<alternativeEmulator>` beside
+`<gameList>`: parse them as a fragment), SQLite with FTS5 and the Windows launcher on `rv_launcher`.

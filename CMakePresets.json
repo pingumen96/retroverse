@@ -31,6 +31,7 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "VCPKG_HOST_TRIPLET": "x64-windows",
         "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed",
+        "VCPKG_MANIFEST_FEATURES": "video;ui",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
@@ -73,16 +74,7 @@
       "displayName": "MSVC x64 Profile (Tracy)",
       "cacheVariables": {
         "RV_ENABLE_TRACY": "ON",
-        "VCPKG_MANIFEST_FEATURES": "profiling"
-      }
-    },
-    {
-      "name": "msvc-x64-warm-video",
-      "inherits": "msvc-x64-debug",
-      "hidden": true,
-      "displayName": "Warm the vcpkg binary cache with FFmpeg",
-      "cacheVariables": {
-        "VCPKG_MANIFEST_FEATURES": "video"
+        "VCPKG_MANIFEST_FEATURES": "video;ui;profiling"
       }
     }
   ],
@@ -116,7 +108,7 @@
       },
       "filter": {
         "exclude": {
-          "label": "gpu"
+          "label": "gpu|desktop"
         }
       }
     },
@@ -128,6 +120,27 @@
       },
       "execution": {
         "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "desktop"
+        }
+      }
+    },
+    {
+      "name": "msvc-x64-debug-desktop",
+      "description": "Tests that take over the screen (fullscreen windows, focus changes, external processes); run on demand only",
+      "configurePreset": "msvc-x64-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "filter": {
+        "include": {
+          "label": "desktop"
+        }
       }
     },
     {
@@ -141,7 +154,7 @@
       },
       "filter": {
         "exclude": {
-          "label": "gpu"
+          "label": "gpu|desktop"
         }
       }
     },
@@ -153,6 +166,11 @@
       },
       "execution": {
         "noTestsAction": "error"
+      },
+      "filter": {
+        "exclude": {
+          "label": "desktop"
+        }
       }
     }
   ]

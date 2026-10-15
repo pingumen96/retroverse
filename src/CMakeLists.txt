@@ -6,10 +6,13 @@ add_subdirectory(geometry)
 add_subdirectory(input)
 add_subdirectory(assets)
 add_subdirectory(scene)
+add_subdirectory(media)    # video decoding with FFmpeg (I1 spike c)
+add_subdirectory(launcher) # emulator launch policy (I1 spike f)
 
 # Platform and rendering layer
 add_subdirectory(platform)
 add_subdirectory(render)
+add_subdirectory(ui)       # RmlUi product UI; its GPU-free model always (I1 spike d)
 # Developer overlay: its GPU-free model always, the Dear ImGui overlay itself only with RV_DEV_UI.
 add_subdirectory(devui)
 
