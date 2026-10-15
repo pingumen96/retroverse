@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <rv/app/self_check.hpp>
@@ -22,8 +23,11 @@ std::vector<std::uint8_t> greyPixels(std::size_t count, std::uint8_t value) {
 
 TEST_CASE("app/self_check: check names", "[app][self_check]") {
     CHECK(rv::app::toString(SelfCheck::Srgb) == "srgb");
+    CHECK(rv::app::toString(SelfCheck::Bloom) == "bloom");
     CHECK(rv::app::selfCheckFromString("srgb") == SelfCheck::Srgb);
+    CHECK(rv::app::selfCheckFromString("bloom") == SelfCheck::Bloom);
     CHECK_FALSE(rv::app::selfCheckFromString("SRGB").has_value());
+    CHECK_FALSE(rv::app::selfCheckFromString("Bloom").has_value());
     CHECK_FALSE(rv::app::selfCheckFromString("").has_value());
 }
 
@@ -62,4 +66,75 @@ TEST_CASE("app/self_check: the sRGB check tolerates driver rounding only", "[app
     CHECK_FALSE(rv::app::evaluateSrgbCheck({}).passed);
     const std::vector<std::uint8_t> partial{188, 188, 188};
     CHECK_FALSE(rv::app::evaluateSrgbCheck(partial).passed);
+}
+
+namespace {
+
+/// Measurements of a bloom chain that works: nothing from the lit square, the emitter's energy nearly all kept, eight
+/// fireflies within a few percent of each other.
+rv::app::BloomCheckMeasurements goodBloom() {
+    rv::app::BloomCheckMeasurements measurements;
+    measurements.litBloomPeak = 0.0f;
+    measurements.emitterEnergyRatio = 0.987f;
+    measurements.fireflyEnergies = {4.6f, 4.6f, 4.6f, 4.6f, 4.8f, 4.8f, 4.8f, 4.8f};
+    return measurements;
+}
+
+} // namespace
+
+TEST_CASE("app/self_check: the bloom check passes a chain that blooms as documented", "[app][self_check]") {
+    const auto result = rv::app::evaluateBloomCheck(goodBloom());
+    CHECK(result.passed);
+    CHECK(result.litStaysOut);
+    CHECK(result.energyKept);
+    CHECK(result.firefliesSteady);
+    CHECK(result.fireflySpread > 0.02f);
+    CHECK(result.fireflySpread < 0.03f);
+}
+
+TEST_CASE("app/self_check: the bloom check fails what made the bloom wrong", "[app][self_check]") {
+    // Lit paper that blooms: any glow from the lit square.
+    auto lit = goodBloom();
+    lit.litBloomPeak = 1e-3f;
+    CHECK_FALSE(rv::app::evaluateBloomCheck(lit).litStaysOut);
+    CHECK_FALSE(rv::app::evaluateBloomCheck(lit).passed);
+
+    // Light added or lost by the chain (unnormalized filters, a broken blend), within 5% only.
+    for (const float ratio : {0.94f, 1.06f, 0.5f, 2.0f, 0.0f, std::numeric_limits<float>::quiet_NaN()}) {
+        INFO(ratio);
+        auto energy = goodBloom();
+        energy.emitterEnergyRatio = ratio;
+        CHECK_FALSE(rv::app::evaluateBloomCheck(energy).energyKept);
+        CHECK_FALSE(rv::app::evaluateBloomCheck(energy).passed);
+    }
+    for (const float ratio : {0.96f, 1.0f, 1.04f}) {
+        auto energy = goodBloom();
+        energy.emitterEnergyRatio = ratio;
+        CHECK(rv::app::evaluateBloomCheck(energy).passed);
+    }
+
+    // A firefly whose glow follows its brightness (Karis weights per box: 1000x glows ten times as much as 100x).
+    auto pulsing = goodBloom();
+    pulsing.fireflyEnergies = {6.0f, 6.0f, 6.0f, 6.0f, 60.0f, 60.0f, 60.0f, 60.0f};
+    const auto failed = rv::app::evaluateBloomCheck(pulsing);
+    CHECK_FALSE(failed.firefliesSteady);
+    CHECK_FALSE(failed.passed);
+    CHECK(failed.fireflySpread > 0.8f);
+    // Every energy within 20% of their mean is steady; one beyond it is not.
+    auto steady = goodBloom();
+    steady.fireflyEnergies = {1.0f, 1.0f, 1.0f, 1.25f}; // the last one 17.6% above the mean
+    CHECK(rv::app::evaluateBloomCheck(steady).firefliesSteady);
+    auto unsteady = goodBloom();
+    unsteady.fireflyEnergies = {1.0f, 1.0f, 1.0f, 1.35f}; // 24% above
+    CHECK_FALSE(rv::app::evaluateBloomCheck(unsteady).firefliesSteady);
+    // Fewer than two energies, no glow at all or a non-finite one prove nothing.
+    const float infinity = std::numeric_limits<float>::infinity();
+    for (const std::vector<float>& energies : {std::vector<float>{}, std::vector<float>{4.6f},
+                                               std::vector<float>{0.0f, 0.0f}, std::vector<float>{4.6f, infinity}}) {
+        INFO(energies.size() << " energies");
+        auto unproven = goodBloom();
+        unproven.fireflyEnergies = energies;
+        CHECK_FALSE(rv::app::evaluateBloomCheck(unproven).firefliesSteady);
+        CHECK_FALSE(rv::app::evaluateBloomCheck(unproven).passed);
+    }
 }

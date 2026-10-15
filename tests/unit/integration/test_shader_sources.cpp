@@ -2,9 +2,10 @@
 // with rv::assets::ShaderSourceLoader, and the std140 uniform blocks, material flags and texture units declared in
 // GLSL match their C++ mirrors in rv/render/uniform_blocks.hpp (binding points, member types, offsets, sizes), so a
 // change on one side cannot silently skew the other. The same holds for the display transform (tonemap.glsl and
-// rv/render/tonemap.hpp); the material shaders are checked to write linear radiance (exposure and tonemapping are the
-// post pass's), fragment stages to sample their textures before they may discard, the post-processing passes to draw
-// without vertex buffers and the bloom filters to keep the energy of the image.
+// rv/render/tonemap.hpp); the material shaders are checked to write linear radiance and its emitted part to the
+// attachments of the HDR target (exposure and tonemapping are the post pass's), fragment stages to sample their
+// textures before they may discard, the post-processing passes to draw without vertex buffers, the bloom filters to
+// keep the energy of the image and the first bloom level to take the Karis average of every tap.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -216,11 +217,10 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
                                              "pbr/pbr.vert", "post/bloom_downsample.frag", "post/bloom_upsample.frag",
                                              "post/fullscreen.vert", "post/post.frag", "unlit/unlit_emissive.frag"});
 
-    // The first bloom level is built with RV_BLOOM_KARIS, the sRGB self-check's post pass with RV_POST_LINEAR_OUTPUT.
+    // The first bloom level is built with RV_BLOOM_KARIS; the self-checks use the programs of the views.
     const std::vector<std::string> karisDefines{"RV_BLOOM_KARIS"};
-    const std::vector<std::string> selfCheckDefines{"RV_POST_LINEAR_OUTPUT"};
     for (const std::string& stage : stages) {
-        for (const std::vector<std::string>& defines : {std::vector<std::string>{}, karisDefines, selfCheckDefines}) {
+        for (const std::vector<std::string>& defines : {std::vector<std::string>{}, karisDefines}) {
             INFO(stage << " with " << defines.size() << " define(s)");
             const auto source = loader.load(stage, defines);
             REQUIRE(source.has_value());
@@ -238,8 +238,11 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
         return std::find(source->files.begin(), source->files.end(), fs::path(include)) != source->files.end();
     };
     CHECK(includes("pbr/pbr.frag", "common/lights.glsl"));
-    CHECK(includes("pbr/pbr.frag", "common/material.glsl"));
-    CHECK(includes("unlit/unlit_emissive.frag", "common/material.glsl"));
+    for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag"}) {
+        INFO(stage);
+        CHECK(includes(stage, "common/material.glsl"));
+        CHECK(includes(stage, "common/scene_output.glsl"));
+    }
     for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag"}) {
         INFO(stage);
         CHECK(includes(stage, "common/post.glsl"));
@@ -254,19 +257,39 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
 
 TEST_CASE("integration/shaders: the material shaders write linear radiance for the post pass",
           "[integration][shader]") {
+    // Both outputs at the locations of rv::gl::SceneOutput, the attachments of the HDR target: the radiance, and the
+    // emitted part of it that the bloom always spreads.
+    const std::string outputs = glslWithoutComments("common/scene_output.glsl");
+    std::map<std::string, std::uint32_t> locations;
+    const std::regex output(R"(layout\s*\(\s*location\s*=\s*(\d+)\s*\)\s*out\s+vec4\s+(\w+)\s*;)");
+    for (auto it = std::sregex_iterator(outputs.begin(), outputs.end(), output); it != std::sregex_iterator(); ++it) {
+        locations[(*it)[2].str()] = static_cast<std::uint32_t>(std::stoul((*it)[1].str()));
+    }
+    using rv::gl::SceneOutput;
+    CHECK(locations == std::map<std::string, std::uint32_t>{{"oColor", rv::gl::toIndex(SceneOutput::Radiance)},
+                                                            {"oEmission", rv::gl::toIndex(SceneOutput::Emission)}});
+    CHECK(locations.size() == rv::gl::kSceneOutputCount);
+
     // Exposure and tonemapping happen once, in the post pass: a material shader that applied them again would darken
     // and flatten its surfaces, and the bloom would see display values instead of radiance.
     const rv::assets::ShaderSourceLoader loader(shaderRoot());
     for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag"}) {
         INFO(stage);
+        const std::string own = glslWithoutComments(stage);
+        // The outputs are the shared ones, written together.
+        CHECK_FALSE(std::regex_search(own, std::regex(R"(\bout\s+vec4\b)")));
+        CHECK(std::regex_search(own, std::regex(R"(\bwriteSceneOutput\s*\()")));
         const auto loaded = loader.load(stage);
         REQUIRE(loaded.has_value());
         const std::string source = withoutComments(loaded->text);
         CHECK_FALSE(std::regex_search(source, std::regex(R"(\btonemap\w*\s*\()")));
         CHECK_FALSE(std::regex_search(source, std::regex(R"(\buExposure\b)")));
-        // The output is the radiance itself, with the material's alpha.
-        CHECK(std::regex_search(source, std::regex(R"(oColor\s*=\s*vec4\s*\()")));
     }
+    // The emitted part: the emissive term of a lit material, all of an unlit one's radiance.
+    CHECK(std::regex_search(glslWithoutComments("pbr/pbr.frag"),
+                            std::regex(R"(writeSceneOutput\s*\(\s*radiance\s*,\s*emissive\s*,)")));
+    CHECK(std::regex_search(glslWithoutComments("unlit/unlit_emissive.frag"),
+                            std::regex(R"(writeSceneOutput\s*\(\s*radiance\s*,\s*radiance\s*,)")));
 }
 
 TEST_CASE("integration/shaders: mesh and debug line stages read the vertex layouts the renderer uploads",
@@ -462,11 +485,13 @@ TEST_CASE("integration/shaders: the GLSL post block, texture units and filters m
                 sizeof(PostUniforms));
     CHECK(rv::gl::kFirstReservedUniformBinding == rv::gl::toIndex(rv::gl::UniformBinding::Post) + 1);
 
-    // Every pass samples its source on PostTextureUnit::Source; only the post pass reads the bloom, so the bloom
-    // passes, which draw into the bloom levels, never sample one of them by accident.
+    // Every pass samples its source on PostTextureUnit::Source (and may read the emitted light of the scene); only the
+    // post pass reads the bloom, so the bloom passes, which draw into the bloom levels, never sample one of them by
+    // accident.
     using rv::gl::PostTextureUnit;
     CHECK(samplerUnits(source) ==
-          std::map<std::string, std::uint32_t>{{"uSource", rv::gl::toIndex(PostTextureUnit::Source)}});
+          std::map<std::string, std::uint32_t>{{"uSource", rv::gl::toIndex(PostTextureUnit::Source)},
+                                               {"uEmission", rv::gl::toIndex(PostTextureUnit::Emission)}});
     CHECK(samplerUnits(glslWithoutComments("post/post.frag")) ==
           std::map<std::string, std::uint32_t>{{"uBloom", rv::gl::toIndex(PostTextureUnit::Bloom)}});
     for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag"}) {
@@ -486,6 +511,44 @@ TEST_CASE("integration/shaders: the GLSL post block, texture units and filters m
     CHECK(tentCenter + 4.0f * tentEdge + 4.0f * tentCorner == 1.0f);
     // The HDR targets are half floats: radiance is limited where the CPU mirror of the tonemap limits it.
     CHECK(glslFloatConstant(source, "RV_MAX_RADIANCE") == rv::gl::kTonemapInputLimit);
+}
+
+TEST_CASE("integration/shaders: the first bloom level takes the Karis average of every one of its 13 taps",
+          "[integration][shader]") {
+    // Weighting whole boxes would let a lone firefly through: it falls into all five boxes of the texel that covers it,
+    // so their weights cancel out. Each tap gets its own Karis weight, times its share of the 13-tap filter.
+    const std::string post = glslWithoutComments("common/post.glsl");
+    const float center = glslFloatConstant(post, "RV_BLOOM_CENTER_BOX_WEIGHT");
+    const float corner = glslFloatConstant(post, "RV_BLOOM_CORNER_BOX_WEIGHT");
+    CHECK(std::regex_search(post, std::regex(R"(float\s+karisWeight\s*\([^)]*\)\s*\{\s*return\s+1\.0\s*/\s*\()"
+                                             R"(\s*1\.0\s*\+\s*luminance\s*\(\s*\w+\s*\)\s*\*\s*uExposure\s*\)\s*;)")));
+
+    const std::string downsample = glslWithoutComments("post/bloom_downsample.frag");
+    const std::regex tap(R"(addKarisTap\s*\(\s*([a-m])\s*,\s*(?:(\d+\.\d+)\s*\*\s*)?(centerBoxTap|cornerBoxTap)\s*,)");
+    std::map<char, float> weights;
+    for (auto it = std::sregex_iterator(downsample.begin(), downsample.end(), tap); it != std::sregex_iterator();
+         ++it) {
+        const float factor = (*it)[2].matched ? std::stof((*it)[2].str()) : 1.0f;
+        const float boxWeight = (*it)[3].str() == "centerBoxTap" ? center : corner;
+        CHECK(weights.emplace((*it)[1].str()[0], factor * boxWeight * 0.25f).second); // each tap once
+    }
+    REQUIRE(weights.size() == 13);
+    // A tap's share: a quarter of the weight of each box it belongs to.
+    const std::map<char, int> cornerBoxes{{'a', 1}, {'b', 2}, {'c', 1}, {'d', 2}, {'e', 4},
+                                          {'f', 2}, {'g', 1}, {'h', 2}, {'i', 1}};
+    float total = 0.0f;
+    for (const auto& [name, weight] : weights) {
+        INFO(name);
+        const auto boxes = cornerBoxes.find(name);
+        const float expected = boxes != cornerBoxes.end() ? static_cast<float>(boxes->second) * corner * 0.25f
+                                                          : center * 0.25f; // j, k, l, m: the central box
+        CHECK(weight == expected);
+        total += weight;
+    }
+    CHECK(total == 1.0f);
+    // The bloom source of each tap (the emitted light and the highlights), with its Karis weight.
+    CHECK(std::regex_search(downsample, std::regex(R"(bloomSource\s*\()")));
+    CHECK(std::regex_search(downsample, std::regex(R"(karisWeight\s*\(\s*source\s*\))")));
 }
 
 TEST_CASE("integration/shaders: the post-processing passes draw a fullscreen triangle without vertex buffers",

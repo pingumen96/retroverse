@@ -64,8 +64,8 @@ private:
         ImGui::SetItemTooltip("Multiplies the scene radiance before the ACES tonemap");
         ImGui::SliderFloat("Bloom strength", &environment.bloomStrength, 0.0f, 1.0f, "%.3f",
                            ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
-        ImGui::SetItemTooltip(
-            "Glow of the light above the bloom threshold: screens, lamp shades, highlights (0: none)");
+        ImGui::SetItemTooltip("Share of the light of screens, lamp shades, neon and bright highlights that glows "
+                              "around them (0: none)");
         ImGui::SliderFloat("Bloom radius", &environment.bloomRadius, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
         ImGui::SetItemTooltip("How far the glow spreads: from a few pixels (0) to most of the view (1)");
         ImGui::SliderFloat("Vignette", &environment.vignette, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);

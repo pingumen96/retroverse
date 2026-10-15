@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 
 namespace rv::gl {
 namespace {
@@ -32,21 +31,12 @@ PostSettings postSettingsFor(const scene::EnvironmentSetup& environment) noexcep
 PostUniforms makePostUniforms(const PostSettings& settings) noexcept {
     PostUniforms uniforms;
     uniforms.exposure = std::isfinite(settings.exposure) && settings.exposure > 0.0f ? settings.exposure : 1.0f;
-    uniforms.bloomMix = bloomMix(settings.bloomStrength);
+    uniforms.bloomMix = unitInterval(settings.bloomStrength);
     uniforms.bloomThreshold = kBloomThreshold;
     uniforms.bloomKnee = kBloomKnee;
     uniforms.vignette = unitInterval(settings.vignette);
     uniforms.ditherAmplitude = unitInterval(settings.ditherAmplitude);
     return uniforms;
-}
-
-float bloomMix(float strength) noexcept {
-    const float kept = 1.0f - unitInterval(strength);
-    float remaining = 1.0f;
-    for (std::size_t level = 0; level < kBloomLevelCount; ++level) {
-        remaining *= kept;
-    }
-    return 1.0f - remaining;
 }
 
 float bloomScatter(float radius) noexcept {

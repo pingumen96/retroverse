@@ -51,3 +51,25 @@ TEST_CASE("render/tonemap: exposure scales the radiance and bad input becomes bl
     checkColor(rv::gl::tonemap(glm::vec3(infinity, 0.0f, 0.0f), 1.0f),
                rv::gl::tonemapAcesFitted(glm::vec3(rv::gl::kTonemapInputLimit, 0.0f, 0.0f)));
 }
+
+TEST_CASE("render/tonemap: the grey radiance a display value needs inverts the tonemap", "[render][tonemap]") {
+    // What the sRGB self-check draws: the radiance shown as linear 0.5 (sRGB 188) at exposure 1.
+    const float half = rv::gl::greyRadianceForDisplay(0.5f, 1.0f);
+    CHECK(half > 0.5f);
+    CHECK(half < 1.0f);
+    checkColor(rv::gl::tonemap(glm::vec3(half), 1.0f), glm::vec3(0.5f));
+    for (const float display : {0.01f, 0.1f, 0.5f, 0.9f}) {
+        for (const float exposure : {0.5f, 1.0f, 1.5f}) {
+            INFO(display << " at exposure " << exposure);
+            const float radiance = rv::gl::greyRadianceForDisplay(display, exposure);
+            checkColor(rv::gl::tonemap(glm::vec3(radiance), exposure), glm::vec3(display));
+            // Exposure scales the radiance needed down.
+            CHECK(radiance * exposure == Approx(rv::gl::greyRadianceForDisplay(display, 1.0f)).epsilon(1e-4));
+        }
+    }
+    // Black needs no light; a bad exposure counts as 1.
+    CHECK(rv::gl::greyRadianceForDisplay(0.0f, 1.0f) == 0.0f);
+    CHECK(rv::gl::greyRadianceForDisplay(-1.0f, 1.0f) == 0.0f);
+    CHECK(rv::gl::greyRadianceForDisplay(0.5f, 0.0f) == half);
+    CHECK(rv::gl::greyRadianceForDisplay(0.5f, std::numeric_limits<float>::quiet_NaN()) == half);
+}

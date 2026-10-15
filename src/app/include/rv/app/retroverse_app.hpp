@@ -30,7 +30,8 @@ namespace rv::app {
 /// the pose); frame-limited runs log the final camera pose at exit. Developer builds (RV_DEV_ASSET_ROOT) also reload
 /// shaders automatically when their files change. A frame-limited run with --screenshot writes its last frame to that
 /// file (RGB: the window shows no alpha); --self-check srgb checks the sRGB output pipeline after initialization
-/// (runSrgbSelfCheck). A frame-limited run fails (exit code 3, AppContext::failRun) when that file is not written
+/// (runSrgbSelfCheck), --self-check bloom the bloom chain (runBloomSelfCheck), both with the programs the views use. A
+/// frame-limited run fails (exit code 3, AppContext::failRun) when that file is not written
 /// (write error, or the run ended before its last frame), when a scene or post-processing shader never built, so
 /// frames were never drawn completely, or when the self-check fails. A --input-script that cannot be loaded fails the
 /// initialization (exit code 2).

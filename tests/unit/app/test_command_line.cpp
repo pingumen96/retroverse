@@ -439,6 +439,9 @@ TEST_CASE("app/command_line: --self-check runs a named check in a frame-limited 
         const auto options = parse({"--self-check", "srgb", limit, "--hidden"});
         REQUIRE(options.has_value());
         CHECK(options->selfCheck == rv::app::SelfCheck::Srgb);
+        const auto bloom = parse({"--self-check", "bloom", limit, "--hidden"});
+        REQUIRE(bloom.has_value());
+        CHECK(bloom->selfCheck == rv::app::SelfCheck::Bloom);
     }
 
     // An interactive run has no end for the check to report to.
@@ -447,7 +450,7 @@ TEST_CASE("app/command_line: --self-check runs a named check in a frame-limited 
     CHECK(interactive.error().code == ErrorCode::InvalidArgument);
     CHECK(interactive.error().context == "--self-check");
 
-    for (const char* name : {"SRGB", "gamma", ""}) {
+    for (const char* name : {"SRGB", "Bloom", "gamma", ""}) {
         INFO(name);
         const auto rejected = parse({"--exit-after-frames", "--self-check", name});
         REQUIRE_FALSE(rejected.has_value());

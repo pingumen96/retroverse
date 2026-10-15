@@ -19,6 +19,8 @@ namespace {
 
 constexpr GLuint kSourceUnit = toIndex(PostTextureUnit::Source);
 constexpr GLuint kBloomUnit = toIndex(PostTextureUnit::Bloom);
+constexpr GLuint kEmissionUnit = toIndex(PostTextureUnit::Emission);
+constexpr std::size_t kEmissionAttachment = toIndex(SceneOutput::Emission);
 
 bool usable(const ShaderProgram* program) noexcept {
     return program != nullptr && program->valid();
@@ -73,7 +75,8 @@ void PostProcessor::bloom(GLDevice& device, const PostShaders& shaders, float sc
                           const ViewTargets& targets) const {
     const ScopedDebugGroup group(device, "Bloom");
     const std::span<const Framebuffer, kBloomLevelCount> levels = targets.bloomLevels();
-    // Downsampling: the scene into the first level (Karis average), then each level into the next smaller one.
+    // Downsampling: the light of the scene that blooms (its radiance and emission) into the first level (Karis
+    // average), then each level into the next smaller one.
     drawPass(device, *shaders.bloomDownsampleFirst, targets.hdr(), levels[0]);
     for (std::size_t level = 1; level < kBloomLevelCount; ++level) {
         drawPass(device, *shaders.bloomDownsample, levels[level - 1], levels[level]);
@@ -130,6 +133,9 @@ void PostProcessor::apply(GLDevice& device, const PostShaders& shaders, const Po
         m_triangle.bind();
         glBindSampler(kSourceUnit, m_sampler.id());
         glBindSampler(kBloomUnit, m_sampler.id());
+        glBindSampler(kEmissionUnit, m_sampler.id());
+        // The emitted light, read by the first downsample and the post pass.
+        targets.hdr().bindColorTexture(kEmissionUnit, kEmissionAttachment);
         if (uniforms.bloomMix > 0.0f) {
             bloom(device, shaders, bloomScatter(settings.bloomRadius), targets);
         }

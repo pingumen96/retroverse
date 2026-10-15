@@ -46,4 +46,10 @@ inline constexpr float kTonemapInputLimit = 65504.0f;
 /// encodes the result like the output of the post pass.
 [[nodiscard]] glm::vec3 tonemap(const glm::vec3& radiance, float exposure) noexcept;
 
+/// The inverse of tonemap() for greys (the ACES fit keeps grey grey): the radiance r for which tonemap(vec3(r),
+/// `exposure`) shows `display` in each component, found by bisection, so that a test or check can draw the radiance a
+/// view must show as a given display value (the sRGB self-check: linear 0.5). `display` at or below 0 gives 0, at or
+/// above the largest display value the radiance that reaches it; a non-finite or non-positive exposure counts as 1.
+[[nodiscard]] float greyRadianceForDisplay(float display, float exposure) noexcept;
+
 } // namespace rv::gl

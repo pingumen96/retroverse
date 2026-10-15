@@ -35,7 +35,8 @@ inline constexpr float kModelViewerMargin = 1.15f;
 ///    point fill light from the front right and a point rim light from behind above (their intensities scale with the
 ///    square of their distance, so the model receives the same light whatever its size).
 ///  - Environment: neutral hemispheric ambient, exposure 1, a neutral dark mid-grey background (shown as about sRGB
-///    61), against which dark models (black plastic, graphite) and light ones both stand out.
+///    61), against which dark models (black plastic, graphite) and light ones both stand out; no bloom and no
+///    vignette, so that every part of the model shows its own colors wherever it is in the view.
 /// Empty or non-finite bounds are framed as a 1 m cube standing on the origin.
 [[nodiscard]] scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::Aabb& bounds);
 

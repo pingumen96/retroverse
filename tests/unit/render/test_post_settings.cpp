@@ -2,12 +2,14 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
-#include <cmath>
 #include <limits>
 
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
+#include <rv/core/math.hpp>
 #include <rv/render/post_settings.hpp>
+#include <rv/render/tonemap.hpp>
 #include <rv/scene/scene_description.hpp>
 
 using Catch::Approx;
@@ -54,7 +56,8 @@ TEST_CASE("render/post_settings: the post block keeps every value in its documen
     settings.ditherAmplitude = rv::gl::kDitherAmplitude;
     PostUniforms uniforms = rv::gl::makePostUniforms(settings);
     CHECK(uniforms.exposure == 2.5f);
-    CHECK(uniforms.bloomMix == Approx(rv::gl::bloomMix(0.06f)));
+    // The strength is the share of the light that blooms moved into the glow: the bloom mix itself.
+    CHECK(uniforms.bloomMix == 0.06f);
     CHECK(uniforms.vignette == 0.05f);
     CHECK(uniforms.ditherAmplitude == rv::gl::kDitherAmplitude);
 
@@ -79,34 +82,41 @@ TEST_CASE("render/post_settings: the post block keeps every value in its documen
     CHECK(uniforms.vignette == 0.0f);
     CHECK(uniforms.ditherAmplitude == 0.0f);
 
-    // The soft knee starts above 0 and never beyond the threshold, so dark surfaces never bloom.
+    // The soft knee starts above 0 and never beyond the threshold.
     CHECK(rv::gl::kBloomThreshold > 0.0f);
     CHECK(rv::gl::kBloomKnee >= 0.0f);
     CHECK(rv::gl::kBloomKnee <= rv::gl::kBloomThreshold);
 }
 
-TEST_CASE("render/post_settings: the bloom strength is a share per bloom level", "[render][post]") {
-    CHECK(rv::gl::bloomMix(0.0f) == 0.0f);
-    CHECK(rv::gl::bloomMix(1.0f) == 1.0f);
-    // Each of the levels takes the strength of what the levels before it left: 1 - (1 - s)^n.
-    const float strength = 0.06f;
-    const float expected =
-        1.0f - static_cast<float>(std::pow(1.0 - strength, static_cast<double>(rv::gl::kBloomLevelCount)));
-    CHECK(rv::gl::bloomMix(strength) == Approx(expected));
-    // The default strength spreads about a third of the light above the threshold: a subtle glow.
-    CHECK(rv::gl::bloomMix(0.06f) > 0.25f);
-    CHECK(rv::gl::bloomMix(0.06f) < 0.35f);
-    // Close to n * s for small strengths, and rising with the strength up to 1.
-    CHECK(rv::gl::bloomMix(0.005f) == Approx(0.005f * static_cast<float>(rv::gl::kBloomLevelCount)).epsilon(0.03));
-    float previous = 0.0f;
-    for (int step = 1; step <= 50; ++step) {
-        const float mix = rv::gl::bloomMix(0.01f * static_cast<float>(step));
-        CHECK(mix > previous);
-        previous = mix;
+TEST_CASE("render/post_settings: the bloom strength is the share of the glowing light moved into the glow",
+          "[render][post]") {
+    PostSettings settings;
+    for (const float strength : {0.0f, 0.04f, 0.06f, 0.08f, 1.0f}) {
+        settings.bloomStrength = strength;
+        CHECK(rv::gl::makePostUniforms(settings).bloomMix == strength);
     }
-    CHECK(rv::gl::bloomMix(0.9f) <= 1.0f);
-    CHECK(rv::gl::bloomMix(-0.5f) == 0.0f);
-    CHECK(rv::gl::bloomMix(std::numeric_limits<float>::quiet_NaN()) == 0.0f);
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    for (const float wrong : {-0.5f, nan, -std::numeric_limits<float>::infinity()}) {
+        settings.bloomStrength = wrong;
+        CHECK(rv::gl::makePostUniforms(settings).bloomMix == 0.0f);
+    }
+    settings.bloomStrength = 1.5f;
+    CHECK(rv::gl::makePostUniforms(settings).bloomMix == 1.0f);
+    // The default of the scene files is subtle (style §4.3): a few percent of the light of screens and lamp shades.
+    CHECK(rv::scene::EnvironmentSetup{}.bloomStrength >= 0.04f);
+    CHECK(rv::scene::EnvironmentSetup{}.bloomStrength <= 0.08f);
+}
+
+TEST_CASE("render/post_settings: only highlights of the reflected light reach the bloom threshold", "[render][post]") {
+    // Where the knee starts, the ACES curve shows a lit surface at about sRGB 240 or brighter: the brightest lit paper,
+    // labels and wood of the rooms stay below and never bloom (the emitted light always does).
+    const float kneeStart = rv::gl::kBloomThreshold - rv::gl::kBloomKnee;
+    const float shown = rv::core::linearToSrgb(rv::gl::tonemap(glm::vec3(kneeStart), 1.0f).g) * 255.0f;
+    CHECK(shown > 238.0f);
+    // The lit paper of the test room's posters, exposed about 2 to 2.6 (sRGB 231 to 238), is well below.
+    CHECK(kneeStart >= 3.0f);
+    // A mirror-like highlight of a light (10 to 1000 times white) blooms in full.
+    CHECK(rv::gl::kBloomThreshold + rv::gl::kBloomKnee < 10.0f);
 }
 
 TEST_CASE("render/post_settings: the bloom radius is the scatter of the upsampling blend", "[render][post]") {

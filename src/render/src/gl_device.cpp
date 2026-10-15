@@ -36,12 +36,14 @@ GLint glInteger(GLenum name) {
     return value;
 }
 
-/// Name of the first DSA / KHR_debug entry point used by rv_render that the driver did not export, or empty.
+/// Name of the first OpenGL 4.1 to 4.5 entry point used by rv_render (DSA, program uniforms, timer queries, KHR_debug,
+/// ...) that the driver did not export, or empty.
 std::string_view firstMissingEntryPoint() {
     const std::pair<std::string_view, bool> entryPoints[] = {
         {"glCreateBuffers", glCreateBuffers != nullptr},
         {"glNamedBufferStorage", glNamedBufferStorage != nullptr},
         {"glNamedBufferSubData", glNamedBufferSubData != nullptr},
+        {"glMapNamedBufferRange", glMapNamedBufferRange != nullptr},
         {"glGetNamedBufferParameteriv", glGetNamedBufferParameteriv != nullptr},
         {"glCreateVertexArrays", glCreateVertexArrays != nullptr},
         {"glVertexArrayVertexBuffer", glVertexArrayVertexBuffer != nullptr},
@@ -53,6 +55,10 @@ std::string_view firstMissingEntryPoint() {
         {"glDrawElementsInstancedBaseInstance", glDrawElementsInstancedBaseInstance != nullptr},
         {"glProgramUniformMatrix4fv", glProgramUniformMatrix4fv != nullptr},
         {"glProgramUniform4fv", glProgramUniform4fv != nullptr},
+        {"glProgramUniform3fv", glProgramUniform3fv != nullptr},
+        {"glProgramUniform2fv", glProgramUniform2fv != nullptr},
+        {"glProgramUniform1f", glProgramUniform1f != nullptr},
+        {"glProgramUniform1i", glProgramUniform1i != nullptr},
         {"glBindBufferRange", glBindBufferRange != nullptr},
         {"glCreateTextures", glCreateTextures != nullptr},
         {"glTextureStorage2D", glTextureStorage2D != nullptr},
@@ -61,6 +67,7 @@ std::string_view firstMissingEntryPoint() {
         {"glTextureParameteri", glTextureParameteri != nullptr},
         {"glTextureParameterf", glTextureParameterf != nullptr},
         {"glBindTextures", glBindTextures != nullptr},
+        {"glBindTextureUnit", glBindTextureUnit != nullptr},
         {"glCreateSamplers", glCreateSamplers != nullptr},
         {"glSamplerParameteri", glSamplerParameteri != nullptr},
         {"glSamplerParameterf", glSamplerParameterf != nullptr},
@@ -74,13 +81,14 @@ std::string_view firstMissingEntryPoint() {
         {"glCreateFramebuffers", glCreateFramebuffers != nullptr},
         {"glNamedFramebufferTexture", glNamedFramebufferTexture != nullptr},
         {"glNamedFramebufferRenderbuffer", glNamedFramebufferRenderbuffer != nullptr},
-        {"glNamedFramebufferDrawBuffer", glNamedFramebufferDrawBuffer != nullptr},
+        {"glNamedFramebufferDrawBuffers", glNamedFramebufferDrawBuffers != nullptr},
         {"glNamedFramebufferReadBuffer", glNamedFramebufferReadBuffer != nullptr},
         {"glCheckNamedFramebufferStatus", glCheckNamedFramebufferStatus != nullptr},
         {"glClearNamedFramebufferfv", glClearNamedFramebufferfv != nullptr},
         {"glClearNamedFramebufferfi", glClearNamedFramebufferfi != nullptr},
         {"glBlitNamedFramebuffer", glBlitNamedFramebuffer != nullptr},
         {"glGetNamedFramebufferAttachmentParameteriv", glGetNamedFramebufferAttachmentParameteriv != nullptr},
+        {"glCreateQueries", glCreateQueries != nullptr},
         {"glObjectLabel", glObjectLabel != nullptr},
         {"glPushDebugGroup", glPushDebugGroup != nullptr},
         {"glPopDebugGroup", glPopDebugGroup != nullptr},

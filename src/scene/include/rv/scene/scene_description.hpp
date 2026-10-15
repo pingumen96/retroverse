@@ -41,7 +41,7 @@ namespace rv::scene {
 ///       "ambientSky": "#FFFFFF", "ambientGround": "#808080",
 ///       "ambientIntensity": 0.2,                   >= 0, scales the hemispheric sky/ground ambient
 ///       "exposure": 1.0,                           > 0, applied before tonemapping
-///       "bloomStrength": 0.06,                     [0, 1], glow of the light above the bloom threshold (0: none)
+///       "bloomStrength": 0.06,                     [0, 1], glow of screens, lamp shades, neon, highlights (0: none)
 ///       "bloomRadius": 0.7,                        [0, 1], how far the glow spreads (0: a few pixels)
 ///       "vignette": 0.05                           [0, 1], darkening of the view's corners (0: none)
 ///     },
@@ -108,9 +108,9 @@ struct EnvironmentSetup {
     glm::vec3 ambientGround{0.2158605f}; ///< "#808080"
     float ambientIntensity = 0.2f;
     float exposure = 1.0f;
-    /// How much of the light above the renderer's bloom threshold (screens, lamp shades, neon, highlights) spreads into
-    /// a soft glow around it: the share each of the bloom levels takes, about a third of that light in all for the
-    /// default, which is subtle (style §4.3: localized bloom). The lit room below the threshold stays as it is.
+    /// How much of the light that blooms spreads into a soft glow around it (style §4.3: localized bloom): all the
+    /// light emissive surfaces give off (screens, lamp shades, neon) and the highlights of the lights on glossy
+    /// surfaces, moved from them into the glow; 0.06 is subtle. Lit paper, wood and walls never bloom.
     float bloomStrength = 0.06f;
     /// How far the glow spreads: the weight the bloom chain gives its wider levels, from a few pixels around a bright
     /// surface (0) to most of the view (1).

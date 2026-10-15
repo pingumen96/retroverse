@@ -174,21 +174,37 @@ static_assert(offsetof(MaterialUniforms, emissiveStrength) == 48);
 static_assert(offsetof(MaterialUniforms, flags) == 52);
 static_assert(sizeof(MaterialUniforms) == 64, "std140 block sizes are multiples of 16 bytes");
 
+/// Fragment outputs of the scene shaders (`layout(location = N) out` in common/scene_output.glsl), written into the
+/// color attachments of the HDR scene target with the same numbers (gl::ViewTargets::hdr()).
+enum class SceneOutput : std::uint32_t {
+    /// `oColor`: the linear radiance a surface sends towards the eye (reflected and emitted), alpha for blending.
+    Radiance = 0,
+    /// `oEmission`: the part of that radiance the surface emits itself (screens, lamp shades, neon), the light the
+    /// bloom always spreads (common/post.glsl bloomSource).
+    Emission = 1,
+};
+inline constexpr std::uint32_t kSceneOutputCount = 2;
+
+[[nodiscard]] constexpr std::uint32_t toIndex(SceneOutput output) noexcept {
+    return static_cast<std::uint32_t>(output);
+}
+
 /// Post-processing parameters of a view at UniformBinding::Post: block `PostUniforms` of common/post.glsl, read by the
 /// bloom passes and the post pass. Built from a PostSettings by rv::gl::makePostUniforms (post_settings.hpp), which
 /// keeps every value in the range documented here. Brightness is exposed radiance, the input scale of the tonemap.
 struct PostUniforms {
     /// > 0: multiplies the scene radiance (bloom included) before tonemapping.
     float exposure = 1.0f;
-    /// [0, 1]: share of the light above the bloom threshold that the bloom spreads: radiance + bloomMix * (bloom -
-    /// excess), with excess the light above the threshold and bloom its blur, so the energy is kept. 0 leaves the
-    /// bloom texture unread.
+    /// [0, 1]: share of the light that blooms (bloomSource: the emitted light and the highlights above bloomThreshold)
+    /// that the bloom moves into the glow around it: radiance + bloomMix * (bloom - source), with bloom the blur of the
+    /// source, so the energy is kept. 0 leaves the bloom and emission textures unread.
     float bloomMix = 0.0f;
-    /// > 0: exposed brightness (largest component) above which light counts towards the bloom in full.
-    float bloomThreshold = 1.0f;
-    /// [0, bloomThreshold]: half width of the soft knee around the threshold, where the counted share rises
-    /// quadratically from 0 (Kino / Unity quadratic threshold).
-    float bloomKnee = 0.5f;
+    /// > 0: exposed brightness (largest component) above which reflected light (highlights) blooms in full; emitted
+    /// light always blooms.
+    float bloomThreshold = 4.0f;
+    /// [0, bloomThreshold]: half width of the soft knee around the threshold, where the share of reflected light that
+    /// blooms rises quadratically from 0 (Kino / Unity quadratic threshold).
+    float bloomKnee = 1.0f;
     /// [0, 1]: darkening of the corners, radiance * (1 - vignette * r^4), r = 0 at the center and 1 in the corners.
     float vignette = 0.0f;
     /// [0, 1]: peak-to-peak noise added to the sRGB-encoded output before the target quantizes it (1/255: one 8-bit
@@ -205,13 +221,16 @@ static_assert(offsetof(PostUniforms, vignette) == 16);
 static_assert(offsetof(PostUniforms, ditherAmplitude) == 20);
 static_assert(sizeof(PostUniforms) == 32, "std140 block sizes are multiples of 16 bytes");
 
-/// Texture units of the post-processing passes: `layout(binding = N) uniform sampler2D` in common/post.glsl (Source)
-/// and post/post.frag (Bloom). They follow the material units, so that no pass rebinds a material texture.
+/// Texture units of the post-processing passes: `layout(binding = N) uniform sampler2D` in common/post.glsl (Source,
+/// Emission) and post/post.frag (Bloom). They follow the material units, so that no pass rebinds a material texture.
 enum class PostTextureUnit : std::uint32_t {
-    /// The image a pass filters: the HDR scene (first bloom downsample, post pass) or a bloom level.
+    /// The image a pass filters: the radiance of the HDR scene (first bloom downsample, post pass) or a bloom level.
     Source = kMaterialTextureSlotCount,
     /// The bloom of the view (the largest bloom level), read by the post pass.
     Bloom = kMaterialTextureSlotCount + 1,
+    /// The emitted part of the HDR scene's radiance (SceneOutput::Emission), read by the first bloom downsample and the
+    /// post pass.
+    Emission = kMaterialTextureSlotCount + 2,
 };
 
 [[nodiscard]] constexpr std::uint32_t toIndex(PostTextureUnit unit) noexcept {

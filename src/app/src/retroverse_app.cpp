@@ -1,5 +1,6 @@
 #include <rv/app/retroverse_app.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -38,9 +39,11 @@
 #include <rv/render/gl_device.hpp>
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
+#include <rv/render/post_processor.hpp>
 #include <rv/render/post_settings.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/shader_library.hpp>
+#include <rv/render/shader_program.hpp>
 #include <rv/render/texture.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/render/texture_defaults.hpp>
@@ -60,6 +63,7 @@
 #endif
 
 #include "app_input.hpp"
+#include "bloom_self_check.hpp"
 #include "free_roam.hpp"
 #include "srgb_self_check.hpp"
 
@@ -249,22 +253,65 @@ Expected<ScenePrograms> loadScenePrograms(gl::ShaderLibrary& library) {
     return programs;
 }
 
+/// The post-processing programs of `programs` in `library`, as the views and the self-checks use them.
+gl::PostShaders postShadersOf(const gl::ShaderLibrary& library, const ScenePrograms& programs) {
+    gl::PostShaders post;
+    post.bloomDownsampleFirst = &library.get(programs.bloomDownsampleFirst);
+    post.bloomDownsample = &library.get(programs.bloomDownsample);
+    post.bloomUpsample = &library.get(programs.bloomUpsample);
+    post.post = &library.get(programs.post);
+    return post;
+}
+
 /// --self-check srgb: logs the outcome; a check that fails, or cannot run, fails the run (exit code 3).
-void runSrgbCheck(AppContext& context, const gl::TextureDefaults& defaults, const std::filesystem::path& shaderRoot) {
-    const auto result = runSrgbSelfCheck(context.device(), defaults, shaderRoot);
-    if (!result) {
-        Error error = result.error();
+void runSrgbCheck(AppContext& context, const gl::TextureDefaults& defaults, const gl::ShaderProgram& unlit,
+                  const gl::PostShaders& post) {
+    const auto results = runSrgbSelfCheck(context.device(), defaults, unlit, post);
+    if (!results) {
+        Error error = results.error();
         error.message = "sRGB self-check could not run: " + error.message;
         context.failRun(std::move(error));
         return;
     }
-    const std::string summary =
-        fmt::format("linear {} stored as {}..{} in {} pixel(s), expected {} +- {}", kSrgbCheckLinearValue,
-                    result->minimum, result->maximum, result->pixelCount, result->expected, kSrgbCheckTolerance);
-    if (result->passed) {
+    const auto describe = [](const SrgbCheckResult& result) {
+        return fmt::format("{}..{} in {} pixel(s)", result.minimum, result.maximum, result.pixelCount);
+    };
+    const std::string summary = fmt::format(
+        "linear {} stored as {} without and {} with bloom and dithering, expected {} +- {}", kSrgbCheckLinearValue,
+        describe(results->plain), describe(results->postProcessed), results->plain.expected, kSrgbCheckTolerance);
+    if (results->passed()) {
         spdlog::info("sRGB self-check passed: {}", summary);
     } else {
         context.failRun(Error{ErrorCode::ValidationFailed, "sRGB self-check failed: " + summary, "--self-check=srgb"});
+    }
+}
+
+/// --self-check bloom: logs the measurements and the outcome; a check that fails, or cannot run, fails the run (exit
+/// code 3).
+void runBloomCheck(AppContext& context, const gl::PostShaders& post) {
+    const auto measurements = runBloomSelfCheck(context.device(), post);
+    if (!measurements) {
+        Error error = measurements.error();
+        error.message = "bloom self-check could not run: " + error.message;
+        context.failRun(std::move(error));
+        return;
+    }
+    const BloomCheckResult result = evaluateBloomCheck(*measurements);
+    const auto [lowest, highest] =
+        std::minmax_element(measurements->fireflyEnergies.begin(), measurements->fireflyEnergies.end());
+    const std::string summary = fmt::format(
+        "lit square below the threshold blooms {:g} ({}), emitter keeps {:.1f}% of its energy ({}, +- {:g}%), "
+        "single bright pixels bloom {:.3g} to {:.3g} ({:.1f}% from their mean: {}, at most {:g}%)",
+        measurements->litBloomPeak, result.litStaysOut ? "ok" : "FAILED", 100.0f * measurements->emitterEnergyRatio,
+        result.energyKept ? "ok" : "FAILED", 100.0f * kBloomCheckEnergyTolerance,
+        lowest == measurements->fireflyEnergies.end() ? 0.0f : *lowest,
+        highest == measurements->fireflyEnergies.end() ? 0.0f : *highest, 100.0f * result.fireflySpread,
+        result.firefliesSteady ? "ok" : "FAILED", 100.0f * kBloomCheckFireflyTolerance);
+    if (result.passed) {
+        spdlog::info("Bloom self-check passed: {}", summary);
+    } else {
+        context.failRun(
+            Error{ErrorCode::ValidationFailed, "bloom self-check failed: " + summary, "--self-check=bloom"});
     }
 }
 
@@ -359,10 +406,7 @@ struct RetroverseApp::State {
         shaderSet.pbr = &shaders->get(programs.pbr);
         shaderSet.unlit = &shaders->get(programs.unlit);
         shaderSet.debugLines = debugShader ? &shaders->get(*debugShader) : nullptr;
-        shaderSet.post.bloomDownsampleFirst = &shaders->get(programs.bloomDownsampleFirst);
-        shaderSet.post.bloomDownsample = &shaders->get(programs.bloomDownsample);
-        shaderSet.post.bloomUpsample = &shaders->get(programs.bloomUpsample);
-        shaderSet.post.post = &shaders->get(programs.post);
+        shaderSet.post = postShadersOf(*shaders, programs);
         const scene::EnvironmentSetup& environment = scene->environment();
         gl::RenderView view;
         view.camera = camera;
@@ -708,8 +752,17 @@ Status RetroverseApp::onInit(AppContext& context) {
                      *options.frameLimit - 1, options.screenshotWidth, options.screenshotHeight,
                      core::pathToUtf8(*options.screenshot));
     }
-    if (options.selfCheck == SelfCheck::Srgb) {
-        runSrgbCheck(context, *state->textureDefaults, state->shaders->root());
+    if (options.selfCheck) {
+        // With the programs the views use.
+        const gl::PostShaders post = postShadersOf(*state->shaders, state->programs);
+        switch (*options.selfCheck) {
+        case SelfCheck::Srgb:
+            runSrgbCheck(context, *state->textureDefaults, state->shaders->get(state->programs.unlit), post);
+            break;
+        case SelfCheck::Bloom:
+            runBloomCheck(context, post);
+            break;
+        }
     }
     m_state = std::move(state);
     return ok();

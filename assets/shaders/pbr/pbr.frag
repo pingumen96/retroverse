@@ -1,19 +1,18 @@
 #version 450 core
 // PBR_Base (style §25): metallic-roughness materials lit by the scene's point, spot and directional lights
 // (common/lights.glsl) and a hemispherical sky/ground ambient, with optional base color, metallic-roughness, normal,
-// occlusion and emissive textures. Output: linear scene radiance into the HDR target; exposure, bloom and tonemapping
-// belong to the post pass (post/post.frag).
+// occlusion and emissive textures. Output (common/scene_output.glsl): the linear scene radiance and its emissive part
+// into the HDR target; exposure, bloom and tonemapping belong to the post pass (post/post.frag).
 #include "common/common.glsl"
 #include "common/lights.glsl"
 #include "common/brdf.glsl"
 #include "common/material.glsl"
+#include "common/scene_output.glsl"
 
 layout(location = 0) in vec3 vWorldPosition;
 layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec4 vTangent;
 layout(location = 3) in vec2 vUv;
-
-layout(location = 0) out vec4 oColor;
 
 // Shading normal: the interpolated vertex normal, perturbed by the normal texture in the tangent frame of ADR-0002
 // (bitangent = cross(normal, tangent.xyz) * tangent.w), then reversed on the back faces of double-sided materials.
@@ -90,5 +89,5 @@ void main() {
                 environmentBrdf(surface.f0, surface.perceptualRoughness, NoV) * occlusion;
     radiance += emissive;
 
-    oColor = vec4(radiance, materialOutputAlpha(baseColor.a));
+    writeSceneOutput(radiance, emissive, materialOutputAlpha(baseColor.a));
 }

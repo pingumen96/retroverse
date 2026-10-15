@@ -15,7 +15,9 @@ namespace rv::gl {
 
 /// The render targets one output of the renderer (the window, a screenshot) is drawn through, all for the size of that
 /// output:
-///  - hdr(): GL_RGBA16F color + depth24/stencil8. The scene pass writes linear radiance into it (SceneRenderer).
+///  - hdr(): two GL_RGBA16F color attachments + depth24/stencil8. The scene pass writes the fragment outputs of the
+///    scene shaders into them (SceneOutput, SceneRenderer): the linear radiance (the first attachment, the one copies
+///    and readbacks take) and its emitted part, the light the bloom always spreads (PostProcessor).
 ///  - bloomLevels(): kBloomLevelCount GL_RGBA16F targets of bloomLevelSizes(size()), the bloom chain (PostProcessor).
 ///  - output(): GL_SRGB8_ALPHA8 color + depth24/stencil8. The post pass writes the tonemapped image into it, debug
 ///    lines and overlays are drawn over it; it is what the window shows (Framebuffer::blitToDefault) and what

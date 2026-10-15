@@ -29,6 +29,7 @@ add_library(rv_app STATIC
     src/app_host.cpp
     src/app_input.cpp
     src/app_logic.cpp
+    src/bloom_self_check.cpp
     src/free_roam.cpp
     src/retroverse_app.cpp
     src/scene_instance.cpp

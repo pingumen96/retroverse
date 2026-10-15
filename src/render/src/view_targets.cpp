@@ -5,12 +5,15 @@
 
 #include <fmt/format.h>
 
+#include <rv/render/uniform_blocks.hpp>
+
 namespace rv::gl {
 
 Expected<ViewTargets> ViewTargets::create(glm::ivec2 size, std::string_view debugName) {
     ViewTargets targets;
     targets.m_debugName = std::string(debugName);
-    auto hdr = Framebuffer::create(FramebufferDesc{size, ColorFormat::Rgba16F, true}, targets.m_debugName + ".hdr");
+    auto hdr = Framebuffer::create(FramebufferDesc{size, ColorFormat::Rgba16F, true, kSceneOutputCount},
+                                   targets.m_debugName + ".hdr");
     if (!hdr) {
         return propagate(hdr.error());
     }

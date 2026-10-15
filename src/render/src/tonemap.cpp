@@ -1,6 +1,7 @@
 #include <rv/render/tonemap.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 #include <glm/mat3x3.hpp>
 
@@ -32,6 +33,28 @@ glm::vec3 tonemap(const glm::vec3& radiance, float exposure) noexcept {
         exposed[i] = !(exposed[i] > 0.0f) ? 0.0f : std::min(exposed[i], kTonemapInputLimit);
     }
     return tonemapAcesFitted(exposed);
+}
+
+float greyRadianceForDisplay(float display, float exposure) noexcept {
+    if (!(std::isfinite(exposure) && exposure > 0.0f)) {
+        exposure = 1.0f;
+    }
+    // tonemap() of a grey rises monotonically with the radiance up to the input limit: bisect between 0 and there.
+    float low = 0.0f;
+    float high = kTonemapInputLimit / exposure;
+    if (!(display > 0.0f)) {
+        return low;
+    }
+    constexpr int kIterations = 64; // far beyond float precision: the interval stops shrinking much earlier
+    for (int iteration = 0; iteration < kIterations; ++iteration) {
+        const float middle = 0.5f * (low + high);
+        if (tonemap(glm::vec3(middle), exposure).g < display) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return high;
 }
 
 } // namespace rv::gl

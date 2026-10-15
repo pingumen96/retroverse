@@ -47,7 +47,8 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
 - `--model <file.gltf|.glb>` (not with `--scene`): model viewer, the model at the origin with a three-point light rig
   and a camera framing its bounds from the front right and above, on a dark mid-grey background (about sRGB 61, so
-  dark and light models both stand out); a file that cannot be loaded is shown as the magenta placeholder (logged).
+  dark and light models both stand out), without bloom or vignette; a file that cannot be loaded is shown as the
+  magenta placeholder (logged).
   `--debug-draw` draws debug lines over any scene or model: object bounds (amber), socket axes (X red, Y green, Z
   blue; the parts hidden by surfaces dimmed, so a socket under a surface still shows its origin) and a world grid on
   y = 0 (1 m cells in scenes; for a model, cells of the power of ten that makes it span 2 to 20 of them: 10 cm for a
@@ -55,22 +56,25 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
 - Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, GPU times
   of the scene pass and of the post-processing from timer queries, `GPU scene ... ms, post ... ms`, frame times) are
   logged once per second in developer builds and as `Frame stats of the run` at the end of every frame-limited run;
-  measure frame times with `--no-vsync` (at 1920x1080 on the reference GPU the post-processing takes about 0.2 ms:
+  measure frame times with `--no-vsync` (at 1920x1080 on the reference GPU the post-processing takes about 0.3 ms:
   `--width 1920 --height 1080 --no-vsync --hidden --exit-after-frames --frames 600`).
 - `--screenshot <file.png>` writes the last frame of a frame-limited run; a run that ends before that frame (Esc,
   window closed) exits 3 like a failed write. `--screenshot-size WxH` (default 1920x1080, independent of the
   window) also applies to F12.
-- `--self-check srgb` (frame-limited runs only) checks the output path after initialization: an unlit linear 0.5 grey
-  quad drawn into an HDR target and taken through the post pass (bloom, vignette and dithering off, exposure 1, the
-  ACES curve replaced by a clamp: `RV_POST_LINEAR_OUTPUT`) into an sRGB target must read back as 188 +- 2, else the run
-  exits 3. Use `retroverse.exe --self-check srgb --smoke --hidden --data-dir build/rvdata`.
+- `--self-check <name>` (frame-limited runs only) checks the rendering after initialization with the programs the
+  views use, else the run exits 3. `srgb`: an unlit grey quad of the radiance the tonemap shows as linear 0.5, drawn
+  into an HDR target and taken through the post-processing into an sRGB target, must read back as 188 +- 2, without
+  and then with bloom and dithering. `bloom`: known patterns through the bloom chain: a lit square just below the
+  highlight threshold must not bloom, an emitter must keep its energy (+-5%), a single very bright pixel must glow
+  alike (+-20%) whatever its value and place. Use `retroverse.exe --self-check srgb --smoke --hidden --data-dir
+  build/rvdata` (and `--self-check bloom`).
 - Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`)
-  and post-processed once per view: bloom of the light above a soft threshold (screens, lamp shades, neon and
-  highlights glow, the lit room stays crisp), vignette, exposure + ACES, dithering. The look is tuned in the scene files
-  (`environment` exposure, ambient and `clearColor`, which is background radiance post-processed like the surfaces;
-  `bloomStrength` 0.06, `bloomRadius` 0.7 and `vignette` 0.05 by default; `lights`, at most 8 point/spot plus one
-  directional), material presets in `assets/materials/base/materials.json`, shaders in
-  `assets/shaders/{common,pbr,unlit,post}`.
+  and post-processed once per view: bloom of the light surfaces emit (screens, lamp shades, neon) and of the
+  highlights above a soft threshold (lit paper, wood and walls never bloom), vignette, exposure + ACES, dithering. The
+  look is tuned in the scene files (`environment` exposure, ambient and `clearColor`, which is background radiance
+  post-processed like the surfaces; `bloomStrength`, the share of that light moved into the glow, 0.06, `bloomRadius`
+  0.7 and `vignette` 0.05 by default; `lights`, at most 8 point/spot plus one directional), material presets in
+  `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit,post}`.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Esc (gamepad B) leaves one level: it closes a popup of the developer overlay (a

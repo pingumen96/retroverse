@@ -14,16 +14,16 @@ This document describes the code that exists today. The target architecture is i
 | platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
 | render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe), the render targets of an output (`ViewTargets`: HDR scene target, bloom chain, sRGB output), bloom and the post pass (`PostProcessor`), debug lines (`DebugDraw`) | core, geometry, assets, scene, glad |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, popups closed by Back, dock space and its see-through scene area, rendering into the window or a screenshot) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials, Rendering, Log, Scene) | core, input, scene, platform, render, imgui |
-| app | `rv_app` | Composition root: application host, main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the model viewer (`--model`), screenshots, the sRGB self-check, the developer overlay's panels wired to the app state (developer builds) | all of the above |
+| app | `rv_app` | Composition root: application host, main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the model viewer (`--model`), screenshots, the sRGB and bloom self-checks, the developer overlay's panels wired to the app state (developer builds) | all of the above |
 
 Four GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
 | Sub-target | Part of | Content |
 |---|---|---|
-| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else release the mouse, else close the overlay, else quit), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
+| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else release the mouse, else close the overlay, else quit), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`, `evaluateBloomCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
 | `rv_devui_model` | devui | Built in every configuration: the frame time history of the Stats panel (`FrameTimeHistory`), the overlay's input routing (`routeOverlayEvent`) and mouse capture hand-over (`CaptureHandover`), the Log panel's copy of the log (`LogView`), where the overlay lands in a screenshot (`fitOverlayCapture`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
-| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and ambient packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the post-processing of a view (`post_settings.hpp`: `PostSettings` from the scene environment, `postSettingsFor`; its `PostUniforms` block, `makePostUniforms`; the bloom strength per level, `bloomMix`, the radius as the upsampling scatter, `bloomScatter`, the threshold and knee, the bloom level sizes, `bloomLevelSizes`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, which tests use to predict displayed colors), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
+| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and ambient packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the post-processing of a view (`post_settings.hpp`: `PostSettings` from the scene environment, `postSettingsFor`; its `PostUniforms` block, `makePostUniforms`, the bloom strength as its mix; the radius as the upsampling scatter, `bloomScatter`; the highlight threshold and knee; the bloom level sizes, `bloomLevelSizes`), the fragment outputs of the scene shaders (`SceneOutput`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, which tests use to predict displayed colors, and its inverse for greys, `greyRadianceForDisplay`), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
 
 `core`, `geometry`, `input`, `assets`, `scene` and the four sub-targets are **GPU-free**: they never reach SDL3,
 glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
@@ -31,7 +31,7 @@ a context. `render` receives the OpenGL function loader as a function pointer an
 `platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a hidden window, the
 fullscreen shortcut) is tested by its own executable, `rv_platform_tests` (label `unit`, SDL but no OpenGL), so
 `rv_tests` stays SDL-free. Because `rv_render_uniforms` is GPU-free, tests check its std140 mirrors, material flags,
-texture units, tonemapping constants and bloom filter weights against the GLSL sources.
+texture units, fragment outputs, tonemapping constants and bloom filter weights against the GLSL sources.
 
 Cross-module contracts written by independent work streams (prefab parameters and sockets, material names, scene
 files, manifests, shader sources and uniform blocks) are pinned by `tests/unit/integration`, which builds the real
@@ -42,7 +42,7 @@ geometry, resolves the real materials and preprocesses the real shaders.
 - **Scene:** `--scene <name|file>` (default `m0_testroom`) is loaded with `scene::loadSceneDescription`; `--model
   <file>` instead builds the model viewer scene (`app::makeModelViewerScene`: the model at the origin, a camera framing
   its bounds from the front right and above, a three-point light rig sized to it, a neutral environment whose dark
-  mid-grey background, shown as about sRGB 61, sets off black plastic as well as ivory).
+  mid-grey background, shown as about sRGB 61, sets off black plastic as well as ivory, without bloom or vignette).
   `app::SceneInstance` (`rv/app/scene_instance.hpp`) turns the description into drawable content, the reusable step
   between a scene and the renderer: `scene::buildSceneGeometry` builds every prefab or primitive once per kind and
   parameters (the 24 cartridges of the test room share one shell mesh and one label mesh, `ScenePart::meshKey`),
@@ -103,7 +103,9 @@ geometry, resolves the real materials and preprocesses the real shaders.
   (derivatives are undefined after it).
   Shader families (`scene::ShaderKind`): `Pbr` (`pbr/pbr.vert` + `pbr/pbr.frag`) and `Unlit` (`pbr/pbr.vert` +
   `unlit/unlit_emissive.frag`: base color * texture * emissive strength). Both write linear scene radiance, neither
-  exposed nor tonemapped: the post pass does that once for the whole view.
+  exposed nor tonemapped (the post pass does that once for the whole view), and the part of it they emit
+  (`common/scene_output.glsl`, `gl::SceneOutput`: the emissive term of a lit material, all of an unlit one's light)
+  into the two attachments of the HDR target.
 - **Textures:** `TextureCache` uploads each source once (asset files, `pattern:<name>:<title>:<seed>@WxH` patterns,
   decoded model images; keys include the color space and the wrap mode) as immutable `GL_RGBA8` / `GL_SRGB8_ALPHA8`
   textures with full mip chains. A missing or broken source is logged once and drawn as the checker (style §21).
@@ -119,23 +121,28 @@ geometry, resolves the real materials and preprocesses the real shaders.
   `gl::ViewTargets` to its sRGB output with the `gl::PostSettings` of the view (`gl::postSettingsFor` the scene's
   environment: exposure, `bloomStrength`, `bloomRadius`, `vignette`, and one 8-bit step of dither noise), in passes
   that draw one fullscreen triangle each without a vertex buffer (`post/fullscreen.vert`, an empty vertex array, the
-  sources on texture units 5 and 6, `gl::PostTextureUnit`, with a bilinear sampler clamped to the edges; parameters in
-  `PostUniforms` at binding 3, `common/post.glsl`). Bloom (Jimenez 2014), when its strength is above 0: the light of
-  the scene above a soft threshold (exposed brightness 1, knee 0.5, `bloomExcess`: lit walls and wood stay out,
-  screens, lamp shades, neon and highlights bloom) is downsampled into 6 levels of half, a quarter, ... of the view
-  with the 13-tap filter, the first level with the Karis average against fireflies (`RV_BLOOM_KARIS`); then, from
-  the smallest level up, the 3 x 3 tent upsampling of each level is mixed into the next larger one by the
-  fixed-function blend (constant alpha `bloomScatter(bloomRadius)`). Filters and blend keep the energy of the image.
-  The post pass (`post/post.frag`) replaces the share `bloomMix(bloomStrength)` of the light above the threshold by
-  its bloom (each of the 6 levels takes the strength, so 0.06 moves about 31% of that light: the usual strengths of
-  0.04 to 0.08 of chains that sum their levels give the same soft glow, but energy is moved, never added), applies the
-  vignette, the exposure and the ACES fitted curve (`common/tonemap.glsl`, mirrored on the CPU by `gl::tonemap`), and
-  dithers the result with interleaved gradient noise in its sRGB encoding against banding. A program that never built
-  falls back: without the bloom programs the view is composited without bloom, without the post program the HDR scene
-  is copied to the output as it is (clamped, neither exposed nor tonemapped). At 1920x1080 the post-processing takes
-  about 0.2 ms on the reference GPU.
+  sources on texture units 5 to 7, `gl::PostTextureUnit`, with a bilinear sampler clamped to the edges; parameters in
+  `PostUniforms` at binding 3, `common/post.glsl`). Bloom (Jimenez 2014), localized (style §4.3), when its strength is
+  above 0: the light of the scene that blooms (`bloomSource`: all the light surfaces emit, from the HDR target's
+  emission attachment, so screens, lamp shades and neon glow however bright they are, and of the reflected light only
+  what is above a soft threshold at exposed brightness 4, knee 1, `gl::kBloomThreshold`: the mirror-like highlights
+  of the lights; lit paper, wood, plastic and walls, shown at most near sRGB 240 below exposed 3, never bloom) is
+  downsampled into 6 levels of half, a quarter, ... of the view with the 13-tap filter, the first level with the
+  Karis average against fireflies (`RV_BLOOM_KARIS`: every tap weighted by 1 / (1 + its exposed luminance) times its
+  share of the filter, so a lone very bright pixel adds about what a pixel of exposed luminance 1 adds, whatever its
+  value and wherever it falls under the pixel grid, and its glow does not pulse as the camera moves; the edges of
+  bright areas lose a little of their glow); then, from the smallest level up, the 3 x 3 tent upsampling of each level
+  is mixed into the next larger one by the fixed-function blend (constant alpha `bloomScatter(bloomRadius)`). Filters
+  and blend keep the energy of the image. The post pass (`post/post.frag`) replaces the share `bloomStrength` of the
+  light that blooms by its bloom (energy is moved, never added: 0.04 to 0.08 is subtle), applies the vignette, the
+  exposure and the ACES fitted curve (`common/tonemap.glsl`, mirrored on the CPU by `gl::tonemap`), and dithers the
+  result with interleaved gradient noise in its sRGB encoding against banding. A program that never built falls back:
+  without the bloom programs the view is composited without bloom, without the post program the HDR scene is copied
+  to the output as it is (clamped, neither exposed nor tonemapped). At 1920x1080 the post-processing takes about
+  0.3 ms on the reference GPU.
 - **Frames:** every view is rendered through a `gl::ViewTargets`, the targets of one output, all of its size: the HDR
-  scene target (`GL_RGBA16F` color + depth24/stencil8), the 6 bloom levels (`GL_RGBA16F`, `gl::bloomLevelSizes`) and
+  scene target (two `GL_RGBA16F` color attachments, the radiance and its emitted part, `gl::SceneOutput`, +
+  depth24/stencil8), the 6 bloom levels (`GL_RGBA16F`, `gl::bloomLevelSizes`) and
   the output (`GL_SRGB8_ALPHA8` color + depth24/stencil8), which the post pass writes with `GL_FRAMEBUFFER_SRGB`
   enabled, so shaders output linear values and the target stores sRGB. The window and the screenshots each keep their
   own `ViewTargets`, reallocated only when their size changes (a complete new set first, so a failure keeps the old
@@ -144,11 +151,17 @@ geometry, resolves the real materials and preprocesses the real shaders.
   last, into the default framebuffer, with `GL_FRAMEBUFFER_SRGB` disabled (Dear ImGui's colors are sRGB already); the
   backend changes GL state behind the `RenderStateCache`, which is invalidated afterwards. A frame whose window targets
   cannot be allocated clears the window to black (`Framebuffer::clearDefault`) and still draws the overlay over it, so
-  its log shows why. `RenderView::wireframe` draws the scene pass with `glPolygonMode(GL_LINE)`. `--self-check srgb`
-  proves the output path: an unlit linear 0.5 grey quad drawn with the scene's unlit program into the HDR target of
-  8x8 `ViewTargets`, taken by the `PostProcessor` to the output with bloom, vignette and dithering off, exposure 1 and
-  the post program built with `RV_POST_LINEAR_OUTPUT` (a clamp instead of the ACES curve), must read back as
-  188 +- 2.
+  its log shows why. `RenderView::wireframe` draws the scene pass with `glPolygonMode(GL_LINE)`. Two self-checks run
+  the programs the views use on the GPU. `--self-check srgb` proves the output path: an unlit grey quad of the
+  radiance that the CPU mirror of the tonemap shows as linear 0.5 (`gl::greyRadianceForDisplay`), drawn with the
+  scene's unlit program into the HDR target of 8x8 `ViewTargets` and taken by the `PostProcessor` to the output, must
+  read back as 188 +- 2, once with exposure 1 and bloom, vignette and dithering off (the GPU's ACES curve against its
+  CPU mirror), once with bloom and dithering on (a uniform field, which neither may change). `--self-check bloom`
+  writes known patterns straight into the HDR target of 512x512 `ViewTargets` (scissored clears) and reads the
+  largest bloom level back as floats (`Framebuffer::readLinearPixels`): a lit square just below the highlight knee
+  must not bloom at all, an emitter square must keep its energy within 5% (98.6% on the reference GPU), and a single
+  pixel 100 and 1000 times brighter than white, at the four places of a 2x2 pixel block, must bloom alike within
+  20% (2.6%).
 - **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view through a second
   `ViewTargets` at `--screenshot-size` (default 1920x1080, independent of the window; the bloom levels scale with it,
   so the glow covers the same share of the image), read the output back through an `RGBA8` texture view

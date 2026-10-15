@@ -58,26 +58,18 @@ std::string_view statusName(GLenum status) noexcept {
 }
 
 struct Attachments {
-    TextureObject color;
+    std::array<TextureObject, kMaxColorAttachments> colors;
     RenderbufferObject depthStencil;
     FramebufferObject framebuffer;
 };
 
-Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& debugName) {
-    const glm::ivec2 limit = maxFramebufferSize();
-    if (desc.size.x < 1 || desc.size.y < 1 || desc.size.x > limit.x || desc.size.y > limit.y) {
-        return makeError(
-            ErrorCode::OutOfRange,
-            fmt::format("framebuffer size {}x{} is outside 1x1..{}x{}", desc.size.x, desc.size.y, limit.x, limit.y),
-            debugName);
-    }
-    Attachments attachments;
-
+/// Creates a color texture of `desc` with immutable storage, labeled `label`.
+Expected<TextureObject> createColorTexture(const FramebufferDesc& desc, const std::string& label) {
     GLuint color = 0;
     glCreateTextures(GL_TEXTURE_2D, 1, &color);
-    attachments.color = TextureObject(color);
+    TextureObject texture(color);
     if (color == 0) {
-        return makeError(ErrorCode::GraphicsError, "glCreateTextures returned no texture", debugName);
+        return makeError(ErrorCode::GraphicsError, "glCreateTextures returned no texture", label);
     }
     glTextureStorage2D(color, 1, internalFormat(desc.colorFormat), desc.size.x, desc.size.y);
     // Storage only becomes immutable when the allocation succeeded (GL_OUT_OF_MEMORY otherwise).
@@ -87,13 +79,31 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
         return makeError(ErrorCode::GraphicsError,
                          fmt::format("could not allocate a {}x{} {} color texture", desc.size.x, desc.size.y,
                                      toString(desc.colorFormat)),
-                         debugName);
+                         label);
     }
     glTextureParameteri(color, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTextureParameteri(color, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTextureParameteri(color, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTextureParameteri(color, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    detail::setObjectLabel(GL_TEXTURE, color, debugName + ".color");
+    detail::setObjectLabel(GL_TEXTURE, color, label);
+    return texture;
+}
+
+Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& debugName) {
+    const glm::ivec2 limit = maxFramebufferSize();
+    if (desc.size.x < 1 || desc.size.y < 1 || desc.size.x > limit.x || desc.size.y > limit.y) {
+        return makeError(
+            ErrorCode::OutOfRange,
+            fmt::format("framebuffer size {}x{} is outside 1x1..{}x{}", desc.size.x, desc.size.y, limit.x, limit.y),
+            debugName);
+    }
+    if (desc.colorAttachments < 1 || desc.colorAttachments > kMaxColorAttachments) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("{} color attachments requested, 1 to {} supported", desc.colorAttachments,
+                                     kMaxColorAttachments),
+                         debugName);
+    }
+    Attachments attachments;
 
     GLuint framebuffer = 0;
     glCreateFramebuffers(1, &framebuffer);
@@ -101,7 +111,18 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
     if (framebuffer == 0) {
         return makeError(ErrorCode::GraphicsError, "glCreateFramebuffers returned no framebuffer", debugName);
     }
-    glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, color, 0);
+    std::array<GLenum, kMaxColorAttachments> drawBuffers{};
+    for (std::size_t index = 0; index < desc.colorAttachments; ++index) {
+        // The first attachment keeps the plain ".color" label of single-attachment framebuffers.
+        const std::string label = index == 0 ? debugName + ".color" : fmt::format("{}.color{}", debugName, index);
+        auto color = createColorTexture(desc, label);
+        if (!color) {
+            return propagate(color.error());
+        }
+        drawBuffers[index] = GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(index);
+        glNamedFramebufferTexture(framebuffer, drawBuffers[index], color->id(), 0);
+        attachments.colors[index] = std::move(*color);
+    }
 
     if (desc.depthStencil) {
         GLuint depthStencil = 0;
@@ -122,7 +143,7 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
         glNamedFramebufferRenderbuffer(framebuffer, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthStencil);
     }
 
-    glNamedFramebufferDrawBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
+    glNamedFramebufferDrawBuffers(framebuffer, static_cast<GLsizei>(desc.colorAttachments), drawBuffers.data());
     glNamedFramebufferReadBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
     const GLenum status = glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
@@ -155,7 +176,7 @@ Expected<Framebuffer> Framebuffer::create(const FramebufferDesc& desc, std::stri
     Framebuffer framebuffer;
     framebuffer.m_desc = desc;
     framebuffer.m_debugName = std::move(name);
-    framebuffer.m_color = std::move(attachments->color);
+    framebuffer.m_colors = std::move(attachments->colors);
     framebuffer.m_depthStencil = std::move(attachments->depthStencil);
     framebuffer.m_framebuffer = std::move(attachments->framebuffer);
     return framebuffer;
@@ -177,7 +198,7 @@ Status Framebuffer::resize(glm::ivec2 size) {
     m_desc = desc;
     m_framebuffer = std::move(attachments->framebuffer);
     m_depthStencil = std::move(attachments->depthStencil);
-    m_color = std::move(attachments->color);
+    m_colors = std::move(attachments->colors);
     return ok();
 }
 
@@ -194,13 +215,17 @@ void Framebuffer::clear(const glm::vec4& colorLinear) const {
         return;
     }
     glClearNamedFramebufferfv(m_framebuffer.id(), GL_COLOR, 0, glm::value_ptr(colorLinear));
+    constexpr std::array<GLfloat, 4> kZero{0.0f, 0.0f, 0.0f, 0.0f};
+    for (std::size_t index = 1; index < m_desc.colorAttachments; ++index) {
+        glClearNamedFramebufferfv(m_framebuffer.id(), GL_COLOR, static_cast<GLint>(index), kZero.data());
+    }
     if (m_depthStencil.valid()) {
         glClearNamedFramebufferfi(m_framebuffer.id(), GL_DEPTH_STENCIL, 0, 1.0f, 0);
     }
 }
 
-void Framebuffer::bindColorTexture(GLuint unit) const {
-    glBindTextureUnit(unit, m_color.id());
+void Framebuffer::bindColorTexture(GLuint unit, std::size_t attachment) const {
+    glBindTextureUnit(unit, attachment < m_desc.colorAttachments ? m_colors[attachment].id() : 0);
 }
 
 void Framebuffer::copyDepthStencilTo(const Framebuffer& destination) const {
@@ -265,13 +290,13 @@ Expected<assets::ImageData> Framebuffer::readPixels() const {
 
     // The sRGB question of texture queries is answered differently by drivers; a GL_RGBA8 view of the same storage
     // has no sRGB encoding, so its texels are returned exactly as stored.
-    GLuint source = m_color.id();
+    GLuint source = m_colors[0].id();
     TextureObject view;
     if (m_desc.colorFormat == ColorFormat::Srgb8Alpha8) {
         GLuint viewId = 0;
         glGenTextures(1, &viewId); // glTextureView needs a name that has never been bound: not glCreateTextures
         view = TextureObject(viewId);
-        glTextureView(viewId, GL_TEXTURE_2D, m_color.id(), GL_RGBA8, 0, 1, 0, 1);
+        glTextureView(viewId, GL_TEXTURE_2D, m_colors[0].id(), GL_RGBA8, 0, 1, 0, 1);
         source = viewId;
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
@@ -280,6 +305,25 @@ Expected<assets::ImageData> Framebuffer::readPixels() const {
     // Texture rows start at the bottom of the framebuffer; images are stored top row first.
     assets::flipRowsInPlace(image);
     return image;
+}
+
+Expected<std::vector<glm::vec4>> Framebuffer::readLinearPixels() const {
+    if (!valid() || m_desc.colorFormat != ColorFormat::Rgba16F) {
+        return makeError(ErrorCode::InvalidArgument, "linear pixels are read from rgba16f framebuffers only",
+                         m_debugName);
+    }
+    const std::size_t pixelCount = static_cast<std::size_t>(m_desc.size.x) * static_cast<std::size_t>(m_desc.size.y);
+    const std::size_t byteCount = pixelCount * sizeof(glm::vec4);
+    if (byteCount > static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("{}x{} pixels do not fit one readback", m_desc.size.x, m_desc.size.y),
+                         m_debugName);
+    }
+    std::vector<glm::vec4> pixels(pixelCount);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glGetTextureImage(m_colors[0].id(), 0, GL_RGBA, GL_FLOAT, static_cast<GLsizei>(byteCount), pixels.data());
+    return pixels;
 }
 
 } // namespace rv::gl

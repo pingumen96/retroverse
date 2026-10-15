@@ -25,11 +25,15 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   Rendering panel). Rooms of very different brightness (a dim arcade next to the lit hub, I4) need an exposure per room
   or an automatic one (a luminance histogram of the HDR target, adapted over a second or two).
 - Cheaper HDR targets for the Low profile (style §20.1): the scene and bloom targets are `GL_RGBA16F` (8 bytes per
-  pixel); `GL_R11F_G11F_B10F` would halve their bandwidth on integrated GPUs (no alpha, fewer mantissa bits: check the
-  dark gradients for banding first).
-- Bloom threshold per theme: the soft threshold is fixed (`gl::kBloomThreshold`, `gl::kBloomKnee`: exposed brightness 1,
-  knee 0.5). A neon-heavy theme pack (`ArcadeAfterDark`, style §14.4) may want it lower or a stronger strength; make
-  them scene keys when such a room exists.
+  pixel, and the scene target has two attachments, the radiance and its emitted part); `GL_R11F_G11F_B10F` would halve
+  their bandwidth on integrated GPUs (no alpha, fewer mantissa bits: check the dark gradients for banding first; the
+  emission attachment needs no alpha of its own, the blend reads the shader's).
+- Bloom of thin emitters and highlights per theme: emitted light always blooms, reflected light above a fixed soft
+  threshold (`gl::kBloomThreshold`, `gl::kBloomKnee`: exposed brightness 4, knee 1), and the per-tap Karis average of
+  the first bloom level, which keeps fireflies steady, also keeps only about 60 to 75% of the glow of emitters one or
+  two pixels wide (neon tubes seen from afar; large screens and shades keep about 95%). A neon-heavy theme pack
+  (`ArcadeAfterDark`, style §14.4) may want a stronger `bloomStrength`, a Karis weight on a wider luminance scale
+  (`1 / (1 + luminance / k)`) or a lower highlight threshold; make them scene keys when such a room exists.
 - Bounce light for dark rooms: the hemispheric ambient cannot lift 4%-albedo walls out of the ACES toe, so the
   test room relies on direct light. It uses all 8 point/spot slots of the lights block (two wall washers, a pendant
   fill, the floor lamp's bulb and two shade cones, the magenta accent, the entrance washer), and the upper walls and

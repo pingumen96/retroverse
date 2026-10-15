@@ -77,9 +77,11 @@ core::ArgParser makeParser() {
         .flag("debug-draw", "Draw debug lines over the scene: object bounds, socket axes and a world grid.")
         .option("self-check", "name",
                 "Run a rendering check after initialization and fail the run (exit code 3) if it does not pass; "
-                "only with --smoke or --exit-after-frames. srgb: an unlit linear 0.5 grey quad, drawn into an HDR "
-                "target and taken through the post pass (bloom, vignette and dithering off, no tonemap curve), must "
-                "be stored as sRGB 188 (+-2) by the sRGB output target.")
+                "only with --smoke or --exit-after-frames. srgb: an unlit grey quad that the tonemap shows as linear "
+                "0.5, drawn into an HDR target and taken through the post-processing of the views (bloom, vignette "
+                "and dithering off, then bloom and dithering on), must be stored as sRGB 188 (+-2) by the sRGB output "
+                "target. bloom: a lit surface below the bloom threshold must not bloom, an emitter must keep its "
+                "energy (+-5%) and a single very bright pixel must glow alike (+-20%) wherever it falls.")
         .flag("devui-open", "Show the developer overlay (F1) from the first frame; developer builds only. A "
                             "frame-limited run fails (exit code 3) when the overlay cannot start.")
         .flag("screenshot-include-ui",
@@ -245,7 +247,7 @@ Status applySelfCheck(const core::ParsedArgs& args, CommandLineOptions& options)
     const std::string name = args.value("self-check").value_or("");
     const auto check = selfCheckFromString(name);
     if (!check) {
-        return makeError(ErrorCode::InvalidArgument, "unknown check (expected srgb)", "--self-check=" + name);
+        return makeError(ErrorCode::InvalidArgument, "unknown check (expected srgb or bloom)", "--self-check=" + name);
     }
     if (!options.frameLimit) {
         return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames", "--self-check");

@@ -18,11 +18,14 @@ inline constexpr std::size_t kBloomLevelCount = 6;
 /// Peak-to-peak dither noise of the views drawn into 8-bit targets: one quantization step.
 inline constexpr float kDitherAmplitude = 1.0f / 255.0f;
 
-/// Exposed brightness (the largest component of radiance * exposure) above which light blooms in full, and the half
-/// width of the soft knee below it (PostUniforms::bloomThreshold, bloomKnee): 1 is where the ACES curve starts to
-/// compress, so screens, lamp shades, neon and highlights glow while the lit room keeps its crisp detail.
-inline constexpr float kBloomThreshold = 1.0f;
-inline constexpr float kBloomKnee = 0.5f;
+/// Exposed brightness (the largest component of radiance * exposure) above which the light a surface reflects blooms in
+/// full, and the half width of the soft knee below it (PostUniforms::bloomThreshold, bloomKnee). The light surfaces
+/// emit (screens, lamp shades, neon: SceneOutput::Emission) always blooms, whatever its brightness; of the reflected
+/// light only highlights do: the knee starts at exposed 3, which the ACES curve shows as about sRGB 240, above the
+/// brightest lit paper, wood and plastic, while the mirror-like highlights of the lights on glossy surfaces are 10 to
+/// 1000 times brighter. So the lit room keeps its crisp detail and only what shines glows.
+inline constexpr float kBloomThreshold = 4.0f;
+inline constexpr float kBloomKnee = 1.0f;
 
 /// What the post-processing does to the HDR scene of a view (gl::PostProcessor): bloom, exposure, vignette, the ACES
 /// fitted tonemap and dithering. The defaults change nothing but the tonemap: exposure 1, no bloom, no vignette, no
@@ -30,8 +33,8 @@ inline constexpr float kBloomKnee = 0.5f;
 struct PostSettings {
     /// > 0: multiplies the scene radiance before tonemapping.
     float exposure = 1.0f;
-    /// [0, 1]: how much light above the bloom threshold the bloom spreads, per bloom level (bloomMix()); 0 skips the
-    /// bloom chain.
+    /// [0, 1]: share of the light that blooms (all the emitted light, the highlights above the threshold) moved into
+    /// the soft glow around it (PostUniforms::bloomMix); 0 skips the bloom chain. 0.04 to 0.08 is subtle.
     float bloomStrength = 0.0f;
     /// [0, 1]: how far the bloom spreads (bloomScatter()).
     float bloomRadius = 0.0f;
@@ -46,16 +49,9 @@ struct PostSettings {
 [[nodiscard]] PostSettings postSettingsFor(const scene::EnvironmentSetup& environment) noexcept;
 
 /// The PostUniforms block of `settings` with every value in its documented range: a non-finite or non-positive
-/// exposure becomes 1; the bloom mix is bloomMix(bloomStrength); the vignette and the dither amplitude are clamped to
+/// exposure becomes 1; the bloom strength (the bloom mix), the vignette and the dither amplitude are clamped to
 /// [0, 1], non-finite values becoming 0; the bloom threshold and knee are kBloomThreshold and kBloomKnee.
 [[nodiscard]] PostUniforms makePostUniforms(const PostSettings& settings) noexcept;
-
-/// Share of the light above the bloom threshold that the bloom spreads (PostUniforms::bloomMix) for a bloom strength:
-/// each of the kBloomLevelCount levels takes `strength` of what the levels before it left, 1 - (1 - strength)^n in
-/// all, close to n * strength for the usual small strengths (the mix of the summed bloom levels in Jimenez 2014's
-/// chain, which a strength of 0.04 to 0.08 keeps subtle). `strength` is clamped to [0, 1], non-finite values becoming
-/// 0.
-[[nodiscard]] float bloomMix(float strength) noexcept;
 
 /// Weight of the wider level in each upsampling step of the bloom chain, level[i] = mix(level[i],
 /// upsampled(level[i + 1]), scatter), from the bloom radius: `radius` clamped to [0, 1], non-finite values becoming 0.

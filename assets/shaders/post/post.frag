@@ -1,12 +1,9 @@
 #version 450 core
-// Post pass (rv::gl::PostProcessor, common/post.glsl): the HDR scene (uSource, one texel per fragment: the output
-// target has its size) with the share uBloomMix of its light above the bloom threshold replaced by the bloom (the tent
-// upsampling of the largest bloom level), the vignette, then exposure and the ACES fitted curve (common/tonemap.glsl),
-// dithered against banding. The output is linear; the sRGB target encodes it (GL_FRAMEBUFFER_SRGB).
-//
-// RV_POST_LINEAR_OUTPUT (injected define) replaces the ACES curve with a clamp to [0, 1], so that the display value is
-// the exposed radiance itself: the sRGB self-check takes linear 0.5 through this pass, with bloom, vignette and
-// dithering off, and expects the target to store sRGB 188.
+// Post pass (rv::gl::PostProcessor, common/post.glsl): the HDR scene (uSource and its emitted part uEmission, one
+// texel per fragment: the output target has its size) with the share uBloomMix of its light that blooms (bloomSource)
+// replaced by the bloom (the tent upsampling of the largest bloom level), the vignette, then exposure and the ACES
+// fitted curve (common/tonemap.glsl), dithered against banding. The output is linear; the sRGB target encodes it
+// (GL_FRAMEBUFFER_SRGB). The sRGB self-check takes a grey through this very pass (rv::app::runSrgbSelfCheck).
 #include "common/common.glsl"
 #include "common/post.glsl"
 #include "common/tonemap.glsl"
@@ -53,17 +50,15 @@ vec3 dither(vec3 display, vec2 pixel) {
 }
 
 void main() {
-    vec3 radiance = sanitizeRadiance(texelFetch(uSource, ivec2(gl_FragCoord.xy), 0).rgb);
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    vec3 radiance = sanitizeRadiance(texelFetch(uSource, pixel, 0).rgb);
     if (uBloomMix > 0.0) {
-        // The bloom holds the blurred excess, so this moves light without adding or removing any.
+        // The bloom holds the blurred light that blooms, so this moves light without adding any.
+        vec3 emission = sanitizeRadiance(texelFetch(uEmission, pixel, 0).rgb);
         vec3 bloom = sanitizeRadiance(tentFilter(uBloom, vUv));
-        radiance += uBloomMix * (bloom - bloomExcess(radiance));
+        radiance += uBloomMix * (bloom - bloomSource(radiance, emission));
     }
     radiance *= vignette(vUv);
-#if defined(RV_POST_LINEAR_OUTPUT)
-    vec3 display = clamp(radiance * uExposure, 0.0, 1.0);
-#else
     vec3 display = tonemap(radiance, uExposure);
-#endif
     oColor = vec4(dither(display, gl_FragCoord.xy), 1.0);
 }

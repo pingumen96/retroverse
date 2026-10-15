@@ -32,13 +32,14 @@ struct PostShaders {
 /// The post-processing of a view (style §4.3, spec §14.2): from the HDR scene of a ViewTargets to its sRGB output, in
 /// passes that each draw one fullscreen triangle without a vertex buffer (post/fullscreen.vert, an empty vertex array):
 ///  1. Bloom, when the settings ask for it (bloomStrength > 0), into ViewTargets::bloomLevels(): the light of the scene
-///     above the bloom threshold (soft knee, kBloomThreshold) is downsampled level by level with the 13-tap filter,
-///     the first level with the Karis average against fireflies; then, from the smallest level up, each level is mixed
-///     with the tent upsampling of the next smaller one by the fixed-function blend: level = mix(level, upsampled,
-///     bloomScatter(bloomRadius)), the blend constant.
+///     that blooms (common/post.glsl bloomSource: all the light surfaces emit, from the HDR target's emission
+///     attachment, and the reflected light above the soft threshold kBloomThreshold, the highlights) is downsampled
+///     level by level with the 13-tap filter, the first level with the Karis average against fireflies; then, from the
+///     smallest level up, each level is mixed with the tent upsampling of the next smaller one by the fixed-function
+///     blend: level = mix(level, upsampled, bloomScatter(bloomRadius)), the blend constant.
 ///  2. The post pass (post/post.frag) into ViewTargets::output() with GL_FRAMEBUFFER_SRGB enabled: the share
-///     bloomMix(bloomStrength) of the light above the threshold replaced by its bloom (energy is moved, never added),
-///     the vignette, exposure and the ACES fitted curve, then dithering.
+///     bloomStrength of the light that blooms replaced by its bloom (energy is moved, never added), the vignette,
+///     exposure and the ACES fitted curve, then dithering.
 /// The parameters reach the shaders through the PostUniforms block (UniformBinding::Post, written per call); the
 /// sources are bound to the PostTextureUnit units with a bilinear sampler clamped to the edges. A GpuTimer measures
 /// both steps. When the block cannot be written, the view is shown without post-processing like without the post

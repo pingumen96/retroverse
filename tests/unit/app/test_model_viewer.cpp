@@ -147,6 +147,9 @@ TEST_CASE("app/model_viewer: the background sets off dark and light models alike
         CHECK(shown[channel] <= 68.0f);
     }
     CHECK(std::abs(shown.r - shown.b) < 8.0f);
+    // Inspection shows the model's own colors: no glow over emissive or glossy parts, no darkened corners.
+    CHECK(scene.environment.bloomStrength == 0.0f);
+    CHECK(scene.environment.vignette == 0.0f);
 }
 
 TEST_CASE("app/model_viewer: the model summary names its size, or that it has none", "[app][model_viewer]") {

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
@@ -27,18 +30,25 @@ enum class ColorFormat : std::uint8_t {
 /// "srgb8_alpha8" or "rgba16f".
 [[nodiscard]] std::string_view toString(ColorFormat format) noexcept;
 
+/// Most color attachments a Framebuffer has (FramebufferDesc::colorAttachments).
+inline constexpr std::size_t kMaxColorAttachments = 2;
+
 struct FramebufferDesc {
     /// Pixels; each side in [1, min(GL_MAX_FRAMEBUFFER_WIDTH/HEIGHT, GL_MAX_TEXTURE_SIZE, GL_MAX_RENDERBUFFER_SIZE)]
     /// (at least 16384 on any OpenGL 4.5 implementation).
     glm::ivec2 size{0};
+    /// Format of every color attachment.
     ColorFormat colorFormat = ColorFormat::Srgb8Alpha8;
     /// Adds a GL_DEPTH24_STENCIL8 renderbuffer at GL_DEPTH_STENCIL_ATTACHMENT.
     bool depthStencil = true;
+    /// Color attachments, 1 to kMaxColorAttachments: GL_COLOR_ATTACHMENT0 + i is the draw buffer of fragment output i.
+    std::size_t colorAttachments = 1;
 };
 
-/// Move-only offscreen render target (DSA): a color texture with immutable storage (one mip level, linear filtering,
-/// clamped to edge) at GL_COLOR_ATTACHMENT0, which is both its draw and read buffer, and an optional depth24/stencil8
-/// renderbuffer. Rendering into it starts with GLDevice::beginPass(); later passes sample its color texture
+/// Move-only offscreen render target (DSA): one or more color textures with immutable storage (one mip level, linear
+/// filtering, clamped to edge) at GL_COLOR_ATTACHMENT0, 1, ..., all drawn into at once, and an optional
+/// depth24/stencil8 renderbuffer. The first color attachment is the read buffer: the copies, blitToDefault() and
+/// readPixels() take it. Rendering into it starts with GLDevice::beginPass(); later passes sample its color textures
 /// (bindColorTexture()); blitToDefault() presents it in the window and readPixels() returns its pixels for screenshots.
 /// Its pixel rows are bottom-first like every OpenGL framebuffer. A default-constructed or moved-from Framebuffer is
 /// empty. Main thread only.
@@ -46,8 +56,9 @@ class Framebuffer {
 public:
     Framebuffer() noexcept = default;
 
-    /// Allocates the attachments and checks completeness. Errors: OutOfRange for a size outside the limits above,
-    /// GraphicsError when an allocation fails (out of memory) or the driver reports the framebuffer incomplete.
+    /// Allocates the attachments and checks completeness. Errors: OutOfRange for a size or a color attachment count
+    /// outside the limits above, GraphicsError when an allocation fails (out of memory) or the driver reports the
+    /// framebuffer incomplete.
     [[nodiscard]] static Expected<Framebuffer> create(const FramebufferDesc& desc, std::string_view debugName);
 
     /// Reallocates the attachments at `size`; their contents are undefined afterwards. No-op for the current size. On
@@ -60,14 +71,15 @@ public:
     /// Binds the default framebuffer (the window's back buffer).
     static void unbind();
 
-    /// Clears color to `colorLinear` (linear RGBA, encoded to sRGB by an Srgb8Alpha8 attachment while
-    /// GL_FRAMEBUFFER_SRGB is enabled), depth to 1 and stencil to 0. Like glClear it honors the color, depth and
-    /// stencil write masks, which GLDevice::beginPass() enables.
+    /// Clears the first color attachment to `colorLinear` (linear RGBA, encoded to sRGB by an Srgb8Alpha8 attachment
+    /// while GL_FRAMEBUFFER_SRGB is enabled), the others to 0, depth to 1 and stencil to 0. Like glClear it honors the
+    /// color, depth and stencil write masks, which GLDevice::beginPass() enables, and the scissor test.
     void clear(const glm::vec4& colorLinear) const;
 
-    /// Binds the color texture to texture unit `unit` (glBindTextureUnit) for a later pass to sample; the sampler
-    /// bound to that unit, if any, decides how. Do not sample it while this framebuffer is bound for drawing.
-    void bindColorTexture(GLuint unit) const;
+    /// Binds color attachment `attachment` to texture unit `unit` (glBindTextureUnit) for a later pass to sample; the
+    /// sampler bound to that unit, if any, decides how. An attachment this framebuffer does not have unbinds the unit.
+    /// Do not sample it while this framebuffer is bound for drawing.
+    void bindColorTexture(GLuint unit, std::size_t attachment = 0) const;
 
     /// Copies the depth and stencil values into `destination`'s (glBlitNamedFramebuffer, exact), so that what is drawn
     /// there afterwards is depth-tested against this framebuffer's scene. Does nothing unless both have the same size
@@ -93,16 +105,21 @@ public:
     /// them; Rgba16F returns linear values clamped to [0, 1]. Waits for pending rendering (a pipeline stall: meant for
     /// screenshots and tests, not for every frame).
     [[nodiscard]] Expected<assets::ImageData> readPixels() const;
+    /// Reads the first color attachment of an Rgba16F framebuffer back as linear RGBA, bottom row first (texel order),
+    /// the values as stored. A pipeline stall like readPixels(): meant for checks and tests. Errors: InvalidArgument
+    /// for an empty or Srgb8Alpha8 framebuffer, OutOfRange when the pixels do not fit one readback.
+    [[nodiscard]] Expected<std::vector<glm::vec4>> readLinearPixels() const;
 
     [[nodiscard]] bool valid() const noexcept { return m_framebuffer.valid(); }
     [[nodiscard]] glm::ivec2 size() const noexcept { return m_desc.size; }
     [[nodiscard]] ColorFormat colorFormat() const noexcept { return m_desc.colorFormat; }
+    [[nodiscard]] std::size_t colorAttachments() const noexcept { return m_desc.colorAttachments; }
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
 private:
     FramebufferDesc m_desc;
     std::string m_debugName;
-    TextureObject m_color;
+    std::array<TextureObject, kMaxColorAttachments> m_colors;
     RenderbufferObject m_depthStencil;
     FramebufferObject m_framebuffer;
 };
