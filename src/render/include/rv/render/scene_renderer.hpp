@@ -114,7 +114,9 @@ struct RenderView {
 /// The registries must outlive the renderer. Main thread only; destroy it while the GL context is current.
 class SceneRenderer {
 public:
-    /// Instances per region of the instance buffer at creation; it grows when a view needs more.
+    /// Instances per region of the instance buffer at creation; it grows when a view needs more. A view writes the
+    /// instances of its plan and of its shadow map into one region (instancing_stress: 1001 + 1000, so it grows on the
+    /// first frame).
     static constexpr std::size_t kInitialInstanceCapacity = 1024;
 
     /// Creates the uniform buffers, the instance buffer, the shadow map, the ambient occlusion pass, the
@@ -167,7 +169,8 @@ private:
     MeshRegistry* m_meshes = nullptr;
     const MaterialRegistry* m_materials = nullptr;
     UniformBuffer<FrameUniforms> m_frameUniforms;
-    /// The frame block of the shadow map: the key light's view, read by the depth program while the map is drawn.
+    /// The frame block of the shadow map: the key light's view (time 0: the depth programs read none, so the block
+    /// changes only with the light), read by the depth program while the map is drawn.
     UniformBuffer<FrameUniforms> m_shadowFrameUniforms;
     UniformBuffer<LightsUniforms> m_lightsUniforms;
     UniformBuffer<ShadowUniforms> m_shadowUniforms;

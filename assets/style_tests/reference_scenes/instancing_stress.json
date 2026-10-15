@@ -3,7 +3,9 @@
 // and one for the floor. The background radiance is exposed and tonemapped like the scene: #383A3C is displayed as
 // #202224. The sun casts shadows (M0 step 11): the reference of the directional shadow map, orthographic and fitted
 // to the casters (the block; the floor casts none), which the shadow pass draws in 3 instanced draw calls; the upper
-// boxes shade the tops of the lower ones and the block shades the floor behind it.
+// boxes shade the tops of the lower ones and the block shades the floor behind it. The view's 1001 instances and the
+// shadow map's 1000 share one region of the renderer's instance buffer, more than the 1024 it starts with: the log
+// reads "Instance buffer 'SceneRenderer.Instances' grown to ..." on the first frame (instancing_growth grows mid-run).
 {
   "schemaVersion": 1,
   "name": "instancing_stress",

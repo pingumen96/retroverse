@@ -8,9 +8,9 @@
 //     pixel at twice its coordinates and its normal (both from the scene's depth), then kSsaoSampleCount points of the
 //     hemisphere above the surface (the kernel scaled by the radius and rotated about the normal by a 4 x 4 pattern of
 //     angles): a sample counts as occluded where the scene's surface at its pixel is in front of it by more than the
-//     bias, weighted down when that surface lies farther than the radius from the point (a foreground object does not
-//     darken the background around it). Output: the unoccluded share raised to the intensity, and the point's
-//     distance for the blur.
+//     bias, weighted down as that surface's depth nears the radius away from the point's, and not at all beyond it (a
+//     foreground object farther than the radius from the background does not darken it: no halos). Output: the
+//     unoccluded share raised to the intensity, and the point's distance for the blur.
 //  2. ssao/ssao_blur.frag, at full resolution: the 4 x 4 half-resolution estimates around each pixel (one of each
 //     rotation of the pattern, so the noise averages out), each weighted by how close its depth is to the depth the
 //     pixel's surface has at its place (the plane of the pixel, from the gradient of the reciprocal depth, which is
@@ -55,4 +55,11 @@ vec3 viewPosition(vec2 pixel, float depth) {
 float sceneDepthAt(ivec2 pixel) {
     ivec2 last = textureSize(uSceneDepth, 0) - 1;
     return texelFetch(uSceneDepth, clamp(pixel, ivec2(0), last), 0).r;
+}
+
+// Whether full-resolution `pixel` lies inside the target. Differences of the depth along the image use only neighbors
+// inside it: clamped to the border, a neighbor would repeat the border pixel's depth, a step with no change in depth
+// that looks like a surface facing the camera whatever its orientation.
+bool insideScene(ivec2 pixel) {
+    return all(greaterThanEqual(pixel, ivec2(0))) && all(lessThan(pixel, textureSize(uSceneDepth, 0)));
 }

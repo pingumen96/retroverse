@@ -20,6 +20,7 @@
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/texture_cache.hpp>
+#include <rv/scene/batch_planner.hpp>
 
 namespace rv::app {
 namespace {
@@ -136,14 +137,15 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
         }
     }
 
-    for (const scene::RenderItem& item : instance.m_items) {
-        if (item.castsShadow) {
-            const core::Aabb bounds = resources.meshes.bounds(item.mesh);
-            if (!bounds.isEmpty()) {
-                instance.m_shadowCasterBounds.expand(bounds.transformed(item.model));
-            }
-        }
-    }
+    // What the shadow pass draws (gl::SceneRenderer plans it like this): blended items cast no shadow.
+    scene::PlanOptions casters;
+    casters.localBounds = [&resources](scene::MeshHandle mesh) {
+        return resources.meshes.bounds(mesh);
+    };
+    casters.passOf = [&resources](scene::MaterialHandle material) {
+        return resources.materials.pass(material);
+    };
+    instance.m_shadowCasterBounds = scene::shadowCasterBounds(instance.m_items, casters);
 
     instance.m_sceneLights = description.lights;
     instance.m_environment = description.environment;
@@ -176,6 +178,7 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
 
 void SceneInstance::applyLighting() {
     gl::PackedLights packed = gl::packLights(m_sceneLights, m_environment);
+    gl::requireShadowCasters(packed, m_sceneLights, m_shadowCasterBounds);
     m_lights = packed.uniforms;
     m_droppedLights = std::move(packed.dropped);
     m_shadowLight = packed.shadowLight;

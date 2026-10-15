@@ -19,20 +19,31 @@ const float RV_SSAO_MIN_SCALE = 0.5;
 // Largest relative error of the plane test of viewTangent: a 1 cm step 20 m away still fails it, a plane at any angle
 // passes it whatever the depth precision.
 const float RV_SSAO_PLANE_TOLERANCE = 0.0005;
+// Plane error of a side of viewTangent whose neighbors are not all inside the target: that side is never chosen.
+const float RV_SSAO_OUTSIDE = 1e30;
+// Share of the radius up to which an occluder's depth distance from the point counts fully (fading out to the radius).
+const float RV_SSAO_FULL_RANGE = 0.75;
+
+// Plane error of the side of full-resolution `pixel` towards `step`: how far the next two neighbors that way, `near`
+// (window depth, at pixel + step) and the one after it, extrapolate the center's reciprocal distance `own`.
+// RV_SSAO_OUTSIDE when the second neighbor lies outside the target (at the image's borders).
+float planeError(ivec2 pixel, ivec2 step, float near, float own) {
+    float error = abs(2.0 * inverseDistance(near) - inverseDistance(sceneDepthAt(pixel + 2 * step)) - own);
+    return insideScene(pixel + 2 * step) ? error : RV_SSAO_OUTSIDE;
+}
 
 // Tangent of the surface at full-resolution `pixel` (whose view-space position is `center`, window depth `depth`) along
 // `step`: towards the side whose neighbors continue the center's plane. The reciprocal distance is linear in screen
 // space on a plane, so the side where the two next neighbors extrapolate the center's best is on its surface; this
-// keeps normals right along creases (a wall meeting the floor) and the edges of objects. `reliable` becomes false when
-// neither side does (a sliver one pixel thin, such as the top of a baseboard seen from afar): its normal is unknown.
+// keeps normals right along creases (a wall meeting the floor) and the edges of objects, and at the image's borders,
+// where only the side inside the target is used. `reliable` becomes false when neither side continues the plane (a
+// sliver one pixel thin, such as the top of a baseboard seen from afar): its normal is unknown.
 vec3 viewTangent(ivec2 pixel, ivec2 step, vec3 center, float depth, inout bool reliable) {
     float before1 = sceneDepthAt(pixel - step);
-    float before2 = sceneDepthAt(pixel - 2 * step);
     float after1 = sceneDepthAt(pixel + step);
-    float after2 = sceneDepthAt(pixel + 2 * step);
     float own = inverseDistance(depth);
-    float errorBefore = abs(2.0 * inverseDistance(before1) - inverseDistance(before2) - own);
-    float errorAfter = abs(2.0 * inverseDistance(after1) - inverseDistance(after2) - own);
+    float errorBefore = planeError(pixel, -step, before1, own);
+    float errorAfter = planeError(pixel, step, after1, own);
     reliable = reliable && min(errorBefore, errorAfter) <= RV_SSAO_PLANE_TOLERANCE * own;
     if (errorAfter < errorBefore) {
         return viewPosition(vec2(pixel + step), after1) - center;
@@ -81,8 +92,10 @@ void main() {
             continue; // off screen: nothing is known there, the sample counts as unoccluded
         }
         float surfaceZ = viewZ(textureLod(uSceneDepth, uv, 0.0).r);
-        // An occluder much farther from the point than the radius (an object in front of a distant wall) fades out.
-        float range = smoothstep(0.0, 1.0, uSsaoRadius / max(abs(position.z - surfaceZ), 1e-4));
+        // Only occluders within the radius of the point count: an object farther in front of a wall than the radius (a
+        // lamp pole, the face of a TV) leaves no halo on it. The depth buffer holds front surfaces only, so the weight
+        // fades with their depth distance from the point, fully counted up to RV_SSAO_FULL_RANGE of the radius.
+        float range = 1.0 - smoothstep(RV_SSAO_FULL_RANGE * uSsaoRadius, uSsaoRadius, abs(position.z - surfaceZ));
         occlusion += (surfaceZ >= samplePosition.z + uSsaoBias ? 1.0 : 0.0) * range;
     }
     float visibility = 1.0 - occlusion / float(RV_SSAO_SAMPLE_COUNT);

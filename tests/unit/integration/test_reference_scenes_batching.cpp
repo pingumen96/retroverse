@@ -29,6 +29,10 @@
 
 namespace {
 
+/// gl::SceneRenderer::kInitialInstanceCapacity: matrices per region of the instance buffer at creation (each view
+/// writes its plan's instances and its shadow map's into one region).
+constexpr std::size_t kInitialInstanceCapacity = 1024;
+
 /// A reference scene's content as the application registers it: render items whose handles are indices into the
 /// plan's meshes and materials (the registries hand them out in plan order).
 struct ReferenceContent {
@@ -112,6 +116,37 @@ TEST_CASE("integration/batching: instancing_stress draws 1000 boxes in three bat
     CHECK(boxes == 1000);
 }
 
+TEST_CASE("integration/batching: instancing_stress's sun shadows the block through a map fitted to it",
+          "[integration][batching][shadow]") {
+    // The directional shadow map as gl::SceneRenderer plans it: fitted to what the shadow pass draws.
+    const ReferenceContent reference = loadReferenceContent("instancing_stress");
+    rv::gl::PackedLights lights = rv::gl::packLights(reference.scene.lights, reference.scene.environment);
+    const rv::core::Aabb casterBounds = rv::scene::shadowCasterBounds(reference.items, reference.planOptions());
+    rv::gl::requireShadowCasters(lights, reference.scene.lights, casterBounds);
+    REQUIRE(lights.shadowLight.casts());
+    CHECK(lights.shadowLight.type == rv::scene::LightType::Directional);
+    // The floor casts no shadow: the casters are the 10 x 10 x 10 boxes, 0.3 m wide and 0.6 m apart, on the floor.
+    CHECK(rv::core::nearlyEqual(casterBounds.min, glm::vec3(-2.85f, 0.0f, -2.85f), 1e-4f));
+    CHECK(rv::core::nearlyEqual(casterBounds.max, glm::vec3(2.85f, 5.7f, 2.85f), 1e-4f));
+    const std::optional<rv::gl::ShadowProjection> shadow =
+        rv::gl::shadowProjectionFor(lights.shadowLight, casterBounds, rv::gl::kShadowMapResolution);
+    REQUIRE(shadow.has_value());
+    CHECK_FALSE(shadow->perspective);
+
+    rv::scene::PlanOptions options = reference.planOptions();
+    options.frustum = rv::scene::Frustum::fromViewProjection(shadow->viewProjection);
+    options.eye = shadow->eye;
+    options.shadowCastersOnly = true;
+    const rv::scene::BatchPlan plan = rv::scene::BatchPlanner{}.plan(reference.items, options);
+    CHECK(plan.culledItems == 0);
+    CHECK(plan.instanceTransforms.size() == 1000);
+    CHECK(plan.batches.size() == 3);
+    // With the view's 1001 instances a frame writes about 2000 into one region of the instance buffer: more than the
+    // renderer starts with, so it grows on the first frame (unlike instancing_growth, which grows mid-run).
+    const PlannedView view = planReferenceView("instancing_stress");
+    CHECK(view.batches.instanceTransforms.size() + plan.instanceTransforms.size() > kInitialInstanceCapacity);
+}
+
 TEST_CASE("integration/batching: the test room draws fewer batches than parts", "[integration][batching]") {
     const PlannedView view = planReferenceView("m0_testroom");
     CHECK(view.content.items.size() == 71);
@@ -128,8 +163,10 @@ TEST_CASE("integration/batching: the test room draws fewer batches than parts", 
 
 TEST_CASE("integration/batching: instancing_growth outgrows the initial instance regions when turned around",
           "[integration][batching]") {
-    // gl::SceneRenderer::kInitialInstanceCapacity: matrices per region of the instance buffer at creation.
-    constexpr std::size_t kInitialInstanceCapacity = 1024;
+    // No light casts shadows: a view writes the instances of its own plan only.
+    const rv::gl::PackedLights lights =
+        rv::gl::packLights(loadReferenceContent("instancing_growth").scene.lights, rv::scene::EnvironmentSetup{});
+    CHECK_FALSE(lights.shadowLight.casts());
     // The start view writes few instances, so the meshes are attached to the first buffer at frame 0...
     const PlannedView start = planReferenceView("instancing_growth");
     CHECK(start.content.items.size() == 1 + 36 + 3 * 768);
@@ -152,12 +189,7 @@ TEST_CASE("integration/batching: the test room's key light shadows the furniture
     CHECK(lights.shadowNote.empty());
     CHECK(lights.shadowLight.type == rv::scene::LightType::Spot);
 
-    rv::core::Aabb casterBounds;
-    for (const rv::scene::RenderItem& item : reference.items) {
-        if (item.castsShadow) {
-            casterBounds.expand(reference.content.meshes[item.mesh.value].mesh->bounds.transformed(item.model));
-        }
-    }
+    const rv::core::Aabb casterBounds = rv::scene::shadowCasterBounds(reference.items, reference.planOptions());
     const std::optional<rv::gl::ShadowProjection> shadow =
         rv::gl::shadowProjectionFor(lights.shadowLight, casterBounds, rv::gl::kShadowMapResolution);
     REQUIRE(shadow.has_value());
@@ -175,20 +207,21 @@ TEST_CASE("integration/batching: the test room's key light shadows the furniture
     };
     for (const rv::scene::SceneObject& object : reference.scene.objects) {
         INFO("object " << object.id);
-        if (object.kind == "rug") {
-            CHECK_FALSE(casts(object)); // castsShadows false: a flat rug would only shadow the floor under it
+        if (object.kind == "rug" || object.kind == "poster_frame") {
+            // castsShadows false: a flat rug would only shadow the floor under it, a poster is thin geometry
+            CHECK_FALSE(casts(object));
         } else if (object.kind == "shelf" || object.kind == "cartridge" || object.kind == "tv_cabinet" ||
-                   object.kind == "crt" || object.kind == "console_cartridge" || object.kind == "poster_frame") {
+                   object.kind == "crt" || object.kind == "console_cartridge") {
             CHECK(casts(object));
         }
     }
     // The ceiling above the light is outside its map; everything else of the room that casts is in it or culled.
     CHECK(plan.culledItems > 0);
-    const auto rugParts =
+    const auto nonCasting =
         static_cast<std::size_t>(std::count_if(reference.items.begin(), reference.items.end(),
                                                [](const rv::scene::RenderItem& item) { return !item.castsShadow; }));
-    CHECK(rugParts >= 1);
-    CHECK(plan.instanceTransforms.size() + plan.culledItems + rugParts == reference.items.size());
+    CHECK(nonCasting >= 5); // the rug and the two parts of each poster
+    CHECK(plan.instanceTransforms.size() + plan.culledItems + nonCasting == reference.items.size());
     // Batched like the view: the 24 cartridge shells share one draw.
     std::size_t largest = 0;
     for (const rv::scene::Batch& batch : plan.batches) {

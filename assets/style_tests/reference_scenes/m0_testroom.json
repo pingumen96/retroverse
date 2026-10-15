@@ -23,7 +23,10 @@
   // Shadows and ambient occlusion (M0 step 11, style 4.1 contact and shadow cues): the ceiling key light is the one
   // light that casts shadows, so the furniture it lights is grounded on the floor and the wall; the screen-space
   // ambient occlusion darkens the ambient light in the corners and where objects meet, which lets the ambient be a
-  // little stronger than before without flattening the room.
+  // little stronger than before without flattening the room. Thin geometry casts no shadow: the posters' frames, 2 cm
+  // deep, would cast shadows a few millimeters wide, narrower than the shadow filter, which the texels of the map break
+  // into dashes. The floor lamp lights its corner with its own lights, which cast no shadows (one light per view
+  // does), so it shows no shadow of its own.
   // Post-processing (M0 step 10, style 4.3 and 15.2): only emitted light and highlights bloom, so the lit room, the
   // posters and the cartridge labels stay as crisp as without bloom. A bloom stronger than the default makes the hero
   // CRT and the lamp shade glow softly onto the bezel and the wall; the radius, tighter than the default, keeps the
@@ -42,21 +45,28 @@
   },
   "lights": [
     // Key (the first light that casts shadows): a warm-white downlight in the ceiling between the room's center and the
-    // hero wall, tilted 39 degrees towards the wall, whose wide cone ends at the horizontal (39 + 50 degrees) like
-    // every ceiling light here, so it never lights the ceiling. It lights the collection, the TV corner and the floor
-    // in front of them as one pool, and its shadows ground the furniture: the shelf boards shade the compartments below
-    // them and the shelf a band of the wall beside it, the CRT, the console and the cabinet throw long soft shadows on
-    // the wall and the floor to their right, the cabinet darkens the floor under it.
-    {"name": "ceiling_key", "type": "spot", "position": [-0.2, 2.92, -2.2], "target": [-0.2, 0.0, -4.6],
-     "color": "#FFE0C0", "intensity": 110.0, "range": 12.0, "innerConeDeg": 28.0, "outerConeDeg": 50.0,
+    // hero wall, tilted 44 degrees towards the wall, whose wide cone ends at the horizontal (44 + 46 degrees) like
+    // every ceiling light here, so it never lights the ceiling. It lights the collection, the left poster and the TV
+    // corner, and its shadows ground the furniture: the shelf boards shade the compartments below them and the shelf a
+    // band of the wall beside it, the CRT, the console and the cabinet throw soft shadows on the wall and the floor to
+    // their right, the cabinet darkens the floor under it. It is aimed at the wall rather than at the floor, which
+    // reflects about 2.6 times as much light as the walls: its pool on the floor stays well below the CRT, the focal
+    // point (style 6.1), which a downlight wide enough to also reach the room's center would outshine.
+    {"name": "ceiling_key", "type": "spot", "position": [0.1, 2.92, -2.45], "target": [0.1, 0.0, -5.25],
+     "color": "#FFE0C0", "intensity": 80.0, "range": 12.0, "innerConeDeg": 22.0, "outerConeDeg": 46.0,
      "castsShadows": true},
-    // Fill: a dim pendant 0.9 m under the ceiling, east of center, gives the dark ceiling a soft glow (well below
-    // clipping) and keeps the east wall readable.
-    {"name": "pendant_fill", "type": "point", "position": [1.2, 2.1, -2.0], "color": "#FFE0C0", "intensity": 16.0,
+    // Fill: a dim pendant 0.9 m under the ceiling, over the way from the room's center to the hero wall, lights the
+    // center of the room softly and gives the dark ceiling a soft glow (well below clipping).
+    {"name": "pendant_fill", "type": "point", "position": [0.4, 2.1, -1.4], "color": "#FFE0C0", "intensity": 16.0,
      "range": 10.0},
+    // Museum picture light: a narrow warm spot on the right poster and the wall between it and the TV, beyond the key's
+    // cone, keeps them in tungsten light (style 4.2: the magenta accent stays an accent); the CRT's shadow on the wall
+    // lies in its falloff.
+    {"name": "poster_wash", "type": "spot", "position": [3.25, 2.92, -3.6], "target": [3.05, 1.45, -5.0],
+     "color": "#FFE0C0", "intensity": 16.0, "range": 6.0, "innerConeDeg": 15.0, "outerConeDeg": 40.0},
     // SNES / 16-bit preset (style 4.2): tungsten dominant with a light magenta accent washing the TV corner.
     {"name": "accent_magenta", "type": "spot", "position": [3.0, 2.7, -3.0], "target": [1.62, 1.0, -4.67],
-     "color": "#B34DCE", "intensity": 9.5, "range": 7.0, "innerConeDeg": 22.0, "outerConeDeg": 55.0},
+     "color": "#B34DCE", "intensity": 7.0, "range": 7.0, "innerConeDeg": 22.0, "outerConeDeg": 55.0},
     // Practical light of the north-west corner. The bulb inside the floor lamp shade (LightSource socket) is dim: the
     // shade is opaque but only the key light casts shadows, so the light leaves through its openings, two cones from
     // the bulb matching them (bottom: 55 degrees, top: 47 degrees), and the emissive shade carries the glow.
@@ -184,15 +194,18 @@
      "params": {"width": 2.4, "depth": 1.6, "thickness": 0.012},
      "materials": {"fabric": "MAT_Carpet_Ornate"}, "castsShadows": false, "collides": false},
 
-    // Museum accents: two framed posters on the hero wall (back on the wall surface, 2 mm off to avoid z-fighting).
+    // Museum accents: two framed posters on the hero wall (back on the wall surface, 2 mm off to avoid z-fighting),
+    // thin geometry that casts no shadow.
     {"id": "poster_left", "prefab": "poster_frame", "position": [0.15, 1.55, -4.998],
      "params": {"width": 0.5, "height": 0.7, "frameWidth": 0.03, "depth": 0.02},
      "materials": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
-     "textures": {"picture": {"pattern": "cover", "title": "PIXEL PILOTS", "seed": 1201}}, "collides": false},
+     "textures": {"picture": {"pattern": "cover", "title": "PIXEL PILOTS", "seed": 1201}}, "castsShadows": false,
+     "collides": false},
     {"id": "poster_right", "prefab": "poster_frame", "position": [3.45, 1.55, -4.998],
      "params": {"width": 0.5, "height": 0.7, "frameWidth": 0.03, "depth": 0.02},
      "materials": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
-     "textures": {"picture": {"pattern": "cover", "title": "SUNSET SPEEDWAY", "seed": 1307}}, "collides": false},
+     "textures": {"picture": {"pattern": "cover", "title": "SUNSET SPEEDWAY", "seed": 1307}}, "castsShadows": false,
+     "collides": false},
 
     // Practical light in the north-west corner; its bulb is the "floor_lamp_bulb" light.
     {"id": "floor_lamp", "prefab": "floor_lamp", "position": [-4.05, 0.0, -4.55],

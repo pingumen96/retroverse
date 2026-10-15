@@ -86,4 +86,11 @@ private:
     std::vector<Candidate> m_candidates;
 };
 
+/// World bounds of what a shadow map can draw of `items`: the items a plan with PlanOptions::shadowCastersOnly keeps
+/// before culling (a finite model matrix, castsShadow, not alpha-blended by `options.passOf`), each the bounds of its
+/// mesh (`options.localBounds`; meshes of unknown bounds add nothing) under its model matrix. Empty when nothing casts.
+/// The orthographic shadow map of a directional key light is fitted to them. The frustum, eye and shadowCastersOnly of
+/// `options` are not used.
+[[nodiscard]] core::Aabb shadowCasterBounds(std::span<const RenderItem> items, const PlanOptions& options);
+
 } // namespace rv::scene

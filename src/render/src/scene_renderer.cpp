@@ -132,8 +132,10 @@ bool SceneRenderer::updateUniforms(const RenderView& view, const scene::Camera& 
     if (!updateIfChanged(m_shadowUniforms, m_uploadedShadow, shadowBlock, "ShadowUniforms")) {
         return false;
     }
+    // The depth programs read the light's transforms only: a fixed time keeps the block of a static light unchanged, so
+    // it is written once.
     if (shadow && !updateIfChanged(m_shadowFrameUniforms, m_uploadedShadowFrame,
-                                   frameUniforms(shadow->view, shadow->projection, shadow->eye, view.timeSeconds),
+                                   frameUniforms(shadow->view, shadow->projection, shadow->eye, 0.0f),
                                    "ShadowFrameUniforms")) {
         return false;
     }

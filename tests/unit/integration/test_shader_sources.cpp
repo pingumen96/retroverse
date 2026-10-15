@@ -845,6 +845,14 @@ TEST_CASE("integration/shaders: the GLSL ambient occlusion block and texture uni
         CHECK_FALSE(std::regex_search(own, std::regex(R"(\bin\s+\w+\s+\w+\s*;)")));
     }
     CHECK(std::regex_search(glslWithoutComments("ssao/ssao.frag"), std::regex(R"(uProjection\s*\*)")));
+    // Depth differences (the estimate's normals, the blur's planes) use neighbors inside the target only: clamped to the
+    // border, a neighbor repeats the border pixel's depth, which reads as a surface facing the camera.
+    const auto estimate = functionBodies(glslWithoutComments("ssao/ssao.frag"));
+    REQUIRE(estimate.contains("planeError"));
+    CHECK(std::regex_search(estimate.at("planeError"), std::regex(R"(\binsideScene\s*\()")));
+    const auto blur = functionBodies(glslWithoutComments("ssao/ssao_blur.frag"));
+    REQUIRE(blur.contains("inverseDistanceSlope"));
+    CHECK(std::regex_search(blur.at("inverseDistanceSlope"), std::regex(R"(\binsideScene\s*\()")));
 }
 
 TEST_CASE("integration/shaders: the mesh programs share an invariant vertex stage", "[integration][shader]") {

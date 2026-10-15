@@ -419,3 +419,51 @@ TEST_CASE("scene/batch_planner: a shadow map plans the items that cast shadows, 
     CHECK(away.instanceTransforms.empty());
     CHECK(away.culledItems == 3);
 }
+
+TEST_CASE("scene/batch_planner: the shadow casters' bounds hold what a shadow map draws", "[scene][batch_planner]") {
+    // Material 4 is blended. Unit cubes at x = tag, z = -5.
+    PlanOptions options;
+    options.localBounds = unitCube;
+    options.passOf = [](MaterialHandle material) {
+        return material.value == 4 ? DrawPass::Blend : DrawPass::Opaque;
+    };
+    std::vector<RenderItem> items{
+        item(1, 1, ShaderKind::Pbr, 0.0f),   // caster
+        item(1, 1, ShaderKind::Pbr, 6.0f),   // casts no shadow (a rug)
+        item(1, 4, ShaderKind::Pbr, -9.0f),  // blended: never in a shadow map, so never in its fit
+        item(2, 1, ShaderKind::Unlit, 2.0f), // caster
+        item(1, 1, ShaderKind::Pbr, 0.0f),   // non-finite: dropped by the planner too
+    };
+    items[1].castsShadow = false;
+    items[4].model[3][1] = std::numeric_limits<float>::quiet_NaN();
+    // The frustum and the shadow flag of the options play no part.
+    rv::scene::Camera away;
+    away.setPose(glm::vec3(100.0f, 0.0f, 0.0f), 0.0f, 0.0f);
+    options.frustum = away.frustum();
+
+    const Aabb bounds = rv::scene::shadowCasterBounds(items, options);
+    REQUIRE_FALSE(bounds.isEmpty());
+    CHECK(bounds.min == glm::vec3(-0.5f, -0.5f, -5.5f));
+    CHECK(bounds.max == glm::vec3(2.5f, 0.5f, -4.5f));
+    // Without passOf every item counts as opaque, the blended one included (as in a plan without passes).
+    PlanOptions withoutPasses = options;
+    withoutPasses.passOf = nullptr;
+    CHECK(rv::scene::shadowCasterBounds(items, withoutPasses).min.x == -9.5f);
+
+    // Meshes of unknown bounds add nothing.
+    options.localBounds = [](MeshHandle mesh) {
+        return mesh.value == 2 ? Aabb{} : unitCube(mesh);
+    };
+    const Aabb known = rv::scene::shadowCasterBounds(items, options);
+    CHECK(known.min == glm::vec3(-0.5f, -0.5f, -5.5f));
+    CHECK(known.max == glm::vec3(0.5f, 0.5f, -4.5f));
+    // Nothing that casts, no items, or no mesh bounds at all: empty.
+    for (RenderItem& entry : items) {
+        entry.castsShadow = false;
+    }
+    CHECK(rv::scene::shadowCasterBounds(items, options).isEmpty());
+    CHECK(rv::scene::shadowCasterBounds({}, options).isEmpty());
+    items[0].castsShadow = true;
+    options.localBounds = nullptr;
+    CHECK(rv::scene::shadowCasterBounds(items, options).isEmpty());
+}

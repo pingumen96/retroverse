@@ -255,3 +255,51 @@ TEST_CASE("render/light_packing: a point or dropped key light casts no shadow an
     CHECK_FALSE(packed.shadowLight.casts());
     CHECK(packed.shadowNote.find("'ninth'") != std::string::npos);
 }
+
+TEST_CASE("render/light_packing: a directional key light without shadow casters casts no shadow and says why",
+          "[render][lights][shadow]") {
+    Light sun;
+    sun.name = "sun";
+    sun.type = LightType::Directional;
+    sun.direction = glm::vec3(-0.4f, -0.8f, -0.45f);
+    sun.castsShadows = true;
+    const std::vector<Light> lights{pointLight("fill", glm::vec3(0.0f, 2.0f, 0.0f)), sun};
+    const rv::core::Aabb casters = rv::core::Aabb::fromMinMax(glm::vec3(-1.0f), glm::vec3(1.0f));
+
+    // Something casts: the sun keeps its map, fitted to the casters.
+    PackedLights packed = rv::gl::packLights(lights, rv::scene::EnvironmentSetup{});
+    rv::gl::requireShadowCasters(packed, lights, casters);
+    REQUIRE(packed.shadowLight.casts());
+    CHECK(packed.shadowLight.index == rv::gl::kDirectionalShadowLight);
+    CHECK(packed.shadowNote.empty());
+
+    // Nothing casts: there is no map to fit, and the log and the Lights panel say so.
+    rv::gl::requireShadowCasters(packed, lights, rv::core::Aabb{});
+    CHECK_FALSE(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.find("'sun'") != std::string::npos);
+    CHECK(packed.shadowNote.find("directional") != std::string::npos);
+    CHECK(packed.uniforms.directionalIntensity == sun.intensity); // it still lights the scene
+
+    // A spot key light's map does not depend on the casters; without a key light nothing changes.
+    Light spot = pointLight("spot", glm::vec3(0.0f, 2.9f, 0.0f));
+    spot.type = LightType::Spot;
+    spot.outerConeDeg = 40.0f;
+    spot.castsShadows = true;
+    packed = rv::gl::packLights(std::vector<Light>{spot}, rv::scene::EnvironmentSetup{});
+    rv::gl::requireShadowCasters(packed, std::vector<Light>{spot}, rv::core::Aabb{});
+    CHECK(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.empty());
+    const std::vector<Light> unshadowed{pointLight("fill", glm::vec3(0.0f, 2.0f, 0.0f))};
+    packed = rv::gl::packLights(unshadowed, rv::scene::EnvironmentSetup{});
+    rv::gl::requireShadowCasters(packed, unshadowed, rv::core::Aabb{});
+    CHECK_FALSE(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.empty());
+
+    // A key light that cannot cast keeps the reason it already has.
+    Light bulb = pointLight("bulb", glm::vec3(0.0f, 2.0f, 0.0f));
+    bulb.castsShadows = true;
+    packed = rv::gl::packLights(std::vector<Light>{bulb}, rv::scene::EnvironmentSetup{});
+    const std::string pointNote = packed.shadowNote;
+    rv::gl::requireShadowCasters(packed, std::vector<Light>{bulb}, rv::core::Aabb{});
+    CHECK(packed.shadowNote == pointNote);
+}

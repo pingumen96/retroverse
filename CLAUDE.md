@@ -79,15 +79,17 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit,depth,ssao,post}`.
 - Shadows and ambient occlusion: the first light with `"castsShadows": true` is the key light. A spot key light gets a
   perspective 2048x2048 shadow map over twice its cone, a directional one an orthographic map fitted to the shadow
-  casters (objects with `castsShadows`, default true) and snapped to whole texels; point lights cast no shadow (the log
-  and the Lights panel say so: make key lights spots). The lit shader filters the map with a 3x3 tent of hardware
-  2x2 PCF fetches; slope-scaled depth bias and a normal offset of 1.5 texels keep surfaces from shadowing themselves
-  (no acne) with shadows attached to their casters; `"shadowStrength"` (0..1, default 1) on the light sets how much of
-  its light its shadows take away. Every view first draws a depth pre-pass, from which screen-space ambient occlusion
-  (`environment.ssao`: `{"enabled": true, "radius": 0.4, "intensity": 1.0}` by default; half-resolution estimate,
-  depth-aware blur) darkens the ambient light only, never a light's (a subtle effect in rooms lit mostly by lights).
-  The model viewer has neither. Shadows are world-locked (the maps depend on the light, not on the camera): walking
-  never makes them shimmer.
+  casters (objects with `castsShadows`, default true; blended ones cast nothing) and snapped to whole texels; point
+  lights cast no shadow, nor does a directional light while no object casts (the log and the Lights panel say so: make
+  key lights spots). The lit shader filters the map with a 3x3 tent of hardware 2x2 PCF fetches; slope-scaled depth
+  bias and a normal offset of 1.5 texels keep surfaces from shadowing themselves (no acne) with shadows attached to
+  their casters; `"shadowStrength"` (0..1, default 1) on the light sets how much of its light its shadows take away.
+  Thin geometry on walls (posters, signs) gets `"castsShadows": false` in scene files: its shadows would be narrower
+  than the filter and break into dashes. Every view first draws a depth pre-pass, from which screen-space ambient
+  occlusion (`environment.ssao`: `{"enabled": true, "radius": 0.4, "intensity": 1.0}` by default; half-resolution
+  estimate, depth-aware blur; occluders farther than the radius in depth count for nothing, so no halos) darkens the
+  ambient light only, never a light's (a subtle effect in rooms lit mostly by lights). The model viewer has neither.
+  Shadows are world-locked (the maps depend on the light, not on the camera): walking never makes them shimmer.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Esc (gamepad B) leaves one level: it closes a popup of the developer overlay (a
@@ -145,14 +147,19 @@ wall). Check the log for GL debug messages (`GL debug output summary: 0 high, 0 
 ceiling key light (`ceiling_key`) grounds the furniture: each shelf board shades the compartment below it and the shelf
 a band of the wall to its left, the CRT, the console and the cabinet throw soft shadows on the wall and the floor to
 their right, the floor under the cabinet is dark; zoom in on contact lines for acne (speckles on lit surfaces) and
-peter-panning (a lit gap between an object and its shadow). To judge one effect alone, render a scratch copy of the
-scene under `build/` (scene files are plain JSON with comments): the key light without `castsShadows`, `"ssao":
-{"enabled": false}`, or only a strong ambient (no lights) to see the ambient occlusion, then compare the two PNGs
-pixel by pixel. The other reference scenes: `material_test` (roughness grows along X, metallic along Y; the floor
-under the lowest spheres darkens a little), `instancing_stress` (1000 boxes in 4 draw calls; the sun casts the
-directional shadows; frame times with `--no-vsync`) and `instancing_growth`, which grows the renderer's instance buffer
-mid-run: turned around, it shows about 2000 boxes, more than the 1024 the buffer starts with (the log reads `Instance
-buffer 'SceneRenderer.Instances' grown to ...`; with `--frames 1` it must not):
+peter-panning (a lit gap between an object and its shadow). The floor lamp shows no shadow: its own lights, which cast
+none (one light per view does), light its corner (a deviation from the step 11 plan, which lists the lamp; BACKLOG
+"More shadowed lights"). The CRT stays the brightest surface: the key's pool on the floor, the right poster under its
+picture light and the room's center under the pendant are lit well below it, in tungsten light with a light magenta
+accent. To judge one effect alone, render a scratch copy of the scene under `build/` (scene files are plain JSON with
+comments): the key light without `castsShadows`, `"ssao": {"enabled": false}`, or only a strong ambient (no lights) to
+see the ambient occlusion, then compare the two PNGs pixel by pixel. The other reference scenes: `material_test`
+(roughness grows along X, metallic along Y; the floor under the lowest spheres darkens a little), `instancing_stress`
+(1000 boxes in 4 draw calls; the sun casts the directional shadows, so each frame writes about 2000 instances, the
+view's and the shadow map's, and the instance buffer grows on the first frame; frame times with `--no-vsync`) and
+`instancing_growth`, without shadows, which grows the renderer's instance buffer mid-run: turned around, it shows about
+2000 boxes, more than the 1024 the buffer starts with (the log reads `Instance buffer 'SceneRenderer.Instances' grown to
+...`; for `instancing_growth` with `--frames 1` it must not):
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --scene instancing_growth --exit-after-frames --frames 10 --fixed-dt 0.016667 `

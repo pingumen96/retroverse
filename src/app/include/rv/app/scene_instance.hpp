@@ -45,7 +45,8 @@ struct SceneResources {
 ///  - Render items: one per part and object instance, and one per model primitive and model instance.
 ///  - Lights and environment: the scene lights and ambient packed into the lights block (gl::packLights; lights
 ///    beyond its capacity are logged and left out), with the key light that casts the shadows (the first light with
-///    castsShadows, when it can: spot and directional lights) and the world bounds of the items that cast shadows. The
+///    castsShadows, when it can: a spot light, or the directional light when some item casts shadows,
+///    gl::requireShadowCasters) and the world bounds of what the shadow pass draws (scene::shadowCasterBounds). The
 ///    environment also holds the background radiance, the ambient occlusion and the post-processing (exposure, bloom,
 ///    vignette), which the renderer reads per view (gl::postSettingsFor). The developer overlay edits the lights and
 ///    the environment in place (sceneLights(), environment()) and repacks the lights with applyLighting().
@@ -82,17 +83,18 @@ public:
     /// post-processing of every view, edited in place by the developer overlay.
     [[nodiscard]] scene::EnvironmentSetup& environment() noexcept { return m_environment; }
     /// Packs sceneLights() and the ambient of environment() into lights(); the lights left out are droppedLights(), the
-    /// light that casts the shadows is shadowLight().
+    /// light that casts the shadows is shadowLight() (or shadowNote() says why none does).
     void applyLighting();
     /// Scene lights that the last packing left out, with the reason.
     [[nodiscard]] const std::vector<gl::DroppedLight>& droppedLights() const noexcept { return m_droppedLights; }
     /// The key light of the last packing: the light that casts the views' shadow (casts() is false for none).
     [[nodiscard]] const gl::ShadowLight& shadowLight() const noexcept { return m_shadowLight; }
-    /// Why the first light that asks for shadows casts none in the last packing (a point light, a dropped light);
-    /// empty otherwise.
+    /// Why the first light that asks for shadows casts none in the last packing (a point light, a dropped light, a
+    /// directional light while no item casts shadows); empty otherwise.
     [[nodiscard]] const std::string& shadowNote() const noexcept { return m_shadowNote; }
-    /// World bounds of the render items that cast shadows: the orthographic shadow map of a directional key light is
-    /// fitted to them. Empty when nothing casts.
+    /// World bounds of the render items the shadow pass draws (those that cast shadows and are not alpha-blended,
+    /// scene::shadowCasterBounds): the orthographic shadow map of a directional key light is fitted to them. Empty when
+    /// nothing casts.
     [[nodiscard]] const core::Aabb& shadowCasterBounds() const noexcept { return m_shadowCasterBounds; }
 
 private:

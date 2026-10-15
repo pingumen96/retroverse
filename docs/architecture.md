@@ -10,7 +10,7 @@ This document describes the code that exists today. The target architecture is i
 | geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex` with glTF tangent space), sockets, procedural mesh builder and procedural prefabs with their collision boxes, uv scale of a surface, also as drawn with a transform (`uvMetersPerUnit`) | core |
 | input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets, shader source loading, procedural test patterns (sized to their surface: `patternSizeForAspect`) | core, geometry, fastgltf, stb |
-| scene | `rv_scene` | Camera, first-person controller and viewpoints (`frontViewpoint`: where a walker stands to look at an object, framed in a part of the view, `ViewArea`), lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneBoundsLines`, `addSceneSocketLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
+| scene | `rv_scene` | Camera, first-person controller and viewpoints (`frontViewpoint`: where a walker stands to look at an object, framed in a part of the view, `ViewArea`), lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front; the world bounds of what a shadow map draws, `shadowCasterBounds`), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneBoundsLines`, `addSceneSocketLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
 | platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
 | render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, sampleable depth, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe) with the key light's shadow map (`ShadowMap`), the depth pre-pass and screen-space ambient occlusion (`SsaoPass`), the render targets of an output (`ViewTargets`: HDR scene target with its depth, ambient occlusion targets, bloom chain, sRGB output), bloom and the post pass (`PostProcessor`), debug lines (`DebugDraw`) | core, geometry, assets, scene, glad |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, popups closed by Back, dock space and its see-through scene area, rendering into the window or a screenshot) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials, Rendering, Log, Scene) | core, input, scene, platform, render, imgui |
@@ -23,7 +23,7 @@ Four GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 | `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else release the mouse, else close the overlay, else quit), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`, `evaluateBloomCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
 | `rv_devui_model` | devui | Built in every configuration: the frame time history of the Stats panel (`FrameTimeHistory`), the overlay's input routing (`routeOverlayEvent`) and mouse capture hand-over (`CaptureHandover`), the Log panel's copy of the log (`LogView`), where the overlay lands in a screenshot (`fitOverlayCapture`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
-| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and ambient packed into `LightsUniforms` (`packLights`, which also picks the key light that casts the shadows, `ShadowLight`), the key light's shadow map (`shadow_settings.hpp`: `spotShadowProjection`, `directionalShadowProjection` fitted to the casters and snapped to whole texels, `shadowProjectionFor`, `ShadowSettings` and their `ShadowUniforms`, `makeShadowUniforms`, the depth bias of the shadow pass, `shadowDepthBias`), the ambient occlusion (`ssao_settings.hpp`: the deterministic sample kernel `ssaoKernel`, `SsaoUniforms` from the scene's `SsaoSetup`, `makeSsaoUniforms`, the half-resolution target size `ssaoTargetSize`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the post-processing of a view (`post_settings.hpp`: `PostSettings` from the scene environment, `postSettingsFor`; its `PostUniforms` block, `makePostUniforms`, the bloom strength as its mix; the radius as the upsampling scatter, `bloomScatter`; the highlight threshold and knee; the bloom level sizes, `bloomLevelSizes`), the fragment outputs of the scene shaders (`SceneOutput`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, which tests use to predict displayed colors, and its inverse for greys, `greyRadianceForDisplay`), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
+| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and ambient packed into `LightsUniforms` (`packLights`, which also picks the key light that casts the shadows, `ShadowLight`; `requireShadowCasters` takes a directional key light's shadow away when nothing casts), the key light's shadow map (`shadow_settings.hpp`: `spotShadowProjection`, `directionalShadowProjection` fitted to the casters and snapped to whole texels, `shadowProjectionFor`, `ShadowSettings` and their `ShadowUniforms`, `makeShadowUniforms`, the depth bias of the shadow pass, `shadowDepthBias`), the ambient occlusion (`ssao_settings.hpp`: the deterministic sample kernel `ssaoKernel`, `SsaoUniforms` from the scene's `SsaoSetup`, `makeSsaoUniforms`, the half-resolution target size `ssaoTargetSize`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the post-processing of a view (`post_settings.hpp`: `PostSettings` from the scene environment, `postSettingsFor`; its `PostUniforms` block, `makePostUniforms`, the bloom strength as its mix; the radius as the upsampling scatter, `bloomScatter`; the highlight threshold and knee; the bloom level sizes, `bloomLevelSizes`), the fragment outputs of the scene shaders (`SceneOutput`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, which tests use to predict displayed colors, and its inverse for greys, `greyRadianceForDisplay`), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
 
 `core`, `geometry`, `input`, `assets`, `scene` and the four sub-targets are **GPU-free**: they never reach SDL3,
 glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
@@ -58,8 +58,10 @@ geometry, resolves the real materials and preprocesses the real shaders.
   `gl::GpuModel` (meshes `<path>#mesh<i>`, materials `<path>#material<i>`, images through the `TextureCache` as
   `<path>#image<i>`, the draw items with their node transforms, the sockets) and adds one render item per model
   primitive and model instance. It also packs the lights (with the key light that casts the shadows, and why the
-  first light that asks for shadows has none, when it cannot), sums the world bounds of the items that cast shadows (a
-  directional key light's map is fitted to them), builds the collision world and the debug lines (bounds of every
+  first light that asks for shadows has none, when it cannot), sums the world bounds of what the shadow pass draws
+  (`scene::shadowCasterBounds`: the items that cast shadows, blended ones left out; a directional key light's map is
+  fitted to them, and with none it casts no shadow: `gl::requireShadowCasters`), builds the collision world and the
+  debug lines (bounds of every
   object instance, axes of every socket), and keeps the environment (background radiance, ambient, ambient occlusion,
   post-processing) that the overlay edits and every view reads.
 - **Renderer:** `gl::SceneRenderer` draws a `gl::RenderView` (camera, render items, lights, the key light with the
@@ -88,21 +90,28 @@ geometry, resolves the real materials and preprocesses the real shaders.
   shadow map reports no shadow time) are kept per view; `app::FrameStatsLog` logs them with the frame times once per
   second in developer builds (`RV_DEV_UI`) and for the whole run at the end of frame-limited runs (frames that render
   no view, a minimized window, count their time only). The test room draws its 71 parts in 47 batches (23 meshes
-  uploaded), its shadow map 68 casters in 44 and its depth pre-pass 47; `instancing_stress` draws 1001 items in 4,
-  its shadow map the 1000 boxes in 3; `instancing_growth` turned around draws about 2000 instances, more than the
-  1024 per region the instance buffer starts with, so it grows mid-run.
+  uploaded), its shadow map 63 casters in 40 and its depth pre-pass 47; `instancing_stress` draws 1001 items in 4,
+  its shadow map the 1000 boxes in 3, about 2000 instances per view in all, more than the 1024 per region the
+  instance buffer starts with, so it grows on the first frame; `instancing_growth`, without shadows, starts below that
+  and grows mid-run, turned around (about 2000 instances).
 - **Shadows and ambient occlusion (M0 step 11, style §4.1 contact and shadow cues):** the key light is the first scene
   light with `castsShadows` (`gl::packLights` records it as a `gl::ShadowLight`: its index in the lights block, its
-  geometry, its `shadowStrength`; a point light, or one left out of the block, casts none, and the log and the Lights
-  panel say why). Its depth goes into a `gl::ShadowMap`, a 2048 x 2048 `GL_DEPTH_COMPONENT32F` texture in a
+  geometry, its `shadowStrength`; a point light, one left out of the block, or a directional light while nothing
+  casts shadows (`gl::requireShadowCasters`) casts none, and the log and the Lights panel say why). Its depth goes into
+  a `gl::ShadowMap`, a 2048 x 2048 `GL_DEPTH_COMPONENT32F` texture in a
   framebuffer without color: `gl::spotShadowProjection` looks from a spot light along its axis with a square field of
   view of twice its outer cone (at most 150 degrees), from 5 cm to its range; `gl::directionalShadowProjection` fits
-  an orthographic map to the casters' bounds in a light space that only rotates the world and snaps its edges to whole
-  texels, so moving bounds slide the grid by whole texels. Neither depends on the camera: shadows are locked to the
-  world and never shimmer as the walker moves. The shadow pass draws the casters with the depth programs
-  (`pbr/pbr.vert` + `depth/depth.frag`, `RV_ALPHA_TEST` for alpha-masked materials), culled like their materials
-  (double-sided ones on both sides), their depth pushed back by a slope-scaled bias (`glPolygonOffset`, factor and
-  units 2, `gl::ShadowSettings`). `pbr.frag` (`common/shadow.glsl`) darkens only the key light's radiance by its
+  an orthographic map to the casters' bounds (`scene::shadowCasterBounds`: what the shadow pass draws) in a light space
+  that only rotates the world and snaps its edges to whole texels, so moving bounds slide the grid by whole texels.
+  Neither depends on the camera: shadows are locked to the world and never shimmer as the walker moves (the frame block
+  of the map carries no time either, so a static light writes it once). The shadow pass draws the casters with the
+  depth programs (`pbr/pbr.vert` + `depth/depth.frag`, `RV_ALPHA_TEST` for alpha-masked materials), culled like their
+  materials (double-sided ones on both sides), their depth pushed back by a slope-scaled bias (`glPolygonOffset`,
+  factor and units 2, `gl::ShadowSettings`). Thin geometry is a culling choice of the scene: flat wall decorations
+  (posters, signs) are marked `castsShadows: false`, since their shadows would be a few millimeters wide, narrower than
+  the filter below, and the stair-steps of their silhouettes in the map would break them into dashes; decals that lie
+  on or in their object (cartridge labels in their pocket) cast with it, and the biases keep the surface under them
+  from shadowing itself. `pbr.frag` (`common/shadow.glsl`) darkens only the key light's radiance by its
   visibility: the receiver is moved along its geometric normal by 1.5 texels of the map at its distance (normal
   offset, a few millimeters at room scale), then compared in hardware (`sampler2DShadow`, `GL_LEQUAL`, bilinear: each
   fetch a 2 x 2 percentage-closer filter) in a 3 x 3 tent of fetches one texel apart, mixed towards lit by 1 - the
@@ -113,13 +122,16 @@ geometry, resolves the real materials and preprocesses the real shaders.
   depths match). `gl::SsaoPass` estimates the ambient occlusion from that depth (`common/ssao.glsl`): at half the
   resolution (`ssao/ssao.frag`, `ViewTargets::ambientOcclusionRaw()`, `GL_RG16F`) it reconstructs the view-space
   position and the normal of each surface from the depth (the normal from the neighbors that continue the surface's
-  plane, judged by extrapolating the reciprocal distance, which is linear in screen space on a plane; slivers one pixel
-  thin get no estimate), and tests 16 samples of a cosine-weighted hemisphere kernel (`gl::ssaoKernel`, scaled by the
-  radius) rotated and scaled per pixel by a 4 x 4 Bayer pattern against the scene depth (bilinear: exact on planes),
-  occluders much farther than the radius fading out; then a depth-aware blur at full resolution
-  (`ssao/ssao_blur.frag`, `ViewTargets::ambientOcclusion()`, `GL_R8`) averages the 4 x 4 estimates around each pixel,
-  every rotation and scale once, each weighted by how close its depth is to the depth the pixel's plane predicts there
-  (2% tolerance: flat surfaces blur fully at any angle, nothing bleeds across depth edges, no halos). `pbr.frag`
+  plane, judged by extrapolating the reciprocal distance, which is linear in screen space on a plane; at the image's
+  borders only the side inside it; slivers one pixel thin get no estimate), and tests 16 samples of a cosine-weighted
+  hemisphere kernel (`gl::ssaoKernel`, scaled by the radius) rotated and scaled per pixel by a 4 x 4 Bayer pattern
+  against the scene depth (bilinear: exact on planes), occluders counting fully up to three quarters of the radius away
+  in depth and not at all beyond the radius (a lamp pole or a TV's face farther in front of a wall than the radius
+  leaves no halo on it); then a depth-aware blur at full resolution (`ssao/ssao_blur.frag`,
+  `ViewTargets::ambientOcclusion()`, `GL_R8`) averages the 4 x 4 estimates around each pixel, every rotation and scale
+  once (at the borders the window moves inside the image), each weighted by how close its depth is to the depth the
+  pixel's plane predicts there (2% tolerance: flat surfaces blur fully at any angle, nothing bleeds across depth edges,
+  no halos). `pbr.frag`
   (`common/occlusion.glsl`) multiplies the ambient terms only by it (the diffuse ambient directly, the specular
   ambient through the specular occlusion of Lagarde and de Rousiers), never a light's; blended surfaces ignore it.
   Without ambient occlusion (off in the environment or the overlay, its programs missing, wireframe views, which also

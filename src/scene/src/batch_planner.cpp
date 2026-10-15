@@ -112,4 +112,22 @@ BatchPlan BatchPlanner::plan(std::span<const RenderItem> items, const PlanOption
     return result;
 }
 
+core::Aabb shadowCasterBounds(std::span<const RenderItem> items, const PlanOptions& options) {
+    core::Aabb bounds;
+    if (!options.localBounds) {
+        return bounds;
+    }
+    for (const RenderItem& item : items) {
+        if (!item.castsShadow || !core::isFinite(item.model) ||
+            (options.passOf && options.passOf(item.material) == DrawPass::Blend)) {
+            continue;
+        }
+        const core::Aabb local = options.localBounds(item.mesh);
+        if (!local.isEmpty()) {
+            bounds.expand(local.transformed(item.model));
+        }
+    }
+    return bounds;
+}
+
 } // namespace rv::scene

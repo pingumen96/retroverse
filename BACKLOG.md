@@ -34,14 +34,14 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   two pixels wide (neon tubes seen from afar; large screens and shades keep about 95%). A neon-heavy theme pack
   (`ArcadeAfterDark`, style §14.4) may want a stronger `bloomStrength`, a Karis weight on a wider luminance scale
   (`1 / (1 + luminance / k)`) or a lower highlight threshold; make them scene keys when such a room exists.
-- Bounce light for dark rooms: the hemispheric ambient cannot lift 4%-albedo walls out of the ACES toe, so the
-  test room relies on direct light, and its ambient occlusion (M0 step 11), which darkens the ambient only, stays a
-  subtle cue there. It uses 7 of the 8 point/spot slots of the lights block (the ceiling key light, a pendant fill, the
-  floor lamp's bulb and two shade cones, the magenta accent, the entrance washer), and the upper walls and the ceiling
-  far from them still fall to black. Candidates: light probes / IBL, a hemisphere tinted by the lit floor (indoor
-  bounce comes mostly from below), or the fake screen light of style §4.3 (a point light near each TV with the slowly
-  updated average screen color); real rooms will also need more than 8 lights per view (per-room light lists or
-  clustered shading).
+- Bounce light for dark rooms: the hemispheric ambient cannot lift 4%-albedo walls out of the ACES toe, so the test room
+  relies on direct light, and its ambient occlusion (M0 step 11), which darkens the ambient only, stays a subtle cue
+  there. It uses all 8 point/spot slots of the lights block (the ceiling key light, a pendant over the room's center, a
+  picture light on the right poster, the floor lamp's bulb and two shade cones, the magenta accent, the entrance
+  washer), and the upper walls and the ceiling far from them still fall to black. Candidates: light probes / IBL, a
+  hemisphere tinted by the lit floor (indoor bounce comes mostly from below), or the fake screen light of style §4.3 (a
+  point light near each TV with the slowly updated average screen color); real rooms will also need more than 8 lights
+  per view (per-room light lists or clustered shading).
 - Texture array (or atlas) for cartridge labels: the 24 labels of the test room share one mesh but each shows its own
   cover, so each has a material instance of its own and is a batch of one (24 of the room's 47 draw calls, in each
   of the three passes since M0 step 11: shadow map, depth pre-pass and lit pass; the shells are one batch of 24). Covers
@@ -67,8 +67,9 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   planner emit item indices and gather the matrices straight into the region the buffer hands out.
 - More shadowed lights: one key light per view casts shadows (M0 step 11). Rooms with several focal lights (the hub,
   a showcase spot, the floor lamp of the test room, whose corner its own unshadowed lights dominate, so it casts no
-  visible shadow) need a few shadowed lights per view: a shadow atlas with one tile per light, budgeted by screen
-  coverage (style §20.2: 1-3 relevant shadow-casting lights).
+  visible shadow: the step 11 plan lists the lamp among the grounded furniture, and no single key light can reach it,
+  the shelf and the TV at once) need a few shadowed lights per view: a shadow atlas with one tile per light, budgeted
+  by screen coverage (style §20.2: 1-3 relevant shadow-casting lights).
 - Point-light shadows: point lights cast none (key lights should be spots, logged otherwise). A cube map or a
   dual-paraboloid map would shadow a bare bulb or a pendant.
 - Cascaded shadow maps for large directional areas: the directional map is fitted to all the shadow casters, which
@@ -79,7 +80,9 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   changes.
 - Softer penumbrae: the 3 x 3 tent of hardware PCF fetches gives a fixed penumbra of about 4 texels (1-3 cm in the test
   room). Large practical lights (ceiling panels, a window) would want contact-hardening shadows (PCSS) or a wider,
-  rotated Poisson filter.
+  rotated Poisson filter. A filter wider than the stair-steps of the map would also let thin geometry cast: the posters
+  of the test room have `castsShadows` false, since their frames' shadows, a few millimeters wide, break into dashes
+  under the 3 x 3 tent.
 - Ambient occlusion quality: normals are reconstructed from the depth (slivers one pixel thin get no estimate);
   normals from a G-buffer attachment, temporal accumulation (with the jitter of a temporal anti-aliasing pass) and bent
   normals for the ambient would refine it. An art option to let it darken the unshadowed fill lights a little (as some

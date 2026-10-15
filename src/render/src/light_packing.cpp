@@ -157,4 +157,19 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
     return packed;
 }
 
+void requireShadowCasters(PackedLights& packed, std::span<const scene::Light> lights, const core::Aabb& casterBounds) {
+    if (!packed.shadowLight.casts() || packed.shadowLight.type != scene::LightType::Directional ||
+        !casterBounds.isEmpty()) {
+        return;
+    }
+    const auto key =
+        std::find_if(lights.begin(), lights.end(), [](const scene::Light& light) { return light.castsShadows; });
+    const std::string name =
+        key != lights.end() ? lightName(*key, static_cast<std::size_t>(key - lights.begin())) : std::string("?");
+    packed.shadowNote = fmt::format("directional light '{}' casts shadows but no object does: its map is fitted to "
+                                    "the objects that cast shadows",
+                                    name);
+    packed.shadowLight = ShadowLight{};
+}
+
 } // namespace rv::gl

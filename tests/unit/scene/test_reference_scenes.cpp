@@ -239,6 +239,35 @@ float gapBetween(const Footprint& a, const Footprint& b) {
     return std::sqrt(dx * dx + dz * dz);
 }
 
+/// Cone factor of `light` at `point`, as the lit shader computes it (common/lights.glsl): 1 inside the inner cone of a
+/// spot, 0 outside its outer cone, a smoothstep between them; 1 for other lights.
+float coneFactor(const rv::scene::Light& light, const glm::vec3& point) {
+    if (light.type != LightType::Spot) {
+        return 1.0f;
+    }
+    const float cosOuter = std::cos(rv::core::degreesToRadians(light.outerConeDeg));
+    const float cosInner = std::max(std::cos(rv::core::degreesToRadians(light.innerConeDeg)), cosOuter);
+    const float cosAngle = glm::dot(glm::normalize(light.direction), glm::normalize(point - light.position));
+    const float t = std::clamp((cosAngle - cosOuter) / std::max(cosInner - cosOuter, 1e-4f), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+/// Irradiance that a point or spot `light` brings to a surface at `point` facing the unit `normal`, as the lit shader
+/// computes it (common/lights.glsl): the intensity, the inverse-square falloff with its window reaching 0 at the range,
+/// the cone factor and the cosine of incidence. The light's color is left out.
+float irradiance(const rv::scene::Light& light, const glm::vec3& point, const glm::vec3& normal) {
+    const glm::vec3 toLight = light.position - point;
+    const float distanceSquared = glm::dot(toLight, toLight);
+    const float rangeSquared = light.range * light.range;
+    if (distanceSquared >= rangeSquared || distanceSquared <= 0.0f) {
+        return 0.0f;
+    }
+    const float ratio = distanceSquared / rangeSquared;
+    const float window = std::clamp(1.0f - ratio * ratio, 0.0f, 1.0f);
+    const float incidence = std::max(glm::dot(normal, toLight / std::sqrt(distanceSquared)), 0.0f);
+    return light.intensity * window * window / distanceSquared * coneFactor(light, point) * incidence;
+}
+
 } // namespace
 
 TEST_CASE("scene/reference_scenes: the reference scenes load", "[scene][reference_scenes]") {
@@ -414,22 +443,25 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(objectsOfKind(scene, "rug").size() == 1);
     CHECK(objectsOfKind(scene, "poster_frame").size() == 2);
 
-    // Everything collides except the rug and the posters; the rug casts no shadow.
+    // Everything collides except the rug and the posters. The rug and the posters cast no shadow: a flat rug would only
+    // shadow the floor under it, and the posters are thin geometry (their frames, 2 cm deep, would cast shadows
+    // narrower than the shadow filter, broken into dashes by the texels of the map).
     for (const SceneObject& object : scene.objects) {
         INFO("object " << object.id);
-        CHECK(object.collides == (object.kind != "rug" && object.kind != "poster_frame"));
+        const bool flat = object.kind == "rug" || object.kind == "poster_frame";
+        CHECK(object.collides == !flat);
+        CHECK(object.castsShadows == !flat);
         if (object.kind == "poster_frame") {
             CHECK(object.texturesByRole.at("picture").pattern == "cover");
         }
     }
-    CHECK_FALSE(objectsOfKind(scene, "rug")[0]->castsShadows);
 
     // Lighting (style 3.1 and 4.2): warm tungsten mood with neutrals that stay neutral. The lamp is the amber tungsten
     // practical light; the room lights are a warm white, much less saturated than tungsten (an amber key turned every
     // surface orange); a light magenta accent washes the TV; the entrance half has a light of its own; nothing lights
     // the dark ceiling from up close; the ambient is low, warm and near neutral, and darkened by the ambient occlusion.
     // Shadows (M0 step 11): exactly one light casts them, the key: a warm-white downlight in the ceiling whose cone
-    // takes in the shelf and the TV on the hero wall and the floor in front of them.
+    // takes in the shelf and the TV on the hero wall.
     const glm::vec3 tungsten = rv::core::hexToLinearRgb("#FFC88A").value();
     const glm::vec3 magenta = rv::core::hexToLinearRgb("#B34DCE").value();
     const glm::vec3 screen = translationOf(crts[0]->transform) + glm::vec3(0.0f, 0.3f, 0.0f);
@@ -498,21 +530,70 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(tilt < rv::core::degreesToRadians(45.0f));
     CHECK(key.outerConeDeg >= 45.0f);
     CHECK(std::asin(-key.direction.y) >= rv::core::degreesToRadians(key.outerConeDeg) - 1e-4f);
-    // Between the room's center and the hero wall, the shelf, the TV and the floor in front of them in its cone.
+    // Between the room's center and the hero wall; the shelf and the TV well inside its cone.
     CHECK(key.position.z < 0.0f);
     CHECK(key.position.z > -2.5f);
-    const auto inCone = [&key](const glm::vec3& point, float coneDeg) {
-        return glm::dot(key.direction, glm::normalize(point - key.position)) >
-               std::cos(rv::core::degreesToRadians(coneDeg));
-    };
-    CHECK(inCone(translationOf(shelf->transform) + glm::vec3(0.0f, 1.0f, 0.0f), key.innerConeDeg + 5.0f));
-    CHECK(inCone(screen, key.innerConeDeg + 15.0f));
-    CHECK(inCone(glm::vec3(key.position.x, 0.0f, key.position.z - 1.0f), key.outerConeDeg));
-    CHECK(inCone(translationOf(objectsOfKind(scene, "rug")[0]->transform), key.outerConeDeg - 10.0f));
+    CHECK(coneFactor(key, translationOf(shelf->transform) + glm::vec3(0.0f, 1.0f, 0.0f)) > 0.75f);
+    CHECK(coneFactor(key, screen) > 0.75f);
     // Warm white like the other room lights.
     CHECK(warmth(key.color) > 0.0f);
     CHECK(warmth(key.color) < 0.7f * warmth(tungsten));
     CHECK(key.range >= 8.0f);
+
+    // The CRT is the focal point (style 6.1, 15): the key is aimed at the hero wall rather than at the floor, which
+    // reflects about 2.6 times as much light as the walls (oak against painted plaster), so its brightest spot on the
+    // floor gets less light than its brightest spot on the wall (interior x in [-4.5, 4.5], z in [-5, 5]; the hero wall
+    // at z = -5).
+    const glm::vec3 up(0.0f, 1.0f, 0.0f);
+    const glm::vec3 south(0.0f, 0.0f, 1.0f); // the hero wall faces the room
+    float floorPeak = 0.0f;
+    float wallPeak = 0.0f;
+    for (int i = -44; i <= 44; ++i) {
+        const float x = 0.1f * static_cast<float>(i);
+        for (int j = -49; j <= 49; ++j) {
+            floorPeak = std::max(floorPeak, irradiance(key, glm::vec3(x, 0.0f, 0.1f * static_cast<float>(j)), up));
+        }
+        for (int j = 1; j < 30; ++j) {
+            wallPeak = std::max(wallPeak, irradiance(key, glm::vec3(x, 0.1f * static_cast<float>(j), -5.0f), south));
+        }
+    }
+    REQUIRE(wallPeak > 0.0f);
+    CHECK(floorPeak < 0.9f * wallPeak);
+    // The room's center, beyond the key's cone, gets warm light from the ceiling too (the pendant), at least a fifth of
+    // the key's brightest on the floor: the walk in from the doorway is not dark.
+    float centerLight = 0.0f;
+    for (const rv::scene::Light& light : scene.lights) {
+        if (&light != &key && !rv::core::nearlyEqual(light.color, magenta)) {
+            centerLight += irradiance(light, glm::vec3(0.0f), up);
+        }
+    }
+    CHECK(centerLight > 0.2f * floorPeak);
+    // Both posters hang in warm light, and so does the wall between the TV and the right poster (style 4.2: tungsten
+    // dominant, the magenta accent stays an accent): the light reaching them is red over green over blue. The right
+    // poster, beyond the key's cone, has a picture light of its own and gets at least a quarter of the left one's.
+    const auto lightAt = [&scene](const glm::vec3& point, const glm::vec3& normal) {
+        glm::vec3 color(0.0f);
+        float total = 0.0f;
+        for (const rv::scene::Light& light : scene.lights) {
+            const float received = irradiance(light, point, normal);
+            color += light.color * received;
+            total += received;
+        }
+        return std::pair(color, total);
+    };
+    const auto tungstenDominant = [](const glm::vec3& color) { return color.r > color.g && color.g > color.b; };
+    const SceneObject* posterLeft = scene.findObject("poster_left");
+    const SceneObject* posterRight = scene.findObject("poster_right");
+    REQUIRE(posterLeft != nullptr);
+    REQUIRE(posterRight != nullptr);
+    const glm::vec3 wallFront(0.0f, 0.0f, 0.02f); // the front of the frames, 2 cm off the wall
+    const auto [leftColor, leftLight] = lightAt(translationOf(posterLeft->transform) + wallFront, south);
+    const auto [rightColor, rightLight] = lightAt(translationOf(posterRight->transform) + wallFront, south);
+    const glm::vec3 between(0.5f * (screen.x + translationOf(posterRight->transform).x), 1.85f, -4.999f);
+    CHECK(tungstenDominant(leftColor));
+    CHECK(tungstenDominant(rightColor));
+    CHECK(tungstenDominant(lightAt(between, south).first));
+    CHECK(rightLight > 0.25f * leftLight);
 
     // Ambient occlusion with the defaults of the plan: radius 0.4 m, intensity 1.
     CHECK(scene.environment.ssao.enabled);
