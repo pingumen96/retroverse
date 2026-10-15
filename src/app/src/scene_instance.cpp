@@ -3,7 +3,9 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -29,11 +31,10 @@ const gl::Texture2D& pictureTexture(const PlannedMaterial& planned, gl::TextureC
     return textures.pattern(source.pattern, source.title, source.seed, planned.patternSize, gl::ColorSpace::Srgb);
 }
 
-void logLights(const scene::SceneDescription& scene, const gl::PackedLights& packed) {
-    for (const gl::DroppedLight& dropped : packed.dropped) {
-        spdlog::warn("Scene '{}': light '{}' is not drawn: {}", scene.name, dropped.name, dropped.reason);
+void logLights(std::string_view scene, const gl::LightsUniforms& block, std::span<const gl::DroppedLight> dropped) {
+    for (const gl::DroppedLight& light : dropped) {
+        spdlog::warn("Scene '{}': light '{}' is not drawn: {}", scene, light.name, light.reason);
     }
-    const gl::LightsUniforms& block = packed.uniforms;
     spdlog::info("Scene lights: {} point/spot, {} directional; ambient intensity {:g}, exposure {:g}",
                  block.punctualLightCount, block.directionalIntensity > 0.0f ? 1 : 0, block.ambientIntensity,
                  block.exposure);
@@ -105,14 +106,17 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
         }
     }
 
-    const gl::PackedLights lights = gl::packLights(description.lights, description.environment);
-    logLights(description, lights);
-    instance.m_lights = lights.uniforms;
-    // The background is scene radiance like any surface: exposure and tonemapping apply before the sRGB encoding.
-    instance.m_clearColor =
-        glm::vec4(gl::tonemap(description.environment.clearColor, description.environment.exposure), 1.0f);
+    instance.m_sceneLights = description.lights;
+    instance.m_environment = description.environment;
+    instance.applyLighting();
+    logLights(description.name, instance.m_lights, instance.m_droppedLights);
     instance.m_collision = scene::buildCollisionWorld(geometry);
-    scene::addSceneDebugLines(geometry, instance.m_debugLines);
+    scene::addSceneBoundsLines(geometry, instance.m_boundsLines);
+    scene::addSceneSocketLines(geometry, instance.m_socketLines);
+    instance.m_objectBounds.reserve(geometry.objects.size());
+    for (const scene::SceneObjectGeometry& object : geometry.objects) {
+        instance.m_objectBounds.push_back(object.bounds);
+    }
 
     spdlog::info("Scene '{}': {} object(s) ({} with a glTF model), {} instance(s), {} part(s), {} placeholder(s), {} "
                  "part(s) with the fallback material; {} triangle(s) per view",
@@ -127,6 +131,14 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
                  static_cast<double>(resources.textures.estimatedBytes()) / (1024.0 * 1024.0),
                  resources.textures.failedCount());
     return instance;
+}
+
+void SceneInstance::applyLighting() {
+    gl::PackedLights packed = gl::packLights(m_sceneLights, m_environment);
+    m_lights = packed.uniforms;
+    m_droppedLights = std::move(packed.dropped);
+    // The background is scene radiance like any surface: exposure and tonemapping apply before the sRGB encoding.
+    m_clearColor = glm::vec4(gl::tonemap(m_environment.clearColor, m_environment.exposure), 1.0f);
 }
 
 } // namespace rv::app

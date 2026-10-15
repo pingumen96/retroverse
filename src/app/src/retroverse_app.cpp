@@ -14,7 +14,9 @@
 #include <glm/vec2.hpp>
 #include <spdlog/spdlog.h>
 
+#include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
+#include <rv/app/debug_line_selection.hpp>
 #include <rv/app/frame_stats_log.hpp>
 #include <rv/app/model_viewer.hpp>
 #include <rv/app/scene_instance.hpp>
@@ -29,6 +31,7 @@
 #include <rv/core/text.hpp>
 #include <rv/input/action.hpp>
 #include <rv/input/input_script.hpp>
+#include <rv/platform/graphics_window.hpp>
 #include <rv/render/debug_draw.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
@@ -43,6 +46,15 @@
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
+
+#if defined(RV_DEV_UI)
+#include <rv/devui/dev_ui.hpp>
+#include <rv/devui/frame_time_history.hpp>
+#include <rv/devui/overlay_input.hpp>
+#include <rv/devui/panels.hpp>
+#include <rv/scene/first_person_controller.hpp>
+#include <rv/scene/viewpoint.hpp>
+#endif
 
 #include "app_input.hpp"
 #include "free_roam.hpp"
@@ -65,6 +77,8 @@ constexpr bool kDeveloperBuild = false;
 #endif
 
 constexpr std::string_view kMaterialLibraryPath = "materials/base/materials.json";
+/// Where the developer overlay keeps its window layout, under <user data>/config.
+constexpr std::string_view kOverlayLayoutFile = "imgui.ini";
 /// Anisotropic filtering of textures and material samplers, and of the checker that replaces missing textures (plan
 /// 5.4: 8x), clamped to the device limit.
 constexpr float kTextureAnisotropy = 8.0f;
@@ -97,6 +111,30 @@ bool prepareTarget(gl::Framebuffer& target, glm::ivec2 size, std::string_view de
         failedSize = size;
     }
     return false;
+}
+
+/// Width / height of a viewport, 16:9 for an empty one.
+float aspectOf(glm::ivec2 size) noexcept {
+    return size.x > 0 && size.y > 0 ? static_cast<float>(size.x) / static_cast<float>(size.y) : 16.0f / 9.0f;
+}
+
+/// "world grid (1 m cells out to 10 m), object bounds" for the kinds of `selection`.
+std::string describeDebugLines(const DebugLineSelection& selection, const DebugGrid& grid) {
+    std::string kinds;
+    const auto add = [&kinds](std::string_view kind) {
+        kinds += kinds.empty() ? "" : ", ";
+        kinds += kind;
+    };
+    if (selection.grid) {
+        add(fmt::format("world grid ({:g} m cells out to {:g} m)", grid.spacing, grid.halfExtent));
+    }
+    if (selection.bounds) {
+        add("object bounds");
+    }
+    if (selection.sockets) {
+        add("socket axes");
+    }
+    return kinds;
 }
 
 assets::MaterialLibrary loadMaterials(const core::Paths& paths) {
@@ -223,7 +261,7 @@ struct RetroverseApp::State {
     std::unique_ptr<gl::ShaderLibrary> shaders;
     gl::ShaderHandle pbrShader;
     gl::ShaderHandle unlitShader;
-    std::optional<gl::ShaderHandle> debugShader; ///< --debug-draw only
+    std::optional<gl::ShaderHandle> debugShader; ///< loaded when debug lines are first shown
     // Declared before the scene content and the renderer, which refer to them, so that they are destroyed after.
     std::unique_ptr<gl::TextureDefaults> textureDefaults;
     std::unique_ptr<gl::TextureCache> textures;
@@ -231,7 +269,19 @@ struct RetroverseApp::State {
     gl::MeshRegistry meshes;
     std::optional<SceneInstance> scene;
     std::optional<gl::SceneRenderer> renderer;
-    std::optional<gl::DebugDraw> debugDraw;
+    std::optional<gl::DebugDraw> debugDraw; ///< created when debug lines are first shown
+    /// The scene as described: its camera (start, reset) and objects (the developer overlay's list).
+    scene::SceneDescription description;
+    /// Reference grid of the debug lines.
+    DebugGrid debugGrid;
+    /// Debug lines wanted (--debug-draw, the developer overlay) and those debugDraw holds.
+    DebugLineSelection debugLines;
+    DebugLineSelection shownDebugLines;
+    /// Developer overlay toggles: the scene pass as wireframe, collision of the walker (off: noclip).
+    bool wireframe = false;
+    bool collision = true;
+    /// ToggleDevUI pressed in a run without the overlay: logged once.
+    bool overlayNoticeLogged = false;
     /// The view camera: the scene camera's lens and pose, then driven by free roam.
     scene::Camera camera;
     std::optional<FreeRoam> freeRoam;
@@ -246,6 +296,12 @@ struct RetroverseApp::State {
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
     bool lastFrameCaptured = false;   ///< --screenshot written
     bool viewRendered = false;        ///< renderScene() ran during the current onRender (window or screenshot)
+#if defined(RV_DEV_UI)
+    devui::FrameTimeHistory frameTimes;
+    devui::CaptureHandover captureHandover;
+    /// The developer overlay. Declared last: destroyed first, before the state its panels refer to.
+    std::unique_ptr<devui::DevUi> devUi;
+#endif
 
     /// Logs the pose at the end of every input script step that ends on `frame`.
     void logScriptProgress(std::uint64_t frame) const {
@@ -273,7 +329,8 @@ struct RetroverseApp::State {
         view.lights = scene->lights();
         view.clearColor = scene->clearColor();
         view.timeSeconds = static_cast<float>(simulatedSeconds);
-        view.debugDraw = debugDraw ? &*debugDraw : nullptr;
+        view.debugDraw = debugDraw && shownDebugLines.any() ? &*debugDraw : nullptr;
+        view.wireframe = wireframe;
         renderer->render(context.device(), programs, view, target);
         viewRendered = true;
     }
@@ -300,6 +357,11 @@ struct RetroverseApp::State {
             return makeError(ErrorCode::GraphicsError, "no render target for the screenshot", core::pathToUtf8(path));
         }
         renderScene(context, screenshotTarget);
+#if defined(RV_DEV_UI)
+        if (devUi && options.screenshotIncludeUi) {
+            devUi->renderTo(context.device(), screenshotTarget);
+        }
+#endif
         gl::Framebuffer::unbind(); // onRender leaves the default framebuffer bound, also when the window is not drawn
         auto image = screenshotTarget.readPixels();
         if (!image) {
@@ -314,25 +376,195 @@ struct RetroverseApp::State {
         return ok();
     }
 
-    /// --debug-draw: the reference grid, then the bounds and sockets of the scene's objects.
-    Status createDebugDraw(const DebugGrid& grid) {
-        scene::DebugLines lines;
-        lines.addGrid(grid.halfExtent, grid.spacing);
-        const std::size_t gridLines = lines.lineCount();
-        lines.append(scene->debugLines());
-        auto draw = gl::DebugDraw::create("DebugLines");
-        if (!draw) {
-            return propagate(draw.error());
+    /// Shows the debug lines of `debugLines` (--debug-draw, the developer overlay's toggles) when they differ from
+    /// those shown: loads the debug program and creates the line buffer on first use, then uploads the selected kinds
+    /// (the reference grid, then the bounds and sockets of the scene's objects). A failure is reported once per change;
+    /// no lines are drawn then.
+    Status syncDebugLines() {
+        if (debugLines == shownDebugLines) {
+            return ok();
         }
-        if (auto uploaded = draw->setLines(lines); !uploaded) {
+        shownDebugLines = debugLines;
+        if (!debugLines.any()) {
+            spdlog::info("Debug lines off");
+            return ok();
+        }
+        if (!debugShader) {
+            auto debug =
+                shaders->load(gl::ShaderDesc{"debug_lines", "debug/debug_lines.vert", "debug/debug_lines.frag", {}});
+            if (!debug) {
+                return propagate(debug.error());
+            }
+            debugShader = *debug;
+        }
+        if (!debugDraw) {
+            auto draw = gl::DebugDraw::create("DebugLines");
+            if (!draw) {
+                return propagate(draw.error());
+            }
+            debugDraw = std::move(*draw);
+        }
+        const scene::DebugLines lines =
+            composeDebugLines(debugLines, debugGrid, scene->boundsLines(), scene->socketLines());
+        if (auto uploaded = debugDraw->setLines(lines); !uploaded) {
             return propagate(uploaded.error());
         }
-        debugDraw = std::move(*draw);
-        spdlog::info("Debug lines: {} line(s): world grid ({:g} m cells out to {:g} m, {} lines), object bounds and "
-                     "socket axes ({} lines)",
-                     lines.lineCount(), grid.spacing, grid.halfExtent, gridLines, lines.lineCount() - gridLines);
+        spdlog::info("Debug lines: {} line(s): {}", lines.lineCount(), describeDebugLines(debugLines, debugGrid));
         return ok();
     }
+
+    [[nodiscard]] bool overlayVisible() const noexcept {
+#if defined(RV_DEV_UI)
+        return devUi && devUi->visible();
+#else
+        return false;
+#endif
+    }
+
+    /// A text field or a dragged value of the overlay has the keyboard.
+    [[nodiscard]] bool overlayHasKeyboard() const noexcept {
+#if defined(RV_DEV_UI)
+        return devUi && devUi->hasKeyboard();
+#else
+        return false;
+#endif
+    }
+
+    /// ToggleDevUI (F1).
+    void toggleOverlay() {
+#if defined(RV_DEV_UI)
+        if (devUi) {
+            setOverlayVisible(!devUi->visible());
+            return;
+        }
+#endif
+        if (!overlayNoticeLogged) {
+            overlayNoticeLogged = true;
+            spdlog::info("ToggleDevUI: no developer overlay in this run ({})",
+                         kDeveloperBuild ? "it could not start, see the error above" : "not part of this build");
+        }
+    }
+
+    /// Shows or hides the developer overlay, handing the mouse over: opening it frees a captured mouse for the panels,
+    /// closing it gives first-person look the capture back.
+    void setOverlayVisible([[maybe_unused]] bool visible) {
+#if defined(RV_DEV_UI)
+        if (!devUi || devUi->visible() == visible) {
+            return;
+        }
+        if (visible) {
+            if (captureHandover.open(input->mouseCaptured())) {
+                input->releaseMouse("developer overlay opened; F1 or Esc closes it");
+            }
+        } else if (captureHandover.close(input->mouseCaptured())) {
+            input->captureMouseWhenFocused();
+        }
+        devUi->setVisible(visible);
+        devUi->setMouseCaptured(input->mouseCaptured());
+#endif
+    }
+
+    /// Back (Esc, gamepad B): leaves one level (backAction).
+    void back(AppContext& context) {
+        switch (backAction(input->mouseCaptured(), overlayVisible(), overlayHasKeyboard())) {
+        case BackAction::Ignore:
+            break;
+        case BackAction::ReleaseMouse:
+            input->releaseMouse(overlayVisible() ? "Back pressed; press it again to close the developer overlay"
+                                                 : "Back pressed; press it again to quit");
+            break;
+        case BackAction::CloseOverlay:
+            setOverlayVisible(false);
+            break;
+        case BackAction::Quit:
+            spdlog::info("Back pressed, quitting");
+            context.requestQuit();
+            break;
+        }
+    }
+
+#if defined(RV_DEV_UI)
+    /// Creates the developer overlay and its panels. When it cannot start, the error is logged and the run goes on
+    /// without it.
+    void createDevUi(AppContext& context) {
+        devui::DevUiConfig config;
+        config.iniFile = context.paths().configDir() / core::pathFromUtf8(kOverlayLayoutFile);
+        auto created = devui::DevUi::create(context.window(), config);
+        if (!created) {
+            spdlog::error("Developer overlay unavailable: {}", created.error().toString());
+            return;
+        }
+        devUi = std::move(*created);
+        platform::GraphicsWindow& window = context.window();
+        devUi->addPanel(devui::makeStatsPanel({frameTimes, renderer->stats(), meshes, materials, *textures}),
+                        devui::DockSlot::Left);
+        devUi->addPanel(devui::makeCameraPanel({camera, freeRoam->controller(), input->system(), collision,
+                                                [this] { resetToSceneCamera(); }}),
+                        devui::DockSlot::LeftBottom);
+        // Tabs of one node; the first is shown.
+        devUi->addPanel(devui::makeLightsPanel({scene->sceneLights(), scene->environment(), scene->droppedLights(),
+                                                [this] { scene->applyLighting(); }}),
+                        devui::DockSlot::Right);
+        devUi->addPanel(devui::makeMaterialsPanel({materials, scene->renderItems()}), devui::DockSlot::Right);
+        devUi->addPanel(
+            devui::makeScenePanel(
+                {description, [this, &window](std::size_t index) { goTo(index, aspectOf(window.drawableSize())); }}),
+            devui::DockSlot::Right);
+        devUi->addPanel(devui::makeRenderingPanel(
+                            {debugLines.grid, debugLines.bounds, debugLines.sockets, wireframe, *shaders, window}),
+                        devui::DockSlot::RightBottom);
+        devUi->addPanel(devui::makeLogPanel(), devui::DockSlot::Bottom);
+    }
+
+    /// Records the frame time and builds the overlay frame; its panels edit the state the frame then simulates and
+    /// renders.
+    void updateOverlay(const AppContext& context) {
+        frameTimes.record(context.clock().deltaSeconds());
+        if (!devUi) {
+            return;
+        }
+        devUi->setMouseCaptured(input->mouseCaptured());
+        devUi->buildFrame(overlayCaptureSize(context));
+    }
+
+    /// Size of the screenshot the overlay is drawn into this frame (--screenshot-include-ui), if any.
+    [[nodiscard]] std::optional<glm::ivec2> overlayCaptureSize(const AppContext& context) const {
+        const CommandLineOptions& options = context.options();
+        const bool lastFrameShot =
+            options.screenshot && options.frameLimit && context.frameIndex() + 1 == *options.frameLimit;
+        if (!options.screenshotIncludeUi || (!screenshotRequested && !lastFrameShot)) {
+            return std::nullopt;
+        }
+        return glm::ivec2(options.screenshotWidth, options.screenshotHeight);
+    }
+
+    /// The overlay's "reset to scene camera": the walker and the lens as the scene starts them.
+    void resetToSceneCamera() {
+        freeRoam->teleportToCamera(description.camera);
+        camera.setLens(description.camera.lens);
+        spdlog::info("Camera reset to the scene camera: {}", freeRoam->describePose());
+    }
+
+    /// The overlay's "go to": the walker stands in front of objects[index], looking at it (scene::frontViewpoint over
+    /// the bounds of all its instances, for a view of `aspect`).
+    void goTo(std::size_t index, float aspect) {
+        if (index >= description.objects.size() || index >= scene->objectBounds().size()) {
+            return;
+        }
+        const scene::SceneObject& object = description.objects[index];
+        const core::Aabb& local = scene->objectBounds()[index];
+        core::Aabb bounds;
+        for (const glm::mat4& instance : object.instanceTransforms()) {
+            bounds.expand(local.transformed(instance));
+        }
+        scene::FirstPersonController& walker = freeRoam->controller();
+        const scene::WalkerPose pose =
+            scene::frontViewpoint(bounds, scene::frontDirection(object.transform), walker.feetPosition().y,
+                                  walker.settings().eyeHeight, camera.lens(), aspect);
+        walker.teleport(pose.feet, pose.yaw, pose.pitch);
+        spdlog::info("Go to '{}': {}", object.id, freeRoam->describePose());
+    }
+#endif
 };
 
 RetroverseApp::RetroverseApp() = default;
@@ -353,6 +585,8 @@ Status RetroverseApp::onInit(AppContext& context) {
     const assets::MaterialLibrary library = loadMaterials(paths);
 
     auto state = std::make_unique<State>();
+    state->description = std::move(source->description);
+    state->debugGrid = source->grid;
     state->shaders = std::make_unique<gl::ShaderLibrary>(paths.assetRoot() / "shaders");
     auto pbr = state->shaders->load(gl::ShaderDesc{"pbr", "pbr/pbr.vert", "pbr/pbr.frag", {}});
     if (!pbr) {
@@ -365,14 +599,6 @@ Status RetroverseApp::onInit(AppContext& context) {
         return propagate(unlit.error());
     }
     state->unlitShader = *unlit;
-    if (options.debugDraw) {
-        auto debug =
-            state->shaders->load(gl::ShaderDesc{"debug_lines", "debug/debug_lines.vert", "debug/debug_lines.frag", {}});
-        if (!debug) {
-            return propagate(debug.error());
-        }
-        state->debugShader = *debug;
-    }
     spdlog::info("Shader hot reload {}; F5 reloads every shader",
                  kShaderHotReload ? "on (sources checked every 500 ms)" : "off in this build");
 
@@ -392,7 +618,7 @@ Status RetroverseApp::onInit(AppContext& context) {
 
     const SceneResources resources{state->meshes, state->materials, *state->textures,
                                    caps.uniformBufferOffsetAlignment};
-    auto sceneInstance = SceneInstance::create(source->description, library, source->loadModel, resources);
+    auto sceneInstance = SceneInstance::create(state->description, library, source->loadModel, resources);
     if (!sceneInstance) {
         return propagate(sceneInstance.error());
     }
@@ -403,20 +629,32 @@ Status RetroverseApp::onInit(AppContext& context) {
     }
     state->renderer.emplace(std::move(*renderer));
     if (options.debugDraw) {
-        if (auto created = state->createDebugDraw(source->grid); !created) {
-            return propagate(created.error());
+        state->debugLines = kAllDebugLines;
+        if (auto shown = state->syncDebugLines(); !shown) {
+            return propagate(shown.error());
         }
     }
 
-    const scene::CameraSetup& camera = source->description.camera;
+    const scene::CameraSetup& camera = state->description.camera;
     state->camera.setLens(camera.lens);
     state->camera.setPose(camera.position, core::degreesToRadians(camera.yawDeg),
                           core::degreesToRadians(camera.pitchDeg));
-    state->freeRoam.emplace(source->description, state->scene->collisionWorld());
+    state->freeRoam.emplace(state->description, state->scene->collisionWorld());
 
     state->input = std::make_unique<AppInput>(context.window(), loadBindings(paths), std::move(*script));
+#if defined(RV_DEV_UI)
+    state->createDevUi(context);
+    if (state->devUi && options.devUiOpen) {
+        state->devUi->setVisible(true);
+    }
+#else
+    if (options.devUiOpen || options.screenshotIncludeUi) {
+        spdlog::warn("--devui-open and --screenshot-include-ui do nothing: this build has no developer overlay");
+    }
+#endif
     // Frame-limited runs may be unattended: they never take the user's mouse (and stray motion never reaches them).
-    if (!options.frameLimit) {
+    // With the overlay open from the start, the mouse stays free for its panels.
+    if (!options.frameLimit && !state->overlayVisible()) {
         state->input->captureMouseWhenFocused();
     }
 
@@ -433,9 +671,16 @@ Status RetroverseApp::onInit(AppContext& context) {
 }
 
 void RetroverseApp::onEvent(AppContext& /*context*/, const SDL_Event& event) {
-    if (m_state) {
-        m_state->input->handleEvent(event);
+    if (!m_state) {
+        return;
     }
+#if defined(RV_DEV_UI)
+    // The overlay sees events first and keeps what it uses (a click on a panel, keys while a field is edited).
+    if (m_state->devUi && m_state->devUi->handleEvent(event, m_state->input->mouseCaptured())) {
+        return;
+    }
+#endif
+    m_state->input->handleEvent(event);
 }
 
 void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
@@ -447,13 +692,11 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     state.simulatedSeconds += deltaSeconds;
     const input::ActionState actions = state.input->update(frame);
 
+    if (actions.pressed(input::Action::ToggleDevUI)) {
+        state.toggleOverlay();
+    }
     if (actions.pressed(input::Action::Back)) {
-        if (state.input->mouseCaptured()) {
-            state.input->releaseMouse("Back pressed; press it again to quit");
-        } else {
-            spdlog::info("Back pressed, quitting");
-            context.requestQuit();
-        }
+        state.back(context);
     }
     if (actions.pressed(input::Action::ReloadShaders)) {
         spdlog::info("Reloading shaders");
@@ -463,6 +706,13 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.screenshotRequested = true;
     }
 
+#if defined(RV_DEV_UI)
+    state.updateOverlay(context);
+#endif
+    if (auto shown = state.syncDebugLines(); !shown) {
+        spdlog::error("Debug lines unavailable: {}", shown.error().toString());
+    }
+    state.freeRoam->setCollisionEnabled(state.collision);
     state.freeRoam->update(actions, static_cast<float>(deltaSeconds), state.camera);
     state.logScriptProgress(frame);
 
@@ -505,6 +755,12 @@ void RetroverseApp::onRender(AppContext& context) {
         prepareTarget(state.windowTarget, windowSize, "WindowTarget", state.failedWindowSize)) {
         state.renderScene(context, state.windowTarget);
         state.windowTarget.blitToDefault(context.device().state(), windowSize);
+#if defined(RV_DEV_UI)
+        // Last, over the scene in the window: the screenshots above show the scene alone unless asked otherwise.
+        if (state.devUi) {
+            state.devUi->renderToWindow(context.device());
+        }
+#endif
     }
 
     // The statistics of the last view rendered this frame: the window's, or the screenshot's when the window is empty.

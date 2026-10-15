@@ -70,6 +70,9 @@ public:
 
     /// Underlying SDL window (owned by this object).
     [[nodiscard]] SDL_Window* handle() const noexcept { return m_window; }
+    /// The window's OpenGL context (an SDL_GLContext, owned by this object), for libraries that take it, such as the
+    /// Dear ImGui SDL3 backend.
+    [[nodiscard]] SDL_GLContextState* glContext() const noexcept { return m_context; }
     /// SDL window id, as found in SDL_WindowEvent::windowID.
     [[nodiscard]] std::uint32_t id() const noexcept;
 

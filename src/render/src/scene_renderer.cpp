@@ -146,7 +146,7 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         RenderStateCache& state = device.state();
         state.setDepthTest(true);
         state.setDepthFunc(GL_LESS);
-        state.setPolygonMode(GL_FILL);
+        state.setPolygonMode(view.wireframe ? GL_LINE : GL_FILL);
         state.setCullMode(GL_BACK);
         state.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         if (auto baseInstance = uploadInstances(); baseInstance) {
@@ -160,6 +160,7 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
                           baseInstance.error().toString());
         }
         m_instances.release(); // the draws that read this view's instances are issued
+        state.setPolygonMode(GL_FILL);
 
         if (view.debugDraw != nullptr && shaders.debugLines != nullptr && shaders.debugLines->valid()) {
             view.debugDraw->draw(*shaders.debugLines, state);

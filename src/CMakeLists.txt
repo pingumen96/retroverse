@@ -10,9 +10,8 @@ add_subdirectory(scene)
 # Platform and rendering layer
 add_subdirectory(platform)
 add_subdirectory(render)
-if(RV_DEV_UI)
-    add_subdirectory(devui)
-endif()
+# Developer overlay: its GPU-free model always, the Dear ImGui overlay itself only with RV_DEV_UI.
+add_subdirectory(devui)
 
 # Composition root
 add_subdirectory(app)

@@ -17,6 +17,7 @@
 #include <rv/assets/material_desc.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/buffer.hpp>
+#include <rv/render/material_uniforms.hpp>
 #include <rv/render/sampler.hpp>
 #include <rv/render/texture.hpp>
 #include <rv/render/texture_defaults.hpp>
@@ -44,6 +45,9 @@ using MaterialTextures = std::array<const Texture2D*, kMaterialTextureSlotCount>
 /// A material ready to draw.
 struct GpuMaterial {
     std::string name;
+    /// The description the material was registered with. Live edits (MaterialRegistry::setFactors) change `uniforms`
+    /// only, so this is also what reverting them goes back to.
+    assets::MaterialDesc source;
     scene::ShaderKind shader = scene::ShaderKind::Pbr;
     assets::AlphaMode alphaMode = assets::AlphaMode::Opaque;
     bool doubleSided = false;
@@ -55,10 +59,11 @@ struct GpuMaterial {
 };
 
 /// The materials of the scene on the GPU, behind the scene::MaterialHandle of the render items: every
-/// MaterialUniforms block in one immutable uniform buffer (each at an offset aligned to
-/// GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT), and per material the textures and samplers of its five slots. Samplers carry
-/// the renderer's filtering quality (trilinear, anisotropy from the device capabilities) and the wrap mode of the
-/// texture they are bound with, so pictures stay clamped and surfaces tile.
+/// MaterialUniforms block in one uniform buffer of fixed size (each at an offset aligned to
+/// GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT; live edits, setFactors, rewrite single blocks), and per material the textures
+/// and samplers of its five slots. Samplers carry the renderer's filtering quality (trilinear, anisotropy from the
+/// device capabilities) and the wrap mode of the texture they are bound with, so pictures stay clamped and surfaces
+/// tile.
 ///
 /// Materials are registered under keys that identify them (a library material's name, "<object>/<role>@WxH" for the
 /// picture instance of a part, "<model>#material<i>" for a glTF material): equal keys share one material. Usage:
@@ -80,10 +85,16 @@ public:
     /// The handle registered under `key`, if any.
     [[nodiscard]] std::optional<scene::MaterialHandle> find(std::string_view key) const;
 
-    /// Writes every block into a new immutable uniform buffer, when materials were added since the last upload (a
-    /// no-op otherwise). Errors: InvalidArgument for an empty registry or a bad alignment, and the errors of
-    /// Buffer::create.
+    /// Writes every block into a new uniform buffer, when materials were added since the last upload (a no-op
+    /// otherwise). Errors: InvalidArgument for an empty registry or a bad alignment, and the errors of Buffer::create.
     [[nodiscard]] Status upload(int uniformBufferOffsetAlignment, std::string_view debugName);
+
+    /// Replaces the base color, metallic, roughness and emissive strength of `handle` (withFactors with its source's
+    /// emissive factor; its shader, alpha mode and textures stay), for live editing in the developer overlay: the
+    /// draws issued afterwards use them, nothing is saved. An uploaded material's block is rewritten at once, the
+    /// others go up with the next upload(). Errors: InvalidArgument for an unknown handle, and the errors of
+    /// Buffer::update.
+    [[nodiscard]] Status setFactors(scene::MaterialHandle handle, const MaterialFactors& factors);
 
     /// Binds the uniform block of `handle` to UniformBinding::Material and its textures and samplers to the texture
     /// units 0..kMaterialTextureSlotCount-1. Does nothing for a handle outside the uploaded materials.
@@ -100,6 +111,8 @@ public:
     [[nodiscard]] std::size_t uploadedCount() const noexcept { return m_uploadedCount; }
     /// Bytes between two blocks in the uniform buffer.
     [[nodiscard]] std::size_t stride() const noexcept { return m_stride; }
+    /// Size of the uniform buffer of the last upload, in bytes (textures are the TextureCache's).
+    [[nodiscard]] std::size_t gpuBytes() const noexcept { return m_buffer.size(); }
 
 private:
     const TextureDefaults* m_defaults = nullptr;

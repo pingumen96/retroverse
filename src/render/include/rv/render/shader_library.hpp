@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rv/core/expected.hpp>
@@ -29,6 +30,16 @@ struct ShaderHandle {
     std::uint32_t value = 0;
 
     auto operator<=>(const ShaderHandle&) const = default;
+};
+
+/// Build state of one program of a ShaderLibrary, for diagnostics (the developer overlay).
+struct ShaderStatus {
+    std::string_view name; ///< ShaderDesc::name
+    /// A build succeeded at some point: the program draws (its latest working version).
+    bool valid = false;
+    /// The messages of the last build when it failed (preprocessing errors and compiler messages as
+    /// "<file>:<line>: ..."), empty when it succeeded.
+    std::string_view lastError;
 };
 
 /// Outcome of a reload pass.
@@ -72,10 +83,18 @@ public:
 
     [[nodiscard]] const std::filesystem::path& root() const noexcept { return m_root; }
 
+    /// Programs loaded so far.
+    [[nodiscard]] std::size_t size() const noexcept { return m_entries.size(); }
+    /// Build state of the `index`-th program loaded (load order, 0-based; its handle is index + 1). The views stay
+    /// valid until the next load() or rebuild. std::out_of_range for an index beyond size().
+    [[nodiscard]] ShaderStatus status(std::size_t index) const;
+
 private:
     struct Entry {
         ShaderDesc desc;
         ShaderProgram program;
+        /// Messages of the last build when it failed, empty after a successful one.
+        std::string lastError;
         /// Absolute, lexically normal paths of the files each stage's last assembly read or tried to read (root file
         /// first; a missing include too): the files hot reload watches for it.
         std::vector<std::filesystem::path> vertexFiles;

@@ -77,9 +77,12 @@ private:
 /// has bounds.
 [[nodiscard]] float socketAxisLength(const geometry::Socket& socket, const core::Aabb& objectBounds) noexcept;
 
-/// Adds, for every instance of every object of `geometry`, its bounds (SceneObjectGeometry::bounds under the instance
-/// transform, an oriented box in debug_colors::kObjectBounds) and the axes of each of its sockets as markers
+/// Adds the bounds of every instance of every object of `geometry` as plain lines: SceneObjectGeometry::bounds under
+/// the instance transform, an oriented box in debug_colors::kObjectBounds.
+void addSceneBoundsLines(const SceneGeometry& geometry, DebugLines& lines);
+
+/// Adds, for every instance of every object of `geometry`, the axes of each of its sockets as markers
 /// (socketAxisLength): shelf slots, CRT screen surfaces, model anchors.
-void addSceneDebugLines(const SceneGeometry& geometry, DebugLines& lines);
+void addSceneSocketLines(const SceneGeometry& geometry, DebugLines& lines);
 
 } // namespace rv::scene

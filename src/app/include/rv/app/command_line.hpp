@@ -86,6 +86,14 @@ struct CommandLineOptions {
 
     /// --self-check <name>: rendering check performed after initialization by a frame-limited run (SelfCheck).
     std::optional<SelfCheck> selfCheck;
+
+    /// --devui-open: show the developer overlay (F1) from the first frame, for automation and screenshots. Builds
+    /// without the overlay (RV_DEV_UI off) accept it and log that it does nothing.
+    bool devUiOpen = false;
+    /// --screenshot-include-ui: --screenshot and F12 screenshots also show the developer overlay when it is open,
+    /// drawn over the scene as in the window (scaled to the screenshot size). Without it screenshots show the scene
+    /// only.
+    bool screenshotIncludeUi = false;
 };
 
 /// Parses and validates arguments (UTF-8, program name excluded). Errors name the offending option:

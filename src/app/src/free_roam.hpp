@@ -15,13 +15,22 @@ namespace rv::app {
 
 /// FreeRoam mode (specification §12.2): first-person walking with capsule collision. The walker starts at the scene
 /// camera (feet = camera position - eye height, the camera's yaw, its pitch within the walker's pitch limit) and
-/// collides with the scene's collision world (SceneInstance::collisionWorld). GPU-free state; main thread.
+/// collides with the scene's collision world (SceneInstance::collisionWorld) unless collision is turned off (the
+/// developer overlay's noclip). GPU-free state; main thread.
 class FreeRoam {
 public:
     FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision);
 
     /// Advances the walker by one frame of `deltaSeconds` and writes the camera pose.
     void update(const input::ActionState& actions, float deltaSeconds, scene::Camera& camera);
+
+    /// Places the walker at `camera`: feet = camera position - eye height, the camera's yaw and pitch (within the
+    /// walker's pitch limit). The camera pose follows at the next update().
+    void teleportToCamera(const scene::CameraSetup& camera) noexcept;
+    /// Walls and furniture stop the walker while enabled (the default); disabled, it walks through them.
+    void setCollisionEnabled(bool enabled) noexcept { m_collisionEnabled = enabled; }
+    /// The walker, for the developer overlay (pose, speeds).
+    [[nodiscard]] scene::FirstPersonController& controller() noexcept { return m_controller; }
 
     /// "feet (x, y, z) m, yaw Y deg, pitch P deg", positions to 0.1 mm and angles to 0.01 degree.
     [[nodiscard]] std::string describePose() const;
@@ -34,6 +43,7 @@ private:
     scene::FirstPersonController m_controller;
     scene::CollisionWorld m_collision;
     glm::vec3 m_startFeet{0.0f};
+    bool m_collisionEnabled = true;
 };
 
 } // namespace rv::app

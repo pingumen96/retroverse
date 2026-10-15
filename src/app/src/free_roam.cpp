@@ -13,9 +13,8 @@ namespace rv::app {
 FreeRoam::FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision)
     : m_collision(std::move(collision)) {
     const scene::FirstPersonSettings& settings = m_controller.settings();
-    m_startFeet = scene.camera.position - glm::vec3(0.0f, settings.eyeHeight, 0.0f);
-    m_controller.teleport(m_startFeet, core::degreesToRadians(scene.camera.yawDeg),
-                          core::degreesToRadians(scene.camera.pitchDeg));
+    teleportToCamera(scene.camera);
+    m_startFeet = m_controller.feetPosition();
     spdlog::info("Free roam: {} collider box(es); start {}", m_collision.boxes().size(), describePose());
     spdlog::info("Free roam: walk {} m/s, sprint {} m/s, eye height {} m, capsule radius {} m and height {} m, pitch "
                  "limit {} deg",
@@ -29,7 +28,12 @@ FreeRoam::FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld c
 }
 
 void FreeRoam::update(const input::ActionState& actions, float deltaSeconds, scene::Camera& camera) {
-    m_controller.update(actions, deltaSeconds, camera, &m_collision);
+    m_controller.update(actions, deltaSeconds, camera, m_collisionEnabled ? &m_collision : nullptr);
+}
+
+void FreeRoam::teleportToCamera(const scene::CameraSetup& camera) noexcept {
+    const glm::vec3 feet = camera.position - glm::vec3(0.0f, m_controller.settings().eyeHeight, 0.0f);
+    m_controller.teleport(feet, core::degreesToRadians(camera.yawDeg), core::degreesToRadians(camera.pitchDeg));
 }
 
 std::string FreeRoam::describePose() const {

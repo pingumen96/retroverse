@@ -49,6 +49,9 @@ struct RenderView {
     float timeSeconds = 0.0f;
     /// Lines drawn over the scene with SceneShaders::debugLines; null for none.
     const DebugDraw* debugDraw = nullptr;
+    /// Draws the scene's triangles as their edges (glPolygonMode GL_LINE) to inspect geometry; the clear and the debug
+    /// lines are unaffected.
+    bool wireframe = false;
 };
 
 /// Batched, instanced scene renderer (spec §14.4). For each view it:
@@ -74,8 +77,8 @@ public:
     [[nodiscard]] static Expected<SceneRenderer> create(MeshRegistry& meshes, const MaterialRegistry& materials);
 
     /// Renders `view` into `target`: GLDevice::beginPass (clear to the view's clear color), then the passes above.
-    /// Leaves the state defaults documented on GLDevice::state() (blending off, depth writes on, back faces culled).
-    /// Batches whose mesh, material or program is unavailable are skipped (never a crash).
+    /// Leaves the state defaults documented on GLDevice::state() (blending off, depth writes on, back faces culled,
+    /// filled polygons). Batches whose mesh, material or program is unavailable are skipped (never a crash).
     void render(GLDevice& device, const SceneShaders& shaders, const RenderView& view, const Framebuffer& target);
 
     /// Statistics of the last render() call.

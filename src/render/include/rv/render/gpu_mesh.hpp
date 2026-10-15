@@ -53,6 +53,8 @@ public:
     [[nodiscard]] const core::Aabb& bounds() const noexcept { return m_bounds; }
     [[nodiscard]] std::size_t triangleCount() const noexcept { return m_indexCount / 3; }
     [[nodiscard]] std::size_t vertexCount() const noexcept { return m_vertexCount; }
+    /// Storage of the vertex and index buffers, in bytes.
+    [[nodiscard]] std::size_t gpuBytes() const noexcept { return m_vertices.size() + m_indices.size(); }
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
 private:

@@ -119,10 +119,17 @@ float socketAxisLength(const geometry::Socket& socket, const Aabb& objectBounds)
     return kDefaultSocketAxis;
 }
 
-void addSceneDebugLines(const SceneGeometry& geometry, DebugLines& lines) {
+void addSceneBoundsLines(const SceneGeometry& geometry, DebugLines& lines) {
     for (const SceneObjectGeometry& object : geometry.objects) {
         for (const glm::mat4& instance : object.instances) {
             lines.addBox(object.bounds, instance, debug_colors::kObjectBounds);
+        }
+    }
+}
+
+void addSceneSocketLines(const SceneGeometry& geometry, DebugLines& lines) {
+    for (const SceneObjectGeometry& object : geometry.objects) {
+        for (const glm::mat4& instance : object.instances) {
             for (const geometry::Socket& socket : object.sockets) {
                 lines.addAxes(instance * socket.transform, socketAxisLength(socket, object.bounds));
             }

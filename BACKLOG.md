@@ -35,6 +35,11 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   image with repeat and trilinear filtering (the glTF default); honor clamp/mirror wrap modes and nearest filters.
 - Per-instance normal matrix: `pbr.vert` inverts the instance's 3x3 matrix per vertex; precompute it per instance (or
   restrict instances to rotation + uniform scale) once vertex work matters.
+- Saving the developer overlay's edits: light, environment and material tweaks are live only (M0 step 9). Writing them
+  back to a scene file or to `materials.json` needs a JSON writer that keeps the files' comments and layout.
+- Log copy with worker threads: the overlay's `devui::LogView` reads `core::loggedMessageCount()` and then the newest
+  lines, so a line logged by another thread in between can show twice. Once workers log (I2), let `rv::core` return
+  the lines and the count under one lock.
 - Instance upload without the staging copy: `scene::BatchPlanner` gathers the plan's matrices into
   `BatchPlan::instanceTransforms` (kept by `gl::SceneRenderer`, so no allocation), which `gl::InstanceBuffer::write`
   then copies into the mapped region: 64 B per instance twice. When instance counts reach the tens of thousands, let the

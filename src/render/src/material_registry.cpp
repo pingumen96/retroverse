@@ -69,6 +69,7 @@ scene::MaterialHandle MaterialRegistry::add(std::string_view key, std::string la
     }
     GpuMaterial material;
     material.name = std::move(label);
+    material.source = desc;
     material.shader = shaderKindOf(desc);
     material.alphaMode = desc.alphaMode;
     material.doubleSided = desc.doubleSided;
@@ -123,7 +124,8 @@ Status MaterialRegistry::upload(int uniformBufferOffsetAlignment, std::string_vi
     for (std::size_t index = 0; index < m_materials.size(); ++index) {
         std::memcpy(bytes.data() + index * stride, &m_materials[index].uniforms, sizeof(MaterialUniforms));
     }
-    auto buffer = Buffer::create(std::span<const std::byte>(bytes), 0, debugName);
+    // Dynamic storage: setFactors() rewrites single blocks (developer overlay).
+    auto buffer = Buffer::create(std::span<const std::byte>(bytes), GL_DYNAMIC_STORAGE_BIT, debugName);
     if (!buffer) {
         return propagate(buffer.error());
     }
@@ -131,6 +133,19 @@ Status MaterialRegistry::upload(int uniformBufferOffsetAlignment, std::string_vi
     m_stride = stride;
     m_uploadedCount = m_materials.size();
     return ok();
+}
+
+Status MaterialRegistry::setFactors(scene::MaterialHandle handle, const MaterialFactors& factors) {
+    if (handle.value >= m_materials.size()) {
+        return makeError(ErrorCode::InvalidArgument, "unknown material", fmt::format("material #{}", handle.value));
+    }
+    GpuMaterial& material = m_materials[handle.value];
+    material.uniforms = withFactors(material.uniforms, factors, material.source.emissiveFactor);
+    if (handle.value >= m_uploadedCount) {
+        return ok();
+    }
+    return m_buffer.update(handle.value * m_stride,
+                           std::as_bytes(std::span<const MaterialUniforms, 1>(&material.uniforms, 1)));
 }
 
 void MaterialRegistry::bind(scene::MaterialHandle handle) const {

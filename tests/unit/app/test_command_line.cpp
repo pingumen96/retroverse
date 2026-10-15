@@ -54,6 +54,8 @@ TEST_CASE("app/command_line: no arguments describe an interactive windowed run",
     CHECK_FALSE(options->model.has_value());
     CHECK_FALSE(options->debugDraw);
     CHECK_FALSE(options->selfCheck.has_value());
+    CHECK_FALSE(options->devUiOpen);
+    CHECK_FALSE(options->screenshotIncludeUi);
 }
 
 TEST_CASE("app/command_line: --input-script and --fixed-dt drive automated runs", "[app][command_line]") {
@@ -322,6 +324,27 @@ TEST_CASE("app/command_line: --debug-draw draws debug lines over any scene", "[a
     CHECK_FALSE(parse({"--debug-draw=yes"}).has_value()); // a flag takes no value
 }
 
+TEST_CASE("app/command_line: --devui-open and --screenshot-include-ui show the developer overlay",
+          "[app][command_line]") {
+    const auto automated = parse({"--scene", "m0_testroom", "--devui-open", "--exit-after-frames", "--frames", "30",
+                                  "--screenshot", "ui.png", "--screenshot-include-ui"});
+    REQUIRE(automated.has_value());
+    CHECK(automated->devUiOpen);
+    CHECK(automated->screenshotIncludeUi);
+
+    // Interactive runs may open the overlay too, and F12 screenshots honor --screenshot-include-ui.
+    const auto interactive = parse({"--devui-open", "--screenshot-include-ui"});
+    REQUIRE(interactive.has_value());
+    CHECK(interactive->devUiOpen);
+    CHECK(interactive->screenshotIncludeUi);
+    const auto sceneOnly = parse({"--devui-open"});
+    REQUIRE(sceneOnly.has_value());
+    CHECK_FALSE(sceneOnly->screenshotIncludeUi);
+
+    CHECK_FALSE(parse({"--devui-open=1"}).has_value()); // flags take no value
+    CHECK_FALSE(parse({"--screenshot-include-ui=yes"}).has_value());
+}
+
 TEST_CASE("app/command_line: --screenshot needs a frame-limited run and a .png file", "[app][command_line]") {
     const auto interactive = parse({"--screenshot", "shot.png"});
     REQUIRE_FALSE(interactive.has_value());
@@ -475,6 +498,8 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
         INFO(option);
         CHECK(helpListsOption(help, option));
     }
+    CHECK(helpListsOption(help, "--devui-open"));
+    CHECK(helpListsOption(help, "--screenshot-include-ui"));
     CHECK_FALSE(helpListsOption(help, "--exi")); // a prefix of a listed option is not an entry
     CHECK(help.find("  --exit\n      Same as --exit-after-frames.") != std::string::npos);
     CHECK(help.find("Exit codes") != std::string::npos);

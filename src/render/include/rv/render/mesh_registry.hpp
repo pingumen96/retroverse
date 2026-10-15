@@ -42,6 +42,8 @@ public:
     [[nodiscard]] core::Aabb bounds(scene::MeshHandle handle) const noexcept;
     /// Registered meshes.
     [[nodiscard]] std::size_t size() const noexcept { return m_entries.size(); }
+    /// Vertex and index storage of every registered mesh, in bytes.
+    [[nodiscard]] std::size_t gpuBytes() const noexcept { return m_gpuBytes; }
 
     /// Makes every mesh read its per-instance matrices (locations 4..7) from `instances`. Meshes already attached to
     /// its current generation are skipped, so calling it before every view costs a loop unless the instance buffer was
@@ -57,6 +59,7 @@ private:
 
     std::vector<Entry> m_entries;
     std::map<std::string, std::uint32_t, std::less<>> m_keys;
+    std::size_t m_gpuBytes = 0;
 };
 
 } // namespace rv::gl

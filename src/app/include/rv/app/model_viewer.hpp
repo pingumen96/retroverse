@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include <rv/app/debug_line_selection.hpp>
 #include <rv/assets/model_data.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/scene/scene_description.hpp>
@@ -37,12 +38,6 @@ inline constexpr float kModelViewerMargin = 1.15f;
 ///    61), against which dark models (black plastic, graphite) and light ones both stand out.
 /// Empty or non-finite bounds are framed as a 1 m cube standing on the origin.
 [[nodiscard]] scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::Aabb& bounds);
-
-/// Reference grid of the debug lines (scene::DebugLines::addGrid) on the y = 0 plane.
-struct DebugGrid {
-    float halfExtent = 10.0f; ///< meters from the origin along x and z
-    float spacing = 1.0f;     ///< meters between lines
-};
 
 /// Grid for a model with `bounds` in the viewer, so that the model spans 2 to 20 cells whatever its size: the spacing
 /// is the power of ten at or below half the model's largest extent (a 0.5 m model gets 10 cm cells, a 12 m one 1 m

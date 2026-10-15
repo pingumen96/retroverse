@@ -1,5 +1,5 @@
-# rv_scene: camera, first-person controller, lights, render items and batching plan, scene descriptions, scene
-# content (geometry, models) and collision, debug lines. GPU-free: the renderer consumes its plain data.
+# rv_scene: camera, first-person controller and viewpoints, lights, render items and batching plan, scene descriptions,
+# scene content (geometry, models) and collision, debug lines. GPU-free: the renderer consumes its plain data.
 
 add_library(rv_scene STATIC
     src/batch_planner.cpp
@@ -10,6 +10,7 @@ add_library(rv_scene STATIC
     src/light.cpp
     src/scene_description.cpp
     src/scene_geometry.cpp
+    src/viewpoint.cpp
 )
 add_library(rv::scene ALIAS rv_scene)
 rv_set_target_defaults(rv_scene)

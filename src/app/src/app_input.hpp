@@ -54,6 +54,8 @@ public:
 
     /// The --input-script being played, or nullptr.
     [[nodiscard]] const input::InputScript* script() const noexcept { return m_script ? &m_script->script() : nullptr; }
+    /// The bindings and input settings (the developer overlay edits the mouse sensitivity and Y inversion).
+    [[nodiscard]] input::InputSystem& system() noexcept { return m_system; }
 
 private:
     platform::SdlInputCollector m_collector;

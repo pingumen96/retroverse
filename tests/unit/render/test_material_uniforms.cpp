@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <limits>
 
 #include <rv/assets/material_desc.hpp>
@@ -83,4 +84,62 @@ TEST_CASE("render/material_uniforms: values the shaders cannot use never reach t
     CHECK(block.emissiveStrength == defaults.emissiveStrength);
     CHECK(block.emissive == glm::vec3(1.0f, 0.0f, 0.0f));
     CHECK(block.alphaCutoff == 1.0f);
+}
+
+TEST_CASE("render/material_uniforms: live factor edits match a material with those factors", "[render][materials]") {
+    MaterialDesc lamp;
+    lamp.baseColorFactor = glm::vec4(0.8f, 0.7f, 0.5f, 1.0f);
+    lamp.roughnessFactor = 0.85f;
+    lamp.emissiveFactor = glm::vec3(1.0f, 0.58f, 0.25f);
+    lamp.emissiveStrength = 2.0f;
+    lamp.normalScale = 0.5f;
+    lamp.alphaMode = rv::assets::AlphaMode::Mask;
+    const std::uint32_t textures = flags::kBaseColorTexture | flags::kEmissiveTexture;
+    const rv::gl::MaterialUniforms registered = rv::gl::makeMaterialUniforms(lamp, textures);
+
+    const rv::gl::MaterialFactors factors = rv::gl::materialFactors(lamp);
+    CHECK(factors.baseColor == lamp.baseColorFactor);
+    CHECK(factors.metallic == lamp.metallicFactor);
+    CHECK(factors.roughness == lamp.roughnessFactor);
+    CHECK(factors.emissiveStrength == lamp.emissiveStrength);
+
+    // Edited factors: the block of the material with those factors, its other fields and flags untouched.
+    rv::gl::MaterialFactors edited = factors;
+    edited.baseColor = glm::vec4(0.2f, 0.4f, 0.6f, 0.5f);
+    edited.metallic = 0.9f;
+    edited.roughness = 0.1f;
+    edited.emissiveStrength = 0.0f; // switched off, then back on below: the emissive color comes back
+    MaterialDesc expected = lamp;
+    expected.baseColorFactor = edited.baseColor;
+    expected.metallicFactor = edited.metallic;
+    expected.roughnessFactor = edited.roughness;
+    expected.emissiveStrength = edited.emissiveStrength;
+    const rv::gl::MaterialUniforms off = rv::gl::withFactors(registered, edited, lamp.emissiveFactor);
+    const rv::gl::MaterialUniforms reference = rv::gl::makeMaterialUniforms(expected, textures);
+    CHECK(off.baseColorFactor == reference.baseColorFactor);
+    CHECK(off.metallic == reference.metallic);
+    CHECK(off.roughness == reference.roughness);
+    CHECK(off.emissive == glm::vec3(0.0f));
+    CHECK(off.emissiveStrength == 0.0f);
+    CHECK(off.normalScale == registered.normalScale);
+    CHECK(off.alphaCutoff == registered.alphaCutoff);
+    CHECK(off.flags == registered.flags);
+
+    edited.emissiveStrength = 4.0f;
+    const rv::gl::MaterialUniforms brighter = rv::gl::withFactors(off, edited, lamp.emissiveFactor);
+    CHECK(brighter.emissive == glm::vec3(4.0f, 2.32f, 1.0f));
+    CHECK(brighter.emissiveStrength == 4.0f);
+
+    // The same validation as makeMaterialUniforms: clamped, non-finite values take the defaults.
+    rv::gl::MaterialFactors wild;
+    wild.baseColor = glm::vec4(-1.0f, std::numeric_limits<float>::quiet_NaN(), 2.0f, 3.0f);
+    wild.metallic = 7.0f;
+    wild.roughness = -1.0f;
+    wild.emissiveStrength = -2.0f;
+    const rv::gl::MaterialUniforms clamped = rv::gl::withFactors(registered, wild, lamp.emissiveFactor);
+    CHECK(clamped.baseColorFactor == glm::vec4(0.0f, 1.0f, 2.0f, 1.0f));
+    CHECK(clamped.metallic == 1.0f);
+    CHECK(clamped.roughness == 0.0f);
+    CHECK(clamped.emissiveStrength == 0.0f);
+    CHECK(clamped.emissive == glm::vec3(0.0f));
 }

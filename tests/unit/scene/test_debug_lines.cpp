@@ -196,18 +196,23 @@ TEST_CASE("scene/debug_lines: scene lines are object bounds and socket axes at e
     REQUIRE(scene.has_value());
     const rv::scene::SceneGeometry geometry = rv::scene::buildSceneGeometry(*scene, *library);
 
-    DebugLines lines;
-    rv::scene::addSceneDebugLines(geometry, lines);
+    DebugLines bounds;
+    rv::scene::addSceneBoundsLines(geometry, bounds);
+    DebugLines sockets;
+    rv::scene::addSceneSocketLines(geometry, sockets);
     std::size_t boxes = 0;
     std::size_t axes = 0;
     for (const rv::scene::SceneObjectGeometry& object : geometry.objects) {
         boxes += object.instances.size() * 12;
         axes += object.instances.size() * 3 * object.sockets.size();
     }
-    CHECK(lines.lineCount() == boxes + axes);
     // Bounds are plain lines, socket axes markers (the CRT screen surface lies under its bulged glass).
-    CHECK(lines.vertices().size() == 2 * boxes);
-    CHECK(lines.markerVertices().size() == 2 * axes);
+    CHECK(bounds.lineCount() == boxes);
+    CHECK(bounds.vertices().size() == 2 * boxes);
+    CHECK(bounds.markerVertices().empty());
+    CHECK(sockets.lineCount() == axes);
+    CHECK(sockets.vertices().empty());
+    CHECK(sockets.markerVertices().size() == 2 * axes);
 
     // The shelf's bounds sit at its position: 1.2 x 2.0 x 0.35 m standing on the floor at (-1.5, 0, -4.8).
     DebugLines shelfOnly;
@@ -218,8 +223,7 @@ TEST_CASE("scene/debug_lines: scene lines are object bounds and socket axes at e
         }
     }
     REQUIRE(shelf.objects.size() == 1);
-    shelf.objects.front().sockets.clear();
-    rv::scene::addSceneDebugLines(shelf, shelfOnly);
+    rv::scene::addSceneBoundsLines(shelf, shelfOnly);
     REQUIRE(shelfOnly.lineCount() == 12);
     CHECK(linesOf(shelfOnly).contains(keyOf({-2.1f, 0.0f, -4.975f}, {-0.9f, 0.0f, -4.975f})));
 }

@@ -21,6 +21,7 @@ Expected<scene::MeshHandle> MeshRegistry::add(std::string_view key, const geomet
     }
     const auto index = static_cast<std::uint32_t>(m_entries.size());
     m_entries.push_back(Entry{std::move(*uploaded), 0});
+    m_gpuBytes += m_entries.back().mesh.gpuBytes();
     m_keys.emplace(std::string(key), index);
     return scene::MeshHandle{index};
 }

@@ -66,13 +66,25 @@ runs out of `%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
   `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit}`.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
-  gamepad sticks walk and look; Esc (gamepad B) releases the mouse, or quits when it is free; F5 reloads the shaders,
-  F12 writes `<user data>/screenshots/retroverse-<timestamp>.png`. Interactive runs capture the mouse when the window
-  has focus and on a click into it; frame-limited runs only on a click. Alt+Enter toggles fullscreen: the host handles
-  it before the action map (fixed, not rebindable, never seen as Enter). The walker collides with walls and furniture
-  and can step into a doorway but not leave the room. Developer builds also reload a shader within ~0.5 s of saving
-  any of its files (`assets/shaders`); a broken edit logs `<file>:<line>: error ...` and the previous program stays
-  in use.
+  gamepad sticks walk and look; Esc (gamepad B) leaves one level: it releases the mouse, else closes the developer
+  overlay, else quits; F1 toggles the developer overlay; F5 reloads the shaders, F12 writes
+  `<user data>/screenshots/retroverse-<timestamp>.png`. Interactive runs capture the mouse when the window has focus
+  and on a click into it; frame-limited runs only on a click. Alt+Enter toggles fullscreen: the host handles it before
+  the action map (fixed, not rebindable, never seen as Enter). The walker collides with walls and furniture and can
+  step into a doorway but not leave the room. Developer builds also reload a shader within ~0.5 s of saving any of its
+  files (`assets/shaders`); a broken edit logs `<file>:<line>: error ...` and the previous program stays in use.
+- Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about
+  the two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation,
+  screenshots). Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU time, what the
+  last view drew, GPU resources), Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision off =
+  noclip, reset to the scene camera), Lights (every scene light and the environment, live), Materials (base color,
+  metallic, roughness, emissive strength, live and never saved), Rendering (debug line kinds, wireframe, vsync, shader
+  reload with the last compile errors), Log (level filter, autoscroll) and Scene (the objects, with "go to"). The
+  layout is kept in `<user data>/config/imgui.ini` (delete it for the default layout). The overlay sees every event
+  first and keeps what it uses (a click on a panel, keys while a value is edited, so Esc in a text field never quits).
+  Opening it frees a captured mouse for the panels; a click into the scene captures it again, Esc releases it, and
+  closing the overlay gives back the capture it took. Screenshots show the scene only unless `--screenshot-include-ui`
+  is given: the overlay is then drawn into `--screenshot` and F12 images too, scaled to `--screenshot-size`.
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,
   both included) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window
@@ -117,6 +129,16 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 (a cartridge is about 50x30 px at 1920x1080). `turn_around.json` (`--frames 10`) faces the entrance half: the south
 wall and the doorway, which must read in free roam too.
 
+The developer overlay is checked the same way. Its pixels must hold Dear ImGui's theme colors exactly (they are sRGB
+already: the title bar of the focused panel reads 41,74,122), neither washed out nor darkened, with readable text; the
+same run without `--screenshot-include-ui` must show the scene alone. `--input-script` can press `toggle_dev_ui` and
+`back` on chosen frames:
+
+```powershell
+build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --devui-open --exit-after-frames --frames 30 --hidden `
+  --screenshot build/screenshots/devui.png --screenshot-include-ui --data-dir build/rvdata
+```
+
 glTF models are checked with `--model` and models written to `build/` (never commit generated or third-party models;
 downloads go to the git-ignored `assets/staging`). `python -I scripts/make_test_models.py build/models` (Python 3 with
 Pillow >= 10.1) writes `orientation_cube.gltf`, a 0.5 m cube whose faces are labeled FRONT +Z, TOP +Y, RIGHT +X, ...:
@@ -140,7 +162,8 @@ then edit or break the copy's shaders while it runs; the log shows each rebuild 
   with an explicit source list. Include as `#include <rv/<module>/<file>.hpp>`.
 - Dependency order: `core` -> `geometry` -> `input` -> `assets` -> `scene` (GPU-free; `rv_forbid_link` fails the
   configure if they reach SDL3, glad or ImGui) -> `platform` (SDL3) -> `render` (OpenGL through glad; never
-  includes SDL) -> `devui` (Dear ImGui, developer builds) -> `app` (composition root) -> `retroverse.exe`.
+  includes SDL) -> `devui` (Dear ImGui, developer builds; its GPU-free part `rv_devui_model` is always built) -> `app`
+  (composition root) -> `retroverse.exe`. Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`.
 - Tests: `tests/unit/<module>/test_*.cpp` (globbed into `rv_tests`, label `unit`, no SDL or OpenGL),
   `tests/platform/test_*.cpp` (globbed into `rv_platform_tests`, label `unit`: SDL platform layer, no OpenGL),
   `tests/support/*` helpers (globbed into `rv_test_support`), `tests/input_scripts` (scripted verification runs),

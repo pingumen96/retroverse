@@ -63,6 +63,11 @@ Expected<ShaderHandle> ShaderLibrary::load(const ShaderDesc& desc) {
     return ShaderHandle{static_cast<std::uint32_t>(m_entries.size())};
 }
 
+ShaderStatus ShaderLibrary::status(std::size_t index) const {
+    const Entry& entry = m_entries.at(index);
+    return ShaderStatus{entry.desc.name, entry.program.valid(), entry.lastError};
+}
+
 const ShaderProgram& ShaderLibrary::get(ShaderHandle handle) const noexcept {
     if (handle.value == 0 || handle.value > m_entries.size()) {
         return m_empty;
@@ -122,6 +127,7 @@ bool ShaderLibrary::rebuild(Entry& entry, bool reload) {
         auto program = ShaderProgram::build(*vertex, *fragment, entry.desc.name);
         if (program) {
             entry.program = std::move(*program);
+            entry.lastError.clear();
             std::set<std::filesystem::path> files(entry.vertexFiles.begin(), entry.vertexFiles.end());
             files.insert(entry.fragmentFiles.begin(), entry.fragmentFiles.end());
             spdlog::info("Shader '{}' {} from {} + {} ({} file(s) with includes)", entry.desc.name,
@@ -131,6 +137,7 @@ bool ShaderLibrary::rebuild(Entry& entry, bool reload) {
         failure = program.error().message;
     }
 
+    entry.lastError = failure;
     if (entry.program.valid()) {
         spdlog::error("Shader '{}' failed to build; the previous version stays in use:\n{}", entry.desc.name, failure);
     } else {
