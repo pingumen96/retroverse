@@ -377,3 +377,45 @@ TEST_CASE("scene/batch_planner: draw passes follow the alpha modes", "[scene][ba
     REQUIRE(plan.batches.size() == 1);
     CHECK(plan.batches[0].pass == DrawPass::Opaque);
 }
+
+TEST_CASE("scene/batch_planner: a shadow map plans the items that cast shadows, blended ones left out",
+          "[scene][batch_planner]") {
+    // Materials 1 and 2 are opaque, 3 is masked, 4 is blended (glass casts no shadow).
+    PlanOptions options;
+    options.localBounds = unitCube;
+    options.passOf = [](MaterialHandle material) {
+        return material.value == 4 ? DrawPass::Blend : (material.value == 3 ? DrawPass::Mask : DrawPass::Opaque);
+    };
+    std::vector<RenderItem> items{
+        item(1, 1, ShaderKind::Pbr, 0.0f), // opaque caster
+        item(1, 2, ShaderKind::Pbr, 1.0f), // opaque, casts no shadow (a rug)
+        item(2, 3, ShaderKind::Pbr, 2.0f), // masked caster
+        item(1, 4, ShaderKind::Pbr, 3.0f), // blended caster: left out all the same
+        item(1, 1, ShaderKind::Unlit, 4.0f), // unlit surfaces cast like the others
+    };
+    items[1].castsShadow = false;
+
+    // The view draws everything.
+    const BatchPlan view = BatchPlanner{}.plan(items, options);
+    CHECK(view.instanceTransforms.size() == 5);
+
+    options.shadowCastersOnly = true;
+    const BatchPlan shadow = BatchPlanner{}.plan(items, options);
+    checkContiguous(shadow);
+    // Left out, not culled: the culled count belongs to the frustum.
+    CHECK(shadow.culledItems == 0);
+    CHECK(tagsOf(shadow) == std::vector<float>{0.0f, 4.0f, 2.0f});
+    REQUIRE(shadow.batches.size() == 3);
+    CHECK(shadow.batches[0].pass == DrawPass::Opaque);
+    CHECK(shadow.batches[1].pass == DrawPass::Opaque);
+    CHECK(shadow.batches[1].shader == ShaderKind::Unlit);
+    CHECK(shadow.batches[2].pass == DrawPass::Mask);
+
+    // The frustum of the light culls as usual.
+    rv::scene::Camera light;
+    light.setPose(glm::vec3(100.0f, 0.0f, 0.0f), 0.0f, 0.0f); // looking away from every item
+    options.frustum = light.frustum();
+    const BatchPlan away = BatchPlanner{}.plan(items, options);
+    CHECK(away.instanceTransforms.empty());
+    CHECK(away.culledItems == 3);
+}

@@ -25,9 +25,13 @@ enum class ColorFormat : std::uint8_t {
     Srgb8Alpha8,
     /// GL_RGBA16F: linear values beyond [0, 1] (up to 65504), the HDR scene and its bloom before tonemapping.
     Rgba16F,
+    /// GL_R8: one channel in [0, 1], 8 bits (the ambient occlusion the lit shader reads).
+    R8,
+    /// GL_RG16F: two half floats (the half-resolution ambient occlusion and the distance it was estimated at).
+    Rg16F,
 };
 
-/// "srgb8_alpha8" or "rgba16f".
+/// "srgb8_alpha8", "rgba16f", "r8" or "rg16f".
 [[nodiscard]] std::string_view toString(ColorFormat format) noexcept;
 
 /// Most color attachments a Framebuffer has (FramebufferDesc::colorAttachments).
@@ -39,19 +43,22 @@ struct FramebufferDesc {
     glm::ivec2 size{0};
     /// Format of every color attachment.
     ColorFormat colorFormat = ColorFormat::Srgb8Alpha8;
-    /// Adds a GL_DEPTH24_STENCIL8 renderbuffer at GL_DEPTH_STENCIL_ATTACHMENT.
+    /// Adds a GL_DEPTH24_STENCIL8 buffer at GL_DEPTH_STENCIL_ATTACHMENT.
     bool depthStencil = true;
     /// Color attachments, 1 to kMaxColorAttachments: GL_COLOR_ATTACHMENT0 + i is the draw buffer of fragment output i.
     std::size_t colorAttachments = 1;
+    /// With depthStencil: the depth/stencil buffer is a texture that later passes can sample (bindDepthTexture():
+    /// window depth in [0, 1], nearest filtering unless a sampler says otherwise) instead of a renderbuffer.
+    bool depthTexture = false;
 };
 
 /// Move-only offscreen render target (DSA): one or more color textures with immutable storage (one mip level, linear
 /// filtering, clamped to edge) at GL_COLOR_ATTACHMENT0, 1, ..., all drawn into at once, and an optional
-/// depth24/stencil8 renderbuffer. The first color attachment is the read buffer: the copies, blitToDefault() and
-/// readPixels() take it. Rendering into it starts with GLDevice::beginPass(); later passes sample its color textures
-/// (bindColorTexture()); blitToDefault() presents it in the window and readPixels() returns its pixels for screenshots.
-/// Its pixel rows are bottom-first like every OpenGL framebuffer. A default-constructed or moved-from Framebuffer is
-/// empty. Main thread only.
+/// depth24/stencil8 buffer (a renderbuffer, or a texture with FramebufferDesc::depthTexture). The first color
+/// attachment is the read buffer: the copies, blitToDefault() and readPixels() take it. Rendering into it starts with
+/// GLDevice::beginPass(); later passes sample its color textures (bindColorTexture()); blitToDefault() presents it in
+/// the window and readPixels() returns its pixels for screenshots. Its pixel rows are bottom-first like every OpenGL
+/// framebuffer. A default-constructed or moved-from Framebuffer is empty. Main thread only.
 class Framebuffer {
 public:
     Framebuffer() noexcept = default;
@@ -80,6 +87,10 @@ public:
     /// sampler bound to that unit, if any, decides how. An attachment this framebuffer does not have unbinds the unit.
     /// Do not sample it while this framebuffer is bound for drawing.
     void bindColorTexture(GLuint unit, std::size_t attachment = 0) const;
+    /// Binds the depth/stencil texture (FramebufferDesc::depthTexture) to texture unit `unit`: sampled as window depth
+    /// in [0, 1] (GL_DEPTH_STENCIL_TEXTURE_MODE GL_DEPTH_COMPONENT). A framebuffer without one unbinds the unit. Do not
+    /// sample it while this framebuffer is bound for drawing.
+    void bindDepthTexture(GLuint unit) const;
 
     /// Copies the depth and stencil values into `destination`'s (glBlitNamedFramebuffer, exact), so that what is drawn
     /// there afterwards is depth-tested against this framebuffer's scene. Does nothing unless both have the same size
@@ -102,8 +113,8 @@ public:
 
     /// Reads the color attachment back as RGBA8 with the top row first (rows flipped once, ADR-0002). Srgb8Alpha8
     /// returns the stored sRGB-encoded bytes, read through a GL_RGBA8 view of the texture so that no driver converts
-    /// them; Rgba16F returns linear values clamped to [0, 1]. Waits for pending rendering (a pipeline stall: meant for
-    /// screenshots and tests, not for every frame).
+    /// them; the other formats return their values clamped to [0, 1] (channels they lack read 0, alpha 1). Waits for
+    /// pending rendering (a pipeline stall: meant for screenshots and tests, not for every frame).
     [[nodiscard]] Expected<assets::ImageData> readPixels() const;
     /// Reads the first color attachment of an Rgba16F framebuffer back as linear RGBA, bottom row first (texel order),
     /// the values as stored. A pipeline stall like readPixels(): meant for checks and tests. Errors: InvalidArgument
@@ -117,10 +128,17 @@ public:
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
 private:
+    /// True when the framebuffer has a depth/stencil buffer (renderbuffer or texture).
+    [[nodiscard]] bool hasDepthStencil() const noexcept {
+        return m_depthStencil.valid() || m_depthStencilTexture.valid();
+    }
+
     FramebufferDesc m_desc;
     std::string m_debugName;
     std::array<TextureObject, kMaxColorAttachments> m_colors;
+    /// The depth/stencil buffer: a renderbuffer, or a texture with FramebufferDesc::depthTexture.
     RenderbufferObject m_depthStencil;
+    TextureObject m_depthStencilTexture;
     FramebufferObject m_framebuffer;
 };
 

@@ -5,7 +5,10 @@
 // rv/render/tonemap.hpp); the material shaders are checked to write linear radiance and its emitted part to the
 // attachments of the HDR target (exposure and tonemapping are the post pass's), fragment stages to sample their
 // textures before they may discard, the post-processing passes to draw without vertex buffers, the bloom filters to
-// keep the energy of the image and the first bloom level to take the Karis average of every tap.
+// keep the energy of the image and the first bloom level to take the Karis average of every tap. The shadow and
+// ambient occlusion blocks, their texture units and constants match their mirrors too, the mesh programs share one
+// invariant vertex stage (the depth pre-pass and the lit pass compute the same depth) and the ambient occlusion
+// darkens the ambient light only.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,6 +21,7 @@
 #include <regex>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <rv/assets/shader_source.hpp>
@@ -210,17 +214,21 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
         }
     }
     std::sort(stages.begin(), stages.end());
-    // The programs of the application: pbr (PBR_Base), unlit_emissive (Unlit_Emissive), which shares pbr.vert,
-    // debug_lines (--debug-draw), and the post-processing, every pass on post/fullscreen.vert: bloom_downsample (also
-    // with RV_BLOOM_KARIS for the first level), bloom_upsample and post.
-    CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "pbr/pbr.frag",
-                                             "pbr/pbr.vert", "post/bloom_downsample.frag", "post/bloom_upsample.frag",
-                                             "post/fullscreen.vert", "post/post.frag", "unlit/unlit_emissive.frag"});
+    // The programs of the application: pbr (PBR_Base), unlit_emissive (Unlit_Emissive) and the depth-only depth and
+    // depth_masked (the shadow map, the depth pre-pass), which all share pbr.vert, debug_lines (--debug-draw), and the
+    // fullscreen passes on post/fullscreen.vert: the ambient occlusion (ssao, ssao_blur) and the post-processing,
+    // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample and post.
+    CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "depth/depth.frag",
+                                             "pbr/pbr.frag", "pbr/pbr.vert", "post/bloom_downsample.frag",
+                                             "post/bloom_upsample.frag", "post/fullscreen.vert", "post/post.frag",
+                                             "ssao/ssao.frag", "ssao/ssao_blur.frag", "unlit/unlit_emissive.frag"});
 
-    // The first bloom level is built with RV_BLOOM_KARIS; the self-checks use the programs of the views.
+    // The first bloom level is built with RV_BLOOM_KARIS, the depth program of alpha-masked batches with RV_ALPHA_TEST;
+    // the self-checks use the programs of the views.
     const std::vector<std::string> karisDefines{"RV_BLOOM_KARIS"};
+    const std::vector<std::string> alphaTestDefines{"RV_ALPHA_TEST"};
     for (const std::string& stage : stages) {
-        for (const std::vector<std::string>& defines : {std::vector<std::string>{}, karisDefines}) {
+        for (const std::vector<std::string>& defines : {std::vector<std::string>{}, karisDefines, alphaTestDefines}) {
             INFO(stage << " with " << defines.size() << " define(s)");
             const auto source = loader.load(stage, defines);
             REQUIRE(source.has_value());
@@ -232,12 +240,23 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
     }
     // The blocks and helpers each stage reads: the material shaders their material (and the lit one its lights), the
     // post-processing passes the post block, and only the post pass the display transform.
-    const auto includes = [&loader](const char* stage, const char* include) {
-        const auto source = loader.load(stage);
+    const auto includes = [&loader](const char* stage, const char* include,
+                                    const std::vector<std::string>& defines = {}) {
+        const auto source = loader.load(stage, defines);
         REQUIRE(source.has_value());
         return std::find(source->files.begin(), source->files.end(), fs::path(include)) != source->files.end();
     };
     CHECK(includes("pbr/pbr.frag", "common/lights.glsl"));
+    // The lit shader reads the key light's shadow and the ambient occlusion; the ambient occlusion passes their block.
+    CHECK(includes("pbr/pbr.frag", "common/shadow.glsl"));
+    CHECK(includes("pbr/pbr.frag", "common/occlusion.glsl"));
+    for (const char* stage : {"ssao/ssao.frag", "ssao/ssao_blur.frag"}) {
+        INFO(stage);
+        CHECK(includes(stage, "common/ssao.glsl"));
+        CHECK_FALSE(includes(stage, "common/tonemap.glsl"));
+    }
+    // The depth stage reads its material for the alpha test of alpha-masked batches.
+    CHECK(includes("depth/depth.frag", "common/material.glsl", alphaTestDefines));
     for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag"}) {
         INFO(stage);
         CHECK(includes(stage, "common/material.glsl"));
@@ -453,10 +472,11 @@ float glslFloatConstant(const std::string& source, const std::string& name) {
     return std::stof(match[1].str());
 }
 
-/// Texture units of `layout(binding = N) uniform sampler2D <name>;` declarations: name -> unit.
+/// Texture units of `layout(binding = N) uniform sampler2D <name>;` (or sampler2DShadow) declarations: name -> unit.
 std::map<std::string, std::uint32_t> samplerUnits(const std::string& source) {
     std::map<std::string, std::uint32_t> units;
-    const std::regex sampler(R"(layout\s*\(\s*binding\s*=\s*(\d+)\s*\)\s*uniform\s+sampler2D\s+(\w+)\s*;)");
+    const std::regex sampler(
+        R"(layout\s*\(\s*binding\s*=\s*(\d+)\s*\)\s*uniform\s+sampler2D(?:Shadow)?\s+(\w+)\s*;)");
     for (auto it = std::sregex_iterator(source.begin(), source.end(), sampler); it != std::sregex_iterator(); ++it) {
         units[(*it)[2].str()] = static_cast<std::uint32_t>(std::stoul((*it)[1].str()));
     }
@@ -483,7 +503,7 @@ TEST_CASE("integration/shaders: the GLSL post block, texture units and filters m
                     {"float", "uDitherAmplitude", offsetof(PostUniforms, ditherAmplitude)},
                 },
                 sizeof(PostUniforms));
-    CHECK(rv::gl::kFirstReservedUniformBinding == rv::gl::toIndex(rv::gl::UniformBinding::Post) + 1);
+    CHECK(rv::gl::toIndex(rv::gl::UniformBinding::Shadow) == rv::gl::toIndex(rv::gl::UniformBinding::Post) + 1);
 
     // Every pass samples its source on PostTextureUnit::Source (and may read the emitted light of the scene); only the
     // post pass reads the bloom, so the bloom passes, which draw into the bloom levels, never sample one of them by
@@ -689,13 +709,17 @@ TEST_CASE("integration/shaders: the display transform of tonemap.glsl matches it
 TEST_CASE("integration/shaders: fragment stages sample every texture before the alpha test may discard",
           "[integration][shader]") {
     // After a discard that only some fragments of a 2x2 quad take, implicit derivatives are undefined (GLSL 4.50
-    // §6.4): a texture() after it could pick a wrong mip level along cut-out edges.
+    // §6.4): a texture() after it could pick a wrong mip level along cut-out edges. Lookups with an explicit level of
+    // detail or none (textureLod: the shadow map; texelFetch: the ambient occlusion) need no derivatives and may
+    // follow.
     const rv::assets::ShaderSourceLoader loader(shaderRoot());
-    const std::regex sampling(R"(\btexture\w*\s*\()");
+    const std::regex sampling(R"(\btexture(?:Offset|Proj|ProjOffset)?\s*\()");
     const std::regex discarding(R"(\bdiscard\b)");
-    for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag"}) {
+    const std::pair<const char*, std::vector<std::string>> stages[] = {
+        {"pbr/pbr.frag", {}}, {"unlit/unlit_emissive.frag", {}}, {"depth/depth.frag", {"RV_ALPHA_TEST"}}};
+    for (const auto& [stage, defines] : stages) {
         INFO(stage);
-        const auto loaded = loader.load(stage);
+        const auto loaded = loader.load(stage, defines);
         REQUIRE(loaded.has_value());
         const auto bodies = functionBodies(withoutComments(loaded->text));
         REQUIRE(bodies.contains("main"));
@@ -710,4 +734,159 @@ TEST_CASE("integration/shaders: fragment stages sample every texture before the 
         CHECK(firstUse(main, sampling, samplers) < discardAt);
         CHECK(firstUse(main.substr(discardAt), sampling, samplers) == std::string::npos);
     }
+}
+
+namespace {
+
+/// Value of `const int <name> = <literal>;` in a comment-free GLSL source.
+int glslIntConstant(const std::string& source, const std::string& name) {
+    std::smatch match;
+    REQUIRE(std::regex_search(source, match, std::regex(R"(const\s+int\s+)" + name + R"(\s*=\s*(-?\d+)\s*;)")));
+    return std::stoi(match[1].str());
+}
+
+/// The statements (the text between semicolons) of `body` that contain `needle`.
+std::vector<std::string> statementsWith(const std::string& body, const std::string& needle) {
+    std::vector<std::string> statements;
+    std::size_t start = 0;
+    while (start < body.size()) {
+        const std::size_t end = std::min(body.find(';', start), body.size());
+        const std::string statement = body.substr(start, end - start);
+        if (statement.find(needle) != std::string::npos) {
+            statements.push_back(statement);
+        }
+        start = end + 1;
+    }
+    return statements;
+}
+
+} // namespace
+
+TEST_CASE("integration/shaders: the GLSL shadow block, constants and shadow map unit match their C++ mirrors",
+          "[integration][shader]") {
+    const std::string source = glslWithoutComments("common/shadow.glsl");
+    const auto defines = parseDefines(source);
+    int binding = -1;
+    const std::vector<Member> members = parseBlock(source, "ShadowUniforms", binding, defines);
+    CHECK(binding == static_cast<int>(rv::gl::toIndex(rv::gl::UniformBinding::Shadow)));
+    using rv::gl::ShadowUniforms;
+    checkLayout(members, {},
+                {
+                    {"mat4", "uShadowViewProjection", offsetof(ShadowUniforms, viewProjection)},
+                    {"vec3", "uShadowLightPosition", offsetof(ShadowUniforms, lightPosition)},
+                    {"int", "uShadowLightIndex", offsetof(ShadowUniforms, lightIndex)},
+                    {"vec2", "uShadowNormalOffset", offsetof(ShadowUniforms, normalOffset)},
+                    {"float", "uShadowStrength", offsetof(ShadowUniforms, strength)},
+                    {"float", "uShadowTexelSize", offsetof(ShadowUniforms, texelSize)},
+                },
+                sizeof(ShadowUniforms));
+    CHECK(glslIntConstant(source, "RV_NO_SHADOW_LIGHT") == rv::gl::kNoShadowLight);
+    CHECK(glslIntConstant(source, "RV_DIRECTIONAL_SHADOW_LIGHT") == rv::gl::kDirectionalShadowLight);
+    // The directional light's index follows the punctual lights of the lights block.
+    const auto lightDefines = parseDefines(glslWithoutComments("common/lights.glsl"));
+    REQUIRE(lightDefines.contains("RV_MAX_PUNCTUAL_LIGHTS"));
+    CHECK(static_cast<std::size_t>(glslIntConstant(source, "RV_DIRECTIONAL_SHADOW_LIGHT")) ==
+          lightDefines.at("RV_MAX_PUNCTUAL_LIGHTS"));
+
+    // The depth comparison is the hardware's (a shadow sampler) on the scene unit of the shadow map.
+    CHECK(samplerUnits(source) == std::map<std::string, std::uint32_t>{
+                                      {"uShadowMap", rv::gl::toIndex(rv::gl::SceneTextureUnit::ShadowMap)}});
+    CHECK(std::regex_search(source, std::regex(R"(uniform\s+sampler2DShadow\s+uShadowMap\b)")));
+    // A 3 x 3 tent (1 2 1) of filtered fetches, whose weights add up to 16, mixed towards 1 by the strength; receivers
+    // are moved along their normal before the lookup (normal offset).
+    const auto bodies = functionBodies(source);
+    REQUIRE(bodies.contains("keyLightVisibility"));
+    const std::string& visibility = bodies.at("keyLightVisibility");
+    CHECK(std::regex_search(visibility, std::regex(R"(textureLod\s*\(\s*uShadowMap\b)")));
+    CHECK(std::regex_search(visibility,
+                            std::regex(R"(2\s*-\s*abs\s*\(\s*x\s*\)\s*\)\s*\*\s*\(\s*2\s*-\s*abs\s*\(\s*y)")));
+    CHECK(std::regex_search(visibility,
+                            std::regex(R"(mix\s*\(\s*1\.0\s*,\s*visibility\s*/\s*16\.0\s*,\s*uShadowStrength\s*\))")));
+    CHECK(std::regex_search(visibility, std::regex(R"(worldPosition\s*\+\s*normal\s*\*\s*offset)")));
+}
+
+TEST_CASE("integration/shaders: the GLSL ambient occlusion block and texture units match their C++ mirrors",
+          "[integration][shader]") {
+    const std::string source = glslWithoutComments("common/ssao.glsl");
+    const auto defines = parseDefines(source);
+    REQUIRE(defines.contains("RV_SSAO_SAMPLE_COUNT"));
+    CHECK(defines.at("RV_SSAO_SAMPLE_COUNT") == rv::gl::kSsaoSampleCount);
+    int binding = -1;
+    const std::vector<Member> members = parseBlock(source, "SsaoUniforms", binding, defines);
+    CHECK(binding == static_cast<int>(rv::gl::toIndex(rv::gl::UniformBinding::Ssao)));
+    using rv::gl::SsaoUniforms;
+    checkLayout(members, {},
+                {
+                    {"vec4", "uSsaoKernel", offsetof(SsaoUniforms, kernel), rv::gl::kSsaoSampleCount},
+                    {"float", "uSsaoRadius", offsetof(SsaoUniforms, radius)},
+                    {"float", "uSsaoIntensity", offsetof(SsaoUniforms, intensity)},
+                    {"float", "uSsaoBias", offsetof(SsaoUniforms, bias)},
+                    {"float", "uSsaoDepthTolerance", offsetof(SsaoUniforms, depthTolerance)},
+                },
+                sizeof(SsaoUniforms));
+    CHECK(rv::gl::kFirstReservedUniformBinding == rv::gl::toIndex(rv::gl::UniformBinding::Ssao) + 1);
+
+    using rv::gl::SsaoTextureUnit;
+    CHECK(samplerUnits(source) ==
+          std::map<std::string, std::uint32_t>{{"uSceneDepth", rv::gl::toIndex(SsaoTextureUnit::SceneDepth)},
+                                               {"uRawOcclusion", rv::gl::toIndex(SsaoTextureUnit::RawOcclusion)}});
+    // The lit shader reads the result on a unit of its own.
+    CHECK(samplerUnits(glslWithoutComments("common/occlusion.glsl")) ==
+          std::map<std::string, std::uint32_t>{
+              {"uAmbientOcclusion", rv::gl::toIndex(rv::gl::SceneTextureUnit::AmbientOcclusion)}});
+
+    // Both passes draw the fullscreen triangle of post/fullscreen.vert, read nothing from it and write one output; the
+    // estimate places its samples with the camera's projection.
+    for (const char* stage : {"ssao/ssao.frag", "ssao/ssao_blur.frag"}) {
+        INFO(stage);
+        const std::string own = glslWithoutComments(stage);
+        CHECK(std::regex_search(own,
+                                std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*out\s+vec4\s+oOcclusion\s*;)")));
+        CHECK_FALSE(std::regex_search(own, std::regex(R"(\bin\s+\w+\s+\w+\s*;)")));
+    }
+    CHECK(std::regex_search(glslWithoutComments("ssao/ssao.frag"), std::regex(R"(uProjection\s*\*)")));
+}
+
+TEST_CASE("integration/shaders: the mesh programs share an invariant vertex stage", "[integration][shader]") {
+    // The depth pre-pass and the lit pass draw with different programs over the same vertex stage: an invariant
+    // gl_Position gives both the same depth, so the lit pass passes GL_LEQUAL exactly where the pre-pass drew.
+    CHECK(std::regex_search(glslWithoutComments("pbr/pbr.vert"), std::regex(R"(\binvariant\s+gl_Position\s*;)")));
+    // The depth stage writes nothing but depth, and discards like the lit pass when it alpha-tests.
+    const std::string depth = glslWithoutComments("depth/depth.frag");
+    CHECK_FALSE(std::regex_search(depth, std::regex(R"(\bout\s+\w+\s+\w+\s*;)")));
+    CHECK_FALSE(std::regex_search(depth, std::regex(R"(\bgl_FragDepth\b)")));
+    // Opaque batches draw their depth without a material bound: main reads one (the alpha test) only with
+    // RV_ALPHA_TEST, and calls nothing otherwise.
+    const auto bodies = functionBodies(depth);
+    REQUIRE(bodies.contains("main"));
+    std::smatch alphaTest;
+    REQUIRE(std::regex_search(bodies.at("main"), alphaTest,
+                              std::regex(R"(#if\s+defined\s*\(\s*RV_ALPHA_TEST\s*\)([\s\S]*?)#endif)")));
+    CHECK(std::regex_search(alphaTest[1].str(), std::regex(R"(materialAlphaTest\s*\()")));
+    CHECK_FALSE(std::regex_search(alphaTest.prefix().str() + alphaTest.suffix().str(), std::regex(R"(\w+\s*\()")));
+}
+
+TEST_CASE("integration/shaders: the lit shader shadows the key light and occludes the ambient light only",
+          "[integration][shader]") {
+    const auto bodies = functionBodies(glslWithoutComments("pbr/pbr.frag"));
+    REQUIRE(bodies.contains("main"));
+    const std::string& main = bodies.at("main");
+    // The shadow darkens the light the block names: the punctual light with its index, or the directional light.
+    CHECK(std::regex_search(main, std::regex(R"(i\s*==\s*uShadowLightIndex)")));
+    CHECK(std::regex_search(main, std::regex(R"(uShadowLightIndex\s*==\s*RV_DIRECTIONAL_SHADOW_LIGHT)")));
+    // The ambient occlusion is read once and reaches the two ambient terms, never a light's.
+    CHECK(std::regex_search(main, std::regex(R"(ambientVisibility\s*=[^;]*screenAmbientOcclusion\s*\(\s*\))")));
+    CHECK(statementsWith(main, "ambientVisibility").size() == 3); // read, then the diffuse and specular ambient
+    const std::vector<std::string> ambient = statementsWith(main, "hemisphereAmbient");
+    CHECK(ambient.size() == 2);
+    for (const std::string& statement : ambient) {
+        INFO(statement);
+        CHECK(statement.find("ambientVisibility") != std::string::npos);
+    }
+    for (const std::string& statement : statementsWith(main, "evaluateLight")) {
+        INFO(statement);
+        CHECK(statement.find("ambientVisibility") == std::string::npos);
+    }
+    // The specular ambient is occluded through the specular occlusion of the ambient occlusion.
+    CHECK(std::regex_search(main, std::regex(R"(specularOcclusion\s*\(\s*NoV\s*,\s*ambientVisibility\s*,)")));
 }

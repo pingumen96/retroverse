@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 #include <rv/devui/dev_ui.hpp>
@@ -15,6 +16,8 @@ struct FrameStats;
 class MaterialRegistry;
 class MeshRegistry;
 class ShaderLibrary;
+struct ShadowLight;
+struct ShadowSettings;
 class TextureCache;
 } // namespace rv::gl
 
@@ -41,8 +44,8 @@ struct SceneDescription;
 namespace rv::devui {
 
 /// "Stats": frame rate and times with a graph of the last FrameTimeHistory::kCapacity frames, the GPU times of the
-/// scene pass and of the post-processing, what the renderer's last view drew (gl::FrameStats) and the GPU resources of
-/// the registries and the texture cache.
+/// shadow map, the depth pre-pass, the ambient occlusion, the lit pass and the post-processing, what the renderer's
+/// last view drew (gl::FrameStats) and the GPU resources of the registries and the texture cache.
 struct StatsPanelModel {
     const FrameTimeHistory& frameTimes;
     /// gl::SceneRenderer::stats(): the last view rendered.
@@ -69,9 +72,11 @@ struct CameraPanelModel {
 };
 [[nodiscard]] std::unique_ptr<Panel> makeCameraPanel(CameraPanelModel model);
 
-/// "Lights": every scene light (position, direction, color shown in sRGB and stored linear, intensity, range, cone
-/// angles, shadow flag) and the environment (background radiance, ambient sky, ground and intensity), edited live; the
-/// lights the renderer leaves out are listed with the reason. The exposure is the Rendering panel's.
+/// "Lights": the key light that casts the shadows (or why there is none), every scene light (position, direction, color
+/// shown in sRGB and stored linear, intensity, range, cone angles, whether it casts shadows and how strongly: the first
+/// that does is the key light) and the environment (background radiance, ambient sky, ground and intensity), edited
+/// live; the lights the renderer leaves out are listed with the reason. The exposure and the ambient occlusion are the
+/// Rendering panel's.
 struct LightsPanelModel {
     /// The scene's lights as described (linear colors), edited in place.
     std::span<scene::Light> lights;
@@ -79,6 +84,9 @@ struct LightsPanelModel {
     scene::EnvironmentSetup& environment;
     /// Lights left out of the lights block by the last apply().
     const std::vector<gl::DroppedLight>& dropped;
+    /// The key light of the last apply(), and why the first light that asks for shadows has none.
+    const gl::ShadowLight& shadowLight;
+    const std::string& shadowNote;
     /// Repacks the lights block and the background after an edit.
     std::function<void()> apply;
 };
@@ -95,15 +103,18 @@ struct MaterialsPanelModel {
 [[nodiscard]] std::unique_ptr<Panel> makeMaterialsPanel(const MaterialsPanelModel& model);
 
 /// "Rendering": the debug line kinds (world grid, object bounds, socket axes), wireframe for the scene pass, vsync, the
-/// post-processing of the scene's environment (exposure, bloom strength and radius, vignette; live, never saved), and
-/// the shaders: a reload button (F5) and the build state of every program with its last compile error.
+/// key light's shadow (on or off, depth bias, normal offset), the ambient occlusion of the scene's environment (on or
+/// off, radius, intensity), its post-processing (exposure, bloom strength and radius, vignette; all live, never
+/// saved), and the shaders: a reload button (F5) and the build state of every program with its last compile error.
 struct RenderingPanelModel {
     bool& showGrid;
     bool& showBounds;
     bool& showSockets;
     bool& wireframe;
-    /// Its exposure, bloom and vignette are edited in place; the renderer reads them every view.
+    /// Its ambient occlusion, exposure, bloom and vignette are edited in place; the renderer reads them every view.
     scene::EnvironmentSetup& environment;
+    /// Edited in place; the renderer reads it every view.
+    gl::ShadowSettings& shadows;
     gl::ShaderLibrary& shaders;
     /// Its swap interval (vsync).
     platform::GraphicsWindow& window;

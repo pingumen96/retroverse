@@ -1,7 +1,9 @@
 // Instancing stress test (plan step 8): exactly 1000 boxes of ONE mesh in three materials (400 + 300 + 300),
 // stacked as a 10 x 10 x 10 block, plus a floor and one light. Expected plan: one batch per material for the boxes
 // and one for the floor. The background radiance is exposed and tonemapped like the scene: #383A3C is displayed as
-// #202224.
+// #202224. The sun casts shadows (M0 step 11): the reference of the directional shadow map, orthographic and fitted
+// to the casters (the block; the floor casts none), which the shadow pass draws in 3 instanced draw calls; the upper
+// boxes shade the tops of the lower ones and the block shades the floor behind it.
 {
   "schemaVersion": 1,
   "name": "instancing_stress",
@@ -14,7 +16,8 @@
     "exposure": 1.3
   },
   "lights": [
-    {"name": "sun", "type": "directional", "direction": [-0.4, -0.8, -0.45], "color": "#FFF1DE", "intensity": 3.0}
+    {"name": "sun", "type": "directional", "direction": [-0.4, -0.8, -0.45], "color": "#FFF1DE", "intensity": 3.0,
+     "castsShadows": true}
   ],
   "objects": [
     {"id": "floor", "primitive": "plane", "params": {"size": [40.0, 40.0], "uvTiling": [40.0, 40.0]},

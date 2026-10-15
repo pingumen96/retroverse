@@ -338,10 +338,26 @@ bool isUnitInterval(float value) noexcept {
     return value >= 0.0f && value <= 1.0f;
 }
 
+Expected<SsaoSetup> parseSsao(const json& value, const Location& at) {
+    Fields fields(value, at, {"enabled", "radius", "intensity"});
+    SsaoSetup ssao;
+    fields.optional("enabled", ssao.enabled, readBool);
+    fields.optional("radius", ssao.radius, readNumber);
+    fields.check(ssao.radius > 0.0f && ssao.radius <= kMaxSsaoRadius, "radius",
+                 "must be within (0, " + formatNumber(kMaxSsaoRadius) + "] meters");
+    fields.optional("intensity", ssao.intensity, readNumber);
+    fields.check(ssao.intensity >= 0.0f && ssao.intensity <= kMaxSsaoIntensity, "intensity",
+                 "must be within [0, " + formatNumber(kMaxSsaoIntensity) + "]");
+    if (fields.failed()) {
+        return propagate(fields.error());
+    }
+    return ssao;
+}
+
 Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& at) {
     Fields fields(value, at,
                   {"clearColor", "ambientSky", "ambientGround", "ambientIntensity", "exposure", "bloomStrength",
-                   "bloomRadius", "vignette"});
+                   "bloomRadius", "vignette", "ssao"});
     EnvironmentSetup environment;
     fields.optional("clearColor", environment.clearColor, readColor);
     fields.optional("ambientSky", environment.ambientSky, readColor);
@@ -356,6 +372,7 @@ Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& a
     fields.check(isUnitInterval(environment.bloomRadius), "bloomRadius", "must be within [0, 1]");
     fields.optional("vignette", environment.vignette, readNumber);
     fields.check(isUnitInterval(environment.vignette), "vignette", "must be within [0, 1]");
+    fields.optional("ssao", environment.ssao, parseSsao);
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -365,7 +382,7 @@ Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& a
 Expected<Light> parseLight(const json& value, const Location& at) {
     Fields fields(value, at,
                   {"name", "type", "position", "direction", "target", "color", "intensity", "range", "innerConeDeg",
-                   "outerConeDeg", "castsShadows"});
+                   "outerConeDeg", "castsShadows", "shadowStrength"});
     Light light;
     fields.optional("name", light.name, readString);
 
@@ -420,6 +437,8 @@ Expected<Light> parseLight(const json& value, const Location& at) {
                      formatNumber(light.outerConeDeg) + ")");
     fields.check(light.outerConeDeg < 90.0f, "outerConeDeg", "must be < 90");
     fields.optional("castsShadows", light.castsShadows, readBool);
+    fields.optional("shadowStrength", light.shadowStrength, readNumber);
+    fields.check(isUnitInterval(light.shadowStrength), "shadowStrength", "must be within [0, 1]");
     if (fields.failed()) {
         return propagate(fields.error());
     }

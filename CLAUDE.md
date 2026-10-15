@@ -53,11 +53,13 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   blue; the parts hidden by surfaces dimmed, so a socket under a surface still shows its origin) and a world grid on
   y = 0 (1 m cells in scenes; for a model, cells of the power of ten that makes it span 2 to 20 of them: 10 cm for a
   0.5 m model, 1 mm for a 1 cm part).
-- Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, GPU times
-  of the scene pass and of the post-processing from timer queries, `GPU scene ... ms, post ... ms`, frame times) are
-  logged once per second in developer builds and as `Frame stats of the run` at the end of every frame-limited run;
-  measure frame times with `--no-vsync` (at 1920x1080 on the reference GPU the post-processing takes about 0.3 ms:
-  `--width 1920 --height 1080 --no-vsync --hidden --exit-after-frames --frames 600`).
+- Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, the draw
+  calls of the shadow map and of the depth pre-pass, GPU times from timer queries, `GPU shadow ... ms, depth ... ms,
+  SSAO ... ms, scene ... ms, post ... ms`, frame times) are logged once per second in developer builds and as `Frame
+  stats of the run` at the end of every frame-limited run; measure frame times with `--no-vsync` (at 1920x1080 on the
+  reference GPU the test room's shadow map takes about 0.02 ms, its depth pre-pass 0.02 ms, the ambient occlusion
+  0.36 ms, the post-processing 0.3 ms: `--width 1920 --height 1080 --no-vsync --hidden --exit-after-frames --frames
+  600`).
 - `--screenshot <file.png>` writes the last frame of a frame-limited run; a run that ends before that frame (Esc,
   window closed) exits 3 like a failed write. `--screenshot-size WxH` (default 1920x1080, independent of the
   window) also applies to F12.
@@ -74,7 +76,18 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   look is tuned in the scene files (`environment` exposure, ambient and `clearColor`, which is background radiance
   post-processed like the surfaces; `bloomStrength`, the share of that light moved into the glow, 0.06, `bloomRadius`
   0.7 and `vignette` 0.05 by default; `lights`, at most 8 point/spot plus one directional), material presets in
-  `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit,post}`.
+  `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit,depth,ssao,post}`.
+- Shadows and ambient occlusion: the first light with `"castsShadows": true` is the key light. A spot key light gets a
+  perspective 2048x2048 shadow map over twice its cone, a directional one an orthographic map fitted to the shadow
+  casters (objects with `castsShadows`, default true) and snapped to whole texels; point lights cast no shadow (the log
+  and the Lights panel say so: make key lights spots). The lit shader filters the map with a 3x3 tent of hardware
+  2x2 PCF fetches; slope-scaled depth bias and a normal offset of 1.5 texels keep surfaces from shadowing themselves
+  (no acne) with shadows attached to their casters; `"shadowStrength"` (0..1, default 1) on the light sets how much of
+  its light its shadows take away. Every view first draws a depth pre-pass, from which screen-space ambient occlusion
+  (`environment.ssao`: `{"enabled": true, "radius": 0.4, "intensity": 1.0}` by default; half-resolution estimate,
+  depth-aware blur) darkens the ambient light only, never a light's (a subtle effect in rooms lit mostly by lights).
+  The model viewer has neither. Shadows are world-locked (the maps depend on the light, not on the camera): walking
+  never makes them shimmer.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Esc (gamepad B) leaves one level: it closes a popup of the developer overlay (a
@@ -87,12 +100,15 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   `<file>:<line>: error ...` and the previous program stays in use.
 - Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about the
   two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation, screenshots).
-  Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the scene pass and of
-  the post-processing, what the last view drew, GPU resources), Camera (feet, yaw, pitch, FOV, speeds, mouse
-  sensitivity, invert Y, collision off = noclip, reset to the scene camera), Lights (every scene light, the background
-  and the ambient, live), Materials (base color, metallic, roughness, emissive strength, live and never saved),
-  Rendering (debug line kinds, wireframe, vsync, post-processing: exposure, bloom strength and radius, vignette, live
-  and never saved; shader reload with the last compile errors), Log (level filter, autoscroll) and Scene (the objects,
+  Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the shadow map, the
+  depth pre-pass, the ambient occlusion, the scene pass and the post-processing, what the last view drew, GPU
+  resources), Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision off = noclip, reset to the
+  scene camera), Lights (the key light, every scene light with its shadow flag and strength, the background and the
+  ambient, live), Materials (base color, metallic, roughness, emissive strength, live and never saved), Rendering
+  (debug line kinds, wireframe, vsync, the key light's shadow on/off with its slope and constant bias and normal
+  offset, ambient occlusion on/off with radius and intensity, post-processing: exposure, bloom strength and radius,
+  vignette, all live and never saved; shader reload with the last compile errors), Log (level filter, autoscroll) and
+  Scene (the objects,
   with "go to", which frames the object in the part of the view the panels leave visible). The default layout widens its
   side columns with the display scale (at least 18 and 22 font sizes). Interactive runs keep the layout in
   `<user data>/config/imgui.ini` (delete it for the default layout); frame-limited runs always start from the default
@@ -125,11 +141,18 @@ sRGB-encoded values exactly as the window shows them (`--self-check srgb` proves
 checked numerically, e.g. with Python and Pillow; the post pass dithers the scene by one 8-bit step (the overlay is
 drawn after it and keeps its exact colors), so compare scene pixels with that tolerance, and crop and enlarge to judge
 the bloom, which is subtle by design (in the test room the CRT and the lamp shade glow softly onto the bezel and the
-wall). Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`). The other reference
-scenes: `material_test` (roughness grows along X, metallic along Y), `instancing_stress` (1000 boxes in 4 draw calls;
-frame times with `--no-vsync`) and `instancing_growth`, which grows the renderer's instance buffer mid-run: turned
-around, it shows about 2000 boxes, more than the 1024 the buffer starts with (the log reads
-`Instance buffer 'SceneRenderer.Instances' grown to ...`; with `--frames 1` it must not):
+wall). Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`). In the test room the
+ceiling key light (`ceiling_key`) grounds the furniture: each shelf board shades the compartment below it and the shelf
+a band of the wall to its left, the CRT, the console and the cabinet throw soft shadows on the wall and the floor to
+their right, the floor under the cabinet is dark; zoom in on contact lines for acne (speckles on lit surfaces) and
+peter-panning (a lit gap between an object and its shadow). To judge one effect alone, render a scratch copy of the
+scene under `build/` (scene files are plain JSON with comments): the key light without `castsShadows`, `"ssao":
+{"enabled": false}`, or only a strong ambient (no lights) to see the ambient occlusion, then compare the two PNGs
+pixel by pixel. The other reference scenes: `material_test` (roughness grows along X, metallic along Y; the floor
+under the lowest spheres darkens a little), `instancing_stress` (1000 boxes in 4 draw calls; the sun casts the
+directional shadows; frame times with `--no-vsync`) and `instancing_growth`, which grows the renderer's instance buffer
+mid-run: turned around, it shows about 2000 boxes, more than the 1024 the buffer starts with (the log reads `Instance
+buffer 'SceneRenderer.Instances' grown to ...`; with `--frames 1` it must not):
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --scene instancing_growth --exit-after-frames --frames 10 --fixed-dt 0.016667 `
@@ -147,8 +170,11 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 ```
 
 `walk_forward_2s.json` ends 3.2 m from the hero wall: a close-up of the shelf, a poster and the TV on its cabinet
-(a cartridge is about 50x30 px at 1920x1080). `turn_around.json` (`--frames 10`) faces the entrance half: the south
-wall and the doorway, which must read in free roam too.
+(a cartridge is about 50x30 px at 1920x1080). Two consecutive frames of it (`--frames 90` and `--frames 91`) show the
+shadows on the hero wall scaling with the wall and nothing else: walking straight at it, frame 90 magnified about the
+focus of expansion matches frame 91 on the wall within about one 8-bit step, shadow edges included (no shimmering).
+`turn_around.json` (`--frames 10`) faces the entrance half: the south wall and the doorway, which must read in free
+roam too.
 
 The developer overlay is checked the same way. Its pixels must hold Dear ImGui's theme colors exactly (they are sRGB
 already: the title bar of the focused panel reads 41,74,122), neither washed out nor darkened, with readable text; the

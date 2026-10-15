@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <fmt/format.h>
 
@@ -60,6 +62,20 @@ std::optional<std::string> rejection(const scene::Light& light) {
     return std::nullopt;
 }
 
+/// The key light `light`, packed at `index` (a punctual light index or kDirectionalShadowLight) with the unit
+/// `direction`.
+ShadowLight keyLightOf(const scene::Light& light, std::int32_t index, const glm::vec3& direction) {
+    ShadowLight key;
+    key.index = index;
+    key.type = light.type;
+    key.position = light.position;
+    key.direction = direction;
+    key.outerConeDeg = light.outerConeDeg;
+    key.range = light.range;
+    key.strength = std::isfinite(light.shadowStrength) ? std::clamp(light.shadowStrength, 0.0f, 1.0f) : 1.0f;
+    return key;
+}
+
 } // namespace
 
 glm::vec2 spotConeScaleOffset(float innerConeDeg, float outerConeDeg) noexcept {
@@ -73,27 +89,47 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
     PackedLights packed;
     LightsUniforms& block = packed.uniforms;
     bool directionalUsed = false;
+    bool keyLightSeen = false;
+    // Drops `light` for `reason`; a dropped key light casts no shadow.
+    const auto drop = [&packed](const scene::Light& light, std::size_t index, std::string reason, bool key) {
+        const std::string name = lightName(light, index);
+        if (key) {
+            packed.shadowNote = fmt::format("light '{}' casts shadows but is not drawn ({})", name, reason);
+        }
+        packed.dropped.push_back({name, std::move(reason)});
+    };
     for (std::size_t index = 0; index < lights.size(); ++index) {
         const scene::Light& light = lights[index];
+        // The first light that asks for shadows is the key light, whether or not it can have them.
+        const bool key = light.castsShadows && !keyLightSeen;
+        keyLightSeen = keyLightSeen || light.castsShadows;
         if (const auto reason = rejection(light)) {
-            packed.dropped.push_back({lightName(light, index), *reason});
+            drop(light, index, *reason, key);
             continue;
         }
         if (light.type == scene::LightType::Directional) {
             if (directionalUsed) {
-                packed.dropped.push_back({lightName(light, index), "only one directional light is supported"});
+                drop(light, index, "only one directional light is supported", key);
                 continue;
             }
             directionalUsed = true;
             block.directionalDirection = *unitDirection(light.direction);
             block.directionalColor = light.color;
             block.directionalIntensity = light.intensity;
+            if (key) {
+                packed.shadowLight = keyLightOf(light, kDirectionalShadowLight, block.directionalDirection);
+            }
             continue;
         }
         if (block.punctualLightCount >= static_cast<std::int32_t>(kMaxPunctualLights)) {
-            packed.dropped.push_back(
-                {lightName(light, index), fmt::format("more than {} point and spot lights", kMaxPunctualLights)});
+            drop(light, index, fmt::format("more than {} point and spot lights", kMaxPunctualLights), key);
             continue;
+        }
+        if (key && light.type == scene::LightType::Point) {
+            packed.shadowNote = fmt::format(
+                "light '{}' casts shadows but is a point light: point-light shadows are not supported, make the key "
+                "light a spot",
+                lightName(light, index));
         }
         PunctualLightUniforms& entry = block.punctualLights[block.punctualLightCount++];
         entry.position = light.position;
@@ -105,6 +141,10 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
             const glm::vec2 cone = spotConeScaleOffset(light.innerConeDeg, light.outerConeDeg);
             entry.spotScale = cone.x;
             entry.spotOffset = cone.y;
+            if (key) {
+                packed.shadowLight = keyLightOf(light, block.punctualLightCount - 1, entry.direction);
+                packed.shadowLight.range = entry.range;
+            }
         } else {
             entry.direction = glm::vec3(0.0f, -1.0f, 0.0f); // unused: no cone
             entry.spotScale = 0.0f;

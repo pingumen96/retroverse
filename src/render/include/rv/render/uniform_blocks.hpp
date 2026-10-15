@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include <glm/mat4x4.hpp>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
@@ -18,22 +19,26 @@ namespace rv::gl {
 ///   1   Lights    LightsUniforms, scene lights and ambient (assets/shaders/common/lights.glsl)
 ///   2   Material  MaterialUniforms, per material (assets/shaders/common/material.glsl)
 ///   3   Post      PostUniforms, post-processing of a view (assets/shaders/common/post.glsl)
-///   4+  reserved: new blocks are added to this table first, then to the shaders.
+///   4   Shadow    ShadowUniforms, the key light's shadow map in a view (assets/shaders/common/shadow.glsl)
+///   5   Ssao      SsaoUniforms, the ambient occlusion passes of a view (assets/shaders/common/ssao.glsl)
+///   6+  reserved: new blocks are added to this table first, then to the shaders.
 enum class UniformBinding : std::uint32_t {
     Frame = 0,
     Lights = 1,
     Material = 2,
     Post = 3,
+    Shadow = 4,
+    Ssao = 5,
 };
 
 /// First binding point that is not assigned yet.
-inline constexpr std::uint32_t kFirstReservedUniformBinding = 4;
+inline constexpr std::uint32_t kFirstReservedUniformBinding = 6;
 
 [[nodiscard]] constexpr std::uint32_t toIndex(UniformBinding binding) noexcept {
     return static_cast<std::uint32_t>(binding);
 }
 
-static_assert(sizeof(glm::mat4) == 64 && sizeof(glm::vec3) == 12 && sizeof(glm::vec4) == 16,
+static_assert(sizeof(glm::mat4) == 64 && sizeof(glm::vec2) == 8 && sizeof(glm::vec3) == 12 && sizeof(glm::vec4) == 16,
               "glm types must be tightly packed (no GLM_FORCE_DEFAULT_ALIGNED_GENTYPES)");
 
 // The C++ mirrors below follow std140 member for member: a mat4 is four 16-byte columns, a vec3 takes a 16-byte slot
@@ -236,5 +241,100 @@ enum class PostTextureUnit : std::uint32_t {
 [[nodiscard]] constexpr std::uint32_t toIndex(PostTextureUnit unit) noexcept {
     return static_cast<std::uint32_t>(unit);
 }
+
+/// Texture units the lit scene shader (pbr/pbr.frag) reads besides its material's: `layout(binding = N) uniform` in
+/// common/shadow.glsl and common/occlusion.glsl. They follow the post-processing units.
+enum class SceneTextureUnit : std::uint32_t {
+    /// The key light's shadow map (sampler2DShadow: depth compared in hardware, gl::ShadowMap).
+    ShadowMap = 8,
+    /// The ambient occlusion of the view, one value per pixel of the HDR target (gl::ViewTargets::ambientOcclusion()).
+    AmbientOcclusion = 9,
+};
+
+[[nodiscard]] constexpr std::uint32_t toIndex(SceneTextureUnit unit) noexcept {
+    return static_cast<std::uint32_t>(unit);
+}
+
+static_assert(toIndex(SceneTextureUnit::ShadowMap) == toIndex(PostTextureUnit::Emission) + 1,
+              "the scene units follow the post-processing units");
+
+/// Texture units of the ambient occlusion passes (gl::SsaoPass): `layout(binding = N) uniform sampler2D` in
+/// common/ssao.glsl. They follow the scene units, so that no pass rebinds a texture the lit shader reads.
+enum class SsaoTextureUnit : std::uint32_t {
+    /// The depth of the view's HDR scene target (window depth in [0, 1]), with a bilinear sampler: on a plane, window
+    /// depth is linear in screen space, so filtered samples between pixels are exact.
+    SceneDepth = 10,
+    /// The half-resolution occlusion the blur pass filters (gl::ViewTargets::ambientOcclusionRaw()).
+    RawOcclusion = 11,
+};
+
+[[nodiscard]] constexpr std::uint32_t toIndex(SsaoTextureUnit unit) noexcept {
+    return static_cast<std::uint32_t>(unit);
+}
+
+static_assert(toIndex(SsaoTextureUnit::SceneDepth) == toIndex(SceneTextureUnit::AmbientOcclusion) + 1,
+              "the ambient occlusion units follow the scene units");
+
+/// ShadowUniforms::lightIndex when no light casts the view's shadow.
+inline constexpr std::int32_t kNoShadowLight = -1;
+/// ShadowUniforms::lightIndex of the directional light of LightsUniforms; 0 .. kMaxPunctualLights - 1 index its point
+/// and spot lights.
+inline constexpr std::int32_t kDirectionalShadowLight = static_cast<std::int32_t>(kMaxPunctualLights);
+
+/// The key light's shadow in a view at UniformBinding::Shadow: block `ShadowUniforms` of common/shadow.glsl, read by
+/// the lit shader with the shadow map on SceneTextureUnit::ShadowMap. Built per view by rv::gl::makeShadowUniforms
+/// (shadow_settings.hpp).
+struct ShadowUniforms {
+    /// World -> clip space of the shadow map (OpenGL clip space, depth in [-1, 1]).
+    glm::mat4 viewProjection{1.0f};
+    /// Eye of a perspective (spot light) shadow map: the normal offset grows with the distance from it.
+    glm::vec3 lightPosition{0.0f};
+    /// The LightsUniforms light whose radiance the shadow darkens: kNoShadowLight (no shadow in this view), a punctual
+    /// light index or kDirectionalShadowLight.
+    std::int32_t lightIndex = kNoShadowLight;
+    /// Normal offset in meters: a receiver is looked up in the map from its position moved along its normal by
+    /// x + y * (distance from lightPosition), about one and a half texels of the map at that distance.
+    glm::vec2 normalOffset{0.0f};
+    /// [0, 1]: share of the light's radiance its shadow takes away (scene::Light::shadowStrength).
+    float strength = 0.0f;
+    /// One texel of the shadow map in its texture coordinates: 1 / resolution.
+    float texelSize = 0.0f;
+};
+
+static_assert(offsetof(ShadowUniforms, viewProjection) == 0);
+static_assert(offsetof(ShadowUniforms, lightPosition) == 64);
+static_assert(offsetof(ShadowUniforms, lightIndex) == 76);
+static_assert(offsetof(ShadowUniforms, normalOffset) == 80);
+static_assert(offsetof(ShadowUniforms, strength) == 88);
+static_assert(offsetof(ShadowUniforms, texelSize) == 92);
+static_assert(sizeof(ShadowUniforms) == 96, "std140 block sizes are multiples of 16 bytes");
+
+/// Samples of the ambient occlusion estimate of a pixel (RV_SSAO_SAMPLE_COUNT in common/ssao.glsl).
+inline constexpr std::uint32_t kSsaoSampleCount = 16;
+
+/// Parameters of the ambient occlusion passes of a view at UniformBinding::Ssao: block `SsaoUniforms` of
+/// common/ssao.glsl. Built by rv::gl::makeSsaoUniforms (ssao_settings.hpp), which keeps every value in the range
+/// documented here.
+struct SsaoUniforms {
+    /// xyz: the sample offsets of a pixel in the unit hemisphere around +Z (rotated about the surface normal per
+    /// pixel, scaled by the radius); w is 0.
+    glm::vec4 kernel[kSsaoSampleCount]{};
+    /// Meters (> 0): how far from a surface occluders darken it.
+    float radius = 0.4f;
+    /// >= 0: exponent applied to the unoccluded share of the ambient light.
+    float intensity = 1.0f;
+    /// Meters (>= 0): an occluder must be this much in front of a sample point to occlude it, against self-occlusion.
+    float bias = 0.0f;
+    /// > 0: relative depth difference at which a tap of the blur stops counting (its weight falls linearly to 0), so
+    /// the occlusion of one surface never bleeds onto another in front of or behind it.
+    float depthTolerance = 0.05f;
+};
+
+static_assert(offsetof(SsaoUniforms, kernel) == 0);
+static_assert(offsetof(SsaoUniforms, radius) == 256);
+static_assert(offsetof(SsaoUniforms, intensity) == 260);
+static_assert(offsetof(SsaoUniforms, bias) == 264);
+static_assert(offsetof(SsaoUniforms, depthTolerance) == 268);
+static_assert(sizeof(SsaoUniforms) == 272, "std140 block sizes are multiples of 16 bytes");
 
 } // namespace rv::gl

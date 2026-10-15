@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <string_view>
@@ -8,6 +9,7 @@
 
 #include <rv/devui/panels.hpp>
 #include <rv/render/light_packing.hpp>
+#include <rv/render/shadow_settings.hpp>
 #include <rv/scene/light.hpp>
 #include <rv/scene/scene_description.hpp>
 
@@ -38,6 +40,7 @@ public:
         if (m_model.lights.empty()) {
             ImGui::TextDisabled("The scene has no lights");
         }
+        drawKeyLight();
         ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, kLightIndentEms * ImGui::GetFontSize());
         for (std::size_t index = 0; index < m_model.lights.size(); ++index) {
             ImGui::PushID(static_cast<int>(index));
@@ -54,6 +57,26 @@ public:
     }
 
 private:
+    /// Which light casts the shadows, or why none does.
+    void drawKeyLight() const {
+        if (!m_model.shadowNote.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kWarningColor);
+            ImGui::TextWrapped("No shadows: %s", m_model.shadowNote.c_str());
+            ImGui::PopStyleColor();
+            return;
+        }
+        const gl::ShadowLight& key = m_model.shadowLight;
+        const auto first = std::find_if(m_model.lights.begin(), m_model.lights.end(),
+                                        [](const scene::Light& light) { return light.castsShadows; });
+        if (!key.casts() || first == m_model.lights.end()) {
+            ImGui::TextDisabled("No light casts shadows");
+            return;
+        }
+        const char* name = first->name.empty() ? "(unnamed)" : first->name.c_str();
+        ImGui::Text("Key light: %s", name);
+        ImGui::SetItemTooltip("The first light that casts shadows; its shadow map darkens what it cannot see");
+    }
+
     bool drawEnvironment() {
         if (!ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen)) {
             return false;
@@ -105,9 +128,15 @@ private:
             changed |= ImGui::DragFloat("Outer cone", &light.outerConeDeg, 0.25f, light.innerConeDeg, kMaxConeDeg,
                                         "%.1f deg", ImGuiSliderFlags_AlwaysClamp);
         }
+        changed |= ImGui::Checkbox("Casts shadows", &light.castsShadows);
+        ImGui::SetItemTooltip("The first light that casts shadows is the key light: spot and directional lights are "
+                              "shadow-mapped, point lights cast none");
+        if (light.castsShadows) {
+            changed |= ImGui::SliderFloat("Shadow", &light.shadowStrength, 0.0f, 1.0f, "%.2f",
+                                          ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SetItemTooltip("Shadow strength: share of this light its shadows take away (1: all of it)");
+        }
         ImGui::PopItemWidth();
-        ImGui::Checkbox("Casts shadows", &light.castsShadows);
-        ImGui::SetItemTooltip("Kept for the shadow pass (not drawn yet)");
         ImGui::TreePop();
         return changed;
     }

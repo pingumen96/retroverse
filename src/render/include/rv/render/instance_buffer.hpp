@@ -50,6 +50,10 @@ public:
     /// Errors: InvalidArgument for an empty buffer, OutOfRange beyond kMaxRegionCapacity, GraphicsError when the GPU
     /// does not release the region within kFenceTimeoutNanoseconds or a larger buffer cannot be allocated.
     [[nodiscard]] Expected<std::uint32_t> write(std::span<const glm::mat4> transforms);
+    /// Same for several lists of transforms written one after the other into one region (a view and its shadow map):
+    /// part i starts at the returned index plus the sizes of the parts before it. Parts may be empty; when all are, it
+    /// returns 0 and uses no region.
+    [[nodiscard]] Expected<std::uint32_t> write(std::span<const std::span<const glm::mat4>> parts);
 
     /// Fences the region of the last write(): call it once the draws that read it are issued.
     void release();

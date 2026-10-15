@@ -35,7 +35,7 @@ private:
         const FrameTimeHistory& history = m_model.frameTimes;
         const FrameTimeHistory::Summary summary = history.summary();
         ImGui::Text("%.0f FPS  %.2f ms", summary.framesPerSecond, summary.averageMilliseconds);
-        ImGui::SetItemTooltip("Average frame time of the frames in the graph; GPU times: Last view");
+        ImGui::SetItemTooltip("Average frame time of the frames in the graph; GPU times of the passes: Last view");
         char caption[64];
         std::snprintf(caption, sizeof(caption), "%.2f to %.2f ms, %zu frames", summary.minMilliseconds,
                       summary.maxMilliseconds, history.size());
@@ -49,9 +49,15 @@ private:
         ImGui::SeparatorText("Last view");
         const gl::FrameStats& stats = m_model.renderStats;
         if (widgets::beginValueTable("view")) {
+            widgets::millisecondsRow("GPU shadow", stats.shadowGpuMilliseconds);
+            widgets::millisecondsRow("GPU depth", stats.depthGpuMilliseconds);
+            widgets::millisecondsRow("GPU SSAO", stats.ssaoGpuMilliseconds);
             widgets::millisecondsRow("GPU scene", stats.sceneGpuMilliseconds);
             widgets::millisecondsRow("GPU post", stats.postGpuMilliseconds);
             widgets::valueRow("Draw calls", stats.drawCalls);
+            widgets::valueRow("Shadow draw calls", stats.shadowDrawCalls);
+            widgets::valueRow("Shadow instances", stats.shadowInstances);
+            widgets::valueRow("Depth draw calls", stats.depthDrawCalls);
             widgets::valueRow("Batches", stats.batches);
             widgets::valueRow("Instances", stats.instances);
             widgets::valueRow("Triangles", stats.triangles);

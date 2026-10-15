@@ -1,5 +1,6 @@
 # rv_render: OpenGL 4.5 core renderer (device, shaders, buffers, textures, mesh and material registries, glTF models,
-# the batched and instanced scene renderer, HDR view targets, bloom and the post pass, debug lines, framebuffers).
+# the batched and instanced scene renderer with the key light's shadow map, the depth pre-pass and ambient occlusion,
+# HDR view targets, bloom and the post pass, debug lines, framebuffers).
 # Receives the GL function loader as a function pointer and never includes SDL.
 
 # GPU-free policy pieces of the renderer, so rv_tests can unit-test them without a context. Their headers include no
@@ -7,8 +8,10 @@
 #   rv_render_debug_filter  which GL debug messages are logged, dropped or de-duplicated
 #   rv_render_uniforms      std140 uniform block mirrors (uniform_blocks.hpp) and their packing from scene lights,
 #                           the environment and materials; the post-processing settings, their block and the bloom
-#                           chain's level sizes (post_settings.hpp); the CPU mirror of the display transform
-#                           (tonemap.hpp); the renderer's frame statistics (frame_stats.hpp, header only)
+#                           chain's level sizes (post_settings.hpp); the key light's shadow map transforms, biases and
+#                           block (shadow_settings.hpp); the ambient occlusion kernel, block and target size
+#                           (ssao_settings.hpp); the CPU mirror of the display transform (tonemap.hpp); the renderer's
+#                           frame statistics (frame_stats.hpp, header only)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -22,6 +25,8 @@ add_library(rv_render_uniforms STATIC
     src/light_packing.cpp
     src/material_uniforms.cpp
     src/post_settings.cpp
+    src/shadow_settings.cpp
+    src/ssao_settings.cpp
     src/tonemap.cpp
 )
 add_library(rv::render_uniforms ALIAS rv_render_uniforms)
@@ -48,6 +53,8 @@ add_library(rv_render STATIC
     src/scene_renderer.cpp
     src/shader_library.cpp
     src/shader_program.cpp
+    src/shadow_map.cpp
+    src/ssao_pass.cpp
     src/texture.cpp
     src/texture_cache.cpp
     src/texture_defaults.cpp

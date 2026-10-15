@@ -50,10 +50,14 @@ struct PlanOptions {
     /// Pass of a material (drawPassOf its alpha mode). An empty function makes every item opaque. Called once per run
     /// of consecutive items sharing a material in submission order.
     std::function<DrawPass(MaterialHandle)> passOf;
+    /// Plans a shadow map: only the items that cast shadows (RenderItem::castsShadow) and are not alpha-blended take
+    /// part (blended surfaces, glass, cast no shadow); the others are left out without counting as culled.
+    bool shadowCastersOnly = false;
 };
 
 /// Groups render items into instanced batches for one view (spec §14.4). GPU-free and deterministic:
-///  - items with a non-finite model matrix are dropped, items outside PlanOptions::frustum are culled;
+///  - items with a non-finite model matrix are dropped, and so are those that cast no shadow when planning a shadow
+///    map (PlanOptions::shadowCastersOnly); items outside PlanOptions::frustum are culled;
 ///  - batches come in pass order: opaque, alpha-masked, alpha-blended;
 ///  - opaque and masked items with the same (shader, material, mesh) form one batch; batches are ordered by that key,
 ///    which minimizes program and material switches, and instances keep their submission order;

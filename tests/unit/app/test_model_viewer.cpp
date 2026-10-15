@@ -147,9 +147,15 @@ TEST_CASE("app/model_viewer: the background sets off dark and light models alike
         CHECK(shown[channel] <= 68.0f);
     }
     CHECK(std::abs(shown.r - shown.b) < 8.0f);
-    // Inspection shows the model's own colors: no glow over emissive or glossy parts, no darkened corners.
+    // Inspection shows the model's own colors: no glow over emissive or glossy parts, no darkened corners, no ambient
+    // occlusion sized for rooms over models of any size, no shadow.
     CHECK(scene.environment.bloomStrength == 0.0f);
     CHECK(scene.environment.vignette == 0.0f);
+    CHECK_FALSE(scene.environment.ssao.enabled);
+    for (const rv::scene::Light& light : scene.lights) {
+        INFO(light.name);
+        CHECK_FALSE(light.castsShadows);
+    }
 }
 
 TEST_CASE("app/model_viewer: the model summary names its size, or that it has none", "[app][model_viewer]") {

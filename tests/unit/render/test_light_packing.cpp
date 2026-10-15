@@ -169,3 +169,89 @@ TEST_CASE("render/light_packing: lights the shaders could not use are dropped", 
     REQUIRE(packed.uniforms.punctualLightCount == 1);
     CHECK(packed.uniforms.punctualLights[0].range == Approx(0.001f));
 }
+
+TEST_CASE("render/light_packing: the first light that casts shadows is the key light", "[render][lights][shadow]") {
+    // Nothing casts shadows: no key light, nothing to say about it.
+    std::vector<Light> lights{pointLight("fill", glm::vec3(0.0f, 2.0f, 0.0f))};
+    PackedLights packed = rv::gl::packLights(lights, rv::scene::EnvironmentSetup{});
+    CHECK_FALSE(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.empty());
+
+    // A spot light: its index in the block, its geometry for the shadow map and its shadow strength.
+    Light key = pointLight("key", glm::vec3(-0.2f, 2.92f, -2.2f));
+    key.type = LightType::Spot;
+    key.direction = glm::vec3(0.0f, -2.92f, -2.4f); // normalized by the packer
+    key.outerConeDeg = 50.0f;
+    key.range = 12.0f;
+    key.castsShadows = true;
+    key.shadowStrength = 0.8f;
+    Light later = key;
+    later.name = "later";
+    later.position.x = 3.0f;
+    lights.push_back(key);
+    lights.push_back(later); // a second caster is not the key light
+    packed = rv::gl::packLights(lights, rv::scene::EnvironmentSetup{});
+    REQUIRE(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.empty());
+    CHECK(packed.shadowLight.index == 1);
+    CHECK(packed.shadowLight.type == LightType::Spot);
+    CHECK(packed.shadowLight.position == key.position);
+    CHECK(rv::core::nearlyEqual(packed.shadowLight.direction, glm::normalize(key.direction)));
+    CHECK(packed.shadowLight.direction == packed.uniforms.punctualLights[1].direction);
+    CHECK(packed.shadowLight.outerConeDeg == 50.0f);
+    CHECK(packed.shadowLight.range == 12.0f);
+    CHECK(packed.shadowLight.strength == 0.8f);
+
+    // The directional light, wherever it is in the list.
+    Light sun;
+    sun.name = "sun";
+    sun.type = LightType::Directional;
+    sun.direction = glm::vec3(0.0f, -2.0f, -1.0f);
+    sun.castsShadows = true;
+    sun.shadowStrength = 3.0f; // clamped
+    packed = rv::gl::packLights(std::vector<Light>{pointLight("fill", glm::vec3(0.0f, 2.0f, 0.0f)), sun, key},
+                                rv::scene::EnvironmentSetup{});
+    REQUIRE(packed.shadowLight.casts());
+    CHECK(packed.shadowLight.index == rv::gl::kDirectionalShadowLight);
+    CHECK(packed.shadowLight.type == LightType::Directional);
+    CHECK(rv::core::nearlyEqual(packed.shadowLight.direction, glm::normalize(sun.direction)));
+    CHECK(packed.shadowLight.strength == 1.0f);
+    sun.shadowStrength = std::numeric_limits<float>::quiet_NaN();
+    CHECK(rv::gl::packLights(std::vector<Light>{sun}, rv::scene::EnvironmentSetup{}).shadowLight.strength == 1.0f);
+}
+
+TEST_CASE("render/light_packing: a point or dropped key light casts no shadow and says why",
+          "[render][lights][shadow]") {
+    // Point-light shadows are not supported: the key light should be a spot. A later spot does not take over.
+    Light bulb = pointLight("bulb", glm::vec3(0.0f, 2.0f, 0.0f));
+    bulb.castsShadows = true;
+    Light spot = pointLight("spot", glm::vec3(1.0f, 2.9f, 0.0f));
+    spot.type = LightType::Spot;
+    spot.castsShadows = true;
+    PackedLights packed = rv::gl::packLights(std::vector<Light>{bulb, spot}, rv::scene::EnvironmentSetup{});
+    CHECK_FALSE(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.find("'bulb'") != std::string::npos);
+    CHECK(packed.shadowNote.find("point") != std::string::npos);
+    CHECK(packed.dropped.empty()); // the bulb still lights the scene
+
+    // A key light that cannot be drawn casts nothing either.
+    Light broken = spot;
+    broken.name = "broken";
+    broken.direction = glm::vec3(0.0f);
+    packed = rv::gl::packLights(std::vector<Light>{broken, spot}, rv::scene::EnvironmentSetup{});
+    CHECK_FALSE(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.find("'broken'") != std::string::npos);
+    REQUIRE(packed.dropped.size() == 1);
+
+    // Nor does one beyond the capacity of the block.
+    std::vector<Light> crowded;
+    for (int i = 0; i < 8; ++i) {
+        crowded.push_back(pointLight("bulb" + std::to_string(i), glm::vec3(static_cast<float>(i), 2.0f, 0.0f)));
+    }
+    Light ninth = spot;
+    ninth.name = "ninth";
+    crowded.push_back(ninth);
+    packed = rv::gl::packLights(crowded, rv::scene::EnvironmentSetup{});
+    CHECK_FALSE(packed.shadowLight.casts());
+    CHECK(packed.shadowNote.find("'ninth'") != std::string::npos);
+}

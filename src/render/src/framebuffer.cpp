@@ -31,7 +31,17 @@ glm::ivec2 maxFramebufferSize() {
 }
 
 GLenum internalFormat(ColorFormat format) noexcept {
-    return format == ColorFormat::Rgba16F ? GL_RGBA16F : GL_SRGB8_ALPHA8;
+    switch (format) {
+    case ColorFormat::Srgb8Alpha8:
+        return GL_SRGB8_ALPHA8;
+    case ColorFormat::Rgba16F:
+        return GL_RGBA16F;
+    case ColorFormat::R8:
+        return GL_R8;
+    case ColorFormat::Rg16F:
+        return GL_RG16F;
+    }
+    return GL_SRGB8_ALPHA8;
 }
 
 std::string_view statusName(GLenum status) noexcept {
@@ -60,8 +70,35 @@ std::string_view statusName(GLenum status) noexcept {
 struct Attachments {
     std::array<TextureObject, kMaxColorAttachments> colors;
     RenderbufferObject depthStencil;
+    TextureObject depthStencilTexture;
     FramebufferObject framebuffer;
 };
+
+/// Creates the depth/stencil texture of `desc` with immutable storage (nearest filtering, clamped to edge, sampled as
+/// depth), labeled `label`.
+Expected<TextureObject> createDepthStencilTexture(const FramebufferDesc& desc, const std::string& label) {
+    GLuint depth = 0;
+    glCreateTextures(GL_TEXTURE_2D, 1, &depth);
+    TextureObject texture(depth);
+    if (depth == 0) {
+        return makeError(ErrorCode::GraphicsError, "glCreateTextures returned no texture", label);
+    }
+    glTextureStorage2D(depth, 1, GL_DEPTH24_STENCIL8, desc.size.x, desc.size.y);
+    GLint immutable = GL_FALSE;
+    glGetTextureParameteriv(depth, GL_TEXTURE_IMMUTABLE_FORMAT, &immutable);
+    if (immutable == GL_FALSE) {
+        return makeError(ErrorCode::GraphicsError,
+                         fmt::format("could not allocate a {}x{} depth/stencil texture", desc.size.x, desc.size.y),
+                         label);
+    }
+    glTextureParameteri(depth, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
+    glTextureParameteri(depth, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTextureParameteri(depth, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTextureParameteri(depth, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(depth, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    detail::setObjectLabel(GL_TEXTURE, depth, label);
+    return texture;
+}
 
 /// Creates a color texture of `desc` with immutable storage, labeled `label`.
 Expected<TextureObject> createColorTexture(const FramebufferDesc& desc, const std::string& label) {
@@ -124,7 +161,14 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
         attachments.colors[index] = std::move(*color);
     }
 
-    if (desc.depthStencil) {
+    if (desc.depthStencil && desc.depthTexture) {
+        auto depth = createDepthStencilTexture(desc, debugName + ".depthStencil");
+        if (!depth) {
+            return propagate(depth.error());
+        }
+        glNamedFramebufferTexture(framebuffer, GL_DEPTH_STENCIL_ATTACHMENT, depth->id(), 0);
+        attachments.depthStencilTexture = std::move(*depth);
+    } else if (desc.depthStencil) {
         GLuint depthStencil = 0;
         glCreateRenderbuffers(1, &depthStencil);
         attachments.depthStencil = RenderbufferObject(depthStencil);
@@ -163,6 +207,10 @@ std::string_view toString(ColorFormat format) noexcept {
         return "srgb8_alpha8";
     case ColorFormat::Rgba16F:
         return "rgba16f";
+    case ColorFormat::R8:
+        return "r8";
+    case ColorFormat::Rg16F:
+        return "rg16f";
     }
     return "unknown";
 }
@@ -178,6 +226,7 @@ Expected<Framebuffer> Framebuffer::create(const FramebufferDesc& desc, std::stri
     framebuffer.m_debugName = std::move(name);
     framebuffer.m_colors = std::move(attachments->colors);
     framebuffer.m_depthStencil = std::move(attachments->depthStencil);
+    framebuffer.m_depthStencilTexture = std::move(attachments->depthStencilTexture);
     framebuffer.m_framebuffer = std::move(attachments->framebuffer);
     return framebuffer;
 }
@@ -198,6 +247,7 @@ Status Framebuffer::resize(glm::ivec2 size) {
     m_desc = desc;
     m_framebuffer = std::move(attachments->framebuffer);
     m_depthStencil = std::move(attachments->depthStencil);
+    m_depthStencilTexture = std::move(attachments->depthStencilTexture);
     m_colors = std::move(attachments->colors);
     return ok();
 }
@@ -219,7 +269,7 @@ void Framebuffer::clear(const glm::vec4& colorLinear) const {
     for (std::size_t index = 1; index < m_desc.colorAttachments; ++index) {
         glClearNamedFramebufferfv(m_framebuffer.id(), GL_COLOR, static_cast<GLint>(index), kZero.data());
     }
-    if (m_depthStencil.valid()) {
+    if (hasDepthStencil()) {
         glClearNamedFramebufferfi(m_framebuffer.id(), GL_DEPTH_STENCIL, 0, 1.0f, 0);
     }
 }
@@ -228,8 +278,12 @@ void Framebuffer::bindColorTexture(GLuint unit, std::size_t attachment) const {
     glBindTextureUnit(unit, attachment < m_desc.colorAttachments ? m_colors[attachment].id() : 0);
 }
 
+void Framebuffer::bindDepthTexture(GLuint unit) const {
+    glBindTextureUnit(unit, m_depthStencilTexture.id());
+}
+
 void Framebuffer::copyDepthStencilTo(const Framebuffer& destination) const {
-    if (!m_depthStencil.valid() || !destination.m_depthStencil.valid() || m_desc.size != destination.m_desc.size) {
+    if (!hasDepthStencil() || !destination.hasDepthStencil() || m_desc.size != destination.m_desc.size) {
         return;
     }
     glBlitNamedFramebuffer(m_framebuffer.id(), destination.m_framebuffer.id(), 0, 0, m_desc.size.x, m_desc.size.y, 0, 0,

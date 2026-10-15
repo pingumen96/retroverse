@@ -66,6 +66,10 @@ TEST_CASE("scene/scene_description: omitted sections take the documented default
     CHECK(scene->environment.bloomStrength == 0.06f);
     CHECK(scene->environment.bloomRadius == 0.7f);
     CHECK(scene->environment.vignette == 0.05f);
+    // Ambient occlusion on, 0.4 m radius, intensity 1 (the plan's defaults).
+    CHECK(scene->environment.ssao.enabled);
+    CHECK(scene->environment.ssao.radius == 0.4f);
+    CHECK(scene->environment.ssao.intensity == 1.0f);
     CHECK(scene->lights.empty());
     CHECK(scene->objects.empty());
     CHECK(scene->findObject("anything") == nullptr);
@@ -121,11 +125,44 @@ TEST_CASE("scene/scene_description: camera, environment and lights", "[scene][sc
     CHECK(spot.innerConeDeg == 20.0f);
     CHECK(spot.outerConeDeg == 30.0f);
     CHECK(spot.castsShadows);
+    CHECK(spot.shadowStrength == 1.0f); // the default: its shadows take all of its light
+    CHECK(point.shadowStrength == 1.0f);
 
     const auto& sun = scene->lights[2];
     CHECK(sun.type == LightType::Directional);
     CHECK(rv::core::nearlyEqual(sun.direction, glm::vec3(0.0f, -1.0f, 0.0f)));
     CHECK(sun.range == 0.0f); // ignored for directional lights, so not validated
+}
+
+TEST_CASE("scene/scene_description: ambient occlusion and shadow strength", "[scene][scene_description]") {
+    const auto scene = parse(R"({
+        "schemaVersion": 1, "name": "shaded",
+        "environment": {"ssao": {"enabled": false, "radius": 0.25, "intensity": 2.0}},
+        "lights": [{"name": "key", "type": "spot", "position": [0, 2.9, 0], "direction": [0, -1, 0],
+                    "castsShadows": true, "shadowStrength": 0.75}]
+    })");
+    REQUIRE(scene.has_value());
+    CHECK_FALSE(scene->environment.ssao.enabled);
+    CHECK(scene->environment.ssao.radius == 0.25f);
+    CHECK(scene->environment.ssao.intensity == 2.0f);
+    REQUIRE(scene->lights.size() == 1);
+    CHECK(scene->lights[0].castsShadows);
+    CHECK(scene->lights[0].shadowStrength == 0.75f);
+
+    // Keys left out keep their defaults; the documented bounds are accepted.
+    const auto partial = parse(R"({"schemaVersion": 1, "name": "partial",
+        "environment": {"ssao": {"intensity": 0}},
+        "lights": [{"type": "spot", "position": [0, 2.9, 0], "direction": [0, -1, 0], "shadowStrength": 0}]})");
+    REQUIRE(partial.has_value());
+    CHECK(partial->environment.ssao.enabled);
+    CHECK(partial->environment.ssao.radius == 0.4f);
+    CHECK(partial->environment.ssao.intensity == 0.0f);
+    CHECK(partial->lights[0].shadowStrength == 0.0f);
+    const auto bounds = parse(R"({"schemaVersion": 1, "name": "bounds",
+        "environment": {"ssao": {"radius": 5, "intensity": 4}}})");
+    REQUIRE(bounds.has_value());
+    CHECK(bounds->environment.ssao.radius == rv::scene::kMaxSsaoRadius);
+    CHECK(bounds->environment.ssao.intensity == rv::scene::kMaxSsaoIntensity);
 }
 
 TEST_CASE("scene/scene_description: light directions stay unit vectors at extreme coordinates",
@@ -313,6 +350,20 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
          "/environment/vignette"},
         {"unknown environment key", R"({"schemaVersion": 1, "name": "x", "environment": {"bloomThreshold": 1}})",
          "/environment/bloomThreshold"},
+        {"ssao is an object", R"({"schemaVersion": 1, "name": "x", "environment": {"ssao": true}})",
+         "/environment/ssao"},
+        {"ssao enabled is a boolean", R"({"schemaVersion": 1, "name": "x", "environment": {"ssao": {"enabled": 1}}})",
+         "/environment/ssao/enabled"},
+        {"ssao radius > 0", R"({"schemaVersion": 1, "name": "x", "environment": {"ssao": {"radius": 0}}})",
+         "/environment/ssao/radius"},
+        {"ssao radius <= 5 m", R"({"schemaVersion": 1, "name": "x", "environment": {"ssao": {"radius": 5.5}}})",
+         "/environment/ssao/radius"},
+        {"ssao intensity >= 0", R"({"schemaVersion": 1, "name": "x", "environment": {"ssao": {"intensity": -1}}})",
+         "/environment/ssao/intensity"},
+        {"ssao intensity <= 4", R"({"schemaVersion": 1, "name": "x", "environment": {"ssao": {"intensity": 4.5}}})",
+         "/environment/ssao/intensity"},
+        {"unknown ssao key", R"({"schemaVersion": 1, "name": "x", "environment": {"ssao": {"samples": 16}}})",
+         "/environment/ssao/samples"},
         {"ambient intensity >= 0", R"({"schemaVersion": 1, "name": "x", "environment": {"ambientIntensity": -1}})",
          "/environment/ambientIntensity"},
         {"colors are hex strings", R"({"schemaVersion": 1, "name": "x", "environment": {"clearColor": "#12345"}})",
@@ -369,6 +420,18 @@ TEST_CASE("scene/scene_description: every validation rule reports its JSON path"
         {"unknown light key",
          R"({"schemaVersion": 1, "name": "x", "lights": [{"type": "point", "position": [0, 2, 0], "colour": "#FFFFFF"}]})",
          "/lights/0/colour"},
+        {"shadow strength within [0, 1]",
+         R"({"schemaVersion": 1, "name": "x", "lights": [)"
+         R"({"type": "point", "position": [0, 2, 0], "shadowStrength": 1.5}]})",
+         "/lights/0/shadowStrength"},
+        {"shadow strength >= 0",
+         R"({"schemaVersion": 1, "name": "x", "lights": [)"
+         R"({"type": "point", "position": [0, 2, 0], "shadowStrength": -0.1}]})",
+         "/lights/0/shadowStrength"},
+        {"casts shadows is a boolean",
+         R"({"schemaVersion": 1, "name": "x", "lights": [)"
+         R"({"type": "point", "position": [0, 2, 0], "castsShadows": "yes"}]})",
+         "/lights/0/castsShadows"},
         {"objects is an array", R"({"schemaVersion": 1, "name": "x", "objects": {"id": "a"}})", "/objects"},
         {"object id is required", R"({"schemaVersion": 1, "name": "x", "objects": [{"primitive": "box"}]})",
          "/objects/0/id"},

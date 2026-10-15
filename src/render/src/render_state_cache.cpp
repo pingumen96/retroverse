@@ -83,6 +83,22 @@ void RenderStateCache::setPolygonMode(GLenum mode) {
     }
 }
 
+void RenderStateCache::setColorWrite(bool enabled) {
+    if (changes(m_colorWrite, enabled)) {
+        const GLboolean mask = enabled ? GL_TRUE : GL_FALSE;
+        glColorMask(mask, mask, mask, mask);
+    }
+}
+
+void RenderStateCache::setPolygonOffset(bool enabled, float factor, float units) {
+    if (changes(m_polygonOffset, enabled)) {
+        setCapability(GL_POLYGON_OFFSET_FILL, enabled);
+    }
+    if (enabled && changes(m_polygonOffsetFactors, std::pair{factor, units})) {
+        glPolygonOffset(factor, units);
+    }
+}
+
 void RenderStateCache::setViewport(const glm::ivec4& rectangle) {
     if (changes(m_viewport, rectangle)) {
         glViewport(rectangle.x, rectangle.y, rectangle.z, rectangle.w);
@@ -100,6 +116,9 @@ void RenderStateCache::invalidate() noexcept {
     m_blendColor.reset();
     m_framebufferSrgb.reset();
     m_polygonMode.reset();
+    m_colorWrite.reset();
+    m_polygonOffset.reset();
+    m_polygonOffsetFactors.reset();
     m_viewport.reset();
 }
 

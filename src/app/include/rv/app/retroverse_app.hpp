@@ -10,16 +10,18 @@ namespace rv::app {
 /// with --model one glTF model in the model viewer (makeModelViewerScene: the model at the origin, a three-point light
 /// rig, a camera framing it), turns it into drawable content (SceneInstance: deduplicated meshes and materials, glTF
 /// models, render items, lights, collision world) and draws it with the batched, instanced gl::SceneRenderer (PBR and
-/// unlit emissive materials, scene textures such as cartridge covers and CRT color bars, the scene's lights and
-/// hemispheric ambient) as linear radiance into an HDR target, post-processed (bloom, exposure, vignette, ACES
+/// unlit emissive materials, scene textures such as cartridge covers and CRT color bars, the scene's lights with the
+/// key light's shadow map, hemispheric ambient darkened by screen-space ambient occlusion after a depth pre-pass) as
+/// linear radiance into an HDR target, post-processed (bloom, exposure, vignette, ACES
 /// tonemapping, dithering: the post-processing of the scene's environment) into an sRGB target that is copied to the
 /// window, from a first-person camera walking the scene (FreeRoam: starts at the scene camera, collides with the walls
 /// and furniture). The window and the screenshots each have their own gl::ViewTargets. --debug-draw adds debug lines
 /// over the scene: object bounds, socket axes and a world grid.
 ///
 /// Frame statistics (gl::FrameStats: draw calls, instances, triangles, batches, shader switches, culled items, GPU
-/// time of the scene pass and of the post-processing) and frame times are logged once per second in developer builds
-/// (RV_DEV_UI), and for the whole run when a frame-limited run ends.
+/// times of the shadow map, the depth pre-pass, the ambient occlusion, the scene pass and the post-processing) and
+/// frame times are logged once per second in developer builds (RV_DEV_UI), and for the whole run when a frame-limited
+/// run ends.
 ///
 /// Input goes through the action map (assets/config/default_bindings.json, overridden per action by
 /// <user data>/config/bindings.json): Move/Look/Sprint drive the walker; Back (Esc, gamepad B) leaves one level
@@ -37,9 +39,10 @@ namespace rv::app {
 /// initialization (exit code 2).
 ///
 /// Developer builds (RV_DEV_UI) add the Dear ImGui developer overlay (devui::DevUi), toggled by ToggleDevUI (F1) and
-/// open from the start with --devui-open: dockable panels for frame statistics, the camera and walker, the lights and
-/// environment, the materials, rendering switches (debug lines, wireframe, vsync, exposure, bloom and vignette, shader
-/// reload), the log and the scene objects ("go to"). It sees every event first and keeps what it uses; opening it frees
+/// open from the start with --devui-open: dockable panels for frame statistics, the camera and walker, the lights (the
+/// key light that casts shadows) and environment, the materials, rendering switches (debug lines, wireframe, vsync,
+/// shadow biases, ambient occlusion, exposure, bloom and vignette, shader reload), the log and the scene objects ("go
+/// to"). It sees every event first and keeps what it uses; opening it frees
 /// a captured mouse for its panels and closing it captures the mouse again. It is drawn last into the window, and into
 /// screenshots only with
 /// --screenshot-include-ui. --debug-draw starts with every kind of debug line on; the overlay toggles each kind.

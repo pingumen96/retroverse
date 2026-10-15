@@ -1,8 +1,12 @@
 #version 450 core
-// Mesh vertex stage shared by the lit program (pbr/pbr.frag) and the unlit one (unlit/unlit_emissive.frag): world
-// position, normal and tangent for shading, uv0 for textures. Every draw is instanced: each instance reads its model
-// matrix from the instance buffer (rv::gl::GpuMesh, locations 4..7, divisor 1).
+// Mesh vertex stage shared by the lit program (pbr/pbr.frag), the unlit one (unlit/unlit_emissive.frag) and the
+// depth-only ones (depth/depth.frag: the shadow map and the depth pre-pass): world position, normal and tangent for
+// shading, uv0 for textures. Every draw is instanced: each instance reads its model matrix from the instance buffer
+// (rv::gl::GpuMesh, locations 4..7, divisor 1). gl_Position is invariant: every program computes the same depth for a
+// vertex, so the lit pass passes the depth test (GL_LEQUAL) exactly where the depth pre-pass left its surfaces.
 #include "common/common.glsl"
+
+invariant gl_Position;
 
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;

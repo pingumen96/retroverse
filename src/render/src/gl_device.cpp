@@ -372,6 +372,8 @@ void GLDevice::applyDefaultState() {
     m_state.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     m_state.setFramebufferSrgb(m_caps.srgbDefaultFramebuffer);
     m_state.setPolygonMode(GL_FILL);
+    m_state.setColorWrite(true);
+    m_state.setPolygonOffset(false);
 }
 
 void GLDevice::beginPass(const Framebuffer& target, const glm::vec4& clearColorLinear) {

@@ -31,6 +31,13 @@ public:
     void setFramebufferSrgb(bool enabled);
     /// GL_FILL, GL_LINE or GL_POINT, for both faces (core profile).
     void setPolygonMode(GLenum mode);
+    /// glColorMask for every channel of every draw buffer: false leaves the color attachments untouched (depth-only
+    /// passes).
+    void setColorWrite(bool enabled);
+    /// GL_POLYGON_OFFSET_FILL with glPolygonOffset(factor, units): the depth of filled polygons is pushed back by
+    /// factor times their depth slope plus units of the smallest depth step (shadow maps). Disabled, the factors are
+    /// left as they are.
+    void setPolygonOffset(bool enabled, float factor = 0.0f, float units = 0.0f);
     /// x, y, width, height in pixels, origin at the bottom-left corner.
     void setViewport(const glm::ivec4& rectangle);
 
@@ -48,6 +55,9 @@ private:
     std::optional<glm::vec4> m_blendColor;
     std::optional<bool> m_framebufferSrgb;
     std::optional<GLenum> m_polygonMode;
+    std::optional<bool> m_colorWrite;
+    std::optional<bool> m_polygonOffset;
+    std::optional<std::pair<float, float>> m_polygonOffsetFactors;
     std::optional<glm::ivec4> m_viewport;
 };
 

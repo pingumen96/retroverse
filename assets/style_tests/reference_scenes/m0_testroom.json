@@ -16,10 +16,14 @@
   // Tuned on the lit renderer (M0 step 6). Palette (style 3.1, 70/20/10): the ceiling lights are a warm white, not
   // amber, so that the neutral surfaces (walls #383735, gray plastic, paper) stay neutral and the wood, the lamp and
   // the screens carry the warmth and the color; amber #FFC88A is kept for the practical lamp. The walls have 4%
-  // albedo and what no light reaches falls into the ACES toe (no shadows or bounce light yet), so the hero wall, the
-  // lamp corner, the ceiling and the entrance each get a light of their own; the ambient is low and near neutral. The
-  // exposure (1.5) also scales the emissive CRT screen, whose 75% bars keep their colors. The background (clear
-  // color) is exposed and tonemapped like the room: a dark corridor beyond the doorway, darker than the lit walls.
+  // albedo and what no light reaches falls into the ACES toe (no bounce light yet), so the hero wall, the lamp corner,
+  // the ceiling and the entrance each get a light of their own; the ambient is low and near neutral. The exposure
+  // (1.5) also scales the emissive CRT screen, whose 75% bars keep their colors. The background (clear color) is
+  // exposed and tonemapped like the room: a dark corridor beyond the doorway, darker than the lit walls.
+  // Shadows and ambient occlusion (M0 step 11, style 4.1 contact and shadow cues): the ceiling key light is the one
+  // light that casts shadows, so the furniture it lights is grounded on the floor and the wall; the screen-space
+  // ambient occlusion darkens the ambient light in the corners and where objects meet, which lets the ambient be a
+  // little stronger than before without flattening the room.
   // Post-processing (M0 step 10, style 4.3 and 15.2): only emitted light and highlights bloom, so the lit room, the
   // posters and the cartridge labels stay as crisp as without bloom. A bloom stronger than the default makes the hero
   // CRT and the lamp shade glow softly onto the bezel and the wall; the radius, tighter than the default, keeps the
@@ -29,19 +33,23 @@
     "clearColor": "#221E1A",
     "ambientSky": "#E6E2DC",
     "ambientGround": "#4A4642",
-    "ambientIntensity": 0.19,
+    "ambientIntensity": 0.25,
     "exposure": 1.5,
     "bloomStrength": 0.18,
     "bloomRadius": 0.5,
-    "vignette": 0.05
+    "vignette": 0.05,
+    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
   },
   "lights": [
-    // Key: two ceiling-mounted wall washers on the hero wall (the collection and the TV corner), as in a gallery. Their
-    // cones end at the horizontal (axis 45 degrees down, outer cone 44 degrees), so they never light the ceiling.
-    {"name": "wall_wash_shelf", "type": "spot", "position": [-1.5, 2.9, -2.5], "target": [-1.5, 0.4, -5.0],
-     "color": "#FFE0C0", "intensity": 75.0, "range": 10.0, "innerConeDeg": 22.0, "outerConeDeg": 44.0},
-    {"name": "wall_wash_tv", "type": "spot", "position": [1.9, 2.9, -2.5], "target": [1.9, 0.4, -5.0],
-     "color": "#FFE0C0", "intensity": 75.0, "range": 10.0, "innerConeDeg": 22.0, "outerConeDeg": 44.0},
+    // Key (the first light that casts shadows): a warm-white downlight in the ceiling between the room's center and the
+    // hero wall, tilted 39 degrees towards the wall, whose wide cone ends at the horizontal (39 + 50 degrees) like
+    // every ceiling light here, so it never lights the ceiling. It lights the collection, the TV corner and the floor
+    // in front of them as one pool, and its shadows ground the furniture: the shelf boards shade the compartments below
+    // them and the shelf a band of the wall beside it, the CRT, the console and the cabinet throw long soft shadows on
+    // the wall and the floor to their right, the cabinet darkens the floor under it.
+    {"name": "ceiling_key", "type": "spot", "position": [-0.2, 2.92, -2.2], "target": [-0.2, 0.0, -4.6],
+     "color": "#FFE0C0", "intensity": 110.0, "range": 12.0, "innerConeDeg": 28.0, "outerConeDeg": 50.0,
+     "castsShadows": true},
     // Fill: a dim pendant 0.9 m under the ceiling, east of center, gives the dark ceiling a soft glow (well below
     // clipping) and keeps the east wall readable.
     {"name": "pendant_fill", "type": "point", "position": [1.2, 2.1, -2.0], "color": "#FFE0C0", "intensity": 16.0,
@@ -50,8 +58,8 @@
     {"name": "accent_magenta", "type": "spot", "position": [3.0, 2.7, -3.0], "target": [1.62, 1.0, -4.67],
      "color": "#B34DCE", "intensity": 9.5, "range": 7.0, "innerConeDeg": 22.0, "outerConeDeg": 55.0},
     // Practical light of the north-west corner. The bulb inside the floor lamp shade (LightSource socket) is dim: the
-    // shade is opaque (until shadows arrive, step 11), so the light leaves through its openings, two cones from the
-    // bulb matching them (bottom: 55 degrees, top: 47 degrees), and the emissive shade carries the glow.
+    // shade is opaque but only the key light casts shadows, so the light leaves through its openings, two cones from
+    // the bulb matching them (bottom: 55 degrees, top: 47 degrees), and the emissive shade carries the glow.
     {"name": "floor_lamp_bulb", "type": "point", "position": [-4.05, 1.45, -4.55], "color": "#FFC88A",
      "intensity": 2.5, "range": 4.0},
     {"name": "floor_lamp_down", "type": "spot", "position": [-4.05, 1.45, -4.55], "target": [-4.05, 0.0, -4.55],

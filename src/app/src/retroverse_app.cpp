@@ -44,6 +44,7 @@
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/shader_library.hpp>
 #include <rv/render/shader_program.hpp>
+#include <rv/render/shadow_settings.hpp>
 #include <rv/render/texture.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/render/texture_defaults.hpp>
@@ -219,10 +220,15 @@ Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const c
     return source;
 }
 
-/// The programs of the scene and its post-processing (ShaderLibrary handles), loaded at startup.
+/// The programs of the scene, its shadow and ambient occlusion and its post-processing (ShaderLibrary handles), loaded
+/// at startup.
 struct ScenePrograms {
     gl::ShaderHandle pbr;
     gl::ShaderHandle unlit;
+    gl::ShaderHandle depth;
+    gl::ShaderHandle depthMasked;
+    gl::ShaderHandle ssao;
+    gl::ShaderHandle ssaoBlur;
     gl::ShaderHandle bloomDownsampleFirst;
     gl::ShaderHandle bloomDownsample;
     gl::ShaderHandle bloomUpsample;
@@ -236,6 +242,10 @@ Expected<ScenePrograms> loadScenePrograms(gl::ShaderLibrary& library) {
     const std::pair<gl::ShaderHandle ScenePrograms::*, gl::ShaderDesc> descriptions[] = {
         {&ScenePrograms::pbr, {"pbr", "pbr/pbr.vert", "pbr/pbr.frag", {}}},
         {&ScenePrograms::unlit, {"unlit_emissive", "pbr/pbr.vert", "unlit/unlit_emissive.frag", {}}},
+        {&ScenePrograms::depth, {"depth", "pbr/pbr.vert", "depth/depth.frag", {}}},
+        {&ScenePrograms::depthMasked, {"depth_masked", "pbr/pbr.vert", "depth/depth.frag", {"RV_ALPHA_TEST"}}},
+        {&ScenePrograms::ssao, {"ssao", "post/fullscreen.vert", "ssao/ssao.frag", {}}},
+        {&ScenePrograms::ssaoBlur, {"ssao_blur", "post/fullscreen.vert", "ssao/ssao_blur.frag", {}}},
         {&ScenePrograms::bloomDownsampleFirst,
          {"bloom_downsample_karis", "post/fullscreen.vert", "post/bloom_downsample.frag", {"RV_BLOOM_KARIS"}}},
         {&ScenePrograms::bloomDownsample,
@@ -362,6 +372,8 @@ struct RetroverseApp::State {
     /// Developer overlay toggles: the scene pass as wireframe, collision of the walker (off: noclip).
     bool wireframe = false;
     bool collision = true;
+    /// How the key light's shadow map is drawn and read (renderer tuning; the developer overlay edits it live).
+    gl::ShadowSettings shadowSettings;
     /// ToggleDevUI pressed in a run without the overlay: logged once.
     bool overlayNoticeLogged = false;
     /// The view camera: the scene camera's lens and pose, then driven by free roam.
@@ -405,13 +417,21 @@ struct RetroverseApp::State {
         gl::SceneShaders shaderSet;
         shaderSet.pbr = &shaders->get(programs.pbr);
         shaderSet.unlit = &shaders->get(programs.unlit);
+        shaderSet.depth = &shaders->get(programs.depth);
+        shaderSet.depthMasked = &shaders->get(programs.depthMasked);
         shaderSet.debugLines = debugShader ? &shaders->get(*debugShader) : nullptr;
+        shaderSet.ssao.occlusion = &shaders->get(programs.ssao);
+        shaderSet.ssao.blur = &shaders->get(programs.ssaoBlur);
         shaderSet.post = postShadersOf(*shaders, programs);
         const scene::EnvironmentSetup& environment = scene->environment();
         gl::RenderView view;
         view.camera = camera;
         view.items = scene->renderItems();
         view.lights = scene->lights();
+        view.shadowLight = scene->shadowLight();
+        view.shadowSettings = shadowSettings;
+        view.shadowCasterBounds = scene->shadowCasterBounds();
+        view.ssao = environment.ssao;
         view.clearColor = glm::vec4(environment.clearColor, 1.0f);
         view.post = gl::postSettingsFor(environment);
         view.timeSeconds = static_cast<float>(simulatedSeconds);
@@ -597,6 +617,7 @@ struct RetroverseApp::State {
                         devui::DockSlot::LeftBottom);
         // Tabs of one node; the first is shown.
         devUi->addPanel(devui::makeLightsPanel({scene->sceneLights(), scene->environment(), scene->droppedLights(),
+                                                scene->shadowLight(), scene->shadowNote(),
                                                 [this] { scene->applyLighting(); }}),
                         devui::DockSlot::Right);
         devUi->addPanel(devui::makeMaterialsPanel({materials, scene->renderItems()}), devui::DockSlot::Right);
@@ -607,7 +628,7 @@ struct RetroverseApp::State {
                                                }}),
                         devui::DockSlot::Right);
         devUi->addPanel(devui::makeRenderingPanel({debugLines.grid, debugLines.bounds, debugLines.sockets, wireframe,
-                                                   scene->environment(), *shaders, window}),
+                                                   scene->environment(), shadowSettings, *shaders, window}),
                         devui::DockSlot::RightBottom);
         devUi->addPanel(devui::makeLogPanel(), devui::DockSlot::Bottom);
         return ok();

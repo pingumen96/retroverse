@@ -1,6 +1,7 @@
 #include <rv/render/instance_buffer.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <utility>
@@ -83,16 +84,25 @@ Status InstanceBuffer::allocate(std::size_t regionCapacity) {
 }
 
 Expected<std::uint32_t> InstanceBuffer::write(std::span<const glm::mat4> transforms) {
+    const std::array<std::span<const glm::mat4>, 1> parts{transforms};
+    return write(std::span<const std::span<const glm::mat4>>(parts));
+}
+
+Expected<std::uint32_t> InstanceBuffer::write(std::span<const std::span<const glm::mat4>> parts) {
     if (!m_buffer.valid() || m_mapped == nullptr) {
         return makeError(ErrorCode::InvalidArgument, "cannot write to an empty instance buffer", m_debugName);
     }
-    if (transforms.empty()) {
+    std::size_t count = 0;
+    for (const std::span<const glm::mat4> part : parts) {
+        count += part.size();
+    }
+    if (count == 0) {
         return 0u;
     }
     release(); // a write that was not released still guards its region
-    if (transforms.size() > m_regionCapacity) {
+    if (count > m_regionCapacity) {
         // Doubling keeps reallocations rare; allocate() refuses more than the maximum.
-        const std::size_t grown = std::max(transforms.size(), std::min(2 * m_regionCapacity, kMaxRegionCapacity));
+        const std::size_t grown = std::max(count, std::min(2 * m_regionCapacity, kMaxRegionCapacity));
         if (auto allocated = allocate(grown); !allocated) {
             return propagate(allocated.error());
         }
@@ -108,7 +118,13 @@ Expected<std::uint32_t> InstanceBuffer::write(std::span<const glm::mat4> transfo
     }
     m_fences[region].reset();
     const std::size_t first = region * m_regionCapacity;
-    std::memcpy(m_mapped + first * kMatrixBytes, transforms.data(), transforms.size_bytes());
+    std::byte* destination = m_mapped + first * kMatrixBytes;
+    for (const std::span<const glm::mat4> part : parts) {
+        if (!part.empty()) {
+            std::memcpy(destination, part.data(), part.size_bytes());
+            destination += part.size_bytes();
+        }
+    }
     m_region = region;
     m_releasePending = true;
     return static_cast<std::uint32_t>(first);

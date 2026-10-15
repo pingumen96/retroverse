@@ -81,9 +81,11 @@ scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::
     scene.environment.ambientIntensity = 0.35f;
     scene.environment.exposure = 1.0f;
     // No bloom and no vignette: every part of the model, emissive or glossy, in the middle or in a corner of the view,
-    // shows its own colors (the overlay's Rendering panel can still turn them on).
+    // shows its own colors (the overlay's Rendering panel can still turn them on). No ambient occlusion either: its
+    // radius is in meters, sized for rooms, not for models from a millimeter to 20 m.
     scene.environment.bloomStrength = 0.0f;
     scene.environment.vignette = 0.0f;
+    scene.environment.ssao.enabled = false;
 
     // Three-point rig: key (directional, warm), fill (cool, dimmer) and rim (from behind), around the bounds.
     scene::Light key;

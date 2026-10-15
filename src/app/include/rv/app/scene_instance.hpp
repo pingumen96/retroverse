@@ -44,10 +44,11 @@ struct SceneResources {
 ///    gl::GpuModel per distinct model.
 ///  - Render items: one per part and object instance, and one per model primitive and model instance.
 ///  - Lights and environment: the scene lights and ambient packed into the lights block (gl::packLights; lights
-///    beyond its capacity are logged and left out). The environment also holds the background radiance and the
-///    post-processing (exposure, bloom, vignette), which the renderer reads per view (gl::postSettingsFor). The
-///    developer overlay edits the lights and the environment in place (sceneLights(), environment()) and repacks the
-///    lights with applyLighting().
+///    beyond its capacity are logged and left out), with the key light that casts the shadows (the first light with
+///    castsShadows, when it can: spot and directional lights) and the world bounds of the items that cast shadows. The
+///    environment also holds the background radiance, the ambient occlusion and the post-processing (exposure, bloom,
+///    vignette), which the renderer reads per view (gl::postSettingsFor). The developer overlay edits the lights and
+///    the environment in place (sceneLights(), environment()) and repacks the lights with applyLighting().
 ///  - Collision: scene::buildCollisionWorld of the content, for first-person navigation.
 ///  - Debug lines: the bounds of every object instance (scene::addSceneBoundsLines) and the axes of its sockets
 ///    (scene::addSceneSocketLines), kept apart so that each kind can be shown on its own.
@@ -80,10 +81,19 @@ public:
     /// The scene's environment: the source of the ambient of lights(), the background radiance and the
     /// post-processing of every view, edited in place by the developer overlay.
     [[nodiscard]] scene::EnvironmentSetup& environment() noexcept { return m_environment; }
-    /// Packs sceneLights() and the ambient of environment() into lights(); the lights left out are droppedLights().
+    /// Packs sceneLights() and the ambient of environment() into lights(); the lights left out are droppedLights(), the
+    /// light that casts the shadows is shadowLight().
     void applyLighting();
     /// Scene lights that the last packing left out, with the reason.
     [[nodiscard]] const std::vector<gl::DroppedLight>& droppedLights() const noexcept { return m_droppedLights; }
+    /// The key light of the last packing: the light that casts the views' shadow (casts() is false for none).
+    [[nodiscard]] const gl::ShadowLight& shadowLight() const noexcept { return m_shadowLight; }
+    /// Why the first light that asks for shadows casts none in the last packing (a point light, a dropped light);
+    /// empty otherwise.
+    [[nodiscard]] const std::string& shadowNote() const noexcept { return m_shadowNote; }
+    /// World bounds of the render items that cast shadows: the orthographic shadow map of a directional key light is
+    /// fitted to them. Empty when nothing casts.
+    [[nodiscard]] const core::Aabb& shadowCasterBounds() const noexcept { return m_shadowCasterBounds; }
 
 private:
     std::string m_name;
@@ -92,6 +102,9 @@ private:
     scene::EnvironmentSetup m_environment;
     gl::LightsUniforms m_lights;
     std::vector<gl::DroppedLight> m_droppedLights;
+    gl::ShadowLight m_shadowLight;
+    std::string m_shadowNote;
+    core::Aabb m_shadowCasterBounds;
     scene::CollisionWorld m_collision;
     scene::DebugLines m_boundsLines;
     scene::DebugLines m_socketLines;

@@ -8,6 +8,8 @@
 #include <rv/devui/panels.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/render/shader_library.hpp>
+#include <rv/render/shadow_settings.hpp>
+#include <rv/render/ssao_settings.hpp>
 #include <rv/scene/scene_description.hpp>
 
 #include "widgets.hpp"
@@ -39,10 +41,12 @@ public:
 
         ImGui::SeparatorText("Frame");
         ImGui::Checkbox("Wireframe", &m_model.wireframe);
-        ImGui::SetItemTooltip("Draws the scene's triangles as edges");
+        ImGui::SetItemTooltip("Draws the scene's triangles as edges (without ambient occlusion)");
         ImGui::SameLine();
         drawVsync();
 
+        drawShadows();
+        drawAmbientOcclusion();
         drawPostProcessing();
 
         ImGui::SeparatorText("Shaders");
@@ -54,6 +58,42 @@ public:
     }
 
 private:
+    /// The key light's shadow map: on or off, its biases (renderer tuning, the defaults until edited).
+    void drawShadows() {
+        ImGui::SeparatorText("Shadows");
+        gl::ShadowSettings& shadows = m_model.shadows;
+        ImGui::Checkbox("Key light shadow", &shadows.enabled);
+        ImGui::SetItemTooltip("Shadow map of the first light that casts shadows (Lights panel)");
+        widgets::pushLabelWidth("Normal offset"); // the widest label of the section
+        ImGui::SliderFloat("Slope bias", &shadows.slopeBias, 0.0f, gl::kMaxShadowDepthBias, "%.2f",
+                           ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("Depth bias of the casters by their slope in the map (against acne on grazing light)");
+        ImGui::SliderFloat("Constant bias", &shadows.constantBias, 0.0f, gl::kMaxShadowDepthBias, "%.2f",
+                           ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("Depth bias of the casters in the smallest depth steps of the map");
+        ImGui::SliderFloat("Normal offset", &shadows.normalOffsetTexels, 0.0f, gl::kMaxShadowNormalOffsetTexels,
+                           "%.2f texels", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("Receivers look the map up this far along their normal (too much detaches the "
+                              "shadows from their casters)");
+        ImGui::PopItemWidth();
+    }
+
+    /// The ambient occlusion of the scene's environment (the scene file's values until edited).
+    void drawAmbientOcclusion() {
+        ImGui::SeparatorText("Ambient occlusion");
+        scene::SsaoSetup& ssao = m_model.environment.ssao;
+        ImGui::Checkbox("SSAO", &ssao.enabled);
+        ImGui::SetItemTooltip("Darkens the ambient light in corners and where objects meet");
+        widgets::pushLabelWidth("Intensity"); // the widest label of the section
+        ImGui::SliderFloat("Radius", &ssao.radius, gl::kMinSsaoRadius, 2.0f, "%.2f m",
+                           ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+        ImGui::SetItemTooltip("How far from a surface occluders darken it");
+        ImGui::SliderFloat("Intensity", &ssao.intensity, 0.0f, scene::kMaxSsaoIntensity, "%.2f",
+                           ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("Exponent of the unoccluded share of the ambient light (0: no darkening)");
+        ImGui::PopItemWidth();
+    }
+
     /// The post-processing of the scene's environment (the scene file's values until edited).
     void drawPostProcessing() {
         ImGui::SeparatorText("Post-processing");

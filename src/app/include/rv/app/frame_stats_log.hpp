@@ -14,13 +14,16 @@ namespace rv::app {
 /// Aggregates frame times and the statistics of the main view for the log: a summary per interval (developer builds
 /// log one per second) and one for the whole run (frame-limited runs log it at exit).
 ///
-/// A summary line reads: "<label>: <n> frame(s) in <s> s, frame time <avg> ms (min <a>, max <b>), GPU scene <g> ms,
-/// post <p> ms; last view: <items> item(s), <culled> culled, <batches> batch(es), <draws> draw call(s), <instances>
-/// instance(s), <triangles> triangle(s), <shaders> shader switch(es), <materials> material switch(es)", followed by
-/// ", <lines> debug line(s)" when debug lines were drawn. "<n> frame(s)" reads "<n> frame(s) (<k> without a view)" when
-/// some frames rendered no view. The GPU times average, over the frames with a view, the latest timer query results
-/// each reported for the scene pass and the post-processing (FrameStats::sceneGpuMilliseconds and
-/// postGpuMilliseconds; "n/a" without any); "last view" is the last view recorded.
+/// A summary line reads: "<label>: <n> frame(s) in <s> s, frame time <avg> ms (min <a>, max <b>), GPU shadow <s> ms,
+/// depth <d> ms, SSAO <o> ms, scene <g> ms, post <p> ms; last view: <items> item(s), <culled> culled, <batches>
+/// batch(es), <draws> draw call(s), <instances> instance(s), <triangles> triangle(s), <shaders> shader switch(es),
+/// <materials> material switch(es)", followed by ", <lines> debug line(s)" when debug lines were drawn, then "; shadow
+/// map <draws> draw call(s), <instances> instance(s); depth pre-pass <draws> draw call(s)". "<n> frame(s)" reads "<n>
+/// frame(s) (<k> without a view)" when some frames rendered no view. The GPU times average, over the frames with a
+/// view, the latest timer query results each reported for the shadow map, the depth pre-pass, the ambient occlusion,
+/// the lit scene pass and the post-processing (FrameStats::shadowGpuMilliseconds, depthGpuMilliseconds,
+/// ssaoGpuMilliseconds, sceneGpuMilliseconds and postGpuMilliseconds; "n/a" without any, e.g. the shadow of views
+/// without a key light); "last view" is the last view recorded.
 class FrameStatsLog {
 public:
     /// `intervalSeconds` (> 0) of recorded frame time between two interval summaries.
@@ -61,6 +64,9 @@ private:
         double seconds = 0.0;
         double minSeconds = 0.0;
         double maxSeconds = 0.0;
+        GpuTime shadowGpu;
+        GpuTime depthGpu;
+        GpuTime ssaoGpu;
         GpuTime sceneGpu;
         GpuTime postGpu;
 

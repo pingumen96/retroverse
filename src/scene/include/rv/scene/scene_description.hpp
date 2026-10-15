@@ -43,7 +43,12 @@ namespace rv::scene {
 ///       "exposure": 1.0,                           > 0, applied before tonemapping
 ///       "bloomStrength": 0.06,                     [0, 1], glow of screens, lamp shades, neon, highlights (0: none)
 ///       "bloomRadius": 0.7,                        [0, 1], how far the glow spreads (0: a few pixels)
-///       "vignette": 0.05                           [0, 1], darkening of the view's corners (0: none)
+///       "vignette": 0.05,                          [0, 1], darkening of the view's corners (0: none)
+///       "ssao": {                                  optional: screen-space ambient occlusion of the ambient light
+///         "enabled": true,
+///         "radius": 0.4,                           (0, 5] meters: how far from a surface occluders darken it
+///         "intensity": 1.0                         [0, 4]: exponent of the unoccluded share (0: no darkening)
+///       }
 ///     },
 ///     "lights": [{                                 optional
 ///       "name": "ceiling",                         optional
@@ -54,7 +59,9 @@ namespace rv::scene {
 ///       "color": "#FFFFFF", "intensity": 1.0,      intensity >= 0
 ///       "range": 10.0,                             > 0 for point and spot lights
 ///       "innerConeDeg": 25, "outerConeDeg": 35,    0 <= inner <= outer < 90 (inner == outer: hard edge)
-///       "castsShadows": false
+///       "castsShadows": false,                     the first light that casts shadows is the key light: a spot
+///                                                  or directional one is shadow-mapped, a point light casts none
+///       "shadowStrength": 1.0                      [0, 1]: share of the light its shadows take away
 ///     }],
 ///     "objects": [{                                optional
 ///       "id": "shelf_main",                        required, non-empty, unique in the file
@@ -87,6 +94,9 @@ namespace rv::scene {
 
 inline constexpr int kSceneSchemaVersion = 1;
 inline constexpr std::size_t kMaxSceneInstances = 100000;
+/// Largest ambient occlusion radius (meters) and intensity a scene may ask for (SsaoSetup).
+inline constexpr float kMaxSsaoRadius = 5.0f;
+inline constexpr float kMaxSsaoIntensity = 4.0f;
 /// Procedural texture patterns understood by the asset layer (assets::test patterns).
 inline constexpr std::array<std::string_view, 3> kTexturePatternNames{"color_bars", "checker", "cover"};
 
@@ -97,6 +107,21 @@ struct CameraSetup {
     float yawDeg = 0.0f;
     float pitchDeg = 0.0f;
     CameraLens lens;
+};
+
+/// Screen-space ambient occlusion of a view (style §4.1 contact cues): the ambient light is darkened in corners, in
+/// creases and where objects meet, estimated per pixel from the depth of the view. It never darkens the direct light
+/// (that is the key light's shadow).
+struct SsaoSetup {
+    bool enabled = true;
+    /// Meters, (0, kMaxSsaoRadius]: how far from a surface occluders darken it; 0.4 m reaches into the corners of a
+    /// room and under furniture without darkening whole walls.
+    float radius = 0.4f;
+    /// [0, kMaxSsaoIntensity]: exponent applied to the unoccluded share of the ambient light (1 as estimated, larger
+    /// darker, 0 no darkening).
+    float intensity = 1.0f;
+
+    bool operator==(const SsaoSetup&) const = default;
 };
 
 /// Linear-RGB environment terms and the post-processing of the view for the renderer.
@@ -117,6 +142,8 @@ struct EnvironmentSetup {
     float bloomRadius = 0.7f;
     /// Darkening of the view's corners (style §18.2 postprocess_vignette): 0.05 takes 5% of the radiance there.
     float vignette = 0.05f;
+    /// Ambient occlusion of the views ("ssao").
+    SsaoSetup ssao;
 };
 
 /// Texture bound to one material role of an object (label of a cartridge, CRT screen, poster picture). The

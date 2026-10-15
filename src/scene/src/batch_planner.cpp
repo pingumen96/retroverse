@@ -33,14 +33,18 @@ void BatchPlanner::plan(std::span<const RenderItem> items, const PlanOptions& op
     DrawPass materialPass = DrawPass::Opaque;
     for (std::size_t index = 0; index < items.size(); ++index) {
         const RenderItem& item = items[index];
-        if (!core::isFinite(item.model)) {
+        if (!core::isFinite(item.model) || (options.shadowCastersOnly && !item.castsShadow)) {
             continue;
         }
         if (options.passOf && passMaterial != item.material) {
             materialPass = options.passOf(item.material);
             passMaterial = item.material;
         }
-        m_candidates.push_back(Candidate{index, options.passOf ? materialPass : DrawPass::Opaque, 0.0f});
+        const DrawPass pass = options.passOf ? materialPass : DrawPass::Opaque;
+        if (options.shadowCastersOnly && pass == DrawPass::Blend) {
+            continue;
+        }
+        m_candidates.push_back(Candidate{index, pass, 0.0f});
     }
 
     // Key order: pass, shader, material, mesh. The submission index breaks ties, so items with the same key keep their

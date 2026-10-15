@@ -1,6 +1,8 @@
 #include <rv/app/scene_instance.hpp>
 
+#include <algorithm>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <span>
@@ -8,11 +10,13 @@
 #include <string_view>
 #include <utility>
 
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/app/scene_content_plan.hpp>
 #include <rv/render/gpu_model.hpp>
 #include <rv/render/light_packing.hpp>
+#include <rv/render/shadow_settings.hpp>
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/texture_cache.hpp>
@@ -39,6 +43,31 @@ void logLights(std::string_view scene, const gl::LightsUniforms& block, std::spa
                  "{:g}, bloom radius {:g}, vignette {:g}",
                  block.punctualLightCount, block.directionalIntensity > 0.0f ? 1 : 0, block.ambientIntensity,
                  environment.exposure, environment.bloomStrength, environment.bloomRadius, environment.vignette);
+}
+
+/// Logs the key light (the first light with castsShadows) and its shadow, or why there is none, and the ambient
+/// occlusion.
+void logShadows(std::string_view scene, std::span<const scene::Light> lights, const gl::ShadowLight& key,
+                std::string_view note, const scene::SsaoSetup& ssao) {
+    const auto first =
+        std::find_if(lights.begin(), lights.end(), [](const scene::Light& light) { return light.castsShadows; });
+    if (key.casts() && first != lights.end()) {
+        const std::string name =
+            first->name.empty() ? fmt::format("#{}", std::distance(lights.begin(), first)) : first->name;
+        spdlog::info("Scene '{}': key light '{}' ({}) casts the shadows, strength {:g}, {}x{} shadow map", scene,
+                     name, scene::toString(key.type), key.strength, gl::kShadowMapResolution,
+                     gl::kShadowMapResolution);
+    } else if (!note.empty()) {
+        spdlog::warn("Scene '{}': no shadows: {}", scene, note);
+    } else {
+        spdlog::info("Scene '{}': no light casts shadows", scene);
+    }
+    if (ssao.enabled) {
+        spdlog::info("Scene '{}': ambient occlusion radius {:g} m, intensity {:g}", scene, ssao.radius,
+                     ssao.intensity);
+    } else {
+        spdlog::info("Scene '{}': ambient occlusion off", scene);
+    }
 }
 
 } // namespace
@@ -107,10 +136,21 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
         }
     }
 
+    for (const scene::RenderItem& item : instance.m_items) {
+        if (item.castsShadow) {
+            const core::Aabb bounds = resources.meshes.bounds(item.mesh);
+            if (!bounds.isEmpty()) {
+                instance.m_shadowCasterBounds.expand(bounds.transformed(item.model));
+            }
+        }
+    }
+
     instance.m_sceneLights = description.lights;
     instance.m_environment = description.environment;
     instance.applyLighting();
     logLights(description.name, instance.m_lights, instance.m_droppedLights, instance.m_environment);
+    logShadows(description.name, instance.m_sceneLights, instance.m_shadowLight, instance.m_shadowNote,
+               instance.m_environment.ssao);
     instance.m_collision = scene::buildCollisionWorld(geometry);
     scene::addSceneBoundsLines(geometry, instance.m_boundsLines);
     scene::addSceneSocketLines(geometry, instance.m_socketLines);
@@ -138,6 +178,8 @@ void SceneInstance::applyLighting() {
     gl::PackedLights packed = gl::packLights(m_sceneLights, m_environment);
     m_lights = packed.uniforms;
     m_droppedLights = std::move(packed.dropped);
+    m_shadowLight = packed.shadowLight;
+    m_shadowNote = std::move(packed.shadowNote);
 }
 
 } // namespace rv::app

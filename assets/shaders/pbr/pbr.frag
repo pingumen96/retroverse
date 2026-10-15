@@ -1,18 +1,28 @@
 #version 450 core
 // PBR_Base (style §25): metallic-roughness materials lit by the scene's point, spot and directional lights
-// (common/lights.glsl) and a hemispherical sky/ground ambient, with optional base color, metallic-roughness, normal,
-// occlusion and emissive textures. Output (common/scene_output.glsl): the linear scene radiance and its emissive part
-// into the HDR target; exposure, bloom and tonemapping belong to the post pass (post/post.frag).
+// (common/lights.glsl), the key light shadowed by its shadow map (common/shadow.glsl), and a hemispherical sky/ground
+// ambient darkened by the view's ambient occlusion (common/occlusion.glsl), with optional base color,
+// metallic-roughness, normal, occlusion and emissive textures. Output (common/scene_output.glsl): the linear scene
+// radiance and its emissive part into the HDR target; exposure, bloom and tonemapping belong to the post pass
+// (post/post.frag).
 #include "common/common.glsl"
 #include "common/lights.glsl"
 #include "common/brdf.glsl"
 #include "common/material.glsl"
+#include "common/shadow.glsl"
+#include "common/occlusion.glsl"
 #include "common/scene_output.glsl"
 
 layout(location = 0) in vec3 vWorldPosition;
 layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec4 vTangent;
 layout(location = 3) in vec2 vUv;
+
+// Geometric normal: the interpolated vertex normal, reversed on the back faces of double-sided materials.
+vec3 geometricNormal() {
+    vec3 N = safeNormalize(vNormal, vec3(0.0, 1.0, 0.0));
+    return materialHas(RV_MATERIAL_DOUBLE_SIDED) && !gl_FrontFacing ? -N : N;
+}
 
 // Shading normal: the interpolated vertex normal, perturbed by the normal texture in the tangent frame of ADR-0002
 // (bitangent = cross(normal, tangent.xyz) * tangent.w), then reversed on the back faces of double-sided materials.
@@ -59,6 +69,8 @@ void main() {
 
     vec3 V = safeNormalize(uCameraPosition - vWorldPosition, N);
     BrdfSurface surface = makeBrdfSurface(baseColor.rgb, metallic, roughness);
+    // Shadow lookups move along the geometric normal: a normal map does not move the surface.
+    vec3 shadowNormal = geometricNormal();
 
     vec3 radiance = vec3(0.0);
     int lightCount = min(uPunctualLightCount, RV_MAX_PUNCTUAL_LIGHTS);
@@ -71,22 +83,30 @@ void main() {
         }
         vec3 L = toLight * inversesqrt(max(distanceSquared, 1e-8));
         float attenuation = distanceAttenuation(distanceSquared, light.range) * spotFactor(light, L);
+        if (i == uShadowLightIndex && attenuation > 0.0) {
+            attenuation *= keyLightVisibility(vWorldPosition, shadowNormal);
+        }
         radiance += evaluateLight(surface, N, V, L, light.color * (light.intensity * attenuation));
     }
     if (uDirectionalIntensity > 0.0) {
-        radiance += evaluateLight(surface, N, V, -uDirectionalDirection, uDirectionalColor * uDirectionalIntensity);
+        float visibility =
+            uShadowLightIndex == RV_DIRECTIONAL_SHADOW_LIGHT ? keyLightVisibility(vWorldPosition, shadowNormal) : 1.0;
+        radiance += evaluateLight(surface, N, V, -uDirectionalDirection,
+                                  uDirectionalColor * (uDirectionalIntensity * visibility));
     }
 
-    // Hemispherical ambient, darkened by occlusion: diffuse from the hemisphere around the normal,
-    // mix(ground, sky, n.y * 0.5 + 0.5) * albedo * ambientIntensity, and its specular counterpart seen along the
-    // reflection (bent towards the normal as the lobe widens), weighted by the environment BRDF so that metals
-    // reflect the room tinted by their base color.
+    // Hemispherical ambient, darkened by the material's occlusion and the view's ambient occlusion (not where blended
+    // surfaces such as glass lie in front of the surfaces it was estimated on): diffuse from the hemisphere around the
+    // normal, mix(ground, sky, n.y * 0.5 + 0.5) * albedo * ambientIntensity, and its specular counterpart seen along
+    // the reflection (bent towards the normal as the lobe widens), weighted by the environment BRDF so that metals
+    // reflect the room tinted by their base color, and occluded like it (specular occlusion).
     float NoV = max(dot(N, V), 1e-4);
+    float ambientVisibility = materialHas(RV_MATERIAL_ALPHA_BLEND) ? 1.0 : screenAmbientOcclusion();
     vec3 reflected = reflect(-V, N);
     vec3 specularDirection = safeNormalize(mix(reflected, N, surface.alpha), N);
-    radiance += hemisphereAmbient(N) * surface.diffuseColor * occlusion;
-    radiance += hemisphereAmbient(specularDirection) *
-                environmentBrdf(surface.f0, surface.perceptualRoughness, NoV) * occlusion;
+    radiance += hemisphereAmbient(N) * surface.diffuseColor * (occlusion * ambientVisibility);
+    radiance += hemisphereAmbient(specularDirection) * environmentBrdf(surface.f0, surface.perceptualRoughness, NoV) *
+                (occlusion * specularOcclusion(NoV, ambientVisibility, surface.alpha));
     radiance += emissive;
 
     writeSceneOutput(radiance, emissive, materialOutputAlpha(baseColor.a));

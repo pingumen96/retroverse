@@ -296,6 +296,17 @@ TEST_CASE("scene/reference_scenes: instancing_stress expands to exactly 1000 box
     }
     CHECK(batchSizes == std::multiset<std::uint32_t>{1, 300, 300, 400});
 
+    // The sun casts the shadows (the reference of the directional shadow map): the shadow pass draws the boxes in 3
+    // batches, without the floor.
+    REQUIRE(scene.lights.size() == 1);
+    CHECK(scene.lights[0].type == LightType::Directional);
+    CHECK(scene.lights[0].castsShadows);
+    rv::scene::PlanOptions casters;
+    casters.shadowCastersOnly = true;
+    const rv::scene::BatchPlan shadow = rv::scene::BatchPlanner{}.plan(items, casters);
+    CHECK(shadow.instanceTransforms.size() == 1000);
+    CHECK(shadow.batches.size() == 3);
+
     // The camera frames every box.
     const rv::scene::Frustum frustum = cameraOf(scene.camera).frustum();
     for (const SceneObject* box : boxes) {
@@ -416,7 +427,9 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     // Lighting (style 3.1 and 4.2): warm tungsten mood with neutrals that stay neutral. The lamp is the amber tungsten
     // practical light; the room lights are a warm white, much less saturated than tungsten (an amber key turned every
     // surface orange); a light magenta accent washes the TV; the entrance half has a light of its own; nothing lights
-    // the dark ceiling from up close; the ambient is low, warm and near neutral.
+    // the dark ceiling from up close; the ambient is low, warm and near neutral, and darkened by the ambient occlusion.
+    // Shadows (M0 step 11): exactly one light casts them, the key: a warm-white downlight in the ceiling whose cone
+    // takes in the shelf and the TV on the hero wall and the floor in front of them.
     const glm::vec3 tungsten = rv::core::hexToLinearRgb("#FFC88A").value();
     const glm::vec3 magenta = rv::core::hexToLinearRgb("#B34DCE").value();
     const glm::vec3 screen = translationOf(crts[0]->transform) + glm::vec3(0.0f, 0.3f, 0.0f);
@@ -466,10 +479,45 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(bulbs == 1);
     CHECK(lampLights >= 1);
     CHECK(entranceLights >= 1);
-    CHECK(scene.environment.ambientIntensity < 0.2f);
+    CHECK(scene.environment.ambientIntensity < 0.3f);
     const glm::vec3& sky = scene.environment.ambientSky;
     CHECK(warmth(sky) > 0.0f);
     CHECK(warmth(sky) < 0.2f);
+
+    // The key light: the first light, and the only one, that casts shadows.
+    REQUIRE_FALSE(scene.lights.empty());
+    const rv::scene::Light& key = scene.lights.front();
+    CHECK(key.castsShadows);
+    CHECK(std::count_if(scene.lights.begin(), scene.lights.end(),
+                        [](const rv::scene::Light& light) { return light.castsShadows; }) == 1);
+    CHECK(key.type == LightType::Spot);   // point lights cast no shadow
+    CHECK(key.shadowStrength == 1.0f);
+    CHECK(key.position.y > wallHeight - 0.1f); // in the ceiling
+    // A downlight with a wide cone: pointing more down than towards the wall, the cone ending below the horizontal.
+    const float tilt = std::acos(-key.direction.y);
+    CHECK(tilt < rv::core::degreesToRadians(45.0f));
+    CHECK(key.outerConeDeg >= 45.0f);
+    CHECK(std::asin(-key.direction.y) >= rv::core::degreesToRadians(key.outerConeDeg) - 1e-4f);
+    // Between the room's center and the hero wall, the shelf, the TV and the floor in front of them in its cone.
+    CHECK(key.position.z < 0.0f);
+    CHECK(key.position.z > -2.5f);
+    const auto inCone = [&key](const glm::vec3& point, float coneDeg) {
+        return glm::dot(key.direction, glm::normalize(point - key.position)) >
+               std::cos(rv::core::degreesToRadians(coneDeg));
+    };
+    CHECK(inCone(translationOf(shelf->transform) + glm::vec3(0.0f, 1.0f, 0.0f), key.innerConeDeg + 5.0f));
+    CHECK(inCone(screen, key.innerConeDeg + 15.0f));
+    CHECK(inCone(glm::vec3(key.position.x, 0.0f, key.position.z - 1.0f), key.outerConeDeg));
+    CHECK(inCone(translationOf(objectsOfKind(scene, "rug")[0]->transform), key.outerConeDeg - 10.0f));
+    // Warm white like the other room lights.
+    CHECK(warmth(key.color) > 0.0f);
+    CHECK(warmth(key.color) < 0.7f * warmth(tungsten));
+    CHECK(key.range >= 8.0f);
+
+    // Ambient occlusion with the defaults of the plan: radius 0.4 m, intensity 1.
+    CHECK(scene.environment.ssao.enabled);
+    CHECK(scene.environment.ssao.radius == 0.4f);
+    CHECK(scene.environment.ssao.intensity == 1.0f);
 }
 
 TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit at the contract slot positions of the shelf",

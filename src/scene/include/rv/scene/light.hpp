@@ -30,7 +30,10 @@ enum class LightType : std::uint8_t { Point, Spot, Directional };
 ///    i.e. full intensity inside innerConeDeg and zero outside outerConeDeg (half-angles from the axis). The
 ///    max() keeps hard-edged cones (inner == outer, valid) defined: GLSL smoothstep is undefined for equal edges.
 ///  - Directional lights: attenuation = spotFactor = 1; light travels along `direction`; position and range are
-///    ignored (position may serve as an anchor for shadow-map placement and debug drawing).
+///    ignored (position may serve as an anchor for debug drawing).
+///  - Shadows: the first light of a scene with `castsShadows` is its key light. A spot or directional key light is
+///    shadow-mapped: its radiance at a point is further multiplied by mix(1, visibility, shadowStrength), visibility
+///    being the share of the light the shadow casters let through (0 in full shadow). Point lights cast no shadow.
 struct Light {
     std::string name;
     LightType type = LightType::Point;
@@ -47,7 +50,11 @@ struct Light {
     /// Spot cone half-angles in degrees, 0 <= inner <= outer < 90.
     float innerConeDeg = 25.0f;
     float outerConeDeg = 35.0f;
+    /// The first light that casts shadows is the scene's key light (see the shadow contract above).
     bool castsShadows = false;
+    /// [0, 1]: share of the light's radiance its shadows take away (1: none of this light reaches into its shadows,
+    /// which the other lights and the ambient still light; 0: no visible shadow).
+    float shadowStrength = 1.0f;
 };
 
 } // namespace rv::scene

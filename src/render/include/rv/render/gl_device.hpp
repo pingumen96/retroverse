@@ -84,8 +84,8 @@ public:
     [[nodiscard]] const GLCapabilities& caps() const noexcept { return m_caps; }
 
     /// Fixed-function state. Defaults after create(): depth test on with GL_LESS and depth writes, back faces culled,
-    /// blending off with (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), filled polygons, GL_FRAMEBUFFER_SRGB as in
-    /// GLCapabilities::srgbDefaultFramebuffer.
+    /// blending off with (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), filled polygons, color writes on, polygon offset off,
+    /// GL_FRAMEBUFFER_SRGB as in GLCapabilities::srgbDefaultFramebuffer.
     [[nodiscard]] RenderStateCache& state() noexcept { return m_state; }
 
     /// Starts rendering into `target`: binds it, sets the viewport to (0, 0, target.size()), enables
