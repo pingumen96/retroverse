@@ -36,7 +36,9 @@ namespace rv::scene {
 ///       "near": 0.05, "far": 100                   0 < near < far
 ///     },
 ///     "environment": {                             optional
-///       "clearColor": "#383735", "ambientSky": "#FFFFFF", "ambientGround": "#808080",
+///       "clearColor": "#383735",                   background radiance where nothing is drawn (exposed and
+///                                                  tonemapped like an unlit surface)
+///       "ambientSky": "#FFFFFF", "ambientGround": "#808080",
 ///       "ambientIntensity": 0.2,                   >= 0, scales the hemispheric sky/ground ambient
 ///       "exposure": 1.0                            > 0, applied before tonemapping
 ///     },
@@ -92,9 +94,11 @@ struct CameraSetup {
 
 /// Linear-RGB environment terms for the renderer.
 struct EnvironmentSetup {
-    glm::vec3 clearColor{0.0395462f, 0.0382044f, 0.0356013f}; ///< "#383735"
-    glm::vec3 ambientSky{1.0f};                               ///< "#FFFFFF"
-    glm::vec3 ambientGround{0.2158605f};                      ///< "#808080"
+    /// "#383735". Radiance of the background, seen where no surface is drawn: the renderer exposes and tonemaps it
+    /// like the surfaces, so it reads on the same scale as the lit scene.
+    glm::vec3 clearColor{0.0395462f, 0.0382044f, 0.0356013f};
+    glm::vec3 ambientSky{1.0f};          ///< "#FFFFFF"
+    glm::vec3 ambientGround{0.2158605f}; ///< "#808080"
     float ambientIntensity = 0.2f;
     float exposure = 1.0f;
 };

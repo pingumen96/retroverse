@@ -68,6 +68,10 @@ void computeTangents(MeshData& mesh);
 /// non-finite data are skipped; (0, 0) when none is left.
 [[nodiscard]] glm::vec2 uvMetersPerUnit(const MeshData& mesh) noexcept;
 
+/// Same for the mesh as drawn with the local -> world `transform`: only its linear part (rotation, scale, shear)
+/// matters, so the quad above scaled by (2, 1, 1) gives (0.8, 0.3) and turned by any angle still (0.4, 0.3).
+[[nodiscard]] glm::vec2 uvMetersPerUnit(const MeshData& mesh, const glm::mat4& transform) noexcept;
+
 /// Structural validation: index count multiple of 3, indices in range, finite attributes, non-zero normals.
 [[nodiscard]] Status validateMesh(const MeshData& mesh);
 

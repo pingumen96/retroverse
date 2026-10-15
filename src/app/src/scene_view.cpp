@@ -1,43 +1,27 @@
 #include "scene_view.hpp"
 
-#include <algorithm>
 #include <cstdint>
-#include <functional>
-#include <map>
+#include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 
-#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
-#include <rv/assets/test_patterns.hpp>
+#include <rv/app/scene_draw_plan.hpp>
 #include <rv/core/math.hpp>
-#include <rv/geometry/mesh_data.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/light_packing.hpp>
 #include <rv/render/shader_program.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/render/texture_defaults.hpp>
+#include <rv/render/tonemap.hpp>
 
 namespace rv::app {
 namespace {
 
-/// Drawing pass of an alpha mode: opaque first, then alpha-tested, then blended.
-int alphaPass(assets::AlphaMode mode) noexcept {
-    switch (mode) {
-    case assets::AlphaMode::Opaque:
-        return 0;
-    case assets::AlphaMode::Mask:
-        return 1;
-    case assets::AlphaMode::Blend:
-        return 2;
-    }
-    return 0;
-}
-
-/// Texture of one material slot named by the material itself (an asset file), or null when the slot has none.
+/// Texture of one material slot named by the material itself (an asset file of a tiling surface), or null when the
+/// slot has none.
 const gl::Texture2D* materialTexture(const assets::TextureRef& reference, gl::ColorSpace colorSpace,
                                      const assets::MaterialDesc& material, gl::TextureCache& textures,
                                      const gl::TextureDefaults& defaults) {
@@ -45,7 +29,7 @@ const gl::Texture2D* materialTexture(const assets::TextureRef& reference, gl::Co
         return nullptr;
     }
     if (!reference.path.empty()) {
-        return &textures.file(reference.path, colorSpace);
+        return &textures.file(reference.path, colorSpace, gl::TextureWrap::Repeat);
     }
     // Image indices refer to the images of a glTF model; scene parts carry library and inline materials only.
     spdlog::warn("Material '{}' refers to model image {}, which this scene does not provide; drawn as a checker",
@@ -68,17 +52,14 @@ gl::MaterialTextures materialTextures(const assets::MaterialDesc& material, gl::
     return slots;
 }
 
-/// Base color texture of a part from its scene texture source: an asset file, or a pattern generated at the aspect
-/// ratio of the part's surface so that covers and test cards are not stretched.
-const gl::Texture2D& sceneTexture(const scene::TextureSource& source, const geometry::MeshData& surface,
-                                  gl::TextureCache& textures) {
+/// Base color texture of a material instance from its picture (PlannedMaterial::picture): an asset file or a pattern
+/// generated at the planned size, both clamped to their edges (single pictures).
+const gl::Texture2D& pictureTexture(const PlannedMaterial& planned, gl::TextureCache& textures) {
+    const scene::TextureSource& source = *planned.picture;
     if (source.kind == scene::TextureSource::Kind::File) {
-        return textures.file(source.path, gl::ColorSpace::Srgb);
+        return textures.file(source.path, gl::ColorSpace::Srgb, gl::TextureWrap::ClampToEdge);
     }
-    const glm::vec2 metersPerUnit = geometry::uvMetersPerUnit(surface);
-    const float aspect = metersPerUnit.y > 0.0f ? metersPerUnit.x / metersPerUnit.y : 1.0f;
-    return textures.pattern(source.pattern, source.title, source.seed, assets::patternSizeForAspect(aspect),
-                            gl::ColorSpace::Srgb);
+    return textures.pattern(source.pattern, source.title, source.seed, planned.patternSize, gl::ColorSpace::Srgb);
 }
 
 void logLights(const scene::SceneDescription& scene, const gl::PackedLights& packed) {
@@ -100,7 +81,8 @@ Expected<SceneView> SceneView::create(const scene::SceneDescription& scene, cons
     view.m_camera.setLens(scene.camera.lens);
     view.m_camera.setPose(scene.camera.position, core::degreesToRadians(scene.camera.yawDeg),
                           core::degreesToRadians(scene.camera.pitchDeg));
-    view.m_clearColor = glm::vec4(scene.environment.clearColor, 1.0f);
+    // The background is scene radiance like any surface: exposure and tonemapping apply before the sRGB encoding.
+    view.m_clearColor = glm::vec4(gl::tonemap(scene.environment.clearColor, scene.environment.exposure), 1.0f);
 
     auto materials = gl::MaterialSet::create(defaults, textures.anisotropy());
     if (!materials) {
@@ -108,36 +90,34 @@ Expected<SceneView> SceneView::create(const scene::SceneDescription& scene, cons
     }
     view.m_materials = std::move(*materials);
 
-    // One material per name; one instance per object and role with a scene texture of its own.
-    std::map<std::string, scene::MaterialHandle, std::less<>> materialByKey;
-    std::size_t texturedInstances = 0;
-    for (const scene::SceneObjectGeometry& object : geometry.objects) {
-        for (const scene::ScenePart& part : object.parts) {
+    // One GpuMesh per part, in scene order; a part that cannot be uploaded is logged and not drawn.
+    std::vector<std::vector<std::optional<std::size_t>>> meshOfPart(geometry.objects.size());
+    for (std::size_t objectIndex = 0; objectIndex < geometry.objects.size(); ++objectIndex) {
+        const scene::SceneObjectGeometry& object = geometry.objects[objectIndex];
+        meshOfPart[objectIndex].resize(object.parts.size());
+        for (std::size_t partIndex = 0; partIndex < object.parts.size(); ++partIndex) {
+            const scene::ScenePart& part = object.parts[partIndex];
             auto mesh = gl::GpuMesh::create(part.mesh, object.id + ":" + part.mesh.name);
             if (!mesh) {
                 spdlog::error("Scene object '{}': part '{}' cannot be uploaded and is not drawn: {}", object.id,
                               part.role, mesh.error().toString());
                 continue;
             }
-            const std::string key = part.texture ? object.id + "/" + part.role : part.material.name;
-            auto found = materialByKey.find(key);
-            if (found == materialByKey.end()) {
-                gl::MaterialTextures slots = materialTextures(part.material, textures, defaults);
-                std::string name = part.material.name;
-                if (part.texture) {
-                    slots[gl::toIndex(gl::MaterialTextureSlot::BaseColor)] =
-                        &sceneTexture(*part.texture, part.mesh, textures);
-                    name = fmt::format("{} ({})", key, part.material.name);
-                    ++texturedInstances;
-                }
-                found = materialByKey.emplace(key, view.m_materials.add(std::move(name), part.material, slots)).first;
-            }
-            const std::size_t meshIndex = view.m_meshes.size();
+            meshOfPart[objectIndex][partIndex] = view.m_meshes.size();
             view.m_meshes.push_back(std::move(*mesh));
-            for (const glm::mat4& instance : object.instances) {
-                view.m_draws.push_back(DrawItem{meshIndex, found->second, instance});
-            }
         }
+    }
+
+    // Materials and drawing order come from the GPU-free plan (scene_draw_plan.hpp).
+    const SceneDrawPlan plan = planSceneDraws(geometry);
+    std::vector<scene::MaterialHandle> handles;
+    handles.reserve(plan.materials.size());
+    for (const PlannedMaterial& planned : plan.materials) {
+        gl::MaterialTextures slots = materialTextures(planned.material, textures, defaults);
+        if (planned.picture) {
+            slots[gl::toIndex(gl::MaterialTextureSlot::BaseColor)] = &pictureTexture(planned, textures);
+        }
+        handles.push_back(view.m_materials.add(planned.label, planned.material, slots));
     }
     if (view.m_materials.size() > 0) {
         if (auto uploaded = view.m_materials.upload(caps.uniformBufferOffsetAlignment, "MaterialUniforms");
@@ -145,19 +125,12 @@ Expected<SceneView> SceneView::create(const scene::SceneDescription& scene, cons
             return propagate(uploaded.error());
         }
     }
-
-    // Opaque, then masked (each by shader, material and mesh), then blended in scene order.
-    const gl::MaterialSet& set = view.m_materials;
-    std::stable_sort(view.m_draws.begin(), view.m_draws.end(), [&set](const DrawItem& a, const DrawItem& b) {
-        const gl::GpuMaterial& left = set.material(a.material);
-        const gl::GpuMaterial& right = set.material(b.material);
-        const int leftPass = alphaPass(left.alphaMode);
-        const int rightPass = alphaPass(right.alphaMode);
-        if (leftPass != rightPass || leftPass == alphaPass(assets::AlphaMode::Blend)) {
-            return leftPass < rightPass;
+    view.m_draws.reserve(plan.draws.size());
+    for (const PlannedDraw& draw : plan.draws) {
+        if (const std::optional<std::size_t> mesh = meshOfPart[draw.object][draw.part]) {
+            view.m_draws.push_back(DrawItem{*mesh, handles[draw.material], draw.model});
         }
-        return std::tuple(left.shader, a.material, a.mesh) < std::tuple(right.shader, b.material, b.mesh);
-    });
+    }
 
     const gl::PackedLights lights = gl::packLights(scene.lights, scene.environment);
     logLights(scene, lights);
@@ -171,7 +144,7 @@ Expected<SceneView> SceneView::create(const scene::SceneDescription& scene, cons
     view.m_lights = std::move(*lightsBuffer);
 
     spdlog::info("Scene materials: {} ({} textured instance(s)); textures: {} ({:.1f} MiB), {} unavailable",
-                 view.m_materials.size(), texturedInstances, textures.textureCount(),
+                 view.m_materials.size(), plan.pictureMaterialCount(), textures.textureCount(),
                  static_cast<double>(textures.estimatedBytes()) / (1024.0 * 1024.0), textures.failedCount());
     return view;
 }

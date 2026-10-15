@@ -44,7 +44,8 @@ vec4 materialBaseColor(vec2 uv) {
     return color;
 }
 
-// Alpha mode: mask discards the fragments below the cutoff; only blend keeps the alpha in the output.
+// Alpha mode: mask discards the fragments below the cutoff; only blend keeps the alpha in the output. Call it after
+// the last texture fetch: implicit derivatives are undefined after a non-uniform discard (GLSL 4.50 §6.4).
 void materialAlphaTest(float alpha) {
     if (materialHas(RV_MATERIAL_ALPHA_MASK) && alpha < uAlphaCutoff) {
         discard;

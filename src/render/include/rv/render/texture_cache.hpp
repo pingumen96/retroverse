@@ -18,12 +18,15 @@
 
 namespace rv::gl {
 
-/// Uploads each texture source once and hands out the GPU texture for it. Sources and their keys:
-///  - asset files: "<asset-relative path>|<color space>", decoded with assets::loadImage, repeating (tiling surfaces);
-///  - procedural patterns: "pattern:<name>:<title>:<seed>@<width>x<height>|<color space>" (assets::patternKey; the
-///    size is part of the key because patterns are generated at the aspect ratio of the surface that shows them),
-///    rendered with assets::makeNamedPattern, clamped to their edges (single pictures);
-///  - decoded images, such as the images of a glTF model: "<caller key>|<color space>".
+/// Uploads each texture source once and hands out the GPU texture for it. Keys are "<source>|<color space>|<wrap>"
+/// (toString of ColorSpace and TextureWrap): the same image in another color space or with another wrap mode is
+/// another texture, so a texture's own sampling state always matches the request. Sources:
+///  - asset files: "<asset-relative path>", decoded with assets::loadImage, with the caller's wrap mode (Repeat for
+///    the textures of tiling surfaces, ClampToEdge for single pictures such as labels, posters and screens);
+///  - procedural patterns: "pattern:<name>:<title>:<seed>@<width>x<height>" (assets::patternKey; the size is part of
+///    the key because patterns are generated at the aspect ratio of the surface that shows them), rendered with
+///    assets::makeNamedPattern, always clamped to their edges (single pictures);
+///  - decoded images, such as the images of a glTF model: "<caller key>".
 /// Every texture has the full mip chain and the cache's anisotropy. A source that cannot be loaded or uploaded is
 /// logged as a warning once, and its key then always gives TextureDefaults::checker() (style §21: missing assets
 /// are visible, never fatal). Returned references stay valid as long as the cache (and the defaults) are alive.
@@ -34,11 +37,11 @@ public:
     /// device limit (clampAnisotropy).
     TextureCache(std::filesystem::path assetRoot, const TextureDefaults& defaults, float anisotropy);
 
-    /// Texture of an image file under the asset root. `assetPath` is asset-relative with forward slashes
-    /// (assets::TextureRef::path, scene texture files); absolute paths and ".." components are refused.
-    [[nodiscard]] const Texture2D& file(std::string_view assetPath, ColorSpace colorSpace);
+    /// Texture of an image file under the asset root, sampled with `wrap`. `assetPath` is asset-relative with forward
+    /// slashes (assets::TextureRef::path, scene texture files); absolute paths and ".." components are refused.
+    [[nodiscard]] const Texture2D& file(std::string_view assetPath, ColorSpace colorSpace, TextureWrap wrap);
     /// Texture of the procedural pattern `name` (assets::patternNames) with `title` and `seed`, generated at `size`
-    /// pixels (assets::patternSizeForAspect).
+    /// pixels (assets::patternSizeForAspect), clamped to its edges.
     [[nodiscard]] const Texture2D& pattern(std::string_view name, std::string_view title, std::uint32_t seed,
                                            glm::ivec2 size, ColorSpace colorSpace);
     /// Texture of a decoded image; `key` identifies the image among the cache's sources (for instance

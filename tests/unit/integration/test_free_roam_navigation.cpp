@@ -6,6 +6,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -161,6 +162,14 @@ TEST_CASE("integration/free_roam: look_turn_pitch.json turns and clamps the pitc
     CHECK(rv::core::radiansToDegrees(down.controller.yaw()) == Approx(25.2101f).margin(1e-3));
     CHECK(rv::core::radiansToDegrees(down.controller.pitch()) == Approx(-85.0f).margin(1e-4));
     CHECK(rv::core::nearlyEqual(down.controller.feetPosition(), glm::vec3(0.0f, 0.0f, 3.2f)));
+}
+
+TEST_CASE("integration/free_roam: turn_around.json turns 180 degrees in place", "[integration][free_roam]") {
+    TestRoomWalker walker;
+    walker.play(loadScript("turn_around"), 10);
+    CHECK(std::abs(rv::core::radiansToDegrees(walker.controller.yaw())) == Approx(180.0f).margin(0.01f));
+    CHECK(rv::core::radiansToDegrees(walker.controller.pitch()) == Approx(-6.0f).margin(1e-4));
+    CHECK(rv::core::nearlyEqual(walker.controller.feetPosition(), glm::vec3(0.0f, 0.0f, 3.2f)));
 }
 
 TEST_CASE("integration/free_roam: walk_back_into_doorway.json steps into the doorway but stays in the room",

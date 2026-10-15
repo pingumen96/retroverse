@@ -20,6 +20,7 @@
 #include <rv/core/text.hpp>
 #include <rv/geometry/prefabs.hpp>
 #include <rv/geometry/socket.hpp>
+#include <rv/render/light_packing.hpp>
 #include <rv/scene/scene_description.hpp>
 
 namespace fs = std::filesystem;
@@ -167,6 +168,18 @@ TEST_CASE("integration/m0_testroom: cartridges sit exactly in shelf slots", "[in
         CHECK(usedSlots.insert(*matched).second); // one cartridge per slot
     }
     CHECK(cartridges == 24);
+}
+
+TEST_CASE("integration/reference scenes: every light reaches the shaders' lights block", "[integration][scene]") {
+    for (const fs::path& file : filesIn(assetDir() / "style_tests/reference_scenes", ".json")) {
+        INFO("scene " << rv::core::pathToUtf8(file.filename()));
+        const auto scene = rv::scene::loadSceneDescription(file);
+        REQUIRE(scene.has_value());
+        const rv::gl::PackedLights packed = rv::gl::packLights(scene->lights, scene->environment);
+        for (const rv::gl::DroppedLight& dropped : packed.dropped) {
+            FAIL_CHECK("light " << dropped.name << " is dropped: " << dropped.reason);
+        }
+    }
 }
 
 TEST_CASE("integration/m0_testroom: the lamp light sits at the lamp's LightSource socket", "[integration][scene]") {

@@ -1,7 +1,8 @@
 // Cross-module integration checks (GPU-free) for the shader sources in assets/shaders: every program preprocesses
 // with rv::assets::ShaderSourceLoader, and the std140 uniform blocks, material flags and texture units declared in
 // GLSL match their C++ mirrors in rv/render/uniform_blocks.hpp (binding points, member types, offsets, sizes), so a
-// change on one side cannot silently skew the other.
+// change on one side cannot silently skew the other. The same holds for the display transform (tonemap.glsl and
+// rv/render/tonemap.hpp); fragment stages are checked to sample their textures before they may discard.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,12 +13,14 @@
 #include <map>
 #include <optional>
 #include <regex>
+#include <set>
 #include <string>
 #include <vector>
 
 #include <rv/assets/shader_source.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
+#include <rv/render/tonemap.hpp>
 #include <rv/render/uniform_blocks.hpp>
 
 namespace fs = std::filesystem;
@@ -28,12 +31,17 @@ fs::path shaderRoot() {
     return rv::core::pathFromUtf8(RV_TEST_ASSET_DIR) / "shaders";
 }
 
+/// GLSL text with comments removed.
+std::string withoutComments(const std::string& text) {
+    std::string source = std::regex_replace(text, std::regex("/\\*[\\s\\S]*?\\*/"), " ");
+    return std::regex_replace(source, std::regex("//[^\\n]*"), "");
+}
+
 /// GLSL text of a shader file with comments removed.
 std::string glslWithoutComments(const std::string& relativePath) {
     const auto text = rv::core::readTextFile(shaderRoot() / rv::core::pathFromUtf8(relativePath));
     REQUIRE(text.has_value());
-    std::string source = std::regex_replace(*text, std::regex("/\\*[\\s\\S]*?\\*/"), " ");
-    return std::regex_replace(source, std::regex("//[^\\n]*"), "");
+    return withoutComments(*text);
 }
 
 // --- A small std140 layout engine: scalars, vectors, mat4, structs and arrays of them --------------------------------
@@ -339,4 +347,150 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
     }
     CHECK(glslUnits == expectedUnits);
     CHECK(expectedUnits.size() == rv::gl::kMaterialTextureSlotCount);
+}
+
+namespace {
+
+/// Decimal literals of `text` ("0.0245786", "-0.53108"), in order.
+std::vector<float> floatsIn(const std::string& text) {
+    std::vector<float> values;
+    const std::regex number(R"(-?\d+\.\d+)");
+    for (auto it = std::sregex_iterator(text.begin(), text.end(), number); it != std::sregex_iterator(); ++it) {
+        values.push_back(std::stof(it->str()));
+    }
+    return values;
+}
+
+/// Function definitions at file scope of a comment-free GLSL source: name -> body (between its braces).
+std::map<std::string, std::string> functionBodies(const std::string& source) {
+    std::map<std::string, std::string> bodies;
+    const std::regex header(R"(\b\w+\s+(\w+)\s*\([^;{}]*\)\s*\{)");
+    int depth = 0;
+    std::size_t scanned = 0;
+    for (auto it = std::sregex_iterator(source.begin(), source.end(), header); it != std::sregex_iterator(); ++it) {
+        const auto start = static_cast<std::size_t>(it->position(0));
+        for (; scanned < start; ++scanned) {
+            depth += source[scanned] == '{' ? 1 : (source[scanned] == '}' ? -1 : 0);
+        }
+        if (depth != 0) {
+            continue; // a statement such as `if (...) {` inside a function
+        }
+        const std::size_t open = start + static_cast<std::size_t>(it->length(0)) - 1;
+        int nested = 0;
+        std::size_t close = open;
+        for (; close < source.size(); ++close) {
+            nested += source[close] == '{' ? 1 : (source[close] == '}' ? -1 : 0);
+            if (nested == 0) {
+                break;
+            }
+        }
+        REQUIRE(close < source.size());
+        bodies[(*it)[1].str()] = source.substr(open + 1, close - open - 1);
+    }
+    return bodies;
+}
+
+/// A call of the function `name`.
+std::regex callOf(const std::string& name) {
+    return std::regex(R"(\b)" + name + R"(\s*\()");
+}
+
+/// Functions whose body matches `direct`, or calls one that does (transitively).
+std::set<std::string> functionsReaching(const std::map<std::string, std::string>& bodies, const std::regex& direct) {
+    std::set<std::string> reaching;
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (const auto& [name, body] : bodies) {
+            if (reaching.contains(name)) {
+                continue;
+            }
+            bool reaches = std::regex_search(body, direct);
+            for (const std::string& callee : reaching) {
+                reaches = reaches || std::regex_search(body, callOf(callee));
+            }
+            if (reaches) {
+                reaching.insert(name);
+                changed = true;
+            }
+        }
+    }
+    return reaching;
+}
+
+/// Position of the first match in `text` of `direct` or of a call to one of `functions`, or npos.
+std::size_t firstUse(const std::string& text, const std::regex& direct, const std::set<std::string>& functions) {
+    std::size_t first = std::string::npos;
+    std::smatch match;
+    if (std::regex_search(text, match, direct)) {
+        first = static_cast<std::size_t>(match.position(0));
+    }
+    for (const std::string& function : functions) {
+        if (std::regex_search(text, match, callOf(function))) {
+            first = std::min(first, static_cast<std::size_t>(match.position(0)));
+        }
+    }
+    return first;
+}
+
+} // namespace
+
+TEST_CASE("integration/shaders: the display transform of tonemap.glsl matches its CPU mirror rv::gl::tonemap",
+          "[integration][shader]") {
+    const std::string source = glslWithoutComments("common/tonemap.glsl");
+    const auto matrix = [&source](const std::string& name) {
+        std::smatch match;
+        REQUIRE(std::regex_search(source, match,
+                                  std::regex(R"(const\s+mat3\s+)" + name + R"(\s*=\s*mat3\s*\(([^)]*)\)\s*;)")));
+        return floatsIn(match[1].str());
+    };
+    const auto checkValues = [](const std::vector<float>& glsl, const std::vector<float>& cpp) {
+        REQUIRE(glsl.size() == cpp.size());
+        for (std::size_t i = 0; i < glsl.size(); ++i) {
+            INFO("value " << i);
+            CHECK(glsl[i] == cpp[i]);
+        }
+    };
+    checkValues(matrix("RV_ACES_INPUT"),
+                std::vector<float>(rv::gl::kAcesInputColumns.begin(), rv::gl::kAcesInputColumns.end()));
+    checkValues(matrix("RV_ACES_OUTPUT"),
+                std::vector<float>(rv::gl::kAcesOutputColumns.begin(), rv::gl::kAcesOutputColumns.end()));
+
+    const auto bodies = functionBodies(source);
+    REQUIRE(bodies.contains("acesRrtOdtFit"));
+    REQUIRE(bodies.contains("tonemap"));
+    // (v * (v + a) - b) / (v * (c * v + d) + e), constants in that order.
+    const rv::gl::AcesCurveFit& fit = rv::gl::kAcesCurveFit;
+    checkValues(floatsIn(bodies.at("acesRrtOdtFit")), {fit.a, fit.b, fit.c, fit.d, fit.e});
+    // The exposed radiance is clamped at 0 (NaN included) and limited before the curve.
+    const std::string& tonemap = bodies.at("tonemap");
+    const std::regex clampedAtZero(R"(max\s*\(\s*radiance\s*\*\s*exposure\s*,\s*vec3\s*\(\s*0\.0\s*\)\s*\))");
+    CHECK(std::regex_search(tonemap, clampedAtZero));
+    CHECK(std::regex_search(tonemap, std::regex(R"(isnan\s*\(\s*exposed\s*\))")));
+    checkValues(floatsIn(tonemap), {0.0f, 0.0f, rv::gl::kTonemapInputLimit});
+}
+
+TEST_CASE("integration/shaders: fragment stages sample every texture before the alpha test may discard",
+          "[integration][shader]") {
+    // After a discard that only some fragments of a 2x2 quad take, implicit derivatives are undefined (GLSL 4.50
+    // §6.4): a texture() after it could pick a wrong mip level along cut-out edges.
+    const rv::assets::ShaderSourceLoader loader(shaderRoot());
+    const std::regex sampling(R"(\btexture\w*\s*\()");
+    const std::regex discarding(R"(\bdiscard\b)");
+    for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag"}) {
+        INFO(stage);
+        const auto loaded = loader.load(stage);
+        REQUIRE(loaded.has_value());
+        const auto bodies = functionBodies(withoutComments(loaded->text));
+        REQUIRE(bodies.contains("main"));
+        const std::set<std::string> samplers = functionsReaching(bodies, sampling);
+        const std::set<std::string> discarders = functionsReaching(bodies, discarding);
+        CHECK(discarders.contains("materialAlphaTest"));
+
+        // main honors the alpha mode, and samples nothing after the first point where it may discard.
+        const std::string& main = bodies.at("main");
+        const std::size_t discardAt = firstUse(main, discarding, discarders);
+        REQUIRE(discardAt != std::string::npos);
+        CHECK(firstUse(main, sampling, samplers) < discardAt);
+        CHECK(firstUse(main.substr(discardAt), sampling, samplers) == std::string::npos);
+    }
 }

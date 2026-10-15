@@ -37,9 +37,9 @@ vec3 shadingNormal() {
 }
 
 void main() {
+    // Every texture is sampled before the alpha test: after a discard taken by only some fragments of a 2x2 quad,
+    // implicit derivatives, hence the mip level and anisotropy of texture(), are undefined (GLSL 4.50 §6.4).
     vec4 baseColor = materialBaseColor(vUv);
-    materialAlphaTest(baseColor.a);
-
     float metallic = uMetallic;
     float roughness = uRoughness;
     if (materialHas(RV_MATERIAL_METALLIC_ROUGHNESS_TEXTURE)) {
@@ -57,6 +57,8 @@ void main() {
     }
 
     vec3 N = shadingNormal();
+    materialAlphaTest(baseColor.a);
+
     vec3 V = safeNormalize(uCameraPosition - vWorldPosition, N);
     BrdfSurface surface = makeBrdfSurface(baseColor.rgb, metallic, roughness);
 

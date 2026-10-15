@@ -12,8 +12,9 @@
 namespace rv::gl {
 namespace {
 
-std::string withColorSpace(std::string_view source, ColorSpace colorSpace) {
-    return fmt::format("{}|{}", source, toString(colorSpace));
+/// Cache key of `source` sampled in `colorSpace` with `wrap`.
+std::string cacheKey(std::string_view source, ColorSpace colorSpace, TextureWrap wrap) {
+    return fmt::format("{}|{}|{}", source, toString(colorSpace), toString(wrap));
 }
 
 /// Asset-relative path: relative, no root name, no ".." component.
@@ -37,37 +38,40 @@ Expected<std::filesystem::path> assetRelativePath(std::string_view assetPath) {
 TextureCache::TextureCache(std::filesystem::path assetRoot, const TextureDefaults& defaults, float anisotropy)
     : m_assetRoot(std::move(assetRoot)), m_defaults(defaults), m_anisotropy(anisotropy) {}
 
-const Texture2D& TextureCache::file(std::string_view assetPath, ColorSpace colorSpace) {
-    if (const Texture2D* cached = lookup(withColorSpace(assetPath, colorSpace))) {
+const Texture2D& TextureCache::file(std::string_view assetPath, ColorSpace colorSpace, TextureWrap wrap) {
+    const std::string key = cacheKey(assetPath, colorSpace, wrap);
+    if (const Texture2D* cached = lookup(key)) {
         return *cached;
     }
     auto path = assetRelativePath(assetPath);
     if (!path) {
-        return insert(withColorSpace(assetPath, colorSpace), propagate(path.error()));
+        return insert(key, propagate(path.error()));
     }
     auto decoded = assets::loadImage(m_assetRoot / *path);
     if (!decoded) {
-        return insert(withColorSpace(assetPath, colorSpace), propagate(decoded.error()));
+        return insert(key, propagate(decoded.error()));
     }
-    return image(assetPath, *decoded, colorSpace, TextureWrap::Repeat);
+    return image(assetPath, *decoded, colorSpace, wrap);
 }
 
 const Texture2D& TextureCache::pattern(std::string_view name, std::string_view title, std::uint32_t seed,
                                        glm::ivec2 size, ColorSpace colorSpace) {
+    constexpr TextureWrap kWrap = TextureWrap::ClampToEdge;
     const std::string source = fmt::format("{}@{}x{}", assets::patternKey(name, title, seed), size.x, size.y);
-    if (const Texture2D* cached = lookup(withColorSpace(source, colorSpace))) {
+    const std::string key = cacheKey(source, colorSpace, kWrap);
+    if (const Texture2D* cached = lookup(key)) {
         return *cached;
     }
     auto generated = assets::makeNamedPattern(name, size.x, size.y, title, seed);
     if (!generated) {
-        return insert(withColorSpace(source, colorSpace), propagate(generated.error()));
+        return insert(key, propagate(generated.error()));
     }
-    return image(source, *generated, colorSpace, TextureWrap::ClampToEdge);
+    return image(source, *generated, colorSpace, kWrap);
 }
 
 const Texture2D& TextureCache::image(std::string_view key, const assets::ImageData& image, ColorSpace colorSpace,
                                      TextureWrap wrap) {
-    const std::string fullKey = withColorSpace(key, colorSpace);
+    const std::string fullKey = cacheKey(key, colorSpace, wrap);
     if (const Texture2D* cached = lookup(fullKey)) {
         return *cached;
     }

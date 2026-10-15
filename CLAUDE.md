@@ -50,7 +50,8 @@ runs out of `%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
   0.5 grey quad drawn into an sRGB render target must read back as 188 +- 2, else the run exits 3. Use
   `retroverse.exe --self-check srgb --smoke --hidden --data-dir build/rvdata`.
 - Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient, exposure + ACES): the look is
-  tuned in the scene files (`environment` exposure and ambient, `lights`), material presets in
+  tuned in the scene files (`environment` exposure, ambient and `clearColor`, which is background radiance exposed and
+  tonemapped like the surfaces; `lights`, at most 8 point/spot plus one directional), material presets in
   `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit}`.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
@@ -94,7 +95,8 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 ```
 
 `walk_forward_2s.json` ends 3.2 m from the hero wall: a close-up of the shelf, a poster and the TV on its cabinet
-(a cartridge is about 50x30 px at 1920x1080).
+(a cartridge is about 50x30 px at 1920x1080). `turn_around.json` (`--frames 10`) faces the entrance half: the south
+wall and the doorway, which must read in free roam too.
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),

@@ -1,12 +1,13 @@
 // Instancing stress test (plan step 8): exactly 1000 boxes of ONE mesh in three materials (400 + 300 + 300),
 // stacked as a 10 x 10 x 10 block, plus a floor and one light. Expected plan: one batch per material for the boxes
-// and one for the floor.
+// and one for the floor. The background radiance is exposed and tonemapped like the scene: #383A3C is displayed as
+// #202224.
 {
   "schemaVersion": 1,
   "name": "instancing_stress",
   "camera": {"position": [7.6, 6.3, 9.4], "yawDeg": -38.96, "pitchDeg": -15.93, "horizontalFovDeg": 75.0},
   "environment": {
-    "clearColor": "#202224",
+    "clearColor": "#383A3C",
     "ambientSky": "#FFFFFF",
     "ambientGround": "#5E5A55",
     "ambientIntensity": 0.6,

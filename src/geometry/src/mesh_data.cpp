@@ -90,6 +90,12 @@ void computeTangents(MeshData& mesh) {
 }
 
 glm::vec2 uvMetersPerUnit(const MeshData& mesh) noexcept {
+    return uvMetersPerUnit(mesh, glm::mat4(1.0f));
+}
+
+glm::vec2 uvMetersPerUnit(const MeshData& mesh, const glm::mat4& transform) noexcept {
+    // Edges are differences of positions: the translation cancels out, the linear part maps them to world space.
+    const glm::dmat3 linear{glm::mat3(transform)};
     const std::size_t vertexCount = mesh.vertices.size();
     const std::size_t indexCount = mesh.indices.size() - (mesh.indices.size() % 3);
     glm::dvec2 weightedLength(0.0);
@@ -104,8 +110,8 @@ glm::vec2 uvMetersPerUnit(const MeshData& mesh) noexcept {
         const Vertex& v0 = mesh.vertices[i0];
         const Vertex& v1 = mesh.vertices[i1];
         const Vertex& v2 = mesh.vertices[i2];
-        const glm::dvec3 e1 = glm::dvec3(v1.position) - glm::dvec3(v0.position);
-        const glm::dvec3 e2 = glm::dvec3(v2.position) - glm::dvec3(v0.position);
+        const glm::dvec3 e1 = linear * (glm::dvec3(v1.position) - glm::dvec3(v0.position));
+        const glm::dvec3 e2 = linear * (glm::dvec3(v2.position) - glm::dvec3(v0.position));
         const glm::dvec2 d1 = glm::dvec2(v1.uv0) - glm::dvec2(v0.uv0);
         const glm::dvec2 d2 = glm::dvec2(v2.uv0) - glm::dvec2(v0.uv0);
         const double determinant = d1.x * d2.y - d2.x * d1.y;

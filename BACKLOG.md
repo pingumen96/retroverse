@@ -22,6 +22,9 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
 - Localized bloom on emissive surfaces (style §4.3, §15.2): the CRT screen and the lamp shade glow only by
   brightness in M0.
 - Bounce light for dark rooms: the hemispheric ambient cannot lift 4%-albedo walls out of the ACES toe, so the
-  test room relies on direct light. Candidates: light probes / IBL, or the fake screen light of style §4.3 (a point
-  light near each TV with the slowly updated average screen color).
+  test room relies on direct light. It uses all 8 point/spot slots of the lights block (two wall washers, a pendant
+  fill, the floor lamp's bulb and two shade cones, the magenta accent, the entrance washer), and the upper walls and
+  the ceiling far from them still fall to black. Candidates: light probes / IBL, or the fake screen light of style
+  §4.3 (a point light near each TV with the slowly updated average screen color); real rooms will also need more
+  than 8 lights per view (per-room light lists or clustered shading).
 - Sort alpha-blended draws back to front (the M0 scene view draws them last in scene order).

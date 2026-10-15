@@ -35,16 +35,19 @@ struct SceneShaders {
 
 /// Lit scene path (M0 step 6): the meshes of a loaded scene on the GPU with their materials, textures and lights,
 /// drawn from the view camera with one draw per part and instance.
-///  - Materials: one GPU material per material of the scene (library name, inline material, fallback), and one more
-///    per object and role whose part has a scene texture (ScenePart::texture), which becomes the base color texture
-///    of that instance: cover patterns on cartridge labels and posters, color bars on the CRT screen. Pattern images
-///    take the aspect ratio of their surface (geometry::uvMetersPerUnit). Textures named by the materials themselves
-///    are loaded from the asset root; missing ones are drawn as a checker (TextureCache).
+///  - Materials and drawing order follow planSceneDraws (scene_draw_plan.hpp): one GPU material per material of the
+///    scene (library name, inline material, fallback), and one more per object and role whose part has a scene
+///    texture (ScenePart::texture), which becomes the base color texture of that instance: cover patterns on
+///    cartridge labels and posters, color bars on the CRT screen. Pattern images take the aspect ratio of their
+///    surface as drawn; pictures are clamped to their edges. Textures named by the materials themselves are loaded
+///    from the asset root and repeat; missing ones are drawn as a checker (TextureCache).
 ///  - Lights: the scene lights and environment packed into the lights block (gl::packLights; lights beyond its
 ///    capacity are logged and left out).
-///  - Order: opaque materials, then alpha-masked ones, each sorted by shader, material and mesh; alpha-blended
+///  - Order: opaque materials, then alpha-masked ones, each sorted by shader, material and part; alpha-blended
 ///    materials last, in scene order, without depth sorting (blending on, depth writes off): no M0 scene uses one,
 ///    and sorting arrives with the batching renderer.
+///  - Background: the environment's clear color is scene radiance, exposed and tonemapped like the surfaces
+///    (gl::tonemap), so the void beyond a doorway sits on the same scale as the lit room.
 /// Main thread only; destroy it while the GL context is current.
 class SceneView {
 public:
@@ -57,9 +60,9 @@ public:
                                                     const gl::TextureDefaults& defaults,
                                                     const gl::GLCapabilities& caps);
 
-    /// Renders into `target`: clears to the scene's clear color, sets the camera aspect ratio from the target, writes
-    /// FrameUniforms to `frameUniforms`, binds it and the lights block, and draws every part instance with the program
-    /// of its material's shader kind, which receives uModel (local -> world).
+    /// Renders into `target`: clears to the scene's tonemapped clear color, sets the camera aspect ratio from the
+    /// target, writes FrameUniforms to `frameUniforms`, binds it and the lights block, and draws every part instance
+    /// with the program of its material's shader kind, which receives uModel (local -> world).
     void render(gl::GLDevice& device, const SceneShaders& shaders,
                 gl::UniformBuffer<gl::FrameUniforms>& frameUniforms, const gl::Framebuffer& target, float timeSeconds);
 
@@ -85,6 +88,7 @@ private:
     std::vector<DrawItem> m_draws;
     gl::UniformBuffer<gl::LightsUniforms> m_lights;
     scene::Camera m_camera;
+    /// Linear display value (exposed and tonemapped), encoded by the sRGB target.
     glm::vec4 m_clearColor{0.0f, 0.0f, 0.0f, 1.0f};
 };
 

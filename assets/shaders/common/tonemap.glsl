@@ -1,5 +1,6 @@
 // Display transform shared by every shaded surface, lit or unlit (ADR-0002: exposure + ACES fitted curve). The
-// result is linear in [0, 1]; the sRGB framebuffer encodes it (GL_FRAMEBUFFER_SRGB).
+// result is linear in [0, 1]; the sRGB framebuffer encodes it (GL_FRAMEBUFFER_SRGB). Mirrored on the CPU, for the
+// clear color, by rv::gl::tonemap (src/render/include/rv/render/tonemap.hpp): change both together.
 
 // ACES fitted (Stephen Hill, BakingLab): sRGB -> ACES AP1-like space, the RRT + ODT curve fit, back to sRGB. The
 // matrices are written column by column (GLSL mat3 constructors are column-major).

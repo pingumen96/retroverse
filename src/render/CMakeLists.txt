@@ -5,7 +5,7 @@
 # OpenGL header.
 #   rv_render_debug_filter  which GL debug messages are logged, dropped or de-duplicated
 #   rv_render_uniforms      std140 uniform block mirrors (uniform_blocks.hpp) and their packing from scene lights,
-#                           the environment and materials
+#                           the environment and materials; the CPU mirror of the display transform (tonemap.hpp)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -18,6 +18,7 @@ rv_forbid_link(rv_render_debug_filter)
 add_library(rv_render_uniforms STATIC
     src/light_packing.cpp
     src/material_uniforms.cpp
+    src/tonemap.cpp
 )
 add_library(rv::render_uniforms ALIAS rv_render_uniforms)
 rv_set_target_defaults(rv_render_uniforms)

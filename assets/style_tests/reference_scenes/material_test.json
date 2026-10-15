@@ -1,13 +1,14 @@
 // PBR look-development grid (plan step 6): 5 x 5 spheres, roughness 0.05 -> 1 along +X, metallic 0 -> 1 along +Y,
 // one warm key and one cool fill light over a neutral gray floor. inlineMaterial entries use the material
 // library format (assets/materials/base/materials.json). The hemispheric ambient is bright, with a darker ground, so
-// that metals, which have no diffuse lobe, show their tinted reflection of the sky and of the ground.
+// that metals, which have no diffuse lobe, show their tinted reflection of the sky and of the ground. The background
+// radiance is exposed and tonemapped like the scene: #36383A is displayed as #202224.
 {
   "schemaVersion": 1,
   "name": "material_test",
   "camera": {"position": [0.0, 2.35, 6.2], "yawDeg": 0.0, "pitchDeg": 0.0, "horizontalFovDeg": 75.0},
   "environment": {
-    "clearColor": "#202224",
+    "clearColor": "#36383A",
     "ambientSky": "#FFFFFF",
     "ambientGround": "#4A4A4A",
     "ambientIntensity": 0.7,

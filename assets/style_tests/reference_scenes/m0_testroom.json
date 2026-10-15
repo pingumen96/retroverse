@@ -13,33 +13,54 @@
     "near": 0.05,
     "far": 100.0
   },
-  // Tuned on the lit renderer (M0 step 6): the walls (#383735, 4% albedo) and walnut need strong light to leave the
-  // ACES toe, so the exposure is 1.5 and the key light hangs in front of the hero wall. The exposure also scales the
-  // emissive CRT screen: at 1.5 its 75% bars keep their colors instead of washing out to white.
+  // Tuned on the lit renderer (M0 step 6). Palette (style 3.1, 70/20/10): the ceiling lights are a warm white, not
+  // amber, so that the neutral surfaces (walls #383735, gray plastic, paper) stay neutral and the wood, the lamp and
+  // the screens carry the warmth and the color; amber #FFC88A is kept for the practical lamp. The walls have 4%
+  // albedo and what no light reaches falls into the ACES toe (no shadows or bounce light yet), so the hero wall, the
+  // lamp corner, the ceiling and the entrance each get a light of their own; the ambient is low and near neutral. The
+  // exposure (1.5) also scales the emissive CRT screen, whose 75% bars keep their colors. The background (clear
+  // color) is exposed and tonemapped like the room: a dark corridor beyond the doorway, darker than the lit walls.
   "environment": {
-    "clearColor": "#151311",
-    "ambientSky": "#FFE2C4",
-    "ambientGround": "#5A3F2E",
+    "clearColor": "#221E1A",
+    "ambientSky": "#E6E2DC",
+    "ambientGround": "#4A4642",
     "ambientIntensity": 0.19,
     "exposure": 1.5
   },
   "lights": [
-    // Pendant tungsten key 0.65 m under the ceiling, 2 m in front of the hero wall: lights the shelf, the posters and
-    // the TV corner; its glow on the ceiling stays below clipping.
-    {"name": "ceiling_tungsten", "type": "point", "position": [0.5, 2.35, -3.0], "color": "#FFC88A",
-     "intensity": 30.0, "range": 10.0},
+    // Key: two ceiling-mounted wall washers on the hero wall (the collection and the TV corner), as in a gallery. Their
+    // cones end at the horizontal (axis 45 degrees down, outer cone 44 degrees), so they never light the ceiling.
+    {"name": "wall_wash_shelf", "type": "spot", "position": [-1.5, 2.9, -2.5], "target": [-1.5, 0.4, -5.0],
+     "color": "#FFE0C0", "intensity": 75.0, "range": 10.0, "innerConeDeg": 22.0, "outerConeDeg": 44.0},
+    {"name": "wall_wash_tv", "type": "spot", "position": [1.9, 2.9, -2.5], "target": [1.9, 0.4, -5.0],
+     "color": "#FFE0C0", "intensity": 75.0, "range": 10.0, "innerConeDeg": 22.0, "outerConeDeg": 44.0},
+    // Fill: a dim pendant 0.9 m under the ceiling, east of center, gives the dark ceiling a soft glow (well below
+    // clipping) and keeps the east wall readable.
+    {"name": "pendant_fill", "type": "point", "position": [1.2, 2.1, -2.0], "color": "#FFE0C0", "intensity": 16.0,
+     "range": 10.0},
     // SNES / 16-bit preset (style 4.2): tungsten dominant with a light magenta accent washing the TV corner.
     {"name": "accent_magenta", "type": "spot", "position": [3.0, 2.7, -3.0], "target": [1.62, 1.0, -4.67],
      "color": "#B34DCE", "intensity": 9.5, "range": 7.0, "innerConeDeg": 22.0, "outerConeDeg": 55.0},
-    // Bulb inside the floor lamp shade (LightSource socket height): the practical light of the north-west corner.
+    // Practical light of the north-west corner. The bulb inside the floor lamp shade (LightSource socket) is dim: the
+    // shade is opaque (until shadows arrive, step 11), so the light leaves through its openings, two cones from the
+    // bulb matching them (bottom: 55 degrees, top: 47 degrees), and the emissive shade carries the glow.
     {"name": "floor_lamp_bulb", "type": "point", "position": [-4.05, 1.45, -4.55], "color": "#FFC88A",
-     "intensity": 12.0, "range": 6.0}
+     "intensity": 2.5, "range": 4.0},
+    {"name": "floor_lamp_down", "type": "spot", "position": [-4.05, 1.45, -4.55], "target": [-4.05, 0.0, -4.55],
+     "color": "#FFC88A", "intensity": 10.0, "range": 6.0, "innerConeDeg": 40.0, "outerConeDeg": 55.0},
+    {"name": "floor_lamp_up", "type": "spot", "position": [-4.05, 1.45, -4.55], "target": [-4.05, 3.0, -4.55],
+     "color": "#FFC88A", "intensity": 6.0, "range": 6.0, "innerConeDeg": 35.0, "outerConeDeg": 47.0},
+    // Entrance half: a washer on the doorway wall (cone below the horizontal, like the key), so that the south wall
+    // reads when the walker turns around and the way out is lit.
+    {"name": "entrance_wash", "type": "spot", "position": [0.0, 2.9, 2.6], "target": [0.0, 0.4, 5.0],
+     "color": "#FFE0C0", "intensity": 40.0, "range": 8.0, "innerConeDeg": 25.0, "outerConeDeg": 44.0}
   ],
   "objects": [
     {"id": "room", "prefab": "room_shell",
      "params": {"size": [9.0, 10.0], "wallHeight": 3.0, "wallThickness": 0.15, "metersPerTile": 1.0, "ceiling": true,
                 "baseboardHeight": 0.1, "doorway": {"wall": "south", "offset": 0.0, "width": 1.6, "height": 2.3}},
-     "materials": {"floor": "MAT_Wood_Oak", "wall": "MAT_Wall_Painted", "ceiling": "MAT_Wood_Walnut",
+     // Dark matte ceiling (plan 5.6): a glossy one mirrors the lights at grazing angles.
+     "materials": {"floor": "MAT_Wood_Oak", "wall": "MAT_Wall_Painted", "ceiling": "MAT_Wall_Painted",
                    "trim": "MAT_Wood_Walnut"}},
 
     // Collection wall: shelf against the north wall, 2.5 cm off the wall surface (baseboard).

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <vector>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <rv/geometry/mesh_data.hpp>
 #include <rv/geometry/socket.hpp>
 
@@ -114,6 +116,30 @@ TEST_CASE("geometry/mesh_data: uv scale gives the aspect ratio of the textured s
     outOfRange.indices = {0, 1, 9};
     CHECK(rv::geometry::uvMetersPerUnit(outOfRange) == glm::vec2(0.0f));
     CHECK(rv::geometry::uvMetersPerUnit(MeshData{}) == glm::vec2(0.0f));
+}
+
+TEST_CASE("geometry/mesh_data: uv scale of a mesh as drawn follows the linear part of its transform",
+          "[geometry][mesh]") {
+    MeshData label = makeQuad();
+    for (Vertex& v : label.vertices) {
+        v.position *= glm::vec3(0.4f, 0.3f, 1.0f);
+    }
+    CHECK(rv::geometry::uvMetersPerUnit(label, glm::mat4(1.0f)) == rv::geometry::uvMetersPerUnit(label));
+
+    // Moving the surface changes nothing; scaling it twice as wide needs an image twice as wide.
+    const glm::mat4 moved = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, -2.0f, 7.0f));
+    glm::vec2 scale = rv::geometry::uvMetersPerUnit(label, moved);
+    CHECK(scale.x == Approx(0.4f));
+    CHECK(scale.y == Approx(0.3f));
+    scale = rv::geometry::uvMetersPerUnit(label, glm::scale(moved, glm::vec3(2.0f, 1.0f, 1.0f)));
+    CHECK(scale.x == Approx(0.8f));
+    CHECK(scale.y == Approx(0.3f));
+
+    // Scene transforms scale first, then turn: the turn keeps the scaled proportions.
+    const glm::mat4 turned = glm::rotate(moved, glm::radians(35.0f), glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f)));
+    scale = rv::geometry::uvMetersPerUnit(label, glm::scale(turned, glm::vec3(1.0f, 0.5f, 3.0f)));
+    CHECK(scale.x == Approx(0.4f));
+    CHECK(scale.y == Approx(0.15f));
 }
 
 TEST_CASE("geometry/mesh_data: hash is deterministic and content-sensitive", "[geometry][mesh]") {

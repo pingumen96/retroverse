@@ -1,0 +1,9 @@
+// M0 step 6 visual verification: turn around in place to face the entrance half of m0_testroom (south wall and
+// doorway), which free roam makes a viewpoint like any other. With the default 0.0022 rad per mouse pixel, from yaw 0
+// and pitch -6 degrees: yaw += 10 * 142.8 * 0.0022 rad = 3.1416 rad (180 degrees), pitch and feet unchanged.
+//   retroverse.exe --scene m0_testroom --exit-after-frames --frames 10 --fixed-dt 0.016667 --hidden
+//     --input-script tests/input_scripts/turn_around.json --screenshot build/screenshots/turn_around.png
+//     --data-dir build/rvdata
+[
+  {"fromFrame": 0, "toFrame": 9, "actions": {"look_delta_x": 142.8}}
+]

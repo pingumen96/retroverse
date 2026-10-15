@@ -362,6 +362,7 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     CHECK(room.at("doorway").at("wall") == "south");
     CHECK(rooms[0]->materialNameForRole("floor") == "MAT_Wood_Oak");
     CHECK(rooms[0]->materialNameForRole("wall") == "MAT_Wall_Painted");
+    CHECK(rooms[0]->materialNameForRole("ceiling") == "MAT_Wall_Painted"); // dark and matte: no glare
     CHECK(rooms[0]->materialNameForRole("trim") == "MAT_Wood_Walnut");
     CHECK(scene.camera.position.y == Approx(1.65f));
     CHECK(std::abs(scene.camera.position.x) < 4.5f - 0.3f);
@@ -412,38 +413,63 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
     }
     CHECK_FALSE(objectsOfKind(scene, "rug")[0]->castsShadows);
 
-    // Lighting: warm tungsten key, light magenta accent on the TV, the lamp's own bulb, low warm ambient.
-    REQUIRE(scene.lights.size() == 3);
+    // Lighting (style 3.1 and 4.2): warm tungsten mood with neutrals that stay neutral. The lamp is the amber tungsten
+    // practical light; the room lights are a warm white, much less saturated than tungsten (an amber key turned every
+    // surface orange); a light magenta accent washes the TV; the entrance half has a light of its own; nothing lights
+    // the dark ceiling from up close; the ambient is low, warm and near neutral.
     const glm::vec3 tungsten = rv::core::hexToLinearRgb("#FFC88A").value();
     const glm::vec3 magenta = rv::core::hexToLinearRgb("#B34DCE").value();
-    const auto findLight = [&scene](LightType type, const glm::vec3& color) {
-        return std::count_if(scene.lights.begin(), scene.lights.end(), [&](const rv::scene::Light& light) {
-            return light.type == type && rv::core::nearlyEqual(light.color, color);
-        });
-    };
-    CHECK(findLight(LightType::Point, tungsten) == 2);
-    CHECK(findLight(LightType::Spot, magenta) == 1);
-    for (const rv::scene::Light& light : scene.lights) {
-        INFO("light " << light.name);
-        if (light.type == LightType::Spot) {
-            const glm::vec3 screen = translationOf(crts[0]->transform) + glm::vec3(0.0f, 0.3f, 0.0f);
-            const float cosAngle = glm::dot(light.direction, glm::normalize(screen - light.position));
-            CHECK(cosAngle > std::cos(rv::core::degreesToRadians(light.innerConeDeg)));
-            CHECK(light.intensity < 10.0f); // an accent, not a key light
-        }
-        CHECK(light.position.y > 0.0f);
-        CHECK(light.position.y < room.at("wallHeight").get<float>());
-    }
+    const glm::vec3 screen = translationOf(crts[0]->transform) + glm::vec3(0.0f, 0.3f, 0.0f);
     const glm::vec3 lampPosition = translationOf(lamps[0]->transform);
     const float lampHeight = lamps[0]->params.at("height").get<float>();
     const float shadeHeight = lamps[0]->params.at("shadeHeight").get<float>();
-    CHECK(std::count_if(scene.lights.begin(), scene.lights.end(), [&](const rv::scene::Light& light) {
-              return std::abs(light.position.x - lampPosition.x) < 1e-4f &&
-                     std::abs(light.position.z - lampPosition.z) < 1e-4f &&
-                     light.position.y > lampHeight - shadeHeight && light.position.y < lampHeight;
-          }) == 1);
+    const float wallHeight = room.at("wallHeight").get<float>();
+    // Linear chroma of a warm color: 1 - blue / red (0 for white, about 0.75 for tungsten).
+    const auto warmth = [](const glm::vec3& color) { return 1.0f - color.b / color.r; };
+    int accents = 0;
+    int lampLights = 0;
+    int bulbs = 0;
+    int entranceLights = 0;
+    for (const rv::scene::Light& light : scene.lights) {
+        INFO("light " << light.name);
+        CHECK(light.position.y > 0.0f);
+        CHECK(light.position.y < wallHeight);
+        entranceLights += light.position.z > 0.0f ? 1 : 0;
+        const bool inLamp = std::abs(light.position.x - lampPosition.x) < 1e-4f &&
+                            std::abs(light.position.z - lampPosition.z) < 1e-4f &&
+                            light.position.y > lampHeight - shadeHeight && light.position.y < lampHeight;
+        if (rv::core::nearlyEqual(light.color, magenta)) {
+            ++accents;
+            CHECK(light.type == LightType::Spot);
+            const float cosAngle = glm::dot(light.direction, glm::normalize(screen - light.position));
+            CHECK(cosAngle > std::cos(rv::core::degreesToRadians(light.innerConeDeg)));
+            CHECK(light.intensity < 10.0f); // an accent, not a key light
+        } else if (inLamp) {
+            // The bulb inside the shade, and cones leaving through the shade's openings.
+            ++lampLights;
+            bulbs += light.type == LightType::Point ? 1 : 0;
+            CHECK(rv::core::nearlyEqual(light.color, tungsten));
+        } else {
+            CHECK(light.color.r >= light.color.g);
+            CHECK(light.color.g >= light.color.b);
+            CHECK(warmth(light.color) > 0.0f);
+            CHECK(warmth(light.color) < 0.7f * warmth(tungsten));
+            if (light.type == LightType::Spot) {
+                // The cone stays below the horizontal (the axis points down at least the outer cone angle).
+                CHECK(std::asin(-light.direction.y) >= rv::core::degreesToRadians(light.outerConeDeg) - 1e-4f);
+            } else {
+                CHECK(light.position.y <= wallHeight - 0.8f); // its glow on the ceiling stays soft
+            }
+        }
+    }
+    CHECK(accents == 1);
+    CHECK(bulbs == 1);
+    CHECK(lampLights >= 1);
+    CHECK(entranceLights >= 1);
     CHECK(scene.environment.ambientIntensity < 0.2f);
-    CHECK(scene.environment.ambientSky.r > scene.environment.ambientSky.b); // warm
+    const glm::vec3& sky = scene.environment.ambientSky;
+    CHECK(warmth(sky) > 0.0f);
+    CHECK(warmth(sky) < 0.2f);
 }
 
 TEST_CASE("scene/reference_scenes: m0_testroom cartridges sit at the contract slot positions of the shelf",
