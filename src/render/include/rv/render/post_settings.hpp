@@ -31,6 +31,9 @@ inline constexpr float kBloomKnee = 1.0f;
 /// fitted tonemap, dithering and anti-aliasing. The defaults change nothing but the tonemap: exposure 1, no bloom, no
 /// vignette, no dithering, no anti-aliasing.
 struct PostSettings {
+    /// False shows the HDR scene as it is, clamped to [0, 1] and encoded by the sRGB output, without any of the steps
+    /// below: the inspection views, whose shaders write the colors to display (SurfaceView).
+    bool tonemap = true;
     /// > 0: multiplies the scene radiance before tonemapping.
     float exposure = 1.0f;
     /// [0, 1]: share of the light that blooms (all the emitted light, the highlights above the threshold) moved into

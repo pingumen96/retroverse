@@ -29,6 +29,7 @@
 #include <rv/geometry/mesh_data.hpp>
 #include <rv/core/text.hpp>
 #include <rv/render/post_settings.hpp>
+#include <rv/render/surface_view.hpp>
 #include <rv/render/tonemap.hpp>
 #include <rv/render/uniform_blocks.hpp>
 #include <rv/scene/debug_lines.hpp>
@@ -217,19 +218,22 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
     // The programs of the application: pbr (PBR_Base), unlit_emissive (Unlit_Emissive) and the depth-only depth and
     // depth_masked (the shadow map, the depth pre-pass), which all share pbr.vert, debug_lines (--debug-draw), and the
     // fullscreen passes on post/fullscreen.vert: the ambient occlusion (ssao, ssao_blur) and the post-processing,
-    // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample, post and fxaa.
-    CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "depth/depth.frag",
-                                             "pbr/pbr.frag", "pbr/pbr.vert", "post/bloom_downsample.frag",
-                                             "post/bloom_upsample.frag", "post/fullscreen.vert", "post/fxaa.frag",
-                                             "post/post.frag", "ssao/ssao.frag", "ssao/ssao_blur.frag",
-                                             "unlit/unlit_emissive.frag"});
+    // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample, post and fxaa. The asset
+    // preview adds the inspection views on pbr.vert (debug/inspect.frag with RV_INSPECT_*).
+    CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "debug/inspect.frag",
+                                             "depth/depth.frag", "pbr/pbr.frag", "pbr/pbr.vert",
+                                             "post/bloom_downsample.frag", "post/bloom_upsample.frag",
+                                             "post/fullscreen.vert", "post/fxaa.frag", "post/post.frag",
+                                             "ssao/ssao.frag", "ssao/ssao_blur.frag", "unlit/unlit_emissive.frag"});
 
-    // The first bloom level is built with RV_BLOOM_KARIS, the depth program of alpha-masked batches with RV_ALPHA_TEST;
-    // the self-checks use the programs of the views.
+    // The first bloom level is built with RV_BLOOM_KARIS, the depth program of alpha-masked batches with RV_ALPHA_TEST,
+    // the inspection views with one of RV_INSPECT_*; the self-checks use the programs of the views.
     const std::vector<std::string> karisDefines{"RV_BLOOM_KARIS"};
     const std::vector<std::string> alphaTestDefines{"RV_ALPHA_TEST"};
+    const std::vector<std::string> inspectDefines{"RV_INSPECT_NORMALS"};
     for (const std::string& stage : stages) {
-        for (const std::vector<std::string>& defines : {std::vector<std::string>{}, karisDefines, alphaTestDefines}) {
+        for (const std::vector<std::string>& defines :
+             {std::vector<std::string>{}, karisDefines, alphaTestDefines, inspectDefines}) {
             INFO(stage << " with " << defines.size() << " define(s)");
             const auto source = loader.load(stage, defines);
             REQUIRE(source.has_value());
@@ -269,8 +273,19 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
         CHECK(includes(stage, "common/post.glsl"));
     }
     CHECK(includes("post/post.frag", "common/tonemap.glsl"));
-    for (const char* stage : {"pbr/pbr.frag", "unlit/unlit_emissive.frag", "post/bloom_downsample.frag",
-                              "post/bloom_upsample.frag", "post/fxaa.frag", "debug/debug_lines.frag"}) {
+    // The lit shader and the inspection views build the same surface normals; the post pass dithers, and the inspection
+    // views write display colors, in the encoding of the sRGB target.
+    for (const char* stage : {"pbr/pbr.frag", "debug/inspect.frag"}) {
+        INFO(stage);
+        CHECK(includes(stage, "common/surface.glsl"));
+    }
+    for (const char* stage : {"post/post.frag", "debug/inspect.frag"}) {
+        INFO(stage);
+        CHECK(includes(stage, "common/srgb.glsl"));
+    }
+    for (const char* stage :
+         {"pbr/pbr.frag", "unlit/unlit_emissive.frag", "post/bloom_downsample.frag", "post/bloom_upsample.frag",
+          "post/fxaa.frag", "debug/debug_lines.frag", "debug/inspect.frag"}) {
         INFO(stage);
         CHECK_FALSE(includes(stage, "common/tonemap.glsl"));
     }
@@ -312,6 +327,24 @@ TEST_CASE("integration/shaders: the material shaders write linear radiance for t
                             std::regex(R"(writeSceneOutput\s*\(\s*radiance\s*,\s*emissive\s*,)")));
     CHECK(std::regex_search(glslWithoutComments("unlit/unlit_emissive.frag"),
                             std::regex(R"(writeSceneOutput\s*\(\s*radiance\s*,\s*emitted\s*,)")));
+}
+
+TEST_CASE("integration/shaders: the inspection views write display colors and emit nothing", "[integration][shader]") {
+    const std::string inspect = glslWithoutComments("debug/inspect.frag");
+    // The shared scene outputs, without emitted light: inspection views are shown without tonemapping or bloom.
+    CHECK_FALSE(std::regex_search(inspect, std::regex(R"(\bout\s+vec4\b)")));
+    CHECK(std::regex_search(inspect, std::regex(R"(writeSceneOutput\s*\(\s*color\s*,\s*vec3\s*\(\s*0\.0\s*\)\s*,)")));
+    // One branch per view, selected by the define the application injects (rv::gl::inspectionDefine), the base color
+    // being the default.
+    for (const rv::gl::SurfaceView view : {rv::gl::SurfaceView::Normals, rv::gl::SurfaceView::UvChecker}) {
+        const std::string define(rv::gl::inspectionDefine(view));
+        INFO(define);
+        CHECK(std::regex_search(inspect, std::regex(R"(#(el)?if\s+defined\s*\(\s*)" + define + R"(\s*\))")));
+    }
+    CHECK(rv::gl::inspectionDefine(rv::gl::SurfaceView::BaseColor) == "RV_INSPECT_BASE_COLOR");
+    CHECK(rv::gl::inspectionDefine(rv::gl::SurfaceView::Lit).empty());
+    // The normals shown are those the lit shader shades with.
+    CHECK(std::regex_search(inspect, std::regex(R"(\bshadingNormal\s*\(\s*\))")));
 }
 
 TEST_CASE("integration/shaders: mesh and debug line stages read the vertex layouts the renderer uploads",
@@ -728,9 +761,14 @@ TEST_CASE("integration/shaders: fragment stages sample every texture before the 
     const std::regex sampling(R"(\btexture(?:Offset|Proj|ProjOffset)?\s*\()");
     const std::regex discarding(R"(\bdiscard\b)");
     const std::pair<const char*, std::vector<std::string>> stages[] = {
-        {"pbr/pbr.frag", {}}, {"unlit/unlit_emissive.frag", {}}, {"depth/depth.frag", {"RV_ALPHA_TEST"}}};
+        {"pbr/pbr.frag", {}},
+        {"unlit/unlit_emissive.frag", {}},
+        {"depth/depth.frag", {"RV_ALPHA_TEST"}},
+        {"debug/inspect.frag", {"RV_INSPECT_BASE_COLOR"}},
+        {"debug/inspect.frag", {"RV_INSPECT_NORMALS"}},
+        {"debug/inspect.frag", {"RV_INSPECT_UV"}}};
     for (const auto& [stage, defines] : stages) {
-        INFO(stage);
+        INFO(stage << (defines.empty() ? std::string() : " with " + defines.front()));
         const auto loaded = loader.load(stage, defines);
         REQUIRE(loaded.has_value());
         const auto bodies = functionBodies(withoutComments(loaded->text));

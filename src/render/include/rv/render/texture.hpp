@@ -11,6 +11,7 @@
 #include <rv/assets/image_data.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/gl_object.hpp>
+#include <rv/render/texture_memory.hpp>
 
 namespace rv::gl {
 
@@ -51,8 +52,12 @@ struct SamplingDesc {
 /// `requested` clamped to [1, maxSupported] (GLCapabilities::maxAnisotropy); 1 for non-finite input.
 [[nodiscard]] float clampAnisotropy(float requested, float maxSupported) noexcept;
 
-/// Mip levels of a full chain for an image of `size`: floor(log2(max(width, height))) + 1, 1 for an empty size.
-[[nodiscard]] int fullMipLevelCount(glm::ivec2 size) noexcept;
+/// A GL_RGBA8 view (glTextureView) of the first `levelCount` levels of `texture`, an immutable GL_RGBA8 or
+/// GL_SRGB8_ALPHA8 texture: sampling it returns the stored bytes as they are, without sRGB decoding, so an sRGB image
+/// drawn without sRGB encoding (the developer overlay draws so) shows the colors it holds, and reading it back returns
+/// them unconverted on every driver (Framebuffer::readPixels). Trilinear filtering. Empty when the driver creates
+/// none.
+[[nodiscard]] TextureObject createRgba8View(GLuint texture, int levelCount);
 
 struct TextureDesc {
     ColorSpace colorSpace = ColorSpace::Srgb;

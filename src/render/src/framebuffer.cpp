@@ -11,6 +11,7 @@
 
 #include <rv/assets/image_io.hpp>
 #include <rv/render/render_state_cache.hpp>
+#include <rv/render/texture.hpp>
 
 #include "gl_object_label.hpp"
 
@@ -347,11 +348,11 @@ Expected<assets::ImageData> Framebuffer::readPixels() const {
     GLuint source = m_colors[0].id();
     TextureObject view;
     if (m_desc.colorFormat == ColorFormat::Srgb8Alpha8) {
-        GLuint viewId = 0;
-        glGenTextures(1, &viewId); // glTextureView needs a name that has never been bound: not glCreateTextures
-        view = TextureObject(viewId);
-        glTextureView(viewId, GL_TEXTURE_2D, m_colors[0].id(), GL_RGBA8, 0, 1, 0, 1);
-        source = viewId;
+        view = createRgba8View(m_colors[0].id(), 1);
+        if (!view.valid()) {
+            return makeError(ErrorCode::GraphicsError, "no texture view to read the pixels through", m_debugName);
+        }
+        source = view.id();
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glPixelStorei(GL_PACK_ALIGNMENT, 4); // RGBA8 rows are always a multiple of 4 bytes: no padding

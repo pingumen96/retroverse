@@ -76,6 +76,12 @@ struct SceneContentPlan {
     [[nodiscard]] std::size_t pictureMaterialCount() const noexcept;
 };
 
+/// Size of the pattern picture shown on `mesh` drawn with `model` (local -> world): the aspect ratio of the surface as
+/// drawn (geometry::uvMetersPerUnit with the transform, so that a picture scaled unevenly is not stretched) and about
+/// assets::kPatternPixelsPerMeter pixels per meter of its longer side (assets::patternLongSideFor,
+/// assets::patternSizeForAspect).
+[[nodiscard]] glm::ivec2 patternSizeFor(const geometry::MeshData& mesh, const glm::mat4& model);
+
 /// Plans the content of `geometry`, deterministically, in scene order (objects, then parts, then instances):
 ///  - Meshes: one per distinct ScenePart::meshKey, in order of first use, so objects built from the same shape share
 ///    their meshes (the 24 cartridges of the test room: one shell mesh, one label mesh).

@@ -47,6 +47,11 @@ struct SceneShaders {
     const ShaderProgram* debugLines = nullptr; ///< debug/debug_lines.vert + debug/debug_lines.frag
     SsaoShaders ssao;                          ///< the ambient occlusion passes
     PostShaders post;                          ///< bloom, the post pass and the anti-aliasing
+    /// An inspection view (SurfaceView: pbr/pbr.vert + debug/inspect.frag): when set, the lit pass draws every batch
+    /// with it instead of its material's program, still binding the material (its textures, factors and alpha mode).
+    /// Such a view is meant to be shown without tonemapping (PostSettings::tonemap off). Null for the materials' own
+    /// shading.
+    const ShaderProgram* inspection = nullptr;
 };
 
 /// One view of the scene for SceneRenderer::render().

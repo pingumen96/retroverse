@@ -2,11 +2,13 @@
 
 #include <cstddef>
 #include <optional>
+#include <string_view>
 
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
-// Widgets shared by the panels of the developer overlay (Dear ImGui, inside an overlay frame).
+// Widgets shared by the panels of the developer overlay and of the asset preview tool (Dear ImGui, inside an overlay
+// frame).
 namespace rv::devui::widgets {
 
 /// Color picker for a linear RGB color (lights, ambient, background radiance): shown and edited as an sRGB hex code,
@@ -30,6 +32,8 @@ void labelAbove(const char* label);
 
 /// A "label: value" row of a two-column table started with beginValueTable().
 void valueRow(const char* label, std::size_t value);
+/// A "label: text" row of such a table; the text wraps in its column.
+void textRow(const char* label, std::string_view text);
 /// A "label: <value> ms" row of such a table, "n/a" without a value (a GPU timer before its first result).
 void millisecondsRow(const char* label, const std::optional<double>& milliseconds);
 /// Starts a compact two-column table (labels, values) with the given id; end it with ImGui::EndTable() when it returns

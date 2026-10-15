@@ -2,47 +2,17 @@
 // PBR_Base (style §25): metallic-roughness materials lit by the scene's point, spot and directional lights
 // (common/lights.glsl), the key light shadowed by its shadow map (common/shadow.glsl), and a hemispherical sky/ground
 // ambient darkened by the view's ambient occlusion (common/occlusion.glsl), with optional base color,
-// metallic-roughness, normal, occlusion and emissive textures. Output (common/scene_output.glsl): the linear scene
-// radiance and its emissive part into the HDR target; exposure, bloom and tonemapping belong to the post pass
-// (post/post.frag).
+// metallic-roughness, normal, occlusion and emissive textures (the surface normals: common/surface.glsl). Output
+// (common/scene_output.glsl): the linear scene radiance and its emissive part into the HDR target; exposure, bloom and
+// tonemapping belong to the post pass (post/post.frag).
 #include "common/common.glsl"
 #include "common/lights.glsl"
 #include "common/brdf.glsl"
 #include "common/material.glsl"
+#include "common/surface.glsl"
 #include "common/shadow.glsl"
 #include "common/occlusion.glsl"
 #include "common/scene_output.glsl"
-
-layout(location = 0) in vec3 vWorldPosition;
-layout(location = 1) in vec3 vNormal;
-layout(location = 2) in vec4 vTangent;
-layout(location = 3) in vec2 vUv;
-
-// Geometric normal: the interpolated vertex normal, reversed on the back faces of double-sided materials.
-vec3 geometricNormal() {
-    vec3 N = safeNormalize(vNormal, vec3(0.0, 1.0, 0.0));
-    return materialHas(RV_MATERIAL_DOUBLE_SIDED) && !gl_FrontFacing ? -N : N;
-}
-
-// Shading normal: the interpolated vertex normal, perturbed by the normal texture in the tangent frame of ADR-0002
-// (bitangent = cross(normal, tangent.xyz) * tangent.w), then reversed on the back faces of double-sided materials.
-vec3 shadingNormal() {
-    vec3 N = safeNormalize(vNormal, vec3(0.0, 1.0, 0.0));
-    if (materialHas(RV_MATERIAL_NORMAL_TEXTURE)) {
-        vec3 T = vTangent.xyz - N * dot(N, vTangent.xyz); // Gram-Schmidt against the interpolated normal
-        if (dot(T, T) > 1e-12) {
-            T = normalize(T);
-            vec3 B = cross(N, T) * (vTangent.w < 0.0 ? -1.0 : 1.0);
-            vec3 tangentNormal = texture(uNormalTexture, vUv).xyz * 2.0 - 1.0;
-            tangentNormal.xy *= uNormalScale;
-            N = safeNormalize(mat3(T, B, N) * tangentNormal, N);
-        }
-    }
-    if (materialHas(RV_MATERIAL_DOUBLE_SIDED) && !gl_FrontFacing) {
-        N = -N;
-    }
-    return N;
-}
 
 void main() {
     // Every texture is sampled before the alpha test: after a discard taken by only some fragments of a 2x2 quad,

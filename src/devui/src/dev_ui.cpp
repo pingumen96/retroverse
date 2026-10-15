@@ -190,7 +190,8 @@ struct DevUi::Impl {
         displayScale = scale;
     }
 
-    /// The default layout: the side columns, the log row under the scene, and the panels docked by slot.
+    /// The default layout: the side columns, the log row under the scene, and the panels docked by slot; the first
+    /// panel of each slot is brought to the front of its node (before the panels focusPanel() asked for).
     void buildDefaultLayout(ImGuiID dockSpace, const ImVec2& size) {
         ImGui::DockBuilderRemoveNode(dockSpace);
         // The flags come from two enums (public and internal): combined as the ImGuiDockNodeFlags integer they are.
@@ -230,6 +231,15 @@ struct DevUi::Impl {
             ImGui::DockBuilderDockWindow(docked.panel->title(), node);
         }
         ImGui::DockBuilderFinish(dockSpace);
+        std::vector<std::string> firstOfSlot;
+        std::vector<DockSlot> slots;
+        for (const DockedPanel& docked : panels) {
+            if (std::find(slots.begin(), slots.end(), docked.slot) == slots.end()) {
+                slots.push_back(docked.slot);
+                firstOfSlot.emplace_back(docked.panel->title());
+            }
+        }
+        layoutFocus = std::move(firstOfSlot);
     }
 
     platform::GraphicsWindow& window;
@@ -241,6 +251,14 @@ struct DevUi::Impl {
     ImGuiStyle baseStyle;
     float displayScale = 1.0f;
     std::vector<DockedPanel> panels;
+
+    /// Titles of the panels to bring to the front of their dock node: first the first panel of each slot of the default
+    /// layout, in the frame after the one that built it (its windows are docked during their Begin), then, from the
+    /// next frame on, those focusPanel() asked for. One set per frame: a node shows the last panel focused in it.
+    std::vector<std::string> layoutFocus;
+    std::vector<std::string> focusRequests;
+    /// setSceneDecoration().
+    std::function<void()> sceneDecoration;
 
     bool visible = false;
     bool mouseCaptured = false;
@@ -323,6 +341,14 @@ void DevUi::addPanel(std::unique_ptr<Panel> panel, DockSlot slot) {
     if (panel != nullptr) {
         m_impl->panels.push_back(Impl::DockedPanel{std::move(panel), slot});
     }
+}
+
+void DevUi::focusPanel(std::string_view title) {
+    m_impl->focusRequests.emplace_back(title);
+}
+
+void DevUi::setSceneDecoration(std::function<void()> draw) {
+    m_impl->sceneDecoration = std::move(draw);
 }
 
 bool DevUi::visible() const noexcept {
@@ -455,17 +481,30 @@ void DevUi::buildFrame(std::optional<glm::ivec2> captureSize) {
     if (!impl.needsDefaultLayout) {
         impl.needsDefaultLayout = ImGui::DockBuilderGetNode(dockSpace) == nullptr; // imgui.ini has none
     }
+    bool layoutBuilt = false;
     if (*impl.needsDefaultLayout && viewport->WorkSize.x > 0.0f && viewport->WorkSize.y > 0.0f) {
         impl.buildDefaultLayout(dockSpace, viewport->WorkSize);
         impl.needsDefaultLayout = false;
+        layoutBuilt = true;
     }
     ImGui::DockSpaceOverViewport(dockSpace, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
     impl.sceneArea = centralArea(dockSpace, *viewport); // laid out now: the panels below may ask for it
+    // Focusing a docked window selects its tab: one set of panels per frame, the layout's first.
+    std::vector<std::string> focus;
+    if (!layoutBuilt) {
+        focus.swap(!impl.layoutFocus.empty() ? impl.layoutFocus : impl.focusRequests);
+    }
     for (const Impl::DockedPanel& docked : impl.panels) {
+        if (std::find(focus.begin(), focus.end(), docked.panel->title()) != focus.end()) {
+            ImGui::SetNextWindowFocus();
+        }
         if (ImGui::Begin(docked.panel->title())) {
             docked.panel->draw();
         }
         ImGui::End();
+    }
+    if (impl.sceneDecoration) {
+        impl.sceneDecoration();
     }
     ImGui::Render();
     impl.wantsMouse = io.WantCaptureMouse && !impl.mouseCaptured;

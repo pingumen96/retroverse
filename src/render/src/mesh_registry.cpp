@@ -33,6 +33,12 @@ std::optional<scene::MeshHandle> MeshRegistry::find(std::string_view key) const 
     return std::nullopt;
 }
 
+void MeshRegistry::clear() noexcept {
+    m_entries.clear();
+    m_keys.clear();
+    m_gpuBytes = 0;
+}
+
 core::Aabb MeshRegistry::bounds(scene::MeshHandle handle) const noexcept {
     return contains(handle) ? m_entries[handle.value].mesh.bounds() : core::Aabb{};
 }

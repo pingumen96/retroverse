@@ -51,7 +51,7 @@ scene::Light pointLight(std::string name, const glm::vec3& center, const glm::ve
 
 } // namespace
 
-scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::Aabb& bounds) {
+scene::SceneDescription makeInspectionScene(scene::SceneObject subject, const core::Aabb& bounds) {
     const core::Aabb framed = framedBounds(bounds);
     const glm::vec3 center = framed.center();
     const float radius = std::max(0.5f * glm::length(framed.size()), kMinRadius);
@@ -101,13 +101,18 @@ scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::
     scene.lights.push_back(pointLight("viewer_rim", center, directionFrom(160.0f, 50.0f), lightDistance,
                                       srgb(255.0f, 255.0f, 255.0f), 2.0f));
 
-    scene::SceneObject& model = scene.objects.emplace_back();
-    model.id = std::string(kModelViewerObjectId);
+    scene::SceneObject& object = scene.objects.emplace_back(std::move(subject));
+    object.id = std::string(kModelViewerObjectId);
+    // The walker's capsule would push the camera off a model smaller than its radius; inspecting means getting close.
+    object.collides = false;
+    return scene;
+}
+
+scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::Aabb& bounds) {
+    scene::SceneObject model;
     model.source = scene::SceneObject::Source::Model;
     model.modelPath = std::move(modelPath);
-    // The walker's capsule would push the camera off a model smaller than its radius; inspecting means getting close.
-    model.collides = false;
-    return scene;
+    return makeInspectionScene(std::move(model), bounds);
 }
 
 DebugGrid modelViewerGrid(const core::Aabb& bounds) noexcept {

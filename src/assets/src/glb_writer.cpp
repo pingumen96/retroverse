@@ -1,13 +1,16 @@
-#include "support/glb_builder.hpp"
+#include <rv/assets/glb_writer.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <stdexcept>
+#include <limits>
+#include <utility>
 
 #include <rv/assets/image_io.hpp>
+#include <rv/core/file_io.hpp>
+#include <rv/core/text.hpp>
 
-namespace rv::test {
+namespace rv::assets {
 namespace {
 
 constexpr int kFloat = 5126;
@@ -30,7 +33,6 @@ public:
         return offset;
     }
     [[nodiscard]] std::vector<std::byte> take() && { return std::move(m_bytes); }
-    [[nodiscard]] bool empty() const noexcept { return m_bytes.empty(); }
 
 private:
     std::vector<std::byte> m_bytes;
@@ -106,64 +108,69 @@ void appendU32(std::vector<std::byte>& out, std::uint32_t value) {
     }
 }
 
-} // namespace
-
-GltfParts buildGltfParts(const GlbDescription& description) {
-    BinWriter bin;
-    JsonArrays arrays;
-    nlohmann::json root;
-    root["asset"] = {{"version", "2.0"}, {"generator", "rv glb_builder"}};
-    if (!description.extensionsUsed.empty()) {
-        root["extensionsUsed"] = description.extensionsUsed;
+/// `json` as text (`indent` < 0: compact). ParseError when a string in it is not UTF-8.
+Expected<std::string> serialize(const nlohmann::json& json, int indent) {
+    try {
+        return json.dump(indent);
+    } catch (const nlohmann::json::exception& e) {
+        return makeError(ErrorCode::ParseError, std::string("the glTF JSON cannot be serialized: ") + e.what());
     }
-    if (!description.extensionsRequired.empty()) {
-        root["extensionsRequired"] = description.extensionsRequired;
-    }
+}
 
+nlohmann::json nodeJson(const GlbNode& node) {
+    nlohmann::json json = {{"name", node.name}};
+    if (node.matrix) {
+        nlohmann::json matrix = nlohmann::json::array();
+        for (int column = 0; column < 4; ++column) {
+            for (int row = 0; row < 4; ++row) {
+                matrix.push_back((*node.matrix)[column][row]);
+            }
+        }
+        json["matrix"] = matrix;
+    } else {
+        json["translation"] = {node.translation.x, node.translation.y, node.translation.z};
+        json["rotation"] = {node.rotation.x, node.rotation.y, node.rotation.z, node.rotation.w};
+        json["scale"] = {node.scale.x, node.scale.y, node.scale.z};
+    }
+    if (!node.children.empty()) {
+        json["children"] = node.children;
+    }
+    if (node.mesh) {
+        json["mesh"] = *node.mesh;
+    }
+    return json;
+}
+
+/// The nodes and scene 0 of `description` into `root`.
+void addNodes(const GlbDescription& description, nlohmann::json& root) {
+    if (description.nodes.empty()) {
+        return;
+    }
     nlohmann::json nodes = nlohmann::json::array();
     std::vector<bool> isChild(description.nodes.size(), false);
     for (const GlbNode& node : description.nodes) {
-        nlohmann::json json = {{"name", node.name}};
-        if (node.matrix) {
-            nlohmann::json matrix = nlohmann::json::array();
-            for (int column = 0; column < 4; ++column) {
-                for (int row = 0; row < 4; ++row) {
-                    matrix.push_back((*node.matrix)[column][row]);
-                }
-            }
-            json["matrix"] = matrix;
-        } else {
-            json["translation"] = {node.translation.x, node.translation.y, node.translation.z};
-            json["rotation"] = {node.rotation.x, node.rotation.y, node.rotation.z, node.rotation.w};
-            json["scale"] = {node.scale.x, node.scale.y, node.scale.z};
-        }
-        if (!node.children.empty()) {
-            json["children"] = node.children;
-            for (const int child : node.children) {
-                if (child >= 0 && static_cast<std::size_t>(child) < isChild.size()) {
-                    isChild[static_cast<std::size_t>(child)] = true;
-                }
+        nodes.push_back(nodeJson(node));
+        for (const int child : node.children) {
+            if (child >= 0 && static_cast<std::size_t>(child) < isChild.size()) {
+                isChild[static_cast<std::size_t>(child)] = true;
             }
         }
-        if (node.mesh) {
-            json["mesh"] = *node.mesh;
-        }
-        nodes.push_back(json);
     }
-    if (!description.nodes.empty()) {
-        root["nodes"] = nodes;
-        std::vector<int> roots = description.sceneRoots;
-        if (roots.empty()) {
-            for (std::size_t n = 0; n < description.nodes.size(); ++n) {
-                if (!isChild[n]) {
-                    roots.push_back(static_cast<int>(n));
-                }
+    root["nodes"] = nodes;
+    std::vector<int> roots = description.sceneRoots;
+    if (roots.empty()) {
+        for (std::size_t n = 0; n < description.nodes.size(); ++n) {
+            if (!isChild[n]) {
+                roots.push_back(static_cast<int>(n));
             }
         }
-        root["scenes"] = nlohmann::json::array({{{"nodes", roots}}});
-        root["scene"] = 0;
     }
+    root["scenes"] = nlohmann::json::array({{{"nodes", roots}}});
+    root["scene"] = 0;
+}
 
+/// The meshes of `description`, one primitive each, into `root`.
+void addMeshes(const GlbDescription& description, JsonArrays& arrays, BinWriter& bin, nlohmann::json& root) {
     nlohmann::json meshes = nlohmann::json::array();
     for (const GlbMesh& mesh : description.meshes) {
         nlohmann::json attributes;
@@ -195,7 +202,10 @@ GltfParts buildGltfParts(const GlbDescription& description) {
     if (!meshes.empty()) {
         root["meshes"] = meshes;
     }
+}
 
+/// The materials of `description` with their embedded images into `root`.
+Status addMaterials(const GlbDescription& description, JsonArrays& arrays, BinWriter& bin, nlohmann::json& root) {
     nlohmann::json materials = nlohmann::json::array();
     nlohmann::json images = nlohmann::json::array();
     nlohmann::json textures = nlohmann::json::array();
@@ -206,9 +216,11 @@ GltfParts buildGltfParts(const GlbDescription& description) {
                               {"roughnessFactor", material.roughnessFactor}};
         std::vector<std::byte> imageBytes = material.baseColorImageBytes;
         if (imageBytes.empty() && material.baseColorImage) {
-            auto png = assets::encodePng(*material.baseColorImage);
+            auto png = encodePng(*material.baseColorImage);
             if (!png) {
-                throw std::runtime_error("glb_builder: cannot encode the base color image: " + png.error().toString());
+                return makeError(ErrorCode::InvalidArgument,
+                                 "the base color image cannot be encoded: " + png.error().toString(),
+                                 "material " + material.name);
             }
             imageBytes = std::move(*png);
         }
@@ -226,6 +238,27 @@ GltfParts buildGltfParts(const GlbDescription& description) {
     if (!images.empty()) {
         root["images"] = images;
         root["textures"] = textures;
+    }
+    return ok();
+}
+
+} // namespace
+
+Expected<GltfParts> buildGltfParts(const GlbDescription& description) {
+    BinWriter bin;
+    JsonArrays arrays;
+    nlohmann::json root;
+    root["asset"] = {{"version", "2.0"}, {"generator", "Retroverse glb_writer"}};
+    if (!description.extensionsUsed.empty()) {
+        root["extensionsUsed"] = description.extensionsUsed;
+    }
+    if (!description.extensionsRequired.empty()) {
+        root["extensionsRequired"] = description.extensionsRequired;
+    }
+    addNodes(description, root);
+    addMeshes(description, arrays, bin, root);
+    if (auto added = addMaterials(description, arrays, bin, root); !added) {
+        return propagate(added.error());
     }
     if (!arrays.accessors.empty()) {
         root["accessors"] = arrays.accessors;
@@ -246,26 +279,35 @@ GltfParts buildGltfParts(const GlbDescription& description) {
     return parts;
 }
 
-std::vector<std::byte> buildGlb(const GlbDescription& description) {
-    GltfParts parts = buildGltfParts(description);
-    std::string json = parts.json.dump();
-    while (json.size() % 4 != 0) {
-        json.push_back(' ');
+Expected<std::vector<std::byte>> buildGlb(const GlbDescription& description) {
+    auto parts = buildGltfParts(description);
+    if (!parts) {
+        return propagate(parts.error());
     }
-    std::vector<std::byte> bin = std::move(parts.bin);
+    auto json = serialize(parts->json, -1);
+    if (!json) {
+        return propagate(json.error());
+    }
+    while (json->size() % 4 != 0) {
+        json->push_back(' ');
+    }
+    std::vector<std::byte> bin = std::move(parts->bin);
     while (bin.size() % 4 != 0) {
         bin.push_back(std::byte{0});
     }
-    const std::size_t total = 12 + 8 + json.size() + (bin.empty() ? 0 : 8 + bin.size());
+    const std::size_t total = 12 + 8 + json->size() + (bin.empty() ? 0 : 8 + bin.size());
+    if (total > std::numeric_limits<std::uint32_t>::max()) {
+        return makeError(ErrorCode::OutOfRange, "the model does not fit a GLB container (4 GiB)");
+    }
 
     std::vector<std::byte> glb;
     glb.reserve(total);
     appendU32(glb, 0x46546C67u); // "glTF"
     appendU32(glb, 2u);
     appendU32(glb, static_cast<std::uint32_t>(total));
-    appendU32(glb, static_cast<std::uint32_t>(json.size()));
+    appendU32(glb, static_cast<std::uint32_t>(json->size()));
     appendU32(glb, 0x4E4F534Au); // "JSON"
-    for (const char c : json) {
+    for (const char c : *json) {
         glb.push_back(static_cast<std::byte>(c));
     }
     if (!bin.empty()) {
@@ -276,20 +318,40 @@ std::vector<std::byte> buildGlb(const GlbDescription& description) {
     return glb;
 }
 
-std::string buildGltfWithEmbeddedBuffer(const GlbDescription& description) {
-    GltfParts parts = buildGltfParts(description);
-    if (!parts.bin.empty()) {
-        parts.json["buffers"][0]["uri"] = "data:application/octet-stream;base64," + base64(parts.bin);
+Expected<std::string> buildGltfWithEmbeddedBuffer(const GlbDescription& description) {
+    auto parts = buildGltfParts(description);
+    if (!parts) {
+        return propagate(parts.error());
     }
-    return parts.json.dump(2);
+    if (!parts->bin.empty()) {
+        parts->json["buffers"][0]["uri"] = "data:application/octet-stream;base64," + base64(parts->bin);
+    }
+    return serialize(parts->json, 2);
 }
 
-GltfFiles buildGltfWithExternalBuffer(const GlbDescription& description, std::string_view binUri) {
-    GltfParts parts = buildGltfParts(description);
-    if (!parts.bin.empty()) {
-        parts.json["buffers"][0]["uri"] = std::string(binUri);
+Expected<GltfFiles> buildGltfWithExternalBuffer(const GlbDescription& description, std::string_view binUri) {
+    auto parts = buildGltfParts(description);
+    if (!parts) {
+        return propagate(parts.error());
     }
-    return GltfFiles{parts.json.dump(2), std::move(parts.bin)};
+    if (!parts->bin.empty()) {
+        parts->json["buffers"][0]["uri"] = std::string(binUri);
+    }
+    auto json = serialize(parts->json, 2);
+    if (!json) {
+        return propagate(json.error());
+    }
+    return GltfFiles{std::move(*json), std::move(parts->bin)};
+}
+
+Status writeGlb(const std::filesystem::path& path, const GlbDescription& description) {
+    auto glb = buildGlb(description);
+    if (!glb) {
+        Error error = glb.error();
+        error.context = core::pathToUtf8(path);
+        return propagate(std::move(error));
+    }
+    return core::writeFileAtomic(path, *glb);
 }
 
 GlbMesh makeQuadMesh(std::string name, float width, float height, bool withNormals) {
@@ -306,4 +368,22 @@ GlbMesh makeQuadMesh(std::string name, float width, float height, bool withNorma
     return mesh;
 }
 
-} // namespace rv::test
+GlbMesh toGlbMesh(const geometry::MeshData& mesh, std::optional<int> material) {
+    GlbMesh result;
+    result.name = mesh.name;
+    result.positions.reserve(mesh.vertices.size());
+    result.normals.reserve(mesh.vertices.size());
+    result.tangents.reserve(mesh.vertices.size());
+    result.uvs.reserve(mesh.vertices.size());
+    for (const geometry::Vertex& vertex : mesh.vertices) {
+        result.positions.push_back(vertex.position);
+        result.normals.push_back(vertex.normal);
+        result.tangents.push_back(vertex.tangent);
+        result.uvs.push_back(vertex.uv0);
+    }
+    result.indices = mesh.indices;
+    result.material = material;
+    return result;
+}
+
+} // namespace rv::assets

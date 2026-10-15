@@ -114,6 +114,11 @@ const Texture2D& TextureCache::image(std::string_view key, const assets::ImageDa
     return insert(fullKey, upload(fullKey, image, colorSpace, wrap));
 }
 
+void TextureCache::clear() noexcept {
+    m_textures.clear();
+    ++m_revision;
+}
+
 std::size_t TextureCache::textureCount() const noexcept {
     std::size_t count = 0;
     for (const auto& entry : m_textures) {

@@ -1,7 +1,9 @@
 # rv_assets: CPU-side asset loading (images, glTF models, prefab manifests, material presets, shader sources,
-# procedural test patterns and surface textures). GPU-free: produces plain data consumed by the renderer.
+# procedural test patterns and surface textures) and the GLB writer. GPU-free: produces plain data consumed by the
+# renderer.
 
 add_library(rv_assets STATIC
+    src/glb_writer.cpp
     src/gltf_geometry.cpp
     src/gltf_loader.cpp
     src/image_decode.cpp

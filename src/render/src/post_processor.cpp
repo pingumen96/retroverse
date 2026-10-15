@@ -114,17 +114,20 @@ void PostProcessor::apply(GLDevice& device, const PostShaders& shaders, const Po
     if (!bloomAvailable) {
         uniforms.bloomMix = 0.0f; // the post pass then leaves the bloom levels unread
     }
-    bool uniformsWritten = true;
-    if (auto updated = m_uniforms.update(uniforms); !updated) {
-        uniformsWritten = false;
-        if (m_uniformFailures.fail(updated.error().code)) {
+    // Inspection views (no tonemap) are shown as their shaders wrote them, like views without the post program.
+    bool uniformsWritten = false;
+    if (settings.tonemap) {
+        if (auto updated = m_uniforms.update(uniforms); updated) {
+            uniformsWritten = true;
+            if (const std::optional<std::size_t> failed = m_uniformFailures.succeed()) {
+                spdlog::info("Views are post-processed again after {} view(s) without post-processing", *failed);
+            }
+        } else if (m_uniformFailures.fail(updated.error().code)) {
             // Logged once per cause: a persistent failure would otherwise flood the log at the frame rate.
             spdlog::error("Views are shown without post-processing until this failure stops (repeats are not "
                           "logged): {}",
                           updated.error().toString());
         }
-    } else if (const std::optional<std::size_t> failed = m_uniformFailures.succeed()) {
-        spdlog::info("Views are post-processed again after {} view(s) without post-processing", *failed);
     }
 
     const Framebuffer& output = targets.output();

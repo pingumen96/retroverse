@@ -10,8 +10,9 @@
 #                           the environment and materials; the post-processing settings, their block and the bloom
 #                           chain's level sizes (post_settings.hpp); the key light's shadow map transforms, biases and
 #                           block (shadow_settings.hpp); the ambient occlusion kernel, block and target size
-#                           (ssao_settings.hpp); the CPU mirror of the display transform (tonemap.hpp); the renderer's
-#                           frame statistics (frame_stats.hpp, header only)
+#                           (ssao_settings.hpp); the CPU mirror of the display transform (tonemap.hpp); the memory of
+#                           texture mip chains (texture_memory.hpp); the inspection views and the defines of their
+#                           programs (surface_view.hpp); the renderer's frame statistics (frame_stats.hpp, header only)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -27,6 +28,8 @@ add_library(rv_render_uniforms STATIC
     src/post_settings.cpp
     src/shadow_settings.cpp
     src/ssao_settings.cpp
+    src/surface_view.cpp
+    src/texture_memory.cpp
     src/tonemap.cpp
 )
 add_library(rv::render_uniforms ALIAS rv_render_uniforms)

@@ -6,6 +6,5 @@ add_library(rv_test_support STATIC ${RV_TEST_SUPPORT_SOURCES})
 rv_set_target_defaults(rv_test_support)
 # Tests include helpers as "support/<file>.hpp".
 target_include_directories(rv_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-# rv_assets: the in-memory GLB builder embeds PNG images produced with rv::assets::encodePng.
-target_link_libraries(rv_test_support PUBLIC rv_core rv_geometry rv_assets)
+target_link_libraries(rv_test_support PUBLIC rv_core)
 rv_forbid_link(rv_test_support)

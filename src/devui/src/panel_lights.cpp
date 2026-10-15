@@ -8,12 +8,11 @@
 #include <imgui.h>
 
 #include <rv/devui/panels.hpp>
+#include <rv/devui/widgets.hpp>
 #include <rv/render/light_packing.hpp>
 #include <rv/render/shadow_settings.hpp>
 #include <rv/scene/light.hpp>
 #include <rv/scene/scene_description.hpp>
-
-#include "widgets.hpp"
 
 namespace rv::devui {
 namespace {

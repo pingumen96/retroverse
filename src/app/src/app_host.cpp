@@ -40,16 +40,14 @@ constexpr bool kDevUi = true;
 constexpr bool kDevUi = false;
 #endif
 
-constexpr std::string_view kAppIdentifier = "io.github.pingumen96.retroverse";
-constexpr std::string_view kDialogTitle = "Retroverse";
-constexpr std::string_view kOpenGlRequired =
-    "Retroverse requires OpenGL 4.5 (core profile). Update the graphics driver, or make sure Windows runs "
-    "Retroverse on a GPU that supports OpenGL 4.5.";
 constexpr double kTitleRefreshSeconds = 1.0;
 constexpr std::chrono::milliseconds kMinimizedWait{100};
 
-std::string baseWindowTitle() {
-    return fmt::format("{} {}", core::kProductName, core::kVersion);
+/// Shown when OpenGL 4.5 is not available.
+std::string openGlRequired(std::string_view name) {
+    return fmt::format("{0} requires OpenGL 4.5 (core profile). Update the graphics driver, or make sure Windows runs "
+                       "{0} on a GPU that supports OpenGL 4.5.",
+                       name);
 }
 
 std::string describeRunMode(const CommandLineOptions& options) {
@@ -97,8 +95,12 @@ std::string describeRunMode(const CommandLineOptions& options) {
     return mode;
 }
 
-void logStartupBanner(const core::Paths& paths, const CommandLineOptions& options) {
-    spdlog::info("{}", core::versionBanner());
+void logStartupBanner(std::string_view name, const core::Paths& paths, const CommandLineOptions& options) {
+    if (name == core::kProductName) {
+        spdlog::info("{}", core::versionBanner());
+    } else {
+        spdlog::info("{}: {}", core::versionBanner(), name);
+    }
     spdlog::info("Executable: {}", core::pathToUtf8(core::executablePath()));
     spdlog::info("Asset root: {} ({})", core::pathToUtf8(paths.assetRoot()), core::toString(paths.assetRootSource()));
     spdlog::info("User data: {}{}", core::pathToUtf8(paths.userDataRoot()), paths.isPortable() ? " (portable)" : "");
@@ -108,9 +110,9 @@ void logStartupBanner(const core::Paths& paths, const CommandLineOptions& option
     spdlog::info("Run mode: {}", describeRunMode(options));
 }
 
-platform::WindowDesc makeWindowDesc(const CommandLineOptions& options) {
+platform::WindowDesc makeWindowDesc(const CommandLineOptions& options, std::string title) {
     platform::WindowDesc desc;
-    desc.title = baseWindowTitle();
+    desc.title = std::move(title);
     desc.width = options.windowWidth;
     desc.height = options.windowHeight;
     desc.hidden = options.hidden;
@@ -187,7 +189,12 @@ private:
 
 } // namespace
 
-AppHost::AppHost(CommandLineOptions options) : m_options(std::move(options)) {}
+AppHost::AppHost(CommandLineOptions options, AppIdentity identity)
+    : m_options(std::move(options)), m_identity(identity) {}
+
+std::string AppHost::baseWindowTitle() const {
+    return fmt::format("{} {}", m_identity.name, core::kVersion);
+}
 
 int AppHost::run(IAppLogic& logic) noexcept {
     ExitCode exitCode = ExitCode::RuntimeFailure;
@@ -218,37 +225,39 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     const auto paths = core::Paths::resolve(pathOptions, core::PathEnvironment::fromProcess());
 
     core::LogConfig logConfig;
+    logConfig.fileName = std::string(m_identity.logFileName);
     logConfig.level = m_options.logLevel;
     if (paths) {
         logConfig.directory = paths->logsDir();
     }
     core::initLogging(logConfig);
     if (!paths) {
-        return failInitialization("Retroverse could not locate its directories.", paths.error());
+        return failInitialization(fmt::format("{} could not locate its directories.", m_identity.name), paths.error());
     }
-    logStartupBanner(*paths, m_options);
+    logStartupBanner(m_identity.name, *paths, m_options);
 
     // --- SDL, window, OpenGL context, GL device ----------------------------------------------------------------------
-    const platform::AppMetadata metadata{std::string(core::kProductName), std::string(core::kVersion),
-                                         std::string(kAppIdentifier)};
+    const platform::AppMetadata metadata{std::string(m_identity.name), std::string(core::kVersion),
+                                         std::string(m_identity.identifier)};
     const auto sdl = platform::SdlPlatform::init(metadata);
     if (!sdl) {
-        return failInitialization("Retroverse could not initialize SDL.", sdl.error());
+        return failInitialization(fmt::format("{} could not initialize SDL.", m_identity.name), sdl.error());
     }
     spdlog::info("{}, video driver: {}", platform::SdlPlatform::versionString(), platform::SdlPlatform::videoDriver());
 
-    auto window = platform::createGraphicsWindow(makeWindowDesc(m_options), makeContextDesc(m_options));
+    auto window =
+        platform::createGraphicsWindow(makeWindowDesc(m_options, baseWindowTitle()), makeContextDesc(m_options));
     if (!window) {
         return failInitialization(window.error().code == ErrorCode::GraphicsError
-                                      ? kOpenGlRequired
-                                      : std::string_view("Retroverse could not create its window."),
+                                      ? openGlRequired(m_identity.name)
+                                      : fmt::format("{} could not create its window.", m_identity.name),
                                   window.error());
     }
     logWindow(*window);
 
     const auto device = gl::GLDevice::create(window->glLoader(), gl::GLDeviceConfig{.debugOutput = kGlDebug});
     if (!device) {
-        return failInitialization(kOpenGlRequired, device.error());
+        return failInitialization(openGlRequired(m_identity.name), device.error());
     }
 
     // --- Application logic -------------------------------------------------------------------------------------------
@@ -258,7 +267,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
 
     LogicShutdownGuard logicScope(logic, context);
     if (auto initialized = logic.onInit(context); !initialized) {
-        return failInitialization("Retroverse could not load its content.", initialized.error());
+        return failInitialization(fmt::format("{} could not load its content.", m_identity.name), initialized.error());
     }
     std::optional<SelfTestOutcome> selfTest;
     if (m_options.glSelfTest) {
@@ -300,17 +309,17 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
 ExitCode AppHost::failInitialization(std::string_view summary, const Error& error) const {
     spdlog::critical("{} {}", summary, error.toString());
     if (!m_options.noDialogs) {
-        platform::showErrorDialog(kDialogTitle, fmt::format("{}\n\n{}", summary, error.toString()));
+        platform::showErrorDialog(m_identity.name, fmt::format("{}\n\n{}", summary, error.toString()));
     }
     return ExitCode::InitializationFailed;
 }
 
 void AppHost::reportUnexpectedFailure(std::string_view what) const noexcept {
-    reportFailure("Unexpected failure", "Retroverse stopped because of an unexpected error", what);
+    reportFailure("Unexpected failure", "stopped because of an unexpected error", what);
 }
 
 void AppHost::reportRunFailure(std::string_view what) const noexcept {
-    reportFailure("Run failed", "Retroverse stopped because of an error", what);
+    reportFailure("Run failed", "stopped because of an error", what);
 }
 
 void AppHost::reportFailure(std::string_view logPrefix, std::string_view headline,
@@ -321,8 +330,8 @@ void AppHost::reportFailure(std::string_view logPrefix, std::string_view headlin
             const std::filesystem::path logFile = core::activeLogFile();
             const std::string logLocation =
                 logFile.empty() ? std::string("(file logging disabled)") : core::pathToUtf8(logFile);
-            platform::showErrorDialog(
-                kDialogTitle, fmt::format("{}:\n\n{}\n\nDetails are in the log: {}", headline, what, logLocation));
+            platform::showErrorDialog(m_identity.name, fmt::format("{} {}:\n\n{}\n\nDetails are in the log: {}",
+                                                                   m_identity.name, headline, what, logLocation));
         }
     } catch (...) {
         // Reporting must not turn a failure into a crash.

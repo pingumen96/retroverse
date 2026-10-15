@@ -5,12 +5,11 @@
 #include <imgui.h>
 
 #include <rv/devui/panels.hpp>
+#include <rv/devui/widgets.hpp>
 #include <rv/render/frame_stats.hpp>
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/texture_cache.hpp>
-
-#include "widgets.hpp"
 
 namespace rv::devui {
 namespace {

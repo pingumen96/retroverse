@@ -1,4 +1,4 @@
-#include "widgets.hpp"
+#include <rv/devui/widgets.hpp>
 
 #include <cfloat>
 #include <cmath>
@@ -62,6 +62,16 @@ void valueRow(const char* label, std::size_t value) {
     ImGui::TextUnformatted(label);
     ImGui::TableNextColumn();
     ImGui::Text("%zu", value);
+}
+
+void textRow(const char* label, std::string_view text) {
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(label);
+    ImGui::TableNextColumn();
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextUnformatted(text.data(), text.data() + text.size());
+    ImGui::PopTextWrapPos();
 }
 
 void millisecondsRow(const char* label, const std::optional<double>& milliseconds) {

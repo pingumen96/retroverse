@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -50,6 +51,10 @@ public:
 
     /// Appends one render item per draw item, placed by `transform` (model space -> world).
     void appendRenderItems(const glm::mat4& transform, bool castsShadow, std::vector<scene::RenderItem>& items) const;
+
+    /// The MeshRegistry key of primitive `meshIndex` (into assets::ModelData::meshes) of the model registered with
+    /// `key`: "<key>#mesh<meshIndex>".
+    [[nodiscard]] static std::string meshKey(std::string_view key, std::uint32_t meshIndex);
 
     [[nodiscard]] const std::string& key() const noexcept { return m_key; }
     [[nodiscard]] std::span<const DrawItem> drawItems() const noexcept { return m_drawItems; }

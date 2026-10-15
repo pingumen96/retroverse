@@ -1,10 +1,12 @@
 #pragma once
 
-// In-memory glTF 2.0 / GLB writer for loader tests and fixtures. It writes the minimal valid structure that
-// describes the given nodes, meshes and materials; deliberate errors are injected through GlbDescription::patchJson.
+// glTF 2.0 / GLB writer (GPU-free): the minimal valid files that describe the given nodes, meshes and materials. It
+// writes the CRT-like fixture of the asset preview tool (retroverse-asset-preview --write-fixture) and the models of
+// the loader tests, which inject deliberate errors through GlbDescription::patchJson.
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -16,8 +18,10 @@
 #include <nlohmann/json.hpp>
 
 #include <rv/assets/image_data.hpp>
+#include <rv/core/expected.hpp>
+#include <rv/geometry/mesh_data.hpp>
 
-namespace rv::test {
+namespace rv::assets {
 
 /// glTF node: TRS (translation, rotation, scale) unless `matrix` is set.
 struct GlbNode {
@@ -48,8 +52,8 @@ struct GlbMaterial {
     glm::vec4 baseColorFactor{1.0f};
     float metallicFactor = 0.0f;
     float roughnessFactor = 0.5f;
-    /// Embedded as PNG (rv::assets::encodePng) in a buffer view and used as baseColorTexture.
-    std::optional<assets::ImageData> baseColorImage;
+    /// Embedded as PNG (encodePng) in a buffer view and used as baseColorTexture.
+    std::optional<ImageData> baseColorImage;
     /// Raw image bytes embedded instead of `baseColorImage` when not empty (corrupt-data tests).
     std::vector<std::byte> baseColorImageBytes;
 };
@@ -72,23 +76,38 @@ struct GltfParts {
     std::vector<std::byte> bin;
 };
 
-[[nodiscard]] GltfParts buildGltfParts(const GlbDescription& description);
+/// The glTF JSON of `description` and its binary payload: one 4-byte aligned buffer view per attribute, index list and
+/// embedded image, accessors with the bounds of their positions (non-finite components are left out of them: JSON
+/// cannot hold them). Errors: InvalidArgument when a base color image cannot be encoded as PNG (an invalid ImageData).
+[[nodiscard]] Expected<GltfParts> buildGltfParts(const GlbDescription& description);
 
-/// Binary glTF: 12-byte header, JSON chunk (space padded), BIN chunk (zero padded), 4-byte aligned.
-[[nodiscard]] std::vector<std::byte> buildGlb(const GlbDescription& description);
+/// Binary glTF: 12-byte header, JSON chunk (space padded), BIN chunk (zero padded; none without a payload), 4-byte
+/// aligned. Errors: those of buildGltfParts, ParseError when the JSON cannot be serialized (a string that is not
+/// UTF-8), OutOfRange for a container beyond the 4 GiB a GLB header can describe.
+[[nodiscard]] Expected<std::vector<std::byte>> buildGlb(const GlbDescription& description);
 
-/// .gltf text with buffer 0 embedded as a base64 data URI.
-[[nodiscard]] std::string buildGltfWithEmbeddedBuffer(const GlbDescription& description);
+/// .gltf text with buffer 0 embedded as a base64 data URI. Errors: as buildGlb.
+[[nodiscard]] Expected<std::string> buildGltfWithEmbeddedBuffer(const GlbDescription& description);
 
 /// .gltf text whose buffer 0 references `binUri`, plus the payload the caller writes next to it.
 struct GltfFiles {
     std::string json;
     std::vector<std::byte> bin;
 };
-[[nodiscard]] GltfFiles buildGltfWithExternalBuffer(const GlbDescription& description, std::string_view binUri);
+/// Errors: as buildGlb.
+[[nodiscard]] Expected<GltfFiles> buildGltfWithExternalBuffer(const GlbDescription& description,
+                                                              std::string_view binUri);
+
+/// Writes buildGlb(description) to `path` atomically (temporary file and rename, parent directories created).
+/// Errors: those of buildGlb and core::writeFileAtomic.
+[[nodiscard]] Status writeGlb(const std::filesystem::path& path, const GlbDescription& description);
 
 /// Unit quad in the XY plane facing +Z (CCW from the front), uv (0, 0) at the top-left; `withNormals` adds +Z
-/// normals. Handy mesh for loader tests.
+/// normals.
 [[nodiscard]] GlbMesh makeQuadMesh(std::string name, float width = 1.0f, float height = 1.0f, bool withNormals = true);
 
-} // namespace rv::test
+/// The triangles of `mesh` as a GLB mesh named after it: positions, normals, tangents, uvs and indices, drawn with
+/// `material`.
+[[nodiscard]] GlbMesh toGlbMesh(const geometry::MeshData& mesh, std::optional<int> material = std::nullopt);
+
+} // namespace rv::assets

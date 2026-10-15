@@ -4,6 +4,7 @@
 #include <optional>
 #include <string_view>
 
+#include <rv/app/bindings.hpp>
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
 #include <rv/input/input_script.hpp>
@@ -13,20 +14,11 @@
 
 union SDL_Event;
 
-namespace rv::core {
-class Paths;
-} // namespace rv::core
-
 namespace rv::platform {
 class GraphicsWindow;
 } // namespace rv::platform
 
 namespace rv::app {
-
-/// Bindings of the application: <asset root>/config/default_bindings.json (input::ActionMap::defaults() with a warning
-/// when it is missing or invalid), then input::ActionMap::applyOverrides() with <user data>/config/bindings.json when
-/// that file exists (ignored with a warning when invalid). Reads only; never writes the user file.
-[[nodiscard]] input::ActionMap loadBindings(const core::Paths& paths);
 
 /// Input pipeline of RetroverseApp, one update() per frame on the main thread:
 /// SDL events -> platform::SdlInputCollector -> input::RawInputFrame -> input::InputSystem -> input::ActionState ->

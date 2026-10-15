@@ -15,6 +15,11 @@
 #include <rv/app/self_check.hpp>
 #include <rv/core/expected.hpp>
 
+namespace rv::core {
+class ArgParser;
+class ParsedArgs;
+} // namespace rv::core
+
 namespace rv::app {
 
 /// Scene loaded when --scene is not given.
@@ -123,18 +128,32 @@ struct CommandLineOptions {
     bool screenshotIncludeUi = false;
 };
 
-/// Parses and validates arguments (UTF-8, program name excluded). Errors name the offending option:
-///  - unknown options, missing values, malformed numbers;
-///  - --width / --height outside [64, 16384]; --frames below 1;
+/// Declares on `parser` the options of the host that every application built on AppHost understands (retroverse.exe,
+/// retroverse-asset-preview): --version, the window (--width, --height, --fullscreen, --hidden, --no-vsync), the run
+/// length (--smoke, --frames, --exit-after-frames and its alias --exit), --gl-selftest, the directories (--asset-root,
+/// --data-dir, --portable), --log-level, --no-dialogs, the screenshots (--screenshot, --screenshot-size) and
+/// --fixed-dt. --help is always accepted (core::ArgParser).
+void addHostOptions(core::ArgParser& parser);
+
+/// Validates the host options of `args` (declared by addHostOptions) into the matching fields of `options`. Errors
+/// name the offending option:
+///  - malformed numbers; --width / --height outside [64, 16384]; --frames below 1;
 ///  - --frames without --smoke or --exit-after-frames, --hidden without a frame limit (nobody could close the
-///    window), --screenshot without a frame limit (there would be no last frame to capture), --self-check without a
-///    frame limit (an unattended check must end on its own) or with an unknown check name;
+///    window), --screenshot without a frame limit (there would be no last frame to capture);
 ///  - --screenshot not ending in ".png"; --screenshot-size other than WIDTHxHEIGHT with sides in [1, 16384];
+///  - --fixed-dt that is not a number in (0, kMaxFixedDeltaSeconds];
+///  - --log-level other than trace, debug, info, warn or error; empty paths.
+/// Every frame-limited run implies --no-dialogs.
+[[nodiscard]] Status applyHostOptions(const core::ParsedArgs& args, CommandLineOptions& options);
+
+/// Parses and validates arguments (UTF-8, program name excluded): the host options (applyHostOptions, with its
+/// errors) and those of retroverse.exe. Errors name the offending option:
+///  - unknown options, missing values;
+///  - --self-check without a frame limit (an unattended check must end on its own) or with an unknown check name;
 ///  - --scene names with characters other than letters, digits, '_', '-' and '.', or starting with '.';
 ///  - --model not ending in ".gltf" or ".glb", or given together with --scene;
-///  - --fixed-dt that is not a number in (0, kMaxFixedDeltaSeconds];
 ///  - --spawn that parseSpawnPoint refuses;
-///  - --log-level other than trace, debug, info, warn or error; empty paths or names.
+///  - empty paths or names.
 /// The --input-script file itself is read by the application (a bad script fails its initialization).
 /// With --help or --version the remaining options are not validated.
 [[nodiscard]] Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> arguments);

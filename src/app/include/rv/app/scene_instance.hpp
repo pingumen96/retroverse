@@ -82,6 +82,7 @@ public:
     /// The scene's environment: the source of the ambient of lights(), the background radiance and the
     /// post-processing of every view, edited in place by the developer overlay.
     [[nodiscard]] scene::EnvironmentSetup& environment() noexcept { return m_environment; }
+    [[nodiscard]] const scene::EnvironmentSetup& environment() const noexcept { return m_environment; }
     /// Packs sceneLights() and the ambient of environment() into lights(); the lights left out are droppedLights(), the
     /// light that casts the shadows is shadowLight() (or shadowNote() says why none does).
     void applyLighting();

@@ -20,6 +20,8 @@ struct WalkerPose {
 struct ViewArea {
     glm::vec2 min{-1.0f, -1.0f};
     glm::vec2 max{1.0f, 1.0f};
+
+    friend bool operator==(const ViewArea&, const ViewArea&) = default;
 };
 
 /// Horizontal extent beyond which an object spanning it along both x and z is a space to stand in, such as a room shell
@@ -31,6 +33,24 @@ inline constexpr float kMinViewDistance = 0.8f;
 inline constexpr float kMaxViewDistance = 4.0f;
 /// Distance factor over the tight fit of an object in the view.
 inline constexpr float kViewMargin = 1.2f;
+
+/// Orientation of a camera, radians (Camera conventions: yaw 0 looks at -Z, positive yaw turns right, positive pitch
+/// looks up).
+struct ViewAngles {
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+};
+
+/// The orientation from which a camera at `eye` sees `target` at the center of `area` of a view of `lens` at `aspect`:
+/// looking straight at it with the whole view (the default), turned and pitched away from it so that it appears at
+/// the center of a smaller or off-center area (the part of the view the developer overlay's panels leave visible).
+/// `fallbackYaw` is the yaw towards a target straight above or below the eye. An area that is empty or not finite
+/// counts as the whole view; a target or eye that is not finite gives `fallbackYaw` and pitch 0.
+[[nodiscard]] ViewAngles aimAt(const glm::vec3& eye, const glm::vec3& target, const CameraLens& lens, float aspect,
+                               const ViewArea& area = {}, float fallbackYaw = 0.0f) noexcept;
+
+/// A view `area` in usable form: the area itself when it is a finite rectangle with some extent, else the whole view.
+[[nodiscard]] ViewArea usableViewArea(const ViewArea& area) noexcept;
 
 /// Unit horizontal direction the front of an object faces: its local +Z (ADR-0002) under `transform`, projected on the
 /// floor. +Z when the transform turns the front straight up or down, or is not finite.

@@ -7,31 +7,53 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "support/glb_builder.hpp"
 #include "support/temp_dir.hpp"
+#include <rv/assets/glb_writer.hpp>
 #include <rv/assets/gltf_loader.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
 
 using Catch::Approx;
 using rv::ErrorCode;
+using rv::assets::GlbDescription;
+using rv::assets::GlbMaterial;
+using rv::assets::GlbMesh;
+using rv::assets::GlbNode;
 using rv::assets::GltfLoadOptions;
 using rv::assets::ModelData;
 using rv::geometry::SocketKind;
-using rv::test::GlbDescription;
-using rv::test::GlbMaterial;
-using rv::test::GlbMesh;
-using rv::test::GlbNode;
 
 namespace {
 
+/// The GLB of `description` (the writer's failure fails the test).
+std::vector<std::byte> glbBytes(const GlbDescription& description) {
+    auto glb = rv::assets::buildGlb(description);
+    REQUIRE(glb.has_value());
+    return std::move(*glb);
+}
+
+/// The .gltf text of `description` with its buffer embedded as a data URI.
+std::string embeddedGltf(const GlbDescription& description) {
+    auto text = rv::assets::buildGltfWithEmbeddedBuffer(description);
+    REQUIRE(text.has_value());
+    return std::move(*text);
+}
+
+/// The .gltf text of `description` referencing its buffer as `binUri`, and the buffer.
+rv::assets::GltfFiles externalGltf(const GlbDescription& description, std::string_view binUri) {
+    auto files = rv::assets::buildGltfWithExternalBuffer(description, binUri);
+    REQUIRE(files.has_value());
+    return std::move(*files);
+}
+
 rv::Expected<ModelData> load(const GlbDescription& description, const GltfLoadOptions& options = {}) {
-    const std::vector<std::byte> glb = rv::test::buildGlb(description);
+    const std::vector<std::byte> glb = glbBytes(description);
     return rv::assets::loadGltfFromMemory(glb, {}, options);
 }
 
@@ -78,10 +100,10 @@ GlbMesh makeGridMesh(std::string name, int size) {
 /// Root > Body, ScreenSurface, Anchor_TV_Stand, Anchor_ScreenLook, PowerButton, SpeakerLeft, ColliderProxy.
 GlbDescription makeCrtLikeModel() {
     GlbDescription description;
-    description.meshes.push_back(rv::test::makeQuadMesh("body", 0.71f, 0.61f));
-    description.meshes.push_back(rv::test::makeQuadMesh("screen", 0.48f, 0.36f));
-    description.meshes.push_back(rv::test::makeQuadMesh("collider", 0.71f, 0.61f));
-    description.meshes.push_back(rv::test::makeQuadMesh("button", 0.02f, 0.02f));
+    description.meshes.push_back(rv::assets::makeQuadMesh("body", 0.71f, 0.61f));
+    description.meshes.push_back(rv::assets::makeQuadMesh("screen", 0.48f, 0.36f));
+    description.meshes.push_back(rv::assets::makeQuadMesh("collider", 0.71f, 0.61f));
+    description.meshes.push_back(rv::assets::makeQuadMesh("button", 0.02f, 0.02f));
 
     GlbNode root = node("Root");
     root.children = {1, 2, 3, 4, 5, 6, 7};
@@ -100,7 +122,7 @@ GlbDescription makeCrtLikeModel() {
 
 TEST_CASE("assets/gltf: nested TRS transforms produce world matrices", "[assets][gltf]") {
     GlbDescription description;
-    description.meshes.push_back(rv::test::makeQuadMesh("quad"));
+    description.meshes.push_back(rv::assets::makeQuadMesh("quad"));
     GlbNode root = node("Root", glm::vec3(1.0f, 0.0f, 0.0f));
     root.rotation = glm::angleAxis(rv::core::kHalfPi, glm::vec3(0.0f, 1.0f, 0.0f));
     root.scale = glm::vec3(2.0f);
@@ -158,7 +180,7 @@ TEST_CASE("assets/gltf: nested TRS transforms produce world matrices", "[assets]
 
 TEST_CASE("assets/gltf: sockets are classified by node name", "[assets][gltf]") {
     GlbDescription description = makeCrtLikeModel();
-    description.meshes.push_back(rv::test::makeQuadMesh("second screen", 0.2f, 0.15f));
+    description.meshes.push_back(rv::assets::makeQuadMesh("second screen", 0.2f, 0.15f));
     description.nodes[0].children.insert(description.nodes[0].children.end(), {8, 9, 10, 11});
     description.nodes.push_back(node("ScreenSurface_2", glm::vec3(0.5f, 0.3f, 0.0f), 4));
     description.nodes.push_back(node("ScreenSurfaceGlass", glm::vec3(0.0f), 1)); // not a socket name
@@ -271,7 +293,7 @@ TEST_CASE("assets/gltf: embedded PNG textures are decoded and referenced", "[ass
     material.roughnessFactor = 0.6f;
     material.baseColorImage = texture;
     description.materials.push_back(material);
-    GlbMesh quad = rv::test::makeQuadMesh("label");
+    GlbMesh quad = rv::assets::makeQuadMesh("label");
     quad.material = 0;
     description.meshes.push_back(quad);
     description.nodes = {node("Label", glm::vec3(0.0f), 0)};
@@ -316,7 +338,7 @@ TEST_CASE("assets/gltf: a corrupt embedded image is dropped with a warning", "[a
                                     std::byte{0x0D}, std::byte{0x0A}, std::byte{0x1A}, std::byte{0x0A},
                                     std::byte{0x00}, std::byte{0x01}, std::byte{0x02}, std::byte{0x03}};
     description.materials.push_back(material);
-    GlbMesh quad = rv::test::makeQuadMesh("quad");
+    GlbMesh quad = rv::assets::makeQuadMesh("quad");
     quad.material = 0;
     description.meshes.push_back(quad);
     description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
@@ -331,8 +353,8 @@ TEST_CASE("assets/gltf: a corrupt embedded image is dropped with a warning", "[a
 
 TEST_CASE("assets/gltf: tangents are generated with unit length or taken from the file", "[assets][gltf]") {
     GlbDescription description;
-    description.meshes.push_back(rv::test::makeQuadMesh("generated"));
-    GlbMesh authored = rv::test::makeQuadMesh("authored");
+    description.meshes.push_back(rv::assets::makeQuadMesh("generated"));
+    GlbMesh authored = rv::assets::makeQuadMesh("authored");
     authored.tangents.assign(4, glm::vec4(0.0f, 2.0f, 0.0f, -3.0f)); // not normalized on purpose
     description.meshes.push_back(authored);
     description.nodes = {node("A", glm::vec3(0.0f), 0), node("B", glm::vec3(2.0f, 0.0f, 0.0f), 1)};
@@ -385,7 +407,7 @@ TEST_CASE("assets/gltf: missing normals become flat normals with a warning", "[a
 
 TEST_CASE("assets/gltf: missing indices are generated", "[assets][gltf]") {
     GlbDescription description;
-    GlbMesh soup = rv::test::makeQuadMesh("soup");
+    GlbMesh soup = rv::assets::makeQuadMesh("soup");
     std::vector<glm::vec3> positions;
     std::vector<glm::vec3> normals;
     std::vector<glm::vec2> uvs;
@@ -409,13 +431,13 @@ TEST_CASE("assets/gltf: missing indices are generated", "[assets][gltf]") {
 
 TEST_CASE("assets/gltf: triangle strips and fans become lists; points are skipped", "[assets][gltf]") {
     GlbDescription description;
-    GlbMesh strip = rv::test::makeQuadMesh("strip");
+    GlbMesh strip = rv::assets::makeQuadMesh("strip");
     strip.indices = {0, 1, 3, 2}; // TL, BL, TR, BR
     strip.mode = 5;
-    GlbMesh fan = rv::test::makeQuadMesh("fan");
+    GlbMesh fan = rv::assets::makeQuadMesh("fan");
     fan.indices = {0, 1, 2, 3};
     fan.mode = 6;
-    GlbMesh points = rv::test::makeQuadMesh("points");
+    GlbMesh points = rv::assets::makeQuadMesh("points");
     points.mode = 0;
     description.meshes = {strip, fan, points};
     description.nodes = {node("Strip", glm::vec3(0.0f), 0), node("Fan", glm::vec3(2.0f, 0.0f, 0.0f), 1),
@@ -442,7 +464,7 @@ TEST_CASE("assets/gltf: triangle strips and fans become lists; points are skippe
 
 TEST_CASE("assets/gltf: truncated or invalid containers are errors", "[assets][gltf]") {
     GlbDescription description = makeCrtLikeModel();
-    const std::vector<std::byte> glb = rv::test::buildGlb(description);
+    const std::vector<std::byte> glb = glbBytes(description);
 
     const std::vector<std::byte> truncated(glb.begin(), glb.end() - 40);
     const auto result = rv::assets::loadGltfFromMemory(truncated, {});
@@ -504,9 +526,9 @@ TEST_CASE("assets/gltf: material extensions are mapped", "[assets][gltf]") {
     GlbMaterial flat;
     flat.name = "Flat";
     description.materials = {glowing, flat};
-    GlbMesh quad = rv::test::makeQuadMesh("quad");
+    GlbMesh quad = rv::assets::makeQuadMesh("quad");
     quad.material = 0;
-    GlbMesh second = rv::test::makeQuadMesh("second");
+    GlbMesh second = rv::assets::makeQuadMesh("second");
     second.material = 1;
     description.meshes = {quad, second};
     description.nodes = {node("Quad", glm::vec3(0.0f), 0), node("Second", glm::vec3(2.0f, 0.0f, 0.0f), 1)};
@@ -558,7 +580,7 @@ TEST_CASE("assets/gltf: texture transform rotation and conflicting transforms", 
     rotated.name = "Rotated";
     rotated.baseColorImage = texel;
     description.materials = {rotated};
-    GlbMesh quad = rv::test::makeQuadMesh("quad");
+    GlbMesh quad = rv::assets::makeQuadMesh("quad");
     quad.material = 0;
     description.meshes = {quad};
     description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
@@ -587,7 +609,7 @@ TEST_CASE("assets/gltf: texture transform rotation and conflicting transforms", 
 TEST_CASE("assets/gltf: scale diagnostics", "[assets][gltf]") {
     SECTION("non-uniform scale on a node with a mesh") {
         GlbDescription description;
-        description.meshes.push_back(rv::test::makeQuadMesh("quad"));
+        description.meshes.push_back(rv::assets::makeQuadMesh("quad"));
         GlbNode stretched = node("Stretched", glm::vec3(0.0f), 0);
         stretched.scale = glm::vec3(1.0f, 2.0f, 1.0f);
         description.nodes = {stretched};
@@ -598,7 +620,7 @@ TEST_CASE("assets/gltf: scale diagnostics", "[assets][gltf]") {
     }
     SECTION("mirroring scale") {
         GlbDescription description;
-        description.meshes.push_back(rv::test::makeQuadMesh("quad"));
+        description.meshes.push_back(rv::assets::makeQuadMesh("quad"));
         GlbNode mirrored = node("Mirrored", glm::vec3(0.0f), 0);
         mirrored.scale = glm::vec3(-1.0f, 1.0f, 1.0f);
         description.nodes = {mirrored};
@@ -608,7 +630,7 @@ TEST_CASE("assets/gltf: scale diagnostics", "[assets][gltf]") {
     }
     SECTION("uniform scale is fine") {
         GlbDescription description;
-        description.meshes.push_back(rv::test::makeQuadMesh("quad", 0.5f, 0.5f));
+        description.meshes.push_back(rv::assets::makeQuadMesh("quad", 0.5f, 0.5f));
         GlbNode scaled = node("Scaled", glm::vec3(0.0f), 0);
         scaled.scale = glm::vec3(1.5f);
         description.nodes = {scaled};
@@ -618,7 +640,7 @@ TEST_CASE("assets/gltf: scale diagnostics", "[assets][gltf]") {
     }
     SECTION("bounds larger than 20 m: probably centimeters") {
         GlbDescription description;
-        description.meshes.push_back(rv::test::makeQuadMesh("crt in centimeters", 71.0f, 61.0f));
+        description.meshes.push_back(rv::assets::makeQuadMesh("crt in centimeters", 71.0f, 61.0f));
         description.nodes = {node("Crt", glm::vec3(0.0f), 0)};
         const auto model = load(description);
         REQUIRE(model.has_value());
@@ -626,7 +648,7 @@ TEST_CASE("assets/gltf: scale diagnostics", "[assets][gltf]") {
     }
     SECTION("bounds smaller than 5 mm") {
         GlbDescription description;
-        description.meshes.push_back(rv::test::makeQuadMesh("speck", 0.001f, 0.001f));
+        description.meshes.push_back(rv::assets::makeQuadMesh("speck", 0.001f, 0.001f));
         description.nodes = {node("Speck", glm::vec3(0.0f), 0)};
         const auto model = load(description);
         REQUIRE(model.has_value());
@@ -637,7 +659,7 @@ TEST_CASE("assets/gltf: scale diagnostics", "[assets][gltf]") {
 TEST_CASE("assets/gltf: invalid vertex data and references are errors", "[assets][gltf]") {
     SECTION("NaN position") {
         GlbDescription description;
-        GlbMesh quad = rv::test::makeQuadMesh("quad");
+        GlbMesh quad = rv::assets::makeQuadMesh("quad");
         quad.positions[2].x = std::numeric_limits<float>::quiet_NaN();
         description.meshes.push_back(quad);
         description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
@@ -647,7 +669,7 @@ TEST_CASE("assets/gltf: invalid vertex data and references are errors", "[assets
     }
     SECTION("infinite normal") {
         GlbDescription description;
-        GlbMesh quad = rv::test::makeQuadMesh("quad");
+        GlbMesh quad = rv::assets::makeQuadMesh("quad");
         quad.normals[0].z = std::numeric_limits<float>::infinity();
         description.meshes.push_back(quad);
         description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
@@ -655,7 +677,7 @@ TEST_CASE("assets/gltf: invalid vertex data and references are errors", "[assets
     }
     SECTION("index out of range") {
         GlbDescription description;
-        GlbMesh quad = rv::test::makeQuadMesh("quad");
+        GlbMesh quad = rv::assets::makeQuadMesh("quad");
         quad.indices[5] = 7;
         description.meshes.push_back(quad);
         description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
@@ -665,7 +687,7 @@ TEST_CASE("assets/gltf: invalid vertex data and references are errors", "[assets
     }
     SECTION("accessor reading past its buffer view") {
         GlbDescription description;
-        description.meshes.push_back(rv::test::makeQuadMesh("quad"));
+        description.meshes.push_back(rv::assets::makeQuadMesh("quad"));
         description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
         description.patchJson = [](nlohmann::json& json) {
             json["accessors"][0]["count"] = 400;
@@ -717,7 +739,7 @@ TEST_CASE("assets/gltf: invalid vertex data and references are errors", "[assets
 
 TEST_CASE("assets/gltf: the default scene selects what is drawn", "[assets][gltf]") {
     GlbDescription description;
-    description.meshes.push_back(rv::test::makeQuadMesh("quad"));
+    description.meshes.push_back(rv::assets::makeQuadMesh("quad"));
     description.nodes = {node("InSceneZero", glm::vec3(0.0f), 0), node("InSceneOne", glm::vec3(5.0f, 0.0f, 0.0f), 0)};
     description.patchJson = [](nlohmann::json& json) {
         json["scenes"] = nlohmann::json::array({{{"nodes", {0}}}, {{"nodes", {1}}}});
@@ -744,14 +766,14 @@ TEST_CASE("assets/gltf: .gltf files with base64 and external buffers", "[assets]
     const GlbDescription description = makeCrtLikeModel();
     rv::test::TempDir dir;
 
-    const std::string embedded = rv::test::buildGltfWithEmbeddedBuffer(description);
+    const std::string embedded = embeddedGltf(description);
     REQUIRE(rv::core::writeTextFileAtomic(dir.file("embedded.gltf"), embedded).has_value());
     const auto fromEmbedded = rv::assets::loadGltf(dir.file("embedded.gltf"));
     REQUIRE(fromEmbedded.has_value());
     CHECK(fromEmbedded->sockets.size() == 6);
 
     // Unicode directory and file names (UTF-8 literals: the sources are compiled with /utf-8).
-    const rv::test::GltfFiles files = rv::test::buildGltfWithExternalBuffer(description, "crt_è.bin");
+    const rv::assets::GltfFiles files = externalGltf(description, "crt_è.bin");
     REQUIRE(rv::core::writeTextFileAtomic(dir.file("modèle/crt.gltf"), files.json).has_value());
     REQUIRE(rv::core::writeFileAtomic(dir.file("modèle/crt_è.bin"), files.bin).has_value());
     const auto fromExternal = rv::assets::loadGltf(dir.file("modèle/crt.gltf"));
@@ -766,7 +788,7 @@ TEST_CASE("assets/gltf: .gltf files with base64 and external buffers", "[assets]
     CHECK(withoutBase.error().code == ErrorCode::NotFound);
 
     // External references may not leave the model directory.
-    const rv::test::GltfFiles escaping = rv::test::buildGltfWithExternalBuffer(description, "../outside.bin");
+    const rv::assets::GltfFiles escaping = externalGltf(description, "../outside.bin");
     REQUIRE(rv::core::writeFileAtomic(dir.file("outside.bin"), escaping.bin).has_value());
     REQUIRE(rv::core::writeTextFileAtomic(dir.file("nested/escape.gltf"), escaping.json).has_value());
     const auto escaped = rv::assets::loadGltf(dir.file("nested/escape.gltf"));
@@ -788,7 +810,7 @@ TEST_CASE("assets/gltf: unreadable external image paths drop the texture, not th
     material.name = "Cover";
     material.baseColorImage = texel;
     description.materials = {material};
-    GlbMesh quad = rv::test::makeQuadMesh("quad");
+    GlbMesh quad = rv::assets::makeQuadMesh("quad");
     quad.material = 0;
     description.meshes = {quad};
     description.nodes = {node("Quad", glm::vec3(0.0f), 0)};
@@ -798,7 +820,7 @@ TEST_CASE("assets/gltf: unreadable external image paths drop the texture, not th
     description.patchJson = [](nlohmann::json& json) {
         json["images"][0] = {{"uri", "covers/caf%E9.png"}};
     };
-    const std::string latin1 = rv::test::buildGltfWithEmbeddedBuffer(description);
+    const std::string latin1 = embeddedGltf(description);
     const auto model = rv::assets::loadGltfFromMemory(std::as_bytes(std::span(latin1)), dir.path());
     REQUIRE(model.has_value());
     CHECK(model->images.empty());
@@ -811,7 +833,7 @@ TEST_CASE("assets/gltf: unreadable external image paths drop the texture, not th
     description.patchJson = [](nlohmann::json& json) {
         json["images"][0] = {{"uri", "cover.png"}};
     };
-    const std::string plain = rv::test::buildGltfWithEmbeddedBuffer(description);
+    const std::string plain = embeddedGltf(description);
     const auto odd =
         rv::assets::loadGltfFromMemory(std::as_bytes(std::span(plain)), dir.path() / std::wstring(L"bad\xD800-dir"));
     REQUIRE(odd.has_value());
@@ -819,7 +841,7 @@ TEST_CASE("assets/gltf: unreadable external image paths drop the texture, not th
     CHECK(hasWarning(*odd, "image 0"));
 
     // Buffers are required, so a buffer path that is not UTF-8 fails the model with a clear code.
-    const rv::test::GltfFiles external = rv::test::buildGltfWithExternalBuffer(description, "caf%E9.bin");
+    const rv::assets::GltfFiles external = externalGltf(description, "caf%E9.bin");
     const auto noBuffer = rv::assets::loadGltfFromMemory(std::as_bytes(std::span(external.json)), dir.path());
     REQUIRE_FALSE(noBuffer.has_value());
     CHECK(noBuffer.error().code == ErrorCode::InvalidArgument);
@@ -845,7 +867,7 @@ TEST_CASE("assets/gltf: decoded geometry is bounded by the file size limit", "[a
                 primitives.push_back(primitive);
             }
         };
-        const std::vector<std::byte> glb = rv::test::buildGlb(description);
+        const std::vector<std::byte> glb = glbBytes(description);
         REQUIRE(glb.size() < small.maxFileBytes);
         const auto shared = rv::assets::loadGltfFromMemory(glb, {}, small);
         REQUIRE_FALSE(shared.has_value());
@@ -899,38 +921,9 @@ TEST_CASE("assets/gltf: deep chains, many roots and many sockets", "[assets][glt
     CHECK_FALSE(hasWarning(*model, "duplicate"));
 }
 
-TEST_CASE("assets/gltf: the test GLB builder writes an aligned two-chunk container", "[assets][gltf]") {
-    const auto u32 = [](const std::vector<std::byte>& bytes, std::size_t offset) {
-        return static_cast<std::uint32_t>(bytes[offset]) | (static_cast<std::uint32_t>(bytes[offset + 1]) << 8) |
-               (static_cast<std::uint32_t>(bytes[offset + 2]) << 16) |
-               (static_cast<std::uint32_t>(bytes[offset + 3]) << 24);
-    };
-    const std::vector<std::byte> glb = rv::test::buildGlb(makeCrtLikeModel());
-    REQUIRE(glb.size() > 28);
-    CHECK(u32(glb, 0) == 0x46546C67u); // "glTF"
-    CHECK(u32(glb, 4) == 2u);
-    CHECK(u32(glb, 8) == glb.size());
-    const std::uint32_t jsonLength = u32(glb, 12);
-    CHECK(u32(glb, 16) == 0x4E4F534Au); // "JSON"
-    CHECK(jsonLength % 4 == 0);
-    const std::byte lastJsonByte = glb[20 + jsonLength - 1]; // JSON chunks are padded with spaces
-    CHECK((lastJsonByte == std::byte{'}'} || lastJsonByte == std::byte{' '}));
-    const std::size_t binHeader = 20 + jsonLength;
-    const std::uint32_t binLength = u32(glb, binHeader);
-    CHECK(u32(glb, binHeader + 4) == 0x004E4942u); // "BIN\0"
-    CHECK(binLength % 4 == 0);
-    CHECK(binHeader + 8 + binLength == glb.size());
-
-    // Without geometry or images there is no binary chunk.
-    rv::test::GlbDescription empty;
-    empty.nodes = {node("Lonely")};
-    const std::vector<std::byte> jsonOnly = rv::test::buildGlb(empty);
-    CHECK(20 + u32(jsonOnly, 12) == jsonOnly.size());
-}
-
 TEST_CASE("assets/gltf: a GLB written to disk loads through loadGltf", "[assets][gltf]") {
     rv::test::TempDir dir;
-    const std::vector<std::byte> glb = rv::test::buildGlb(makeCrtLikeModel());
+    const std::vector<std::byte> glb = glbBytes(makeCrtLikeModel());
     REQUIRE(rv::core::writeFileAtomic(dir.file("crt.glb"), glb).has_value());
     const auto model = rv::assets::loadGltf(dir.file("crt.glb"));
     REQUIRE(model.has_value());

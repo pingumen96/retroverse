@@ -34,6 +34,11 @@ public:
     /// The handle registered under `key`, if any.
     [[nodiscard]] std::optional<scene::MeshHandle> find(std::string_view key) const;
 
+    /// Releases every mesh and forgets every key: the handles returned so far are no longer valid, and render items
+    /// that use them must not be drawn any more. For new content in the same renderer (the asset preview loads another
+    /// model).
+    void clear() noexcept;
+
     /// True for a handle returned by add().
     [[nodiscard]] bool contains(scene::MeshHandle handle) const noexcept { return handle.value < m_entries.size(); }
     /// The mesh of a handle returned by add() (std::out_of_range otherwise).

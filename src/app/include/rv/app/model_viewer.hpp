@@ -24,13 +24,14 @@ inline constexpr float kModelViewerElevationDeg = 25.0f;
 /// Distance factor over the tight fit of the bounding sphere, leaving a margin around the model.
 inline constexpr float kModelViewerMargin = 1.15f;
 
-/// Scene of the --model viewer (spec plan 5.7): the model `modelPath` (as given: the viewer's model loader resolves
-/// it) at the origin, unrotated, so its own axes are the world's (ADR-0002: +Y up, front +Z, meters). The model does
-/// not collide: free roam can get as close to it as inspecting it needs.
-///  - Camera: the default lens (75 degrees horizontal), looking at the center of `bounds` (the model's bounds) from
-///    kModelViewerAzimuthDeg to the right of its front and kModelViewerElevationDeg above, far enough that the bounding
-///    sphere fits a kModelViewerAspect view with kModelViewerMargin; near and far planes follow the distance, so
-///    millimeter details and 20 m models both fit.
+/// Scene that shows one object for inspection, the --model viewer's and the asset preview's: `subject` (a model, a
+/// prefab or a primitive, placed where its own transform puts it) with a camera, lights and an environment sized to
+/// `bounds`, its world bounds. The object is given the id kModelViewerObjectId and does not collide: free roam can get
+/// as close to it as inspecting it needs.
+///  - Camera: the default lens (75 degrees horizontal), looking at the center of `bounds` from kModelViewerAzimuthDeg
+///    to the right of its front and kModelViewerElevationDeg above, far enough that the bounding sphere fits a
+///    kModelViewerAspect view with kModelViewerMargin; near and far planes follow the distance, so millimeter details
+///    and 20 m models both fit.
 ///  - Lights, a three-point rig sized to the bounds: a warm directional key light from the front left above, a cool
 ///    point fill light from the front right and a point rim light from behind above (their intensities scale with the
 ///    square of their distance, so the model receives the same light whatever its size).
@@ -39,6 +40,11 @@ inline constexpr float kModelViewerMargin = 1.15f;
 ///    vignette, so that every part of the model shows its own colors wherever it is in the view, and no ambient
 ///    occlusion (its radius is sized for rooms). No light casts shadows.
 /// Empty or non-finite bounds are framed as a 1 m cube standing on the origin.
+[[nodiscard]] scene::SceneDescription makeInspectionScene(scene::SceneObject subject, const core::Aabb& bounds);
+
+/// Scene of the --model viewer (spec plan 5.7): makeInspectionScene of the model `modelPath` (as given: the viewer's
+/// model loader resolves it) at the origin, unrotated, so its own axes are the world's (ADR-0002: +Y up, front +Z,
+/// meters); `bounds` are the model's.
 [[nodiscard]] scene::SceneDescription makeModelViewerScene(std::string modelPath, const core::Aabb& bounds);
 
 /// Grid for a model with `bounds` in the viewer, so that the model spans 2 to 20 cells whatever its size: the spacing

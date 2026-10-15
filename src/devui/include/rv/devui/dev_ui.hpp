@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <string_view>
 
 #include <glm/vec2.hpp>
 
@@ -35,7 +37,7 @@ public:
 };
 
 /// Where the default layout docks a panel; the layout imgui.ini keeps replaces it once the user rearranges the panels.
-/// Panels sharing a slot become tabs of one dock node.
+/// Panels sharing a slot become tabs of one dock node, the first added in front.
 enum class DockSlot : std::uint8_t {
     Left,        ///< left column, top
     LeftBottom,  ///< left column, bottom
@@ -85,6 +87,12 @@ public:
 
     /// Adds a dockable panel, placed at `slot` by the default layout. Panels are drawn in the order they were added.
     void addPanel(std::unique_ptr<Panel> panel, DockSlot slot);
+    /// Brings the panel titled `title` to the front of its dock node (selects its tab) when the next frame is built.
+    void focusPanel(std::string_view title);
+    /// Draws over the scene and under the panels in every frame built (Dear ImGui's background draw list), after the
+    /// panels: labels placed in the scene, such as the asset preview's socket names (sceneViewArea() is the part the
+    /// panels leave visible). Empty: nothing.
+    void setSceneDecoration(std::function<void()> draw);
 
     [[nodiscard]] bool visible() const noexcept;
     /// Shows or hides the overlay. Showing it forgets the keys and buttons Dear ImGui last saw held (they may have been

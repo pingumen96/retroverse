@@ -8,6 +8,7 @@
 // this very pass (rv::app::runSrgbSelfCheck).
 #include "common/common.glsl"
 #include "common/post.glsl"
+#include "common/srgb.glsl"
 #include "common/tonemap.glsl"
 
 // The bloom of the view: the largest bloom level (PostTextureUnit::Bloom), half the size of the scene.
@@ -16,18 +17,6 @@ layout(binding = 6) uniform sampler2D uBloom;
 layout(location = 0) in vec2 vUv;
 
 layout(location = 0) out vec4 oColor;
-
-// sRGB transfer functions (IEC 61966-2-1), as the target applies them.
-vec3 linearToSrgb(vec3 linear) {
-    linear = clamp(linear, 0.0, 1.0);
-    vec3 curve = 1.055 * pow(linear, vec3(1.0 / 2.4)) - 0.055;
-    return mix(curve, linear * 12.92, lessThanEqual(linear, vec3(0.0031308)));
-}
-
-vec3 srgbToLinear(vec3 encoded) {
-    vec3 curve = pow((encoded + 0.055) / 1.055, vec3(2.4));
-    return mix(curve, encoded / 12.92, lessThanEqual(encoded, vec3(0.04045)));
-}
 
 // Interleaved gradient noise (Jimenez 2014): a threshold in [0, 1) per pixel that changes from pixel to pixel with no
 // visible pattern; fixed in time, so screenshots are reproducible.

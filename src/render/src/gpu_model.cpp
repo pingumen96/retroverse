@@ -25,6 +25,10 @@ assets::MaterialDesc defaultGltfMaterial() {
 
 } // namespace
 
+std::string GpuModel::meshKey(std::string_view key, std::uint32_t meshIndex) {
+    return fmt::format("{}#mesh{}", key, meshIndex);
+}
+
 GpuModel GpuModel::create(std::string_view key, const assets::ModelData& model, MeshRegistry& meshes,
                           MaterialRegistry& materials, TextureCache& textures) {
     GpuModel gpu;
@@ -49,7 +53,7 @@ GpuModel GpuModel::create(std::string_view key, const assets::ModelData& model, 
         if (!meshTried[item.meshIndex]) {
             meshTried[item.meshIndex] = true;
             const geometry::MeshData& mesh = model.meshes[item.meshIndex];
-            auto handle = meshes.add(fmt::format("{}#mesh{}", key, item.meshIndex), mesh);
+            auto handle = meshes.add(meshKey(key, item.meshIndex), mesh);
             if (handle) {
                 meshHandles[item.meshIndex] = *handle;
             } else {

@@ -82,6 +82,7 @@ scene::MaterialHandle MaterialRegistry::add(std::string_view key, std::string la
         const Texture2D* texture = textures[slot];
         if (texture != nullptr && texture->valid()) {
             textureFlags |= material_flags::textureBit(materialSlot);
+            material.textureSources[slot] = texture;
         } else {
             texture = m_defaults != nullptr ? &m_defaults->neutral(materialSlot) : nullptr;
         }
@@ -101,6 +102,14 @@ std::optional<scene::MaterialHandle> MaterialRegistry::find(std::string_view key
         return scene::MaterialHandle{found->second};
     }
     return std::nullopt;
+}
+
+void MaterialRegistry::clear() noexcept {
+    m_materials.clear();
+    m_keys.clear();
+    m_buffer = Buffer();
+    m_stride = 0;
+    m_uploadedCount = 0;
 }
 
 scene::DrawPass MaterialRegistry::pass(scene::MaterialHandle handle) const noexcept {

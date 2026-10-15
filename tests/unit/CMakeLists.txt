@@ -2,6 +2,10 @@
 # are globbed so modules can add tests without editing this file.
 
 file(GLOB_RECURSE RV_UNIT_TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+# tests/unit/preview covers the GPU-free core of the asset preview tool, which only exists with RV_BUILD_TOOLS.
+if(NOT TARGET rv_preview_core)
+    list(FILTER RV_UNIT_TEST_SOURCES EXCLUDE REGEX "/preview/")
+endif()
 
 add_executable(rv_tests ${RV_UNIT_TEST_SOURCES})
 rv_set_target_defaults(rv_tests)
@@ -17,6 +21,9 @@ target_link_libraries(rv_tests PRIVATE
     rv_render_uniforms     # GPU-free part of rv_render (std140 blocks, light and material packing, tonemap)
     rv_test_support
     Catch2::Catch2WithMain)
+if(TARGET rv_preview_core)
+    target_link_libraries(rv_tests PRIVATE rv_preview_core) # GPU-free core of retroverse-asset-preview
+endif()
 target_compile_definitions(rv_tests PRIVATE
     RV_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     RV_TEST_ASSET_DIR="${PROJECT_SOURCE_DIR}/assets")

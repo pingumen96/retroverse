@@ -19,16 +19,6 @@ GLenum internalFormat(ColorSpace colorSpace) noexcept {
     return colorSpace == ColorSpace::Srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8;
 }
 
-std::size_t chainBytes(glm::ivec2 size, int levels) noexcept {
-    std::size_t bytes = 0;
-    glm::ivec2 level = size;
-    for (int i = 0; i < levels; ++i) {
-        bytes += static_cast<std::size_t>(level.x) * static_cast<std::size_t>(level.y) * 4u;
-        level = glm::ivec2(std::max(level.x / 2, 1), std::max(level.y / 2, 1));
-    }
-    return bytes;
-}
-
 } // namespace
 
 std::string_view toString(ColorSpace colorSpace) noexcept {
@@ -54,14 +44,17 @@ float clampAnisotropy(float requested, float maxSupported) noexcept {
     return std::clamp(requested, 1.0f, std::max(maxSupported, 1.0f));
 }
 
-int fullMipLevelCount(glm::ivec2 size) noexcept {
-    int largest = std::max(size.x, size.y);
-    int levels = 1;
-    while (largest > 1) {
-        largest /= 2;
-        ++levels;
+TextureObject createRgba8View(GLuint texture, int levelCount) {
+    GLuint viewId = 0;
+    glGenTextures(1, &viewId); // glTextureView needs a name that has never been bound: not glCreateTextures
+    TextureObject view(viewId);
+    if (viewId == 0 || texture == 0 || levelCount < 1) {
+        return {};
     }
-    return levels;
+    glTextureView(viewId, GL_TEXTURE_2D, texture, GL_RGBA8, 0, static_cast<GLuint>(levelCount), 0, 1);
+    glTextureParameteri(viewId, GL_TEXTURE_MIN_FILTER, levelCount > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+    glTextureParameteri(viewId, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    return view;
 }
 
 Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const TextureDesc& desc,
@@ -124,7 +117,7 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
     result.m_texture = std::move(texture);
     result.m_size = size;
     result.m_levels = levels;
-    result.m_bytes = chainBytes(size, levels);
+    result.m_bytes = mipChainBytes(size, levels);
     result.m_desc = desc;
     result.m_debugName = std::move(name);
     return result;

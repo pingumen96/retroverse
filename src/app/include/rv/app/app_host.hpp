@@ -1,10 +1,12 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/core/version.hpp>
 
 union SDL_Event;
 
@@ -13,9 +15,21 @@ namespace rv::app {
 class AppContext;
 class IAppLogic;
 
+/// How an application built on AppHost presents itself. The defaults are retroverse.exe's.
+struct AppIdentity {
+    /// Shown in the window title (followed by the version and, once per second, the frame rate) and as the title of
+    /// message boxes.
+    std::string_view name = core::kProductName;
+    /// SDL application identifier, reverse domain notation.
+    std::string_view identifier = "io.github.pingumen96.retroverse";
+    /// The log file under <user data>/logs.
+    std::string_view logFileName = "retroverse.log";
+};
+
 /// Owns a run of the application (specification §15.3, §15.5 Boot -> active -> Shutdown): resolves the directories,
-/// configures logging (<user data>/logs/retroverse.log), initializes SDL, opens the window with an OpenGL 4.5 core
-/// context, creates the GL device (debug output in RV_GL_DEBUG builds) and drives an IAppLogic through the main loop.
+/// configures logging (<user data>/logs/<AppIdentity::logFileName>), initializes SDL, opens the window with an OpenGL
+/// 4.5 core context, creates the GL device (debug output in RV_GL_DEBUG builds) and drives an IAppLogic through the
+/// main loop.
 ///
 /// The host handles quit requests, window close, resizes (framebuffer size) and Alt+Enter (borderless fullscreen; the
 /// key press is consumed, so it never reaches the logic's bindings), refreshes the window title with FPS and frame time
@@ -24,7 +38,7 @@ class IAppLogic;
 /// included, is the logic's. Exit codes: see ExitCode.
 class AppHost {
 public:
-    explicit AppHost(CommandLineOptions options);
+    explicit AppHost(CommandLineOptions options, AppIdentity identity = {});
 
     /// Runs `logic` to completion on the calling (main) thread and returns the process exit code. Never throws:
     /// unexpected exceptions are logged and reported as ExitCode::RuntimeFailure.
@@ -44,8 +58,11 @@ private:
     /// Handles quit, window close, resize and the fullscreen shortcut. Returns true when the event is consumed and must
     /// not reach the logic: the Alt+Enter press (platform::isFullscreenToggle).
     [[nodiscard]] bool handleHostEvent(AppContext& context, const SDL_Event& event) const;
+    /// "<name> <version>".
+    [[nodiscard]] std::string baseWindowTitle() const;
 
     CommandLineOptions m_options;
+    AppIdentity m_identity;
 };
 
 } // namespace rv::app

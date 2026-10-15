@@ -55,6 +55,10 @@ struct GpuMaterial {
     MaterialUniforms uniforms;
     /// Texture bound to the unit of each slot: the material's texture, or TextureDefaults::neutral(slot).
     std::array<GLuint, kMaterialTextureSlotCount> textures{};
+    /// The material's own texture of each slot (what the developer overlay shows), null where it has none and the
+    /// slot's neutral default is bound. Owned by the TextureCache (or the TextureDefaults: the checker of a source that
+    /// failed).
+    MaterialTextures textureSources{};
     /// Sampler bound next to it: the registry's sampler for the texture's wrap mode.
     std::array<GLuint, kMaterialTextureSlotCount> samplers{};
 };
@@ -85,6 +89,11 @@ public:
                                             const MaterialTextures& textures);
     /// The handle registered under `key`, if any.
     [[nodiscard]] std::optional<scene::MaterialHandle> find(std::string_view key) const;
+
+    /// Forgets every material and releases the uniform buffer (the samplers stay): the handles returned so far are no
+    /// longer valid, and render items that use them must not be drawn any more. For new content in the same renderer
+    /// (the asset preview loads another model).
+    void clear() noexcept;
 
     /// Writes every block into a new uniform buffer, when materials were added since the last upload (a no-op
     /// otherwise). Errors: InvalidArgument for an empty registry or a bad alignment, and the errors of Buffer::create.

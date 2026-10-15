@@ -57,6 +57,14 @@ public:
     [[nodiscard]] const Texture2D& image(std::string_view key, const assets::ImageData& image, ColorSpace colorSpace,
                                          TextureWrap wrap);
 
+    /// Releases every texture and forgets every source (failed ones included, so they are tried and logged again):
+    /// references returned so far are no longer valid. For new content in the same renderer (the asset preview loads
+    /// another model, or the same file changed on disk: its images keep their keys).
+    void clear() noexcept;
+    /// Counts the calls of clear(): whoever keeps something derived from the cache's textures (the developer overlay's
+    /// thumbnail views) drops it when the revision changes.
+    [[nodiscard]] std::uint64_t revision() const noexcept { return m_revision; }
+
     /// Textures uploaded so far (failed sources excluded).
     [[nodiscard]] std::size_t textureCount() const noexcept;
     /// Sources that fell back to the checker.
@@ -80,6 +88,7 @@ private:
     float m_anisotropy;
     /// Empty optional: the source failed and is served by the checker. std::map keeps references stable.
     std::map<std::string, std::optional<Texture2D>, std::less<>> m_textures;
+    std::uint64_t m_revision = 0;
 };
 
 } // namespace rv::gl

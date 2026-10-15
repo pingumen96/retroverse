@@ -25,7 +25,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
 
-- Outputs: `build/<preset>/bin` holds `retroverse.exe`, `rv_tests.exe`, `rv_platform_tests.exe` and the vcpkg DLLs.
+- Outputs: `build/<preset>/bin` holds `retroverse.exe`, `retroverse-asset-preview.exe` (developer builds only, see
+  "Asset preview"), `rv_tests.exe`, `rv_platform_tests.exe` and the vcpkg DLLs.
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`. The first
   configure in a fresh checkout or worktree restores packages from the local binary cache (a few minutes).
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
@@ -238,6 +239,47 @@ To check shader errors or hot reload, never edit the tracked shaders: copy `asse
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),
 then edit or break the copy's shaders while it runs; the log shows each rebuild or `<file>:<line>: error ...`.
 
+## Asset preview
+
+`retroverse-asset-preview.exe` (style §19.3, `tools/asset-preview`; developer builds only, it needs the Dear ImGui
+overlay) shows one asset in the model viewer's neutral studio with the host, renderer, scene instantiation and overlay
+of `rv_app` (`app::SceneGraphics`, `app::SceneInstance`, `devui::DevUi`): `retroverse-asset-preview <file.glb |
+file.gltf | manifest.json | prefab:<kind>>` with `--params '<json object>'` for a prefab, `--view lit | base-color |
+normals | uv-checker | wireframe`, `--panel <title>` (a tab brought forward at start, for screenshots) and the host
+options of `retroverse.exe` (`--smoke`, `--exit-after-frames`, `--frames`, `--hidden`, `--screenshot`,
+`--screenshot-size`, `--data-dir`, `--fixed-dt`, ...); without a target it shows the empty studio and waits for a file
+dropped on the window. It logs to `<user data>/logs/asset-preview.log` and keeps its layout in
+`<user data>/config/asset-preview-imgui.ini`. `--write-fixture <file.glb>` writes a CRT-like test model (Body,
+ScreenSurface, Anchor_TV_Stand, Anchor_ScreenLook, ColliderProxy; 71 x 61 x 56 cm) and exits without a window.
+
+- Controls: left drag orbits, middle or right drag pans, the wheel zooms (gamepad: right stick, left stick, triggers); F
+  frames the subject in the part of the view the panels leave visible (the framing follows the panels until the camera
+  is moved), R toggles the auto-rotation, 1 to 5 pick the view mode; F1 hides the panels, F5 reloads the shaders, F12
+  writes a screenshot; Esc closes a popup, else hides the panels, else quits. The subject's files are polled: a change
+  reloads it, also a manifest created next to a model.
+- Overlays (Asset panel): floor grid (10 cm, brighter every meter), a 1 m cube and a 1.70 m marker left of the subject,
+  the bounds with W/H/D in cm, node bounds, pivot axes, socket axes with their names, ScreenSurface outlines, collision
+  proxy outlines, vertex normals. The labels are drawn by the overlay: in screenshots they line up with the scene when
+  `--screenshot-size` has the window's aspect (1920x1080 for the default 1280x720 window).
+- Panels: Asset, Model (node tree, or a prefab's parts and sockets), Statistics (bounds in cm, primitives as potential
+  draw calls, triangles, vertices, textures with estimated GPU memory, glTF extensions), Materials (factors and texture
+  thumbnails), Manifest (its fields and the `validatePrefabManifest` results; brought forward when a manifest is
+  loaded or sits next to the model as `<name>.manifest.json` or `<name>.json`), Screen (each ScreenSurface with the
+  color bars it shows: glTF screens are drawn with `MAT_Screen_CRT` and the pattern instead of their own material),
+  Stats, Warnings, Log. Screenshots include the panels.
+
+```powershell
+build/msvc-x64-debug/bin/retroverse-asset-preview.exe --write-fixture build/preview/crt_fixture.glb
+build/msvc-x64-debug/bin/retroverse-asset-preview.exe build/preview/crt_fixture.glb --exit-after-frames --frames 5 `
+  --hidden --screenshot build/screenshots/preview_fixture.png --data-dir build/rvdata
+build/msvc-x64-debug/bin/retroverse-asset-preview.exe assets/manifests/prefabs/electronics.crt.consumer.generic.json `
+  --exit-after-frames --frames 5 --hidden --screenshot build/screenshots/preview_manifest.png --data-dir build/rvdata
+```
+
+The fixture shows W 71.0 / H 61.0 / D 56.0 cm, the four socket names and the color bars on its screen; the CRT manifest
+builds `prefab:crt` and reports one warning (the placeholder hash); a copy under `build/` whose `runtime.sockets.screen`
+names a missing socket reports that error.
+
 ## Layout and layering
 
 - `src/<module>/include/rv/<module>/*.hpp` public headers, `src/<module>/src/*.cpp`, `src/<module>/CMakeLists.txt`
@@ -246,7 +288,11 @@ then edit or break the copy's shaders while it runs; the log shows each rebuild 
   configure if they reach SDL3, glad or ImGui) -> `platform` (SDL3) -> `render` (OpenGL through glad; never
   includes SDL) -> `devui` (Dear ImGui, developer builds; its GPU-free part `rv_devui_model` is always built) -> `app`
   (composition root) -> `retroverse.exe`. Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`.
-- Tests: `tests/unit/<module>/test_*.cpp` (globbed into `rv_tests`, label `unit`, no SDL or OpenGL),
+- `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
+  its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
+  configuration and tested by `tests/unit/preview`.
+- Tests: `tests/unit/<module>/test_*.cpp` (globbed into `rv_tests`, label `unit`, no SDL or OpenGL; GLB files for
+  tests come from `rv/assets/glb_writer.hpp`),
   `tests/platform/test_*.cpp` (globbed into `rv_platform_tests`, label `unit`: SDL platform layer, no OpenGL),
   `tests/support/*` helpers (globbed into `rv_test_support`), `tests/input_scripts` (scripted verification runs),
   `tests/smoke` GPU tests (label `gpu`).

@@ -30,6 +30,7 @@ add_library(rv_devui STATIC
     src/panel_rendering.cpp
     src/panel_scene.cpp
     src/panel_stats.cpp
+    src/texture_previews.cpp
     src/widgets.cpp
 )
 add_library(rv::devui ALIAS rv_devui)

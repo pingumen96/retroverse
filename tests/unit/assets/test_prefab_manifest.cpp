@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "support/glb_builder.hpp"
+#include <rv/assets/glb_writer.hpp>
 #include <rv/assets/gltf_loader.hpp>
 #include <rv/assets/prefab_manifest.hpp>
 #include <rv/core/json.hpp>
@@ -219,20 +219,22 @@ TEST_CASE("assets/manifest: the style section 11 example parses", "[assets][mani
 }
 
 TEST_CASE("assets/manifest: validation against a loaded model", "[assets][manifest]") {
-    rv::test::GlbDescription description;
-    description.meshes.push_back(rv::test::makeQuadMesh("screen", 0.48f, 0.36f));
-    rv::test::GlbNode root;
+    rv::assets::GlbDescription description;
+    description.meshes.push_back(rv::assets::makeQuadMesh("screen", 0.48f, 0.36f));
+    rv::assets::GlbNode root;
     root.name = "Root";
     root.children = {1, 2, 3};
-    rv::test::GlbNode screen;
+    rv::assets::GlbNode screen;
     screen.name = "ScreenSurface";
     screen.mesh = 0;
-    rv::test::GlbNode look;
+    rv::assets::GlbNode look;
     look.name = "Anchor_ScreenLook";
-    rv::test::GlbNode power;
+    rv::assets::GlbNode power;
     power.name = "PowerButton";
     description.nodes = {root, screen, look, power};
-    const auto model = rv::assets::loadGltfFromMemory(rv::test::buildGlb(description), {});
+    const auto glb = rv::assets::buildGlb(description);
+    REQUIRE(glb.has_value());
+    const auto model = rv::assets::loadGltfFromMemory(*glb, {});
     REQUIRE(model.has_value());
 
     const PrefabManifest manifest = example();

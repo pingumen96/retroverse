@@ -89,6 +89,17 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   by screen coverage (style §20.2: 1-3 relevant shadow-casting lights). Meanwhile an unshadowed lamp standing on
   furniture must not reach the floor: the test room's table lamp ends its down light 0.8 m below the bulb, or it would
   light the floor under the sideboard and its compartment through the top.
+- Screens of glTF models in scenes: the asset preview shows its test pattern on a glTF model's ScreenSurface by drawing
+  the primitives of the socket's node with `MAT_Screen_CRT` and the pattern (it finds them by `gl::GpuModel::meshKey`),
+  but scene files cannot do it: the `materials` and `textures` of model objects are ignored (only prefab roles take
+  them). Covers and video on glTF CRTs (I3, I5) need a scene binding for model screens (a material and texture per
+  ScreenSurface socket, applied by `gl::GpuModel` when it appends the render items).
+- Asset preview, further (style §19.3): the LODs of a manifest (`runtime.lods`) and their switch distances are not
+  loaded yet (no LOD exists in M0); files open by drag and drop only (an open-file dialog, `SDL_ShowOpenFileDialog`, and
+  a folder browser would help); the scene labels are drawn by the overlay, over the scene whatever is in front, and
+  placed for the window's aspect, so a screenshot of another aspect than the window's misplaces them (draw them into
+  the scene targets with a text renderer, depth-tested, once one exists); glTF Validator results (style §26.3) are not
+  shown.
 - Point-light shadows: point lights cast none (key lights should be spots, logged otherwise). A cube map or a
   dual-paraboloid map would shadow a bare bulb or a pendant.
 - Cascaded shadow maps for large directional areas: the directional map is fitted to all the shadow casters, which

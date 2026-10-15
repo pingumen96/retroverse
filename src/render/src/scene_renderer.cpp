@@ -204,7 +204,9 @@ void SceneRenderer::drawShadedBatches(GLDevice& device, const SceneShaders& shad
         if (!m_meshes->contains(batch.mesh) || batch.material.value >= m_materials->uploadedCount()) {
             continue;
         }
-        const ShaderProgram* program = batch.shader == scene::ShaderKind::Unlit ? shaders.unlit : shaders.pbr;
+        const ShaderProgram* program = shaders.inspection != nullptr              ? shaders.inspection
+                                       : batch.shader == scene::ShaderKind::Unlit ? shaders.unlit
+                                                                                  : shaders.pbr;
         if (program == nullptr || !program->valid()) {
             continue;
         }

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -18,15 +19,12 @@
 #include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/debug_line_selection.hpp>
-#include <rv/app/frame_stats_log.hpp>
 #include <rv/app/model_viewer.hpp>
 #include <rv/app/overlay_policy.hpp>
+#include <rv/app/scene_graphics.hpp>
 #include <rv/app/scene_instance.hpp>
-#include <rv/app/screenshot_name.hpp>
 #include <rv/app/self_check.hpp>
 #include <rv/assets/gltf_loader.hpp>
-#include <rv/assets/image_io.hpp>
-#include <rv/assets/material_library.hpp>
 #include <rv/core/frame_clock.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/paths.hpp>
@@ -34,21 +32,10 @@
 #include <rv/input/action.hpp>
 #include <rv/input/input_script.hpp>
 #include <rv/platform/graphics_window.hpp>
-#include <rv/render/debug_draw.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
-#include <rv/render/material_registry.hpp>
-#include <rv/render/mesh_registry.hpp>
-#include <rv/render/post_processor.hpp>
-#include <rv/render/post_settings.hpp>
 #include <rv/render/scene_renderer.hpp>
-#include <rv/render/shader_library.hpp>
-#include <rv/render/shader_program.hpp>
 #include <rv/render/shadow_settings.hpp>
-#include <rv/render/texture.hpp>
-#include <rv/render/texture_cache.hpp>
-#include <rv/render/texture_defaults.hpp>
-#include <rv/render/view_targets.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/scene_description.hpp>
@@ -71,12 +58,6 @@
 namespace rv::app {
 namespace {
 
-#if defined(RV_DEV_ASSET_ROOT)
-constexpr bool kShaderHotReload = true;
-#else
-constexpr bool kShaderHotReload = false;
-#endif
-
 #if defined(RV_DEV_UI)
 /// Developer builds (with the developer overlay) log the frame statistics once per second.
 constexpr bool kDeveloperBuild = true;
@@ -84,41 +65,10 @@ constexpr bool kDeveloperBuild = true;
 constexpr bool kDeveloperBuild = false;
 #endif
 
-constexpr std::string_view kMaterialLibraryPath = "materials/base/materials.json";
 /// Where the developer overlay keeps its window layout, under <user data>/config.
 constexpr std::string_view kOverlayLayoutFile = "imgui.ini";
-/// Anisotropic filtering of textures and material samplers, and of the checker that replaces missing textures (plan
-/// 5.4: 8x), clamped to the device limit.
-constexpr float kTextureAnisotropy = 8.0f;
 /// Reference grid of --debug-draw in scenes: 1 m cells over 20 x 20 m around the origin.
 constexpr DebugGrid kSceneDebugGrid{10.0f, 1.0f};
-
-/// Creates the render targets of an output (`targets`) at `size`, or resizes them. Failures are logged once per size so
-/// a persistent one does not flood the log at the frame rate.
-bool prepareTargets(gl::ViewTargets& targets, glm::ivec2 size, std::string_view debugName,
-                    std::optional<glm::ivec2>& failedSize) {
-    Status status = ok();
-    if (!targets.valid()) {
-        auto created = gl::ViewTargets::create(size, debugName);
-        if (created) {
-            targets = std::move(*created);
-        } else {
-            status = propagate(created.error());
-        }
-    } else {
-        status = targets.resize(size);
-    }
-    if (status) {
-        failedSize.reset();
-        return true;
-    }
-    if (failedSize != size) {
-        spdlog::error("Render targets '{}' unavailable at {}x{}: {}", debugName, size.x, size.y,
-                      status.error().toString());
-        failedSize = size;
-    }
-    return false;
-}
 
 /// Width / height of a viewport, 16:9 for an empty one.
 float aspectOf(glm::ivec2 size) noexcept {
@@ -142,17 +92,6 @@ std::string describeDebugLines(const DebugLineSelection& selection, const DebugG
         add("socket axes");
     }
     return kinds;
-}
-
-assets::MaterialLibrary loadMaterials(const core::Paths& paths) {
-    auto library = assets::MaterialLibrary::loadFromFile(paths.assetRoot() / core::pathFromUtf8(kMaterialLibraryPath));
-    if (library) {
-        return std::move(*library);
-    }
-    assets::MaterialLibrary builtin;
-    spdlog::error("Material library unavailable, every material falls back to {}: {}", builtin.fallback().name,
-                  library.error().toString());
-    return builtin;
 }
 
 /// What the application shows: a scene file (--scene), or one glTF model in the model viewer (--model), with the loader
@@ -220,66 +159,10 @@ Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const c
     return source;
 }
 
-/// The programs of the scene, its shadow and ambient occlusion and its post-processing (ShaderLibrary handles), loaded
-/// at startup.
-struct ScenePrograms {
-    gl::ShaderHandle pbr;
-    gl::ShaderHandle unlit;
-    gl::ShaderHandle depth;
-    gl::ShaderHandle depthMasked;
-    gl::ShaderHandle ssao;
-    gl::ShaderHandle ssaoBlur;
-    gl::ShaderHandle bloomDownsampleFirst;
-    gl::ShaderHandle bloomDownsample;
-    gl::ShaderHandle bloomUpsample;
-    gl::ShaderHandle post;
-    gl::ShaderHandle antialiasing;
-};
-
-/// Loads the programs of ScenePrograms. A program that does not build is logged and stays empty until a reload
-/// succeeds (ShaderLibrary::load); errors only for an invalid description.
-Expected<ScenePrograms> loadScenePrograms(gl::ShaderLibrary& library) {
-    ScenePrograms programs;
-    const std::pair<gl::ShaderHandle ScenePrograms::*, gl::ShaderDesc> descriptions[] = {
-        {&ScenePrograms::pbr, {"pbr", "pbr/pbr.vert", "pbr/pbr.frag", {}}},
-        {&ScenePrograms::unlit, {"unlit_emissive", "pbr/pbr.vert", "unlit/unlit_emissive.frag", {}}},
-        {&ScenePrograms::depth, {"depth", "pbr/pbr.vert", "depth/depth.frag", {}}},
-        {&ScenePrograms::depthMasked, {"depth_masked", "pbr/pbr.vert", "depth/depth.frag", {"RV_ALPHA_TEST"}}},
-        {&ScenePrograms::ssao, {"ssao", "post/fullscreen.vert", "ssao/ssao.frag", {}}},
-        {&ScenePrograms::ssaoBlur, {"ssao_blur", "post/fullscreen.vert", "ssao/ssao_blur.frag", {}}},
-        {&ScenePrograms::bloomDownsampleFirst,
-         {"bloom_downsample_karis", "post/fullscreen.vert", "post/bloom_downsample.frag", {"RV_BLOOM_KARIS"}}},
-        {&ScenePrograms::bloomDownsample,
-         {"bloom_downsample", "post/fullscreen.vert", "post/bloom_downsample.frag", {}}},
-        {&ScenePrograms::bloomUpsample, {"bloom_upsample", "post/fullscreen.vert", "post/bloom_upsample.frag", {}}},
-        {&ScenePrograms::post, {"post", "post/fullscreen.vert", "post/post.frag", {}}},
-        {&ScenePrograms::antialiasing, {"fxaa", "post/fullscreen.vert", "post/fxaa.frag", {}}},
-    };
-    for (const auto& [handle, description] : descriptions) {
-        auto loaded = library.load(description);
-        if (!loaded) {
-            return propagate(loaded.error());
-        }
-        programs.*handle = *loaded;
-    }
-    return programs;
-}
-
-/// The post-processing programs of `programs` in `library`, as the views and the self-checks use them.
-gl::PostShaders postShadersOf(const gl::ShaderLibrary& library, const ScenePrograms& programs) {
-    gl::PostShaders post;
-    post.bloomDownsampleFirst = &library.get(programs.bloomDownsampleFirst);
-    post.bloomDownsample = &library.get(programs.bloomDownsample);
-    post.bloomUpsample = &library.get(programs.bloomUpsample);
-    post.post = &library.get(programs.post);
-    post.antialiasing = &library.get(programs.antialiasing);
-    return post;
-}
-
 /// --self-check srgb: logs the outcome; a check that fails, or cannot run, fails the run (exit code 3).
-void runSrgbCheck(AppContext& context, const gl::TextureDefaults& defaults, const gl::ShaderProgram& unlit,
-                  const gl::PostShaders& post) {
-    const auto results = runSrgbSelfCheck(context.device(), defaults, unlit, post);
+void runSrgbCheck(AppContext& context, const SceneGraphics& graphics) {
+    const auto results =
+        runSrgbSelfCheck(context.device(), graphics.textureDefaults(), graphics.unlitProgram(), graphics.postShaders());
     if (!results) {
         Error error = results.error();
         error.message = "sRGB self-check could not run: " + error.message;
@@ -302,8 +185,8 @@ void runSrgbCheck(AppContext& context, const gl::TextureDefaults& defaults, cons
 
 /// --self-check bloom: logs the measurements and the outcome; a check that fails, or cannot run, fails the run (exit
 /// code 3).
-void runBloomCheck(AppContext& context, const gl::PostShaders& post) {
-    const auto measurements = runBloomSelfCheck(context.device(), post);
+void runBloomCheck(AppContext& context, const SceneGraphics& graphics) {
+    const auto measurements = runBloomSelfCheck(context.device(), graphics.postShaders());
     if (!measurements) {
         Error error = measurements.error();
         error.message = "bloom self-check could not run: " + error.message;
@@ -355,22 +238,15 @@ Expected<std::optional<input::InputScript>> loadInputScript(const CommandLineOpt
 } // namespace
 
 struct RetroverseApp::State {
-    std::unique_ptr<gl::ShaderLibrary> shaders;
-    ScenePrograms programs;
-    std::optional<gl::ShaderHandle> debugShader; ///< loaded when debug lines are first shown
-    // Declared before the scene content and the renderer, which refer to them, so that they are destroyed after.
-    std::unique_ptr<gl::TextureDefaults> textureDefaults;
-    std::unique_ptr<gl::TextureCache> textures;
-    gl::MaterialRegistry materials;
-    gl::MeshRegistry meshes;
+    /// Shaders, textures, registries, the renderer and the outputs. Declared first: destroyed last, after the scene
+    /// content and the overlay, which refer to it.
+    std::unique_ptr<SceneGraphics> graphics;
     std::optional<SceneInstance> scene;
-    std::optional<gl::SceneRenderer> renderer;
-    std::optional<gl::DebugDraw> debugDraw; ///< created when debug lines are first shown
     /// The scene as described: its camera (start, reset) and objects (the developer overlay's list).
     scene::SceneDescription description;
     /// Reference grid of the debug lines.
     DebugGrid debugGrid;
-    /// Debug lines wanted (--debug-draw, the developer overlay) and those debugDraw holds.
+    /// Debug lines wanted (--debug-draw, the developer overlay) and those shown.
     DebugLineSelection debugLines;
     DebugLineSelection shownDebugLines;
     /// Developer overlay toggles: the scene pass as wireframe, anti-aliasing of the views, collision of the walker
@@ -386,17 +262,9 @@ struct RetroverseApp::State {
     scene::Camera camera;
     std::optional<FreeRoam> freeRoam;
     std::unique_ptr<AppInput> input;
-    /// Render targets of the window's view and of screenshots, each kept at its size (allocated on first use).
-    gl::ViewTargets windowTargets;
-    gl::ViewTargets screenshotTargets;
-    std::optional<glm::ivec2> failedWindowSize;
-    std::optional<glm::ivec2> failedScreenshotSize;
-    FrameStatsLog statsLog;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
-    bool lastFrameCaptured = false;   ///< --screenshot written
-    bool viewRendered = false;        ///< renderScene() ran during the current onRender (window or screenshot)
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
     devui::CaptureHandover captureHandover;
@@ -419,76 +287,19 @@ struct RetroverseApp::State {
         }
     }
 
-    void renderScene(AppContext& context, const gl::ViewTargets& targets) {
-        gl::SceneShaders shaderSet;
-        shaderSet.pbr = &shaders->get(programs.pbr);
-        shaderSet.unlit = &shaders->get(programs.unlit);
-        shaderSet.depth = &shaders->get(programs.depth);
-        shaderSet.depthMasked = &shaders->get(programs.depthMasked);
-        shaderSet.debugLines = debugShader ? &shaders->get(*debugShader) : nullptr;
-        shaderSet.ssao.occlusion = &shaders->get(programs.ssao);
-        shaderSet.ssao.blur = &shaders->get(programs.ssaoBlur);
-        shaderSet.post = postShadersOf(*shaders, programs);
-        const scene::EnvironmentSetup& environment = scene->environment();
-        gl::RenderView view;
-        view.camera = camera;
-        view.items = scene->renderItems();
-        view.lights = scene->lights();
-        view.shadowLight = scene->shadowLight();
+    /// The view of the frame: the scene from the walker's camera, with the overlay's rendering toggles.
+    [[nodiscard]] gl::RenderView view() const {
+        gl::RenderView view = makeRenderView(*scene, camera);
         view.shadowSettings = shadowSettings;
-        view.shadowCasterBounds = scene->shadowCasterBounds();
-        view.ssao = environment.ssao;
-        view.clearColor = glm::vec4(environment.clearColor, 1.0f);
-        view.post = gl::postSettingsFor(environment);
         view.post.antialiasing = antialiasing;
         view.timeSeconds = static_cast<float>(simulatedSeconds);
-        view.debugDraw = debugDraw && shownDebugLines.any() ? &*debugDraw : nullptr;
         view.wireframe = wireframe;
-        renderer->render(context.device(), shaderSet, view, targets);
-        viewRendered = true;
-    }
-
-    /// Name of a program (scene, post-processing, debug lines) that never built, or empty when all did.
-    [[nodiscard]] std::string_view missingSceneShader() const {
-        for (std::size_t index = 0; index < shaders->size(); ++index) {
-            if (const gl::ShaderStatus status = shaders->status(index); !status.valid) {
-                return status.name;
-            }
-        }
-        return {};
-    }
-
-    /// Renders the current view at --screenshot-size into the screenshot targets and writes it as an RGB PNG.
-    Status captureScreenshot(AppContext& context, const std::filesystem::path& path) {
-        const CommandLineOptions& options = context.options();
-        const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
-        if (!prepareTargets(screenshotTargets, size, "ScreenshotTargets", failedScreenshotSize)) {
-            return makeError(ErrorCode::GraphicsError, "no render targets for the screenshot", core::pathToUtf8(path));
-        }
-        renderScene(context, screenshotTargets);
-#if defined(RV_DEV_UI)
-        if (devUi && options.screenshotIncludeUi) {
-            devUi->renderTo(context.device(), screenshotTargets.output());
-        }
-#endif
-        gl::Framebuffer::unbind(); // onRender leaves the default framebuffer bound, also when the window is not drawn
-        auto image = screenshotTargets.output().readPixels();
-        if (!image) {
-            return propagate(image.error());
-        }
-        // The window is opaque: it shows the stored color whatever alpha the passes wrote (a material's alpha, say).
-        // Dropping the alpha channel makes the PNG show the same pixels.
-        if (auto written = assets::writePng(path, assets::convertChannels(*image, 3)); !written) {
-            return propagate(written.error());
-        }
-        spdlog::info("Screenshot written: {} ({}x{})", core::pathToUtf8(path), size.x, size.y);
-        return ok();
+        return view;
     }
 
     /// Shows the debug lines of `debugLines` (--debug-draw, the developer overlay's toggles) when they differ from
-    /// those shown: loads the debug program and creates the line buffer on first use, then uploads the selected kinds
-    /// (the reference grid, then the bounds and sockets of the scene's objects). A failure is reported once per change;
-    /// no lines are drawn then.
+    /// those shown: the selected kinds (the reference grid, then the bounds and sockets of the scene's objects). A
+    /// failure is reported once per change; no lines are drawn then.
     Status syncDebugLines() {
         if (debugLines == shownDebugLines) {
             return ok();
@@ -496,27 +307,12 @@ struct RetroverseApp::State {
         shownDebugLines = debugLines;
         if (!debugLines.any()) {
             spdlog::info("Debug lines off");
-            return ok();
-        }
-        if (!debugShader) {
-            auto debug =
-                shaders->load(gl::ShaderDesc{"debug_lines", "debug/debug_lines.vert", "debug/debug_lines.frag", {}});
-            if (!debug) {
-                return propagate(debug.error());
-            }
-            debugShader = *debug;
-        }
-        if (!debugDraw) {
-            auto draw = gl::DebugDraw::create("DebugLines");
-            if (!draw) {
-                return propagate(draw.error());
-            }
-            debugDraw = std::move(*draw);
+            return graphics->setDebugLines(scene::DebugLines{});
         }
         const scene::DebugLines lines =
             composeDebugLines(debugLines, debugGrid, scene->boundsLines(), scene->socketLines());
-        if (auto uploaded = debugDraw->setLines(lines); !uploaded) {
-            return propagate(uploaded.error());
+        if (auto shown = graphics->setDebugLines(lines); !shown) {
+            return shown;
         }
         spdlog::info("Debug lines: {} line(s): {}", lines.lineCount(), describeDebugLines(debugLines, debugGrid));
         return ok();
@@ -617,7 +413,8 @@ struct RetroverseApp::State {
         }
         devUi = std::move(*created);
         platform::GraphicsWindow& window = context.window();
-        devUi->addPanel(devui::makeStatsPanel({frameTimes, renderer->stats(), meshes, materials, *textures}),
+        devUi->addPanel(devui::makeStatsPanel({frameTimes, graphics->renderStats(), graphics->meshes(),
+                                               graphics->materials(), graphics->textures()}),
                         devui::DockSlot::Left);
         devUi->addPanel(devui::makeCameraPanel({camera, freeRoam->controller(), input->system(), collision,
                                                 [this] { resetToSceneCamera(); }}),
@@ -627,7 +424,9 @@ struct RetroverseApp::State {
                                                 scene->shadowLight(), scene->shadowNote(),
                                                 [this] { scene->applyLighting(); }}),
                         devui::DockSlot::Right);
-        devUi->addPanel(devui::makeMaterialsPanel({materials, scene->renderItems()}), devui::DockSlot::Right);
+        devUi->addPanel(devui::makeMaterialsPanel(
+                            {graphics->materials(), [this] { return scene->renderItems(); }, graphics->textures()}),
+                        devui::DockSlot::Right);
         devUi->addPanel(devui::makeScenePanel({description,
                                                [this, &window](std::size_t index) {
                                                    goTo(index, aspectOf(window.drawableSize()),
@@ -635,10 +434,19 @@ struct RetroverseApp::State {
                                                }}),
                         devui::DockSlot::Right);
         devUi->addPanel(devui::makeRenderingPanel({debugLines.grid, debugLines.bounds, debugLines.sockets, wireframe,
-                                                   antialiasing, scene->environment(), shadowSettings, *shaders,
-                                                   window}),
+                                                   antialiasing, scene->environment(), shadowSettings,
+                                                   graphics->shaders(), window}),
                         devui::DockSlot::RightBottom);
         devUi->addPanel(devui::makeLogPanel(), devui::DockSlot::Bottom);
+        // Over the scene in the window; in screenshots only when asked for.
+        std::function<void(gl::GLDevice&, const gl::Framebuffer&)> intoScreenshot;
+        if (context.options().screenshotIncludeUi) {
+            intoScreenshot = [this](gl::GLDevice& device, const gl::Framebuffer& target) {
+                devUi->renderTo(device, target);
+            };
+        }
+        graphics->setOverlay([this](gl::GLDevice& device) { devUi->renderToWindow(device); },
+                             std::move(intoScreenshot));
         return ok();
     }
 
@@ -697,46 +505,20 @@ Status RetroverseApp::onInit(AppContext& context) {
     if (!script) {
         return propagate(std::move(script.error()));
     }
-    const assets::MaterialLibrary library = loadMaterials(paths);
-
     auto state = std::make_unique<State>();
     state->description = std::move(source->description);
     state->debugGrid = source->grid;
-    state->shaders = std::make_unique<gl::ShaderLibrary>(paths.assetRoot() / "shaders");
-    auto programs = loadScenePrograms(*state->shaders);
-    if (!programs) {
-        return propagate(programs.error());
+    auto graphics = SceneGraphics::create(context);
+    if (!graphics) {
+        return propagate(graphics.error());
     }
-    state->programs = *programs;
-    spdlog::info("Shader hot reload {}; F5 reloads every shader",
-                 kShaderHotReload ? "on (sources checked every 500 ms)" : "off in this build");
-
-    const gl::GLCapabilities& caps = context.device().caps();
-    const float anisotropy = gl::clampAnisotropy(kTextureAnisotropy, caps.maxAnisotropy);
-    auto textureDefaults = gl::TextureDefaults::create(anisotropy);
-    if (!textureDefaults) {
-        return propagate(textureDefaults.error());
-    }
-    state->textureDefaults = std::make_unique<gl::TextureDefaults>(std::move(*textureDefaults));
-    state->textures = std::make_unique<gl::TextureCache>(paths.assetRoot(), *state->textureDefaults, anisotropy);
-    auto materials = gl::MaterialRegistry::create(*state->textureDefaults, anisotropy);
-    if (!materials) {
-        return propagate(materials.error());
-    }
-    state->materials = std::move(*materials);
-
-    const SceneResources resources{state->meshes, state->materials, *state->textures,
-                                   caps.uniformBufferOffsetAlignment};
-    auto sceneInstance = SceneInstance::create(state->description, library, source->loadModel, resources);
+    state->graphics = std::move(*graphics);
+    auto sceneInstance = SceneInstance::create(state->description, state->graphics->materialLibrary(),
+                                               source->loadModel, state->graphics->resources());
     if (!sceneInstance) {
         return propagate(sceneInstance.error());
     }
     state->scene.emplace(std::move(*sceneInstance));
-    auto renderer = gl::SceneRenderer::create(state->meshes, state->materials);
-    if (!renderer) {
-        return propagate(renderer.error());
-    }
-    state->renderer.emplace(std::move(*renderer));
     if (options.debugDraw) {
         state->debugLines = kAllDebugLines;
         if (auto shown = state->syncDebugLines(); !shown) {
@@ -776,20 +558,14 @@ Status RetroverseApp::onInit(AppContext& context) {
         state->input->captureMouseWhenFocused("startup");
     }
 
-    if (options.screenshot && options.frameLimit) {
-        spdlog::info("Screenshot of the last frame (frame {}, counted from 0) at {}x{} will be written to {}",
-                     *options.frameLimit - 1, options.screenshotWidth, options.screenshotHeight,
-                     core::pathToUtf8(*options.screenshot));
-    }
     if (options.selfCheck) {
         // With the programs the views use.
-        const gl::PostShaders post = postShadersOf(*state->shaders, state->programs);
         switch (*options.selfCheck) {
         case SelfCheck::Srgb:
-            runSrgbCheck(context, *state->textureDefaults, state->shaders->get(state->programs.unlit), post);
+            runSrgbCheck(context, *state->graphics);
             break;
         case SelfCheck::Bloom:
-            runBloomCheck(context, post);
+            runBloomCheck(context, *state->graphics);
             break;
         }
     }
@@ -826,8 +602,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.back(context);
     }
     if (actions.pressed(input::Action::ReloadShaders)) {
-        spdlog::info("Reloading shaders");
-        state.shaders->reloadAll();
+        state.graphics->reloadShaders();
     }
     if (actions.pressed(input::Action::Screenshot)) {
         state.screenshotRequested = true;
@@ -842,10 +617,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     state.freeRoam->setCollisionEnabled(state.collision);
     state.freeRoam->update(actions, static_cast<float>(deltaSeconds), state.camera);
     state.logScriptProgress(frame);
-
-    if constexpr (kShaderHotReload) {
-        state.shaders->pollHotReload();
-    }
+    state.graphics->pollShaderReload();
 }
 
 void RetroverseApp::onRender(AppContext& context) {
@@ -853,86 +625,16 @@ void RetroverseApp::onRender(AppContext& context) {
         return;
     }
     State& state = *m_state;
-    state.viewRendered = false;
-    // Screenshots are rendered before the window view, so the frame ends with the window blit and the state it
-    // documents (default framebuffer with the window's viewport, GL_FRAMEBUFFER_SRGB off) for whatever draws next.
-    if (state.screenshotRequested) {
-        state.screenshotRequested = false;
-        const std::filesystem::path path =
-            context.paths().screenshotsDir() / screenshotFileName(currentLocalTimestamp());
-        if (auto written = state.captureScreenshot(context, path); !written) {
-            spdlog::error("Screenshot failed: {}", written.error().toString());
-        }
-    }
-
-    const CommandLineOptions& options = context.options();
-    const bool lastFrame = options.frameLimit && context.frameIndex() + 1 == *options.frameLimit;
-    if (options.screenshot && lastFrame) {
-        if (auto written = state.captureScreenshot(context, *options.screenshot); written) {
-            state.lastFrameCaptured = true;
-        } else {
-            Error error = written.error();
-            error.message = "--screenshot failed: " + error.message;
-            context.failRun(std::move(error));
-        }
-    }
-
-    const glm::ivec2 windowSize = context.framebufferSize();
-    if (windowSize.x > 0 && windowSize.y > 0) {
-        if (prepareTargets(state.windowTargets, windowSize, "WindowTargets", state.failedWindowSize)) {
-            state.renderScene(context, state.windowTargets);
-            state.windowTargets.output().blitToDefault(context.device().state(), windowSize);
-        } else {
-            // No scene this frame (logged): a black window, with the overlay and its log still over it.
-            gl::Framebuffer::clearDefault(context.device().state(), windowSize);
-        }
-#if defined(RV_DEV_UI)
-        // Last, over the scene in the window: the screenshots above show the scene alone unless asked otherwise.
-        if (state.devUi) {
-            state.devUi->renderToWindow(context.device());
-        }
-#endif
-    }
-
-    // The statistics of the last view rendered this frame: the window's, or the screenshot's when the window is empty.
-    // A frame that rendered no view (a minimized window) counts its time only: the renderer's statistics still
-    // describe an earlier view.
-    if (state.viewRendered) {
-        state.statsLog.record(context.clock().deltaSeconds(), state.renderer->stats());
-    } else {
-        state.statsLog.recordWithoutView(context.clock().deltaSeconds());
-    }
-    if constexpr (kDeveloperBuild) {
-        if (const std::optional<std::string> summary = state.statsLog.takeIntervalSummary()) {
-            spdlog::info("{}", *summary);
-        }
-    }
+    state.graphics->renderFrame(context, state.view(), state.screenshotRequested);
+    state.screenshotRequested = false;
 }
 
 void RetroverseApp::onShutdown(AppContext& context) {
-    const CommandLineOptions& options = context.options();
-    if (m_state && options.frameLimit) {
-        m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
-        if (const std::optional<std::string> summary = m_state->statsLog.runSummary("Frame stats of the run")) {
-            spdlog::info("{}", *summary);
+    if (m_state) {
+        if (context.options().frameLimit) {
+            m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }
-    }
-    // An unattended run must not pass when it could never draw its scene completely (its frames and screenshot miss
-    // surfaces, the bloom or the tonemap).
-    if (m_state && options.frameLimit && !m_state->missingSceneShader().empty()) {
-        context.failRun(Error{ErrorCode::GraphicsError,
-                              fmt::format("the scene was never drawn completely: shader '{}' did not build (see the "
-                                          "errors above)",
-                                          m_state->missingSceneShader()),
-                              core::pathToUtf8(m_state->shaders->root())});
-    }
-    // Nor when it ended (Esc, window closed, quit request) before the last frame, which --screenshot captures: a file
-    // left at that path by an earlier run must not pass for this run's result.
-    if (m_state && options.screenshot && !m_state->lastFrameCaptured && !context.failure()) {
-        context.failRun(Error{ErrorCode::ValidationFailed,
-                              fmt::format("--screenshot was not written: the run ended after {} of {} frame(s)",
-                                          context.frameIndex(), options.frameLimit.value_or(0)),
-                              core::pathToUtf8(*options.screenshot)});
+        m_state->graphics->finishRun(context);
     }
     m_state.reset();
 }

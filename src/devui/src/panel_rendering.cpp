@@ -6,13 +6,12 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/devui/panels.hpp>
+#include <rv/devui/widgets.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/render/shader_library.hpp>
 #include <rv/render/shadow_settings.hpp>
 #include <rv/render/ssao_settings.hpp>
 #include <rv/scene/scene_description.hpp>
-
-#include "widgets.hpp"
 
 namespace rv::devui {
 namespace {

@@ -36,43 +36,15 @@ constexpr std::string_view kDescription =
 
 core::ArgParser makeParser() {
     core::ArgParser parser("retroverse", std::string(kDescription));
-    parser.flag("version", "Print the version and exit.")
-        .option("width", "pixels", "Initial window width.", std::to_string(CommandLineOptions::kDefaultWindowWidth))
-        .option("height", "pixels", "Initial window height.", std::to_string(CommandLineOptions::kDefaultWindowHeight))
-        .flag("fullscreen", "Start in borderless fullscreen.")
-        .flag("hidden", "Never show the window; only with --smoke or --exit-after-frames.")
-        .flag("no-vsync", "Disable vertical synchronization.")
-        .flag("smoke", "Render a few frames (see --frames) and exit. The exit code is 1 when the run stops early or, "
-                       "in builds with GL debug output, when High-severity OpenGL debug messages occur.")
-        .option("frames", "n",
-                fmt::format("Frames to render before exiting with --smoke or --exit-after-frames (default {}).",
-                            CommandLineOptions::kDefaultFrameLimit))
-        .flag("exit-after-frames", "Exit after the number of frames given by --frames.")
-        .flag("exit", "Same as --exit-after-frames.")
-        .flag("gl-selftest", "Provoke one GL_INVALID_ENUM after initialization to prove that OpenGL errors reach "
-                             "the log, then continue.")
-        .option("asset-root", "dir", "Asset directory (overrides RV_ASSET_ROOT and the defaults).")
-        .option("data-dir", "dir", "User data directory: config, cache and logs.")
-        .flag("portable", "Keep user data next to the executable (RetroverseData).")
-        .option("log-level", "level", "One of trace, debug, info, warn, error.", "info")
-        .flag("no-dialogs", "Never show message boxes; failures are only logged. Implied by --smoke and "
-                            "--exit-after-frames.")
+    addHostOptions(parser);
+    parser
         .option("scene", "name|file",
                 fmt::format("Scene to load: a name from <asset root>/{} (default {}) or the path of a scene file.",
                             kSceneDirectory, kDefaultSceneName))
-        .option("screenshot", "png", "Write a PNG of the last frame; only with --smoke or --exit-after-frames.")
-        .option("screenshot-size", "WxH",
-                fmt::format("Resolution of --screenshot and F12 screenshots, independent of the window (default "
-                            "{}x{}).",
-                            CommandLineOptions::kDefaultScreenshotWidth, CommandLineOptions::kDefaultScreenshotHeight))
         .option("input-script", "json",
                 "Replace the input of chosen frames with scripted action values, a JSON array of steps such as "
                 "[{\"fromFrame\": 0, \"toFrame\": 119, \"actions\": {\"move_forward\": 1}}] (frames count from 0, "
                 "both included).")
-        .option("fixed-dt", "seconds",
-                fmt::format("Advance the simulation by this time step every frame instead of the measured frame time "
-                            "(at most {} s), for reproducible automated runs, e.g. 0.016667.",
-                            CommandLineOptions::kMaxFixedDeltaSeconds))
         .option("model", "file",
                 "glTF model (.gltf or .glb) to inspect instead of a scene: drawn at the origin with a three-point "
                 "light rig and a camera framing it. Not together with --scene.")
@@ -301,71 +273,82 @@ Status applyRunLength(const core::ParsedArgs& args, CommandLineOptions& options)
 
 } // namespace
 
-Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> arguments) {
-    const core::ArgParser parser = makeParser();
-    const auto args = parser.parse(arguments);
-    if (!args) {
-        return propagate(args.error());
-    }
+void addHostOptions(core::ArgParser& parser) {
+    parser.flag("version", "Print the version and exit.")
+        .option("width", "pixels", "Initial window width.", std::to_string(CommandLineOptions::kDefaultWindowWidth))
+        .option("height", "pixels", "Initial window height.", std::to_string(CommandLineOptions::kDefaultWindowHeight))
+        .flag("fullscreen", "Start in borderless fullscreen.")
+        .flag("hidden", "Never show the window; only with --smoke or --exit-after-frames.")
+        .flag("no-vsync", "Disable vertical synchronization.")
+        .flag("smoke", "Render a few frames (see --frames) and exit. The exit code is 1 when the run stops early or, "
+                       "in builds with GL debug output, when High-severity OpenGL debug messages occur.")
+        .option("frames", "n",
+                fmt::format("Frames to render before exiting with --smoke or --exit-after-frames (default {}).",
+                            CommandLineOptions::kDefaultFrameLimit))
+        .flag("exit-after-frames", "Exit after the number of frames given by --frames.")
+        .flag("exit", "Same as --exit-after-frames.")
+        .flag("gl-selftest", "Provoke one GL_INVALID_ENUM after initialization to prove that OpenGL errors reach "
+                             "the log, then continue.")
+        .option("asset-root", "dir", "Asset directory (overrides RV_ASSET_ROOT and the defaults).")
+        .option("data-dir", "dir", "User data directory: config, cache and logs.")
+        .flag("portable", "Keep user data next to the executable (RetroverseData).")
+        .option("log-level", "level", "One of trace, debug, info, warn, error.", "info")
+        .flag("no-dialogs", "Never show message boxes; failures are only logged. Implied by --smoke and "
+                            "--exit-after-frames.")
+        .option("screenshot", "png", "Write a PNG of the last frame; only with --smoke or --exit-after-frames.")
+        .option("screenshot-size", "WxH",
+                fmt::format("Resolution of --screenshot and F12 screenshots, independent of the window (default "
+                            "{}x{}).",
+                            CommandLineOptions::kDefaultScreenshotWidth, CommandLineOptions::kDefaultScreenshotHeight))
+        .option("fixed-dt", "seconds",
+                fmt::format("Advance the simulation by this time step every frame instead of the measured frame time "
+                            "(at most {} s), for reproducible automated runs, e.g. 0.016667.",
+                            CommandLineOptions::kMaxFixedDeltaSeconds));
+}
 
-    CommandLineOptions options;
-    options.showHelp = args->has("help");
-    options.showVersion = args->has("version");
-    if (options.showHelp || options.showVersion) {
-        return options;
-    }
-
-    auto width = windowExtent(*args, "width", CommandLineOptions::kDefaultWindowWidth);
+Status applyHostOptions(const core::ParsedArgs& args, CommandLineOptions& options) {
+    auto width = windowExtent(args, "width", CommandLineOptions::kDefaultWindowWidth);
     if (!width) {
         return propagate(width.error());
     }
-    auto height = windowExtent(*args, "height", CommandLineOptions::kDefaultWindowHeight);
+    auto height = windowExtent(args, "height", CommandLineOptions::kDefaultWindowHeight);
     if (!height) {
         return propagate(height.error());
     }
     options.windowWidth = *width;
     options.windowHeight = *height;
-    options.fullscreen = args->has("fullscreen");
-    options.hidden = args->has("hidden");
-    options.vsync = !args->has("no-vsync");
+    options.fullscreen = args.has("fullscreen");
+    options.hidden = args.has("hidden");
+    options.vsync = !args.has("no-vsync");
 
-    options.smoke = args->has("smoke");
-    options.exitAfterFrames = args->has("exit-after-frames") || args->has("exit");
-    if (auto runLength = applyRunLength(*args, options); !runLength) {
+    options.smoke = args.has("smoke");
+    options.exitAfterFrames = args.has("exit-after-frames") || args.has("exit");
+    if (auto runLength = applyRunLength(args, options); !runLength) {
         return propagate(runLength.error());
     }
-    options.glSelfTest = args->has("gl-selftest");
+    options.glSelfTest = args.has("gl-selftest");
 
-    auto assetRoot = pathValue(*args, "asset-root");
+    auto assetRoot = pathValue(args, "asset-root");
     if (!assetRoot) {
         return propagate(assetRoot.error());
     }
-    auto dataDir = pathValue(*args, "data-dir");
+    auto dataDir = pathValue(args, "data-dir");
     if (!dataDir) {
         return propagate(dataDir.error());
     }
     options.assetRoot = std::move(*assetRoot);
     options.dataDir = std::move(*dataDir);
-    options.portable = args->has("portable");
+    options.portable = args.has("portable");
 
-    auto level = logLevel(*args);
+    auto level = logLevel(args);
     if (!level) {
         return propagate(level.error());
     }
     options.logLevel = *level;
     // A frame-limited run may be unattended (scripts, agents): a modal message box would keep it from ever exiting.
-    options.noDialogs = args->has("no-dialogs") || options.frameLimit.has_value();
+    options.noDialogs = args.has("no-dialogs") || options.frameLimit.has_value();
 
-    auto scene = nonEmptyValue(*args, "scene");
-    if (!scene) {
-        return propagate(scene.error());
-    }
-    if (*scene && isSceneName(**scene)) {
-        if (auto name = validateSceneName(**scene); !name) {
-            return propagate(name.error());
-        }
-    }
-    auto screenshot = pathValue(*args, "screenshot");
+    auto screenshot = pathValue(args, "screenshot");
     if (!screenshot) {
         return propagate(screenshot.error());
     }
@@ -380,16 +363,47 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
                              "--screenshot=" + core::pathToUtf8(**screenshot));
         }
     }
-    if (auto size = applyScreenshotSize(*args, options); !size) {
+    if (auto size = applyScreenshotSize(args, options); !size) {
         return propagate(size.error());
+    }
+    auto fixedDt = fixedDeltaSeconds(args);
+    if (!fixedDt) {
+        return propagate(fixedDt.error());
+    }
+    options.screenshot = std::move(*screenshot);
+    options.fixedDeltaSeconds = *fixedDt;
+    return ok();
+}
+
+Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> arguments) {
+    const core::ArgParser parser = makeParser();
+    const auto args = parser.parse(arguments);
+    if (!args) {
+        return propagate(args.error());
+    }
+
+    CommandLineOptions options;
+    options.showHelp = args->has("help");
+    options.showVersion = args->has("version");
+    if (options.showHelp || options.showVersion) {
+        return options;
+    }
+    if (auto host = applyHostOptions(*args, options); !host) {
+        return propagate(host.error());
+    }
+
+    auto scene = nonEmptyValue(*args, "scene");
+    if (!scene) {
+        return propagate(scene.error());
+    }
+    if (*scene && isSceneName(**scene)) {
+        if (auto name = validateSceneName(**scene); !name) {
+            return propagate(name.error());
+        }
     }
     auto inputScript = pathValue(*args, "input-script");
     if (!inputScript) {
         return propagate(inputScript.error());
-    }
-    auto fixedDt = fixedDeltaSeconds(*args);
-    if (!fixedDt) {
-        return propagate(fixedDt.error());
     }
     auto model = pathValue(*args, "model");
     if (!model) {
@@ -409,9 +423,7 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     }
     options.spawn = *spawn;
     options.scene = std::move(*scene);
-    options.screenshot = std::move(*screenshot);
     options.inputScript = std::move(*inputScript);
-    options.fixedDeltaSeconds = *fixedDt;
     options.model = std::move(*model);
     options.debugDraw = args->has("debug-draw");
     options.devUiOpen = args->has("devui-open");

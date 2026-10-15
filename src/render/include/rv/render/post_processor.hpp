@@ -47,9 +47,9 @@ struct PostShaders {
 ///     the output, which smooths the stair-steps of edges and copies every other pixel exactly.
 /// The parameters reach the shaders through the PostUniforms block (UniformBinding::Post, written per call); the
 /// sources are bound to the PostTextureUnit units with a bilinear sampler clamped to the edges. A GpuTimer measures
-/// all the steps. When the block cannot be written, the view is shown without post-processing like without the post
-/// program (logged once, and again only when the cause changes). Nothing is allocated per call. Main thread only;
-/// destroy it while the GL context is current.
+/// all the steps. Settings without tonemap (PostSettings::tonemap off: the inspection views) show the HDR scene as it
+/// is, like a missing post program; so does a view whose block cannot be written (logged once, and again only when the
+/// cause changes). Nothing is allocated per call. Main thread only; destroy it while the GL context is current.
 class PostProcessor {
 public:
     /// An empty post-processor, whose apply() does nothing.

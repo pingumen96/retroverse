@@ -15,8 +15,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include "support/glb_builder.hpp"
 #include "support/log_capture.hpp"
+#include <rv/assets/glb_writer.hpp>
 #include <rv/assets/gltf_loader.hpp>
 #include <rv/assets/material_library.hpp>
 #include <rv/core/math.hpp>
@@ -467,25 +467,27 @@ namespace {
 
 /// A model with a 0.4 x 0.3 m body quad, a ColliderProxy quad and an anchor: Root > Body, ColliderProxy, Anchor_Top.
 std::vector<std::byte> makeModelGlb() {
-    rv::test::GlbDescription description;
-    description.meshes.push_back(rv::test::makeQuadMesh("body", 0.4f, 0.3f));
-    description.meshes.push_back(rv::test::makeQuadMesh("collider", 0.5f, 0.4f));
-    rv::test::GlbNode root;
+    rv::assets::GlbDescription description;
+    description.meshes.push_back(rv::assets::makeQuadMesh("body", 0.4f, 0.3f));
+    description.meshes.push_back(rv::assets::makeQuadMesh("collider", 0.5f, 0.4f));
+    rv::assets::GlbNode root;
     root.name = "Root";
     root.children = {1, 2, 3};
-    rv::test::GlbNode body;
+    rv::assets::GlbNode body;
     body.name = "Body";
     body.translation = glm::vec3(0.0f, 0.15f, 0.0f);
     body.mesh = 0;
-    rv::test::GlbNode collider;
+    rv::assets::GlbNode collider;
     collider.name = "ColliderProxy";
     collider.translation = glm::vec3(0.0f, 0.2f, 0.0f);
     collider.mesh = 1;
-    rv::test::GlbNode anchor;
+    rv::assets::GlbNode anchor;
     anchor.name = "Anchor_Top";
     anchor.translation = glm::vec3(0.0f, 0.3f, 0.0f);
     description.nodes = {root, body, collider, anchor};
-    return rv::test::buildGlb(description);
+    auto glb = rv::assets::buildGlb(description);
+    REQUIRE(glb.has_value());
+    return std::move(*glb);
 }
 
 using SharedModel = std::shared_ptr<const rv::assets::ModelData>;

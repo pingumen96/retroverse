@@ -26,15 +26,6 @@ std::size_t findOrAdd(Index& index, std::vector<Entry>& entries, const std::stri
     return index.emplace(key, entries.size() - 1).first->second;
 }
 
-/// Pattern size for `part` drawn with `model`: the aspect of its surface as drawn, about assets::kPatternPixelsPerMeter
-/// pixels per meter of it.
-glm::ivec2 patternSizeOf(const scene::ScenePart& part, const glm::mat4& model) {
-    const glm::vec2 metersPerUnit = geometry::uvMetersPerUnit(*part.mesh, model);
-    const float aspect = metersPerUnit.y > 0.0f ? metersPerUnit.x / metersPerUnit.y : 1.0f;
-    return assets::patternSizeForAspect(aspect,
-                                        assets::patternLongSideFor(std::max(metersPerUnit.x, metersPerUnit.y)));
-}
-
 class MaterialPlanner {
 public:
     explicit MaterialPlanner(std::vector<PlannedMaterial>& materials) : m_materials(materials) {}
@@ -49,7 +40,7 @@ public:
         std::string key = object.id + "/" + part.role;
         glm::ivec2 patternSize(0);
         if (part.texture->kind == scene::TextureSource::Kind::Pattern) {
-            patternSize = patternSizeOf(part, model);
+            patternSize = patternSizeFor(*part.mesh, model);
             key += fmt::format("@{}x{}", patternSize.x, patternSize.y);
         }
         return findOrAdd(m_instances, m_materials, key, [&] {
@@ -78,6 +69,13 @@ private:
 };
 
 } // namespace
+
+glm::ivec2 patternSizeFor(const geometry::MeshData& mesh, const glm::mat4& model) {
+    const glm::vec2 metersPerUnit = geometry::uvMetersPerUnit(mesh, model);
+    const float aspect = metersPerUnit.y > 0.0f ? metersPerUnit.x / metersPerUnit.y : 1.0f;
+    return assets::patternSizeForAspect(aspect,
+                                        assets::patternLongSideFor(std::max(metersPerUnit.x, metersPerUnit.y)));
+}
 
 std::size_t SceneContentPlan::pictureMaterialCount() const noexcept {
     return static_cast<std::size_t>(std::count_if(materials.begin(), materials.end(),

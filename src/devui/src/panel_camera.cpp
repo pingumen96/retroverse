@@ -6,11 +6,10 @@
 
 #include <rv/core/math.hpp>
 #include <rv/devui/panels.hpp>
+#include <rv/devui/widgets.hpp>
 #include <rv/input/input_system.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/first_person_controller.hpp>
-
-#include "widgets.hpp"
 
 namespace rv::devui {
 namespace {

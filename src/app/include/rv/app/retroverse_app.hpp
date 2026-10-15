@@ -9,14 +9,14 @@ namespace rv::app {
 /// The Retroverse application logic. M0 step 10 content: loads the scene selected by --scene (default m0_testroom), or
 /// with --model one glTF model in the model viewer (makeModelViewerScene: the model at the origin, a three-point light
 /// rig, a camera framing it), turns it into drawable content (SceneInstance: deduplicated meshes and materials, glTF
-/// models, render items, lights, collision world) and draws it with the batched, instanced gl::SceneRenderer (PBR and
-/// unlit emissive materials, scene textures such as cartridge covers and CRT color bars, the scene's lights with the
-/// key light's shadow map, hemispheric ambient darkened by screen-space ambient occlusion after a depth pre-pass) as
-/// linear radiance into an HDR target, post-processed (bloom, exposure, vignette, ACES
-/// tonemapping, dithering: the post-processing of the scene's environment) into an sRGB target that is copied to the
-/// window, from a first-person camera walking the scene (FreeRoam: starts at the scene camera, collides with the walls
-/// and furniture). The window and the screenshots each have their own gl::ViewTargets. --debug-draw adds debug lines
-/// over the scene: object bounds, socket axes and a world grid.
+/// models, render items, lights, collision world) and draws it through SceneGraphics (shared with the asset preview)
+/// with the batched, instanced gl::SceneRenderer (PBR and unlit emissive materials, scene textures such as cartridge
+/// covers and CRT color bars, the scene's lights with the key light's shadow map, hemispheric ambient darkened by
+/// screen-space ambient occlusion after a depth pre-pass) as linear radiance into an HDR target, post-processed (bloom,
+/// exposure, vignette, ACES tonemapping, dithering: the post-processing of the scene's environment) into an sRGB target
+/// that is copied to the window, from a first-person camera walking the scene (FreeRoam: starts at the scene camera,
+/// collides with the walls and furniture). The window and the screenshots each have their own gl::ViewTargets.
+/// --debug-draw adds debug lines over the scene: object bounds, socket axes and a world grid.
 ///
 /// Frame statistics (gl::FrameStats: draw calls, instances, triangles, batches, shader switches, culled items, GPU
 /// times of the shadow map, the depth pre-pass, the ambient occlusion, the scene pass and the post-processing) and

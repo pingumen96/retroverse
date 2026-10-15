@@ -32,6 +32,7 @@ add_library(rv_app STATIC
     src/bloom_self_check.cpp
     src/free_roam.cpp
     src/retroverse_app.cpp
+    src/scene_graphics.cpp
     src/scene_instance.cpp
     src/srgb_self_check.cpp
 )
