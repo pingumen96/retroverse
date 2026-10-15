@@ -258,6 +258,12 @@ std::string formatRunReport(const RunReport& report) {
                                      {"medium", report.debugMessages->medium},
                                      {"low", report.debugMessages->low}};
     }
+    if (report.glSelfTest) {
+        json["glSelfTest"] = Json{{"errorFlagRaised", report.glSelfTest->errorFlagRaised},
+                                  {"debugOutputActive", report.glSelfTest->debugOutputActive},
+                                  {"messagesCaptured", report.glSelfTest->messagesCaptured},
+                                  {"highSeverityCaptured", report.glSelfTest->highSeverityCaptured}};
+    }
     Json frames;
     if (report.frameLimit) {
         frames["limit"] = *report.frameLimit;
@@ -325,6 +331,14 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     if (auto messages = fields.optionalObject("debugMessages")) {
         report.debugMessages = DebugMessageCounts{messages->count("high"), messages->count("medium"),
                                                   messages->count("low")};
+    }
+    if (auto selfTest = fields.optionalObject("glSelfTest")) {
+        SelfTestOutcome outcome;
+        outcome.errorFlagRaised = selfTest->boolean("errorFlagRaised");
+        outcome.debugOutputActive = selfTest->boolean("debugOutputActive");
+        outcome.messagesCaptured = selfTest->count("messagesCaptured");
+        outcome.highSeverityCaptured = selfTest->count("highSeverityCaptured", outcome.messagesCaptured);
+        report.glSelfTest = outcome;
     }
     if (auto frames = fields.optionalObject("frames")) {
         if (const auto limit = frames->optionalCount("limit", std::numeric_limits<std::uint32_t>::max())) {

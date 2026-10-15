@@ -62,7 +62,8 @@ private:
     /// Completes the report with `exitCode` and writes it to the --run-report file; returns the exit code of the run,
     /// ExitCode::RuntimeFailure instead of ExitCode::Ok when the report could not be written.
     [[nodiscard]] ExitCode finishReport(ExitCode exitCode) noexcept;
-    /// Runs until quit or the frame limit; an error means presentation failed.
+    /// Runs until quit or the frame limit, keeping RunReport::framesRendered current after every frame; an error means
+    /// presentation failed.
     [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context) const;
     /// Handles quit, window close, resize and the fullscreen shortcut. Returns true when the event is consumed and must
     /// not reach the logic: the Alt+Enter press (platform::isFullscreenToggle).

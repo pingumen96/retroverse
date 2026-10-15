@@ -140,17 +140,22 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 
 ### Testing and automation
 
-- **Continuous integration:** the repository builds and tests locally only (plan §4.2: a remote and CI need the
-  user's go-ahead). A hosted Windows runner can build every preset and run the unit tests; its GPU smoke tests would
-  skip (no OpenGL 4.5 context: exit code 77), so the GPU tests and the golden comparison need a self-hosted runner on
-  the reference machine (`scripts/gate.ps1 -Gate A` is the command), and the vcpkg binary cache a shared location.
+- **Continuous integration:** none yet: the GitHub repository has no workflow and every build and test runs locally
+  (setting up CI acts outside the machine and waits for the owner's go-ahead). A hosted Windows runner can build every
+  preset and run the unit tests; its GPU smoke tests would skip (no OpenGL 4.5 context: exit code 77), so the GPU tests
+  and the golden comparison need a self-hosted runner on the reference machine (`scripts/gate.ps1 -Gate A` is the
+  command), and the vcpkg binary cache a shared location.
 - **More golden images:** G01 is the only golden and is compared on the reference machine only (GL_RENDERER and
   GL_VERSION must match its metadata). G02-G10 (style §26.1) come with the rooms they show (I3-I8); golden images per
   quality profile come with the profiles (I8). Other machines could compare with a perceptual metric and a looser
   tolerance instead of skipping.
-- **Benchmark runs:** the run report (`--run-report`) records the last view's statistics and GPU times; the NFR
-  benchmarks (plan §7: `--bench --frames 600`, p50/p99 frame times) need frame time percentiles over the run in it and
-  a fixed camera path (`--input-script`), first in I2/I3, in full in I8.
+- **Run report of an invalid command line:** `--run-report` takes effect once the command line parses, so a script
+  that passes a bad option gets exit code 2 and the usage on stderr but no report. A minimal report (exit code, the
+  parse error) would need the report path read before the other options are validated.
+- **Benchmark runs:** the run report (`--run-report`) records the last view's statistics and GPU times; the frame time
+  benchmarks of specification NFR-03 and NFR-04 (60 FPS at 1080p, p99 at most 33.3 ms; a `--bench --frames 600` run)
+  need frame time percentiles over the run in it and a fixed camera path (`--input-script`), first in I2/I3, in full in
+  I8.
 
 ### Platform and infrastructure
 

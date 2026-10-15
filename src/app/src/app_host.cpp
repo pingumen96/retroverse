@@ -337,14 +337,13 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     std::optional<SelfTestOutcome> selfTest;
     if (m_options.glSelfTest) {
         selfTest = runGlSelfTest(**device);
+        m_report.glSelfTest = selfTest;
     }
 
     if (auto loop = runMainLoop(logic, context); !loop) {
-        m_report.framesRendered = context.m_frameIndex;
         reportUnexpectedFailure(loop.error().toString());
         return ExitCode::RuntimeFailure;
     }
-    m_report.framesRendered = context.m_frameIndex;
     // Release the logic's GPU resources now, so that messages they cause still count towards the result.
     logicScope.shutdown();
     if (context.m_failure) {
@@ -445,6 +444,9 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
             return propagate(presented.error());
         }
         ++context.m_frameIndex;
+        // Kept current every frame, so that a report written after an exception escaped the loop counts the frames
+        // presented before it.
+        context.m_report.framesRendered = context.m_frameIndex;
 
         if (m_options.frameLimit && context.m_frameIndex >= *m_options.frameLimit) {
             spdlog::info("Rendered {} frame(s), stopping as requested", context.m_frameIndex);

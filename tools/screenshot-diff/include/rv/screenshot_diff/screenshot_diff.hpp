@@ -14,10 +14,10 @@
 
 namespace rv::screenshot_diff {
 
-/// How far a screenshot may drift from its golden image (style §26.1, plan §7): a pixel differs when one of its color
-/// channels differs by more than channelThreshold (of 255), and the images match when at most maxDifferingPercent of
-/// their pixels differ. The defaults absorb what another run of the same build, driver and GPU may change (a step or
-/// two of dithering, texture filtering or FXAA), not a change of the look.
+/// How far a screenshot may drift from its golden image (style §26.1, docs/testing/gate-a.md): a pixel differs when one
+/// of its color channels differs by more than channelThreshold (of 255), and the images match when at most
+/// maxDifferingPercent of their pixels differ. The defaults absorb what another run of the same build, driver and GPU
+/// may change (a step or two of dithering, texture filtering or FXAA), not a change of the look.
 struct Tolerance {
     /// 0..255.
     int channelThreshold = 6;

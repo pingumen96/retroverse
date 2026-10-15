@@ -37,8 +37,8 @@ and the wood, plaster, rug, metal and plastic surfaces. The checklist of style.m
 - **Verification:** more than 500 unit tests (GPU-free, plus the SDL platform layer), GPU smoke tests that run the
   executables on every reference scene and check their reports and screenshots (frame statistics, OpenGL errors, the
   sRGB, bloom and FXAA self-checks, the shadow, the ambient occlusion, the overlay, the asset preview, the golden
-  image), and `scripts/gate.ps1`, which builds the Debug, RelWithDebInfo and Release configurations and runs all of
-  it.
+  image), and `scripts/gate.ps1`, which builds the Debug, RelWithDebInfo and Release configurations and runs the unit
+  tests, the smoke tests and the golden comparison of Debug and Release.
 
 ## Requirements
 
@@ -53,7 +53,7 @@ and the wood, plaster, rug, metal and plastic surfaces. The checklist of style.m
 ./scripts/build.ps1                                # Debug (msvc-x64-debug); the first run installs vcpkg packages
 ./scripts/test.ps1                                 # unit tests
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu      # unit tests and GPU smoke tests
-./scripts/gate.ps1 -Gate A                         # Debug, RelWithDebInfo and Release builds, every test, golden G01
+./scripts/gate.ps1 -Gate A                         # Debug, RelWithDebInfo, Release builds; tests of Debug and Release
 ```
 
 Other presets: `msvc-x64-relwithdebinfo`, `msvc-x64-release` (no developer overlay, assets deployed next to the

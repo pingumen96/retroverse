@@ -540,33 +540,39 @@ code of `retroverse.exe`, nothing of the rendering duplicated:
 - **Unit tests** (`rv_tests`, label `unit`, Catch2, GPU-free): one directory per module under `tests/unit`, the tools'
   cores under `tests/unit/preview` and `tests/unit/screenshot_diff`, and `tests/unit/integration`, which pins the
   contracts between work streams (real geometry, materials, shaders, scene files, the input scripts played through the
-  walker). `rv_platform_tests` (label `unit`) covers the SDL side of `rv_platform` without OpenGL.
+  walker). `rv_platform_tests` (label `unit`) covers the SDL side of `rv_platform` without OpenGL, and `tests/cmake`
+  (label `unit`) runs the build's CMake scripts in script mode: the Release asset mirror (`cmake/CopyAssets.cmake`)
+  copies new and edited files and removes deleted ones and the never-deployed staging area and golden screenshots.
 - **Run reports:** every application on `AppHost` writes, with `--run-report <file.json>`, an `app::RunReport` when the
-  run ends, whatever the outcome: the executable (version, build type, overlay, debug output), the asset root and its
-  source, the exit code, outcome and first failure, whether no OpenGL 4.5 core context could be created
-  (`openGlUnavailable`), the context (vendor, renderer, version: the driver), the debug messages per severity (recorded
-  after the logic released its GPU resources, before the device goes), the frames, the last view's `gl::FrameStats`,
-  the instance buffer's capacity, the screenshot written, the walker's final pose (as `--spawn` takes it) and the
-  self-check. Automated checks read it back (`app::readRunReport`) instead of scraping the log; a report that cannot
-  be written fails a successful run (exit code 3).
+  run ends, whatever the outcome (a command line that does not parse ends before the host and writes none): the
+  executable (version, build type, overlay, debug output), the asset root and its source, the exit code, outcome and
+  first failure, whether no OpenGL 4.5 core context could be created (`openGlUnavailable`), the context (vendor,
+  renderer, version: the driver), the debug messages per severity (recorded after the logic released its GPU
+  resources, before the device goes; those `--gl-selftest` provoked included, and counted again in its `glSelfTest`
+  record), the frames (kept current every frame, so a run ended by an exception reports the frames before it), the
+  last view's `gl::FrameStats`, the instance buffer's capacity, the screenshot written, the walker's final pose (as
+  `--spawn` takes it) and the self-check. Automated checks read it back (`app::readRunReport`) instead of scraping the
+  log; a report that cannot be written fails a successful run (exit code 3).
 - **GPU smoke tests** (`rv_smoke_tests`, label `gpu`, `tests/smoke`; the presets `msvc-x64-debug-gpu` and
   `msvc-x64-release-gpu`): Catch2 test cases that start the executables of their build as child processes (Win32, output
   to a log, terminated after 4 minutes, `RV_ASSET_ROOT` removed from their environment), frame-limited with `--hidden`,
   a data directory under `<build>/smoke/<case>` and a run report, and check every run (exit code 0, every frame
-  rendered, no high or medium debug message in builds with debug output, the assets of the configuration: the source
-  tree, or the copy deployed next to a Release executable) and its screenshot (the requested size, neither uniform nor
-  black). The cases: the four reference scenes with bounds on their frame statistics (the test room at most 160 draw
-  calls, `instancing_stress` at most 4 batches), `instancing_growth` (one frame does not grow the instance buffer,
-  turning around grows it mid-run, and the frame after the growth matches a run spawned at the final pose, whose buffer
-  grows before its first draw), the three self-checks, the key light's shadow and the ambient occlusion (test scenes
-  rendered with and without the effect, compared at world points projected through the scene camera: the floor behind a
-  caster darkens to about a quarter of its brightness, lit surfaces keep their exact pixels and nothing changes outside
-  the shadow's region; the floor and face at a block's base darken by about 11%, the open floor keeps its exact pixels),
-  the developer overlay (about 28,000 pixels of the focused title bar's 41,74,122 with `--screenshot-include-ui`, none
-  without) and the asset preview on its own fixture (developer builds), and golden G01 compared with
-  `rv_screenshot_diff_core` (6/255 per channel, at most 0.5% of the pixels, a heatmap on a mismatch; skipped unless
-  GL_RENDERER and GL_VERSION match the golden's metadata). A case skipped because no OpenGL 4.5 context can be created
-  exits with 77, ctest's skip code (`tests/smoke/main.cpp` maps Catch2's "all skipped").
+  rendered, no high or medium debug message in builds with debug output but those `--gl-selftest` provoked, the assets
+  of the configuration: the source tree, or the copy deployed next to a Release executable) and its screenshot (the
+  requested size, neither uniform nor black). The cases: the four reference scenes with bounds on their frame statistics
+  (the test room at most 160 draw calls, `instancing_stress` at most 4 batches), `instancing_growth` (one frame does not
+  grow the instance buffer, turning around grows it mid-run, and the last frame, drawn after the growth, matches within
+  the golden tolerance a run spawned at the final pose, whose buffer grows before its first draw), the three
+  self-checks, `--gl-selftest` (the provoked GL_INVALID_ENUM recorded in the report, the run clean apart from it), the
+  key light's shadow and the ambient occlusion (test scenes rendered with and without the effect, compared at world
+  points projected through the scene camera: the floor behind a caster darkens to about a quarter of its brightness, lit
+  surfaces keep their exact pixels and nothing changes outside the shadow's region; the floor and face at a block's base
+  darken by about 11%, the open floor keeps its exact pixels), the developer overlay (about 28,000 pixels of the focused
+  title bar's 41,74,122 with `--screenshot-include-ui`, none without) and the asset preview on its own fixture
+  (developer builds), and golden G01 compared with `rv_screenshot_diff_core` (6/255 per channel, at most 0.5% of the
+  pixels, a heatmap on a mismatch; skipped unless GL_RENDERER and GL_VERSION match the golden's metadata). A case
+  skipped because no OpenGL 4.5 context can be created exits with 77, ctest's skip code (`tests/smoke/main.cpp` maps
+  Catch2's "all skipped").
 - **The gate:** `scripts/gate.ps1 -Gate A` builds the Debug, RelWithDebInfo and Release presets (no warning: `/WX`, and
   the build output is scanned for compiler, linker and CMake warnings), runs the unit tests and the smoke tests of Debug
   and Release and the golden comparison of both, and prints a summary table (logs in `build/gate-a`).
@@ -587,7 +593,10 @@ synthetic normal maps in M0 step 6: `tests/unit/geometry/test_mesh_data.cpp`).
 
 ## Runtime directories
 
-- Asset root: `--asset-root`, `RV_ASSET_ROOT`, `<source>/assets` (developer builds), `<exe>/assets`.
+- Asset root: `--asset-root`, `RV_ASSET_ROOT`, `<source>/assets` (developer builds), `<exe>/assets`. Builds without
+  `RV_DEV_ASSET_ROOT` (Release) mirror `<source>/assets` into `<exe>/assets` on every build (`rv_deploy_assets`: the
+  target `rv_runtime_assets` runs `cmake/CopyAssets.cmake`, which copies new and changed files and removes the ones
+  gone from the source; the staging area and the golden screenshots are never deployed).
 - User data: `--data-dir`, `<exe>/RetroverseData` with `--portable`, `%LOCALAPPDATA%\Retroverse` otherwise.
   Logs go to `<user data>/logs/retroverse.log`, F12 screenshots to `<user data>/screenshots`, the developer
   overlay's layout to `<user data>/config/imgui.ini`.

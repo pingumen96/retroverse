@@ -1,6 +1,6 @@
-# retroverse-screenshot-diff (style guide §26.1, plan §7): compares a screenshot with its golden image within a
-# tolerance (per-channel threshold, share of differing pixels) and writes a heatmap of the differences. Built in every
-# configuration: it needs neither a window nor OpenGL.
+# retroverse-screenshot-diff (style guide §26.1; the Gate A tolerance in docs/testing/gate-a.md): compares a screenshot
+# with its golden image within a tolerance (per-channel threshold, share of differing pixels) and writes a heatmap of
+# the differences. Built in every configuration: it needs neither a window nor OpenGL.
 
 # GPU-free core, shared by the tool and the GPU smoke tests (tests/smoke: the golden comparison of G01) and unit-tested
 # by tests/unit/screenshot_diff.

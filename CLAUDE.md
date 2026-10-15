@@ -29,14 +29,17 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 
 - Outputs: `build/<preset>/bin` holds `retroverse.exe`, `retroverse-asset-preview.exe` (developer builds only, see
   "Asset preview"), `retroverse-screenshot-diff.exe`, `rv_tests.exe`, `rv_platform_tests.exe`, `rv_smoke_tests.exe`
-  and the vcpkg DLLs.
+  and the vcpkg DLLs. Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the
+  source tree (target `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed,
+  `staging` and the golden screenshots left out), so an edit of the assets alone reaches the next Release build.
 - GPU smoke tests (`tests/smoke`, label `gpu`, ctest names `gpu.<case>`): each case starts the executables of its
   build frame-limited with `--hidden`, `--data-dir` and `--run-report` under `build/<preset>/smoke/<case>` (logs,
   reports, screenshots, heatmaps stay there) and checks the reports and screenshots: the reference scenes with frame
-  statistics bounds, `instancing_growth` growing mid-run, the three self-checks, the key light's shadow and the ambient
-  occlusion on `tests/smoke/scenes` (with and without the effect, compared at projected probe points), the developer
-  overlay and the asset preview (developer builds), golden G01 (reference machine only). A case is skipped (exit code
-  77) when no OpenGL 4.5 context can be created, and the golden comparison on another GPU or driver. One case:
+  statistics bounds, `instancing_growth` growing mid-run, the three self-checks, `--gl-selftest` (its provoked error in
+  the report, the run clean), the key light's shadow and the ambient occlusion on `tests/smoke/scenes` (with and
+  without the effect, compared at projected probe points), the developer overlay and the asset preview (developer
+  builds), golden G01 (reference machine only). A case is skipped (exit code 77) when no OpenGL 4.5 context can be
+  created, and the golden comparison on another GPU or driver. One case:
   `build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden*"` (Catch2 test names), or `./scripts/test.ps1 -Preset
   msvc-x64-debug-gpu -Filter golden`.
 - `scripts/gate.ps1 -Gate A` builds `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release` (a compiler,
@@ -65,13 +68,15 @@ report not written). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>`
   `RV_ASSET_ROOT`, the source tree in developer builds, `<exe>/assets`), `--data-dir <dir>` or `--portable` (user data
   in `<exe>/RetroverseData`, else `%LOCALAPPDATA%\Retroverse`), `--log-level trace|debug|info|warn|error`,
   `--no-dialogs` (implied by every frame-limited run), `--version`, `--exit` (alias of `--exit-after-frames`).
-- `--run-report <file.json>` (both executables) writes a JSON report when the run ends, also when it fails
-  (`rv/app/run_report.hpp`): version and build type, overlay and debug output built in, the asset root and its source,
+- `--run-report <file.json>` (both executables) writes a JSON report when the run ends, also when it fails, once the
+  command line is valid (an invalid one, `--help`, `--version` and `--write-fixture` write none;
+  `rv/app/run_report.hpp`): version and build type, overlay and debug output built in, the asset root and its source,
   exit code, outcome and first failure, `openGlUnavailable` (no OpenGL 4.5 core context), the GL vendor, renderer and
-  version (the driver), debug messages per severity, frames, the last view's statistics (draw calls, batches,
-  instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance buffer's capacity, the
-  screenshot written, the walker's final pose (feet, yaw, pitch as `--spawn` takes them) and the self-check. Read it
-  instead of the log in scripts and tests.
+  version (the driver), debug messages per severity (those `--gl-selftest` provoked included; its `glSelfTest` record
+  counts them apart, so in a clean run `high` equals its `highSeverityCaptured`), frames, the last view's statistics
+  (draw calls, batches, instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance
+  buffer's capacity, the screenshot written, the walker's final pose (feet, yaw, pitch as `--spawn` takes them) and the
+  self-check. Read it instead of the log in scripts and tests.
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
   `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
@@ -346,7 +351,8 @@ Manifest one; a copy under `build/` whose `runtime.sockets.screen` names a missi
   `tests/smoke/*.cpp` GPU smoke tests (globbed into `rv_smoke_tests`, label `gpu`: GPU-free itself, it starts the
   executables of its build and reads their run reports and screenshots; `smoke_support.hpp` runs them,
   `image_checks.hpp` measures screenshots; Win32 child processes in `child_process.hpp`) and their test scenes in
-  `tests/smoke/scenes`.
+  `tests/smoke/scenes`, `tests/cmake/test_*.cmake` (label `unit`, listed in `tests/cmake/CMakeLists.txt`: the build's
+  CMake scripts run by ctest in script mode, e.g. the Release asset mirror).
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 
 ## Conventions

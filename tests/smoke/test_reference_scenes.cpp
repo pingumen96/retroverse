@@ -108,8 +108,9 @@ TEST_CASE("scenes/instancing_growth grows the instance buffer mid-run and draws 
     CHECK(turned.report->lastView->instances > kInitialInstanceCapacity);
     CHECK(turned.report->instanceCapacity >= turned.report->lastView->instances);
 
-    // A run that starts where the turn ends grows the buffer before its first draw: the frame after the growth mid-run
-    // must look the same, every box drawn from the re-attached buffer.
+    // A run that starts where the turn ends grows the buffer before its first draw: the turned run's last frame, drawn
+    // a few frames after the buffer grew and was re-attached mid-run, must look the same within the golden tolerance.
+    // Not to the byte: the final yaw reads back through radians, so a few edges move by a fraction of a pixel.
     const std::filesystem::path spawnedShot = dir / "spawned.png";
     const AppRun spawned =
         runApp(retroverseExe(), dir, "spawned",

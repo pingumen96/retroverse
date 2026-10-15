@@ -17,8 +17,8 @@ using rv::app::RunReport;
 
 namespace {
 
-/// A report with every field set, as a frame-limited run of retroverse.exe with a screenshot and a self-check would
-/// write it.
+/// A report with every field set, as a frame-limited run of retroverse.exe with --gl-selftest, a screenshot and a
+/// self-check would write it.
 RunReport fullReport() {
     RunReport report;
     report.application = "Retroverse";
@@ -34,7 +34,9 @@ RunReport fullReport() {
     report.openGlUnavailable = false;
     report.context = rv::app::RunReportContext{"NVIDIA Corporation", "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
                                                "4.5.0 NVIDIA 617.42", "4.50 NVIDIA"};
-    report.debugMessages = rv::app::DebugMessageCounts{0, 2, 5};
+    report.debugMessages = rv::app::DebugMessageCounts{1, 2, 5};
+    // The GL_INVALID_ENUM of --gl-selftest, counted in debugMessages too.
+    report.glSelfTest = rv::app::SelfTestOutcome{true, true, 1, 1};
     report.frameLimit = 30;
     report.framesRendered = 30;
     rv::gl::FrameStats view;
@@ -111,6 +113,7 @@ TEST_CASE("app/run_report: a full report reads back field for field", "[app][run
     CHECK_FALSE(parsed->openGlUnavailable);
     CHECK(parsed->context == report.context);
     CHECK(parsed->debugMessages == report.debugMessages);
+    CHECK(parsed->glSelfTest == report.glSelfTest);
     CHECK(parsed->frameLimit == report.frameLimit);
     CHECK(parsed->framesRendered == report.framesRendered);
     REQUIRE(parsed->lastView.has_value());
@@ -132,8 +135,8 @@ TEST_CASE("app/run_report: optional parts are left out and read back as absent",
     report.openGlUnavailable = true;
     const std::string text = rv::app::formatRunReport(report);
     const nlohmann::json json = nlohmann::json::parse(text);
-    for (const char* key : {"failure", "context", "debugMessages", "lastView", "screenshot", "finalCamera",
-                            "selfCheck"}) {
+    for (const char* key :
+         {"failure", "context", "debugMessages", "glSelfTest", "lastView", "screenshot", "finalCamera", "selfCheck"}) {
         CAPTURE(key);
         CHECK_FALSE(json.contains(key));
     }
@@ -147,6 +150,7 @@ TEST_CASE("app/run_report: optional parts are left out and read back as absent",
     CHECK_FALSE(parsed->failure.has_value());
     CHECK_FALSE(parsed->context.has_value());
     CHECK_FALSE(parsed->debugMessages.has_value());
+    CHECK_FALSE(parsed->glSelfTest.has_value());
     CHECK_FALSE(parsed->frameLimit.has_value());
     CHECK(parsed->framesRendered == 0);
     CHECK_FALSE(parsed->lastView.has_value());
@@ -185,6 +189,16 @@ TEST_CASE("app/run_report: malformed reports are errors that point at the key", 
     const auto negative = parseEdited([](nlohmann::json& json) { json["debugMessages"]["medium"] = -1; });
     REQUIRE_FALSE(negative.has_value());
     CHECK(negative.error().context == "r.json:/debugMessages/medium");
+
+    const auto selfTestType = parseEdited([](nlohmann::json& json) { json["glSelfTest"]["errorFlagRaised"] = "yes"; });
+    REQUIRE_FALSE(selfTestType.has_value());
+    CHECK(selfTestType.error().context == "r.json:/glSelfTest/errorFlagRaised");
+
+    // The high-severity messages the self-test provoked are a part of all it provoked.
+    const auto selfTestCounts =
+        parseEdited([](nlohmann::json& json) { json["glSelfTest"]["highSeverityCaptured"] = 2; });
+    REQUIRE_FALSE(selfTestCounts.has_value());
+    CHECK(selfTestCounts.error().context == "r.json:/glSelfTest/highSeverityCaptured");
 
     const auto camera = parseEdited([](nlohmann::json& json) { json["finalCamera"]["feet"] = {1.0, 2.0}; });
     REQUIRE_FALSE(camera.has_value());

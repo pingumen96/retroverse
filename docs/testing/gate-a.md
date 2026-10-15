@@ -89,7 +89,7 @@ video decoder and the hub of later iterations.
 | Does the CRT look like a physical object, not a floating video plane? | Yes | A deep shell with bezel and bulged screen. The picture curves, darkens towards its edges and ends in the tube's dark border with rounded corners; the aperture grille and the scanlines show from up close and fade out before they could cause moiré. The hazy glass adds a faint sheen of the room's lights, which shows on the dark border (seen seated, the pendant's reflection lies over the top-left corner without washing out the bars), and the set casts the key light's shadow and lights the top of its cabinet. |
 | Does the room stay credible without commercial assets? | Yes | Everything is procedural and original: prefabs, the eight surfaces, labels, posters, sign. No logos, trademarks or downloaded textures (style §17.2). |
 | Do the props leave the ROM search unhindered? | Yes | Decoration density about 0.4 (style §6.3): nothing stands in front of the shelves, the furniture keeps 1.2 m passages, decor hangs above or beside the collection. |
-| Does the Low view keep the same aesthetic priorities? | No | Not assessable: there is one quality level. The Low, Balanced and High profiles (style §4.3, §20.1) come in I8; a Low profile would first drop FXAA, the ambient occlusion and the shadow map. |
+| Does the Low view keep the same aesthetic priorities? | Not assessable | There is one quality level. The Low, Balanced and High profiles (style §4.3, §20.1) come in I8; a Low profile would first drop FXAA, the ambient occlusion and the shadow map. |
 
 ## Measurements
 
@@ -161,11 +161,12 @@ in the 23 maps of the procedural surfaces with their mip chains, which take 0.6 
 
   | Case | What it checks |
   |---|---|
-  | `scenes/m0_testroom` | a clean run (exit code 0, every frame, no high or medium OpenGL debug message, the assets of the configuration: the source tree in Debug, the copy next to the executable in Release), a screenshot of the requested size that is neither uniform nor black, at most 160 draw calls for its 231 items (129 at M0), a shadow map and a depth pre-pass |
+  | `scenes/m0_testroom` | a clean run (exit code 0, every frame, no high or medium OpenGL debug message, the assets of the configuration: the source tree in Debug, the copy next to the executable in Release, which every build mirrors from the source tree), a screenshot of the requested size that is neither uniform nor black, at most 160 draw calls for its 231 items (129 at M0), a shadow map and a depth pre-pass |
   | `scenes/material_test` | the same, its 26 items in at most 26 draw calls |
   | `scenes/instancing_stress` | the same, 1000 boxes in at most 4 batches, the sun's shadow map drawing them too |
-  | `scenes/instancing_growth` | one frame does not grow the instance buffer; turning around (`turn_around.json`) grows it mid-run, and that frame matches, within the golden tolerance, a run spawned at the final pose |
+  | `scenes/instancing_growth` | one frame does not grow the instance buffer; turning around (`turn_around.json`) grows it mid-run, and the last frame, drawn after the growth, matches a run spawned at the final pose within the golden tolerance (not to the byte: the final yaw reads back through radians, which moves a few edges by a fraction of a pixel) |
   | `self-check/srgb`, `bloom`, `fxaa` | `--self-check` with the programs of the views: linear 0.5 stored as 188, the bloom chain's energy and thresholds, FXAA blending a slanted edge while copying flat areas exactly |
+  | `gl-selftest` | `--gl-selftest --smoke`: the provoked GL_INVALID_ENUM is flagged and, with debug output, reported by the callback; the report records it (`glSelfTest`) beside the run's message counts, which hold nothing else |
   | `effects/shadow` | `tests/smoke/scenes/shadow_caster.json` with and without the key light's shadow: the floor behind the box keeps about a quarter of its brightness (less than half required), lit surfaces keep their exact pixels (no acne), nothing changes outside the shadow's region, nothing gets brighter |
   | `effects/ambient occlusion` | `tests/smoke/scenes/ambient_corner.json` with and without ambient occlusion: the floor and the face at the block's base darken (about 11%), the open floor keeps its exact pixels, and without it the base reads like the open floor |
   | `developer-overlay` | `--devui-open --screenshot-include-ui`: the focused title bar's sRGB 41,74,122 reaches the screenshot exactly (about 28,000 pixels); without `--screenshot-include-ui`, none (Debug only) |

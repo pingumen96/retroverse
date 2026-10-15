@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include <rv/app/command_line.hpp>
+#include <rv/app/exit_code.hpp>
 #include <rv/app/self_check.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/frame_stats.hpp>
@@ -30,7 +31,8 @@ struct RunReportContext {
 };
 
 /// OpenGL debug messages a run received, by severity (gl::GLDevice::debugMessageCount: repeats the log suppressed
-/// included, notifications and known informational ids excluded).
+/// included, notifications and known informational ids excluded), those --gl-selftest provoked included
+/// (RunReport::glSelfTest).
 struct DebugMessageCounts {
     std::uint64_t high = 0;
     std::uint64_t medium = 0;
@@ -59,12 +61,15 @@ struct SelfCheckRecord {
 };
 
 /// What a run of an application built on AppHost did (retroverse.exe, retroverse-asset-preview), written as JSON by
-/// --run-report <file.json> when the run ends, whether it succeeded or failed (formatRunReport). Automated checks (the
-/// GPU smoke tests of tests/smoke, scripts/gate.ps1) read it back with readRunReport instead of scraping the log.
+/// --run-report <file.json> when the run ends, whether it succeeded or failed (formatRunReport). Only the host writes
+/// it: a command line that does not parse, --help, --version and --write-fixture end before the host starts and write
+/// none. Automated checks (the GPU smoke tests of tests/smoke, scripts/gate.ps1) read it back with readRunReport
+/// instead of scraping the log.
 ///
-/// The host fills the executable, the directories, the outcome, the OpenGL context, the debug message counts and the
-/// frames (AppHost); the application logic adds what it rendered through AppContext::report() (SceneGraphics: the last
-/// view's statistics, the instance buffer, the screenshot; RetroverseApp: the walker's final pose and the self-check).
+/// The host fills the executable, the directories, the outcome, the OpenGL context, the debug message counts, the
+/// --gl-selftest outcome and the frames (AppHost); the application logic adds what it rendered through
+/// AppContext::report() (SceneGraphics: the last view's statistics, the instance buffer, the screenshot; RetroverseApp:
+/// the walker's final pose and the self-check).
 struct RunReport {
     /// AppIdentity::name, e.g. "Retroverse".
     std::string application;
@@ -95,6 +100,10 @@ struct RunReport {
     std::optional<RunReportContext> context;
     /// Debug messages over the whole run; absent without debug output (glDebugOutput off).
     std::optional<DebugMessageCounts> debugMessages;
+    /// The outcome of --gl-selftest; absent without it. The messages it provoked are counted in debugMessages as well,
+    /// so the run had no unexpected error when debugMessages.high equals glSelfTest.highSeverityCaptured (the rule
+    /// exitCodeForCompletedRun applies to --smoke runs).
+    std::optional<SelfTestOutcome> glSelfTest;
 
     /// CommandLineOptions::frameLimit, and the frames presented.
     std::optional<std::uint32_t> frameLimit;
@@ -109,7 +118,8 @@ struct RunReport {
     /// The --screenshot of the last frame, when it was written.
     std::optional<ScreenshotRecord> screenshot;
     /// Where the walker of retroverse.exe ended, as --spawn takes it (feet, yaw and pitch): a run started with that
-    /// --spawn and no input sees the same view.
+    /// --spawn and no input sees the same view up to float rounding (the yaw goes through radians and back, so a few
+    /// edges may move by a fraction of a pixel).
     std::optional<SpawnPoint> finalCamera;
     /// The --self-check of the run.
     std::optional<SelfCheckRecord> selfCheck;

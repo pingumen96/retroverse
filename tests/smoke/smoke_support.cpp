@@ -1,5 +1,6 @@
 #include "smoke_support.hpp"
 
+#include <cstdint>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -131,8 +132,9 @@ AppRun runCommand(const std::filesystem::path& executable, const std::filesystem
     request.removedVariables = {"RV_ASSET_ROOT"};
     request.timeout = kRunTimeout;
     const auto outcome = runProcess(request);
-    INFO("starting " << core::pathToUtf8(executable));
-    REQUIRE(outcome.has_value());
+    if (!outcome) {
+        FAIL("could not run " << core::pathToUtf8(executable) << ": " << outcome.error().toString());
+    }
     run.exitCode = outcome->exitCode;
     run.timedOut = outcome->timedOut;
     INFO(run.describe());
@@ -172,15 +174,22 @@ void requireCleanRun(const AppRun& run) {
     CHECK_FALSE(report.failure.has_value());
     REQUIRE(report.frameLimit.has_value());
     CHECK(report.framesRendered == *report.frameLimit);
-    CHECK(report.context.has_value());
+    REQUIRE(report.context.has_value());
 
     const BuildConfig config = buildConfig();
     CHECK(report.developerOverlay == config.developerOverlay);
     CHECK(report.glDebugOutput == config.glDebugOutput);
+    if (report.glSelfTest) {
+        CHECK(report.glSelfTest->passed());
+    }
     if (config.glDebugOutput) {
         REQUIRE(report.debugMessages.has_value());
-        CHECK(report.debugMessages->high == 0);
-        CHECK(report.debugMessages->medium == 0);
+        // What --gl-selftest provoked is counted too: high severity on the reference driver, maybe medium or low on
+        // another. Any other high or medium message is an error.
+        const std::uint64_t provokedHigh = report.glSelfTest ? report.glSelfTest->highSeverityCaptured : 0;
+        const std::uint64_t provokedOther = report.glSelfTest ? report.glSelfTest->messagesCaptured - provokedHigh : 0;
+        CHECK(report.debugMessages->high == provokedHigh);
+        CHECK(report.debugMessages->medium <= provokedOther);
     } else {
         CHECK_FALSE(report.debugMessages.has_value());
     }

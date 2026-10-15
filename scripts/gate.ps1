@@ -9,8 +9,9 @@
          warning (with -Clean every target is rebuilt, so that all of them are seen);
       2. runs the unit tests (label unit) of Debug and Release;
       3. runs the GPU smoke tests (label gpu, tests/smoke) of Debug and Release: the reference scenes, the rendering
-         self-checks, the key light's shadow and the ambient occlusion, the instance buffer growing mid-run, the
-         developer overlay and the asset preview (Debug), Release rendering from the assets deployed next to it;
+         self-checks and --gl-selftest, the key light's shadow and the ambient occlusion, the instance buffer growing
+         mid-run, the developer overlay and the asset preview (Debug), Release rendering from the assets deployed next to
+         it (which its build, incremental too, mirrors from the source tree);
       4. compares the test room with golden G01 in Debug and Release (within 6/255 per channel, at most 0.5% of the
          pixels; on the reference machine only, skipped elsewhere).
     Every step logs into build/gate-<gate>/. The script prints one row per step and exits 0 when no step failed: a

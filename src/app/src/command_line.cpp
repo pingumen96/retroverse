@@ -309,9 +309,10 @@ void addHostOptions(core::ArgParser& parser) {
                             "(at most {} s), for reproducible automated runs, e.g. 0.016667.",
                             CommandLineOptions::kMaxFixedDeltaSeconds))
         .option("run-report", "json",
-                "Write a JSON report of the run to this file when it ends, also when it fails: exit code and failure, "
-                "OpenGL renderer and driver, GL debug message counts, frames, the last view's statistics, the "
-                "screenshot, the final camera, the self-check (for automated checks such as tests/smoke).");
+                "Write a JSON report of the run to this file when it ends, also when it fails (not when the command "
+                "line is invalid): exit code and failure, OpenGL renderer and driver, GL debug message counts, the "
+                "GL self-test, frames, the last view's statistics, the screenshot, the final camera, the self-check "
+                "(for automated checks such as tests/smoke).");
 }
 
 Status applyHostOptions(const core::ParsedArgs& args, CommandLineOptions& options) {

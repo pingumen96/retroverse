@@ -41,6 +41,8 @@ struct SelfTestOutcome {
 
     /// The error path works: the error was flagged and, when debug output is active, the callback reported it.
     [[nodiscard]] bool passed() const noexcept;
+
+    bool operator==(const SelfTestOutcome&) const = default;
 };
 
 /// What a finished run observed, as input to exitCodeForCompletedRun().
