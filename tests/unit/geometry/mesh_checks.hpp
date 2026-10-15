@@ -76,7 +76,8 @@ struct TriangleRef {
 }
 
 /// Triangles with a usable uv layout where a vertex tangent frame contradicts the uv derivatives: the tangent
-/// must follow dP/du and the bitangent cross(n, t) * w must follow dP/dv.
+/// must follow dP/du and the bitangent cross(n, t) * w must follow -dP/dv (glTF tangent space: towards the top of
+/// the image, the "+Y up" of normal maps).
 [[nodiscard]] inline std::size_t tangentFrameMismatches(const geometry::MeshData& mesh) {
     std::size_t count = 0;
     for (std::size_t t = 0; t < mesh.triangleCount(); ++t) {
@@ -94,7 +95,7 @@ struct TriangleRef {
         for (const geometry::Vertex* v : {&tri.v0, &tri.v1, &tri.v2}) {
             const glm::vec3 tangent(v->tangent);
             const glm::vec3 bitangent = glm::cross(v->normal, tangent) * v->tangent.w;
-            if (glm::dot(tangent, dPdu) <= 0.0f || glm::dot(bitangent, dPdv) <= 0.0f) {
+            if (glm::dot(tangent, dPdu) <= 0.0f || glm::dot(bitangent, dPdv) >= 0.0f) {
                 ++count;
                 break;
             }

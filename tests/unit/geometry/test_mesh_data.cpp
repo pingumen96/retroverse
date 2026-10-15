@@ -49,11 +49,12 @@ TEST_CASE("geometry/mesh_data: bounds, tangents, validation", "[geometry][mesh]"
 
     rv::geometry::computeTangents(quad);
     for (const Vertex& v : quad.vertices) {
-        // u grows towards +X, v grows towards -Y: tangent = +X, bitangent = -Y => handedness -1 with N = +Z.
+        // u grows towards +X, v towards -Y: tangent = +X; the glTF bitangent cross(N, T) * w follows -v, i.e. +Y
+        // (the top of the image) => handedness +1 with N = +Z.
         CHECK(v.tangent.x == Approx(1.0f));
         CHECK(v.tangent.y == Approx(0.0f).margin(1e-6));
         CHECK(v.tangent.z == Approx(0.0f).margin(1e-6));
-        CHECK(std::abs(v.tangent.w) == Approx(1.0f));
+        CHECK(v.tangent.w == 1.0f);
     }
     CHECK(rv::geometry::validateMesh(quad).has_value());
 
@@ -82,6 +83,39 @@ TEST_CASE("geometry/mesh_data: degenerate UVs still give a perpendicular unit ta
     }
 }
 
+TEST_CASE("geometry/mesh_data: uv scale gives the aspect ratio of the textured surface", "[geometry][mesh]") {
+    MeshData quad = makeQuad();
+    CHECK(rv::geometry::uvMetersPerUnit(quad) == glm::vec2(1.0f, 1.0f));
+
+    // A 0.4 x 0.3 m label with uv 0..1: an undistorted image is 4:3.
+    for (Vertex& v : quad.vertices) {
+        v.position *= glm::vec3(0.4f, 0.3f, 1.0f);
+    }
+    glm::vec2 scale = rv::geometry::uvMetersPerUnit(quad);
+    CHECK(scale.x == Approx(0.4f));
+    CHECK(scale.y == Approx(0.3f));
+
+    // Tiling twice along u halves the meters per unit along u; turning the surface does not matter.
+    for (Vertex& v : quad.vertices) {
+        v.uv0.x *= 2.0f;
+        v.position = glm::vec3(v.position.z, v.position.y, -v.position.x);
+    }
+    scale = rv::geometry::uvMetersPerUnit(quad);
+    CHECK(scale.x == Approx(0.2f));
+    CHECK(scale.y == Approx(0.3f));
+
+    // Degenerate uvs, out-of-range indices and empty meshes give no scale instead of NaN.
+    MeshData degenerate = makeQuad();
+    for (Vertex& v : degenerate.vertices) {
+        v.uv0 = glm::vec2(0.5f);
+    }
+    CHECK(rv::geometry::uvMetersPerUnit(degenerate) == glm::vec2(0.0f));
+    MeshData outOfRange = makeQuad();
+    outOfRange.indices = {0, 1, 9};
+    CHECK(rv::geometry::uvMetersPerUnit(outOfRange) == glm::vec2(0.0f));
+    CHECK(rv::geometry::uvMetersPerUnit(MeshData{}) == glm::vec2(0.0f));
+}
+
 TEST_CASE("geometry/mesh_data: hash is deterministic and content-sensitive", "[geometry][mesh]") {
     const MeshData a = makeQuad();
     MeshData b = makeQuad();
@@ -101,4 +135,37 @@ TEST_CASE("geometry/socket: lookup by id", "[geometry][socket]") {
     CHECK(screen->kind == rv::geometry::SocketKind::ScreenSurface);
     CHECK(rv::geometry::findSocket(sockets, "missing") == nullptr);
     CHECK(rv::geometry::toString(rv::geometry::SocketKind::ShelfSlot) == "shelf-slot");
+}
+
+TEST_CASE("geometry/mesh_data: generated tangents follow the glTF normal-map convention", "[geometry][mesh]") {
+    // ADR-0002: bitangent = cross(normal, tangent.xyz) * tangent.w. glTF normal maps store tangent-space +X along +u
+    // (right) and +Y up in the image; with uv (0, 0) at the top-left corner, "up" is the direction of decreasing v.
+    // A normal-map texel tilted up must therefore tilt the shading normal towards the top of the picture, as in the
+    // Khronos sample viewer, whichever way the quad is mirrored.
+    const auto shade = [](const Vertex& v, const glm::vec3& tangentSpace) {
+        const glm::vec3 t(v.tangent);
+        const glm::vec3 b = glm::cross(v.normal, t) * v.tangent.w;
+        return glm::normalize(t * tangentSpace.x + b * tangentSpace.y + v.normal * tangentSpace.z);
+    };
+    const glm::vec3 tiltedUp(0.0f, 0.6f, 0.8f);
+    const glm::vec3 tiltedRight(0.6f, 0.0f, 0.8f);
+
+    MeshData quad = makeQuad(); // facing +Z, image top at +Y, image right at +X
+    rv::geometry::computeTangents(quad);
+    for (const Vertex& v : quad.vertices) {
+        CHECK(shade(v, tiltedUp).y == Approx(0.6f));
+        CHECK(shade(v, tiltedRight).x == Approx(0.6f));
+    }
+
+    // The same picture mirrored left-right (u grows towards -X): "right" in the image is now -X, "up" is still +Y.
+    MeshData mirrored = makeQuad();
+    for (Vertex& v : mirrored.vertices) {
+        v.uv0.x = 1.0f - v.uv0.x;
+    }
+    rv::geometry::computeTangents(mirrored);
+    for (const Vertex& v : mirrored.vertices) {
+        CHECK(v.tangent.w == -1.0f);
+        CHECK(shade(v, tiltedUp).y == Approx(0.6f));
+        CHECK(shade(v, tiltedRight).x == Approx(-0.6f));
+    }
 }

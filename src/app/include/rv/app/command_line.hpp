@@ -11,6 +11,7 @@
 
 #include <spdlog/common.h>
 
+#include <rv/app/self_check.hpp>
 #include <rv/core/expected.hpp>
 
 namespace rv::app {
@@ -78,13 +79,17 @@ struct CommandLineOptions {
 
     /// --model <file>: accepted and kept for the step that implements it; the host logs that it is ignored.
     std::optional<std::filesystem::path> model;
+
+    /// --self-check <name>: rendering check performed after initialization by a frame-limited run (SelfCheck).
+    std::optional<SelfCheck> selfCheck;
 };
 
 /// Parses and validates arguments (UTF-8, program name excluded). Errors name the offending option:
 ///  - unknown options, missing values, malformed numbers;
 ///  - --width / --height outside [64, 16384]; --frames below 1;
 ///  - --frames without --smoke or --exit-after-frames, --hidden without a frame limit (nobody could close the
-///    window), --screenshot without a frame limit (there would be no last frame to capture);
+///    window), --screenshot without a frame limit (there would be no last frame to capture), --self-check without a
+///    frame limit (an unattended check must end on its own) or with an unknown check name;
 ///  - --screenshot not ending in ".png"; --screenshot-size other than WIDTHxHEIGHT with sides in [1, 16384];
 ///  - --scene names with characters other than letters, digits, '_', '-' and '.', or starting with '.';
 ///  - --fixed-dt that is not a number in (0, kMaxFixedDeltaSeconds];

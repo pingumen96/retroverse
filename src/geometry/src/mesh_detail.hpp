@@ -25,8 +25,9 @@ inline constexpr float kDegenerateUvArea = 1e-12f;
 [[nodiscard]] glm::vec3 orthonormalize(const glm::vec3& v, const glm::vec3& n, const glm::vec3& fallback) noexcept;
 
 /// Tangent frame of a triangle (computeTangents' formula): edges e1 = p1 - p0, e2 = p2 - p0 and uv deltas d1, d2.
-/// Returns (unit tangent orthogonal to `n`, handedness). Degenerate uvs give (`fallback` orthonormalized, -1),
-/// the handedness of every Retroverse uv layout (v grows downwards).
+/// Returns (unit tangent orthogonal to `n`, handedness) in glTF's tangent space (cross(n, tangent) * handedness
+/// follows -dP/dv). Degenerate uvs give (`fallback` orthonormalized, +1), the handedness of every unmirrored
+/// Retroverse uv layout (v grows downwards).
 [[nodiscard]] glm::vec4 triangleTangent(const glm::vec3& n, const glm::vec3& e1, const glm::vec3& e2,
                                         const glm::vec2& d1, const glm::vec2& d2, const glm::vec3& fallback) noexcept;
 

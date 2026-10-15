@@ -1,11 +1,14 @@
 // Declarations shared by every Retroverse shader: #include "common/common.glsl" right after #version.
 //
 // Uniform buffer binding points (single table: src/render/include/rv/render/uniform_blocks.hpp):
-//   0 FrameUniforms (below), 1 lights, 2 material, 3+ reserved.
+//   0 FrameUniforms (below), 1 LightsUniforms (common/lights.glsl), 2 MaterialUniforms (common/material.glsl),
+//   3+ reserved.
 // Vertex attribute locations (rv::geometry::VertexLayout::standard(), rv::gl::GpuMesh):
 //   0 position, 1 normal, 2 tangent (w = bitangent sign), 3 uv0, 4..7 per-instance model matrix columns.
-// Conventions (ADR-0002): meters, +Y up, right-handed, counter-clockwise front faces, linear-space shading written to
-// an sRGB framebuffer.
+// Conventions (ADR-0002): meters, +Y up, right-handed, counter-clockwise front faces, uv (0, 0) at the top-left of
+// the image, linear-space shading written to an sRGB framebuffer (GL_FRAMEBUFFER_SRGB encodes the output).
+
+const float RV_PI = 3.14159265358979;
 
 // Per-view constants. Mirrors rv::gl::FrameUniforms member for member (std140): change both together.
 layout(std140, binding = 0) uniform FrameUniforms {
@@ -14,5 +17,10 @@ layout(std140, binding = 0) uniform FrameUniforms {
     mat4 uViewProjection; // world -> clip
     vec3 uCameraPosition; // eye position, world space
     float uTime;          // simulated seconds since the start of the run
-    float uExposure;      // scene exposure, applied before tonemapping
 };
+
+// v / |v|, or `fallback` when v is (nearly) zero: interpolated or perturbed vectors never turn into NaN.
+vec3 safeNormalize(vec3 v, vec3 fallback) {
+    float lengthSquared = dot(v, v);
+    return lengthSquared > 1e-12 ? v * inversesqrt(lengthSquared) : fallback;
+}

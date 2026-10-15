@@ -1,0 +1,28 @@
+#version 450 core
+// Mesh vertex stage shared by the lit program (pbr/pbr.frag) and the unlit one (unlit/unlit_emissive.frag): world
+// position, normal and tangent for shading, uv0 for textures. Every draw sets uModel (one object instance).
+#include "common/common.glsl"
+
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec4 aTangent; // xyz tangent, w = bitangent sign (ADR-0002)
+layout(location = 3) in vec2 aUv0;
+
+uniform mat4 uModel; // local -> world
+
+layout(location = 0) out vec3 vWorldPosition;
+layout(location = 1) out vec3 vNormal;  // world space, not normalized
+layout(location = 2) out vec4 vTangent; // world-space xyz, bitangent sign in w
+layout(location = 3) out vec2 vUv;
+
+void main() {
+    vec4 world = uModel * vec4(aPosition, 1.0);
+    // The inverse transpose keeps normals perpendicular to the surface under non-uniform scales; tangents follow the
+    // surface, so they use the model matrix itself.
+    mat3 normalMatrix = transpose(inverse(mat3(uModel)));
+    vWorldPosition = world.xyz;
+    vNormal = normalMatrix * aNormal;
+    vTangent = vec4(mat3(uModel) * aTangent.xyz, aTangent.w);
+    vUv = aUv0;
+    gl_Position = uViewProjection * world;
+}

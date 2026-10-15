@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 
+#include <glm/ext/vector_int2.hpp>
 #include <glm/ext/vector_uint4_sized.hpp>
 
 #include <rv/assets/image_data.hpp>
@@ -48,5 +50,18 @@ inline constexpr std::string_view kPatternCover = "cover";
 /// [1, kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);
+
+/// Longer side, in pixels, of the pattern images generated for scene surfaces (cartridge labels, posters, screens).
+inline constexpr int kPatternLongSide = 512;
+
+/// Pixel size of a pattern image shown on a surface whose width / height is `aspect` (for instance the ratio of
+/// rv::geometry::uvMetersPerUnit), so that the pattern is not stretched: the longer side gets `longSide` pixels
+/// (clamped to [1, kMaxImageDimension]) and the other one the rounded proportional count, at least 1. A non-finite
+/// or non-positive aspect gives a square.
+[[nodiscard]] glm::ivec2 patternSizeForAspect(float aspect, int longSide = kPatternLongSide) noexcept;
+
+/// Identity of a generated pattern, "pattern:<name>:<title>:<seed>" (the title verbatim, may be empty), used to key
+/// pattern textures in caches and logs.
+[[nodiscard]] std::string patternKey(std::string_view name, std::string_view title, std::uint32_t seed);
 
 } // namespace rv::assets

@@ -29,13 +29,14 @@ glm::vec4 triangleTangent(const glm::vec3& n, const glm::vec3& e1, const glm::ve
                           const glm::vec2& d2, const glm::vec3& fallback) noexcept {
     const float determinant = d1.x * d2.y - d2.x * d1.y;
     if (std::fabs(determinant) < kDegenerateUvArea) {
-        return glm::vec4(orthonormalize(fallback, n, fallback), -1.0f);
+        return glm::vec4(orthonormalize(fallback, n, fallback), 1.0f);
     }
     const float r = 1.0f / determinant;
     const glm::vec3 t = (e1 * d2.y - e2 * d1.y) * r;
     const glm::vec3 b = (e2 * d1.x - e1 * d2.x) * r;
     const glm::vec3 tangent = orthonormalize(t, n, fallback);
-    const float handedness = glm::dot(glm::cross(n, tangent), b) < 0.0f ? -1.0f : 1.0f;
+    // glTF tangent space: cross(n, tangent) * handedness follows -dP/dv, towards the top of the image.
+    const float handedness = glm::dot(glm::cross(n, tangent), b) > 0.0f ? -1.0f : 1.0f;
     return glm::vec4(tangent, handedness);
 }
 
@@ -88,7 +89,7 @@ void addFlatPolygon(MeshData& mesh, std::span<const glm::vec3> points, std::span
     };
 
     // Tangent from the first fan triangle with usable uvs (a planar polygon with an affine uv layout has one frame).
-    glm::vec4 tangent(orthonormalize(points[at(1)] - points[at(0)], normal, glm::vec3(1.0f, 0.0f, 0.0f)), -1.0f);
+    glm::vec4 tangent(orthonormalize(points[at(1)] - points[at(0)], normal, glm::vec3(1.0f, 0.0f, 0.0f)), 1.0f);
     for (std::size_t i = 1; i + 1 < count; ++i) {
         const glm::vec3 e1 = points[at(i)] - points[at(0)];
         const glm::vec3 e2 = points[at(i + 1)] - points[at(0)];

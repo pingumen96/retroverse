@@ -20,7 +20,8 @@ enum class ExitCode : int {
     InitializationFailed = 2,
     /// Failure after initialization: an unexpected one (exception, failed presentation) or one the application logic
     /// reported because it must not pass silently (AppContext::failRun: a --screenshot that was not written because
-    /// writing failed or the run ended before its last frame, a frame-limited run whose scene shader never built).
+    /// writing failed or the run ended before its last frame, a frame-limited run whose scene shader never built, a
+    /// --self-check that failed or could not run).
     /// Logged, shown in a message box unless dialogs are off, never propagated.
     RuntimeFailure = 3,
 };

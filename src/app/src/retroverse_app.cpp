@@ -15,6 +15,7 @@
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/screenshot_name.hpp>
+#include <rv/app/self_check.hpp>
 #include <rv/assets/image_io.hpp>
 #include <rv/assets/material_library.hpp>
 #include <rv/core/paths.hpp>
@@ -24,6 +25,9 @@
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/shader_library.hpp>
+#include <rv/render/texture.hpp>
+#include <rv/render/texture_cache.hpp>
+#include <rv/render/texture_defaults.hpp>
 #include <rv/render/uniform_buffer.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
@@ -31,6 +35,7 @@
 #include "app_input.hpp"
 #include "free_roam.hpp"
 #include "scene_view.hpp"
+#include "srgb_self_check.hpp"
 
 namespace rv::app {
 namespace {
@@ -42,6 +47,9 @@ constexpr bool kShaderHotReload = false;
 #endif
 
 constexpr std::string_view kMaterialLibraryPath = "materials/base/materials.json";
+/// Anisotropic filtering of textures and material samplers, and of the checker that replaces missing textures (plan
+/// 5.4: 8x), clamped to the device limit.
+constexpr float kTextureAnisotropy = 8.0f;
 
 /// Creates `target` at `size`, or resizes it. Failures are logged once per size so a persistent one does not flood the
 /// log at the frame rate.
@@ -82,6 +90,25 @@ assets::MaterialLibrary loadMaterials(const core::Paths& paths) {
     return builtin;
 }
 
+/// --self-check srgb: logs the outcome; a check that fails, or cannot run, fails the run (exit code 3).
+void runSrgbCheck(AppContext& context, const gl::TextureDefaults& defaults, const std::filesystem::path& shaderRoot) {
+    const auto result = runSrgbSelfCheck(context.device(), defaults, shaderRoot);
+    if (!result) {
+        Error error = result.error();
+        error.message = "sRGB self-check could not run: " + error.message;
+        context.failRun(std::move(error));
+        return;
+    }
+    const std::string summary =
+        fmt::format("linear {} stored as {}..{} in {} pixel(s), expected {} +- {}", kSrgbCheckLinearValue,
+                    result->minimum, result->maximum, result->pixelCount, result->expected, kSrgbCheckTolerance);
+    if (result->passed) {
+        spdlog::info("sRGB self-check passed: {}", summary);
+    } else {
+        context.failRun(Error{ErrorCode::ValidationFailed, "sRGB self-check failed: " + summary, "--self-check=srgb"});
+    }
+}
+
 /// Loads the --input-script file, if any, and reports what it will do.
 Expected<std::optional<input::InputScript>> loadInputScript(const CommandLineOptions& options) {
     if (!options.inputScript) {
@@ -109,9 +136,13 @@ Expected<std::optional<input::InputScript>> loadInputScript(const CommandLineOpt
 
 struct RetroverseApp::State {
     std::unique_ptr<gl::ShaderLibrary> shaders;
+    gl::ShaderHandle pbrShader;
     gl::ShaderHandle unlitShader;
     gl::UniformBuffer<gl::FrameUniforms> frameUniforms;
-    SceneView scene;
+    // Declared before the scene view, whose materials bind them, so that they are destroyed after it.
+    std::unique_ptr<gl::TextureDefaults> textureDefaults;
+    std::unique_ptr<gl::TextureCache> textures;
+    std::optional<SceneView> scene;
     std::optional<FreeRoam> freeRoam;
     std::unique_ptr<AppInput> input;
     gl::Framebuffer windowTarget;
@@ -139,8 +170,19 @@ struct RetroverseApp::State {
     }
 
     void renderScene(AppContext& context, const gl::Framebuffer& target) {
-        scene.render(context.device(), shaders->get(unlitShader), frameUniforms, target,
-                     static_cast<float>(simulatedSeconds));
+        const SceneShaders programs{&shaders->get(pbrShader), &shaders->get(unlitShader)};
+        scene->render(context.device(), programs, frameUniforms, target, static_cast<float>(simulatedSeconds));
+    }
+
+    /// Name of a scene program that never built, or empty when both did.
+    [[nodiscard]] std::string_view missingSceneShader() const {
+        if (!shaders->get(pbrShader).valid()) {
+            return "pbr";
+        }
+        if (!shaders->get(unlitShader).valid()) {
+            return "unlit_emissive";
+        }
+        return {};
     }
 
     /// Renders the current view at --screenshot-size into the screenshot target and writes it as an RGB PNG.
@@ -195,7 +237,13 @@ Status RetroverseApp::onInit(AppContext& context) {
 
     auto state = std::make_unique<State>();
     state->shaders = std::make_unique<gl::ShaderLibrary>(paths.assetRoot() / "shaders");
-    auto unlit = state->shaders->load(gl::ShaderDesc{"unlit", "unlit/unlit.vert", "unlit/unlit.frag", {}});
+    auto pbr = state->shaders->load(gl::ShaderDesc{"pbr", "pbr/pbr.vert", "pbr/pbr.frag", {}});
+    if (!pbr) {
+        return propagate(pbr.error());
+    }
+    state->pbrShader = *pbr;
+    auto unlit =
+        state->shaders->load(gl::ShaderDesc{"unlit_emissive", "pbr/pbr.vert", "unlit/unlit_emissive.frag", {}});
     if (!unlit) {
         return propagate(unlit.error());
     }
@@ -208,9 +256,22 @@ Status RetroverseApp::onInit(AppContext& context) {
         return propagate(frameUniforms.error());
     }
     state->frameUniforms = std::move(*frameUniforms);
-    state->scene = SceneView::create(*description, geometry);
-    spdlog::info("Scene view: {} mesh(es) on the GPU, {} draw call(s) per view", state->scene.meshCount(),
-                 state->scene.drawCount());
+
+    const gl::GLCapabilities& caps = context.device().caps();
+    const float anisotropy = gl::clampAnisotropy(kTextureAnisotropy, caps.maxAnisotropy);
+    auto textureDefaults = gl::TextureDefaults::create(anisotropy);
+    if (!textureDefaults) {
+        return propagate(textureDefaults.error());
+    }
+    state->textureDefaults = std::make_unique<gl::TextureDefaults>(std::move(*textureDefaults));
+    state->textures = std::make_unique<gl::TextureCache>(paths.assetRoot(), *state->textureDefaults, anisotropy);
+    auto sceneView = SceneView::create(*description, geometry, *state->textures, *state->textureDefaults, caps);
+    if (!sceneView) {
+        return propagate(sceneView.error());
+    }
+    state->scene.emplace(std::move(*sceneView));
+    spdlog::info("Scene view: {} mesh(es) on the GPU, {} material(s), {} draw call(s) per view",
+                 state->scene->meshCount(), state->scene->materialCount(), state->scene->drawCount());
     state->freeRoam.emplace(*description, geometry);
 
     state->input = std::make_unique<AppInput>(context.window(), loadBindings(paths), std::move(*script));
@@ -223,6 +284,9 @@ Status RetroverseApp::onInit(AppContext& context) {
         spdlog::info("Screenshot of the last frame (frame {}, counted from 0) at {}x{} will be written to {}",
                      *options.frameLimit - 1, options.screenshotWidth, options.screenshotHeight,
                      core::pathToUtf8(*options.screenshot));
+    }
+    if (options.selfCheck == SelfCheck::Srgb) {
+        runSrgbCheck(context, *state->textureDefaults, state->shaders->root());
     }
     m_state = std::move(state);
     return ok();
@@ -259,7 +323,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.screenshotRequested = true;
     }
 
-    state.freeRoam->update(actions, static_cast<float>(deltaSeconds), state.scene.camera());
+    state.freeRoam->update(actions, static_cast<float>(deltaSeconds), state.scene->camera());
     state.logScriptProgress(frame);
 
     if constexpr (kShaderHotReload) {
@@ -308,10 +372,12 @@ void RetroverseApp::onShutdown(AppContext& context) {
     if (m_state && options.frameLimit) {
         m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
     }
-    // An unattended run must not pass when it could never draw its scene (its frames and screenshot show nothing).
-    if (m_state && options.frameLimit && !m_state->shaders->get(m_state->unlitShader).valid()) {
+    // An unattended run must not pass when it could never draw its scene (its frames and screenshot miss surfaces).
+    if (m_state && options.frameLimit && !m_state->missingSceneShader().empty()) {
         context.failRun(Error{ErrorCode::GraphicsError,
-                              "the scene was never drawn: shader 'unlit' did not build (see the errors above)",
+                              fmt::format("the scene was never drawn completely: shader '{}' did not build (see the "
+                                          "errors above)",
+                                          m_state->missingSceneShader()),
                               core::pathToUtf8(m_state->shaders->root())});
     }
     // Nor when it ended (Esc, window closed, quit request) before the last frame, which --screenshot captures: a file

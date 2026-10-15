@@ -361,10 +361,11 @@ TEST_CASE("geometry/mesh_builder: plane and quad orientation and uvs", "[geometr
             CHECK(v.uv0 == glm::vec2(left ? 0.25f : 0.75f, top ? 0.5f : 1.0f));
         }
     }
-    // The tangent follows +u (towards +X) and the bitangent +v (downwards): handedness -1 with normal +Z.
+    // The tangent follows +u (towards +X) and the bitangent -v (upwards, glTF tangent space): handedness +1 with
+    // normal +Z.
     for (const Vertex& v : quads.vertices) {
         CHECK(closeTo(glm::vec3(v.tangent), glm::vec3(1.0f, 0.0f, 0.0f)));
-        CHECK(v.tangent.w == -1.0f);
+        CHECK(v.tangent.w == 1.0f);
     }
 }
 
@@ -517,7 +518,7 @@ TEST_CASE("geometry/mesh_builder: append transforms meshes and drops invalid tri
     CHECK(mesh.bounds.max.x == 5.5f);
     // build() recomputed the tangents of the appended quad from its uvs.
     CHECK(closeTo(glm::vec3(mesh.vertices[24].tangent), glm::vec3(1.0f, 0.0f, 0.0f)));
-    CHECK(mesh.vertices[24].tangent.w == -1.0f);
+    CHECK(mesh.vertices[24].tangent.w == 1.0f);
 
     // Mirrored placement: the winding is swapped so the quad still faces its normal.
     MeshBuilder mirrored;
@@ -552,25 +553,25 @@ TEST_CASE("geometry/mesh_builder: tangents follow the uv layout, degenerate uvs 
         for (const FaceFrame& face : kBoxFaces) {
             if (v.normal == face.normal) {
                 CHECK(closeTo(glm::vec3(v.tangent), face.right));
-                CHECK(v.tangent.w == -1.0f);
+                CHECK(v.tangent.w == 1.0f);
             }
         }
     }
 
     // A quad whose uvs collapse to one point has no uv frame: the tangent carried through the transform
-    // (local +X, handedness -1) survives instead of an arbitrary perpendicular.
+    // (local +X, handedness +1) survives instead of an arbitrary perpendicular.
     const glm::vec4 collapsed(0.5f, 0.5f, 0.5f, 0.5f);
     MeshBuilder turned;
     turned.quad({1.0f, 1.0f}, rotate(90.0f, {0.0f, 0.0f, 1.0f}), collapsed);
     for (const Vertex& v : std::move(turned).build("turned").vertices) {
         CHECK(closeTo(glm::vec3(v.tangent), glm::vec3(0.0f, 1.0f, 0.0f)));
-        CHECK(v.tangent.w == -1.0f);
+        CHECK(v.tangent.w == 1.0f);
     }
     MeshBuilder mirrored;
     mirrored.quad({1.0f, 1.0f}, scale(-1.0f, 1.0f, 1.0f), collapsed);
     for (const Vertex& v : std::move(mirrored).build("mirrored").vertices) {
         CHECK(closeTo(glm::vec3(v.tangent), glm::vec3(-1.0f, 0.0f, 0.0f)));
-        CHECK(v.tangent.w == 1.0f);
+        CHECK(v.tangent.w == -1.0f);
     }
 }
 

@@ -52,6 +52,7 @@ TEST_CASE("app/command_line: no arguments describe an interactive windowed run",
     CHECK_FALSE(options->inputScript.has_value());
     CHECK_FALSE(options->fixedDeltaSeconds.has_value());
     CHECK_FALSE(options->model.has_value());
+    CHECK_FALSE(options->selfCheck.has_value());
 }
 
 TEST_CASE("app/command_line: --input-script and --fixed-dt drive automated runs", "[app][command_line]") {
@@ -378,6 +379,29 @@ TEST_CASE("app/command_line: scene names resolve under the asset root", "[app][c
           rv::core::pathFromUtf8("E:/Scene di prova/città.json"));
 }
 
+TEST_CASE("app/command_line: --self-check runs a named check in a frame-limited run", "[app][command_line]") {
+    for (const char* limit : {"--smoke", "--exit-after-frames"}) {
+        INFO(limit);
+        const auto options = parse({"--self-check", "srgb", limit, "--hidden"});
+        REQUIRE(options.has_value());
+        CHECK(options->selfCheck == rv::app::SelfCheck::Srgb);
+    }
+
+    // An interactive run has no end for the check to report to.
+    const auto interactive = parse({"--self-check", "srgb"});
+    REQUIRE_FALSE(interactive.has_value());
+    CHECK(interactive.error().code == ErrorCode::InvalidArgument);
+    CHECK(interactive.error().context == "--self-check");
+
+    for (const char* name : {"SRGB", "gamma", ""}) {
+        INFO(name);
+        const auto rejected = parse({"--exit-after-frames", "--self-check", name});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == ErrorCode::InvalidArgument);
+        CHECK(rejected.error().context == std::string("--self-check=") + name);
+    }
+}
+
 TEST_CASE("app/command_line: --help and --version skip the remaining validation", "[app][command_line]") {
     for (const char* help : {"--help", "-h"}) {
         const auto options = parse({help});
@@ -416,7 +440,7 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
                                "--no-vsync",     "--smoke",      "--frames",     "--exit-after-frames", "--exit",
                                "--gl-selftest",  "--asset-root", "--data-dir",   "--portable",          "--log-level",
                                "--no-dialogs",   "--scene",      "--screenshot", "--screenshot-size",   "--model",
-                               "--input-script", "--fixed-dt"}) {
+                               "--input-script", "--fixed-dt",   "--self-check"}) {
         INFO(option);
         CHECK(helpListsOption(help, option));
     }

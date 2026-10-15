@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -532,6 +533,32 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     }
     return makeError(ErrorCode::NotFound, "unknown test pattern (expected color_bars, checker or cover)",
                      std::string(name));
+}
+
+glm::ivec2 patternSizeForAspect(float aspect, int longSide) noexcept {
+    const int side = std::clamp(longSide, 1, kMaxImageDimension);
+    if (!std::isfinite(aspect) || aspect <= 0.0f) {
+        return glm::ivec2(side);
+    }
+    // The shorter side in floating point first: aspects beyond the int range must not overflow.
+    const auto shorter = [side](double ratio) {
+        return static_cast<int>(
+            std::clamp(std::lround(static_cast<double>(side) * ratio), 1L, static_cast<long>(side)));
+    };
+    if (aspect >= 1.0f) {
+        return glm::ivec2(side, shorter(1.0 / static_cast<double>(aspect)));
+    }
+    return glm::ivec2(shorter(static_cast<double>(aspect)), side);
+}
+
+std::string patternKey(std::string_view name, std::string_view title, std::uint32_t seed) {
+    std::string key = "pattern:";
+    key += name;
+    key += ':';
+    key += title;
+    key += ':';
+    key += std::to_string(seed);
+    return key;
 }
 
 } // namespace rv::assets

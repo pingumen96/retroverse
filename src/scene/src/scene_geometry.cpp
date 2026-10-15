@@ -207,6 +207,9 @@ SceneGeometry buildSceneGeometry(const SceneDescription& scene, const assets::Ma
             part.mesh = std::move(mesh);
             part.role = std::move(role);
             resolver.resolve(part);
+            if (const auto texture = object.texturesByRole.find(part.role); texture != object.texturesByRole.end()) {
+                part.texture = texture->second;
+            }
         }
         if (object.collides) {
             built.colliders = std::move(shapes->colliders);

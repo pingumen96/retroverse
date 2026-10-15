@@ -27,7 +27,8 @@ constexpr std::string_view kDescription =
     "          <user data>/config/bindings.json; Alt+Enter (borderless fullscreen) is fixed.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
     "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script);\n"
-    "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built).";
+    "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built,\n"
+    "              --self-check failed).";
 
 core::ArgParser makeParser() {
     core::ArgParser parser("retroverse", std::string(kDescription));
@@ -68,7 +69,11 @@ core::ArgParser makeParser() {
                 fmt::format("Advance the simulation by this time step every frame instead of the measured frame time "
                             "(at most {} s), for reproducible automated runs, e.g. 0.016667.",
                             CommandLineOptions::kMaxFixedDeltaSeconds))
-        .option("model", "file", "glTF model to display (not implemented yet).");
+        .option("model", "file", "glTF model to display (not implemented yet).")
+        .option("self-check", "name",
+                "Run a rendering check after initialization and fail the run (exit code 3) if it does not pass; "
+                "only with --smoke or --exit-after-frames. srgb: an unlit linear 0.5 grey quad must be stored as "
+                "sRGB 188 (+-2) by the sRGB render targets.");
     return parser;
 }
 
@@ -206,6 +211,23 @@ Expected<std::optional<double>> fixedDeltaSeconds(const core::ParsedArgs& args) 
     return std::optional<double>(*seconds);
 }
 
+/// --self-check <name>: a known check, in a run that ends on its own.
+Status applySelfCheck(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("self-check")) {
+        return ok();
+    }
+    const std::string name = args.value("self-check").value_or("");
+    const auto check = selfCheckFromString(name);
+    if (!check) {
+        return makeError(ErrorCode::InvalidArgument, "unknown check (expected srgb)", "--self-check=" + name);
+    }
+    if (!options.frameLimit) {
+        return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames", "--self-check");
+    }
+    options.selfCheck = *check;
+    return ok();
+}
+
 /// --frames, --smoke and --exit-after-frames together decide when the run stops; --hidden needs such a limit.
 Status applyRunLength(const core::ParsedArgs& args, CommandLineOptions& options) {
     if (args.has("frames")) {
@@ -325,6 +347,9 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     auto model = pathValue(*args, "model");
     if (!model) {
         return propagate(model.error());
+    }
+    if (auto selfCheck = applySelfCheck(*args, options); !selfCheck) {
+        return propagate(selfCheck.error());
     }
     options.scene = std::move(*scene);
     options.screenshot = std::move(*screenshot);

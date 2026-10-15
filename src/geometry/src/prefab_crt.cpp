@@ -188,7 +188,7 @@ void addQuad(MeshData& mesh, const glm::vec3& a, const glm::vec3& b, const glm::
             const glm::vec3 tangent =
                 detail::orthonormalize(glm::vec3(1.0f, 0.0f, dzdx), normal, glm::vec3(1.0f, 0.0f, 0.0f));
             detail::addVertex(mesh, glm::vec3(center.x + x, center.y + y, l.zScreen + l.bulge * fx * fy), normal,
-                              glm::vec4(tangent, -1.0f), glm::vec2(u, v));
+                              glm::vec4(tangent, 1.0f), glm::vec2(u, v));
         }
     }
     const auto columns = static_cast<std::uint32_t>(kScreenColumns + 1);

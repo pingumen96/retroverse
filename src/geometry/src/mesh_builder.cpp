@@ -444,7 +444,7 @@ MeshBuilder& MeshBuilder::uvSphere(float radius, int segments, int rings, const 
     const auto addPoles = [&](float y, float v) {
         for (int i = 0; i < segmentCount; ++i) {
             addVertex(local, glm::vec3(0.0f, y * r, 0.0f), glm::vec3(0.0f, y, 0.0f),
-                      glm::vec4(azimuth.midTangent(i), -1.0f), glm::vec2(azimuth.midU(i), v));
+                      glm::vec4(azimuth.midTangent(i), 1.0f), glm::vec2(azimuth.midU(i), v));
         }
     };
     addPoles(1.0f, 0.0f);
@@ -457,7 +457,7 @@ MeshBuilder& MeshBuilder::uvSphere(float radius, int segments, int rings, const 
         for (int i = 0; i <= segmentCount; ++i) {
             const glm::vec3 radial = azimuth.radial(i);
             const glm::vec3 normal(radial.x * sinTheta, cosTheta, radial.z * sinTheta);
-            addVertex(local, normal * r, normal, glm::vec4(azimuth.tangent(i), -1.0f), glm::vec2(azimuth.u(i), v));
+            addVertex(local, normal * r, normal, glm::vec4(azimuth.tangent(i), 1.0f), glm::vec2(azimuth.u(i), v));
         }
     }
     const auto southPoles = static_cast<std::uint32_t>(local.vertices.size());
@@ -524,12 +524,12 @@ MeshBuilder& MeshBuilder::frustum(float bottomRadius, float topRadius, float hei
                 for (int i = 0; i <= segmentCount; ++i) {
                     const glm::vec3 radial = azimuth.radial(i);
                     addVertex(local, radial * radius + glm::vec3(0.0f, y, 0.0f), sideNormal(radial),
-                              glm::vec4(azimuth.tangent(i), -1.0f), glm::vec2(azimuth.u(i), v));
+                              glm::vec4(azimuth.tangent(i), 1.0f), glm::vec2(azimuth.u(i), v));
                 }
             } else {
                 for (int i = 0; i < segmentCount; ++i) {
                     addVertex(local, glm::vec3(0.0f, y, 0.0f), sideNormal(azimuth.midRadial(i)),
-                              glm::vec4(azimuth.midTangent(i), -1.0f), glm::vec2(azimuth.midU(i), v));
+                              glm::vec4(azimuth.midTangent(i), 1.0f), glm::vec2(azimuth.midU(i), v));
                 }
             }
             return first;
@@ -555,7 +555,7 @@ MeshBuilder& MeshBuilder::frustum(float bottomRadius, float topRadius, float hei
                 return;
             }
             const glm::vec3 normal(0.0f, facing, 0.0f);
-            const glm::vec4 tangent(1.0f, 0.0f, 0.0f, -1.0f);
+            const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
             const std::uint32_t center =
                 addVertex(local, glm::vec3(0.0f, y, 0.0f), normal, tangent, glm::vec2(0.5f, 0.5f));
             for (int i = 0; i < segmentCount; ++i) {

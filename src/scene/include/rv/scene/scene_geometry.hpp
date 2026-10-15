@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -31,6 +32,10 @@ struct ScenePart {
     /// `material` is the library fallback: the role has no material, the named one is unknown, the inline material is
     /// invalid, or the part is a placeholder.
     bool fallbackMaterial = false;
+    /// Texture the scene binds to the part's role (SceneObject::texturesByRole): the renderer uses it as the base
+    /// color texture of `material`, in a material instance of its own. Empty when the role has none, and for
+    /// placeholders.
+    std::optional<TextureSource> texture;
 };
 
 /// CPU-side geometry of one SceneObject: every part is drawn at every transform in `instances` (local -> world,
@@ -72,8 +77,9 @@ struct SceneGeometry {
 /// Material of a part with role R: the library material named by SceneObject::materialNameForRole(R) (an unknown name
 /// gives the library fallback and is logged once by the library); without a name, the object's inlineMaterial parsed
 /// with assets::parseMaterialDesc (once per object; a parse error is logged and gives the fallback); without either,
-/// the fallback, logged. Colliders: see SceneObjectGeometry::colliders (a placeholder blocks like the furniture it
-/// stands in for). Never fails: missing or bad content becomes visible magenta (style §21).
+/// the fallback, logged. Textures: ScenePart::texture is SceneObject::texturesByRole[R], when present. Colliders: see
+/// SceneObjectGeometry::colliders (a placeholder blocks like the furniture it stands in for). Never fails: missing or
+/// bad content becomes visible magenta (style §21).
 [[nodiscard]] SceneGeometry buildSceneGeometry(const SceneDescription& scene, const assets::MaterialLibrary& materials);
 
 /// Static collision world of a scene for first-person navigation: every collider of every object at every instance

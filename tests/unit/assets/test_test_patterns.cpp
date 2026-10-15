@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -216,4 +217,31 @@ TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     REQUIRE_FALSE(unknown.has_value());
     CHECK(unknown.error().code == ErrorCode::NotFound);
     CHECK(rv::assets::makeNamedPattern("checker", 0, 16).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("assets/test_patterns: pattern images follow the aspect of their surface", "[assets][patterns]") {
+    using rv::assets::patternSizeForAspect;
+    CHECK(rv::assets::kPatternLongSide == 512);
+    CHECK(patternSizeForAspect(4.0f / 3.0f) == glm::ivec2(512, 384));   // CRT screen
+    CHECK(patternSizeForAspect(0.101f / 0.061f) == glm::ivec2(512, 309)); // cartridge label
+    CHECK(patternSizeForAspect(0.44f / 0.64f) == glm::ivec2(352, 512));   // poster picture
+    CHECK(patternSizeForAspect(1.0f, 64) == glm::ivec2(64, 64));
+    CHECK(patternSizeForAspect(2.0f, 100) == glm::ivec2(100, 50));
+
+    // Bad aspects give a square; extreme ones keep at least one pixel; the long side stays a valid image side.
+    for (const float bad :
+         {0.0f, -1.0f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
+        INFO(bad);
+        CHECK(patternSizeForAspect(bad) == glm::ivec2(512, 512));
+    }
+    CHECK(patternSizeForAspect(1e30f) == glm::ivec2(512, 1));
+    CHECK(patternSizeForAspect(1e-30f) == glm::ivec2(1, 512));
+    CHECK(patternSizeForAspect(1.0f, 0) == glm::ivec2(1, 1));
+    CHECK(patternSizeForAspect(1.0f, 1 << 20) == glm::ivec2(rv::assets::kMaxImageDimension));
+}
+
+TEST_CASE("assets/test_patterns: pattern keys name the pattern, its title and its seed", "[assets][patterns]") {
+    CHECK(rv::assets::patternKey("cover", "RETRO RALLY 16", 101) == "pattern:cover:RETRO RALLY 16:101");
+    CHECK(rv::assets::patternKey("color_bars", "", 0) == "pattern:color_bars::0");
+    CHECK(rv::assets::patternKey("cover", "A", 1) != rv::assets::patternKey("cover", "A", 2));
 }

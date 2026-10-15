@@ -38,14 +38,20 @@ behind: `--smoke` (render `--frames N`, default 3, then exit; any high-severity 
 `--exit-after-frames --frames N`. `--hidden`, `--frames` and `--screenshot` require one of them; frame-limited runs
 never show message boxes. Exit codes: 0 ok, 1 smoke check failed, 2 initialization failure (window, context,
 GL < 4.5, paths, scene file, input script), 3 runtime failure (unexpected error, `--screenshot` not written, scene
-shader never built). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs out of
-`%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
+shader never built, `--self-check` failed). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test
+runs out of `%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
 
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`), anything with a path separator or `.json` is a file.
 - `--screenshot <file.png>` writes the last frame of a frame-limited run; a run that ends before that frame (Esc,
   window closed) exits 3 like a failed write. `--screenshot-size WxH` (default 1920x1080, independent of the
   window) also applies to F12.
+- `--self-check srgb` (frame-limited runs only) checks the sRGB output pipeline after initialization: an unlit linear
+  0.5 grey quad drawn into an sRGB render target must read back as 188 +- 2, else the run exits 3. Use
+  `retroverse.exe --self-check srgb --smoke --hidden --data-dir build/rvdata`.
+- Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient, exposure + ACES): the look is
+  tuned in the scene files (`environment` exposure and ambient, `lights`), material presets in
+  `assets/materials/base/materials.json`, shaders in `assets/shaders/{common,pbr,unlit}`.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Esc (gamepad B) releases the mouse, or quits when it is free; F5 reloads the shaders,
@@ -73,8 +79,10 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 ```
 
 Open the PNG with the Read tool and compare it against `style.md` and `example.png`. The PNG (RGB, no alpha) holds
-sRGB-encoded values exactly as the window shows them (a `#383735` wall reads back as `#383735`), so pixels can also
-be checked numerically. Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`).
+sRGB-encoded values exactly as the window shows them (`--self-check srgb` proves the encoding), so pixels can also be
+checked numerically, e.g. with Python and Pillow. Check the log for GL debug messages (`GL debug output summary:
+0 high, 0 medium, ...`). The other reference scenes: `material_test` (roughness grows along X, metallic along Y) and
+`instancing_stress`.
 
 Other viewpoints and movement are scripted: `tests/input_scripts/*.json` (each file names its expected result; the
 unit tests in `tests/unit/integration/test_free_roam_navigation.cpp` play the same scripts):

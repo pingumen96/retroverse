@@ -104,6 +104,47 @@ TEST_CASE("scene/scene_geometry: the M0 test room resolves every part to a libra
     CHECK(geometry.drawnTriangleCount() == triangles); // one instance per object
 }
 
+TEST_CASE("scene/scene_geometry: scene textures reach exactly the parts of their role", "[scene][geometry]") {
+    const auto materials = realMaterials();
+    const auto scene = referenceScene("m0_testroom");
+    const SceneGeometry geometry = rv::scene::buildSceneGeometry(scene, materials);
+
+    std::size_t textured = 0;
+    for (const SceneObjectGeometry& built : geometry.objects) {
+        const rv::scene::SceneObject* source = scene.findObject(built.id);
+        REQUIRE(source != nullptr);
+        for (const ScenePart& builtPart : built.parts) {
+            INFO("object " << built.id << ", part " << builtPart.role);
+            const auto expected = source->texturesByRole.find(builtPart.role);
+            REQUIRE(builtPart.texture.has_value() == (expected != source->texturesByRole.end()));
+            if (builtPart.texture) {
+                ++textured;
+                CHECK(builtPart.texture->pattern == expected->second.pattern);
+                CHECK(builtPart.texture->title == expected->second.title);
+                CHECK(builtPart.texture->seed == expected->second.seed);
+            }
+        }
+    }
+    CHECK(textured == 24 + 1 + 2); // cartridge labels, the CRT screen, the two posters
+
+    const ScenePart& label = part(object(geometry, "cartridge_1_0"), "label");
+    REQUIRE(label.texture.has_value());
+    CHECK(label.texture->kind == rv::scene::TextureSource::Kind::Pattern);
+    CHECK(label.texture->pattern == "cover");
+    CHECK(label.texture->title == "RETRO RALLY 16");
+    CHECK(label.texture->seed == 101u);
+    CHECK_FALSE(part(object(geometry, "cartridge_1_0"), "plastic_shell").texture.has_value());
+    CHECK(part(object(geometry, "crt_tv"), "screen").texture->pattern == "color_bars");
+
+    // The surfaces are shaped like the pictures they show: a landscape label, a 4:3 screen, a portrait poster.
+    const glm::vec2 labelScale = rv::geometry::uvMetersPerUnit(label.mesh);
+    CHECK(labelScale.x / labelScale.y == Catch::Approx(0.101f / 0.061f).epsilon(1e-3));
+    const glm::vec2 screenScale = rv::geometry::uvMetersPerUnit(part(object(geometry, "crt_tv"), "screen").mesh);
+    CHECK(screenScale.x / screenScale.y == Catch::Approx(4.0f / 3.0f).epsilon(2e-2));
+    const glm::vec2 posterScale = rv::geometry::uvMetersPerUnit(part(object(geometry, "poster_left"), "picture").mesh);
+    CHECK(posterScale.x / posterScale.y == Catch::Approx(0.44f / 0.64f).epsilon(1e-3));
+}
+
 TEST_CASE("scene/scene_geometry: primitives use their kind as role and grids expand", "[scene][geometry]") {
     const auto materials = realMaterials();
     const SceneGeometry geometry = rv::scene::buildSceneGeometry(referenceScene("instancing_stress"), materials);

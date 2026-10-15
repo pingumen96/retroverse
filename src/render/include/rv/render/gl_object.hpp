@@ -7,8 +7,8 @@
 namespace rv::gl {
 
 /// Move-only owner of one OpenGL object name, deleted with `Deleter` (a stateless functor taking the name) when the
-/// owner is destroyed, reset or assigned. Zero means "no object". Building block of the RAII resource classes that
-/// own several GL objects (Framebuffer). Main thread only, like every GL call.
+/// owner is destroyed, reset or assigned. Zero means "no object". Building block of the RAII resource classes
+/// (Framebuffer, Texture2D, Sampler). Main thread only, like every GL call.
 template <class Deleter>
 class GlObject {
 public:
@@ -51,9 +51,13 @@ struct RenderbufferDeleter {
 struct FramebufferDeleter {
     void operator()(GLuint id) const noexcept { glDeleteFramebuffers(1, &id); }
 };
+struct SamplerDeleter {
+    void operator()(GLuint id) const noexcept { glDeleteSamplers(1, &id); }
+};
 
 using TextureObject = GlObject<TextureDeleter>;
 using RenderbufferObject = GlObject<RenderbufferDeleter>;
 using FramebufferObject = GlObject<FramebufferDeleter>;
+using SamplerObject = GlObject<SamplerDeleter>;
 
 } // namespace rv::gl

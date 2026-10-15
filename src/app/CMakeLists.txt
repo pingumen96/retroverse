@@ -1,12 +1,14 @@
 # rv_app: composition root (application host, main loop, input pipeline, free roam, scenes, screenshots). Links every
 # module.
 
-# GPU-free part of the application layer: command line options, scene selection, screenshot naming and the exit-code
-# policy. Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL.
+# GPU-free part of the application layer: command line options, scene selection, screenshot naming, the exit-code
+# policy and the verdicts of the rendering self-checks. Kept apart from rv_app so that rv_tests can unit-test it
+# without SDL or OpenGL.
 add_library(rv_app_cli STATIC
     src/command_line.cpp
     src/exit_code.cpp
     src/screenshot_name.cpp
+    src/self_check.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
@@ -22,6 +24,7 @@ add_library(rv_app STATIC
     src/free_roam.cpp
     src/retroverse_app.cpp
     src/scene_view.cpp
+    src/srgb_self_check.cpp
 )
 add_library(rv::app ALIAS rv_app)
 rv_set_target_defaults(rv_app)

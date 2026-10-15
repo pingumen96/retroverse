@@ -82,9 +82,51 @@ void computeTangents(MeshData& mesh) {
         } else {
             t = glm::normalize(t);
         }
-        const float handedness = glm::dot(glm::cross(n, t), bitangents[v]) < 0.0f ? -1.0f : 1.0f;
+        // glTF tangent space: the bitangent cross(n, t) * w follows -dP/dv (towards the top of the image), the
+        // "+Y up" direction of normal maps.
+        const float handedness = glm::dot(glm::cross(n, t), bitangents[v]) > 0.0f ? -1.0f : 1.0f;
         vertex.tangent = glm::vec4(t, handedness);
     }
+}
+
+glm::vec2 uvMetersPerUnit(const MeshData& mesh) noexcept {
+    const std::size_t vertexCount = mesh.vertices.size();
+    const std::size_t indexCount = mesh.indices.size() - (mesh.indices.size() % 3);
+    glm::dvec2 weightedLength(0.0);
+    double totalArea = 0.0;
+    for (std::size_t i = 0; i < indexCount; i += 3) {
+        const std::uint32_t i0 = mesh.indices[i];
+        const std::uint32_t i1 = mesh.indices[i + 1];
+        const std::uint32_t i2 = mesh.indices[i + 2];
+        if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount) {
+            continue;
+        }
+        const Vertex& v0 = mesh.vertices[i0];
+        const Vertex& v1 = mesh.vertices[i1];
+        const Vertex& v2 = mesh.vertices[i2];
+        const glm::dvec3 e1 = glm::dvec3(v1.position) - glm::dvec3(v0.position);
+        const glm::dvec3 e2 = glm::dvec3(v2.position) - glm::dvec3(v0.position);
+        const glm::dvec2 d1 = glm::dvec2(v1.uv0) - glm::dvec2(v0.uv0);
+        const glm::dvec2 d2 = glm::dvec2(v2.uv0) - glm::dvec2(v0.uv0);
+        const double determinant = d1.x * d2.y - d2.x * d1.y;
+        const double area = 0.5 * glm::length(glm::cross(e1, e2));
+        if (!std::isfinite(determinant) || std::fabs(determinant) < 1e-12 || !std::isfinite(area) || area <= 0.0) {
+            continue;
+        }
+        // Partial derivatives of the position with respect to u and v (as for tangents, not normalized).
+        const glm::dvec3 dPdu = (e1 * d2.y - e2 * d1.y) / determinant;
+        const glm::dvec3 dPdv = (e2 * d1.x - e1 * d2.x) / determinant;
+        const glm::dvec2 lengths(glm::length(dPdu), glm::length(dPdv));
+        if (!std::isfinite(lengths.x) || !std::isfinite(lengths.y)) {
+            continue;
+        }
+        weightedLength += lengths * area;
+        totalArea += area;
+    }
+    if (totalArea <= 0.0) {
+        return glm::vec2(0.0f);
+    }
+    return glm::vec2(weightedLength / totalArea);
 }
 
 Status validateMesh(const MeshData& mesh) {

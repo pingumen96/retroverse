@@ -13,22 +13,27 @@
     "near": 0.05,
     "far": 100.0
   },
+  // Tuned on the lit renderer (M0 step 6): the walls (#383735, 4% albedo) and walnut need strong light to leave the
+  // ACES toe, so the exposure is 1.5 and the key light hangs in front of the hero wall. The exposure also scales the
+  // emissive CRT screen: at 1.5 its 75% bars keep their colors instead of washing out to white.
   "environment": {
     "clearColor": "#151311",
-    "ambientSky": "#FFD6A8",
+    "ambientSky": "#FFE2C4",
     "ambientGround": "#5A3F2E",
-    "ambientIntensity": 0.08,
-    "exposure": 1.0
+    "ambientIntensity": 0.19,
+    "exposure": 1.5
   },
   "lights": [
-    {"name": "ceiling_tungsten", "type": "point", "position": [0.0, 2.75, -2.4], "color": "#FFC88A",
-     "intensity": 16.0, "range": 9.0},
-    // SNES / 16-bit preset (style 4.2): tungsten dominant with a light magenta accent on the TV corner.
-    {"name": "accent_magenta", "type": "spot", "position": [3.2, 2.85, -2.2], "target": [1.62, 1.0, -4.67],
-     "color": "#B34DCE", "intensity": 6.0, "range": 7.0, "innerConeDeg": 18.0, "outerConeDeg": 30.0},
-    // Bulb inside the floor lamp shade (LightSource socket height).
+    // Pendant tungsten key 0.65 m under the ceiling, 2 m in front of the hero wall: lights the shelf, the posters and
+    // the TV corner; its glow on the ceiling stays below clipping.
+    {"name": "ceiling_tungsten", "type": "point", "position": [0.5, 2.35, -3.0], "color": "#FFC88A",
+     "intensity": 30.0, "range": 10.0},
+    // SNES / 16-bit preset (style 4.2): tungsten dominant with a light magenta accent washing the TV corner.
+    {"name": "accent_magenta", "type": "spot", "position": [3.0, 2.7, -3.0], "target": [1.62, 1.0, -4.67],
+     "color": "#B34DCE", "intensity": 9.5, "range": 7.0, "innerConeDeg": 22.0, "outerConeDeg": 55.0},
+    // Bulb inside the floor lamp shade (LightSource socket height): the practical light of the north-west corner.
     {"name": "floor_lamp_bulb", "type": "point", "position": [-4.05, 1.45, -4.55], "color": "#FFC88A",
-     "intensity": 4.0, "range": 5.0}
+     "intensity": 12.0, "range": 6.0}
   ],
   "objects": [
     {"id": "room", "prefab": "room_shell",
