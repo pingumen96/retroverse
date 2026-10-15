@@ -1,6 +1,6 @@
 #include "free_roam.hpp"
 
-#include <algorithm>
+#include <utility>
 
 #include <fmt/format.h>
 #include <glm/glm.hpp>
@@ -10,18 +10,13 @@
 
 namespace rv::app {
 
-FreeRoam::FreeRoam(const scene::SceneDescription& scene, const scene::SceneGeometry& geometry)
-    : m_collision(scene::buildCollisionWorld(geometry)) {
+FreeRoam::FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision)
+    : m_collision(std::move(collision)) {
     const scene::FirstPersonSettings& settings = m_controller.settings();
     m_startFeet = scene.camera.position - glm::vec3(0.0f, settings.eyeHeight, 0.0f);
     m_controller.teleport(m_startFeet, core::degreesToRadians(scene.camera.yawDeg),
                           core::degreesToRadians(scene.camera.pitchDeg));
-    const auto collidingObjects =
-        std::count_if(geometry.objects.begin(), geometry.objects.end(), [](const scene::SceneObjectGeometry& object) {
-            return !object.colliders.empty() && !object.instances.empty();
-        });
-    spdlog::info("Free roam: {} collider box(es) from {} object(s); start {}", m_collision.boxes().size(),
-                 collidingObjects, describePose());
+    spdlog::info("Free roam: {} collider box(es); start {}", m_collision.boxes().size(), describePose());
     spdlog::info("Free roam: walk {} m/s, sprint {} m/s, eye height {} m, capsule radius {} m and height {} m, pitch "
                  "limit {} deg",
                  settings.walkSpeed, settings.sprintSpeed, settings.eyeHeight, settings.capsule.radius,

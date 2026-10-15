@@ -75,14 +75,6 @@ Status GpuMesh::attachInstanceBuffer(const Buffer& instances, std::size_t offset
     return status;
 }
 
-void GpuMesh::draw() const {
-    if (m_indexCount == 0) {
-        return;
-    }
-    m_vertexArray.bind();
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indexCount), GL_UNSIGNED_INT, nullptr);
-}
-
 void GpuMesh::drawInstanced(std::uint32_t instanceCount, std::uint32_t baseInstance) const {
     if (m_indexCount == 0 || instanceCount == 0) {
         return;

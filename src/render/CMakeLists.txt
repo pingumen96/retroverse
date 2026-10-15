@@ -1,11 +1,13 @@
-# rv_render: OpenGL 4.5 core renderer (device, shaders, buffers, textures, materials, framebuffers).
-# Receives the GL function loader as a function pointer and never includes SDL.
+# rv_render: OpenGL 4.5 core renderer (device, shaders, buffers, textures, mesh and material registries, glTF models,
+# the batched and instanced scene renderer, debug lines, framebuffers). Receives the GL function loader as a function
+# pointer and never includes SDL.
 
 # GPU-free policy pieces of the renderer, so rv_tests can unit-test them without a context. Their headers include no
 # OpenGL header.
 #   rv_render_debug_filter  which GL debug messages are logged, dropped or de-duplicated
 #   rv_render_uniforms      std140 uniform block mirrors (uniform_blocks.hpp) and their packing from scene lights,
-#                           the environment and materials; the CPU mirror of the display transform (tonemap.hpp)
+#                           the environment and materials; the CPU mirror of the display transform (tonemap.hpp);
+#                           the renderer's frame statistics (frame_stats.hpp, header only)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -28,13 +30,19 @@ rv_forbid_link(rv_render_uniforms)
 
 add_library(rv_render STATIC
     src/buffer.cpp
+    src/debug_draw.cpp
     src/framebuffer.cpp
     src/gl_device.cpp
     src/gl_object_label.cpp
     src/gpu_mesh.cpp
-    src/material_set.cpp
+    src/gpu_model.cpp
+    src/gpu_timer.cpp
+    src/instance_buffer.cpp
+    src/material_registry.cpp
+    src/mesh_registry.cpp
     src/render_state_cache.cpp
     src/sampler.cpp
+    src/scene_renderer.cpp
     src/shader_library.cpp
     src/shader_program.cpp
     src/texture.cpp

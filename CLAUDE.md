@@ -43,6 +43,15 @@ runs out of `%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
 
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`), anything with a path separator or `.json` is a file.
+  Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
+- `--model <file.gltf|.glb>` (not with `--scene`): model viewer, the model at the origin with a three-point light rig
+  and a camera framing its bounds from the front right and above; a file that cannot be loaded is shown as the magenta
+  placeholder (logged). `--debug-draw` draws debug lines over any scene or model: object bounds (amber), socket axes
+  (X red, Y green, Z blue) and a world grid on y = 0 (1 m cells in scenes; for a model, cells of the power of ten
+  that makes it span 2 to 20 of them: 10 cm for a 0.5 m model, 1 mm for a 1 cm part).
+- Frame statistics (draw calls, batches, instances, triangles, culled items, shader and material switches, GPU time
+  from a timer query, frame times) are logged once per second in developer builds and as `Frame stats of the run` at
+  the end of every frame-limited run; measure frame times with `--no-vsync`.
 - `--screenshot <file.png>` writes the last frame of a frame-limited run; a run that ends before that frame (Esc,
   window closed) exits 3 like a failed write. `--screenshot-size WxH` (default 1920x1080, independent of the
   window) also applies to F12.
@@ -97,6 +106,16 @@ build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --exit-after-frames 
 `walk_forward_2s.json` ends 3.2 m from the hero wall: a close-up of the shelf, a poster and the TV on its cabinet
 (a cartridge is about 50x30 px at 1920x1080). `turn_around.json` (`--frames 10`) faces the entrance half: the south
 wall and the doorway, which must read in free roam too.
+
+glTF models are checked with `--model` and a model written to `build/` (never commit third-party models; downloads
+go to the git-ignored `assets/staging`), e.g. a cube whose faces are labeled FRONT +Z, TOP +Y, RIGHT +X: in the
+default view FRONT faces the camera, TOP is up and every label reads unmirrored. Add `--debug-draw` for the grid
+(scale) and the socket axes:
+
+```powershell
+build/msvc-x64-debug/bin/retroverse.exe --model build/models/orientation_cube.gltf --debug-draw --exit-after-frames `
+  --frames 5 --hidden --screenshot build/screenshots/model.png --data-dir build/rvdata
+```
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),

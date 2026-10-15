@@ -1,5 +1,6 @@
 #include "srgb_self_check.hpp"
 
+#include <span>
 #include <string>
 #include <utility>
 
@@ -8,10 +9,11 @@
 #include <rv/assets/material_desc.hpp>
 #include <rv/assets/shader_source.hpp>
 #include <rv/geometry/prefabs.hpp>
+#include <rv/render/buffer.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/gpu_mesh.hpp>
-#include <rv/render/material_set.hpp>
+#include <rv/render/material_registry.hpp>
 #include <rv/render/shader_program.hpp>
 #include <rv/render/texture_defaults.hpp>
 #include <rv/render/uniform_buffer.hpp>
@@ -45,7 +47,8 @@ Expected<SrgbCheckResult> runSrgbSelfCheck(gl::GLDevice& device, const gl::Textu
         return propagate(program.error());
     }
 
-    // A 2 x 2 quad facing +Z through identity matrices covers the whole target.
+    // A 2 x 2 quad facing +Z through identity matrices covers the whole target: one instance with the identity model
+    // matrix, read like every mesh instance (pbr.vert).
     auto quad = geometry::buildPrimitive("quad", nlohmann::json{{"size", {2.0, 2.0}}});
     if (!quad) {
         return propagate(quad.error());
@@ -54,17 +57,26 @@ Expected<SrgbCheckResult> runSrgbSelfCheck(gl::GLDevice& device, const gl::Textu
     if (!mesh) {
         return propagate(mesh.error());
     }
+    const glm::mat4 identity(1.0f);
+    auto instance =
+        gl::Buffer::create(std::as_bytes(std::span<const glm::mat4, 1>(&identity, 1)), 0, "SrgbSelfCheck.instance");
+    if (!instance) {
+        return propagate(instance.error());
+    }
+    if (auto attached = mesh->attachInstanceBuffer(*instance); !attached) {
+        return propagate(attached.error());
+    }
 
     assets::MaterialDesc grey;
     grey.name = "SrgbSelfCheck.grey";
     grey.shading = assets::ShadingModel::Unlit;
     grey.baseColorFactor = glm::vec4(glm::vec3(kSrgbCheckLinearValue), 1.0f);
     grey.emissiveStrength = 1.0f;
-    auto materials = gl::MaterialSet::create(defaults, 1.0f);
+    auto materials = gl::MaterialRegistry::create(defaults, 1.0f);
     if (!materials) {
         return propagate(materials.error());
     }
-    const scene::MaterialHandle material = materials->add(grey.name, grey, gl::MaterialTextures{});
+    const scene::MaterialHandle material = materials->add(grey.name, grey.name, grey, gl::MaterialTextures{});
     if (auto uploaded = materials->upload(device.caps().uniformBufferOffsetAlignment, "SrgbSelfCheck.material");
         !uploaded) {
         return propagate(uploaded.error());
@@ -94,8 +106,7 @@ Expected<SrgbCheckResult> runSrgbSelfCheck(gl::GLDevice& device, const gl::Textu
     frameUniforms->bind(gl::UniformBinding::Frame);
     materials->bind(material);
     program->use();
-    program->setMat4("uModel", glm::mat4(1.0f));
-    mesh->draw();
+    mesh->drawInstanced(1);
 
     auto pixels = target->readPixels();
     gl::Framebuffer::unbind();

@@ -10,16 +10,15 @@
 #include <rv/scene/collision.hpp>
 #include <rv/scene/first_person_controller.hpp>
 #include <rv/scene/scene_description.hpp>
-#include <rv/scene/scene_geometry.hpp>
 
 namespace rv::app {
 
 /// FreeRoam mode (specification §12.2): first-person walking with capsule collision. The walker starts at the scene
 /// camera (feet = camera position - eye height, the camera's yaw, its pitch within the walker's pitch limit) and
-/// collides with scene::buildCollisionWorld() of the scene geometry. GPU-free state; main thread.
+/// collides with the scene's collision world (SceneInstance::collisionWorld). GPU-free state; main thread.
 class FreeRoam {
 public:
-    FreeRoam(const scene::SceneDescription& scene, const scene::SceneGeometry& geometry);
+    FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision);
 
     /// Advances the walker by one frame of `deltaSeconds` and writes the camera pose.
     void update(const input::ActionState& actions, float deltaSeconds, scene::Camera& camera);

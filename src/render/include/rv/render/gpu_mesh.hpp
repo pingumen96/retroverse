@@ -19,9 +19,10 @@ namespace rv::gl {
 /// standard 48-byte layout (geometry::VertexLayout::standard(): location 0 position, 1 normal, 2 tangent, 3 uv0, all
 /// read from binding 0), an immutable uint32 index buffer and the vertex array that ties them together (DSA).
 ///
-/// Instancing: attribute locations 4..7 are reserved for a per-instance model matrix, one column per location. Attach
-/// a buffer of column-major glm::mat4 with attachInstanceBuffer() and draw with drawInstanced(); a shader that does not
-/// read locations 4..7 can still use draw(). A default-constructed or moved-from GpuMesh is empty. Main thread only.
+/// Instancing: attribute locations 4..7 hold the per-instance model matrix (local -> world), one column per location,
+/// read by every mesh shader (pbr/pbr.vert). Attach a buffer of column-major glm::mat4 with attachInstanceBuffer()
+/// (usually the renderer's InstanceBuffer) and draw with drawInstanced(). A default-constructed or moved-from GpuMesh
+/// is empty. Main thread only.
 class GpuMesh {
 public:
     static constexpr GLuint kVertexBinding = 0;
@@ -42,9 +43,9 @@ public:
     /// stride). The mesh does not own the buffer: keep it alive while drawing. Attaching again replaces the buffer.
     [[nodiscard]] Status attachInstanceBuffer(const Buffer& instances, std::size_t offsetBytes = 0);
 
-    /// Draws every triangle once. Binds the mesh's vertex array; the program and the render state are the caller's.
-    void draw() const;
-    /// Draws `instanceCount` copies: instance i reads matrix `baseInstance + i` of the attached instance buffer.
+    /// Draws `instanceCount` copies (glDrawElementsInstancedBaseInstance): instance i reads matrix `baseInstance + i`
+    /// of the attached instance buffer. Binds the mesh's vertex array; the program and the render state are the
+    /// caller's.
     void drawInstanced(std::uint32_t instanceCount, std::uint32_t baseInstance = 0) const;
 
     [[nodiscard]] bool valid() const noexcept { return m_vertexArray.valid(); }

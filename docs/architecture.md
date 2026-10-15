@@ -10,19 +10,19 @@ This document describes the code that exists today. The target architecture is i
 | geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex` with glTF tangent space), sockets, procedural mesh builder and procedural prefabs with their collision boxes, uv scale of a surface, also as drawn with a transform (`uvMetersPerUnit`) | core |
 | input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets, shader source loading, procedural test patterns (sized to their surface: `patternSizeForAspect`) | core, geometry, fastgltf, stb |
-| scene | `rv_scene` | Camera, first-person controller, lights, render items and batching plan, scene description files, scene geometry assembly (`buildSceneGeometry`: meshes, resolved materials, scene textures and colliders per object), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
+| scene | `rv_scene` | Camera, first-person controller, lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneDebugLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
 | platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
-| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary`, `GpuMesh`, uniform buffers, framebuffers, textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), GPU materials (`MaterialSet`) | core, geometry, assets, scene, glad |
+| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary`, `GpuMesh`, uniform buffers, framebuffers, textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry`), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`), debug lines (`DebugDraw`) | core, geometry, assets, scene, glad |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only) | platform, render, imgui |
-| app | `rv_app` | Composition root: application host, main loop, input pipeline, FreeRoam walking, scene loading and the lit scene view, screenshots, the sRGB self-check | all of the above |
+| app | `rv_app` | Composition root: application host, main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the model viewer (`--model`), screenshots, the sRGB self-check | all of the above |
 
 Three GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
 | Sub-target | Part of | Content |
 |---|---|---|
-| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, self-check verdicts (`evaluateSrgbCheck`), the scene draw plan of the lit scene view (`planSceneDraws`: materials and picture instances, drawing order) |
+| `rv_app_cli` | app | Command line options and validation, scene selection (`resolveScenePath`), screenshot file names, exit-code policy, self-check verdicts (`evaluateSrgbCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances), the model viewer scene (`makeModelViewerScene`: framing, three-point light rig; `modelViewerGrid`), the frame statistics log (`FrameStatsLog`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
-| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and environment packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, for the clear color) |
+| `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and environment packed into `LightsUniforms` (`packLights`), materials into `MaterialUniforms` (`makeMaterialUniforms`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, for the clear color), the renderer's frame statistics (`FrameStats`, header only) |
 
 `core`, `geometry`, `input`, `assets`, `scene` and the three sub-targets are **GPU-free**: they never reach SDL3,
 glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
@@ -38,23 +38,53 @@ geometry, resolves the real materials and preprocesses the real shaders.
 
 ## Rendering path (M0)
 
-- **Scene:** `--scene <name|file>` (default `m0_testroom`) is loaded with `scene::loadSceneDescription`;
-  `scene::buildSceneGeometry` builds every prefab or primitive, resolves each part's material (library name, inline
-  material, magenta fallback; placeholder cubes for unavailable geometry) and attaches the texture the scene binds to
-  the part's role. The application's `SceneView` uploads one `GpuMesh` per part and draws every part instance
-  separately (batching and instancing arrive with step 8) in the order of the GPU-free plan `app::planSceneDraws`
-  (`rv/app/scene_draw_plan.hpp`, unit-tested): opaque materials, then alpha-masked ones, each sorted by shader,
-  material and part, then alpha-blended ones in scene order (blending on, depth writes off, no depth sorting yet).
+- **Scene:** `--scene <name|file>` (default `m0_testroom`) is loaded with `scene::loadSceneDescription`; `--model
+  <file>` instead builds the model viewer scene (`app::makeModelViewerScene`: the model at the origin, a camera framing
+  its bounds from the front right and above, a three-point light rig sized to it, a neutral environment).
+  `app::SceneInstance` (`rv/app/scene_instance.hpp`) turns the description into drawable content, the reusable step
+  between a scene and the renderer: `scene::buildSceneGeometry` builds every prefab or primitive once per kind and
+  parameters (the 24 cartridges of the test room share one shell mesh and one label mesh, `ScenePart::meshKey`),
+  loads every glTF model once per path (`scene::ModelLoader`: `assets::loadGltf` under the asset root, or the viewer's
+  file), resolves each part's material (library name, inline material, magenta fallback; magenta placeholder cubes
+  for unavailable geometry: builder errors, models that cannot be loaded or have nothing to draw) and attaches the
+  texture the scene binds to the part's role. The GPU-free plan `app::planSceneContent` (unit-tested) lists the
+  distinct meshes, the materials and one render item per part and object instance; `SceneInstance` registers them in
+  the `gl::MeshRegistry` and `gl::MaterialRegistry` (deduplicated by key), uploads every distinct model as a
+  `gl::GpuModel` (meshes `<path>#mesh<i>`, materials `<path>#material<i>`, images through the `TextureCache` as
+  `<path>#image<i>`, the draw items with their node transforms, the sockets) and adds one render item per model
+  primitive and model instance. It also packs the lights, tonemaps the clear color, builds the collision world and the
+  debug lines (bounds of every object instance, axes of every socket).
+- **Renderer:** `gl::SceneRenderer` draws a `gl::RenderView` (camera, render items, lights, clear color, time,
+  optional debug lines) per target. Per view it writes `FrameUniforms` and, when they changed, `LightsUniforms`;
+  plans the items with `scene::BatchPlanner` (frustum culling against the registered mesh bounds; opaque batches, then
+  alpha-masked ones, each sorted by shader, material and mesh; then alpha-blended items back to front by the distance
+  to their world bounds, consecutive ones with the same key merged); copies every instance matrix of the plan into the
+  `gl::InstanceBuffer` (persistently mapped, coherent, three regions used in turn, each guarded by a fence placed
+  after the draws that read it, grown and re-attached to the meshes when a view needs more) and issues one
+  `glDrawElementsInstancedBaseInstance` per batch, binding the program and the material (uniform block range,
+  textures, samplers, blend, depth writes, culling) only when they change. Mesh shaders read the instance matrix at
+  vertex attribute locations 4..7 (divisor 1). A `gl::GpuTimer` (a ring of `GL_TIME_ELAPSED` queries read frames
+  later, never stalling) times each view. `gl::FrameStats` (items, culled items, batches, draw calls, instances,
+  triangles, shader and material switches, debug lines, GPU time) are kept per view; `app::FrameStatsLog` logs them
+  with the frame times once per second in developer builds (`RV_DEV_UI`) and for the whole run at the end of
+  frame-limited runs. The test room draws its 71 parts in 47 batches (23 meshes uploaded); `instancing_stress` draws
+  1001 items in 4.
+- **Debug lines:** `--debug-draw` adds `gl::DebugDraw` over the scene: `scene::DebugLines` (a world grid, every
+  object instance's bounds as an oriented box, the axes of every socket: shelf slots, the CRT screen surface, model
+  anchors) uploaded once and drawn as `GL_LINES` in one call with `debug/debug_lines.{vert,frag}` (linear colors, no
+  lighting or tonemapping; depth-tested without depth writes, each vertex pulled towards the eye by 0.2% of its
+  distance so that lines lying on surfaces do not flicker).
 - **Materials:** one GPU material per material of the scene, and one more per object, role and pattern size with a
   scene texture, which becomes that instance's base color texture (cover patterns on cartridge labels and posters,
   color bars on the CRT screen; patterns are generated at the aspect ratio of their surface as drawn,
   `geometry::uvMetersPerUnit` with the instance transform, so a poster scaled unevenly is not stretched). Scene
-  textures are single pictures, sampled clamped to their edges; textures named by materials repeat. `MaterialSet`
-  keeps every `MaterialUniforms` block in one uniform buffer (offsets aligned to `GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT`)
-  and binds per material the block range, five textures (base color and emissive sRGB; metallic-roughness, normal and
-  occlusion linear; neutral `TextureDefaults` in empty slots) and sampler objects (trilinear, 8x anisotropy clamped to
-  the device, the wrap mode of the texture). Material flags tell the shaders which slots hold a texture and the alpha
-  mode; fragment stages sample every texture before an alpha-mask discard (derivatives are undefined after it).
+  textures are single pictures, sampled clamped to their edges; textures named by materials and model images repeat.
+  `MaterialRegistry` keeps every `MaterialUniforms` block in one uniform buffer (offsets aligned to
+  `GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT`) and binds per material the block range, five textures (base color and emissive
+  sRGB; metallic-roughness, normal and occlusion linear; neutral `TextureDefaults` in empty slots) and sampler objects
+  (trilinear, 8x anisotropy clamped to the device, the wrap mode of the texture). Material flags tell the shaders
+  which slots hold a texture and the alpha mode; fragment stages sample every texture before an alpha-mask discard
+  (derivatives are undefined after it).
   Shader families (`scene::ShaderKind`): `Pbr` (`pbr/pbr.vert` + `pbr/pbr.frag`) and `Unlit` (`pbr/pbr.vert` +
   `unlit/unlit_emissive.frag`: base color * texture * emissive strength).
 - **Textures:** `TextureCache` uploads each source once (asset files, `pattern:<name>:<title>:<seed>@WxH` patterns,
@@ -82,7 +112,7 @@ geometry, resolves the real materials and preprocesses the real shaders.
 - **Uniforms:** binding points are listed once in `rv/render/uniform_blocks.hpp` (0 frame, 1 lights, 2 material,
   3+ reserved) with the std140 mirrors `FrameUniforms` (view, projection, viewProjection, cameraPosition, time:
   `common/common.glsl`), `LightsUniforms` (`common/lights.glsl`) and `MaterialUniforms` (`common/material.glsl`).
-  The per-draw `uModel` is a plain uniform.
+  Model matrices are per-instance vertex attributes (locations 4..7), not uniforms.
 - **Shaders:** `gl::ShaderLibrary` assembles GLSL from `<asset root>/shaders` (`#include`, defines, `#line`) and
   maps compiler messages to `<file>:<line>`. F5 rebuilds every program; developer builds (`RV_DEV_ASSET_ROOT`) also
   poll the files of every program, includes included, every 500 ms (after a failed assembly: the files it read and
@@ -109,13 +139,13 @@ One pass per frame on the main thread, in `RetroverseApp` (`src/app/src/app_inpu
 - **Use:** Back releases the captured mouse or quits, ReloadShaders and Screenshot are handled by the app, ToggleDevUI
   is reserved for the developer overlay. `FreeRoam` drives `scene::FirstPersonController` with the actions and the
   frame delta (`--fixed-dt` replaces it for reproducible runs; the sum of the deltas is also the shader time): the
-  walker starts at the scene camera (feet = camera position - eye height) and collides with
-  `scene::buildCollisionWorld()` of the scene geometry, built from the colliders each prefab declares (for
-  `room_shell` one box per wall part around the doorway and a stop in the doorway's outer face, so the walker can
-  step into the opening but not leave the room; the bounds for furniture; none for `rug`; objects with
-  `"collides": false` have none). Objects turned about +Y collide with their exact footprints, tilted ones with their
-  world boxes. Frame-limited runs log the final feet position, yaw and pitch, the simulated time, the distance walked
-  and the nearest collider with its clearance.
+  walker starts at the scene camera (feet = camera position - eye height) and collides with the collision world of the
+  `SceneInstance` (`scene::buildCollisionWorld()` of the scene content), built from the colliders each object declares
+  (for `room_shell` one box per wall part around the doorway and a stop in the doorway's outer face, so the walker can
+  step into the opening but not leave the room; the bounds for furniture; the `ColliderProxy` nodes of glTF models,
+  else their bounds; none for `rug`; objects with `"collides": false` have none). Objects turned about +Y collide with
+  their exact footprints, tilted ones with their world boxes. Frame-limited runs log the final feet position, yaw and
+  pitch, the simulated time, the distance walked and the nearest collider with its clearance.
 
 ## Threading (M0)
 

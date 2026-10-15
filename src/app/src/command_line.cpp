@@ -69,7 +69,10 @@ core::ArgParser makeParser() {
                 fmt::format("Advance the simulation by this time step every frame instead of the measured frame time "
                             "(at most {} s), for reproducible automated runs, e.g. 0.016667.",
                             CommandLineOptions::kMaxFixedDeltaSeconds))
-        .option("model", "file", "glTF model to display (not implemented yet).")
+        .option("model", "file",
+                "glTF model (.gltf or .glb) to inspect instead of a scene: drawn at the origin with a three-point "
+                "light rig and a camera framing it. Not together with --scene.")
+        .flag("debug-draw", "Draw debug lines over the scene: object bounds, socket axes and a world grid.")
         .option("self-check", "name",
                 "Run a rendering check after initialization and fail the run (exit code 3) if it does not pass; "
                 "only with --smoke or --exit-after-frames. srgb: an unlit linear 0.5 grey quad must be stored as "
@@ -211,6 +214,20 @@ Expected<std::optional<double>> fixedDeltaSeconds(const core::ParsedArgs& args) 
     return std::optional<double>(*seconds);
 }
 
+/// --model <file>: a glTF file, shown instead of a scene.
+Status validateModel(const std::filesystem::path& model, bool sceneGiven) {
+    const std::string extension = core::pathToUtf8(model.extension());
+    if (!core::equalsIgnoreCaseAscii(extension, ".gltf") && !core::equalsIgnoreCaseAscii(extension, ".glb")) {
+        return makeError(ErrorCode::InvalidArgument, "glTF models are .gltf or .glb files",
+                         "--model=" + core::pathToUtf8(model));
+    }
+    if (sceneGiven) {
+        return makeError(ErrorCode::InvalidArgument, "the model viewer replaces the scene: give --model or --scene",
+                         "--model");
+    }
+    return ok();
+}
+
 /// --self-check <name>: a known check, in a run that ends on its own.
 Status applySelfCheck(const core::ParsedArgs& args, CommandLineOptions& options) {
     if (!args.has("self-check")) {
@@ -348,6 +365,11 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (!model) {
         return propagate(model.error());
     }
+    if (*model) {
+        if (auto valid = validateModel(**model, scene->has_value()); !valid) {
+            return propagate(valid.error());
+        }
+    }
     if (auto selfCheck = applySelfCheck(*args, options); !selfCheck) {
         return propagate(selfCheck.error());
     }
@@ -356,6 +378,7 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     options.inputScript = std::move(*inputScript);
     options.fixedDeltaSeconds = *fixedDt;
     options.model = std::move(*model);
+    options.debugDraw = args->has("debug-draw");
     return options;
 }
 

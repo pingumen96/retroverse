@@ -39,6 +39,14 @@ float tagOf(const glm::mat4& model) {
     return model[3][0];
 }
 
+/// Options that cull against `frustum` with `localBounds`.
+rv::scene::PlanOptions culling(const rv::scene::Frustum& frustum, const std::function<Aabb(MeshHandle)>& localBounds) {
+    rv::scene::PlanOptions options;
+    options.frustum = frustum;
+    options.localBounds = localBounds;
+    return options;
+}
+
 /// Every batch is non-empty and the batches tile instanceTransforms contiguously and in order.
 void checkContiguous(const BatchPlan& plan) {
     std::uint32_t next = 0;
@@ -138,7 +146,8 @@ TEST_CASE("scene/batch_planner: frustum culling uses the world bounds of each in
         item(2, 1, ShaderKind::Pbr, 0.0f, 5.0f),   // behind but bounds unknown: kept
         item(1, 1, ShaderKind::Pbr, 30.0f, -5.0f), // far to the right of the 75-degree view: culled
     };
-    const BatchPlan plan = BatchPlanner{}.plan(items, frustum, localBounds);
+    const BatchPlan plan = BatchPlanner{}.plan(items, culling(frustum, localBounds));
+    CHECK(plan.culledItems == 3);
     REQUIRE(plan.batches.size() == 2);
     checkContiguous(plan);
     CHECK(plan.batches[0].mesh == MeshHandle{1});
@@ -154,11 +163,12 @@ TEST_CASE("scene/batch_planner: frustum culling uses the world bounds of each in
     // A scaled model moves the world bounds: a unit cube scaled 20x around z = -5 reaches the view from behind.
     std::vector<RenderItem> scaled{item(1, 1, ShaderKind::Pbr, 0.0f, 5.0f)};
     scaled[0].model = glm::scale(scaled[0].model, glm::vec3(20.0f));
-    CHECK(BatchPlanner{}.plan(scaled, frustum, localBounds).batches.size() == 1);
+    CHECK(BatchPlanner{}.plan(scaled, culling(frustum, localBounds)).batches.size() == 1);
 
     // Without a bounds function nothing is culled.
-    CHECK(BatchPlanner{}.plan(items, frustum, std::function<Aabb(MeshHandle)>{}).instanceTransforms.size() ==
-          items.size());
+    const BatchPlan unknown = BatchPlanner{}.plan(items, culling(frustum, std::function<Aabb(MeshHandle)>{}));
+    CHECK(unknown.instanceTransforms.size() == items.size());
+    CHECK(unknown.culledItems == 0);
 }
 
 TEST_CASE("scene/batch_planner: empty input and non-finite transforms", "[scene][batch_planner]") {
@@ -186,4 +196,134 @@ TEST_CASE("scene/batch_planner: handles compare and hash by value", "[scene][bat
     std::unordered_map<MaterialHandle, int> materials{{MaterialHandle{5}, 1}};
     CHECK(materials.at(MaterialHandle{5}) == 1);
     CHECK(std::hash<MeshHandle>{}(MeshHandle{7}) == std::hash<MeshHandle>{}(MeshHandle{7}));
+}
+
+namespace {
+
+using rv::scene::DrawPass;
+using rv::scene::PlanOptions;
+
+/// Tags (x translations) of the instances in plan order.
+std::vector<float> tagsOf(const BatchPlan& plan) {
+    std::vector<float> tags;
+    for (const glm::mat4& model : plan.instanceTransforms) {
+        tags.push_back(tagOf(model));
+    }
+    return tags;
+}
+
+Aabb unitCube(MeshHandle /*mesh*/) {
+    return Aabb::fromCenterHalfExtents(glm::vec3(0.0f), glm::vec3(0.5f));
+}
+
+} // namespace
+
+TEST_CASE("scene/batch_planner: opaque, then masked, then blended items back to front", "[scene][batch_planner]") {
+    // Materials 1 and 2 are opaque, 3 is masked, 4 and 5 are blended.
+    int passCalls = 0;
+    PlanOptions options;
+    options.localBounds = unitCube;
+    options.passOf = [&passCalls](MaterialHandle material) {
+        ++passCalls;
+        return material.value >= 4 ? DrawPass::Blend : (material.value == 3 ? DrawPass::Mask : DrawPass::Opaque);
+    };
+    // Item i sits at (tag, 0, z); the eye is at the origin.
+    const std::vector<RenderItem> items{
+        item(1, 4, ShaderKind::Pbr, 0.0f, -3.0f),   // blended, distance^2 9
+        item(1, 1, ShaderKind::Pbr, 1.0f, -5.0f),   // opaque
+        item(1, 4, ShaderKind::Pbr, 2.0f, -9.0f),   // blended, distance^2 85
+        item(2, 3, ShaderKind::Pbr, 3.0f, -5.0f),   // masked
+        item(1, 5, ShaderKind::Unlit, 4.0f, -6.0f), // blended, distance^2 52
+        item(1, 2, ShaderKind::Pbr, 5.0f, -5.0f),   // opaque
+        item(1, 4, ShaderKind::Pbr, 6.0f, -8.0f),   // blended, distance^2 100: the farthest
+    };
+    const BatchPlan plan = BatchPlanner{}.plan(items, options);
+    checkContiguous(plan);
+    CHECK(plan.culledItems == 0);
+    // One passOf call per run of a material in submission order (no two neighbors share one here).
+    CHECK(passCalls == 7);
+
+    REQUIRE(plan.batches.size() == 6);
+    const auto expect = [&plan](std::size_t index, DrawPass pass, ShaderKind shader, std::uint32_t material,
+                                std::uint32_t count) {
+        INFO("batch " << index);
+        CHECK(plan.batches[index].pass == pass);
+        CHECK(plan.batches[index].shader == shader);
+        CHECK(plan.batches[index].material == MaterialHandle{material});
+        CHECK(plan.batches[index].instanceCount == count);
+    };
+    expect(0, DrawPass::Opaque, ShaderKind::Pbr, 1, 1);
+    expect(1, DrawPass::Opaque, ShaderKind::Pbr, 2, 1);
+    expect(2, DrawPass::Mask, ShaderKind::Pbr, 3, 1);
+    // Back to front: the two farthest blended items share material and mesh, so they form one batch drawn in order.
+    expect(3, DrawPass::Blend, ShaderKind::Pbr, 4, 2);
+    expect(4, DrawPass::Blend, ShaderKind::Unlit, 5, 1);
+    expect(5, DrawPass::Blend, ShaderKind::Pbr, 4, 1);
+    CHECK(tagsOf(plan) == std::vector<float>{1.0f, 5.0f, 3.0f, 6.0f, 2.0f, 4.0f, 0.0f});
+}
+
+TEST_CASE("scene/batch_planner: blended items sort by the center of their world bounds, ties in submission order",
+          "[scene][batch_planner]") {
+    PlanOptions options;
+    options.eye = glm::vec3(0.0f, 0.0f, 0.0f);
+    options.passOf = [](MaterialHandle) {
+        return DrawPass::Blend;
+    };
+    // Mesh 1: a unit cube around its origin. Mesh 2: bounds centered 20 m behind its origin. Mesh 3: unknown bounds.
+    options.localBounds = [](MeshHandle mesh) {
+        if (mesh == MeshHandle{1}) {
+            return unitCube(mesh);
+        }
+        if (mesh == MeshHandle{2}) {
+            return Aabb::fromCenterHalfExtents(glm::vec3(0.0f, 0.0f, -20.0f), glm::vec3(0.5f));
+        }
+        return Aabb{};
+    };
+
+    // Mesh 2 at z = -2 is centered at z = -22: the farthest although its origin is the nearest.
+    std::vector<RenderItem> items{item(1, 1, ShaderKind::Pbr, 0.0f, -10.0f), item(2, 2, ShaderKind::Pbr, 1.0f, -2.0f),
+                                  item(3, 3, ShaderKind::Pbr, 2.0f, -15.0f)};
+    CHECK(tagsOf(BatchPlanner{}.plan(items, options)) == std::vector<float>{1.0f, 2.0f, 0.0f});
+
+    // Equal distances keep the submission order, whatever the keys.
+    std::vector<RenderItem> ring{item(1, 7, ShaderKind::Pbr, 3.0f, 0.0f), item(1, 2, ShaderKind::Pbr, -3.0f, 0.0f),
+                                 item(1, 7, ShaderKind::Pbr, 0.0f, -3.0f)};
+    const BatchPlan tied = BatchPlanner{}.plan(ring, options);
+    CHECK(tagsOf(tied) == std::vector<float>{3.0f, -3.0f, 0.0f});
+    CHECK(tied.batches.size() == 3);
+
+    // A non-finite eye counts as the origin instead of breaking the sort.
+    options.eye = glm::vec3(std::numeric_limits<float>::quiet_NaN());
+    CHECK(tagsOf(BatchPlanner{}.plan(ring, options)) == std::vector<float>{3.0f, -3.0f, 0.0f});
+}
+
+TEST_CASE("scene/batch_planner: culling applies to every pass", "[scene][batch_planner]") {
+    rv::scene::Camera camera;
+    camera.setPose(glm::vec3(0.0f), 0.0f, 0.0f); // looking down -Z
+    PlanOptions options = culling(camera.frustum(), unitCube);
+    options.passOf = [](MaterialHandle material) {
+        return material.value == 2 ? DrawPass::Blend : DrawPass::Opaque;
+    };
+    const std::vector<RenderItem> items{
+        item(1, 1, ShaderKind::Pbr, 0.0f, -5.0f), // opaque, visible
+        item(1, 1, ShaderKind::Pbr, 0.0f, 5.0f),  // opaque, behind
+        item(1, 2, ShaderKind::Pbr, 1.0f, -5.0f), // blended, visible
+        item(1, 2, ShaderKind::Pbr, 1.0f, 5.0f),  // blended, behind
+    };
+    const BatchPlan plan = BatchPlanner{}.plan(items, options);
+    CHECK(plan.culledItems == 2);
+    REQUIRE(plan.batches.size() == 2);
+    CHECK(plan.batches[0].pass == DrawPass::Opaque);
+    CHECK(plan.batches[1].pass == DrawPass::Blend);
+    CHECK(tagsOf(plan) == std::vector<float>{0.0f, 1.0f});
+}
+
+TEST_CASE("scene/batch_planner: draw passes follow the alpha modes", "[scene][batch_planner]") {
+    CHECK(rv::scene::drawPassOf(rv::assets::AlphaMode::Opaque) == DrawPass::Opaque);
+    CHECK(rv::scene::drawPassOf(rv::assets::AlphaMode::Mask) == DrawPass::Mask);
+    CHECK(rv::scene::drawPassOf(rv::assets::AlphaMode::Blend) == DrawPass::Blend);
+    // Without passOf every item is opaque.
+    const BatchPlan plan = BatchPlanner{}.plan(std::vector<RenderItem>{item(1, 1, ShaderKind::Pbr, 0.0f)});
+    REQUIRE(plan.batches.size() == 1);
+    CHECK(plan.batches[0].pass == DrawPass::Opaque);
 }

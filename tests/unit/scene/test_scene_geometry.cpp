@@ -3,12 +3,19 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
+#include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
+#include "support/glb_builder.hpp"
+#include <rv/assets/gltf_loader.hpp>
 #include <rv/assets/material_library.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
@@ -87,7 +94,7 @@ TEST_CASE("scene/scene_geometry: the M0 test room resolves every part to a libra
     REQUIRE(cartridge.parts.size() == 2);
     CHECK(part(cartridge, "plastic_shell").material.name == "MAT_Plastic_Gray");
     CHECK(part(cartridge, "label").material.name == "MAT_Label_Print");
-    CHECK(part(cartridge, "label").mesh.name == "cartridge/label");
+    CHECK(part(cartridge, "label").mesh->name == "cartridge/label");
     CHECK(rv::core::nearlyEqual(cartridge.instances.front(), scene.findObject("cartridge_2_3")->transform));
 
     const SceneObjectGeometry& crt = object(geometry, "crt_tv");
@@ -97,8 +104,9 @@ TEST_CASE("scene/scene_geometry: the M0 test room resolves every part to a libra
     std::size_t triangles = 0;
     for (const SceneObjectGeometry& built : geometry.objects) {
         for (const ScenePart& builtPart : built.parts) {
-            CHECK_FALSE(builtPart.mesh.empty());
-            triangles += builtPart.mesh.triangleCount();
+            REQUIRE(builtPart.mesh != nullptr);
+            CHECK_FALSE(builtPart.mesh->empty());
+            triangles += builtPart.mesh->triangleCount();
         }
     }
     CHECK(geometry.drawnTriangleCount() == triangles); // one instance per object
@@ -137,11 +145,11 @@ TEST_CASE("scene/scene_geometry: scene textures reach exactly the parts of their
     CHECK(part(object(geometry, "crt_tv"), "screen").texture->pattern == "color_bars");
 
     // The surfaces are shaped like the pictures they show: a landscape label, a 4:3 screen, a portrait poster.
-    const glm::vec2 labelScale = rv::geometry::uvMetersPerUnit(label.mesh);
+    const glm::vec2 labelScale = rv::geometry::uvMetersPerUnit(*label.mesh);
     CHECK(labelScale.x / labelScale.y == Catch::Approx(0.101f / 0.061f).epsilon(1e-3));
-    const glm::vec2 screenScale = rv::geometry::uvMetersPerUnit(part(object(geometry, "crt_tv"), "screen").mesh);
+    const glm::vec2 screenScale = rv::geometry::uvMetersPerUnit(*part(object(geometry, "crt_tv"), "screen").mesh);
     CHECK(screenScale.x / screenScale.y == Catch::Approx(4.0f / 3.0f).epsilon(2e-2));
-    const glm::vec2 posterScale = rv::geometry::uvMetersPerUnit(part(object(geometry, "poster_left"), "picture").mesh);
+    const glm::vec2 posterScale = rv::geometry::uvMetersPerUnit(*part(object(geometry, "poster_left"), "picture").mesh);
     CHECK(posterScale.x / posterScale.y == Catch::Approx(0.44f / 0.64f).epsilon(1e-3));
 }
 
@@ -151,7 +159,8 @@ TEST_CASE("scene/scene_geometry: primitives use their kind as role and grids exp
 
     REQUIRE(geometry.objects.size() == 4);
     CHECK(geometry.instanceCount() == 1001);
-    CHECK(geometry.meshCount() == 4);
+    CHECK(geometry.partCount() == 4);
+    CHECK(geometry.uniqueMeshCount() == 2); // the three grids share one box mesh
     const SceneObjectGeometry& walnut = object(geometry, "boxes_walnut");
     REQUIRE(walnut.parts.size() == 1);
     CHECK(walnut.parts.front().role == "box");
@@ -217,8 +226,10 @@ TEST_CASE("scene/scene_geometry: missing or bad content falls back to visible ma
         CHECK(cube.fallbackMaterial);
         CHECK(rv::core::nearlyEqual(cube.material.baseColorFactor, magenta));
         // A kPlaceholderSize cube standing on the object origin.
-        CHECK(rv::core::nearlyEqual(cube.mesh.bounds.min, glm::vec3(-0.25f, 0.0f, -0.25f)));
-        CHECK(rv::core::nearlyEqual(cube.mesh.bounds.max, glm::vec3(0.25f, 0.5f, 0.25f)));
+        CHECK(rv::core::nearlyEqual(cube.mesh->bounds.min, glm::vec3(-0.25f, 0.0f, -0.25f)));
+        CHECK(rv::core::nearlyEqual(cube.mesh->bounds.max, glm::vec3(0.25f, 0.5f, 0.25f)));
+        CHECK(cube.meshKey == rv::scene::kPlaceholderMeshKey);
+        CHECK(built.bounds == rv::scene::placeholderBounds());
     }
     CHECK(object(geometry, "model").instances.size() == 2); // the grid still applies to the placeholder
     CHECK(rv::core::nearlyEqual(glm::vec3(object(geometry, "bad_params").instances.front()[3]), glm::vec3(1, 0, 2)));
@@ -235,7 +246,7 @@ TEST_CASE("scene/scene_geometry: missing or bad content falls back to visible ma
 TEST_CASE("scene/scene_geometry: a library without the file still has the built-in fallback", "[scene][geometry]") {
     const rv::assets::MaterialLibrary empty;
     const SceneGeometry geometry = rv::scene::buildSceneGeometry(referenceScene("instancing_stress"), empty);
-    CHECK(geometry.fallbackMaterialCount() == geometry.meshCount());
+    CHECK(geometry.fallbackMaterialCount() == geometry.partCount());
     for (const SceneObjectGeometry& built : geometry.objects) {
         for (const ScenePart& builtPart : built.parts) {
             CHECK(builtPart.material.name == rv::assets::kFallbackMaterialName);
@@ -370,4 +381,190 @@ TEST_CASE("scene/scene_geometry: a room turned about +Y keeps its interior free 
                                 1e-3f));
     // Through the doorway up to the stop in its outer face: 5.15 - 0.02 - 0.3 m from the center.
     CHECK(rv::core::nearlyEqual(world.moveCapsule(center, 10.0f * south, capsule), 4.83f * south, 1e-3f));
+}
+
+TEST_CASE("scene/scene_geometry: objects with the same kind and parameters share their meshes", "[scene][geometry]") {
+    const SceneGeometry geometry = rv::scene::buildSceneGeometry(referenceScene("m0_testroom"), realMaterials());
+
+    // The 24 cartridges have the same (default) parameters: one shell mesh and one label mesh for all of them.
+    std::set<const rv::geometry::MeshData*> shells;
+    std::set<std::string> shellKeys;
+    std::size_t cartridges = 0;
+    for (const SceneObjectGeometry& built : geometry.objects) {
+        if (built.id.starts_with("cartridge_")) {
+            ++cartridges;
+            shells.insert(part(built, "plastic_shell").mesh.get());
+            shellKeys.insert(part(built, "plastic_shell").meshKey);
+        }
+    }
+    CHECK(cartridges == 24);
+    CHECK(shells.size() == 1);
+    REQUIRE(shellKeys.size() == 1);
+    CHECK(shellKeys.begin()->starts_with("prefab:cartridge:"));
+    CHECK(shellKeys.begin()->ends_with("#plastic_shell"));
+    const ScenePart& firstLabel = part(object(geometry, "cartridge_1_0"), "label");
+    CHECK(firstLabel.mesh == part(object(geometry, "cartridge_3_7"), "label").mesh);
+    CHECK(firstLabel.meshKey != *shellKeys.begin());
+    // So do the two posters; the shelf and the cabinet, other kinds, do not share theirs.
+    CHECK(part(object(geometry, "poster_left"), "frame").mesh == part(object(geometry, "poster_right"), "frame").mesh);
+    CHECK(part(object(geometry, "shelf_main"), "wood_primary").meshKey !=
+          part(object(geometry, "tv_cabinet"), "wood_primary").meshKey);
+
+    // 71 parts, 23 distinct meshes: room 4, shelf 2, cartridge 2, cabinet 3, CRT 4, console 3, rug 1, poster 2, lamp 2.
+    CHECK(geometry.partCount() == 71);
+    CHECK(geometry.uniqueMeshCount() == 23);
+    // Parts with equal keys always share the mesh object itself.
+    std::map<std::string, const rv::geometry::MeshData*> byKey;
+    for (const SceneObjectGeometry& built : geometry.objects) {
+        for (const ScenePart& builtPart : built.parts) {
+            const auto entry = byKey.emplace(builtPart.meshKey, builtPart.mesh.get()).first;
+            CHECK(entry->second == builtPart.mesh.get());
+        }
+    }
+    CHECK(byKey.size() == 23);
+}
+
+TEST_CASE("scene/scene_geometry: prefab sockets, bounds and shadow flags reach the objects", "[scene][geometry]") {
+    const SceneGeometry geometry = rv::scene::buildSceneGeometry(referenceScene("m0_testroom"), realMaterials());
+
+    const SceneObjectGeometry& shelf = object(geometry, "shelf_main");
+    CHECK(std::count_if(shelf.sockets.begin(), shelf.sockets.end(), [](const rv::geometry::Socket& socket) {
+              return socket.kind == rv::geometry::SocketKind::ShelfSlot;
+          }) == 40); // 5 levels of 8 slots
+    CHECK(rv::core::nearlyEqual(shelf.bounds.size(), glm::vec3(1.2f, 2.0f, 0.35f)));
+
+    const SceneObjectGeometry& crt = object(geometry, "crt_tv");
+    const rv::geometry::Socket* screen = rv::geometry::findSocket(crt.sockets, "ScreenSurface");
+    REQUIRE(screen != nullptr);
+    CHECK(screen->kind == rv::geometry::SocketKind::ScreenSurface);
+    CHECK(rv::geometry::findSocket(crt.sockets, "TV_Stand") != nullptr);
+
+    CHECK_FALSE(object(geometry, "rug").castsShadows);
+    CHECK(object(geometry, "shelf_main").castsShadows);
+    // Primitives have no sockets; their bounds are the mesh bounds.
+    const SceneGeometry stress = rv::scene::buildSceneGeometry(referenceScene("instancing_stress"), realMaterials());
+    CHECK(object(stress, "boxes_walnut").sockets.empty());
+    CHECK(rv::core::nearlyEqual(object(stress, "boxes_walnut").bounds.size(), glm::vec3(0.3f)));
+}
+
+namespace {
+
+/// A model with a 0.4 x 0.3 m body quad, a ColliderProxy quad and an anchor: Root > Body, ColliderProxy, Anchor_Top.
+std::vector<std::byte> makeModelGlb() {
+    rv::test::GlbDescription description;
+    description.meshes.push_back(rv::test::makeQuadMesh("body", 0.4f, 0.3f));
+    description.meshes.push_back(rv::test::makeQuadMesh("collider", 0.5f, 0.4f));
+    rv::test::GlbNode root;
+    root.name = "Root";
+    root.children = {1, 2, 3};
+    rv::test::GlbNode body;
+    body.name = "Body";
+    body.translation = glm::vec3(0.0f, 0.15f, 0.0f);
+    body.mesh = 0;
+    rv::test::GlbNode collider;
+    collider.name = "ColliderProxy";
+    collider.translation = glm::vec3(0.0f, 0.2f, 0.0f);
+    collider.mesh = 1;
+    rv::test::GlbNode anchor;
+    anchor.name = "Anchor_Top";
+    anchor.translation = glm::vec3(0.0f, 0.3f, 0.0f);
+    description.nodes = {root, body, collider, anchor};
+    return rv::test::buildGlb(description);
+}
+
+using SharedModel = std::shared_ptr<const rv::assets::ModelData>;
+
+/// Loader serving `models` by path (NotFound otherwise), counting its calls per path.
+rv::scene::ModelLoader countingLoader(std::map<std::string, std::vector<std::byte>> models,
+                                      std::shared_ptr<std::map<std::string, int>> calls) {
+    return [models = std::move(models), calls](std::string_view path) -> rv::Expected<SharedModel> {
+        ++(*calls)[std::string(path)];
+        const auto found = models.find(std::string(path));
+        if (found == models.end()) {
+            return rv::makeError(rv::ErrorCode::NotFound, "no such model", std::string(path));
+        }
+        auto model = rv::assets::loadGltfFromMemory(found->second, {});
+        if (!model) {
+            return rv::propagate(model.error());
+        }
+        return std::make_shared<const rv::assets::ModelData>(std::move(*model));
+    };
+}
+
+} // namespace
+
+TEST_CASE("scene/scene_geometry: glTF models load once per path and keep their sockets and colliders",
+          "[scene][geometry][gltf]") {
+    const json document = json::parse(R"({
+        "schemaVersion": 1,
+        "name": "models",
+        "objects": [
+            {"id": "first", "model": "models/sign.glb", "position": [1, 0, 0]},
+            {"id": "pair", "model": "models/sign.glb", "grid": {"counts": [2, 1, 1], "spacing": [1, 1, 1]},
+             "material": "MAT_Wood_Oak"},
+            {"id": "missing", "model": "models/missing.glb"},
+            {"id": "box", "primitive": "box", "material": "MAT_Wood_Oak", "castsShadows": false}
+        ]
+    })");
+    const auto scene = rv::scene::parseSceneDescription(document, "models.json");
+    REQUIRE(scene.has_value());
+    auto calls = std::make_shared<std::map<std::string, int>>();
+    const SceneGeometry geometry = rv::scene::buildSceneGeometry(
+        *scene, realMaterials(), countingLoader({{"models/sign.glb", makeModelGlb()}}, calls));
+
+    CHECK(*calls == std::map<std::string, int>{{"models/missing.glb", 1}, {"models/sign.glb", 1}});
+    const SceneObjectGeometry& first = object(geometry, "first");
+    const SceneObjectGeometry& pair = object(geometry, "pair");
+    REQUIRE(first.model != nullptr);
+    CHECK(first.model == pair.model); // loaded once, shared
+    CHECK(first.modelPath == "models/sign.glb");
+    CHECK(first.parts.empty()); // drawn through the model's own meshes and materials
+    CHECK_FALSE(first.placeholder);
+    CHECK(pair.instances.size() == 2);
+    CHECK(first.bounds == first.model->bounds);
+    CHECK(rv::geometry::findSocket(first.sockets, "Top") != nullptr);
+    // The ColliderProxy node collides instead of the model bounds.
+    REQUIRE(first.colliders.size() == 1);
+    CHECK(first.colliders.front().name == "ColliderProxy");
+    CHECK(rv::core::nearlyEqual(first.colliders.front().box.min, glm::vec3(-0.25f, 0.0f, 0.0f)));
+    CHECK(rv::core::nearlyEqual(first.colliders.front().box.max, glm::vec3(0.25f, 0.4f, 0.0f)));
+
+    const SceneObjectGeometry& missing = object(geometry, "missing");
+    CHECK(missing.placeholder);
+    CHECK(missing.model == nullptr);
+    CHECK(missing.modelPath == "models/missing.glb");
+    REQUIRE(missing.parts.size() == 1);
+    CHECK(missing.parts.front().fallbackMaterial);
+
+    CHECK(geometry.modelObjectCount() == 2);
+    CHECK(geometry.placeholderCount() == 1);
+    // Distinct meshes: the model's meshes once (both loaded, only the body is drawn), the placeholder and the box.
+    CHECK(geometry.uniqueMeshCount() == first.model->meshes.size() + 2);
+    // Three model instances of the body's 2 triangles, the placeholder cube and the box (12 each).
+    CHECK(geometry.drawnTriangleCount() == 3 * 2 + 12 + 12);
+    CHECK_FALSE(object(geometry, "box").castsShadows);
+
+    // The collision world places the proxy at every instance.
+    const rv::scene::CollisionWorld world = rv::scene::buildCollisionWorld(geometry);
+    CHECK(closeTo(colliderBox(world, "first/ColliderProxy").box, {0.75f, 0.0f, 0.0f}, {1.25f, 0.4f, 0.0f}));
+    CHECK(closeTo(colliderBox(world, "pair[1]/ColliderProxy").box, {0.75f, 0.0f, 0.0f}, {1.25f, 0.4f, 0.0f}));
+}
+
+TEST_CASE("scene/scene_geometry: a model without anything to draw stands in as a placeholder",
+          "[scene][geometry][gltf]") {
+    const json document = json::parse(R"({
+        "schemaVersion": 1, "name": "empty_model",
+        "objects": [{"id": "ghost", "model": "models/ghost.glb"}]
+    })");
+    const auto scene = rv::scene::parseSceneDescription(document, "empty_model.json");
+    REQUIRE(scene.has_value());
+    const rv::scene::ModelLoader loader = [](std::string_view) -> rv::Expected<SharedModel> {
+        return std::make_shared<const rv::assets::ModelData>();
+    };
+    const SceneGeometry geometry = rv::scene::buildSceneGeometry(*scene, realMaterials(), loader);
+    const SceneObjectGeometry& ghost = object(geometry, "ghost");
+    CHECK(ghost.placeholder);
+    CHECK(ghost.model == nullptr);
+    REQUIRE(ghost.colliders.size() == 1);
+    CHECK(ghost.colliders.front().box == rv::scene::placeholderBounds());
 }

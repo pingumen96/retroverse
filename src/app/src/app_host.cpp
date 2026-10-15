@@ -79,6 +79,12 @@ std::string describeRunMode(const CommandLineOptions& options) {
     if (options.inputScript) {
         mode += ", input script " + core::pathToUtf8(*options.inputScript);
     }
+    if (options.model) {
+        mode += ", model viewer " + core::pathToUtf8(*options.model);
+    }
+    if (options.debugDraw) {
+        mode += ", debug lines";
+    }
     return mode;
 }
 
@@ -91,12 +97,6 @@ void logStartupBanner(const core::Paths& paths, const CommandLineOptions& option
     spdlog::info("Log file: {}", logFile.empty() ? std::string("disabled") : core::pathToUtf8(logFile));
     spdlog::info("Build: GL debug output {}, developer UI {}", kGlDebug ? "on" : "off", kDevUi ? "on" : "off");
     spdlog::info("Run mode: {}", describeRunMode(options));
-}
-
-void warnAboutPendingFeatures(const CommandLineOptions& options) {
-    if (options.model) {
-        spdlog::warn("--model is not implemented yet; ignoring '{}'", core::pathToUtf8(*options.model));
-    }
 }
 
 platform::WindowDesc makeWindowDesc(const CommandLineOptions& options) {
@@ -218,7 +218,6 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
         return failInitialization("Retroverse could not locate its directories.", paths.error());
     }
     logStartupBanner(*paths, m_options);
-    warnAboutPendingFeatures(m_options);
 
     // --- SDL, window, OpenGL context, GL device ----------------------------------------------------------------------
     const platform::AppMetadata metadata{std::string(core::kProductName), std::string(core::kVersion),

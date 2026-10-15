@@ -1,10 +1,11 @@
-# rv_scene: camera, first-person controller, lights, render items and batching plan, scene descriptions and
-# collision. GPU-free: the renderer consumes its plain data.
+# rv_scene: camera, first-person controller, lights, render items and batching plan, scene descriptions, scene
+# content (geometry, models) and collision, debug lines. GPU-free: the renderer consumes its plain data.
 
 add_library(rv_scene STATIC
     src/batch_planner.cpp
     src/camera.cpp
     src/collision.cpp
+    src/debug_lines.cpp
     src/first_person_controller.cpp
     src/light.cpp
     src/scene_description.cpp

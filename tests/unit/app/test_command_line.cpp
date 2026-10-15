@@ -52,6 +52,7 @@ TEST_CASE("app/command_line: no arguments describe an interactive windowed run",
     CHECK_FALSE(options->inputScript.has_value());
     CHECK_FALSE(options->fixedDeltaSeconds.has_value());
     CHECK_FALSE(options->model.has_value());
+    CHECK_FALSE(options->debugDraw);
     CHECK_FALSE(options->selfCheck.has_value());
 }
 
@@ -273,13 +274,13 @@ TEST_CASE("app/command_line: directories are UTF-8 paths", "[app][command_line]"
 
 TEST_CASE("app/command_line: scene and screenshot options", "[app][command_line]") {
     const auto options = parse({"--scene", "material_test", "--screenshot", "shots/G01.png", "--exit-after-frames",
-                                "--frames", "5", "--screenshot-size", "1280x720", "--model", "crt.glb"});
+                                "--frames", "5", "--screenshot-size", "1280x720"});
     REQUIRE(options.has_value());
     CHECK(options->scene == "material_test");
     CHECK(options->screenshot == rv::core::pathFromUtf8("shots/G01.png"));
     CHECK(options->screenshotWidth == 1280);
     CHECK(options->screenshotHeight == 720);
-    CHECK(options->model == rv::core::pathFromUtf8("crt.glb")); // kept for the glTF step
+    CHECK_FALSE(options->model.has_value());
 
     const auto emptyScene = parse({"--scene="});
     REQUIRE_FALSE(emptyScene.has_value());
@@ -289,6 +290,36 @@ TEST_CASE("app/command_line: scene and screenshot options", "[app][command_line]
     const auto file = parse({"--scene", "D:/Scene di prova/città.json"});
     REQUIRE(file.has_value());
     CHECK(file->scene == "D:/Scene di prova/città.json");
+}
+
+TEST_CASE("app/command_line: --model opens a glTF file in the model viewer instead of a scene", "[app][command_line]") {
+    const auto options = parse({"--model", "build/models/Orientation Cube.GLTF", "--debug-draw"});
+    REQUIRE(options.has_value());
+    CHECK(options->model == rv::core::pathFromUtf8("build/models/Orientation Cube.GLTF"));
+    CHECK(options->debugDraw);
+    CHECK_FALSE(options->scene.has_value());
+    CHECK(parse({"--model", "D:/modelli/città.glb"}).has_value());
+
+    // Only glTF files.
+    const auto obj = parse({"--model", "crt.obj"});
+    REQUIRE_FALSE(obj.has_value());
+    CHECK(obj.error().code == ErrorCode::InvalidArgument);
+    CHECK(obj.error().context == "--model=crt.obj");
+    CHECK_FALSE(parse({"--model", "crt"}).has_value());
+    CHECK_FALSE(parse({"--model="}).has_value());
+
+    // The viewer replaces the scene: both together are refused.
+    const auto both = parse({"--scene", "m0_testroom", "--model", "crt.glb"});
+    REQUIRE_FALSE(both.has_value());
+    CHECK(both.error().code == ErrorCode::InvalidArgument);
+    CHECK(both.error().context == "--model");
+}
+
+TEST_CASE("app/command_line: --debug-draw draws debug lines over any scene", "[app][command_line]") {
+    const auto options = parse({"--scene", "m0_testroom", "--debug-draw", "--smoke"});
+    REQUIRE(options.has_value());
+    CHECK(options->debugDraw);
+    CHECK_FALSE(parse({"--debug-draw=yes"}).has_value()); // a flag takes no value
 }
 
 TEST_CASE("app/command_line: --screenshot needs a frame-limited run and a .png file", "[app][command_line]") {
@@ -440,7 +471,7 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
                                "--no-vsync",     "--smoke",      "--frames",     "--exit-after-frames", "--exit",
                                "--gl-selftest",  "--asset-root", "--data-dir",   "--portable",          "--log-level",
                                "--no-dialogs",   "--scene",      "--screenshot", "--screenshot-size",   "--model",
-                               "--input-script", "--fixed-dt",   "--self-check"}) {
+                               "--input-script", "--fixed-dt",   "--self-check", "--debug-draw"}) {
         INFO(option);
         CHECK(helpListsOption(help, option));
     }

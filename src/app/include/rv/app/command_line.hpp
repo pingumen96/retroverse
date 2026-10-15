@@ -77,8 +77,12 @@ struct CommandLineOptions {
     /// (0, kMaxFixedDeltaSeconds]. With --input-script it makes automated runs reproducible.
     std::optional<double> fixedDeltaSeconds;
 
-    /// --model <file>: accepted and kept for the step that implements it; the host logs that it is ignored.
+    /// --model <file>: a glTF model (.gltf or .glb) shown in the model viewer instead of a scene: at the origin, lit by
+    /// a three-point light rig, with a camera framing it (makeModelViewerScene). Exclusive with --scene.
     std::optional<std::filesystem::path> model;
+    /// --debug-draw: draw debug lines over the scene: the bounds of every object, the axes of its sockets and a world
+    /// grid.
+    bool debugDraw = false;
 
     /// --self-check <name>: rendering check performed after initialization by a frame-limited run (SelfCheck).
     std::optional<SelfCheck> selfCheck;
@@ -92,6 +96,7 @@ struct CommandLineOptions {
 ///    frame limit (an unattended check must end on its own) or with an unknown check name;
 ///  - --screenshot not ending in ".png"; --screenshot-size other than WIDTHxHEIGHT with sides in [1, 16384];
 ///  - --scene names with characters other than letters, digits, '_', '-' and '.', or starting with '.';
+///  - --model not ending in ".gltf" or ".glb", or given together with --scene;
 ///  - --fixed-dt that is not a number in (0, kMaxFixedDeltaSeconds];
 ///  - --log-level other than trace, debug, info, warn or error; empty paths or names.
 /// The --input-script file itself is read by the application (a bad script fails its initialization).

@@ -1,13 +1,16 @@
-# rv_app: composition root (application host, main loop, input pipeline, free roam, scenes, screenshots). Links every
-# module.
+# rv_app: composition root (application host, main loop, input pipeline, free roam, scene instantiation, the model
+# viewer, screenshots). Links every module.
 
 # GPU-free part of the application layer: command line options, scene selection, screenshot naming, the exit-code
-# policy, the verdicts of the rendering self-checks and the scene draw plan (materials and drawing order of the lit
-# scene view). Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL.
+# policy, the verdicts of the rendering self-checks, the scene content plan (distinct meshes, materials and picture
+# instances, render items), the model viewer scene and the frame statistics log. Kept apart from rv_app so that
+# rv_tests can unit-test it without SDL or OpenGL.
 add_library(rv_app_cli STATIC
     src/command_line.cpp
     src/exit_code.cpp
-    src/scene_draw_plan.cpp
+    src/frame_stats_log.cpp
+    src/model_viewer.cpp
+    src/scene_content_plan.cpp
     src/screenshot_name.cpp
     src/self_check.cpp
 )
@@ -24,7 +27,7 @@ add_library(rv_app STATIC
     src/app_logic.cpp
     src/free_roam.cpp
     src/retroverse_app.cpp
-    src/scene_view.cpp
+    src/scene_instance.cpp
     src/srgb_self_check.cpp
 )
 add_library(rv::app ALIAS rv_app)

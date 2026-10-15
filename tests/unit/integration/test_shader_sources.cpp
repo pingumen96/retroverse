@@ -19,9 +19,11 @@
 
 #include <rv/assets/shader_source.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/geometry/mesh_data.hpp>
 #include <rv/core/text.hpp>
 #include <rv/render/tonemap.hpp>
 #include <rv/render/uniform_blocks.hpp>
+#include <rv/scene/debug_lines.hpp>
 
 namespace fs = std::filesystem;
 
@@ -204,8 +206,10 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
         }
     }
     std::sort(stages.begin(), stages.end());
-    // The programs of the application: pbr (PBR_Base) and unlit_emissive (Unlit_Emissive), which shares pbr.vert.
-    CHECK(stages == std::vector<std::string>{"pbr/pbr.frag", "pbr/pbr.vert", "unlit/unlit_emissive.frag"});
+    // The programs of the application: pbr (PBR_Base), unlit_emissive (Unlit_Emissive), which shares pbr.vert, and
+    // debug_lines (--debug-draw).
+    CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "pbr/pbr.frag",
+                                             "pbr/pbr.vert", "unlit/unlit_emissive.frag"});
 
     // The sRGB self-check builds the unlit program with RV_UNLIT_LINEAR_OUTPUT.
     const std::vector<std::string> selfCheckDefines{"RV_UNLIT_LINEAR_OUTPUT"};
@@ -229,6 +233,41 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
             CHECK(std::find(source->files.begin(), source->files.end(), fs::path(include)) != source->files.end());
         }
     }
+}
+
+TEST_CASE("integration/shaders: mesh and debug line stages read the vertex layouts the renderer uploads",
+          "[integration][shader]") {
+    // Vertex inputs `layout(location = N) in <type> <name>;` of a stage.
+    const auto inputsOf = [](const std::string& source) {
+        std::map<int, std::string> inputs;
+        const std::regex input(R"(layout\s*\(\s*location\s*=\s*(\d+)\s*\)\s*in\s+(\w+)\s+(\w+)\s*;)");
+        for (auto it = std::sregex_iterator(source.begin(), source.end(), input); it != std::sregex_iterator(); ++it) {
+            inputs[std::stoi((*it)[1].str())] = (*it)[2].str() + " " + (*it)[3].str();
+        }
+        return inputs;
+    };
+
+    // Meshes: the standard 48-byte vertex at locations 0..3 (rv::geometry::VertexLayout), then the per-instance model
+    // matrix, a mat4 whose columns take locations 4..7 (rv::gl::GpuMesh::kInstanceMatrixLocation). No draw sets a
+    // model matrix uniform any more: every mesh is drawn instanced.
+    const std::string mesh = glslWithoutComments("pbr/pbr.vert");
+    const std::map<int, std::string> meshInputs = inputsOf(mesh);
+    CHECK(meshInputs ==
+          std::map<int, std::string>{
+              {0, "vec3 aPosition"}, {1, "vec3 aNormal"}, {2, "vec4 aTangent"}, {3, "vec2 aUv0"}, {4, "mat4 aModel"}});
+    const rv::geometry::VertexLayout& layout = rv::geometry::VertexLayout::standard();
+    REQUIRE(layout.attributes.size() == 4);
+    for (const rv::geometry::VertexAttribute& attribute : layout.attributes) {
+        CHECK(meshInputs.contains(static_cast<int>(attribute.location)));
+    }
+    CHECK(mesh.find("uModel") == std::string::npos);
+
+    // Debug lines: rv::scene::DebugVertex, a position (3 floats) then a linear RGBA color (4 floats).
+    CHECK(inputsOf(glslWithoutComments("debug/debug_lines.vert")) ==
+          std::map<int, std::string>{{0, "vec3 aPosition"}, {1, "vec4 aColor"}});
+    CHECK(offsetof(rv::scene::DebugVertex, position) == 0);
+    CHECK(offsetof(rv::scene::DebugVertex, color) == 12);
+    CHECK(sizeof(rv::scene::DebugVertex) == 28);
 }
 
 TEST_CASE("integration/shaders: the GLSL FrameUniforms block matches rv::gl::FrameUniforms", "[integration][shader]") {

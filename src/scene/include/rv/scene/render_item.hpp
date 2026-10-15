@@ -7,6 +7,8 @@
 
 #include <glm/glm.hpp>
 
+#include <rv/assets/material_desc.hpp>
+
 namespace rv::scene {
 
 /// Opaque index of a mesh in the renderer's resource registry. The scene layer only compares and hashes it.
@@ -25,6 +27,26 @@ struct MaterialHandle {
 
 /// Shader family an item is drawn with (style §25: PBR_Base and Unlit_Emissive in M0).
 enum class ShaderKind : std::uint8_t { Pbr, Unlit };
+
+/// Passes of a view, in drawing order.
+enum class DrawPass : std::uint8_t {
+    Opaque, ///< assets::AlphaMode::Opaque
+    Mask,   ///< assets::AlphaMode::Mask: alpha-tested, writes depth
+    Blend,  ///< assets::AlphaMode::Blend: blended over the other passes, back to front, without depth writes
+};
+
+/// Pass of the materials with alpha mode `mode`.
+[[nodiscard]] constexpr DrawPass drawPassOf(assets::AlphaMode mode) noexcept {
+    switch (mode) {
+    case assets::AlphaMode::Opaque:
+        return DrawPass::Opaque;
+    case assets::AlphaMode::Mask:
+        return DrawPass::Mask;
+    case assets::AlphaMode::Blend:
+        return DrawPass::Blend;
+    }
+    return DrawPass::Opaque;
+}
 
 /// One mesh instance to draw this frame. `model` is the local -> world transform (meters, column vectors).
 /// `castsShadow` is not part of the batch key: renderers plan the shadow pass from the subset of items that

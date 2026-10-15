@@ -1,6 +1,6 @@
 // Material parameters at uniform binding 2 and material textures on units 0..4. Mirrors rv::gl::MaterialUniforms,
 // rv::gl::material_flags and rv::gl::MaterialTextureSlot (src/render/include/rv/render/uniform_blocks.hpp), filled by
-// rv::gl::MaterialSet from an rv::assets::MaterialDesc. Colors are linear.
+// rv::gl::MaterialRegistry from an rv::assets::MaterialDesc. Colors are linear.
 
 layout(std140, binding = 2) uniform MaterialUniforms {
     vec4 uBaseColorFactor;     // RGBA
