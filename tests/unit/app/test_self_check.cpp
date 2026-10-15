@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <vector>
 
 #include <rv/app/self_check.hpp>
@@ -24,8 +25,13 @@ std::vector<std::uint8_t> greyPixels(std::size_t count, std::uint8_t value) {
 TEST_CASE("app/self_check: check names", "[app][self_check]") {
     CHECK(rv::app::toString(SelfCheck::Srgb) == "srgb");
     CHECK(rv::app::toString(SelfCheck::Bloom) == "bloom");
+    CHECK(rv::app::toString(SelfCheck::Fxaa) == "fxaa");
     CHECK(rv::app::selfCheckFromString("srgb") == SelfCheck::Srgb);
     CHECK(rv::app::selfCheckFromString("bloom") == SelfCheck::Bloom);
+    CHECK(rv::app::selfCheckFromString("fxaa") == SelfCheck::Fxaa);
+    for (const SelfCheck check : rv::app::kSelfChecks) {
+        CHECK(rv::app::selfCheckFromString(rv::app::toString(check)) == check);
+    }
     CHECK_FALSE(rv::app::selfCheckFromString("SRGB").has_value());
     CHECK_FALSE(rv::app::selfCheckFromString("Bloom").has_value());
     CHECK_FALSE(rv::app::selfCheckFromString("").has_value());
@@ -137,4 +143,96 @@ TEST_CASE("app/self_check: the bloom check fails what made the bloom wrong", "[a
         CHECK_FALSE(rv::app::evaluateBloomCheck(unproven).firefliesSteady);
         CHECK_FALSE(rv::app::evaluateBloomCheck(unproven).passed);
     }
+}
+
+namespace {
+
+constexpr int kEdgeSize = 16;
+
+/// A kEdgeSize-square RGBA image: black left of a stair-stepped edge (column 6 + row / 4), white right of it.
+std::vector<std::uint8_t> hardEdge() {
+    std::vector<std::uint8_t> pixels;
+    for (int y = 0; y < kEdgeSize; ++y) {
+        for (int x = 0; x < kEdgeSize; ++x) {
+            const std::uint8_t value = x < 6 + y / 4 ? 0 : 255;
+            pixels.insert(pixels.end(), {value, value, value, 255});
+        }
+    }
+    return pixels;
+}
+
+/// Sets pixel (x, y) of a kEdgeSize-square RGBA image to grey `value`.
+void setGrey(std::vector<std::uint8_t>& pixels, int x, int y, std::uint8_t value) {
+    const auto offset = static_cast<std::size_t>((y * kEdgeSize + x) * 4);
+    pixels[offset] = value;
+    pixels[offset + 1] = value;
+    pixels[offset + 2] = value;
+}
+
+/// `hardEdge()` with the last black pixel of the first `rows` rows blended to grey, as FXAA leaves a slanted edge.
+std::vector<std::uint8_t> blendedEdge(int rows) {
+    std::vector<std::uint8_t> pixels = hardEdge();
+    for (int y = 0; y < rows; ++y) {
+        setGrey(pixels, 5 + y / 4, y, 96);
+    }
+    return pixels;
+}
+
+} // namespace
+
+TEST_CASE("app/self_check: the FXAA check passes a blended edge with untouched flat areas", "[app][self_check]") {
+    const auto result = rv::app::evaluateFxaaCheck(hardEdge(), blendedEdge(kEdgeSize), kEdgeSize, kEdgeSize);
+    CHECK(result.passed);
+    CHECK(result.aliasedIsHard);
+    CHECK(result.edgeRows == 16);
+    CHECK(result.blendedEdgeRows == 16);
+    CHECK(result.edgeBlended);
+    CHECK(result.flatCopied);
+    CHECK(result.flatChanged == 0);
+    // Every pixel at least two columns from the edge has a flat 3 x 3 neighborhood.
+    CHECK(result.flatPixels >= static_cast<std::size_t>(kEdgeSize * (kEdgeSize - 4)));
+    CHECK(result.flatPixels < static_cast<std::size_t>(kEdgeSize * kEdgeSize));
+
+    // Half the rows blended is enough: the middle row of a stair-step may keep its hard values.
+    CHECK(rv::app::evaluateFxaaCheck(hardEdge(), blendedEdge(8), kEdgeSize, kEdgeSize).passed);
+    const auto fewer = rv::app::evaluateFxaaCheck(hardEdge(), blendedEdge(7), kEdgeSize, kEdgeSize);
+    CHECK(fewer.blendedEdgeRows == 7);
+    CHECK_FALSE(fewer.edgeBlended);
+    CHECK_FALSE(fewer.passed);
+}
+
+TEST_CASE("app/self_check: the FXAA check fails what made the anti-aliasing wrong", "[app][self_check]") {
+    // A pass that copies everything (the edge stays aliased).
+    const auto copied = rv::app::evaluateFxaaCheck(hardEdge(), hardEdge(), kEdgeSize, kEdgeSize);
+    CHECK(copied.flatCopied);
+    CHECK(copied.blendedEdgeRows == 0);
+    CHECK_FALSE(copied.passed);
+
+    // A pass that blurs flat areas too (or a dithered input): one changed pixel far from the edge is enough.
+    std::vector<std::uint8_t> blurred = blendedEdge(kEdgeSize);
+    setGrey(blurred, 0, 0, 1);
+    const auto changed = rv::app::evaluateFxaaCheck(hardEdge(), blurred, kEdgeSize, kEdgeSize);
+    CHECK(changed.flatChanged == 1);
+    CHECK_FALSE(changed.flatCopied);
+    CHECK_FALSE(changed.passed);
+
+    // An input that is not a hard edge proves nothing (dithering or bloom left on).
+    std::vector<std::uint8_t> soft = hardEdge();
+    setGrey(soft, 15, 15, 254);
+    const auto notHard = rv::app::evaluateFxaaCheck(soft, blendedEdge(kEdgeSize), kEdgeSize, kEdgeSize);
+    CHECK_FALSE(notHard.aliasedIsHard);
+    CHECK_FALSE(notHard.passed);
+
+    // A uniform input has no edge.
+    const std::vector<std::uint8_t> uniform = greyPixels(kEdgeSize * kEdgeSize, 40);
+    const auto flat = rv::app::evaluateFxaaCheck(uniform, uniform, kEdgeSize, kEdgeSize);
+    CHECK_FALSE(flat.aliasedIsHard);
+    CHECK(flat.edgeRows == 0);
+    CHECK_FALSE(flat.edgeBlended);
+    CHECK_FALSE(flat.passed);
+
+    // Read-backs that do not hold the target, or an empty target.
+    const std::vector<std::uint8_t> edge = hardEdge();
+    CHECK_FALSE(rv::app::evaluateFxaaCheck(edge, std::span(edge).first(edge.size() - 4), kEdgeSize, kEdgeSize).passed);
+    CHECK_FALSE(rv::app::evaluateFxaaCheck(edge, edge, 0, kEdgeSize).passed);
 }

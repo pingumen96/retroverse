@@ -7,6 +7,20 @@
 #include <rv/core/math.hpp>
 
 namespace rv::app {
+namespace {
+
+/// The RGB of an RGBA8 pixel, packed.
+std::uint32_t rgbAt(std::span<const std::uint8_t> rgba, std::size_t pixel) noexcept {
+    const std::size_t offset = pixel * 4;
+    return (std::uint32_t{rgba[offset]} << 16) | (std::uint32_t{rgba[offset + 1]} << 8) | rgba[offset + 2];
+}
+
+/// Sum of the channels of a packed RGB color: orders the two colors of the FXAA check.
+std::uint32_t brightness(std::uint32_t rgb) noexcept {
+    return ((rgb >> 16) & 0xFFu) + ((rgb >> 8) & 0xFFu) + (rgb & 0xFFu);
+}
+
+} // namespace
 
 std::string_view toString(SelfCheck check) noexcept {
     switch (check) {
@@ -14,12 +28,14 @@ std::string_view toString(SelfCheck check) noexcept {
         return "srgb";
     case SelfCheck::Bloom:
         return "bloom";
+    case SelfCheck::Fxaa:
+        return "fxaa";
     }
     return "srgb";
 }
 
 std::optional<SelfCheck> selfCheckFromString(std::string_view name) noexcept {
-    for (const SelfCheck check : {SelfCheck::Srgb, SelfCheck::Bloom}) {
+    for (const SelfCheck check : kSelfChecks) {
         if (name == toString(check)) {
             return check;
         }
@@ -74,6 +90,71 @@ BloomCheckResult evaluateBloomCheck(const BloomCheckMeasurements& measurements) 
         result.firefliesSteady = result.fireflySpread <= kBloomCheckFireflyTolerance;
     }
     result.passed = result.litStaysOut && result.energyKept && result.firefliesSteady;
+    return result;
+}
+
+FxaaCheckResult evaluateFxaaCheck(std::span<const std::uint8_t> aliased, std::span<const std::uint8_t> antialiased,
+                                  int width, int height) noexcept {
+    FxaaCheckResult result;
+    if (width <= 0 || height <= 0) {
+        return result;
+    }
+    const auto columns = static_cast<std::size_t>(width);
+    const auto rows = static_cast<std::size_t>(height);
+    const std::size_t pixels = columns * rows;
+    if (aliased.size() < pixels * 4 || antialiased.size() < pixels * 4) {
+        return result;
+    }
+    std::uint32_t dark = rgbAt(aliased, 0);
+    std::uint32_t bright = dark;
+    for (std::size_t pixel = 0; pixel < pixels; ++pixel) {
+        const std::uint32_t rgb = rgbAt(aliased, pixel);
+        dark = brightness(rgb) < brightness(dark) ? rgb : dark;
+        bright = brightness(rgb) > brightness(bright) ? rgb : bright;
+    }
+    result.aliasedIsHard = dark != bright;
+    for (std::size_t pixel = 0; pixel < pixels && result.aliasedIsHard; ++pixel) {
+        const std::uint32_t rgb = rgbAt(aliased, pixel);
+        result.aliasedIsHard = rgb == dark || rgb == bright;
+    }
+
+    for (std::size_t y = 0; y < rows && dark != bright; ++y) {
+        bool hasDark = false;
+        bool hasBright = false;
+        bool blended = false;
+        for (std::size_t x = 0; x < columns; ++x) {
+            const std::uint32_t before = rgbAt(aliased, y * columns + x);
+            hasDark = hasDark || before == dark;
+            hasBright = hasBright || before == bright;
+            const std::uint32_t after = rgbAt(antialiased, y * columns + x);
+            blended = blended || (after != dark && after != bright);
+        }
+        if (hasDark && hasBright) {
+            ++result.edgeRows;
+            result.blendedEdgeRows += blended ? 1 : 0;
+        }
+    }
+    result.edgeBlended = result.edgeRows > 0 && static_cast<float>(result.blendedEdgeRows) >=
+                                                    kFxaaCheckMinBlendedShare * static_cast<float>(result.edgeRows);
+
+    // A pixel is flat when its 3x3 neighborhood (clamped to the image) holds a single color.
+    for (std::size_t y = 0; y < rows; ++y) {
+        for (std::size_t x = 0; x < columns; ++x) {
+            const std::uint32_t center = rgbAt(aliased, y * columns + x);
+            bool flat = true;
+            for (std::size_t ny = (y == 0 ? 0 : y - 1); ny <= std::min(y + 1, rows - 1) && flat; ++ny) {
+                for (std::size_t nx = (x == 0 ? 0 : x - 1); nx <= std::min(x + 1, columns - 1) && flat; ++nx) {
+                    flat = rgbAt(aliased, ny * columns + nx) == center;
+                }
+            }
+            if (flat) {
+                ++result.flatPixels;
+                result.flatChanged += rgbAt(antialiased, y * columns + x) != center ? 1 : 0;
+            }
+        }
+    }
+    result.flatCopied = result.flatPixels > 0 && result.flatChanged == 0;
+    result.passed = result.aliasedIsHard && result.edgeBlended && result.flatCopied;
     return result;
 }
 

@@ -50,6 +50,14 @@ std::string FreeRoam::describePose() const {
                        core::radiansToDegrees(m_controller.yaw()), core::radiansToDegrees(m_controller.pitch()));
 }
 
+SpawnPoint FreeRoam::pose() const {
+    SpawnPoint pose;
+    pose.feet = m_controller.feetPosition();
+    pose.yawDeg = core::radiansToDegrees(m_controller.yaw());
+    pose.pitchDeg = core::radiansToDegrees(m_controller.pitch());
+    return pose;
+}
+
 void FreeRoam::logFinalPose(std::uint64_t frames, double simulatedSeconds) const {
     const scene::FirstPersonSettings& settings = m_controller.settings();
     const glm::vec3& feet = m_controller.feetPosition();

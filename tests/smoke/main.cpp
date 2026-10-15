@@ -1,0 +1,18 @@
+// rv_smoke_tests: the GPU smoke tests (label "gpu", tests/smoke/CMakeLists.txt). Catch2 with its own main, so that a
+// test case skipped because the machine has no OpenGL 4.5 core profile context reports ctest's skip code.
+
+#include <catch2/catch_session.hpp>
+
+namespace {
+
+/// What Catch2 returns when every test case it ran was skipped (SKIP).
+constexpr int kCatchAllSkipped = 4;
+/// What ctest reads as a skipped test (SKIP_RETURN_CODE of the gpu tests).
+constexpr int kCtestSkipped = 77;
+
+} // namespace
+
+int main(int argc, char* argv[]) {
+    const int result = Catch::Session().run(argc, argv);
+    return result == kCatchAllSkipped ? kCtestSkipped : result;
+}

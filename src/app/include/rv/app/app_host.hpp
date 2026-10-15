@@ -5,6 +5,7 @@
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
+#include <rv/app/run_report.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/core/version.hpp>
 
@@ -36,6 +37,10 @@ struct AppIdentity {
 /// once per second, passes the frame delta (or the CommandLineOptions::fixedDeltaSeconds step) to the logic, and stops
 /// after CommandLineOptions::frameLimit frames in --smoke / --exit-after-frames runs. Every other input, Escape
 /// included, is the logic's. Exit codes: see ExitCode.
+///
+/// With --run-report the host writes the RunReport of the run when it ends, whatever the outcome (an initialization
+/// failure included): its own fields, and what the logic added through AppContext::report(). A report that cannot be
+/// written is logged and turns a successful run into ExitCode::RuntimeFailure.
 class AppHost {
 public:
     explicit AppHost(CommandLineOptions options, AppIdentity identity = {});
@@ -46,13 +51,17 @@ public:
 
 private:
     [[nodiscard]] ExitCode runUnchecked(IAppLogic& logic);
-    /// Logs the failure and shows it in a message box unless dialogs are disabled.
-    [[nodiscard]] ExitCode failInitialization(std::string_view summary, const Error& error) const;
-    /// Logs an unexpected failure and, unless dialogs are disabled, tells the user where the log is.
-    void reportUnexpectedFailure(std::string_view what) const noexcept;
+    /// Logs the failure, records it in the report and shows it in a message box unless dialogs are disabled.
+    [[nodiscard]] ExitCode failInitialization(std::string_view summary, const Error& error);
+    /// Logs an unexpected failure, records it in the report and, unless dialogs are disabled, tells the user where the
+    /// log is.
+    void reportUnexpectedFailure(std::string_view what) noexcept;
     /// Same for a failure the logic reported through AppContext::failRun.
-    void reportRunFailure(std::string_view what) const noexcept;
-    void reportFailure(std::string_view logPrefix, std::string_view headline, std::string_view what) const noexcept;
+    void reportRunFailure(std::string_view what) noexcept;
+    void reportFailure(std::string_view logPrefix, std::string_view headline, std::string_view what) noexcept;
+    /// Completes the report with `exitCode` and writes it to the --run-report file; returns the exit code of the run,
+    /// ExitCode::RuntimeFailure instead of ExitCode::Ok when the report could not be written.
+    [[nodiscard]] ExitCode finishReport(ExitCode exitCode) noexcept;
     /// Runs until quit or the frame limit; an error means presentation failed.
     [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context) const;
     /// Handles quit, window close, resize and the fullscreen shortcut. Returns true when the event is consumed and must
@@ -63,6 +72,8 @@ private:
 
     CommandLineOptions m_options;
     AppIdentity m_identity;
+    /// The report of the run, filled as it goes.
+    RunReport m_report;
 };
 
 } // namespace rv::app

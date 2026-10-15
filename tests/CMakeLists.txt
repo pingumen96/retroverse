@@ -3,12 +3,11 @@
 #   tests/platform      SDL platform layer tests (label "unit"), executable rv_platform_tests (SDL, no OpenGL)
 #   tests/support       shared helpers (temporary directories, log capture)
 #   tests/input_scripts --input-script files of the verification runs, also played by tests/unit/integration
-#   tests/smoke         GPU smoke tests (label "gpu"), excluded from the default test preset
+#   tests/smoke         GPU smoke tests (label "gpu"), executable rv_smoke_tests: runs retroverse.exe and the asset
+#                       preview frame-limited and checks their run reports and screenshots; excluded from the default
+#                       test presets (msvc-x64-debug-gpu and msvc-x64-release-gpu run them)
 
 add_subdirectory(support)
 add_subdirectory(unit)
 add_subdirectory(platform)
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/smoke/CMakeLists.txt")
-    add_subdirectory(smoke)
-endif()
+add_subdirectory(smoke)

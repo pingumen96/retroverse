@@ -4,8 +4,9 @@
 # GPU-free part of the application layer: command line options, scene selection, screenshot naming, the exit-code
 # policy, the Back action policy, when a run needs the developer overlay and which screenshots show it, the verdicts of
 # the rendering self-checks, the scene content plan (distinct meshes, materials and picture instances, render items),
-# the model viewer scene, the debug line selection and the frame statistics log. Kept apart from rv_app so that
-# rv_tests can unit-test it without SDL or OpenGL.
+# the model viewer scene, the debug line selection, the frame statistics log and the run report (--run-report). Kept
+# apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the
+# reports of the runs they start.
 add_library(rv_app_cli STATIC
     src/back_action.cpp
     src/command_line.cpp
@@ -14,6 +15,7 @@ add_library(rv_app_cli STATIC
     src/frame_stats_log.cpp
     src/model_viewer.cpp
     src/overlay_policy.cpp
+    src/run_report.cpp
     src/scene_content_plan.cpp
     src/screenshot_name.cpp
     src/self_check.cpp
@@ -31,9 +33,11 @@ add_library(rv_app STATIC
     src/app_logic.cpp
     src/bloom_self_check.cpp
     src/free_roam.cpp
+    src/fxaa_self_check.cpp
     src/retroverse_app.cpp
     src/scene_graphics.cpp
     src/scene_instance.cpp
+    src/self_check_canvas.cpp
     src/srgb_self_check.cpp
 )
 add_library(rv::app ALIAS rv_app)

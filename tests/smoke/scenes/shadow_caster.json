@@ -1,0 +1,31 @@
+// GPU smoke test scene (tests/smoke/test_effects.cpp): a box on a grey floor under a spot key light that casts its
+// shadow towards +X. The test renders it with and without "castsShadows" on the light and compares the pixels: the
+// floor behind the box darkens, while the lit floor around it and the box's top stay exactly as they are (no acne).
+// Ambient occlusion, bloom and vignette are off, so that only the shadow differs. Run it on its own with
+//   retroverse.exe --scene tests/smoke/scenes/shadow_caster.json --exit-after-frames --frames 3 --hidden
+//     --screenshot build/screenshots/shadow_caster.png --data-dir build/rvdata
+{
+  "schemaVersion": 1,
+  "name": "shadow_caster",
+  "camera": {"position": [0.4, 4.2, 3.4], "yawDeg": 0.0, "pitchDeg": -50.0, "horizontalFovDeg": 75.0},
+  "environment": {
+    "clearColor": "#000000",
+    "ambientSky": "#FFFFFF",
+    "ambientGround": "#FFFFFF",
+    "ambientIntensity": 0.15,
+    "exposure": 1.0,
+    "bloomStrength": 0.0,
+    "vignette": 0.0,
+    "ssao": {"enabled": false}
+  },
+  "lights": [
+    {"name": "key", "type": "spot", "position": [-2.0, 4.0, 0.0], "target": [0.3, 0.0, 0.0], "color": "#FFFFFF",
+     "intensity": 60.0, "range": 12.0, "innerConeDeg": 35.0, "outerConeDeg": 50.0, "castsShadows": true}
+  ],
+  "objects": [
+    {"id": "floor", "primitive": "plane", "params": {"size": [10.0, 10.0]}, "collides": false,
+     "inlineMaterial": {"shading": "pbr", "baseColor": "#808080", "metallic": 0.0, "roughness": 0.9}},
+    {"id": "caster", "primitive": "box", "params": {"size": [0.6, 1.0, 0.6]}, "position": [0.0, 0.5, 0.0],
+     "inlineMaterial": {"shading": "pbr", "baseColor": "#A08060", "metallic": 0.0, "roughness": 0.8}}
+  ]
+}

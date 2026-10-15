@@ -24,9 +24,16 @@ enum class SelfCheck : std::uint8_t {
     /// (evaluateBloomCheck): a lit surface below the bloom threshold not at all, an emitter with its energy kept, a
     /// single very bright pixel with the same glow wherever it falls and however bright it is.
     Bloom,
+    /// Anti-aliasing pass (FXAA): a hard slanted edge between black and an emitter, taken through the post-processing
+    /// without dithering, once without and once with anti-aliasing, must come out as documented (evaluateFxaaCheck):
+    /// pixels along the edge get intermediate values, flat areas are copied exactly.
+    Fxaa,
 };
 
-/// Command line name: "srgb", "bloom".
+/// Every check, in documentation order.
+inline constexpr SelfCheck kSelfChecks[] = {SelfCheck::Srgb, SelfCheck::Bloom, SelfCheck::Fxaa};
+
+/// Command line name: "srgb", "bloom", "fxaa".
 [[nodiscard]] std::string_view toString(SelfCheck check) noexcept;
 /// The check named `name` (exact, lowercase), or nothing.
 [[nodiscard]] std::optional<SelfCheck> selfCheckFromString(std::string_view name) noexcept;
@@ -84,5 +91,39 @@ struct BloomCheckResult {
 /// Evaluates the bloom measurements: the check passes when lit surfaces stay out of the bloom, the emitter's energy is
 /// kept and the fireflies are steady. Non-finite measurements fail.
 [[nodiscard]] BloomCheckResult evaluateBloomCheck(const BloomCheckMeasurements& measurements) noexcept;
+
+/// Side of the square target of SelfCheck::Fxaa, in pixels.
+inline constexpr int kFxaaCheckSize = 64;
+/// Smallest share of the rows crossed by the edge that must hold a pixel with an intermediate value after the
+/// anti-aliasing pass. FXAA blends each pixel of a stair-step by its distance from the step's nearer end, so the middle
+/// row of a step may keep its hard values.
+inline constexpr float kFxaaCheckMinBlendedShare = 0.5f;
+
+/// Outcome of the FXAA check over the two read-backs of the edge: without anti-aliasing ("aliased") and with it.
+struct FxaaCheckResult {
+    bool passed = false;
+    /// Without anti-aliasing every pixel holds one of two colors (a hard edge, no dithering): the check's premise.
+    bool aliasedIsHard = false;
+    /// Rows of the aliased image that hold both colors (the edge crosses them).
+    std::size_t edgeRows = 0;
+    /// Of those, rows of the anti-aliased image with at least one pixel strictly between the two colors.
+    std::size_t blendedEdgeRows = 0;
+    /// blendedEdgeRows is at least kFxaaCheckMinBlendedShare of edgeRows, and edgeRows is not 0.
+    bool edgeBlended = false;
+    /// Pixels whose 3x3 neighborhood is a single color in the aliased image (flat areas), and how many of them the
+    /// anti-aliasing changed.
+    std::size_t flatPixels = 0;
+    std::size_t flatChanged = 0;
+    /// flatPixels is not 0 and flatChanged is 0: flat areas are copied exactly.
+    bool flatCopied = false;
+};
+
+/// Evaluates the FXAA check: `aliased` and `antialiased` are tightly packed RGBA8 read-backs of a `width` x `height`
+/// target, rows in the same order (alpha is ignored). The two colors are the darkest and the brightest pixel of the
+/// aliased image; it passes when the aliased image is hard, its edge is blended and its flat areas are copied exactly.
+/// Read-backs smaller than width x height pixels fail.
+[[nodiscard]] FxaaCheckResult evaluateFxaaCheck(std::span<const std::uint8_t> aliased,
+                                                std::span<const std::uint8_t> antialiased, int width,
+                                                int height) noexcept;
 
 } // namespace rv::app

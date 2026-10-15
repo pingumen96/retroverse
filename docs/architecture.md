@@ -14,20 +14,22 @@ This document describes the code that exists today. The target architecture is i
 | platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
 | render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, sampleable depth, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe) with the key light's shadow map (`ShadowMap`), the depth pre-pass and screen-space ambient occlusion (`SsaoPass`), the render targets of an output (`ViewTargets`: HDR scene target with its depth, ambient occlusion targets, bloom chain, tonemapped image, sRGB output), bloom, the post pass and FXAA (`PostProcessor`; views shown without tonemapping, `PostSettings::tonemap`), the inspection views of the asset preview (`SceneShaders::inspection`, `debug/inspect.frag`), debug lines (`DebugDraw`), registries emptied and the texture cache's content released for new content (`clear`, `TextureCache::clearContent`, which keeps the procedural surfaces), GL_RGBA8 views of textures (`createRgba8View`: readbacks, thumbnails) | core, geometry, assets, scene, glad |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, popups closed by Back, dock space and its see-through scene area, rendering into the window or a screenshot, panels brought to the front, a decoration drawn over the scene under the panels and while they are hidden, `Panel::update` every frame for every panel) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials with texture thumbnails, Rendering, Log, Scene), the widgets they share with the asset preview's panels (`widgets.hpp`), texture thumbnails (`TexturePreviews`) | core, input, scene, platform, render, imgui |
-| app | `rv_app` | Composition root: application host (`AppHost` with an `AppIdentity`: window title, log file), main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the GPU side of a scene application shared with the asset preview (`SceneGraphics`: material library, shader programs, texture cache, registries, renderer, debug lines, surface views, window and screenshot targets, frame statistics), the model viewer (`--model`), screenshots, the sRGB and bloom self-checks, the developer overlay's panels wired to the app state (developer builds) | all of the above |
+| app | `rv_app` | Composition root: application host (`AppHost` with an `AppIdentity`: window title, log file; the run report of `--run-report`), main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the GPU side of a scene application shared with the asset preview (`SceneGraphics`: material library, shader programs, texture cache, registries, renderer, debug lines, surface views, window and screenshot targets, frame statistics), the model viewer (`--model`), screenshots, the sRGB, bloom and FXAA self-checks (the sRGB and FXAA checks draw on a `SelfCheckCanvas`), the developer overlay's panels wired to the app state (developer builds) | all of the above |
 | tools/asset-preview | `retroverse-asset-preview` | The asset preview tool (style §19.3; developer builds): `PreviewApp` on `AppHost`, `SceneGraphics`, `SceneInstance` and `DevUi`, its panels (Asset, Model, Statistics, Manifest, Screen, Warnings) | app, devui, `rv_preview_core` |
+| tools/screenshot-diff | `retroverse-screenshot-diff` | Compares a screenshot with its golden image within a tolerance and writes a heatmap of the differences (style §26.1); every configuration | `rv_screenshot_diff_core` |
 
-Five GPU-free sub-targets keep testable policy out of the GPU-side libraries:
+Six GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
 | Sub-target | Part of | Content |
 |---|---|---|
-| `rv_app_cli` | app | Command line options and validation (the host's options shared with the tools: `addHostOptions`, `applyHostOptions`; the walker's start of `--spawn`: `SpawnPoint`, `parseSpawnPoint`), scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else release the mouse, else close the overlay, else quit), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`, `evaluateBloomCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances; the size of a pattern picture on its surface, `patternSizeFor`), the model viewer scene (`makeInspectionScene` of any object, `makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`) |
+| `rv_app_cli` | app | Command line options and validation (the host's options shared with the tools: `addHostOptions`, `applyHostOptions`; the walker's start of `--spawn`: `SpawnPoint`, `parseSpawnPoint`), scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else release the mouse, else close the overlay, else quit), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`, `evaluateBloomCheck`, `evaluateFxaaCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances; the size of a pattern picture on its surface, `patternSizeFor`), the model viewer scene (`makeInspectionScene` of any object, `makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`), the run report (`RunReport`, `formatRunReport`, `parseRunReport`, `writeRunReport`, `readRunReport`), which the GPU smoke tests read back |
 | `rv_preview_core` | tools/asset-preview | Built in every configuration: the asset preview's command line and targets (`parsePreviewCommandLine`, `parsePreviewTarget`), the subject loaded from a target (`loadPreviewSubject`: a glTF model, a manifest's model or procedural prefab, a prefab with parameters; the manifest next to a model, `sidecarManifestPaths`; manifest checks with `scaleIssue`; messages; watched files; when the Manifest panel comes forward, `bringsManifestForward`), its scene (`makePreviewScene`, `prefabRoleMaterials`, `prefabRoleTextures`, `screenSurfaces` with the screens' sizes as placed), statistics (`buildAssetReport`), overlay lines and labels (`buildPreviewOverlay`, `gridHeight`, `projectToViewport`, `placeLabelPlates`), what the camera frames (`framingBounds`), orbit controls and shortcuts (`orbitInputFrom`, `previewShortcutsFrom`), view modes (`ViewMode`), the CRT-like fixture (`makeCrtFixture`) |
+| `rv_screenshot_diff_core` | tools/screenshot-diff | The golden comparison (`Tolerance`: 6/255 per channel, at most 0.5% of the pixels; `compareImages` with the count, share, largest difference and bounds of the differing pixels, alpha ignored; `makeHeatmap`; `compareFiles`, which writes the heatmap on a mismatch), shared by the tool and the GPU smoke tests |
 | `rv_devui_model` | devui | Built in every configuration: the frame time history of the Stats panel (`FrameTimeHistory`), the overlay's input routing (`routeOverlayEvent`) and mouse capture hand-over (`CaptureHandover`), the Log panel's copy of the log (`LogView`), where the overlay lands in a screenshot (`fitOverlayCapture`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
 | `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and ambient packed into `LightsUniforms` (`packLights`, which also picks the key light that casts the shadows, `ShadowLight`; `requireShadowCasters` takes a directional key light's shadow away when nothing casts), the key light's shadow map (`shadow_settings.hpp`: `spotShadowProjection`, `directionalShadowProjection` fitted to the casters and snapped to whole texels, `shadowProjectionFor`, `ShadowSettings` and their `ShadowUniforms`, `makeShadowUniforms`, the depth bias of the shadow pass, `shadowDepthBias`), the ambient occlusion (`ssao_settings.hpp`: the deterministic sample kernel `ssaoKernel`, `SsaoUniforms` from the scene's `SsaoSetup`, `makeSsaoUniforms`, the half-resolution target size `ssaoTargetSize`), materials into `MaterialUniforms` (`makeMaterialUniforms`, with the picture-tube parameters of CRT screens), the post-processing of a view (`post_settings.hpp`: `PostSettings` from the scene environment, `postSettingsFor`, anti-aliasing on or off; its `PostUniforms` block, `makePostUniforms`, the bloom strength as its mix; the radius as the upsampling scatter, `bloomScatter`; the highlight threshold and knee; the bloom level sizes, `bloomLevelSizes`), the fragment outputs of the scene shaders (`SceneOutput`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, which tests use to predict displayed colors, and its inverse for greys, `greyRadianceForDisplay`), the inspection views and the defines of their programs (`surface_view.hpp`: `SurfaceView`, `inspectionDefine`), the memory of texture mip chains (`texture_memory.hpp`: `fullMipLevelCount`, `mipChainBytes`), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
 
-`core`, `geometry`, `input`, `assets`, `scene` and the five sub-targets are **GPU-free**: they never reach SDL3,
+`core`, `geometry`, `input`, `assets`, `scene` and the six sub-targets are **GPU-free**: they never reach SDL3,
 glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
 a context. `render` receives the OpenGL function loader as a function pointer and never includes SDL. The SDL side of
 `platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a hidden window, the
@@ -40,6 +42,75 @@ without a GPU.
 Cross-module contracts written by independent work streams (prefab parameters and sockets, material names, scene
 files, manifests, shader sources and uniform blocks) are pinned by `tests/unit/integration`, which builds the real
 geometry, resolves the real materials and preprocesses the real shaders.
+
+### Module diagram
+
+An arrow reads "links" (transitive links left out), a dotted one "starts as a process". `rv_devui` and
+`retroverse-asset-preview` exist in developer builds only (`RV_DEV_UI`). Only `rv_app`, `rv_devui`, `rv_render` and
+`rv_platform` reach OpenGL, SDL3 or Dear ImGui; every other library is GPU-free.
+
+```mermaid
+flowchart TD
+    retroverse[retroverse.exe] --> app[rv_app]
+    preview[retroverse-asset-preview] --> app
+    preview --> previewCore[rv_preview_core]
+    diffTool[retroverse-screenshot-diff] --> diffCore[rv_screenshot_diff_core]
+    smoke[rv_smoke_tests] -. starts .-> retroverse
+    smoke -. starts .-> preview
+    smoke --> diffCore
+    smoke --> appCli
+    app --> devui[rv_devui: Dear ImGui]
+    app --> appCli[rv_app_cli]
+    devui --> render[rv_render: OpenGL via glad]
+    devui --> platform[rv_platform: SDL3]
+    devui --> devuiModel[rv_devui_model]
+    render --> uniforms[rv_render_uniforms]
+    render --> debugFilter[rv_render_debug_filter]
+    previewCore --> appCli
+    appCli --> uniforms
+    uniforms --> scene[rv_scene]
+    platform --> input[rv_input]
+    scene --> assets[rv_assets]
+    scene --> input
+    diffCore --> assets
+    assets --> geometry[rv_geometry]
+    geometry --> core[rv_core]
+    input --> core
+    devuiModel --> core
+    debugFilter --> core
+```
+
+`rv_app` also links `rv_render` and `rv_platform` directly (Release builds have no `rv_devui`). `rv_render` never
+includes SDL: the platform layer hands it the OpenGL loader. The unit test executables link GPU-free targets only;
+`rv_smoke_tests` reaches the GPU through the executables it starts (below, "Testing").
+
+## Frame pipeline (M0)
+
+`SceneGraphics::renderFrame` renders the view of a frame through the `gl::ViewTargets` of each output, a screenshot's
+first (`--screenshot`, F12), the window's last, with `gl::SceneRenderer::render` (details in "Rendering path"):
+
+```text
+ render items --BatchPlanner--> view plan (frustum-culled; opaque, alpha-masked, blended back to front)
+                            \-> shadow plan (casters in the key light's frustum)
+              --InstanceBuffer--> one write of both plans' matrices (persistently mapped, fenced regions)
+
+ 1. shadow pass      key light's casters, depth programs, slope-scaled bias  -> ShadowMap (2048^2 DEPTH32F)
+ 2. depth pre-pass   opaque and masked batches                               -> HDR target depth (D24S8 texture)
+ 3. ambient occl.    depth -> half-resolution estimate (RG16F) -> depth-aware blur -> occlusion (R8)
+ 4. lit pass         PBR and unlit batches, GL_LEQUAL without depth writes; shadow map and occlusion read
+                                                                             -> HDR radiance + emission (2 x RGBA16F)
+ 5. bloom            emission and highlights -> 6 levels (13-tap down, Karis first) -> tent upsample chain
+ 6. post pass        bloom mix, vignette, exposure + ACES fitted, dither     -> tonemapped (SRGB8_A8, luma in alpha)
+ 7. FXAA                                                                     -> output (SRGB8_A8)
+ 8. debug lines      depth-tested against the scene depth (--debug-draw, overlay toggles)
+ then                output -> screenshot PNG (RGBA8 view, rows flipped, RGB)  or  raw blit to the window
+                     -> developer overlay (Dear ImGui, sRGB writes off) over the window, and over screenshots
+                        with --screenshot-include-ui
+```
+
+Linear values are written everywhere; the sRGB targets encode them (`GL_FRAMEBUFFER_SRGB`), and the window shows the
+stored bytes. Without a key light the shadow pass is skipped; without ambient occlusion the occlusion target is cleared
+to 1; programs that never built fall back as "Post-processing" describes.
 
 ## Rendering path (M0)
 
@@ -278,16 +349,21 @@ geometry, resolves the real materials and preprocesses the real shaders.
   draws the overlay over it, so its log shows why. `RenderView::wireframe` draws the scene pass with
   `glPolygonMode(GL_LINE)`, without depth pre-pass or ambient occlusion, so hidden edges stay visible. The key light's
   `gl::ShadowMap` belongs to the renderer, not to an output: every view draws it again (it depends on the light only).
-  Two self-checks run the programs the views use on the GPU. `--self-check srgb` proves the output path: an unlit grey
+  Three self-checks run the programs the views use on the GPU. `--self-check srgb` proves the output path: an unlit grey
   quad of the radiance that the CPU mirror of the tonemap shows as linear 0.5 (`gl::greyRadianceForDisplay`), drawn with
-  the scene's unlit program into the HDR target of 8x8 `ViewTargets` and taken by the `PostProcessor` to the output,
-  must read back as 188 +- 2, once with exposure 1 and bloom, vignette, dithering and anti-aliasing off (the GPU's ACES
-  curve against its CPU mirror), once with bloom, dithering and anti-aliasing on (a uniform field, which none may
-  change: FXAA copies it exactly). `--self-check bloom` writes known patterns straight into the HDR target of 512x512
-  `ViewTargets` (scissored clears) and reads the largest bloom level back as floats (`Framebuffer::readLinearPixels`): a
-  lit square just below the highlight knee must not bloom at all, an emitter square must keep its energy within 5%
-  (98.6% on the reference GPU), and a single pixel 100 and 1000 times brighter than white, at the four places of a 2x2
-  pixel block, must bloom alike within 20% (2.6%).
+  the scene's unlit program into the HDR target of 8x8 `ViewTargets` (`app::SelfCheckCanvas`: one unlit quad through
+  identity matrices, taken by the `PostProcessor` to the output and read back) must read back as 188 +- 2, once with
+  exposure 1 and bloom, vignette, dithering and anti-aliasing off (the GPU's ACES curve against its CPU mirror), once
+  with bloom, dithering and anti-aliasing on (a uniform field, which none may change: FXAA copies it exactly).
+  `--self-check fxaa` draws on the same canvas an emitter that the tonemap clamps to white over the right half of 64x64
+  targets, its edge slanted 12 degrees from the vertical, and post-processes it without dithering, once without and
+  once with anti-aliasing (`app::evaluateFxaaCheck`): without, every pixel is black or white; with, at least half the
+  rows the edge crosses hold an intermediate value (all 64 on the reference GPU) and every pixel whose 3x3 neighborhood
+  is flat is unchanged (3940 of them). `--self-check bloom` writes known patterns straight into the HDR target of
+  512x512 `ViewTargets` (scissored clears) and reads the largest bloom level back as floats
+  (`Framebuffer::readLinearPixels`): a lit square just below the highlight knee must not bloom at all, an emitter square
+  must keep its energy within 5% (98.6% on the reference GPU), and a single pixel 100 and 1000 times brighter than
+  white, at the four places of a 2x2 pixel block, must bloom alike within 20% (2.6%).
 - **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view through a second
   `ViewTargets` at `--screenshot-size` (default 1920x1080, independent of the window; the bloom levels scale with it,
   so the glow covers the same share of the image), read the output back through an `RGBA8` texture view
@@ -458,6 +534,42 @@ code of `retroverse.exe`, nothing of the rendering duplicated:
   triggers) and the shortcuts (`previewShortcutsFrom`: F, R, 1 to 5); the action map gives F1, F5, F12 and Back
   (`app::backAction`). A dropped file (`SDL_EVENT_DROP_FILE`) becomes the subject; `core::FileWatchSet` polls the
   subject's files and reloads it when one changes.
+
+## Testing (M0)
+
+- **Unit tests** (`rv_tests`, label `unit`, Catch2, GPU-free): one directory per module under `tests/unit`, the tools'
+  cores under `tests/unit/preview` and `tests/unit/screenshot_diff`, and `tests/unit/integration`, which pins the
+  contracts between work streams (real geometry, materials, shaders, scene files, the input scripts played through the
+  walker). `rv_platform_tests` (label `unit`) covers the SDL side of `rv_platform` without OpenGL.
+- **Run reports:** every application on `AppHost` writes, with `--run-report <file.json>`, an `app::RunReport` when the
+  run ends, whatever the outcome: the executable (version, build type, overlay, debug output), the asset root and its
+  source, the exit code, outcome and first failure, whether no OpenGL 4.5 core context could be created
+  (`openGlUnavailable`), the context (vendor, renderer, version: the driver), the debug messages per severity (recorded
+  after the logic released its GPU resources, before the device goes), the frames, the last view's `gl::FrameStats`,
+  the instance buffer's capacity, the screenshot written, the walker's final pose (as `--spawn` takes it) and the
+  self-check. Automated checks read it back (`app::readRunReport`) instead of scraping the log; a report that cannot
+  be written fails a successful run (exit code 3).
+- **GPU smoke tests** (`rv_smoke_tests`, label `gpu`, `tests/smoke`; the presets `msvc-x64-debug-gpu` and
+  `msvc-x64-release-gpu`): Catch2 test cases that start the executables of their build as child processes (Win32, output
+  to a log, terminated after 4 minutes, `RV_ASSET_ROOT` removed from their environment), frame-limited with `--hidden`,
+  a data directory under `<build>/smoke/<case>` and a run report, and check every run (exit code 0, every frame
+  rendered, no high or medium debug message in builds with debug output, the assets of the configuration: the source
+  tree, or the copy deployed next to a Release executable) and its screenshot (the requested size, neither uniform nor
+  black). The cases: the four reference scenes with bounds on their frame statistics (the test room at most 160 draw
+  calls, `instancing_stress` at most 4 batches), `instancing_growth` (one frame does not grow the instance buffer,
+  turning around grows it mid-run, and the frame after the growth matches a run spawned at the final pose, whose buffer
+  grows before its first draw), the three self-checks, the key light's shadow and the ambient occlusion (test scenes
+  rendered with and without the effect, compared at world points projected through the scene camera: the floor behind a
+  caster darkens to about a quarter of its brightness, lit surfaces keep their exact pixels and nothing changes outside
+  the shadow's region; the floor and face at a block's base darken by about 11%, the open floor keeps its exact pixels),
+  the developer overlay (about 28,000 pixels of the focused title bar's 41,74,122 with `--screenshot-include-ui`, none
+  without) and the asset preview on its own fixture (developer builds), and golden G01 compared with
+  `rv_screenshot_diff_core` (6/255 per channel, at most 0.5% of the pixels, a heatmap on a mismatch; skipped unless
+  GL_RENDERER and GL_VERSION match the golden's metadata). A case skipped because no OpenGL 4.5 context can be created
+  exits with 77, ctest's skip code (`tests/smoke/main.cpp` maps Catch2's "all skipped").
+- **The gate:** `scripts/gate.ps1 -Gate A` builds the Debug, RelWithDebInfo and Release presets (no warning: `/WX`, and
+  the build output is scanned for compiler, linker and CMake warnings), runs the unit tests and the smoke tests of Debug
+  and Release and the golden comparison of both, and prints a summary table (logs in `build/gate-a`).
 
 ## Threading (M0)
 

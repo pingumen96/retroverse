@@ -32,7 +32,8 @@ constexpr std::string_view kDescription =
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
     "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script);\n"
     "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built,\n"
-    "              --self-check failed, developer overlay asked for by a frame-limited run unable to start).";
+    "              --self-check failed, developer overlay asked for by a frame-limited run unable to start,\n"
+    "              --run-report not written).";
 
 core::ArgParser makeParser() {
     core::ArgParser parser("retroverse", std::string(kDescription));
@@ -60,7 +61,9 @@ core::ArgParser makeParser() {
                 "dithering and anti-aliasing off, then bloom, dithering and anti-aliasing on), must be stored as sRGB "
                 "188 (+-2) by the sRGB output target. bloom: a lit surface below the bloom threshold must not bloom, "
                 "an emitter must keep its energy (+-5%) and a single very bright pixel must glow alike (+-20%) "
-                "wherever it falls.")
+                "wherever it falls. fxaa: a hard slanted edge between black and white, post-processed without "
+                "dithering, must get intermediate values along the edge from the anti-aliasing while its flat areas "
+                "are copied exactly.")
         .flag("devui-open", "Show the developer overlay (F1) from the first frame; developer builds only. A "
                             "frame-limited run fails (exit code 3) when the overlay cannot start.")
         .flag("screenshot-include-ui",
@@ -238,7 +241,8 @@ Status applySelfCheck(const core::ParsedArgs& args, CommandLineOptions& options)
     const std::string name = args.value("self-check").value_or("");
     const auto check = selfCheckFromString(name);
     if (!check) {
-        return makeError(ErrorCode::InvalidArgument, "unknown check (expected srgb or bloom)", "--self-check=" + name);
+        return makeError(ErrorCode::InvalidArgument, "unknown check (expected srgb, bloom or fxaa)",
+                         "--self-check=" + name);
     }
     if (!options.frameLimit) {
         return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames", "--self-check");
@@ -303,7 +307,11 @@ void addHostOptions(core::ArgParser& parser) {
         .option("fixed-dt", "seconds",
                 fmt::format("Advance the simulation by this time step every frame instead of the measured frame time "
                             "(at most {} s), for reproducible automated runs, e.g. 0.016667.",
-                            CommandLineOptions::kMaxFixedDeltaSeconds));
+                            CommandLineOptions::kMaxFixedDeltaSeconds))
+        .option("run-report", "json",
+                "Write a JSON report of the run to this file when it ends, also when it fails: exit code and failure, "
+                "OpenGL renderer and driver, GL debug message counts, frames, the last view's statistics, the "
+                "screenshot, the final camera, the self-check (for automated checks such as tests/smoke).");
 }
 
 Status applyHostOptions(const core::ParsedArgs& args, CommandLineOptions& options) {
@@ -370,8 +378,17 @@ Status applyHostOptions(const core::ParsedArgs& args, CommandLineOptions& option
     if (!fixedDt) {
         return propagate(fixedDt.error());
     }
+    auto runReport = pathValue(args, "run-report");
+    if (!runReport) {
+        return propagate(runReport.error());
+    }
+    if (*runReport && !core::equalsIgnoreCaseAscii(core::pathToUtf8((*runReport)->extension()), ".json")) {
+        return makeError(ErrorCode::InvalidArgument, "run reports are JSON files: use the .json extension",
+                         "--run-report=" + core::pathToUtf8(**runReport));
+    }
     options.screenshot = std::move(*screenshot);
     options.fixedDeltaSeconds = *fixedDt;
+    options.runReport = std::move(*runReport);
     return ok();
 }
 

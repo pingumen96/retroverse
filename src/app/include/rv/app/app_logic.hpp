@@ -7,6 +7,7 @@
 #include <glm/vec2.hpp>
 
 #include <rv/app/command_line.hpp>
+#include <rv/app/run_report.hpp>
 #include <rv/core/expected.hpp>
 
 union SDL_Event;
@@ -62,18 +63,23 @@ public:
     }
     [[nodiscard]] const std::optional<Error>& failure() const noexcept { return m_failure; }
 
+    /// The report of the run (--run-report), which the host writes when the run ends: the logic adds what it rendered
+    /// (RunReport documents who fills which field). Kept, and harmless to fill, without --run-report too.
+    [[nodiscard]] RunReport& report() noexcept { return m_report; }
+
 private:
     friend class AppHost;
 
     AppContext(const CommandLineOptions& options, const core::Paths& paths, platform::GraphicsWindow& window,
-               gl::GLDevice& device, core::FrameClock& clock) noexcept
-        : m_options(options), m_paths(paths), m_window(window), m_device(device), m_clock(clock) {}
+               gl::GLDevice& device, core::FrameClock& clock, RunReport& report) noexcept
+        : m_options(options), m_paths(paths), m_window(window), m_device(device), m_clock(clock), m_report(report) {}
 
     const CommandLineOptions& m_options;
     const core::Paths& m_paths;
     platform::GraphicsWindow& m_window;
     gl::GLDevice& m_device;
     core::FrameClock& m_clock;
+    RunReport& m_report;
     std::uint64_t m_frameIndex = 0;
     glm::ivec2 m_framebufferSize{0};
     bool m_quitRequested = false;

@@ -144,6 +144,16 @@
           "label": "gpu"
         }
       }
+    },
+    {
+      "name": "msvc-x64-release-gpu",
+      "configurePreset": "msvc-x64-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     }
   ]
 }

@@ -22,11 +22,27 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/test.ps1                                    # unit tests (label "unit"); GPU tests excluded
 ./scripts/test.ps1 -Filter aabb                       # ctest -R aabb
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu         # also GPU smoke tests (label "gpu")
+./scripts/test.ps1 -Preset msvc-x64-release-gpu       # the same for Release (rendering from its deployed assets)
+./scripts/gate.ps1 -Gate A                            # Gate A end to end: build matrix, tests, golden G01; -Clean
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
 
 - Outputs: `build/<preset>/bin` holds `retroverse.exe`, `retroverse-asset-preview.exe` (developer builds only, see
-  "Asset preview"), `rv_tests.exe`, `rv_platform_tests.exe` and the vcpkg DLLs.
+  "Asset preview"), `retroverse-screenshot-diff.exe`, `rv_tests.exe`, `rv_platform_tests.exe`, `rv_smoke_tests.exe`
+  and the vcpkg DLLs.
+- GPU smoke tests (`tests/smoke`, label `gpu`, ctest names `gpu.<case>`): each case starts the executables of its
+  build frame-limited with `--hidden`, `--data-dir` and `--run-report` under `build/<preset>/smoke/<case>` (logs,
+  reports, screenshots, heatmaps stay there) and checks the reports and screenshots: the reference scenes with frame
+  statistics bounds, `instancing_growth` growing mid-run, the three self-checks, the key light's shadow and the ambient
+  occlusion on `tests/smoke/scenes` (with and without the effect, compared at projected probe points), the developer
+  overlay and the asset preview (developer builds), golden G01 (reference machine only). A case is skipped (exit code
+  77) when no OpenGL 4.5 context can be created, and the golden comparison on another GPU or driver. One case:
+  `build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden*"` (Catch2 test names), or `./scripts/test.ps1 -Preset
+  msvc-x64-debug-gpu -Filter golden`.
+- `scripts/gate.ps1 -Gate A` builds `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release` (a compiler,
+  linker or CMake warning fails the step; `-Clean` rebuilds every target), runs the unit tests and the GPU smoke tests
+  of Debug and Release and the golden comparison of both, prints a summary table (logs in `build/gate-a`) and exits 1
+  when a step failed (skipped steps are reported, not failed).
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`. The first
   configure in a fresh checkout or worktree restores packages from the local binary cache (a few minutes).
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
@@ -39,10 +55,23 @@ behind: `--smoke` (render `--frames N`, default 3, then exit; any high-severity 
 `--exit-after-frames --frames N`. `--hidden`, `--frames` and `--screenshot` require one of them; frame-limited runs
 never show message boxes. Exit codes: 0 ok, 1 smoke check failed, 2 initialization failure (window, context,
 GL < 4.5, paths, scene file, input script), 3 runtime failure (unexpected error, `--screenshot` not written, scene
-shader never built, `--self-check` failed, developer overlay asked for by a frame-limited run unable to start). Logs:
-`<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs out of `%LOCALAPPDATA%`; use
-`--data-dir build/rvdata`).
+shader never built, `--self-check` failed, developer overlay asked for by a frame-limited run unable to start, run
+report not written). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs out of
+`%LOCALAPPDATA%`; use `--data-dir build/rvdata`).
 
+- Host options of both executables, besides those described below: `--width`/`--height` (the window, default
+  1280x720), `--fullscreen` (borderless), `--no-vsync`, `--gl-selftest` (provokes one GL_INVALID_ENUM to prove that
+  OpenGL errors reach the log; a `--smoke` run still passes when it is the only one), `--asset-root <dir>` (else
+  `RV_ASSET_ROOT`, the source tree in developer builds, `<exe>/assets`), `--data-dir <dir>` or `--portable` (user data
+  in `<exe>/RetroverseData`, else `%LOCALAPPDATA%\Retroverse`), `--log-level trace|debug|info|warn|error`,
+  `--no-dialogs` (implied by every frame-limited run), `--version`, `--exit` (alias of `--exit-after-frames`).
+- `--run-report <file.json>` (both executables) writes a JSON report when the run ends, also when it fails
+  (`rv/app/run_report.hpp`): version and build type, overlay and debug output built in, the asset root and its source,
+  exit code, outcome and first failure, `openGlUnavailable` (no OpenGL 4.5 core context), the GL vendor, renderer and
+  version (the driver), debug messages per severity, frames, the last view's statistics (draw calls, batches,
+  instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance buffer's capacity, the
+  screenshot written, the walker's final pose (feet, yaw, pitch as `--spawn` takes them) and the self-check. Read it
+  instead of the log in scripts and tests.
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
   `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
@@ -69,8 +98,10 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   into an HDR target and taken through the post-processing into an sRGB target, must read back as 188 +- 2, without
   and then with bloom, dithering and anti-aliasing. `bloom`: known patterns through the bloom chain: a lit square just
   below the highlight threshold must not bloom, an emitter must keep its energy (+-5%), a single very bright pixel must
-  glow alike (+-20%) whatever its value and place. Use `retroverse.exe --self-check srgb --smoke --hidden --data-dir
-  build/rvdata` (and `--self-check bloom`).
+  glow alike (+-20%) whatever its value and place. `fxaa`: a hard edge slanted 12 degrees between black and white,
+  post-processed without dithering, without and then with anti-aliasing: at least half the rows it crosses must get
+  intermediate values, every pixel of a flat 3x3 neighborhood must stay exactly as it was. Use `retroverse.exe
+  --self-check srgb --smoke --hidden --data-dir build/rvdata` (and `--self-check bloom`, `--self-check fxaa`).
 - Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`) and
   post-processed once per view: bloom of the light surfaces emit (screens, lamp shades, neon) and of the highlights
   above a soft threshold (lit paper, wood and walls never bloom), vignette, exposure + ACES, dithering, then FXAA (the
@@ -210,7 +241,12 @@ The Gate A golden G01, `assets/style_tests/screenshots/m0_testroom_golden.png`, 
 1920x1080 from `msvc-x64-debug` on the reference machine; `m0_testroom_golden.json` beside it records the GPU, the
 driver, the commit and the SHA-256 of the scene file and of the image, and `docs/testing/gate-a.md` answers the
 checklist of style §26.2 for it. Regenerate it (the command is in its JSON) only when a change alters the look on
-purpose, and update the JSON and the page with it.
+purpose, and update the JSON and the page with it. The GPU smoke test `gpu.golden/G01` compares the frame with it on
+the reference machine (GL_RENDERER and GL_VERSION as in the JSON; skipped elsewhere): a pixel differs when a channel
+moves by more than 6/255, and at most 0.5% may differ (0 do today). Compare any two screenshots the same way with
+`retroverse-screenshot-diff <expected.png> <actual.png> [--threshold 6] [--max-percent 0.5] [--heatmap <png>]` (exit
+code 0 match, 1 mismatch, 2 error; the heatmap shows unchanged pixels as dark grey, changes within the threshold dim
+blue, beyond it red to yellow), e.g. two frames of a walk or a change that should not alter the look.
 
 The developer overlay is checked the same way. Its pixels must hold Dear ImGui's theme colors exactly (they are sRGB
 already: the title bar of the focused panel reads 41,74,122), neither washed out nor darkened, with readable text; the
@@ -300,11 +336,17 @@ Manifest one; a copy under `build/` whose `runtime.sockets.screen` names a missi
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
+- `tools/screenshot-diff`: `retroverse-screenshot-diff.exe` and its GPU-free core `rv_screenshot_diff_core`
+  (`include/rv/screenshot_diff/*.hpp`, namespace `rv::screenshot_diff`), built in every configuration, tested by
+  `tests/unit/screenshot_diff` and linked by the GPU smoke tests.
 - Tests: `tests/unit/<module>/test_*.cpp` (globbed into `rv_tests`, label `unit`, no SDL or OpenGL; GLB files for
   tests come from `rv/assets/glb_writer.hpp`),
   `tests/platform/test_*.cpp` (globbed into `rv_platform_tests`, label `unit`: SDL platform layer, no OpenGL),
   `tests/support/*` helpers (globbed into `rv_test_support`), `tests/input_scripts` (scripted verification runs),
-  `tests/smoke` GPU tests (label `gpu`).
+  `tests/smoke/*.cpp` GPU smoke tests (globbed into `rv_smoke_tests`, label `gpu`: GPU-free itself, it starts the
+  executables of its build and reads their run reports and screenshots; `smoke_support.hpp` runs them,
+  `image_checks.hpp` measures screenshots; Win32 child processes in `child_process.hpp`) and their test scenes in
+  `tests/smoke/scenes`.
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 
 ## Conventions

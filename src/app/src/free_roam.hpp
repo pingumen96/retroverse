@@ -38,6 +38,8 @@ public:
 
     /// "feet (x, y, z) m, yaw Y deg, pitch P deg", positions to 0.1 mm and angles to 0.01 degree.
     [[nodiscard]] std::string describePose() const;
+    /// The walker's feet, yaw and pitch as --spawn takes them: a walker spawned there stands in the same pose.
+    [[nodiscard]] SpawnPoint pose() const;
     /// Logs the pose reached after `frames` frames and `simulatedSeconds` of simulated time: feet and eye position, yaw
     /// and pitch, the horizontal distance from the start, and the nearest collider at the walker's height with its
     /// clearance (distance - capsule radius).

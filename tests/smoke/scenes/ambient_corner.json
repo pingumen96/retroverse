@@ -1,0 +1,28 @@
+// GPU smoke test scene (tests/smoke/test_effects.cpp): a grey block on a grey floor lit by a uniform white ambient
+// alone (no light). The test renders it with and without ambient occlusion and compares the pixels: the floor along
+// the block's base and the base of its faces darken, the open floor stays exactly as it is (occluders farther than the
+// radius count for nothing), and without the occlusion the floor reads alike near the block and away from it. Bloom
+// and vignette are off. Run it on its own with
+//   retroverse.exe --scene tests/smoke/scenes/ambient_corner.json --exit-after-frames --frames 3 --hidden
+//     --screenshot build/screenshots/ambient_corner.png --data-dir build/rvdata
+{
+  "schemaVersion": 1,
+  "name": "ambient_corner",
+  "camera": {"position": [0.0, 1.8, 2.2], "yawDeg": 0.0, "pitchDeg": -35.0, "horizontalFovDeg": 75.0},
+  "environment": {
+    "clearColor": "#000000",
+    "ambientSky": "#FFFFFF",
+    "ambientGround": "#FFFFFF",
+    "ambientIntensity": 1.0,
+    "exposure": 1.0,
+    "bloomStrength": 0.0,
+    "vignette": 0.0,
+    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
+  },
+  "objects": [
+    {"id": "floor", "primitive": "plane", "params": {"size": [10.0, 10.0]}, "collides": false,
+     "inlineMaterial": {"shading": "pbr", "baseColor": "#808080", "metallic": 0.0, "roughness": 1.0}},
+    {"id": "block", "primitive": "box", "params": {"size": [1.0, 1.0, 1.0]}, "position": [0.0, 0.5, 0.0],
+     "inlineMaterial": {"shading": "pbr", "baseColor": "#A0A0A0", "metallic": 0.0, "roughness": 1.0}}
+  ]
+}

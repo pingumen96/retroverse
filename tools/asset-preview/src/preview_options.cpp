@@ -31,7 +31,8 @@ constexpr std::string_view kDescription =
     "Screenshots: the panels settle over the first frames; --screenshot shows them laid out from --frames 3 on.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
     "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, --write-fixture not\n"
-    "              written); 3 runtime failure (unexpected error, --screenshot not written, shader never built).";
+    "              written); 3 runtime failure (unexpected error, --screenshot not written, shader never built,\n"
+    "              --run-report not written).";
 
 core::ArgParser makeParser() {
     core::ArgParser parser("retroverse-asset-preview", std::string(kDescription));

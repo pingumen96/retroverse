@@ -485,6 +485,9 @@ TEST_CASE("app/command_line: --self-check runs a named check in a frame-limited 
         const auto bloom = parse({"--self-check", "bloom", limit, "--hidden"});
         REQUIRE(bloom.has_value());
         CHECK(bloom->selfCheck == rv::app::SelfCheck::Bloom);
+        const auto fxaa = parse({"--self-check", "fxaa", limit, "--hidden"});
+        REQUIRE(fxaa.has_value());
+        CHECK(fxaa->selfCheck == rv::app::SelfCheck::Fxaa);
     }
 
     // An interactive run has no end for the check to report to.
@@ -493,7 +496,7 @@ TEST_CASE("app/command_line: --self-check runs a named check in a frame-limited 
     CHECK(interactive.error().code == ErrorCode::InvalidArgument);
     CHECK(interactive.error().context == "--self-check");
 
-    for (const char* name : {"SRGB", "Bloom", "gamma", ""}) {
+    for (const char* name : {"SRGB", "Bloom", "FXAA", "gamma", ""}) {
         INFO(name);
         const auto rejected = parse({"--exit-after-frames", "--self-check", name});
         REQUIRE_FALSE(rejected.has_value());
@@ -547,6 +550,7 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
     CHECK(helpListsOption(help, "--devui-open"));
     CHECK(helpListsOption(help, "--screenshot-include-ui"));
     CHECK(helpListsOption(help, "--spawn"));
+    CHECK(helpListsOption(help, "--run-report"));
     CHECK_FALSE(helpListsOption(help, "--exi")); // a prefix of a listed option is not an entry
     CHECK(help.find("  --exit\n      Same as --exit-after-frames.") != std::string::npos);
     CHECK(help.find("Exit codes") != std::string::npos);

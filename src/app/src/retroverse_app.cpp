@@ -53,6 +53,7 @@
 #include "app_input.hpp"
 #include "bloom_self_check.hpp"
 #include "free_roam.hpp"
+#include "fxaa_self_check.hpp"
 #include "srgb_self_check.hpp"
 
 namespace rv::app {
@@ -159,14 +160,20 @@ Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const c
     return source;
 }
 
-/// --self-check srgb: logs the outcome; a check that fails, or cannot run, fails the run (exit code 3).
+/// A self-check that could not run: recorded in the run report and failing the run (exit code 3).
+void failSelfCheck(AppContext& context, SelfCheck check, Error error) {
+    error.message = fmt::format("{} self-check could not run: {}", toString(check), error.message);
+    context.report().selfCheck = SelfCheckRecord{check, false, error.message};
+    context.failRun(std::move(error));
+}
+
+/// --self-check srgb: logs the outcome and records it in the run report; a check that fails, or cannot run, fails the
+/// run (exit code 3).
 void runSrgbCheck(AppContext& context, const SceneGraphics& graphics) {
     const auto results =
         runSrgbSelfCheck(context.device(), graphics.textureDefaults(), graphics.unlitProgram(), graphics.postShaders());
     if (!results) {
-        Error error = results.error();
-        error.message = "sRGB self-check could not run: " + error.message;
-        context.failRun(std::move(error));
+        failSelfCheck(context, SelfCheck::Srgb, results.error());
         return;
     }
     const auto describe = [](const SrgbCheckResult& result) {
@@ -176,6 +183,7 @@ void runSrgbCheck(AppContext& context, const SceneGraphics& graphics) {
         fmt::format("linear {} stored as {} without and {} with bloom, dithering and anti-aliasing, expected {} +- {}",
                     kSrgbCheckLinearValue, describe(results->plain), describe(results->postProcessed),
                     results->plain.expected, kSrgbCheckTolerance);
+    context.report().selfCheck = SelfCheckRecord{SelfCheck::Srgb, results->passed(), summary};
     if (results->passed()) {
         spdlog::info("sRGB self-check passed: {}", summary);
     } else {
@@ -183,14 +191,12 @@ void runSrgbCheck(AppContext& context, const SceneGraphics& graphics) {
     }
 }
 
-/// --self-check bloom: logs the measurements and the outcome; a check that fails, or cannot run, fails the run (exit
-/// code 3).
+/// --self-check bloom: logs the measurements and the outcome and records them in the run report; a check that fails,
+/// or cannot run, fails the run (exit code 3).
 void runBloomCheck(AppContext& context, const SceneGraphics& graphics) {
     const auto measurements = runBloomSelfCheck(context.device(), graphics.postShaders());
     if (!measurements) {
-        Error error = measurements.error();
-        error.message = "bloom self-check could not run: " + error.message;
-        context.failRun(std::move(error));
+        failSelfCheck(context, SelfCheck::Bloom, measurements.error());
         return;
     }
     const BloomCheckResult result = evaluateBloomCheck(*measurements);
@@ -204,11 +210,35 @@ void runBloomCheck(AppContext& context, const SceneGraphics& graphics) {
         lowest == measurements->fireflyEnergies.end() ? 0.0f : *lowest,
         highest == measurements->fireflyEnergies.end() ? 0.0f : *highest, 100.0f * result.fireflySpread,
         result.firefliesSteady ? "ok" : "FAILED", 100.0f * kBloomCheckFireflyTolerance);
+    context.report().selfCheck = SelfCheckRecord{SelfCheck::Bloom, result.passed, summary};
     if (result.passed) {
         spdlog::info("Bloom self-check passed: {}", summary);
     } else {
         context.failRun(
             Error{ErrorCode::ValidationFailed, "bloom self-check failed: " + summary, "--self-check=bloom"});
+    }
+}
+
+/// --self-check fxaa: logs the outcome and records it in the run report; a check that fails, or cannot run, fails the
+/// run (exit code 3).
+void runFxaaCheck(AppContext& context, const SceneGraphics& graphics) {
+    const auto result =
+        runFxaaSelfCheck(context.device(), graphics.textureDefaults(), graphics.unlitProgram(), graphics.postShaders());
+    if (!result) {
+        failSelfCheck(context, SelfCheck::Fxaa, result.error());
+        return;
+    }
+    const std::string summary = fmt::format(
+        "without anti-aliasing the edge is hard ({}); with it {} of {} rows crossed by the edge hold blended pixels "
+        "({}, at least {:g}%), {} of {} pixels of flat areas changed ({})",
+        result->aliasedIsHard ? "ok" : "FAILED", result->blendedEdgeRows, result->edgeRows,
+        result->edgeBlended ? "ok" : "FAILED", 100.0f * kFxaaCheckMinBlendedShare, result->flatChanged,
+        result->flatPixels, result->flatCopied ? "ok" : "FAILED");
+    context.report().selfCheck = SelfCheckRecord{SelfCheck::Fxaa, result->passed, summary};
+    if (result->passed) {
+        spdlog::info("FXAA self-check passed: {}", summary);
+    } else {
+        context.failRun(Error{ErrorCode::ValidationFailed, "FXAA self-check failed: " + summary, "--self-check=fxaa"});
     }
 }
 
@@ -567,6 +597,9 @@ Status RetroverseApp::onInit(AppContext& context) {
         case SelfCheck::Bloom:
             runBloomCheck(context, *state->graphics);
             break;
+        case SelfCheck::Fxaa:
+            runFxaaCheck(context, *state->graphics);
+            break;
         }
     }
     m_state = std::move(state);
@@ -634,6 +667,7 @@ void RetroverseApp::onShutdown(AppContext& context) {
         if (context.options().frameLimit) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }
+        context.report().finalCamera = m_state->freeRoam->pose();
         m_state->graphics->finishRun(context);
     }
     m_state.reset();

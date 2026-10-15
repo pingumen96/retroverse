@@ -105,6 +105,8 @@ struct CommandLineOptions {
     /// --fixed-dt <seconds>: time step of every frame's simulation (onUpdate) instead of the measured frame time, in
     /// (0, kMaxFixedDeltaSeconds]. With --input-script it makes automated runs reproducible.
     std::optional<double> fixedDeltaSeconds;
+    /// --run-report <json>: where the host writes the run report (RunReport, formatRunReport) when the run ends.
+    std::optional<std::filesystem::path> runReport;
 
     /// --model <file>: a glTF model (.gltf or .glb) shown in the model viewer instead of a scene: at the origin, lit by
     /// a three-point light rig, with a camera framing it (makeModelViewerScene). Exclusive with --scene.
@@ -131,8 +133,8 @@ struct CommandLineOptions {
 /// Declares on `parser` the options of the host that every application built on AppHost understands (retroverse.exe,
 /// retroverse-asset-preview): --version, the window (--width, --height, --fullscreen, --hidden, --no-vsync), the run
 /// length (--smoke, --frames, --exit-after-frames and its alias --exit), --gl-selftest, the directories (--asset-root,
-/// --data-dir, --portable), --log-level, --no-dialogs, the screenshots (--screenshot, --screenshot-size) and
-/// --fixed-dt. --help is always accepted (core::ArgParser).
+/// --data-dir, --portable), --log-level, --no-dialogs, the screenshots (--screenshot, --screenshot-size), --fixed-dt
+/// and --run-report. --help is always accepted (core::ArgParser).
 void addHostOptions(core::ArgParser& parser);
 
 /// Validates the host options of `args` (declared by addHostOptions) into the matching fields of `options`. Errors
@@ -142,6 +144,7 @@ void addHostOptions(core::ArgParser& parser);
 ///    window), --screenshot without a frame limit (there would be no last frame to capture);
 ///  - --screenshot not ending in ".png"; --screenshot-size other than WIDTHxHEIGHT with sides in [1, 16384];
 ///  - --fixed-dt that is not a number in (0, kMaxFixedDeltaSeconds];
+///  - --run-report not ending in ".json";
 ///  - --log-level other than trace, debug, info, warn or error; empty paths.
 /// Every frame-limited run implies --no-dialogs.
 [[nodiscard]] Status applyHostOptions(const core::ParsedArgs& args, CommandLineOptions& options);

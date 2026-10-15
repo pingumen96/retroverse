@@ -32,11 +32,12 @@ namespace rv::app {
 /// the pose); frame-limited runs log the final camera pose at exit. Developer builds (RV_DEV_ASSET_ROOT) also reload
 /// shaders automatically when their files change. A frame-limited run with --screenshot writes its last frame to that
 /// file (RGB: the window shows no alpha); --self-check srgb checks the sRGB output pipeline after initialization
-/// (runSrgbSelfCheck), --self-check bloom the bloom chain (runBloomSelfCheck), both with the programs the views use. A
-/// frame-limited run fails (exit code 3, AppContext::failRun) when that file is not written
-/// (write error, or the run ended before its last frame), when a scene or post-processing shader never built, so
-/// frames were never drawn completely, or when the self-check fails. A --input-script that cannot be loaded fails the
-/// initialization (exit code 2).
+/// (runSrgbSelfCheck), --self-check bloom the bloom chain (runBloomSelfCheck), --self-check fxaa the anti-aliasing pass
+/// (runFxaaSelfCheck), all with the programs the views use. A frame-limited run fails (exit code 3,
+/// AppContext::failRun) when that file is not written (write error, or the run ended before its last frame), when a
+/// scene or post-processing shader never built, so frames were never drawn completely, or when the self-check fails. A
+/// --input-script that cannot be loaded fails the initialization (exit code 2). The run report (--run-report) gets the
+/// self-check's outcome, the walker's final pose and, through SceneGraphics::finishRun, what the last view drew.
 ///
 /// Developer builds (RV_DEV_UI) add the Dear ImGui developer overlay (devui::DevUi), toggled by ToggleDevUI (F1) and
 /// open from the start with --devui-open: dockable panels for frame statistics, the camera and walker, the lights (the

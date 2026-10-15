@@ -2,9 +2,13 @@
 # are globbed so modules can add tests without editing this file.
 
 file(GLOB_RECURSE RV_UNIT_TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
-# tests/unit/preview covers the GPU-free core of the asset preview tool, which only exists with RV_BUILD_TOOLS.
+# tests/unit/preview and tests/unit/screenshot_diff cover the GPU-free cores of the asset preview and the screenshot
+# diff tools, which only exist with RV_BUILD_TOOLS.
 if(NOT TARGET rv_preview_core)
     list(FILTER RV_UNIT_TEST_SOURCES EXCLUDE REGEX "/preview/")
+endif()
+if(NOT TARGET rv_screenshot_diff_core)
+    list(FILTER RV_UNIT_TEST_SOURCES EXCLUDE REGEX "/screenshot_diff/")
 endif()
 
 add_executable(rv_tests ${RV_UNIT_TEST_SOURCES})
@@ -23,6 +27,9 @@ target_link_libraries(rv_tests PRIVATE
     Catch2::Catch2WithMain)
 if(TARGET rv_preview_core)
     target_link_libraries(rv_tests PRIVATE rv_preview_core) # GPU-free core of retroverse-asset-preview
+endif()
+if(TARGET rv_screenshot_diff_core)
+    target_link_libraries(rv_tests PRIVATE rv_screenshot_diff_core) # GPU-free core of retroverse-screenshot-diff
 endif()
 target_compile_definitions(rv_tests PRIVATE
     RV_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

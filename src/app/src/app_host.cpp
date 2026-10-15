@@ -158,6 +158,41 @@ SelfTestOutcome runGlSelfTest(gl::GLDevice& device) {
     return outcome;
 }
 
+/// The report fields of the executable itself.
+RunReport initialReport(const AppIdentity& identity, const CommandLineOptions& options) {
+    RunReport report;
+    report.application = std::string(identity.name);
+    report.version = std::string(core::kVersion);
+    report.buildType = std::string(core::kBuildType);
+    report.developerOverlay = kDevUi;
+    report.glDebugOutput = kGlDebug;
+    report.frameLimit = options.frameLimit;
+    return report;
+}
+
+/// Records the GL debug message counts of a device into the report when it goes out of scope. Declared after the
+/// device and before the logic's shutdown guard, it records after the logic released its GPU resources and before the
+/// device is destroyed, on every way out of the run.
+class DebugMessageRecorder {
+public:
+    DebugMessageRecorder(const gl::GLDevice& device, RunReport& report) noexcept : m_device(device), m_report(report) {}
+    DebugMessageRecorder(const DebugMessageRecorder&) = delete;
+    DebugMessageRecorder& operator=(const DebugMessageRecorder&) = delete;
+    ~DebugMessageRecorder() {
+        if (!m_device.debugOutputEnabled()) {
+            return;
+        }
+        const std::uint64_t high = m_device.debugMessageCount(gl::DebugSeverity::High);
+        const std::uint64_t mediumOrMore = m_device.debugMessageCount(gl::DebugSeverity::Medium);
+        const std::uint64_t lowOrMore = m_device.debugMessageCount(gl::DebugSeverity::Low);
+        m_report.debugMessages = DebugMessageCounts{high, mediumOrMore - high, lowOrMore - mediumOrMore};
+    }
+
+private:
+    const gl::GLDevice& m_device;
+    RunReport& m_report;
+};
+
 /// Calls IAppLogic::onShutdown exactly once: explicitly at the end of a normal run, or on scope exit when
 /// initialization fails or an exception unwinds the run (the window and device are still alive at that point).
 class LogicShutdownGuard {
@@ -190,7 +225,7 @@ private:
 } // namespace
 
 AppHost::AppHost(CommandLineOptions options, AppIdentity identity)
-    : m_options(std::move(options)), m_identity(identity) {}
+    : m_options(std::move(options)), m_identity(identity), m_report(initialReport(m_identity, m_options)) {}
 
 std::string AppHost::baseWindowTitle() const {
     return fmt::format("{} {}", m_identity.name, core::kVersion);
@@ -205,6 +240,7 @@ int AppHost::run(IAppLogic& logic) noexcept {
     } catch (...) {
         reportUnexpectedFailure("unknown exception");
     }
+    exitCode = finishReport(exitCode);
     try {
         spdlog::info("Exiting with code {} ({})", toInt(exitCode), toString(exitCode));
         core::shutdownLogging();
@@ -212,6 +248,27 @@ int AppHost::run(IAppLogic& logic) noexcept {
         // The exit code matters more than the last log line.
     }
     return toInt(exitCode);
+}
+
+ExitCode AppHost::finishReport(ExitCode exitCode) noexcept {
+    if (!m_options.runReport) {
+        return exitCode;
+    }
+    try {
+        m_report.exitCode = toInt(exitCode);
+        m_report.outcome = std::string(toString(exitCode));
+        if (auto written = writeRunReport(*m_options.runReport, m_report); !written) {
+            spdlog::error("Run report not written: {}", written.error().toString());
+            return exitCode == ExitCode::Ok ? ExitCode::RuntimeFailure : exitCode;
+        }
+        spdlog::info("Run report written: {}", core::pathToUtf8(*m_options.runReport));
+    } catch (const std::exception& e) {
+        spdlog::error("Run report not written: {}", e.what());
+        return exitCode == ExitCode::Ok ? ExitCode::RuntimeFailure : exitCode;
+    } catch (...) {
+        return exitCode == ExitCode::Ok ? ExitCode::RuntimeFailure : exitCode;
+    }
+    return exitCode;
 }
 
 ExitCode AppHost::runUnchecked(IAppLogic& logic) {
@@ -235,6 +292,8 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
         return failInitialization(fmt::format("{} could not locate its directories.", m_identity.name), paths.error());
     }
     logStartupBanner(m_identity.name, *paths, m_options);
+    m_report.assetRoot = paths->assetRoot();
+    m_report.assetRootSource = std::string(core::toString(paths->assetRootSource()));
 
     // --- SDL, window, OpenGL context, GL device ----------------------------------------------------------------------
     const platform::AppMetadata metadata{std::string(m_identity.name), std::string(core::kVersion),
@@ -248,7 +307,9 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     auto window =
         platform::createGraphicsWindow(makeWindowDesc(m_options, baseWindowTitle()), makeContextDesc(m_options));
     if (!window) {
-        return failInitialization(window.error().code == ErrorCode::GraphicsError
+        // GraphicsError: the window exists but no OpenGL 4.5 core context could be created for it.
+        m_report.openGlUnavailable = window.error().code == ErrorCode::GraphicsError;
+        return failInitialization(m_report.openGlUnavailable
                                       ? openGlRequired(m_identity.name)
                                       : fmt::format("{} could not create its window.", m_identity.name),
                                   window.error());
@@ -257,12 +318,16 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
 
     const auto device = gl::GLDevice::create(window->glLoader(), gl::GLDeviceConfig{.debugOutput = kGlDebug});
     if (!device) {
+        m_report.openGlUnavailable = true;
         return failInitialization(openGlRequired(m_identity.name), device.error());
     }
+    const gl::GLCapabilities& caps = (*device)->caps();
+    m_report.context = RunReportContext{caps.vendor, caps.renderer, caps.version, caps.glslVersion};
+    const DebugMessageRecorder debugMessages(**device, m_report);
 
     // --- Application logic -------------------------------------------------------------------------------------------
     core::FrameClock clock;
-    AppContext context(m_options, *paths, *window, **device, clock);
+    AppContext context(m_options, *paths, *window, **device, clock, m_report);
     context.m_framebufferSize = window->drawableSize();
 
     LogicShutdownGuard logicScope(logic, context);
@@ -275,9 +340,11 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     }
 
     if (auto loop = runMainLoop(logic, context); !loop) {
+        m_report.framesRendered = context.m_frameIndex;
         reportUnexpectedFailure(loop.error().toString());
         return ExitCode::RuntimeFailure;
     }
+    m_report.framesRendered = context.m_frameIndex;
     // Release the logic's GPU resources now, so that messages they cause still count towards the result.
     logicScope.shutdown();
     if (context.m_failure) {
@@ -299,32 +366,41 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
                 ? fmt::format("{} high-severity GL debug message(s) ({} provoked by --gl-selftest)",
                               summary.highSeverityGlMessages, provoked)
                 : std::string("OpenGL errors not checked (GL debug output is off in this build)");
-        spdlog::log(exitCode == ExitCode::Ok ? spdlog::level::info : spdlog::level::err,
-                    "Smoke test {}: {} of {} frame(s) rendered, {}", exitCode == ExitCode::Ok ? "passed" : "FAILED",
-                    summary.framesRendered, summary.frameLimit.value_or(0), glCheck);
+        const std::string verdict = fmt::format("{} of {} frame(s) rendered, {}", summary.framesRendered,
+                                                summary.frameLimit.value_or(0), glCheck);
+        spdlog::log(exitCode == ExitCode::Ok ? spdlog::level::info : spdlog::level::err, "Smoke test {}: {}",
+                    exitCode == ExitCode::Ok ? "passed" : "FAILED", verdict);
+        if (exitCode == ExitCode::SmokeCheckFailed && !m_report.failure) {
+            m_report.failure = "smoke test failed: " + verdict;
+        }
     }
     return exitCode;
 }
 
-ExitCode AppHost::failInitialization(std::string_view summary, const Error& error) const {
+ExitCode AppHost::failInitialization(std::string_view summary, const Error& error) {
     spdlog::critical("{} {}", summary, error.toString());
+    if (!m_report.failure) {
+        m_report.failure = fmt::format("{} {}", summary, error.toString());
+    }
     if (!m_options.noDialogs) {
         platform::showErrorDialog(m_identity.name, fmt::format("{}\n\n{}", summary, error.toString()));
     }
     return ExitCode::InitializationFailed;
 }
 
-void AppHost::reportUnexpectedFailure(std::string_view what) const noexcept {
+void AppHost::reportUnexpectedFailure(std::string_view what) noexcept {
     reportFailure("Unexpected failure", "stopped because of an unexpected error", what);
 }
 
-void AppHost::reportRunFailure(std::string_view what) const noexcept {
+void AppHost::reportRunFailure(std::string_view what) noexcept {
     reportFailure("Run failed", "stopped because of an error", what);
 }
 
-void AppHost::reportFailure(std::string_view logPrefix, std::string_view headline,
-                            std::string_view what) const noexcept {
+void AppHost::reportFailure(std::string_view logPrefix, std::string_view headline, std::string_view what) noexcept {
     try {
+        if (!m_report.failure) {
+            m_report.failure = fmt::format("{}: {}", logPrefix, what);
+        }
         spdlog::critical("{}: {}", logPrefix, what);
         if (!m_options.noDialogs) {
             const std::filesystem::path logFile = core::activeLogFile();

@@ -138,6 +138,8 @@ public:
 
     /// Statistics of the last render() call.
     [[nodiscard]] const FrameStats& stats() const noexcept { return m_stats; }
+    /// Instance matrices per region of the instance buffer: kInitialInstanceCapacity until a view needs more.
+    [[nodiscard]] std::size_t instanceCapacity() const noexcept { return m_instances.regionCapacity(); }
 
 private:
     /// Draw calls, instances and triangles of a pass.

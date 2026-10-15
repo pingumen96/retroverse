@@ -112,9 +112,10 @@ public:
     /// call every frame.
     void pollShaderReload();
 
-    /// The end of a frame-limited run, from IAppLogic::onShutdown: logs the frame statistics of the run, and fails the
-    /// run when a program of the views never built (frames missed surfaces, the bloom or the tonemap) or when the
-    /// --screenshot of its last frame was not written (the run ended before it). Nothing for interactive runs.
+    /// The end of a run, from IAppLogic::onShutdown: adds to the run report (AppContext::report) the statistics of the
+    /// last view rendered, the instance buffer's capacity and the --screenshot written. A frame-limited run also logs
+    /// the frame statistics of the run, and fails when a program of the views never built (frames missed surfaces, the
+    /// bloom or the tonemap) or when the --screenshot of its last frame was not written (the run ended before it).
     void finishRun(AppContext& context);
 
 private:

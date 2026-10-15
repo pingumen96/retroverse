@@ -15,6 +15,7 @@
 #include <rv/app/app_logic.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/frame_stats_log.hpp>
+#include <rv/app/run_report.hpp>
 #include <rv/app/screenshot_name.hpp>
 #include <rv/assets/image_io.hpp>
 #include <rv/assets/material_library.hpp>
@@ -195,6 +196,7 @@ struct SceneGraphics::State {
     FrameStatsLog statsLog;
     bool lastFrameCaptured = false; ///< --screenshot written
     bool viewRendered = false;      ///< a view was rendered during the current frame (window or screenshot)
+    bool anyViewRendered = false;   ///< a view was rendered during the run
 
     /// Renders `view` into `targets` with the programs of the views, the debug lines and the surface view.
     void render(gl::GLDevice& device, const gl::RenderView& view, const gl::ViewTargets& targets) {
@@ -220,6 +222,7 @@ struct SceneGraphics::State {
         }
         renderer->render(device, shaderSet, shown, targets);
         viewRendered = true;
+        anyViewRendered = true;
     }
 
     [[nodiscard]] gl::PostShaders postShaders() const {
@@ -489,10 +492,18 @@ void SceneGraphics::pollShaderReload() {
 
 void SceneGraphics::finishRun(AppContext& context) {
     const CommandLineOptions& options = context.options();
+    const State& state = *m_state;
+    RunReport& report = context.report();
+    if (state.anyViewRendered) {
+        report.lastView = state.renderer->stats();
+    }
+    report.instanceCapacity = state.renderer->instanceCapacity();
+    if (options.screenshot && state.lastFrameCaptured) {
+        report.screenshot = ScreenshotRecord{*options.screenshot, options.screenshotWidth, options.screenshotHeight};
+    }
     if (!options.frameLimit) {
         return;
     }
-    const State& state = *m_state;
     if (const std::optional<std::string> summary = state.statsLog.runSummary("Frame stats of the run")) {
         spdlog::info("{}", *summary);
     }
