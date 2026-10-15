@@ -53,6 +53,55 @@ int countColor(const ImageData& image, int y0, int y1, Rgba color) {
     return count;
 }
 
+/// One line of title text: the glyphs it holds and the font scale (pixels per font pixel).
+struct TextLine {
+    int glyphs = 0;
+    int scale = 0;
+    bool operator==(const TextLine&) const = default;
+};
+
+/// Lines of charcoal glyphs in rows [y0, y1) of a cover, inside its border (min(width, height) / 24): each run of rows
+/// holding glyph pixels is a line 7 font pixels tall, its width (the 6-pixel advance per glyph, less the last gap,
+/// give or take the empty edge columns of some glyphs) gives its glyph count.
+std::vector<TextLine> textLines(const ImageData& cover, int y0, int y1) {
+    const int border = std::max(1, std::min(cover.width, cover.height) / 24);
+    std::vector<TextLine> lines;
+    int runStart = -1;
+    int minX = cover.width;
+    int maxX = -1;
+    for (int y = y0; y <= y1; ++y) {
+        bool glyphRow = false;
+        for (int x = border; y < y1 && x < cover.width - border; ++x) {
+            if (pixel(cover, x, y) == kCharcoal) {
+                glyphRow = true;
+                minX = std::min(minX, x);
+                maxX = std::max(maxX, x);
+            }
+        }
+        if (glyphRow && runStart < 0) {
+            runStart = y;
+        } else if (!glyphRow && runStart >= 0) {
+            const int scale = (y - runStart) / 7;
+            if (scale > 0) {
+                lines.push_back({(maxX - minX + 1 + scale + 3 * scale) / (6 * scale), scale});
+            }
+            runStart = -1;
+            minX = cover.width;
+            maxX = -1;
+        }
+    }
+    return lines;
+}
+
+/// The title lines of a cover: those inside its ivory band.
+std::vector<TextLine> titleLines(const ImageData& cover) {
+    const std::vector<int> rows = ivoryRows(cover);
+    if (rows.empty()) {
+        return {};
+    }
+    return textLines(cover, rows.front(), rows.back() + 1);
+}
+
 } // namespace
 
 TEST_CASE("assets/test_patterns: sizes and invalid dimensions", "[assets][patterns]") {
@@ -195,6 +244,54 @@ TEST_CASE("assets/test_patterns: cover titles change only the band", "[assets][p
     const ImageData crowded = rv::assets::makeCoverPlaceholder(64, 64, longTitle + " " + longTitle, 2);
     CHECK(isRgba(crowded, 64, 64));
     CHECK(rv::assets::makeCoverPlaceholder(64, 64, std::string("\xFF\xFE broken utf8 \xC3", 17), 2).isValid());
+}
+
+TEST_CASE("assets/test_patterns: titles wrap between words at the largest scale that keeps them whole",
+          "[assets][patterns]") {
+    // The test room's east poster (a 352 x 512 picture): at scale 6 a line holds 8 glyphs, so "MOONLIGHT" would break
+    // into "MOONLIGH" / "T"; scale 5 keeps both words whole.
+    CHECK(titleLines(rv::assets::makeCoverPlaceholder(352, 512, "MOONLIGHT DERBY", 1511)) ==
+          std::vector<TextLine>{{9, 5}, {5, 5}});
+    // A word longer than a line at every scale is split as a last resort, at the largest scale that fits: never
+    // dropped.
+    CHECK(titleLines(rv::assets::makeCoverPlaceholder(128, 64, "SUPERCALIFRAGILISTIC", 3)) ==
+          std::vector<TextLine>{{19, 1}, {1, 1}});
+    // Room signs follow the same rule (their white letters recolored as glyphs for textLines): at scale 3 a line holds
+    // 8 glyphs, scale 2 keeps both words whole.
+    ImageData sign = rv::assets::makeSignLettering(160, 64, "MOONLIGHT DERBY");
+    REQUIRE(sign.isValid());
+    for (std::size_t i = 0; i < sign.pixels.size(); i += 4) {
+        if (sign.pixels[i] == 255) {
+            sign.pixels[i] = kCharcoal.r;
+            sign.pixels[i + 1] = kCharcoal.g;
+            sign.pixels[i + 2] = kCharcoal.b;
+        }
+    }
+    CHECK(textLines(sign, 0, sign.height) == std::vector<TextLine>{{9, 2}, {5, 2}});
+}
+
+TEST_CASE("assets/test_patterns: cartridge labels keep long titles legible", "[assets][patterns]") {
+    // A cartridge label of the test room: 10.1 x 6.1 cm at 2560 pixels per meter. Seen from 1.3 m at 1920 x 1080 it
+    // spans about 60 pixels in height, so its glyphs need 3 texels per font pixel (8 screen pixels tall) to stay
+    // legible: two lines of up to a dozen glyphs get them, short single-line titles more.
+    CHECK(rv::assets::patternLongSideFor(0.101f) == 259);
+    CHECK(titleLines(rv::assets::makeCoverPlaceholder(259, 156, "PIXEL KNIGHT CHRONICLES", 138)) ==
+          std::vector<TextLine>{{12, 3}, {10, 3}});
+    CHECK(titleLines(rv::assets::makeCoverPlaceholder(259, 156, "SPELLBOUND SPROUT", 1766)) ==
+          std::vector<TextLine>{{10, 3}, {6, 3}});
+    CHECK(titleLines(rv::assets::makeCoverPlaceholder(259, 156, "EMERALD", 1729)) == std::vector<TextLine>{{7, 5}});
+    // The band grows on wide labels only (above half the label's inner height: its border is 6 pixels, 156 / 24, and
+    // its inner height 144); portrait covers keep it from 58% to 88% of their inner height (the 352 x 512 poster: a
+    // 14-pixel border, an inner height of 484).
+    const ImageData label = rv::assets::makeCoverPlaceholder(259, 156, "TITLE", 1);
+    const std::vector<int> labelBand = ivoryRows(label);
+    REQUIRE_FALSE(labelBand.empty());
+    CHECK(labelBand.front() < 6 + 144 * 50 / 100);
+    const ImageData poster = rv::assets::makeCoverPlaceholder(352, 512, "TITLE", 1);
+    const std::vector<int> posterBand = ivoryRows(poster);
+    REQUIRE_FALSE(posterBand.empty());
+    CHECK(posterBand.front() == 14 + 484 * 58 / 100);
+    CHECK(posterBand.back() == 14 + 484 * 88 / 100 - 1);
 }
 
 TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {

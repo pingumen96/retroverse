@@ -24,8 +24,11 @@ layout(location = 0) out vec4 oColor;
 const float RV_FXAA_RELATIVE_THRESHOLD = 0.125;
 // ... and at least this much, so that the faint gradients and the noise of dark areas are left alone.
 const float RV_FXAA_ABSOLUTE_THRESHOLD = 0.0625;
-// Strength of the blending of sub-pixel features, in [0, 1]: the lower half keeps thin lines and small print sharper.
-const float RV_FXAA_SUBPIXEL = 0.5;
+// Strength of the blending of sub-pixel features, in [0, 1] (Lottes: 0.75 by default, 0.25 almost off). A quarter
+// spares the one-pixel strokes of small print, such as cartridge titles seen from a meter away (at 0.5 those of the
+// test room kept about 15% less contrast against their band); the stair-steps of slanted edges are smoothed by the
+// walk along them whatever its value.
+const float RV_FXAA_SUBPIXEL = 0.25;
 // Taps of the walk along an edge, each way, and how far each one advances in pixels: single pixels first, then longer
 // strides (each bilinear tap averages the two pixels across the boundary), 23.5 pixels each way in all.
 const int RV_FXAA_SEARCH_STEPS = 10;

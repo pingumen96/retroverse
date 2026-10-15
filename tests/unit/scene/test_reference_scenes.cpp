@@ -694,6 +694,25 @@ TEST_CASE("scene/reference_scenes: m0_testroom composition", "[scene][reference_
         CHECK(received > 0.2f * mainLight);
         CHECK(tungstenDominant(color));
     }
+    // Lamps cast no shadow (one shadowed light per view): the down cone of a lamp standing on furniture lights the top
+    // it stands on, and ends above the floor, which it would otherwise light through the furniture.
+    int standingCones = 0;
+    for (const SceneObject* lamp : lamps) {
+        const glm::vec3 base = translationOf(lamp->transform);
+        if (base.y < 0.01f) {
+            continue; // a floor lamp
+        }
+        for (const rv::scene::Light& light : scene.lights) {
+            if (!inLamp(light, *lamp) || light.type != LightType::Spot || light.direction.y > -0.9f) {
+                continue;
+            }
+            INFO("light " << light.name);
+            ++standingCones;
+            CHECK(irradiance(light, base + glm::vec3(0.1f, 0.0f, 0.0f), up) > 0.0f);
+            CHECK(light.range < light.position.y - 0.1f);
+        }
+    }
+    CHECK(standingCones == 1); // the table lamp's
 
     // Ambient occlusion with the defaults of the plan: radius 0.4 m, intensity 1.
     CHECK(scene.environment.ssao.enabled);

@@ -64,6 +64,18 @@ double interiorDifference(const ImageData& image, bool rows) {
     return largest;
 }
 
+/// Largest difference between neighboring columns (or rows) among the `pairs` pairs on each side of the wrap-around
+/// edge, inside the image.
+double differenceBesideEdge(const ImageData& image, bool rows, int pairs) {
+    const int count = rows ? image.height : image.width;
+    double largest = 0.0;
+    for (int i = 0; i < pairs; ++i) {
+        largest = std::max({largest, lineDifference(image, i, i + 1, rows),
+                            lineDifference(image, count - 2 - i, count - 1 - i, rows)});
+    }
+    return largest;
+}
+
 /// Mean linear albedo of a base color map.
 glm::vec3 meanLinearColor(const ImageData& image) {
     glm::dvec3 sum(0.0);
@@ -166,11 +178,12 @@ TEST_CASE("assets/surface_textures: every surface generates its maps", "[assets]
 }
 
 TEST_CASE("assets/surface_textures: the same name gives the same bytes", "[assets][surfaces]") {
-    for (const char* name : {"aged_plastic", "painted_plaster"}) {
-        INFO(name);
-        const auto again = rv::assets::makeProceduralSurface(name);
+    // Every surface, its rows rendered in parallel, is a pure function of its name.
+    for (const ProceduralSurfaceInfo& info : rv::assets::proceduralSurfaces()) {
+        INFO(info.name);
+        const auto again = rv::assets::makeProceduralSurface(info.name);
         REQUIRE(again.has_value());
-        const ProceduralSurface& first = surfaceOf(name);
+        const ProceduralSurface& first = surfaceOf(info.name);
         CHECK(again->baseColor.pixels == first.baseColor.pixels);
         CHECK(again->metallicRoughness.pixels == first.metallicRoughness.pixels);
         CHECK(again->normal.pixels == first.normal.pixels);
@@ -178,9 +191,13 @@ TEST_CASE("assets/surface_textures: the same name gives the same bytes", "[asset
 }
 
 TEST_CASE("assets/surface_textures: tiling surfaces repeat without a seam", "[assets][surfaces]") {
-    // Across the wrap-around edge the image changes no more than between any two neighboring columns or rows inside it
-    // (a seam would stand out as a line every repeat; where the layout puts a joint, between two planks or two boards
-    // of a panel, the image changes as much at every other joint).
+    // A seam would stand out as a line, every repeat, where the image changes more than around it. Across the
+    // wrap-around edge the image changes no more than twice as much as between the neighboring columns (or rows) on
+    // either side of it: where the layout puts a joint on the edge, between two planks or two boards of a panel, the
+    // lines beside it change sharply too (the joint's gap and bevels), while along the grain they barely change at
+    // all. Nor does it change more than anywhere inside the image. Half an 8-bit step of slack absorbs the
+    // quantization of normals that flip between two codes where a noise lattice puts the slope through zero, at the
+    // edge as at every lattice line.
     for (const ProceduralSurfaceInfo& info : rv::assets::proceduralSurfaces()) {
         if (!info.tiles) {
             continue;
@@ -191,11 +208,13 @@ TEST_CASE("assets/surface_textures: tiling surfaces repeat without a seam", "[as
             if (!image.isValid()) {
                 continue;
             }
-            INFO(info.name << " " << rv::assets::toString(map));
-            const double columns = interiorDifference(image, false);
-            const double rows = interiorDifference(image, true);
-            CHECK(lineDifference(image, image.width - 1, 0, false) <= 1.1 * columns + 0.5);
-            CHECK(lineDifference(image, image.height - 1, 0, true) <= 1.1 * rows + 0.5);
+            for (const bool rows : {false, true}) {
+                INFO(info.name << " " << rv::assets::toString(map) << (rows ? " rows" : " columns"));
+                const int count = rows ? image.height : image.width;
+                const double edge = lineDifference(image, count - 1, 0, rows);
+                CHECK(edge <= 2.0 * differenceBesideEdge(image, rows, 3) + 0.5);
+                CHECK(edge <= 1.1 * interiorDifference(image, rows) + 0.5);
+            }
         }
     }
     // The rug's outer guard band is uniform, so its picture joins seamlessly too where a material repeats it.

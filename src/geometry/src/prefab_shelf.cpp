@@ -25,6 +25,8 @@ constexpr float kFitTolerance = 1e-4f;
 /// Every wooden part: uv in meters along each board (detail::kWoodMetersPerTile).
 constexpr BoxUv kGrain = BoxUv::GrainMeters;
 constexpr float kWoodTile = detail::kWoodMetersPerTile;
+/// Horizontal boards bevel the edges of their top face only (MeshBuilder::chamferedBox).
+constexpr FaceMask kBoardBevels = FaceMask::PosY;
 
 struct ShelfLayout {
     float innerWidth = 0.0f;
@@ -119,14 +121,16 @@ ProceduralPrefab assemble(const ShelfParams& p) {
                           translation(glm::vec3(side * (halfWidth - 0.5f * board), 0.5f * p.height, 0.0f)), kGrain,
                           kWoodTile);
     }
-    // Top board between the sides, over the back panel.
+    // Top board between the sides, over the back panel, and the level boards, the lowest one resting on the plinth.
+    // Horizontal boards bevel their top edges only: the front one catches the ceiling lights, while a bottom bevel
+    // would face away from them, a dark strip thinner than a pixel from a few meters away that aliases into dashes.
     wood.chamferedBox(glm::vec3(l.innerWidth, board, p.depth), chamfer,
-                      translation(glm::vec3(0.0f, p.height - 0.5f * board, 0.0f)), kGrain, kWoodTile);
-    // Level boards, the lowest one resting on the plinth.
+                      translation(glm::vec3(0.0f, p.height - 0.5f * board, 0.0f)), kGrain, kWoodTile, kBoardBevels);
     for (int level = 0; level < p.levels; ++level) {
         const float bottom = p.plinthHeight + static_cast<float>(level) * l.pitch;
         wood.chamferedBox(glm::vec3(l.innerWidth, board, l.boardDepth()), chamfer,
-                          translation(glm::vec3(0.0f, bottom + 0.5f * board, l.boardCenterZ())), kGrain, kWoodTile);
+                          translation(glm::vec3(0.0f, bottom + 0.5f * board, l.boardCenterZ())), kGrain, kWoodTile,
+                          kBoardBevels);
     }
     // Recessed kick board under the lowest board.
     if (p.plinthHeight > 1e-4f) {

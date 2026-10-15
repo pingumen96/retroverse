@@ -19,10 +19,13 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
 - Consider `FlushFileBuffers` for atomic writes of critical state (world plans) in I2/I3.
 - Anti-aliasing beyond FXAA: since M0 step 12 the views are anti-aliased by FXAA after the tonemap, which smooths the
   stair-steps of edges within one frame but cannot rebuild geometry thinner than a pixel: shelf boards, frame moldings
-  and far cartridges still crawl a little in motion, and the sub-pixel blend softens small print near edges slightly
-  (kept at half strength for the labels). MSAA on the HDR scene target (a sample count in `gl::FramebufferDesc`,
-  resolved with a tonemapped average before the bloom) or a temporal pass (jittered projection, reprojection with the
-  depth; it would also feed the temporal accumulation of the ambient occlusion) would steady them.
+  and far cartridges still crawl a little in motion, the bright bevel along a board's top edge breaks into dashes from
+  a few meters away (the boards and cabinet tops bevel their top edges only, as a dark bottom bevel aliased worse,
+  below FXAA's threshold), and the pass softens small print: its sub-pixel blend runs at a quarter strength, which
+  leaves the cartridge titles at about 3:1 against their band from 1.3 m (4.8:1 without the pass). MSAA on the HDR
+  scene target (a sample count in `gl::FramebufferDesc`, resolved with a tonemapped average before the bloom) or a
+  temporal pass (jittered projection, reprojection with the depth; it would also feed the temporal accumulation of the
+  ambient occlusion) would steady them and keep small print sharp.
 - Exposure per room or eye adaptation: the exposure is one value per scene (`environment.exposure`, the overlay's
   Rendering panel). Rooms of very different brightness (a dim arcade next to the lit hub, I4) need an exposure per room
   or an automatic one (a luminance histogram of the HDR target, adapted over a second or two).
@@ -57,6 +60,11 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   of the test room's 105 MiB of textures (RGBA8 with mips). Once worker threads exist (I2), generate them off the main
   thread while the room shows its flat material colors, or cache the encoded maps under `<user data>/cache` keyed by a
   generator version; for the Low profile (style §20.1) halve them or compress them (BC7 for color, BC5 for normals).
+- Upholstery surface: `MAT_Fabric_Sofa` (the test room's armchair, golden G01's largest foreground object) is a flat
+  #683D42 at roughness 0.9, a smooth block next to the grained wood and the rug (style §2.1, §3.2: the normal map is
+  optional). A procedural `upholstery` surface (a fine weave in the normal map, roughness micro-variation, the bordeaux
+  of style §3 with a faint nap) and meter uvs on the armchair's boxes (`BoxUv::WorldMeters`) would make it read as
+  fabric at 2 m.
 - glTF sampler state: the loader does not expose the samplers of a model yet, so `gl::GpuModel` samples every model
   image with repeat and trilinear filtering (the glTF default); honor clamp/mirror wrap modes and nearest filters.
 - Per-instance normal matrix: `pbr.vert` inverts the instance's 3x3 matrix per vertex; precompute it per instance (or
@@ -78,7 +86,9 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
   a showcase spot, the floor lamp of the test room, whose corner its own unshadowed lights dominate, so it casts no
   visible shadow: the step 11 plan lists the lamp among the grounded furniture, and no single key light can reach it,
   the shelf and the TV at once) need a few shadowed lights per view: a shadow atlas with one tile per light, budgeted
-  by screen coverage (style §20.2: 1-3 relevant shadow-casting lights).
+  by screen coverage (style §20.2: 1-3 relevant shadow-casting lights). Meanwhile an unshadowed lamp standing on
+  furniture must not reach the floor: the test room's table lamp ends its down light 0.8 m below the bulb, or it would
+  light the floor under the sideboard and its compartment through the top.
 - Point-light shadows: point lights cast none (key lights should be spots, logged otherwise). A cube map or a
   dual-paraboloid map would shadow a bare bulb or a pendant.
 - Cascaded shadow maps for large directional areas: the directional map is fitted to all the shadow casters, which

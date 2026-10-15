@@ -945,6 +945,20 @@ TEST_CASE("integration/shaders: an unlit CRT screen emits its picture, its glass
     REQUIRE(all.contains("crtGlassReflection"));
     CHECK(std::regex_search(all.at("crtGlassReflection"), std::regex(R"(\bpunctualLightRadiance\s*\()")));
     CHECK(std::regex_search(all.at("crtGlassReflection"), std::regex(R"(\bevaluateLight\s*\()")));
+
+    // The picture's corners are rounded, by a radius that grows with the curvature and stays within half the picture
+    // up to the largest curvature (0.5); the glass is hazy, so a lamp's reflection spreads into a faint sheen instead
+    // of a hot spot over the picture.
+    const std::string crt = glslWithoutComments("common/crt.glsl");
+    REQUIRE(all.contains("crtPictureLight"));
+    CHECK(std::regex_search(all.at("crtPictureLight"),
+                            std::regex(R"(radius\s*=\s*RV_CRT_CORNER_ROUNDING\s*\*\s*uCrtCurvature\s*;)")));
+    const float rounding = glslFloatConstant(crt, "RV_CRT_CORNER_ROUNDING");
+    CHECK(rounding > 0.0f);
+    CHECK(rounding * 0.5f < 0.5f);
+    const float glassRoughness = glslFloatConstant(crt, "RV_CRT_GLASS_ROUGHNESS");
+    CHECK(glassRoughness >= 0.3f);
+    CHECK(glassRoughness <= 0.5f);
 }
 
 TEST_CASE("integration/shaders: the anti-aliasing pass finds edges in the luma the post pass writes",

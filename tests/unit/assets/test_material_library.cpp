@@ -160,7 +160,12 @@ TEST_CASE("assets/materials: unlit presets", "[assets][materials]") {
     CHECK(crt.crt->scanlineStrength <= 0.5f);
     CHECK(crt.crt->maskStrength <= 0.3f);
     CHECK(crt.crt->curvature <= 0.1f);
+    CHECK(crt.crt->curvature > 0.0f); // a bulging tube: rounded picture corners
     CHECK(crt.crt->vignette <= 0.4f);
+    // A faint sheen on the glass: a lamp's reflection must not wash out the picture (style 15.2).
+    CHECK(crt.crt->glassReflection > 0.0f);
+    CHECK(crt.crt->glassReflection <= 0.35f);
+    CHECK(rv::assets::CrtEffect{}.glassReflection <= 0.35f);
 
     const MaterialDesc& neon = *library->find("MAT_Neon_Diffuser");
     CHECK(neon.shading == ShadingModel::Unlit);

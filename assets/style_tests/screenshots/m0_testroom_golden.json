@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "id": "G01",
-  "description": "Gate A golden of the M0 test room: the scene camera's view, the last frame of a 30-frame run. The style 26.2 checklist for it is in docs/testing/gate-a.md.",
+  "description": "Gate A golden of the M0 test room: the scene camera's view, the last frame of a 30-frame run, regenerated after the review of M0 step 12. The style 26.2 checklist for it is in docs/testing/gate-a.md.",
   "image": {
     "file": "m0_testroom_golden.png",
     "width": 1920,
     "height": 1080,
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
-    "sha256": "6375fd7aad3a63b4e12539b45d7842c27193d6c20cea4cf135bcdb7a6c0ccfba"
+    "sha256": "a4aeebd2cc6939531d29e343d8577b60f6270905bade1659b20ab84f672f3176"
   },
   "scene": {
     "file": "assets/style_tests/reference_scenes/m0_testroom.json",
-    "sha256": "ebb87fcba7f69c21f941ee0bc90cd428b25a3f5928ec6f688d6ffd9ef767f987",
+    "sha256": "743d63669892f528bd0e8cbccf685a1e8623ca3981e45ea88894cf6d07fbf82b",
     "camera": "scene camera: eye (-0.6, 1.65, 0.9) m, yaw 9 deg, pitch -7 deg, horizontal FOV 75 deg"
   },
   "run": {
@@ -21,8 +21,9 @@
   },
   "build": {
     "preset": "msvc-x64-debug",
-    "gitCommit": "d89f9860fcb7b92b8ea13dc6f4901e747ce3820f",
-    "workingTreeClean": true
+    "gitCommit": "493f48981a33a542d596427b94e019ad43f30789",
+    "workingTreeClean": false,
+    "sources": "gitCommit plus the changes of the commit that adds this metadata (\"step12: address review findings\"), rendered from that working tree before committing: check out that commit to reproduce the bytes"
   },
   "gpu": {
     "vendor": "NVIDIA Corporation",
@@ -32,5 +33,5 @@
     "machine": "docs/testing/reference-hardware.md"
   },
   "renderedOn": "2026-10-15",
-  "comparison": "The same build, driver and scene give the same bytes (two runs, before and after the commit, matched). Another driver or GPU can move pixels by an 8-bit step or two (dither, texture filtering, FXAA): compare with a tolerance."
+  "comparison": "The same build, driver and scene give the same bytes (two runs matched, and msvc-x64-release writes the same bytes as msvc-x64-debug). Another driver or GPU can move pixels by an 8-bit step or two (dither, texture filtering, FXAA): compare with a tolerance."
 }

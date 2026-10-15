@@ -5,10 +5,10 @@
 //
 // Composition (style 5.3, 6.1-6.3): the north wall is both the collection wall (two shelf units full of cartridges, the
 // floor lamp in the corner) and the hero wall (the CRT on its cabinet with the console, the rug in front of it, an
-// armchair turned towards it, a sideboard with a table lamp), under an illuminated "16-BIT CORNER" sign. A 1.2 m wide
-// way runs from the doorway to the hero wall between the shelves and the TV corner (the walk scripts of
-// tests/input_scripts start on it, --spawn 0,0,3.2,0,-6), and the furniture leaves 1.2 m passages; the south half stays
-// open (negative space). Decoration density about 0.4 (style 6.3).
+// armchair turned towards it, a sideboard with a table lamp), with an illuminated "16-BIT CORNER" sign above the middle
+// of the wall, between the two. A 1.2 m wide way runs from the doorway to the hero wall between the shelves and the TV
+// corner (the walk scripts of tests/input_scripts start on it, --spawn 0,0,3.2,0,-6), and the furniture leaves 1.2 m
+// passages; the south half stays open (negative space). Decoration density about 0.4 (style 6.3).
 {
   "schemaVersion": 1,
   "name": "m0_testroom",
@@ -57,8 +57,11 @@
      "color": "#FFC88A", "intensity": 6.0, "range": 6.0, "innerConeDeg": 35.0, "outerConeDeg": 47.0},
     {"name": "table_lamp_bulb", "type": "point", "position": [3.95, 1.226, -4.8], "color": "#FFC88A",
      "intensity": 1.5, "range": 3.0},
+    // The table lamp's pool on the sideboard top and the wall behind it. Lamps cast no shadow (one shadowed light per
+    // view), so the range ends the cone 0.8 m below the bulb: it would otherwise shine through the top onto the floor
+    // under the sideboard and into its compartment.
     {"name": "table_lamp_down", "type": "spot", "position": [3.95, 1.226, -4.8], "target": [3.95, 0.0, -4.8],
-     "color": "#FFC88A", "intensity": 4.0, "range": 4.0, "innerConeDeg": 40.0, "outerConeDeg": 55.0},
+     "color": "#FFC88A", "intensity": 4.5, "range": 0.8, "innerConeDeg": 40.0, "outerConeDeg": 55.0},
     {"name": "sign_glow", "type": "point", "position": [0.15, 2.45, -4.7], "color": "#B34DCE", "intensity": 1.5,
      "range": 2.5},
     {"name": "crt_glow", "type": "spot", "position": [1.62, 0.98, -4.45], "direction": [0.0, -0.25, 1.0],
@@ -412,7 +415,8 @@
      "params": {"width": 0.82, "depth": 0.82, "height": 0.84, "seatHeight": 0.44, "armHeight": 0.62,
                 "legHeight": 0.1},
      "materials": {"fabric": "MAT_Fabric_Sofa", "wood": "MAT_Wood_Walnut"}},
-    // Sideboard right of the TV with a table lamp: a low piece between the tall shelves and the TV (style 6.1 rhythm).
+    // Sideboard right of the TV with a table lamp: tall shelves, the TV on its cabinet, then this low piece (style 6.1
+    // rhythm).
     {"id": "sideboard", "prefab": "tv_cabinet", "position": [3.62, 0.0, -4.77],
      "params": {"width": 1.3, "height": 0.76, "depth": 0.42, "drawers": 3, "legHeight": 0.1},
      "materials": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished",

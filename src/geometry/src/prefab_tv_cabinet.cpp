@@ -114,9 +114,12 @@ ProceduralPrefab assemble(const TvCabinetParams& p) {
     const float carcassMidZ = 0.5f * (l.carcassFront + l.carcassBack);
     const float carcassHeight = l.carcassTop - l.carcassBottom;
 
-    // Top, overhanging the sides and reaching the front edge of the handles.
+    // Top, overhanging the sides and reaching the front edge of the handles. Only its top edges are bevelled: a bottom
+    // bevel would face away from the ceiling lights, a dark strip thinner than a pixel from afar that aliases into
+    // dashes under the bright front edge.
     carcass.chamferedBox(glm::vec3(p.width, kTopThickness, p.depth), kTopChamfer,
-                         translation(glm::vec3(0.0f, p.height - 0.5f * kTopThickness, 0.0f)), kGrain, kWoodTile);
+                         translation(glm::vec3(0.0f, p.height - 0.5f * kTopThickness, 0.0f)), kGrain, kWoodTile,
+                         FaceMask::PosY);
     // Sides, bottom, back and the two dividers.
     for (const float side : {-1.0f, 1.0f}) {
         carcass.chamferedBox(glm::vec3(kPanel, carcassHeight, carcassDepth), kPanelChamfer,

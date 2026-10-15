@@ -29,9 +29,11 @@ namespace rv::assets {
 /// Generic box-art placeholder for games without cover art (style §12.2 points 4-5, §21): dark border, an
 /// abstract geometric pattern whose colors and layout are picked by `seed` from the style §3 palette, and a light
 /// title band with `title` in a built-in 5x7 bitmap font (A-Z, 0-9, space and . , : ; ! ? - ' " & ( ) [ ] / + #).
-/// Text is uppercased (Latin-1 accented letters fold to their base letter, other characters become '?'),
-/// word-wrapped onto at most 3 lines, scaled by the largest integer factor that fits and centered; text that does
-/// not fit even at scale 1 is truncated with "...". The same arguments always produce the same pixels.
+/// The band spans 58% to 88% of the height inside the border; on wide covers (cartridge labels) it grows upwards, up
+/// to 45% of that height, so that a two-line title keeps legible glyphs. Text is uppercased (Latin-1 accented letters
+/// fold to their base letter, other characters become '?'), word-wrapped onto at most 3 lines, scaled by the largest
+/// integer factor at which no word is split (a word is split only when no scale keeps it whole) and centered; text
+/// that does not fit even at scale 1 is truncated with "...". The same arguments always produce the same pixels.
 [[nodiscard]] ImageData makeCoverPlaceholder(int width, int height, std::string_view title, std::uint32_t seed);
 
 /// Uniform color.
@@ -39,7 +41,7 @@ namespace rv::assets {
 
 /// Lettering of an illuminated room sign (style §17.1 room signage, with original themes such as "16-BIT CORNER" of
 /// §17.2): `text` in the built-in bitmap font, white on black, on at most 2 lines, scaled by the largest integer factor
-/// that leaves a margin of a twelfth of the shorter side and centered (folding and truncation as for
+/// that leaves a margin of a twelfth of the shorter side and centered (folding, whole words and truncation as for
 /// makeCoverPlaceholder). Multiplied by an unlit material's color, the letters glow in that color on a dark panel.
 [[nodiscard]] ImageData makeSignLettering(int width, int height, std::string_view text);
 

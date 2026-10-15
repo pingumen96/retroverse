@@ -376,6 +376,73 @@ TEST_CASE("geometry/mesh_builder: chamfered box bevels every edge", "[geometry][
     CHECK(inwardTriangles(rounded, glm::vec3(0.0f)) == 0);
 }
 
+TEST_CASE("geometry/mesh_builder: a chamfered box can bevel the edges of some faces only",
+          "[geometry][mesh_builder][chamfer]") {
+    // Volume enclosed by a closed mesh with outward triangles (divergence theorem); holes would change it.
+    const auto enclosedVolume = [](const MeshData& mesh) {
+        double volume = 0.0;
+        for (std::size_t t = 0; t < mesh.triangleCount(); ++t) {
+            const rv::test::TriangleRef tri = rv::test::triangleAt(mesh, t);
+            volume += static_cast<double>(glm::dot(tri.v0.position, glm::cross(tri.v1.position, tri.v2.position)));
+        }
+        return volume / 6.0;
+    };
+    const glm::vec3 size(0.1f, 0.05f, 0.08f);
+    const float c = 0.01f;
+
+    // The top face's four edges: six faces and four strips; at the top corners the strips meet in mitres (no corner
+    // triangle) above square vertical edges, and the bottom face keeps its full size.
+    MeshBuilder top;
+    top.chamferedBox(size, c, kIdentity, BoxUv::PerFace, 1.0f, FaceMask::PosY);
+    const MeshData board = std::move(top).build("board");
+    CHECK(board.vertices.size() == 6 * 4 + 4 * 4);
+    CHECK(board.indices.size() == 6 * 6 + 4 * 6);
+    CHECK(rv::geometry::validateMesh(board).has_value());
+    CHECK(closeTo(board.bounds.min, -0.5f * size, 1e-7f));
+    CHECK(closeTo(board.bounds.max, 0.5f * size, 1e-7f));
+    CHECK(rv::test::windingMismatches(board) == 0);
+    CHECK(inwardTriangles(board, glm::vec3(0.0f)) == 0);
+    CHECK(rv::test::tangentFrameMismatches(board) == 0);
+    // Closed: the box less the bevels along the four top edges, whose mitred ends overlap at the top corners (c^3 / 3
+    // each).
+    const double boxVolume = static_cast<double>(size.x) * size.y * size.z;
+    const double bevels = static_cast<double>(c) * c * (size.x + size.z) - 4.0 * c * c * c / 3.0;
+    CHECK(enclosedVolume(board) == Approx(boxVolume - bevels).epsilon(1e-4));
+    for (const Vertex& v : board.vertices) {
+        // Nothing leans downwards: the bottom edges stay square.
+        if (v.normal.y < 0.0f) {
+            CHECK(closeTo(v.normal, glm::vec3(0.0f, -1.0f, 0.0f)));
+            CHECK(std::fabs(v.position.x) == Approx(0.5f * size.x));
+            CHECK(std::fabs(v.position.z) == Approx(0.5f * size.z));
+        }
+        // The top face is inset by the chamfer on all four sides.
+        if (closeTo(v.normal, glm::vec3(0.0f, 1.0f, 0.0f))) {
+            CHECK(std::fabs(v.position.x) == Approx(0.5f * size.x - c));
+            CHECK(std::fabs(v.position.z) == Approx(0.5f * size.z - c));
+        }
+    }
+
+    // Two faces: the seven edges around them; the two corners where all three edges are bevelled get triangles.
+    MeshBuilder frontTop;
+    frontTop.chamferedBox(size, c, kIdentity, BoxUv::PerFace, 1.0f, FaceMask::PosY | FaceMask::PosZ);
+    const MeshData edged = std::move(frontTop).build("edged");
+    CHECK(edged.vertices.size() == 6 * 4 + 7 * 4 + 2 * 3);
+    CHECK(rv::test::windingMismatches(edged) == 0);
+    CHECK(inwardTriangles(edged, glm::vec3(0.0f)) == 0);
+    CHECK(enclosedVolume(edged) < enclosedVolume(board));
+
+    // Every face bevels all twelve edges, as the default does; none gives the plain box.
+    const auto hashOf = [&](FaceMask bevelled) {
+        MeshBuilder builder;
+        builder.chamferedBox(size, c, kIdentity, BoxUv::PerFace, 1.0f, bevelled);
+        return rv::geometry::hashMesh(std::move(builder).build("mesh"));
+    };
+    MeshBuilder defaults;
+    defaults.chamferedBox(size, c);
+    CHECK(hashOf(FaceMask::All) == rv::geometry::hashMesh(std::move(defaults).build("mesh")));
+    CHECK(hashOf(FaceMask::None) == rv::geometry::hashMesh(buildBox(size)));
+}
+
 TEST_CASE("geometry/mesh_builder: plane and quad orientation and uvs", "[geometry][mesh_builder][uv]") {
     MeshBuilder planeBuilder;
     planeBuilder.plane({4.0f, 2.0f}, kIdentity, {8.0f, 4.0f});

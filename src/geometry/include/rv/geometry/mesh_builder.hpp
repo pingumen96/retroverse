@@ -77,13 +77,19 @@ public:
     MeshBuilder& box(const glm::vec3& size, const glm::mat4& transform = glm::mat4(1.0f), BoxUv uv = BoxUv::PerFace,
                      float metersPerTile = 1.0f, FaceMask faces = FaceMask::All);
 
-    /// Box centered on the origin whose 12 edges are bevelled by `chamfer` meters (measured along each face) with
-    /// flat-shaded 45-degree strips and corner triangles (96 vertices, 132 indices). The chamfer is clamped to 45%
-    /// of the smallest dimension; a chamfer below 0.01 mm produces a plain box (with the same uv layout). UVs follow
-    /// `uv` over the full box faces (BoxUv::PerFace: each face spans 0..1; the meter layouts divide by
+    /// Box centered on the origin whose edges are bevelled by `chamfer` meters (measured along each face) with
+    /// flat-shaded 45-degree strips and corner triangles: with every face in `bevelled` (the default), all 12 edges
+    /// (96 vertices, 132 indices). Otherwise only the edges of the faces in `bevelled` are (an edge is bevelled when
+    /// either of its two faces is in the set); a corner gets a triangle when its three edges are bevelled, and two
+    /// bevels meeting at a corner with a square third edge join in a mitre. FaceMask::PosY bevels the top edges of a
+    /// shelf board only: its bottom edges, which face away from ceiling lights and would be a dark line thinner than a
+    /// pixel from a few meters away (aliasing into dashes), stay square. The chamfer is clamped to 45% of the smallest
+    /// dimension; a chamfer below 0.01 mm or an empty `bevelled` produces a plain box (with the same uv layout). UVs
+    /// follow `uv` over the full box faces (BoxUv::PerFace: each face spans 0..1; the meter layouts divide by
     /// metersPerTile); bevels reuse the mapping of the face they lean towards.
     MeshBuilder& chamferedBox(const glm::vec3& size, float chamfer, const glm::mat4& transform = glm::mat4(1.0f),
-                              BoxUv uv = BoxUv::PerFace, float metersPerTile = 1.0f);
+                              BoxUv uv = BoxUv::PerFace, float metersPerTile = 1.0f,
+                              FaceMask bevelled = FaceMask::All);
 
     /// Rectangle in the XZ plane facing +Y, centered on the origin. uv (0, 0) at the -X/-Z corner, u grows
     /// along +X up to uvTiling.x, v grows along +Z up to uvTiling.y.

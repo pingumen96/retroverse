@@ -643,6 +643,34 @@ TEST_CASE("geometry/prefabs: wooden parts have uvs in meters along their boards"
     CHECK(uMax - uMin == Approx(2.0f).margin(0.01f));
 }
 
+TEST_CASE("geometry/prefabs: horizontal boards bevel their top edges only", "[geometry][prefabs][shelf]") {
+    // A bevel along the bottom edge of a board faces away from the ceiling lights: from a few meters away it is a dark
+    // strip thinner than a pixel that aliases into dashes under the board's bright front edge. The shelf's boards and
+    // the cabinet top keep their top bevels (the front one catches the light) and square bottom edges.
+    const auto downwardBevels = [](const PrefabPart& wood, float minY) {
+        std::size_t count = 0;
+        for (const rv::geometry::Vertex& v : wood.mesh.vertices) {
+            count += (v.position.y > minY && v.normal.y < -0.1f && v.normal.y > -0.99f) ? 1u : 0u;
+        }
+        return count;
+    };
+    const auto upwardBevels = [](const PrefabPart& wood, float minY) {
+        std::size_t count = 0;
+        for (const rv::geometry::Vertex& v : wood.mesh.vertices) {
+            count += (v.position.y > minY && v.normal.y > 0.1f && v.normal.y < 0.99f) ? 1u : 0u;
+        }
+        return count;
+    };
+    // Above the floor, where only the side panels' bottom edges are bevelled.
+    const ProceduralPrefab shelf = buildOk("shelf");
+    CHECK(downwardBevels(part(shelf, "wood_primary"), 0.01f) == 0);
+    CHECK(upwardBevels(part(shelf, "wood_primary"), 0.01f) > 0);
+    // The cabinet top: 3 cm thick, at the top of the default 0.55 m cabinet.
+    const ProceduralPrefab cabinet = buildOk("tv_cabinet");
+    CHECK(downwardBevels(part(cabinet, "wood_primary"), 0.55f - 0.03f - 1e-4f) == 0);
+    CHECK(upwardBevels(part(cabinet, "wood_primary"), 0.55f - 0.03f - 1e-4f) > 0);
+}
+
 TEST_CASE("geometry/prefabs: the wainscot lines the walls and stops at the doorway", "[geometry][prefabs][wainscot]") {
     const ProceduralPrefab room = buildOk("room_shell", {{"wainscotHeight", 1.0}});
     const PrefabPart& wainscot = part(room, "wainscot");

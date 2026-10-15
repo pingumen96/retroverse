@@ -7,7 +7,7 @@ This document describes the code that exists today. The target architecture is i
 | Module | CMake target | Responsibility | May depend on |
 |---|---|---|---|
 | core | `rv_core` | Errors (`rv::Expected`), logging (`FailureStreak`: which failures of an operation retried every frame to log; the in-memory recent lines with a message count and `parseLogLine` for the overlay), paths, frame clock, AABB/ray math, sRGB color helpers, file I/O, file change polling (`FileWatchSet`), JSON, command line parsing | glm, spdlog, nlohmann-json, tl-expected |
-| geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex` with glTF tangent space), sockets, procedural mesh builder (box uvs in meters along each face's longer side, `BoxUv::GrainMeters`, for surfaces with a grain) and procedural prefabs with their collision boxes, uv scale of a surface, also as drawn with a transform (`uvMetersPerUnit`) | core |
+| geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex` with glTF tangent space), sockets, procedural mesh builder (box uvs in meters along each face's longer side, `BoxUv::GrainMeters`, for surfaces with a grain; chamfered boxes bevelled around chosen faces only, so that boards keep square bottom edges) and procedural prefabs with their collision boxes, uv scale of a surface, also as drawn with a transform (`uvMetersPerUnit`) | core |
 | input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets (texture files, procedural textures, the `crt` block of screens), shader source loading, procedural test patterns (cover placeholders, color bars, sign lettering; sized to their surface: `patternLongSideFor`, `patternSizeForAspect`), procedural PBR surfaces (`surface_textures.hpp`: wood, plaster, rug, metal, plastic) | core, geometry, fastgltf, stb |
 | scene | `rv_scene` | Camera, first-person controller and viewpoints (`frontViewpoint`: where a walker stands to look at an object, framed in a part of the view, `ViewArea`), lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front; the world bounds of what a shadow map draws, `shadowCasterBounds`), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneBoundsLines`, `addSceneSocketLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
@@ -152,8 +152,10 @@ geometry, resolves the real materials and preprocesses the real shaders.
   texture, which becomes that instance's base color texture (cover patterns on cartridge labels and posters, color bars
   on the CRT screen, the lettering of a sign; patterns are generated at 2560 pixels per meter of their surface's longer
   side, 64 to 512 pixels, `assets::patternLongSideFor`, and at the aspect ratio of their surface as drawn,
-  `geometry::uvMetersPerUnit` with the instance transform, so a poster scaled unevenly is not stretched). Pattern
-  textures are single pictures, sampled clamped to their edges; procedural surface textures a scene names
+  `geometry::uvMetersPerUnit` with the instance transform, so a poster scaled unevenly is not stretched; a cover's title
+  wraps between words at the largest integer scale of the bitmap font that keeps every word whole, in a band that grows
+  on wide covers, up to 45% of a cartridge label's height, so that two-line titles keep 3 texels per font pixel).
+  Pattern textures are single pictures, sampled clamped to their edges; procedural surface textures a scene names
   (`{"procedural": "<surface>/<map>"}`, without a size in their key), textures named by materials and model images
   repeat. `MaterialRegistry` keeps every `MaterialUniforms` block in one uniform buffer (offsets aligned to
   `GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT`, dynamic storage: the overlay's live edits, `setFactors`, rewrite one block with
@@ -172,7 +174,7 @@ geometry, resolves the real materials and preprocesses the real shaders.
   immutable `GL_RGBA8` / `GL_SRGB8_ALPHA8` textures with full mip chains. The first request of a procedural surface
   generates all of its maps (`assets::makeProceduralSurface`, logged with its time) and uploads each in its color space.
   A missing or broken source is logged once and drawn as the checker (style §21). The test room's 125 textures take 105
-  MiB, 80 of them the maps of its eight procedural surfaces.
+  MiB, 80 MiB of it in the 23 maps of its eight procedural surfaces.
 - **Procedural surfaces (M0 step 12, style §3.2-3.3):** `rv/assets/surface_textures.hpp` generates the PBR maps of the
   shared materials at startup, so Retroverse needs no texture download and every design is original: `oak_planks` (14.3
   cm planks with staggered joints, a tint and a slight cup per plank, dark gaps covered in proportion to the share of
@@ -191,19 +193,24 @@ geometry, resolves the real materials and preprocesses the real shaders.
   the furniture prefabs and the room shell map their boxes in meters along each face's longer side
   (`geometry::BoxUv::GrainMeters`, `kWoodMetersPerTile` 1 m; the room's floor and walls `metersPerTile` 2 m). The
   surfaces take about 0.6 s at startup in Release (3 s in Debug); tests check that each one is deterministic, tiles
-  without a seam, averages its palette color and has unit normals facing out.
+  without a seam (across the wrap-around edge the image changes no more than beside it, where a designed joint shows
+  as much), averages its palette color and has unit normals facing out.
 - **CRT screens (M0 step 12, style §15.2, `CRT_Subtle` of §25):** an unlit screen material with a `crt` block
   (`assets::CrtEffect`: `lineCount` 240, `scanlineStrength`, `maskTriadCount`, `maskStrength`, `curvature`, `vignette`,
   `glassReflection`; `MAT_Screen_CRT`) sets `material_flags::kCrtScreen` and fills the crt fields of its
-  `MaterialUniforms`. `unlit_emissive.frag` (`common/crt.glsl`) then bends the picture's uvs with a barrel curvature, so
-  its corners round off into the tube's dark border (antialiased over a pixel), multiplies it by scanlines and an RGB
-  aperture grille whose means are 1 (the brightness is kept) and which fade out as their period shrinks from 4 to 2
-  pixels (no moiré at a distance; at 1920 x 1080 the test room's scanlines appear within about 1 m of the screen, seen
-  head-on, and reach full strength within 0.55 m), and by a vignette towards the picture's edges; all of it is emitted
-  (it blooms). The glass in front reflects the scene's lights and the ambient like a smooth dielectric (4% at normal
-  incidence, roughness 0.2), added to the radiance but not to the emission, through the lit shader's own light
-  evaluation (`punctualLightRadiance` of `common/lights.glsl`). The test room's `crt_glow` spot, in front of the screen,
-  stands in for the tube's light on the cabinet and the console.
+  `MaterialUniforms`. `unlit_emissive.frag` (`common/crt.glsl`) then bends the picture's uvs with a barrel curvature and
+  ends the picture in the tube's dark border with rounded corners (a rounded rectangle whose radius, 0.75 x the
+  curvature in picture widths and heights, grows with the bulge; antialiased over a pixel), multiplies it by scanlines
+  and an RGB aperture grille whose means are 1 (the brightness is kept) and which fade out as their period shrinks from
+  4 to 2 pixels (no moiré at a distance; at 1920 x 1080 the test room's scanlines appear within about 1 m of the screen,
+  seen head-on, and reach full strength within 0.55 m), and by a vignette towards the picture's edges; all of it is
+  emitted (it blooms). The glass in front reflects the scene's lights and the ambient like a hazy dielectric (4% at
+  normal incidence, roughness 0.35, an anti-glare coating) scaled by `glassReflection` (0.25: a faint sheen, seen on the
+  tube's dark border; at 1 a lamp washed out a corner of the picture seen from the armchair's distance), added to the
+  radiance but not to the emission, through the lit shader's own light evaluation (`punctualLightRadiance` of
+  `common/lights.glsl`). The test room's `crt_glow` spot, just behind the glass (so that the glass never mirrors it),
+  points forward and a little down: it stands in for the tube's light on the top of the cabinet in front of the set
+  (the console beside the set lies outside its cone).
 - **Lighting:** `gl::packLights` turns the scene lights (contract of `scene::Light`) and environment into
   `LightsUniforms`: up to 16 point/spot lights (inverse square with a smooth window reaching 0 at the range, smoothstep
   spot cones; the test room uses 14) and one directional light, and the hemispherical sky/ground ambient. `pbr.frag`:
@@ -239,9 +246,12 @@ geometry, resolves the real materials and preprocesses the real shaders.
   whose luma differs little from its four neighbors is copied exactly; on an edge it finds the edge's direction, walks
   along it both ways to the ends of the stair-step (up to 23.5 pixels) and blends the pixel towards its neighbor across
   the edge by its distance from the nearer end, or by its contrast with the 3 x 3 average for features thinner than a
-  pixel (strength 0.5, which keeps small print legible). A program that never built falls back: without the bloom
-  programs the view is composited without bloom, without the FXAA program the post pass writes the output directly,
-  without the post program the HDR scene is copied to the output as it is (clamped, neither exposed nor tonemapped).
+  pixel (`RV_FXAA_SUBPIXEL` 0.25, "almost off" in Lottes' terms: one-pixel strokes such as the cartridge titles of the
+  test room's shelf seen from 1.3 m keep a median contrast ratio of about 3:1 against their band, where the pass off
+  gives 4.8:1 and strength 0.5 gave 2.7:1; the stair-steps of slanted edges are smoothed by the walk whatever its
+  value). A program that never built falls back: without the bloom programs the view is composited without bloom,
+  without the FXAA program the post pass writes the output directly, without the post program the HDR scene is copied
+  to the output as it is (clamped, neither exposed nor tonemapped).
   At 1920x1080 the post-processing takes about 0.45 ms on the reference GPU, FXAA 0.1 to 0.15 ms of it.
 - **Frames:** every view is rendered through a `gl::ViewTargets`, the targets of one output, all of its size: the HDR
   scene target (two `GL_RGBA16F` color attachments, the radiance and its emitted part, `gl::SceneOutput`, + a

@@ -84,9 +84,10 @@ shader never built, `--self-check` failed, developer overlay asked for by a fram
   name a map as `"procedural:<surface>/<map>"` in a texture slot, scene files as `{"procedural": "<surface>/<map>"}` in
   `textures`; they repeat, at the scale each surface's description gives (the furniture prefabs and the room shell map
   their faces in meters along the grain). Never add downloaded textures: new looks are new generators or parameters. A
-  screen material with a `crt` block (`MAT_Screen_CRT`: line count, scanline and mask strength, curvature, vignette,
-  glass reflection) shows its picture as a CRT tube; the scanlines and the mask fade out below 4 pixels per period, so
-  at 1920x1080 they appear only within about 1 m of the TV.
+  screen material with a `crt` block (`MAT_Screen_CRT`: line count, scanline and mask strength, curvature, which also
+  rounds the picture's corners, vignette, glass reflection, 0.25: a faint sheen that must never wash out the picture)
+  shows its picture as a CRT tube; the scanlines and the mask fade out below 4 pixels per period, so at 1920x1080 they
+  appear only within about 1 m of the TV.
 - Shadows and ambient occlusion: the first light with `"castsShadows": true` is the key light. A spot key light gets a
   perspective 2048x2048 shadow map over twice its cone, a directional one an orthographic map fitted to the shadow
   casters (objects with `castsShadows`, default true; blended ones cast nothing) and snapped to whole texels; point
@@ -159,24 +160,28 @@ drawn after it and keeps its exact colors), so compare scene pixels with that to
 the bloom, which is subtle by design (in the test room the CRT and the lamp shade glow softly onto the bezel and the
 wall). Check the log for GL debug messages (`GL debug output summary: 0 high, 0 medium, ...`). The test room (Gate A,
 `docs/testing/gate-a.md`): the north wall holds the collection (two shelves of 96 cartridges, each shelf under its own
-spot) and the hero corner (the CRT on its cabinet with the console, the rug, an armchair turned towards it, a sideboard
-with a table lamp) under the magenta "16-BIT CORNER" sign; a varnished wainscot runs around the room. The ceiling key
-light (`ceiling_key`) grounds the hero wall: the shelf boards shade the compartments below them, the CRT, the console
-and the cabinet throw soft shadows on the wall and the floor; zoom in on contact lines for acne (speckles on lit
-surfaces) and peter-panning (a lit gap between an object and its shadow). The lamps show no shadow: their own lights
-cast none (one light per view does; BACKLOG "More shadowed lights"). The CRT and the sign are the most saturated
-elements, in tungsten light with a light magenta accent; the upper walls and the ceiling fall to black (no bounce
-light). Standing 1 m from the main shelf (`--spawn -1.5,0,-3.5,0,-14`) the titles around eye height must read at a
-glance, those of the lowest levels when enlarged; the CRT close-up is `--spawn 1.62,0,-4.0,0,-48`. To judge one effect
-alone, render a scratch copy of the scene under `build/` (scene files are plain JSON with comments): the key light
-without `castsShadows`, `"ssao": {"enabled": false}`, or only a strong ambient (no lights) to see the ambient occlusion,
-then compare the two PNGs pixel by pixel. The other reference scenes: `material_test` (roughness grows along X, metallic
-along Y; the floor under the lowest spheres darkens a little), `instancing_stress` (1000 boxes in 4 draw calls; the sun
-casts the directional shadows, so each frame writes about 2000 instances, the view's and the shadow map's, and the
-instance buffer grows on the first frame; frame times with `--no-vsync`) and `instancing_growth`, without shadows, which
-grows the renderer's instance buffer mid-run: turned around, it shows about 2000 boxes, more than the 1024 the buffer
-starts with (the log reads `Instance buffer 'SceneRenderer.Instances' grown to ...`; for `instancing_growth` with
-`--frames 1` it must not):
+spot), the magenta "16-BIT CORNER" sign above the middle of the wall, and right of it the hero corner (the CRT on its
+cabinet with the console, the rug, an armchair turned towards it, a sideboard with a table lamp); a varnished wainscot
+runs around the room. The ceiling key light (`ceiling_key`) grounds the hero wall: the shelf boards shade the
+compartments below them, the CRT, the console and the cabinet throw soft shadows on the wall and the floor; zoom in on
+contact lines for acne (speckles on lit surfaces) and peter-panning (a lit gap between an object and its shadow). The
+lamps show no shadow: their own lights cast none (one light per view does; BACKLOG "More shadowed lights"), so the
+table lamp's down light ends above the floor (its range), or it would light the floor under the sideboard through its
+top. The CRT and the sign are the most saturated elements, in tungsten light with a light magenta accent; the upper
+walls and the ceiling fall to black (no bounce light). Standing 1 m from the main shelf (`--spawn -1.5,0,-3.5,0,-14`)
+the titles must read at 1:1: two lines of whole words, glyphs about 8 px tall around eye height, softened by the
+texture filtering and FXAA to about 3:1 against their band; those of the lowest levels read enlarged. The CRT close-up
+is `--spawn 1.62,0,-4.0,0,-48` (rounded picture corners; the glass's faint sheen shows on the tube's dark border when a
+lamp's reflection falls there, as seen seated at `--spawn 1.62,-0.65,-3.55,0,0`, never as a patch washing out the
+picture). To judge one effect alone, render a scratch copy of the scene under `build/` (scene files are plain JSON with
+comments): the key light without `castsShadows`, `"ssao": {"enabled": false}`, or only a strong ambient (no lights) to
+see the ambient occlusion, then compare the two PNGs pixel by pixel. The other reference scenes: `material_test`
+(roughness grows along X, metallic along Y; the floor under the lowest spheres darkens a little), `instancing_stress`
+(1000 boxes in 4 draw calls; the sun casts the directional shadows, so each frame writes about 2000 instances, the
+view's and the shadow map's, and the instance buffer grows on the first frame; frame times with `--no-vsync`) and
+`instancing_growth`, without shadows, which grows the renderer's instance buffer mid-run: turned around, it shows about
+2000 boxes, more than the 1024 the buffer starts with (the log reads `Instance buffer 'SceneRenderer.Instances' grown to
+...`; for `instancing_growth` with `--frames 1` it must not):
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --scene instancing_growth --exit-after-frames --frames 10 --fixed-dt 0.016667 `

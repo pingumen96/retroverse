@@ -334,7 +334,7 @@ MeshBuilder& MeshBuilder::box(const glm::vec3& size, const glm::mat4& transform,
 }
 
 MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, const glm::mat4& transform, BoxUv uv,
-                                       float metersPerTile) {
+                                       float metersPerTile, FaceMask bevelled) {
     const std::optional<Affine> affine = makeAffine(transform);
     if (!affine || !core::isFinite(size) || !std::isfinite(chamfer) || !std::isfinite(metersPerTile)) {
         return *this;
@@ -343,14 +343,25 @@ MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, con
     const float tile = metersPerTile > 0.0f ? metersPerTile : 1.0f;
     const float smallest = 2.0f * std::min({half.x, half.y, half.z});
     const float c = std::min(std::fabs(chamfer), kMaxChamferFraction * smallest);
-    if (c < kMinChamfer) {
+    if (c < kMinChamfer || bevelled == FaceMask::None) {
         return box(size, transform, uv, tile);
     }
 
-    // Vertex of the bevelled box lying on the face perpendicular to `axis`, in the octant given by `signs`.
+    // The edge between the face perpendicular to `axisA` on the side `signA` and the one perpendicular to `axisB` on
+    // the side `signB` is bevelled when either face is in `bevelled`. So the corner where three faces meet has all
+    // three edges bevelled (a corner triangle), two (the two strips meet in a mitre) or none.
+    const auto bevelledEdge = [&](int axisA, float signA, int axisB, float signB) {
+        return hasAny(bevelled, boxFace(axisA, signA).bit | boxFace(axisB, signB).bit);
+    };
+    // Vertex of the bevelled box lying on the face perpendicular to `axis`, in the octant given by `signs`: inset by
+    // the chamfer along each other axis whose edge with that face is bevelled.
     const auto corner = [&](int axis, const glm::vec3& signs) {
-        glm::vec3 p = signs * (half - glm::vec3(c));
-        p[axis] = signs[axis] * half[axis];
+        glm::vec3 p = signs * half;
+        for (int other = 0; other < 3; ++other) {
+            if (other != axis && bevelledEdge(axis, signs[axis], other, signs[other])) {
+                p[other] = signs[other] * (half[other] - c);
+            }
+        }
         return p;
     };
     MeshData local;
@@ -365,7 +376,7 @@ MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, con
                                std::span<const glm::vec2>(uvs.data(), count), outward);
     };
 
-    // Six faces, shrunk by the chamfer.
+    // Six faces, shrunk by the chamfer along their bevelled edges.
     constexpr std::array<std::array<float, 2>, 4> kSquare{{{-1.0f, -1.0f}, {1.0f, -1.0f}, {1.0f, 1.0f}, {-1.0f, 1.0f}}};
     for (int axis = 0; axis < 3; ++axis) {
         const int second = (axis + 1) % 3;
@@ -383,12 +394,15 @@ MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, con
             emit(4, outward);
         }
     }
-    // Twelve 45-degree strips, one per box edge (the edge runs along `edge`).
+    // A 45-degree strip per bevelled edge (the edge runs along `edge`).
     for (int edge = 0; edge < 3; ++edge) {
         const int second = (edge + 1) % 3;
         const int third = (edge + 2) % 3;
         for (const float secondSign : {1.0f, -1.0f}) {
             for (const float thirdSign : {1.0f, -1.0f}) {
+                if (!bevelledEdge(second, secondSign, third, thirdSign)) {
+                    continue;
+                }
                 glm::vec3 outward(0.0f);
                 outward[second] = secondSign;
                 outward[third] = thirdSign;
@@ -401,10 +415,13 @@ MeshBuilder& MeshBuilder::chamferedBox(const glm::vec3& size, float chamfer, con
             }
         }
     }
-    // Eight corner triangles.
+    // A triangle per corner whose three edges are bevelled.
     for (const float sx : {1.0f, -1.0f}) {
         for (const float sy : {1.0f, -1.0f}) {
             for (const float sz : {1.0f, -1.0f}) {
+                if (!bevelledEdge(0, sx, 1, sy) || !bevelledEdge(0, sx, 2, sz) || !bevelledEdge(1, sy, 2, sz)) {
+                    continue;
+                }
                 const glm::vec3 signs(sx, sy, sz);
                 points[0] = corner(0, signs);
                 points[1] = corner(1, signs);

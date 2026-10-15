@@ -309,7 +309,24 @@ void drawText(ImageData& image, const std::vector<std::string>& lines, int scale
     }
 }
 
-/// Lays the title out in the band: largest integer scale with at most `maxLines` lines, else scale 1 and truncation.
+/// Glyphs of the longest space-separated word of `text`.
+std::size_t longestWord(const std::string& text) noexcept {
+    std::size_t longest = 0;
+    std::size_t start = 0;
+    while (start < text.size()) {
+        std::size_t end = text.find(' ', start);
+        if (end == std::string::npos) {
+            end = text.size();
+        }
+        longest = std::max(longest, end - start);
+        start = end + 1;
+    }
+    return longest;
+}
+
+/// Lays the title out in the box: the largest integer scale at which it wraps onto at most `maxLines` lines without
+/// splitting a word; words are split only when no scale keeps them whole (a word longer than a line even at scale 1),
+/// at the largest scale that fits; text that does not fit even at scale 1 is truncated.
 void drawTitle(ImageData& image, std::string_view title, int x0, int y0, int x1, int y1, Rgba color,
                std::size_t maxLines) {
     const std::string text = normalizeTitle(title);
@@ -318,16 +335,30 @@ void drawTitle(ImageData& image, std::string_view title, int x0, int y0, int x1,
     if (text.empty() || availableWidth < kGlyphWidth || availableHeight < kGlyphHeight) {
         return;
     }
+    const std::size_t wordLength = longestWord(text);
+    std::vector<std::string> splitLines; // the largest layout that splits a word, used if no scale keeps words whole
+    int splitScale = 0;
     for (int scale = availableHeight / kGlyphHeight; scale >= 1; --scale) {
         const int perLine = (availableWidth + scale) / (kGlyphAdvance * scale);
         if (perLine < 1) {
             continue;
         }
-        const std::vector<std::string> lines = wrapWords(text, static_cast<std::size_t>(perLine));
-        if (lines.size() <= maxLines && textBlockHeight(lines.size(), scale) <= availableHeight) {
+        std::vector<std::string> lines = wrapWords(text, static_cast<std::size_t>(perLine));
+        if (lines.size() > maxLines || textBlockHeight(lines.size(), scale) > availableHeight) {
+            continue;
+        }
+        if (wordLength <= static_cast<std::size_t>(perLine)) {
             drawText(image, lines, scale, x0, y0, x1, y1, color);
             return;
         }
+        if (splitScale == 0) {
+            splitScale = scale;
+            splitLines = std::move(lines);
+        }
+    }
+    if (splitScale > 0) {
+        drawText(image, splitLines, splitScale, x0, y0, x1, y1, color);
+        return;
     }
     // Does not fit even at scale 1: keep the lines that fit and mark the cut.
     const auto perLine = static_cast<std::size_t>((availableWidth + 1) / kGlyphAdvance);
@@ -493,8 +524,13 @@ ImageData makeCoverPlaceholder(int width, int height, std::string_view title, st
     if (innerWidth < 1 || innerHeight < 1) {
         return image;
     }
-    const int bandTop = border + innerHeight * 58 / 100;
-    const int bandBottom = std::max(bandTop + 1, border + innerHeight * 88 / 100);
+    // Title band from 58% to 88% of the inner height on portrait and square covers. Wide covers such as cartridge
+    // labels, whose short height would leave a two-line title tiny, get a taller band, down to the same line: about the
+    // height two lines of a dozen glyphs take across the band (11/40 of its width with the padding), at most 45%.
+    const int baseTop = border + innerHeight * 58 / 100;
+    const int bandBottom = std::max(baseTop + 1, border + innerHeight * 88 / 100);
+    const int wideHeight = std::min(innerWidth * 11 / 40, innerHeight * 45 / 100);
+    const int bandTop = std::min(baseTop, bandBottom - wideHeight);
     fillRect(image, border, bandTop, width - border, bandBottom, kUiText);
     const int paddingX = std::max(1, innerWidth / 24);
     const int paddingY = std::max(1, (bandBottom - bandTop) / 8);

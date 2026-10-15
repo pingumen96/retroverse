@@ -38,12 +38,15 @@ struct CrtEffect {
     float maskTriadCount = 320.0f;
     /// [0, 1]: how strongly each triad separates red, green and blue.
     float maskStrength = 0.2f;
-    /// [0, 0.5]: barrel curvature: the picture bows out and its corners round off into the tube's dark border.
+    /// [0, 0.5]: barrel curvature: the picture bows out and its corners round off into the tube's dark border (the
+    /// corner radius grows with it; a flat tube has square corners).
     float curvature = 0.05f;
     /// [0, 1]: darkening of the picture towards its edges.
     float vignette = 0.25f;
-    /// [0, 1]: share of the scene's lights and ambient the screen's glass reflects (a dielectric's reflectance).
-    float glassReflection = 1.0f;
+    /// [0, 1]: scale of the scene's lights and ambient reflected by the screen's hazy glass (a dielectric, 4% at
+    /// normal incidence). 0.25 gives a faint sheen that shows on the tube's dark border and leaves the picture legible
+    /// under a nearby lamp; 1 reflects lamps as bright patches that wash out the picture around them.
+    float glassReflection = 0.25f;
 
     bool operator==(const CrtEffect&) const = default;
 };
