@@ -1,0 +1,70 @@
+<rml>
+<head>
+	<!--
+		Quick catalog (specification 12.2 QuickLibrary, 13.2 "Catalogo rapido"; style 16.3 contextual UI).
+		Bound to the data model "catalog" of rv::ui::QuickCatalogScreen (src/ui/src/quick_catalog_screen.cpp), which
+		also names the ids and nav-region attributes below: keep them in step (tests/unit/ui/test_ui_documents.cpp).
+		Focus: spatial navigation inside each region (nav: auto in quick_catalog.rcss; each region is a scroll
+		container, which confines it), the screen's region links between them, Back through the focus history.
+	-->
+	<title>Catalogo rapido</title>
+	<link type="text/rcss" href="quick_catalog.rcss"/>
+</head>
+<body data-model="catalog">
+	<div id="catalog" class="panel">
+		<div class="panel-header">
+			<h1>Catalogo rapido</h1>
+			<span class="count" data-if="count == 1">1 gioco</span>
+			<span class="count" data-if="count != 1">{{ count }} giochi</span>
+		</div>
+		<div id="search-box" class="region" nav-region="search">
+			<input id="search" type="text" maxlength="64" data-value="search"/>
+			<span class="placeholder" data-if="search == ''">Cerca per titolo, sviluppatore o anno</span>
+		</div>
+		<div id="chips" class="region" nav-region="chips">
+			<button class="chip" data-for="chip : chips" data-attr-id="chip.elementId" data-class-active="chip.active"
+				data-event-click="filter(chip.key)">{{ chip.label }}</button>
+		</div>
+		<div id="game-list" class="region" nav-region="list">
+			<!-- The row's bindings sit one level below the data-for element, so that RmlUi updates them after the
+			     list has shrunk (views update by depth): bindings of removed rows are never evaluated. -->
+			<div class="game-slot" data-for="game : games">
+				<div class="game" data-attr-id="game.elementId" data-class-selected="game.selected">
+					<span class="game-title">{{ game.title }}</span>
+					<span class="game-meta">{{ game.platform }}<span class="dot"> · </span>{{ game.year }}</span>
+				</div>
+			</div>
+			<p class="empty" data-if="games.size == 0">Nessun gioco corrisponde alla ricerca.</p>
+		</div>
+	</div>
+
+	<div id="card" class="panel" data-if="card.present">
+		<h2 id="card-title">{{ card.title }}</h2>
+		<p class="subtitle">{{ card.developer }}, {{ card.year }}</p>
+		<p id="card-description" class="description" data-class-expanded="card.expanded">{{ card.description }}</p>
+		<div class="rows">
+			<div class="row"><span class="key">Piattaforma</span><span class="value">{{ card.platform }}</span></div>
+			<div class="row"><span class="key">Genere</span><span class="value">{{ card.genre }}</span></div>
+			<div class="row"><span class="key">Giocatori</span><span class="value">{{ card.players }}</span></div>
+			<div class="row"><span class="key">Sviluppatore</span><span class="value">{{ card.developer }}</span></div>
+			<div class="row" data-if="card.expanded"><span class="key">Editore</span><span class="value">{{ card.publisher }}</span></div>
+			<div class="row" data-if="card.expanded"><span class="key">Anno</span><span class="value">{{ card.year }}</span></div>
+		</div>
+		<div id="actions" class="region" nav-region="actions">
+			<button id="act-play" class="action primary" data-event-click="launch()">Avvia</button>
+			<button id="act-media" class="action" data-event-click="media()">Vedi media</button>
+			<button id="act-info" class="action" data-event-click="info()">Informazioni</button>
+		</div>
+		<p id="status" class="status" data-if="status != ''">{{ status }}</p>
+	</div>
+
+	<div id="hints">
+		<div id="hint-bar" class="hint-bar">
+			<span class="hint"><span class="pad pad-a">A</span>Avvia</span>
+			<span class="hint"><span class="pad pad-y">Y</span>Vedi media</span>
+			<span class="hint"><span class="pad pad-x">X</span>Informazioni</span>
+			<span class="hint"><span class="pad pad-b">B</span>Indietro</span>
+		</div>
+	</div>
+</body>
+</rml>
