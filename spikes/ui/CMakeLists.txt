@@ -27,19 +27,9 @@ rv_deploy_assets(spike_ui)
 # scaling and high contrast, a clean RmlUi log, the screenshots. --smoke also fails the run when it stops before its last
 # frame or the OpenGL debug output reports a high-severity message (Debug builds), and the spike fails it when a check
 # of the scenario never ran.
-#
-# Test registration: the top-level CMakeLists.txt adds spikes/ before it calls enable_testing(), so neither spikes/ nor
-# this directory would get a CTestTestfile and ctest would never see the case. This directory enables testing for
-# itself and, through CMAKE_TESTING_ENABLED (what enable_testing() sets), for spikes/, whose scope then carries it into
-# the spike directories added after this one (spikes/CMakeLists.txt adds video, ui, launch in that order): launch's
-# tests are registered by accident, video's are not unless it enables testing itself. The fix belongs to the top level,
-# at the merge of the I1 spikes: call enable_testing() before add_subdirectory(spikes) and delete the PARENT_SCOPE line
-# below.
 if(NOT RV_BUILD_TESTS)
     return()
 endif()
-enable_testing()
-set(CMAKE_TESTING_ENABLED ON PARENT_SCOPE)
 set(RV_SPIKE_UI_WORK_DIR "${CMAKE_BINARY_DIR}/spikes/ui")
 add_test(NAME gpu.spike_ui.scenario
     COMMAND spike_ui --smoke --frames 1910 --hidden --no-vsync --fixed-dt 0.016667
@@ -52,4 +42,7 @@ add_test(NAME gpu.spike_ui.scenario
             --screenshot-at "806:${RV_SPIKE_UI_WORK_DIR}/last_chip.png"
             --screenshot-at "908:${RV_SPIKE_UI_WORK_DIR}/text_scale_1.2.png"
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-set_tests_properties(gpu.spike_ui.scenario PROPERTIES LABELS gpu TIMEOUT 600 RUN_SERIAL TRUE)
+# Skipped, like the smoke tests, where no OpenGL 4.5 core profile context can be created: AppHost logs this line on the
+# console, then exits with 2.
+set_tests_properties(gpu.spike_ui.scenario PROPERTIES LABELS gpu TIMEOUT 600 RUN_SERIAL TRUE
+    SKIP_REGULAR_EXPRESSION "requires OpenGL 4\\.5 \\(core profile\\)")

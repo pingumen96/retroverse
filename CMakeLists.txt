@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.28)
 
+# vcpkg's find_package override is a macro that project() defines when it loads the toolchain, and a macro runs with
+# the policies recorded where it was defined: find modules called through it see the policies set before project(),
+# not those set after it. vcpkg's FindFFMPEG (below) calls cmake_parse_arguments(PARSE_ARGV) with empty values, which
+# warns while CMP0174 (CMake 3.31) is unset.
+if(POLICY CMP0174)
+    cmake_policy(SET CMP0174 NEW)
+endif()
+
 project(Retroverse
     VERSION 0.1.0
     DESCRIPTION "Explorable 3D frontend for ES-DE game collections"
@@ -44,7 +52,8 @@ if(RV_ENABLE_TRACY)
 endif()
 
 # FFmpeg (vcpkg feature "video", enabled by every preset): avformat, avcodec, swscale, swresample and avutil only, LGPL
-# components linked as DLLs. vcpkg's FindFFMPEG sets variables; rv::ffmpeg wraps them in one target.
+# components linked as DLLs. vcpkg's FindFFMPEG sets variables; rv::ffmpeg wraps them in one target (CMP0174 is set
+# before project(), above).
 find_package(FFMPEG REQUIRED)
 add_library(rv_ffmpeg INTERFACE)
 add_library(rv::ffmpeg ALIAS rv_ffmpeg)
@@ -56,7 +65,17 @@ target_link_libraries(rv_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
 # vendored in third_party/rmlui_backends on our glad loader.
 find_package(RmlUi CONFIG REQUIRED)
 
+# Testing is enabled before any directory is added: tests/ and spikes/ register ctest cases, and a directory only gets a
+# test file when testing is already enabled while it is configured.
+if(RV_BUILD_TESTS)
+    enable_testing()
+    find_package(Catch2 3 CONFIG REQUIRED)
+    include(Catch)
+endif()
+
 # --- Project ------------------------------------------------------------------------------------
+# Order: src/ (the modules), tools/ (whose GPU-free cores the tests use), tests/, spikes/ (whose fake emulator the
+# platform tests start).
 add_subdirectory(third_party/glad)
 add_subdirectory(src)
 
@@ -64,15 +83,12 @@ if(RV_BUILD_TOOLS)
     add_subdirectory(tools)
 endif()
 
-if(RV_BUILD_SPIKES)
-    add_subdirectory(spikes)
+if(RV_BUILD_TESTS)
+    add_subdirectory(tests)
 endif()
 
-if(RV_BUILD_TESTS)
-    enable_testing()
-    find_package(Catch2 3 CONFIG REQUIRED)
-    include(Catch)
-    add_subdirectory(tests)
+if(RV_BUILD_SPIKES)
+    add_subdirectory(spikes)
 endif()
 
 message(STATUS "Retroverse ${PROJECT_VERSION} | build type: ${CMAKE_BUILD_TYPE} | dev UI: ${RV_DEV_UI} | "

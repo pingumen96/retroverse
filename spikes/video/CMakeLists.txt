@@ -22,19 +22,16 @@ if(RV_BUILD_TESTS)
     #           VideoTexture's resize and busy-ring paths pass their self-test; timing thresholds when the machine is
     #           mostly idle
     #   errors  the damaged files of SC-08 beside a good clip: each falls back for its reason, none crashes the run
-    # The top-level CMakeLists.txt adds spikes/ before it enables testing, so a test added here would not be registered:
-    # the tests are added at the end of the top-level directory instead (deferred), where testing is enabled.
-    function(rv_spike_video_add_check name mode source_dir binary_dir)
+    # Both are skipped, like the smoke tests, where no OpenGL 4.5 core profile context can be created (the script prints
+    # the marker the skip expression matches).
+    function(rv_spike_video_add_check name mode)
         add_test(NAME "${name}"
-            COMMAND "${CMAKE_COMMAND}" "-DSPIKE=$<TARGET_FILE:spike_video>" "-DWORK_DIR=${binary_dir}/${mode}"
-                    "-DMODE=${mode}" -P "${source_dir}/check_spike_video.cmake")
-        set_tests_properties("${name}" PROPERTIES LABELS gpu TIMEOUT 600)
+            COMMAND "${CMAKE_COMMAND}" "-DSPIKE=$<TARGET_FILE:spike_video>"
+                    "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/${mode}" "-DMODE=${mode}"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_spike_video.cmake")
+        set_tests_properties("${name}" PROPERTIES LABELS gpu TIMEOUT 600
+            SKIP_REGULAR_EXPRESSION "SKIPPED: no OpenGL 4\\.5 core profile context")
     endfunction()
-    # DEFER arguments are evaluated when the call runs, in the top-level directory: bake the values in now.
-    cmake_language(EVAL CODE "cmake_language(DEFER DIRECTORY [[${CMAKE_SOURCE_DIR}]] CALL rv_spike_video_add_check
-        [[gpu.spike/video: two generated 720p clips play on time for 3 s]] smoke
-        [[${CMAKE_CURRENT_SOURCE_DIR}]] [[${CMAKE_CURRENT_BINARY_DIR}]])")
-    cmake_language(EVAL CODE "cmake_language(DEFER DIRECTORY [[${CMAKE_SOURCE_DIR}]] CALL rv_spike_video_add_check
-        [[gpu.spike/video: damaged files fall back to a picture without a crash]] errors
-        [[${CMAKE_CURRENT_SOURCE_DIR}]] [[${CMAKE_CURRENT_BINARY_DIR}]])")
+    rv_spike_video_add_check("gpu.spike/video: two generated 720p clips play on time for 3 s" smoke)
+    rv_spike_video_add_check("gpu.spike/video: damaged files fall back to a picture without a crash" errors)
 endif()

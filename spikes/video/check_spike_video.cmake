@@ -39,6 +39,13 @@ execute_process(COMMAND "${SPIKE}" ${arguments}
     RESULT_VARIABLE exit_code OUTPUT_FILE "${log}" ERROR_FILE "${log}" TIMEOUT 400)
 if(NOT exit_code EQUAL 0)
     file(READ "${log}" output)
+    # No OpenGL 4.5 core profile context (AppHost logs this line, then exits with 2): skipped like the smoke tests,
+    # through the test's SKIP_REGULAR_EXPRESSION on the marker below, printed unwrapped (message(FATAL_ERROR) reflows
+    # the spike's lines and can split the phrase).
+    if(exit_code EQUAL 2 AND output MATCHES "requires OpenGL 4\\.5 \\(core profile\\)")
+        message(STATUS "SKIPPED: no OpenGL 4.5 core profile context on this machine")
+        return()
+    endif()
     message(FATAL_ERROR "spike_video exited with '${exit_code}' (0 expected). Its output:\n${output}")
 endif()
 if(NOT EXISTS "${report}")

@@ -35,8 +35,6 @@ target_link_libraries(spike_launch PRIVATE spike_launch_core rv_core rv_input rv
 add_dependencies(spike_launch rv_fake_emulator)
 
 if(RV_BUILD_TESTS)
-    # The spikes are configured before the top level finds Catch2: find it for this directory too.
-    find_package(Catch2 3 CONFIG REQUIRED)
     add_executable(spike_launch_tests
         tests/test_measurements.cpp
         tests/test_targets.cpp
@@ -46,9 +44,8 @@ if(RV_BUILD_TESTS)
     rv_forbid_link(spike_launch_tests)
 endif()
 
-# Test registration and the runner tests' dependency, deferred to the end of the top-level directory: tests/ (whose
-# rv_platform_tests start rv_fake_emulator.exe from the shared runtime output directory) and enable_testing() come after
-# spikes/, and ctest only reads the test files of directories configured with testing enabled.
+# Test registration and the runner tests' dependency: tests/ is configured before spikes/ (top-level CMakeLists.txt),
+# so rv_platform_tests, which starts rv_fake_emulator.exe from the shared runtime output directory, already exists.
 # The desktop cases: "<name>|<spike_launch arguments separated by spaces>".
 set(RV_LAUNCH_SPIKE_DESKTOP_CASES
     "fake_direct_minimize|--strategy direct --policy minimize --repeat 3"
@@ -88,4 +85,4 @@ function(_rv_launch_spike_register_tests)
         set_tests_properties("desktop.launch.${name}" PROPERTIES LABELS desktop TIMEOUT 300 RUN_SERIAL TRUE)
     endforeach()
 endfunction()
-cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL _rv_launch_spike_register_tests)
+_rv_launch_spike_register_tests()
