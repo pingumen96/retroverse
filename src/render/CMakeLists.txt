@@ -62,6 +62,7 @@ add_library(rv_render STATIC
     src/texture_cache.cpp
     src/texture_defaults.cpp
     src/vertex_array.cpp
+    src/video_texture.cpp
     src/view_targets.cpp
 )
 add_library(rv::render ALIAS rv_render)
