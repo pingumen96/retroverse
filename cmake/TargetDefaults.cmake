@@ -38,3 +38,15 @@ function(rv_set_target_defaults target)
 
     set_target_properties(${target} PROPERTIES FOLDER "retroverse")
 endfunction()
+
+# Declares an executable long-path aware (ADR-0008 §1): cmake/long_path_aware.manifest, a .manifest source, is merged
+# into the manifest the linker generates (its trustInfo kept), so that Win32 file functions accept paths longer than
+# MAX_PATH where the system enables long paths (LongPathsEnabled). File-system walks still use \\?\ paths.
+#
+#   rv_enable_long_paths(<executable-target>)
+
+function(rv_enable_long_paths target)
+    if(MSVC)
+        target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/cmake/long_path_aware.manifest")
+    endif()
+endfunction()

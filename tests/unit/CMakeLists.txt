@@ -2,17 +2,21 @@
 # are globbed so modules can add tests without editing this file.
 
 file(GLOB_RECURSE RV_UNIT_TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
-# tests/unit/preview and tests/unit/screenshot_diff cover the GPU-free cores of the asset preview and the screenshot
-# diff tools, which only exist with RV_BUILD_TOOLS.
+# tests/unit/preview, tests/unit/screenshot_diff and tests/unit/cli cover the GPU-free cores of the asset preview, the
+# screenshot diff and retroverse-cli, which only exist with RV_BUILD_TOOLS.
 if(NOT TARGET rv_preview_core)
     list(FILTER RV_UNIT_TEST_SOURCES EXCLUDE REGEX "/preview/")
 endif()
 if(NOT TARGET rv_screenshot_diff_core)
     list(FILTER RV_UNIT_TEST_SOURCES EXCLUDE REGEX "/screenshot_diff/")
 endif()
+if(NOT TARGET rv_cli_core)
+    list(FILTER RV_UNIT_TEST_SOURCES EXCLUDE REGEX "/cli/")
+endif()
 
 add_executable(rv_tests ${RV_UNIT_TEST_SOURCES})
 rv_set_target_defaults(rv_tests)
+rv_enable_long_paths(rv_tests)
 target_link_libraries(rv_tests PRIVATE
     rv_core
     rv_geometry
@@ -26,6 +30,10 @@ target_link_libraries(rv_tests PRIVATE
     rv_media               # video decoding with FFmpeg (CPU frames)
     rv_launcher            # emulator launch policy
     rv_ui_model            # GPU-free part of the product UI (navigation and focus)
+    rv_catalog             # the catalog domain and its ports (I2)
+    rv_esde                # the ES-DE adapter (I2)
+    rv_catalog_db          # the SQLite store of the catalog (I2)
+    rv_platform_win        # the Windows services without SDL: system probe, process runner (I2)
     rv_test_support
     Catch2::Catch2WithMain)
 if(TARGET rv_preview_core)
@@ -33,6 +41,9 @@ if(TARGET rv_preview_core)
 endif()
 if(TARGET rv_screenshot_diff_core)
     target_link_libraries(rv_tests PRIVATE rv_screenshot_diff_core) # GPU-free core of retroverse-screenshot-diff
+endif()
+if(TARGET rv_cli_core)
+    target_link_libraries(rv_tests PRIVATE rv_cli_core) # GPU-free core of retroverse-cli
 endif()
 target_compile_definitions(rv_tests PRIVATE
     RV_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

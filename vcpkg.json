@@ -18,11 +18,19 @@
       ]
     },
     "nlohmann-json",
+    "pugixml",
     {
       "name": "sdl3",
       "default-features": false
     },
     "spdlog",
+    {
+      "name": "sqlite3",
+      "features": [
+        "fts5",
+        "json1"
+      ]
+    },
     "stb",
     "tl-expected"
   ],

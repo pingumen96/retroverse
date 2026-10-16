@@ -84,7 +84,7 @@ toggles fullscreen.
 | `src/` | Engine-free application code, one library per module (see [docs/architecture.md](docs/architecture.md)) |
 | `assets/` | Shaders, material presets, prefab manifests, asset registry, reference scenes and their golden screenshots |
 | `tests/` | Catch2 unit tests (GPU-free and SDL platform layer), test helpers, scripted input runs, GPU smoke tests |
-| `tools/` | Developer tools (asset preview, screenshot diff) |
+| `tools/` | Developer tools (asset preview, screenshot diff) and `retroverse-cli`, the ES-DE catalog from the command line (I2) |
 | `spikes/` | I1 measurement executables (video, product UI, emulator return) and their tests; reports in `docs/spikes/` |
 | `scripts/` | Build, test and gate scripts (PowerShell), test model generator (Python) |
 | `third_party/` | Vendored code not available through vcpkg (generated glad loader, RmlUi's SDL3 and OpenGL 3 backends) |
@@ -93,5 +93,6 @@ toggles fullscreen.
 
 ## License
 
-Retroverse source code is released under the [MIT License](LICENSE). Third-party libraries keep their own licenses.
+Retroverse source code is released under the [MIT License](LICENSE). Third-party libraries keep their own licenses,
+listed with their versions and notices in [docs/third-party.md](docs/third-party.md).
 Retroverse ships no ROMs, BIOS files, cover art or other copyrighted game content.

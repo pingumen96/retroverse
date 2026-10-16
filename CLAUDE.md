@@ -29,12 +29,15 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ```
 
 - Outputs: `build/<preset>/bin` holds `retroverse.exe`, `retroverse-asset-preview.exe` (developer builds only, see
-  "Asset preview"), `retroverse-screenshot-diff.exe`, `rv_tests.exe`, `rv_platform_tests.exe`, `rv_smoke_tests.exe`,
-  the I1 spike executables (`spike_video.exe`, `spike_ui.exe`, `spike_launch.exe`, `rv_fake_emulator.exe`,
-  `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi included: every preset enables the vcpkg features
-  `video` and `ui`). Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the
-  source tree (target `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed,
-  `staging` and the golden screenshots left out), so an edit of the assets alone reaches the next Release build.
+  "Asset preview"), `retroverse-screenshot-diff.exe`, `retroverse-cli.exe` (the ES-DE catalog from the command line,
+  I2: `--help` lists its commands, each a stub that exits 2 until its step; results on stdout or `--output`, logs on
+  stderr and `<user data>/logs/retroverse-cli.log`; pass `--data-dir build/rvdata`), `rv_tests.exe`,
+  `rv_platform_tests.exe`, `rv_smoke_tests.exe`, the I1 spike executables (`spike_video.exe`, `spike_ui.exe`,
+  `spike_launch.exe`, `rv_fake_emulator.exe`, `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi included:
+  every preset enables the vcpkg features `video` and `ui`; `sqlite3.dll` and `pugixml.dll` once code calls them).
+  Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the source tree (target
+  `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed, `staging` and the golden
+  screenshots left out), so an edit of the assets alone reaches the next Release build.
 - GPU smoke tests (`tests/smoke`, label `gpu`, ctest names `gpu.<case>`): each case starts the executables of its
   build frame-limited with `--hidden`, `--data-dir` and `--run-report` under `build/<preset>/smoke/<case>` (logs,
   reports, screenshots, heatmaps stay there) and checks the reports and screenshots: the reference scenes with frame
@@ -366,14 +369,23 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
 - `src/<module>/include/rv/<module>/*.hpp` public headers, `src/<module>/src/*.cpp`, `src/<module>/CMakeLists.txt`
   with an explicit source list. Include as `#include <rv/<module>/<file>.hpp>`.
 - Dependency order: `core` -> `geometry` -> `input` -> `assets` -> `scene`, `media` (FFmpeg only inside its
-  sources), `launcher` (GPU-free; `rv_forbid_link` fails the configure if they reach SDL3, glad or ImGui) -> `platform`
+  sources), `launcher` (GPU-free; `rv_forbid_link` fails the configure if they reach SDL3, glad or ImGui) -> `catalog`
+  (I2, ADR-0008: the catalog's domain and ports, on `launcher`; never SQLite, pugixml or the Windows-only targets) ->
+  `esde` (the ES-DE adapter, pugixml private), `catalog_db` (the SQLite store, SQLite private), `platform_win`
+  (Windows without SDL: the system probe, the process runner from I2 step 0b; on `core` and `launcher`) -> `platform`
   (SDL3; the Win32 process runner) -> `render` (OpenGL through glad; never includes SDL) -> `devui` (Dear ImGui,
   developer builds; its GPU-free part `rv_devui_model` is always built), `ui` (RmlUi product UI; its GPU-free part
-  `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. Code for the overlay in `rv_app` sits
-  under `#if defined(RV_DEV_UI)`. `rv_app` does not use `rv_media`, `rv_launcher` or `rv_ui` yet: the I1 spikes do.
+  `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. `catalog`, `esde`, `catalog_db` and
+  `platform_win` are GPU-free skeletons that the I2 steps fill (each file names its step); the system probe's port is
+  in `core` (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA <library>...)` forbids more
+  libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`.
+  `rv_app` does not use `rv_media`, `rv_launcher` or `rv_ui` yet: the I1 spikes do.
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
+- `tools/cli`: `retroverse-cli.exe` and its GPU-free core `rv_cli_core` (`include/rv/cli/*.hpp`, namespace `rv::cli`:
+  the command table, the dispatcher, the output contract; one `src/cmd_<name>.cpp` per command), built in every
+  configuration and tested by `tests/unit/cli` and, as a process, by `tests/cmake/test_cli_process.cmake`.
 - `tools/screenshot-diff`: `retroverse-screenshot-diff.exe` and its GPU-free core `rv_screenshot_diff_core`
   (`include/rv/screenshot_diff/*.hpp`, namespace `rv::screenshot_diff`), built in every configuration, tested by
   `tests/unit/screenshot_diff` and linked by the GPU smoke tests.
@@ -384,8 +396,9 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `tests/smoke/*.cpp` GPU smoke tests (globbed into `rv_smoke_tests`, label `gpu`: GPU-free itself, it starts the
   executables of its build and reads their run reports and screenshots; `smoke_support.hpp` runs them,
   `image_checks.hpp` measures screenshots; Win32 child processes in `child_process.hpp`) and their test scenes in
-  `tests/smoke/scenes`, `tests/cmake/test_*.cmake` (label `unit`, listed in `tests/cmake/CMakeLists.txt`: the build's
-  CMake scripts run by ctest in script mode, e.g. the Release asset mirror).
+  `tests/smoke/scenes`, `tests/cmake/test_*.cmake` (label `unit`, listed in `tests/cmake/CMakeLists.txt`, run by ctest
+  in CMake script mode: the build's CMake scripts, e.g. the Release asset mirror, and `retroverse-cli` as a process,
+  its exit codes with stdout and stderr apart).
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 
 ## Conventions

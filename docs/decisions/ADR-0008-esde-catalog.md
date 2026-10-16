@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-16
+- Amended: 2026-10-16, at I2 step 0a: the system probe's port lives in `rv_core`, not in `rv_catalog` (§2)
 
 ## Context
 
@@ -52,14 +53,15 @@ All GPU-free and checked by `rv_forbid_link`, which gains per-target forbidden l
 SQLite, pugixml or Windows-only targets):
 
 - `rv_catalog`: the domain (libraries, systems, games, entry states, media kinds, disc groups, change sets, play
-  sessions), one header per port (`ILibrarySource`, `ICatalogStore`, `ICatalogQuery`, `IMediaResolver`,
-  `ISystemProbe`), and the services that only see ports (import and reconciliation, launch resolution).
+  sessions), one header per port (`ILibrarySource`, `ICatalogStore`, `ICatalogQuery`, `IMediaResolver`), and the
+  services that only see ports (import and reconciliation, launch resolution).
 - `rv_esde`: the ES-DE adapter (discovery, settings, systems, find rules, gamelists, ROM scan, disc groups, media,
   command translation); pugixml stays private.
 - `rv_catalog_db`: the SQLite store and its queries; SQLite stays private.
 - `rv_platform_win`: the Windows side that needs no SDL: the process runner moved out of `rv_platform`, and the system
   probe (registry values and App Paths in HKCU then HKLM, the uninstall key, the executable search of point 8, file and
-  wildcard checks).
+  wildcard checks). The probe's port, `ISystemProbe`, lives in `rv_core` (`rv/core/system_probe.hpp`): `rv_launcher`
+  finds emulator executables through it and sits below `rv_catalog`, and `rv_esde` uses it too.
 - `tools/cli`: `retroverse-cli` and its GPU-free core. Results go to stdout or `--output` as UTF-8, logs only to stderr
   and the log file.
 

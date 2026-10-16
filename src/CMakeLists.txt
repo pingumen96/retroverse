@@ -8,6 +8,12 @@ add_subdirectory(assets)
 add_subdirectory(scene)
 add_subdirectory(media)    # video decoding with FFmpeg (I1 spike c)
 add_subdirectory(launcher) # emulator launch policy (I1 spike f)
+# The ES-DE catalog of milestone M1 (I2, ADR-0008): the domain and its ports, the ES-DE adapter (pugixml private), the
+# SQLite store (SQLite private) and the Windows services without SDL (system probe, process runner).
+add_subdirectory(catalog)
+add_subdirectory(esde)
+add_subdirectory(catalog_db)
+add_subdirectory(platform_win)
 
 # Platform and rendering layer
 add_subdirectory(platform)
@@ -21,5 +27,6 @@ add_subdirectory(app)
 
 add_executable(retroverse main.cpp)
 rv_set_target_defaults(retroverse)
+rv_enable_long_paths(retroverse)
 target_link_libraries(retroverse PRIVATE rv_app)
 rv_deploy_assets(retroverse)

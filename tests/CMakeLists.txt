@@ -6,8 +6,8 @@
 #   tests/smoke         GPU smoke tests (label "gpu"), executable rv_smoke_tests: runs retroverse.exe and the asset
 #                       preview frame-limited and checks their run reports and screenshots; excluded from the default
 #                       test presets (msvc-x64-debug-gpu and msvc-x64-release-gpu run them)
-#   tests/cmake         tests of the build's CMake scripts (label "unit"), run by ctest in CMake script mode: the
-#                       Release asset deployment (cmake/CopyAssets.cmake)
+#   tests/cmake         tests run by ctest in CMake script mode (label "unit"): the Release asset deployment
+#                       (cmake/CopyAssets.cmake) and retroverse-cli as a process (exit codes, stdout and stderr apart)
 
 add_subdirectory(support)
 add_subdirectory(unit)

@@ -65,6 +65,13 @@ target_link_libraries(rv_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
 # vendored in third_party/rmlui_backends on our glad loader.
 find_package(RmlUi CONFIG REQUIRED)
 
+# SQLite with FTS5 and the JSON functions (vcpkg features fts5 and json1): the catalog database, private to
+# rv_catalog_db (ADR-0008).
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+# pugixml: ES-DE's XML files, private to rv_esde; parsed with parse_fragment and never through XPath, which throws
+# (ADR-0008).
+find_package(pugixml CONFIG REQUIRED)
+
 # Testing is enabled before any directory is added: tests/ and spikes/ register ctest cases, and a directory only gets a
 # test file when testing is already enabled while it is configured.
 if(RV_BUILD_TESTS)

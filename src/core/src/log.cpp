@@ -24,6 +24,14 @@ std::mutex g_mutex;
 std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_ringSink;
 std::filesystem::path g_logFile;
 std::atomic<std::uint64_t> g_loggedMessages{0};
+ConsoleStream g_consoleStream = ConsoleStream::Stdout; // of the last configuration, for shutdownLogging()
+
+spdlog::sink_ptr makeConsoleSink(ConsoleStream stream) {
+    if (stream == ConsoleStream::Stderr) {
+        return std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
+    }
+    return std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+}
 
 /// Counts the messages the logger writes (loggedMessageCount). The count is atomic, so no lock is needed.
 class CountingSink final : public spdlog::sinks::base_sink<spdlog::details::null_mutex> {
@@ -40,8 +48,13 @@ void initLogging(const LogConfig& config) {
     std::scoped_lock lock(g_mutex);
 
     std::vector<spdlog::sink_ptr> sinks;
+    g_consoleStream = config.consoleStream;
     if (config.console) {
-        sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+        spdlog::sink_ptr console = makeConsoleSink(config.consoleStream);
+        if (config.consoleLevel) {
+            console->set_level(*config.consoleLevel);
+        }
+        sinks.push_back(std::move(console));
     }
 
     g_ringSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(std::max<std::size_t>(config.ringBufferLines, 1));
@@ -82,7 +95,7 @@ void shutdownLogging() {
     if (auto current = spdlog::default_logger()) {
         current->flush();
     }
-    auto console = std::make_shared<spdlog::logger>(kLoggerName, std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+    auto console = std::make_shared<spdlog::logger>(kLoggerName, makeConsoleSink(g_consoleStream));
     console->set_pattern(kPattern);
     spdlog::set_default_logger(std::move(console));
     g_ringSink.reset();
