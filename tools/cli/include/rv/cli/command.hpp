@@ -82,6 +82,10 @@ struct Command {
     std::string_view summary; ///< one line, listed by --help
     int step = 0;             ///< the I2 step that implements it (docs/roadmap.md)
     CommandFunction run = nullptr;
+    /// The command checks the user data directory itself against the folders of the library it reads, which its
+    /// options can name (discover, library), and starts the log file only once that passed. For the other commands
+    /// the dispatcher checks it against the library library.json records before they run (run()).
+    bool checksDataDirectory = false;
 };
 
 /// The command table, in the order --help lists it.
@@ -100,9 +104,13 @@ struct Command {
 ///  - --version writes the version banner to `out`, --help the help text; both exit 0;
 ///  - invalid global options, no command (the help text goes to `err`) or an unknown command (named) exit 2;
 ///  - otherwise the directories are resolved from the global options and `environment` (failure: exit 2), logging
-///    starts (console sink on stderr: warnings and errors, everything at debug and trace; the log file
-///    <user data>/logs/retroverse-cli.log at --log-level) and the command runs. An exception escaping it is logged and
-///    exits 3. Logging is shut down before returning.
+///    starts (console sink on stderr: warnings and errors, everything at debug and trace) and the command runs. An
+///    exception escaping it is logged and exits 3. Logging is shut down before returning.
+/// Retroverse writes nothing in the folders of the library it reads (ADR-0008 §6, §7), not even its log file: the log
+/// file <user data>/logs/retroverse-cli.log (at --log-level) starts once the user data directory is known to lie
+/// outside them. A command with Command::checksDataDirectory checks that itself; for the others, when
+/// <user data>/config/library.json records a library, the dispatcher refuses a user data directory inside its folders
+/// (esde::readOnlyFolders(): the message on `err`, exit 2, nothing written) before the command runs.
 /// Never writes logs to `out`. `out` and `err` are finished by the caller.
 [[nodiscard]] ExitCode run(std::span<const std::string> arguments, Output& out, Output& err,
                            const core::PathEnvironment& environment);

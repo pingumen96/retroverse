@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!-- The bundled game systems of the custom-systems fixture: ES-DE's format, its rules and quirks (see README.md) -->
+<systemList>
+    <system>
+        <name>gb</name>
+        <fullname>Nintendo Game Boy</fullname>
+        <path>%ROMPATH%\gb</path>
+        <extension>.gb .GB .zip .ZIP</extension>
+        <command label="Bundled Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>gb</platform>
+        <theme>gb</theme>
+    </system>
+    <system>
+        <name>nes</name>
+        <fullname>Nintendo
+Entertainment System</fullname>
+        <systemsortname>Nintendo 1</systemsortname>
+        <path>%ROMPATH%\nes</path>
+        <extension>.nes .NES,.unf	.UNF
+            .zip,,.ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <command label="Fake Emulator (Core)">%EMULATOR_FAKE-EMULATOR% -L %CORE_RETROARCH%\fake_nes_libretro.dll %ROM%</command>
+        <command label="Shell">%HIDEWINDOW% %ESCAPESPECIALS% %EMULATOR_OS-SHELL% /C %ROM%</command>
+        <platform>NES, Famicom</platform>
+    </system>
+    <system>
+        <name>nes</name>
+        <fullname>Nintendo Entertainment System (again)</fullname>
+        <path>%ROMPATH%\nes-again</path>
+        <extension>.nes</extension>
+        <command>%EMULATOR_FAKE-EMULATOR% %ROM%</command>
+        <platform>nes</platform>
+        <theme>nes</theme>
+    </system>
+    <system>
+        <name>dirgames</name>
+        <fullname>Games Without Extensions</fullname>
+        <path>%ROMPATH%\dirgames</path>
+        <extension>.</extension>
+        <command>%EMULATOR_FAKE-EMULATOR% %ROM%</command>
+        <platform></platform>
+        <theme></theme>
+    </system>
+    <system>
+        <name>pcfx</name>
+        <fullname>NEC PC-FX</fullname>
+        <path>%ROMPATH%\pcfx</path>
+        <extension>.cue CUE .chd .CHD</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>pcfx</platform>
+        <theme>pcfx</theme>
+    </system>
+    <system>
+        <name>androidgames</name>
+        <fullname>Android Games</fullname>
+        <path>%ROMPATH%\androidgames</path>
+        <extension>.apk .APK</extension>
+        <command>PLACEHOLDER %ROM%</command>
+        <platform>android</platform>
+        <theme>androidgames</theme>
+    </system>
+    <system>
+        <name>unlabelled</name>
+        <fullname>Unlabelled Commands</fullname>
+        <path>%ROMPATH%\unlabelled</path>
+        <extension>.bin</extension>
+        <command>%EMULATOR_FAKE-EMULATOR% --first %ROM%</command>
+        <command label="Second">%EMULATOR_FAKE-EMULATOR% --second %ROM%</command>
+        <platform>unlabelled</platform>
+    </system>
+    <system>
+        <name>duplabels</name>
+        <fullname>Duplicate Labels</fullname>
+        <path>%ROMPATH%\duplabels</path>
+        <extension>.bin</extension>
+        <command label="Same">%EMULATOR_FAKE-EMULATOR% --one %ROM%</command>
+        <command label="Same">%EMULATOR_FAKE-EMULATOR% --two %ROM%</command>
+        <command label="Other">%EMULATOR_FAKE-EMULATOR% --three %ROM%</command>
+        <command>%EMULATOR_FAKE-EMULATOR% --four %ROM%</command>
+        <command label="After">%EMULATOR_FAKE-EMULATOR% --five %ROM%</command>
+        <platform>duplabels</platform>
+    </system>
+    <system>
+        <name>nofullname</name>
+        <path>%ROMPATH%\nofullname</path>
+        <extension>.bin</extension>
+        <command>%EMULATOR_FAKE-EMULATOR% %ROM%</command>
+    </system>
+    <system>
+        <name>bad:name</name>
+        <fullname>A Name That Is No Folder Name</fullname>
+        <path>%ROMPATH%\bad</path>
+        <extension>.bin</extension>
+        <command>%EMULATOR_FAKE-EMULATOR% %ROM%</command>
+    </system>
+    <system>
+        <fullname>No Name</fullname>
+        <path>%ROMPATH%\noname</path>
+        <extension>.bin</extension>
+        <command>%EMULATOR_FAKE-EMULATOR% %ROM%</command>
+    </system>
+</systemList>
+<!-- BUNDLED-LOAD-EXCLUSIVE -->

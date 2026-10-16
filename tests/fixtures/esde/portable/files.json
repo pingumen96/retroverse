@@ -1,0 +1,11 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe, ROM and media payloads, empty folders.
+{
+    "files": [
+        {"path": "ES-DE/ES-DE.exe", "size": 4096, "seed": 3000},
+        {"path": "ES-DE/ROMs/nes/Pixel Quest (World).nes", "size": 24592, "seed": 3001,
+         "mtime": "1991-05-04T10:00:00Z"},
+        {"path": "ES-DE/ES-DE/downloaded_media/nes/covers/Pixel Quest (World).png", "size": 512, "seed": 3002},
+        {"path": "PortableHome/Media/nes/covers/Pixel Quest (World).png", "size": 512, "seed": 3003}
+    ],
+    "directories": ["ES-DE/ES-DE/custom_systems", "Users/Someone/ES-DE"]
+}

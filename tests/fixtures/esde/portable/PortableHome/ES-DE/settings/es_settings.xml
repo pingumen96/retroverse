@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<bool name="ShowHiddenFiles" value="true" />
+<string name="MediaDirectory" value="~/Media" />
+<string name="ROMDirectory" value="%ESPATH%\ROMs" />
+<string name="ScraperPasswordScreenScraper" value="portable-scraper-password-T3v8" />
+<string name="ScraperUsernameScreenScraper" value="portable-scraper-user-M5p1" />

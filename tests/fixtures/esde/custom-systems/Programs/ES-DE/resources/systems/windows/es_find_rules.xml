@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- The bundled find rules of the custom-systems fixture (see README.md) -->
+<ruleList>
+    <emulator name="FAKE-EMULATOR">
+        <rule type="staticpath">
+            <entry>%ESPATH%\Emulators\FakeEmulator\fake-emulator.exe</entry>
+        </rule>
+    </emulator>
+    <emulator name="OS-SHELL">
+        <rule type="systempath">
+            <entry>cmd.exe</entry>
+        </rule>
+    </emulator>
+    <core name="RETROARCH">
+        <rule type="corepath">
+            <entry>%EMUPATH%\cores</entry>
+        </rule>
+    </core>
+    <core name="ODD-CORE">
+        <rule type="staticpath">
+            <entry>~\cores</entry>
+        </rule>
+    </core>
+</ruleList>

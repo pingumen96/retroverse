@@ -110,13 +110,18 @@ expect_contains(err "retroverse-cli: unknown command 'frobnicaté'")
 
 # Every command, stub or implemented, given an unknown option with every log level shown on the console: exit 2,
 # nothing on stdout, the dispatcher's log lines on stderr and in the log file of a user data directory named outside
-# ASCII.
+# ASCII. The commands that check the user data directory themselves against the library their options name (discover,
+# library: Command::checksDataDirectory) start the log file only once it passed, never on a usage error: Retroverse
+# writes nothing, not even a log file, in a library's folders (ADR-0008 §6, §7).
 set(data "${WORK_DIR}/dàta")
 foreach(command IN LISTS commands)
     run_cli(--data-dir "${data}" --log-level trace ${command} --no-such-option)
     expect_code(2)
     expect_empty(out)
     expect_contains(err "retroverse-cli ${command}: exit code 2")
+    if(command STREQUAL "discover" OR command STREQUAL "library")
+        continue()
+    endif()
     if(NOT EXISTS "${data}/logs/retroverse-cli.log")
         fail("no log file in ${data}/logs")
     endif()

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- The find rules of the portable fixture (see README.md) -->
+<ruleList>
+    <emulator name="PORTABLE-EMULATOR">
+        <!-- %ESPATH% is the portable folder; ~ is ES-DE's home folder, the same folder for an empty portable.txt -->
+        <rule type="staticpath">
+            <entry>%ESPATH%\Emulators\Portable\portable-emulator.exe</entry>
+            <entry>~\Emulators\Portable\portable-emulator.exe</entry>
+        </rule>
+    </emulator>
+</ruleList>

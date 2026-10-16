@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!-- The game systems of the custom-dirs fixture: ES-DE's format with an invented emulator (see README.md) -->
+<systemList>
+    <system>
+        <name>gb</name>
+        <fullname>Nintendo Game Boy</fullname>
+        <path>%ROMPATH%\gb</path>
+        <extension>.gb .GB .zip .ZIP</extension>
+        <command label="Dirs Emulator">%EMULATOR_DIRS-EMULATOR% -- %ROM%</command>
+        <platform>gb</platform>
+        <theme>gb</theme>
+    </system>
+    <system>
+        <name>snes</name>
+        <fullname>Nintendo SNES (Super Nintendo)</fullname>
+        <path>%ROMPATH%/snes</path>
+        <extension>.sfc .SFC .zip .ZIP</extension>
+        <command label="Dirs Emulator">%EMULATOR_DIRS-EMULATOR% -- %ROM%</command>
+        <platform>snes</platform>
+        <theme>snes</theme>
+    </system>
+    <system>
+        <name>pico8</name>
+        <fullname>PICO-8 Fantasy Console</fullname>
+        <path>~\Homebrew\pico8</path>
+        <extension>.p8 .P8 .png .PNG</extension>
+        <command label="Dirs Emulator">%EMULATOR_DIRS-EMULATOR% -- %ROM%</command>
+        <platform>pico8</platform>
+        <theme>pico8</theme>
+    </system>
+    <system>
+        <name>vectrex</name>
+        <fullname>GCE Vectrex</fullname>
+        <path>{{FIXTURE_ROOT}}\Elsewhere\vectrex</path>
+        <extension>.vec .VEC .zip .ZIP</extension>
+        <command label="Dirs Emulator">%EMULATOR_DIRS-EMULATOR% -- %ROM%</command>
+        <platform>vectrex</platform>
+        <theme>vectrex</theme>
+    </system>
+    <system>
+        <name>n64</name>
+        <fullname>Nintendo 64</fullname>
+        <path>%ROMPATH%\n64</path>
+        <extension>.z64 .Z64 .n64 .N64 .zip .ZIP</extension>
+        <command label="Dirs Emulator">%EMULATOR_DIRS-EMULATOR% -- %ROM%</command>
+        <platform>n64</platform>
+        <theme>n64</theme>
+    </system>
+</systemList>

@@ -1,0 +1,18 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe, ROM and media payloads in the folders the
+// settings name and in ES-DE's default folders (for the variant with empty values), empty folders.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 4000},
+        {"path": "Games/ROM Library/gb/Tiny Tunnel (World).gb", "size": 32768, "seed": 4001,
+         "mtime": "1992-08-01T09:00:00Z"},
+        {"path": "Games/ROM Library/snes/Sky Sprint (USA).sfc", "size": 65536, "seed": 4002,
+         "mtime": "1994-11-11T11:00:00Z"},
+        {"path": "Homebrew/pico8/Moon Garden.p8", "size": 2048, "seed": 4003, "mtime": "2021-03-03T03:00:00Z"},
+        {"path": "Elsewhere/vectrex/Star Lines (World).vec", "size": 8192, "seed": 4004,
+         "mtime": "1983-02-02T02:00:00Z"},
+        {"path": "Programs/Media Store/gb/covers/Tiny Tunnel (World).png", "size": 512, "seed": 4005},
+        {"path": "ROMs/gb/Default Dash (World).gb", "size": 32768, "seed": 4006, "mtime": "1995-05-05T05:00:00Z"},
+        {"path": "ES-DE/downloaded_media/gb/covers/Default Dash (World).png", "size": 512, "seed": 4007}
+    ],
+    "directories": ["ES-DE/custom_systems", "ES-DE/gamelists"]
+}

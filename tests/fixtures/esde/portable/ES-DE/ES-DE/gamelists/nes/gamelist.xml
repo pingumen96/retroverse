@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Pixel Quest (World).nes</path>
+		<name>Pixel Quest</name>
+		<releasedate>19910504T000000</releasedate>
+		<developer>Lantern Works</developer>
+		<players>1</players>
+	</game>
+</gameList>

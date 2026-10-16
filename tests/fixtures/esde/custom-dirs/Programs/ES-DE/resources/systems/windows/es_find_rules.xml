@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- The find rules of the custom-dirs fixture (see README.md) -->
+<ruleList>
+    <emulator name="DIRS-EMULATOR">
+        <rule type="staticpath">
+            <entry>~\Emulators\Dirs\dirs-emulator.exe</entry>
+            <entry>%ESPATH%\Emulators\Dirs\dirs-emulator.exe</entry>
+        </rule>
+    </emulator>
+</ruleList>
