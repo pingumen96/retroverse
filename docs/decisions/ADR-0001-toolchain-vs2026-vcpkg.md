@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-14
+- See also: ADR-0007 (the builds use the vcpkg clone that `VCPKG_ROOT` names)
 
 ## Context
 

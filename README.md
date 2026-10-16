@@ -45,8 +45,10 @@ and the wood, plaster, rug, metal and plastic surfaces. The checklist of style.m
 
 - Windows 10/11 x64, a GPU with OpenGL 4.5 core support.
 - Visual Studio 2026 with the "Desktop development with C++" workload (MSVC 14.5x, bundled CMake and Ninja).
-- [vcpkg](https://github.com/microsoft/vcpkg) cloned locally, with `VCPKG_ROOT` pointing at it. The manifest pins
-  the baseline in `vcpkg.json`; update the clone if that commit is missing.
+- [vcpkg](https://github.com/microsoft/vcpkg) cloned locally and bootstrapped, with `VCPKG_ROOT` pointing at it (set
+  for the user, not only in a shell: `scripts/dev.ps1` keeps it through the Visual Studio developer environment, which
+  would point it at Visual Studio's bundled vcpkg; ADR-0007). The manifest pins the baseline in `vcpkg.json`; update
+  the clone if that commit is missing.
 
 ## Build and test
 

@@ -31,6 +31,22 @@ function Get-CompactPath([string]$PathValue) {
     return ($kept -join ';')
 }
 
+# The presets take the vcpkg toolchain from VCPKG_ROOT, which names the pinned clone (ADR-0007). The developer
+# environment's vcpkg extension (VC\vcpkg\vcpkg-init.cmd) points VCPKG_ROOT at Visual Studio's bundled copy whatever it
+# was, so the value is read before entering the environment and restored after it. Inside a Visual Studio developer
+# shell the process already holds the bundled copy: the user's (or the machine's) own setting is taken instead.
+function Test-BundledVcpkg([string]$Root) {
+    return [bool]$Root -and (Test-Path -LiteralPath (Join-Path $Root 'vcpkg-bundle.json'))
+}
+$vcpkgRoot = $env:VCPKG_ROOT
+if (-not $vcpkgRoot -or (Test-BundledVcpkg $vcpkgRoot)) {
+    $vcpkgRoot = [Environment]::GetEnvironmentVariable('VCPKG_ROOT', 'User')
+    if (-not $vcpkgRoot) { $vcpkgRoot = [Environment]::GetEnvironmentVariable('VCPKG_ROOT', 'Machine') }
+}
+if (-not $vcpkgRoot -or (Test-BundledVcpkg $vcpkgRoot)) {
+    throw "VCPKG_ROOT must name your vcpkg clone (e.g. E:/Progetti/vcpkg), not Visual Studio's bundled vcpkg (ADR-0007)."
+}
+
 if (-not $env:VSCMD_VER) {
     $installerDir = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
     $vswhere = Join-Path $installerDir 'vswhere.exe'
@@ -54,7 +70,7 @@ if (-not $env:VSCMD_VER) {
     }
 }
 
-if (-not $env:VCPKG_ROOT) { throw 'VCPKG_ROOT is not set. Point it at your vcpkg clone (e.g. E:/Progetti/vcpkg).' }
+$env:VCPKG_ROOT = $vcpkgRoot
 
 if ($args.Count -eq 0) { return }
 

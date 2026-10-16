@@ -239,17 +239,3 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Shared quoting:** `tests/smoke/child_process.cpp` duplicates the command-line quoting: use
   `rv::launcher::buildCommandLine`.
 - **Fake emulator home:** move `rv_fake_emulator` from `spikes/launch` to `tests/support` when I2 adopts the launcher.
-
-### Build
-
-- **Which vcpkg the builds use (decision pending, ADR needed):** the presets take the toolchain from `VCPKG_ROOT`, and
-  README, ADR-0001 and `scripts/dev.ps1` mean the local clone (`E:/Progetti/vcpkg` here, at the baseline). But
-  `Enter-VsDevShell` runs the developer environment's vcpkg extension (`VC/vcpkg/vcpkg-init.cmd`), which points
-  `VCPKG_ROOT` at Visual Studio's bundled, read-only vcpkg whatever it was, and `dev.ps1` checks the variable only
-  afterwards: every tree has been configured with the bundled copy (`CMAKE_TOOLCHAIN_FILE` in `CMakeCache.txt`; tool
-  2026-07-27 against the clone's 2026-09-26, 16 of the helper scripts they share differ, and the scripts enter the
-  packages' ABI hashes). Options: the clone as documented (`dev.ps1` restores `VCPKG_ROOT` after entering the
-  environment; one full rebuild of the packages, FFmpeg included; the clone is shared with other projects, whose updates
-  would then rebuild Retroverse's packages), a clone for Retroverse alone (isolated; one rebuild and about 2 GB), or the
-  bundled copy (no rebuild; the README and `dev.ps1`'s check change; a Visual Studio update can rebuild every package at
-  the next configure, and a later baseline may need a newer tool than Visual Studio ships).

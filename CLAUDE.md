@@ -50,8 +50,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   smoke tests and the I1 spike checks) of Debug and Release and the golden comparison of both, prints a summary table
   (logs in `build/gate-a`) and exits 1
   when a step failed (skipped steps are reported, not failed).
-- vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`. The first
-  configure in a fresh checkout or worktree restores packages from the local binary cache (a few minutes).
+- vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`, built by the
+  vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
+  restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure
+  in a fresh checkout or worktree restores packages from the local binary cache (a few minutes). A tree configured with
+  another toolchain keeps it until `./scripts/build.ps1 -Preset <preset> -Fresh`.
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
   `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"`.
 
