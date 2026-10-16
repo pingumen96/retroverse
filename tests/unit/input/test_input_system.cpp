@@ -407,21 +407,31 @@ TEST_CASE("input/input_system: default buttons trigger their actions", "[input][
     RawInputFrame leftClick;
     leftClick.mouseButtonsDown.set(toIndex(MouseButton::Left));
 
+    // The world's actions and the UI's share devices (the application reads those of the context that has the input).
     const std::vector<Case> cases = {
         {keys({Key::LeftShift}), {Action::Sprint}},
         {keys({Key::E}), {Action::Interact}},
         {leftClick, {Action::Interact}},
-        {keys({Key::Escape}), {Action::Back}},
+        {keys({Key::Escape}), {Action::Back, Action::UiBack}},
         {keys({Key::Tab}), {Action::QuickCatalog}},
-        {keys({Key::Enter}), {Action::Confirm}},
+        {keys({Key::Enter}), {Action::Confirm, Action::UiActivate}},
         {keys({Key::M}), {Action::Map}},
         {keys({Key::F1}), {Action::ToggleDevUI}},
         {keys({Key::F5}), {Action::ReloadShaders}},
         {keys({Key::F12}), {Action::Screenshot}},
-        {pad(GamepadButton::LeftStick), {Action::Sprint}},
-        {pad(GamepadButton::South), {Action::Interact}},
-        {pad(GamepadButton::East), {Action::Back}},
-        {pad(GamepadButton::North), {Action::QuickCatalog}},
+        {keys({Key::Up}), {Action::MoveForward, Action::UiUp}},
+        {keys({Key::PageDown}), {Action::UiPageDown}},
+        {keys({Key::Home}), {Action::UiHome}},
+        {keys({Key::End}), {Action::UiEnd}},
+        {pad(GamepadButton::LeftStick), {Action::Sprint, Action::UiHome}},
+        {pad(GamepadButton::RightStick), {Action::UiEnd}},
+        {pad(GamepadButton::South), {Action::Interact, Action::UiActivate}},
+        {pad(GamepadButton::East), {Action::Back, Action::UiBack}},
+        {pad(GamepadButton::North), {Action::QuickCatalog, Action::UiMedia}},
+        {pad(GamepadButton::West), {Action::UiInfo}},
+        {pad(GamepadButton::DpadDown), {Action::UiDown}},
+        {pad(GamepadButton::LeftShoulder), {Action::UiFilterPrevious}},
+        {pad(GamepadButton::RightShoulder), {Action::UiFilterNext}},
         {pad(GamepadButton::Start), {Action::Confirm, Action::Menu}},
         {pad(GamepadButton::Back), {Action::Map}},
         {pad(GamepadButton::Guide), {}},
@@ -434,6 +444,28 @@ TEST_CASE("input/input_system: default buttons trigger their actions", "[input][
         CHECK(pressedActions(state) == cases[i].pressed);
         CHECK(state.activeDevice() == cases[i].frame.lastActiveDevice);
     }
+}
+
+TEST_CASE("input/input_system: the UI's stick and triggers pass their dead zone", "[input][input_system]") {
+    InputSystem input;
+    // The left stick drives the walker and the UI's focus axis alike, each through its own binding's 0.15 dead zone.
+    const ActionState down = input.resolve(padAxis(GamepadAxis::LeftY, -0.6f));
+    CHECK(down.axis(Action::UiNavY) == Approx(-(0.6f - 0.15f) / 0.85f));
+    CHECK(down.axis(Action::MoveForward) == Approx(-(0.6f - 0.15f) / 0.85f));
+    CHECK(down.axis(Action::UiNavX) == 0.0f);
+    CHECK(input.resolve(padAxis(GamepadAxis::LeftX, 0.1f)).axis(Action::UiNavX) == 0.0f); // inside the dead zone
+    CHECK(input.resolve(padAxis(GamepadAxis::LeftX, 1.0f)).axis(Action::UiNavX) == 1.0f);
+
+    // A trigger pages once past the press threshold (0.5 of the range left by the dead zone: 0.575 of its travel).
+    InputSystem triggers;
+    const ActionState light = triggers.resolve(padAxis(GamepadAxis::RightTrigger, 0.5f));
+    CHECK_FALSE(light.held(Action::UiPageDown));
+    const ActionState pulled = triggers.resolve(padAxis(GamepadAxis::RightTrigger, 0.6f));
+    CHECK(pulled.held(Action::UiPageDown));
+    CHECK(pulled.pressed(Action::UiPageDown));
+    CHECK_FALSE(pulled.held(Action::UiPageUp));
+    const ActionState released = triggers.resolve(padAxis(GamepadAxis::RightTrigger, 0.0f));
+    CHECK(released.released(Action::UiPageDown));
 }
 
 TEST_CASE("input/input_system: settings are sanitized", "[input][input_system]") {

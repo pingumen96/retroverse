@@ -1,0 +1,13 @@
+// A user's <user data>/config/bindings.json for spike_ui --scenario user-bindings (I2 step 6): ui_down moves to the
+// pad's X (west) button alone, so the D-pad down no longer moves the selection, and ui_info is unbound, so X no longer
+// shows the card's details. Every action the file leaves out keeps its default bindings (the D-pad up still moves the
+// selection up). The ctest gpu.spike_ui.user_bindings copies it into its data directory at configure time.
+{
+  "schemaVersion": 1,
+  "bindings": {
+    "ui_down": [
+      { "padButton": "west" }
+    ],
+    "ui_info": []
+  }
+}

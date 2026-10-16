@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -9,6 +10,8 @@
 
 #include <rv/app/command_line.hpp>
 #include <rv/core/expected.hpp>
+
+#include "scenario.hpp"
 
 namespace rv::spike_ui {
 
@@ -26,8 +29,16 @@ struct SpikeOptions {
     std::vector<ScreenshotRequest> screenshots;
     /// --report <json>: the measurements and checks of the run, written when it ends.
     std::optional<std::filesystem::path> report;
-    /// Cleared by --interactive: no scripted gamepad, the window is driven by hand.
+    /// Cleared by --interactive and --input-script: no scripted gamepad, the window is driven by hand or by the input
+    /// script.
     bool scenario = true;
+    /// --scenario <name>: which scripted scenario the virtual gamepad plays.
+    ScenarioKind scenarioKind = ScenarioKind::QuickCatalog;
+    /// --input-script <json>: UI actions that replace the devices' on chosen frames (rv::input::InputScript), as
+    /// retroverse.exe plays them.
+    std::optional<std::filesystem::path> inputScript;
+    /// --expect-selection <position>: with --input-script, the run fails (exit code 3) unless the selection ends there.
+    std::optional<std::size_t> expectSelection;
     /// --ui-scale <factor>: text scaling (specification §12.4), multiplies the dp ratio.
     float textScale = 1.0f;
     /// --high-contrast: the high-contrast theme (specification §12.4).
@@ -46,7 +57,9 @@ inline constexpr double kScenarioFixedDeltaSeconds = 1.0 / 60.0;
 
 /// Parses the arguments (UTF-8, program name excluded). Errors name the offending option: those of
 /// app::applyHostOptions, a --screenshot-at that is not <frame>:<file.png> or names a frame the run never reaches,
-/// a --report without the .json extension, a --ui-scale outside [0.5, 3].
+/// a --report without the .json extension, a --ui-scale outside [0.5, 3], an unknown --scenario, --scenario or
+/// --input-script with --interactive, --scenario with --input-script, --expect-selection without --input-script or a
+/// frame limit.
 [[nodiscard]] Expected<SpikeOptions> parseSpikeOptions(std::span<const std::string> arguments);
 [[nodiscard]] Expected<SpikeOptions> parseSpikeOptions(int argc, const char* const* argv);
 [[nodiscard]] std::string spikeHelp();

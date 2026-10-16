@@ -11,7 +11,8 @@ namespace rv::spike_ui {
 
 /// A gamepad that exists only in software (SDL's virtual joystick driver, every standard button and axis), driven by
 /// the scripted scenario: its presses travel the real path, SDL gamepad events -> platform::GamepadManager (hot-plug)
-/// -> platform::SdlInputCollector -> ui::NavInput. State set during a frame reaches the application with the next
+/// -> platform::SdlInputCollector -> the action map (input::InputSystem) -> ui::NavInput. State set during a frame
+/// reaches the application with the next
 /// frame's event poll. Move-only RAII: detached on destruction. Main thread only; SDL must be initialized with the
 /// gamepad subsystem (app::AppHost does) for its whole lifetime.
 class VirtualPad {

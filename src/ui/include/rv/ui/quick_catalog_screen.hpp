@@ -16,7 +16,6 @@ namespace rv::ui {
 
 class UiView;
 
-
 /// What the quick catalog asks of the application. Every callback is optional.
 struct QuickCatalogEvents {
     /// "Avvia": A or Enter on a game, the Avvia button, a double click on a game.
@@ -32,32 +31,43 @@ struct QuickCatalogEvents {
 };
 
 /// The quick catalog (specification §12.2 QuickLibrary, §13.2 "Catalogo rapido"; style §16.3), the first product
-/// screen: assets/ui/quick_catalog.rml bound to a QuickCatalogModel (data model "catalog": the filter chips, the
-/// visible games, the selected game's card, the search text, a status line), navigable with the pad alone.
+/// screen: assets/ui/quick_catalog.rml bound to a QuickCatalogModel (data model "catalog": the filter chips, the rows
+/// of the list's window, the selected game's card, the search text, a scroll indicator, a status line), navigable with
+/// the pad alone.
 ///
-///  - Regions: search field, filter chips, game list, card actions (the nav-region attribute of the document). Inside a
-///    region RmlUi's spatial navigation moves the focus (UiView::navigate); at its edge region links take over (list
-///    Right -> actions, actions Left -> list, list Up -> chips, chips Down -> list, chips Up -> search, search Down ->
-///    chips), landing on the element the target region last focused, else on its entry: the selected game, the active
-///    filter, Avvia (FocusRegions).
-///  - The focused game is the selected one: its card fills (title, developer and year, three lines of description,
-///    platform, genre, players, developer; Informazioni adds the publisher, the year and the whole description), at
-///    once after a pause and, while a held direction runs through the list, once the focus rests for 0.15 s (laying
-///    the card's text out again is most of the cost of a move). A card left behind that way is filled at once when the
-///    focus leaves the list or an action (Avvia, Vedi media, Informazioni) runs, so the card always shows the game the
-///    actions act on. The list scrolls with the focus.
+///  - The list is virtualized: a fixed pool of quick_catalog::kPoolRows rows ("row-0", "row-1", ...) shows the model's
+///    window, re-bound as it scrolls, so element ids never change with the games; the screen measures how many rows fit
+///    the list area (the layout, the text scale) and gives the model that window. The selected game's row has the
+///    class "selected", set on the two rows concerned when the selection moves (no re-evaluation of the list).
+///  - Regions: search field, filter chips, game list, card actions (the nav-region attribute of the document). In the
+///    list Up and Down move the selection over the whole list (the model scrolls the window) and the focus follows it
+///    from row to row; page moves, Home and End jump. In the other regions RmlUi's spatial navigation moves the focus
+///    (UiView::navigate). At a region's edge region links take over (list Right -> actions, actions Left -> list, list
+///    Up at the first game -> chips, chips Down -> list, chips Up -> search, search Down -> chips), landing on the
+///    element the target region last focused, else on its entry: the active filter, Avvia; the list always lands on
+///    the selected game (FocusRegions).
+///  - The selected game's card fills (title, developer and year, the state of a game that cannot start, three lines of
+///    description, platform, genre, players, developer; Informazioni adds the publisher, the year and the whole
+///    description) at once after a pause and, while a held direction runs through the list, once the selection rests
+///    for 0.15 s (laying the card's text out again is most of the cost of a move). A card left behind that way is
+///    filled at once when the focus leaves the list or an action (Avvia, Vedi media, Informazioni) runs, so the card
+///    always shows the game the actions act on.
 ///  - Filter chips: one row that scrolls with the focus; the active filter's chip is highlighted whenever the filter
-///    changes (also when the same games pass), and fades mark the row's edges where chips hide beyond them.
-///  - Commands: Activate launches the focused game, else presses the focused element (a chip filters, a button acts,
-///    Enter in the search field moves to the list); Back returns along the FocusHistory, then asks to close; Media and
-///    Info act on the selected game.
+///    changes (also when the same games pass), and fades mark the row's edges where chips hide beyond them. The
+///    shoulders (FilterPrevious, FilterNext) change the filter from any region.
+///  - Commands: Activate launches the selected game from the list, else presses the focused element (a chip filters, a
+///    button acts, Enter in the search field moves to the list); Back returns along the FocusHistory, then asks to
+///    close; Media and Info act on the selected game; Home and End in the search field move its caret.
+///  - The mouse: a click focuses a row (selecting its game), a double click launches it, the wheel over the list moves
+///    the selection three games per notch.
 /// In developer builds the document and its style sheet reload when saved, keeping the focus. Destroy the screen before
 /// its view and its model. Main thread only.
 class QuickCatalogScreen {
 public:
-    /// Registers the data model in the view's context, loads and shows the document and focuses the selected game.
-    /// `watchFiles` polls the document and the style sheet for reloadIfChanged(). Errors: the data model exists in the
-    /// context already (InvalidArgument), the document cannot be loaded (IoError, details in the log).
+    /// Registers the data model in the view's context, loads and shows the document, sizes the model's window to the
+    /// list area and focuses the selected game. `watchFiles` polls the document and the style sheet for
+    /// reloadIfChanged(). Errors: the data model exists in the context already (InvalidArgument), the document cannot
+    /// be loaded (IoError, details in the log).
     [[nodiscard]] static Expected<std::unique_ptr<QuickCatalogScreen>>
     create(UiView& view, QuickCatalogModel& model, QuickCatalogEvents events, bool watchFiles = false);
     ~QuickCatalogScreen();
@@ -67,8 +77,8 @@ public:
     /// Applies the commands of a frame, in order (ignored while hidden).
     void apply(const UiCommandList& commands);
     void apply(UiCommand command);
-    /// After UiView::update(): when the focused element left the document (its game was filtered out), focuses the
-    /// region's landing element again.
+    /// After UiView::update(): settles the card, follows the layout (the rows that fit the list area: the model's
+    /// window), and focuses the region's landing element again when the focused element left the document.
     void afterUpdate();
 
     /// Shows the document again with the focus where it was; hide() keeps the focus history.
@@ -87,6 +97,8 @@ public:
     [[nodiscard]] const FocusHistory& history() const noexcept;
     /// How many times the card was filled with the selected game: measurements tell the frames that laid it out again.
     [[nodiscard]] std::uint64_t cardRefreshes() const noexcept;
+    /// How many times the rows of the pool were bound to another window (scrolling, another list, another size).
+    [[nodiscard]] std::uint64_t windowBinds() const noexcept;
 
     /// With watchFiles, reloads the document when it or its style sheet changed on disk (polled every 500 ms), keeping
     /// the focus; true when it reloaded. A document that no longer loads keeps the screen empty until fixed (logged).

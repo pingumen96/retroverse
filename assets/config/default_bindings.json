@@ -63,6 +63,64 @@
     ],
     "screenshot": [
       { "key": "f12" }
+    ],
+    "ui_up": [
+      { "key": "up" },
+      { "padButton": "dpad_up" }
+    ],
+    "ui_down": [
+      { "key": "down" },
+      { "padButton": "dpad_down" }
+    ],
+    "ui_left": [
+      { "key": "left" },
+      { "padButton": "dpad_left" }
+    ],
+    "ui_right": [
+      { "key": "right" },
+      { "padButton": "dpad_right" }
+    ],
+    "ui_nav_x": [
+      { "padAxis": "left_x", "scale": 1, "deadzone": 0.15 }
+    ],
+    "ui_nav_y": [
+      { "padAxis": "left_y", "scale": 1, "deadzone": 0.15 }
+    ],
+    "ui_page_up": [
+      { "key": "page_up" },
+      { "padAxis": "left_trigger", "scale": 1, "deadzone": 0.15 }
+    ],
+    "ui_page_down": [
+      { "key": "page_down" },
+      { "padAxis": "right_trigger", "scale": 1, "deadzone": 0.15 }
+    ],
+    "ui_home": [
+      { "key": "home" },
+      { "padButton": "left_stick" }
+    ],
+    "ui_end": [
+      { "key": "end" },
+      { "padButton": "right_stick" }
+    ],
+    "ui_activate": [
+      { "key": "enter" },
+      { "padButton": "south" }
+    ],
+    "ui_back": [
+      { "key": "escape" },
+      { "padButton": "east" }
+    ],
+    "ui_media": [
+      { "padButton": "north" }
+    ],
+    "ui_info": [
+      { "padButton": "west" }
+    ],
+    "ui_filter_previous": [
+      { "padButton": "left_shoulder" }
+    ],
+    "ui_filter_next": [
+      { "padButton": "right_shoulder" }
     ]
   }
 }

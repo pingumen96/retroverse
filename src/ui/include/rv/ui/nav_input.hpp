@@ -3,12 +3,14 @@
 // GPU-free (part of rv_ui_model): no SDL, OpenGL or RmlUi header is included.
 
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <optional>
-#include <vector>
 
+#include <rv/input/action.hpp>
+#include <rv/input/action_map.hpp>
+#include <rv/input/action_state.hpp>
 #include <rv/input/codes.hpp>
-#include <rv/input/raw_input.hpp>
 #include <rv/ui/ui_command.hpp>
 
 namespace rv::ui {
@@ -16,7 +18,9 @@ namespace rv::ui {
 /// Tuning of focus navigation from the pad and the keyboard. The defaults follow style §16.2 (focus feedback under
 /// 100 ms, a stable focus without jitter with the controller) and the habits of TV interfaces.
 struct NavSettings {
-    /// Left stick deflection (its length, in [0, 1]) that engages a direction...
+    /// Stick deflection (the length of (UiNavX, UiNavY), in [0, 1]) that engages a direction. The values are the
+    /// actions', which the bindings' dead zone shapes: with the default bindings' 0.15 the left stick engages at 0.62
+    /// and releases at 0.45 of its travel along an axis...
     float stickEngage = 0.55f;
     /// ...and below which an engaged direction is released. Between the two the stick keeps its state (hysteresis): a
     /// stick resting near either threshold, or drifting, never toggles a direction on and off.
@@ -74,57 +78,65 @@ private:
     std::optional<NavDirection> m_direction;
 };
 
-/// Which pad buttons and keys give which command (specification §12.1 defaults). Directions also come from the left
-/// stick when leftStickNavigates. A command may have several sources; empty lists disable it.
-struct NavBindings {
-    std::array<std::vector<input::GamepadButton>, kUiCommandCount> buttons;
-    std::array<std::vector<input::Key>, kUiCommandCount> keys;
-    bool leftStickNavigates = true;
+/// The action of the action map (input::Action::UiUp ...) that gives `command`: the user's bindings reach the UI
+/// through them (ADR-0005).
+[[nodiscard]] input::Action actionFor(UiCommand command) noexcept;
 
-    /// D-pad and arrow keys move the focus, A / Enter activates, B / Esc goes back, Y "Vedi media", X "Informazioni".
-    /// Letters and the space bar stay free for text fields; Tab is left to the UI's own tab navigation.
-    [[nodiscard]] static NavBindings defaults();
-};
+/// The keys bound to a UI action in `map` (every action input::isUiAction names, the stick's axes included): UiView
+/// keeps them away from RmlUi's key handling, since they reach the UI as commands (the screen sends RmlUi's own keys
+/// where an element uses them: the arrows, Home and End in a text field).
+[[nodiscard]] std::bitset<input::kKeyCount> commandKeys(const input::ActionMap& map);
 
-/// The commands of a frame from the raw device input (rv::input::RawInputFrame, filled by rv_platform's SDL
-/// collector):
+/// The commands of a frame from its actions (input::ActionState, resolved by input::InputSystem through the bindings
+/// and overridden by --input-script):
 ///  - focus moves: one DirectionRepeater for every source, so a held D-pad, arrow key or stick repeats alike. The
-///    digital sources (D-pad, keys) win over the stick, and among them the direction pressed last; a direction tapped
-///    within one frame (pressed and released before it ended) steps once;
-///  - the other commands on the press of a bound button or key, after the frame's step (Down then Activate activates
-///    the element the focus moved to).
-/// Gamepad fields are ignored while RawInputFrame::gamepadConnected is false. Main thread, one update() per frame.
+///    digital directions (UiUp, UiDown, UiLeft, UiRight) win over the stick (UiNavX, UiNavY: StickDirection's
+///    hysteresis on the values the bindings' dead zone shaped), and among them the direction pressed last; a direction
+///    tapped within one frame (pressed and released before it ended) steps once;
+///  - page moves (UiPageUp, UiPageDown): a DirectionRepeater of their own, the one pressed last winning;
+///  - the other commands on the press of their action (Activate, Back, Media, Info, Home, End, FilterPrevious,
+///    FilterNext, in that order), after the frame's steps (Down then Activate activates the element the focus moved
+///    to).
+/// A press is an edge of the action (InputSystem's): released and pressed again between two frames reads as held, as
+/// for every action. Main thread, one update() per frame.
 class NavInput {
 public:
-    explicit NavInput(NavSettings settings = {}, NavBindings bindings = NavBindings::defaults());
+    explicit NavInput(NavSettings settings = {});
 
-    /// Appends the commands of `frame` to `out`.
-    void update(const input::RawInputFrame& frame, double deltaSeconds, UiCommandList& out);
-    /// Forgets held directions and the press order (focus loss, a screen opening while the stick walks): directions
-    /// held now step only once everything is released or a direction is pressed again, so a stick still held from
-    /// walking does not start scrolling the screen that just opened. Buttons work at once.
+    /// Appends the commands of `actions` to `out`.
+    void update(const input::ActionState& actions, double deltaSeconds, UiCommandList& out);
+    /// Forgets held directions and pages and the press order (focus loss, a screen opening while the stick walks):
+    /// directions held now step only once everything is released or a direction is pressed again, so a stick still held
+    /// from walking does not start scrolling the screen that just opened; pages likewise. Buttons work at once.
     void reset() noexcept;
 
     [[nodiscard]] const NavSettings& settings() const noexcept { return m_settings; }
-    [[nodiscard]] const NavBindings& bindings() const noexcept { return m_bindings; }
 
 private:
     /// The digital direction held at the end of the frame, the most recently pressed one.
-    [[nodiscard]] std::optional<NavDirection> heldDigital(const input::RawInputFrame& frame) const noexcept;
+    [[nodiscard]] std::optional<NavDirection> heldDigital(const input::ActionState& actions) const noexcept;
     /// A direction pressed and released within the frame, if any (the first found, in Up, Down, Left, Right order).
-    [[nodiscard]] std::optional<NavDirection> tappedDigital(const input::RawInputFrame& frame) const noexcept;
-    [[nodiscard]] bool isDown(const input::RawInputFrame& frame, UiCommand command) const noexcept;
-    [[nodiscard]] bool wasPressed(const input::RawInputFrame& frame, UiCommand command) const noexcept;
+    [[nodiscard]] std::optional<NavDirection> tappedDigital(const input::ActionState& actions) const noexcept;
+    /// The page command held at the end of the frame (the most recently pressed one), or tapped within it.
+    [[nodiscard]] std::optional<NavDirection> heldPage(const input::ActionState& actions) const noexcept;
+    [[nodiscard]] std::optional<NavDirection> tappedPage(const input::ActionState& actions) const noexcept;
+    /// The step of the directions this frame.
+    [[nodiscard]] std::optional<NavDirection> directionStep(const input::ActionState& actions, double deltaSeconds);
+    /// The page step this frame: Up for a page up, Down for a page down.
+    [[nodiscard]] std::optional<NavDirection> pageStep(const input::ActionState& actions, double deltaSeconds);
 
     NavSettings m_settings;
-    NavBindings m_bindings;
     DirectionRepeater m_repeater;
+    /// Page moves as directions: Up pages up, Down pages down.
+    DirectionRepeater m_pageRepeater;
     StickDirection m_stick;
-    /// Order of the last press of each direction (0: never), from m_pressCounter.
+    /// Order of the last press of each direction and of each page command (0: never), from m_pressCounter.
     std::array<std::uint64_t, 4> m_pressOrder{};
+    std::array<std::uint64_t, 2> m_pagePressOrder{};
     std::uint64_t m_pressCounter = 0;
-    /// Set by reset(): held directions give no step until released or pressed again.
+    /// Set by reset(): held directions (pages) give no step until released or pressed again.
     bool m_suppressHeld = false;
+    bool m_suppressPages = false;
 };
 
 } // namespace rv::ui

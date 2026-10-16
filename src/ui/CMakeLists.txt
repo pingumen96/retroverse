@@ -1,15 +1,19 @@
-# Product UI (I1 spike d, ADR-0005).
+# Product UI (I1 spike d, ADR-0005; I2 step 6).
 #   rv_ui_model  GPU-free policy of the product UI, always built and unit-tested by rv_tests (tests/unit/ui): UI
-#                commands from the pad and the keyboard (stick hysteresis, repeat timing, bindings), focus regions and
-#                the focus history for Back, the quick catalog's view model, timing percentiles of the UI pass.
+#                commands from the UI actions of the action map (stick hysteresis, repeat timing), focus regions and the
+#                focus history for Back, the paged catalog source (CatalogSource, InMemoryCatalogSource) and the quick
+#                catalog's view model, a window over it; timing percentiles of the UI pass.
 #   rv_ui        RmlUi 6.3 on SDL3 and OpenGL 3: RmlUi's lifetime and interfaces (UiSystem), one context per output
 #                (UiView: input, update, rendering into the window and screenshots, CPU and GPU times), the quick
-#                catalog screen (QuickCatalogScreen); the RmlUi backends are vendored in third_party/rmlui_backends on
-#                our glad loader (target rv_rmlui_backends, used by rv_ui only).
+#                catalog screen (QuickCatalogScreen, a fixed pool of rows); the RmlUi backends are vendored in
+#                third_party/rmlui_backends on our glad loader (target rv_rmlui_backends, used by rv_ui only).
+#                It never links rv_catalog: rv_app adapts the catalog to CatalogSource.
 
 add_library(rv_ui_model STATIC
+    src/catalog_source.cpp
     src/focus_history.cpp
     src/focus_regions.cpp
+    src/in_memory_catalog_source.cpp
     src/nav_input.cpp
     src/quick_catalog_model.cpp
     src/timing_samples.cpp

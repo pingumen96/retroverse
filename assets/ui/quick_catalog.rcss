@@ -176,11 +176,14 @@ h2 {
 	background-color: #6EAF93;
 }
 
-/* The game list: the region that scrolls with the focus. */
+/* The game list, virtualized: a fixed pool of rows shows the window of the list around the selected game, re-bound as
+   it scrolls, so the region itself never scrolls (overflow: hidden, from .region). The screen measures how many rows
+   fit its height (the layout, the text scale) and displays those. The track of the scroll indicator runs down its right
+   edge. */
 #game-list {
+	position: relative;
 	flex: 1 1 0dp;
-	overflow-y: auto;
-	padding-right: 6dp;
+	padding-right: 20dp;
 }
 
 .game {
@@ -201,40 +204,64 @@ h2 {
 	background-color: #F4EFE614;
 }
 
+/* A slot past the end of the list: blank, never focused. */
+.game.vacant {
+	visibility: hidden;
+	tab-index: none;
+}
+
+/* A game that cannot start (its file missing, its emulator to configure): dimmed, the card says why. */
+.game.unavailable .game-title {
+	color: #F4EFE68C;
+}
+
+/* One line per row, whatever the text scale: the rows of the pool keep one height, which the screen measures to fit
+   them to the list. A long title ends in an ellipsis before the platform and year. */
 .game-title {
+	flex: 1 1 0dp;
 	font-size: 26dp;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .game-meta {
+	flex: 0 0 auto;
 	font-size: 21dp;
 	color: #F4EFE6A6;
 	white-space: nowrap;
 	margin-left: 16dp;
 }
 
+/* Over the blank rows of an empty list. */
 .empty {
+	position: absolute;
+	top: 0dp;
+	left: 0dp;
+	right: 20dp;
 	color: #F4EFE6A6;
 	padding: 12dp 14dp;
 }
 
-scrollbarvertical {
-	width: 10dp;
-	margin-left: 6dp;
-}
-
-scrollbarvertical slidertrack {
+/* The scroll indicator: the screen places the thumb in percent of the track (top, height). */
+#list-track {
+	position: absolute;
+	top: 0dp;
+	bottom: 0dp;
+	right: 2dp;
+	width: 8dp;
 	background-color: #F4EFE614;
-	border-radius: 5dp;
+	border-radius: 4dp;
+	pointer-events: none;
+	focus: none;
 }
 
-scrollbarvertical sliderbar {
+#list-thumb {
+	position: absolute;
+	left: 0dp;
+	right: 0dp;
 	background-color: #F4EFE659;
-	border-radius: 5dp;
-	min-height: 40dp;
-}
-
-scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc {
-	height: 0dp;
+	border-radius: 4dp;
 }
 
 /* The focus, always visible: a tungsten edge and a warm wash. */
@@ -283,6 +310,14 @@ scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc {
 	color: #F4EFE6B3;
 	margin-top: 6dp;
 	margin-bottom: 18dp;
+}
+
+/* What keeps the game from starting. */
+.state {
+	flex: 0 0 auto;
+	font-size: 22dp;
+	color: #FFC88A;
+	margin-bottom: 16dp;
 }
 
 /* Three lines, the rest with Informazioni (X). */
@@ -402,8 +437,17 @@ body.high-contrast .panel, body.high-contrast .hint-bar {
 	border-color: #FFFFFF;
 }
 
-body.high-contrast .count, body.high-contrast .game-meta, body.high-contrast .subtitle, body.high-contrast .key {
+body.high-contrast .count, body.high-contrast .game-meta, body.high-contrast .subtitle, body.high-contrast .key,
+body.high-contrast .game.unavailable .game-title {
 	color: #FFFFFF;
+}
+
+body.high-contrast #list-track {
+	background-color: #FFFFFF40;
+}
+
+body.high-contrast #list-thumb {
+	background-color: #FFFFFF;
 }
 
 body.high-contrast .game:focus, body.high-contrast .action:focus, body.high-contrast .chip:focus,
@@ -439,6 +483,7 @@ body.high-contrast .fade-after {
 	.game-title { font-size: 22dp; }
 	.game-meta { font-size: 18dp; }
 	.subtitle { font-size: 20dp; margin-bottom: 10dp; }
+	.state { font-size: 19dp; margin-bottom: 8dp; }
 	.description { font-size: 19dp; max-height: 2.8em; margin-bottom: 10dp; }
 	.rows { padding-top: 8dp; margin-bottom: 12dp; }
 	.row { font-size: 19dp; padding: 1dp 0dp; }

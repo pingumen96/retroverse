@@ -49,11 +49,11 @@ struct PhaseTimes {
 }
 
 /// Which frames of the spans count: every frame, the quiet ones (the UI did not change), or those in which it changed
-/// (the focus moved, the card was laid out again).
+/// (the focus or the selection moved, the card was laid out again, the rows were bound to another window).
 enum class FrameFilter : std::uint8_t { All, Quiet, Changed };
 
 [[nodiscard]] bool changed(const FrameSample& sample) noexcept {
-    return sample.focusMoved || sample.cardRefreshed;
+    return sample.focusMoved || sample.cardRefreshed || sample.rowsBound || sample.selectionMoved;
 }
 
 [[nodiscard]] PhaseTimes summarize(const ReportData& data, const std::vector<Span>& spans,
@@ -219,7 +219,8 @@ struct MeasuredSets {
 
 json reportJson(const ReportData& data) {
     json report;
-    report["spike"] = "I1 (d) product UI: RmlUi on SDL3 and OpenGL 3, gamepad navigation";
+    report["spike"] = "I1 (d) product UI: RmlUi on SDL3 and OpenGL 3, gamepad navigation; I2 step 6: UI actions, a "
+                      "virtualized quick catalog";
     report["build"] = data.build;
     report["rmlui"] = data.rmluiVersion;
     report["gl"] = json{{"renderer", data.glRenderer}, {"version", data.glVersion}};
@@ -228,6 +229,14 @@ json reportJson(const ReportData& data) {
     report["textScale"] = data.textScale;
     report["highContrast"] = data.highContrast;
     report["scenario"] = data.scenario;
+    report["scenarioName"] = data.scenarioName;
+    report["catalog"] = json{{"games", data.catalogGames},
+                             {"generatedMs", data.catalogMs},
+                             {"poolRows", data.poolRows},
+                             {"windowRows", data.windowRows},
+                             {"finalSelection", data.finalSelection ? json(*data.finalSelection) : json(nullptr)},
+                             {"finalSelectionId", data.finalSelectionId},
+                             {"userBindings", data.userBindings}};
     report["fixedDtSeconds"] = data.fixedDeltaSeconds ? json(*data.fixedDeltaSeconds) : json(nullptr);
     report["vsync"] = data.vsync;
     report["fpsCap"] = data.fpsCap;
@@ -271,28 +280,36 @@ json reportJson(const ReportData& data) {
          json{{"passed", verdict(data, "expect-steady")},
               {"detail", "a stick resting under its threshold moves nothing, one crossing it every frame steps at the "
                          "held cadence (no burst), a diagonal one steps once; single taps step once each"}}},
+        {"virtualizedList",
+         json{{"passed", verdict(data, "expect-window") && verdict(data, "expect-row") &&
+                             verdict(data, "expect-pages") && verdict(data, "expect-selected")},
+              {"detail", "the pool of rows shows the window of the list around the selection at its start, middle and "
+                         "end, at every size and text scale; the focus and the class 'selected' follow the selection; "
+                         "pages, Home, End, filters and searches place it as the model says"}}},
         {"uiPassUnder1ms",
-         json{{"passed", quietPassed && changesPassed},
-              {"budgetMs", kUiPassBudgetMs},
-              {"quietFrames",
-               json{{"passed", quietPassed},
-                    {"frames", sets.quiet.frames},
-                    {"cpuP50", sets.quiet.cpu.p50},
-                    {"cpuP99", sets.quiet.cpu.p99},
-                    {"gpuP50", sets.quiet.gpu.p50},
-                    {"gpuP99", sets.quiet.gpu.p99},
-                    {"detail", "frames of the idle, taps and navigation phases in which the UI did not change: median "
-                               "CPU time of the pass (commands, update, render) and median GPU time of its frame"}}},
-              {"framesWithChanges",
-               json{{"passed", changesPassed},
-                    {"frames", sets.changes.frames},
-                    {"cpuP50", sets.changes.cpu.p50},
-                    {"cpuP99", sets.changes.cpu.p99},
-                    {"cpuMax", sets.changes.cpu.max},
-                    {"detail", "frames of the taps and navigation phases in which the focus moved or the card was laid "
-                               "out again: median CPU time (the GPU time of the UI's frame does not depend on them)"}}},
-              {"taps", cpuJson(sets.taps)},
-              {"held", cpuJson(sets.held)}}},
+         json{
+             {"passed", quietPassed && changesPassed},
+             {"budgetMs", kUiPassBudgetMs},
+             {"quietFrames",
+              json{{"passed", quietPassed},
+                   {"frames", sets.quiet.frames},
+                   {"cpuP50", sets.quiet.cpu.p50},
+                   {"cpuP99", sets.quiet.cpu.p99},
+                   {"gpuP50", sets.quiet.gpu.p50},
+                   {"gpuP99", sets.quiet.gpu.p99},
+                   {"detail", "frames of the idle, taps and navigation phases in which the UI did not change: median "
+                              "CPU time of the pass (commands, update, render) and median GPU time of its frame"}}},
+             {"framesWithChanges",
+              json{{"passed", changesPassed},
+                   {"frames", sets.changes.frames},
+                   {"cpuP50", sets.changes.cpu.p50},
+                   {"cpuP99", sets.changes.cpu.p99},
+                   {"cpuMax", sets.changes.cpu.max},
+                   {"detail", "frames of the taps and navigation phases in which the focus or the selection moved, the "
+                              "card was laid out again or the rows were bound to another window: median CPU time (the "
+                              "GPU time of the UI's frame does not depend on them)"}}},
+             {"taps", cpuJson(sets.taps)},
+             {"held", cpuJson(sets.held)}}},
         {"resize", json{{"passed", resized},
                         {"detail", "RmlUi's context and the document follow the window's drawable at the display's "
                                    "density, every panel inside the view and the focused game visible at each size, "
@@ -318,6 +335,11 @@ json reportJson(const ReportData& data) {
         focus.push_back(json{{"frame", record.frame}, {"region", record.region}, {"element", record.element}});
     }
     report["focusChanges"] = focus;
+    json selections = json::array();
+    for (const SelectionRecord& record : data.selections) {
+        selections.push_back(json{{"frame", record.frame}, {"position", record.position}});
+    }
+    report["selections"] = selections;
     json actions = json::array();
     for (const ActionRecord& record : data.actions) {
         actions.push_back(json{{"frame", record.frame}, {"action", record.action}, {"game", record.game}});
@@ -338,6 +360,7 @@ json reportJson(const ReportData& data) {
                                {"size", json::array({layout.size.x, layout.size.y})},
                                {"dpRatio", layout.dpRatio},
                                {"compact", layout.compact},
+                               {"windowRows", layout.windowRows},
                                {"focused", layout.focused},
                                {"boxes", boxes},
                                {"fontSizes", fontSizes}});
@@ -380,7 +403,7 @@ std::vector<std::string> timingSummaryLines(const ReportData& data) {
     }
     const MeasuredSets sets = measuredSets(data);
     line("quiet frames (the UI did not change)", sets.quiet);
-    line("frames with changes (focus moved or card laid out)", sets.changes);
+    line("frames with changes (focus or selection moved, card laid out, rows bound)", sets.changes);
     line("frames with changes, single taps", sets.taps);
     line("frames with changes, D-pad held", sets.held);
     return lines;
