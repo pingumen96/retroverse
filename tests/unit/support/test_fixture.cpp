@@ -161,6 +161,54 @@ TEST_CASE("support/fixture: generated files and folders past MAX_PATH", "[suppor
     CHECK(foundFolder);
 }
 
+TEST_CASE("support/fixture: a program of the build copied into a fixture", "[support][fixture]") {
+    const fs::path program = rv::test::testProgramsDir() / "rv_fake_emulator.exe";
+    if (!fs::exists(program)) {
+        SKIP("rv_fake_emulator.exe is not next to the tests");
+    }
+    rv::test::TempDir dir;
+    const fs::path source = dir.file("source");
+    REQUIRE(rv::core::writeTextFileAtomic(
+                source / "files.json",
+                R"({"files": [{"path": "Programs/Emulators/fake-emulator.exe", "copyOf": "rv_fake_emulator.exe",
+                               "mtime": "2001-02-03T04:05:06Z"}]})")
+                .has_value());
+    auto materialized = Fixture::materializeFrom(source, "copy");
+    INFO((materialized ? "materialized" : materialized.error().toString()));
+    REQUIRE(materialized.has_value());
+    const fs::path copy = materialized->path("Programs/Emulators/fake-emulator.exe");
+    CHECK(rv::core::sha256Hex(read(copy)) == rv::core::sha256Hex(read(program)));
+    CHECK(std::chrono::clock_cast<std::chrono::system_clock>(fs::last_write_time(copy)) ==
+          rv::core::parseUtcIso8601("2001-02-03T04:05:06Z").value());
+}
+
+TEST_CASE("support/fixture: a variant made by replacing text in the materialized copy", "[support][fixture]") {
+    auto materialized = Fixture::materialize("materializer");
+    REQUIRE(materialized.has_value());
+    const Fixture& fixture = *materialized;
+    const std::string settings = "es-de/settings/es_settings.xml";
+    REQUIRE(fixture
+                .replaceText(settings, "name=\"ShowHiddenFiles\" value=\"true\"",
+                             "name=\"ShowHiddenFiles\" value=\"false\"")
+                .has_value());
+    const std::string variant = read(fixture.path(settings));
+    CHECK(variant.find("name=\"ShowHiddenFiles\" value=\"false\"") != std::string::npos);
+    CHECK(variant.find("value=\"true\"") == std::string::npos);
+    CHECK(variant.find(rv::core::pathToUtf8(fixture.root()) + "/media") != std::string::npos); // the rest unchanged
+    // The source tree is never changed.
+    CHECK(read(rv::test::fixturesDir() / "materializer" / "es-de" / "settings" / "es_settings.xml")
+              .find("name=\"ShowHiddenFiles\" value=\"true\"") != std::string::npos);
+
+    // The text must be there exactly once.
+    const auto missing = fixture.replaceText(settings, "name=\"ShowHiddenGames\"", "x");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().code == rv::ErrorCode::NotFound);
+    const auto twice = fixture.replaceText("notes.txt", "=", "==");
+    REQUIRE_FALSE(twice.has_value());
+    CHECK(twice.error().code == rv::ErrorCode::InvalidArgument);
+    CHECK_FALSE(fixture.replaceText("no such file.txt", "a", "b").has_value());
+}
+
 TEST_CASE("support/fixture: payload bytes", "[support][fixture]") {
     CHECK(rv::test::payloadBytes(1, 0).empty());
     CHECK(rv::test::payloadBytes(1, 20).size() == 20);
@@ -198,6 +246,12 @@ TEST_CASE("support/fixture: broken fixtures are refused", "[support][fixture]") 
     refused(R"({"files": [{"path": "roms/a.bin", "size": 1, "seed": 1, "hidden": "yes"}]})", "true or false");
     refused(R"({"directories": [7]})", "string");
     refused(R"([])", "object");
+    refused(R"({"files": [{"path": "bin/a.exe", "copyOf": "rv_fake_emulator.exe", "size": 1, "seed": 1}]})",
+            "either \"copyOf\"");
+    refused(R"({"files": [{"path": "bin/a.exe", "copyOf": "../rv_fake_emulator.exe"}]})", "not a path");
+    refused(R"({"files": [{"path": "bin/a.exe", "copyOf": "C:rv_fake_emulator.exe"}]})", "not a path");
+    refused(R"({"files": [{"path": "bin/a.exe", "copyOf": 7}]})", "file name");
+    refused(R"({"files": [{"path": "bin/a.exe", "copyOf": "no such program.exe"}]})", "not beside the test program");
 
     const auto missing = Fixture::materialize("no such fixture");
     REQUIRE_FALSE(missing.has_value());

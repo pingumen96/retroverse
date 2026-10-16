@@ -26,6 +26,9 @@ enum class ErrorCode {
     /// The operation clashes with the state of something else: a file another program holds locked, a lock already
     /// taken, a stored identity that does not match the one given.
     Conflict,
+    /// The operation stopped because it was asked to (a cancellation flag, the program shutting down): nothing is
+    /// wrong, and nothing it would have produced may be used.
+    Cancelled,
 };
 
 [[nodiscard]] std::string_view toString(ErrorCode code) noexcept;

@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<alternativeEmulator>
+	<label>Fake Emulator (Hidden Console)</label>
+</alternativeEmulator>
+<gameList>
+	<game>
+		<path>./Alpha Quest (USA).sfc</path>
+		<name>Alpha Quest</name>
+		<desc>A knight, a lantern and a map of the Lost Isles. The manual calls its heroes "Ash &amp;amp; Ember".</desc>
+		<rating>1</rating>
+		<releasedate>19951120T000000</releasedate>
+		<developer>Lantern Works </developer>
+		<publisher>Mirage Soft
+</publisher>
+		<genre>Azione, Avventura / RPG</genre>
+		<players>8+</players>
+		<kidgame>true</kidgame>
+	</game>
+	<game>
+		<path>./Mixed Case (USA).Sfc</path>
+		<name>Mixed Case</name>
+		<desc>ES-DE compares extensions with their case: .Sfc is not configured, so this file is no game.</desc>
+	</game>
+	<folder>
+		<path>./Hacks</path>
+		<name>Hacks</name>
+		<desc>Fan-made changes of other games.</desc>
+	</folder>
+	<game>
+		<path>./Hacks/Gamma Hack (Hack).sfc</path>
+		<name>Gamma Hack</name>
+		<rating>0.3</rating>
+		<players>2-3000</players>
+	</game>
+	<game>
+		<path>./delta drift (usa).sfc</path>
+		<name>Delta Drift</name>
+		<desc>Its gamelist path differs from the file's name in case only.</desc>
+		<releasedate>19960315T000000</releasedate>
+		<developer>Quiet Fox</developer>
+		<genre>Corsa, Guida</genre>
+		<players>1-2</players>
+	</game>
+	<folder>
+		<path>./Sports Vol. 2</path>
+		<name>Sports, Volume 2</name>
+		<desc>A folder whose name holds a dot: its media keep the whole name.</desc>
+	</folder>
+</gameList>

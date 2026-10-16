@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Twin Tracks (Europe).cue</path>
+		<name>Twin Tracks</name>
+		<desc>A racing game on one disc, its music on a second track.</desc>
+		<rating>0.5</rating>
+		<releasedate>19970702T000000</releasedate>
+		<developer>Pixel Orchard</developer>
+		<publisher>Northwind Games</publisher>
+		<genre>Corsa, Guida</genre>
+		<players>1-4</players>
+		<playcount>12</playcount>
+		<playtime>33552</playtime>
+		<lastplayed>20260906T190454</lastplayed>
+	</game>
+	<game>
+		<path>./Solo Disc (USA).chd</path>
+		<name>Solo Disc</name>
+		<releasedate>19990910T000000</releasedate>
+		<players>24</players>
+		<hidden>true</hidden>
+		<completed>true</completed>
+		<broken>false</broken>
+	</game>
+</gameList>

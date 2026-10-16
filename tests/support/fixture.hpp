@@ -18,6 +18,10 @@ namespace rv::test {
 /// tests/fixtures in the source tree.
 [[nodiscard]] std::filesystem::path fixturesDir();
 
+/// The folder of the running test executable, where the build puts every program and DLL (rv_fake_emulator.exe,
+/// retroverse-cli.exe, SDL3.dll, ...): what files.json's "copyOf" copies from.
+[[nodiscard]] std::filesystem::path testProgramsDir();
+
 /// A fixture materialized for one test: the tree copied into <build>/test-fixtures/<name>-<process id>-<n>, a fresh
 /// folder removed again when the object goes (unless keep() was called). While the tree is copied:
 ///  - `{{FIXTURE_ROOT}}` in a text file (.xml, .json, .txt, .cfg) becomes the folder's absolute Windows path, written
@@ -31,7 +35,10 @@ namespace rv::test {
 ///       "directories": ["roms/empty"]}
 ///    Paths are relative ("/" or "\", no ".."), unknown keys are errors, a file is at most 64 MiB, and a generated file
 ///    may neither replace a copied one nor be listed twice, names compared as the file system compares them
-///    ("ROMS/A.BIN" is "roms/a.bin"). The bytes come from payloadBytes(seed, size).
+///    ("ROMS/A.BIN" is "roms/a.bin"). The bytes come from payloadBytes(seed, size). Instead of a size and a seed, a
+///    file may name a program of the build to copy: {"path": "emulators/fake.exe", "copyOf": "rv_fake_emulator.exe"}
+///    copies that file of testProgramsDir() (a file name only). The copy finds the DLLs it needs (SDL3, fmt) only
+///    through PATH: a test that starts it puts testProgramsDir() on the PATH it passes to the program.
 /// Everything is written through \\?\ paths, so fixtures may reach past MAX_PATH whatever the system's long path
 /// setting (read them back through core::readFileShared, core::walkTree or core::extendedLengthPath).
 class Fixture {
@@ -51,6 +58,11 @@ public:
     [[nodiscard]] const std::filesystem::path& root() const noexcept { return m_root; }
     /// root() / `relative` (UTF-8, '/' between the elements).
     [[nodiscard]] std::filesystem::path path(std::string_view relative) const;
+    /// Makes a variant of the materialized fixture: replaces `text`, which must occur exactly once in the file
+    /// `relative`, with `replacement` (an ES-DE setting turned off, say). Errors: NotFound when the file or the text is
+    /// missing, InvalidArgument when the text occurs more than once, those of reading and writing the file.
+    [[nodiscard]] Status replaceText(std::string_view relative, std::string_view text,
+                                     std::string_view replacement) const;
     /// Leaves the folder in place when the object goes, to look at it after a failure.
     void keep() noexcept { m_keep = true; }
 

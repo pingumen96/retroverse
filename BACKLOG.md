@@ -236,3 +236,11 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   and a missing DLL the loader's modal box; decide Retroverse's error-mode policy (hard-error dialogs are disabled only
   around `CreateProcessW` today).
 - **Release subsystem:** consider a GUI-subsystem `retroverse.exe` for Release (ADR-0006 open risk).
+
+## Follow-ups from I2
+
+### Catalog
+
+- **Sort keys that fold diacritics** (`kSortKeyVersion` 2, `rv/catalog/metadata.hpp`): version 1 only lower-cases with
+  the invariant locale, so accented titles sort after "z" ("Écran" after "Zone"); fold accents to their base letters
+  (Windows' normalization functions can decompose them) and consider a natural order of numbers ("2" before "10").

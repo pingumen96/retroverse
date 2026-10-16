@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Tiny Tennis (Europe).gb</path>
+		<name>Tiny Tennis</name>
+		<desc>Serve and volley on twelve invented courts.
+
+Singles &amp; doubles, a practice wall and a tournament of eight rounds.</desc>
+		<rating>0.7</rating>
+		<releasedate>19940312T000000</releasedate>
+		<developer>Pixel Orchard</developer>
+		<publisher>Northwind Games</publisher>
+		<genre>Sport / Tennis</genre>
+		<players>1-2</players>
+		<favorite>true</favorite>
+		<playcount>3</playcount>
+		<playtime>1825</playtime>
+		<lastplayed>20250812T211503</lastplayed>
+	</game>
+	<folder>
+		<path>./Collection A</path>
+		<name>Collection A</name>
+		<lastplayed>20250901T193000</lastplayed>
+	</folder>
+	<game>
+		<path>./Collection A/Pocket Puzzle (World).gb</path>
+		<name>Pocket Puzzle</name>
+		<releasedate>19900101T000000</releasedate>
+		<developer>Quiet Fox</developer>
+		<genre>Rompicapo</genre>
+		<players>1</players>
+		<region>wor</region>
+		<playcount>1</playcount>
+		<lastplayed>20250901T193000</lastplayed>
+	</game>
+	<game>
+		<path>./Café Racer (Europe).gb</path>
+		<name>Café Racer</name>
+		<desc>Motorcycles, espresso and a coastal road.</desc>
+		<releasedate>19980605T000000</releasedate>
+		<developer>Ironside Interactive</developer>
+		<publisher>Northwind Games </publisher>
+		<genre>Corsa, Guida / Moto</genre>
+		<players>2-16</players>
+		<altemulator>Fake Emulator (Game Folder)</altemulator>
+	</game>
+	<game>
+		<path>./Gone Fishing (USA).gb</path>
+		<name>Gone Fishing</name>
+		<desc>Its file is gone: the entry stays, unavailable.</desc>
+		<releasedate>19920101T000000</releasedate>
+		<genre>Sport / Pesca</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./../snes/Alpha Quest (USA).sfc</path>
+		<name>Wrong Way</name>
+	</game>
+</gameList>

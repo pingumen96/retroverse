@@ -22,6 +22,12 @@ namespace rv::core {
 /// The same on UTF-16 text, as Windows stores paths; surrogates, paired or not, are kept as they are.
 [[nodiscard]] Expected<std::wstring> fileSystemUpperCase(std::wstring_view utf16);
 
+/// Lower-cases UTF-8 text with the same table the other way round: LCMapStringEx with LOCALE_NAME_INVARIANT and
+/// LCMAP_LOWERCASE, without linguistic casing, each UTF-16 code unit of the Basic Multilingual Plane to one, characters
+/// outside it kept, never normalized. Text to be ordered rather than names to be matched: the sort keys of the catalog
+/// (ADR-0008 §5). Errors: malformed UTF-8 (InvalidArgument), a failure of the system call (PlatformError).
+[[nodiscard]] Expected<std::string> invariantLowerCase(std::string_view utf8);
+
 /// The version of the casing table fileSystemUpperCase() uses: the NLS version of the invariant locale
 /// (GetNLSVersionEx), "<NLS version>.<defined version>" in hexadecimal, or "unknown" when the system does not say.
 /// Stored with the lookup keys, which are computed again when it changes (ADR-0008 §4).

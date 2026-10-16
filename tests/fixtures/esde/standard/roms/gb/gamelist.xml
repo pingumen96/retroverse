@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<gameList>
+	<game id="1001" source="legacy-scraper">
+		<path>./Tiny Tennis (Europe).gb</path>
+		<name>Legacy Tennis</name>
+		<desc>A gamelist inside the ROM folder, in an older scraper's format: never read while LegacyGamelistFileLocation is false.</desc>
+		<image>./images/Tiny Tennis (Europe)-image.png</image>
+		<rating>0.75</rating>
+		<releasedate></releasedate>
+		<md5>00112233445566778899aabbccddeeff</md5>
+	</game>
+</gameList>

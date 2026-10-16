@@ -28,6 +28,8 @@ std::string_view toString(ErrorCode code) noexcept {
         return "unavailable";
     case ErrorCode::Conflict:
         return "conflict";
+    case ErrorCode::Cancelled:
+        return "cancelled";
     }
     return "unknown";
 }

@@ -169,6 +169,40 @@ TEST_CASE("core/case_fold: UTF-16 text keeps its surrogates", "[core][case_fold]
     CHECK(upperWide(std::wstring_view()).empty());
 }
 
+TEST_CASE("core/case_fold: the invariant lower case of sort keys", "[core][case_fold]") {
+    const auto lower = [](std::string_view utf8) {
+        const auto folded = rv::core::invariantLowerCase(utf8);
+        REQUIRE(folded.has_value());
+        return *folded;
+    };
+    CHECK(lower("Tiny Tennis (EUROPE) [!] _Z_") == "tiny tennis (europe) [!] _z_");
+    CHECK(lower("") == "");
+    // The ASCII shortcut agrees with the system call, which the same text with a non-ASCII character goes through.
+    std::string ascii;
+    for (int c = 1; c < 0x80; ++c) {
+        ascii.push_back(static_cast<char>(c));
+    }
+    const std::string shortcut = lower(ascii);
+    const std::string system = lower(ascii + "\xC3\x89"); // É
+    REQUIRE(system.size() == shortcut.size() + 2);
+    CHECK(system.substr(0, shortcut.size()) == shortcut);
+    CHECK(system.substr(shortcut.size()) == "\xC3\xA9"); // é
+
+    // É Ü Ñ; capital sigma and alpha to small sigma (never the final form) and alpha.
+    CHECK(lower("CAF\xC3\x89 D\xC3\x9CX \xC3\x91") == "caf\xC3\xA9 d\xC3\xBCx \xC3\xB1");
+    CHECK(lower("\xCE\xA3\xCE\x91") == "\xCF\x83\xCE\xB1");
+    // One code unit to one, never normalized: NFD stays NFD, sharp s stays; outside the BMP nothing changes (U+10400).
+    CHECK(lower("CAFE\xCC\x81") == "cafe\xCC\x81");
+    CHECK(lower("STRA\xC3\x9F" "E") == "stra\xC3\x9F" "e");
+    CHECK(lower("\xF0\x90\x90\x80 A") == "\xF0\x90\x90\x80 a");
+    // Upper and lower case agree on what is a letter pair: folding either way gives one key for é and É.
+    CHECK(lower(upper("Pok\xC3\xA9mon")) == lower("Pok\xC3\xA9mon"));
+
+    const auto malformed = rv::core::invariantLowerCase("\xC3");
+    REQUIRE_FALSE(malformed.has_value());
+    CHECK(malformed.error().code == rv::ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("core/case_fold: the casing table has a version", "[core][case_fold]") {
     const std::string version = rv::core::casingTableVersion();
     CHECK_FALSE(version.empty());

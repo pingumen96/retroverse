@@ -22,8 +22,9 @@ namespace rv::core {
 /// Errors, naming the text, of two kinds that callers tell apart by their code:
 ///  - OutOfRange: the path lies outside `base` (an absolute path elsewhere, on another drive or share, or ".."
 ///    elements that lead out of it): an ES-DE entry "outside the system folder" (ADR-0008 §3);
-///  - InvalidArgument: the text is malformed or a form that is not allowed: an empty path, a NUL or another control
-///    character, malformed UTF-8, ".." elements that stay inside `base` (refused all the same), ':' anywhere but after
+///  - InvalidArgument: the text is malformed or a form that is not allowed: an empty path, a NUL or another character
+///    below U+0020 (which NTFS and exFAT refuse in names; DEL, U+007F, is allowed like any other name character),
+///    malformed UTF-8, ".." elements that stay inside `base` (refused all the same), ':' anywhere but after
 ///    a drive letter (alternate data streams), the \\?\ and \\.\ forms, drive-relative forms ("C:a.ext"; "\a.ext",
 ///    rooted without a drive), a UNC path without a share, a path that names `base` itself; also a `base` that is not
 ///    absolute.

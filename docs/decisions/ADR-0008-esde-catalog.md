@@ -5,6 +5,9 @@
 - Amended: 2026-10-16, at I2 step 0a: the system probe's port lives in `rv_core`, not in `rv_catalog` (§2)
 - Amended: 2026-10-16, at I2 step 0b: §1 names the executables that declare `longPathAware`; §6 names the install
   folder and links in the data-directory rule; §7 says how ES-DE's XML files are decoded
+- Amended: 2026-10-16, at I2 step 1: §3 names `ShowHiddenGames` among the settings that exclude entries and says what
+  becomes of a `<folder>` entry that names no folder; §8 says that `~` is ES-DE's home folder, the parent of the ES-DE
+  home (ES-DE's own meaning, which the earlier wording misstated)
 
 ## Context
 
@@ -83,11 +86,15 @@ frontends agree:
   and commas, `.` meaning "no extension", upstream quirks such as pcfx's `CUE` left as they are);
 - in every sub-folder; a directory whose name carries a configured extension is a game, other directories are entered;
   symbolic links and junctions are followed unless they loop (volume serial and file id);
-- hidden files and folders (the attribute or a leading dot) as `ShowHiddenFiles` says; `ParseGamelistOnly` and
-  `noload.txt` honoured; `flatten.txt` only changes ES-DE's presentation and is ignored;
+- hidden files and folders (the attribute or a leading dot) as `ShowHiddenFiles` says, and entries their gamelist marks
+  `<hidden>` as `ShowHiddenGames` says (ES-DE drops them when it loads the gamelist, so they are not games, excluded by
+  that setting); `ParseGamelistOnly` and `noload.txt` honoured; `flatten.txt` only changes ES-DE's presentation and is
+  ignored;
 - MAME BIOS and device sets skipped for the arcade and neogeo platforms, from ES-DE's `resources/MAME` lists, and
   unscraped arcade zips titled from `mamenames.xml`; other unscraped files titled from their cleaned file name;
-- gamelist metadata matched to files by path; gamelists inside ROM folders ignored (`LegacyGamelistFileLocation` off).
+- gamelist metadata matched to files by path; gamelists inside ROM folders ignored (`LegacyGamelistFileLocation` off);
+  a `<folder>` entry that names no folder (gone, or a file) is skipped with an issue, as ES-DE skips it: a folder is no
+  game, and nothing is kept for it as unavailable.
 
 Deliberate differences from ES-DE: a missing file stays as an unavailable game with its metadata (FR-033), hidden by
 default; files that a `.cue` or `.m3u` references are disc members of it, kept and identifiable but hidden, when that
@@ -108,8 +115,8 @@ one; a gamelist path that differs from the file only in case matches it (ES-DE w
   key keep distinct identities, disambiguated deterministically and reported as an import issue.
 - **GameId**: assigned the first time a key is seen, then persisted. SHA-256 over the UTF-8, NUL-separated tuple
   (`rv-game/1`, library id, ES-DE system name, key); the first 8 bytes big-endian with the top bit cleared, 0 excluded.
-  On a collision the tuple gains a counter (1, 2, ...) until the value is free, keys being processed in (system, key)
-  ordinal order. Text form: `g` and 16 hexadecimal digits, a valid UI entry id. A new drive letter or ROM root keeps every
+  On a collision the tuple gains a fourth element, a counter n = 1, 2, ... written in decimal ASCII after a fourth NUL,
+  until the value is free, keys being processed in (system, key) ordinal order. Text form: `g` and 16 hexadecimal digits, a valid UI entry id. A new drive letter or ROM root keeps every
   ID. Golden ID tables are built on an empty database and checked by an independent implementation.
 - **Fingerprints**: every import stores each file's size and modification time from the listing (free). A quick hash
   (SHA-256 of the first and last 64 KiB) is computed progressively by a resumable, cancellable pass that commits in
@@ -197,8 +204,9 @@ unscraped.
   `%RPCS3_GAMEID%` and other unknown `%X%` text, placeholder commands, a static path with `|`) makes the game "requires
   launcher configuration" with the token named; nothing runs.
 - **Find rules**: in ES-DE's order: App Paths (HKCU, then HKLM when the HKCU key is absent), registry values (the value
-  plus the suffix appended verbatim), the executable search, static paths (`~` is the ES-DE home, `%ESPATH%` the install
-  folder, a wildcard only in the last component with matches taken in sorted order), and the core path
+  plus the suffix appended verbatim), the executable search, static paths (`~` is ES-DE's home folder, the parent of
+  the ES-DE home: `%USERPROFILE%`, the `--home` folder, or the folder of `ES-DE.exe` when portable; `%ESPATH%` the
+  install folder; a wildcard only in the last component with matches taken in sorted order), and the core path
   (`%EMUPATH%\cores`); `custom_systems/es_find_rules.xml` is read first and its emulators replace the bundled ones. The
   executable search looks in the ES-DE install folder, System32, the Windows folder and the absolute entries of PATH,
   never in Retroverse's folder or the current directory (the ROM tree here holds emulators named like find-rule entries).

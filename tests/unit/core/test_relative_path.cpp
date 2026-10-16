@@ -56,6 +56,8 @@ TEST_CASE("core/relative_path: relative forms", "[core][relative_path]") {
     CHECK(resolved("./~/a.gb") == "~/a.gb");          // no home expansion in gamelists
     CHECK(resolved("./.EXE, Cogito.gb") == ".EXE, Cogito.gb");
     CHECK(resolved("./Ultima II - Galactic Disk .atr") == "Ultima II - Galactic Disk .atr");
+    // DEL is a valid name character on NTFS and exFAT (they refuse only U+0000 to U+001F).
+    CHECK(resolved("./Game\x7FName (World).gb") == "Game\x7FName (World).gb");
 }
 
 TEST_CASE("core/relative_path: absolute paths inside the folder", "[core][relative_path]") {
@@ -122,6 +124,7 @@ TEST_CASE("core/relative_path: malformed paths and forms that are not allowed", 
     malformed("\\\\ser:ver\\share\\a.gb", "alternate data streams");
     malformed(std::string_view("./a\0.gb", 7), "NUL");
     malformed("./a\t.gb", "control character");
+    malformed("./a\x1F.gb", "control character");
     malformed("./Caf\xE9.gb", "malformed UTF-8 at byte offset 5");
 }
 

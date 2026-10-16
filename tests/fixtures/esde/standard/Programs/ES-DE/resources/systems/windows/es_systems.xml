@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!-- The game systems of the standard fixture: ES-DE's format with invented emulators (see README.md) -->
+<systemList>
+    <system>
+        <name>gb</name>
+        <fullname>Nintendo Game Boy</fullname>
+        <path>%ROMPATH%\gb</path>
+        <extension>.gb .GB .gbc .GBC .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- -L %CORE_FAKE-EMULATOR%\fake_gb_libretro.dll %ROM%</command>
+        <command label="Fake Emulator (Game Folder)">%STARTDIR%=%GAMEDIR% %EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <command label="Missing Emulator (Standalone)">%EMULATOR_MISSING-EMULATOR% -batch %ROM%</command>
+        <command label="Home Emulator">%EMULATOR_HOME-EMULATOR% -- %ROM%</command>
+        <platform>gb</platform>
+        <theme>gb</theme>
+    </system>
+    <system>
+        <name>snes</name>
+        <fullname>Nintendo SNES (Super Nintendo)</fullname>
+        <path>%ROMPATH%\snes</path>
+        <extension>.sfc .SFC .smc .SMC .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <command label="Fake Emulator (Hidden Console)">%HIDEWINDOW% %STARTDIR%=%EMUDIR% %EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <command label="Shortcut or script">%HIDEWINDOW% %ESCAPESPECIALS% %EMULATOR_OS-SHELL% /C %ROM%</command>
+        <platform>snes, satellaview</platform>
+        <theme>snes</theme>
+    </system>
+    <system>
+        <name>psx</name>
+        <fullname>Sony PlayStation</fullname>
+        <path>%ROMPATH%\psx</path>
+        <extension>.bin .BIN .chd .CHD .cue CUE .m3u .M3U</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- -L %CORE_FAKE-EMULATOR%\fake_psx_libretro.dll %ROM%</command>
+        <command label="Fake Emulator (Inject)">%EMULATOR_FAKE-EMULATOR% %INJECT%=%BASENAME%.commands -- %ROM%</command>
+        <command label="Fake Emulator (Missing Core)">%EMULATOR_FAKE-EMULATOR% -- -L %CORE_FAKE-EMULATOR%\fake_missing_libretro.dll %ROM%</command>
+        <platform>psx</platform>
+        <theme>psx</theme>
+    </system>
+</systemList>

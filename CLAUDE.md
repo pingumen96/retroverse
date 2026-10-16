@@ -389,8 +389,9 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   process runner `Win32ProcessRunner`, `win32_util.hpp`; on `core` and `launcher`) -> `platform` (SDL3; the window
   hand-over; links `platform_win`) -> `render` (OpenGL through glad; never includes SDL) -> `devui` (Dear ImGui,
   developer builds; its GPU-free part `rv_devui_model` is always built), `ui` (RmlUi product UI; its GPU-free part
-  `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. `catalog`, `esde` and `catalog_db` are
-  GPU-free skeletons that the I2 steps fill (each file names its step; `esde` has its XML loader); the system probe's
+  `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. `catalog` holds the domain, the
+  identities and one header per port (I2 step 1); its services, `esde` and `catalog_db` are GPU-free skeletons that the
+  I2 steps fill (each file names its step; `esde` has its XML loader); the system probe's
   port is in `core` (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA <library>...)`
   forbids more libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under `#if
   defined(RV_DEV_UI)`. `rv_app` does not use `rv_media`, `rv_launcher` or `rv_ui` yet: the I1 spikes do.
@@ -410,14 +411,18 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `tests/support/*` helpers (globbed into `rv_test_support`, namespace `rv::test`: `TempDir`, `LogCapture`, `Fixture`
   (`fixture.hpp`: `tests/fixtures/<name>/` materialized into a fresh folder under `build/<preset>/test-fixtures`,
   removed afterwards; `{{FIXTURE_ROOT}}` in .xml, .json, .txt and .cfg files becomes that folder, escaped for the file;
-  the fixture's `files.json` generates ROM payloads from a size and a seed, with an optional `mtime` and `hidden`, and
-  empty folders, so that no payload is committed), `writeProgramStub` (`program_stub.hpp`), `runChild`
+  the fixture's `files.json` generates ROM payloads from a size and a seed, with an optional `mtime` and `hidden`,
+  copies programs of the build with `copyOf` (from `testProgramsDir()`; such a copy finds its DLLs through PATH only)
+  and makes empty folders, so that no payload is committed), `writeProgramStub` (`program_stub.hpp`), `runChild`
   (`child_process.hpp`: a program run to completion, its command line built by `launcher::buildCommandLine`, stdout and
   stderr in files of the test's choosing, apart or together, a timeout), `FakeSystemProbe` (`fake_system_probe.hpp`: a
   machine as maps of registry values, files and folders), `Junction`, `ListingDenied`, `writeFileAnyLength`
   (`file_system.hpp`: junctions without admin rights, a folder this user cannot list, paths past MAX_PATH)),
   `tests/fixtures/<name>/` (original, minimal fixtures; text committed as LF, so CRLF, BOM and oversized files are
-  written at test time), `tests/fake_emulator` (`rv_fake_emulator`, built with the tests or the spikes),
+  written at test time; `tests/fixtures/esde/standard` is the ES-DE installation the catalog steps share: its README
+  lists what each part exercises and the counts they assert, and it only ever grows additively; a step that needs
+  another situation adds a fixture folder of its own), `tests/fake_emulator` (`rv_fake_emulator`, built with the tests
+  or the spikes),
   `tests/input_scripts` (scripted verification runs),
   `tests/smoke/*.cpp` GPU smoke tests (globbed into `rv_smoke_tests`, label `gpu`: GPU-free itself, it starts the
   executables of its build with `tests/support/child_process.hpp` and reads their run reports and screenshots;
@@ -445,7 +450,8 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `appendUtf8`; `utf8WithWindows1252Fallback` and `windows1252ToUtf8` for text other programs wrote).
 - Core helpers of I2, one header each in `rv/core/`: `sha256.hpp` (SHA-256, streaming and one-shot, hex);
   `case_fold.hpp` (`fileSystemUpperCase`: the file-system casing of lookup keys and path comparisons, code unit by code
-  unit as NTFS and exFAT compare names, never ASCII-only folding or Unicode normalization; `casingTableVersion`);
+  unit as NTFS and exFAT compare names, never ASCII-only folding or Unicode normalization; `invariantLowerCase`, the
+  same table's lower case for the catalog's sort keys; `casingTableVersion`);
   `time.hpp` (UTC ISO-8601: `formatUtcIso8601`, `utcNow`, `parseUtcIso8601`); `relative_path.hpp`
   (`resolveRelativePath`: a path read from a file, a gamelist's for one, relative to its folder; `OutOfRange` when it
   lies outside the folder, `InvalidArgument` when malformed); `tree_walk.hpp` (`walkTree`/`listTree`: big trees through
@@ -453,9 +459,15 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `file_io.hpp` (`readFileShared` for files another program rewrites, `extendedLengthPath` for folders the user names,
   `extendedLengthPathBelow` to reopen a walked name exactly: a plain path loses trailing dots and spaces);
   `system_error.hpp` (Windows errors as text and as `ErrorCode`: a missing drive is `Unavailable`, a locked file
-  `Conflict`); `paths.hpp` (`Paths::databaseDir`, `pathIsWithin` (lexical), `checkUserDataDirectory`: the
-  data-directory guard, links and junctions resolved); `system_probe.hpp` (the `ISystemProbe` port with `appPath`,
-  `findUninstallEntry`, `matchesWildcard`; `platform_win::Win32SystemProbe` asks Windows, `test::FakeSystemProbe` maps).
+  `Conflict`; `ErrorCode::Cancelled` is an operation stopped on request); `paths.hpp` (`Paths::databaseDir`,
+  `pathIsWithin` (lexical), `checkUserDataDirectory`: the data-directory guard, links and junctions resolved);
+  `system_probe.hpp` (the `ISystemProbe` port with `appPath`, `findUninstallEntry`, `matchesWildcard`;
+  `platform_win::Win32SystemProbe` asks Windows, `test::FakeSystemProbe` maps).
+- Catalog identities (ADR-0008 §4, `rv_catalog`): a GameId is derived once from (`rv-game/1`, library, system, lookup
+  key) and then persisted; never derive it again for a stored identity. The golden GameIds of
+  `tests/unit/catalog/test_identity.cpp` come from `scripts/game_id_oracle.py` (Python's hashlib): a change of the
+  derivation changes both, and `python -I scripts/game_id_oracle.py --check tests/unit/catalog/test_identity.cpp`
+  must pass.
 - OpenGL calls only in `rv_render`/`rv_devui`/`rv_ui`/`rv_app` (and the I1 spike executables), only on the main
   thread, DSA style (GL 4.5; the vendored RmlUi GL3 renderer in `third_party/rmlui_backends` excepted).
 - Determinism: no `rand()`, no iteration over unordered containers into outputs, explicit seeds.

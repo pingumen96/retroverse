@@ -70,7 +70,8 @@ Expected<std::string> resolveRelativePath(std::string_view pathText, const std::
         return malformed("it holds a NUL character");
     }
     for (const char c : pathText) {
-        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F) {
+        // Below U+0020 only, what NTFS and exFAT refuse in names; DEL (U+007F) is a valid name character.
+        if (static_cast<unsigned char>(c) < 0x20) {
             return malformed("it holds a control character");
         }
     }

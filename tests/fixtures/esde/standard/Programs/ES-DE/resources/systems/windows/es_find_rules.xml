@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!-- The find rules of the standard fixture: ES-DE's format (see README.md) -->
+<ruleList>
+    <emulator name="OS-SHELL">
+        <!-- Operating system shell: found, and refused by name -->
+        <rule type="systempath">
+            <entry>cmd.exe</entry>
+        </rule>
+    </emulator>
+    <emulator name="FAKE-EMULATOR">
+        <!-- Found by the static path under %ESPATH%, where the materializer copies rv_fake_emulator.exe -->
+        <rule type="winregistrypath">
+            <entry>fake-emulator.exe</entry>
+        </rule>
+        <rule type="systempath">
+            <entry>fake-emulator.exe</entry>
+        </rule>
+        <rule type="staticpath">
+            <entry>~\AppData\Roaming\FakeEmulator\fake-emulator.exe</entry>
+            <entry>%ESPATH%\Emulators\FakeEmulator\fake-emulator.exe</entry>
+            <entry>%ESPATH%\..\Emulators\FakeEmulator\fake-emulator.exe</entry>
+        </rule>
+    </emulator>
+    <core name="FAKE-EMULATOR">
+        <rule type="corepath">
+            <entry>%EMUPATH%\cores</entry>
+        </rule>
+    </core>
+    <emulator name="MISSING-EMULATOR">
+        <!-- Never found -->
+        <rule type="systempath">
+            <entry>missing-emulator.exe</entry>
+        </rule>
+        <rule type="staticpath">
+            <entry>%ESPATH%\Emulators\MissingEmulator\missing-emulator.exe</entry>
+        </rule>
+    </emulator>
+    <emulator name="HOME-EMULATOR">
+        <!-- Found only under ~, ES-DE's home folder: the fixture root, the parent of the ES-DE home -->
+        <rule type="staticpath">
+            <entry>~\Emulators\HomeEmulator\home-emulator.exe</entry>
+        </rule>
+    </emulator>
+</ruleList>

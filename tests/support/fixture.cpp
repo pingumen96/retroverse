@@ -16,6 +16,7 @@
 #include <rv/core/case_fold.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/json.hpp>
+#include <rv/core/paths.hpp>
 #include <rv/core/relative_path.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/time.hpp>
@@ -125,6 +126,33 @@ Status setLastWriteTime(const std::filesystem::path& target, std::string_view ut
     return setLastWriteTimeAnyLength(target, std::chrono::clock_cast<std::chrono::file_clock>(*time));
 }
 
+/// Copies the program files.json's "copyOf" names (`name`, a file name of testProgramsDir()) to `target`, the file
+/// `relative` of the fixture; errors name `context`, the manifest.
+Status copyProgram(const nlohmann::json& name, const std::filesystem::path& target, const std::string& relative,
+                   const std::string& context) {
+    const auto fail = [&](std::string message) {
+        return makeError(ErrorCode::ValidationFailed, relative + ": " + message, context);
+    };
+    if (!name.is_string()) {
+        return fail("\"copyOf\" must be a file name");
+    }
+    const std::string text = name.get<std::string>();
+    if (text.empty() || text == "." || text == ".." || text.find_first_of("/\\:") != std::string::npos) {
+        return fail("\"copyOf\" must be a file name of the folder of the test programs, not a path");
+    }
+    const std::filesystem::path source = testProgramsDir() / core::pathFromUtf8(text);
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(source, ec)) {
+        return makeError(ErrorCode::NotFound, relative + ": " + text + " is not beside the test program (built?)",
+                         core::pathToUtf8Lossy(source));
+    }
+    const auto bytes = core::readBinaryFile(source);
+    if (!bytes) {
+        return propagate(bytes.error());
+    }
+    return writeFileAnyLength(target, std::string_view(reinterpret_cast<const char*>(bytes->data()), bytes->size()));
+}
+
 /// Generates what files.json lists into `root`; `copied` holds the case keys of the paths copied from the source tree.
 Status generate(const std::filesystem::path& manifest, const std::filesystem::path& root,
                 const std::set<std::string>& copied) {
@@ -167,9 +195,9 @@ Status generate(const std::filesystem::path& manifest, const std::filesystem::pa
             return fail("a file must be an object");
         }
         for (const auto& [key, value] : file.items()) {
-            static constexpr std::array<std::string_view, 5> kKeys{"path", "size", "seed", "mtime", "hidden"};
+            static constexpr std::array<std::string_view, 6> kKeys{"path", "size", "seed", "copyOf", "mtime", "hidden"};
             if (std::find(kKeys.begin(), kKeys.end(), key) == kKeys.end()) {
-                return fail("unknown key \"" + key + "\" of a file (path, size, seed, mtime, hidden)");
+                return fail("unknown key \"" + key + "\" of a file (path, size, seed, copyOf, mtime, hidden)");
             }
         }
         const auto relative = relativeOf(file.value("path", nlohmann::json()));
@@ -184,19 +212,28 @@ Status generate(const std::filesystem::path& manifest, const std::filesystem::pa
         if (!generated.insert(key).second) {
             return fail("the generated file " + *relative + " is listed twice (names differing in case only)");
         }
-        const nlohmann::json size = file.value("size", nlohmann::json());
-        const nlohmann::json seed = file.value("seed", nlohmann::json());
-        if (!size.is_number_unsigned() || !seed.is_number_unsigned()) {
-            return fail(*relative + ": \"size\" and \"seed\" must be integers of 0 or more");
-        }
-        if (size.get<std::uint64_t>() > kMaxPayloadBytes) {
-            return fail(*relative + ": larger than 64 MiB");
-        }
         const std::filesystem::path target = root / core::pathFromUtf8(*relative);
-        const std::string payload =
-            payloadBytes(seed.get<std::uint64_t>(), static_cast<std::size_t>(size.get<std::uint64_t>()));
-        if (auto written = writeFileAnyLength(target, payload); !written) {
-            return written;
+        if (file.contains("copyOf")) {
+            if (file.contains("size") || file.contains("seed")) {
+                return fail(*relative + ": either \"copyOf\" or \"size\" and \"seed\"");
+            }
+            if (auto done = copyProgram(file["copyOf"], target, *relative, context); !done) {
+                return done;
+            }
+        } else {
+            const nlohmann::json size = file.value("size", nlohmann::json());
+            const nlohmann::json seed = file.value("seed", nlohmann::json());
+            if (!size.is_number_unsigned() || !seed.is_number_unsigned()) {
+                return fail(*relative + ": \"size\" and \"seed\" must be integers of 0 or more");
+            }
+            if (size.get<std::uint64_t>() > kMaxPayloadBytes) {
+                return fail(*relative + ": larger than 64 MiB");
+            }
+            const std::string payload =
+                payloadBytes(seed.get<std::uint64_t>(), static_cast<std::size_t>(size.get<std::uint64_t>()));
+            if (auto written = writeFileAnyLength(target, payload); !written) {
+                return written;
+            }
         }
         if (file.contains("mtime")) {
             if (!file["mtime"].is_string()) {
@@ -224,6 +261,10 @@ Status generate(const std::filesystem::path& manifest, const std::filesystem::pa
 
 std::filesystem::path fixturesDir() {
     return core::pathFromUtf8(RV_TEST_SUPPORT_SOURCE_DIR) / "tests" / "fixtures";
+}
+
+std::filesystem::path testProgramsDir() {
+    return core::executablePath().parent_path();
 }
 
 std::string payloadBytes(std::uint64_t seed, std::size_t size) {
@@ -304,6 +345,25 @@ Fixture::~Fixture() {
 
 std::filesystem::path Fixture::path(std::string_view relative) const {
     return m_root / core::pathFromUtf8(relative);
+}
+
+Status Fixture::replaceText(std::string_view relative, std::string_view text, std::string_view replacement) const {
+    const std::filesystem::path file = path(relative);
+    auto content = core::readTextFile(file);
+    if (!content) {
+        return propagate(std::move(content.error()));
+    }
+    const std::size_t at = text.empty() ? std::string::npos : content->find(text);
+    if (at == std::string::npos) {
+        return makeError(ErrorCode::NotFound, "the text to replace is not in the file: " + std::string(text),
+                         core::pathToUtf8Lossy(file));
+    }
+    if (content->find(text, at + 1) != std::string::npos) {
+        return makeError(ErrorCode::InvalidArgument, "the text to replace occurs more than once: " + std::string(text),
+                         core::pathToUtf8Lossy(file));
+    }
+    content->replace(at, text.size(), replacement);
+    return writeFileAnyLength(file, *content);
 }
 
 } // namespace rv::test

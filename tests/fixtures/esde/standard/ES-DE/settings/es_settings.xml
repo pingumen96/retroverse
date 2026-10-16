@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<bool name="AlternativeEmulatorPerGame" value="true" />
+<bool name="FoldersOnTop" value="true" />
+<bool name="LegacyGamelistFileLocation" value="false" />
+<bool name="ParseGamelistOnly" value="false" />
+<bool name="ShowHiddenFiles" value="true" />
+<bool name="ShowHiddenGames" value="true" />
+<int name="MaxPlayTimeTracking" value="8" />
+<string name="DefaultSortOrder" value="filename, ascending" />
+<string name="MediaDirectory" value="{{FIXTURE_ROOT}}/media" />
+<string name="ROMDirectory" value="{{FIXTURE_ROOT}}\roms" />
+<string name="ScraperPasswordScreenScraper" value="fixture-scraper-password-K9w2" />
+<string name="ScraperUsernameScreenScraper" value="fixture-scraper-user-Q7x4" />
+<string name="UIMode" value="full" />
