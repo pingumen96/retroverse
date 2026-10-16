@@ -7,11 +7,13 @@
       1. builds msvc-x64-debug, msvc-x64-relwithdebinfo and msvc-x64-release: every project target compiles with /WX,
          so a compiler warning fails its build; the build output is also scanned for any compiler, linker or CMake
          warning (with -Clean every target is rebuilt, so that all of them are seen);
-      2. runs the unit tests (label unit) of Debug and Release;
-      3. runs the GPU smoke tests (label gpu, tests/smoke) of Debug and Release: the reference scenes, the rendering
-         self-checks and --gl-selftest, the key light's shadow and the ambient occlusion, the instance buffer growing
-         mid-run, the developer overlay and the asset preview (Debug), Release rendering from the assets deployed next to
-         it (which its build, incremental too, mirrors from the source tree);
+      2. runs the unit tests (label unit: rv_tests, rv_platform_tests, the CMake script test, spike_launch_tests) of
+         Debug and Release;
+      3. runs the GPU checks (label gpu) of Debug and Release: the smoke tests of tests/smoke (the reference scenes, the
+         rendering self-checks and --gl-selftest, the key light's shadow and the ambient occlusion, the instance buffer
+         growing mid-run, the developer overlay and the asset preview (Debug), Release rendering from the assets
+         deployed next to it, which its build, incremental too, mirrors from the source tree) and the I1 spike checks
+         (spike/video: two generated clips on time and the damaged files falling back; spike_ui.scenario);
       4. compares the test room with golden G01 in Debug and Release (within 6/255 per channel, at most 0.5% of the
          pixels; on the reference machine only, skipped elsewhere).
     Every step logs into build/gate-<gate>/. The script prints one row per step and exits 0 when no step failed: a

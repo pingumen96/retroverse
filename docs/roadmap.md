@@ -66,7 +66,7 @@ M0 is done (spec §22: the app starts, the camera is controllable, rendering is 
 phase A of style §27 (an empty but credible room, its style and light recognizable): the style §26.2 checklist for
 golden G01 and the remaining gaps are in [testing/gate-a.md](testing/gate-a.md); deferred work is in `BACKLOG.md`.
 
-## I1: risk spikes (in progress)
+## I1: risk spikes (done)
 
 Each spike delivers the first version of the module it de-risks, kept out of the app's main flow until a later
 iteration wires it in, plus a measurement executable under `spikes/` with its own tests, a report in `docs/spikes/` and
@@ -76,9 +76,35 @@ FreeType).
 
 | Spike | Modules | Success criterion | Fallback | ADR |
 |---|---|---|---|---|
-| (c) Video on a texture | `rv_media` (FFmpeg demux and decode on a worker thread, a bounded frame queue, a presentation clock driven by timestamps), `gl::VideoTexture` (ring of persistently mapped PBOs with fences), `spikes/video` | Two 720p videos at 60 FPS for 60 s: p99 frame time at most 16.7 ms, upload under 2 ms, fewer than 1% late frames, drift within 2%, stable memory; a truncated or corrupt file falls back without a crash | YUV planes converted in the shader, 480p or a single decoder, prebuilt LGPL FFmpeg binaries pinned by SHA-256 | ADR-0004 |
+| (c) Video on a texture | `rv_media` (FFmpeg demux and decode on a worker thread, a bounded frame queue, a presentation clock driven by timestamps), `gl::VideoTexture` (ring of persistently mapped PBOs freed by timestamp queries, fences as the fallback), `spikes/video` | Two 720p videos at 60 FPS for 60 s: p99 frame time at most 16.7 ms, upload under 2 ms, fewer than 1% late frames, drift within 2%, stable memory; a truncated or corrupt file falls back without a crash | YUV planes converted in the shader, 480p or a single decoder, prebuilt LGPL FFmpeg binaries pinned by SHA-256 | ADR-0004 |
 | (d) Product UI | `rv_ui` (RmlUi 6.3 on SDL3 and OpenGL 3, backends vendored on our glad, an OFL font), `rv_ui_model` (navigation and focus from the action map), `spikes/ui` | A quick-catalog mock screen usable with the pad alone, stable focus, the UI pass under 1 ms, correct resizing | The product UI in Dear ImGui with gamepad navigation, behind C++ view models | ADR-0005 |
 | (f) Return from the emulator | `rv_launcher` (Windows command-line quoting, waiting strategies, launch session state machine, outcome classification), the Win32 process runner and the window hand-over in `rv_platform`, a fake emulator, `spikes/launch` | 5 of 5 RetroArch launches back in the foreground, fullscreen, with pad input and 60 FPS within 1 s of the emulator's exit; wrappers wait for the process tree; crashes reported; never a kill | `AllowSetForegroundWindow` before the launch, a minimized window with a notification, a direct process with a "return" confirmation | ADR-0006 |
 
-Then I2 (M1): the ES-DE catalog (gamelists can hold two top-level elements, `<alternativeEmulator>` beside
-`<gameList>`: parse them as a fragment), SQLite with FTS5 and the Windows launcher on `rv_launcher`.
+Outcomes (2026-10-16, reference machine; the spikes were measured while other agents were building, the video spike
+once more after the merge with no other agent running; see each report):
+
+- **(c) Video, adopted (ADR-0004):** FFmpeg software decoding on a thread per video, RGBA at most 720 rows, a pooled
+  bounded queue, timestamp-driven presentation, a ring of 3 persistently mapped PBOs freed by `GL_TIMESTAMP` queries
+  (fences stalled NVIDIA's threaded driver about 0.5 ms per upload). Two 720p30 clips in the second and third
+  campaigns (the machine at most 58% busy): upload p99 1.1 to 1.4 ms, at most 0.22% of the frames late or dropped,
+  drift 0.003%, flat memory (in the first campaign, 63 to 98% busy, one normal-priority run dropped 11.6% and one
+  above-normal run drifted -4.80%); three real ES-DE videos (480p60 H.264): upload p99 about 0.4 ms. With no other
+  agent running all 12 runs met every criterion at either priority; under other agents'
+  builds, at normal priority, the 60 Hz frame pacing held up to about 46% machine load and failed from 51% (up to 5% of
+  a real video's frames dropped), while 7 of 9 above-normal runs up to 70% met every criterion. I5 raises the process
+  to above-normal priority while it renders and staggers 720p uploads (two due on one render frame reach 2.1 to 2.7 ms
+  at p99). First frame on screen 7 to 20 ms after the start. Full 1080p uploads exceed 2 ms, hence the 720-row cap.
+- **(d) Product UI, adopted (ADR-0005), criteria met in part:** RmlUi 6.3 runs the quick catalog with the pad alone (80
+  scripted checks; text entry waits for the on-screen keyboard of I7), with a stable visible focus and correct resizing;
+  the UI pass takes about 0.22 ms CPU and 0.11 ms GPU on quiet frames but 1.2 to 1.5 ms per held move and 3.0 to 4.2 ms
+  per tap, accepted against the 16.7 ms frame (follow-up: a pooled vertex buffer). Navigation reads its own binding
+  table (`ui::NavBindings`), not yet the action map the table above plans for `rv_ui_model` (ADR-0005; BACKLOG "UI
+  actions in the action map").
+- **(f) Emulator return, adopted (ADR-0006):** 30 of 30 isolated RetroArch launches came back in the foreground, in
+  borderless fullscreen, with pad input and 60 FPS within 1 s of the exit (median about 74 ms); wrappers are followed
+  through a job object, crashes are reported with their NTSTATUS name, nothing is ever terminated; the window is kept
+  (not minimized) and `AttachThreadInput` brings the foreground back when another window holds it.
+
+Next: I2 (M1): the ES-DE catalog (gamelists can hold two top-level elements, `<alternativeEmulator>` beside
+`<gameList>`: parse them as a fragment), SQLite with FTS5 and the Windows launcher on `rv_launcher` and
+`Win32ProcessRunner`.

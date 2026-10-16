@@ -154,7 +154,8 @@ in the 23 maps of the procedural surfaces with their mip chains, which take 0.6 
 
 - **Build matrix:** `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release` build without a compiler,
   linker or CMake warning (`/WX`, and the build output is scanned; `-Clean` rebuilds every target).
-- **Unit tests** of Debug and Release (label `unit`: `rv_tests`, `rv_platform_tests`).
+- **Unit tests** of Debug and Release (label `unit`: `rv_tests`, `rv_platform_tests`, the CMake script test
+  `tests/cmake/test_copy_assets.cmake`, and since I1 `spike_launch_tests`).
 - **GPU smoke tests** of Debug and Release (label `gpu`, `tests/smoke`; each case starts the executables with
   `--hidden`, a data directory under `build/<preset>/smoke/<case>` and `--run-report`, and checks the report and the
   screenshots):
@@ -175,4 +176,9 @@ in the 23 maps of the procedural surfaces with their mip chains, which take 0.6 
   | `support/child_process` | the smoke tests' own process runner: arguments quoted for the Windows command line read back unchanged, a process past its timeout is terminated |
 
   A case that cannot create an OpenGL 4.5 context, and the golden comparison on another GPU or driver, are skipped
-  (exit code 77, ctest's skip code), not failed.
+  (exit code 77, ctest's skip code), not failed. Since I1 the same step also runs the spike checks (label `gpu`):
+  `spike/video` (two generated 720p clips on time for 3 s, their frame counters read back from the screenshot,
+  `gl::VideoTexture`'s self-test; the damaged files falling back without a crash) and `spike_ui.scenario` (the scripted
+  quick catalog, 80 checks), skipped likewise without an OpenGL 4.5 context: a `SKIP_REGULAR_EXPRESSION` matches the
+  host's "requires OpenGL 4.5 (core profile)" failure in `spike_ui`'s output, and a skip marker that
+  `check_spike_video.cmake` prints for that failure in `spike_video`'s; see `docs/spikes/`.

@@ -304,7 +304,7 @@ by the system) needs UserConfirmReturn.
    sometimes a third of 31-55 ms; 60 FPS back after 307-442 ms, 485-710 ms after an exclusive mode); later returns
    stall once, sometimes twice (31-118 ms, usually 40-60 ms; 60 FPS back after 54-258 ms, 310-539 ms after an exclusive
    mode; the hung-window launches aside). The swap chain (independent flip versus composed presentation) is the likely
-   cause; not investigated further (not yet in BACKLOG.md: the integration adds the entry, see ADR-0006).
+   cause; not investigated further (BACKLOG.md, "Frame stalls after returning from an emulator", since the merge).
 8. **Exclusive display modes.** The mode change shrinks a kept window (fullscreen re-applied, 9 of 9; back 101-298 ms
    after the exit) and moves a minimized one to the other monitor (8 of 9; moved back to its display). Worst case
    710 ms.

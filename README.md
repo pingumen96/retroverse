@@ -9,9 +9,10 @@ It is a native Windows application written in C++20 with OpenGL 4.5 and SDL3, wi
 does not emulate anything and never copies or rewrites the collection: ROMs, `gamelist.xml` metadata and media
 stay where ES-DE keeps them.
 
-> **Status:** milestone M0 (native foundations) is done and Gate A (the first room's look) passes. Retroverse renders
-> a hand-composed test room, not your library yet: reading the ES-DE catalog and launching emulators come next (I1
-> risk spikes, then M1). See [docs/roadmap.md](docs/roadmap.md).
+> **Status:** milestone M0 (native foundations) is done, Gate A (the first room's look) passes and the I1 risk spikes
+> (video on a texture, the RmlUi product UI, the return from an emulator; ADR-0004 to ADR-0006) are done. Retroverse
+> renders a hand-composed test room, not your library yet: reading the ES-DE catalog and launching emulators come next
+> (I2, milestone M1). See [docs/roadmap.md](docs/roadmap.md).
 
 ![The M0 test room: golden G01](assets/style_tests/screenshots/m0_testroom_golden.png)
 
@@ -38,7 +39,7 @@ and the wood, plaster, rug, metal and plastic surfaces. The checklist of style.m
   executables on every reference scene and check their reports and screenshots (frame statistics, OpenGL errors, the
   sRGB, bloom and FXAA self-checks, the shadow, the ambient occlusion, the overlay, the asset preview, the golden
   image), and `scripts/gate.ps1`, which builds the Debug, RelWithDebInfo and Release configurations and runs the unit
-  tests, the smoke tests and the golden comparison of Debug and Release.
+  tests, the smoke tests, the I1 spike checks and the golden comparison of Debug and Release.
 
 ## Requirements
 
@@ -82,9 +83,10 @@ toggles fullscreen.
 | `assets/` | Shaders, material presets, prefab manifests, asset registry, reference scenes and their golden screenshots |
 | `tests/` | Catch2 unit tests (GPU-free and SDL platform layer), test helpers, scripted input runs, GPU smoke tests |
 | `tools/` | Developer tools (asset preview, screenshot diff) |
+| `spikes/` | I1 measurement executables (video, product UI, emulator return) and their tests; reports in `docs/spikes/` |
 | `scripts/` | Build, test and gate scripts (PowerShell), test model generator (Python) |
-| `third_party/` | Vendored code not available through vcpkg (generated glad loader) |
-| `docs/` | Roadmap, architecture, decision records, testing notes |
+| `third_party/` | Vendored code not available through vcpkg (generated glad loader, RmlUi's SDL3 and OpenGL 3 backends) |
+| `docs/` | Roadmap, architecture, decision records, spike reports, testing notes |
 | `specification.md`, `style.md`, `example.png` | Product specification, art bible and concept (Italian) |
 
 ## License

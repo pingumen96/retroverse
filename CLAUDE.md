@@ -22,14 +22,17 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/test.ps1                                    # unit tests (label "unit"); GPU tests excluded
 ./scripts/test.ps1 -Filter aabb                       # ctest -R aabb
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu         # also GPU smoke tests (label "gpu")
+./scripts/test.ps1 -Preset msvc-x64-debug-desktop     # on demand: tests that take over the screen (label "desktop")
 ./scripts/test.ps1 -Preset msvc-x64-release-gpu       # the same for Release (rendering from its deployed assets)
 ./scripts/gate.ps1 -Gate A                            # Gate A end to end: build matrix, tests, golden G01; -Clean
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
 
 - Outputs: `build/<preset>/bin` holds `retroverse.exe`, `retroverse-asset-preview.exe` (developer builds only, see
-  "Asset preview"), `retroverse-screenshot-diff.exe`, `rv_tests.exe`, `rv_platform_tests.exe`, `rv_smoke_tests.exe`
-  and the vcpkg DLLs. Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the
+  "Asset preview"), `retroverse-screenshot-diff.exe`, `rv_tests.exe`, `rv_platform_tests.exe`, `rv_smoke_tests.exe`,
+  the I1 spike executables (`spike_video.exe`, `spike_ui.exe`, `spike_launch.exe`, `rv_fake_emulator.exe`,
+  `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi included: every preset enables the vcpkg features
+  `video` and `ui`). Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the
   source tree (target `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed,
   `staging` and the golden screenshots left out), so an edit of the assets alone reaches the next Release build.
 - GPU smoke tests (`tests/smoke`, label `gpu`, ctest names `gpu.<case>`): each case starts the executables of its
@@ -43,8 +46,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden*"` (Catch2 test names), or `./scripts/test.ps1 -Preset
   msvc-x64-debug-gpu -Filter golden`.
 - `scripts/gate.ps1 -Gate A` builds `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release` (a compiler,
-  linker or CMake warning fails the step; `-Clean` rebuilds every target), runs the unit tests and the GPU smoke tests
-  of Debug and Release and the golden comparison of both, prints a summary table (logs in `build/gate-a`) and exits 1
+  linker or CMake warning fails the step; `-Clean` rebuilds every target), runs the unit tests and the GPU checks (the
+  smoke tests and the I1 spike checks) of Debug and Release and the golden comparison of both, prints a summary table
+  (logs in `build/gate-a`) and exits 1
   when a step failed (skipped steps are reported, not failed).
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`. The first
   configure in a fresh checkout or worktree restores packages from the local binary cache (a few minutes).
@@ -330,14 +334,40 @@ lies outside the default framing; a second F shows it) and the color bars on its
 `prefab:crt` and reports one warning (the placeholder hash), and with `--panel Materials` shows that tab instead of the
 Manifest one; a copy under `build/` whose `runtime.sockets.screen` names a missing socket reports that error.
 
+## I1 spikes
+
+Measurement executables for the three integration risks of I1 (`spikes/`, reports in `docs/spikes/`, decisions in
+ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure performance in Release.
+
+- Video (`docs/spikes/i1-video.md`): `spike_video.exe --generate-fixtures build/spike_video/fixtures --seconds 10
+  --hidden --report build/spike_video/report.json --screenshot build/screenshots/video.png --data-dir build/rvdata`
+  plays two generated 1280x720 30 fps clips with burned-in frame counters. `--videos <file>...` plays files read in
+  place (never written; the ES-DE media folder only read), `--error-cases` shows each damaged file falling back to a
+  card naming its failure; also `--count`, `--max-height`, `--no-vsync`, `--upload-fences`, `--priority above-normal`,
+  `--list-encoders`. `./spikes/video/run_measurements.ps1` runs the Release series (3 x 60 s, interleaved). GPU checks:
+  `./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter spike/video`.
+- Product UI (`docs/spikes/i1-ui.md`): `spike_ui.exe --exit-after-frames --frames 1910 --hidden --no-vsync --fixed-dt
+  0.016667 --data-dir build/rvdata --report build/spike_ui/report.json` drives the quick catalog over the test room with
+  a scripted SDL virtual gamepad (80 checks; exit 3 when one fails), with `--screenshot-at <frame>:<png>` (repeatable),
+  `--ui-scale`, `--high-contrast` and `--interactive` (a real pad or keyboard). The documents in `assets/ui` reload when
+  saved in developer builds. GPU check: `./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter spike_ui`.
+- Emulator return (`docs/spikes/i1-launch.md`): `spike_launch.exe --target fake|retroarch|notepad --strategy
+  direct|tree|confirm --policy minimize|keep --repeat N --report <json> --data-dir build/...`;
+  `./spikes/launch/measure.ps1` measures. RetroArch only ever runs with the isolated append configuration `spike_launch`
+  writes under `build/` (its own config, saves and the ROM folder untouched, checked with before/after snapshots); never
+  launch emulators whose data cannot be isolated (DuckStation). Keep visible runs short. The `desktop` tests run the
+  fake emulator in fullscreen: `./scripts/test.ps1 -Preset msvc-x64-debug-desktop`.
+
 ## Layout and layering
 
 - `src/<module>/include/rv/<module>/*.hpp` public headers, `src/<module>/src/*.cpp`, `src/<module>/CMakeLists.txt`
   with an explicit source list. Include as `#include <rv/<module>/<file>.hpp>`.
-- Dependency order: `core` -> `geometry` -> `input` -> `assets` -> `scene` (GPU-free; `rv_forbid_link` fails the
-  configure if they reach SDL3, glad or ImGui) -> `platform` (SDL3) -> `render` (OpenGL through glad; never
-  includes SDL) -> `devui` (Dear ImGui, developer builds; its GPU-free part `rv_devui_model` is always built) -> `app`
-  (composition root) -> `retroverse.exe`. Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`.
+- Dependency order: `core` -> `geometry` -> `input` -> `assets` -> `scene`, `media` (FFmpeg only inside its
+  sources), `launcher` (GPU-free; `rv_forbid_link` fails the configure if they reach SDL3, glad or ImGui) -> `platform`
+  (SDL3; the Win32 process runner) -> `render` (OpenGL through glad; never includes SDL) -> `devui` (Dear ImGui,
+  developer builds; its GPU-free part `rv_devui_model` is always built), `ui` (RmlUi product UI; its GPU-free part
+  `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. Code for the overlay in `rv_app` sits
+  under `#if defined(RV_DEV_UI)`. `rv_app` does not use `rv_media`, `rv_launcher` or `rv_ui` yet: the I1 spikes do.
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
@@ -368,8 +398,14 @@ Manifest one; a copy under `build/` whose `runtime.sockets.screen` names a missi
 - Colors are authored as sRGB hex codes (style §3) and converted to linear for shading
   (`rv::core::hexToLinearRgb`). Shading happens in linear space; output through an sRGB framebuffer.
 - Text and paths are UTF-8; convert with `rv::core::pathFromUtf8` / `rv::core::pathToUtf8`.
-- OpenGL calls only in `rv_render`/`rv_devui`/`rv_app`, only on the main thread, DSA style (GL 4.5).
+- OpenGL calls only in `rv_render`/`rv_devui`/`rv_ui`/`rv_app` (and the I1 spike executables), only on the main
+  thread, DSA style (GL 4.5; the vendored RmlUi GL3 renderer in `third_party/rmlui_backends` excepted).
 - Determinism: no `rand()`, no iteration over unordered containers into outputs, explicit seeds.
+- Product code starts processes only through `rv_launcher` and `rv_platform` (`Win32ProcessRunner`): argv, never a
+  shell string, no batch files; the product never terminates an emulator. (Test harnesses start their own children:
+  `tests/smoke/child_process.hpp`, `rv_fake_emulator`.)
+- Product UI strings live in the RML documents under `assets/ui` (Italian until localization tables exist); sizes in dp,
+  bundled fonts only, no color transitions (RmlUi rebuilds the geometry of every animated frame).
 - Language: identifiers, comments, documentation and commit messages in English.
 
 ## Safety rules

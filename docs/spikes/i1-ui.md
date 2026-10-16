@@ -291,8 +291,9 @@ Everything else is RmlUi's documented API (data models, event listeners, `nav-*`
     scale differ, and measurement runs with a change are left out (`displayScaleChanges`).
 17. **Test registration.** The top-level `CMakeLists.txt` adds `spikes/` before `enable_testing()`, so `add_test` there
     is silently ignored; `spikes/ui` enables testing for itself and, through `CMAKE_TESTING_ENABLED` in the parent
-    scope, for `spikes/` and the spike directories added after it (launch) but not before it (video). To be fixed at
-    the top level when the spikes merge: `enable_testing()` before `add_subdirectory(spikes)`.
+    scope, for `spikes/` and the spike directories added after it (launch) but not before it (video). Fixed at the
+    merge of the spikes: the top level enables testing before it adds any directory, and `spikes/ui` no longer enables
+    it for itself.
 
 ## Follow-ups
 
@@ -310,8 +311,8 @@ Everything else is RmlUi's documented API (data models, event listeners, `nav-*`
 - Localization: the documents' Italian strings into `assets/ui/locale` tables bound through the data model.
 - Covers and video frames in documents: an image source scheme (`rv-texture:<key>`) mapped to `gl::TextureCache`
   textures by the render interface.
-- At the merge of the I1 spikes: `enable_testing()` before `add_subdirectory(spikes)` (pitfall 17); move
-  `devui::fitOverlayCapture`, which `rv_ui` links `rv_devui_model` for, to a module below both overlays (`rv_core` or
-  `rv_render`); a result count in `gl::GpuTimer`, so that GPU samples are recorded per result instead of per changed
-  value.
+- Move `devui::fitOverlayCapture`, which `rv_ui` links `rv_devui_model` for, to a module below both overlays
+  (`rv_core` or `rv_render`); a result count in `gl::GpuTimer`, so that GPU samples are recorded per result instead of
+  per changed value. (Done at the merge of the I1 spikes: testing enabled before `add_subdirectory(spikes)`, pitfall
+  17.)
 - Propose the three renderer options upstream.

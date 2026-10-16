@@ -107,8 +107,8 @@ and offers to return without closing it (the session ends with the emulator left
 - Open risks:
   - The first return of a run stalls twice (about 100 ms, then 147-325 ms; 60 FPS back within 307-442 ms, up to
     710 ms after an exclusive display mode); later returns once (usually 40-60 ms). Presentation mode changes are the
-    likely cause. Not yet in BACKLOG.md: the integration adds the entry ("Frame stalls after returning from an
-    emulator", with these ranges).
+    likely cause. In BACKLOG.md since the merge of the I1 spikes ("Frame stalls after returning from an emulator",
+    with these ranges).
   - Exclusive-fullscreen emulators change the display mode: the return took up to 710 ms (fullscreen re-applied, the
     window moved back to its monitor). Not measured with a real exclusive-mode emulator: DuckStation was not launched,
     as its data folder cannot be isolated without writing into its installation.
@@ -127,6 +127,7 @@ and offers to return without closing it (the session ends with the emulator left
   - Console emulators that run without a window would reach StillRunning after 30 s: such a profile sets a longer or no
     window timeout.
   - `retroverse.exe` is a console-subsystem program (double-clicked, it opens a console window): console emulators no
-    longer share it, but a GUI-subsystem release build would also spare the user that window (the integration decides).
+    longer share it, but a GUI-subsystem release build would also spare the user that window (deferred at the merge
+    of the I1 spikes: BACKLOG.md, "Release subsystem").
   - Emulators on another monitor than Retroverse's: Retroverse stays visible on its monitor (keep); untested with a real
     emulator.

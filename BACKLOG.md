@@ -170,3 +170,72 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Log copy with worker threads:** the overlay's `devui::LogView` reads `core::loggedMessageCount()` and then the
   newest lines, so a line logged by another thread in between can show twice. Once workers log (I2), let `rv::core`
   return the lines and the count under one lock.
+
+## Follow-ups from I1
+
+### Video (for I5)
+
+- **Decoder scheduler** (spec §9.5, NFR-07): 2 decoders in the Balanced profile, 1 in Low; pause or stop out-of-view
+  screens (`media::VideoPlayback::pause`); share one `gl::VideoTexture` between screens showing the same clip; drop to
+  one decoder when frames come late; stagger 720p uploads over frames (two uploads due in one frame cost p99 2.1 to
+  2.7 ms).
+- **Process priority while rendering:** frame pacing held at normal priority up to about 46% machine load and failed
+  from 51% (with no other agent running, 25 to 31%, every run held it); ADR-0004 makes above-normal priority of the
+  process while it renders an I5 requirement (a boost of the render thread alone, or MMCSS, is the alternative to
+  measure).
+- **Cheaper uploads:** convert straight into the mapped PBOs (about 0.8 ms per 720p frame saved on the render thread);
+  YUV 4:2:0 planes converted in the screen shader (1.5 instead of 4 bytes per pixel) if 1080p previews or more decoders
+  are wanted (a full 1080p RGBA upload has p99 2.37 ms); a cheaper downscale for 1080p sources (5.4 ms per frame).
+- **Asynchronous copies:** NVIDIA reports id 131154 ("Pixel transfer is synchronized with 3D rendering") for every
+  upload, about 0.5 ms GPU per 720p frame: try a second GL context for the copies, and let the debug filter drop that id
+  for video uploads.
+- **Clip audio** (spec §9.7): swresample and miniaudio, and which clock drives presentation.
+- **Library-wide checks:** the corruption and truncation thresholds against every video of the collection; an hour-long
+  soak with the scene renderer.
+
+### Product UI
+
+- **UI actions in the action map:** `ui_*` actions in `assets/config/default_bindings.json`, with `ui::NavBindings`
+  built from the action map, so user rebindings reach the product UI (ADR-0005).
+- **Per-change cost under 1 ms:** a pooled vertex buffer in the vendored GL3 renderer, the detail card in its own
+  document, the selected row marked by class; profile RmlUi with Tracy (`RMLUI_TRACY_PROFILING` is off in vcpkg's
+  build).
+- **Large collections:** a virtualized game list; tune the card's settle delay (0.15 s) on a TV.
+- **Text entry with the pad:** an on-screen keyboard (I7); the hint bar built from the active bindings.
+- **Localization:** tables in `assets/ui/locale` bound through RmlUi's data model.
+- **Pictures in the UI:** an image source scheme (`rv-texture:<key>`) mapping covers and video frames to
+  `gl::TextureCache` textures in the render interface (I3, I5).
+- **Upstream:** propose the vendored renderer's three local changes to RmlUi (output target, state-backup opt-out,
+  sampler reset).
+- **Registry:** register `ui/quick_catalog.rml` and `ui/quick_catalog.rcss` (kinds ui-document and ui-style-sheet,
+  provenance retroverse-original) once the asset validator covers `assets/ui`.
+- **Shared overlay helper:** move `devui::fitOverlayCapture` below both overlays; `rv_ui` links `rv_devui_model` only
+  for it.
+- **GPU timings by result:** a result counter in `gl::GpuTimer`, so samples are recorded per query result (2 to 8% of
+  quiet frames get no GPU sample today).
+- **Automated pad input:** an `SdlPlatform` option to accept background joystick events in automated runs (`spike_ui`
+  sets the hint itself).
+
+### Emulator launch (for I2 and I7)
+
+- **Frame stalls after returning from an emulator:** the first return of a run stalls about 100 ms then 147 to 325 ms
+  (60 FPS back in 307 to 442 ms, up to 710 ms after an exclusive display mode); later returns 31 to 118 ms. Likely a
+  presentation-mode change (independent flip against composed): check with PresentMon (`docs/spikes/i1-launch.md`,
+  finding 7).
+- **While the emulator closes:** with the keep policy the last frame shows for the 170 to 350 ms RetroArch takes to shut
+  down; resume when its windows are gone and the foreground is back, or draw a "returning" state.
+- **"Game running" screen** (I2/I7) with return and go-back options, a StillRunning notice, and the quick-exit hint of
+  `LaunchOutcome::quickExit`.
+- **Batch launchers:** `.bat` files need a verified profile kind with cmd-specific escaping (the BatBadBut class of
+  injection); until then only PE programs start.
+- **More emulators:** DuckStation and real exclusive-fullscreen emulators from an isolated copy; an emulator on another
+  monitor than Retroverse's; a window timeout per profile for windowless console emulators; re-grant
+  `AllowSetForegroundWindow` once a console emulator's window exists (it fails with error 87 while suspended).
+- **Crash and loader-error returns under the default error mode:** not measured (the spike's crash return ran with the
+  fake emulator's own error dialogs off), because on this machine a crash opens the Visual Studio JIT debugger prompt
+  and a missing DLL the loader's modal box; decide Retroverse's error-mode policy (hard-error dialogs are disabled only
+  around `CreateProcessW` today).
+- **Release subsystem:** consider a GUI-subsystem `retroverse.exe` for Release (ADR-0006 open risk).
+- **Shared quoting:** `tests/smoke/child_process.cpp` duplicates the command-line quoting: use
+  `rv::launcher::buildCommandLine`.
+- **Fake emulator home:** move `rv_fake_emulator` from `spikes/launch` to `tests/support` when I2 adopts the launcher.

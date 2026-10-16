@@ -11,14 +11,20 @@ This document describes the code that exists today. The target architecture is i
 | input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets (texture files, procedural textures, the `crt` block of screens), shader source loading, procedural test patterns (cover placeholders, color bars, sign lettering; sized to their surface: `patternLongSideFor`, `patternSizeForAspect`), procedural PBR surfaces (`surface_textures.hpp`: wood, plaster, rug, metal, plastic), the GLB writer (`glb_writer.hpp`: the asset preview's CRT-like fixture, the models of the loader tests); a model lists the files it references (`ModelData::externalFiles`) | core, geometry, fastgltf, stb |
 | scene | `rv_scene` | Camera, first-person controller and viewpoints (`frontViewpoint`: where a walker stands to look at an object, framed in a part of the view, `ViewArea`; `aimAt`: the orientation that shows a point at the center of a view area), the orbit camera of the asset preview (`OrbitController`: orbit, pan, zoom, auto-rotation, bounds framed in a view area, clip planes that follow the distance), lights, render items, draw passes and the batching plan (`BatchPlanner`: frustum culling, opaque/mask/blend passes, blend back to front; the world bounds of what a shadow map draws, `shadowCasterBounds`), scene description files, scene content assembly (`buildSceneGeometry`: meshes shared by objects of the same shape, resolved materials, scene textures, glTF models through a `ModelLoader`, sockets, bounds and colliders per object), debug lines (`DebugLines`, `addSceneBoundsLines`, `addSceneSocketLines`), collision (`CollisionWorld`, `buildCollisionWorld`) | core, geometry, input, assets |
-| platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`) | core, input, SDL3 |
-| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, sampleable depth, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe) with the key light's shadow map (`ShadowMap`), the depth pre-pass and screen-space ambient occlusion (`SsaoPass`), the render targets of an output (`ViewTargets`: HDR scene target with its depth, ambient occlusion targets, bloom chain, tonemapped image, sRGB output), bloom, the post pass and FXAA (`PostProcessor`; views shown without tonemapping, `PostSettings::tonemap`), the inspection views of the asset preview (`SceneShaders::inspection`, `debug/inspect.frag`), debug lines (`DebugDraw`), registries emptied and the texture cache's content released for new content (`clear`, `TextureCache::clearContent`, which keeps the procedural surfaces), GL_RGBA8 views of textures (`createRgba8View`: readbacks, thumbnails) | core, geometry, assets, scene, glad |
+| media | `rv_media` | Video decoding with FFmpeg (spec §9.4, ADR-0004; FFmpeg only inside its sources): `VideoDecoder` (a `std::jthread` per video opens, demuxes and decodes with FFmpeg's file protocol only and UTF-8 paths: send_packet/receive_frame with EAGAIN, drain at the end, flush on loops and seeks with a 1 s pre-roll; swscale to RGBA8 at most `maxHeight` rows, aspect kept, never enlarged; timestamps from best_effort_timestamp, monotonic across loops; seek generations; failures as `DecodeFailure` for the fallback picture; `stop` never joins on the caller's thread), `FramePool`/`PooledFrame` (reused frames), `FrameQueue` (bounded, 4 frames, generations), `PresentationClock` (newest due frame; dropped, late and repeated counts; resync; pause), `VideoPlayback` (one video for the render thread), `SampleRecorder`, `scaledFrameSize`, test videos with a burned-in frame counter (`test_video.hpp`) | core, assets, FFmpeg (private) |
+| launcher | `rv_launcher` | Emulator launch policy (spec §11, ADR-0006), GPU-free: Windows command-line quoting (the inverse of CommandLineToArgvW), launch requests as argv with validation (PE programs only, no batch files), environment overrides, exit status classification (NTSTATUS crash names), the process runner port (`IProcessRunner`, `ProcessEvent`), the `LaunchSession` state machine (DirectProcess / ProcessTree / UserConfirmReturn, startup grace, window timeout -> StillRunning, never a kill) | core |
+| platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`); the Windows side of emulator launches: `Win32ProcessRunner` (CreateProcessW suspended into a job object without kill-on-close, a completion port, one watcher thread per launch that wakes the main loop), `WindowHandover` (window state before a launch, minimize or keep, restore with fullscreen back on its monitor, foreground remedies: AttachThreadInput, then a taskbar flash) | core, input, launcher, SDL3 |
+| render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, sampleable depth, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe) with the key light's shadow map (`ShadowMap`), the depth pre-pass and screen-space ambient occlusion (`SsaoPass`), the render targets of an output (`ViewTargets`: HDR scene target with its depth, ambient occlusion targets, bloom chain, tonemapped image, sRGB output), bloom, the post pass and FXAA (`PostProcessor`; views shown without tonemapping, `PostSettings::tonemap`), the inspection views of the asset preview (`SceneShaders::inspection`, `debug/inspect.frag`), debug lines (`DebugDraw`), registries emptied and the texture cache's content released for new content (`clear`, `TextureCache::clearContent`, which keeps the procedural surfaces), GL_RGBA8 views of textures (`createRgba8View`: readbacks, thumbnails), the picture of a playing video (`VideoTexture`: an sRGB texture refilled from a ring of 3 persistently mapped pixel buffers, never waiting for the GPU: a buffer is freed by the end timestamp of its copy, a fence as the fallback; GPU upload time) | core, geometry, assets, scene, glad |
+| ui | `rv_ui` | Product UI on RmlUi 6.3 (spec §13.1, ADR-0005): `UiSystem` (RmlUi's lifetime; SDL3 system interface on the app clock, RmlUi's log to spdlog, UTF-8 file interface on the asset root, the OpenGL 3 renderer, bundled fonts only), `UiView` (one context per output, dp ratio = display scale x text scale, a compact theme for views under 760 dp of the display tall (`compactLayout`: the display scale alone, never the text scale), event routing, spatial navigation, rendering into the window with `GL_FRAMEBUFFER_SRGB` off and into screenshots, CPU and GPU times), `QuickCatalogScreen`; RmlUi's SDL3 and GL3 backends vendored in `third_party/rmlui_backends` (target `rv_rmlui_backends`, on our glad) | ui_model, core, input, platform, render, RmlUi; private: rmlui_backends, devui_model, SDL3 |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, popups closed by Back, dock space and its see-through scene area, rendering into the window or a screenshot, panels brought to the front, a decoration drawn over the scene under the panels and while they are hidden, `Panel::update` every frame for every panel) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials with texture thumbnails, Rendering, Log, Scene), the widgets they share with the asset preview's panels (`widgets.hpp`), texture thumbnails (`TexturePreviews`) | core, input, scene, platform, render, imgui |
 | app | `rv_app` | Composition root: application host (`AppHost` with an `AppIdentity`: window title, log file; the run report of `--run-report`), main loop, input pipeline, FreeRoam walking, scene loading and instantiation (`SceneInstance`), the GPU side of a scene application shared with the asset preview (`SceneGraphics`: material library, shader programs, texture cache, registries, renderer, debug lines, surface views, window and screenshot targets, frame statistics), the model viewer (`--model`), screenshots, the sRGB, bloom and FXAA self-checks (the sRGB and FXAA checks draw on a `SelfCheckCanvas`), the developer overlay's panels wired to the app state (developer builds) | all of the above |
 | tools/asset-preview | `retroverse-asset-preview` | The asset preview tool (style §19.3; developer builds): `PreviewApp` on `AppHost`, `SceneGraphics`, `SceneInstance` and `DevUi`, its panels (Asset, Model, Statistics, Manifest, Screen, Warnings) | app, devui, `rv_preview_core` |
 | tools/screenshot-diff | `retroverse-screenshot-diff` | Compares a screenshot with its golden image within a tolerance and writes a heatmap of the differences (style §26.1); every configuration | `rv_screenshot_diff_core` |
+| spikes/video | `spike_video` | I1 spike (c): videos decoded by `rv_media` on textured quads through `gl::VideoTexture`, a JSON report of frame pacing, upload times, late and dropped frames, drift, decoder CPU and memory (`docs/spikes/i1-video.md`) | app, media, render, platform |
+| spikes/ui | `spike_ui` | I1 spike (d): the quick catalog of `rv_ui` over the test room, driven by a scripted SDL virtual gamepad, with 80 checks, UI pass timings and allocation counts (`docs/spikes/i1-ui.md`) | ui, app |
+| spikes/launch | `spike_launch`, `rv_fake_emulator` | I1 spike (f): a borderless fullscreen window that launches a target through `rv_launcher` and `rv_platform` and times the return; the fake emulator stands in for one in tests (exit codes, crashes, hangs, wrappers, exclusive fullscreen); `spike_launch_core` holds the GPU-free measurements (`docs/spikes/i1-launch.md`) | launcher, platform, render |
 
-Six GPU-free sub-targets keep testable policy out of the GPU-side libraries:
+Seven GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 
 | Sub-target | Part of | Content |
 |---|---|---|
@@ -26,18 +32,19 @@ Six GPU-free sub-targets keep testable policy out of the GPU-side libraries:
 | `rv_preview_core` | tools/asset-preview | Built in every configuration: the asset preview's command line and targets (`parsePreviewCommandLine`, `parsePreviewTarget`), the subject loaded from a target (`loadPreviewSubject`: a glTF model, a manifest's model or procedural prefab, a prefab with parameters; the manifest next to a model, `sidecarManifestPaths`; manifest checks with `scaleIssue`; messages; watched files; when the Manifest panel comes forward, `bringsManifestForward`), its scene (`makePreviewScene`, `prefabRoleMaterials`, `prefabRoleTextures`, `screenSurfaces` with the screens' sizes as placed), statistics (`buildAssetReport`), overlay lines and labels (`buildPreviewOverlay`, `gridHeight`, `projectToViewport`, `placeLabelPlates`), what the camera frames (`framingBounds`), orbit controls and shortcuts (`orbitInputFrom`, `previewShortcutsFrom`), view modes (`ViewMode`), the CRT-like fixture (`makeCrtFixture`) |
 | `rv_screenshot_diff_core` | tools/screenshot-diff | The golden comparison (`Tolerance`: 6/255 per channel, at most 0.5% of the pixels; `compareImages` with the count, share, largest difference and bounds of the differing pixels, alpha ignored; `makeHeatmap`; `compareFiles`, which writes the heatmap on a mismatch), shared by the tool and the GPU smoke tests |
 | `rv_devui_model` | devui | Built in every configuration: the frame time history of the Stats panel (`FrameTimeHistory`), the overlay's input routing (`routeOverlayEvent`) and mouse capture hand-over (`CaptureHandover`), the Log panel's copy of the log (`LogView`), where the overlay lands in a screenshot (`fitOverlayCapture`) |
+| `rv_ui_model` | ui | Built in every configuration: UI commands from the pad and the keyboard (`UiCommand`, `NavInput`: D-pad, left stick with hysteresis, repeat delay and rate; `NavBindings`, a table of its own until UI actions join the action map), links between navigation regions with their remembered focus (`FocusRegions`), the focus history of Back (`FocusHistory`), the quick catalog's view model (`QuickCatalogModel`), timing percentiles of the UI pass (`TimingSamples`), the ids of the UI documents and font faces (`ui_assets.hpp`) |
 | `rv_render_debug_filter` | render | Which OpenGL debug messages are logged, dropped or deduplicated |
 | `rv_render_uniforms` | render | std140 uniform block mirrors and binding tables (`uniform_blocks.hpp`), scene lights and ambient packed into `LightsUniforms` (`packLights`, which also picks the key light that casts the shadows, `ShadowLight`; `requireShadowCasters` takes a directional key light's shadow away when nothing casts), the key light's shadow map (`shadow_settings.hpp`: `spotShadowProjection`, `directionalShadowProjection` fitted to the casters and snapped to whole texels, `shadowProjectionFor`, `ShadowSettings` and their `ShadowUniforms`, `makeShadowUniforms`, the depth bias of the shadow pass, `shadowDepthBias`), the ambient occlusion (`ssao_settings.hpp`: the deterministic sample kernel `ssaoKernel`, `SsaoUniforms` from the scene's `SsaoSetup`, `makeSsaoUniforms`, the half-resolution target size `ssaoTargetSize`), materials into `MaterialUniforms` (`makeMaterialUniforms`, with the picture-tube parameters of CRT screens), the post-processing of a view (`post_settings.hpp`: `PostSettings` from the scene environment, `postSettingsFor`, anti-aliasing on or off; its `PostUniforms` block, `makePostUniforms`, the bloom strength as its mix; the radius as the upsampling scatter, `bloomScatter`; the highlight threshold and knee; the bloom level sizes, `bloomLevelSizes`), the fragment outputs of the scene shaders (`SceneOutput`), the CPU mirror of the display transform (`tonemap.hpp`: exposure + ACES fitted, which tests use to predict displayed colors, and its inverse for greys, `greyRadianceForDisplay`), the inspection views and the defines of their programs (`surface_view.hpp`: `SurfaceView`, `inspectionDefine`), the memory of texture mip chains (`texture_memory.hpp`: `fullMipLevelCount`, `mipChainBytes`), the renderer's frame statistics (`FrameStats`, header only), live material factor edits (`MaterialFactors`, `withFactors`) |
 
-`core`, `geometry`, `input`, `assets`, `scene` and the six sub-targets are **GPU-free**: they never reach SDL3,
-glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested without a window or
-a context. `render` receives the OpenGL function loader as a function pointer and never includes SDL. The SDL side of
-`platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a hidden window, the
-fullscreen shortcut) is tested by its own executable, `rv_platform_tests` (label `unit`, SDL but no OpenGL), so
-`rv_tests` stays SDL-free. Because `rv_render_uniforms` is GPU-free, tests check its std140 mirrors, material flags,
-texture units, fragment outputs, tonemapping constants, bloom filter weights, shadow and ambient occlusion blocks and
-constants against the GLSL sources, and the shadow map projections (cones on the map's edges, texel snapping)
-without a GPU.
+`core`, `geometry`, `input`, `assets`, `scene`, `media`, `launcher` and the seven sub-targets are **GPU-free**: they
+never reach SDL3, glad or ImGui (enforced at configure time by `cmake/LayerRules.cmake`), so they are unit-tested
+without a window or a context. `render` receives the OpenGL function loader as a function pointer and never includes
+SDL. The SDL side of `platform` (code tables, collector, gamepads through SDL virtual joysticks, mouse capture on a
+hidden window, the fullscreen shortcut) is tested by its own executable, `rv_platform_tests` (label `unit`, SDL but no
+OpenGL), so `rv_tests` stays SDL-free. Because `rv_render_uniforms` is GPU-free, tests check its std140 mirrors,
+material flags, texture units, fragment outputs, tonemapping constants, bloom filter weights, shadow and ambient
+occlusion blocks and constants against the GLSL sources, and the shadow map projections (cones on the map's edges, texel
+snapping) without a GPU.
 
 Cross-module contracts written by independent work streams (prefab parameters and sockets, material names, scene
 files, manifests, shader sources and uniform blocks) are pinned by `tests/unit/integration`, which builds the real
@@ -46,8 +53,9 @@ geometry, resolves the real materials and preprocesses the real shaders.
 ### Module diagram
 
 An arrow reads "links" (transitive links left out), a dotted one "starts as a process". `rv_devui` and
-`retroverse-asset-preview` exist in developer builds only (`RV_DEV_UI`). Only `rv_app`, `rv_devui`, `rv_render` and
-`rv_platform` reach OpenGL, SDL3 or Dear ImGui; every other library is GPU-free.
+`retroverse-asset-preview` exist in developer builds only (`RV_DEV_UI`). Only `rv_app`, `rv_devui`, `rv_ui` (with the
+vendored `rv_rmlui_backends`), `rv_render` and `rv_platform` reach OpenGL, SDL3, Dear ImGui or RmlUi, besides the
+executables (the I1 spikes call OpenGL themselves); every other library is GPU-free.
 
 ```mermaid
 flowchart TD
@@ -78,6 +86,22 @@ flowchart TD
     input --> core
     devuiModel --> core
     debugFilter --> core
+    spikeVideo[spike_video] --> app
+    spikeVideo --> media[rv_media: FFmpeg]
+    media --> assets
+    spikeUi[spike_ui] --> ui[rv_ui: RmlUi]
+    spikeUi --> app
+    ui --> uiModel[rv_ui_model]
+    ui --> render
+    ui --> platform
+    ui --> devuiModel
+    uiModel --> input
+    spikeLaunch[spike_launch] --> platform
+    spikeLaunch --> render
+    spikeLaunch -. starts .-> fakeEmulator[rv_fake_emulator]
+    platform --> launcher[rv_launcher]
+    fakeEmulator --> launcher
+    launcher --> core
 ```
 
 `rv_app` also links `rv_render` and `rv_platform` directly (Release builds have no `rv_devui`). `rv_render` never
@@ -574,14 +598,32 @@ code of `retroverse.exe`, nothing of the rendering duplicated:
   skipped because no OpenGL 4.5 context can be created exits with 77, ctest's skip code (`tests/smoke/main.cpp` maps
   Catch2's "all skipped").
 - **The gate:** `scripts/gate.ps1 -Gate A` builds the Debug, RelWithDebInfo and Release presets (no warning: `/WX`, and
-  the build output is scanned for compiler, linker and CMake warnings), runs the unit tests and the smoke tests of Debug
-  and Release and the golden comparison of both, and prints a summary table (logs in `build/gate-a`).
+  the build output is scanned for compiler, linker and CMake warnings), runs the unit tests (label `unit`, the I1
+  spikes' included) and the GPU checks (label `gpu`: the smoke tests and the I1 spike checks below) of Debug and Release
+  and the golden comparison of both, and prints a summary table (logs in `build/gate-a`).
+- **Spike tests (I1):** `tests/unit/media` (decoder, queue, clock and playback on videos written at test time under
+  `<bin>/test-media` and removed afterwards; never commit videos), `tests/unit/launcher` (quoting round trips, session
+  states and outcomes), `tests/unit/ui` (navigation, focus, the catalog model, the UI documents and the font's registry
+  records), `spike_launch_tests` (label `unit`, the launch spike's measurements), the runner tests of
+  `rv_platform_tests` against `rv_fake_emulator.exe` in its windowless modes; label `gpu`: `spike/video` (two generated
+  720p clips for 3 s, the frame counters read back from the screenshot, `VideoTexture`'s self-test; the damaged files
+  falling back) and `spike_ui.scenario` (the scripted quick catalog, 1910 frames); label `desktop`, run on demand only
+  by the `msvc-x64-debug-desktop` test preset because they show fullscreen windows and move the foreground:
+  `spike_launch` against the fake emulator (strategies, policies, crashes, exclusive fullscreen, focus stealing, another
+  window in front).
 
-## Threading (M0)
+## Threading
 
-Single main thread: event pump, input, simulation, OpenGL calls, presentation. Asset loading is synchronous at
-startup. Worker threads (catalog, media decoding, video) arrive in later iterations and must hand GPU work to the
-main thread through a command queue (spec §15.3). `rv::core::assertMainThread` guards main-thread-only code.
+The main thread runs the event pump, input, simulation, OpenGL calls and presentation; asset loading is synchronous at
+startup (the rows of the procedural surfaces are generated on the system thread pool with `std::execution::par`, the
+main thread taking part and waiting for the rest: pure functions of (u, v), no OpenGL). Since I1 two kinds of
+long-lived worker threads exist, neither of which calls OpenGL (spec §15.3) or creates or changes a window: each playing
+video has a decoder thread (`media::VideoDecoder`) whose frames reach the render thread through a
+bounded `FrameQueue`, uploaded there by `gl::VideoTexture`; each running emulator has a watcher thread
+(`Win32ProcessRunner`) that waits on the process handle and the job's completion port, checks the tree's visible
+top-level windows every 100 ms (`EnumWindows`, read only) and wakes the main loop through the caller's wake callback
+(an SDL event in `spike_launch`).
+`rv::core::assertMainThread` guards main-thread-only code.
 
 ## Data conventions
 
