@@ -36,6 +36,8 @@ MediaTestDir::MediaTestDir() {
 }
 
 MediaTestDir::~MediaTestDir() {
+    // A stopped decoder's thread ends on its own and may still hold a file of the directory.
+    media::waitForStoppedDecoders();
     std::error_code ec;
     std::filesystem::remove_all(m_path, ec);
 }

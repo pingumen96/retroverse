@@ -22,7 +22,8 @@ namespace rv::test {
 inline constexpr std::chrono::milliseconds kDecoderTimeout{30000};
 
 /// A unique directory under the build tree (next to the test executable, in test-media/), removed recursively on
-/// destruction: the video fixtures of one test.
+/// destruction, once the threads of the stopped decoders have ended: the video fixtures of one test. Declare it before
+/// the decoders and playbacks that read its files.
 class MediaTestDir {
 public:
     MediaTestDir();
