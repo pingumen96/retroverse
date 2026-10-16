@@ -736,10 +736,12 @@ void Transaction::rollback() noexcept {
 
 Expected<DatabaseLock> DatabaseLock::acquireShared(const std::filesystem::path& lockFile,
                                                    std::chrono::milliseconds wait) {
-    // Read and write access (LockFileEx needs one of them), full sharing: every holder opens the same file.
-    const HANDLE file = CreateFileW(core::extendedLengthPath(lockFile).c_str(), GENERIC_READ | GENERIC_WRITE,
-                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS,
-                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    // Read and write access (LockFileEx needs one of them), shared for both: every holder opens the same file. Never
+    // delete sharing: deleting the file would then succeed while it is held (NTFS removes the name at once, POSIX
+    // semantics), and the next process would lock a new file apart from the holders of this one.
+    const HANDLE file =
+        CreateFileW(core::extendedLengthPath(lockFile).c_str(), GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
         const DWORD error = GetLastError();
         return makeError(core::fileErrorCode(error, lockFile),
@@ -962,18 +964,21 @@ Status checkApplicationId(Connection& writer, const std::string& context) {
     return ok();
 }
 
-/// The writer's journal: WAL (readers never wait on it), every commit synced (synchronous FULL: no committed
-/// identity or session is lost on a power cut), the WAL cut back after checkpoints (journal_size_limit).
-Status configureWriter(Connection& writer, const std::string& context) {
-    const auto mode = writer.queryText("PRAGMA journal_mode = WAL");
-    if (!mode) {
-        return propagate(mode.error());
-    }
-    if (!mode->has_value() || !core::equalsIgnoreCaseAscii(**mode, "wal")) {
-        return makeError(
-            ErrorCode::Unsupported,
-            fmt::format("the database cannot use WAL journal mode (it stays in '{}' mode)", mode->value_or("")),
-            context);
+/// The writer's journal: WAL (readers never wait on it) unless `switchToWal` is off (the file keeps its mode: switching
+/// writes the file's header), every commit synced (synchronous FULL: no committed identity or session is lost on a
+/// power cut), the WAL cut back after checkpoints (journal_size_limit).
+Status configureWriter(Connection& writer, bool switchToWal, const std::string& context) {
+    if (switchToWal) {
+        const auto mode = writer.queryText("PRAGMA journal_mode = WAL");
+        if (!mode) {
+            return propagate(mode.error());
+        }
+        if (!mode->has_value() || !core::equalsIgnoreCaseAscii(**mode, "wal")) {
+            return makeError(
+                ErrorCode::Unsupported,
+                fmt::format("the database cannot use WAL journal mode (it stays in '{}' mode)", mode->value_or("")),
+                context);
+        }
     }
     return writer.execute(
         fmt::format("PRAGMA synchronous = FULL; PRAGMA journal_size_limit = {}; PRAGMA cache_size = {}",
@@ -1020,7 +1025,7 @@ Expected<Database> Database::open(const std::filesystem::path& file, const Datab
     if (auto ours = checkApplicationId(*writer, context); !ours) {
         return propagate(ours.error());
     }
-    if (auto configured = configureWriter(*writer, context); !configured) {
+    if (auto configured = configureWriter(*writer, options.switchToWal, context); !configured) {
         return propagate(configured.error());
     }
     spdlog::debug("Catalog database opened: {}", context);

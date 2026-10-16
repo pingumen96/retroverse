@@ -3,7 +3,9 @@
 // unique name precedes a migration and only the last 3 are kept; a failing migration rolls back and leaves the version
 // it had; a migration waits for no other holder of the database's lock and checks the free space first; the schema's
 // rules (foreign keys from the index to the state, never cascading; AUTOINCREMENT ids; STRICT tables) and its foreign
-// keys enforced; `db check` and `db info`'s views of a database.
+// keys enforced; `db check` and `db info`'s views of a database (FTS5 indexes against their content, a check that
+// cannot run while another connection writes, files left as they are found). Schema v1 stays open until the M1 gate:
+// the tests check step 4's tables and keys among those of later steps, and the schema's rules on every table.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -50,12 +52,17 @@ ErrorCode codeOf(const rv::Expected<T>& result) {
     return result.has_value() ? ErrorCode::Unknown : result.error().code;
 }
 
-/// The tables of schema v1, by name.
-const std::vector<std::string> kTablesV1{
+/// The tables of schema v1 that I2 step 4 makes (the identity and index areas), by name. Later steps add theirs to v1
+/// (search, launch): the tests check that these are among the schema's tables, and the schema's rules on all of them.
+const std::vector<std::string> kStep4Tables{
     "idx_disc_groups",     "idx_disc_members",    "idx_games",          "idx_import_issues",
     "idx_media",           "idx_systems",         "rv_game_identities", "rv_identity_aliases",
     "rv_identity_history", "rv_identity_reviews", "rv_libraries",       "rv_meta",
 };
+
+/// The rv_meta keys the identity and index areas write, by name.
+const std::vector<std::string> kStep4MetaKeys{"casing_table_version", "lookup_key_rule", "schema_created_at",
+                                              "schema_created_by", "sort_key_version"};
 
 /// Text rows of a query's first column.
 std::vector<std::string> textColumn(Connection& connection, std::string_view sql) {
@@ -66,6 +73,19 @@ std::vector<std::string> textColumn(Connection& connection, std::string_view sql
         values.emplace_back(statement->columnText(0));
     }
     return values;
+}
+
+/// The schema's ordinary tables, sorted: SQLite's own, virtual tables and their shadow tables (FTS5's) left out.
+std::vector<std::string> ordinaryTables(Connection& connection) {
+    std::vector<std::string> tables = textColumn(connection, "SELECT name FROM pragma_table_list WHERE schema = 'main' "
+                                                             "AND type = 'table' AND name NOT GLOB 'sqlite_*'");
+    std::sort(tables.begin(), tables.end());
+    return tables;
+}
+
+/// True when every value of `part` (sorted) is in `whole` (sorted).
+bool includesAll(const std::vector<std::string>& whole, const std::vector<std::string>& part) {
+    return std::includes(whole.begin(), whole.end(), part.begin(), part.end());
 }
 
 /// The schema as SQLite stores it: type, name and SQL of every object.
@@ -105,7 +125,7 @@ TEST_CASE("catalog_db/migrator: a fresh database migrates to schema v1, the iden
     const auto migrations = programMigrations();
     REQUIRE(migrations.size() == 1);
     CHECK(migrations[0].version == 1);
-    CHECK(migrations[0].name == "schema v1: identity, index");
+    CHECK(migrations[0].name.starts_with("schema v1: identity, index")); // later areas add their names
     CHECK_FALSE(migrations[0].rebuildsTables);
 
     const rv::test::TempDir dir("rv-migrate-fresh");
@@ -125,8 +145,7 @@ TEST_CASE("catalog_db/migrator: a fresh database migrates to schema v1, the iden
 
     Connection& writer = database->writer();
     CHECK(writer.queryInt("PRAGMA application_id").value() == kApplicationId);
-    CHECK(textColumn(writer, "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT GLOB 'sqlite_*' "
-                             "ORDER BY name") == kTablesV1);
+    CHECK(includesAll(ordinaryTables(writer), kStep4Tables));
     CHECK(metaValue(writer, "lookup_key_rule") == std::to_string(rv::catalog::kLookupKeyRule));
     CHECK(metaValue(writer, "casing_table_version") == rv::core::casingTableVersion());
     CHECK(metaValue(writer, "sort_key_version") == std::to_string(rv::catalog::kSortKeyVersion));
@@ -430,7 +449,10 @@ TEST_CASE("catalog_db/schema: foreign keys point from the index to the state tab
     auto database = openCatalogDatabase(rv::test::databaseFileIn(dir));
     REQUIRE(database.has_value());
     Connection& writer = database->writer();
-    for (const std::string& table : kTablesV1) {
+    // Every area's tables keep the rules, those of the later steps too.
+    const std::vector<std::string> tables = ordinaryTables(writer);
+    CHECK(includesAll(tables, kStep4Tables));
+    for (const std::string& table : tables) {
         INFO(table);
         auto keys = writer.prepare("SELECT \"table\", on_update, on_delete FROM pragma_foreign_key_list(?1)");
         REQUIRE(keys.has_value());
@@ -556,7 +578,12 @@ TEST_CASE("catalog_db/check: a migrated database passes every check; broken refe
                 .has_value());
     CHECK(checkDatabase(*database).value().passed());
 
-    // An FTS5 table is checked by FTS5's own integrity-check.
+    // An FTS5 table is checked by FTS5's own integrity-check (one more than the schema's own, if any).
+    const auto schemaFts5Tables = writer
+                                      .queryInt("SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND "
+                                                "sql LIKE 'CREATE VIRTUAL TABLE % USING fts5%'")
+                                      .value()
+                                      .value();
     REQUIRE(writer
                 .execute("CREATE VIRTUAL TABLE search_test USING fts5(title);"
                          "INSERT INTO search_test (title) VALUES ('Pocket Puzzle')")
@@ -564,8 +591,27 @@ TEST_CASE("catalog_db/check: a migrated database passes every check; broken refe
     const auto withFts = checkDatabase(*database);
     REQUIRE(withFts.has_value());
     CHECK(withFts->checks[2].passed);
-    CHECK(withFts->checks[2].details == std::vector<std::string>{"compiled in; 1 FTS5 table(s) checked"});
+    CHECK(withFts->checks[2].details ==
+          std::vector<std::string>{fmt::format("compiled in; {} FTS5 table(s) checked", schemaFts5Tables + 1)});
     REQUIRE(writer.execute("DROP TABLE search_test").has_value());
+
+    // An index over external content (as the search index over the index tables) whose content changed behind its
+    // back: FTS5's check with rank 1 compares the two.
+    REQUIRE(writer
+                .execute("CREATE TABLE search_content (id INTEGER PRIMARY KEY, title TEXT NOT NULL) STRICT;"
+                         "CREATE VIRTUAL TABLE search_drift USING fts5(title, content = 'search_content', "
+                         "content_rowid = 'id');"
+                         "INSERT INTO search_content (id, title) VALUES (1, 'Pocket Puzzle');"
+                         "INSERT INTO search_drift (rowid, title) VALUES (1, 'Pocket Puzzle')")
+                .has_value());
+    CHECK(checkDatabase(*database).value().checks[2].passed);
+    REQUIRE(writer.execute("UPDATE search_content SET title = 'Harbor Racer' WHERE id = 1").has_value());
+    const auto drift = failedCheck("fts5");
+    REQUIRE(drift.has_value());
+    CHECK(drift->problems == 1);
+    REQUIRE(drift->details.size() == 1);
+    CHECK(contains(drift->details[0], "search_drift: the index is damaged or differs from its content"));
+    REQUIRE(writer.execute("DROP TABLE search_drift; DROP TABLE search_content").has_value());
 
     // An older schema version: migrate it; its schema is not compared.
     REQUIRE(writer.execute("PRAGMA user_version = 0").has_value());
@@ -624,6 +670,95 @@ TEST_CASE("catalog_db/check: pages SQLite cannot read are problems the checks fi
     }
 }
 
+TEST_CASE("catalog_db/check: a check that cannot run while another connection writes fails (Conflict) instead of "
+          "reporting a damaged FTS5 index",
+          "[catalog_db]") {
+    const rv::test::TempDir dir("rv-check-busy");
+    const std::filesystem::path file = rv::test::databaseFileIn(dir);
+    {
+        auto database = openCatalogDatabase(file);
+        REQUIRE(database.has_value());
+        REQUIRE(database->writer()
+                    .execute("CREATE VIRTUAL TABLE search_test USING fts5(title);"
+                             "INSERT INTO search_test (title) VALUES ('Pocket Puzzle')")
+                    .has_value());
+    }
+    DatabaseOptions briefWait;
+    briefWait.busyTimeout = 100ms;
+    auto checking = Database::open(file, briefWait);
+    auto writing = Database::open(file); // another process, in a write transaction
+    REQUIRE(checking.has_value());
+    REQUIRE(writing.has_value());
+    auto transaction = Transaction::begin(writing->writer(), Transaction::Mode::Immediate);
+    REQUIRE(transaction.has_value());
+
+    // FTS5's check takes the write lock for an instant: past the busy timeout it could not run, which is no problem
+    // found (`db check` exits 3, not 1).
+    const auto busy = checkDatabase(*checking);
+    REQUIRE_FALSE(busy.has_value());
+    CHECK(busy.error().code == ErrorCode::Conflict);
+    CHECK(contains(busy.error().message, "cannot run FTS5's integrity-check of search_test"));
+    transaction->rollback();
+    const auto checked = checkDatabase(*checking);
+    REQUIRE(checked.has_value());
+    CHECK(checked->checks[2].passed);
+}
+
+TEST_CASE(
+    "catalog_db/check: check and info opened without the switch to WAL leave a database in rollback journal mode, "
+    "and an empty file, as they find them",
+    "[catalog_db]") {
+    const rv::test::TempDir dir("rv-check-unchanged");
+    const std::filesystem::path file = rv::test::databaseFileIn(dir);
+    const std::filesystem::path restored = dir.file("restored/retroverse.sqlite");
+    {
+        auto database = openCatalogDatabase(file);
+        REQUIRE(database.has_value());
+        REQUIRE(database->writer()
+                    .execute("INSERT INTO rv_libraries (id, adapter, esde_home) VALUES ('esde', 'esde', 'C:/ES-DE')")
+                    .has_value());
+        REQUIRE(database->backupTo(restored).has_value()); // a backup, as a user would put it back: rollback journal
+    }
+    REQUIRE(rv::test::readDatabaseHeader(restored).has_value());
+    REQUIRE(rv::test::readDatabaseHeader(restored)->writeVersion == 1);
+    const std::string bytes = rv::core::readTextFile(restored).value();
+
+    DatabaseOptions asFound;
+    asFound.create = false;
+    asFound.switchToWal = false;
+    {
+        auto database = Database::open(restored, asFound);
+        REQUIRE(database.has_value());
+        const auto report = checkDatabase(*database);
+        REQUIRE(report.has_value());
+        CHECK(report->passed());
+        const auto info = describeDatabase(*database);
+        REQUIRE(info.has_value());
+        CHECK(info->journalMode == "delete");
+        CHECK(info->walBytes == 0);
+    }
+    CHECK(rv::core::readTextFile(restored).value() == bytes);
+    CHECK_FALSE(std::filesystem::exists(dir.file("restored/retroverse.sqlite-wal")));
+    CHECK_FALSE(std::filesystem::exists(dir.file("restored/retroverse.sqlite-journal")));
+    // The product's paths switch it to WAL when they open it.
+    REQUIRE(openCatalogDatabase(restored).has_value());
+    CHECK(rv::test::readDatabaseHeader(restored)->writeVersion == 2);
+
+    // An empty file is no database yet: its version is older than the program's, and it stays empty.
+    const std::filesystem::path empty = dir.file("empty/retroverse.sqlite");
+    REQUIRE(rv::core::writeTextFileAtomic(empty, "").has_value());
+    {
+        auto database = Database::open(empty, asFound);
+        REQUIRE(database.has_value());
+        const auto report = checkDatabase(*database);
+        REQUIRE(report.has_value());
+        CHECK_FALSE(report->passed());
+        CHECK(report->schemaVersion == 0);
+        REQUIRE(describeDatabase(*database).has_value());
+    }
+    CHECK(std::filesystem::file_size(empty) == 0);
+}
+
 TEST_CASE("catalog_db/info: the file, versions, sizes, metadata, row counts and backups", "[catalog_db]") {
     const rv::test::TempDir dir("rv-info");
     const std::filesystem::path file = rv::test::databaseFileIn(dir);
@@ -649,15 +784,24 @@ TEST_CASE("catalog_db/info: the file, versions, sizes, metadata, row counts and 
     std::vector<std::string> tables;
     for (const TableRows& table : info->tables) {
         tables.push_back(table.name);
-        CHECK(table.rows == (table.name == "rv_meta" ? 5 : table.name == "rv_libraries" ? 1 : 0));
+        if (std::find(kStep4Tables.begin(), kStep4Tables.end(), table.name) == kStep4Tables.end()) {
+            continue; // a later step's
+        }
+        INFO(table.name);
+        if (table.name == "rv_meta") {
+            CHECK(table.rows >= static_cast<std::int64_t>(kStep4MetaKeys.size()));
+        } else {
+            CHECK(table.rows == (table.name == "rv_libraries" ? 1 : 0));
+        }
     }
-    CHECK(tables == kTablesV1);
+    CHECK(std::is_sorted(tables.begin(), tables.end()));
+    CHECK(includesAll(tables, kStep4Tables));
     std::vector<std::string> keys;
     for (const auto& [key, value] : info->meta) {
         keys.push_back(key);
     }
-    CHECK(keys == std::vector<std::string>{"casing_table_version", "lookup_key_rule", "schema_created_at",
-                                           "schema_created_by", "sort_key_version"});
+    CHECK(std::is_sorted(keys.begin(), keys.end()));
+    CHECK(includesAll(keys, kStep4MetaKeys));
     CHECK(info->backups.empty());
 
     const auto report = migrate(*database, optionsUpTo(2, at("2026-10-16T12:00:00.000Z")));

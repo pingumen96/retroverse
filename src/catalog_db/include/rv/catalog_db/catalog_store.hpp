@@ -12,14 +12,16 @@
 // same connection, see its writes at once; readers (Database::openReader()) and other processes see them only once it
 // commits; a transaction dropped without commit() rolls back. It holds the import lock (DatabaseLock::lockImport()), so
 // that a second beginImport(), on this store, another store or another process, gets Conflict at once instead of
-// waiting. A refused write leaves it open and working; when SQLite rolls the whole transaction back on its own (a full
-// disk, an I/O error, an interrupt), it ends there and every later call fails (InvalidArgument), so that nothing is
-// ever written outside it. Commits run a WAL checkpoint (ADR-0008 §5: a checkpoint after each import) that waits
-// briefly for readers and is otherwise left to the next one. Writes are upserts (INSERT ... ON CONFLICT DO UPDATE),
-// never REPLACE, so that triggers on the index tables (the search index, I2 step 9) see updates as updates.
+// waiting. A refused write leaves it open and working, as it was before the write: a write of several statements
+// (putEntry(), removeEntry()) runs in a savepoint, undone whole when SQLite refuses one of them. When SQLite rolls the
+// whole transaction back on its own (a full disk, an I/O error, an interrupt), it ends there and every later call fails
+// (InvalidArgument), so that nothing is ever written outside it. Commits run a WAL checkpoint (ADR-0008 §5: a
+// checkpoint after each import) that waits briefly for readers and is otherwise left to the next one. Writes are
+// upserts (INSERT ... ON CONFLICT DO UPDATE), never REPLACE, so that triggers on the index tables (the search index, I2
+// step 9) see updates as updates.
 //
 // Besides the port's rules, the transaction refuses: in putIdentity(), an identity without a GameId, system or key, of
-// an unknown library (InvalidArgument), or with the key and relative path of another identity (Conflict); in
+// an unknown library (InvalidArgument), or with the relative path of another identity of its system (Conflict); in
 // putEntry(), an entry of another system than its identity's, an absent media kind with an extension, a count or file
 // size beyond 2^63 - 1, a release date or last played time that is none, raw values that are not UTF-8
 // (InvalidArgument), a rating beyond 10 or players below 1 (ValidationFailed, the schema's checks); in putSystem(), an

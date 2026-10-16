@@ -465,15 +465,17 @@ std::filesystem::path withSuffix(const std::filesystem::path& path, std::wstring
     return result;
 }
 
-/// A check that SQLite stopped because the file is damaged (ParseError: SQLITE_CORRUPT, SQLITE_NOTADB) found a
-/// problem: it is recorded in `check`. Any other error means the check could not run, and is returned.
-Status noteDamage(DatabaseCheck& check, const Error& error) {
+/// A check that SQLite stopped because the file is damaged (ParseError: SQLITE_CORRUPT, SQLITE_CORRUPT_VTAB,
+/// SQLITE_NOTADB) found a problem: it is recorded in `check` as "<what>: <SQLite's message>". Any other error (Conflict
+/// for a busy database, Cancelled, IoError...) means the check could not run, and is returned.
+Status noteDamage(DatabaseCheck& check, const Error& error,
+                  std::string_view what = "SQLite cannot read the file (damaged)") {
     if (error.code != ErrorCode::ParseError) {
         return propagate(error);
     }
     check.passed = false;
     ++check.problems;
-    check.details.push_back("SQLite cannot read the file (damaged): " + error.message);
+    check.details.push_back(fmt::format("{}: {}", what, error.message));
     return ok();
 }
 
@@ -733,13 +735,19 @@ Expected<DatabaseCheckReport> checkDatabase(Database& database) {
     } else {
         const std::vector<std::string>& names = *listed;
         for (const std::string& name : names) {
+            // With rank 1, FTS5 also compares the index with its content: an external content table (the search index
+            // over the index tables) that changed behind the index's back. A mismatch is SQLITE_CORRUPT_VTAB, a
+            // problem found. The check is a write (it takes the write lock for an instant): while another connection
+            // writes past the busy timeout it cannot run (Conflict), which is not a damaged index.
             const std::string table = quoteIdentifier(name);
             if (auto checked =
-                    connection.execute(fmt::format("INSERT INTO {0} ({0}) VALUES ('integrity-check')", table));
+                    connection.execute(fmt::format("INSERT INTO {0} ({0}, rank) VALUES ('integrity-check', 1)", table));
                 !checked) {
-                fts5.passed = false;
-                ++fts5.problems;
-                fts5.details.push_back(fmt::format("{}: {}", name, checked.error().message));
+                if (auto noted = noteDamage(fts5, checked.error(),
+                                            fmt::format("{}: the index is damaged or differs from its content", name));
+                    !noted) {
+                    return propagate(withPrefix(noted.error(), "cannot run FTS5's integrity-check of " + name));
+                }
             }
         }
         if (fts5.passed) {

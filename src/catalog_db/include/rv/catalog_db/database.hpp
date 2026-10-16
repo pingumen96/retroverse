@@ -270,7 +270,10 @@ enum class LockMode : std::uint8_t {
 /// Bytes of the lock file: byte 1 is the lock itself (shared or exclusive); byte 0 is its gate, taken exclusively for
 /// an instant by a holder joining, and by a holder that wants to migrate from the moment it waits for the others to
 /// leave to the end of its migration, so that nobody joins meanwhile and moving between shared and exclusive never
-/// loses the lock; byte 2 is the import lock (lockImport()). The lock file is empty and stays in place.
+/// loses the lock; byte 2 is the import lock (lockImport()). The lock file is empty and stays in place: holders open it
+/// without delete sharing, so that it can be neither deleted nor renamed while any holder has it open (a process that
+/// then made a new one would lock it apart from the holders of the old one, and could migrate while they have the
+/// database open).
 class DatabaseLock {
 public:
     /// What upgrade() found.
@@ -338,6 +341,10 @@ struct DatabaseOptions {
     std::chrono::milliseconds busyTimeout{5000};
     /// How long opening waits while another process migrates the database (holds its lock exclusive).
     std::chrono::milliseconds lockWait{10000};
+    /// Switch the file to WAL journal mode, as every product path does. Off for a database opened to be looked at
+    /// (`db check`, `db info`): the file keeps the journal mode it has (a backup put back by hand is in rollback
+    /// journal mode, an empty file is no database yet), so that opening it writes nothing into it.
+    bool switchToWal = true;
 };
 
 /// The catalog database of a process: its process-level lock (held shared while it is open), its one writer connection
@@ -345,13 +352,13 @@ struct DatabaseOptions {
 class Database {
 public:
     /// Opens the database at `file` for this process: takes its lock shared (waiting up to options.lockWait while
-    /// another process migrates it), opens the writer connection (WAL, foreign keys enforced, synchronous FULL,
-    /// journal_size_limit, a page cache of kWriterCacheKiB, the busy timeout; SQLite's defensive mode), checks that
-    /// SQLite has FTS5 and that the file is a Retroverse catalog database or a new one; a file of another application
-    /// is refused before anything is written to it. Errors: NotFound (no file, options.create off), Conflict (still
-    /// migrated by another process after the wait; a file of another application, or holding tables without
-    /// kApplicationId), Unsupported (SQLite without FTS5, a file system without WAL), IoError and the others SQLite
-    /// reports.
+    /// another process migrates it), opens the writer connection (WAL unless options.switchToWal is off, foreign keys
+    /// enforced, synchronous FULL, journal_size_limit, a page cache of kWriterCacheKiB, the busy timeout; SQLite's
+    /// defensive mode), checks that SQLite has FTS5 and that the file is a Retroverse catalog database or a new one; a
+    /// file of another application is refused before anything is written to it. Errors: NotFound (no file,
+    /// options.create off), Conflict (still migrated by another process after the wait; a file of another application,
+    /// or holding tables without kApplicationId), Unsupported (SQLite without FTS5, a file system without WAL), IoError
+    /// and the others SQLite reports.
     [[nodiscard]] static Expected<Database> open(const std::filesystem::path& file,
                                                  const DatabaseOptions& options = {});
 

@@ -4,7 +4,8 @@
 //   db info           path, versions, sizes, row counts, rv_meta, backups
 //   db rebuild-index  I2 step 11
 // Each takes --json (the results as one JSON object) and --output <file>. Opening the database takes its process-level
-// lock: a migration waits for no other Retroverse process, and refuses while one has the database open.
+// lock: a migration waits for no other Retroverse process, and refuses while one has the database open. check and info
+// write nothing into the file: they open it as they find it (no switch to WAL), and make none when it is missing.
 
 #include <algorithm>
 #include <optional>
@@ -211,6 +212,7 @@ ExitCode runCheck(CommandContext& context, SubcommandArgs& args) {
     const std::filesystem::path file = catalog_db::databaseFile(context.paths);
     catalog_db::DatabaseOptions options;
     options.create = false;
+    options.switchToWal = false; // the file stays as it is found
     auto database = catalog_db::Database::open(file, options);
     if (!database && database.error().code == ErrorCode::NotFound) {
         // Nothing to check is a problem: there is no catalog.
@@ -251,6 +253,7 @@ ExitCode runInfo(CommandContext& context, SubcommandArgs& args) {
     const std::filesystem::path file = catalog_db::databaseFile(context.paths);
     catalog_db::DatabaseOptions options;
     options.create = false;
+    options.switchToWal = false; // the file stays as it is found
     auto database = catalog_db::Database::open(file, options);
     if (!database && database.error().code != ErrorCode::NotFound) {
         return failed(context, "info", database.error());

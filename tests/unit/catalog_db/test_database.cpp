@@ -1,7 +1,8 @@
 // I2 step 4: the catalog database's connections (ADR-0008 §5): the file and its lock file, the writer's and the
 // readers' settings, FTS5, statements and SQLite's errors as Expected values, transactions, a reader during a write,
 // interrupting the writer, files that are not a catalog database, long and non-ASCII paths, and the process-level lock
-// between holders (two holders in one process stand for two processes: LockFileEx locks belong to handles).
+// between holders (two holders in one process stand for two processes: LockFileEx locks belong to handles), whose file
+// cannot go while it is held.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 
 #include <rv/catalog_db/database.hpp>
@@ -531,4 +533,32 @@ TEST_CASE("catalog_db/lock: the import lock is one holder's at a time and goes w
     REQUIRE(second->lockImport().has_value());
     second.reset(); // a holder that goes releases it
     CHECK(first->lockImport().has_value());
+}
+
+TEST_CASE("catalog_db/lock: the lock file can be neither deleted nor renamed while a holder has it open",
+          "[catalog_db]") {
+    const rv::test::TempDir dir("rv-db-lock-file");
+    const std::filesystem::path file = rv::test::databaseFileIn(dir);
+    const std::filesystem::path lockFile = lockFileOf(file);
+    {
+        auto database = Database::open(file);
+        REQUIRE(database.has_value());
+        // A user who deletes it to "unlock" the database: refused, so that the next process locks the same file as the
+        // holders (a new file would let it migrate while they have the database open).
+        std::error_code removeError;
+        CHECK_FALSE(std::filesystem::remove(lockFile, removeError));
+        CHECK(removeError);
+        std::error_code renameError;
+        std::filesystem::rename(lockFile, dir.file("moved.lock"), renameError);
+        CHECK(renameError);
+        CHECK(std::filesystem::exists(lockFile));
+        // The holders still share it: a second one cannot migrate while the first has the database open.
+        auto second = Database::open(file);
+        REQUIRE(second.has_value());
+        MigrationOptions noWait;
+        noWait.lockWait = 0ms;
+        CHECK(codeOf(migrate(*second, noWait)) == ErrorCode::Conflict);
+    }
+    // Nobody holds it: it can go.
+    CHECK(std::filesystem::remove(lockFile));
 }

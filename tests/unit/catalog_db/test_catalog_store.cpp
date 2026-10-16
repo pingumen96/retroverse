@@ -380,6 +380,16 @@ TEST_CASE("catalog_db/store: what the import transaction refuses, and that it go
     StoredIdentity twin = identity;
     twin.id = gameIdOf(library.id, entry, 1);
     CHECK(codeOf<void>(writes.putIdentity(twin)) == ErrorCode::Conflict);
+    // A file has one identity, also when the other's key was stored with another casing table (a re-keying not
+    // finished): the path decides, not the key.
+    REQUIRE(fixture.database.writer()
+                .execute(fmt::format("UPDATE rv_game_identities SET lookup_key = 'KEY OF AN OLDER TABLE' WHERE id = {}",
+                                     id.value()))
+                .has_value());
+    const auto samePath = writes.putIdentity(twin);
+    REQUIRE_FALSE(samePath.has_value());
+    CHECK(samePath.error().code == ErrorCode::Conflict);
+    CHECK(contains(samePath.error().message, "another identity of its system has its relative path"));
 
     // Systems of an unknown library.
     CHECK(codeOf<void>(writes.putSystem(elsewhere.library, rv::test::testSystem("gb", L"I:\\gb"))) ==
@@ -422,6 +432,50 @@ TEST_CASE("catalog_db/store: what the import transaction refuses, and that it go
     REQUIRE(writes.putEntry(indexed).has_value());
     REQUIRE(writes.commit().has_value());
     CHECK(fixture.store->indexedEntries(library.id, entry.system).value() == std::vector<IndexedEntry>{indexed});
+}
+
+TEST_CASE(
+    "catalog_db/store: an entry SQLite refuses halfway through its write or removal leaves nothing of the write, and "
+    "the transaction goes on",
+    "[catalog_db]") {
+    StoreFixture fixture("rv-store-halfway");
+    Connection& writer = fixture.database.writer();
+    const LibraryProfile library = rv::test::testLibrary();
+    const CatalogEntry entry = fullEntry("gb", "Halfway (World).gb", "Halfway");
+    const IndexedEntry indexed = indexedEntry(gameIdOf(library.id, entry), entry); // a cover and a video
+    importAll(*fixture.store, library, {}, {indexed});
+    // Statements SQLite refuses after the write's first ones ran, undoing only themselves as after a full disk: a media
+    // row, an index row's removal (temporary triggers of the writer connection, the database's schema untouched).
+    REQUIRE(writer
+                .execute("CREATE TEMP TRIGGER refuse_media BEFORE INSERT ON idx_media WHEN NEW.extension = '.bad' "
+                         "BEGIN SELECT RAISE(ABORT, 'media refused'); END;"
+                         "CREATE TEMP TRIGGER refuse_removal BEFORE DELETE ON idx_games "
+                         "BEGIN SELECT RAISE(ABORT, 'removal refused'); END")
+                .has_value());
+
+    auto transaction = fixture.store->beginImport(library.id);
+    REQUIRE(transaction.has_value());
+    IndexedEntry changed = indexed;
+    changed.entry.title = "Changed";
+    changed.media[MediaKind::Video] = MediaPresence{};
+    changed.media[MediaKind::Marquee] = MediaPresence{true, ".bad"};
+    const auto refused = (*transaction)->putEntry(changed); // after its row's upsert and its old media's removal
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().code == ErrorCode::ValidationFailed);
+    CHECK(contains(refused.error().message, "media refused"));
+    const auto kept = (*transaction)->removeEntry(indexed.id); // after its media's removal
+    REQUIRE_FALSE(kept.has_value());
+    CHECK(kept.error().code == ErrorCode::ValidationFailed);
+    CHECK(contains(kept.error().message, "removal refused"));
+
+    // Nothing of either write is left: the entry and its media as they were, within the transaction and after it.
+    CHECK(writer.inTransaction());
+    CHECK(fixture.store->indexedEntries(library.id, entry.system).value() == std::vector<IndexedEntry>{indexed});
+    REQUIRE(writer.execute("DROP TRIGGER refuse_media; DROP TRIGGER refuse_removal").has_value());
+    REQUIRE((*transaction)->putEntry(indexed).has_value()); // and it goes on
+    REQUIRE((*transaction)->commit().has_value());
+    CHECK(fixture.store->indexedEntries(library.id, entry.system).value() == std::vector<IndexedEntry>{indexed});
+    CHECK(writer.queryInt("SELECT count(*) FROM idx_media").value() == 2);
 }
 
 TEST_CASE("catalog_db/store: identities in (key, relative path) order, two names of one key two identities; index rows "

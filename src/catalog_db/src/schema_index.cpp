@@ -33,8 +33,9 @@ CREATE TABLE idx_systems (
 
 -- One row per indexed entry (IndexedEntry) under its identity's GameId: every entry of the snapshot that has a key
 -- (OutsideSystemFolder entries are never indexed), exactly as the snapshot gave it, with its sort key (sortKeyOf(),
--- rv_meta's sort_key_version) and its media presence mask (bit n: MediaKind n, idx_media holds the extensions). The
--- key of the relative path is its identity's. Text fields as written, '' when empty; NULL where a value is absent:
+-- rv_meta's sort_key_version); its media are idx_media's rows, nowhere else (a filter on a kind present is an EXISTS
+-- on idx_media's primary key). The key of the relative path is its identity's. Text fields as written, '' when empty;
+-- NULL where a value is absent:
 -- file facts (all four together), release date (YYYYMMDD), rating (tenths), players (players_max NULL with
 -- players_min: an open range, "8+"), the disc head's relative path (DiscMember entries), the last played time (ES-DE's
 -- local "YYYYMMDDTHHMMSS"), the raw ES-DE values (a JSON object of [name, text] pairs: "unknown" elements, "original"
@@ -76,7 +77,6 @@ CREATE TABLE idx_games (
     play_count         INTEGER NOT NULL CHECK (play_count >= 0),
     play_time          INTEGER NOT NULL CHECK (play_time >= 0),
     last_played        TEXT,
-    media_mask         INTEGER NOT NULL CHECK (media_mask >= 0),
     raw                TEXT    CHECK (json_valid(raw)),
     CHECK ((is_directory IS NULL) = (file_size IS NULL) AND (file_size IS NULL) = (file_time IS NULL)
            AND (file_time IS NULL) = (file_hidden IS NULL)),

@@ -142,12 +142,14 @@ struct DatabaseCheckReport {
     }
 };
 
-/// Checks `database` without changing it: SQLite's integrity_check; foreign_key_check; FTS5 compiled in, and FTS5's
-/// integrity-check of every FTS5 table of the schema; the schema version against the program's; and, at the program's
-/// version, the schema itself against the one the program's migrations make (tables, indexes, triggers and views, by
-/// their SQL), which tells a database made by an earlier build of an open schema version. A check that SQLite stops on
-/// a damaged page (ParseError) found a problem: it is in the report, and the other checks still run. Errors: the checks
-/// could not run (IoError and the others SQLite reports).
+/// Checks `database` without changing it (opened with DatabaseOptions::switchToWal off, opening changes nothing
+/// either): SQLite's integrity_check; foreign_key_check; FTS5 compiled in, and FTS5's integrity-check of every FTS5
+/// table of the schema, with rank 1 (the index against its content too); the schema version against the program's;
+/// and, at the program's version, the schema itself against the one the program's migrations make (tables, indexes,
+/// triggers and views, by their SQL), which tells a database made by an earlier build of an open schema version. A
+/// check that SQLite stops on a damaged page or a damaged index (ParseError) found a problem: it is in the report, and
+/// the other checks still run. Errors: the checks could not run: Conflict (FTS5's check takes the write lock for an
+/// instant, and another connection kept it past the writer's busy timeout), Cancelled, IoError and SQLite's others.
 [[nodiscard]] Expected<DatabaseCheckReport> checkDatabase(Database& database);
 
 /// A table of the database and its rows.
@@ -162,7 +164,8 @@ struct DatabaseInfo {
     std::string sqliteVersion;
     int schemaVersion = 0;
     int programSchemaVersion = 0;
-    /// PRAGMA journal_mode ("wal").
+    /// PRAGMA journal_mode as found: "wal"; "delete" for a file in rollback journal mode (a backup put back by hand)
+    /// opened with DatabaseOptions::switchToWal off.
     std::string journalMode;
     std::int64_t pageSize = 0;
     std::int64_t pageCount = 0;
@@ -179,7 +182,8 @@ struct DatabaseInfo {
     std::vector<std::filesystem::path> backups;
 };
 
-/// The facts of `database` (`retroverse-cli db info`), read without changing it. Errors: SQLite's.
+/// The facts of `database` (`retroverse-cli db info`), read without changing it (opened with
+/// DatabaseOptions::switchToWal off, as checkDatabase()). Errors: SQLite's.
 [[nodiscard]] Expected<DatabaseInfo> describeDatabase(Database& database);
 
 } // namespace rv::catalog_db

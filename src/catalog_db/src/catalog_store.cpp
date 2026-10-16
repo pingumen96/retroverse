@@ -453,7 +453,6 @@ enum class GameColumn : int {
     PlayCount,
     PlayTime,
     LastPlayed,
-    MediaMask,
     Raw,
     Count,
 };
@@ -495,7 +494,6 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(GameColumn::Coun
     "play_count",
     "play_time",
     "last_played",
-    "media_mask",
     "raw",
 };
 
@@ -531,6 +529,9 @@ enum class Sql : std::size_t {
     DeleteDiscMembers,
     DeleteDiscGroup,
     DeleteGame,
+    Savepoint,
+    ReleaseSavepoint,
+    RollBackToSavepoint,
     Count,
 };
 
@@ -612,6 +613,12 @@ std::string sqlOf(Sql which) {
         return "DELETE FROM idx_disc_groups WHERE head = ?1";
     case Sql::DeleteGame:
         return "DELETE FROM idx_games WHERE id = ?1";
+    case Sql::Savepoint:
+        return "SAVEPOINT rv_store_write";
+    case Sql::ReleaseSavepoint:
+        return "RELEASE rv_store_write";
+    case Sql::RollBackToSavepoint:
+        return "ROLLBACK TO rv_store_write";
     case Sql::Count:
         break;
     }
@@ -877,7 +884,6 @@ Status bindGame(Statement& statement, const IndexedEntry& indexed, std::string_v
     } else {
         statement.bindNull(parameter(GameColumn::LastPlayed));
     }
-    statement.bindInt(parameter(GameColumn::MediaMask), indexed.media.presenceMask());
     const auto raw = rawJson(entry.raw);
     if (!raw) {
         return propagate(raw.error());
@@ -982,6 +988,12 @@ private:
 
     Expected<Statement*> statement(Sql which) { return m_state->statement(which); }
 
+    /// Runs `write`, a write of several statements, as one: inside a savepoint, so that when SQLite refuses one of its
+    /// statements after others ran (a full disk or an I/O error may undo only that statement), what the others wrote is
+    /// undone too, and the transaction goes on as it was before the write.
+    template <class Write>
+    Status asOne(Write write);
+
     /// Records in rv_meta the lookup key version of every identity's key, or "mixed" while they differ.
     Status recordKeyVersion();
 
@@ -1022,6 +1034,42 @@ Status SqliteCatalogStore::ImportTransaction::putLibrary(const LibraryProfile& p
             failed(withPrefix(stored.error(), fmt::format("cannot store the library '{}'", profile.id.str()))));
     }
     return ok();
+}
+
+template <class Write>
+Status SqliteCatalogStore::ImportTransaction::asOne(Write write) {
+    auto begin = statement(Sql::Savepoint);
+    auto release = statement(Sql::ReleaseSavepoint);
+    auto rollBack = statement(Sql::RollBackToSavepoint);
+    if (!begin || !release || !rollBack) {
+        return propagate(!begin ? begin.error() : !release ? release.error() : rollBack.error());
+    }
+    if (auto begun = (*begin)->run(); !begun) {
+        return propagate(failed(begun.error()));
+    }
+    Status written = write();
+    if (written) {
+        if (auto released = (*release)->run(); !released) {
+            return propagate(failed(released.error()));
+        }
+        return written;
+    }
+    // Undone, unless SQLite rolled the whole transaction back with the error (failed() has then ended this one).
+    if (m_state != nullptr && m_state->database.writer().inTransaction()) {
+        auto undone = (*rollBack)->run();
+        if (undone) {
+            undone = (*release)->run();
+        }
+        if (!undone) {
+            // What the write left cannot be undone alone: the import goes rather than commit half an entry.
+            finish();
+            Error error = written.error();
+            error.message += fmt::format(" (the import transaction was rolled back: the write could not be undone: {})",
+                                         undone.error().message);
+            return propagate(std::move(error));
+        }
+    }
+    return written;
 }
 
 Status SqliteCatalogStore::ImportTransaction::recordKeyVersion() {
@@ -1110,7 +1158,7 @@ Status SqliteCatalogStore::ImportTransaction::putIdentity(const StoredIdentity& 
             error.message =
                 fmt::format("its library '{}' is not in the store ({})", identity.library.str(), error.message);
         } else if (isConstraintFailure(error, "UNIQUE")) {
-            error.message = fmt::format("another identity has its key and relative path '{}' ({})",
+            error.message = fmt::format("another identity of its system has its relative path '{}' ({})",
                                         identity.key.relativePath(), error.message);
         }
         return propagate(failed(withPrefix(std::move(error), "cannot store the identity " + context)));
@@ -1209,39 +1257,37 @@ Status SqliteCatalogStore::ImportTransaction::putEntry(const IndexedEntry& index
     }
 
     auto upsert = statement(Sql::UpsertGame);
-    if (!upsert) {
-        return propagate(upsert.error());
+    auto clear = statement(Sql::DeleteMedia);
+    auto insert = statement(Sql::InsertMedia);
+    if (!upsert || !clear || !insert) {
+        return propagate(!upsert ? upsert.error() : !clear ? clear.error() : insert.error());
     }
     if (auto bound = bindGame(**upsert, indexed, **library); !bound) {
         (*upsert)->reset(); // the bindings made before the value it refused
         return propagate(withPrefix(bound.error(), "cannot index the entry " + context()));
     }
-    if (auto stored = (*upsert)->run(); !stored) {
-        return propagate(failed(withPrefix(stored.error(), "cannot index the entry " + context())));
-    }
-
-    // Its media: the kinds present, each with its extension.
-    auto clear = statement(Sql::DeleteMedia);
-    auto insert = statement(Sql::InsertMedia);
-    if (!clear || !insert) {
-        return propagate(!clear ? clear.error() : insert.error());
-    }
-    const auto id = static_cast<std::int64_t>(indexed.id.value());
-    (*clear)->bindInt(1, id);
-    if (auto cleared = (*clear)->run(); !cleared) {
-        return propagate(failed(withPrefix(cleared.error(), "cannot index the media of " + context())));
-    }
-    for (const MediaKind kind : catalog::kMediaKinds) {
-        const catalog::MediaPresence& media = indexed.media[kind];
-        if (!media.present) {
-            continue;
+    // The row and its media (the kinds present, each with its extension) as one write.
+    return asOne([&]() -> Status {
+        if (auto stored = (*upsert)->run(); !stored) {
+            return propagate(failed(withPrefix(stored.error(), "cannot index the entry " + context())));
         }
-        (*insert)->bindInt(1, id).bindInt(2, static_cast<std::int64_t>(kind)).bindText(3, media.extension);
-        if (auto stored = (*insert)->run(); !stored) {
-            return propagate(failed(withPrefix(stored.error(), "cannot index the media of " + context())));
+        const auto id = static_cast<std::int64_t>(indexed.id.value());
+        (*clear)->bindInt(1, id);
+        if (auto cleared = (*clear)->run(); !cleared) {
+            return propagate(failed(withPrefix(cleared.error(), "cannot index the media of " + context())));
         }
-    }
-    return ok();
+        for (const MediaKind kind : catalog::kMediaKinds) {
+            const catalog::MediaPresence& media = indexed.media[kind];
+            if (!media.present) {
+                continue;
+            }
+            (*insert)->bindInt(1, id).bindInt(2, static_cast<std::int64_t>(kind)).bindText(3, media.extension);
+            if (auto stored = (*insert)->run(); !stored) {
+                return propagate(failed(withPrefix(stored.error(), "cannot index the media of " + context())));
+            }
+        }
+        return ok();
+    });
 }
 
 Status SqliteCatalogStore::ImportTransaction::removeEntry(GameId id) {
@@ -1251,19 +1297,28 @@ Status SqliteCatalogStore::ImportTransaction::removeEntry(GameId id) {
     if (!id.isValid()) {
         return makeError(ErrorCode::InvalidArgument, "no GameId to remove");
     }
-    // The rows that refer to the game first, then its own; its identity stays. The disc group it heads goes with it; a
-    // group it is a member of is its head's, which keeps it as it was read (CachedDiscGroup).
-    for (const Sql which : {Sql::DeleteMedia, Sql::DeleteDiscMembers, Sql::DeleteDiscGroup, Sql::DeleteGame}) {
-        auto remove = statement(which);
+    // The rows that refer to the game first, then its own, as one write; its identity stays. The disc group it heads
+    // goes with it; a group it is a member of is its head's, which keeps it as it was read (CachedDiscGroup).
+    constexpr std::array<Sql, 4> kRemovals{Sql::DeleteMedia, Sql::DeleteDiscMembers, Sql::DeleteDiscGroup,
+                                           Sql::DeleteGame};
+    std::array<Statement*, kRemovals.size()> removals{};
+    for (std::size_t i = 0; i < kRemovals.size(); ++i) {
+        auto remove = statement(kRemovals[i]);
         if (!remove) {
             return propagate(remove.error());
         }
-        (*remove)->bindInt(1, static_cast<std::int64_t>(id.value()));
-        if (auto removed = (*remove)->run(); !removed) {
-            return propagate(failed(withPrefix(removed.error(), "cannot remove the index rows of " + id.toString())));
-        }
+        removals[i] = *remove;
     }
-    return ok();
+    return asOne([&]() -> Status {
+        for (Statement* remove : removals) {
+            remove->bindInt(1, static_cast<std::int64_t>(id.value()));
+            if (auto removed = remove->run(); !removed) {
+                return propagate(
+                    failed(withPrefix(removed.error(), "cannot remove the index rows of " + id.toString())));
+            }
+        }
+        return ok();
+    });
 }
 
 Status SqliteCatalogStore::ImportTransaction::commit() {

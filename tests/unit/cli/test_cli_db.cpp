@@ -1,13 +1,16 @@
 // I2 step 4: retroverse-cli db (ADR-0008 §5): migrate, check and info on the database of --data-dir, as text and as
-// JSON, to stdout or --output; their exit codes, and the usage errors that touch no database.
+// JSON, to stdout or --output; their exit codes, files check and info leave as they find them, and the usage errors
+// that touch no database.
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -80,6 +83,30 @@ private:
 
 bool contains(std::string_view text, std::string_view part) {
     return text.find(part) != std::string_view::npos;
+}
+
+/// The line of `text` that starts with `start`, without its end of line; empty when there is none.
+std::string lineStartingWith(std::string_view text, std::string_view start) {
+    std::size_t at = 0;
+    while (at < text.size()) {
+        const std::size_t end = std::min(text.find('\n', at), text.size());
+        const std::string_view line = text.substr(at, end - at);
+        if (line.starts_with(start)) {
+            return std::string(line);
+        }
+        at = end + 1;
+    }
+    return {};
+}
+
+/// The rows `db info --json` counts for `table`; nothing when it does not list the table.
+std::optional<std::int64_t> rowsOf(const nlohmann::json& info, std::string_view table) {
+    for (const nlohmann::json& entry : info.at("tables")) {
+        if (entry.at("name").get<std::string>() == table) {
+            return entry.at("rows").get<std::int64_t>();
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -234,8 +261,9 @@ TEST_CASE(
     CHECK(contains(info.out, "Schema version: 1 (this program: 1)\n"));
     CHECK(contains(info.out, ", journal mode wal\n"));
     CHECK(contains(info.out, "  lookup_key_rule = 1\n"));
-    CHECK(contains(info.out, "  rv_meta              5\n"));
-    CHECK(contains(info.out, "  rv_game_identities   0\n"));
+    // A row count per table, in a column as wide as the longest name (the later steps' tables are listed too).
+    CHECK_FALSE(lineStartingWith(info.out, "  rv_meta ").empty());
+    CHECK(lineStartingWith(info.out, "  rv_game_identities ").ends_with(" 0"));
     CHECK(info.out.ends_with("Backups: none\n"));
 
     const auto json = nlohmann::json::parse(cli.run({"info", "--json"}).out);
@@ -244,9 +272,45 @@ TEST_CASE(
     CHECK(json.at("programSchemaVersion") == 1);
     CHECK(json.at("journalMode") == "wal");
     CHECK(json.at("sizes").at("database").get<std::uint64_t>() > 0);
-    CHECK(json.at("tables").size() == 12);
+    CHECK(rowsOf(json, "rv_meta").value_or(0) >= 5);
+    CHECK(rowsOf(json, "rv_game_identities") == 0);
+    CHECK(rowsOf(json, "idx_games") == 0);
     CHECK(json.at("meta").at("sort_key_version") == "1");
     CHECK(json.at("backups").empty());
+}
+
+TEST_CASE(
+    "cli/db: check and info leave a database in rollback journal mode as they find it; migrate switches it to WAL",
+    "[cli][catalog_db]") {
+    const LoggingReset loggingReset;
+    const DbRunner cli("rv-cli-db-as-found");
+    REQUIRE(cli.run({"migrate"}).code == ExitCode::Ok);
+    // A backup put back in the database's place, as a user restores one: VACUUM INTO writes a rollback journal file.
+    const std::filesystem::path backup = cli.dir().file("backup.sqlite");
+    {
+        auto database = rv::catalog_db::Database::open(cli.databaseFile());
+        REQUIRE(database.has_value());
+        REQUIRE(database->backupTo(backup).has_value());
+    }
+    std::filesystem::copy_file(backup, cli.databaseFile(), std::filesystem::copy_options::overwrite_existing);
+    const auto bytes = rv::core::readTextFile(cli.databaseFile());
+    REQUIRE(bytes.has_value());
+    REQUIRE(static_cast<unsigned char>((*bytes)[18]) == 1); // the file format's write version: a rollback journal
+
+    const RunResult check = cli.run({"check"});
+    CHECK(check.code == ExitCode::Ok);
+    CHECK(check.out.ends_with("No problems found.\n"));
+    const RunResult info = cli.run({"info"});
+    CHECK(info.code == ExitCode::Ok);
+    CHECK(contains(info.out, ", journal mode delete\n"));
+    CHECK(rv::core::readTextFile(cli.databaseFile()).value() == *bytes);
+    std::filesystem::path wal = cli.databaseFile();
+    wal += "-wal";
+    CHECK_FALSE(std::filesystem::exists(wal));
+
+    // The product's paths open it in WAL.
+    REQUIRE(cli.run({"migrate"}).code == ExitCode::Ok);
+    CHECK(contains(cli.run({"info"}).out, ", journal mode wal\n"));
 }
 
 TEST_CASE("cli/db: a database newer than the program: migrate fails (exit 3), check reports it (exit 1)",

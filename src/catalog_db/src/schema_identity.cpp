@@ -40,7 +40,7 @@ CREATE TABLE rv_libraries (
 -- the key's rule and casing table (rv_meta keeps the version the store last wrote keys with); the file's facts at the
 -- last import that saw it (all NULL when none did); the quick hash with the size and time it belongs to (I2 step 11);
 -- when the identity was made and when an import last saw its file. Two names that fold to one key keep two
--- identities (ADR-0008 §4), so the key alone is not unique: the key and the exact path are.
+-- identities (ADR-0008 §4), so the key is not unique: the exact path is.
 CREATE TABLE rv_game_identities (
     id              INTEGER PRIMARY KEY CHECK (id > 0),
     library         TEXT    NOT NULL REFERENCES rv_libraries (id),
@@ -63,14 +63,16 @@ CREATE TABLE rv_game_identities (
            AND (file_time IS NULL) = (file_hidden IS NULL)),
     CHECK ((quick_hash IS NULL) = (quick_hash_size IS NULL) AND (quick_hash_size IS NULL) = (quick_hash_time IS NULL))
 ) STRICT;
--- The import's matches (ICatalogStore::identities: a system's identities in (key, relative path) order; the exact path
--- first, then the key), and the uniqueness of a file's identity.
-CREATE UNIQUE INDEX rv_game_identities_key ON rv_game_identities (library, system, lookup_key, relative_path);
+-- A file has one identity: its exact relative path is unique in its system, whatever casing table its stored key was
+-- computed with (keys of several versions while a re-keying is not finished). The index also serves the reads of a
+-- system's identities (ICatalogStore::identities), which the import matches by path and by key in memory: no index by
+-- key, a second index written in random order (GameIds are random) that made writing 100,000 rows half again as slow.
+CREATE UNIQUE INDEX rv_game_identities_path ON rv_game_identities (library, system, relative_path);
 -- Reconciliation pairs a vanished identity with a new file of the same quick hash (I2 step 11).
 CREATE INDEX rv_game_identities_quick_hash ON rv_game_identities (quick_hash) WHERE quick_hash IS NOT NULL;
 
--- What happened to identities (I2 step 11): moves with their reason (MoveReason), keys computed again, aliases recorded,
--- reviews resolved; the key and path before and after.
+-- What happened to identities (I2 step 11): moves with their reason (MoveReason), keys computed again, aliases
+-- recorded, reviews resolved; the key and path before and after.
 CREATE TABLE rv_identity_history (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     game      INTEGER NOT NULL REFERENCES rv_game_identities (id),
@@ -85,8 +87,8 @@ CREATE TABLE rv_identity_history (
 ) STRICT;
 CREATE INDEX rv_identity_history_game ON rv_identity_history (game, id);
 
--- GameIds that stand for another identity (I2 step 11): a file moved back onto a key that had another identity meanwhile,
--- a review resolved. An alias is never given out again (ICatalogStore::takenGameIds); what it was is kept.
+-- GameIds that stand for another identity (I2 step 11): a file moved back onto a key that had another identity
+-- meanwhile, a review resolved. An alias is never given out again (ICatalogStore::takenGameIds); what it was is kept.
 CREATE TABLE rv_identity_aliases (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     alias         INTEGER NOT NULL UNIQUE CHECK (alias > 0),
