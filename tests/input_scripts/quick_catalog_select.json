@@ -1,0 +1,13 @@
+// I2 step 6: the quick catalog driven by its UI actions alone, as a user's bindings would produce them, over spike_ui's
+// 100,000 generated games (the first one selected at start). A tap of ui_down (one step: position 1), ui_nav_y held at
+// -0.9 for one second (the stick: a step at once, again after 0.4 s, then every 0.1 s: 7 steps, position 8), a tap of
+// ui_end (the last game, 99,999), a tap of ui_up. Expected: the selection on position 99,998.
+//   spike_ui --input-script tests/input_scripts/quick_catalog_select.json --expect-selection 99998
+//     --exit-after-frames --frames 120 --hidden --fixed-dt 0.016667 --data-dir build/rvdata
+// tests/unit/ui/test_quick_catalog_input.cpp plays it GPU-free over a model of 100,000 games.
+[
+  {"fromFrame": 10, "toFrame": 12, "actions": {"ui_down": 1}},
+  {"fromFrame": 20, "toFrame": 79, "actions": {"ui_nav_y": -0.9}},
+  {"fromFrame": 90, "toFrame": 92, "actions": {"ui_end": 1}},
+  {"fromFrame": 100, "toFrame": 102, "actions": {"ui_up": 1}}
+]

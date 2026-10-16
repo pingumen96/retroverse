@@ -20,10 +20,12 @@
 
 #include <rv/core/main_thread.hpp>
 #include <rv/devui/overlay_capture.hpp>
+#include <rv/input/action_map.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/sdl_input_codes.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/ui/nav_input.hpp>
 #include <rv/ui/ui_assets.hpp>
 #include <rv/ui/ui_system.hpp>
 
@@ -122,7 +124,7 @@ Expected<std::unique_ptr<UiView>> UiView::create(UiSystem& system, std::string_v
     view->m_displayScale = sanitizedScale(displayScale);
     context->SetDensityIndependentPixelRatio(view->dpRatio());
     view->applyLayoutTheme();
-    view->setCommandKeys(NavBindings::defaults());
+    view->setCommandKeys(commandKeys(input::ActionMap::defaults()));
     spdlog::info("UI view '{}': {}x{} pixels, dp ratio {:.2f}{}", contextName, size.x, size.y, view->dpRatio(),
                  view->m_compact ? ", compact layout" : "");
     return view;
@@ -169,15 +171,6 @@ void UiView::setTextScale(float scale) {
     }
 }
 
-void UiView::setCommandKeys(const NavBindings& bindings) {
-    m_commandKeys.reset();
-    for (const auto& keys : bindings.keys) {
-        for (const input::Key key : keys) {
-            m_commandKeys.set(input::toIndex(key));
-        }
-    }
-}
-
 bool UiView::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
         if (const std::optional<input::Key> key = platform::keyFromScancode(event.key.scancode);
@@ -213,6 +206,10 @@ NavOutcome UiView::navigate(NavDirection direction) {
 
 bool UiView::activate() {
     return !pressKey(Rml::Input::KI_RETURN);
+}
+
+bool UiView::caretKey(CaretKey key) {
+    return !pressKey(key == CaretKey::Home ? Rml::Input::KI_HOME : Rml::Input::KI_END);
 }
 
 Rml::Element* UiView::element(std::string_view id) const {

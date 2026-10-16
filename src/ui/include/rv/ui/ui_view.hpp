@@ -13,7 +13,6 @@
 #include <rv/core/expected.hpp>
 #include <rv/input/codes.hpp>
 #include <rv/render/gpu_timer.hpp>
-#include <rv/ui/nav_input.hpp>
 #include <rv/ui/ui_command.hpp>
 
 union SDL_Event;
@@ -31,6 +30,9 @@ class GLDevice;
 namespace rv::ui {
 
 class UiSystem;
+
+/// Keys a focused text field moves its caret with, which the screen sends for the UI's Home and End commands.
+enum class CaretKey : std::uint8_t { Home, End };
 
 /// What a focus move did.
 enum class NavOutcome : std::uint8_t {
@@ -62,10 +64,11 @@ struct UiPassTimes {
 ///    text scale does not take part, so that a larger text scale always means larger text (a dp media query would see
 ///    1920x1080 at 125% with text scale 1.2 as 720 dp tall and swap in the compact sizes, about as much smaller).
 ///  - Input: handleEvent() forwards the mouse, the wheel, text input and IME composition and the keys that are not UI
-///    commands (letters, Backspace, Delete, Home, End, Tab) to the context through the SDL3 backend. The keys bound to
-///    UI commands (arrows, Enter, Esc by default: NavBindings) and every gamepad event stay out: they reach the UI as
-///    UiCommands through NavInput, the same path for the pad and the keyboard. The screen turns commands into
-///    navigate() and activate(): the arrow and Enter keys of RmlUi, so its spatial navigation (nav-up/down/left/right
+///    commands (letters, Backspace, Delete, Tab) to the context through the SDL3 backend. The keys bound to the UI
+///    actions of the action map (setCommandKeys(): arrows, Enter, Esc, Page Up and Down, Home, End by default) and
+///    every gamepad event stay out: they reach the UI as UiCommands through the action map and NavInput, the same path
+///    for the pad, the keyboard and --input-script. The screen turns commands into navigate(), activate() and
+///    caretKey(): the arrow, Enter, Home and End keys of RmlUi, so its spatial navigation (nav-up/down/left/right
 ///    properties, confined to the focused element's scroll container), scrolling the focus into view and text editing
 ///    all work as with a keyboard.
 ///  - Frame: update() once per frame (after the commands), then render() into the window after the scene, with
@@ -101,8 +104,9 @@ public:
     [[nodiscard]] Rml::Context& context() noexcept { return *m_context; }
     [[nodiscard]] UiSystem& system() noexcept { return m_system; }
 
-    /// The keys handleEvent() leaves out because NavInput turns them into commands (default: NavBindings::defaults()).
-    void setCommandKeys(const NavBindings& bindings);
+    /// The keys handleEvent() leaves out because they reach the UI as commands: the keys bound to the UI actions
+    /// (ui::commandKeys() of the bindings in use; those of input::ActionMap::defaults() until set).
+    void setCommandKeys(const std::bitset<input::kKeyCount>& keys) noexcept { m_commandKeys = keys; }
     /// Forwards one SDL event to the context (see the class comment). True when the UI used it: the game must not see
     /// it.
     bool handleEvent(const SDL_Event& event);
@@ -113,6 +117,9 @@ public:
     /// Presses the focused element like Enter: a click on a focusable element, a line break in a text field. True
     /// when an element used it.
     bool activate();
+    /// Sends RmlUi's Home or End key to the focused element: the caret of a text field moves to its start or end. True
+    /// when an element used it.
+    bool caretKey(CaretKey key);
 
     /// The element with id `id` in any document of the view, or null.
     [[nodiscard]] Rml::Element* element(std::string_view id) const;

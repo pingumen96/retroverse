@@ -1,21 +1,26 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <bitset>
 #include <cstddef>
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <set>
 #include <vector>
 
+#include <rv/input/action.hpp>
+#include <rv/input/action_map.hpp>
+#include <rv/input/action_state.hpp>
+#include <rv/input/binding.hpp>
 #include <rv/input/codes.hpp>
+#include <rv/input/input_system.hpp>
 #include <rv/input/raw_input.hpp>
 #include <rv/ui/nav_input.hpp>
 #include <rv/ui/ui_command.hpp>
 
-using rv::input::GamepadAxis;
-using rv::input::GamepadButton;
+using rv::input::Action;
+using rv::input::ActionState;
 using rv::input::Key;
-using rv::input::RawInputFrame;
-using rv::input::toIndex;
 using rv::ui::DirectionRepeater;
 using rv::ui::NavDirection;
 using rv::ui::NavInput;
@@ -41,42 +46,31 @@ int countSteps(DirectionRepeater& repeater, NavDirection direction, int first, i
     return steps;
 }
 
-/// A connected pad with nothing pressed.
-RawInputFrame pad() {
-    RawInputFrame frame;
-    frame.gamepadConnected = true;
-    return frame;
+// The action of a command as InputSystem resolves it: went down this frame (and still held), held, tapped within the
+// frame (down and up again: pressed and released while not held).
+void press(ActionState& actions, UiCommand command) {
+    actions.setButton(rv::ui::actionFor(command), true, true, false);
 }
 
-void press(RawInputFrame& frame, GamepadButton button) {
-    frame.gamepadButtonsPressed.set(toIndex(button));
-    frame.gamepadButtonsDown.set(toIndex(button));
+void hold(ActionState& actions, UiCommand command) {
+    actions.setButton(rv::ui::actionFor(command), true, false, false);
 }
 
-void hold(RawInputFrame& frame, GamepadButton button) {
-    frame.gamepadButtonsDown.set(toIndex(button));
+void tap(ActionState& actions, UiCommand command) {
+    actions.setButton(rv::ui::actionFor(command), false, true, true);
 }
 
-void tap(RawInputFrame& frame, GamepadButton button) {
-    frame.gamepadButtonsPressed.set(toIndex(button));
-    frame.gamepadButtonsReleased.set(toIndex(button));
+/// The UI's stick (UiNavX, UiNavY) as the bindings give it (the default ones: the stick's travel itself).
+ActionState stick(float x, float y) {
+    ActionState actions;
+    actions.setAxis(Action::UiNavX, x);
+    actions.setAxis(Action::UiNavY, y);
+    return actions;
 }
 
-void pressKey(RawInputFrame& frame, Key key) {
-    frame.keysPressed.set(toIndex(key));
-    frame.keysDown.set(toIndex(key));
-}
-
-RawInputFrame stick(float x, float y) {
-    RawInputFrame frame = pad();
-    frame.gamepadAxes[toIndex(GamepadAxis::LeftX)] = x;
-    frame.gamepadAxes[toIndex(GamepadAxis::LeftY)] = y;
-    return frame;
-}
-
-std::vector<UiCommand> commandsOf(NavInput& nav, const RawInputFrame& frame, double deltaSeconds = kDt) {
+std::vector<UiCommand> commandsOf(NavInput& nav, const ActionState& actions, double deltaSeconds = kDt) {
     UiCommandList list;
-    nav.update(frame, deltaSeconds, list);
+    nav.update(actions, deltaSeconds, list);
     return {list.commands().begin(), list.commands().end()};
 }
 
@@ -179,61 +173,57 @@ TEST_CASE("ui/nav_input: near a diagonal the stick keeps its axis until the othe
     CHECK(stickDirection.update(0.0f, 0.9f) == NavDirection::Up);      // flicked to the other side
 }
 
-TEST_CASE("ui/nav_input: D-pad, keys and buttons become UI commands", "[ui][nav_input]") {
-    NavInput nav;
-    RawInputFrame frame = pad();
-    tap(frame, GamepadButton::DpadDown); // pressed and released within the frame
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Down}));
-
-    frame = pad();
-    press(frame, GamepadButton::South);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Activate}));
-    frame = pad();
-    press(frame, GamepadButton::East);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Back}));
-    frame = pad();
-    press(frame, GamepadButton::North);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Media}));
-    frame = pad();
-    press(frame, GamepadButton::West);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Info}));
-
-    // The keyboard: arrows, Enter and Esc; letters stay free for text fields.
-    RawInputFrame keys;
-    pressKey(keys, Key::Up);
-    CHECK(commandsOf(nav, keys) == just({UiCommand::Up}));
-    keys = {};
-    pressKey(keys, Key::Enter);
-    CHECK(commandsOf(nav, keys) == just({UiCommand::Activate}));
-    keys = {};
-    pressKey(keys, Key::Escape);
-    CHECK(commandsOf(nav, keys) == just({UiCommand::Back}));
-    keys = {};
-    pressKey(keys, Key::A);
-    pressKey(keys, Key::Space);
-    CHECK(commandsOf(nav, keys).empty());
+TEST_CASE("ui/nav_input: every command has an action of its own in the action map", "[ui][nav_input]") {
+    std::set<Action> actions;
+    for (std::size_t index = 0; index < rv::ui::kUiCommandCount; ++index) {
+        const auto command = static_cast<UiCommand>(index);
+        const Action action = rv::ui::actionFor(command);
+        INFO(rv::ui::toString(command));
+        CHECK(rv::input::isUiAction(action));
+        CHECK(actions.insert(action).second);
+    }
+    CHECK(rv::ui::actionFor(UiCommand::Down) == Action::UiDown);
+    CHECK(rv::ui::actionFor(UiCommand::Activate) == Action::UiActivate);
+    CHECK(rv::ui::actionFor(UiCommand::FilterNext) == Action::UiFilterNext);
 }
 
-TEST_CASE("ui/nav_input: a step comes before the buttons of the same frame", "[ui][nav_input]") {
+TEST_CASE("ui/nav_input: the presses of the UI actions become commands", "[ui][nav_input]") {
+    for (std::size_t index = 0; index < rv::ui::kUiCommandCount; ++index) {
+        const auto command = static_cast<UiCommand>(index);
+        INFO(rv::ui::toString(command));
+        NavInput nav;
+        ActionState actions;
+        press(actions, command);
+        CHECK(commandsOf(nav, actions) == just({command}));
+    }
+    // A tapped direction (down and up within one frame) steps once.
     NavInput nav;
-    RawInputFrame frame = pad();
-    press(frame, GamepadButton::DpadRight);
-    press(frame, GamepadButton::South);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Right, UiCommand::Activate}));
+    ActionState tapped;
+    tap(tapped, UiCommand::Down);
+    CHECK(commandsOf(nav, tapped) == just({UiCommand::Down}));
+    // The world's actions are not the UI's: Back and Interact pressed give no command.
+    ActionState world;
+    world.setButton(Action::Back, true, true, false);
+    world.setButton(Action::Interact, true, true, false);
+    world.setAxis(Action::MoveForward, -1.0f);
+    CHECK(commandsOf(nav, world).empty());
 }
 
-TEST_CASE("ui/nav_input: a disconnected pad gives nothing", "[ui][nav_input]") {
+TEST_CASE("ui/nav_input: the steps come before the presses of the same frame, in a fixed order", "[ui][nav_input]") {
     NavInput nav;
-    RawInputFrame frame = pad();
-    press(frame, GamepadButton::DpadDown);
-    press(frame, GamepadButton::South);
-    frame.gamepadAxes[toIndex(GamepadAxis::LeftY)] = -1.0f;
-    frame.gamepadConnected = false;
-    CHECK(commandsOf(nav, frame).empty());
+    ActionState actions;
+    press(actions, UiCommand::FilterNext);
+    press(actions, UiCommand::Activate);
+    press(actions, UiCommand::PageDown);
+    press(actions, UiCommand::Right);
+    press(actions, UiCommand::End);
+    press(actions, UiCommand::Back);
+    CHECK(commandsOf(nav, actions) == just({UiCommand::Right, UiCommand::PageDown, UiCommand::Activate, UiCommand::Back,
+                                            UiCommand::End, UiCommand::FilterNext}));
 }
 
 TEST_CASE("ui/nav_input: held D-pad and stick repeat alike", "[ui][nav_input]") {
-    const auto countHeld = [](const RawInputFrame& first, const RawInputFrame& held, int frames) {
+    const auto countHeld = [](const ActionState& first, const ActionState& held, int frames) {
         NavInput nav;
         int downs = static_cast<int>(commandsOf(nav, first, 0.0).size());
         for (int frame = 1; frame <= frames; ++frame) {
@@ -243,11 +233,11 @@ TEST_CASE("ui/nav_input: held D-pad and stick repeat alike", "[ui][nav_input]") 
         }
         return downs;
     };
-    RawInputFrame firstPad = pad();
-    press(firstPad, GamepadButton::DpadDown);
-    RawInputFrame heldPad = pad();
-    hold(heldPad, GamepadButton::DpadDown);
-    const RawInputFrame heldStick = stick(0.0f, -0.9f);
+    ActionState firstPad;
+    press(firstPad, UiCommand::Down);
+    ActionState heldPad;
+    hold(heldPad, UiCommand::Down);
+    const ActionState heldStick = stick(0.0f, -0.9f);
     // 0, 0.4, 0.5, ..., 0.9 s: 7 steps within 60 frames.
     CHECK(countHeld(firstPad, heldPad, 60) == 7);
     CHECK(countHeld(heldStick, heldStick, 60) == 7);
@@ -256,51 +246,69 @@ TEST_CASE("ui/nav_input: held D-pad and stick repeat alike", "[ui][nav_input]") 
 TEST_CASE("ui/nav_input: digital directions win over the stick, the last pressed over the others", "[ui][nav_input]") {
     NavInput nav;
     CHECK(commandsOf(nav, stick(0.0f, -0.9f)) == just({UiCommand::Down}));
-    RawInputFrame frame = stick(0.0f, -0.9f);
-    press(frame, GamepadButton::DpadUp);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Up})); // the D-pad wins over the held stick
+    ActionState both = stick(0.0f, -0.9f);
+    press(both, UiCommand::Up);
+    CHECK(commandsOf(nav, both) == just({UiCommand::Up})); // the D-pad wins over the held stick
 
     NavInput keys;
-    RawInputFrame down;
-    pressKey(down, Key::Down);
+    ActionState down;
+    press(down, UiCommand::Down);
     CHECK(commandsOf(keys, down) == just({UiCommand::Down}));
-    RawInputFrame both;
-    both.keysDown.set(toIndex(Key::Down));
-    pressKey(both, Key::Right);
-    CHECK(commandsOf(keys, both) == just({UiCommand::Right})); // pressed last
-    both.keysPressed.reset();
-    CHECK(commandsOf(keys, both).empty()); // still Right, within its delay
+    ActionState two;
+    hold(two, UiCommand::Down);
+    press(two, UiCommand::Right);
+    CHECK(commandsOf(keys, two) == just({UiCommand::Right})); // pressed last
+    hold(two, UiCommand::Right);
+    CHECK(commandsOf(keys, two).empty()); // still Right, within its delay
 }
 
-TEST_CASE("ui/nav_input: a direction pressed again within a frame steps again", "[ui][nav_input]") {
+TEST_CASE("ui/nav_input: a direction released and pressed again steps at once", "[ui][nav_input]") {
     NavInput nav;
-    RawInputFrame frame = pad();
-    press(frame, GamepadButton::DpadDown);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Down}));
-    RawInputFrame again = pad();
-    press(again, GamepadButton::DpadDown);
-    again.gamepadButtonsReleased.set(toIndex(GamepadButton::DpadDown)); // released and pressed between two frames
-    CHECK(commandsOf(nav, again) == just({UiCommand::Down}));
+    ActionState down;
+    press(down, UiCommand::Down);
+    CHECK(commandsOf(nav, down) == just({UiCommand::Down}));
+    ActionState held;
+    hold(held, UiCommand::Down);
+    CHECK(commandsOf(nav, held).empty());
+    CHECK(commandsOf(nav, ActionState{}).empty()); // released
+    CHECK(commandsOf(nav, down) == just({UiCommand::Down}));
+    // The stick held down, then the D-pad down pressed: a fresh step, not the stick's repeat cadence.
+    NavInput both;
+    CHECK(commandsOf(both, stick(0.0f, -0.9f)) == just({UiCommand::Down}));
+    ActionState stickAndPad = stick(0.0f, -0.9f);
+    press(stickAndPad, UiCommand::Down);
+    CHECK(commandsOf(both, stickAndPad) == just({UiCommand::Down}));
 }
 
-TEST_CASE("ui/nav_input: after a reset a held direction waits for its release", "[ui][nav_input]") {
+TEST_CASE("ui/nav_input: after a reset held directions and pages wait for their release", "[ui][nav_input]") {
     NavInput nav;
-    RawInputFrame first = pad();
-    press(first, GamepadButton::DpadDown);
+    ActionState first;
+    press(first, UiCommand::Down);
     CHECK(commandsOf(nav, first) == just({UiCommand::Down}));
     nav.reset(); // e.g. the screen opened while the pad was held
 
-    RawInputFrame held = pad();
-    hold(held, GamepadButton::DpadDown);
+    ActionState held;
+    hold(held, UiCommand::Down);
     for (int frame = 0; frame < 120; ++frame) {
         CHECK(commandsOf(nav, held).empty());
     }
-    const RawInputFrame stickHeld = stick(0.0f, -0.9f);
-    CHECK(commandsOf(nav, stickHeld).empty()); // the stick too, until everything is released
-    CHECK(commandsOf(nav, pad()).empty());
-    RawInputFrame pressedAgain = pad();
-    press(pressedAgain, GamepadButton::DpadDown);
-    CHECK(commandsOf(nav, pressedAgain) == just({UiCommand::Down}));
+    CHECK(commandsOf(nav, stick(0.0f, -0.9f)).empty()); // the stick too, until everything is released
+    CHECK(commandsOf(nav, ActionState{}).empty());
+    CHECK(commandsOf(nav, first) == just({UiCommand::Down}));
+
+    // A trigger held through the reset pages only once released and pulled again.
+    NavInput pages;
+    ActionState pull;
+    press(pull, UiCommand::PageDown);
+    CHECK(commandsOf(pages, pull) == just({UiCommand::PageDown}));
+    pages.reset();
+    ActionState holding;
+    hold(holding, UiCommand::PageDown);
+    for (int frame = 0; frame < 60; ++frame) {
+        CHECK(commandsOf(pages, holding).empty());
+    }
+    CHECK(commandsOf(pages, ActionState{}).empty());
+    CHECK(commandsOf(pages, pull) == just({UiCommand::PageDown}));
 }
 
 TEST_CASE("ui/nav_input: a stick resting around half deflection never moves the focus", "[ui][nav_input]") {
@@ -313,19 +321,110 @@ TEST_CASE("ui/nav_input: a stick resting around half deflection never moves the 
     CHECK(steps == 0);
 }
 
-TEST_CASE("ui/nav_input: custom bindings and settings are honored", "[ui][nav_input]") {
-    rv::ui::NavBindings bindings = rv::ui::NavBindings::defaults();
-    bindings.buttons[rv::ui::toIndex(UiCommand::Activate)] = {GamepadButton::Start};
-    bindings.leftStickNavigates = false;
+TEST_CASE("ui/nav_input: page moves repeat while held, the one pressed last winning", "[ui][nav_input]") {
+    NavInput nav;
+    ActionState pull;
+    press(pull, UiCommand::PageDown);
+    int pages = static_cast<int>(commandsOf(nav, pull, 0.0).size());
+    ActionState holding;
+    hold(holding, UiCommand::PageDown);
+    for (int frame = 1; frame <= 60; ++frame) {
+        for (const UiCommand command : commandsOf(nav, holding)) {
+            pages += command == UiCommand::PageDown ? 1 : 0;
+        }
+    }
+    CHECK(pages == 7); // as a held direction: 0, 0.4, 0.5, ..., 0.9 s
+
+    // Both triggers: the one pulled last pages, and its repeat starts afresh.
+    ActionState both;
+    hold(both, UiCommand::PageDown);
+    press(both, UiCommand::PageUp);
+    CHECK(commandsOf(nav, both) == just({UiCommand::PageUp}));
+    // A page and a focus step in one frame: both, the step first.
+    NavInput mixed;
+    ActionState stepAndPage;
+    press(stepAndPage, UiCommand::PageUp);
+    press(stepAndPage, UiCommand::Down);
+    CHECK(commandsOf(mixed, stepAndPage) == just({UiCommand::Down, UiCommand::PageUp}));
+}
+
+TEST_CASE("ui/nav_input: a trigger resting at the press threshold pages at the held cadence, never per crossing",
+          "[ui][nav_input]") {
+    // The right trigger through the default bindings, chattering around the input system's press threshold (0.5 past
+    // the binding's 0.15 dead zone: 0.575 of its travel): its held flag flickers every frame, the page stays engaged.
+    const auto trigger = [](float value) {
+        rv::input::RawInputFrame frame;
+        frame.gamepadConnected = true;
+        frame.gamepadAxes[rv::input::toIndex(rv::input::GamepadAxis::RightTrigger)] = value;
+        return frame;
+    };
+    rv::input::InputSystem input;
+    NavInput nav;
+    int flickers = 0;
+    int pages = 0;
+    const auto run = [&](int first, int last, float high, float low) {
+        for (int frame = first; frame <= last; ++frame) {
+            const ActionState actions = input.resolve(trigger(frame % 2 == 0 ? high : low));
+            flickers += actions.pressed(Action::UiPageDown) ? 1 : 0;
+            for (const UiCommand command : commandsOf(nav, actions, frame == 0 ? 0.0 : kDt)) {
+                pages += command == UiCommand::PageDown ? 1 : 0;
+            }
+        }
+    };
+    run(0, 19, 0.585f, 0.565f); // 0.30 s, under the repeat delay
+    CHECK(flickers == 10);      // a press every other frame for the input system
+    CHECK(pages == 1);
+    run(20, 63, 0.585f, 0.565f); // on to 0.98 s: the held cadence, 0, 0.4, 0.5, ..., 0.9 s
+    CHECK(pages == 7);
+    // Under the release threshold (0.35 past the dead zone: 0.45 of the travel) the page lets go; the next pull pages
+    // at once.
+    run(64, 65, 0.44f, 0.44f);
+    CHECK(pages == 7);
+    run(66, 66, 0.6f, 0.6f);
+    CHECK(pages == 8);
+}
+
+TEST_CASE("ui/nav_input: custom settings are honored", "[ui][nav_input]") {
     NavSettings settings;
     settings.repeatDelay = 0.2;
-    NavInput nav(settings, bindings);
-    RawInputFrame frame = pad();
-    press(frame, GamepadButton::South);
-    CHECK(commandsOf(nav, frame).empty());
-    frame = pad();
-    press(frame, GamepadButton::Start);
-    CHECK(commandsOf(nav, frame) == just({UiCommand::Activate}));
-    CHECK(commandsOf(nav, stick(0.0f, -1.0f)).empty());
+    settings.stickEngage = 0.8f;
+    NavInput nav(settings);
+    CHECK(commandsOf(nav, stick(0.0f, -0.7f)).empty()); // under the stricter threshold
+    ActionState first;
+    press(first, UiCommand::Down);
+    CHECK(commandsOf(nav, first, 0.0) == just({UiCommand::Down}));
+    ActionState held;
+    hold(held, UiCommand::Down);
+    int steps = 0;
+    for (int frame = 1; frame <= 13; ++frame) { // 0.203 s
+        steps += static_cast<int>(commandsOf(nav, held).size());
+    }
+    CHECK(steps == 1); // the repeat after 0.2 s
     CHECK(nav.settings().repeatDelay == 0.2);
+}
+
+TEST_CASE("ui/nav_input: the command keys are the keys bound to the UI's actions", "[ui][nav_input]") {
+    using rv::input::toIndex;
+    const std::bitset<rv::input::kKeyCount> defaults = rv::ui::commandKeys(rv::input::ActionMap::defaults());
+    for (const Key key : {Key::Up, Key::Down, Key::Left, Key::Right, Key::Enter, Key::Escape, Key::PageUp,
+                          Key::PageDown, Key::Home, Key::End}) {
+        INFO(rv::input::keyName(key));
+        CHECK(defaults.test(toIndex(key)));
+    }
+    // Letters, the space bar, Backspace and Tab stay with text fields and RmlUi; the world's keys are not the UI's.
+    for (const Key key : {Key::A, Key::W, Key::E, Key::Space, Key::Backspace, Key::Delete, Key::Tab, Key::F1, Key::M}) {
+        INFO(rv::input::keyName(key));
+        CHECK_FALSE(defaults.test(toIndex(key)));
+    }
+    CHECK(defaults.count() == 10);
+
+    // A user's bindings: a letter bound to a UI action becomes a command key, an unbound key stops being one.
+    rv::input::ActionMap custom = rv::input::ActionMap::defaults();
+    custom.bind(Action::UiDown, rv::input::KeyBinding{Key::J, 1.0f});
+    custom.clear(Action::UiEnd);
+    custom.bind(Action::UiEnd, rv::input::GamepadButtonBinding{rv::input::GamepadButton::RightStick, 1.0f});
+    const std::bitset<rv::input::kKeyCount> keys = rv::ui::commandKeys(custom);
+    CHECK(keys.test(toIndex(Key::J)));
+    CHECK_FALSE(keys.test(toIndex(Key::End)));
+    CHECK(rv::ui::commandKeys(rv::input::ActionMap{}).none());
 }

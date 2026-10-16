@@ -1,7 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <set>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <rv/input/action.hpp>
 #include <rv/input/action_state.hpp>
@@ -20,6 +24,45 @@ TEST_CASE("input/action: names are unique and round-trip", "[input][action]") {
     }
     CHECK_FALSE(rv::input::actionFromName("teleport_to_moon").has_value());
     CHECK(rv::input::actionName(Action::MoveForward) == "move_forward");
+}
+
+TEST_CASE("input/action: the product UI's actions", "[input][action]") {
+    // Named as binding files and input scripts write them (ADR-0005, I2 step 6).
+    const std::vector<std::pair<Action, std::string_view>> names = {
+        {Action::UiUp, "ui_up"},
+        {Action::UiDown, "ui_down"},
+        {Action::UiLeft, "ui_left"},
+        {Action::UiRight, "ui_right"},
+        {Action::UiNavX, "ui_nav_x"},
+        {Action::UiNavY, "ui_nav_y"},
+        {Action::UiPageUp, "ui_page_up"},
+        {Action::UiPageDown, "ui_page_down"},
+        {Action::UiHome, "ui_home"},
+        {Action::UiEnd, "ui_end"},
+        {Action::UiActivate, "ui_activate"},
+        {Action::UiBack, "ui_back"},
+        {Action::UiMedia, "ui_media"},
+        {Action::UiInfo, "ui_info"},
+        {Action::UiFilterPrevious, "ui_filter_previous"},
+        {Action::UiFilterNext, "ui_filter_next"},
+    };
+    std::size_t uiActions = 0;
+    for (std::size_t i = 0; i < rv::input::kActionCount; ++i) {
+        uiActions += rv::input::isUiAction(static_cast<Action>(i)) ? 1 : 0;
+    }
+    CHECK(uiActions == names.size());
+    for (const auto& [action, name] : names) {
+        INFO(name);
+        CHECK(rv::input::actionName(action) == name);
+        CHECK(rv::input::actionFromName(name) == action);
+        CHECK(rv::input::isUiAction(action));
+        CHECK_FALSE(rv::input::isLookAction(action));
+    }
+    // The actions of the 3D world keep their places and names.
+    CHECK_FALSE(rv::input::isUiAction(Action::Back));
+    CHECK_FALSE(rv::input::isUiAction(Action::Screenshot));
+    CHECK(rv::input::toIndex(Action::Screenshot) == 15);
+    CHECK(rv::input::actionName(Action::Confirm) == "confirm");
 }
 
 TEST_CASE("input/action_state: buttons and axes", "[input][action_state]") {

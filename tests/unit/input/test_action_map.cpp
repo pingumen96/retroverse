@@ -177,6 +177,10 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
     const auto mouseAxis = [](MouseAxis a, float scale) { return Binding{MouseAxisBinding{a, scale}}; };
     const auto padButton = [](GamepadButton b) { return Binding{GamepadButtonBinding{b, 1.0f}}; };
     const auto padAxis = [](GamepadAxis a) { return Binding{GamepadAxisBinding{a, 1.0f, 0.15f, 1.0f}}; };
+    // A stick read whole: no dead zone (the UI's hysteresis is its dead zone, ADR-0005).
+    const auto wholeAxis = [](GamepadAxis a) {
+        return Binding{GamepadAxisBinding{a, 1.0f, 0.0f, 1.0f}};
+    };
 
     // Specification §12.1, written out independently of the implementation.
     const std::vector<std::pair<Action, std::vector<Binding>>> expected = {
@@ -198,6 +202,25 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::ToggleDevUI, {key(Key::F1)}},
         {Action::ReloadShaders, {key(Key::F5)}},
         {Action::Screenshot, {key(Key::F12)}},
+        // The product UI (ADR-0005, I2 step 6): arrows and D-pad, the left stick read whole (NavInput's hysteresis of
+        // 0.55 / 0.35 of its travel is its dead zone), the pad's buttons of the I1 spike, the triggers page (with the
+        // usual dead zone), the stick clicks jump, the shoulders change the filter.
+        {Action::UiUp, {key(Key::Up), padButton(GamepadButton::DpadUp)}},
+        {Action::UiDown, {key(Key::Down), padButton(GamepadButton::DpadDown)}},
+        {Action::UiLeft, {key(Key::Left), padButton(GamepadButton::DpadLeft)}},
+        {Action::UiRight, {key(Key::Right), padButton(GamepadButton::DpadRight)}},
+        {Action::UiNavX, {wholeAxis(GamepadAxis::LeftX)}},
+        {Action::UiNavY, {wholeAxis(GamepadAxis::LeftY)}},
+        {Action::UiPageUp, {key(Key::PageUp), padAxis(GamepadAxis::LeftTrigger)}},
+        {Action::UiPageDown, {key(Key::PageDown), padAxis(GamepadAxis::RightTrigger)}},
+        {Action::UiHome, {key(Key::Home), padButton(GamepadButton::LeftStick)}},
+        {Action::UiEnd, {key(Key::End), padButton(GamepadButton::RightStick)}},
+        {Action::UiActivate, {key(Key::Enter), padButton(GamepadButton::South)}},
+        {Action::UiBack, {key(Key::Escape), padButton(GamepadButton::East)}},
+        {Action::UiMedia, {padButton(GamepadButton::North)}},
+        {Action::UiInfo, {padButton(GamepadButton::West)}},
+        {Action::UiFilterPrevious, {padButton(GamepadButton::LeftShoulder)}},
+        {Action::UiFilterNext, {padButton(GamepadButton::RightShoulder)}},
     };
     REQUIRE(expected.size() == rv::input::kActionCount);
 
@@ -503,4 +526,41 @@ TEST_CASE("input/action_map: user overrides replace only the actions they list",
     CHECK(rejected.error().code == ErrorCode::ValidationFailed);
     CHECK(rejected.error().context == "bad.json:/bindings/back/0/key");
     CHECK(untouched == ActionMap::defaults());
+}
+
+TEST_CASE("input/action_map: user overrides rebind the UI's actions apart from the world's", "[input][action_map]") {
+    // A user file (<user data>/config/bindings.json) over the shipped defaults, as app::loadBindings applies it.
+    auto map = ActionMap::loadFromFile(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR "/config/default_bindings.json"));
+    REQUIRE(map.has_value());
+    const auto document = rv::core::parseJson(R"({
+        // comments are allowed, as in every configuration file
+        "schemaVersion": 1,
+        "bindings": {
+            "ui_back": [{"key": "backspace"}, {"padButton": "east"}],
+            "ui_nav_y": [{"padAxis": "right_y", "deadzone": 0.25}],
+            "ui_media": []
+        }
+    })",
+                                              "bindings.json");
+    REQUIRE(document.has_value());
+    const auto replaced = map->applyOverrides(*document, "bindings.json");
+    REQUIRE(replaced.has_value());
+    CHECK(*replaced == 3);
+    CHECK(bindingsOf(*map, Action::UiBack) ==
+          std::vector<Binding>{KeyBinding{Key::Backspace, 1.0f}, GamepadButtonBinding{GamepadButton::East, 1.0f}});
+    CHECK(bindingsOf(*map, Action::UiNavY) ==
+          std::vector<Binding>{GamepadAxisBinding{GamepadAxis::RightY, 1.0f, 0.25f, 1.0f}});
+    CHECK(map->bindings(Action::UiMedia).empty());
+    // The world's Back keeps Esc, the UI's other actions their defaults.
+    const ActionMap defaults = ActionMap::defaults();
+    for (const Action action : {Action::Back, Action::QuickCatalog, Action::UiUp, Action::UiNavX, Action::UiActivate}) {
+        INFO(rv::input::actionName(action));
+        CHECK(bindingsOf(*map, action) == bindingsOf(defaults, action));
+    }
+    // An unknown UI action is refused like any other.
+    const auto typo = rv::core::parseJson(R"({"schemaVersion": 1, "bindings": {"ui_dwon": []}})", "typo.json");
+    REQUIRE(typo.has_value());
+    const auto refused = map->applyOverrides(*typo, "typo.json");
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().context == "typo.json:/bindings/ui_dwon");
 }

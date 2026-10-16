@@ -64,7 +64,7 @@ TEST_CASE("ui/documents: the quick catalog document has the ids, regions and bin
     const std::string sheetName = rv::core::pathToUtf8(rv::core::pathFromUtf8(qc::kStyleSheetPath).filename());
     CHECK(contains(rml, "href=\"" + sheetName + "\""));
     for (const std::string_view id : {qc::kSearchId, qc::kPlayId, qc::kMediaId, qc::kInfoId, qc::kChipsId,
-                                      qc::kChipsBoxId, qc::kCardTitleId}) {
+                                      qc::kChipsBoxId, qc::kCardTitleId, qc::kListId, qc::kScrollThumbId}) {
         INFO(id);
         CHECK(contains(rml, "id=\"" + std::string(id) + "\""));
     }
@@ -73,28 +73,82 @@ TEST_CASE("ui/documents: the quick catalog document has the ids, regions and bin
         INFO(region);
         CHECK(contains(rml, std::string(qc::kRegionAttribute) + "=\"" + std::string(region) + "\""));
     }
-    // The data model's variables and events (quick_catalog_screen.cpp registers them).
-    for (const std::string_view binding : {"chip : chips", "game : games", "card.present", "card.title", "status",
-                                           "count", "data-value=\"search\"", "filter(chip.key)", "launch()",
-                                           "media()", "info()", "chip.elementId", "game.elementId"}) {
+    // The data model's variables and events (quick_catalog_screen.cpp registers them): the list is a pool of rows
+    // bound to the model's window, as many as fit (the screen sizes the array), its ids those of the slots ("row-0",
+    // ...), never a game's.
+    for (const std::string_view binding :
+         {"chip : chips",     "row : rows", "row.elementId", "row.present", "row.title",     "row.platform",
+          "row.year",         "row.state",  "scroll.shown",  "scroll.top",  "scroll.height", "card.present",
+          "card.title",       "card.state", "status",        "count",       "unavailable",   "data-value=\"search\"",
+          "filter(chip.key)", "launch()",   "media()",       "info()",      "chip.elementId"}) {
         INFO(binding);
         CHECK(contains(rml, binding));
     }
-    // The pad actions of style §16.3 in the hint bar, in Italian.
-    for (const std::string_view hint : {"Avvia", "Vedi media", "Informazioni", "Indietro"}) {
-        INFO(hint);
-        CHECK(contains(rml, hint));
+    CHECK_FALSE(contains(rml, "game : games"));
+    CHECK_FALSE(contains(rml, "row.shown"));
+    // The pad actions of style §16.3 in the hint bar, in Italian, and every other string the screen shows: the chip of
+    // every game, the unknown fields, the states of games that cannot start (the screen binds their keys).
+    // An empty list says why: the catalog could not be read, nothing matches the search, the catalog has no game.
+    for (const std::string_view text :
+         {"Avvia", "Vedi media", "Informazioni", "Indietro", ">Tutte<", ">n.d.<", "Non disponibile", "Da configurare",
+          "Emulatore non trovato", "Catalogo non disponibile", "Nessun gioco corrisponde alla ricerca.",
+          "Nessun gioco nel catalogo."}) {
+        INFO(text);
+        CHECK(contains(rml, text));
     }
+    for (const std::string_view state :
+         {qc::kStateUnavailable, qc::kStateNeedsConfiguration, qc::kStateEmulatorMissing}) {
+        INFO(state);
+        CHECK(contains(rml, "card.state == '" + std::string(state) + "'"));
+    }
+    CHECK(contains(rml, "data-class-unavailable=\"row.state == '" + std::string(qc::kStateUnavailable) + "'\""));
+    CHECK(contains(rml, "data-if=\"unavailable\""));
+    CHECK(contains(rml, "count == 0 && !unavailable"));
+}
+
+TEST_CASE("ui/documents: a game keeps its row of the pool while the window holds it", "[ui][documents]") {
+    // The slot of a position is its rest modulo the rows shown: consecutive positions take every row once, and a scroll
+    // by one row changes the game of one row only.
+    constexpr std::size_t kRows = 7;
+    std::vector<bool> taken(kRows, false);
+    for (std::size_t position = 99995; position < 99995 + kRows; ++position) {
+        const std::size_t slot = qc::poolSlotOf(position, kRows);
+        REQUIRE(slot < kRows);
+        CHECK_FALSE(taken[slot]);
+        taken[slot] = true;
+    }
+    // The row that leaves the window takes the game that enters it.
+    CHECK(qc::poolSlotOf(99995, kRows) == qc::poolSlotOf(99995 + kRows, kRows));
+    CHECK(qc::poolSlotOf(12, 0) == 0);
+}
+
+TEST_CASE("ui/documents: the pool of rows covers the largest supported layouts", "[ui][documents]") {
+    // A 2160-pixel-tall view at 100% fits 24 rows of the regular layout (docs/i2/step-6.md); the pool keeps a margin.
+    CHECK(qc::kPoolRows >= 24);
+    CHECK(qc::kPoolRows <= 64);
+    CHECK(qc::kRowPrefix == "row-");
 }
 
 TEST_CASE("ui/documents: focusable elements navigate spatially inside regions that confine them",
           "[ui][documents]") {
     const std::string rcss = readAsset(qc::kStyleSheetPath);
-    // A region is a scroll container, which RmlUi's spatial navigation does not leave. The regions that scroll with the
-    // focus are auto, not hidden: RmlUi's ScrollIntoView passes over hidden overflow.
+    // A region is a scroll container, which RmlUi's spatial navigation does not leave. The chips row scrolls with the
+    // focus: auto, not hidden (RmlUi's ScrollIntoView passes over hidden overflow). The list never scrolls: its pool of
+    // rows is re-bound instead, so it keeps the region's hidden overflow.
     CHECK(contains(ruleBody(rcss, ".region"), "overflow: hidden"));
-    CHECK(contains(ruleBody(rcss, "#game-list"), "overflow-y: auto"));
     CHECK(contains(ruleBody(rcss, "#chips"), "overflow-x: auto"));
+    CHECK_FALSE(contains(ruleBody(rcss, "#game-list"), "overflow"));
+    CHECK(contains(ruleBody(rcss, "#game-list"), "position: relative"));
+    // The screen moves each row to its place in the window (style top): rows are relatively positioned.
+    CHECK(contains(ruleBody(rcss, ".game"), "position: relative"));
+    // Rows of one height at any text scale (the screen fits them to the list area): titles on one line.
+    CHECK(contains(ruleBody(rcss, ".game-title"), "white-space: nowrap"));
+    CHECK(contains(ruleBody(rcss, ".game-title"), "text-overflow: ellipsis"));
+    CHECK(contains(ruleBody(rcss, ".game-meta"), "white-space: nowrap"));
+    // The selected game's row (a class the screen sets), the blank rows past the list's end, the scroll thumb.
+    CHECK(contains(ruleBody(rcss, ".game." + std::string(qc::kSelectedClass)), "background-color"));
+    CHECK(contains(ruleBody(rcss, ".game.vacant"), "visibility: hidden"));
+    CHECK(contains(ruleBody(rcss, "#" + std::string(qc::kScrollThumbId)), "position: absolute"));
     for (const std::string_view selector : {"#search", ".chip", ".game", ".action"}) {
         INFO(selector);
         const std::string body = ruleBody(rcss, selector);

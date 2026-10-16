@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <utility>
+#include <variant>
+
+#include <rv/input/binding.hpp>
 
 namespace rv::ui {
 namespace {
@@ -12,9 +14,13 @@ constexpr std::array<NavDirection, 4> kDirections{NavDirection::Up, NavDirection
                                                   NavDirection::Right};
 /// Rounding slack of the repeat timing, seconds.
 constexpr double kTimeSlack = 1.0e-6;
-/// The commands that are not focus moves, in the order a frame reports them.
-constexpr std::array<UiCommand, 4> kButtonCommands{UiCommand::Activate, UiCommand::Back, UiCommand::Media,
-                                                   UiCommand::Info};
+/// The commands of a press, in the order a frame reports them (after the focus and page steps).
+constexpr std::array<UiCommand, 8> kButtonCommands{UiCommand::Activate,       UiCommand::Back,      UiCommand::Media,
+                                                   UiCommand::Info,           UiCommand::Home,      UiCommand::End,
+                                                   UiCommand::FilterPrevious, UiCommand::FilterNext};
+/// The page commands, and the direction each runs the page repeater in.
+constexpr std::array<UiCommand, 2> kPages{UiCommand::PageUp, UiCommand::PageDown};
+constexpr std::array<NavDirection, 2> kPageDirections{NavDirection::Up, NavDirection::Down};
 
 [[nodiscard]] std::size_t indexOf(NavDirection direction) noexcept {
     return static_cast<std::size_t>(direction);
@@ -38,6 +44,10 @@ constexpr std::array<UiCommand, 4> kButtonCommands{UiCommand::Activate, UiComman
 
 [[nodiscard]] bool isVertical(NavDirection direction) noexcept {
     return direction == NavDirection::Up || direction == NavDirection::Down;
+}
+
+[[nodiscard]] UiCommand pageCommand(NavDirection direction) noexcept {
+    return direction == NavDirection::Up ? UiCommand::PageUp : UiCommand::PageDown;
 }
 
 } // namespace
@@ -110,68 +120,67 @@ std::optional<NavDirection> StickDirection::update(float x, float y) noexcept {
     return m_direction;
 }
 
-NavBindings NavBindings::defaults() {
-    using input::GamepadButton;
-    using input::Key;
-    NavBindings bindings;
-    bindings.buttons[toIndex(UiCommand::Up)] = {GamepadButton::DpadUp};
-    bindings.buttons[toIndex(UiCommand::Down)] = {GamepadButton::DpadDown};
-    bindings.buttons[toIndex(UiCommand::Left)] = {GamepadButton::DpadLeft};
-    bindings.buttons[toIndex(UiCommand::Right)] = {GamepadButton::DpadRight};
-    bindings.buttons[toIndex(UiCommand::Activate)] = {GamepadButton::South};
-    bindings.buttons[toIndex(UiCommand::Back)] = {GamepadButton::East};
-    bindings.buttons[toIndex(UiCommand::Media)] = {GamepadButton::North};
-    bindings.buttons[toIndex(UiCommand::Info)] = {GamepadButton::West};
-    bindings.keys[toIndex(UiCommand::Up)] = {Key::Up};
-    bindings.keys[toIndex(UiCommand::Down)] = {Key::Down};
-    bindings.keys[toIndex(UiCommand::Left)] = {Key::Left};
-    bindings.keys[toIndex(UiCommand::Right)] = {Key::Right};
-    bindings.keys[toIndex(UiCommand::Activate)] = {Key::Enter};
-    bindings.keys[toIndex(UiCommand::Back)] = {Key::Escape};
-    bindings.leftStickNavigates = true;
-    return bindings;
+input::Action actionFor(UiCommand command) noexcept {
+    using input::Action;
+    switch (command) {
+    case UiCommand::Up:
+        return Action::UiUp;
+    case UiCommand::Down:
+        return Action::UiDown;
+    case UiCommand::Left:
+        return Action::UiLeft;
+    case UiCommand::Right:
+        return Action::UiRight;
+    case UiCommand::Activate:
+        return Action::UiActivate;
+    case UiCommand::Back:
+        return Action::UiBack;
+    case UiCommand::Media:
+        return Action::UiMedia;
+    case UiCommand::Info:
+        return Action::UiInfo;
+    case UiCommand::PageUp:
+        return Action::UiPageUp;
+    case UiCommand::PageDown:
+        return Action::UiPageDown;
+    case UiCommand::Home:
+        return Action::UiHome;
+    case UiCommand::End:
+        return Action::UiEnd;
+    case UiCommand::FilterPrevious:
+        return Action::UiFilterPrevious;
+    case UiCommand::FilterNext:
+        return Action::UiFilterNext;
+    case UiCommand::Count:
+        break;
+    }
+    return Action::UiActivate;
 }
 
-NavInput::NavInput(NavSettings settings, NavBindings bindings)
-    : m_settings(settings), m_bindings(std::move(bindings)), m_repeater(m_settings), m_stick(m_settings) {}
-
-bool NavInput::isDown(const input::RawInputFrame& frame, UiCommand command) const noexcept {
-    if (frame.gamepadConnected) {
-        for (const input::GamepadButton button : m_bindings.buttons[toIndex(command)]) {
-            if (frame.gamepadButtonsDown[input::toIndex(button)]) {
-                return true;
+std::bitset<input::kKeyCount> commandKeys(const input::ActionMap& map) {
+    std::bitset<input::kKeyCount> keys;
+    for (std::size_t index = 0; index < input::kActionCount; ++index) {
+        const auto action = static_cast<input::Action>(index);
+        if (!input::isUiAction(action)) {
+            continue;
+        }
+        for (const input::Binding& binding : map.bindings(action)) {
+            if (const auto* key = std::get_if<input::KeyBinding>(&binding)) {
+                keys.set(input::toIndex(key->key));
             }
         }
     }
-    for (const input::Key key : m_bindings.keys[toIndex(command)]) {
-        if (frame.keysDown[input::toIndex(key)]) {
-            return true;
-        }
-    }
-    return false;
+    return keys;
 }
 
-bool NavInput::wasPressed(const input::RawInputFrame& frame, UiCommand command) const noexcept {
-    if (frame.gamepadConnected) {
-        for (const input::GamepadButton button : m_bindings.buttons[toIndex(command)]) {
-            if (frame.gamepadButtonsPressed[input::toIndex(button)]) {
-                return true;
-            }
-        }
-    }
-    for (const input::Key key : m_bindings.keys[toIndex(command)]) {
-        if (frame.keysPressed[input::toIndex(key)]) {
-            return true;
-        }
-    }
-    return false;
-}
+NavInput::NavInput(NavSettings settings)
+    : m_settings(settings), m_repeater(m_settings), m_pageRepeater(m_settings), m_stick(m_settings) {}
 
-std::optional<NavDirection> NavInput::heldDigital(const input::RawInputFrame& frame) const noexcept {
+std::optional<NavDirection> NavInput::heldDigital(const input::ActionState& actions) const noexcept {
     std::optional<NavDirection> held;
     std::uint64_t heldOrder = 0;
     for (const NavDirection direction : kDirections) {
-        if (!isDown(frame, commandFor(direction))) {
+        if (!actions.held(actionFor(commandFor(direction)))) {
             continue;
         }
         const std::uint64_t order = m_pressOrder[indexOf(direction)];
@@ -183,33 +192,53 @@ std::optional<NavDirection> NavInput::heldDigital(const input::RawInputFrame& fr
     return held;
 }
 
-std::optional<NavDirection> NavInput::tappedDigital(const input::RawInputFrame& frame) const noexcept {
+std::optional<NavDirection> NavInput::tappedDigital(const input::ActionState& actions) const noexcept {
     for (const NavDirection direction : kDirections) {
-        const UiCommand command = commandFor(direction);
-        if (wasPressed(frame, command) && !isDown(frame, command)) {
+        const input::Action action = actionFor(commandFor(direction));
+        if (actions.pressed(action) && !actions.held(action)) {
             return direction;
         }
     }
     return std::nullopt;
 }
 
-void NavInput::update(const input::RawInputFrame& frame, double deltaSeconds, UiCommandList& out) {
+std::optional<NavDirection> NavInput::heldPage() const noexcept {
+    std::optional<NavDirection> held;
+    std::uint64_t heldOrder = 0;
+    for (std::size_t page = 0; page < kPages.size(); ++page) {
+        if (!m_pageEngaged[page]) {
+            continue;
+        }
+        if (!held || m_pagePressOrder[page] > heldOrder) {
+            held = kPageDirections[page];
+            heldOrder = m_pagePressOrder[page];
+        }
+    }
+    return held;
+}
+
+std::optional<NavDirection> NavInput::tappedPage(const input::ActionState& actions) const noexcept {
+    for (std::size_t page = 0; page < kPages.size(); ++page) {
+        const input::Action action = actionFor(kPages[page]);
+        if (actions.pressed(action) && !actions.held(action)) {
+            return kPageDirections[page];
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<NavDirection> NavInput::directionStep(const input::ActionState& actions, double deltaSeconds) {
     bool anyPress = false;
     for (const NavDirection direction : kDirections) {
-        if (wasPressed(frame, commandFor(direction))) {
+        if (actions.pressed(actionFor(commandFor(direction)))) {
             m_pressOrder[indexOf(direction)] = ++m_pressCounter;
             anyPress = true;
         }
     }
-    std::optional<NavDirection> held = heldDigital(frame);
+    std::optional<NavDirection> held = heldDigital(actions);
     // The stick keeps its hysteresis state current even while a digital direction wins over it.
-    std::optional<NavDirection> stick;
-    if (m_bindings.leftStickNavigates && frame.gamepadConnected) {
-        stick = m_stick.update(frame.gamepadAxes[input::toIndex(input::GamepadAxis::LeftX)],
-                               frame.gamepadAxes[input::toIndex(input::GamepadAxis::LeftY)]);
-    } else {
-        m_stick.reset();
-    }
+    std::optional<NavDirection> stick =
+        m_stick.update(actions.axis(input::Action::UiNavX), actions.axis(input::Action::UiNavY));
     if (m_suppressHeld) {
         // After reset(): a fresh press, or everything released, ends the suppression.
         if (anyPress || (!held && !stick)) {
@@ -219,8 +248,8 @@ void NavInput::update(const input::RawInputFrame& frame, double deltaSeconds, Ui
             stick.reset();
         }
     }
-    // Pressed again within the frame (released and pressed between two frames): a fresh step.
-    const bool freshPress = held && wasPressed(frame, commandFor(*held));
+    // The winning direction went down this frame (the stick may have held the same direction already): a fresh step.
+    const bool freshPress = held && actions.pressed(actionFor(commandFor(*held)));
     if (!held) {
         held = stick;
     }
@@ -229,13 +258,55 @@ void NavInput::update(const input::RawInputFrame& frame, double deltaSeconds, Ui
     }
     std::optional<NavDirection> step = m_repeater.update(held, deltaSeconds);
     if (!held && !step) {
-        step = tappedDigital(frame); // pressed and released within the frame: one step
+        step = tappedDigital(actions); // pressed and released within the frame: one step
     }
-    if (step) {
+    return step;
+}
+
+std::optional<NavDirection> NavInput::pageStep(const input::ActionState& actions, double deltaSeconds) {
+    // A page action engages when it is held and stays engaged until its value falls below pageRelease: a trigger
+    // resting near the press threshold, where the input system's held flag would flicker, stays one press. The press
+    // is the engagement's rising edge.
+    bool anyPress = false;
+    std::array<bool, 2> pressedNow{};
+    for (std::size_t page = 0; page < kPages.size(); ++page) {
+        const input::Action action = actionFor(kPages[page]);
+        const bool engaged =
+            actions.held(action) || (m_pageEngaged[page] && std::fabs(actions.axis(action)) >= m_settings.pageRelease);
+        if (engaged && !m_pageEngaged[page]) {
+            m_pagePressOrder[page] = ++m_pressCounter;
+            pressedNow[page] = true;
+            anyPress = true;
+        }
+        m_pageEngaged[page] = engaged;
+    }
+    std::optional<NavDirection> held = heldPage();
+    if (m_suppressPages) {
+        if (anyPress || !held) {
+            m_suppressPages = false;
+        } else {
+            held.reset();
+        }
+    }
+    if (held && pressedNow[*held == kPageDirections[0] ? 0 : 1]) {
+        m_pageRepeater.reset();
+    }
+    std::optional<NavDirection> step = m_pageRepeater.update(held, deltaSeconds);
+    if (!held && !step) {
+        step = tappedPage(actions);
+    }
+    return step;
+}
+
+void NavInput::update(const input::ActionState& actions, double deltaSeconds, UiCommandList& out) {
+    if (const std::optional<NavDirection> step = directionStep(actions, deltaSeconds)) {
         out.push(commandFor(*step));
     }
+    if (const std::optional<NavDirection> page = pageStep(actions, deltaSeconds)) {
+        out.push(pageCommand(*page));
+    }
     for (const UiCommand command : kButtonCommands) {
-        if (wasPressed(frame, command)) {
+        if (actions.pressed(actionFor(command))) {
             out.push(command);
         }
     }
@@ -243,10 +314,13 @@ void NavInput::update(const input::RawInputFrame& frame, double deltaSeconds, Ui
 
 void NavInput::reset() noexcept {
     m_repeater.reset();
+    m_pageRepeater.reset();
     m_stick.reset();
     m_pressOrder.fill(0);
+    m_pagePressOrder.fill(0);
     m_pressCounter = 0;
     m_suppressHeld = true;
+    m_suppressPages = true;
 }
 
 } // namespace rv::ui

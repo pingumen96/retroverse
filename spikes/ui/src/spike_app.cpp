@@ -6,8 +6,11 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <limits>
+#include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -18,6 +21,7 @@
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/StringUtilities.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_timer.h>
@@ -25,6 +29,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/app/bindings.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/scene_graphics.hpp>
 #include <rv/app/scene_instance.hpp>
@@ -33,6 +38,9 @@
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/version.hpp>
+#include <rv/input/action_state.hpp>
+#include <rv/input/input_script.hpp>
+#include <rv/input/input_system.hpp>
 #include <rv/input/raw_input.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/sdl_input_collector.hpp>
@@ -42,6 +50,7 @@
 #include <rv/scene/camera.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
+#include <rv/ui/in_memory_catalog_source.hpp>
 #include <rv/ui/nav_input.hpp>
 #include <rv/ui/quick_catalog_model.hpp>
 #include <rv/ui/quick_catalog_screen.hpp>
@@ -74,6 +83,9 @@ constexpr std::size_t kInteractiveSampleCapacity = 100000;
 
 /// Scenario steps of HighContrast and ExpectHighContrast: the run's setting (--high-contrast) instead of on or off.
 constexpr std::uint32_t kRunSetting = 2;
+
+/// The user's bindings file under <user data>/config (app::loadBindings applies it over the defaults).
+constexpr std::string_view kUserBindingsFile = "bindings.json";
 
 [[nodiscard]] double millisecondsSince(Clock::time_point start) noexcept {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
@@ -153,8 +165,42 @@ bool moveFile(const std::filesystem::path& from, const std::filesystem::path& to
     return std::string(qc::kChipPrefix) + std::to_string(index);
 }
 
+[[nodiscard]] std::string rowId(std::size_t slot) {
+    return std::string(qc::kRowPrefix) + std::to_string(slot);
+}
+
 [[nodiscard]] const char* yesNo(bool value) noexcept {
     return value ? "yes" : "no";
+}
+
+[[nodiscard]] std::string positionText(std::optional<std::size_t> position) {
+    return position ? std::to_string(*position) : std::string("none");
+}
+
+/// The rows of the pool the screen shows for `model`'s window (QuickCatalogScreen: as many as the window, at most
+/// kPoolRows), and the element id of the row that shows `position` (the slot of a position is its rest modulo them).
+[[nodiscard]] std::size_t poolRowsOf(const ui::QuickCatalogModel& model) noexcept {
+    return std::min(model.windowRows(), qc::kPoolRows);
+}
+
+[[nodiscard]] std::string rowIdOf(const ui::QuickCatalogModel& model, std::size_t position) {
+    return rowId(qc::poolSlotOf(position, poolRowsOf(model)));
+}
+
+/// A position and the game on it, recorded by a Mark step.
+struct Mark {
+    std::size_t position = 0;
+    std::string id;
+};
+
+/// The title a row of the pool shows (the text of its .game-title), as RmlUi writes it back.
+[[nodiscard]] std::string rowTitle(Rml::Element* row) {
+    if (row == nullptr) {
+        return {};
+    }
+    Rml::ElementList titles;
+    row->GetElementsByClassName(titles, "game-title");
+    return titles.empty() ? std::string() : titles.front()->GetInnerRML();
 }
 
 /// The elements whose boxes a layout records.
@@ -169,25 +215,36 @@ constexpr std::array<std::string_view, 3> kTextElements{"catalog-title", "card-t
 } // namespace
 
 struct SpikeApp::State {
-    // Declared in the order they are created; destroyed in reverse: the screen before its model and view, the view
-    // before the UI system, the UI before the scene's GPU resources.
+    // Declared in the order they are created; destroyed in reverse: the screen before its model, the model before its
+    // source, the view before the UI system, the UI before the scene's GPU resources.
     std::unique_ptr<app::SceneGraphics> graphics;
     std::optional<app::SceneInstance> scene;
     scene::Camera camera;
     std::unique_ptr<ui::UiSystem> ui;
     std::unique_ptr<ui::UiView> view;
+    std::unique_ptr<ui::InMemoryCatalogSource> source;
     std::unique_ptr<ui::QuickCatalogModel> model;
     std::unique_ptr<ui::QuickCatalogScreen> screen;
 
     platform::SdlInputCollector collector;
+    /// The devices' input through the action map (the default bindings, the user's over them), the input script's
+    /// values over it, then the UI's commands.
+    input::InputSystem input;
+    std::optional<input::InputScriptPlayer> script;
     ui::NavInput nav;
     ui::UiCommandList commands;
     std::optional<VirtualPad> pad;
     bool padFailureLogged = false;
     Scenario scenario;
+    ScenarioFacts facts;
     std::size_t nextInputStep = 0;
     std::size_t nextCheckStep = 0;
     std::size_t nextScreenshot = 0;
+    /// Selected positions and games recorded by the scenario's Mark steps.
+    std::map<std::string, Mark, std::less<>> marks;
+    /// The games the last Import step removed, and where they were in the entries.
+    std::vector<ui::CatalogEntry> removedGames;
+    std::size_t removedAt = 0;
     /// Counts the UI pass's heap allocations (null when it could not be installed).
     std::unique_ptr<AllocationCounter> allocationCounter;
 
@@ -204,8 +261,8 @@ struct SpikeApp::State {
     float lastDisplayScale = 1.0f;
     double simulatedSeconds = 0.0;
     double inputMs = 0.0;
-    /// The screen's work after the context's update (the card settling, the chips' fades, a lost focus), counted with
-    /// the update.
+    /// The screen's work after the context's update (the card settling, the rows that fit, the chips' fades, a lost
+    /// focus), counted with the update.
     double afterUpdateMs = 0.0;
     AllocationCounts updateAllocations;
     /// --fps-cap: when the next frame may start (SDL_GetTicksNS), 0 before the first.
@@ -213,16 +270,25 @@ struct SpikeApp::State {
     std::optional<double> lastGpuMs;
     std::size_t focusLogged = 0;
     std::size_t actionsLogged = 0;
-    /// Whether this frame's update and render handled a change of the UI. A focus move or a card filled before the
-    /// context's update is laid out and drawn in the same frame; one made after it (the card settling in the screen's
-    /// afterUpdate) in the next frame, which then counts as the changed one.
+    /// Whether this frame's update and render handled a change of the UI. A change made before the context's update is
+    /// laid out and drawn in the same frame; one made after it (the card settling, the window following the layout in
+    /// the screen's afterUpdate) in the next frame, which then counts as the changed one.
     bool focusMovedThisFrame = false;
     bool cardLaidOutThisFrame = false;
+    bool rowsBoundThisFrame = false;
+    bool selectionMovedThisFrame = false;
     bool focusMovedLate = false;
     bool cardFilledLate = false;
-    /// The focus changes and card refreshes made up to the end of the previous frame's update.
+    bool rowsBoundLate = false;
+    /// The focus changes, card refreshes and window binds made up to the end of the previous frame's update, and the
+    /// selected position then.
     std::size_t focusChangesSeen = 0;
     std::uint64_t cardRefreshesSeen = 0;
+    std::uint64_t windowBindsSeen = 0;
+    /// Rows of the pool bound to another game up to the end of the previous frame, and in this frame.
+    std::uint64_t rowBindsSeen = 0;
+    std::uint32_t rowBindsThisFrame = 0;
+    std::optional<std::size_t> selectionSeen;
     std::vector<std::string> launched;
     std::vector<std::string> mediaAsked;
     bool infoShown = false;
@@ -290,6 +356,9 @@ struct SpikeApp::State {
                 done = pad->axis(SDL_GAMEPAD_AXIS_LEFTX, step.value.x) &&
                        pad->axis(SDL_GAMEPAD_AXIS_LEFTY, step.value.y);
                 break;
+            case StepKind::Trigger:
+                done = pad->axis(step.axis, step.value.x);
+                break;
             case StepKind::Resize: {
                 const int width = static_cast<int>(step.value.x);
                 const int height = static_cast<int>(step.value.y);
@@ -331,6 +400,16 @@ struct SpikeApp::State {
                 screen->setHighContrast(on);
                 break;
             }
+            case StepKind::Mark:
+                if (const std::optional<std::size_t> position = model->selectedPosition()) {
+                    const ui::CatalogEntry* selected = model->selected();
+                    marks[step.label] = Mark{*position, selected != nullptr ? selected->id : std::string()};
+                    spdlog::info("Frame {}: mark '{}' at position {}", frame, step.label, *position);
+                }
+                break;
+            case StepKind::Import:
+                importGames(step);
+                break;
             default:
                 break;
             }
@@ -339,6 +418,36 @@ struct SpikeApp::State {
                 padFailureLogged = true;
             }
         }
+    }
+
+    /// An import under the screen (StepKind::Import): the source's entries replaced, then the model refreshed directly,
+    /// as the application does when an import completes; the source answers `step.position` polls later.
+    void importGames(const Step& step) {
+        if (!model->search().empty() || !model->activeFilter().empty()) {
+            spdlog::error("Frame {}: the import step needs the whole list (no search, no filter)", frame);
+            return;
+        }
+        // The whole list is the entries in order: a position is an entry's index.
+        std::vector<ui::CatalogEntry> entries(source->entries().begin(), source->entries().end());
+        if (step.count > 0) {
+            const std::size_t selected = model->selectedPosition().value_or(0);
+            removedAt = selected > step.count ? selected - step.count : 0;
+            const auto from = entries.begin() + static_cast<std::ptrdiff_t>(removedAt);
+            const auto to = from + static_cast<std::ptrdiff_t>(std::min<std::size_t>(step.count, selected));
+            removedGames.assign(std::make_move_iterator(from), std::make_move_iterator(to));
+            entries.erase(from, to);
+        } else {
+            entries.insert(entries.begin() + static_cast<std::ptrdiff_t>(removedAt),
+                           std::make_move_iterator(removedGames.begin()), std::make_move_iterator(removedGames.end()));
+            removedGames.clear();
+        }
+        spdlog::info("Frame {}: import: {} game(s) {}, the list answered {} poll(s) later", frame,
+                     step.count > 0 ? step.count : entries.size() - source->entries().size(),
+                     step.count > 0 ? "removed before the selection" : "back", step.position);
+        source->setPendingPolls(static_cast<std::uint32_t>(step.position));
+        source->replaceEntries(std::move(entries));
+        model->refresh();           // as the application does: the screen is not told
+        source->setPendingPolls(0); // the query asked runs on; the next ones are answered at once
     }
 
     void check(std::string name, bool passed, std::string detail) {
@@ -383,6 +492,7 @@ struct SpikeApp::State {
         layout.dpRatio = view->dpRatio();
         layout.displayScale = displayScale;
         layout.compact = view->compact();
+        layout.windowRows = model->windowRows();
         layout.focused = screen->focus() ? screen->focus()->element : std::string();
         for (const std::string_view id : kLayoutElements) {
             if (const std::optional<glm::vec4> box = view->elementBox(id)) {
@@ -438,13 +548,14 @@ struct SpikeApp::State {
             check("layout " + label + ": the card's actions inside their row", clipped.empty(),
                   clipped.empty() ? std::string("every button whole") : "clipped: " + clipped);
         }
-        // The focused game visible in the list (scrolled into view).
-        if (layout.focused.starts_with(qc::kGamePrefix)) {
-            const std::optional<glm::vec4> list = boxOf("game-list");
+        // The focused game's row inside the list area.
+        if (layout.focused.starts_with(qc::kRowPrefix)) {
+            const std::optional<glm::vec4> list = boxOf(qc::kListId);
             const std::optional<glm::vec4> focused = view->elementBox(layout.focused);
             const bool visible = list && focused && focused->y >= list->y - kTolerance &&
                                  focused->y + focused->w <= list->y + list->w + kTolerance;
-            check("layout " + label + ": focused game visible in the list", visible, layout.focused);
+            check("layout " + label + ": focused game visible in the list", visible,
+                  fmt::format("{}, {} row(s) shown", layout.focused, layout.windowRows));
         }
         // RmlUi follows the window: its context has the window's drawable (SDL's) and the dp ratio of the display's scale
         // times the text scale asked for, its compact theme follows the display alone, its document is laid out at the
@@ -494,9 +605,13 @@ struct SpikeApp::State {
                 differences += differences.empty() ? id : ", " + id;
             }
         }
+        if (now->windowRows != before->windowRows) {
+            differences += fmt::format("{}{} row(s) shown, {} before", differences.empty() ? "" : ", ", now->windowRows,
+                                       before->windowRows);
+        }
         check("same-layout " + label + " = " + reference, differences.empty(),
-              differences.empty() ? fmt::format("{} boxes equal at {}x{}", before->boxes.size(), now->size.x,
-                                                now->size.y)
+              differences.empty() ? fmt::format("{} boxes equal at {}x{}, {} row(s) shown", before->boxes.size(),
+                                                now->size.x, now->size.y, now->windowRows)
                                   : "differ: " + differences);
     }
 
@@ -528,9 +643,114 @@ struct SpikeApp::State {
             detail += fmt::format("{}{} {:.1f} -> {:.1f} px (x{:.3f})", detail.empty() ? "" : ", ", id, size, scaled,
                                   measured);
         }
-        detail += fmt::format("; layout theme {} -> {}", before->compact ? "compact" : "regular",
-                              now->compact ? "compact" : "regular");
+        detail += fmt::format("; layout theme {} -> {}, {} -> {} row(s) shown", before->compact ? "compact" : "regular",
+                              now->compact ? "compact" : "regular", before->windowRows, now->windowRows);
         check(name, larger, detail);
+    }
+
+    /// The pool shows the model's window: a row per window row and none more, the row of each position (its rest modulo
+    /// the rows) showing its game's title (or blank past the list's end), the rows in the window's order a pitch apart
+    /// from the list area's top, filling it (the last one inside it, one more would not fit), and the scroll thumb
+    /// where the window lies in the list.
+    void checkWindow(const Step& step) {
+        constexpr float kTolerance = 1.0f;
+        const std::span<const ui::CatalogEntry> window = model->window();
+        const std::size_t rows = poolRowsOf(*model);
+        const std::size_t first = model->windowFirst();
+        std::string problems;
+        const auto problem = [&problems](const std::string& text) {
+            if (problems.size() < 400) {
+                problems += problems.empty() ? text : "; " + text;
+            }
+        };
+        for (std::size_t slot = rows; slot < qc::kPoolRows; ++slot) {
+            if (view->element(rowId(slot)) != nullptr) {
+                problem(rowId(slot) + " exists past the pool's " + std::to_string(rows) + " row(s)");
+            }
+        }
+        std::optional<glm::vec4> previous;
+        float pitch = 0.0f;
+        for (std::size_t row = 0; row < rows; ++row) {
+            const std::string id = rowIdOf(*model, first + row);
+            Rml::Element* element = view->element(id);
+            if (element == nullptr) {
+                problem(id + " missing");
+                continue;
+            }
+            const bool displayed = element->GetComputedValues().display() != Rml::Style::Display::None;
+            const bool vacant = element->IsClassSet("vacant");
+            if (!displayed) {
+                problem(id + " not displayed");
+            } else if (row < window.size()) {
+                const std::string expected = Rml::StringUtilities::EncodeRml(window[row].title);
+                if (vacant || rowTitle(element) != expected) {
+                    problem(fmt::format("{} (window row {}) shows '{}', the window has '{}'", id, row,
+                                        rowTitle(element), expected));
+                }
+            } else if (!vacant) {
+                problem(id + " not blank past the list's end");
+            }
+            // In the window's order, a pitch apart.
+            const std::optional<glm::vec4> box = view->elementBox(id);
+            if (box && previous) {
+                const float gap = box->y - previous->y;
+                if (row == 1) {
+                    pitch = gap;
+                }
+                if (gap <= 0.0f || std::fabs(gap - pitch) > kTolerance) {
+                    problem(fmt::format("window row {} ({}) {:.1f} px below the one before, {:.1f} expected", row, id,
+                                        gap, pitch));
+                }
+            }
+            previous = box;
+        }
+        // The rows fill the list area from its top.
+        Rml::Element* list = view->element(qc::kListId);
+        const std::optional<glm::vec4> top = view->elementBox(rowIdOf(*model, first));
+        const std::optional<glm::vec4> last = view->elementBox(rowIdOf(*model, first + rows - 1));
+        if (list != nullptr && top && last) {
+            const float areaTop = list->GetAbsoluteOffset(Rml::BoxArea::Content).y;
+            const float areaBottom = areaTop + list->GetBox().GetSize(Rml::BoxArea::Content).y;
+            if (std::fabs(top->y - areaTop) > kTolerance) {
+                problem(
+                    fmt::format("the window's first row at {:.1f}, the list area's top at {:.1f}", top->y, areaTop));
+            }
+            if (last->y + last->w > areaBottom + kTolerance) {
+                problem(fmt::format("the last row ends at {:.1f}, past the list area's {:.1f}", last->y + last->w,
+                                    areaBottom));
+            }
+            if (rows >= 2 && rows < qc::kPoolRows && last->y + pitch + last->w <= areaBottom - kTolerance) {
+                problem(fmt::format("one more row would fit (the last ends at {:.1f}, the area at {:.1f})",
+                                    last->y + last->w, areaBottom));
+            }
+        }
+        // The window holds the selection.
+        const std::optional<std::size_t> slot = model->selectedSlot();
+        if (model->count() > 0 && (!slot || *slot >= rows)) {
+            problem("the selection is outside the window");
+        }
+        // The scroll thumb.
+        const bool scrolls = model->count() > rows;
+        const std::optional<glm::vec4> track = view->elementBox("list-track");
+        const std::optional<glm::vec4> thumb = view->elementBox(qc::kScrollThumbId);
+        const bool trackShown = view->element("list-track") != nullptr &&
+                                view->element("list-track")->GetComputedValues().display() != Rml::Style::Display::None;
+        std::string thumbDetail = "no thumb";
+        if (scrolls != trackShown) {
+            problem(fmt::format("the scroll indicator {} with {} game(s) in {} row(s)", trackShown ? "shows" : "hides",
+                                model->count(), rows));
+        } else if (scrolls && track && thumb && track->w > thumb->w) {
+            const float place = (thumb->y - track->y) / (track->w - thumb->w);
+            const float expected = static_cast<float>(model->windowFirst()) / static_cast<float>(model->count() - rows);
+            thumbDetail = fmt::format("thumb at {:.3f}, window at {:.3f}", place, expected);
+            if (std::fabs(place - expected) > 0.01f) {
+                problem(thumbDetail);
+            }
+        }
+        check(named(step, "window"), problems.empty(),
+              problems.empty() ? fmt::format("{} row(s) from position {} of {}, {:.1f} px apart, {}", rows,
+                                             model->windowFirst(), model->count(), pitch, thumbDetail)
+                               : problems);
     }
 
     void runChecks() {
@@ -553,11 +773,16 @@ struct SpikeApp::State {
             break;
         }
         case StepKind::ExpectSteady: {
-            const auto changes = static_cast<std::uint32_t>(
+            const auto moves = static_cast<std::uint32_t>(
+                std::count_if(report.selections.begin(), report.selections.end(),
+                              [&step](const SelectionRecord& record) { return record.frame >= step.since; }));
+            const auto focusMoves = static_cast<std::uint32_t>(
                 std::count_if(report.focusChanges.begin(), report.focusChanges.end(),
                               [&step](const FocusRecord& record) { return record.frame >= step.since; }));
-            check(named(step, fmt::format("steady since frame {}", step.since)), changes == step.count,
-                  fmt::format("{} focus change(s), {} expected", changes, step.count));
+            check(named(step, fmt::format("steady since frame {}", step.since)),
+                  moves == step.count && focusMoves == step.count,
+                  fmt::format("{} move(s) of the selection and {} of the focus, {} expected", moves, focusMoves,
+                              step.count));
             break;
         }
         case StepKind::ExpectLaunched:
@@ -576,16 +801,80 @@ struct SpikeApp::State {
                   fmt::format("{} entr{}", depth, depth == 1 ? "y" : "ies"));
             break;
         }
-        case StepKind::ExpectVisible: {
-            const std::size_t visible = model->visible().size();
-            check(named(step, fmt::format("visible {}", step.count)), visible == step.count,
-                  fmt::format("{} game(s) listed", visible));
+        case StepKind::ExpectCount:
+            check(named(step, fmt::format("count {}", step.position)), model->count() == step.position,
+                  fmt::format("{} game(s) listed", model->count()));
+            break;
+        case StepKind::ExpectSelected: {
+            const std::optional<std::size_t> position = model->selectedPosition();
+            const ui::CatalogEntry* selected = model->selected();
+            const std::string id = selected != nullptr ? selected->id : std::string("(no game)");
+            const bool passed = position == step.position && (step.text.empty() || id == step.text);
+            check(named(step, fmt::format("selected {}{}", step.position, step.text.empty() ? "" : " " + step.text)),
+                  passed,
+                  fmt::format("selection at {} ({}) of {} game(s), window from {}", positionText(position), id,
+                              model->count(), model->windowFirst()));
             break;
         }
+        case StepKind::ExpectPages: {
+            const auto mark = marks.find(step.label);
+            const std::optional<std::size_t> position = model->selectedPosition();
+            if (mark == marks.end() || model->count() == 0) {
+                check(named(step, fmt::format("pages {} from {}", step.pages, step.label)), false, "no such mark");
+                break;
+            }
+            const auto shift =
+                static_cast<std::ptrdiff_t>(step.pages) * static_cast<std::ptrdiff_t>(model->windowRows());
+            const auto target = std::clamp<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(mark->second.position) + shift,
+                                                           0, static_cast<std::ptrdiff_t>(model->count()) - 1);
+            check(named(step, fmt::format("pages {} from {}", step.pages, step.label)),
+                  position == static_cast<std::size_t>(target),
+                  fmt::format("selection at {}, {} expected ({} + {} x {} row(s))", positionText(position), target,
+                              mark->second.position, step.pages, model->windowRows()));
+            break;
+        }
+        case StepKind::ExpectMarked: {
+            // The game marked, at its marked position moved by `pages` (an import removed games before it).
+            const auto mark = marks.find(step.label);
+            const std::string name = named(step, fmt::format("marked {} {:+}", step.label, step.pages));
+            if (mark == marks.end()) {
+                check(name, false, "no such mark");
+                break;
+            }
+            const std::optional<std::size_t> position = model->selectedPosition();
+            const ui::CatalogEntry* selected = model->selected();
+            const std::string id = selected != nullptr ? selected->id : std::string("(no game)");
+            const std::ptrdiff_t expected = static_cast<std::ptrdiff_t>(mark->second.position) + step.pages;
+            check(name, position && static_cast<std::ptrdiff_t>(*position) == expected && id == mark->second.id,
+                  fmt::format("selection at {} ({}) of {} game(s), the marked game {} expected at {}",
+                              positionText(position), id, model->count(), mark->second.id, expected));
+            break;
+        }
+        case StepKind::ExpectRow: {
+            // The focus on the selected game's row (the row of its position), which shows that game and carries the
+            // class "selected".
+            const std::optional<std::size_t> position = model->selectedPosition();
+            const ui::CatalogEntry* selected = model->selected();
+            const std::string expected = position ? rowIdOf(*model, *position) : std::string("(no row)");
+            const std::string focused = screen->focus() ? screen->focus()->element : std::string("(none)");
+            Rml::Element* row = position ? view->element(expected) : nullptr;
+            const std::string title = rowTitle(row);
+            const std::string wanted =
+                selected != nullptr ? Rml::StringUtilities::EncodeRml(selected->title) : std::string("(no game)");
+            const bool marked = row != nullptr && row->IsClassSet(Rml::String(qc::kSelectedClass));
+            check(named(step, "row of the selection"), focused == expected && marked && title == wanted,
+                  fmt::format("focus on {}, the selection's row {} (class {}), showing '{}', the selection '{}'",
+                              focused, expected, marked ? "set" : "missing", title, wanted));
+            break;
+        }
+        case StepKind::ExpectWindow:
+            checkWindow(step);
+            break;
         case StepKind::ExpectCard: {
             // The title the document shows, against the game the actions act on.
             const ui::CatalogEntry* selected = model->selected();
-            const std::string expected = selected != nullptr ? selected->title : std::string("(no game)");
+            const std::string expected =
+                selected != nullptr ? Rml::StringUtilities::EncodeRml(selected->title) : std::string("(no game)");
             Rml::Element* title = view->element(qc::kCardTitleId);
             const std::string shown = title != nullptr ? title->GetInnerRML() : std::string("(no card)");
             check(named(step, "card shows the selected game"), shown == expected,
@@ -741,6 +1030,9 @@ struct SpikeApp::State {
         sample.frameMs = context.clock().deltaSeconds() * 1000.0;
         sample.focusMoved = focusMovedThisFrame;
         sample.cardRefreshed = cardLaidOutThisFrame;
+        sample.rowsBound = rowsBoundThisFrame;
+        sample.rowBinds = rowBindsThisFrame;
+        sample.selectionMoved = selectionMovedThisFrame;
         sample.updateAllocations = updateAllocations;
         sample.renderAllocations = takeAllocations();
         if (report.samples.size() < report.samples.capacity()) {
@@ -779,6 +1071,44 @@ Status SpikeApp::onInit(app::AppContext& context) {
     s.camera.setPose(description->camera.position, core::degreesToRadians(description->camera.yawDeg),
                      core::degreesToRadians(description->camera.pitchDeg));
 
+    // The catalog: 100,000 generated games in memory, the source a virtualized list pages.
+    const Clock::time_point generation = Clock::now();
+    s.source = std::make_unique<ui::InMemoryCatalogSource>(mockCatalog());
+    s.report.catalogGames = s.source->count();
+    s.report.catalogMs = millisecondsSince(generation);
+    spdlog::info("Mock catalog: {} game(s) generated and indexed in {:.0f} ms ({} rejected)", s.report.catalogGames,
+                 s.report.catalogMs, s.source->rejected());
+    if (m_options.scenario && m_options.scenarioKind == ScenarioKind::QuickCatalog) {
+        auto facts = readScenarioFacts(*s.source, kMarkerWord);
+        if (!facts) {
+            return propagate(facts.error());
+        }
+        s.facts = std::move(*facts);
+        spdlog::info("Scenario facts: marker {} at position {} of {}, word '{}' ({} game(s), the marker at {}), {} "
+                     "chip(s)",
+                     s.facts.markerId, s.facts.marker, s.facts.count, s.facts.markerWord, s.facts.markerWordCount,
+                     s.facts.markerInWord, s.facts.chips);
+    }
+
+    // The input: the bindings of every Retroverse application (the defaults, the user's file over them), so that the
+    // UI actions reach the screen as the user bound them; the input script's values over them.
+    input::ActionMap bindings = app::loadBindings(paths);
+    const std::filesystem::path userBindings = paths.configDir() / core::pathFromUtf8(kUserBindingsFile);
+    std::error_code bindingsError;
+    if (std::filesystem::is_regular_file(userBindings, bindingsError)) {
+        s.report.userBindings = core::pathToGenericUtf8(userBindings);
+    }
+    s.input.setMap(bindings);
+    if (m_options.inputScript) {
+        auto script = input::InputScript::loadFromFile(*m_options.inputScript);
+        if (!script) {
+            return propagate(script.error());
+        }
+        spdlog::info("Input script {}: {} step(s) up to frame {}", core::pathToGenericUtf8(*m_options.inputScript),
+                     script->steps().size(), script->lastFrame());
+        s.script.emplace(std::move(*script));
+    }
+
     // The product UI.
     auto ui = ui::UiSystem::create(context.window(), ui::UiSystemConfig{paths.assetRoot()});
     if (!ui) {
@@ -790,11 +1120,12 @@ Status SpikeApp::onInit(app::AppContext& context) {
         return propagate(view.error());
     }
     s.view = std::move(*view);
+    s.view->setCommandKeys(ui::commandKeys(bindings));
     s.runTextScale = m_options.textScale;
     s.runHighContrast = m_options.highContrast;
     s.textScale = m_options.textScale;
     s.view->setTextScale(m_options.textScale);
-    s.model = std::make_unique<ui::QuickCatalogModel>(mockCatalog());
+    s.model = std::make_unique<ui::QuickCatalogModel>(*s.source);
     auto screen = ui::QuickCatalogScreen::create(*s.view, *s.model, s.events(), kWatchDocuments);
     if (!screen) {
         return propagate(screen.error());
@@ -822,8 +1153,9 @@ Status SpikeApp::onInit(app::AppContext& context) {
         spdlog::warn("Heap allocations of the UI pass not counted: {}", s.report.allocationCounting);
     }
 
-    // Input: every connected pad by hand (--interactive); the scripted virtual pad alone in scenario runs, so that a pad
-    // in use on the machine cannot move the focus under the checks.
+    // Input devices: every connected pad by hand (--interactive); the scripted virtual pad alone in scenario runs, and
+    // no pad at all with an input script, so that a pad in use on the machine cannot move the selection under the
+    // checks.
     const std::optional<std::uint32_t> frameLimit = m_options.run.frameLimit;
     if (m_options.scenario) {
         // The scripted pad must reach a window that never has the focus (hidden runs): background joystick events are
@@ -834,17 +1166,19 @@ Status SpikeApp::onInit(app::AppContext& context) {
             return propagate(pad.error());
         }
         s.pad.emplace(std::move(*pad));
-        s.scenario = defaultScenario();
+        s.scenario =
+            m_options.scenarioKind == ScenarioKind::QuickCatalog ? defaultScenario(s.facts) : userBindingsScenario();
         if (!frameLimit || *frameLimit < s.scenario.frames) {
             spdlog::warn("The scenario needs {} frames; with {} the checks after the last frame never run and the run "
                          "fails",
                          s.scenario.frames, frameLimit ? std::to_string(*frameLimit) : std::string("no limit"));
         }
-    } else {
+    } else if (!s.script) {
         s.collector.gamepads().openConnected();
     }
     s.report.samples.reserve(frameLimit ? *frameLimit : kInteractiveSampleCapacity);
     s.report.focusChanges.reserve(frameLimit ? *frameLimit / 2 + 64 : 4096);
+    s.report.selections.reserve(frameLimit ? *frameLimit + 64 : 4096);
     s.report.actions.reserve(256);
 
     ReportData& report = s.report;
@@ -859,17 +1193,24 @@ Status SpikeApp::onInit(app::AppContext& context) {
     report.textScale = m_options.textScale;
     report.highContrast = m_options.highContrast;
     report.scenario = m_options.scenario;
+    report.scenarioName = m_options.scenario ? std::string(toString(m_options.scenarioKind))
+                                             : (s.script ? std::string("input-script") : std::string("interactive"));
     report.fixedDeltaSeconds = m_options.run.fixedDeltaSeconds;
     report.vsync = m_options.run.vsync;
     report.fpsCap = m_options.fpsCap;
     report.fonts = s.ui->loadedFontFaces();
     report.phases = s.scenario.phases;
-    spdlog::info("spike_ui: {}x{} pixels, display scale {:.2f}, {} scripted step(s), {} screenshot(s) asked",
-                 report.initialSize.x, report.initialSize.y, report.displayScale, s.scenario.steps.size(),
-                 m_options.screenshots.size());
+    report.poolRows = qc::kPoolRows;
+    spdlog::info("spike_ui: {}x{} pixels, display scale {:.2f}, scenario {} ({} scripted step(s) over {} frame(s)), {} "
+                 "screenshot(s) asked, {} row(s) shown",
+                 report.initialSize.x, report.initialSize.y, report.displayScale, report.scenarioName,
+                 s.scenario.steps.size(), s.scenario.frames, m_options.screenshots.size(), s.model->windowRows());
     s.logRecords(); // the first focus
     s.focusChangesSeen = report.focusChanges.size(); // laid out by the screen's creation
     s.cardRefreshesSeen = s.screen->cardRefreshes();
+    s.windowBindsSeen = s.screen->windowBinds();
+    s.rowBindsSeen = s.screen->rowBinds();
+    s.selectionSeen = s.model->selectedPosition();
     m_state = std::move(state);
     return ok();
 }
@@ -879,13 +1220,13 @@ void SpikeApp::onEvent(app::AppContext& /*context*/, const SDL_Event& event) {
         return;
     }
     State& s = *m_state;
-    if (s.pad) {
-        if (const std::optional<SDL_JoystickID> pad = gamepadOf(event); pad && *pad != s.pad->id()) {
-            return; // a real pad: scripted runs hear the virtual one only
+    if (s.pad || s.script) {
+        if (const std::optional<SDL_JoystickID> pad = gamepadOf(event); pad && (!s.pad || *pad != s.pad->id())) {
+            return; // a real pad: scripted runs hear the virtual one only, input-script runs none
         }
     }
     // The UI first (mouse, text, keys that are not commands); what it does not use goes to the input collector, which
-    // turns pads and command keys into the raw frame NavInput reads.
+    // turns pads and command keys into the raw frame the bindings resolve.
     if (s.view->handleEvent(event)) {
         return;
     }
@@ -905,9 +1246,13 @@ void SpikeApp::onUpdate(app::AppContext& context, double deltaSeconds) {
     s.ui->setTime(s.simulatedSeconds);
     s.runInputSteps(context);
 
-    const input::RawInputFrame raw = s.collector.endFrame();
+    // Devices -> action map -> input script -> UI commands.
+    input::ActionState actions = s.input.resolve(s.collector.endFrame());
+    if (s.script) {
+        s.script->apply(context.frameIndex(), actions, s.input.settings().pressThreshold);
+    }
     s.commands.clear();
-    s.nav.update(raw, deltaSeconds, s.commands);
+    s.nav.update(actions, deltaSeconds, s.commands);
     s.report.commandsDropped += s.commands.dropped();
 
     // The measured UI pass, CPU side: the commands, then the context's update.
@@ -925,19 +1270,36 @@ void SpikeApp::onUpdate(app::AppContext& context, double deltaSeconds) {
     s.view->update();
     const std::size_t focusUpdated = s.report.focusChanges.size();
     const std::uint64_t cardsUpdated = s.screen->cardRefreshes();
+    const std::uint64_t bindsUpdated = s.screen->windowBinds();
+    const std::uint64_t rowBindsUpdated = s.screen->rowBinds();
     const Clock::time_point afterStart = Clock::now();
     s.screen->afterUpdate();
     s.afterUpdateMs = millisecondsSince(afterStart);
     AllocationCounter::end();
     s.updateAllocations = s.takeAllocations();
     // Which frame laid out a change: this one for the changes made before its update (events, commands), the next one
-    // for those made after it (the card settling).
+    // for those made after it (the card settling, the window following the layout).
     s.focusMovedThisFrame = s.focusMovedLate || focusUpdated > s.focusChangesSeen;
     s.cardLaidOutThisFrame = s.cardFilledLate || cardsUpdated > s.cardRefreshesSeen;
+    s.rowsBoundThisFrame = s.rowsBoundLate || bindsUpdated > s.windowBindsSeen;
+    // The rows bound before this update are laid out in it; those bound after it count for the next frame.
+    s.rowBindsThisFrame = static_cast<std::uint32_t>(rowBindsUpdated - s.rowBindsSeen);
+    s.rowBindsSeen = rowBindsUpdated;
     s.focusChangesSeen = s.report.focusChanges.size();
     s.cardRefreshesSeen = s.screen->cardRefreshes();
+    s.windowBindsSeen = s.screen->windowBinds();
     s.focusMovedLate = s.focusChangesSeen > focusUpdated;
     s.cardFilledLate = s.cardRefreshesSeen > cardsUpdated;
+    s.rowsBoundLate = s.windowBindsSeen > bindsUpdated;
+    // The selection's moves (a scroll keeps the focus on its row: the moves are counted, not the focus changes).
+    const std::optional<std::size_t> selection = s.model->selectedPosition();
+    s.selectionMovedThisFrame = selection != s.selectionSeen;
+    if (s.selectionMovedThisFrame) {
+        s.selectionSeen = selection;
+        if (selection && s.report.selections.size() < s.report.selections.capacity()) {
+            s.report.selections.push_back(SelectionRecord{s.frame, *selection});
+        }
+    }
     if (s.displayScale != s.lastDisplayScale) {
         spdlog::warn("Frame {}: the display scale changed under the run, {:.2f} -> {:.2f}", s.frame, s.lastDisplayScale,
                      s.displayScale);
@@ -1000,11 +1362,23 @@ void SpikeApp::onShutdown(app::AppContext& context) {
     ReportData& report = s.report;
     report.framesRendered = context.frameIndex();
     report.checksNotRun = m_options.scenario ? s.checksNotRun() : 0;
+    report.windowRows = s.model->windowRows();
+    report.finalSelection = s.model->selectedPosition();
+    report.finalSelectionId = s.model->selected() != nullptr ? s.model->selected()->id : std::string();
     const ui::UiLogCounts log = s.ui->logCounts();
     report.rmlErrors = log.errors;
     report.rmlWarnings = log.warnings;
     for (const std::string& line : timingSummaryLines(report)) {
         spdlog::info("{}", line);
+    }
+    spdlog::info(
+        "Final selection: position {} ({}) of {} game(s), {} row(s) shown", positionText(report.finalSelection),
+        report.finalSelectionId.empty() ? "none" : report.finalSelectionId, s.model->count(), report.windowRows);
+    if (m_options.expectSelection) {
+        const bool reached = report.finalSelection == *m_options.expectSelection;
+        report.checks.push_back(CheckRecord{s.frame, fmt::format("expect-selection {}", *m_options.expectSelection),
+                                            reached, "the selection ended at " + positionText(report.finalSelection),
+                                            false});
     }
     const auto failed = static_cast<std::size_t>(std::count_if(
         report.checks.begin(), report.checks.end(), [](const CheckRecord& c) { return !c.passed && !c.skipped; }));
@@ -1014,10 +1388,10 @@ void SpikeApp::onShutdown(app::AppContext& context) {
         std::all_of(report.screenshots.begin(), report.screenshots.end(), [](const ScreenshotRecord& r) {
             return r.written;
         });
-    spdlog::info("spike_ui: {} check(s), {} failed, {} skipped, {} never ran; {} focus change(s); RmlUi log: {} "
-                 "error(s), {} warning(s)",
-                 report.checks.size(), failed, skipped, report.checksNotRun, report.focusChanges.size(), log.errors,
-                 log.warnings);
+    spdlog::info("spike_ui: {} check(s), {} failed, {} skipped, {} never ran; {} focus change(s), {} move(s) of the "
+                 "selection; RmlUi log: {} error(s), {} warning(s)",
+                 report.checks.size(), failed, skipped, report.checksNotRun, report.focusChanges.size(),
+                 report.selections.size(), log.errors, log.warnings);
     if (m_options.report) {
         if (auto written = writeReport(*m_options.report, report); written) {
             spdlog::info("Report written: {}", core::pathToGenericUtf8(*m_options.report));
@@ -1027,7 +1401,7 @@ void SpikeApp::onShutdown(app::AppContext& context) {
         }
     }
     if (failed > 0) {
-        context.failRun(Error{ErrorCode::ValidationFailed, fmt::format("{} scenario check(s) failed", failed), {}});
+        context.failRun(Error{ErrorCode::ValidationFailed, fmt::format("{} check(s) failed", failed), {}});
     } else if (report.checksNotRun > 0) {
         // Quit early (Back with the catalog closed, the window closed) or too few --frames: an unchecked run is no pass.
         context.failRun(Error{ErrorCode::ValidationFailed,
@@ -1041,9 +1415,10 @@ void SpikeApp::onShutdown(app::AppContext& context) {
     } else if (!screenshotsWritten) {
         context.failRun(Error{ErrorCode::IoError, "a --screenshot-at was not written", {}});
     }
-    // UI first (screen, model, view, system), then the scene's GPU resources, while the context is current.
+    // UI first (screen, model, source, view, system), then the scene's GPU resources, while the context is current.
     s.screen.reset();
     s.model.reset();
+    s.source.reset();
     s.view.reset();
     s.ui.reset();
     s.pad.reset();

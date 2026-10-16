@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
@@ -35,10 +36,15 @@ struct FrameSample {
     double gpuMs = std::numeric_limits<double>::quiet_NaN();
     double frameMs = 0.0; ///< the whole frame, the host's clock (vsync, the scene and the UI)
     /// This frame's update and render handled a change of the UI: the focus moved to another element, the card was
-    /// filled again (its text laid out again). A change made after the context's update (the card settling once the
-    /// focus rests) counts for the next frame, which lays it out. Frames with neither are the quiet ones.
+    /// filled again (its text laid out again), the pool's rows were bound to another window (the list scrolled), the
+    /// selection moved. A change made after the context's update (the card settling once the selection rests, the
+    /// window following the layout) counts for the next frame, which lays it out. Frames with none are the quiet ones.
     bool focusMoved = false;
     bool cardRefreshed = false;
+    bool rowsBound = false;
+    bool selectionMoved = false;
+    /// Rows of the pool this frame's update laid out with another game (a scroll by one row: one).
+    std::uint32_t rowBinds = 0;
     /// Heap allocations of the UI pass on the main thread (AllocationCounter), during the commands and the update, and
     /// during the render.
     AllocationCounts updateAllocations;
@@ -49,6 +55,12 @@ struct FocusRecord {
     std::uint32_t frame = 0;
     std::string region;
     std::string element;
+};
+
+/// The selection at a new position of the list (a move, a page, a jump, another list).
+struct SelectionRecord {
+    std::uint32_t frame = 0;
+    std::size_t position = 0;
 };
 
 /// A product action the screen asked for: launch, media, info-shown, info-hidden, close.
@@ -76,6 +88,8 @@ struct LayoutRecord {
     float dpRatio = 1.0f;
     float displayScale = 1.0f;
     bool compact = false;
+    /// The rows of the list the screen showed (the model's window).
+    std::size_t windowRows = 0;
     std::vector<std::pair<std::string, glm::vec4>> boxes;
     std::vector<std::pair<std::string, float>> fontSizes;
     std::string focused;
@@ -98,11 +112,22 @@ struct ReportData {
     float textScale = 1.0f;
     bool highContrast = false;
     bool scenario = true;
+    /// quick-catalog, user-bindings, input-script or interactive.
+    std::string scenarioName;
     std::optional<double> fixedDeltaSeconds;
     bool vsync = true;
     int fpsCap = 0;
     std::uint64_t framesRendered = 0;
     std::vector<std::string> fonts;
+    /// The catalog: games, the time to generate and index them, the pool of rows and the rows the screen showed at the
+    /// end, the selection then, the user's bindings file applied (empty: none).
+    std::size_t catalogGames = 0;
+    double catalogMs = 0.0;
+    std::size_t poolRows = 0;
+    std::size_t windowRows = 0;
+    std::optional<std::size_t> finalSelection;
+    std::string finalSelectionId;
+    std::string userBindings;
     std::uint64_t rmlErrors = 0;
     std::uint64_t rmlWarnings = 0;
     /// How allocations were counted, or why they were not.
@@ -113,6 +138,7 @@ struct ReportData {
     std::vector<Phase> phases;
     std::vector<FrameSample> samples;
     std::vector<FocusRecord> focusChanges;
+    std::vector<SelectionRecord> selections;
     std::vector<ActionRecord> actions;
     std::vector<CheckRecord> checks;
     /// Checks of the scenario that never ran: the run ended before their frame.

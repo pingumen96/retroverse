@@ -2,9 +2,13 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <limits>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -16,7 +20,10 @@
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/EventListener.h>
 #include <RmlUi/Core/Factory.h>
+#include <RmlUi/Core/ID.h>
+#include <RmlUi/Core/Property.h>
 #include <RmlUi/Core/ScrollTypes.h>
+#include <RmlUi/Core/Unit.h>
 #include <RmlUi/Core/Variant.h>
 #include <glm/vec3.hpp>
 #include <spdlog/spdlog.h>
@@ -32,7 +39,10 @@ namespace {
 
 namespace qc = quick_catalog;
 
-/// A filter chip as the document binds it.
+constexpr std::size_t kNone = static_cast<std::size_t>(-1);
+constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+
+/// A filter chip as the document binds it. The chip of every game has an empty label: the document names it.
 struct ChipRow {
     Rml::String elementId;
     Rml::String key;
@@ -40,16 +50,24 @@ struct ChipRow {
     bool active = false;
 };
 
-/// A visible game as the document binds it.
-struct GameRow {
+/// A row of the pool as the document binds it: the game its slot shows, or a blank row (past the list's end, or a
+/// window the source could not read).
+struct RowData {
     Rml::String elementId;
+    bool present = false; ///< the slot shows a game (else the row is blank)
     Rml::String title;
     Rml::String platform;
-    Rml::String year;
-    bool selected = false;
+    Rml::String year; ///< empty when unknown: the document writes "n.d."
+    Rml::String state;
 };
 
-/// The selected game's card.
+/// What a slot of the pool shows: a position of the list and its game's id (kNone and empty: a blank row).
+struct SlotShown {
+    std::size_t position = kNone;
+    std::string id;
+};
+
+/// The selected game's card. Unknown fields are empty: the document writes "n.d.".
 struct CardData {
     bool present = false;
     bool expanded = false;
@@ -61,23 +79,52 @@ struct CardData {
     Rml::String genre;
     Rml::String players;
     Rml::String description;
+    Rml::String state;
 };
 
-/// "n.d." (non disponibile) for an unknown year or field.
-[[nodiscard]] Rml::String orUnknown(const std::string& text) {
-    return text.empty() ? Rml::String("n.d.") : Rml::String(text);
-}
+/// The scroll indicator beside the list: its thumb's top and height in percent of the track.
+struct ScrollData {
+    bool shown = false;
+    Rml::String top;
+    Rml::String height;
+};
 
 [[nodiscard]] Rml::String yearText(int year) {
-    return year > 0 ? std::to_string(year) : Rml::String("n.d.");
-}
-
-[[nodiscard]] Rml::String gameElementId(std::string_view entryId) {
-    return Rml::String(qc::kGamePrefix) + Rml::String(entryId);
+    return year > 0 ? Rml::String(std::to_string(year)) : Rml::String();
 }
 
 [[nodiscard]] Rml::String chipElementId(std::size_t index) {
     return Rml::String(qc::kChipPrefix) + std::to_string(index);
+}
+
+/// The slot of a row's element id ("row-3": 3), if it is one.
+[[nodiscard]] std::optional<std::size_t> slotOf(std::string_view id) noexcept {
+    if (!id.starts_with(qc::kRowPrefix)) {
+        return std::nullopt;
+    }
+    const std::string_view digits = id.substr(qc::kRowPrefix.size());
+    std::size_t slot = 0;
+    const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), slot);
+    if (error != std::errc() || end != digits.data() + digits.size() || slot >= qc::kPoolRows) {
+        return std::nullopt;
+    }
+    return slot;
+}
+
+/// The row of the window the slot `slot` of a pool of `shown` rows shows while the window starts at `first`: the slot
+/// of position p is p mod shown (quick_catalog::poolSlotOf).
+[[nodiscard]] std::size_t windowRowOf(std::size_t slot, std::size_t first, std::size_t shown) noexcept {
+    return (slot + shown - first % shown) % shown;
+}
+
+/// "12.345%": a percentage for a style property, without allocating (it fits the string's own storage).
+void setPercent(Rml::String& text, float percent) {
+    std::array<char, 24> buffer{};
+    const auto [end, error] =
+        std::to_chars(buffer.data(), buffer.data() + buffer.size() - 1, percent, std::chars_format::fixed, 3);
+    char* last = error == std::errc() ? end : buffer.data();
+    *last++ = '%';
+    text.assign(buffer.data(), last);
 }
 
 /// The region of `element`: the nav-region attribute of the element or of its closest ancestor that has one.
@@ -95,10 +142,16 @@ struct CardData {
 /// direction runs through the list at 10 to 20 games per second): a single move updates the card at once.
 constexpr double kCardSettleSeconds = 0.15;
 
+/// Games the selection moves per notch of the mouse wheel over the list.
+constexpr std::ptrdiff_t kWheelRows = 3;
+
+/// The scroll indicator's thumb is at least this tall (percent of the track), so that it shows on a long list.
+constexpr float kMinThumbPercent = 4.0f;
+
 /// Events the screen listens to on its document: every focus change (capture phase: focus does not bubble), double
-/// clicks on games, the line break that ends a search.
-constexpr std::array<Rml::EventId, 3> kListenedEvents{Rml::EventId::Focus, Rml::EventId::Dblclick,
-                                                      Rml::EventId::Change};
+/// clicks on games, the line break that ends a search, the mouse wheel over the list.
+constexpr std::array<Rml::EventId, 4> kListenedEvents{Rml::EventId::Focus, Rml::EventId::Dblclick, Rml::EventId::Change,
+                                                      Rml::EventId::Mousescroll};
 
 } // namespace
 
@@ -114,7 +167,13 @@ struct QuickCatalogScreen::Impl {
     };
 
     Impl(UiView& view, QuickCatalogModel& model, QuickCatalogEvents events)
-        : view(view), model(model), events(std::move(events)), listener(*this) {}
+        : view(view), model(model), events(std::move(events)), listener(*this) {
+        rows.reserve(qc::kPoolRows); // resized with the rows that fit, never moved: no allocation of its own after this
+        for (std::size_t slot = 0; slot < qc::kPoolRows; ++slot) {
+            rowIds[slot] = Rml::String(qc::kRowPrefix) + std::to_string(slot);
+        }
+        appliedTops.fill(kNaN);
+    }
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
 
@@ -141,14 +200,15 @@ struct QuickCatalogScreen::Impl {
             chip.RegisterMember("active", &ChipRow::active);
         }
         constructor.RegisterArray<std::vector<ChipRow>>();
-        if (auto game = constructor.RegisterStruct<GameRow>()) {
-            game.RegisterMember("elementId", &GameRow::elementId);
-            game.RegisterMember("title", &GameRow::title);
-            game.RegisterMember("platform", &GameRow::platform);
-            game.RegisterMember("year", &GameRow::year);
-            game.RegisterMember("selected", &GameRow::selected);
+        if (auto row = constructor.RegisterStruct<RowData>()) {
+            row.RegisterMember("elementId", &RowData::elementId);
+            row.RegisterMember("present", &RowData::present);
+            row.RegisterMember("title", &RowData::title);
+            row.RegisterMember("platform", &RowData::platform);
+            row.RegisterMember("year", &RowData::year);
+            row.RegisterMember("state", &RowData::state);
         }
-        constructor.RegisterArray<std::vector<GameRow>>();
+        constructor.RegisterArray<std::vector<RowData>>();
         if (auto cardStruct = constructor.RegisterStruct<CardData>()) {
             cardStruct.RegisterMember("present", &CardData::present);
             cardStruct.RegisterMember("expanded", &CardData::expanded);
@@ -160,12 +220,20 @@ struct QuickCatalogScreen::Impl {
             cardStruct.RegisterMember("genre", &CardData::genre);
             cardStruct.RegisterMember("players", &CardData::players);
             cardStruct.RegisterMember("description", &CardData::description);
+            cardStruct.RegisterMember("state", &CardData::state);
+        }
+        if (auto scrollStruct = constructor.RegisterStruct<ScrollData>()) {
+            scrollStruct.RegisterMember("shown", &ScrollData::shown);
+            scrollStruct.RegisterMember("top", &ScrollData::top);
+            scrollStruct.RegisterMember("height", &ScrollData::height);
         }
         constructor.Bind("chips", &chips);
-        constructor.Bind("games", &games);
+        constructor.Bind("rows", &rows);
         constructor.Bind("card", &card);
+        constructor.Bind("scroll", &scroll);
         constructor.Bind("status", &status);
         constructor.Bind("count", &count);
+        constructor.Bind("unavailable", &unavailable);
         constructor.BindFunc(
             "search", [this](Rml::Variant& value) { value = Rml::String(model.search()); },
             [this](const Rml::Variant& value) { setSearch(value.Get<Rml::String>()); });
@@ -185,36 +253,31 @@ struct QuickCatalogScreen::Impl {
         return ok();
     }
 
-    /// The chips when the active filter changed; the visible games and their count when they changed. The two are
-    /// independent: a filter that lets the same games through (a search that left one game, whose platform is chosen)
-    /// still moves the highlight to its chip.
-    void syncList() {
+    /// Everything the model changed since the last call: the chips, the window's rows, the card, the selected row's
+    /// class.
+    void sync() {
         syncChips();
-        if (model.visibleRevision() == shownVisible) {
-            return;
-        }
-        shownVisible = model.visibleRevision();
-        const CatalogEntry* selected = model.selected();
-        games.clear();
-        for (const std::size_t index : model.visible()) {
-            const CatalogEntry& entry = model.entries()[index];
-            games.push_back(GameRow{gameElementId(entry.id), entry.title, entry.platform, yearText(entry.year),
-                                    selected != nullptr && selected->id == entry.id});
-        }
-        count = static_cast<int>(games.size());
-        // The game the list region remembers may be gone: the selected game is its entry then.
-        if (const std::optional<std::string> remembered = regions.remembered(qc::kRegionList)) {
-            if (!remembered->starts_with(qc::kGamePrefix) ||
-                !model.isVisible(std::string_view(*remembered).substr(qc::kGamePrefix.size()))) {
-                regions.forget(qc::kRegionList);
-            }
-        }
-        handle.DirtyVariable("games");
-        handle.DirtyVariable("count");
-        syncSelection(); // when the filter or the search moved the selection
+        syncWindow();
+        syncSelection();
+        syncSelectedRow();
     }
 
-    /// The chips, their active flags and the chips region's entry (the active chip), when the active filter changed.
+    /// Shows what the model holds when it changed outside the screen's own commands: a list a query running on the
+    /// source's worker brought (QuickCatalogModel::poll), the application's QuickCatalogModel::refresh() after an
+    /// import. Before every command and after every update, so that a command never acts on a game the screen does not
+    /// show; nothing to do when the model did not change.
+    void catchUp() {
+        if (shownFilter == model.filterRevision() && shownWindow == model.windowRevision() &&
+            shownSelection == model.selectionRevision()) {
+            return;
+        }
+        logError("catalog");
+        sync();
+        followSelection();
+    }
+
+    /// The chips, their active flags and the chips region's entry (the active chip), when the filters or the active
+    /// filter changed.
     void syncChips() {
         if (shownFilter && *shownFilter == model.filterRevision()) {
             return;
@@ -234,33 +297,214 @@ struct QuickCatalogScreen::Impl {
         handle.DirtyVariable("chips");
     }
 
-    /// The selected flags of the rows and the card, when the selection changed.
+    /// The pool's rows, the count, the empty list's reason and the scroll indicator, when the model's window changed.
+    /// The pool has a row per window row; a game keeps its row while the window holds it (the slot of position p is p
+    /// mod the rows shown), so a scroll binds only the rows that enter (one per step of a held direction: one row's
+    /// text changes instead of the window's), and the rows are moved into the window's order (placeRows).
+    void syncWindow() {
+        if (shownWindow && *shownWindow == model.windowRevision()) {
+            return;
+        }
+        shownWindow = model.windowRevision();
+        const std::size_t shown = std::min(model.windowRows(), qc::kPoolRows);
+        bool bound = false;
+        if (rows.size() != shown) {
+            resizePool(shown);
+            bound = true;
+        }
+        // Another list binds every row (the same position may hold another game, the same game other data).
+        const bool newList = !boundList || *boundList != model.listRevision();
+        boundList = model.listRevision();
+        const std::span<const CatalogEntry> window = model.window();
+        const std::size_t first = model.windowFirst();
+        for (std::size_t slot = 0; slot < shown; ++slot) {
+            const std::size_t row = windowRowOf(slot, first, shown);
+            const CatalogEntry* entry = row < window.size() ? &window[row] : nullptr;
+            const std::size_t position = entry != nullptr ? first + row : kNone;
+            const SlotShown& was = slots[slot];
+            if (!newList && was.position == position && (entry != nullptr ? was.id == entry->id : was.id.empty())) {
+                continue; // still in the window: the row shows it already
+            }
+            bindRow(slot, position, entry);
+            bound = true;
+        }
+        if (bound) {
+            ++windowBinds;
+            handle.DirtyVariable("rows");
+        }
+        placeRows();
+        const int listed = static_cast<int>(std::min<std::size_t>(model.count(), std::numeric_limits<int>::max()));
+        if (listed != count) {
+            count = listed;
+            handle.DirtyVariable("count");
+        }
+        // The list shows nothing because the source could not be read, not because nothing matches.
+        const bool cannotRead = model.error().has_value() && window.empty();
+        if (cannotRead != unavailable) {
+            unavailable = cannotRead;
+            handle.DirtyVariable("unavailable");
+        }
+        syncScroll();
+    }
+
+    /// The pool as tall as the rows that fit: the data-for view makes or removes rows at the context's next update,
+    /// when attachPool() finds them; every row is bound again.
+    void resizePool(std::size_t shown) {
+        if (markedSlot && *markedSlot >= shown) {
+            if (rowElements[*markedSlot] != nullptr) {
+                rowElements[*markedSlot]->SetClass(selectedClass, false);
+            }
+            markedSlot.reset();
+        }
+        for (std::size_t slot = shown; slot < qc::kPoolRows; ++slot) {
+            rowElements[slot] = nullptr;
+            slotBoxes[slot] = nullptr;
+        }
+        const std::size_t before = rows.size();
+        rows.resize(shown);
+        for (std::size_t slot = before; slot < shown; ++slot) {
+            rows[slot].elementId = rowIds[slot];
+        }
+        slots.fill(SlotShown{});
+        boundList.reset();
+        poolStale = true;
+    }
+
+    /// Binds the slot `slot` to the game `entry` at `position` (nothing: a blank row).
+    void bindRow(std::size_t slot, std::size_t position, const CatalogEntry* entry) {
+        RowData& row = rows[slot];
+        row.present = entry != nullptr;
+        if (entry != nullptr) {
+            row.title = entry->title;
+            row.platform = entry->platform;
+            row.year = yearText(entry->year);
+            row.state = entry->state;
+        } else {
+            row.title.clear();
+            row.platform.clear();
+            row.year.clear();
+            row.state.clear();
+        }
+        slots[slot].position = position;
+        if (entry != nullptr) {
+            slots[slot].id.assign(entry->id); // keeps its storage
+        } else {
+            slots[slot].id.clear();
+        }
+        ++rowBinds;
+    }
+
+    /// Moves each row of the pool from its place in the list's flow to its row of the window (style top, relative, in
+    /// whole pixels so that the rows' rounding never changes: their geometry is moved, not built again); sets only the
+    /// offsets that changed.
+    void placeRows() {
+        const std::size_t shown = rows.size();
+        const std::size_t first = model.windowFirst();
+        for (std::size_t slot = 0; slot < shown; ++slot) {
+            Rml::Element* element = rowElements[slot];
+            if (element == nullptr) {
+                continue;
+            }
+            const auto offset = static_cast<float>(windowRowOf(slot, first, shown)) - static_cast<float>(slot);
+            const float top = std::round(offset * rowPitch);
+            if (top != appliedTops[slot]) { // a NaN (not set yet) never compares equal
+                element->SetProperty(Rml::PropertyId::Top, Rml::Property(top, Rml::Unit::PX));
+                appliedTops[slot] = top;
+            }
+        }
+    }
+
+    /// After a context update that made the rows of a resized pool or of a loaded document: finds them, places them,
+    /// marks the selected one and gives the focus to it when it waited for its row.
+    void attachPool() {
+        if (!poolStale || document == nullptr) {
+            return;
+        }
+        bool found = true;
+        for (std::size_t slot = 0; slot < qc::kPoolRows; ++slot) {
+            Rml::Element* element = slot < rows.size() ? document->GetElementById(rowIds[slot]) : nullptr;
+            found = found && (slot >= rows.size() || element != nullptr);
+            rowElements[slot] = element;
+            slotBoxes[slot] = element != nullptr ? element->GetParentNode() : nullptr;
+            appliedTops[slot] = kNaN;
+            if (element != nullptr) {
+                element->SetClass(selectedClass, false); // a row kept from a larger pool may have had it
+            }
+        }
+        poolStale = !found;
+        markedSlot.reset();
+        placeRows();
+        syncSelectedRow();
+        if (!poolStale && std::exchange(focusWaits, false)) {
+            followSelection();
+        }
+    }
+
+    /// The scroll indicator: shown while the list holds more games than the window, its thumb as tall as the window's
+    /// share of the list (at least kMinThumbPercent) and as far down the track as the window is down the list.
+    void syncScroll() {
+        const std::size_t total = model.count();
+        const std::size_t shownRows = model.windowRows();
+        const bool shown = total > shownRows;
+        float height = 100.0f;
+        float top = 0.0f;
+        if (shown) {
+            height = std::max(100.0f * static_cast<float>(shownRows) / static_cast<float>(total), kMinThumbPercent);
+            top = (100.0f - height) * static_cast<float>(model.windowFirst()) / static_cast<float>(total - shownRows);
+        }
+        scroll.shown = shown;
+        setPercent(scroll.top, top);
+        setPercent(scroll.height, height);
+        handle.DirtyVariable("scroll");
+    }
+
+    /// The status line and the card when the selected game changed.
     void syncSelection() {
-        if (model.selectionRevision() == shownSelection) {
+        if (shownSelection && *shownSelection == model.selectionRevision()) {
             return;
         }
         shownSelection = model.selectionRevision();
-        const CatalogEntry* selected = model.selected();
-        const Rml::String selectedId = selected != nullptr ? gameElementId(selected->id) : Rml::String();
-        for (GameRow& row : games) {
-            row.selected = row.elementId == selectedId;
-        }
-        regions.setEntry(qc::kRegionList, selectedId);
         // The status line speaks of the game it was set for: another game clears it.
         if (!status.empty()) {
             status.clear();
             handle.DirtyVariable("status");
         }
-        handle.DirtyVariable("games");
-        // The card follows at once after a pause, and once the focus rests while it runs through the list (a held
-        // direction): laying the card's text out again is most of a focus move's cost (docs/spikes/i1-ui.md).
+        // The card follows at once after a pause, and once the selection rests while it runs through the list (a held
+        // direction): laying the card's text out again is most of a move's cost (docs/spikes/i1-ui.md).
         const double now = view.system().time();
         const bool resting = !lastSelectionChange || now - *lastSelectionChange >= kCardSettleSeconds;
         lastSelectionChange = now;
-        if (resting || selected == nullptr) {
+        if (resting || model.selected() == nullptr) {
             refreshCard();
         } else {
             cardPending = true;
+        }
+    }
+
+    /// The slot whose row shows the selected game, if the pool shows it.
+    [[nodiscard]] std::optional<std::size_t> selectedPoolSlot() const noexcept {
+        const std::optional<std::size_t> position = model.selectedPosition();
+        if (!position || rows.empty()) {
+            return std::nullopt;
+        }
+        const std::size_t slot = qc::poolSlotOf(*position, rows.size());
+        return slots[slot].position == *position ? std::optional<std::size_t>(slot) : std::nullopt;
+    }
+
+    /// The class of the selected game's row, moved from the row that had it: two elements change, the bound rows are
+    /// not evaluated again (BACKLOG "Per-change cost under 1 ms").
+    void syncSelectedRow() {
+        const std::optional<std::size_t> slot = selectedPoolSlot();
+        if (slot == markedSlot) {
+            return;
+        }
+        if (markedSlot && rowElements[*markedSlot] != nullptr) {
+            rowElements[*markedSlot]->SetClass(selectedClass, false);
+        }
+        markedSlot.reset();
+        if (slot && rowElements[*slot] != nullptr) {
+            rowElements[*slot]->SetClass(selectedClass, true);
+            markedSlot = slot; // without its element (not made yet) attachPool() marks it
         }
     }
 
@@ -272,18 +516,19 @@ struct QuickCatalogScreen::Impl {
         card.present = selected != nullptr;
         if (selected != nullptr) {
             card.title = selected->title;
-            card.platform = orUnknown(selected->platform);
+            card.platform = selected->platform;
             card.year = yearText(selected->year);
-            card.developer = orUnknown(selected->developer);
-            card.publisher = orUnknown(selected->publisher);
-            card.genre = orUnknown(selected->genre);
-            card.players = orUnknown(selected->players);
+            card.developer = selected->developer;
+            card.publisher = selected->publisher;
+            card.genre = selected->genre;
+            card.players = selected->players;
             card.description = selected->description;
+            card.state = selected->state;
         }
         handle.DirtyVariable("card");
     }
 
-    /// Refreshes a card left behind by quick moves once the focus has rested for kCardSettleSeconds.
+    /// Refreshes a card left behind by quick moves once the selection has rested for kCardSettleSeconds.
     void settleCard() {
         if (cardPending && lastSelectionChange && view.system().time() - *lastSelectionChange >= kCardSettleSeconds) {
             refreshCard();
@@ -300,7 +545,9 @@ struct QuickCatalogScreen::Impl {
 
     void setSearch(const std::string& text) {
         model.setSearch(text);
-        syncList();
+        logError("search");
+        sync();
+        followSelection();
     }
 
     void applyFilter(const std::string& key) {
@@ -308,8 +555,37 @@ struct QuickCatalogScreen::Impl {
             spdlog::warn("Quick catalog: unknown filter '{}'", key);
             return;
         }
-        spdlog::info("Quick catalog: filter '{}', {} game(s)", key.empty() ? "Tutte" : key, model.visible().size());
-        syncList();
+        logError("filter");
+        spdlog::info("Quick catalog: filter '{}', {} game(s)", key.empty() ? "(every game)" : key, model.count());
+        sync();
+        followSelection();
+    }
+
+    /// The shoulders: the next or previous filter from any region. The active chip comes into view (the focus moves to
+    /// it while it is in the chips row).
+    void cycleFilter(int step) {
+        if (!model.cycleFilter(step)) {
+            return;
+        }
+        logError("filter");
+        spdlog::info("Quick catalog: filter '{}', {} game(s)",
+                     model.activeFilter().empty() ? "(every game)" : model.activeFilter(), model.count());
+        sync();
+        const std::optional<std::string> active = regions.entry(qc::kRegionChips);
+        if (focus && focus->region == qc::kRegionChips && active) {
+            static_cast<void>(focusElement(*active));
+        } else if (Rml::Element* chip = active ? view.element(*active) : nullptr) {
+            chip->ScrollIntoView(Rml::ScrollIntoViewOptions(Rml::ScrollAlignment::Nearest));
+        }
+        followSelection();
+    }
+
+    /// Logs the model's error once per failure (the list is then empty).
+    void logError(std::string_view what) {
+        if (model.error() && (!loggedError || loggedError->message != model.error()->message)) {
+            spdlog::warn("Quick catalog: the {} could not be read: {}", what, model.error()->toString());
+        }
+        loggedError = model.error();
     }
 
     // --- Actions ---------------------------------------------------------------------------------------------------
@@ -357,14 +633,23 @@ struct QuickCatalogScreen::Impl {
         if (visible) {
             document->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
         }
-        // Generates the rows of the data views, so that the focus can land on them.
+        // Generates the rows of the data views, so that the focus can land on them, and lays them out for the window's
+        // first measurement.
+        poolStale = true;
         view.context().Update();
         chipsRow = document->GetElementById(Rml::String(qc::kChipsId));
         chipsBox = document->GetElementById(Rml::String(qc::kChipsBoxId));
-        chipsHiddenBefore = false; // the new document's box has neither class yet
+        list = document->GetElementById(Rml::String(qc::kListId));
+        attachPool();
+        chipsHiddenBefore = false;
         chipsHiddenAfter = false;
         chipsRowSeen.reset();
         updateChipsCue();
+        // The window as tall as the list area, laid out before the first frame.
+        if (measureRows() || poolStale) {
+            view.context().Update();
+            attachPool();
+        }
         return ok();
     }
 
@@ -380,6 +665,50 @@ struct QuickCatalogScreen::Impl {
         document = nullptr;
         chipsRow = nullptr;
         chipsBox = nullptr;
+        list = nullptr;
+        rowElements.fill(nullptr);
+        slotBoxes.fill(nullptr);
+        markedSlot.reset();
+        poolStale = true;
+    }
+
+    /// The rows that fit the list area, from the laid-out rows: the pitch between the first two places of the list's
+    /// flow (the rows' slots: a row and its spacing), the height of a row, the height of the list's content box. Gives
+    /// the model a window that tall when it changed (a resize, the text scale, the layout theme), and moves the rows to
+    /// a new pitch. True when the rows must be laid out again before this frame is drawn. The list's height does not
+    /// depend on its rows, so the next layout measures the same. Reads boxes only: no allocation.
+    bool measureRows() {
+        if (list == nullptr || poolStale || rows.empty() || rowElements[0] == nullptr) {
+            return false;
+        }
+        bool moved = false;
+        if (rows.size() >= 2 && slotBoxes[0] != nullptr && slotBoxes[1] != nullptr) {
+            const float top = slotBoxes[0]->GetAbsoluteOffset(Rml::BoxArea::Border).y;
+            const float next = slotBoxes[1]->GetAbsoluteOffset(Rml::BoxArea::Border).y;
+            const float height = rowElements[0]->GetBox().GetSize(Rml::BoxArea::Border).y;
+            if (next > top && height > 0.0f && (next - top != rowPitch || height != rowHeight)) {
+                rowPitch = next - top;
+                rowHeight = height;
+                placeRows();
+                moved = true;
+            }
+        }
+        if (rowPitch <= 0.0f || rowHeight <= 0.0f) {
+            return moved;
+        }
+        const float area = list->GetBox().GetSize(Rml::BoxArea::Content).y;
+        // A hundredth of a pixel of slack: rows that fill the area exactly must count as fitting.
+        const float spare = (area - rowHeight) / rowPitch + 0.01f;
+        const std::size_t fit = spare >= 0.0f ? static_cast<std::size_t>(spare) + 1 : 1;
+        const std::size_t rowsShown = std::clamp<std::size_t>(fit, 1, qc::kPoolRows);
+        if (rowsShown == model.windowRows()) {
+            return moved;
+        }
+        model.setWindowRows(rowsShown);
+        logError("list");
+        sync();
+        followSelection(); // waits for its row when the pool grew past it
+        return true;
     }
 
     /// The fades at the edges of the chips row, where chips hide beyond it (the row scrolls with the focus): classes on
@@ -435,14 +764,58 @@ struct QuickCatalogScreen::Impl {
         return true;
     }
 
-    /// Focuses where the focus lands in `region` (remembered, else entry), else the first focusable choice of the
-    /// region (the first visible game, the first chip).
+    /// Focuses the selected game's row; false when the list is empty (or the row is not made yet).
+    bool focusSelectedRow() {
+        const std::optional<std::size_t> slot = selectedPoolSlot();
+        return slot && model.selected() != nullptr && focusElement(rowIds[*slot]);
+    }
+
+    /// The active filter's chip: where the focus goes when the list it was in, or the card's actions it was on, empty
+    /// (the filter that emptied the list, where the next one is a shoulder or a step away).
+    void focusActiveChip() {
+        const std::optional<std::string> active = regions.entry(qc::kRegionChips);
+        if (!active || !focusElement(*active)) {
+            static_cast<void>(focusRegion(qc::kRegionChips));
+        }
+    }
+
+    /// The focus follows the selection: while the list has it, it moves to the selected game's row (each game keeps its
+    /// row while the window holds it); an empty list sends it to the filters, and so does no game selected while it is
+    /// on the card's actions (the card is hidden then: the focus would stay on a button nobody sees).
+    void followSelection() {
+        if (!focus) {
+            return;
+        }
+        if (focus->region == qc::kRegionActions && model.selected() == nullptr) {
+            focusActiveChip();
+            return;
+        }
+        if (focus->region != qc::kRegionList) {
+            return;
+        }
+        const std::optional<std::size_t> slot = selectedPoolSlot();
+        if (slot && model.selected() != nullptr && rowElements[*slot] != nullptr &&
+            view.focusedElement() == rowElements[*slot]) {
+            return; // on it already
+        }
+        if (focusSelectedRow()) {
+            return;
+        }
+        if (poolStale && model.selected() != nullptr) {
+            focusWaits = true; // the row is made at the next update (attachPool)
+            return;
+        }
+        focusActiveChip();
+    }
+
+    /// Focuses where the focus lands in `region`: the selected game in the list; elsewhere the remembered element, else
+    /// the entry, else the region's first choice (the first chip, Avvia, the search field).
     bool focusRegion(std::string_view region) {
+        if (region == qc::kRegionList) {
+            return focusSelectedRow();
+        }
         if (const std::optional<std::string> landing = regions.landing(region); landing && focusElement(*landing)) {
             return true;
-        }
-        if (region == qc::kRegionList) {
-            return !model.visible().empty() && focusElement(gameElementId(model.entries()[model.visible().front()].id));
         }
         if (region == qc::kRegionChips) {
             return focusElement(chipElementId(0));
@@ -460,6 +833,11 @@ struct QuickCatalogScreen::Impl {
         }
     }
 
+    /// Focuses `target` again: the selected game for the list (its row may show another game by now).
+    bool refocus(const FocusTarget& target) {
+        return target.region == qc::kRegionList ? focusSelectedRow() : focusElement(target.element);
+    }
+
     void onFocus(Rml::Element* element) {
         // RmlUi sends the focus event to every element of the new focus chain, the ancestors of the focused element
         // too: only the elements navigation can focus (tab-index: auto) count.
@@ -471,6 +849,23 @@ struct QuickCatalogScreen::Impl {
         if (region.empty() || id.empty()) {
             return; // the document itself, or an element outside the regions
         }
+        if (region == qc::kRegionList) {
+            // A row: the game it shows becomes the selected one (a click; the screen's own focus follows the selection
+            // already). A blank row (focused with Tab), or a game gone from a list the screen has not shown yet, sends
+            // the focus back to the selected game.
+            const std::optional<std::size_t> slot = slotOf(id);
+            if (!slot || *slot >= rows.size() || slots[*slot].position == kNone) {
+                static_cast<void>(focusSelectedRow());
+                return;
+            }
+            const SlotShown& shown = slots[*slot];
+            const bool current = boundList && *boundList == model.listRevision();
+            if (!(current ? model.selectPosition(shown.position) : model.select(shown.id))) {
+                static_cast<void>(focusSelectedRow());
+                return;
+            }
+            sync();
+        }
         FocusTarget now{region, id};
         if (focus && *focus == now) {
             return;
@@ -478,11 +873,7 @@ struct QuickCatalogScreen::Impl {
         history.onFocusMoved(focus, region);
         regions.onFocused(now);
         focus = now;
-        if (region == qc::kRegionList && id.starts_with(qc::kGamePrefix)) {
-            if (model.select(std::string_view(id).substr(qc::kGamePrefix.size()))) {
-                syncSelection();
-            }
-        } else {
+        if (region != qc::kRegionList) {
             settleCardNow(); // out of the list: the card's actions act on the selected game, the card shows it
         }
         if (events.focusChanged) {
@@ -507,6 +898,19 @@ struct QuickCatalogScreen::Impl {
                 static_cast<void>(focusRegion(qc::kRegionList));
             }
             break;
+        case Rml::EventId::Mousescroll:
+            // The list does not scroll in RmlUi (its rows are the window): the wheel moves the selection, positive
+            // down.
+            if (regionOf(target) == qc::kRegionList) {
+                const float delta = event.GetParameter("wheel_delta_y", 0.0f);
+                if (delta != 0.0f && model.moveSelection(delta > 0.0f ? kWheelRows : -kWheelRows)) {
+                    logError("list");
+                    sync();
+                    followSelection();
+                }
+                event.StopPropagation();
+            }
+            break;
         default:
             break;
         }
@@ -517,12 +921,22 @@ struct QuickCatalogScreen::Impl {
         // move brings the focus back where the screen had it (it shows where the user is), the next ones move it.
         const Rml::Element* leaf = view.focusedElement();
         if (!focus || leaf == nullptr || leaf->GetId() != focus->element) {
-            if (!focus || !focusElement(focus->element)) {
+            if (!focus || !refocus(*focus)) {
                 focusDefault();
             }
             return;
         }
-        if (view.navigate(direction) != NavOutcome::Unhandled) {
+        if (focus->region == qc::kRegionList) {
+            // Up and Down move the selection over the whole list; at its first game Up leaves for the filters (the
+            // region link), at its last Down stays. Left and Right leave by the links.
+            const bool vertical = direction == NavDirection::Up || direction == NavDirection::Down;
+            if (vertical && model.moveSelection(direction == NavDirection::Up ? -1 : 1)) {
+                logError("list");
+                sync();
+                followSelection();
+                return;
+            }
+        } else if (view.navigate(direction) != NavOutcome::Unhandled) {
             return; // moved within the region, or the search field's caret moved
         }
         if (const std::optional<std::string> to = regions.linked(focus->region, direction)) {
@@ -530,9 +944,51 @@ struct QuickCatalogScreen::Impl {
         }
     }
 
+    /// Page moves, Home and End: jumps in the list; Home and End move the search field's caret and go to the first and
+    /// last chip.
+    void jump(UiCommand command) {
+        if (!focus) {
+            return;
+        }
+        if (focus->region == qc::kRegionList) {
+            bool moved = false;
+            switch (command) {
+            case UiCommand::PageUp:
+                moved = model.pageUp();
+                break;
+            case UiCommand::PageDown:
+                moved = model.pageDown();
+                break;
+            case UiCommand::Home:
+                moved = model.home();
+                break;
+            case UiCommand::End:
+                moved = model.end();
+                break;
+            default:
+                break;
+            }
+            if (moved) {
+                logError("list");
+                sync();
+                followSelection();
+            }
+            return;
+        }
+        const bool home = command == UiCommand::Home;
+        if (!home && command != UiCommand::End) {
+            return;
+        }
+        if (focus->region == qc::kRegionSearch) {
+            static_cast<void>(view.caretKey(home ? CaretKey::Home : CaretKey::End));
+        } else if (focus->region == qc::kRegionChips && !chips.empty()) {
+            static_cast<void>(focusElement(chipElementId(home ? 0 : chips.size() - 1)));
+        }
+    }
+
     void back() {
         if (std::optional<FocusTarget> target = history.back()) {
-            if (!focusElement(target->element)) {
+            if (!refocus(*target)) {
                 static_cast<void>(focusRegion(target->region));
             }
             return;
@@ -554,6 +1010,7 @@ struct QuickCatalogScreen::Impl {
         if (!visible || document == nullptr) {
             return;
         }
+        catchUp(); // a command acts on the games the screen shows
         if (const std::optional<NavDirection> direction = directionOf(command)) {
             navigate(*direction);
             return;
@@ -571,6 +1028,18 @@ struct QuickCatalogScreen::Impl {
         case UiCommand::Info:
             info();
             break;
+        case UiCommand::PageUp:
+        case UiCommand::PageDown:
+        case UiCommand::Home:
+        case UiCommand::End:
+            jump(command);
+            break;
+        case UiCommand::FilterPrevious:
+            cycleFilter(-1);
+            break;
+        case UiCommand::FilterNext:
+            cycleFilter(1);
+            break;
         default:
             break;
         }
@@ -584,13 +1053,25 @@ struct QuickCatalogScreen::Impl {
     Rml::DataModelHandle handle;
     bool modelCreated = false;
     std::vector<ChipRow> chips;
-    std::vector<GameRow> games;
+    /// The pool: one row per window row (at most kPoolRows; capacity reserved).
+    std::vector<RowData> rows;
     CardData card;
+    ScrollData scroll;
     Rml::String status;
     int count = 0;
+    /// The list is empty because the source could not be read (the document says so instead of "no match").
+    bool unavailable = false;
+    /// The model's revisions the document shows.
     std::optional<std::uint64_t> shownFilter;
-    std::uint64_t shownVisible = 0;
-    std::uint64_t shownSelection = 0;
+    std::optional<std::uint64_t> shownWindow;
+    std::optional<std::uint64_t> shownSelection;
+    /// The list the rows were bound from (QuickCatalogModel::listRevision), and what each slot shows.
+    std::optional<std::uint64_t> boundList;
+    std::array<SlotShown, qc::kPoolRows> slots;
+    std::uint64_t windowBinds = 0;
+    std::uint64_t rowBinds = 0;
+    /// The last error of the model that was logged.
+    std::optional<Error> loggedError;
     FocusRegions regions;
     FocusHistory history;
     std::optional<FocusTarget> focus;
@@ -601,6 +1082,23 @@ struct QuickCatalogScreen::Impl {
     std::optional<double> lastSelectionChange;
     bool cardPending = false;
     std::uint64_t cardRefreshes = 0;
+    /// The rows' element ids, built once (no string is made per move), their elements and the elements of their places
+    /// in the list's flow (the data-for slots, which never move: null without a document or past the pool), and the
+    /// offset each row was moved by (NaN: none set yet).
+    std::array<Rml::String, qc::kPoolRows> rowIds;
+    std::array<Rml::Element*, qc::kPoolRows> rowElements{};
+    std::array<Rml::Element*, qc::kPoolRows> slotBoxes{};
+    std::array<float, qc::kPoolRows> appliedTops{};
+    /// The pool's rows changed (resized, a document loaded): attachPool() finds them after the next update; the focus
+    /// waits for the selected game's row meanwhile.
+    bool poolStale = true;
+    bool focusWaits = false;
+    Rml::Element* list = nullptr;
+    /// The row that has the selected class.
+    std::optional<std::size_t> markedSlot;
+    /// The rows' pitch (a row and its spacing) and height as last measured, in pixels.
+    float rowPitch = 0.0f;
+    float rowHeight = 0.0f;
     /// The chips row and the box around it (null without a document), the cue classes as set on the box, and their
     /// names (built once: no string is made per frame).
     Rml::Element* chipsRow = nullptr;
@@ -611,6 +1109,7 @@ struct QuickCatalogScreen::Impl {
     bool chipsHiddenAfter = false;
     const Rml::String moreBeforeClass{qc::kMoreBeforeClass};
     const Rml::String moreAfterClass{qc::kMoreAfterClass};
+    const Rml::String selectedClass{qc::kSelectedClass};
 };
 
 QuickCatalogScreen::QuickCatalogScreen(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -631,7 +1130,8 @@ Expected<std::unique_ptr<QuickCatalogScreen>> QuickCatalogScreen::create(UiView&
     impl->regions.link(qc::kRegionActions, NavDirection::Left, qc::kRegionList);
     impl->regions.setEntry(qc::kRegionSearch, qc::kSearchId);
     impl->regions.setEntry(qc::kRegionActions, qc::kPlayId);
-    impl->syncList();
+    impl->logError("catalog");
+    impl->sync();
     if (auto loaded = impl->loadDocument(); !loaded) {
         return propagate(loaded.error());
     }
@@ -642,7 +1142,8 @@ Expected<std::unique_ptr<QuickCatalogScreen>> QuickCatalogScreen::create(UiView&
         impl->watch->add(root / core::pathFromUtf8(qc::kDocumentPath));
         impl->watch->add(root / core::pathFromUtf8(qc::kStyleSheetPath));
     }
-    spdlog::info("Quick catalog: {} game(s), {} filter(s){}", model.entries().size(), model.filters().size(),
+    spdlog::info("Quick catalog: {} game(s), {} filter(s), {} row(s) shown of a pool of at most {}{}", model.count(),
+                 model.filters().size(), model.windowRows(), qc::kPoolRows,
                  watchFiles ? ", reloaded when its files change" : "");
     return std::unique_ptr<QuickCatalogScreen>(new QuickCatalogScreen(std::move(impl)));
 }
@@ -662,15 +1163,29 @@ void QuickCatalogScreen::afterUpdate() {
     if (!impl.visible || impl.document == nullptr) {
         return;
     }
+    impl.attachPool(); // the rows this update made, when the pool grew
+    // A list a query running on the source's worker brought, and what the application changed in the model directly.
+    static_cast<void>(impl.model.poll());
+    impl.catchUp();
     impl.settleCard();
     impl.updateChipsCue();
-    // The focused element left the document (its game was filtered out): the focus returns to its region.
-    if (impl.view.focusedElement() == nullptr) {
+    if (impl.measureRows() || impl.poolStale) {
+        // The rows' number or pitch changed: laid out again at once, so that this frame shows them in place.
+        impl.view.context().Update();
+        impl.attachPool();
+    }
+    // The focused element left the document (a hot reload): the focus returns to its region. One that is no longer
+    // visible (a panel hidden around it) gives way to the list, else the filters.
+    const Rml::Element* focused = impl.view.focusedElement();
+    if (focused == nullptr) {
         const std::string region = impl.focus ? impl.focus->region : std::string(qc::kRegionList);
         impl.focus.reset();
         if (!impl.focusRegion(region)) {
             impl.focusDefault();
         }
+    } else if (!focused->IsVisible(true)) {
+        impl.focus.reset();
+        impl.focusDefault();
     }
 }
 
@@ -682,8 +1197,9 @@ void QuickCatalogScreen::show() {
     impl.visible = true;
     if (impl.document != nullptr) {
         impl.document->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
+        impl.catchUp();
         const std::optional<FocusTarget> previous = std::exchange(impl.focus, std::nullopt);
-        if (!previous || !impl.focusElement(previous->element)) {
+        if (!previous || !impl.refocus(*previous)) {
             impl.focusDefault();
         }
     }
@@ -734,6 +1250,14 @@ std::uint64_t QuickCatalogScreen::cardRefreshes() const noexcept {
     return m_impl->cardRefreshes;
 }
 
+std::uint64_t QuickCatalogScreen::windowBinds() const noexcept {
+    return m_impl->windowBinds;
+}
+
+std::uint64_t QuickCatalogScreen::rowBinds() const noexcept {
+    return m_impl->rowBinds;
+}
+
 bool QuickCatalogScreen::reloadIfChanged() {
     Impl& impl = *m_impl;
     if (!impl.watch) {
@@ -752,7 +1276,7 @@ bool QuickCatalogScreen::reloadIfChanged() {
         spdlog::error("Quick catalog: {}", loaded.error().toString());
         return false;
     }
-    if (!previous || !impl.focusElement(previous->element)) {
+    if (!previous || !impl.refocus(*previous)) {
         impl.focusDefault();
     }
     return true;
