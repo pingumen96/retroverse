@@ -1,0 +1,449 @@
+/*
+	Quick catalog (quick_catalog.rml). Palette of style 3: UI neutral #171B22 (translucent carbon panels), UI text
+	#F4EFE6 (ivory), tungsten #FFC88A for the focus, cold accent #4C8BC9, signage green #6EAF93. Sizes in dp: the view's
+	dp ratio is the display's content scale times the text scale (rv::ui::UiView), so the screen reads the same on a TV
+	at any resolution and the text scale enlarges everything alike. RmlUi colors with alpha: #RRGGBBAA. Focus is always visible and changes at once (style 16.2: focus
+	feedback under 100 ms). No color transitions: RmlUi 6.3 rebuilds an element's background and border geometry (new
+	OpenGL buffers) on every frame of a color animation, which took the UI pass from 0.2 to 0.9 ms of CPU while the
+	focus moved (docs/spikes/i1-ui.md).
+*/
+
+/* The document covers the whole view: the panels are placed in percentages of it. */
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 24dp;
+	color: #F4EFE6;
+}
+
+div, p, h1, h2 {
+	display: block;
+}
+
+/* Text never takes the focus: a click on it focuses the game, chip or button around it (or nothing). */
+p, h1, h2, span {
+	focus: none;
+}
+
+h1 {
+	font-size: 34dp;
+	font-weight: bold;
+}
+
+h2 {
+	font-size: 38dp;
+	font-weight: bold;
+	line-height: 1.15em;
+}
+
+/* Panels: translucent carbon over the room, a thin warm edge. */
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-radius: 18dp;
+	padding: 26dp 30dp;
+}
+
+#catalog {
+	left: 4%;
+	top: 6%;
+	bottom: 15%;
+	width: 44%;
+	display: flex;
+	flex-direction: column;
+}
+
+.panel-header {
+	display: flex;
+	flex-direction: row;
+	align-items: baseline;
+	justify-content: space-between;
+	margin-bottom: 16dp;
+	flex: 0 0 auto;
+}
+
+.count {
+	font-size: 22dp;
+	color: #F4EFE6A6;
+}
+
+/* Each region is a scroll container (overflow other than visible): RmlUi's spatial navigation stays inside it, the
+   screen's region links cross between regions. */
+.region {
+	overflow: hidden;
+}
+
+/* Search field */
+#search-box {
+	position: relative;
+	flex: 0 0 auto;
+	margin-bottom: 14dp;
+}
+
+#search {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	padding: 10dp 16dp;
+	font-size: 24dp;
+	color: #F4EFE6;
+	background-color: #FFFFFF0F;
+	border: 3dp #F4EFE626;
+	border-radius: 12dp;
+	tab-index: auto;
+	nav: auto;
+	cursor: text;
+}
+
+.placeholder {
+	position: absolute;
+	left: 19dp;
+	right: 19dp;
+	top: 13dp;
+	white-space: nowrap;
+	overflow: hidden;
+	color: #F4EFE673;
+	pointer-events: none;
+}
+
+/* Platform filter chips */
+/* One row that scrolls with the focus: a collection holds dozens of platforms. Where chips hide beyond an edge of the
+   row, the panel's color fades over it (the screen sets more-before / more-after on the box). */
+#chips-box {
+	position: relative;
+	flex: 0 0 auto;
+	margin-bottom: 14dp;
+}
+
+/* Scrollable on x, not hidden: RmlUi scrolls only auto and scroll containers to bring the focus into view (an
+   overflow: hidden row keeps a focused chip clipped). Its scroll bar takes no room: the fades show where chips hide. */
+#chips {
+	white-space: nowrap;
+	overflow-x: auto;
+	overflow-y: hidden;
+}
+
+#chips scrollbarhorizontal {
+	height: 0dp;
+}
+
+.fade {
+	position: absolute;
+	top: 0dp;
+	bottom: 0dp;
+	width: 64dp;
+	visibility: hidden;
+	pointer-events: none;
+	focus: none;
+}
+
+.fade-before {
+	left: 0dp;
+	decorator: linear-gradient(to right, #171B22E6, #171B2200);
+}
+
+.fade-after {
+	right: 0dp;
+	decorator: linear-gradient(to right, #171B2200, #171B22E6);
+}
+
+#chips-box.more-before .fade-before, #chips-box.more-after .fade-after {
+	visibility: visible;
+}
+
+.chip {
+	display: inline-block;
+	padding: 6dp 18dp;
+	margin-right: 8dp;
+	font-size: 22dp;
+	color: #F4EFE6CC;
+	background-color: #FFFFFF0F;
+	border: 3dp #00000000;
+	border-radius: 22dp;
+	tab-index: auto;
+	nav: auto;
+}
+
+.chip.active {
+	color: #171B22;
+	background-color: #6EAF93;
+}
+
+/* The game list: the region that scrolls with the focus. */
+#game-list {
+	flex: 1 1 0dp;
+	overflow-y: auto;
+	padding-right: 6dp;
+}
+
+.game {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 9dp 14dp;
+	margin-bottom: 4dp;
+	border: 3dp #00000000;
+	border-left-width: 6dp;
+	border-radius: 10dp;
+	tab-index: auto;
+	nav: auto;
+}
+
+.game.selected {
+	background-color: #F4EFE614;
+}
+
+.game-title {
+	font-size: 26dp;
+}
+
+.game-meta {
+	font-size: 21dp;
+	color: #F4EFE6A6;
+	white-space: nowrap;
+	margin-left: 16dp;
+}
+
+.empty {
+	color: #F4EFE6A6;
+	padding: 12dp 14dp;
+}
+
+scrollbarvertical {
+	width: 10dp;
+	margin-left: 6dp;
+}
+
+scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 5dp;
+}
+
+scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 5dp;
+	min-height: 40dp;
+}
+
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc {
+	height: 0dp;
+}
+
+/* The focus, always visible: a tungsten edge and a warm wash. */
+#search:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+.chip:focus {
+	border-color: #FFC88A;
+}
+
+.game:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A2E;
+	color: #FFFFFF;
+}
+
+.action:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.action.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+/* Game card: as tall as its content, at most down to the catalog's bottom edge; on a small view the description and
+   the rows give way first, the actions always stay. */
+#card {
+	right: 4%;
+	top: 6%;
+	width: 42%;
+	max-height: 79%;
+	display: flex;
+	flex-direction: column;
+}
+
+#card h2, .subtitle, #actions, .status {
+	flex: 0 0 auto;
+}
+
+.subtitle {
+	font-size: 24dp;
+	color: #F4EFE6B3;
+	margin-top: 6dp;
+	margin-bottom: 18dp;
+}
+
+/* Three lines, the rest with Informazioni (X). */
+.description {
+	flex: 0 1 auto;
+	font-size: 22dp;
+	line-height: 1.4em;
+	max-height: 4.2em;
+	overflow: hidden;
+	margin-bottom: 18dp;
+}
+
+.description.expanded {
+	max-height: none;
+}
+
+.rows {
+	flex: 0 1 auto;
+	overflow: hidden;
+	border-top: 2dp #F4EFE61F;
+	padding-top: 14dp;
+	margin-bottom: 22dp;
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	font-size: 22dp;
+	padding: 3dp 0dp;
+}
+
+.key {
+	width: 38%;
+	color: #F4EFE6A6;
+}
+
+.value {
+	width: 62%;
+}
+
+/* The buttons wrap to a second row when a larger text scale makes them wider than the card (the region hides what
+   overflows, and RmlUi never scrolls a hidden region to the focus). */
+.action {
+	display: inline-block;
+	padding: 10dp 22dp;
+	margin-right: 10dp;
+	margin-bottom: 10dp;
+	font-size: 24dp;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+	nav: auto;
+}
+
+.action.primary {
+	background-color: #6EAF9340;
+}
+
+/* The last button has no margin to its right: it would count against the row and wrap a button that fits. */
+#act-info {
+	margin-right: 0dp;
+}
+
+.status {
+	margin-top: 6dp;
+	font-size: 22dp;
+	color: #FFC88A;
+}
+
+/* Hint bar: the four pad actions (style 16.3). */
+#hints {
+	position: absolute;
+	left: 0%;
+	right: 0%;
+	bottom: 4%;
+	text-align: center;
+}
+
+.hint-bar {
+	display: inline-block;
+	padding: 10dp 26dp;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-radius: 30dp;
+	font-size: 22dp;
+}
+
+.hint {
+	margin: 0dp 14dp;
+}
+
+.pad {
+	display: inline-block;
+	width: 34dp;
+	height: 34dp;
+	line-height: 34dp;
+	border-radius: 17dp;
+	margin-right: 10dp;
+	text-align: center;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.pad-a { background-color: #6EAF93; }
+.pad-y { background-color: #FFC88A; }
+.pad-x { background-color: #4C8BC9; }
+.pad-b { background-color: #C8645A; }
+
+/* High contrast (specification 12.4): opaque black panels, white text, yellow focus. */
+body.high-contrast {
+	color: #FFFFFF;
+}
+
+body.high-contrast .panel, body.high-contrast .hint-bar {
+	background-color: #000000;
+	border-color: #FFFFFF;
+}
+
+body.high-contrast .count, body.high-contrast .game-meta, body.high-contrast .subtitle, body.high-contrast .key {
+	color: #FFFFFF;
+}
+
+body.high-contrast .game:focus, body.high-contrast .action:focus, body.high-contrast .chip:focus,
+body.high-contrast #search:focus, body.high-contrast .game:focus .game-meta {
+	border-color: #FFE600;
+	background-color: #FFE600;
+	color: #000000;
+}
+
+body.high-contrast .fade-before {
+	decorator: linear-gradient(to right, #000000FF, #00000000);
+}
+
+body.high-contrast .fade-after {
+	decorator: linear-gradient(to right, #00000000, #000000FF);
+}
+
+/* Compact: views under 760 dp of the display's density tall (1280x720 at 125%, 1920x1080 at 150%) keep everything on
+   screen with smaller text, tighter spacing and a two-line description. The theme comes from rv::ui::UiView, which
+   leaves the text scale out of that height: a larger text scale enlarges the text of either layout instead of
+   switching to these smaller sizes (a dp media query would, and cancel it). */
+@media (theme: compact) {
+	body { font-size: 20dp; }
+	h1 { font-size: 28dp; }
+	h2 { font-size: 30dp; }
+	.panel { padding: 18dp 22dp; }
+	.panel-header { margin-bottom: 10dp; }
+	#search { font-size: 20dp; padding: 7dp 12dp; }
+	.placeholder { left: 15dp; right: 15dp; top: 10dp; }
+	#search-box, #chips-box { margin-bottom: 10dp; }
+	.chip { font-size: 19dp; padding: 4dp 14dp; }
+	.game { padding: 6dp 12dp; }
+	.game-title { font-size: 22dp; }
+	.game-meta { font-size: 18dp; }
+	.subtitle { font-size: 20dp; margin-bottom: 10dp; }
+	.description { font-size: 19dp; max-height: 2.8em; margin-bottom: 10dp; }
+	.rows { padding-top: 8dp; margin-bottom: 12dp; }
+	.row { font-size: 19dp; padding: 1dp 0dp; }
+	.action { font-size: 20dp; padding: 7dp 14dp; margin-right: 8dp; margin-bottom: 8dp; }
+	.status { font-size: 18dp; margin-top: 2dp; }
+	.hint-bar { font-size: 18dp; padding: 6dp 18dp; }
+	.pad { width: 28dp; height: 28dp; line-height: 28dp; border-radius: 14dp; }
+}

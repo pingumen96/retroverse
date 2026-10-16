@@ -7,6 +7,20 @@
       "kind": "material-library",
       "provenance": "retroverse-original",
       "notes": "Parametric PBR presets derived from the style guide palette (style.md section 3); their textures are procedural surfaces generated in code (src/assets/include/rv/assets/surface_textures.hpp), no image files."
+    },
+    {
+      "path": "ui/fonts/AtkinsonHyperlegible-Regular.ttf",
+      "kind": "font",
+      "provenance": "atkinson-hyperlegible",
+      "sha256": "7fb917c89019896d0b52ee84b7cbb3304c18cb90b19a62f5e32712bd23e97669",
+      "notes": "UI sans for the product screens (style.md section 17.3), loaded by rv::ui::UiSystem; upstream fonts/ttf file, unmodified."
+    },
+    {
+      "path": "ui/fonts/AtkinsonHyperlegible-Bold.ttf",
+      "kind": "font",
+      "provenance": "atkinson-hyperlegible",
+      "sha256": "5a3b0c8cc8ca545155150b4512a1fa248298df121c50d6557e651e61fbdab92f",
+      "notes": "Bold weight of the UI sans; upstream fonts/ttf file, unmodified."
     }
   ]
 }
