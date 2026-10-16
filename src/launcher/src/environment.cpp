@@ -1,8 +1,20 @@
 #include <rv/launcher/environment.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 
+#include <rv/core/utf8.hpp>
 #include <rv/launcher/command_line.hpp>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace rv::launcher {
 namespace {
@@ -78,6 +90,39 @@ std::vector<EnvironmentVariable> mergeEnvironment(std::span<const EnvironmentVar
         return nameLess(a.name, b.name);
     });
     return merged;
+}
+
+std::optional<std::string> processEnvironmentVariable(std::string_view name) {
+    if (name.empty() || name.find_first_of(std::string_view("=\0", 2)) != std::string_view::npos) {
+        return std::nullopt;
+    }
+#if defined(_WIN32)
+    const auto wideName = core::utf8ToWide(name);
+    if (!wideName) {
+        return std::nullopt;
+    }
+    std::wstring value(64, L'\0');
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        SetLastError(ERROR_SUCCESS);
+        const DWORD length = GetEnvironmentVariableW(wideName->c_str(), value.data(), static_cast<DWORD>(value.size()));
+        if (length == 0) {
+            // 0 is both "not set" and "set to an empty value": only the error code tells them apart.
+            if (GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+                return std::nullopt;
+            }
+            return std::string();
+        }
+        if (length < value.size()) {
+            value.resize(length);
+            return core::wideToUtf8Lossy(value);
+        }
+        value.resize(length); // the size it needs, its terminator included; the variable may change meanwhile
+    }
+    return std::nullopt;
+#else
+    const char* value = std::getenv(std::string(name).c_str());
+    return value == nullptr ? std::nullopt : std::optional<std::string>(value);
+#endif
 }
 
 } // namespace rv::launcher

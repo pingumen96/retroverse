@@ -1,0 +1,88 @@
+// Retroverse's shipped emulator profiles (ADR-0008 §6 and §8). Format: docs/i2/step-5.md and
+// src/launcher/include/rv/launcher/emulator_profile.hpp. The profiles of <user data>/config/emulators.json replace these
+// by id and add others.
+// No machine path: executables are located through App Paths, then the places below, where '~' is the user's home
+// folder and {env:NAME} an environment variable naming a folder. Not verified on any machine (specification §11.2: a
+// preset is never presented as universal): the first clean launch, or `retroverse-cli launch --test`, says so.
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "retroarch",
+      "displayName": "RetroArch",
+      // The RetroArch installer registers App Paths; the other places are its usual install folders.
+      "executable": {
+        "appPaths": "retroarch.exe",
+        "paths": [
+          "~\\AppData\\Roaming\\RetroArch\\retroarch.exe",
+          "{env:SYSTEMDRIVE}\\RetroArch-Win64\\retroarch.exe",
+          "{env:PROGRAMFILES}\\RetroArch-Win64\\retroarch.exe",
+          "{env:PROGRAMFILES}\\RetroArch\\retroarch.exe"
+        ]
+      },
+      "arguments": ["-L", "{var:core}", "{rom}"],
+      "variables": {
+        // RetroArch's own cores folder; a user profile changes it when libretro_directory points elsewhere.
+        "cores": "{emulator_dir}\\cores"
+      },
+      // A system whose core is missing is "core not found", not a launch that fails.
+      "requiredFiles": ["{var:core}"],
+      "wait": "direct",
+      "windowTimeoutSeconds": 30,
+      // ES-DE's default RetroArch core of each system (its first command in es_systems.xml).
+      "systems": {
+        "amiga": { "variables": { "core": "{var:cores}\\puae_libretro.dll" } },
+        "amigacd32": { "variables": { "core": "{var:cores}\\puae_libretro.dll" } },
+        "amstradcpc": { "variables": { "core": "{var:cores}\\cap32_libretro.dll" } },
+        "atari2600": { "variables": { "core": "{var:cores}\\stella_libretro.dll" } },
+        "atari5200": { "variables": { "core": "{var:cores}\\a5200_libretro.dll" } },
+        "atari7800": { "variables": { "core": "{var:cores}\\prosystem_libretro.dll" } },
+        "atari800": { "variables": { "core": "{var:cores}\\atari800_libretro.dll" } },
+        "atarijaguar": { "variables": { "core": "{var:cores}\\virtualjaguar_libretro.dll" } },
+        "atarilynx": { "variables": { "core": "{var:cores}\\handy_libretro.dll" } },
+        "atarist": { "variables": { "core": "{var:cores}\\hatari_libretro.dll" } },
+        "c64": { "variables": { "core": "{var:cores}\\vice_x64sc_libretro.dll" } },
+        "channelf": { "variables": { "core": "{var:cores}\\freechaf_libretro.dll" } },
+        "colecovision": { "variables": { "core": "{var:cores}\\bluemsx_libretro.dll" } },
+        "dos": { "variables": { "core": "{var:cores}\\dosbox_pure_libretro.dll" } },
+        "dreamcast": { "variables": { "core": "{var:cores}\\flycast_libretro.dll" } },
+        "fds": { "variables": { "core": "{var:cores}\\mesen_libretro.dll" } },
+        "gamegear": { "variables": { "core": "{var:cores}\\genesis_plus_gx_libretro.dll" } },
+        "gb": { "variables": { "core": "{var:cores}\\gambatte_libretro.dll" } },
+        "gba": { "variables": { "core": "{var:cores}\\mgba_libretro.dll" } },
+        "gbc": { "variables": { "core": "{var:cores}\\gambatte_libretro.dll" } },
+        "gc": { "variables": { "core": "{var:cores}\\dolphin_libretro.dll" } },
+        "genesis": { "variables": { "core": "{var:cores}\\genesis_plus_gx_libretro.dll" } },
+        "intellivision": { "variables": { "core": "{var:cores}\\freeintv_libretro.dll" } },
+        "mame": { "variables": { "core": "{var:cores}\\mame_libretro.dll" } },
+        "mastersystem": { "variables": { "core": "{var:cores}\\genesis_plus_gx_libretro.dll" } },
+        "megadrive": { "variables": { "core": "{var:cores}\\genesis_plus_gx_libretro.dll" } },
+        "n64": { "variables": { "core": "{var:cores}\\mupen64plus_next_libretro.dll" } },
+        "nds": { "variables": { "core": "{var:cores}\\melondsds_libretro.dll" } },
+        "neogeo": { "variables": { "core": "{var:cores}\\fbneo_libretro.dll" } },
+        "nes": { "variables": { "core": "{var:cores}\\mesen_libretro.dll" } },
+        "ngp": { "variables": { "core": "{var:cores}\\mednafen_ngp_libretro.dll" } },
+        "ngpc": { "variables": { "core": "{var:cores}\\mednafen_ngp_libretro.dll" } },
+        "odyssey2": { "variables": { "core": "{var:cores}\\o2em_libretro.dll" } },
+        "pc": { "variables": { "core": "{var:cores}\\dosbox_pure_libretro.dll" } },
+        "pcengine": { "variables": { "core": "{var:cores}\\mednafen_pce_libretro.dll" } },
+        "pcenginecd": { "variables": { "core": "{var:cores}\\mednafen_pce_libretro.dll" } },
+        "pcfx": { "variables": { "core": "{var:cores}\\mednafen_pcfx_libretro.dll" } },
+        "pokemini": { "variables": { "core": "{var:cores}\\pokemini_libretro.dll" } },
+        "ps2": { "variables": { "core": "{var:cores}\\pcsx2_libretro.dll" } },
+        "psp": { "variables": { "core": "{var:cores}\\ppsspp_libretro.dll" } },
+        "psx": { "variables": { "core": "{var:cores}\\mednafen_psx_libretro.dll" } },
+        "saturn": { "variables": { "core": "{var:cores}\\mednafen_saturn_libretro.dll" } },
+        "sega32x": { "variables": { "core": "{var:cores}\\picodrive_libretro.dll" } },
+        "segacd": { "variables": { "core": "{var:cores}\\genesis_plus_gx_libretro.dll" } },
+        "snes": { "variables": { "core": "{var:cores}\\snes9x_libretro.dll" } },
+        "vic20": { "variables": { "core": "{var:cores}\\vice_xvic_libretro.dll" } },
+        "virtualboy": { "variables": { "core": "{var:cores}\\mednafen_vb_libretro.dll" } },
+        "wii": { "variables": { "core": "{var:cores}\\dolphin_libretro.dll" } },
+        "wonderswan": { "variables": { "core": "{var:cores}\\mednafen_wswan_libretro.dll" } },
+        "wonderswancolor": { "variables": { "core": "{var:cores}\\mednafen_wswan_libretro.dll" } }
+      },
+      "verified": false
+    }
+  ]
+}

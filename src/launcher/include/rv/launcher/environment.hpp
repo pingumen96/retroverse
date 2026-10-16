@@ -44,4 +44,10 @@ struct EnvironmentOverride {
 [[nodiscard]] std::vector<EnvironmentVariable> mergeEnvironment(std::span<const EnvironmentVariable> inherited,
                                                                 std::span<const EnvironmentOverride> overrides);
 
+/// The value of the variable `name` in this process's environment as it is now (GetEnvironmentVariableW, so that a
+/// change made with SetEnvironmentVariableW is seen; UTF-8, unpaired UTF-16 surrogates read as U+FFFD): nothing when it
+/// is not set, an empty string when it is set to an empty value. A name that is empty, holds '=' or a NUL character or
+/// is not UTF-8 is never set.
+[[nodiscard]] std::optional<std::string> processEnvironmentVariable(std::string_view name);
+
 } // namespace rv::launcher
