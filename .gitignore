@@ -21,6 +21,9 @@ CLAUDE.local.md
 # Asset staging area: third-party downloads under evaluation. Never versioned, never packaged.
 /assets/staging/
 
+# Expectations of the real-library tests that hold this machine's paths and library (never versioned).
+/tests/real_library/local/
+
 # Runtime artifacts
 *.log
 /screenshots/
