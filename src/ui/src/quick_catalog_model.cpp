@@ -74,6 +74,7 @@ bool QuickCatalogModel::setFilter(std::string_view key) {
     }
     if (m_activeFilter != key) {
         m_activeFilter = std::string(key);
+        ++m_filterRevision;
         refresh();
     }
     return true;

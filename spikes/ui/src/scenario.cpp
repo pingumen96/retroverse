@@ -29,6 +29,9 @@ public:
         step.keycode = keycode;
         step.count = times;
     }
+    void textScale(std::uint32_t frame, float factor) { add(frame, StepKind::TextScale).value = glm::vec2(factor); }
+    /// 1 on, 0 off, 2 the run's setting.
+    void highContrast(std::uint32_t frame, std::uint32_t state) { add(frame, StepKind::HighContrast).count = state; }
     void expectFocus(std::uint32_t frame, std::string element) {
         add(frame, StepKind::ExpectFocus).text = std::move(element);
     }
@@ -47,15 +50,43 @@ public:
         add(frame, StepKind::ExpectInfo).text = shown ? "shown" : "hidden";
     }
     void expectHistory(std::uint32_t frame, std::uint32_t depth) { add(frame, StepKind::ExpectHistory).count = depth; }
-    void expectVisible(std::uint32_t frame, std::uint32_t games) { add(frame, StepKind::ExpectVisible).count = games; }
+    /// `keyboard`: the count follows from typed text.
+    void expectVisible(std::uint32_t frame, std::uint32_t games, bool keyboard = false) {
+        Step& step = add(frame, StepKind::ExpectVisible);
+        step.count = games;
+        step.keyboard = keyboard;
+    }
+    void expectCard(std::uint32_t frame) { add(frame, StepKind::ExpectCard); }
+    void expectInView(std::uint32_t frame, std::string element, std::string container) {
+        Step& step = add(frame, StepKind::ExpectInView);
+        step.text = std::move(element);
+        step.label = std::move(container);
+    }
+    void expectClass(std::uint32_t frame, std::string element, std::string className, bool set) {
+        Step& step = add(frame, StepKind::ExpectClass);
+        step.text = std::move(element);
+        step.label = std::move(className);
+        step.count = set ? 1 : 0;
+    }
+    void expectOverflowCue(std::uint32_t frame) { add(frame, StepKind::ExpectOverflowCue); }
+    /// 1 on, 0 off, 2 the run's setting.
+    void expectHighContrast(std::uint32_t frame, std::uint32_t state) {
+        add(frame, StepKind::ExpectHighContrast).count = state;
+    }
     void layout(std::uint32_t frame, std::string label) { add(frame, StepKind::Layout).label = std::move(label); }
     void sameLayout(std::uint32_t frame, std::string label, std::string reference) {
         Step& step = add(frame, StepKind::SameLayout);
         step.label = std::move(label);
         step.text = std::move(reference);
     }
-    void phase(std::string name, std::uint32_t begin, std::uint32_t end) {
-        m_scenario.phases.push_back(Phase{std::move(name), begin, end});
+    void largerText(std::uint32_t frame, std::string label, std::string reference, float ratio) {
+        Step& step = add(frame, StepKind::LargerText);
+        step.label = std::move(label);
+        step.text = std::move(reference);
+        step.value = glm::vec2(ratio);
+    }
+    void phase(std::string_view name, std::uint32_t begin, std::uint32_t end) {
+        m_scenario.phases.push_back(Phase{std::string(name), begin, end});
     }
 
     Scenario finish(std::uint32_t frames) {
@@ -87,12 +118,15 @@ Scenario defaultScenario() {
     constexpr SDL_GamepadButton kB = SDL_GAMEPAD_BUTTON_EAST;
     constexpr SDL_GamepadButton kX = SDL_GAMEPAD_BUTTON_WEST;
     constexpr SDL_GamepadButton kY = SDL_GAMEPAD_BUTTON_NORTH;
+    constexpr std::uint32_t kOn = 1;
+    constexpr std::uint32_t kRunSetting = 2;
 
     ScenarioBuilder s;
     s.phase("startup", 0, 30);
-    s.phase("sequence", 30, 700);
-    s.phase("idle", 700, 1000);
-    s.phase("navigation", 1000, 1300);
+    s.phase("sequence", 30, 930);
+    s.phase(kIdlePhase, 930, 1230);
+    s.phase(kTapsPhase, 1230, 1590);
+    s.phase(kNavigationPhase, 1590, 1890);
 
     // The task's sequence: focus down 10 times (the first game has the focus at start), right into the card's actions,
     // activate (Avvia), back (to the game the actions were opened from).
@@ -101,6 +135,9 @@ Scenario defaultScenario() {
     }
     s.expectFocus(108, "game-g11");
     s.tap(110, kRight);
+    // The downs came 8 frames apart, faster than the card follows (0.15 s): entering the actions fills it at once, so
+    // Avvia shows the game it launches (the focus moves at frame 111; the card would catch up at 113 by itself).
+    s.expectCard(112);
     s.expectFocus(116, "act-play");
     s.expectHistory(116, 1);
     s.tap(120, kA);
@@ -121,7 +158,7 @@ Scenario defaultScenario() {
     s.stick(170, 0.0f, -0.9f);
     s.stick(230, 0.0f, 0.0f);
     s.expectFocus(236, "game-g18");
-    // A stick resting near half deflection (worn, or a thumb on it): the focus never moves.
+    // A stick resting near half deflection, under the engage threshold (a worn stick, a thumb on it): no step.
     for (std::uint32_t frame = 240; frame < 360; ++frame) {
         s.stick(frame, 0.01f, frame % 2 == 0 ? -0.47f : -0.52f);
     }
@@ -142,9 +179,9 @@ Scenario defaultScenario() {
     s.expectHistory(565, 2);
     // The keyboard types into the focused search field (the list filters as it changes), Backspace erases it.
     s.type(566, "faro");
-    s.expectVisible(567, 1);
+    s.expectVisible(567, 1, true);
     s.key(567, SDL_SCANCODE_BACKSPACE, SDLK_BACKSPACE, 4);
-    s.expectVisible(569, 20);
+    s.expectVisible(569, 20, true);
     // Down: back into the filters (Back would now return to the list).
     s.tap(570, kDown);
     s.expectFocus(576, "chip-0");
@@ -180,14 +217,87 @@ Scenario defaultScenario() {
     s.layout(696, "1920x1080 again");
     s.sameLayout(696, "1920x1080 again", "1920x1080");
 
-    // Measurements: idle, then the D-pad held down and up (the focus moves every 3 to 6 frames, the card changes).
-    s.press(1000, kDown);
-    s.release(1100, kDown);
-    s.press(1100, kUp);
-    s.release(1200, kUp);
-    s.press(1200, kDown);
-    s.release(1300, kDown);
-    return s.finish(1320);
+    // A stick crossing its engage threshold (0.55) every frame, 0.58 and 0.53: the hysteresis holds the direction, so it
+    // steps at the held cadence (at once, again after 0.4 s), never on every crossing (a single threshold would step
+    // every other frame).
+    for (std::uint32_t frame = 700; frame < 728; ++frame) {
+        s.stick(frame, 0.01f, frame % 2 == 0 ? -0.58f : -0.53f);
+    }
+    s.stick(728, 0.0f, 0.0f);
+    s.expectSteady(734, 700, 2);
+    s.expectFocus(734, "game-g04");
+
+    // Up into the filters (they remember "Tutte"), then right to the last chip: the row scrolls it into view, and its
+    // fades mark the edges chips hide beyond (the end of the row first, its start once scrolled).
+    for (std::uint32_t tap = 0; tap < 4; ++tap) {
+        s.tap(736 + 8 * tap, kUp);
+    }
+    s.expectFocus(766, "chip-0");
+    s.expectOverflowCue(766);
+    for (std::uint32_t tap = 0; tap < 5; ++tap) {
+        s.tap(768 + 8 * tap, kRight);
+    }
+    s.expectFocus(806, "chip-5");
+    s.expectInView(806, "chip-5", "chips");
+    s.expectOverflowCue(806);
+
+    // A filter that lets the same games through still moves the highlight: "faro" (typed) lists one 16 bit game, A on
+    // "16 bit" keeps it listed and highlights that chip, A on "Tutte" moves the highlight back.
+    s.tap(808, kUp);
+    s.expectFocus(813, "search");
+    s.type(814, "faro");
+    s.expectVisible(815, 1, true);
+    s.tap(816, kDown); // back into the filters, on the chip they remember (the last one)
+    for (std::uint32_t tap = 0; tap < 4; ++tap) {
+        s.tap(824 + 8 * tap, kLeft);
+    }
+    s.expectFocus(854, "chip-1");
+    s.tap(856, kA);
+    s.expectVisible(862, 1);
+    s.expectClass(862, "chip-1", "active", true);
+    s.expectClass(862, "chip-0", "active", false);
+    s.tap(864, kLeft);
+    s.tap(872, kA);
+    s.expectClass(878, "chip-0", "active", true);
+    s.expectClass(878, "chip-1", "active", false);
+    s.tap(880, kUp);
+    s.key(882, SDL_SCANCODE_BACKSPACE, SDLK_BACKSPACE, 4);
+    s.expectVisible(885, 20, true);
+    s.tap(886, kDown);
+    s.tap(894, kDown);
+    s.expectFocus(900, "game-g03"); // the selected game: the search moved the selection to it
+    s.expectHistory(900, 0);
+    s.expectCard(900);
+
+    // Text scaling (specification §12.4): x1.2 makes every text 1.2 times larger; back at x1 the layout is the first.
+    s.layout(902, "text x1");
+    s.textScale(904, 1.2f);
+    s.layout(908, "text x1.2");
+    s.largerText(908, "text x1.2", "text x1", 1.2f);
+    s.textScale(910, 1.0f);
+    s.layout(914, "text x1 again");
+    s.sameLayout(914, "text x1 again", "text x1");
+    // High contrast (specification §12.4): the theme's class on the document, opaque black panels; then the run's.
+    s.highContrast(916, kOn);
+    s.expectHighContrast(918, kOn);
+    s.highContrast(920, kRunSetting);
+    s.expectHighContrast(922, kRunSetting);
+
+    // Measurements. Idle: no input. Taps: down and up taps 0.3 s apart between game-g03 and game-g04, each a resting
+    // move (the card is laid out again in the same frame). Navigation: the D-pad held down, up, down for 100 frames each
+    // (the focus moves every 3 to 6 frames, the card follows once it rests).
+    for (std::uint32_t tap = 0; tap < 20; ++tap) {
+        s.tap(1230 + 18 * tap, tap % 2 == 0 ? kDown : kUp);
+    }
+    s.expectSteady(1588, 1230, 20);
+    s.expectFocus(1588, "game-g03");
+    s.press(1590, kDown);
+    s.release(1690, kDown);
+    s.press(1690, kUp);
+    s.release(1790, kUp);
+    s.press(1790, kDown);
+    s.release(1890, kDown);
+    return s.finish(1910);
 }
 
 std::string_view toString(StepKind kind) noexcept {
@@ -204,6 +314,10 @@ std::string_view toString(StepKind kind) noexcept {
         return "text";
     case StepKind::Key:
         return "key";
+    case StepKind::TextScale:
+        return "text-scale";
+    case StepKind::HighContrast:
+        return "high-contrast";
     case StepKind::ExpectFocus:
         return "expect-focus";
     case StepKind::ExpectSteady:
@@ -218,12 +332,40 @@ std::string_view toString(StepKind kind) noexcept {
         return "expect-history";
     case StepKind::ExpectVisible:
         return "expect-visible";
+    case StepKind::ExpectCard:
+        return "expect-card";
+    case StepKind::ExpectInView:
+        return "expect-in-view";
+    case StepKind::ExpectClass:
+        return "expect-class";
+    case StepKind::ExpectOverflowCue:
+        return "expect-overflow";
+    case StepKind::ExpectHighContrast:
+        return "expect-high-contrast";
     case StepKind::Layout:
         return "layout";
     case StepKind::SameLayout:
         return "same-layout";
+    case StepKind::LargerText:
+        return "larger-text";
     }
     return "unknown";
+}
+
+bool isCheck(StepKind kind) noexcept {
+    switch (kind) {
+    case StepKind::Press:
+    case StepKind::Release:
+    case StepKind::Stick:
+    case StepKind::Resize:
+    case StepKind::Text:
+    case StepKind::Key:
+    case StepKind::TextScale:
+    case StepKind::HighContrast:
+        return false;
+    default:
+        return true;
+    }
 }
 
 } // namespace rv::spike_ui

@@ -50,7 +50,9 @@ struct PlatformFilter {
 ///    game.
 ///  - Selection: a visible game, or none when nothing is visible. It survives filter and search changes that keep it
 ///    visible, else it moves to the first visible game.
-/// The revisions count the changes of visible() and of the selection, so that a view refreshes only what changed.
+/// The revisions count the changes of the active filter, of visible() and of the selection, so that a view refreshes
+/// only what changed. They are independent: a filter change that lets the same games through counts as a filter change
+/// only.
 class QuickCatalogModel {
 public:
     /// Keeps the entries in order; entries with an invalid or duplicate id are left out (rejected() counts them).
@@ -78,6 +80,8 @@ public:
     /// The selected game, or nothing when no game is visible.
     [[nodiscard]] const CatalogEntry* selected() const noexcept;
 
+    /// Incremented whenever the active filter changes, also when the games it lets through stay the same.
+    [[nodiscard]] std::uint64_t filterRevision() const noexcept { return m_filterRevision; }
     /// Incremented whenever visible() changes.
     [[nodiscard]] std::uint64_t visibleRevision() const noexcept { return m_visibleRevision; }
     /// Incremented whenever the selected game changes.
@@ -97,6 +101,7 @@ private:
     std::vector<std::size_t> m_visible;
     /// Index into m_entries of the selected game; npos for none.
     std::size_t m_selected = static_cast<std::size_t>(-1);
+    std::uint64_t m_filterRevision = 0;
     std::uint64_t m_visibleRevision = 0;
     std::uint64_t m_selectionRevision = 0;
 };

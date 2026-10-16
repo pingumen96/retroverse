@@ -18,6 +18,7 @@
 #include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/ScrollTypes.h>
 #include <RmlUi/Core/Variant.h>
+#include <glm/vec3.hpp>
 #include <spdlog/spdlog.h>
 
 #include <rv/core/file_watch_set.hpp>
@@ -184,23 +185,15 @@ struct QuickCatalogScreen::Impl {
         return ok();
     }
 
-    /// The chips, the visible games and their count, when the model's visible games changed.
+    /// The chips when the active filter changed; the visible games and their count when they changed. The two are
+    /// independent: a filter that lets the same games through (a search that left one game, whose platform is chosen)
+    /// still moves the highlight to its chip.
     void syncList() {
+        syncChips();
         if (model.visibleRevision() == shownVisible) {
             return;
         }
         shownVisible = model.visibleRevision();
-        const std::span<const PlatformFilter> filters = model.filters();
-        chips.resize(filters.size());
-        for (std::size_t index = 0; index < filters.size(); ++index) {
-            chips[index].elementId = chipElementId(index);
-            chips[index].key = filters[index].key;
-            chips[index].label = filters[index].label;
-            chips[index].active = filters[index].key == model.activeFilter();
-            if (chips[index].active) {
-                regions.setEntry(qc::kRegionChips, chips[index].elementId);
-            }
-        }
         const CatalogEntry* selected = model.selected();
         games.clear();
         for (const std::size_t index : model.visible()) {
@@ -216,10 +209,29 @@ struct QuickCatalogScreen::Impl {
                 regions.forget(qc::kRegionList);
             }
         }
-        handle.DirtyVariable("chips");
         handle.DirtyVariable("games");
         handle.DirtyVariable("count");
         syncSelection(); // when the filter or the search moved the selection
+    }
+
+    /// The chips, their active flags and the chips region's entry (the active chip), when the active filter changed.
+    void syncChips() {
+        if (shownFilter && *shownFilter == model.filterRevision()) {
+            return;
+        }
+        shownFilter = model.filterRevision();
+        const std::span<const PlatformFilter> filters = model.filters();
+        chips.resize(filters.size());
+        for (std::size_t index = 0; index < filters.size(); ++index) {
+            chips[index].elementId = chipElementId(index);
+            chips[index].key = filters[index].key;
+            chips[index].label = filters[index].label;
+            chips[index].active = filters[index].key == model.activeFilter();
+            if (chips[index].active) {
+                regions.setEntry(qc::kRegionChips, chips[index].elementId);
+            }
+        }
+        handle.DirtyVariable("chips");
     }
 
     /// The selected flags of the rows and the card, when the selection changed.
@@ -255,6 +267,7 @@ struct QuickCatalogScreen::Impl {
     /// The card of the selected game.
     void refreshCard() {
         cardPending = false;
+        ++cardRefreshes;
         const CatalogEntry* selected = model.selected();
         card.present = selected != nullptr;
         if (selected != nullptr) {
@@ -277,6 +290,14 @@ struct QuickCatalogScreen::Impl {
         }
     }
 
+    /// Refreshes a card left behind by quick moves at once: before an action on the selected game, and when the focus
+    /// leaves the list (the card's actions, Avvia first, act on the selected game: the card must show it).
+    void settleCardNow() {
+        if (cardPending) {
+            refreshCard();
+        }
+    }
+
     void setSearch(const std::string& text) {
         model.setSearch(text);
         syncList();
@@ -294,12 +315,14 @@ struct QuickCatalogScreen::Impl {
     // --- Actions ---------------------------------------------------------------------------------------------------
 
     void launch() {
+        settleCardNow();
         if (const CatalogEntry* selected = model.selected(); selected != nullptr && events.launch) {
             events.launch(*selected);
         }
     }
 
     void media() {
+        settleCardNow();
         if (const CatalogEntry* selected = model.selected(); selected != nullptr && events.media) {
             events.media(*selected);
         }
@@ -310,6 +333,7 @@ struct QuickCatalogScreen::Impl {
         if (selected == nullptr) {
             return;
         }
+        settleCardNow();
         card.expanded = !card.expanded;
         handle.DirtyVariable("card");
         if (events.info) {
@@ -335,6 +359,12 @@ struct QuickCatalogScreen::Impl {
         }
         // Generates the rows of the data views, so that the focus can land on them.
         view.context().Update();
+        chipsRow = document->GetElementById(Rml::String(qc::kChipsId));
+        chipsBox = document->GetElementById(Rml::String(qc::kChipsBoxId));
+        chipsHiddenBefore = false; // the new document's box has neither class yet
+        chipsHiddenAfter = false;
+        chipsRowSeen.reset();
+        updateChipsCue();
         return ok();
     }
 
@@ -348,6 +378,47 @@ struct QuickCatalogScreen::Impl {
         }
         view.context().UnloadDocument(document);
         document = nullptr;
+        chipsRow = nullptr;
+        chipsBox = nullptr;
+    }
+
+    /// The fades at the edges of the chips row, where chips hide beyond it (the row scrolls with the focus): classes on
+    /// the box around the row, set only when they change. Called after the context's update, when the row's layout and
+    /// scroll position are current. The chips' boxes decide, not how far the row could still scroll: a chip's margin
+    /// keeps the row scrollable by a few pixels while every chip is whole. Reads them again only when the row scrolled
+    /// or changed size; allocates nothing.
+    void updateChipsCue() {
+        if (chipsRow == nullptr || chipsBox == nullptr) {
+            return;
+        }
+        const glm::vec3 row(chipsRow->GetScrollLeft(), chipsRow->GetScrollWidth(), chipsRow->GetClientWidth());
+        if (chipsRowSeen && *chipsRowSeen == row) {
+            return;
+        }
+        chipsRowSeen = row;
+        constexpr float kSlack = 1.0f; // pixels: rounding of the layout and the scroll position
+        const float rowLeft = chipsRow->GetAbsoluteOffset(Rml::BoxArea::Border).x;
+        const float rowRight = rowLeft + chipsRow->GetBox().GetSize(Rml::BoxArea::Border).x;
+        bool before = false;
+        bool after = false;
+        for (int index = 0; index < chipsRow->GetNumChildren(); ++index) {
+            Rml::Element* chip = chipsRow->GetChild(index);
+            const float width = chip->GetBox().GetSize(Rml::BoxArea::Border).x;
+            if (width <= 0.0f) {
+                continue; // not laid out
+            }
+            const float left = chip->GetAbsoluteOffset(Rml::BoxArea::Border).x;
+            before = before || left < rowLeft - kSlack;
+            after = after || left + width > rowRight + kSlack;
+        }
+        if (before != chipsHiddenBefore) {
+            chipsHiddenBefore = before;
+            chipsBox->SetClass(moreBeforeClass, before);
+        }
+        if (after != chipsHiddenAfter) {
+            chipsHiddenAfter = after;
+            chipsBox->SetClass(moreAfterClass, after);
+        }
     }
 
     // --- Focus -----------------------------------------------------------------------------------------------------
@@ -411,6 +482,8 @@ struct QuickCatalogScreen::Impl {
             if (model.select(std::string_view(id).substr(qc::kGamePrefix.size()))) {
                 syncSelection();
             }
+        } else {
+            settleCardNow(); // out of the list: the card's actions act on the selected game, the card shows it
         }
         if (events.focusChanged) {
             events.focusChanged(now);
@@ -515,6 +588,7 @@ struct QuickCatalogScreen::Impl {
     CardData card;
     Rml::String status;
     int count = 0;
+    std::optional<std::uint64_t> shownFilter;
     std::uint64_t shownVisible = 0;
     std::uint64_t shownSelection = 0;
     FocusRegions regions;
@@ -526,6 +600,17 @@ struct QuickCatalogScreen::Impl {
     /// When the selected game last changed (UiSystem::time), and whether the card still shows an earlier one.
     std::optional<double> lastSelectionChange;
     bool cardPending = false;
+    std::uint64_t cardRefreshes = 0;
+    /// The chips row and the box around it (null without a document), the cue classes as set on the box, and their
+    /// names (built once: no string is made per frame).
+    Rml::Element* chipsRow = nullptr;
+    Rml::Element* chipsBox = nullptr;
+    /// The row's scroll position, scroll width and client width when the fades were last decided.
+    std::optional<glm::vec3> chipsRowSeen;
+    bool chipsHiddenBefore = false;
+    bool chipsHiddenAfter = false;
+    const Rml::String moreBeforeClass{qc::kMoreBeforeClass};
+    const Rml::String moreAfterClass{qc::kMoreAfterClass};
 };
 
 QuickCatalogScreen::QuickCatalogScreen(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -578,6 +663,7 @@ void QuickCatalogScreen::afterUpdate() {
         return;
     }
     impl.settleCard();
+    impl.updateChipsCue();
     // The focused element left the document (its game was filtered out): the focus returns to its region.
     if (impl.view.focusedElement() == nullptr) {
         const std::string region = impl.focus ? impl.focus->region : std::string(qc::kRegionList);
@@ -642,6 +728,10 @@ void QuickCatalogScreen::setHighContrast(bool enabled) {
 
 const FocusHistory& QuickCatalogScreen::history() const noexcept {
     return m_impl->history;
+}
+
+std::uint64_t QuickCatalogScreen::cardRefreshes() const noexcept {
+    return m_impl->cardRefreshes;
 }
 
 bool QuickCatalogScreen::reloadIfChanged() {

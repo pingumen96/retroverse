@@ -57,6 +57,10 @@ struct UiPassTimes {
 /// its display (dp ratio = SDL_GetWindowDisplayScale x the text scale of the accessibility settings, specification
 /// §12.4), so that RCSS sizes in dp read the same at any resolution and scale.
 ///
+///  - Layout themes: views less tall than kCompactBelowDisplayDp in dp of the display alone activate the RmlUi theme
+///    kCompactTheme (compactLayout(): 1280x720 at 125%), which documents style with "@media (theme: compact)". The
+///    text scale does not take part, so that a larger text scale always means larger text (a dp media query would see
+///    1920x1080 at 125% with text scale 1.2 as 720 dp tall and swap in the compact sizes, about as much smaller).
 ///  - Input: handleEvent() forwards the mouse, the wheel, text input and IME composition and the keys that are not UI
 ///    commands (letters, Backspace, Delete, Home, End, Tab) to the context through the SDL3 backend. The keys bound to
 ///    UI commands (arrows, Enter, Esc by default: NavBindings) and every gamepad event stay out: they reach the UI as
@@ -81,15 +85,18 @@ public:
     UiView(const UiView&) = delete;
     UiView& operator=(const UiView&) = delete;
 
-    /// Follows the drawable size and the display's content scale; true when either changed (the context lays its
-    /// documents out again at the next update). A drawable without area (a minimized window) keeps the last size.
+    /// Follows the drawable size and the display's content scale, and the compact theme with them; true when either
+    /// changed (the context lays its documents out again at the next update). A drawable without area (a minimized
+    /// window) keeps the last size.
     bool resize(glm::ivec2 drawableSize, float displayScale);
-    /// Text scaling (specification §12.4), clamped to [0.5, 3]: multiplies the dp ratio.
+    /// Text scaling (specification §12.4), clamped to [0.5, 3]: multiplies the dp ratio, never changes the theme.
     void setTextScale(float scale);
     [[nodiscard]] glm::ivec2 size() const noexcept { return m_size; }
     [[nodiscard]] float displayScale() const noexcept { return m_displayScale; }
     [[nodiscard]] float textScale() const noexcept { return m_textScale; }
     [[nodiscard]] float dpRatio() const noexcept { return m_displayScale * m_textScale; }
+    /// The compact theme is active (see the class comment).
+    [[nodiscard]] bool compact() const noexcept { return m_compact; }
 
     [[nodiscard]] Rml::Context& context() noexcept { return *m_context; }
     [[nodiscard]] UiSystem& system() noexcept { return m_system; }
@@ -129,6 +136,8 @@ private:
 
     /// Sends key down and up to the context; true when the key down was not consumed (it propagated to the end).
     bool pressKey(int keyIdentifier);
+    /// Activates or deactivates the compact theme for the current size and display scale.
+    void applyLayoutTheme();
 
     UiSystem& m_system;
     Rml::Context* m_context = nullptr;
@@ -137,6 +146,7 @@ private:
     glm::ivec2 m_size{0};
     float m_displayScale = 1.0f;
     float m_textScale = 1.0f;
+    bool m_compact = false;
     std::bitset<input::kKeyCount> m_commandKeys;
     UiPassTimes m_times;
 };

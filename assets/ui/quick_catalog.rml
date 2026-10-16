@@ -13,7 +13,7 @@
 <body data-model="catalog">
 	<div id="catalog" class="panel">
 		<div class="panel-header">
-			<h1>Catalogo rapido</h1>
+			<h1 id="catalog-title">Catalogo rapido</h1>
 			<span class="count" data-if="count == 1">1 gioco</span>
 			<span class="count" data-if="count != 1">{{ count }} giochi</span>
 		</div>
@@ -21,9 +21,15 @@
 			<input id="search" type="text" maxlength="64" data-value="search"/>
 			<span class="placeholder" data-if="search == ''">Cerca per titolo, sviluppatore o anno</span>
 		</div>
-		<div id="chips" class="region" nav-region="chips">
-			<button class="chip" data-for="chip : chips" data-attr-id="chip.elementId" data-class-active="chip.active"
-				data-event-click="filter(chip.key)">{{ chip.label }}</button>
+		<!-- The chips row scrolls with the focus; the screen sets more-before / more-after on its box while chips hide
+		     beyond its edges, which fade there. -->
+		<div id="chips-box">
+			<div id="chips" class="region" nav-region="chips">
+				<button class="chip" data-for="chip : chips" data-attr-id="chip.elementId" data-class-active="chip.active"
+					data-event-click="filter(chip.key)">{{ chip.label }}</button>
+			</div>
+			<div class="fade fade-before"></div>
+			<div class="fade fade-after"></div>
 		</div>
 		<div id="game-list" class="region" nav-region="list">
 			<!-- The row's bindings sit one level below the data-for element, so that RmlUi updates them after the

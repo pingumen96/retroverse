@@ -24,6 +24,7 @@
 #include <rv/platform/sdl_input_codes.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/ui/ui_assets.hpp>
 #include <rv/ui/ui_system.hpp>
 
 namespace rv::ui {
@@ -120,9 +121,19 @@ Expected<std::unique_ptr<UiView>> UiView::create(UiSystem& system, std::string_v
     view->m_size = size;
     view->m_displayScale = sanitizedScale(displayScale);
     context->SetDensityIndependentPixelRatio(view->dpRatio());
+    view->applyLayoutTheme();
     view->setCommandKeys(NavBindings::defaults());
-    spdlog::info("UI view '{}': {}x{} pixels, dp ratio {:.2f}", contextName, size.x, size.y, view->dpRatio());
+    spdlog::info("UI view '{}': {}x{} pixels, dp ratio {:.2f}{}", contextName, size.x, size.y, view->dpRatio(),
+                 view->m_compact ? ", compact layout" : "");
     return view;
+}
+
+void UiView::applyLayoutTheme() {
+    const bool compact = compactLayout(m_size.y, m_displayScale);
+    if (compact != m_compact) {
+        m_compact = compact;
+        m_context->ActivateTheme(Rml::String(kCompactTheme), compact); // documents restyle at the next update
+    }
 }
 
 bool UiView::resize(glm::ivec2 drawableSize, float displayScale) {
@@ -142,7 +153,9 @@ bool UiView::resize(glm::ivec2 drawableSize, float displayScale) {
         changed = true;
     }
     if (changed) {
-        spdlog::info("UI view '{}' resized: {}x{} pixels, dp ratio {:.2f}", m_name, m_size.x, m_size.y, dpRatio());
+        applyLayoutTheme();
+        spdlog::info("UI view '{}' resized: {}x{} pixels, dp ratio {:.2f}{}", m_name, m_size.x, m_size.y, dpRatio(),
+                     m_compact ? ", compact layout" : "");
     }
     return changed;
 }

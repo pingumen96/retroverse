@@ -15,13 +15,16 @@ constexpr std::string_view kScreenshotAt = "--screenshot-at";
 
 constexpr std::string_view kDescription =
     "I1 product UI spike (docs/spikes/i1-ui.md, ADR-0005): the quick catalog mock screen in RmlUi over the test room,\n"
-    "navigated with the gamepad alone. By default a scripted virtual gamepad (SDL virtual joystick) walks the screen:\n"
-    "focus down 10 times, right into the card's actions, Avvia, Indietro, Y and X, stick holds and a resting stick,\n"
-    "filters, a resize to 1280x720 and back, then idle and navigation phases for the measurements. Every focus change\n"
-    "is logged; the CPU and GPU times of the UI pass (p50/p99) and the checks go to --report.\n"
+    "navigated with the gamepad alone. By default a scripted virtual gamepad (SDL virtual joystick; real pads are\n"
+    "ignored) walks the screen: focus down 10 times, right into the card's actions, Avvia, Indietro, Y and X, stick\n"
+    "holds, a resting stick and one crossing its threshold, filters and the chips row, a resize to 1280x720 and back,\n"
+    "text scaling and high contrast, then idle, taps and navigation phases for the measurements (1910 frames). Every\n"
+    "focus change is logged; the CPU and GPU times of the UI pass (p50/p99, quiet frames and frames with changes), its\n"
+    "heap allocations and the checks go to --report.\n"
     "Controls with --interactive: D-pad, left stick or arrows move the focus, A/Enter activates, B/Esc goes back,\n"
     "Y Vedi media, X Informazioni; with the catalog closed Y reopens it and B quits.\n"
-    "Exit codes: 0 every check passed; 2 initialization failure; 3 a check failed or the run failed.";
+    "Exit codes: 0 every check passed; 1 a --smoke run stopped early or hit an OpenGL error; 2 initialization failure;\n"
+    "3 a check failed or never ran, or the run failed.";
 
 core::ArgParser makeParser() {
     core::ArgParser parser("spike_ui", std::string(kDescription));

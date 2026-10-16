@@ -138,3 +138,24 @@ TEST_CASE("ui/quick_catalog_model: revisions count real changes only", "[ui][qui
     model.setSearch("corsa "); // the same words: the same games
     CHECK(model.visibleRevision() == visible + 1);
 }
+
+TEST_CASE("ui/quick_catalog_model: a filter change counts even when the same games pass", "[ui][quick_catalog_model]") {
+    QuickCatalogModel model = sample();
+    model.setSearch("faro"); // one game, on the "16 bit" platform
+    REQUIRE(visibleIds(model) == std::vector<std::string>{"g03"});
+    const std::uint64_t filter = model.filterRevision();
+    const std::uint64_t visible = model.visibleRevision();
+    const std::uint64_t selection = model.selectionRevision();
+
+    CHECK(model.setFilter("16 bit")); // still g03 alone: a view must still move its highlight to the new filter
+    CHECK(model.filterRevision() == filter + 1);
+    CHECK(model.visibleRevision() == visible);
+    CHECK(model.selectionRevision() == selection);
+    CHECK(model.setFilter("16 bit")); // unchanged
+    CHECK(model.filterRevision() == filter + 1);
+    CHECK_FALSE(model.setFilter("32 bit")); // unknown: nothing changes
+    CHECK(model.filterRevision() == filter + 1);
+    model.setSearch(""); // the search moves the list, not the filter
+    CHECK(model.filterRevision() == filter + 1);
+    CHECK(model.visibleRevision() == visible + 1);
+}

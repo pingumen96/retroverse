@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -42,7 +43,11 @@ struct QuickCatalogEvents {
 ///  - The focused game is the selected one: its card fills (title, developer and year, three lines of description,
 ///    platform, genre, players, developer; Informazioni adds the publisher, the year and the whole description), at
 ///    once after a pause and, while a held direction runs through the list, once the focus rests for 0.15 s (laying
-///    the card's text out again is most of the cost of a move). The list scrolls with the focus.
+///    the card's text out again is most of the cost of a move). A card left behind that way is filled at once when the
+///    focus leaves the list or an action (Avvia, Vedi media, Informazioni) runs, so the card always shows the game the
+///    actions act on. The list scrolls with the focus.
+///  - Filter chips: one row that scrolls with the focus; the active filter's chip is highlighted whenever the filter
+///    changes (also when the same games pass), and fades mark the row's edges where chips hide beyond them.
 ///  - Commands: Activate launches the focused game, else presses the focused element (a chip filters, a button acts,
 ///    Enter in the search field moves to the list); Back returns along the FocusHistory, then asks to close; Media and
 ///    Info act on the selected game.
@@ -80,6 +85,8 @@ public:
     /// The high-contrast theme (specification §12.4).
     void setHighContrast(bool enabled);
     [[nodiscard]] const FocusHistory& history() const noexcept;
+    /// How many times the card was filled with the selected game: measurements tell the frames that laid it out again.
+    [[nodiscard]] std::uint64_t cardRefreshes() const noexcept;
 
     /// With watchFiles, reloads the document when it or its style sheet changed on disk (polled every 500 ms), keeping
     /// the focus; true when it reloaded. A document that no longer loads keeps the screen empty until fixed (logged).

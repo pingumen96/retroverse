@@ -63,10 +63,12 @@ TEST_CASE("ui/documents: the quick catalog document has the ids, regions and bin
     // The style sheet next to the document.
     const std::string sheetName = rv::core::pathToUtf8(rv::core::pathFromUtf8(qc::kStyleSheetPath).filename());
     CHECK(contains(rml, "href=\"" + sheetName + "\""));
-    for (const std::string_view id : {qc::kSearchId, qc::kPlayId, qc::kMediaId, qc::kInfoId}) {
+    for (const std::string_view id : {qc::kSearchId, qc::kPlayId, qc::kMediaId, qc::kInfoId, qc::kChipsId,
+                                      qc::kChipsBoxId, qc::kCardTitleId}) {
         INFO(id);
         CHECK(contains(rml, "id=\"" + std::string(id) + "\""));
     }
+    CHECK(contains(rml, "data-class-" + std::string(qc::kActiveChipClass) + "=\"chip.active\""));
     for (const std::string_view region : {qc::kRegionSearch, qc::kRegionChips, qc::kRegionList, qc::kRegionActions}) {
         INFO(region);
         CHECK(contains(rml, std::string(qc::kRegionAttribute) + "=\"" + std::string(region) + "\""));
@@ -88,9 +90,11 @@ TEST_CASE("ui/documents: the quick catalog document has the ids, regions and bin
 TEST_CASE("ui/documents: focusable elements navigate spatially inside regions that confine them",
           "[ui][documents]") {
     const std::string rcss = readAsset(qc::kStyleSheetPath);
-    // A region is a scroll container, which RmlUi's spatial navigation does not leave.
+    // A region is a scroll container, which RmlUi's spatial navigation does not leave. The regions that scroll with the
+    // focus are auto, not hidden: RmlUi's ScrollIntoView passes over hidden overflow.
     CHECK(contains(ruleBody(rcss, ".region"), "overflow: hidden"));
     CHECK(contains(ruleBody(rcss, "#game-list"), "overflow-y: auto"));
+    CHECK(contains(ruleBody(rcss, "#chips"), "overflow-x: auto"));
     for (const std::string_view selector : {"#search", ".chip", ".game", ".action"}) {
         INFO(selector);
         const std::string body = ruleBody(rcss, selector);
@@ -103,6 +107,26 @@ TEST_CASE("ui/documents: focusable elements navigate spatially inside regions th
         CHECK(contains(ruleBody(rcss, selector), "border-color"));
     }
     CHECK(contains(rcss, "body." + std::string(qc::kHighContrastClass)));
+    // The chips row's fades follow the classes the screen sets on its box.
+    CHECK(contains(rcss, "#chips-box." + std::string(qc::kMoreBeforeClass) + " .fade-before"));
+    CHECK(contains(rcss, "#chips-box." + std::string(qc::kMoreAfterClass) + " .fade-after"));
+    CHECK(contains(ruleBody(rcss, ".chip." + std::string(qc::kActiveChipClass)), "background-color"));
+}
+
+TEST_CASE("ui/documents: the compact layout follows the display's density, never the text scale", "[ui][documents]") {
+    using rv::ui::compactLayout;
+    CHECK_FALSE(compactLayout(1080, 1.25f)); // 864 dp: the reference TV setup
+    CHECK(compactLayout(720, 1.25f));        // 576 dp
+    CHECK(compactLayout(1080, 1.5f));        // 720 dp
+    CHECK_FALSE(compactLayout(1080, 1.0f));
+    CHECK_FALSE(compactLayout(800, 0.0f)); // a scale that is not positive counts as 1
+    CHECK(compactLayout(700, -2.0f));
+    // The style sheet keys its compact sizes to the theme UiView activates, not to a dp height, which includes the text
+    // scale: 1920x1080 at 125% with text scale 1.2 is 720 dp tall, and a dp query would swap in the smaller sizes.
+    const std::string rcss = readAsset(qc::kStyleSheetPath);
+    CHECK(contains(rcss, "@media (theme: " + std::string(rv::ui::kCompactTheme) + ")"));
+    CHECK_FALSE(contains(rcss, "@media (max-height"));
+    CHECK_FALSE(contains(rcss, "@media (min-height"));
 }
 
 TEST_CASE("ui/documents: every bundled font has a registry entry with its provenance and license", "[ui][documents]") {
