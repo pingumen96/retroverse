@@ -44,7 +44,8 @@ enum class SessionState : std::uint8_t {
 enum class FailureReason : std::uint8_t {
     None,
     InvalidRequest, ///< validateLaunchRequest() refused the request: nothing was started
-    StartFailed,    ///< the process could not be created
+    StartFailed,    ///< the process could not be created (the runner's error says why; the automation guard's refusal,
+                    ///< launch_guard.hpp, is one)
     LoaderError,    ///< it could not be loaded (a missing DLL, a bad image): ExitKind::LoaderError
     EarlyExit,      ///< it ended unclean within LaunchTimeouts::startupGrace
 };

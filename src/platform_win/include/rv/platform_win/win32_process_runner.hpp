@@ -42,6 +42,8 @@ struct Win32StartInfo {
 };
 
 /// The Windows process runner (specification §11.4; no shell, no command interpreter):
+///  - the automation guard first (launcher::checkLaunchGuard(): while RV_LAUNCH_ALLOWLIST is set, a request it refuses
+///    is an error and nothing is created);
 ///  - CreateProcessW with lpApplicationName = the executable and the command line of launcher::commandLineOf()
 ///    (arguments quoted as the inverse of CommandLineToArgvW), the request's working directory and, when it has
 ///    environment overrides, a Unicode environment block (launcher::mergeEnvironment of Retroverse's own);

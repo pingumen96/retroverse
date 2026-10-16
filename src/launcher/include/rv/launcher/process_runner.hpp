@@ -87,8 +87,10 @@ public:
     virtual ~IProcessRunner();
 
     /// Starts `request`, which validateLaunchRequest() accepted, calling `callbacks` as they document. Errors: the
-    /// process could not be created or could not be followed (the message says why); a process that never ran is not
-    /// left behind. Implementations report failures, an exception from a callback included, as errors and never throw.
+    /// automation guard refused it (implementations that create processes call checkLaunchGuard() before anything
+    /// else, launch_guard.hpp), the process could not be created or could not be followed (the message says why); a
+    /// process that never ran is not left behind. Implementations report failures, an exception from a callback
+    /// included, as errors and never throw.
     [[nodiscard]] virtual Expected<std::unique_ptr<IRunningProcess>> start(const LaunchRequest& request,
                                                                            StartCallbacks callbacks) = 0;
 };

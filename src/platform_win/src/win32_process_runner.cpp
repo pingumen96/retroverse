@@ -19,6 +19,7 @@
 
 #include <rv/core/utf8.hpp>
 #include <rv/launcher/command_line.hpp>
+#include <rv/launcher/launch_guard.hpp>
 #include <rv/launcher/launch_request.hpp>
 
 #include <rv/platform_win/win32_util.hpp>
@@ -719,6 +720,10 @@ Expected<std::unique_ptr<launcher::IRunningProcess>> Win32ProcessRunner::start(c
 Expected<std::unique_ptr<launcher::IRunningProcess>>
 Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launcher::StartCallbacks callbacks) {
     const auto begin = std::chrono::steady_clock::now();
+    // The automation guard (RV_LAUNCH_ALLOWLIST) first: what it refuses never exists, not even suspended.
+    if (auto allowed = launcher::checkLaunchGuard(request); !allowed) {
+        return propagate(allowed.error());
+    }
     const auto commandLineUtf8 = launcher::commandLineOf(request);
     if (!commandLineUtf8) {
         return propagate(commandLineUtf8.error());
