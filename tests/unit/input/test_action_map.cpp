@@ -177,6 +177,10 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
     const auto mouseAxis = [](MouseAxis a, float scale) { return Binding{MouseAxisBinding{a, scale}}; };
     const auto padButton = [](GamepadButton b) { return Binding{GamepadButtonBinding{b, 1.0f}}; };
     const auto padAxis = [](GamepadAxis a) { return Binding{GamepadAxisBinding{a, 1.0f, 0.15f, 1.0f}}; };
+    // A stick read whole: no dead zone (the UI's hysteresis is its dead zone, ADR-0005).
+    const auto wholeAxis = [](GamepadAxis a) {
+        return Binding{GamepadAxisBinding{a, 1.0f, 0.0f, 1.0f}};
+    };
 
     // Specification §12.1, written out independently of the implementation.
     const std::vector<std::pair<Action, std::vector<Binding>>> expected = {
@@ -198,14 +202,15 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::ToggleDevUI, {key(Key::F1)}},
         {Action::ReloadShaders, {key(Key::F5)}},
         {Action::Screenshot, {key(Key::F12)}},
-        // The product UI (ADR-0005, I2 step 6): arrows and D-pad, the left stick with the usual dead zone, the pad's
-        // buttons of the I1 spike, the triggers page, the stick clicks jump, the shoulders change the filter.
+        // The product UI (ADR-0005, I2 step 6): arrows and D-pad, the left stick read whole (NavInput's hysteresis of
+        // 0.55 / 0.35 of its travel is its dead zone), the pad's buttons of the I1 spike, the triggers page (with the
+        // usual dead zone), the stick clicks jump, the shoulders change the filter.
         {Action::UiUp, {key(Key::Up), padButton(GamepadButton::DpadUp)}},
         {Action::UiDown, {key(Key::Down), padButton(GamepadButton::DpadDown)}},
         {Action::UiLeft, {key(Key::Left), padButton(GamepadButton::DpadLeft)}},
         {Action::UiRight, {key(Key::Right), padButton(GamepadButton::DpadRight)}},
-        {Action::UiNavX, {padAxis(GamepadAxis::LeftX)}},
-        {Action::UiNavY, {padAxis(GamepadAxis::LeftY)}},
+        {Action::UiNavX, {wholeAxis(GamepadAxis::LeftX)}},
+        {Action::UiNavY, {wholeAxis(GamepadAxis::LeftY)}},
         {Action::UiPageUp, {key(Key::PageUp), padAxis(GamepadAxis::LeftTrigger)}},
         {Action::UiPageDown, {key(Key::PageDown), padAxis(GamepadAxis::RightTrigger)}},
         {Action::UiHome, {key(Key::Home), padButton(GamepadButton::LeftStick)}},

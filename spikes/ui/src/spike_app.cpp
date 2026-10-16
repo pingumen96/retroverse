@@ -177,6 +177,22 @@ bool moveFile(const std::filesystem::path& from, const std::filesystem::path& to
     return position ? std::to_string(*position) : std::string("none");
 }
 
+/// The rows of the pool the screen shows for `model`'s window (QuickCatalogScreen: as many as the window, at most
+/// kPoolRows), and the element id of the row that shows `position` (the slot of a position is its rest modulo them).
+[[nodiscard]] std::size_t poolRowsOf(const ui::QuickCatalogModel& model) noexcept {
+    return std::min(model.windowRows(), qc::kPoolRows);
+}
+
+[[nodiscard]] std::string rowIdOf(const ui::QuickCatalogModel& model, std::size_t position) {
+    return rowId(qc::poolSlotOf(position, poolRowsOf(model)));
+}
+
+/// A position and the game on it, recorded by a Mark step.
+struct Mark {
+    std::size_t position = 0;
+    std::string id;
+};
+
 /// The title a row of the pool shows (the text of its .game-title), as RmlUi writes it back.
 [[nodiscard]] std::string rowTitle(Rml::Element* row) {
     if (row == nullptr) {
@@ -224,8 +240,11 @@ struct SpikeApp::State {
     std::size_t nextInputStep = 0;
     std::size_t nextCheckStep = 0;
     std::size_t nextScreenshot = 0;
-    /// Selected positions recorded by the scenario's Mark steps.
-    std::map<std::string, std::size_t, std::less<>> marks;
+    /// Selected positions and games recorded by the scenario's Mark steps.
+    std::map<std::string, Mark, std::less<>> marks;
+    /// The games the last Import step removed, and where they were in the entries.
+    std::vector<ui::CatalogEntry> removedGames;
+    std::size_t removedAt = 0;
     /// Counts the UI pass's heap allocations (null when it could not be installed).
     std::unique_ptr<AllocationCounter> allocationCounter;
 
@@ -266,6 +285,9 @@ struct SpikeApp::State {
     std::size_t focusChangesSeen = 0;
     std::uint64_t cardRefreshesSeen = 0;
     std::uint64_t windowBindsSeen = 0;
+    /// Rows of the pool bound to another game up to the end of the previous frame, and in this frame.
+    std::uint64_t rowBindsSeen = 0;
+    std::uint32_t rowBindsThisFrame = 0;
     std::optional<std::size_t> selectionSeen;
     std::vector<std::string> launched;
     std::vector<std::string> mediaAsked;
@@ -380,9 +402,13 @@ struct SpikeApp::State {
             }
             case StepKind::Mark:
                 if (const std::optional<std::size_t> position = model->selectedPosition()) {
-                    marks[step.label] = *position;
+                    const ui::CatalogEntry* selected = model->selected();
+                    marks[step.label] = Mark{*position, selected != nullptr ? selected->id : std::string()};
                     spdlog::info("Frame {}: mark '{}' at position {}", frame, step.label, *position);
                 }
+                break;
+            case StepKind::Import:
+                importGames(step);
                 break;
             default:
                 break;
@@ -392,6 +418,36 @@ struct SpikeApp::State {
                 padFailureLogged = true;
             }
         }
+    }
+
+    /// An import under the screen (StepKind::Import): the source's entries replaced, then the model refreshed directly,
+    /// as the application does when an import completes; the source answers `step.position` polls later.
+    void importGames(const Step& step) {
+        if (!model->search().empty() || !model->activeFilter().empty()) {
+            spdlog::error("Frame {}: the import step needs the whole list (no search, no filter)", frame);
+            return;
+        }
+        // The whole list is the entries in order: a position is an entry's index.
+        std::vector<ui::CatalogEntry> entries(source->entries().begin(), source->entries().end());
+        if (step.count > 0) {
+            const std::size_t selected = model->selectedPosition().value_or(0);
+            removedAt = selected > step.count ? selected - step.count : 0;
+            const auto from = entries.begin() + static_cast<std::ptrdiff_t>(removedAt);
+            const auto to = from + static_cast<std::ptrdiff_t>(std::min<std::size_t>(step.count, selected));
+            removedGames.assign(std::make_move_iterator(from), std::make_move_iterator(to));
+            entries.erase(from, to);
+        } else {
+            entries.insert(entries.begin() + static_cast<std::ptrdiff_t>(removedAt),
+                           std::make_move_iterator(removedGames.begin()), std::make_move_iterator(removedGames.end()));
+            removedGames.clear();
+        }
+        spdlog::info("Frame {}: import: {} game(s) {}, the list answered {} poll(s) later", frame,
+                     step.count > 0 ? step.count : entries.size() - source->entries().size(),
+                     step.count > 0 ? "removed before the selection" : "back", step.position);
+        source->setPendingPolls(static_cast<std::uint32_t>(step.position));
+        source->replaceEntries(std::move(entries));
+        model->refresh();           // as the application does: the screen is not told
+        source->setPendingPolls(0); // the query asked runs on; the next ones are answered at once
     }
 
     void check(std::string name, bool passed, std::string detail) {
@@ -592,62 +648,80 @@ struct SpikeApp::State {
         check(name, larger, detail);
     }
 
-    /// The pool shows the model's window: the rows that fit are displayed and the others not, each displayed row shows
-    /// its game's title (or is blank past the list's end), the shown rows fill the list area (the last one inside it,
-    /// one more would not fit), and the scroll thumb lies where the window lies in the list.
+    /// The pool shows the model's window: a row per window row and none more, the row of each position (its rest modulo
+    /// the rows) showing its game's title (or blank past the list's end), the rows in the window's order a pitch apart
+    /// from the list area's top, filling it (the last one inside it, one more would not fit), and the scroll thumb
+    /// where the window lies in the list.
     void checkWindow(const Step& step) {
         constexpr float kTolerance = 1.0f;
         const std::span<const ui::CatalogEntry> window = model->window();
-        const std::size_t rows = std::min(model->windowRows(), qc::kPoolRows);
+        const std::size_t rows = poolRowsOf(*model);
+        const std::size_t first = model->windowFirst();
         std::string problems;
         const auto problem = [&problems](const std::string& text) {
             if (problems.size() < 400) {
                 problems += problems.empty() ? text : "; " + text;
             }
         };
-        for (std::size_t slot = 0; slot < qc::kPoolRows; ++slot) {
-            Rml::Element* row = view->element(rowId(slot));
-            if (row == nullptr) {
-                problem(rowId(slot) + " missing");
-                continue;
-            }
-            const bool displayed = row->GetComputedValues().display() != Rml::Style::Display::None;
-            if (slot >= rows) {
-                if (displayed) {
-                    problem(rowId(slot) + " displayed past the window");
-                }
-                continue;
-            }
-            const bool vacant = row->IsClassSet("vacant");
-            if (!displayed) {
-                problem(rowId(slot) + " not displayed");
-            } else if (slot < window.size()) {
-                const std::string expected = Rml::StringUtilities::EncodeRml(window[slot].title);
-                if (vacant || rowTitle(row) != expected) {
-                    problem(fmt::format("{} shows '{}', the window has '{}'", rowId(slot), rowTitle(row), expected));
-                }
-            } else if (!vacant) {
-                problem(rowId(slot) + " not blank past the list's end");
+        for (std::size_t slot = rows; slot < qc::kPoolRows; ++slot) {
+            if (view->element(rowId(slot)) != nullptr) {
+                problem(rowId(slot) + " exists past the pool's " + std::to_string(rows) + " row(s)");
             }
         }
-        // The rows fill the list area.
+        std::optional<glm::vec4> previous;
+        float pitch = 0.0f;
+        for (std::size_t row = 0; row < rows; ++row) {
+            const std::string id = rowIdOf(*model, first + row);
+            Rml::Element* element = view->element(id);
+            if (element == nullptr) {
+                problem(id + " missing");
+                continue;
+            }
+            const bool displayed = element->GetComputedValues().display() != Rml::Style::Display::None;
+            const bool vacant = element->IsClassSet("vacant");
+            if (!displayed) {
+                problem(id + " not displayed");
+            } else if (row < window.size()) {
+                const std::string expected = Rml::StringUtilities::EncodeRml(window[row].title);
+                if (vacant || rowTitle(element) != expected) {
+                    problem(fmt::format("{} (window row {}) shows '{}', the window has '{}'", id, row,
+                                        rowTitle(element), expected));
+                }
+            } else if (!vacant) {
+                problem(id + " not blank past the list's end");
+            }
+            // In the window's order, a pitch apart.
+            const std::optional<glm::vec4> box = view->elementBox(id);
+            if (box && previous) {
+                const float gap = box->y - previous->y;
+                if (row == 1) {
+                    pitch = gap;
+                }
+                if (gap <= 0.0f || std::fabs(gap - pitch) > kTolerance) {
+                    problem(fmt::format("window row {} ({}) {:.1f} px below the one before, {:.1f} expected", row, id,
+                                        gap, pitch));
+                }
+            }
+            previous = box;
+        }
+        // The rows fill the list area from its top.
         Rml::Element* list = view->element(qc::kListId);
-        const std::optional<glm::vec4> first = view->elementBox(rowId(0));
-        const std::optional<glm::vec4> second = rows >= 2 ? view->elementBox(rowId(1)) : std::nullopt;
-        const std::optional<glm::vec4> last = view->elementBox(rowId(rows - 1));
-        if (list != nullptr && first && last) {
-            const float areaBottom =
-                list->GetAbsoluteOffset(Rml::BoxArea::Content).y + list->GetBox().GetSize(Rml::BoxArea::Content).y;
+        const std::optional<glm::vec4> top = view->elementBox(rowIdOf(*model, first));
+        const std::optional<glm::vec4> last = view->elementBox(rowIdOf(*model, first + rows - 1));
+        if (list != nullptr && top && last) {
+            const float areaTop = list->GetAbsoluteOffset(Rml::BoxArea::Content).y;
+            const float areaBottom = areaTop + list->GetBox().GetSize(Rml::BoxArea::Content).y;
+            if (std::fabs(top->y - areaTop) > kTolerance) {
+                problem(
+                    fmt::format("the window's first row at {:.1f}, the list area's top at {:.1f}", top->y, areaTop));
+            }
             if (last->y + last->w > areaBottom + kTolerance) {
                 problem(fmt::format("the last row ends at {:.1f}, past the list area's {:.1f}", last->y + last->w,
                                     areaBottom));
             }
-            if (second && rows < qc::kPoolRows) {
-                const float pitch = second->y - first->y;
-                if (last->y + pitch + last->w <= areaBottom - kTolerance) {
-                    problem(fmt::format("one more row would fit (the last ends at {:.1f}, the area at {:.1f})",
-                                        last->y + last->w, areaBottom));
-                }
+            if (rows >= 2 && rows < qc::kPoolRows && last->y + pitch + last->w <= areaBottom - kTolerance) {
+                problem(fmt::format("one more row would fit (the last ends at {:.1f}, the area at {:.1f})",
+                                    last->y + last->w, areaBottom));
             }
         }
         // The window holds the selection.
@@ -674,8 +748,8 @@ struct SpikeApp::State {
             }
         }
         check(named(step, "window"), problems.empty(),
-              problems.empty() ? fmt::format("{} row(s) from position {} of {}, {}", rows, model->windowFirst(),
-                                             model->count(), thumbDetail)
+              problems.empty() ? fmt::format("{} row(s) from position {} of {}, {:.1f} px apart, {}", rows,
+                                             model->windowFirst(), model->count(), pitch, thumbDetail)
                                : problems);
     }
 
@@ -702,8 +776,13 @@ struct SpikeApp::State {
             const auto moves = static_cast<std::uint32_t>(
                 std::count_if(report.selections.begin(), report.selections.end(),
                               [&step](const SelectionRecord& record) { return record.frame >= step.since; }));
-            check(named(step, fmt::format("steady since frame {}", step.since)), moves == step.count,
-                  fmt::format("{} move(s) of the selection, {} expected", moves, step.count));
+            const auto focusMoves = static_cast<std::uint32_t>(
+                std::count_if(report.focusChanges.begin(), report.focusChanges.end(),
+                              [&step](const FocusRecord& record) { return record.frame >= step.since; }));
+            check(named(step, fmt::format("steady since frame {}", step.since)),
+                  moves == step.count && focusMoves == step.count,
+                  fmt::format("{} move(s) of the selection and {} of the focus, {} expected", moves, focusMoves,
+                              step.count));
             break;
         }
         case StepKind::ExpectLaunched:
@@ -746,21 +825,39 @@ struct SpikeApp::State {
             }
             const auto shift =
                 static_cast<std::ptrdiff_t>(step.pages) * static_cast<std::ptrdiff_t>(model->windowRows());
-            const auto target = std::clamp<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(mark->second) + shift, 0,
-                                                           static_cast<std::ptrdiff_t>(model->count()) - 1);
+            const auto target = std::clamp<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(mark->second.position) + shift,
+                                                           0, static_cast<std::ptrdiff_t>(model->count()) - 1);
             check(named(step, fmt::format("pages {} from {}", step.pages, step.label)),
                   position == static_cast<std::size_t>(target),
                   fmt::format("selection at {}, {} expected ({} + {} x {} row(s))", positionText(position), target,
-                              mark->second, step.pages, model->windowRows()));
+                              mark->second.position, step.pages, model->windowRows()));
+            break;
+        }
+        case StepKind::ExpectMarked: {
+            // The game marked, at its marked position moved by `pages` (an import removed games before it).
+            const auto mark = marks.find(step.label);
+            const std::string name = named(step, fmt::format("marked {} {:+}", step.label, step.pages));
+            if (mark == marks.end()) {
+                check(name, false, "no such mark");
+                break;
+            }
+            const std::optional<std::size_t> position = model->selectedPosition();
+            const ui::CatalogEntry* selected = model->selected();
+            const std::string id = selected != nullptr ? selected->id : std::string("(no game)");
+            const std::ptrdiff_t expected = static_cast<std::ptrdiff_t>(mark->second.position) + step.pages;
+            check(name, position && static_cast<std::ptrdiff_t>(*position) == expected && id == mark->second.id,
+                  fmt::format("selection at {} ({}) of {} game(s), the marked game {} expected at {}",
+                              positionText(position), id, model->count(), mark->second.id, expected));
             break;
         }
         case StepKind::ExpectRow: {
-            // The focus on the selected game's row, which shows that game and carries the class "selected".
-            const std::optional<std::size_t> slot = model->selectedSlot();
+            // The focus on the selected game's row (the row of its position), which shows that game and carries the
+            // class "selected".
+            const std::optional<std::size_t> position = model->selectedPosition();
             const ui::CatalogEntry* selected = model->selected();
-            const std::string expected = slot ? rowId(*slot) : std::string("(no row)");
+            const std::string expected = position ? rowIdOf(*model, *position) : std::string("(no row)");
             const std::string focused = screen->focus() ? screen->focus()->element : std::string("(none)");
-            Rml::Element* row = slot ? view->element(expected) : nullptr;
+            Rml::Element* row = position ? view->element(expected) : nullptr;
             const std::string title = rowTitle(row);
             const std::string wanted =
                 selected != nullptr ? Rml::StringUtilities::EncodeRml(selected->title) : std::string("(no game)");
@@ -934,6 +1031,7 @@ struct SpikeApp::State {
         sample.focusMoved = focusMovedThisFrame;
         sample.cardRefreshed = cardLaidOutThisFrame;
         sample.rowsBound = rowsBoundThisFrame;
+        sample.rowBinds = rowBindsThisFrame;
         sample.selectionMoved = selectionMovedThisFrame;
         sample.updateAllocations = updateAllocations;
         sample.renderAllocations = takeAllocations();
@@ -1111,6 +1209,7 @@ Status SpikeApp::onInit(app::AppContext& context) {
     s.focusChangesSeen = report.focusChanges.size(); // laid out by the screen's creation
     s.cardRefreshesSeen = s.screen->cardRefreshes();
     s.windowBindsSeen = s.screen->windowBinds();
+    s.rowBindsSeen = s.screen->rowBinds();
     s.selectionSeen = s.model->selectedPosition();
     m_state = std::move(state);
     return ok();
@@ -1172,6 +1271,7 @@ void SpikeApp::onUpdate(app::AppContext& context, double deltaSeconds) {
     const std::size_t focusUpdated = s.report.focusChanges.size();
     const std::uint64_t cardsUpdated = s.screen->cardRefreshes();
     const std::uint64_t bindsUpdated = s.screen->windowBinds();
+    const std::uint64_t rowBindsUpdated = s.screen->rowBinds();
     const Clock::time_point afterStart = Clock::now();
     s.screen->afterUpdate();
     s.afterUpdateMs = millisecondsSince(afterStart);
@@ -1182,6 +1282,9 @@ void SpikeApp::onUpdate(app::AppContext& context, double deltaSeconds) {
     s.focusMovedThisFrame = s.focusMovedLate || focusUpdated > s.focusChangesSeen;
     s.cardLaidOutThisFrame = s.cardFilledLate || cardsUpdated > s.cardRefreshesSeen;
     s.rowsBoundThisFrame = s.rowsBoundLate || bindsUpdated > s.windowBindsSeen;
+    // The rows bound before this update are laid out in it; those bound after it count for the next frame.
+    s.rowBindsThisFrame = static_cast<std::uint32_t>(rowBindsUpdated - s.rowBindsSeen);
+    s.rowBindsSeen = rowBindsUpdated;
     s.focusChangesSeen = s.report.focusChanges.size();
     s.cardRefreshesSeen = s.screen->cardRefreshes();
     s.windowBindsSeen = s.screen->windowBinds();

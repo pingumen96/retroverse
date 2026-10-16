@@ -27,8 +27,8 @@ rv_deploy_assets(spike_ui)
 # GPU checks (label "gpu", run by the *-gpu test presets), in a hidden 1920x1080 window:
 #  - gpu.spike_ui.scenario: the whole quick-catalog scenario must pass every check: pad-only navigation, stable focus,
 #    the card, the chips, the virtualized list at its start, middle and end (searches, filters, pages, Home, End), the
-#    resize, text scaling and high contrast, a clean RmlUi log, the screenshots (the list scrolled to its middle and its
-#    end among them). --smoke also fails the run when it stops before its last frame or the OpenGL debug output reports
+#    resize, text scaling and high contrast, imports under the screen (lists a worker answers), a list emptied under the
+#    card's actions, a clean RmlUi log, the screenshots (the list scrolled to its middle and its end among them). --smoke also fails the run when it stops before its last frame or the OpenGL debug output reports
 #    a high-severity message (Debug builds), and the spike fails it when a check of the scenario never ran.
 #  - gpu.spike_ui.input_script: tests/input_scripts/quick_catalog_select.json moves the selection through UI actions
 #    alone (as --input-script drives retroverse.exe), ending where --expect-selection says.
@@ -39,7 +39,7 @@ if(NOT RV_BUILD_TESTS)
 endif()
 set(RV_SPIKE_UI_WORK_DIR "${CMAKE_BINARY_DIR}/spikes/ui")
 add_test(NAME gpu.spike_ui.scenario
-    COMMAND spike_ui --smoke --frames 2165 --hidden --no-vsync --fixed-dt 0.016667
+    COMMAND spike_ui --smoke --frames 2271 --hidden --no-vsync --fixed-dt 0.016667
             --data-dir "${RV_SPIKE_UI_WORK_DIR}/data"
             --report "${RV_SPIKE_UI_WORK_DIR}/scenario_report.json"
             --run-report "${RV_SPIKE_UI_WORK_DIR}/scenario_run.json"

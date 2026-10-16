@@ -50,12 +50,18 @@ inline constexpr std::string_view kInfoId = "act-info";
 /// Element id prefixes: "row-<slot of the pool>", "chip-<index of the filter>".
 inline constexpr std::string_view kRowPrefix = "row-";
 inline constexpr std::string_view kChipPrefix = "chip-";
-/// The list is virtualized: a fixed pool of rows (the data model's "rows", elements "row-0" to "row-<kPoolRows - 1>")
-/// shows the window of the list, re-bound as it scrolls; the screen shows as many rows as fit the list area and hides
-/// the others. The largest supported layouts fit 24 rows (a 2160-pixel-tall view at 100%, text scale 1; a 1080-pixel
-/// one at 125% fits 7, the compact 1280x720 one at 125% 5): the pool holds them and a margin. Taller views (text scale
-/// below 1) show kPoolRows rows.
+/// The list is virtualized: a pool of rows (the data model's "rows", elements "row-0", "row-1", ...), as many as fit
+/// the list area and at most kPoolRows, shows the window of the list. The largest supported layouts fit 24 rows (a
+/// 2160-pixel-tall view at 100%, text scale 1; a 1080-pixel one at 125% fits 7, the compact 1280x720 one at 125% 5):
+/// the pool holds them and a margin. Taller views (text scale below 1) show kPoolRows rows.
 inline constexpr std::size_t kPoolRows = 28;
+
+/// The row of the pool (of `poolRows` rows) that shows the list's position `position` while the window holds it: a game
+/// keeps its row as the window scrolls, so a scroll by one re-binds the one row that enters, and the screen moves the
+/// rows into the window's order (QuickCatalogScreen). 0 for an empty pool.
+[[nodiscard]] constexpr std::size_t poolSlotOf(std::size_t position, std::size_t poolRows) noexcept {
+    return poolRows > 0 ? position % poolRows : 0;
+}
 /// The game list (the region whose rows the pool binds), the class the screen sets on the selected game's row, and
 /// the scroll indicator beside the list (its thumb shows the window's place in the list).
 inline constexpr std::string_view kListId = "game-list";

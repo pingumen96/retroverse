@@ -18,13 +18,20 @@ namespace rv::ui {
 /// Tuning of focus navigation from the pad and the keyboard. The defaults follow style §16.2 (focus feedback under
 /// 100 ms, a stable focus without jitter with the controller) and the habits of TV interfaces.
 struct NavSettings {
-    /// Stick deflection (the length of (UiNavX, UiNavY), in [0, 1]) that engages a direction. The values are the
-    /// actions', which the bindings' dead zone shapes: with the default bindings' 0.15 the left stick engages at 0.62
-    /// and releases at 0.45 of its travel along an axis...
+    /// Stick deflection (the length of (UiNavX, UiNavY), in [0, 1]) that engages a direction. The default bindings
+    /// read the stick whole, without a dead zone, so these are fractions of its travel (ADR-0005): the hysteresis is
+    /// the stick's dead zone. A binding with a dead zone shapes the values first (0.15 would move them to 0.62 and 0.45
+    /// of the travel)...
     float stickEngage = 0.55f;
     /// ...and below which an engaged direction is released. Between the two the stick keeps its state (hysteresis): a
     /// stick resting near either threshold, or drifting, never toggles a direction on and off.
     float stickRelease = 0.35f;
+    /// A page action (UiPageUp, UiPageDown) engages when it is held (a key, a button, a trigger past the input system's
+    /// press threshold, InputSettings::pressThreshold) and stays engaged until its value falls below this (hysteresis),
+    /// so that a trigger resting near the press threshold pages at the held cadence, never every time it crosses it.
+    /// The triggers' values come through their bindings' dead zone: with the default 0.15, the press threshold's 0.5 is
+    /// 0.575 of their travel and 0.35 is 0.45.
+    float pageRelease = 0.35f;
     /// While a direction is engaged, the stick turns to the other axis only when that axis' deflection exceeds the
     /// engaged axis' by this factor (1.25: about 51 degrees off the engaged axis instead of 45), so a stick held near a
     /// diagonal keeps its direction instead of alternating.
@@ -91,9 +98,10 @@ private:
 /// and overridden by --input-script):
 ///  - focus moves: one DirectionRepeater for every source, so a held D-pad, arrow key or stick repeats alike. The
 ///    digital directions (UiUp, UiDown, UiLeft, UiRight) win over the stick (UiNavX, UiNavY: StickDirection's
-///    hysteresis on the values the bindings' dead zone shaped), and among them the direction pressed last; a direction
-///    tapped within one frame (pressed and released before it ended) steps once;
-///  - page moves (UiPageUp, UiPageDown): a DirectionRepeater of their own, the one pressed last winning;
+///    hysteresis on the values the bindings give, the stick's travel with the default ones), and among them the
+///    direction pressed last; a direction tapped within one frame (pressed and released before it ended) steps once;
+///  - page moves (UiPageUp, UiPageDown): a DirectionRepeater of their own, the one engaged last winning; a page action
+///    engages when held and releases below NavSettings::pageRelease (a trigger's hysteresis);
 ///  - the other commands on the press of their action (Activate, Back, Media, Info, Home, End, FilterPrevious,
 ///    FilterNext, in that order), after the frame's steps (Down then Activate activates the element the focus moved
 ///    to).
@@ -117,8 +125,8 @@ private:
     [[nodiscard]] std::optional<NavDirection> heldDigital(const input::ActionState& actions) const noexcept;
     /// A direction pressed and released within the frame, if any (the first found, in Up, Down, Left, Right order).
     [[nodiscard]] std::optional<NavDirection> tappedDigital(const input::ActionState& actions) const noexcept;
-    /// The page command held at the end of the frame (the most recently pressed one), or tapped within it.
-    [[nodiscard]] std::optional<NavDirection> heldPage(const input::ActionState& actions) const noexcept;
+    /// The page command engaged at the end of the frame (the most recently engaged one), or tapped within it.
+    [[nodiscard]] std::optional<NavDirection> heldPage() const noexcept;
     [[nodiscard]] std::optional<NavDirection> tappedPage(const input::ActionState& actions) const noexcept;
     /// The step of the directions this frame.
     [[nodiscard]] std::optional<NavDirection> directionStep(const input::ActionState& actions, double deltaSeconds);
@@ -133,6 +141,9 @@ private:
     /// Order of the last press of each direction and of each page command (0: never), from m_pressCounter.
     std::array<std::uint64_t, 4> m_pressOrder{};
     std::array<std::uint64_t, 2> m_pagePressOrder{};
+    /// The page actions engaged at the end of the last frame (hysteresis: see NavSettings::pageRelease). reset() keeps
+    /// them: they follow the devices, and a trigger still pulled must not count as a new press.
+    std::array<bool, 2> m_pageEngaged{};
     std::uint64_t m_pressCounter = 0;
     /// Set by reset(): held directions (pages) give no step until released or pressed again.
     bool m_suppressHeld = false;

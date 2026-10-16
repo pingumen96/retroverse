@@ -58,6 +58,12 @@ public:
     /// 1 on, 0 off, 2 the run's setting.
     void highContrast(std::uint32_t frame, std::uint32_t state) { add(frame, StepKind::HighContrast).count = state; }
     void mark(std::uint32_t frame, std::string label) { add(frame, StepKind::Mark).label = std::move(label); }
+    /// An import: `games` games before the selection removed (0: the removed ones back), the list `polls` polls later.
+    void importGames(std::uint32_t frame, std::uint32_t games, std::size_t polls) {
+        Step& step = add(frame, StepKind::Import);
+        step.count = games;
+        step.position = polls;
+    }
     void expectFocus(std::uint32_t frame, std::string element) {
         add(frame, StepKind::ExpectFocus).text = std::move(element);
     }
@@ -92,6 +98,11 @@ public:
         Step& step = add(frame, StepKind::ExpectPages);
         step.label = std::move(label);
         step.pages = pages;
+    }
+    void expectMarked(std::uint32_t frame, std::string label, int offset) {
+        Step& step = add(frame, StepKind::ExpectMarked);
+        step.label = std::move(label);
+        step.pages = offset;
     }
     void expectRow(std::uint32_t frame) { add(frame, StepKind::ExpectRow); }
     void expectWindow(std::uint32_t frame) { add(frame, StepKind::ExpectWindow); }
@@ -205,8 +216,15 @@ Expected<ScenarioFacts> readScenarioFacts(ui::CatalogSource& source, std::string
     ScenarioFacts facts;
     facts.markerSearch = std::string(markerWord);
     std::vector<ui::CatalogEntry> rows;
-    const auto run = [&source](std::string text, std::string platform) {
-        return source.query(ui::CatalogSourceQuery{std::move(text), std::move(platform)});
+    const auto run = [&source](std::string text, std::string platform) -> Status {
+        Expected<ui::QueryState> state = source.query(ui::CatalogSourceQuery{std::move(text), std::move(platform)});
+        if (!state) {
+            return propagate(std::move(state.error()));
+        }
+        if (*state != ui::QueryState::Ready) {
+            return factError("the facts are read from a source that answers its queries at once");
+        }
+        return ok();
     };
 
     if (Status listed = run({}, {}); !listed) {
@@ -344,20 +362,22 @@ Scenario defaultScenario(const ScenarioFacts& facts) {
     s.expectSelected(236, 17);
     s.expectRow(236);
     s.expectWindow(236);
-    // A stick resting just under its engage threshold (a worn stick, a thumb on it): 0.57 and 0.61 of its travel are
-    // 0.49 and 0.54 past the bindings' 0.15 dead zone, under 0.55. No step.
+    // A stick resting near half deflection, under the engage threshold (a worn stick, a thumb on it; the UI reads the
+    // stick whole, its hysteresis is the dead zone): no step, and the focus stays on the selected game's row.
     for (std::uint32_t frame = 240; frame < 360; ++frame) {
-        s.stick(frame, 0.01f, frame % 2 == 0 ? -0.57f : -0.61f);
+        s.stick(frame, 0.01f, frame % 2 == 0 ? -0.47f : -0.52f);
     }
     s.stick(360, 0.0f, 0.0f);
     s.expectSteady(364, 241, 0);
     s.expectSelected(364, 17);
+    s.expectRow(364);
     // A stick near the diagonal: one step down, no turn to the right (it would leave the list for the actions).
     s.stick(370, 0.6f, -0.62f);
     s.stick(385, 0.66f, -0.6f);
     s.stick(392, 0.0f, 0.0f);
     s.expectSteady(398, 371, 1);
     s.expectSelected(398, 18);
+    s.expectRow(398);
 
     // Up held: the selection repeats faster after 1.5 s, reaches the first game, crosses into the filters, then the
     // search field.
@@ -433,11 +453,11 @@ Scenario defaultScenario(const ScenarioFacts& facts) {
     s.layout(710, "1920x1080 again");
     s.sameLayout(710, "1920x1080 again", "1920x1080");
 
-    // A stick crossing its engage threshold every frame, 0.66 and 0.60 of its travel (0.60 and 0.53 past the dead
-    // zone): the hysteresis holds the direction, so it steps at the held cadence (at once, again after 0.4 s), never on
-    // every crossing (a single threshold would step every other frame).
+    // A stick crossing its engage threshold every frame, 0.58 and 0.53 of its travel: the hysteresis holds the
+    // direction, so it steps at the held cadence (at once, again after 0.4 s), never on every crossing (a single
+    // threshold would step every other frame).
     for (std::uint32_t frame = 714; frame < 742; ++frame) {
-        s.stick(frame, 0.01f, frame % 2 == 0 ? -0.66f : -0.60f);
+        s.stick(frame, 0.01f, frame % 2 == 0 ? -0.58f : -0.53f);
     }
     s.stick(742, 0.0f, 0.0f);
     s.expectSteady(748, 714, 2);
@@ -582,7 +602,60 @@ Scenario defaultScenario(const ScenarioFacts& facts) {
     s.release(navigation + 200, kUp);
     s.press(navigation + 200, kDown);
     s.release(end, kDown);
-    return s.finish(end + 20);
+
+    // After the measurements, which must not see them: imports change the catalog under the screen. The spike replaces
+    // the source's entries and refreshes the model itself, never through the screen, as the application does when an
+    // import completes; the source answers the query three polls later, as on the catalog worker. Until then the list
+    // is the previous one; then the screen shows the new one without any command: the selected game five places up, on
+    // its row, with its card and the window around it; the games back, the game back at its place.
+    at = end + 10;
+    s.mark(at, "import");
+    s.importGames(at, 5, 3);
+    s.expectCount(at + 1, facts.count); // the previous list while the query runs
+    s.expectCount(at + 6, facts.count - 5);
+    s.expectMarked(at + 6, "import", -5);
+    s.expectRow(at + 6);
+    s.expectCard(at + 6);
+    s.expectWindow(at + 6);
+    s.importGames(at + 8, 0, 3);
+    s.expectCount(at + 14, facts.count);
+    s.expectMarked(at + 14, "import", 0);
+    s.expectRow(at + 14);
+    s.expectWindow(at + 14);
+
+    // A list that empties under the card's actions: the marker alone in the search (Home, up to the filters, up to the
+    // search field), down to it in the list, right to Avvia; the next filter (the marker's platform) keeps it and the
+    // focus; the next one (the second platform) has no game: the card hides, and the focus goes to that filter's chip
+    // instead of staying on a hidden button. The previous filter twice brings the marker back, End and Backspace erase
+    // the search.
+    at += 16;
+    s.tap(at, kHome);
+    s.tap(at + 8, kUp);
+    s.tap(at + 16, kUp);
+    s.expectFocus(at + 22, "search");
+    s.type(at + 24, marker);
+    s.expectCount(at + 25, 1, true);
+    s.tap(at + 26, kDown);
+    s.tap(at + 34, kDown);
+    s.expectSelected(at + 40, 0, true, facts.markerId);
+    s.expectRow(at + 40);
+    s.tap(at + 42, kRight);
+    s.expectFocus(at + 48, "act-play");
+    s.tap(at + 50, kNextFilter);
+    s.expectCount(at + 56, 1, true);
+    s.expectFocus(at + 56, "act-play");
+    s.tap(at + 58, kNextFilter);
+    s.expectCount(at + 64, 0, true);
+    s.expectFocus(at + 64, chip(2));
+    at = s.taps(at + 66, kPreviousFilter, 2);
+    s.expectFocus(at, chip(0));
+    s.expectCount(at, 1, true);
+    s.tap(at + 2, kUp);
+    s.expectFocus(at + 8, "search");
+    s.key(at + 10, SDL_SCANCODE_END, SDLK_END, 1);
+    s.backspace(at + 12, marker.size());
+    s.expectCount(at + 15, facts.count, true);
+    return s.finish(at + 20);
 }
 
 Scenario userBindingsScenario() {
@@ -627,6 +700,8 @@ std::string_view toString(StepKind kind) noexcept {
         return "high-contrast";
     case StepKind::Mark:
         return "mark";
+    case StepKind::Import:
+        return "import";
     case StepKind::ExpectFocus:
         return "expect-focus";
     case StepKind::ExpectSteady:
@@ -645,6 +720,8 @@ std::string_view toString(StepKind kind) noexcept {
         return "expect-selected";
     case StepKind::ExpectPages:
         return "expect-pages";
+    case StepKind::ExpectMarked:
+        return "expect-marked";
     case StepKind::ExpectRow:
         return "expect-row";
     case StepKind::ExpectWindow:
@@ -681,6 +758,7 @@ bool isCheck(StepKind kind) noexcept {
     case StepKind::TextScale:
     case StepKind::HighContrast:
     case StepKind::Mark:
+    case StepKind::Import:
         return false;
     default:
         return true;

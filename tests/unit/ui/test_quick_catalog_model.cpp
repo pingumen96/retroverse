@@ -23,6 +23,7 @@ using rv::ui::CatalogSource;
 using rv::ui::CatalogSourceQuery;
 using rv::ui::InMemoryCatalogSource;
 using rv::ui::PlatformFilter;
+using rv::ui::QueryState;
 using rv::ui::QuickCatalogModel;
 
 namespace {
@@ -79,16 +80,26 @@ Placement at(std::size_t selected, std::size_t first, std::size_t rows) {
     return {selected, first, rows};
 }
 
-/// A source that fails on demand (a database that cannot be read), over an in-memory one.
+/// A source that fails on demand (a database that cannot be read) and counts the rows it is asked for, over an
+/// in-memory one.
 class FailingSource final : public CatalogSource {
 public:
     explicit FailingSource(std::vector<CatalogEntry> entries) : m_inner(std::move(entries)) {}
 
     bool failQueries = false;
     bool failRows = false;
+    bool failPlatforms = false;
+    /// rows() calls and the rows they asked for.
+    std::size_t rowReads = 0;
+    std::size_t rowsRead = 0;
 
-    Expected<std::vector<PlatformFilter>> platforms() override { return m_inner.platforms(); }
-    Status query(const CatalogSourceQuery& query) override {
+    Expected<std::vector<PlatformFilter>> platforms() override {
+        if (failPlatforms) {
+            return rv::makeError(ErrorCode::IoError, "the platforms cannot be read", "test");
+        }
+        return m_inner.platforms();
+    }
+    Expected<QueryState> query(const CatalogSourceQuery& query) override {
         if (failQueries) {
             m_failed = true;
             return rv::makeError(ErrorCode::Unavailable, "the catalog cannot be read", "test");
@@ -96,8 +107,11 @@ public:
         m_failed = false;
         return m_inner.query(query);
     }
+    Expected<QueryState> poll() override { return m_inner.poll(); }
     std::size_t count() const noexcept override { return m_failed ? 0 : m_inner.count(); }
     Status rows(std::size_t first, std::size_t count, std::vector<CatalogEntry>& out) override {
+        ++rowReads;
+        rowsRead += count;
         if (failRows) {
             out.clear();
             return rv::makeError(ErrorCode::IoError, "a page cannot be read", "test");
@@ -455,4 +469,150 @@ TEST_CASE("ui/quick_catalog_model: errors of the source empty the list until a q
     CHECK(model.home());
     CHECK_FALSE(model.error().has_value());
     CHECK(model.selected()->id == gameId(4));
+}
+
+TEST_CASE("ui/quick_catalog_model: a move inside the window reads the rows again after a read failed",
+          "[ui][quick_catalog_model]") {
+    FailingSource source(catalog(1000));
+    QuickCatalogModel model(source, 7);
+    source.failRows = true;
+    CHECK(model.moveSelection(10)); // scrolls: the read fails
+    REQUIRE(model.error().has_value());
+    CHECK(model.window().empty());
+    CHECK(model.selected() == nullptr);
+    CHECK(model.selectedPosition() == std::optional<std::size_t>(10));
+    source.failRows = false;
+    const std::uint64_t window = model.windowRevision();
+    CHECK(model.moveSelection(-1)); // inside the window: no scroll, but its rows are missing
+    CHECK(model.windowRevision() == window + 1);
+    CHECK_FALSE(model.error().has_value());
+    CHECK(placement(model) == at(9, 6, 7));
+    REQUIRE(model.selected() != nullptr);
+    CHECK(model.selected()->id == gameId(9));
+}
+
+TEST_CASE("ui/quick_catalog_model: platforms that cannot be read keep the filters and report the error",
+          "[ui][quick_catalog_model]") {
+    FailingSource source({entry("a1", "Uno", "Arcade"), entry("p1", "Due", "Portatile"), entry("a2", "Tre", "Arcade")});
+    QuickCatalogModel model(source);
+    REQUIRE(model.setFilter("Portatile"));
+    const std::uint64_t filters = model.filterRevision();
+    source.failPlatforms = true;
+    model.refresh();
+    REQUIRE(model.error().has_value());
+    CHECK(model.error()->code == ErrorCode::IoError); // the list read fine: the platforms' error stands
+    CHECK(model.filters().size() == 3);
+    CHECK(model.activeFilter() == "Portatile");
+    CHECK(model.filterRevision() == filters);
+    CHECK(model.count() == 1);
+    // Readable again: the filter is still the user's.
+    source.failPlatforms = false;
+    model.refresh();
+    CHECK_FALSE(model.error().has_value());
+    CHECK(model.activeFilter() == "Portatile");
+    CHECK(model.count() == 1);
+    // Unreadable from the start: the chip of every game alone, the list still listed.
+    FailingSource blind(catalog(5));
+    blind.failPlatforms = true;
+    QuickCatalogModel first(blind);
+    CHECK(first.filters().size() == 1);
+    CHECK(first.count() == 5);
+    CHECK(first.error().has_value());
+}
+
+TEST_CASE("ui/quick_catalog_model: a scroll reads only the rows that enter the window", "[ui][quick_catalog_model]") {
+    FailingSource source(catalog(kGames));
+    QuickCatalogModel model(source, 7);
+    REQUIRE(model.moveSelection(4)); // the bottom margin's row
+    const std::size_t reads = source.rowReads;
+    const std::size_t rows = source.rowsRead;
+    for (int step = 0; step < 100; ++step) {
+        REQUIRE(model.moveSelection(1)); // each one scrolls by one
+    }
+    CHECK(source.rowReads == reads + 100);
+    CHECK(source.rowsRead == rows + 100);
+    CHECK(placement(model) == at(104, 100, 7));
+    CHECK(windowIds(model) == std::vector<std::string>{gameId(100), gameId(101), gameId(102), gameId(103), gameId(104),
+                                                       gameId(105), gameId(106)});
+    // Up by three (the wheel): three rows; a page: a whole window; at the end, then up from it.
+    REQUIRE(model.moveSelection(-5));
+    CHECK(source.rowsRead == rows + 103);
+    CHECK(windowIds(model).front() == gameId(97));
+    REQUIRE(model.pageDown());
+    CHECK(source.rowsRead == rows + 110);
+    REQUIRE(model.end());
+    REQUIRE(model.moveSelection(-6));
+    REQUIRE(model.moveSelection(-1));
+    CHECK(placement(model) == at(kGames - 8, kGames - 10, 7));
+    CHECK(windowIds(model) == std::vector<std::string>{gameId(kGames - 10), gameId(kGames - 9), gameId(kGames - 8),
+                                                       gameId(kGames - 7), gameId(kGames - 6), gameId(kGames - 5),
+                                                       gameId(kGames - 4)});
+}
+
+TEST_CASE("ui/quick_catalog_model: a list answered on the worker arrives with poll(), as its operation says",
+          "[ui][quick_catalog_model]") {
+    InMemoryCatalogSource source(catalog(1000));
+    QuickCatalogModel model(source, 7);
+    REQUIRE(model.select(gameId(500)));
+    source.setPendingPolls(2);
+    const std::uint64_t list = model.listRevision();
+
+    // A search: the previous list stays, moves work on it, until poll() collects the new one.
+    model.setSearch("gioco 50");
+    CHECK(model.pending());
+    CHECK(model.search() == "gioco 50");
+    CHECK(model.count() == 1000);
+    CHECK(model.listRevision() == list);
+    CHECK(model.moveSelection(1));
+    CHECK(model.selected()->id == gameId(501));
+    CHECK_FALSE(model.poll());
+    // Typed on: only the latest query's list comes, with the selected game when it holds it.
+    model.setSearch("gioco 501");
+    CHECK_FALSE(model.poll());
+    CHECK(model.poll());
+    CHECK_FALSE(model.pending());
+    CHECK(model.listRevision() == list + 1);
+    CHECK(source.lastQuery() == CatalogSourceQuery{"gioco 501", {}});
+    CHECK(model.count() == 1);
+    CHECK(model.selected()->id == gameId(501)); // the game it had, kept
+    CHECK_FALSE(model.poll());
+
+    // A refresh after an import that removed the selected game: the nearest position, once the list comes.
+    model.setSearch("");
+    REQUIRE(model.poll() == false);
+    REQUIRE(model.poll());
+    REQUIRE(model.selected()->id == gameId(501));
+    std::vector<CatalogEntry> fewer = catalog(1000);
+    fewer.erase(fewer.begin() + 501);
+    source.replaceEntries(fewer);
+    model.refresh();
+    CHECK(model.count() == 1000); // the list as it was until the new one comes
+    CHECK_FALSE(model.poll());
+    CHECK(model.poll());
+    CHECK(model.count() == 999);
+    CHECK(model.selectedPosition() == std::optional<std::size_t>(501));
+    CHECK(model.selected()->id == gameId(502));
+    // A refresh and then a filter before the list comes: the filter's rule (its first entry, the game gone).
+    fewer.erase(fewer.begin() + 501);
+    source.replaceEntries(fewer);
+    model.refresh();
+    CHECK(model.setFilter("Arcade"));
+    CHECK_FALSE(model.poll());
+    CHECK(model.poll());
+    CHECK(model.activeFilter() == "Arcade");
+    CHECK(placement(model) == at(0, 0, 7));
+    CHECK(model.selected()->id == gameId(0));
+}
+
+TEST_CASE("ui/quick_catalog_model: a model over a source that answers later starts empty",
+          "[ui][quick_catalog_model]") {
+    InMemoryCatalogSource source(catalog(30));
+    source.setPendingPolls(1);
+    QuickCatalogModel model(source, 7);
+    CHECK(model.pending());
+    CHECK(model.count() == 0);
+    CHECK(model.selected() == nullptr);
+    CHECK(model.poll());
+    CHECK(model.count() == 30);
+    CHECK(placement(model) == at(0, 0, 7));
 }

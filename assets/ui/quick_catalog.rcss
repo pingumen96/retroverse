@@ -176,17 +176,19 @@ h2 {
 	background-color: #6EAF93;
 }
 
-/* The game list, virtualized: a fixed pool of rows shows the window of the list around the selected game, re-bound as
-   it scrolls, so the region itself never scrolls (overflow: hidden, from .region). The screen measures how many rows
-   fit its height (the layout, the text scale) and displays those. The track of the scroll indicator runs down its right
-   edge. */
+/* The game list, virtualized: a pool of rows shows the window of the list around the selected game, so the region
+   itself never scrolls (overflow: hidden, from .region). The screen measures how many rows fit its height (the layout,
+   the text scale) and makes the pool that tall. The track of the scroll indicator runs down its right edge. */
 #game-list {
 	position: relative;
 	flex: 1 1 0dp;
 	padding-right: 20dp;
 }
 
+/* Relative: a game keeps its row while the window scrolls, and the screen moves each row to its place in the window
+   (style top, in whole pixels): moved, a row's text is not laid out or built again. */
 .game {
+	position: relative;
 	display: flex;
 	flex-direction: row;
 	justify-content: space-between;

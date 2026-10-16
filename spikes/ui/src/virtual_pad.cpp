@@ -26,7 +26,12 @@ Expected<VirtualPad> VirtualPad::attach(const char* name) {
         SDL_DetachVirtualJoystick(id);
         return makeError(ErrorCode::PlatformError, "SDL_OpenJoystick of the virtual pad failed: " + error);
     }
-    return VirtualPad(id, joystick);
+    VirtualPad pad(id, joystick);
+    // The triggers at rest: SDL reads a joystick's trigger over the whole Sint16 range, so the axes' initial 0 would be
+    // a trigger half pulled.
+    static_cast<void>(pad.axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0.0f));
+    static_cast<void>(pad.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 0.0f));
+    return pad;
 }
 
 VirtualPad::VirtualPad(VirtualPad&& other) noexcept
@@ -65,6 +70,14 @@ bool VirtualPad::axis(SDL_GamepadAxis axis, float value) noexcept {
         return false;
     }
     float clamped = std::isfinite(value) ? std::clamp(value, -1.0f, 1.0f) : 0.0f;
+    if (axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
+        // A joystick's trigger spans the whole Sint16 range, at rest SDL_JOYSTICK_AXIS_MIN
+        // (SDL_SetJoystickVirtualAxis); the gamepad reads it back as 0 to 1.
+        const float pulled = std::max(clamped, 0.0f);
+        const auto raw = static_cast<Sint16>(std::lround(
+            SDL_JOYSTICK_AXIS_MIN + pulled * (static_cast<float>(SDL_JOYSTICK_AXIS_MAX) - SDL_JOYSTICK_AXIS_MIN)));
+        return SDL_SetJoystickVirtualAxis(m_joystick, axis, raw);
+    }
     if (axis == SDL_GAMEPAD_AXIS_LEFTY || axis == SDL_GAMEPAD_AXIS_RIGHTY) {
         clamped = -clamped; // rv::input sticks are +Y up, SDL's +Y down
     }

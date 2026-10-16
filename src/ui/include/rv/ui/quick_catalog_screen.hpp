@@ -32,16 +32,23 @@ struct QuickCatalogEvents {
 
 /// The quick catalog (specification §12.2 QuickLibrary, §13.2 "Catalogo rapido"; style §16.3), the first product
 /// screen: assets/ui/quick_catalog.rml bound to a QuickCatalogModel (data model "catalog": the filter chips, the rows
-/// of the list's window, the selected game's card, the search text, a scroll indicator, a status line), navigable with
-/// the pad alone.
+/// of the list's window, the selected game's card, the search text, a scroll indicator, a status line, whether the
+/// catalog could be read), navigable with the pad alone.
 ///
-///  - The list is virtualized: a fixed pool of quick_catalog::kPoolRows rows ("row-0", "row-1", ...) shows the model's
-///    window, re-bound as it scrolls, so element ids never change with the games; the screen measures how many rows fit
-///    the list area (the layout, the text scale) and gives the model that window. The selected game's row has the
-///    class "selected", set on the two rows concerned when the selection moves (no re-evaluation of the list).
+///  - The list is virtualized: a pool of rows ("row-0", "row-1", ..., as many as fit the list area and at most
+///    quick_catalog::kPoolRows) shows the model's window, so element ids never name a game; the screen measures how
+///    many rows fit (the layout, the text scale) and gives the model that window. A game keeps its row while the
+///    window holds it (quick_catalog::poolSlotOf): a scroll binds only the rows that enter and moves the rows into the
+///    window's order (their style top), so a step of a held direction binds one row's text. The selected game's row
+///    has the class "selected", set on the two rows concerned when the selection moves (no re-evaluation of the list).
+///  - The model may change outside the screen's commands (QuickCatalogModel::refresh() after an import, a list a query
+///    on the source's worker brings, which afterUpdate() collects with QuickCatalogModel::poll()): the screen shows it
+///    before the next command and after every update.
 ///  - Regions: search field, filter chips, game list, card actions (the nav-region attribute of the document). In the
 ///    list Up and Down move the selection over the whole list (the model scrolls the window) and the focus follows it
-///    from row to row; page moves, Home and End jump. In the other regions RmlUi's spatial navigation moves the focus
+///    from row to row; page moves, Home and End jump. A list that empties sends the focus to the active filter's chip
+///    (from the list, or from the card's actions, hidden with no game selected). In the other regions RmlUi's spatial
+///    navigation moves the focus
 ///    (UiView::navigate). At a region's edge region links take over (list Right -> actions, actions Left -> list, list
 ///    Up at the first game -> chips, chips Down -> list, chips Up -> search, search Down -> chips), landing on the
 ///    element the target region last focused, else on its entry: the active filter, Avvia; the list always lands on
@@ -77,8 +84,10 @@ public:
     /// Applies the commands of a frame, in order (ignored while hidden).
     void apply(const UiCommandList& commands);
     void apply(UiCommand command);
-    /// After UiView::update(): settles the card, follows the layout (the rows that fit the list area: the model's
-    /// window), and focuses the region's landing element again when the focused element left the document.
+    /// After UiView::update(): collects a list the source materialized on its worker (QuickCatalogModel::poll) and
+    /// shows what the model changed, settles the card, follows the layout (the rows that fit the list area: the model's
+    /// window; laid out again at once when they changed), and focuses the region's landing element again when the
+    /// focused element left the document, the list or the filters when it is no longer visible.
     void afterUpdate();
 
     /// Shows the document again with the focus where it was; hide() keeps the focus history.
@@ -97,8 +106,10 @@ public:
     [[nodiscard]] const FocusHistory& history() const noexcept;
     /// How many times the card was filled with the selected game: measurements tell the frames that laid it out again.
     [[nodiscard]] std::uint64_t cardRefreshes() const noexcept;
-    /// How many times the rows of the pool were bound to another window (scrolling, another list, another size).
+    /// How many times rows of the pool were bound to other games (scrolling, another list, another size).
     [[nodiscard]] std::uint64_t windowBinds() const noexcept;
+    /// Rows of the pool bound to another game, in all: a scroll by one row binds one.
+    [[nodiscard]] std::uint64_t rowBinds() const noexcept;
 
     /// With watchFiles, reloads the document when it or its style sheet changed on disk (polled every 500 ms), keeping
     /// the focus; true when it reloaded. A document that no longer loads keeps the screen empty until fixed (logged).

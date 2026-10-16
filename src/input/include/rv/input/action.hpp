@@ -15,8 +15,9 @@ namespace rv::input {
 ///  - LookDeltaX / LookDeltaY: *delta* in device units for this frame (mouse pixels); consumers multiply by a
 ///    sensitivity and never by dt.
 ///  Positive LookX/LookDeltaX turns right; positive LookY/LookDeltaY looks up.
-///  - UiNavX / UiNavY: analog in [-1, 1] after their bindings' dead zone, +X right, +Y up: the product UI's stick, the
-///    focus moves ui::NavInput makes of it with hysteresis.
+///  - UiNavX / UiNavY: analog in [-1, 1], +X right, +Y up: the product UI's stick, the focus moves ui::NavInput makes
+///    of it with hysteresis. The default bindings read the stick whole (no dead zone): the hysteresis is its dead zone,
+///    so its thresholds are fractions of the stick's travel (ADR-0005).
 ///
 /// The Ui* actions drive the product UI (ADR-0005): ui::NavInput turns them into ui::UiCommands for the screen that has
 /// the focus, so that a user's bindings.json and --input-script reach the UI like every other action. They share

@@ -29,16 +29,23 @@ namespace rv::ui {
 ///  - Window: windowRows() positions from windowFirst(); the selection always lies inside. A move scrolls it only when
 ///    the selection would come closer than the scroll margin to the edge it moves towards (the list's ends aside), a
 ///    page scrolls it by a page with the selection, and a new list or another window size keeps the selection's row
-///    where it was, within the margins.
-/// The revisions count the changes, so that a view refreshes only what changed. An error of the source is kept in
-/// error(): the list is then empty (a query) or the window without rows (a fetch). Main thread only.
+///    where it was, within the margins. A scroll reads only the rows that enter the window (one per step of a held
+///    direction); a new list or window size reads the whole window.
+///  - Lists the source materializes on its worker (QueryState::Pending): the model keeps the list it has (moves, pages
+///    and the window work on it) until poll() collects the new one, then places the selection as the operation that
+///    asked for it says (when a search or a filter asked since the last list, a game the new list lacks restarts at
+///    its first entry). Only the latest query's list is applied: typing coalesces.
+/// The revisions count the changes, so that a view refreshes only what changed. Errors of the source are kept in
+/// error(): the list is then empty (a query) or the window without rows (a fetch, read again by the next move); a
+/// failed read of the platforms keeps the filters as they were. Main thread only.
 class QuickCatalogModel {
 public:
     static constexpr std::size_t kDefaultWindowRows = 10;
     /// Rows kept between the selection and the edge of the window it moves towards, so that the next games show.
     static constexpr std::size_t kDefaultScrollMargin = 2;
 
-    /// Lists every game of `source`, which must outlive the model, the first one selected.
+    /// Lists every game of `source`, which must outlive the model, the first one selected (once poll() collects the
+    /// list, when the source answers later).
     explicit QuickCatalogModel(CatalogSource& source, std::size_t windowRows = kDefaultWindowRows,
                                std::size_t scrollMargin = kDefaultScrollMargin);
     QuickCatalogModel(const QuickCatalogModel&) = delete;
@@ -60,6 +67,13 @@ public:
     /// filter whose platform is gone falls back to every game.
     void refresh();
 
+    /// Collects the list of a query the source runs on its worker (CatalogSource::poll) and places the selection and
+    /// the window on it; true when a list (or the error of its query) arrived. Call once per frame: the screen does, in
+    /// QuickCatalogScreen::afterUpdate.
+    bool poll();
+    /// A query runs on the source's worker: the list shown is the previous one until poll() collects the new one.
+    [[nodiscard]] bool pending() const noexcept { return m_pending.has_value(); }
+
     /// Entries in the list.
     [[nodiscard]] std::size_t count() const noexcept { return m_count; }
     [[nodiscard]] std::size_t windowRows() const noexcept { return m_windowRows; }
@@ -67,7 +81,8 @@ public:
     void setWindowRows(std::size_t rows);
     [[nodiscard]] std::size_t scrollMargin() const noexcept;
     [[nodiscard]] std::size_t windowFirst() const noexcept { return m_first; }
-    /// The rows of positions [windowFirst(), windowFirst() + windowRows()), cut at the list's end.
+    /// The rows of positions [windowFirst(), windowFirst() + windowRows()), cut at the list's end; empty while the list
+    /// is, or when the source could not be read (error()).
     [[nodiscard]] std::span<const CatalogEntry> window() const noexcept { return m_window; }
 
     [[nodiscard]] std::optional<std::size_t> selectedPosition() const noexcept;
@@ -94,14 +109,16 @@ public:
     /// Incremented whenever the filters or the active filter change, also when the active one lets the same games
     /// through.
     [[nodiscard]] std::uint64_t filterRevision() const noexcept { return m_filterRevision; }
-    /// Incremented whenever the list is materialized (count() may stay the same).
+    /// Incremented whenever a list is applied: materialized, or collected by poll() (count() may stay the same).
     [[nodiscard]] std::uint64_t listRevision() const noexcept { return m_listRevision; }
-    /// Incremented whenever the window's rows are fetched again: another list, windowFirst() or windowRows().
+    /// Incremented whenever the window's rows are read again: another list, windowFirst() or windowRows(), a read that
+    /// failed before.
     [[nodiscard]] std::uint64_t windowRevision() const noexcept { return m_windowRevision; }
     /// Incremented whenever the selected game changes (another id, or none).
     [[nodiscard]] std::uint64_t selectionRevision() const noexcept { return m_selectionRevision; }
 
-    /// The error of the last query or fetch that failed, until one succeeds.
+    /// The first error of the source in the latest operation that read it (a query, the platforms, the window's rows),
+    /// until an operation reads it without one.
     [[nodiscard]] const std::optional<Error>& error() const noexcept { return m_error; }
 
 private:
@@ -110,14 +127,29 @@ private:
         FirstEntry,      ///< a new search or filter: its first entry
         NearestPosition, ///< the same query again: the position the game had, or the last
     };
+    /// How show() reads the window's rows.
+    enum class Fetch : std::uint8_t {
+        /// The rows that enter the window, when it moved (or all of them when the last read failed): a move, which
+        /// starts its own error() afresh when it reads.
+        Moved,
+        /// Every row: a new list or window size, within an operation that started error() afresh.
+        All,
+    };
 
-    /// Reads the platforms into the filters (the chip of every game first).
+    /// Records the first error of the operation.
+    void fail(Error error);
+    /// Reads the platforms into the filters (the chip of every game first); a failed read keeps them as they were.
     void readFilters();
-    /// Materializes the current query and places the selection and the window (see Restore).
+    /// Asks the source for the current query's list and applies it at once, or once poll() collects it.
     void materialize(Restore restore);
-    /// Selects `position` (kNone: nothing) with the window from `first`, fetching its rows when the window moved or
-    /// `refetch`.
-    void show(std::size_t position, std::size_t first, bool refetch);
+    /// Applies the list the source switched to (or the error of its query), placing the selection and the window.
+    void applyList(const Status& listed, Restore restore);
+    /// Selects `position` (kNone: nothing) with the window from `first`, reading its rows as `fetch` says.
+    void show(std::size_t position, std::size_t first, Fetch fetch);
+    /// Reads the window from `first`: every row, or (a scroll) the rows that enter it, moving the rows it keeps.
+    void readWindow(std::size_t first, bool whole);
+    /// Reads `count` rows from `position` into m_spare from `at`; false when the source failed or gave fewer rows.
+    [[nodiscard]] bool readInto(std::size_t position, std::size_t count, std::size_t at);
     [[nodiscard]] std::size_t maxFirst() const noexcept;
     /// The window's first position that puts `position` at row `slot`, kept within the margins and the list.
     [[nodiscard]] std::size_t placeFirst(std::size_t position, std::size_t slot) const noexcept;
@@ -139,6 +171,13 @@ private:
     /// The selected game's id (to find it again in a new list).
     std::string m_selectedId;
     std::vector<CatalogEntry> m_window;
+    /// The window being assembled while it scrolls, and the rows read for it (their storage reused: a scroll step
+    /// allocates nothing once warm).
+    std::vector<CatalogEntry> m_spare;
+    std::vector<CatalogEntry> m_fetched;
+    /// How the list a pending query brings places the selection (FirstEntry when a search or a filter asked since the
+    /// last list); nothing while no query is pending.
+    std::optional<Restore> m_pending;
     std::optional<Error> m_error;
     std::uint64_t m_filterRevision = 0;
     std::uint64_t m_listRevision = 0;

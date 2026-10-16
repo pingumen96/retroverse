@@ -291,10 +291,10 @@ ActionMap ActionMap::defaults() {
     map.bind(Action::ReloadShaders, KeyBinding{Key::F5, 1.0f});
     map.bind(Action::Screenshot, KeyBinding{Key::F12, 1.0f});
 
-    // The product UI (ADR-0005): arrows and the D-pad move the focus, the left stick too (with ui::NavInput's
-    // hysteresis on top of the dead zone), Enter / A activates, Esc / B goes back, Y and X are the secondary actions;
-    // the triggers page, the stick clicks jump to the ends, the shoulders change the filter. Letters, the space bar and
-    // the other characters stay free for text fields.
+    // The product UI (ADR-0005): arrows and the D-pad move the focus, the left stick too (read whole, without a dead
+    // zone: ui::NavInput's hysteresis, 0.55 / 0.35 of the stick's travel, is its dead zone), Enter / A activates, Esc /
+    // B goes back, Y and X are the secondary actions; the triggers page, the stick clicks jump to the ends, the
+    // shoulders change the filter. Letters, the space bar and the other characters stay free for text fields.
     map.bind(Action::UiUp, KeyBinding{Key::Up, 1.0f});
     map.bind(Action::UiUp, GamepadButtonBinding{GamepadButton::DpadUp, 1.0f});
     map.bind(Action::UiDown, KeyBinding{Key::Down, 1.0f});
@@ -303,8 +303,8 @@ ActionMap ActionMap::defaults() {
     map.bind(Action::UiLeft, GamepadButtonBinding{GamepadButton::DpadLeft, 1.0f});
     map.bind(Action::UiRight, KeyBinding{Key::Right, 1.0f});
     map.bind(Action::UiRight, GamepadButtonBinding{GamepadButton::DpadRight, 1.0f});
-    map.bind(Action::UiNavX, GamepadAxisBinding{GamepadAxis::LeftX, 1.0f});
-    map.bind(Action::UiNavY, GamepadAxisBinding{GamepadAxis::LeftY, 1.0f});
+    map.bind(Action::UiNavX, GamepadAxisBinding{GamepadAxis::LeftX, 1.0f, 0.0f});
+    map.bind(Action::UiNavY, GamepadAxisBinding{GamepadAxis::LeftY, 1.0f, 0.0f});
     map.bind(Action::UiPageUp, KeyBinding{Key::PageUp, 1.0f});
     map.bind(Action::UiPageUp, GamepadAxisBinding{GamepadAxis::LeftTrigger, 1.0f});
     map.bind(Action::UiPageDown, KeyBinding{Key::PageDown, 1.0f});

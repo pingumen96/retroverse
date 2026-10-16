@@ -29,8 +29,8 @@ public:
     [[nodiscard]] SDL_JoystickID id() const noexcept { return m_id; }
     /// Presses or releases a button; false (logged once by the caller) when SDL refuses.
     bool button(SDL_GamepadButton button, bool down) noexcept;
-    /// Moves an axis to `value` in [-1, 1] in rv::input conventions (sticks +Y up), converted to SDL's range and
-    /// direction (SDL's Y axes point down).
+    /// Moves an axis to `value` in rv::input conventions (sticks in [-1, 1], +Y up; triggers in [0, 1], 0 at rest),
+    /// converted to SDL's range and direction (SDL's Y axes point down, a joystick's triggers span the whole range).
     bool axis(SDL_GamepadAxis axis, float value) noexcept;
 
 private:

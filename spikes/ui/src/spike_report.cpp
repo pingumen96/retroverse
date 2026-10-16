@@ -36,6 +36,8 @@ struct PhaseTimes {
     ui::TimingSummary cpu; ///< input + update + render
     ui::TimingSummary gpu;
     ui::TimingSummary frame;
+    /// Rows of the pool bound to another game per frame.
+    ui::TimingSummary rowBinds;
     bool allocationsMeasured = false;
     /// Per frame: the commands and update, the render.
     AllocationTimes updateAllocations;
@@ -69,6 +71,7 @@ enum class FrameFilter : std::uint8_t { All, Quiet, Changed };
     ui::TimingSamples cpu(capacity);
     ui::TimingSamples gpu(capacity);
     ui::TimingSamples frame(capacity);
+    ui::TimingSamples rowBinds(capacity);
     ui::TimingSamples updateRetroverse(capacity);
     ui::TimingSamples updateRmlUi(capacity);
     ui::TimingSamples renderRetroverse(capacity);
@@ -94,6 +97,7 @@ enum class FrameFilter : std::uint8_t { All, Quiet, Changed };
             gpu.add(sample.gpuMs);
         }
         frame.add(sample.frameMs);
+        rowBinds.add(static_cast<double>(sample.rowBinds));
         if (sample.updateAllocations.measured() && sample.renderAllocations.measured()) {
             times.allocationsMeasured = true;
             updateRetroverse.add(static_cast<double>(sample.updateAllocations.retroverse));
@@ -115,6 +119,7 @@ enum class FrameFilter : std::uint8_t { All, Quiet, Changed };
     times.cpu = cpu.summarize();
     times.gpu = gpu.summarize();
     times.frame = frame.summarize();
+    times.rowBinds = rowBinds.summarize();
     times.updateAllocations = {updateRetroverse.summarize(), updateRmlUi.summarize()};
     times.renderAllocations = {renderRetroverse.summarize(), renderRmlUi.summarize()};
     return times;
@@ -136,7 +141,8 @@ enum class FrameFilter : std::uint8_t { All, Quiet, Changed };
                {"drawCalls", summaryJson(times.drawCalls)},
                {"uiCpuMs", summaryJson(times.cpu)},
                {"uiGpuMs", summaryJson(times.gpu)},
-               {"frameMs", summaryJson(times.frame)}};
+               {"frameMs", summaryJson(times.frame)},
+               {"rowsBound", summaryJson(times.rowBinds)}};
     if (times.allocationsMeasured) {
         phase["allocations"] =
             json{{"updatePerFrame", json{{"retroverse", summaryJson(times.updateAllocations.retroverse)},
@@ -381,13 +387,16 @@ Status writeReport(const std::filesystem::path& path, const ReportData& data) {
 std::vector<std::string> timingSummaryLines(const ReportData& data) {
     std::vector<std::string> lines;
     const auto line = [&lines](std::string_view name, const PhaseTimes& times) {
-        std::string text = fmt::format(
-            "UI pass, {} ({} frames): CPU p50 {:.3f} ms p99 {:.3f} ms max {:.3f} ms (input {:.3f}, update {:.3f}, render "
-            "{:.3f} = begin {:.3f} + context {:.3f} + end {:.3f} at p50; {:.0f} draws), GPU p50 {:.3f} ms p99 {:.3f} ms "
-            "({} samples), frame p50 {:.3f} ms p99 {:.3f} ms",
-            name, times.frames, times.cpu.p50, times.cpu.p99, times.cpu.max, times.input.p50, times.update.p50,
-            times.render.p50, times.beginFrame.p50, times.contextRender.p50, times.endFrame.p50, times.drawCalls.p50,
-            times.gpu.p50, times.gpu.p99, times.gpu.count, times.frame.p50, times.frame.p99);
+        std::string text =
+            fmt::format("UI pass, {} ({} frames): CPU p50 {:.3f} ms p99 {:.3f} ms max {:.3f} ms (input {:.3f}, update "
+                        "{:.3f}, render "
+                        "{:.3f} = begin {:.3f} + context {:.3f} + end {:.3f} at p50; {:.0f} draws), GPU p50 {:.3f} ms "
+                        "p99 {:.3f} ms "
+                        "({} samples), frame p50 {:.3f} ms p99 {:.3f} ms; rows bound per frame p50 {:.0f} max {:.0f}",
+                        name, times.frames, times.cpu.p50, times.cpu.p99, times.cpu.max, times.input.p50,
+                        times.update.p50, times.render.p50, times.beginFrame.p50, times.contextRender.p50,
+                        times.endFrame.p50, times.drawCalls.p50, times.gpu.p50, times.gpu.p99, times.gpu.count,
+                        times.frame.p50, times.frame.p99, times.rowBinds.p50, times.rowBinds.max);
         if (times.allocationsMeasured) {
             text += fmt::format("; allocations per frame, Retroverse + RmlUi, p50 (max): update {:.0f} ({:.0f}) + {:.0f} "
                                 "({:.0f}), render {:.0f} ({:.0f}) + {:.0f} ({:.0f})",

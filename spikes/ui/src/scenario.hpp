@@ -19,18 +19,25 @@ namespace rv::spike_ui {
 
 /// What a scenario step does.
 enum class StepKind : std::uint8_t {
-    Press,             ///< press a pad button
-    Release,           ///< release a pad button
-    Stick,             ///< move the left stick to `value` (rv::input conventions: +Y up)
-    Trigger,           ///< move a trigger (`axis`) to `value.x` in [0, 1]
-    Resize,            ///< resize the window to `value` (window units)
-    Text,              ///< type `text` (an SDL text input event, as a keyboard with the focus on a text field sends)
-    Key,               ///< press and release the key `scancode` / `keycode`, `count` times (SDL key events)
-    TextScale,         ///< set the view's text scale to `value.x` times the run's (--ui-scale)
-    HighContrast,      ///< the high-contrast theme: `count` 1 on, 0 off, 2 the run's setting (--high-contrast)
-    Mark,              ///< record the selected position under `label`
+    Press,        ///< press a pad button
+    Release,      ///< release a pad button
+    Stick,        ///< move the left stick to `value` (rv::input conventions: +Y up)
+    Trigger,      ///< move a trigger (`axis`) to `value.x` in [0, 1]
+    Resize,       ///< resize the window to `value` (window units)
+    Text,         ///< type `text` (an SDL text input event, as a keyboard with the focus on a text field sends)
+    Key,          ///< press and release the key `scancode` / `keycode`, `count` times (SDL key events)
+    TextScale,    ///< set the view's text scale to `value.x` times the run's (--ui-scale)
+    HighContrast, ///< the high-contrast theme: `count` 1 on, 0 off, 2 the run's setting (--high-contrast)
+    Mark,         ///< record the selected position and game under `label`
+    /// An import changes the catalog under the screen: the source's entries are replaced and the model refreshed
+    /// directly, never through the screen (as the application does when an import completes), the source answering the
+    /// query `position` polls later (as on the catalog worker). `count` games just before the selection are removed, or
+    /// (`count` 0) the games the last import removed come back. The list must be the whole one (no search, no filter).
+    Import,
     ExpectFocus,       ///< the focused element is `text`
-    ExpectSteady,      ///< exactly `count` moves of the selection since frame `since` (0: it did not move)
+    /// Exactly `count` moves of the selection since frame `since` (0: it did not move), and as many moves of the focus:
+    /// in the list the focus follows the selected game's row, and nothing else moves it.
+    ExpectSteady,
     ExpectLaunched,    ///< games launched so far, in order, separated by commas: `text`
     ExpectMedia,       ///< games whose media were asked so far: `text`
     ExpectInfo,        ///< the card's details are shown ("shown") or hidden ("hidden"): `text`
@@ -38,6 +45,7 @@ enum class StepKind : std::uint8_t {
     ExpectCount,       ///< the list holds `count` games
     ExpectSelected,    ///< the selection is at position `position` of the list (and on the game `text`, if given)
     ExpectPages,       ///< the selection is `pages` pages (of the window's rows) from the position marked `label`
+    ExpectMarked,      ///< the selection is on the game marked `label`, `pages` positions from where it was marked
     ExpectRow,         ///< the focus is on the row of the selected game, which shows its title and has "selected"
     ExpectWindow,      ///< the pool shows the model's window: the rows that fit, their titles, blanks, the scroll thumb
     ExpectCard,        ///< the card's title shows the selected game
@@ -140,8 +148,10 @@ struct ScenarioFacts {
 /// back, Home and a resize to 1280x720 and back to 1920x1080 with the layout recorded; then a stick crossing its
 /// threshold every frame, the last filter chip scrolled into view with the row's fades, a filter that keeps the same
 /// games, text scaling and high contrast; then the shoulders (filters keeping or moving the selection), End, the
-/// triggers' pages, Home and a held trigger; then the measurement phases (kIdlePhase, kTapsPhase, kNavigationPhase).
-/// Its expectations follow `facts`, a 1920x1080 window and the default --ui-scale and --high-contrast.
+/// triggers' pages, Home and a held trigger; then the measurement phases (kIdlePhase, kTapsPhase, kNavigationPhase);
+/// after them, imports that change the catalog under the screen (the list of a query answered on a worker) and a list
+/// that empties while the focus is on the card's actions. Its expectations follow `facts`, a 1920x1080 window and the
+/// default --ui-scale and --high-contrast.
 [[nodiscard]] Scenario defaultScenario(const ScenarioFacts& facts);
 
 /// The user-bindings scenario, for a user bindings.json that binds ui_down to the pad's X (west) alone and unbinds

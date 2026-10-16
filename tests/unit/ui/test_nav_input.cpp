@@ -13,6 +13,8 @@
 #include <rv/input/action_state.hpp>
 #include <rv/input/binding.hpp>
 #include <rv/input/codes.hpp>
+#include <rv/input/input_system.hpp>
+#include <rv/input/raw_input.hpp>
 #include <rv/ui/nav_input.hpp>
 #include <rv/ui/ui_command.hpp>
 
@@ -58,7 +60,7 @@ void tap(ActionState& actions, UiCommand command) {
     actions.setButton(rv::ui::actionFor(command), false, true, true);
 }
 
-/// The UI's stick (UiNavX, UiNavY) as the bindings shaped it.
+/// The UI's stick (UiNavX, UiNavY) as the bindings give it (the default ones: the stick's travel itself).
 ActionState stick(float x, float y) {
     ActionState actions;
     actions.setAxis(Action::UiNavX, x);
@@ -344,6 +346,42 @@ TEST_CASE("ui/nav_input: page moves repeat while held, the one pressed last winn
     press(stepAndPage, UiCommand::PageUp);
     press(stepAndPage, UiCommand::Down);
     CHECK(commandsOf(mixed, stepAndPage) == just({UiCommand::Down, UiCommand::PageUp}));
+}
+
+TEST_CASE("ui/nav_input: a trigger resting at the press threshold pages at the held cadence, never per crossing",
+          "[ui][nav_input]") {
+    // The right trigger through the default bindings, chattering around the input system's press threshold (0.5 past
+    // the binding's 0.15 dead zone: 0.575 of its travel): its held flag flickers every frame, the page stays engaged.
+    const auto trigger = [](float value) {
+        rv::input::RawInputFrame frame;
+        frame.gamepadConnected = true;
+        frame.gamepadAxes[rv::input::toIndex(rv::input::GamepadAxis::RightTrigger)] = value;
+        return frame;
+    };
+    rv::input::InputSystem input;
+    NavInput nav;
+    int flickers = 0;
+    int pages = 0;
+    const auto run = [&](int first, int last, float high, float low) {
+        for (int frame = first; frame <= last; ++frame) {
+            const ActionState actions = input.resolve(trigger(frame % 2 == 0 ? high : low));
+            flickers += actions.pressed(Action::UiPageDown) ? 1 : 0;
+            for (const UiCommand command : commandsOf(nav, actions, frame == 0 ? 0.0 : kDt)) {
+                pages += command == UiCommand::PageDown ? 1 : 0;
+            }
+        }
+    };
+    run(0, 19, 0.585f, 0.565f); // 0.30 s, under the repeat delay
+    CHECK(flickers == 10);      // a press every other frame for the input system
+    CHECK(pages == 1);
+    run(20, 63, 0.585f, 0.565f); // on to 0.98 s: the held cadence, 0, 0.4, 0.5, ..., 0.9 s
+    CHECK(pages == 7);
+    // Under the release threshold (0.35 past the dead zone: 0.45 of the travel) the page lets go; the next pull pages
+    // at once.
+    run(64, 65, 0.44f, 0.44f);
+    CHECK(pages == 7);
+    run(66, 66, 0.6f, 0.6f);
+    CHECK(pages == 8);
 }
 
 TEST_CASE("ui/nav_input: custom settings are honored", "[ui][nav_input]") {

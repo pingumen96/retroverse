@@ -43,6 +43,8 @@ struct FrameSample {
     bool cardRefreshed = false;
     bool rowsBound = false;
     bool selectionMoved = false;
+    /// Rows of the pool this frame's update laid out with another game (a scroll by one row: one).
+    std::uint32_t rowBinds = 0;
     /// Heap allocations of the UI pass on the main thread (AllocationCounter), during the commands and the update, and
     /// during the render.
     AllocationCounts updateAllocations;

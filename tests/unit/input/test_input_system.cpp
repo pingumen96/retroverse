@@ -446,14 +446,16 @@ TEST_CASE("input/input_system: default buttons trigger their actions", "[input][
     }
 }
 
-TEST_CASE("input/input_system: the UI's stick and triggers pass their dead zone", "[input][input_system]") {
+TEST_CASE("input/input_system: the UI's stick comes whole, its triggers through their dead zone",
+          "[input][input_system]") {
     InputSystem input;
-    // The left stick drives the walker and the UI's focus axis alike, each through its own binding's 0.15 dead zone.
+    // The left stick drives the walker through its binding's 0.15 dead zone and the UI's focus axis whole: the UI's
+    // hysteresis (0.55 / 0.35 of the stick's travel, ui::NavSettings) is its dead zone, as ADR-0005 records it.
     const ActionState down = input.resolve(padAxis(GamepadAxis::LeftY, -0.6f));
-    CHECK(down.axis(Action::UiNavY) == Approx(-(0.6f - 0.15f) / 0.85f));
+    CHECK(down.axis(Action::UiNavY) == Approx(-0.6f));
     CHECK(down.axis(Action::MoveForward) == Approx(-(0.6f - 0.15f) / 0.85f));
     CHECK(down.axis(Action::UiNavX) == 0.0f);
-    CHECK(input.resolve(padAxis(GamepadAxis::LeftX, 0.1f)).axis(Action::UiNavX) == 0.0f); // inside the dead zone
+    CHECK(input.resolve(padAxis(GamepadAxis::LeftX, 0.1f)).axis(Action::UiNavX) == Approx(0.1f));
     CHECK(input.resolve(padAxis(GamepadAxis::LeftX, 1.0f)).axis(Action::UiNavX) == 1.0f);
 
     // A trigger pages once past the press threshold (0.5 of the range left by the dead zone: 0.575 of its travel).

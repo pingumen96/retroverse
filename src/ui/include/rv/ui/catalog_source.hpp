@@ -7,6 +7,7 @@
 // contract mirrors it (ADR-0008 §5), and tests and mock-ups use InMemoryCatalogSource.
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -64,13 +65,27 @@ struct CatalogSourceQuery {
     bool operator==(const CatalogSourceQuery&) const = default;
 };
 
+/// Where a query of a CatalogSource stands.
+enum class QueryState : std::uint8_t {
+    /// Its list is materialized: count(), rows() and position() read it.
+    Ready,
+    /// It runs elsewhere (the catalog worker, ADR-0008 §5): count(), rows() and position() still read the previous list
+    /// until poll() switches to the new one.
+    Pending,
+};
+
 /// The paged games of the quick catalog (the UI's side of rv_catalog's ICatalogQuery, ADR-0008 §5). query()
 /// materializes the ordered list of the entries a query matches in one read; count() is its size, rows() fetches the
 /// display rows of a slice of it by position and position() finds an entry's id in it, so that a virtualized view keeps
 /// state for the rows it shows only, jumps anywhere, and restores its selection by id when the list is materialized
 /// again (another search, a filter, an import that changed the catalog). The order is total and the source's (the
-/// catalog's: the sort order's key, then the GameId). Used from one thread at a time, the UI's (a source over the
-/// database answers rows() within ADR-0008's 5 ms for 100,000 games and runs query() where it may take longer).
+/// catalog's: the sort order's key, then the GameId).
+///
+/// Called from the UI's thread only, and never blocking it: platforms(), count(), rows() and position() answer at once
+/// (a source over the database fetches a page within ADR-0008's 5 ms for 100,000 games, keeps the platforms it read
+/// with the last import and an index of the list it materialized); query() may hand the materialization to the catalog
+/// worker, where ICatalogQuery::run() runs, and answer Pending; poll() then collects the list. The list the UI reads
+/// changes only within query() and poll(), never between two calls.
 class CatalogSource {
 public:
     virtual ~CatalogSource() = default;
@@ -79,10 +94,17 @@ public:
     /// holds (search and filter aside). Errors: the source cannot be read (IoError, Unavailable).
     [[nodiscard]] virtual Expected<std::vector<PlatformFilter>> platforms() = 0;
 
-    /// Materializes `query`: the list that count(), rows() and position() read from now on. Errors: the source cannot
-    /// be read (IoError, Unavailable), the query names a platform the source does not have (InvalidArgument); the list
-    /// is then empty.
-    [[nodiscard]] virtual Status query(const CatalogSourceQuery& query) = 0;
+    /// Materializes `query`, the list count(), rows() and position() read from then on: at once (Ready), or on the
+    /// catalog worker (Pending: the previous list stays readable until poll() switches to the new one). A query asked
+    /// while another one is pending replaces it: only the latest query's list is ever switched to. Errors: the source
+    /// cannot be read (IoError, Unavailable), the query names a platform the source does not have (InvalidArgument);
+    /// the list is then empty.
+    [[nodiscard]] virtual Expected<QueryState> query(const CatalogSourceQuery& query) = 0;
+
+    /// Collects a pending query: Ready once its list has replaced the previous one, which happens within this call;
+    /// Pending while it runs; Ready at once when no query is pending. Errors: the pending query failed (as query());
+    /// the list is then empty.
+    [[nodiscard]] virtual Expected<QueryState> poll() = 0;
 
     /// Entries in the list.
     [[nodiscard]] virtual std::size_t count() const noexcept = 0;

@@ -81,10 +81,10 @@
       { "padButton": "dpad_right" }
     ],
     "ui_nav_x": [
-      { "padAxis": "left_x", "scale": 1, "deadzone": 0.15 }
+      { "padAxis": "left_x", "scale": 1, "deadzone": 0 }
     ],
     "ui_nav_y": [
-      { "padAxis": "left_y", "scale": 1, "deadzone": 0.15 }
+      { "padAxis": "left_y", "scale": 1, "deadzone": 0 }
     ],
     "ui_page_up": [
       { "key": "page_up" },

@@ -19,6 +19,7 @@ using rv::ui::CatalogSourceQuery;
 using rv::ui::InMemoryCatalogSource;
 using rv::ui::isValidEntryId;
 using rv::ui::PlatformFilter;
+using rv::ui::QueryState;
 
 namespace {
 
@@ -89,7 +90,10 @@ TEST_CASE("ui/catalog_source: invalid and repeated ids are left out, the first e
 TEST_CASE("ui/catalog_source: the blank query lists every entry in order, by page and by position",
           "[ui][catalog_source]") {
     InMemoryCatalogSource source(sample());
-    REQUIRE(source.query(CatalogSourceQuery{}).has_value());
+    const auto listed = source.query(CatalogSourceQuery{});
+    REQUIRE(listed.has_value());
+    CHECK(*listed == QueryState::Ready);       // in memory: at once
+    CHECK(source.poll() == QueryState::Ready); // nothing pending
     CHECK(source.count() == 4);
     CHECK(listedIds(source, 1) == ids({"g01", "g02", "g03", "g04"}));
     CHECK(listedIds(source, 3) == ids({"g01", "g02", "g03", "g04"}));
@@ -172,22 +176,84 @@ TEST_CASE("ui/catalog_source: typing on narrows the list it had, and a wider que
     CHECK(source.lastQuery() == CatalogSourceQuery{"faro", {}});
 }
 
-TEST_CASE("ui/catalog_source: replaced entries materialize the last query again", "[ui][catalog_source]") {
+TEST_CASE("ui/catalog_source: replaced entries keep the list until the next query, its rows read anew by id",
+          "[ui][catalog_source]") {
     InMemoryCatalogSource source(sample());
     REQUIRE(source.query(CatalogSourceQuery{"", "16 bit"}).has_value());
     CHECK(source.count() == 2);
     std::vector<CatalogEntry> changed = sample();
     changed.erase(changed.begin()); // g01 gone (an import removed its file)
+    changed[1].title = "Il Faro di Vetro (rev. B)";
     changed.push_back(entry("g05", "Volo Notturno", "16 bit", 1996));
     source.replaceEntries(std::move(changed));
+    // The list the UI reads never changes between its calls (CatalogSource): the same positions, the rows as the
+    // entries are now, the id alone of a game that is gone.
+    CHECK(source.count() == 2);
+    CHECK(listedIds(source) == ids({"g01", "g03"}));
+    std::vector<CatalogEntry> rows;
+    REQUIRE(source.rows(0, 2, rows).has_value());
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0] == CatalogEntry{.id = "g01"});
+    CHECK(rows[1].title == "Il Faro di Vetro (rev. B)");
+    CHECK(source.position("g01") == std::optional<std::size_t>(0));
+    CHECK_FALSE(source.position("g05").has_value());
+    CHECK(source.platforms().value().size() == 3); // the new entries' platforms at once
+    // The same query again lists the new entries.
+    REQUIRE(source.query(CatalogSourceQuery{"", "16 bit"}).has_value());
     CHECK(listedIds(source) == ids({"g03", "g05"}));
     CHECK_FALSE(source.position("g01").has_value());
     CHECK(source.position("g05") == std::optional<std::size_t>(1));
-    // A catalog without the platform lists nothing for it.
+    // Replaced twice before a query: still the list as it was, then the latest entries; a catalog without the platform
+    // lists nothing for it.
     source.replaceEntries({entry("g07", "Solo", "Arcade", 2000)});
+    source.replaceEntries({entry("g08", "Altro", "Arcade", 2001), entry("g05", "Volo", "16 bit", 1996)});
+    CHECK(listedIds(source) == ids({"g03", "g05"}));
+    REQUIRE(source.rows(0, 2, rows).has_value());
+    CHECK(rows[0] == CatalogEntry{.id = "g03"});
+    CHECK(rows[1].title == "Volo");
+    const auto noSuchPlatform = source.query(CatalogSourceQuery{"", "8 bit"});
+    REQUIRE_FALSE(noSuchPlatform.has_value());
     CHECK(source.count() == 0);
-    REQUIRE(source.query(CatalogSourceQuery{}).has_value());
-    CHECK(listedIds(source) == ids({"g07"}));
+    REQUIRE(source.query(CatalogSourceQuery{"o"}).has_value());
+    CHECK(listedIds(source) == ids({"g08", "g05"}));
+}
+
+TEST_CASE("ui/catalog_source: a query answered on a worker keeps the previous list until poll() switches",
+          "[ui][catalog_source]") {
+    InMemoryCatalogSource source(sample());
+    source.setPendingPolls(2);
+    const auto asked = source.query(CatalogSourceQuery{"faro"});
+    REQUIRE(asked.has_value());
+    CHECK(*asked == QueryState::Pending);
+    CHECK(source.pending());
+    CHECK(source.count() == 4); // the previous list, readable as it was
+    CHECK(source.position("g04") == std::optional<std::size_t>(3));
+    CHECK(source.poll() == QueryState::Pending);
+    CHECK(source.count() == 4);
+    // A query asked meanwhile replaces it: only the latest list is ever switched to.
+    REQUIRE(source.query(CatalogSourceQuery{"pixel"}).has_value());
+    CHECK(source.poll() == QueryState::Pending);
+    CHECK(source.poll() == QueryState::Ready);
+    CHECK_FALSE(source.pending());
+    CHECK(listedIds(source) == ids({"g04"}));
+    CHECK(source.lastQuery() == CatalogSourceQuery{"pixel", {}});
+    CHECK(source.poll() == QueryState::Ready); // nothing pending
+    // A pending query that fails reports its error when collected; the list is then empty.
+    source.setPendingPolls(1);
+    REQUIRE(source.query(CatalogSourceQuery{"", "32 bit"}).has_value());
+    CHECK(source.count() == 1);
+    const auto failed = source.poll();
+    REQUIRE_FALSE(failed.has_value());
+    CHECK(failed.error().code == ErrorCode::InvalidArgument);
+    CHECK(source.count() == 0);
+    // Answering at once again: a query asked now ends the one pending.
+    REQUIRE(source.query(CatalogSourceQuery{"faro"}).has_value());
+    source.setPendingPolls(0);
+    const auto now = source.query(CatalogSourceQuery{"lanterna"});
+    REQUIRE(now.has_value());
+    CHECK(*now == QueryState::Ready);
+    CHECK_FALSE(source.pending());
+    CHECK(listedIds(source) == ids({"g01"}));
 }
 
 TEST_CASE("ui/catalog_source: 100,000 entries page and find in place", "[ui][catalog_source]") {

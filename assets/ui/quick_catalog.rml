@@ -34,15 +34,19 @@
 			<div class="fade fade-before"></div>
 			<div class="fade fade-after"></div>
 		</div>
-		<!-- The list is virtualized: a fixed pool of rows (row-0, row-1, ...) shows the window of the catalog the screen
-		     keeps around the selected game, re-bound as it scrolls. The screen displays the rows that fit the list area
-		     (row.shown), blanks those past the end of the list (row.present) and marks the selected game's row with the
-		     class "selected". The row's bindings sit one level below the data-for element, as RmlUi updates the views on
-		     the repeated element in the same pass as the data-for view. -->
+		<!-- The list is virtualized: a pool of rows (row-0, row-1, ...), as many as fit the list area, shows the window of
+		     the catalog the screen keeps around the selected game. A game keeps its row while the window holds it: as the
+		     window scrolls the screen binds the rows that enter and moves every row to its place in the window (its style
+		     top; the slots stay where the list's flow puts them). Rows past the end of the list are blank (row.present);
+		     the selected game's row has the class "selected". The row's bindings sit one level below the data-for
+		     element, as RmlUi updates the views on the repeated element in the same pass as the data-for view. An empty
+		     list says why: the catalog could not be read, nothing matches the search, or the catalog has no game. -->
 		<div id="game-list" class="region" nav-region="list">
-			<p class="empty" data-if="count == 0">Nessun gioco corrisponde alla ricerca.</p>
+			<p class="empty" data-if="unavailable">Catalogo non disponibile: non è stato possibile leggerlo.</p>
+			<p class="empty" data-if="count == 0 && !unavailable && search != ''">Nessun gioco corrisponde alla ricerca.</p>
+			<p class="empty" data-if="count == 0 && !unavailable && search == ''">Nessun gioco nel catalogo.</p>
 			<div class="game-slot" data-for="row : rows">
-				<div class="game" data-attr-id="row.elementId" data-if="row.shown" data-class-vacant="!row.present"
+				<div class="game" data-attr-id="row.elementId" data-class-vacant="!row.present"
 					data-class-unavailable="row.state == 'unavailable'">
 					<span class="game-title">{{ row.title }}</span>
 					<span class="game-meta">{{ row.platform }}<span class="dot"> · </span>{{ row.year }}<span data-if="row.year == ''">n.d.</span></span>

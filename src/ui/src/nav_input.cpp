@@ -202,11 +202,11 @@ std::optional<NavDirection> NavInput::tappedDigital(const input::ActionState& ac
     return std::nullopt;
 }
 
-std::optional<NavDirection> NavInput::heldPage(const input::ActionState& actions) const noexcept {
+std::optional<NavDirection> NavInput::heldPage() const noexcept {
     std::optional<NavDirection> held;
     std::uint64_t heldOrder = 0;
     for (std::size_t page = 0; page < kPages.size(); ++page) {
-        if (!actions.held(actionFor(kPages[page]))) {
+        if (!m_pageEngaged[page]) {
             continue;
         }
         if (!held || m_pagePressOrder[page] > heldOrder) {
@@ -264,14 +264,23 @@ std::optional<NavDirection> NavInput::directionStep(const input::ActionState& ac
 }
 
 std::optional<NavDirection> NavInput::pageStep(const input::ActionState& actions, double deltaSeconds) {
+    // A page action engages when it is held and stays engaged until its value falls below pageRelease: a trigger
+    // resting near the press threshold, where the input system's held flag would flicker, stays one press. The press
+    // is the engagement's rising edge.
     bool anyPress = false;
+    std::array<bool, 2> pressedNow{};
     for (std::size_t page = 0; page < kPages.size(); ++page) {
-        if (actions.pressed(actionFor(kPages[page]))) {
+        const input::Action action = actionFor(kPages[page]);
+        const bool engaged =
+            actions.held(action) || (m_pageEngaged[page] && std::fabs(actions.axis(action)) >= m_settings.pageRelease);
+        if (engaged && !m_pageEngaged[page]) {
             m_pagePressOrder[page] = ++m_pressCounter;
+            pressedNow[page] = true;
             anyPress = true;
         }
+        m_pageEngaged[page] = engaged;
     }
-    std::optional<NavDirection> held = heldPage(actions);
+    std::optional<NavDirection> held = heldPage();
     if (m_suppressPages) {
         if (anyPress || !held) {
             m_suppressPages = false;
@@ -279,7 +288,7 @@ std::optional<NavDirection> NavInput::pageStep(const input::ActionState& actions
             held.reset();
         }
     }
-    if (held && actions.pressed(actionFor(pageCommand(*held)))) {
+    if (held && pressedNow[*held == kPageDirections[0] ? 0 : 1]) {
         m_pageRepeater.reset();
     }
     std::optional<NavDirection> step = m_pageRepeater.update(held, deltaSeconds);
