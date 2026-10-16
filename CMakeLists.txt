@@ -81,8 +81,7 @@ if(RV_BUILD_TESTS)
 endif()
 
 # --- Project ------------------------------------------------------------------------------------
-# Order: src/ (the modules), tools/ (whose GPU-free cores the tests use), tests/, spikes/ (whose fake emulator the
-# platform tests start).
+# Order: src/ (the modules), tools/ (whose GPU-free cores the tests use), tests/ (with the fake emulator), spikes/.
 add_subdirectory(third_party/glad)
 add_subdirectory(src)
 
@@ -95,6 +94,10 @@ if(RV_BUILD_TESTS)
 endif()
 
 if(RV_BUILD_SPIKES)
+    # The launch spike starts the fake emulator of the tests, built here when the tests are not.
+    if(NOT TARGET rv_fake_emulator)
+        add_subdirectory(tests/fake_emulator)
+    endif()
     add_subdirectory(spikes)
 endif()
 

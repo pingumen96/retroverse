@@ -20,7 +20,8 @@ with either window policy). The figures here are those of the measurements made 
 
 ## Decision
 
-**Starting a program** (`rv::platform::Win32ProcessRunner` behind the port `rv::launcher::IProcessRunner`):
+**Starting a program** (`rv::platform_win::Win32ProcessRunner`, in `rv::platform` until I2 moved it to the SDL-free
+`rv_platform_win`, behind the port `rv::launcher::IProcessRunner`):
 
 - No shell and no command interpreter. A launch is a `LaunchRequest`: the executable, arguments as argv (each element
   one argument, never a command string), working directory, environment overrides, wait strategy, timeouts, an optional

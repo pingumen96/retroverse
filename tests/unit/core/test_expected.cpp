@@ -40,9 +40,16 @@ TEST_CASE("core/expected: Status and propagate", "[core][expected]") {
 }
 
 TEST_CASE("core/expected: every error code has a name", "[core][expected]") {
-    for (int code = static_cast<int>(rv::ErrorCode::Unknown); code <= static_cast<int>(rv::ErrorCode::PlatformError);
+    // Conflict is the last code: a new one goes after it, and this loop moves its bound there.
+    for (int code = static_cast<int>(rv::ErrorCode::Unknown); code <= static_cast<int>(rv::ErrorCode::Conflict);
          ++code) {
-        CHECK_FALSE(rv::toString(static_cast<rv::ErrorCode>(code)).empty());
+        INFO("code " << code);
+        const auto errorCode = static_cast<rv::ErrorCode>(code);
+        CHECK_FALSE(rv::toString(errorCode).empty());
+        // Only Unknown is named "unknown": every other code has a name of its own.
+        CHECK((errorCode == rv::ErrorCode::Unknown) == (rv::toString(errorCode) == "unknown"));
     }
     CHECK(rv::Error{rv::ErrorCode::NotFound, "missing", {}}.toString() == "not-found: missing");
+    CHECK(rv::toString(rv::ErrorCode::Unavailable) == "unavailable");
+    CHECK(rv::toString(rv::ErrorCode::Conflict) == "conflict");
 }

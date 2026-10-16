@@ -1,19 +1,13 @@
-# spikes/launch (I1 spike f, ADR-0006): emulator launch and return to the borderless fullscreen window.
-#   rv_fake_emulator    the stand-in emulator of the launch tests: exit codes, crashes, hangs, a wrapper that starts a
-#                       copy of itself, fullscreen and exclusive windows, round trips of arguments and environment; also
-#                       started by the runner tests of tests/platform (windowless modes)
+# spikes/launch (I1 spike f, ADR-0006): emulator launch and return to the borderless fullscreen window. The stand-in
+# emulator it launches, rv_fake_emulator, lives in tests/fake_emulator (built with the tests, or for the spikes alone).
 #   spike_launch_core   GPU-free part of the spike: frame pacing and return measurements, the command lines of the
 #                       targets (the isolated RetroArch configuration)
 #   spike_launch        the measurement executable: a Retroverse-like borderless fullscreen window rendering an
-#                       animated scene, launches through rv_launcher and rv_platform, timings of the return, a JSON
-#                       report
+#                       animated scene, launches through rv_launcher, rv_platform_win and rv_platform, timings of the
+#                       return, a JSON report
 #   spike_launch_tests  unit tests of spike_launch_core (label "unit")
 # ctest cases labeled "desktop" run spike_launch against the fake emulator: they show fullscreen windows and move the
 # foreground, so only the msvc-x64-debug-desktop test preset runs them.
-
-add_executable(rv_fake_emulator fake_emulator/fake_emulator.cpp)
-rv_set_target_defaults(rv_fake_emulator)
-target_link_libraries(rv_fake_emulator PRIVATE rv_core rv_launcher SDL3::SDL3)
 
 add_library(spike_launch_core STATIC
     core/src/measurements.cpp
@@ -30,7 +24,8 @@ add_executable(spike_launch
     src/spike_scene.cpp
 )
 rv_set_target_defaults(spike_launch)
-target_link_libraries(spike_launch PRIVATE spike_launch_core rv_core rv_input rv_launcher rv_platform rv_render)
+target_link_libraries(spike_launch PRIVATE
+    spike_launch_core rv_core rv_input rv_launcher rv_platform_win rv_platform rv_render)
 # spike_launch starts the fake emulator from its own directory.
 add_dependencies(spike_launch rv_fake_emulator)
 
@@ -44,9 +39,7 @@ if(RV_BUILD_TESTS)
     rv_forbid_link(spike_launch_tests)
 endif()
 
-# Test registration and the runner tests' dependency: tests/ is configured before spikes/ (top-level CMakeLists.txt),
-# so rv_platform_tests, which starts rv_fake_emulator.exe from the shared runtime output directory, already exists.
-# The desktop cases: "<name>|<spike_launch arguments separated by spaces>".
+# Test registration. The desktop cases: "<name>|<spike_launch arguments separated by spaces>".
 set(RV_LAUNCH_SPIKE_DESKTOP_CASES
     "fake_direct_minimize|--strategy direct --policy minimize --repeat 3"
     "fake_direct_keep|--strategy direct --policy keep --repeat 3"
@@ -61,9 +54,6 @@ set(RV_LAUNCH_SPIKE_DESKTOP_CASES
     CACHE INTERNAL "spike_launch cases of the desktop tests")
 
 function(_rv_launch_spike_register_tests)
-    if(TARGET rv_platform_tests)
-        add_dependencies(rv_platform_tests rv_fake_emulator)
-    endif()
     if(NOT RV_BUILD_TESTS OR NOT TARGET spike_launch_tests)
         return()
     endif()

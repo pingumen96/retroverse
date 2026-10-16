@@ -6,7 +6,7 @@ This document describes the code that exists today. The target architecture is i
 
 | Module | CMake target | Responsibility | May depend on |
 |---|---|---|---|
-| core | `rv_core` | Errors (`rv::Expected`), logging (`FailureStreak`: which failures of an operation retried every frame to log; the in-memory recent lines with a message count and `parseLogLine` for the overlay; the console sink on stdout, or on stderr with a level of its own for `retroverse-cli`), paths, frame clock, AABB/ray math, sRGB color helpers, file I/O, file change polling (`FileWatchSet`), JSON, command line parsing, the system probe port (`system_probe.hpp`, shared by `rv_launcher` and `rv_esde`; skeleton, filled by I2 step 0b) | glm, spdlog, nlohmann-json, tl-expected |
+| core | `rv_core` | Errors (`rv::Expected`), logging (`FailureStreak`: which failures of an operation retried every frame to log; the in-memory recent lines with a message count and `parseLogLine` for the overlay; the console sink on stdout, or on stderr with a level of its own for `retroverse-cli`), paths, frame clock, AABB/ray math, sRGB color helpers, file I/O (also `readFileShared`, for files another program rewrites, through `\\?\` paths, and `extendedLengthPathBelow`, which reopens a walked name exactly), file change polling (`FileWatchSet`), JSON, command line parsing; since I2 (ADR-0008): `ErrorCode`s `Unavailable` and `Conflict` with Windows errors mapped to them (`system_error.hpp`: a missing drive is unavailable, a locked file a conflict), SHA-256 (`sha256.hpp`), file-system case folding (`case_fold.hpp`: `LCMapStringEx` with the invariant locale's upper case, code unit by code unit as NTFS and exFAT compare names, the casing table's version), UTF-8 validation and conversions that never throw, and the Windows-1252 reading of text that is not UTF-8 (`utf8.hpp`), UTC ISO-8601 times (`time.hpp`), paths read from files resolved against their folder without traversal (`relative_path.hpp`: `OutOfRange` outside it, `InvalidArgument` malformed), the tree walker (`tree_walk.hpp`: `FindFirstFileExW` on `\\?\` paths, entries sorted by their UTF-8 names, links followed unless they loop, errors as entries, a folder that cannot be listed `Unavailable`, cancellation), `Paths::databaseDir`, `pathIsWithin` and the data-directory guard `checkUserDataDirectory` (links, junctions, subst and mapped drives resolved), the system probe port (`system_probe.hpp`: registry strings, keys and sub-keys, files and wildcards, the home, System32 and Windows folders, PATH; the App Paths and uninstall-entry rules over it), shared by `rv_launcher` and `rv_esde` | glm, spdlog, nlohmann-json, tl-expected |
 | geometry | `rv_geometry` | CPU meshes (`MeshData`, 48-byte `Vertex` with glTF tangent space), sockets (with their size as placed, `socketSize`), procedural mesh builder (box uvs in meters along each face's longer side, `BoxUv::GrainMeters`, for surfaces with a grain; chamfered boxes bevelled around chosen faces only, so that boards keep square bottom edges) and procedural prefabs with their collision boxes, uv scale of a surface, also as drawn with a transform (`uvMetersPerUnit`) | core |
 | input | `rv_input` | Device-neutral codes, logical actions, action maps (with per-action user overrides), per-frame `ActionState`, input scripts for automated runs (`InputScript`, `InputScriptPlayer`) | core |
 | assets | `rv_assets` | Image decoding/encoding, glTF loading, prefab manifests, material presets (texture files, procedural textures, the `crt` block of screens), shader source loading, procedural test patterns (cover placeholders, color bars, sign lettering; sized to their surface: `patternLongSideFor`, `patternSizeForAspect`), procedural PBR surfaces (`surface_textures.hpp`: wood, plaster, rug, metal, plastic), the GLB writer (`glb_writer.hpp`: the asset preview's CRT-like fixture, the models of the loader tests); a model lists the files it references (`ModelData::externalFiles`) | core, geometry, fastgltf, stb |
@@ -14,10 +14,10 @@ This document describes the code that exists today. The target architecture is i
 | media | `rv_media` | Video decoding with FFmpeg (spec §9.4, ADR-0004; FFmpeg only inside its sources): `VideoDecoder` (a `std::jthread` per video opens, demuxes and decodes with FFmpeg's file protocol only and UTF-8 paths: send_packet/receive_frame with EAGAIN, drain at the end, flush on loops and seeks with a 1 s pre-roll; swscale to RGBA8 at most `maxHeight` rows, aspect kept, never enlarged; timestamps from best_effort_timestamp, monotonic across loops; seek generations; failures as `DecodeFailure` for the fallback picture; `stop` never joins on the caller's thread), `FramePool`/`PooledFrame` (reused frames), `FrameQueue` (bounded, 4 frames, generations), `PresentationClock` (newest due frame; dropped, late and repeated counts; resync; pause), `VideoPlayback` (one video for the render thread), `SampleRecorder`, `scaledFrameSize`, test videos with a burned-in frame counter (`test_video.hpp`) | core, assets, FFmpeg (private) |
 | launcher | `rv_launcher` | Emulator launch policy (spec §11, ADR-0006), GPU-free: Windows command-line quoting (the inverse of CommandLineToArgvW), launch requests as argv with validation (PE programs only, no batch files), environment overrides, exit status classification (NTSTATUS crash names), the process runner port (`IProcessRunner`, `ProcessEvent`), the `LaunchSession` state machine (DirectProcess / ProcessTree / UserConfirmReturn, startup grace, window timeout -> StillRunning, never a kill) | core |
 | catalog | `rv_catalog` | The ES-DE catalog's domain (ADR-0008; skeleton, filled by I2 steps): libraries, systems, games and their entry states, media kinds, disc groups, metadata and its normalizers, library snapshots, change sets, play sessions, ids and lookup keys; one header per port (`ILibrarySource`, `ICatalogStore`, `ICatalogQuery` with the paging contract, `IMediaResolver`) and the services that only see ports (coverage, launch resolution, import and reconciliation, fingerprints). Never reaches SQLite, pugixml or the Windows-only targets | core, launcher |
-| esde | `rv_esde` | The ES-DE adapter of the catalog's ports (ADR-0008; skeleton, filled by I2 steps), read-only towards ES-DE: discovery, settings, systems, find rules, command templates, gamelists, the ROM scan with disc groups and MAME sets, `EsdeLibrarySource`, the media layout, the translation of ES-DE commands into launch plans; pugixml behind the module's private XML loader | catalog; private: pugixml |
+| esde | `rv_esde` | The ES-DE adapter of the catalog's ports (ADR-0008; skeleton, filled by I2 steps), read-only towards ES-DE: discovery, settings, systems, find rules, command templates, gamelists, the ROM scan with disc groups and MAME sets, `EsdeLibrarySource`, the media layout, the translation of ES-DE commands into launch plans; pugixml behind the module's private XML loader (`src/xml.hpp`: files read shared with a size cap and decoded as ES-DE's pugixml decodes them, UTF-8, UTF-16, UTF-32 or a declared ISO-8859-1; bytes that are not UTF-8 read as Windows-1252 and references to no character as U+FFFD, reported as warnings; every name and value UTF-8; `parse_fragment`; at most 64 levels deep; errors with the line, column and byte offset; its test entry point `xml_outline.hpp`) | catalog; private: pugixml |
 | catalog_db | `rv_catalog_db` | The SQLite store of the catalog's ports (ADR-0008 §5; skeleton, filled by I2 steps): connections, migrations with backups, the schema areas (private sources, one per owning step), the catalog store, the queries with FTS5 search and paging, the play session rows; no SQLite type in its headers | catalog; private: SQLite |
-| platform_win | `rv_platform_win` | The Windows side that needs no SDL (ADR-0008; skeleton, filled by I2 steps): the system probe (registry values, App Paths, the uninstall key, the executable search, file checks) and, from I2 step 0b, the Win32 process runner | core, launcher |
-| platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`); the Windows side of emulator launches: `Win32ProcessRunner` (CreateProcessW suspended into a job object without kill-on-close, a completion port, one watcher thread per launch that wakes the main loop), `WindowHandover` (window state before a launch, minimize or keep, restore with fullscreen back on its monitor, foreground remedies: AttachThreadInput, then a taskbar flash) | core, input, launcher, SDL3 |
+| platform_win | `rv_platform_win` | The Windows side that needs no SDL (ADR-0008 §2, namespace `rv::platform_win`): `Win32SystemProbe` (core's `ISystemProbe` on the machine: registry strings with `REG_EXPAND_SZ` expanded, keys and sorted sub-keys of HKCU and HKLM, files, wildcards matched with the file-system casing, the home folder as ES-DE finds it, System32, the Windows folder, the absolute PATH entries; read-only), `Win32ProcessRunner` (CreateProcessW suspended into a job object without kill-on-close, a completion port, one watcher thread per launch that wakes the main loop; moved from `rv_platform` in I2), the Win32 helpers both share with the window hand-over (`win32_util.hpp`) | core, launcher |
+| platform | `rv_platform` | SDL3 window, OpenGL context, event pump, dialogs; input: SDL events -> `input::RawInputFrame` (`SdlInputCollector`, code tables in `sdl_input_codes.hpp`), gamepad hot-plug (`GamepadManager`), mouse capture (`MouseCapture`); the window's side of emulator launches: `WindowHandover` (window state before a launch, minimize or keep, restore with fullscreen back on its monitor, foreground remedies: AttachThreadInput, then a taskbar flash), with the process runner of `rv_platform_win` | core, input, launcher, platform_win, SDL3 |
 | render | `rv_render` | OpenGL 4.5 device and state cache, buffers, vertex arrays, shader programs and the hot-reloading `ShaderLibrary` (with the build state and last error of every program), `GpuMesh`, uniform buffers, framebuffers (`Framebuffer`, sampleable depth, window blit, `clearDefault`), textures (`Texture2D`, `Sampler`, `TextureDefaults`, `TextureCache`), registries (`MeshRegistry`, `MaterialRegistry` with live factor edits; GPU bytes of both), glTF models on the GPU (`GpuModel`), the batched instanced `SceneRenderer` (`InstanceBuffer`, `GpuTimer`, wireframe) with the key light's shadow map (`ShadowMap`), the depth pre-pass and screen-space ambient occlusion (`SsaoPass`), the render targets of an output (`ViewTargets`: HDR scene target with its depth, ambient occlusion targets, bloom chain, tonemapped image, sRGB output), bloom, the post pass and FXAA (`PostProcessor`; views shown without tonemapping, `PostSettings::tonemap`), the inspection views of the asset preview (`SceneShaders::inspection`, `debug/inspect.frag`), debug lines (`DebugDraw`), registries emptied and the texture cache's content released for new content (`clear`, `TextureCache::clearContent`, which keeps the procedural surfaces), GL_RGBA8 views of textures (`createRgba8View`: readbacks, thumbnails), the picture of a playing video (`VideoTexture`: an sRGB texture refilled from a ring of 3 persistently mapped pixel buffers, never waiting for the GPU: a buffer is freed by the end timestamp of its copy, a fence as the fallback; GPU upload time) | core, geometry, assets, scene, glad |
 | ui | `rv_ui` | Product UI on RmlUi 6.3 (spec §13.1, ADR-0005): `UiSystem` (RmlUi's lifetime; SDL3 system interface on the app clock, RmlUi's log to spdlog, UTF-8 file interface on the asset root, the OpenGL 3 renderer, bundled fonts only), `UiView` (one context per output, dp ratio = display scale x text scale, a compact theme for views under 760 dp of the display tall (`compactLayout`: the display scale alone, never the text scale), event routing, spatial navigation, rendering into the window with `GL_FRAMEBUFFER_SRGB` off and into screenshots, CPU and GPU times), `QuickCatalogScreen`; RmlUi's SDL3 and GL3 backends vendored in `third_party/rmlui_backends` (target `rv_rmlui_backends`, on our glad) | ui_model, core, input, platform, render, RmlUi; private: rmlui_backends, devui_model, SDL3 |
 | devui | `rv_devui` | Dear ImGui developer overlay (developer builds only, `RV_DEV_UI`): `DevUi` (ImGui context, SDL3 and OpenGL3 backends, event routing, popups closed by Back, dock space and its see-through scene area, rendering into the window or a screenshot, panels brought to the front, a decoration drawn over the scene under the panels and while they are hidden, `Panel::update` every frame for every panel) and its panels (`panels.hpp`: Stats, Camera, Lights, Materials with texture thumbnails, Rendering, Log, Scene), the widgets they share with the asset preview's panels (`widgets.hpp`), texture thumbnails (`TexturePreviews`) | core, input, scene, platform, render, imgui |
@@ -27,7 +27,8 @@ This document describes the code that exists today. The target architecture is i
 | tools/cli | `retroverse-cli` | The ES-DE catalog from the command line (ADR-0008; skeleton, filled by I2 steps): `wmain`, a `ConsoleSession`, the dispatcher of `rv_cli_core`; every configuration | `rv_cli_core` |
 | spikes/video | `spike_video` | I1 spike (c): videos decoded by `rv_media` on textured quads through `gl::VideoTexture`, a JSON report of frame pacing, upload times, late and dropped frames, drift, decoder CPU and memory (`docs/spikes/i1-video.md`) | app, media, render, platform |
 | spikes/ui | `spike_ui` | I1 spike (d): the quick catalog of `rv_ui` over the test room, driven by a scripted SDL virtual gamepad, with 80 checks, UI pass timings and allocation counts (`docs/spikes/i1-ui.md`) | ui, app |
-| spikes/launch | `spike_launch`, `rv_fake_emulator` | I1 spike (f): a borderless fullscreen window that launches a target through `rv_launcher` and `rv_platform` and times the return; the fake emulator stands in for one in tests (exit codes, crashes, hangs, wrappers, exclusive fullscreen); `spike_launch_core` holds the GPU-free measurements (`docs/spikes/i1-launch.md`) | launcher, platform, render |
+| spikes/launch | `spike_launch` | I1 spike (f): a borderless fullscreen window that launches a target through `rv_launcher`, `rv_platform_win` and `rv_platform` and times the return; `spike_launch_core` holds the GPU-free measurements (`docs/spikes/i1-launch.md`) | launcher, platform_win, platform, render |
+| tests/fake_emulator | `rv_fake_emulator` | The stand-in emulator of the launch tests, built with the tests or the spikes (exit codes, crashes, hangs, wrappers, exclusive fullscreen, standard streams, an exit timeout that ends an abandoned copy) | core, launcher, SDL3 |
 
 Eight GPU-free sub-targets keep testable policy out of the GPU-side libraries and the executables:
 
@@ -108,17 +109,17 @@ flowchart TD
     spikeLaunch[spike_launch] --> platform
     spikeLaunch --> render
     spikeLaunch -. starts .-> fakeEmulator[rv_fake_emulator]
-    platform --> launcher[rv_launcher]
+    platform --> platformWin[rv_platform_win]
+    platformWin --> launcher[rv_launcher]
     fakeEmulator --> launcher
     launcher --> core
     cli[retroverse-cli] --> cliCore[rv_cli_core]
     cliCore --> esde[rv_esde: pugixml]
     cliCore --> catalogDb[rv_catalog_db: SQLite]
-    cliCore --> platformWin[rv_platform_win]
+    cliCore --> platformWin
     esde --> catalog[rv_catalog]
     catalogDb --> catalog
     catalog --> launcher
-    platformWin --> launcher
 ```
 
 `rv_app` also links `rv_render` and `rv_platform` directly (Release builds have no `rv_devui`). `rv_render` never
@@ -598,8 +599,9 @@ code of `retroverse.exe`, nothing of the rendering duplicated:
   `--spawn` takes it) and the self-check. Automated checks read it back (`app::readRunReport`) instead of scraping the
   log; a report that cannot be written fails a successful run (exit code 3).
 - **GPU smoke tests** (`rv_smoke_tests`, label `gpu`, `tests/smoke`; the presets `msvc-x64-debug-gpu` and
-  `msvc-x64-release-gpu`): Catch2 test cases that start the executables of their build as child processes (Win32, output
-  to a log, terminated after 4 minutes, `RV_ASSET_ROOT` removed from their environment), frame-limited with `--hidden`,
+  `msvc-x64-release-gpu`): Catch2 test cases that start the executables of their build as child processes (the child
+  runner of `tests/support`, both output streams to one log, terminated after 4 minutes, `RV_ASSET_ROOT` removed from
+  their environment), frame-limited with `--hidden`,
   a data directory under `<build>/smoke/<case>` and a run report, and check every run (exit code 0, every frame
   rendered, no high or medium debug message in builds with debug output but those `--gl-selftest` provoked, the assets
   of the configuration: the source tree, or the copy deployed next to a Release executable) and its screenshot (the
@@ -617,6 +619,16 @@ code of `retroverse.exe`, nothing of the rendering duplicated:
   pixels, a heatmap on a mismatch; skipped unless GL_RENDERER and GL_VERSION match the golden's metadata). A case
   skipped because no OpenGL 4.5 context can be created exits with 77, ctest's skip code (`tests/smoke/main.cpp` maps
   Catch2's "all skipped").
+- **Test support and fixtures (I2):** `rv_test_support` materializes `tests/fixtures/<name>/` into fresh folders under
+  `build/<preset>/test-fixtures` (the folder's path written into the text files, ROM payloads generated from a size and
+  a seed by the fixture's `files.json`, nothing binary committed, everything written through `\\?\` paths so that
+  fixtures may reach past MAX_PATH), runs child processes with stdout and stderr apart
+  (their command lines built by `rv_launcher`), describes a machine for `ISystemProbe` with maps (`FakeSystemProbe`),
+  and makes junctions, folders that cannot be listed and paths past MAX_PATH without administrator rights. The tests
+  that read the real ES-DE library carry the hidden tag `[.real-library]`: only `scripts/real-library.ps1` runs them,
+  with ES-DE closed, between read-only snapshots of the home, the install, the ROM and the media roots
+  (`scripts/snapshot_tree.py`: folders and files; configuration files hashed, the big trees from their listings; what
+  links lead to as linked roots), and fails on any difference.
 - **The gate:** `scripts/gate.ps1 -Gate A` builds the Debug, RelWithDebInfo and Release presets (no warning: `/WX`, and
   the build output is scanned for compiler, linker and CMake warnings), runs the unit tests (label `unit`, the I1
   spikes' included) and the GPU checks (label `gpu`: the smoke tests and the I1 spike checks below) of Debug and Release
@@ -624,8 +636,9 @@ code of `retroverse.exe`, nothing of the rendering duplicated:
 - **Spike tests (I1):** `tests/unit/media` (decoder, queue, clock and playback on videos written at test time under
   `<bin>/test-media` and removed afterwards; never commit videos), `tests/unit/launcher` (quoting round trips, session
   states and outcomes), `tests/unit/ui` (navigation, focus, the catalog model, the UI documents and the font's registry
-  records), `spike_launch_tests` (label `unit`, the launch spike's measurements), the runner tests of
-  `rv_platform_tests` against `rv_fake_emulator.exe` in its windowless modes; label `gpu`: `spike/video` (two generated
+  records), `spike_launch_tests` (label `unit`, the launch spike's measurements), the runner tests (since I2 in
+  `tests/unit/platform_win`, part of `rv_tests`) against `rv_fake_emulator.exe` in its windowless modes; label `gpu`:
+  `spike/video` (two generated
   720p clips for 3 s, the frame counters read back from the screenshot, `VideoTexture`'s self-test; the damaged files
   falling back) and `spike_ui.scenario` (the scripted quick catalog, 1910 frames); label `desktop`, run on demand only
   by the `msvc-x64-debug-desktop` test preset because they show fullscreen windows and move the foreground:
@@ -640,9 +653,9 @@ main thread taking part and waiting for the rest: pure functions of (u, v), no O
 long-lived worker threads exist, neither of which calls OpenGL (spec §15.3) or creates or changes a window: each playing
 video has a decoder thread (`media::VideoDecoder`) whose frames reach the render thread through a
 bounded `FrameQueue`, uploaded there by `gl::VideoTexture`; each running emulator has a watcher thread
-(`Win32ProcessRunner`) that waits on the process handle and the job's completion port, checks the tree's visible
-top-level windows every 100 ms (`EnumWindows`, read only) and wakes the main loop through the caller's wake callback
-(an SDL event in `spike_launch`).
+(`rv_platform_win`'s `Win32ProcessRunner`) that waits on the process handle and the job's completion port, checks the
+tree's visible top-level windows every 100 ms (`EnumWindows`, read only) and wakes the main loop through the caller's
+wake callback (an SDL event in `spike_launch`). The tree walker and the system probe run on the thread that calls them.
 `rv::core::assertMainThread` guards main-thread-only code.
 
 ## Data conventions
@@ -661,4 +674,7 @@ synthetic normal maps in M0 step 6: `tests/unit/geometry/test_mesh_data.cpp`).
   gone from the source; the staging area and the golden screenshots are never deployed).
 - User data: `--data-dir`, `<exe>/RetroverseData` with `--portable`, `%LOCALAPPDATA%\Retroverse` otherwise.
   Logs go to `<user data>/logs/retroverse.log` (`retroverse-cli.log` for the command line), F12 screenshots to
-  `<user data>/screenshots`, the developer overlay's layout to `<user data>/config/imgui.ini`.
+  `<user data>/screenshots`, the developer overlay's layout to `<user data>/config/imgui.ini`, the catalog database to
+  `<user data>/database` (`Paths::databaseDir`, I2; the user data directory may not lie inside the ES-DE home, the
+  install folder, the ROM root or the media root: `core::checkUserDataDirectory`, which also compares after resolving
+  links, junctions and mapped drives).

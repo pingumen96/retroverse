@@ -37,11 +37,13 @@ measurement campaign (commit `b053022`) ran partly with a build older than its o
   port, watcher thread, output capture, a console of its own for console programs, `AllowSetForegroundWindow`,
   `StartCallbacks::beforeResume`) and `WindowHandover` (window state, minimize or keep, restore, fullscreen on the
   original monitor, foreground with remedies, a foreground event hook and the polled foreground).
-  `tests/platform/test_process_runner.cpp` (19 test cases, hidden child processes).
-- `spikes/launch`: `rv_fake_emulator`, `spike_launch` (+ GPU-free `spike_launch_core` and its 8 test cases),
-  `measure.ps1` (sessions with the machine's load sampled and the build recorded), `summarize_reports.py` (the tables
-  and figures below), `snapshot_tree.py` (read-only before/after snapshots). ctest label `desktop`: 10
-  `desktop.launch.*` cases (preset `msvc-x64-debug-desktop`).
+  `tests/platform/test_process_runner.cpp` (19 test cases, hidden child processes). Since I2 the runner lives in
+  `rv_platform_win` (no SDL) and its tests in `tests/unit/platform_win`.
+- `spikes/launch`: `rv_fake_emulator` (since I2 in `tests/fake_emulator`), `spike_launch` (+ GPU-free
+  `spike_launch_core` and its 8 test cases), `measure.ps1` (sessions with the machine's load sampled and the build
+  recorded), `summarize_reports.py` (the tables and figures below), `snapshot_tree.py` (read-only before/after
+  snapshots; since I2 `scripts/snapshot_tree.py`, folders included). ctest label `desktop`: 10 `desktop.launch.*` cases
+  (preset `msvc-x64-debug-desktop`).
 
 ## Method
 
@@ -356,6 +358,6 @@ by the system) needs UserConfirmReturn.
     '--core','<gambatte_libretro.dll>','--rom','<game.gb>','--max-frames','240','--policy','keep','--repeat','5',
     '--timeout-s','90'
 python -I spikes/launch/summarize_reports.py build/spike-launch/measurements/retroarch-keep-1.json ...
-python -I spikes/launch/snapshot_tree.py snapshot before.json <RetroArch folder> <ROM folder>   # and compare
+python -I scripts/snapshot_tree.py snapshot before.json --hash <RetroArch folder> --hash <ROM folder>  # and compare
 ./scripts/test.ps1 -Preset msvc-x64-debug-desktop
 ```

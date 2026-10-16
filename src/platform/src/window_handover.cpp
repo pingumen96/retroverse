@@ -8,8 +8,8 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/core/text.hpp>
-
-#include "win32_util.hpp"
+#include <rv/core/utf8.hpp>
+#include <rv/platform_win/win32_util.hpp>
 
 namespace rv::platform {
 namespace {
@@ -52,7 +52,7 @@ std::string imageName(DWORD processId) {
     if (QueryFullProcessImageNameW(process, 0, buffer.data(), &size)) {
         const std::wstring_view path(buffer.data(), size);
         const std::size_t slash = path.find_last_of(L"\\/");
-        name = win32::narrow(slash == std::wstring_view::npos ? path : path.substr(slash + 1));
+        name = core::wideToUtf8Lossy(slash == std::wstring_view::npos ? path : path.substr(slash + 1));
     }
     CloseHandle(process);
     return name;
@@ -199,7 +199,7 @@ void WindowHandover::installHook() {
     if (m_hook != nullptr) {
         t_hookOwner = this;
     } else {
-        spdlog::warn("Window hand-over: no foreground event hook ({})", win32::lastErrorMessage());
+        spdlog::warn("Window hand-over: no foreground event hook ({})", platform_win::lastErrorMessage());
     }
 }
 

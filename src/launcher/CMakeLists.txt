@@ -1,7 +1,7 @@
 # rv_launcher: emulator launch policy, GPU-free: Windows command-line quoting (the inverse of CommandLineToArgvW),
 # launch requests and their validation, environment overrides, waiting strategies, exit code classification, the
-# process runner port (IProcessRunner) and the launch session state machine. The Win32 process runner and the window
-# hand-over live in rv_platform (Win32ProcessRunner, WindowHandover).
+# process runner port (IProcessRunner) and the launch session state machine. The Win32 process runner lives in
+# rv_platform_win (Win32ProcessRunner), the window hand-over in rv_platform (WindowHandover).
 
 add_library(rv_launcher STATIC
     src/command_line.cpp

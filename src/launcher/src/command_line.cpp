@@ -15,51 +15,6 @@ constexpr std::string_view kNeedsQuoting = " \t\n\v\"";
 
 } // namespace
 
-bool isValidUtf8(std::string_view text) noexcept {
-    std::size_t i = 0;
-    const std::size_t size = text.size();
-    while (i < size) {
-        const auto lead = static_cast<unsigned char>(text[i]);
-        if (lead < 0x80) {
-            ++i;
-            continue;
-        }
-        std::size_t length = 0;
-        char32_t codePoint = 0;
-        char32_t smallest = 0;
-        if ((lead & 0xE0) == 0xC0) {
-            length = 2;
-            codePoint = lead & 0x1Fu;
-            smallest = 0x80;
-        } else if ((lead & 0xF0) == 0xE0) {
-            length = 3;
-            codePoint = lead & 0x0Fu;
-            smallest = 0x800;
-        } else if ((lead & 0xF8) == 0xF0) {
-            length = 4;
-            codePoint = lead & 0x07u;
-            smallest = 0x10000;
-        } else {
-            return false; // a continuation byte without a lead byte, or a lead byte of a 5- or 6-byte form
-        }
-        if (size - i < length) {
-            return false;
-        }
-        for (std::size_t k = 1; k < length; ++k) {
-            const auto continuation = static_cast<unsigned char>(text[i + k]);
-            if ((continuation & 0xC0) != 0x80) {
-                return false;
-            }
-            codePoint = (codePoint << 6) | (continuation & 0x3Fu);
-        }
-        if (codePoint < smallest || codePoint > 0x10FFFF || (codePoint >= 0xD800 && codePoint <= 0xDFFF)) {
-            return false;
-        }
-        i += length;
-    }
-    return true;
-}
-
 std::size_t utf16Length(std::string_view text) noexcept {
     std::size_t units = 0;
     for (const char c : text) {

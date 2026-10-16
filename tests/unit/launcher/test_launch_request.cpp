@@ -8,7 +8,7 @@
 
 #include <rv/launcher/launch_request.hpp>
 
-#include "program_stub.hpp"
+#include "support/program_stub.hpp"
 #include "support/temp_dir.hpp"
 
 using rv::ErrorCode;

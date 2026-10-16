@@ -49,6 +49,9 @@ target_compile_definitions(rv_tests PRIVATE
     RV_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     RV_TEST_ASSET_DIR="${PROJECT_SOURCE_DIR}/assets")
 rv_forbid_link(rv_tests)
+# The process runner tests (tests/unit/platform_win) and the child runner's (tests/unit/support) start the fake emulator
+# from the directory of rv_tests.exe; it is only started, never linked.
+add_dependencies(rv_tests rv_fake_emulator)
 
 catch_discover_tests(rv_tests
     DISCOVERY_MODE PRE_TEST

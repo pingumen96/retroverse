@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string_view>
 
 #include <rv/core/expected.hpp>
@@ -49,6 +50,8 @@ public:
     [[nodiscard]] std::filesystem::path configDir() const { return m_userDataRoot / "config"; }
     [[nodiscard]] std::filesystem::path cacheDir() const { return m_userDataRoot / "cache"; }
     [[nodiscard]] std::filesystem::path screenshotsDir() const { return m_userDataRoot / "screenshots"; }
+    /// The catalog database's folder (retroverse.sqlite, its WAL and backups; ADR-0008 §5).
+    [[nodiscard]] std::filesystem::path databaseDir() const { return m_userDataRoot / "database"; }
 
     /// Resolves an asset-relative UTF-8 path ("shaders/pbr/pbr_base.frag"). Forward or back slashes are
     /// accepted; absolute paths and paths escaping the asset root ("..") are rejected.
@@ -64,5 +67,22 @@ private:
 
 /// Absolute path of the running executable.
 [[nodiscard]] std::filesystem::path executablePath();
+
+/// True when `child` is `parent` or lies inside it. Both are made absolute against the current directory and
+/// normalized as Windows does ("." and "..", separators, a \\?\ prefix dropped), then compared element by element with
+/// the file-system casing (fileSystemUpperCase: "C:\Users\X" contains "c:\users\x\es-de"), never Unicode-normalized.
+/// Lexical only: links, junctions, subst and mapped drives are not resolved (checkUserDataDirectory() resolves them).
+[[nodiscard]] bool pathIsWithin(const std::filesystem::path& child, const std::filesystem::path& parent);
+
+/// The data-directory guard of ADR-0008 §6 and §7: Retroverse writes its user data (logs, configuration, the
+/// database) nowhere in what it only reads. Refuses `userData` when it is, or lies inside, one of `protectedRoots`
+/// (the ES-DE home and install folders, the ROM root, the media root; empty paths are skipped): compared with
+/// pathIsWithin(), then again on the paths the file system resolves (the deepest existing part of each path replaced
+/// by its final path, GetFinalPathNameByHandleW: links, junctions, subst and mapped drives), so that a data
+/// directory reaching a protected folder through a link is refused too. Neither path has to exist; nothing is created
+/// or written (folders are opened for their attributes only). Errors: InvalidArgument, naming the protected folder,
+/// the data directory as context.
+[[nodiscard]] Status checkUserDataDirectory(const std::filesystem::path& userData,
+                                            std::span<const std::filesystem::path> protectedRoots);
 
 } // namespace rv::core

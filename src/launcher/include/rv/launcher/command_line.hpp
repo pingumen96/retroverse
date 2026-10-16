@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include <rv/core/expected.hpp>
+#include <rv/core/utf8.hpp>
 
 namespace rv::launcher {
 
@@ -13,8 +14,8 @@ namespace rv::launcher {
 inline constexpr std::size_t kMaxCommandLineUnits = 32766;
 
 /// True when `text` is well-formed UTF-8: no stray continuation bytes, no overlong forms, no UTF-16 surrogates, nothing
-/// above U+10FFFF. NUL bytes are well-formed (the command line rejects them separately).
-[[nodiscard]] bool isValidUtf8(std::string_view text) noexcept;
+/// above U+10FFFF. NUL bytes are well-formed (the command line rejects them separately). rv::core's check.
+using core::isValidUtf8;
 
 /// UTF-16 code units of well-formed UTF-8 `text`: one per code point, two above U+FFFF. Meaningless for malformed text.
 [[nodiscard]] std::size_t utf16Length(std::string_view text) noexcept;

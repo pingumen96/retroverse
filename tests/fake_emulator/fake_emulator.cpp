@@ -1,13 +1,13 @@
-// rv_fake_emulator: a stand-in for an emulator in the launch tests (docs/spikes/i1-launch.md). It behaves like the
-// cases the launcher must handle (a clean or failing exit, a crash, a hang, a wrapper that starts the real program and
-// exits, a fullscreen window, an exclusive display mode, a window that grabs the foreground) and writes down what it
-// saw: its arguments, environment and working directory (quoting and environment round trips), whether it got the
-// foreground and which display mode it ran in.
+// rv_fake_emulator: a stand-in for an emulator in the launch tests (tests/unit/platform_win, tests/unit/support, the
+// launch spike's desktop cases; docs/spikes/i1-launch.md). It behaves like the cases the launcher must handle (a clean
+// or failing exit, a crash, a hang, a wrapper that starts the real program and exits, a fullscreen window, an exclusive
+// display mode, a window that grabs the foreground) and writes down what it saw: its arguments, environment and working
+// directory (quoting and environment round trips), whether it got the foreground and which display mode it ran in.
 //
 //   rv_fake_emulator [options] [-- payload arguments...]
 //
 // Options are read up to the first "--"; everything after it is payload, echoed by --print-args and never interpreted.
-// The program never terminates another process.
+// The program never terminates another process; with --exit-timeout-ms it ends itself.
 
 #include <SDL3/SDL_main.h>
 
@@ -41,6 +41,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 #include <rv/launcher/command_line.hpp>
 
 namespace {
@@ -57,6 +58,7 @@ struct Options {
     bool crash = false;
     bool hang = false;
     int hangLimitMs = 0;
+    int exitTimeoutMs = 0;
     bool spawnChildAndExit = false;
     bool childBreakaway = false;
     int spawnChildren = 0;
@@ -70,6 +72,8 @@ struct Options {
     std::string printCwd;
     std::string printConsole;
     std::string stdoutText;
+    std::string outText;
+    std::string errText;
     std::string log;
     std::uint32_t color = 0x7A2E8C;
     std::vector<std::string> payload;
@@ -98,6 +102,9 @@ constexpr std::string_view kUsage =
     "  --hang                   never exit (the test harness ends the process)\n"
     "  --hang-limit-ms N        with --hang: exit after N ms anyway (with --exit-code), so that a test harness that\n"
     "                           is killed before its clean-up leaves nothing running for long\n"
+    "  --exit-timeout-ms N      whatever it is doing, end after N ms with exit code 124: a fake abandoned by a test\n"
+    "                           harness that died ends by itself (copies started by --spawn-child-and-exit inherit\n"
+    "                           it)\n"
     "  --spawn-children N       first start N copies of this program without options (each exits at once), at\n"
     "                           most 16 at a time, and wait for them\n"
     "  --spawn-child-and-exit   start a copy of this program with the other options and exit at once\n"
@@ -107,6 +114,8 @@ constexpr std::string_view kUsage =
     "  --print-cwd FILE         write the current directory to FILE (JSON)\n"
     "  --print-console FILE     write the processes attached to its console to FILE (JSON)\n"
     "  --stdout TEXT            print TEXT on standard output and standard error\n"
+    "  --out TEXT               print TEXT on standard output only\n"
+    "  --err TEXT               print TEXT on standard error only\n"
     "  --log FILE               write what the run saw (foreground, display modes, times) to FILE (JSON)\n"
     "  --color RRGGBB           window color\n";
 
@@ -189,6 +198,11 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
                 return false;
             }
             options.hangLimitMs = static_cast<int>(std::min<std::uint64_t>(n, 3600000));
+        } else if (arg == "--exit-timeout-ms") {
+            if (!number(n)) {
+                return false;
+            }
+            options.exitTimeoutMs = static_cast<int>(std::min<std::uint64_t>(n, 86400000));
         } else if (arg == "--spawn-children") {
             if (!number(n)) {
                 return false;
@@ -257,6 +271,14 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
             if (!value(options.stdoutText)) {
                 return false;
             }
+        } else if (arg == "--out") {
+            if (!value(options.outText)) {
+                return false;
+            }
+        } else if (arg == "--err") {
+            if (!value(options.errText)) {
+                return false;
+            }
         } else if (arg == "--log") {
             if (!value(options.log)) {
                 return false;
@@ -272,15 +294,17 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
     return true;
 }
 
-std::string narrow(std::wstring_view text) {
-    if (text.empty()) {
-        return {};
-    }
-    const int bytes =
-        WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
-    std::string out(static_cast<std::size_t>(std::max(bytes, 0)), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), bytes, nullptr, nullptr);
-    return out;
+/// The exit code of a run ended by --exit-timeout-ms (as GNU timeout's).
+constexpr UINT kExitTimeoutCode = 124;
+
+/// Ends this process after `limitMs` whatever it is doing (--exit-timeout-ms): a detached thread that never returns.
+void armExitTimeout(int limitMs) {
+    std::thread([limitMs] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(limitMs));
+        std::fflush(stdout);
+        std::fflush(stderr);
+        TerminateProcess(GetCurrentProcess(), kExitTimeoutCode);
+    }).detach();
 }
 
 void writeJson(const std::string& path, const nlohmann::json& json) {
@@ -304,15 +328,16 @@ nlohmann::json describeMode(const SDL_DisplayMode* mode) {
 /// Starts a copy of this program with `args`; its process handle (to be closed by the caller), or nullptr.
 HANDLE startCopy(const std::vector<std::string>& args, DWORD flags, DWORD* processId = nullptr) {
     const std::filesystem::path self = rv::core::executablePath();
-    const auto commandLine = rv::launcher::buildCommandLine(rv::core::pathToUtf8(self), args);
+    const auto commandLine = rv::launcher::buildCommandLine(rv::core::pathToUtf8Lossy(self), args);
     if (!commandLine) {
         std::fprintf(stderr, "rv_fake_emulator: %s\n", commandLine.error().toString().c_str());
         return nullptr;
     }
-    const int units = MultiByteToWideChar(CP_UTF8, 0, commandLine->data(), static_cast<int>(commandLine->size()),
-                                          nullptr, 0);
-    std::wstring wide(static_cast<std::size_t>(units), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, commandLine->data(), static_cast<int>(commandLine->size()), wide.data(), units);
+    auto wide = rv::core::utf8ToWide(*commandLine);
+    if (!wide) {
+        std::fprintf(stderr, "rv_fake_emulator: %s\n", wide.error().toString().c_str());
+        return nullptr;
+    }
 
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
@@ -321,7 +346,7 @@ HANDLE startCopy(const std::vector<std::string>& args, DWORD flags, DWORD* proce
     startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     PROCESS_INFORMATION info{};
-    if (!CreateProcessW(self.c_str(), wide.data(), nullptr, nullptr, TRUE, flags, nullptr, nullptr, &startup, &info)) {
+    if (!CreateProcessW(self.c_str(), wide->data(), nullptr, nullptr, TRUE, flags, nullptr, nullptr, &startup, &info)) {
         std::fprintf(stderr, "rv_fake_emulator: CreateProcessW failed with error %lu\n", GetLastError());
         return nullptr;
     }
@@ -675,6 +700,10 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
+    if (options.exitTimeoutMs > 0) {
+        armExitTimeout(options.exitTimeoutMs);
+    }
+
     nlohmann::json log;
     log["pid"] = GetCurrentProcessId();
     log["args"] = args;
@@ -686,13 +715,13 @@ int main(int argc, char* argv[]) {
         }
         writeJson(options.printArgs, nlohmann::json{{"payload", options.payload},
                                                     {"argv", argv0},
-                                                    {"commandLine", narrow(GetCommandLineW())}});
+                                                    {"commandLine", rv::core::wideToUtf8Lossy(GetCommandLineW())}});
     }
     if (!options.printEnv.empty()) {
         nlohmann::json variables = nlohmann::json::object();
         if (wchar_t* block = GetEnvironmentStringsW(); block != nullptr) {
             for (const wchar_t* entry = block; *entry != L'\0'; entry += std::wcslen(entry) + 1) {
-                const std::string text = narrow(entry);
+                const std::string text = rv::core::wideToUtf8Lossy(entry);
                 const std::size_t equals = text.find('=', 1);
                 if (equals != std::string::npos && rv::core::toLowerAscii(text.substr(0, 8)) == "rv_fake_") {
                     variables[text.substr(0, equals)] = text.substr(equals + 1);
@@ -705,7 +734,7 @@ int main(int argc, char* argv[]) {
     if (!options.printCwd.empty()) {
         std::error_code ec;
         writeJson(options.printCwd,
-                  nlohmann::json{{"cwd", rv::core::pathToUtf8(std::filesystem::current_path(ec))}});
+                  nlohmann::json{{"cwd", rv::core::pathToUtf8Lossy(std::filesystem::current_path(ec))}});
     }
     if (!options.printConsole.empty()) {
         std::array<DWORD, 64> processes{};
@@ -718,9 +747,15 @@ int main(int argc, char* argv[]) {
     if (!options.stdoutText.empty()) {
         std::printf("%s\n", options.stdoutText.c_str());
         std::fprintf(stderr, "%s\n", options.stdoutText.c_str());
-        std::fflush(stdout);
-        std::fflush(stderr);
     }
+    if (!options.outText.empty()) {
+        std::printf("%s\n", options.outText.c_str());
+    }
+    if (!options.errText.empty()) {
+        std::fprintf(stderr, "%s\n", options.errText.c_str());
+    }
+    std::fflush(stdout);
+    std::fflush(stderr);
 
     if (options.foregroundWindowMs > 0) {
         runForegroundWindow(options, log);

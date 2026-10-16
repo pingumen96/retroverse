@@ -1,0 +1,5 @@
+// The materializer writes {{FIXTURE_ROOT}} escaped for a JSON string.
+{
+    "home": "{{FIXTURE_ROOT}}/es-de",
+    "romRoot": "{{FIXTURE_ROOT}}\\roms"
+}

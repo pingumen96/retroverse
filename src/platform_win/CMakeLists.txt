@@ -1,10 +1,13 @@
-# rv_platform_win: the Windows side that needs no SDL (ADR-0008 §2), GPU-free: the system probe (rv_core's
-# ISystemProbe: registry values and App Paths in HKCU then HKLM, the uninstall key, the executable search, file and
-# wildcard checks) and, from I2 step 0b, the Win32 process runner moved out of rv_platform, so that retroverse-cli and
-# rv_tests use them without SDL. Skeleton: each file names the I2 step that fills it.
+# rv_platform_win: the Windows side that needs no SDL (ADR-0008 §2), GPU-free: the system probe (Win32SystemProbe,
+# rv_core's ISystemProbe: registry values, key existence and sub-keys of HKCU and HKLM, files and wildcards, the home,
+# System32 and Windows folders, PATH) and the Win32 process runner (Win32ProcessRunner: job object, completion port,
+# watcher thread), with the Win32 helpers they share with rv_platform's window hand-over (win32_util.hpp).
+# retroverse-cli and rv_tests use them without SDL.
 
 add_library(rv_platform_win STATIC
     src/system_probe.cpp
+    src/win32_process_runner.cpp
+    src/win32_util.cpp
 )
 add_library(rv::platform_win ALIAS rv_platform_win)
 rv_set_target_defaults(rv_platform_win)

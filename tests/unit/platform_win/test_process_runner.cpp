@@ -33,12 +33,12 @@
 #include <rv/launcher/exit_status.hpp>
 #include <rv/launcher/launch_request.hpp>
 #include <rv/launcher/launch_session.hpp>
-#include <rv/platform/win32_process_runner.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 
-// The Win32 process runner against real processes: rv_fake_emulator.exe (spikes/launch), started from the directory of
-// this executable in its windowless modes and without a console window (hideConsoleWindow), so nothing appears on
-// screen. Every process a test starts is gone when the test ends; the runner itself never terminates one, so the tests
-// that leave one running end it themselves (the test harness, not the product), whatever way the test ends.
+// The Win32 process runner against real processes: rv_fake_emulator.exe (tests/fake_emulator), started from the
+// directory of this executable in its windowless modes and without a console window (hideConsoleWindow), so nothing
+// appears on screen. Every process a test starts is gone when the test ends; the runner itself never terminates one, so
+// the tests that leave one running end it themselves (the test harness, not the product), whatever way the test ends.
 
 using namespace std::chrono_literals;
 using rv::launcher::ExitKind;
@@ -218,17 +218,17 @@ void waitForExit(std::uint32_t processId) {
 #define REQUIRE_FAKE_EMULATOR()                                                                                        \
     do {                                                                                                               \
         if (!std::filesystem::exists(fakeEmulator())) {                                                                \
-            SKIP("rv_fake_emulator.exe is not next to the tests (RV_BUILD_SPIKES off?)");                              \
+            SKIP("rv_fake_emulator.exe is not next to the tests");                                                     \
         }                                                                                                              \
     } while (false)
 
 } // namespace
 
-TEST_CASE("platform/process_runner: exit codes reach the session", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: exit codes reach the session", "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     for (const std::uint32_t code : {0u, 7u, 0xFFFFFFFFu}) {
         INFO("exit code " << code);
-        rv::platform::Win32ProcessRunner runner;
+        rv::platform_win::Win32ProcessRunner runner;
         WakeSignal wake;
         LaunchRequest request = fakeRequest({"--exit-code", std::to_string(code)});
         request.timeouts.startupGrace = 0ms; // classify the exit itself, however quick
@@ -249,10 +249,10 @@ TEST_CASE("platform/process_runner: exit codes reach the session", "[platform][p
     }
 }
 
-TEST_CASE("platform/process_runner: an unclean exit right after the start is a failure to start",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: an unclean exit right after the start is a failure to start",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchRequest request = fakeRequest({"--exit-code", "1"});
     request.timeouts.startupGrace = 10s;
@@ -264,9 +264,9 @@ TEST_CASE("platform/process_runner: an unclean exit right after the start is a f
     CHECK(session.outcome().exitCode == 1u);
 }
 
-TEST_CASE("platform/process_runner: a crash is reported as such", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: a crash is reported as such", "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchSession session(fakeRequest({"--crash"}), runner);
     session.start(LaunchClock::now(), {wake.callback()});
@@ -277,10 +277,10 @@ TEST_CASE("platform/process_runner: a crash is reported as such", "[platform][pr
     CHECK(session.outcome().message.find("STATUS_ACCESS_VIOLATION") != std::string::npos);
 }
 
-TEST_CASE("platform/process_runner: ProcessTree waits for the process a wrapper started",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: ProcessTree waits for the process a wrapper started",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     // The wrapper starts a copy of itself that runs 600 ms and exits with 3, and exits at once with 0.
     LaunchRequest request =
@@ -315,10 +315,10 @@ TEST_CASE("platform/process_runner: ProcessTree waits for the process a wrapper 
     CHECK(childStarted->image == "rv_fake_emulator.exe");
 }
 
-TEST_CASE("platform/process_runner: DirectProcess returns with the wrapper and reports what it left running",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: DirectProcess returns with the wrapper and reports what it left running",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchSession session(fakeRequest({"--spawn-child-and-exit", "--sleep-ms", "1500"}), runner);
     session.start(LaunchClock::now(), {wake.callback()});
@@ -340,12 +340,12 @@ TEST_CASE("platform/process_runner: DirectProcess returns with the wrapper and r
     waitForExit(*child);
 }
 
-TEST_CASE("platform/process_runner: a hang becomes StillRunning and is never terminated",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: a hang becomes StillRunning and is never terminated",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     std::optional<EndAtScopeExit> cleanUp; // outlives the session: the process must survive it
     {
-        rv::platform::Win32ProcessRunner runner;
+        rv::platform_win::Win32ProcessRunner runner;
         WakeSignal wake;
         LaunchRequest request = fakeRequest(hangArguments());
         request.timeouts.windowTimeout = 300ms; // a windowless hang: no window for 300 ms
@@ -370,9 +370,10 @@ TEST_CASE("platform/process_runner: a hang becomes StillRunning and is never ter
     CHECK(cleanUp->end());
 }
 
-TEST_CASE("platform/process_runner: the harness's termination of a hang is observed", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: the harness's termination of a hang is observed",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchRequest request = fakeRequest(hangArguments());
     request.timeouts.windowTimeout = 0ms;
@@ -388,7 +389,7 @@ TEST_CASE("platform/process_runner: the harness's termination of a hang is obser
     CHECK(session.outcome().exitCode == 0xDEADu);
 }
 
-TEST_CASE("platform/process_runner: arguments reach the program verbatim", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: arguments reach the program verbatim", "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     const std::vector<std::string> payload{
         "",
@@ -420,7 +421,7 @@ TEST_CASE("platform/process_runner: arguments reach the program verbatim", "[pla
     std::vector<std::string> arguments{"--print-args", rv::core::pathToUtf8(output), "--"};
     arguments.insert(arguments.end(), payload.begin(), payload.end());
 
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchSession session(fakeRequest(arguments), runner);
     session.start(LaunchClock::now(), {wake.callback()});
@@ -438,7 +439,7 @@ TEST_CASE("platform/process_runner: arguments reach the program verbatim", "[pla
     CHECK(echoed.at("commandLine").get<std::string>() == session.commandLine());
 }
 
-TEST_CASE("platform/process_runner: environment overrides", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: environment overrides", "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     REQUIRE(SetEnvironmentVariableW(L"RV_FAKE_INHERITED", L"inherited"));
     REQUIRE(SetEnvironmentVariableW(L"RV_FAKE_REMOVED", L"removed"));
@@ -446,7 +447,7 @@ TEST_CASE("platform/process_runner: environment overrides", "[platform][process_
     ScratchDir scratch;
     const std::filesystem::path output = scratch.path() / "env.json";
 
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchRequest request = fakeRequest({"--print-env", rv::core::pathToUtf8(output)});
     request.environment = {
@@ -472,7 +473,7 @@ TEST_CASE("platform/process_runner: environment overrides", "[platform][process_
     CHECK_FALSE(variables.contains("rv_fake_inherited"));
 }
 
-TEST_CASE("platform/process_runner: working directory and captured output", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: working directory and captured output", "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     ScratchDir scratch;
     const std::filesystem::path workDir = scratch.path() / "work dir \xC3\xA8";
@@ -480,7 +481,7 @@ TEST_CASE("platform/process_runner: working directory and captured output", "[pl
     const std::filesystem::path cwdFile = scratch.path() / "cwd.json";
     const std::filesystem::path logFile = scratch.path() / "logs" / "launch.log";
 
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchRequest request =
         fakeRequest({"--print-cwd", rv::core::pathToUtf8(cwdFile), "--stdout", "captured \xC3\xA8 text"});
@@ -507,14 +508,14 @@ TEST_CASE("platform/process_runner: working directory and captured output", "[pl
     CHECK(printed == 2); // standard output and standard error
 }
 
-TEST_CASE("platform/process_runner: files that are not programs are refused before anything starts",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: files that are not programs are refused before anything starts",
+          "[platform_win][process_runner]") {
     ScratchDir scratch;
     const std::filesystem::path text = scratch.path() / "not a program.exe";
     std::ofstream(text) << "this is text, not a Windows program\n";
     const std::filesystem::path dos = scratch.path() / "dos.com";
     std::ofstream(dos, std::ios::binary) << "MZ" << std::string(80, ' '); // a DOS header without a PE signature
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     for (const std::filesystem::path& executable : {text, dos}) {
         LaunchRequest request;
         request.executable = executable;
@@ -526,8 +527,8 @@ TEST_CASE("platform/process_runner: files that are not programs are refused befo
     }
 }
 
-TEST_CASE("platform/process_runner: an image Windows cannot load fails to start, without a dialog",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: an image Windows cannot load fails to start, without a dialog",
+          "[platform_win][process_runner]") {
     ScratchDir scratch;
     // A PE signature over garbage: validation reads the headers only, CreateProcessW refuses the image.
     const std::filesystem::path broken = scratch.path() / "broken program.exe";
@@ -541,7 +542,7 @@ TEST_CASE("platform/process_runner: an image Windows cannot load fails to start,
     const char signature[] = {'P', 'E', '\0', '\0', '\x64', '\x86'}; // x64
     bytes.replace(0x40, sizeof(signature), signature, sizeof(signature));
     std::ofstream(broken, std::ios::binary) << bytes;
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     LaunchRequest request;
     request.executable = broken;
     LaunchSession session(request, runner);
@@ -561,11 +562,12 @@ TEST_CASE("platform/process_runner: an image Windows cannot load fails to start,
     CHECK_FALSE(started.has_value());
 }
 
-TEST_CASE("platform/process_runner: a request is validated before anything starts", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: a request is validated before anything starts",
+          "[platform_win][process_runner]") {
     ScratchDir scratch;
     const std::filesystem::path batch = scratch.path() / "wrapper.bat";
     std::ofstream(batch) << "@echo off\r\n";
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     for (const std::filesystem::path& executable : {batch, scratch.path() / "missing.exe"}) {
         LaunchRequest request;
         request.executable = executable;
@@ -577,12 +579,12 @@ TEST_CASE("platform/process_runner: a request is validated before anything start
     }
 }
 
-TEST_CASE("platform/process_runner: a child that breaks away from the job is not waited for",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: a child that breaks away from the job is not waited for",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     ScratchDir scratch;
     const std::filesystem::path logFile = scratch.path() / "wrapper.log";
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     // JOB_OBJECT_LIMIT_BREAKAWAY_OK lets a child that asks for it leave the job: the tree ends with the wrapper.
     LaunchRequest request = fakeRequest({"--spawn-child-and-exit", "--child-breakaway", "--sleep-ms", "1500"},
@@ -606,15 +608,15 @@ TEST_CASE("platform/process_runner: a child that breaks away from the job is not
     waitForExit(child);
 }
 
-TEST_CASE("platform/process_runner: an exception before the program runs ends it and is reported as an error",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: an exception before the program runs ends it and is reported as an error",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     ScratchDir scratch;
     const std::filesystem::path output = scratch.path() / "args.json";
     const LaunchRequest request = fakeRequest({"--print-args", rv::core::pathToUtf8(output), "--", "payload"});
 
     SECTION("the runner on its own") {
-        rv::platform::Win32ProcessRunner runner;
+        rv::platform_win::Win32ProcessRunner runner;
         ProcessHandle observed;
         rv::launcher::StartCallbacks callbacks;
         callbacks.beforeResume = [&](std::uint32_t processId) {
@@ -633,7 +635,7 @@ TEST_CASE("platform/process_runner: an exception before the program runs ends it
         CHECK_FALSE(std::filesystem::exists(output));
     }
     SECTION("through a session: a failure to start, not an exception") {
-        rv::platform::Win32ProcessRunner runner;
+        rv::platform_win::Win32ProcessRunner runner;
         LaunchSession session(request, runner);
         session.start(LaunchClock::now(), {nullptr, [](std::uint32_t) { throw std::runtime_error("no window"); }});
         CHECK(session.state() == SessionState::FailedToStart);
@@ -644,10 +646,10 @@ TEST_CASE("platform/process_runner: an exception before the program runs ends it
     }
 }
 
-TEST_CASE("platform/process_runner: the start time is the moment the program runs, after the hand-over",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: the start time is the moment the program runs, after the hand-over",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     LaunchSession session(fakeRequest({}), runner);
     const LaunchClock::time_point begin = LaunchClock::now();
@@ -662,10 +664,10 @@ TEST_CASE("platform/process_runner: the start time is the moment the program run
     CHECK(*session.times().exited >= *session.times().started - 50ms);
 }
 
-TEST_CASE("platform/process_runner: a finished session stops following what it leaves running",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: a finished session stops following what it leaves running",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     std::atomic<int> wakes{0};
     WakeSignal wake;
     const auto signal = wake.callback();
@@ -689,10 +691,10 @@ TEST_CASE("platform/process_runner: a finished session stops following what it l
     CHECK(wakes.load() == wakesAtEnd);
 }
 
-TEST_CASE("platform/process_runner: a crash after hundreds of processes in the tree is still classified",
-          "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: a crash after hundreds of processes in the tree is still classified",
+          "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    rv::platform::Win32ProcessRunner runner;
+    rv::platform_win::Win32ProcessRunner runner;
     WakeSignal wake;
     // The wrapper runs 300 short-lived copies of itself, then starts the one that crashes after 500 ms, and exits.
     // Only running processes are tracked (an id given to a new process names the new one), so no count of processes
@@ -710,15 +712,16 @@ TEST_CASE("platform/process_runner: a crash after hundreds of processes in the t
     CHECK(session.outcome().processesSeen > 256);
 }
 
-TEST_CASE("platform/process_runner: a console program never shares Retroverse's console", "[platform][process_runner]") {
+TEST_CASE("platform_win/process_runner: a console program never shares Retroverse's console",
+          "[platform_win][process_runner]") {
     SECTION("its own console, windowless on request; GUI programs ignore both flags") {
         LaunchRequest visible;
-        const std::uint32_t shown = rv::platform::processCreationFlags(visible);
+        const std::uint32_t shown = rv::platform_win::processCreationFlags(visible);
         CHECK((shown & CREATE_NEW_CONSOLE) != 0);
         CHECK((shown & CREATE_NO_WINDOW) == 0);
         LaunchRequest hidden;
         hidden.hideConsoleWindow = true;
-        const std::uint32_t windowless = rv::platform::processCreationFlags(hidden);
+        const std::uint32_t windowless = rv::platform_win::processCreationFlags(hidden);
         CHECK((windowless & CREATE_NO_WINDOW) != 0);
         CHECK((windowless & CREATE_NEW_CONSOLE) == 0);
         for (const std::uint32_t flags : {shown, windowless}) {
@@ -729,13 +732,13 @@ TEST_CASE("platform/process_runner: a console program never shares Retroverse's 
             CHECK((flags & EXTENDED_STARTUPINFO_PRESENT) == 0);
         }
         hidden.outputLog = "C:\\logs\\launch.log";
-        CHECK((rv::platform::processCreationFlags(hidden) & EXTENDED_STARTUPINFO_PRESENT) != 0);
+        CHECK((rv::platform_win::processCreationFlags(hidden) & EXTENDED_STARTUPINFO_PRESENT) != 0);
     }
     SECTION("the processes attached to the started program's console") {
         REQUIRE_FAKE_EMULATOR();
         ScratchDir scratch;
         const std::filesystem::path output = scratch.path() / "console.json";
-        rv::platform::Win32ProcessRunner runner;
+        rv::platform_win::Win32ProcessRunner runner;
         WakeSignal wake;
         LaunchSession session(fakeRequest({"--print-console", rv::core::pathToUtf8(output)}), runner);
         session.start(LaunchClock::now(), {wake.callback()});

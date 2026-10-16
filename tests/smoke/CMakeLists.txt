@@ -18,6 +18,7 @@ file(GLOB RV_SMOKE_TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*
 
 add_executable(rv_smoke_tests ${RV_SMOKE_TEST_SOURCES})
 rv_set_target_defaults(rv_smoke_tests)
+rv_enable_long_paths(rv_smoke_tests)
 # GPU-free itself: it starts the executables under test and reads their reports, scenes and screenshots.
 target_link_libraries(rv_smoke_tests PRIVATE
     rv_core
@@ -25,8 +26,8 @@ target_link_libraries(rv_smoke_tests PRIVATE
     rv_scene
     rv_app_cli               # the run report
     rv_screenshot_diff_core  # the golden comparison
-    Catch2::Catch2
-    shell32)                 # CommandLineToArgvW: the quoting of child process arguments
+    rv_test_support          # the child runner (tests/support/child_process.hpp)
+    Catch2::Catch2)
 rv_forbid_link(rv_smoke_tests)
 
 # The executables under test are built with the tests.

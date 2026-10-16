@@ -2,6 +2,7 @@
 
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 
 namespace rv::core {
 namespace {
@@ -42,7 +43,7 @@ Expected<nlohmann::json> readJsonFile(const std::filesystem::path& path) {
     if (!text) {
         return propagate(text.error());
     }
-    return parseJson(*text, pathToUtf8(path));
+    return parseJson(*text, pathToUtf8Lossy(path));
 }
 
 Expected<glm::vec2> jsonToVec2(const nlohmann::json& value, std::string_view context) {

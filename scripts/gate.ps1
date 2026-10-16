@@ -31,6 +31,8 @@ param(
     [switch]$Clean
 )
 $ErrorActionPreference = 'Stop'
+# Numbers in the summary are formatted with the invariant culture: an Italian Windows would print 1235 s as "1.235 s".
+[System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
 $root = Split-Path -Parent $PSScriptRoot
 $dev = Join-Path $PSScriptRoot 'dev.ps1'
 $logDir = Join-Path $root ("build/gate-" + $Gate.ToLowerInvariant())

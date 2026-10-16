@@ -81,7 +81,7 @@ struct StartCallbacks {
 };
 
 /// Starts processes for launch sessions (the port of specification §15's IProcessRunner; the Windows implementation is
-/// rv::platform::Win32ProcessRunner).
+/// rv::platform_win::Win32ProcessRunner).
 class IProcessRunner {
 public:
     virtual ~IProcessRunner();

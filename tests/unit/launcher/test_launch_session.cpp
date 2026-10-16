@@ -13,7 +13,7 @@
 
 #include <rv/launcher/launch_session.hpp>
 
-#include "program_stub.hpp"
+#include "support/program_stub.hpp"
 #include "support/temp_dir.hpp"
 
 using namespace std::chrono_literals;

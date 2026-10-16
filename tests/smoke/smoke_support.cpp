@@ -14,8 +14,8 @@
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
 
-#include "child_process.hpp"
 #include "image_checks.hpp"
+#include "support/child_process.hpp"
 
 namespace rv::smoke {
 namespace {
@@ -123,15 +123,17 @@ AppRun runCommand(const std::filesystem::path& executable, const std::filesystem
     run.outputFile = caseDir / core::pathFromUtf8(run.name + ".log");
     run.reportError = "the run writes none";
 
-    ProcessRequest request;
+    test::ChildRequest request;
     request.executable = executable;
     request.arguments = std::move(arguments);
     request.workingDirectory = caseDir;
-    request.outputFile = run.outputFile;
+    // One log: standard output and error in the order they were written.
+    request.stdoutFile = run.outputFile;
+    request.stderrFile = run.outputFile;
     // Each configuration must read its own assets: the source tree, or the copy deployed next to a Release executable.
-    request.removedVariables = {"RV_ASSET_ROOT"};
+    request.environment = {{"RV_ASSET_ROOT", std::nullopt}};
     request.timeout = kRunTimeout;
-    const auto outcome = runProcess(request);
+    const auto outcome = test::runChild(request);
     if (!outcome) {
         FAIL("could not run " << core::pathToUtf8(executable) << ": " << outcome.error().toString());
     }

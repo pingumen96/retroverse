@@ -11,7 +11,7 @@ namespace rv::spikes::launch {
 
 /// What spike_launch starts.
 enum class TargetKind : std::uint8_t {
-    Fake,      ///< rv_fake_emulator (spikes/launch/fake_emulator)
+    Fake,      ///< rv_fake_emulator (tests/fake_emulator)
     RetroArch, ///< a RetroArch installation, isolated from the user's configuration and saves
     Notepad,   ///< the system's notepad.exe: on Windows 11 a stub that hands over to the packaged app and exits
 };

@@ -20,6 +20,12 @@ enum class ErrorCode {
     ValidationFailed,
     GraphicsError,
     PlatformError,
+    /// Something that exists cannot be reached now: a drive that is not ready or not mapped, a share or a device that
+    /// does not answer, a folder that cannot be listed. Retrying later may succeed; nothing should be taken as deleted.
+    Unavailable,
+    /// The operation clashes with the state of something else: a file another program holds locked, a lock already
+    /// taken, a stored identity that does not match the one given.
+    Conflict,
 };
 
 [[nodiscard]] std::string_view toString(ErrorCode code) noexcept;

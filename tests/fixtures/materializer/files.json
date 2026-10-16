@@ -1,0 +1,14 @@
+// What git does not hold: generated ROM payloads (never committed), a dated file, a hidden one, an empty folder.
+{
+    "files": [
+        {"path": "roms/snes/Alpha Quest (World).sfc", "size": 70000, "seed": 7},
+        {"path": "roms/snes/Alpha Quest (World) [copy].sfc", "size": 70000, "seed": 7},
+        {"path": "roms/snes/Beta Run (Europe).sfc", "size": 70000, "seed": 8},
+        {"path": "roms/snes/prefix.sfc", "size": 13, "seed": 7},
+        {"path": "roms\\gb\\empty.gb", "size": 0, "seed": 0},
+        {"path": "./roms/gb/Dated (USA).gb", "size": 32, "seed": 1, "mtime": "2001-02-03T04:05:06Z"},
+        {"path": "roms/gb/.hidden.gb", "size": 8, "seed": 2, "hidden": true},
+        {"path": "roms/gb/Pokémon Puzzle (EU).gb", "size": 16, "seed": 3}
+    ],
+    "directories": ["roms/psx/empty"]
+}

@@ -25,6 +25,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/test.ps1 -Preset msvc-x64-debug-desktop     # on demand: tests that take over the screen (label "desktop")
 ./scripts/test.ps1 -Preset msvc-x64-release-gpu       # the same for Release (rendering from its deployed assets)
 ./scripts/gate.ps1 -Gate A                            # Gate A end to end: build matrix, tests, golden G01; -Clean
+./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
 
@@ -32,9 +33,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   "Asset preview"), `retroverse-screenshot-diff.exe`, `retroverse-cli.exe` (the ES-DE catalog from the command line,
   I2: `--help` lists its commands, each a stub that exits 2 until its step; results on stdout or `--output`, logs on
   stderr and `<user data>/logs/retroverse-cli.log`; pass `--data-dir build/rvdata`), `rv_tests.exe`,
-  `rv_platform_tests.exe`, `rv_smoke_tests.exe`, the I1 spike executables (`spike_video.exe`, `spike_ui.exe`,
-  `spike_launch.exe`, `rv_fake_emulator.exe`, `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi included:
-  every preset enables the vcpkg features `video` and `ui`; `sqlite3.dll` and `pugixml.dll` once code calls them).
+  `rv_platform_tests.exe`, `rv_smoke_tests.exe`, `rv_fake_emulator.exe` (the stand-in emulator the launch tests start,
+  `tests/fake_emulator`: exit codes, crashes, hangs, wrappers, windows, `--out`/`--err` text, `--exit-timeout-ms` so
+  that an abandoned copy ends by itself; `--help` lists its options), the I1 spike executables (`spike_video.exe`,
+  `spike_ui.exe`, `spike_launch.exe`, `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi included: every
+  preset enables the vcpkg features `video` and `ui`; `pugixml.dll`, and `sqlite3.dll` once code calls it).
   Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the source tree (target
   `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed, `staging` and the golden
   screenshots left out), so an edit of the assets alone reaches the next Release build.
@@ -60,6 +63,16 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   another toolchain keeps it until `./scripts/build.ps1 -Preset <preset> -Fresh`.
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
   `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"`.
+- Tests that read the real ES-DE library carry the hidden Catch2 tag `[.real-library]` (ctest never runs them) and take
+  its folders from `RV_REAL_ESDE_HOME`, `RV_REAL_ESDE_INSTALL`, `RV_REAL_ROM_ROOT`, `RV_REAL_MEDIA_ROOT` and, optional,
+  `RV_REAL_RETROARCH_EXE`. Run them only through `./scripts/real-library.ps1` (parameters `-EsdeHome`, `-EsdeInstall`,
+  `-RomRoot`, `-MediaRoot`, `-RetroArchExe` or those variables; `-Preset`, default `msvc-x64-release`; `-Filter`): it
+  refuses to run while ES-DE runs, snapshots the home and install (configuration files hashed) and the ROM and media
+  roots (listings only) with `scripts/snapshot_tree.py`, runs `rv_tests.exe "[real-library]"`, snapshots again and
+  fails on a failed test or any difference (outputs in `build/real-library`). `python -I scripts/snapshot_tree.py
+  snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone
+  (Python 3.10 or later, output in UTF-8; links are recorded and never entered, what they lead to is snapshotted as a
+  linked root unless a root covers it).
 
 ## Running the app
 
@@ -362,7 +375,7 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `./spikes/launch/measure.ps1` measures. RetroArch only ever runs with the isolated append configuration `spike_launch`
   writes under `build/` (its own config, saves and the ROM folder untouched, checked with before/after snapshots); never
   launch emulators whose data cannot be isolated (DuckStation). Keep visible runs short. The `desktop` tests run the
-  fake emulator in fullscreen: `./scripts/test.ps1 -Preset msvc-x64-debug-desktop`.
+  fake emulator (`tests/fake_emulator`) in fullscreen: `./scripts/test.ps1 -Preset msvc-x64-debug-desktop`.
 
 ## Layout and layering
 
@@ -371,15 +384,16 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
 - Dependency order: `core` -> `geometry` -> `input` -> `assets` -> `scene`, `media` (FFmpeg only inside its
   sources), `launcher` (GPU-free; `rv_forbid_link` fails the configure if they reach SDL3, glad or ImGui) -> `catalog`
   (I2, ADR-0008: the catalog's domain and ports, on `launcher`; never SQLite, pugixml or the Windows-only targets) ->
-  `esde` (the ES-DE adapter, pugixml private), `catalog_db` (the SQLite store, SQLite private), `platform_win`
-  (Windows without SDL: the system probe, the process runner from I2 step 0b; on `core` and `launcher`) -> `platform`
-  (SDL3; the Win32 process runner) -> `render` (OpenGL through glad; never includes SDL) -> `devui` (Dear ImGui,
+  `esde` (the ES-DE adapter, pugixml private behind `src/esde/src/xml.hpp`), `catalog_db` (the SQLite store, SQLite
+  private), `platform_win` (Windows without SDL, namespace `rv::platform_win`: the system probe `Win32SystemProbe`, the
+  process runner `Win32ProcessRunner`, `win32_util.hpp`; on `core` and `launcher`) -> `platform` (SDL3; the window
+  hand-over; links `platform_win`) -> `render` (OpenGL through glad; never includes SDL) -> `devui` (Dear ImGui,
   developer builds; its GPU-free part `rv_devui_model` is always built), `ui` (RmlUi product UI; its GPU-free part
-  `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. `catalog`, `esde`, `catalog_db` and
-  `platform_win` are GPU-free skeletons that the I2 steps fill (each file names its step); the system probe's port is
-  in `core` (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA <library>...)` forbids more
-  libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`.
-  `rv_app` does not use `rv_media`, `rv_launcher` or `rv_ui` yet: the I1 spikes do.
+  `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. `catalog`, `esde` and `catalog_db` are
+  GPU-free skeletons that the I2 steps fill (each file names its step; `esde` has its XML loader); the system probe's
+  port is in `core` (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA <library>...)`
+  forbids more libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under `#if
+  defined(RV_DEV_UI)`. `rv_app` does not use `rv_media`, `rv_launcher` or `rv_ui` yet: the I1 spikes do.
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
@@ -390,12 +404,24 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   (`include/rv/screenshot_diff/*.hpp`, namespace `rv::screenshot_diff`), built in every configuration, tested by
   `tests/unit/screenshot_diff` and linked by the GPU smoke tests.
 - Tests: `tests/unit/<module>/test_*.cpp` (globbed into `rv_tests`, label `unit`, no SDL or OpenGL; GLB files for
-  tests come from `rv/assets/glb_writer.hpp`),
+  tests come from `rv/assets/glb_writer.hpp`; `tests/unit/platform_win` and `tests/unit/support` start
+  `rv_fake_emulator.exe` from the directory of `rv_tests.exe`),
   `tests/platform/test_*.cpp` (globbed into `rv_platform_tests`, label `unit`: SDL platform layer, no OpenGL),
-  `tests/support/*` helpers (globbed into `rv_test_support`), `tests/input_scripts` (scripted verification runs),
+  `tests/support/*` helpers (globbed into `rv_test_support`, namespace `rv::test`: `TempDir`, `LogCapture`, `Fixture`
+  (`fixture.hpp`: `tests/fixtures/<name>/` materialized into a fresh folder under `build/<preset>/test-fixtures`,
+  removed afterwards; `{{FIXTURE_ROOT}}` in .xml, .json, .txt and .cfg files becomes that folder, escaped for the file;
+  the fixture's `files.json` generates ROM payloads from a size and a seed, with an optional `mtime` and `hidden`, and
+  empty folders, so that no payload is committed), `writeProgramStub` (`program_stub.hpp`), `runChild`
+  (`child_process.hpp`: a program run to completion, its command line built by `launcher::buildCommandLine`, stdout and
+  stderr in files of the test's choosing, apart or together, a timeout), `FakeSystemProbe` (`fake_system_probe.hpp`: a
+  machine as maps of registry values, files and folders), `Junction`, `ListingDenied`, `writeFileAnyLength`
+  (`file_system.hpp`: junctions without admin rights, a folder this user cannot list, paths past MAX_PATH)),
+  `tests/fixtures/<name>/` (original, minimal fixtures; text committed as LF, so CRLF, BOM and oversized files are
+  written at test time), `tests/fake_emulator` (`rv_fake_emulator`, built with the tests or the spikes),
+  `tests/input_scripts` (scripted verification runs),
   `tests/smoke/*.cpp` GPU smoke tests (globbed into `rv_smoke_tests`, label `gpu`: GPU-free itself, it starts the
-  executables of its build and reads their run reports and screenshots; `smoke_support.hpp` runs them,
-  `image_checks.hpp` measures screenshots; Win32 child processes in `child_process.hpp`) and their test scenes in
+  executables of its build with `tests/support/child_process.hpp` and reads their run reports and screenshots;
+  `smoke_support.hpp` runs them, `image_checks.hpp` measures screenshots) and their test scenes in
   `tests/smoke/scenes`, `tests/cmake/test_*.cmake` (label `unit`, listed in `tests/cmake/CMakeLists.txt`, run by ctest
   in CMake script mode: the build's CMake scripts, e.g. the Release asset mirror, and `retroverse-cli` as a process,
   its exit codes with stdout and stderr apart).
@@ -413,13 +439,29 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   faces, glTF UV origin at the image top-left, images never flipped on load.
 - Colors are authored as sRGB hex codes (style §3) and converted to linear for shading
   (`rv::core::hexToLinearRgb`). Shading happens in linear space; output through an sRGB framebuffer.
-- Text and paths are UTF-8; convert with `rv::core::pathFromUtf8` / `rv::core::pathToUtf8`.
+- Text and paths are UTF-8; convert with `rv::core::pathFromUtf8` / `rv::core::pathToUtf8`, which throw on text that
+  does not convert: names from a file system or an untrusted file go through `rv/core/utf8.hpp` (`tryPathFromUtf8`,
+  `tryPathToUtf8`, `pathToUtf8Lossy` for messages, `utf8ToWide`/`wideToUtf8`, `isValidUtf8`/`findInvalidUtf8`,
+  `appendUtf8`; `utf8WithWindows1252Fallback` and `windows1252ToUtf8` for text other programs wrote).
+- Core helpers of I2, one header each in `rv/core/`: `sha256.hpp` (SHA-256, streaming and one-shot, hex);
+  `case_fold.hpp` (`fileSystemUpperCase`: the file-system casing of lookup keys and path comparisons, code unit by code
+  unit as NTFS and exFAT compare names, never ASCII-only folding or Unicode normalization; `casingTableVersion`);
+  `time.hpp` (UTC ISO-8601: `formatUtcIso8601`, `utcNow`, `parseUtcIso8601`); `relative_path.hpp`
+  (`resolveRelativePath`: a path read from a file, a gamelist's for one, relative to its folder; `OutOfRange` when it
+  lies outside the folder, `InvalidArgument` when malformed); `tree_walk.hpp` (`walkTree`/`listTree`: big trees through
+  `\\?\` paths, sorted, links followed without loops, errors as entries, a folder that cannot be listed `Unavailable`);
+  `file_io.hpp` (`readFileShared` for files another program rewrites, `extendedLengthPath` for folders the user names,
+  `extendedLengthPathBelow` to reopen a walked name exactly: a plain path loses trailing dots and spaces);
+  `system_error.hpp` (Windows errors as text and as `ErrorCode`: a missing drive is `Unavailable`, a locked file
+  `Conflict`); `paths.hpp` (`Paths::databaseDir`, `pathIsWithin` (lexical), `checkUserDataDirectory`: the
+  data-directory guard, links and junctions resolved); `system_probe.hpp` (the `ISystemProbe` port with `appPath`,
+  `findUninstallEntry`, `matchesWildcard`; `platform_win::Win32SystemProbe` asks Windows, `test::FakeSystemProbe` maps).
 - OpenGL calls only in `rv_render`/`rv_devui`/`rv_ui`/`rv_app` (and the I1 spike executables), only on the main
   thread, DSA style (GL 4.5; the vendored RmlUi GL3 renderer in `third_party/rmlui_backends` excepted).
 - Determinism: no `rand()`, no iteration over unordered containers into outputs, explicit seeds.
-- Product code starts processes only through `rv_launcher` and `rv_platform` (`Win32ProcessRunner`): argv, never a
+- Product code starts processes only through `rv_launcher` and `rv_platform_win` (`Win32ProcessRunner`): argv, never a
   shell string, no batch files; the product never terminates an emulator. (Test harnesses start their own children:
-  `tests/smoke/child_process.hpp`, `rv_fake_emulator`.)
+  `tests/support/child_process.hpp`, `rv_fake_emulator`.)
 - Product UI strings live in the RML documents under `assets/ui` (Italian until localization tables exist); sizes in dp,
   bundled fonts only, no color transitions (RmlUi rebuilds the geometry of every animated frame).
 - Language: identifiers, comments, documentation and commit messages in English.
@@ -427,7 +469,11 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
 ## Safety rules
 
 - Never write into the user's ES-DE data directory, ROM root or media directory. Retroverse is read-only towards
-  the collection by default (spec §4.6). Tests that read the real library must be tagged `[real-library]`.
+  the collection by default (spec §4.6). Tests that read the real library carry the hidden tag `[.real-library]`, take
+  its paths from the `RV_REAL_*` variables and run only through `./scripts/real-library.ps1` (ES-DE closed, read-only
+  snapshots before and after, 0 differences). Product code never names this machine's library paths (they come from
+  ES-DE's configuration, discovery or the user), and no test but those reads them (strings shaped like them, such as
+  quoting cases, are only data; new tests use invented paths).
 - No brand logos, commercial artwork or trademarked names in `assets/` (style §1, §17.2). Every third-party asset
   needs provenance and license entries in `assets/registry/` before it is committed; `assets/staging/` is never
   committed or packaged.

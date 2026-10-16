@@ -11,7 +11,7 @@
 #include <rv/launcher/environment.hpp>
 #include <rv/launcher/process_runner.hpp>
 
-namespace rv::platform {
+namespace rv::platform_win {
 
 /// Options of the Windows process runner beyond the launch request.
 struct Win32ProcessRunnerOptions {
@@ -91,4 +91,4 @@ private:
 /// included). Unpaired UTF-16 surrogates become U+FFFD.
 [[nodiscard]] std::vector<launcher::EnvironmentVariable> currentEnvironment();
 
-} // namespace rv::platform
+} // namespace rv::platform_win

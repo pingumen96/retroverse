@@ -1,4 +1,4 @@
-#include <rv/platform/win32_process_runner.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 
 #include <algorithm>
 #include <array>
@@ -17,19 +17,18 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
-#include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 #include <rv/launcher/command_line.hpp>
 #include <rv/launcher/launch_request.hpp>
 
-#include "win32_util.hpp"
+#include <rv/platform_win/win32_util.hpp>
 
-namespace rv::platform {
+namespace rv::platform_win {
 namespace {
 
 using launcher::LaunchClock;
 using launcher::ProcessEvent;
 using launcher::ProcessEventKind;
-using win32::UniqueHandle;
 
 /// Completion keys of the job's port: the job's notifications, and the packet that stops the watcher.
 constexpr ULONG_PTR kJobKey = 1;
@@ -49,8 +48,8 @@ LaunchClock::time_point toLaunchClock(const FILETIME& systemTime) noexcept {
     const LaunchClock::time_point now = LaunchClock::now();
     FILETIME current{};
     GetSystemTimePreciseAsFileTime(&current);
-    const std::uint64_t then = win32::ticks(systemTime);
-    const std::uint64_t nowTicks = win32::ticks(current);
+    const std::uint64_t then = ticks(systemTime);
+    const std::uint64_t nowTicks = ticks(current);
     if (then == 0 || then > nowTicks) {
         return now;
     }
@@ -84,7 +83,7 @@ std::wstring imagePath(HANDLE process) {
 /// The file name of a path, in UTF-8.
 std::string fileNameOf(std::wstring_view path) {
     const std::size_t slash = path.find_last_of(L"\\/");
-    return win32::narrow(slash == std::wstring_view::npos ? path : path.substr(slash + 1));
+    return core::wideToUtf8Lossy(slash == std::wstring_view::npos ? path : path.substr(slash + 1));
 }
 
 /// True for the system's console host (System32\conhost.exe). A console program that gets a console of its own
@@ -184,7 +183,7 @@ public:
     /// Starts the watcher thread (before the process is resumed).
     [[nodiscard]] Status startWatching() {
         if (!m_stopEvent) {
-            return makeError(ErrorCode::PlatformError, "CreateEventW failed: " + win32::lastErrorMessage());
+            return makeError(ErrorCode::PlatformError, "CreateEventW failed: " + lastErrorMessage());
         }
         try {
             m_queue.reserve(16);
@@ -240,7 +239,7 @@ private:
                 return false;
             }
             if (result != WAIT_TIMEOUT) {
-                reportFailure("waiting for the process failed: " + win32::lastErrorMessage());
+                reportFailure("waiting for the process failed: " + lastErrorMessage());
                 return false;
             }
             if (m_port) {
@@ -346,7 +345,7 @@ private:
                 overlapped == nullptr) {
                 const DWORD error = GetLastError();
                 if (error != WAIT_TIMEOUT) {
-                    reportFailure("the job's notifications failed: " + win32::errorMessage(error));
+                    reportFailure("the job's notifications failed: " + errorMessage(error));
                     m_stopping.store(true);
                 }
                 return received;
@@ -576,19 +575,19 @@ private:
 void createJob(UniqueHandle& job, UniqueHandle& port, std::string& error) {
     UniqueHandle newJob(CreateJobObjectW(nullptr, nullptr));
     if (!newJob) {
-        error = "CreateJobObjectW failed: " + win32::lastErrorMessage();
+        error = "CreateJobObjectW failed: " + lastErrorMessage();
         return;
     }
     // No JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: closing the handle (Retroverse exiting) leaves the processes running.
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     if (!SetInformationJobObject(newJob.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
-        error = "SetInformationJobObject (limits) failed: " + win32::lastErrorMessage();
+        error = "SetInformationJobObject (limits) failed: " + lastErrorMessage();
         return;
     }
     UniqueHandle newPort(CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1));
     if (!newPort) {
-        error = "CreateIoCompletionPort failed: " + win32::lastErrorMessage();
+        error = "CreateIoCompletionPort failed: " + lastErrorMessage();
         return;
     }
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT association{};
@@ -596,7 +595,7 @@ void createJob(UniqueHandle& job, UniqueHandle& port, std::string& error) {
     association.CompletionPort = newPort.get();
     if (!SetInformationJobObject(newJob.get(), JobObjectAssociateCompletionPortInformation, &association,
                                  sizeof(association))) {
-        error = "SetInformationJobObject (completion port) failed: " + win32::lastErrorMessage();
+        error = "SetInformationJobObject (completion port) failed: " + lastErrorMessage();
         return;
     }
     job = std::move(newJob);
@@ -614,8 +613,8 @@ Status openOutputLog(const std::filesystem::path& path, std::string_view command
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &inheritable, OPEN_ALWAYS,
                                   FILE_ATTRIBUTE_NORMAL, nullptr));
     if (!file) {
-        return makeError(ErrorCode::IoError, "the output log cannot be opened: " + win32::lastErrorMessage(),
-                         core::pathToUtf8(path));
+        return makeError(ErrorCode::IoError, "the output log cannot be opened: " + lastErrorMessage(),
+                         core::pathToUtf8Lossy(path));
     }
     SYSTEMTIME local{};
     GetLocalTime(&local);
@@ -627,7 +626,7 @@ Status openOutputLog(const std::filesystem::path& path, std::string_view command
     UniqueHandle nul(CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &inheritable, OPEN_EXISTING,
                                  0, nullptr));
     if (!nul) {
-        return makeError(ErrorCode::IoError, "the NUL device cannot be opened: " + win32::lastErrorMessage());
+        return makeError(ErrorCode::IoError, "the NUL device cannot be opened: " + lastErrorMessage());
     }
     output = std::move(file);
     input = std::move(nul);
@@ -651,12 +650,12 @@ public:
         InitializeProcThreadAttributeList(nullptr, attributeCount, 0, &size);
         if (size == 0) {
             return makeError(ErrorCode::PlatformError,
-                             "InitializeProcThreadAttributeList failed: " + win32::lastErrorMessage());
+                             "InitializeProcThreadAttributeList failed: " + lastErrorMessage());
         }
         m_storage.resize(size);
         if (!InitializeProcThreadAttributeList(list(), attributeCount, 0, &size)) {
             return makeError(ErrorCode::PlatformError,
-                             "InitializeProcThreadAttributeList failed: " + win32::lastErrorMessage());
+                             "InitializeProcThreadAttributeList failed: " + lastErrorMessage());
         }
         m_initialized = true;
         return ok();
@@ -686,8 +685,8 @@ std::vector<launcher::EnvironmentVariable> currentEnvironment() {
         if (equals == std::wstring_view::npos) {
             continue;
         }
-        variables.push_back(launcher::EnvironmentVariable{win32::narrow(text.substr(0, equals)),
-                                                          win32::narrow(text.substr(equals + 1))});
+        variables.push_back(launcher::EnvironmentVariable{core::wideToUtf8Lossy(text.substr(0, equals)),
+                                                          core::wideToUtf8Lossy(text.substr(equals + 1))});
     }
     FreeEnvironmentStringsW(block);
     return variables;
@@ -724,25 +723,20 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     if (!commandLineUtf8) {
         return propagate(commandLineUtf8.error());
     }
-    auto commandLine = win32::widen(*commandLineUtf8);
+    auto commandLine = core::utf8ToWide(*commandLineUtf8);
     if (!commandLine) {
         return propagate(commandLine.error());
     }
     const std::wstring application = request.executable.native();
     const std::wstring directory = launcher::workingDirectoryOf(request).native();
-    std::string executableUtf8;
-    try {
-        executableUtf8 = core::pathToUtf8(request.executable);
-    } catch (...) {
-        executableUtf8 = "?";
-    }
+    const std::string executableUtf8 = core::pathToUtf8Lossy(request.executable);
 
     // The environment: Retroverse's own, unless the request changes it.
     std::wstring environmentBlock;
     if (!request.environment.empty()) {
         for (const launcher::EnvironmentVariable& variable :
              launcher::mergeEnvironment(currentEnvironment(), request.environment)) {
-            auto entry = win32::widen(variable.name + "=" + variable.value);
+            auto entry = core::utf8ToWide(variable.name + "=" + variable.value);
             if (!entry) {
                 return makeError(ErrorCode::ValidationFailed, "an environment variable is not valid UTF-8",
                                  variable.name);
@@ -777,7 +771,7 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
                                        inheritedHandles.data(), sizeof(HANDLE) * inheritedHandles.size(), nullptr,
                                        nullptr)) {
             return makeError(ErrorCode::PlatformError,
-                             "UpdateProcThreadAttribute failed: " + win32::lastErrorMessage());
+                             "UpdateProcThreadAttribute failed: " + lastErrorMessage());
         }
         startup.StartupInfo.cb = sizeof(STARTUPINFOEXW);
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -810,7 +804,7 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     }
     if (!created) {
         const DWORD error = createError;
-        std::string message = "CreateProcessW failed: " + win32::errorMessage(error);
+        std::string message = "CreateProcessW failed: " + errorMessage(error);
         if (error == ERROR_ELEVATION_REQUIRED) {
             message += "; the program asks for administrator rights, which Retroverse does not request";
         }
@@ -835,14 +829,14 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     std::string foregroundError;
     try {
         if (job && !AssignProcessToJobObject(job.get(), process.get())) {
-            jobError = "AssignProcessToJobObject failed: " + win32::lastErrorMessage();
+            jobError = "AssignProcessToJobObject failed: " + lastErrorMessage();
             job.reset();
             port.reset();
         }
         if (m_options.allowSetForeground) {
             foregroundAllowed = AllowSetForegroundWindow(info.dwProcessId) != FALSE;
             if (!foregroundAllowed) {
-                foregroundError = win32::lastErrorMessage();
+                foregroundError = lastErrorMessage();
             }
         }
         running = std::make_unique<Win32RunningProcess>(std::move(process), info.dwProcessId, std::move(job),
@@ -860,7 +854,7 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
         throw; // start() reports it
     }
     if (ResumeThread(thread.get()) == static_cast<DWORD>(-1)) {
-        const std::string error = win32::lastErrorMessage();
+        const std::string error = lastErrorMessage();
         endNeverRun();
         return makeError(ErrorCode::PlatformError, "ResumeThread failed: " + error, executableUtf8);
     }
@@ -888,4 +882,4 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     return std::unique_ptr<launcher::IRunningProcess>(std::move(running));
 }
 
-} // namespace rv::platform
+} // namespace rv::platform_win

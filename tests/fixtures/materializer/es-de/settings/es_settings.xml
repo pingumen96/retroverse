@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<bool name="ShowHiddenFiles" value="true" />
+<string name="MediaDirectory" value="{{FIXTURE_ROOT}}/media" />
+<string name="ROMDirectory" value="{{FIXTURE_ROOT}}\roms" />

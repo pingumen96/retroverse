@@ -2,7 +2,7 @@
 //
 // A Retroverse-like borderless fullscreen window renders an animated scene at the display's refresh rate. Each launch
 // hands the window over (rv::platform::WindowHandover: minimized, or kept without rendering), starts the target through
-// rv::launcher::LaunchSession and rv::platform::Win32ProcessRunner, waits without rendering and without input, then
+// rv::launcher::LaunchSession and rv::platform_win::Win32ProcessRunner, waits without rendering and without input, then
 // takes the window back and measures, from the system's exit time of the emulator: (a) the window restored, (b) the
 // foreground regained, (c) borderless fullscreen re-applied, (d) the first frame submitted (SwapBuffers returned: with
 // vsync the frame reaches the screen later, which (e) includes), (e) frame pacing back at 60 FPS, (f) a press of an SDL
@@ -53,7 +53,7 @@
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/sdl_input_collector.hpp>
 #include <rv/platform/sdl_platform.hpp>
-#include <rv/platform/win32_process_runner.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/platform/window_handover.hpp>
 #include <rv/render/gl_device.hpp>
 #include <spike_launch/measurements.hpp>
@@ -572,7 +572,7 @@ private:
                                                                  handover.handOver();
                                                              }});
         if (session.process() != nullptr) {
-            const platform::Win32StartInfo& start = m_runner.lastStart();
+            const rv::platform_win::Win32StartInfo& start = m_runner.lastStart();
             record["start"] = {{"processId", start.processId},
                                {"jobAssigned", start.jobAssigned},
                                {"jobError", start.jobError},
@@ -860,7 +860,7 @@ private:
     std::unique_ptr<rv::gl::GLDevice> m_device;
     std::optional<spike::SpikeScene> m_scene;
     platform::SdlInputCollector m_collector;
-    platform::Win32ProcessRunner m_runner;
+    rv::platform_win::Win32ProcessRunner m_runner;
     SDL_JoystickID m_padId = 0;
     SDL_Joystick* m_pad = nullptr;
     Uint32 m_wakeEvent = 0;

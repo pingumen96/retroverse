@@ -236,6 +236,3 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   and a missing DLL the loader's modal box; decide Retroverse's error-mode policy (hard-error dialogs are disabled only
   around `CreateProcessW` today).
 - **Release subsystem:** consider a GUI-subsystem `retroverse.exe` for Release (ADR-0006 open risk).
-- **Shared quoting:** `tests/smoke/child_process.cpp` duplicates the command-line quoting: use
-  `rv::launcher::buildCommandLine`.
-- **Fake emulator home:** move `rv_fake_emulator` from `spikes/launch` to `tests/support` when I2 adopts the launcher.

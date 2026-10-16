@@ -1,11 +1,13 @@
-# rv_core: foundation utilities shared by every module (errors, logging, paths, math, I/O, JSON, CLI).
-# GPU-free and window-system-free.
+# rv_core: foundation utilities shared by every module (errors, logging, paths, math, I/O, JSON, CLI; since I2 SHA-256,
+# file-system case folding, UTF-8, UTC times, relative paths of untrusted files, the tree walker and the system probe's
+# port). GPU-free and window-system-free.
 
 configure_file(include/rv/core/version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/rv/core/version.hpp" @ONLY)
 
 add_library(rv_core STATIC
     src/aabb.cpp
     src/arg_parser.cpp
+    src/case_fold.cpp
     src/expected.cpp
     src/file_io.cpp
     src/file_watch_set.cpp
@@ -15,7 +17,14 @@ add_library(rv_core STATIC
     src/main_thread.cpp
     src/math.cpp
     src/paths.cpp
+    src/relative_path.cpp
+    src/sha256.cpp
+    src/system_error.cpp
+    src/system_probe.cpp
     src/text.cpp
+    src/time.cpp
+    src/tree_walk.cpp
+    src/utf8.cpp
     src/version.cpp
 )
 add_library(rv::core ALIAS rv_core)

@@ -24,6 +24,10 @@ std::string_view toString(ErrorCode code) noexcept {
         return "graphics-error";
     case ErrorCode::PlatformError:
         return "platform-error";
+    case ErrorCode::Unavailable:
+        return "unavailable";
+    case ErrorCode::Conflict:
+        return "conflict";
     }
     return "unknown";
 }

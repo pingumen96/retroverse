@@ -1,10 +1,10 @@
 #pragma once
 
-// Private Win32 helpers of rv_platform: UTF-8 <-> UTF-16, error messages, an owning HANDLE. Windows-only.
+// Win32 helpers shared by rv_platform_win and rv_platform (the window hand-over): an owning HANDLE, FILETIME ticks and
+// error messages. Windows-only. Text conversions are rv::core's (rv/core/utf8.hpp).
 
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -15,15 +15,9 @@
 #endif
 #include <windows.h>
 
-#include <rv/core/expected.hpp>
+namespace rv::platform_win {
 
-namespace rv::platform::win32 {
-
-/// UTF-8 to UTF-16; malformed UTF-8 is an error (never silently replaced).
-[[nodiscard]] Expected<std::wstring> widen(std::string_view utf8);
-/// UTF-16 to UTF-8; unpaired surrogates become U+FFFD (for messages and names).
-[[nodiscard]] std::string narrow(std::wstring_view utf16);
-/// "<system message> (error <code>)" for a Win32 error code.
+/// "<system message> (error <code>)" for a Win32 error code (rv::core::systemErrorMessage).
 [[nodiscard]] std::string errorMessage(DWORD error);
 /// errorMessage(GetLastError()).
 [[nodiscard]] std::string lastErrorMessage();
@@ -65,4 +59,4 @@ private:
     return (static_cast<std::uint64_t>(time.dwHighDateTime) << 32) | time.dwLowDateTime;
 }
 
-} // namespace rv::platform::win32
+} // namespace rv::platform_win

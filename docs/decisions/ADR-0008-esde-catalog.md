@@ -3,6 +3,8 @@
 - Status: accepted
 - Date: 2026-10-16
 - Amended: 2026-10-16, at I2 step 0a: the system probe's port lives in `rv_core`, not in `rv_catalog` (§2)
+- Amended: 2026-10-16, at I2 step 0b: §1 names the executables that declare `longPathAware`; §6 names the install
+  folder and links in the data-directory rule; §7 says how ES-DE's XML files are decoded
 
 ## Context
 
@@ -44,8 +46,10 @@ SQLite (3.53.4, vcpkg features `fts5` and `json1`) and pugixml (1.16, always wit
 throws). Not toml++: configuration stays JSON like every other configuration file of the project (a departure from
 specification §3.1 and §16.1). Not CLI11: `retroverse-cli` dispatches subcommands on `rv::core::ArgParser`. Not xxhash or
 utf8proc: identities hash with SHA-256 implemented in `rv_core`, paths fold case the way the Windows file system does,
-and search folds diacritics in FTS5's `unicode61` tokenizer. Executables declare `longPathAware`, and file-system walks
-use `\\?\` paths.
+and search folds diacritics in FTS5's `unicode61` tokenizer. The executables that handle library paths declare
+`longPathAware`: `retroverse`, `retroverse-cli`, the test programs (`rv_tests`, `rv_platform_tests`, `rv_smoke_tests`)
+and the fake emulator (`rv_fake_emulator`); file-system walks and the reads of ES-DE's files use `\\?\` paths, which
+reach past MAX_PATH whatever the system's long path setting.
 
 ### 2. Modules
 
@@ -157,16 +161,21 @@ JSON with comments under `<user data>/config`: `library.json` (the library's id 
 folders, optional ROM and media root overrides) and `emulators.json` (the user's emulator profiles and per-system
 choices); shipped defaults under `assets/launcher/`. Choices made through the CLI (`assign`) and per-game choices are
 stored in the database, never written into the user's commented files. The user data directory may not lie inside the
-ES-DE home, the ROM root or the media root.
+ES-DE home, its install folder, the ROM root or the media root, compared as the file system compares names and again
+with links, junctions, subst and mapped drives resolved (`rv::core::checkUserDataDirectory`).
 
 ### 7. Read-only towards ES-DE
 
 ADR-0003 and NFR-10: the adapter opens ES-DE's files for reading only, with full sharing, and never writes under the
 ES-DE home, the install, the ROM root or the media root (reading cue sheets may update last-access times, which is
-accepted); `<favorite>`, `<playcount>` and `<lastplayed>` are read, never updated. The settings reader extracts only the
-keys it uses and never reads, logs or copies the scraper credentials. A gamelist that fails to parse, is empty, or has
-no `<gameList>` element is retried after a delay and then keeps that system's previous rows; on a first import that
-system is marked "metadata pending" rather than imported unscraped.
+accepted); `<favorite>`, `<playcount>` and `<lastplayed>` are read, never updated. ES-DE's XML files are decoded as its
+pugixml decodes them (UTF-8, UTF-16 or UTF-32 by their byte order mark or first character, a declared ISO-8859-1), and
+what it reads leniently is read too, as UTF-8 and reported: bytes that are not UTF-8 as Windows-1252 characters,
+character references to no character as U+FFFD. The settings reader extracts only the keys it uses and never reads,
+logs or copies the scraper credentials. A gamelist that fails to parse (it is cut short or padded with NUL characters
+while ES-DE writes it, among others), is empty, or has no `<gameList>` element is retried after a delay and then keeps
+that system's previous rows; on a first import that system is marked "metadata pending" rather than imported
+unscraped.
 
 ### 8. Launch translation
 
