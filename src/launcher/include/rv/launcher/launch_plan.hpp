@@ -3,8 +3,10 @@
 // Launch plans (ADR-0008 §8): a neutral launch target (a ROM, its system, the launch's own variables) and an emulator
 // profile become a LaunchRequest ready for a LaunchSession, or a blocker that says why the game cannot start. No
 // catalog type is involved: the catalog's launch resolution (I2 step 10) fills the target, chooses the profile and maps
-// the blockers to its readiness states, whose order the checks follow: the ROM, the configuration, the executable, the
-// required files, then the request's own validation.
+// the blockers to its readiness states, whose order the checks follow (ROM missing, requires launcher configuration,
+// emulator not found, core not found): the ROM, the configuration, the executable, the request's own validation, then
+// the required files. What depends on the executable (a refused program, a request Windows cannot start) can only be
+// told once it is found, so it follows "emulator not found", still before "core not found".
 
 #include <cstdint>
 #include <filesystem>
@@ -44,13 +46,14 @@ enum class BlockerKind : std::uint8_t {
     ExecutableNotFound,  ///< the profile's executable is nowhere on the machine ("emulator not found")
     ProgramRefused,      ///< the executable is a command interpreter or a launcher, isRefusedProgram() ("requires
                          ///< launcher configuration")
-    RequiredFileMissing, ///< a file the profile requires does not exist: a RetroArch core ("core not found")
     InvalidRequest,      ///< validateLaunchRequest() refuses the request: a batch file, a file that is not a Windows
-                         ///< program, a working directory that does not exist, a command line too long
+                         ///< program, a working directory that does not exist, a command line too long ("requires
+                         ///< launcher configuration")
+    RequiredFileMissing, ///< a file the profile requires does not exist: a RetroArch core ("core not found")
 };
 
 /// "ROM missing", "template error", "variable missing", "executable not found", "program refused",
-/// "required file missing", "invalid request".
+/// "invalid request", "required file missing".
 [[nodiscard]] std::string_view toString(BlockerKind kind) noexcept;
 
 /// Why a launch cannot start.
@@ -92,8 +95,8 @@ struct PlanOptions {
 ///  4. the values: arguments (one per element), the working directory (absolute; empty: the executable's folder), the
 ///     environment overrides, the wait strategy, the window timeout, hideConsoleWindow and the label
 ///     ("<title> with <profile's display name>");
-///  5. the required files exist (ISystemProbe::fileExists);
-///  6. validateLaunchRequest() accepts the request.
+///  5. validateLaunchRequest() accepts the request;
+///  6. the required files exist (ISystemProbe::fileExists).
 /// Never starts anything; the automation guard applies when the request starts (launch_guard.hpp).
 [[nodiscard]] LaunchPlan planLaunch(const LaunchTarget& target, const EmulatorProfile& profile,
                                     const core::ISystemProbe& probe, const PlanOptions& options = {});

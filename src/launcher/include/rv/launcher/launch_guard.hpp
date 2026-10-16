@@ -16,13 +16,27 @@
 //  - its executable is an absolute path without an alternate data stream, a device or \\?\GLOBALROOT form;
 //  - its file name, as Windows normalizes the path (trailing dots and spaces dropped) and as the file system resolves
 //    it (8.3 short names expanded, symbolic links and junctions followed), does not match duckstation*.exe;
-//  - the file exists and can be resolved (opened for its attributes);
-//  - when either name matches retroarch*.exe, it is isolated: every argument that spells --appendconfig or abbreviates
-//    it is "--appendconfig=<files>" or "--appendconfig <files>" spelled out (options are case-sensitive), whose
-//    '|'-separated files are absolute paths to existing files, and one of them is read as that option when the
-//    arguments are read as RetroArch's getopt_long reads them (options before the first "--", the values of its options
-//    that take one skipped; an option it does not know, which stops RetroArch, refuses as well);
-//  - the file it resolves to is the one an entry of the list resolves to (compared with the file-system casing).
+//  - the file exists and can be resolved (opened for its attributes, its file id read);
+//  - when either name matches retroarch*.exe, it is isolated: its command line read as RetroArch 1.21.0 reads it,
+//    conservatively (libretro-common's compat getopt, which its Windows builds use), appends configuration files it
+//    can open:
+//     - the command line reaches it as written: RetroArch's main() reads the ANSI code page's form of it, made with
+//       best-fit characters, so the executable's path and every argument must be held exactly by that code page;
+//     - every argument that may select --appendconfig in any reading (its name after "--", or after "--" and any '='
+//       as RetroArch reads it, is appendconfig, an abbreviation of it or a name holding it), wherever it stands, is
+//       "--appendconfig=<files>" or "--appendconfig <files>" spelled out (options are case-sensitive);
+//     - read as RetroArch reads them (every option wherever it stands, long options by exact name, values after '=' or
+//       in the next argument, grouped short options from its option string), the arguments hold no option it does not
+//       know ("--" and abbreviations included), no lone "-", no grouped short options running into a long one
+//       ("-v-appendconfig"), no option without its value, and at least one --appendconfig, which RetroArch reads last
+//       wins;
+//     - the '|'-separated files of every --appendconfig are files RetroArch opens: absolute drive or UNC paths in ASCII
+//       (it opens the files of its ANSI arguments as UTF-8 text; any text when the ANSI code page is UTF-8), shorter
+//       than 260 characters (it is not long-path aware), existing; the value at most 4095 bytes (it keeps no more). A
+//       file it cannot open is only logged by RetroArch, which then runs on its own configuration;
+//  - the file it resolves to is the one an entry of the list resolves to: the same final path (compared with the
+//    file-system casing) and the same file (volume and file id), so that two files that a folder with case-sensitive
+//    names tells apart stay apart; an entry that cannot be opened allows nothing.
 // Hard links and copies under another name are not recognized by name: only the list keeps them from starting.
 
 #include <cstdint>
@@ -47,7 +61,8 @@ enum class GuardRule : std::uint8_t {
     UnsupportedPath,      ///< refused: a relative executable path, an alternate data stream, a device path
     DuckStation,          ///< refused: duckstation*.exe, listed or not
     Unresolved,           ///< refused: the executable cannot be opened to see which file it is
-    RetroArchNotIsolated, ///< refused: retroarch*.exe without a usable --appendconfig
+    RetroArchNotIsolated, ///< refused: retroarch*.exe whose command line is not surely isolated by --appendconfig
+                          ///< (the verdict's message says why)
     NotListed,            ///< refused: not one of the listed executables
 };
 

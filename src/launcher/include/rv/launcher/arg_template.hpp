@@ -20,8 +20,11 @@
 //                   value is a template itself, expanded where it is used
 //   {env:NAME}      an environment variable of the allow-list (folders of the user and of the system), never another
 // An unknown token, an undefined variable, an environment variable outside the allow-list or not set are errors naming
-// it; nothing is ever left unexpanded or passed on as written.
+// it; nothing is ever left unexpanded or passed on as written. The work an element takes is bounded whatever its
+// variables hold (kMaxTemplateTokens, kMaxExpandedBytes): a variable whose value uses another one twice, and so on,
+// would otherwise double the work with every level.
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -33,8 +36,18 @@
 #include <vector>
 
 #include <rv/core/expected.hpp>
+#include <rv/launcher/command_line.hpp>
 
 namespace rv::launcher {
+
+/// The tokens one element may expand, those in the values of its variables included (each {var:NAME} counts, then the
+/// tokens of its value): far more than any configuration needs, few enough that an element always expands at once.
+inline constexpr std::size_t kMaxTemplateTokens = 1024;
+
+/// The longest expansion of one element, in UTF-8 bytes: UTF-8 takes at most 3 bytes per UTF-16 code unit, so longer
+/// text cannot fit a command line (kMaxCommandLineUnits), nor a path or an environment value, which Windows limits
+/// alike.
+inline constexpr std::size_t kMaxExpandedBytes = 3 * kMaxCommandLineUnits;
 
 /// What a token stands for.
 enum class TemplateToken : std::uint8_t {
@@ -110,8 +123,9 @@ struct TemplateContext {
 ///  - ParseError: what parseTemplateElement() refuses, also in a variable's value (named);
 ///  - NotFound: {var:NAME} defined in no scope; {env:NAME} not set;
 ///  - ValidationFailed: {env:NAME} outside the allow-list; variables that refer to each other (the cycle named) or
-///    nest deeper than 32; a result holding a NUL character or malformed UTF-8 (a variable given by the launch); a path
-///    that UTF-8 cannot represent;
+///    nest deeper than 32; more than kMaxTemplateTokens tokens expanded (the token and the variable being expanded
+///    named) or a result longer than kMaxExpandedBytes, both found as soon as the limit is passed; a result holding a
+///    NUL character or malformed UTF-8 (a variable given by the launch); a path that UTF-8 cannot represent;
 ///  - InvalidArgument: a token whose value the context does not have.
 [[nodiscard]] Expected<std::string> expandTemplateElement(std::string_view element, const TemplateContext& context);
 
@@ -120,10 +134,10 @@ struct TemplateContext {
 [[nodiscard]] Expected<std::vector<std::string>> expandTemplate(std::span<const std::string> elements,
                                                                 const TemplateContext& context);
 
-/// Checks `element` as expandTemplateElement() would expand it, with the same errors, but without the values of the
-/// path tokens ({rom}, {rom_dir}, {rom_name}, {rom_file}, {rom_ext}, {emulator_dir}, {system}), which are accepted
-/// whether the context has them or not: whether a profile's templates can be expanded for a system before its
-/// executable is located (launch_plan.hpp).
+/// Checks `element` as expandTemplateElement() would expand it, with the same errors and limits, but without the values
+/// of the path tokens ({rom}, {rom_dir}, {rom_name}, {rom_file}, {rom_ext}, {emulator_dir}, {system}), which are
+/// accepted whether the context has them or not (and count as tokens): whether a profile's templates can be expanded
+/// for a system before its executable is located (launch_plan.hpp).
 [[nodiscard]] Status checkTemplateElement(std::string_view element, const TemplateContext& context);
 
 } // namespace rv::launcher

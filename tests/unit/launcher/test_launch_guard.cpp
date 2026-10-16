@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -141,6 +142,42 @@ std::filesystem::path fakeEmulator() {
     return rv::core::executablePath().parent_path() / "rv_fake_emulator.exe";
 }
 
+/// True when the ANSI code page holds `character` exactly (no best-fit or default character): asked with
+/// WC_NO_BEST_FIT_CHARS, independently of the guard's round trip.
+bool heldExactly(wchar_t character) {
+    const UINT codePage = GetACP();
+    if (codePage == CP_UTF8) {
+        return true;
+    }
+    char bytes[8]{};
+    BOOL usedDefault = FALSE;
+    const int written = WideCharToMultiByte(codePage, WC_NO_BEST_FIT_CHARS, &character, 1, bytes, sizeof(bytes),
+                                            nullptr, &usedDefault);
+    return written > 0 && !usedDefault;
+}
+
+/// Makes the empty `folder` tell names apart by case, as NTFS can per folder; false when this machine cannot.
+bool makeCaseSensitive(const std::filesystem::path& folder) {
+    const HANDLE handle =
+        CreateFileW(folder.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    FILE_CASE_SENSITIVE_INFO info{FILE_CS_FLAG_CASE_SENSITIVE_DIR};
+    const bool done = SetFileInformationByHandle(handle, FileCaseSensitiveInfo, &info, sizeof(info)) != FALSE;
+    CloseHandle(handle);
+    return done;
+}
+
+/// RetroArch opens its appended configuration only by an ASCII path (unless the ANSI code page is UTF-8): the tests
+/// that expect it isolated need the temporary folder to be one.
+bool configurationReachable(const Files& files) {
+    const std::string path = files.utf8(files.config);
+    return GetACP() == CP_UTF8 ||
+           std::all_of(path.begin(), path.end(), [](char c) { return static_cast<unsigned char>(c) < 0x80; });
+}
+
 } // namespace
 
 TEST_CASE("launcher/launch_guard: an inactive guard allows everything", "[launcher][launch_guard]") {
@@ -204,6 +241,9 @@ TEST_CASE("launcher/launch_guard: DuckStation never starts, listed or not", "[la
 
 TEST_CASE("launcher/launch_guard: RetroArch starts only isolated", "[launcher][launch_guard]") {
     Files files;
+    if (!configurationReachable(files)) {
+        SKIP("the temporary folder's path is not ASCII: RetroArch could not open a configuration there");
+    }
     const std::filesystem::path angle = files.stub("RetroArch/retroarch_angle.exe");
     const LaunchGuard guard = LaunchGuard::fromAllowList(files.utf8(files.retroarch) + ";" + files.utf8(angle));
     const std::string config = files.utf8(files.config);
@@ -213,6 +253,8 @@ TEST_CASE("launcher/launch_guard: RetroArch starts only isolated", "[launcher][l
         std::vector<std::string> arguments;
         GuardRule rule;
     };
+    // RetroArch 1.21.0 reads its arguments with libretro-common's compat getopt: options wherever they stand, long
+    // options by their exact names (after "--" and any '='), short ones from its option string.
     const std::vector<Case> cases{
         {{}, GuardRule::RetroArchNotIsolated},
         {{"-L", "core.dll", "rom.gb"}, GuardRule::RetroArchNotIsolated},
@@ -221,34 +263,59 @@ TEST_CASE("launcher/launch_guard: RetroArch starts only isolated", "[launcher][l
         {{"-L", "core.dll", "--appendconfig=" + config, "--verbose", "rom.gb"}, GuardRule::Allowed},
         {{"-L", "core.dll", "rom.gb", "--appendconfig", config}, GuardRule::Allowed}, // options are permuted
         {{"--appendconfig=" + config + "|" + config2}, GuardRule::Allowed},
-        {{"--appendconfig", config, "--", "rom.gb"}, GuardRule::Allowed},
         // What does not isolate it.
         {{"--appendconfig=" + missing + "|" + config}, GuardRule::RetroArchNotIsolated}, // every file must exist
         {{"--appendconfig=" + missing}, GuardRule::RetroArchNotIsolated},
         {{"--appendconfig=" + config + "|" + missing}, GuardRule::RetroArchNotIsolated},
+        {{"--appendconfig=" + config + "||" + config2}, GuardRule::RetroArchNotIsolated}, // an empty name
         {{"--appendconfig=scratch\\retroverse-isolated.cfg"}, GuardRule::RetroArchNotIsolated}, // relative
+        {{"--appendconfig=\\\\?\\" + config}, GuardRule::RetroArchNotIsolated}, // plain paths only
         {{"--appendconfig="}, GuardRule::RetroArchNotIsolated},
         {{"--appendconfig"}, GuardRule::RetroArchNotIsolated}, // no value
         {{"--APPENDCONFIG=" + config}, GuardRule::RetroArchNotIsolated}, // options are case-sensitive
         {{"--AppendConfig", config}, GuardRule::RetroArchNotIsolated},
         {{"-appendconfig", config}, GuardRule::RetroArchNotIsolated},
-        {{"--", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // content after "--"
+        {{"--", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // "--" is no option: RetroArch stops
+        {{"--appendconfig", config, "--", "rom.gb"}, GuardRule::RetroArchNotIsolated},
         {{"rom.gb --appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // one argument, not the option
         {{"-L", "--appendconfig", config, "rom.gb"}, GuardRule::RetroArchNotIsolated}, // -L's value
         {{"-vL", "--appendconfig", config}, GuardRule::RetroArchNotIsolated},           // grouped options
+        {{"-Lcore.dll", "--appendconfig", config}, GuardRule::Allowed},                 // a glued value
         {{"--libretro", "--appendconfig", config}, GuardRule::RetroArchNotIsolated},
-        {{"--libr", "--appendconfig", config}, GuardRule::RetroArchNotIsolated}, // an abbreviated --libretro
         {{"--appendconfig=" + config, "--appendconfig=" + missing}, GuardRule::RetroArchNotIsolated}, // the last wins
         {{"--appendconfig=" + config, "--appendc=" + config}, GuardRule::RetroArchNotIsolated},
         {{"--appendconfig=" + config, "--appendconfig"}, GuardRule::RetroArchNotIsolated},
         {{"--appendconfig=" + missing, "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // every one
+        {{config, "--appendconfig"}, GuardRule::RetroArchNotIsolated}, // a value from behind: refused, not modelled
+        // RetroArch takes a long option's name after "--" and any '=', its value after the first '=': these are
+        // --appendconfig too, the last one naming no file it can open.
+        {{"--appendconfig=" + config, "--=appendconfig"}, GuardRule::RetroArchNotIsolated},
+        {{"--appendconfig=" + config, "--==appendconfig=x"}, GuardRule::RetroArchNotIsolated},
+        {{"--appendconfig=" + config, "--=appendconfig=" + config}, GuardRule::RetroArchNotIsolated},
+        {{"-L", "core.dll", "--appendconfig=" + config, "--=appendconfig", "rom.gb"}, GuardRule::RetroArchNotIsolated},
+        {{"--appendconfig=" + config, "-v-appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // short to long
         // A flag read as an option taking a value would hide what follows it: RetroArch's own table decides.
         {{"--max-frames-ss", "-L", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated},
         {{"--max-frames-ss", "--appendconfig=" + config}, GuardRule::Allowed},
         {{"--verbose", "--appendconfig", config, "-f", "rom.gb"}, GuardRule::Allowed},
-        {{"--unknown-option", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // RetroArch stops there
-        {{"--max", "240", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated},    // ambiguous
+        {{"--verbose=yes", "--appendconfig=" + config}, GuardRule::Allowed}, // a value glued to a flag is ignored
+        {{"--play-replay", "replay.bsv", "--appendconfig=" + config}, GuardRule::Allowed}, // 1.21.0's options
+        {{"--record-replay=replay.bsv", "--mitm-session", "x", "--appendconfig=" + config}, GuardRule::Allowed},
+        {{"--scan", "C:\\roms", "--appendconfig=" + config}, GuardRule::Allowed},
+        {{"-F", "4", "-V", "--appendconfig=" + config}, GuardRule::Allowed},
+        {{"-F", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // -F's value
+        // What RetroArch does not know stops it: refused as well, since the reading is no longer sure.
+        {{"--unknown-option", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated},
+        {{"--bsvplay", "replay.bsv", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // not in 1.21.0
+        {{"--stateless", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated},
+        {{"--libr", "--appendconfig", config}, GuardRule::RetroArchNotIsolated}, // no abbreviations
+        {{"--appendconfig=" + config, "--libr", "core.dll"}, GuardRule::RetroArchNotIsolated},
+        {{"--max", "240", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated},
         {{"-x", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated},
+        {{"-T", "x", "--appendconfig=" + config}, GuardRule::RetroArchNotIsolated}, // --mitm-session's letter only
+        {{"--appendconfig=" + config, "-"}, GuardRule::RetroArchNotIsolated},
+        {{"--appendconfig=" + config, "-:"}, GuardRule::RetroArchNotIsolated},
+        {{"--appendconfig=" + config, "-L"}, GuardRule::RetroArchNotIsolated}, // no value after it
         {{"--ap=" + config}, GuardRule::RetroArchNotIsolated},
         // The I1 spike's isolated run (spikes/launch).
         {{"-L", "C:\\RetroArch\\cores\\gambatte_libretro.dll", "--appendconfig=" + config, "--max-frames=240",
@@ -270,6 +337,95 @@ TEST_CASE("launcher/launch_guard: RetroArch starts only isolated", "[launcher][l
           GuardRule::NotListed);
 }
 
+TEST_CASE("launcher/launch_guard: RetroArch reads its command line in the ANSI code page", "[launcher][launch_guard]") {
+    // RetroArch's main() reads the ANSI code page's form of its command line, which Windows makes with best-fit
+    // characters, and opens the files it names as UTF-8 text, without long path support.
+    Files files;
+    if (!configurationReachable(files)) {
+        SKIP("the temporary folder's path is not ASCII: RetroArch could not open a configuration there");
+    }
+    const LaunchGuard guard = LaunchGuard::fromAllowList(files.utf8(files.retroarch));
+    const std::string config = "--appendconfig=" + files.utf8(files.config);
+    const auto expected = [](bool held) { return held ? GuardRule::Allowed : GuardRule::RetroArchNotIsolated; };
+
+    // A fullwidth quotation mark becomes '"' where the code page lacks it: "a＂ --appendconfig=bad ＂.gb" would reach
+    // RetroArch as three arguments, the second one an --appendconfig that it reads last.
+    const std::string fullwidth = "C:\\roms\\a\xEF\xBC\x82 --appendconfig=bad \xEF\xBC\x82.gb";
+    CHECK(ruleOf(guard, files.retroarch, {config, fullwidth}) == expected(heldExactly(L'\xFF02')));
+    CHECK(ruleOf(guard, files.retroarch, {config, "\xEF\xBC\x8D\xEF\xBC\x8D" "appendconfig=bad"}) ==
+          expected(heldExactly(L'\xFF0D'))); // fullwidth hyphens
+    // What the code page holds reaches RetroArch as written: an accented name in Windows-1252, any name in UTF-8.
+    CHECK(ruleOf(guard, files.retroarch, {config, "C:\\roms\\Pok\xC3\xA9mon.gb"}) == expected(heldExactly(L'\xE9')));
+    CHECK(ruleOf(guard, files.retroarch, {config, "C:\\roms\\\xE6\x97\xA5.gb"}) == expected(heldExactly(L'\x65E5')));
+    // The executable's own path too: it is the start of the same command line.
+    const std::filesystem::path elsewhere = files.stub("\xE6\x97\xA5\xE6\x9C\xAC/retroarch.exe");
+    CHECK(ruleOf(LaunchGuard::fromAllowList(files.utf8(elsewhere)), elsewhere, {config}) ==
+          expected(heldExactly(L'\x65E5')));
+    const auto refused = guard.check(request(files.retroarch, {config, fullwidth}));
+    if (!heldExactly(L'\xFF02')) {
+        CHECK(refused.message.find("arguments[1] is not held exactly by the ANSI code page") != std::string::npos);
+    }
+
+    // The appended files must be files RetroArch opens: ASCII paths (any text when the code page is UTF-8)...
+    const std::filesystem::path accented = files.text("scratch/conf\xC3\xA9.cfg");
+    CHECK(ruleOf(guard, files.retroarch, {"--appendconfig=" + files.utf8(accented)}) ==
+          (GetACP() == CP_UTF8 ? GuardRule::Allowed : GuardRule::RetroArchNotIsolated));
+    // ...shorter than 260 characters (it is not long-path aware)...
+    std::string deep = "scratch/";
+    while (files.utf8(files.dir.file(deep)).size() < 270) {
+        deep += "a-rather-long-folder-name/";
+    }
+    const std::filesystem::path distant = files.dir.file(deep + "isolated.cfg").lexically_normal();
+    REQUIRE(rv::test::writeFileAnyLength(distant, "config_save_on_exit = \"false\"\n").has_value());
+    const std::vector<std::string> distantConfig{"--appendconfig=" + files.utf8(distant)};
+    CHECK(ruleOf(guard, files.retroarch, distantConfig) == GuardRule::RetroArchNotIsolated);
+    CHECK(guard.check(request(files.retroarch, distantConfig)).message.find("longer than 259") != std::string::npos);
+    rv::test::removeTreeAnyLength(files.dir.file("scratch/a-rather-long-folder-name"));
+    // ...in a value of at most 4095 bytes, which is what RetroArch keeps of it.
+    std::string list = files.utf8(files.config);
+    while (list.size() + 1 + files.utf8(files.config2).size() <= 4095) {
+        list += "|" + files.utf8(files.config2);
+    }
+    CHECK(ruleOf(guard, files.retroarch, {"--appendconfig=" + list}) == GuardRule::Allowed);
+    CHECK(ruleOf(guard, files.retroarch, {"--appendconfig=" + list + "|" + files.utf8(files.config2)}) ==
+          GuardRule::RetroArchNotIsolated);
+}
+
+TEST_CASE("launcher/launch_guard: a refusal of RetroArch says why, without the arguments' values",
+          "[launcher][launch_guard]") {
+    Files files;
+    if (!configurationReachable(files)) {
+        SKIP("the temporary folder's path is not ASCII: RetroArch could not open a configuration there");
+    }
+    const LaunchGuard guard = LaunchGuard::fromAllowList(files.utf8(files.retroarch));
+    const std::string config = "--appendconfig=" + files.utf8(files.config);
+    const std::string missing = "--appendconfig=" + files.utf8(files.dir.file("scratch/missing.cfg"));
+    struct Case {
+        std::vector<std::string> arguments;
+        std::string_view says;
+    };
+    const Case cases[] = {
+        {{"C:\\roms\\a.gb"}, "no argument is read as --appendconfig"},
+        {{config, "--=appendconfig"}, "arguments[1] may be read as --appendconfig but is not"},
+        {{"--bsvplay", "x", config}, "arguments[0] is an option RetroArch does not know (\"--bsvplay\")"},
+        {{config, "--"}, "arguments[1] is an option RetroArch does not know (\"--\")"},
+        {{config, "-T"}, "arguments[1] holds an option RetroArch does not know (\"-T\")"},
+        {{config, "-"}, "arguments[1] is a lone \"-\""},
+        {{config, "-L"}, "arguments[1] (-L) has no value after it"},
+        {{config, "-v-x"}, "arguments[1] runs short options into a long one"},
+        {{"-L", "C:\\roms\\a.gb", missing}, "arguments[2] (--appendconfig): a file it names does not exist"},
+    };
+    for (const Case& c : cases) {
+        const auto verdict = guard.check(request(files.retroarch, c.arguments));
+        INFO(verdict.message);
+        CHECK(verdict.rule == GuardRule::RetroArchNotIsolated);
+        CHECK(verdict.message.starts_with("RetroArch starts in an automated run only isolated by --appendconfig"));
+        CHECK(verdict.message.find(c.says) != std::string::npos);
+        CHECK(verdict.message.find("roms") == std::string::npos); // the values are paths: never shown
+        CHECK(verdict.message.find("scratch") == std::string::npos);
+    }
+}
+
 TEST_CASE("launcher/launch_guard: bypass attempts: another case", "[launcher][launch_guard]") {
     Files files;
     const LaunchGuard guard = LaunchGuard::fromAllowList(files.utf8(files.fake) + ";" + files.utf8(files.retroarch) +
@@ -277,12 +433,35 @@ TEST_CASE("launcher/launch_guard: bypass attempts: another case", "[launcher][la
     CHECK(ruleOf(guard, upperCased(files.fake)) == GuardRule::Allowed); // the same file
     CHECK(ruleOf(guard, upperCased(files.duckstation)) == GuardRule::DuckStation);
     CHECK(ruleOf(guard, upperCased(files.retroarch)) == GuardRule::RetroArchNotIsolated);
-    CHECK(ruleOf(guard, upperCased(files.retroarch), {"--appendconfig", files.utf8(files.config)}) ==
-          GuardRule::Allowed);
+    if (configurationReachable(files)) {
+        CHECK(ruleOf(guard, upperCased(files.retroarch), {"--appendconfig", files.utf8(files.config)}) ==
+              GuardRule::Allowed);
+    }
     CHECK(ruleOf(guard, upperCased(files.other)) == GuardRule::NotListed);
     // A list written in another case.
     const LaunchGuard upper = LaunchGuard::fromAllowList(files.utf8(upperCased(files.fake)));
     CHECK(ruleOf(upper, files.fake) == GuardRule::Allowed);
+}
+
+TEST_CASE("launcher/launch_guard: bypass attempts: a folder with case-sensitive names", "[launcher][launch_guard]") {
+    // NTFS can tell names apart by case per folder: "rv_fake_emulator.exe" and "RV_FAKE_EMULATOR.EXE" are then two
+    // files whose paths fold alike. The guard compares which file each one is, not only their folded paths.
+    Files files;
+    const std::filesystem::path folder = files.dir.file("cs");
+    std::filesystem::create_directories(folder);
+    if (!makeCaseSensitive(folder)) {
+        SKIP("folders with case-sensitive names cannot be made here");
+    }
+    const std::filesystem::path lower = files.stub("cs/rv_fake_emulator.exe");
+    const std::filesystem::path upper = files.stub("cs/RV_FAKE_EMULATOR.EXE");
+    REQUIRE_FALSE(std::filesystem::equivalent(lower, upper)); // two files
+    CHECK(ruleOf(LaunchGuard::fromAllowList(files.utf8(lower)), lower) == GuardRule::Allowed);
+    CHECK(ruleOf(LaunchGuard::fromAllowList(files.utf8(lower)), upper) == GuardRule::NotListed);
+    CHECK(ruleOf(LaunchGuard::fromAllowList(files.utf8(upper)), lower) == GuardRule::NotListed);
+    CHECK(ruleOf(LaunchGuard::fromAllowList(files.utf8(upper)), upper) == GuardRule::Allowed);
+    // A listed name the folder does not hold allows nothing, not even the file whose name folds alike.
+    std::filesystem::remove(upper);
+    CHECK(ruleOf(LaunchGuard::fromAllowList(files.utf8(upper)), lower) == GuardRule::NotListed);
 }
 
 TEST_CASE("launcher/launch_guard: bypass attempts: 8.3 short names", "[launcher][launch_guard]") {
@@ -299,7 +478,9 @@ TEST_CASE("launcher/launch_guard: bypass attempts: 8.3 short names", "[launcher]
                                                          ";" + files.utf8(shortDuck));
     CHECK(ruleOf(guard, shortDuck) == GuardRule::DuckStation);
     CHECK(ruleOf(guard, shortRetro) == GuardRule::RetroArchNotIsolated);
-    CHECK(ruleOf(guard, shortRetro, {"--appendconfig", files.utf8(files.config)}) == GuardRule::Allowed);
+    if (configurationReachable(files)) {
+        CHECK(ruleOf(guard, shortRetro, {"--appendconfig", files.utf8(files.config)}) == GuardRule::Allowed);
+    }
     CHECK(ruleOf(guard, shortFake) == GuardRule::Allowed); // listed by its long name
     CHECK(ruleOf(guard, shortOther) == GuardRule::NotListed);
     // Listed by its short name, started by its long one.
@@ -369,7 +550,9 @@ TEST_CASE("launcher/launch_guard: bypass attempts: links and junctions", "[launc
                                                              files.utf8(files.fake));
         CHECK(ruleOf(guard, *innocent) == GuardRule::DuckStation); // listed by its innocent name
         CHECK(ruleOf(guard, *retro) == GuardRule::RetroArchNotIsolated);
-        CHECK(ruleOf(guard, *retro, {"--appendconfig", config}) == GuardRule::Allowed);
+        if (configurationReachable(files)) {
+            CHECK(ruleOf(guard, *retro, {"--appendconfig", config}) == GuardRule::Allowed);
+        }
         CHECK(ruleOf(guard, *toFake) == GuardRule::Allowed);       // leads to a listed file
         CHECK(ruleOf(guard, *lookalike) == GuardRule::NotListed); // named like a listed file, leads elsewhere
         // A listed link allows the file it leads to, under its own name too.

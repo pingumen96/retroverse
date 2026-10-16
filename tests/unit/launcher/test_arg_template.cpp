@@ -275,6 +275,67 @@ TEST_CASE("launcher/arg_template: variables that refer to each other are named",
     CHECK(deep.message.find("deeper than 32") != std::string::npos);
 }
 
+TEST_CASE("launcher/arg_template: variables used over and over stop at once", "[launcher][arg_template]") {
+    // Each variable uses the one before it twice: within the 32 levels of nesting, {var:v31} stands for 2^31 copies of
+    // v0, hours of work and gigabytes of text. The token budget stops it after a few milliseconds, also when v0 is
+    // empty and the text never grows, also when the element is only checked.
+    for (const std::string_view first : {std::string_view("x"), std::string_view()}) {
+        INFO("v0 = \"" << first << "\"");
+        Values values;
+        values.profile["v0"] = std::string(first);
+        for (int i = 1; i < 32; ++i) {
+            const std::string previous = "{var:v" + std::to_string(i - 1) + "}";
+            values.profile["v" + std::to_string(i)] = previous + previous;
+        }
+        const TemplateContext context = values.context();
+        const rv::Error doubling = failure("-x={var:v31}", context);
+        CHECK(doubling.code == ErrorCode::ValidationFailed);
+        CHECK(doubling.message.find("more than 1024 tokens") != std::string::npos);
+        CHECK(doubling.message.find("at {var:v") != std::string::npos); // the token, and the variable it is in
+        CHECK(doubling.message.find("(in {var:v") != std::string::npos);
+        const auto checked = checkTemplateElement("-x={var:v31}", context);
+        REQUIRE_FALSE(checked.has_value());
+        CHECK(checked.error().code == ErrorCode::ValidationFailed);
+        CHECK(checked.error().message == doubling.message);
+        // Nine levels stay within the budget (1023 tokens).
+        CHECK(expanded("{var:v9}", context) == std::string(512 * first.size(), 'x'));
+    }
+
+    // Path tokens count too, also those the check accepts without a value.
+    Values values;
+    std::string tokens;
+    std::string extensions;
+    for (std::size_t i = 0; i < rv::launcher::kMaxTemplateTokens; ++i) {
+        tokens += "{rom_ext}";
+        extensions += ".gb";
+    }
+    CHECK(expanded(tokens, values.context()) == extensions);
+    CHECK(failure(tokens + "{rom_ext}", values.context()).message.find("more than 1024 tokens") != std::string::npos);
+    CHECK_FALSE(checkTemplateElement(tokens + "{rom}", TemplateContext{}).has_value());
+}
+
+TEST_CASE("launcher/arg_template: an element expands to no more than a command line holds", "[launcher][arg_template]") {
+    using rv::launcher::kMaxExpandedBytes;
+    Values values;
+    values.profile["big"] = std::string(40000, 'a');
+    const TemplateContext context = values.context();
+    CHECK(expanded("{var:big}{var:big}", context).size() == 80000);
+    const rv::Error tooLong = failure("{var:big}{var:big}{var:big}", context);
+    CHECK(tooLong.code == ErrorCode::ValidationFailed);
+    CHECK(tooLong.message.find("more than " + std::to_string(kMaxExpandedBytes) + " bytes") != std::string::npos);
+    CHECK(tooLong.message.find("(in {var:big})") != std::string::npos);
+    CHECK_FALSE(checkTemplateElement("{var:big}{var:big}{var:big}", context).has_value());
+    // Literal text, the ROM's path and environment values count alike, to the byte.
+    CHECK(expanded(std::string(kMaxExpandedBytes, 'x'), context).size() == kMaxExpandedBytes);
+    CHECK(failure(std::string(kMaxExpandedBytes + 1, 'x'), context).code == ErrorCode::ValidationFailed);
+    const std::string rom = R"(C:\Games\gb\Mole Mania (USA).gb)";
+    CHECK(expanded(std::string(kMaxExpandedBytes - rom.size(), 'x') + "{rom}", context).size() == kMaxExpandedBytes);
+    CHECK(failure(std::string(kMaxExpandedBytes - rom.size() + 1, 'x') + "{rom}", context).code ==
+          ErrorCode::ValidationFailed);
+    values.environment["APPDATA"] = std::string(kMaxExpandedBytes, 'e');
+    CHECK(failure("x{env:APPDATA}", values.context()).code == ErrorCode::ValidationFailed);
+}
+
 TEST_CASE("launcher/arg_template: environment variables of the allow-list only", "[launcher][arg_template]") {
     Values values;
     const TemplateContext context = values.context();

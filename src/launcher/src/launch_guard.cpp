@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <optional>
+#include <span>
 #include <system_error>
 #include <utility>
 
@@ -14,6 +18,7 @@
 #include <rv/core/system_probe.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/launcher/command_line.hpp>
 #include <rv/launcher/environment.hpp>
 
 #if defined(_WIN32)
@@ -32,34 +37,49 @@ namespace {
 constexpr std::string_view kDuckStationPattern = "duckstation*.exe";
 constexpr std::string_view kRetroArchPattern = "retroarch*.exe";
 constexpr std::string_view kAppendConfig = "appendconfig";
+constexpr std::string_view kAppendConfigOption = "--appendconfig";
+constexpr std::string_view kAppendConfigGlued = "--appendconfig=";
 
-/// One of RetroArch's command-line options (retroarch.c): its long name, its letter (0: none), whether it takes a
-/// value.
+/// One of RetroArch's long options and whether it takes a value.
 struct RetroArchOption {
     std::string_view name;
-    char letter;
     bool takesValue;
 };
 
-/// RetroArch's options, read the way its getopt_long reads them so that a value is never taken for an option ("-L
-/// --appendconfig" passes "--appendconfig" as the core). An option it does not know stops RetroArch with an error.
-constexpr std::array<RetroArchOption, 43> kRetroArchOptions{{
-    {"libretro", 'L', true},     {"menu", 0, false},           {"help", 'h', false},
-    {"save", 's', true},         {"fullscreen", 'f', false},   {"record", 'r', true},
-    {"recordconfig", 0, true},   {"size", 0, true},            {"verbose", 'v', false},
-    {"config", 'c', true},       {"appendconfig", 0, true},    {"nodevice", 'N', true},
-    {"dualanalog", 'A', true},   {"device", 'd', true},        {"savestate", 'S', true},
-    {"set-shader", 0, true},     {"bsvplay", 'P', true},       {"bsvrecord", 'R', true},
-    {"sram-mode", 'M', true},    {"host", 'H', false},         {"connect", 'C', true},
-    {"stateless", 0, false},     {"check-frames", 0, true},    {"port", 0, true},
-    {"command", 0, true},        {"nick", 0, true},            {"ups", 'U', true},
-    {"bps", 0, true},            {"ips", 0, true},             {"xdelta", 0, true},
-    {"no-patch", 0, false},      {"detach", 'D', false},       {"features", 0, false},
-    {"subsystem", 0, true},      {"max-frames", 0, true},      {"max-frames-ss", 0, false},
-    {"max-frames-ss-path", 0, true}, {"eof-exit", 0, false},   {"version", 0, false},
-    {"log-file", 0, true},       {"accessibility", 0, false},  {"load-menu-on-error", 0, false},
-    {"entryslot", 'e', true},
+/// RetroArch 1.21.0's long options (retroarch.c, opts[]), those of every build option included: an option that a build
+/// leaves out stops that build as an unknown one, which the reading below never relies on.
+constexpr std::array<RetroArchOption, 44> kRetroArchLongOptions{{
+    {"libretro", true},       {"menu", false},          {"help", false},
+    {"save", true},           {"fullscreen", false},    {"record", true},
+    {"recordconfig", true},   {"size", true},           {"verbose", false},
+    {"config", true},         {"appendconfig", true},   {"nodevice", true},
+    {"dualanalog", true},     {"device", true},         {"savestate", true},
+    {"set-shader", true},     {"play-replay", true},    {"record-replay", true},
+    {"sram-mode", true},      {"host", false},          {"connect", true},
+    {"mitm-session", true},   {"check-frames", true},   {"port", true},
+    {"command", true},        {"nick", true},           {"ups", true},
+    {"bps", true},            {"ips", true},            {"xdelta", true},
+    {"no-patch", false},      {"detach", false},        {"features", false},
+    {"subsystem", true},      {"max-frames", true},     {"max-frames-ss", false},
+    {"max-frames-ss-path", true}, {"eof-exit", false},  {"version", false},
+    {"log-file", true},       {"accessibility", false}, {"load-menu-on-error", false},
+    {"entryslot", true},      {"scan", true},
 }};
+// An entry left empty would make "--" a known option.
+static_assert(std::none_of(kRetroArchLongOptions.begin(), kRetroArchLongOptions.end(),
+                           [](const RetroArchOption& option) { return option.name.empty(); }));
+
+/// RetroArch 1.21.0's short options (retroarch.c, its optstring with every build option): a letter followed by ':'
+/// takes a value. The letters of long options missing here ('T' of --mitm-session) are no short options.
+constexpr std::string_view kRetroArchShortOptions = "hs:fvVS:A:U:DN:d:e:P:R:M:HC:F:L:r:c:";
+
+/// RetroArch keeps --appendconfig's value in a buffer of PATH_MAX_LENGTH (4096) bytes, its terminator included: the
+/// rest of a longer value is cut off.
+constexpr std::size_t kRetroArchMaxAppendConfig = 4095;
+
+/// RetroArch is not long-path aware (its manifest declares nothing but DPI awareness): a plain path of MAX_PATH (260)
+/// UTF-16 code units or more does not open.
+constexpr std::size_t kRetroArchMaxPathUnits = 259;
 
 /// `text` without its \\?\ prefix: "\\?\C:\x" is "C:\x", "\\?\UNC\server\share\x" is "\\server\share\x".
 [[nodiscard]] std::wstring withoutPrefix(std::wstring text) {
@@ -109,10 +129,51 @@ constexpr std::array<RetroArchOption, 43> kRetroArchOptions{{
     return withoutPrefix(core::extendedLengthPath(path));
 }
 
-/// The path of the file `path` opens, as the file system names it: 8.3 short names expanded, symbolic links and
-/// junctions followed, subst and mapped drives resolved (GetFinalPathNameByHandleW), without the \\?\ prefix. Nothing
-/// when it cannot be opened, the reason in `error`. Opened for its attributes only.
-[[nodiscard]] std::optional<std::wstring> resolvedForm(const std::filesystem::path& path, std::string* error) {
+/// Which file a handle opens: its volume and its id there. Two names are one file only when these match: a folder
+/// with case-sensitive names (NTFS, per folder) holds "emu.exe" and "EMU.EXE" as two files whose paths fold alike.
+struct FileIdentity {
+    std::uint64_t volume = 0;
+    std::array<unsigned char, 16> id{};
+    /// A 128-bit id (FILE_ID_INFO); otherwise the 64-bit index of the older query, in the first 8 bytes.
+    bool full = false;
+
+    friend bool operator==(const FileIdentity&, const FileIdentity&) = default;
+};
+
+/// The file a path opens: its path as the file system names it and its identity.
+struct ResolvedFile {
+    std::wstring path;
+    FileIdentity identity;
+};
+
+#if defined(_WIN32)
+/// The identity of the file `handle` opens: FILE_ID_INFO, else BY_HANDLE_FILE_INFORMATION (file systems without
+/// 128-bit ids); nothing when the file system gives neither, the reason in GetLastError().
+[[nodiscard]] std::optional<FileIdentity> identityOf(HANDLE handle) {
+    FileIdentity identity;
+    FILE_ID_INFO info{};
+    if (GetFileInformationByHandleEx(handle, FileIdInfo, &info, sizeof(info))) {
+        static_assert(sizeof(info.FileId.Identifier) == sizeof(identity.id));
+        identity.volume = info.VolumeSerialNumber;
+        std::memcpy(identity.id.data(), info.FileId.Identifier, identity.id.size());
+        identity.full = true;
+        return identity;
+    }
+    BY_HANDLE_FILE_INFORMATION legacy{};
+    if (GetFileInformationByHandle(handle, &legacy)) {
+        identity.volume = legacy.dwVolumeSerialNumber;
+        const std::uint64_t index = (static_cast<std::uint64_t>(legacy.nFileIndexHigh) << 32) | legacy.nFileIndexLow;
+        std::memcpy(identity.id.data(), &index, sizeof(index));
+        return identity;
+    }
+    return std::nullopt;
+}
+#endif
+
+/// The file `path` opens, as the file system names it (8.3 short names expanded, symbolic links and junctions followed,
+/// subst and mapped drives resolved: GetFinalPathNameByHandleW, without the \\?\ prefix), and which file it is. Nothing
+/// when it cannot be opened or told apart, the reason in `error`. Opened for its attributes only.
+[[nodiscard]] std::optional<ResolvedFile> resolvedFile(const std::filesystem::path& path, std::string* error) {
 #if defined(_WIN32)
     const std::wstring target = core::extendedLengthPath(path);
     const HANDLE handle =
@@ -134,16 +195,25 @@ constexpr std::array<RetroArchOption, 43> kRetroArchOptions{{
         }
         resolved.resize(length + 1); // the size it needs, its terminator included
     }
-    const DWORD failure = GetLastError();
-    CloseHandle(handle);
+    DWORD failure = ERROR_SUCCESS;
+    std::optional<FileIdentity> identity;
     if (length == 0 || length >= resolved.size()) {
+        failure = GetLastError();
+    } else {
+        identity = identityOf(handle);
+        if (!identity) {
+            failure = GetLastError();
+        }
+    }
+    CloseHandle(handle);
+    if (failure != ERROR_SUCCESS || !identity) {
         if (error != nullptr) {
             *error = core::systemErrorMessage(failure);
         }
         return std::nullopt;
     }
     resolved.resize(length);
-    return withoutPrefix(std::move(resolved));
+    return ResolvedFile{withoutPrefix(std::move(resolved)), *identity};
 #else
     std::error_code ec;
     const std::filesystem::path canonical = std::filesystem::canonical(path, ec);
@@ -153,7 +223,7 @@ constexpr std::array<RetroArchOption, 43> kRetroArchOptions{{
         }
         return std::nullopt;
     }
-    return canonical.wstring();
+    return ResolvedFile{canonical.wstring(), {}};
 #endif
 }
 
@@ -167,118 +237,265 @@ constexpr std::array<RetroArchOption, 43> kRetroArchOptions{{
     return core::wideToUtf8Lossy(std::filesystem::path(form).filename().native());
 }
 
-/// Every '|'-separated file of an --appendconfig value is an absolute path to an existing file.
-[[nodiscard]] bool usableAppendConfig(std::string_view value) {
-    if (value.empty()) {
+[[nodiscard]] bool isAscii(std::string_view text) noexcept {
+    return std::all_of(text.begin(), text.end(), [](char c) { return static_cast<unsigned char>(c) < 0x80; });
+}
+
+/// ` ("<text>")` for a message when `text` is short printable ASCII (an option as written), else nothing: arguments
+/// may hold the user's paths, which messages never show.
+[[nodiscard]] std::string shown(std::string_view text) {
+    constexpr std::size_t kMaxShown = 40;
+    const bool printable = std::all_of(text.begin(), text.end(), [](char c) { return c >= 0x20 && c < 0x7F; });
+    return printable && !text.empty() && text.size() <= kMaxShown ? fmt::format(" (\"{}\")", text) : std::string();
+}
+
+/// True when the ANSI code page, in which RetroArch reads its command line, is UTF-8 (the system-wide option of
+/// Windows): every character is held then.
+[[nodiscard]] bool ansiCodePageIsUtf8() noexcept {
+#if defined(_WIN32)
+    return GetACP() == CP_UTF8;
+#else
+    return true;
+#endif
+}
+
+#if defined(_WIN32)
+/// True when `utf8` comes back unchanged from the ANSI code page `codePage`, converted as Windows converts a command line
+/// for a program that reads it through main() (best-fit characters allowed: a fullwidth quotation mark becomes '"').
+[[nodiscard]] bool survivesCodePage(std::string_view utf8, UINT codePage) {
+    const auto wide = core::utf8ToWide(utf8);
+    if (!wide || wide->size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         return false;
+    }
+    if (wide->empty()) {
+        return true;
+    }
+    const int units = static_cast<int>(wide->size());
+    const int bytes = WideCharToMultiByte(codePage, 0, wide->data(), units, nullptr, 0, nullptr, nullptr);
+    if (bytes <= 0) {
+        return false;
+    }
+    std::string ansi(static_cast<std::size_t>(bytes), '\0');
+    if (WideCharToMultiByte(codePage, 0, wide->data(), units, ansi.data(), bytes, nullptr, nullptr) != bytes) {
+        return false;
+    }
+    const int back = MultiByteToWideChar(codePage, 0, ansi.data(), bytes, nullptr, 0);
+    if (back <= 0) {
+        return false;
+    }
+    std::wstring returned(static_cast<std::size_t>(back), L'\0');
+    if (MultiByteToWideChar(codePage, 0, ansi.data(), bytes, returned.data(), back) != back) {
+        return false;
+    }
+    return returned == *wide;
+}
+#endif
+
+/// Why RetroArch would not read `request`'s command line as it is written, or nothing. Its main() reads the ANSI code
+/// page's form of the command line (its manifest declares no UTF-8 code page), which Windows makes with best-fit
+/// characters: text that the code page does not hold exactly reaches RetroArch as other text (a fullwidth quotation
+/// mark splits an argument in two, a fullwidth hyphen starts an option). The guard's own process has the same code page:
+/// Retroverse's manifests declare none either.
+[[nodiscard]] std::optional<std::string> codePageProblem(const LaunchRequest& request) {
+#if defined(_WIN32)
+    const UINT codePage = GetACP();
+    if (codePage == CP_UTF8) {
+        return std::nullopt;
+    }
+    const auto executable = core::tryPathToUtf8(request.executable);
+    if (!executable || !survivesCodePage(*executable, codePage)) {
+        return fmt::format("the executable's path is not held exactly by the ANSI code page {}, in which RetroArch "
+                           "reads its command line",
+                           codePage);
+    }
+    for (std::size_t i = 0; i < request.arguments.size(); ++i) {
+        if (!survivesCodePage(request.arguments[i], codePage)) {
+            return fmt::format("arguments[{}] is not held exactly by the ANSI code page {}, in which RetroArch reads "
+                               "its command line",
+                               i, codePage);
+        }
+    }
+#else
+    (void)request;
+#endif
+    return std::nullopt;
+}
+
+/// Why RetroArch would not append every file of an --appendconfig value ('|'-separated), or nothing. RetroArch only logs
+/// a file it cannot open and runs on its own configuration, so every file must be one it opens: it keeps 4095 bytes of
+/// the value, opens the files named by its ANSI arguments as UTF-8 text and is not long-path aware. Each file is an
+/// absolute drive or UNC path (no \\?\ form, device or stream), in ASCII unless the ANSI code page is UTF-8, of fewer
+/// than 260 UTF-16 code units as written and once normalized, and an existing file.
+[[nodiscard]] std::optional<std::string> appendConfigProblem(std::string_view value) {
+    if (value.empty()) {
+        return "it names no file";
+    }
+    if (value.size() > kRetroArchMaxAppendConfig) {
+        return fmt::format("its value is longer than the {} bytes RetroArch keeps of it", kRetroArchMaxAppendConfig);
     }
     for (const std::string_view part : core::split(value, '|')) {
         auto path = core::tryPathFromUtf8(part);
-        if (part.empty() || !path || unsupportedForm(*path)) {
-            return false;
+        if (part.empty() || !path || unsupportedForm(*path) || path->native().starts_with(L"\\\\?\\")) {
+            return "a file it names is not an absolute drive or UNC path";
+        }
+        if (!isAscii(part) && !ansiCodePageIsUtf8()) {
+            return "a file it names is not in ASCII, and RetroArch opens the files of its ANSI arguments as UTF-8 "
+                   "text";
+        }
+        if (utf16Length(part) > kRetroArchMaxPathUnits || normalizedForm(*path).size() > kRetroArchMaxPathUnits) {
+            return fmt::format("a file it names has a path longer than {} characters, which RetroArch (not long-path "
+                               "aware) cannot open",
+                               kRetroArchMaxPathUnits);
         }
         std::error_code ec;
         if (!std::filesystem::is_regular_file(std::filesystem::path(core::extendedLengthPath(*path)), ec)) {
-            return false;
+            return "a file it names does not exist";
         }
     }
-    return true;
+    return std::nullopt;
 }
 
-/// The option a long name selects: its exact name, else the one option it abbreviates (getopt_long accepts unique
-/// abbreviations); nothing for a name RetroArch does not know or that abbreviates several options.
+/// The name RetroArch reads in the long option "--<body>": the first run of characters other than '=' (strtok_r), so
+/// that "--=appendconfig" is --appendconfig.
+[[nodiscard]] std::string_view readLongName(std::string_view body) noexcept {
+    const std::size_t start = body.find_first_not_of('=');
+    if (start == std::string_view::npos) {
+        return {};
+    }
+    const std::size_t end = body.find('=', start);
+    return body.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
+}
+
+/// True when a long option's name may select --appendconfig in some reading of it: that name, an abbreviation of it
+/// (GNU getopt_long accepts unique abbreviations) or a name holding it.
+[[nodiscard]] bool mayNameAppendConfig(std::string_view name) noexcept {
+    return !name.empty() && (kAppendConfig.starts_with(name) || name.find(kAppendConfig) != std::string_view::npos);
+}
+
+/// The option of exactly this name (RetroArch accepts no abbreviation); nothing for an unknown or empty name.
 [[nodiscard]] const RetroArchOption* longOption(std::string_view name) {
-    const RetroArchOption* abbreviated = nullptr;
-    for (const RetroArchOption& option : kRetroArchOptions) {
-        if (option.name == name) {
-            return &option;
-        }
-        if (!name.empty() && option.name.starts_with(name)) {
-            if (abbreviated != nullptr) {
-                return nullptr; // ambiguous
-            }
-            abbreviated = &option;
-        }
+    if (name.empty()) {
+        return nullptr;
     }
-    return abbreviated;
+    const auto found = std::find_if(kRetroArchLongOptions.begin(), kRetroArchLongOptions.end(),
+                                    [&](const RetroArchOption& option) { return option.name == name; });
+    return found == kRetroArchLongOptions.end() ? nullptr : &*found;
 }
 
-[[nodiscard]] const RetroArchOption* shortOption(char letter) {
-    const auto found = std::find_if(kRetroArchOptions.begin(), kRetroArchOptions.end(),
-                                    [&](const RetroArchOption& option) { return option.letter == letter; });
-    return found == kRetroArchOptions.end() ? nullptr : &*found;
-}
+/// Why RetroArch's arguments may leave it on its own configuration, or nothing when they surely append usable
+/// configuration files. RetroArch 1.21.0's Windows builds read them with libretro-common's compat getopt: every option
+/// wherever it stands (the other arguments are moved behind the options); long options by their exact names, the name
+/// being the first run of characters other than '=' after "--" (no abbreviations; "--" itself is no option); a long
+/// option's value after the first '=' of its argument, else the next argument; short options from its option string,
+/// grouped, a value the rest of the argument or the next one; an unknown option or a lone "-" stops RetroArch before
+/// it reads any configuration; --appendconfig read again replaces the earlier value. The checks, the first failure
+/// named:
+///  1. the command line reaches RetroArch as written (codePageProblem());
+///  2. every argument that may select --appendconfig in any reading (mayNameAppendConfig() of its name, read either
+///     way), wherever it stands, is "--appendconfig=<files>" or "--appendconfig" and the next argument, with usable
+///     files (appendConfigProblem());
+///  3. the arguments read as RetroArch reads them hold no option it does not know, no lone "-", no grouped short
+///     options running into a long one ("-v-appendconfig"), no option without its value (RetroArch would take it from
+///     the arguments moved behind: refused rather than modelled), and at least one --appendconfig, each with usable
+///     files.
+[[nodiscard]] std::optional<std::string> retroArchIsolationProblem(const LaunchRequest& request) {
+    if (auto problem = codePageProblem(request)) {
+        return problem;
+    }
+    const std::span<const std::string> arguments = request.arguments;
 
-/// True when RetroArch's arguments surely append existing configuration files, in two passes:
-///  1. every element that spells --appendconfig or abbreviates it ("--appendc"), wherever it stands, is the option
-///     spelled out with a usable value ("--appendconfig=<files>", or "--appendconfig" and the next element): whichever
-///     of them RetroArch takes last, it isolates; one with another spelling, an abbreviation (which getopt_long may
-///     accept) or no value refuses;
-///  2. one of them is read as the option, the arguments read as RetroArch's getopt_long reads them: options before the
-///     first "--" (non-options are permuted), the value of an option that takes one skipped (the next element unless
-///     glued), grouped short options. An option RetroArch does not know, or an ambiguous abbreviation, stops RetroArch
-///     with an error before it runs anything: refused as well, since the reading is no longer sure.
-[[nodiscard]] bool isolatedRetroArch(std::span<const std::string> arguments) {
-    const auto split = [](std::string_view argument) {
-        const std::string_view body = argument.substr(2);
-        const std::size_t equals = body.find('=');
-        return std::pair{body.substr(0, equals),
-                         equals == std::string_view::npos ? std::optional<std::string_view>()
-                                                          : std::optional<std::string_view>(body.substr(equals + 1))};
-    };
     for (std::size_t i = 0; i < arguments.size(); ++i) {
         const std::string_view argument = arguments[i];
         if (!argument.starts_with("--")) {
             continue;
         }
-        const auto [name, glued] = split(argument);
-        if (name.size() < 2 || !kAppendConfig.starts_with(name)) {
+        const std::string_view body = argument.substr(2);
+        if (!mayNameAppendConfig(body.substr(0, body.find('='))) && !mayNameAppendConfig(readLongName(body))) {
             continue;
         }
-        std::optional<std::string_view> value = glued;
-        if (!value && i + 1 < arguments.size()) {
-            value = arguments[i + 1];
+        std::optional<std::string_view> value;
+        if (argument == kAppendConfigOption) {
+            if (i + 1 < arguments.size()) {
+                value = arguments[i + 1];
+            }
+        } else if (argument.starts_with(kAppendConfigGlued)) {
+            value = argument.substr(kAppendConfigGlued.size());
+        } else {
+            return fmt::format("arguments[{}] may be read as --appendconfig but is not \"--appendconfig\" or "
+                               "\"--appendconfig=<files>\"",
+                               i);
         }
-        if (name != kAppendConfig || !value || !usableAppendConfig(*value)) {
-            return false;
+        if (!value) {
+            return fmt::format("arguments[{}] (--appendconfig) has no value after it", i);
+        }
+        if (auto problem = appendConfigProblem(*value)) {
+            return fmt::format("arguments[{}] (--appendconfig): {}", i, *problem);
         }
     }
+
+    bool appended = false;
     for (std::size_t i = 0; i < arguments.size(); ++i) {
         const std::string_view argument = arguments[i];
-        if (argument == "--") {
-            return false; // what follows is content, never an option
+        if (argument.empty() || argument.front() != '-') {
+            continue; // not an option: RetroArch moves it behind the options
         }
+        const std::size_t index = i;
         if (argument.starts_with("--")) {
-            const auto [name, glued] = split(argument);
+            const std::string_view name = readLongName(argument.substr(2));
             const RetroArchOption* option = longOption(name);
             if (option == nullptr) {
-                return false;
+                return fmt::format("arguments[{}] is an option RetroArch does not know{}, which stops it", index,
+                                   shown(fmt::format("--{}", name)));
+            }
+            if (!option->takesValue) {
+                continue; // a value glued to an option without one is ignored
+            }
+            std::string_view value;
+            if (const std::size_t equals = argument.find('='); equals != std::string_view::npos) {
+                value = argument.substr(equals + 1);
+            } else if (i + 1 < arguments.size()) {
+                value = arguments[++i];
+            } else {
+                return fmt::format("arguments[{}] (--{}) has no value after it", index, option->name);
             }
             if (option->name == kAppendConfig) {
-                return name == kAppendConfig; // its value is usable (first pass)
-            }
-            if (option->takesValue && !glued) {
-                ++i;
+                if (auto problem = appendConfigProblem(value)) {
+                    return fmt::format("arguments[{}] is read as --appendconfig: {}", index, *problem);
+                }
+                appended = true;
             }
             continue;
         }
-        if (argument.size() > 1 && argument.front() == '-') {
-            // Grouped short options: the first one that takes a value takes the rest of the element, else the next one.
-            for (std::size_t k = 1; k < argument.size(); ++k) {
-                const RetroArchOption* option = shortOption(argument[k]);
-                if (option == nullptr) {
-                    return false;
-                }
-                if (option->takesValue) {
-                    if (k + 1 == argument.size()) {
-                        ++i;
+        if (argument.size() == 1) {
+            return fmt::format("arguments[{}] is a lone \"-\", which stops RetroArch", index);
+        }
+        // Grouped short options: flags one after the other; the first that takes a value takes the rest of the
+        // argument, else the next argument.
+        for (std::size_t k = 1; k < argument.size(); ++k) {
+            const char letter = argument[k];
+            if (letter == '-') {
+                return fmt::format("arguments[{}] runs short options into a long one", index);
+            }
+            const std::size_t at = letter == ':' ? std::string_view::npos : kRetroArchShortOptions.find(letter);
+            if (at == std::string_view::npos) {
+                return fmt::format("arguments[{}] holds an option RetroArch does not know{}, which stops it", index,
+                                   shown(std::string{'-', letter}));
+            }
+            if (at + 1 < kRetroArchShortOptions.size() && kRetroArchShortOptions[at + 1] == ':') {
+                if (k + 1 == argument.size()) {
+                    if (i + 1 == arguments.size()) {
+                        return fmt::format("arguments[{}] (-{}) has no value after it", index, letter);
                     }
-                    break;
+                    ++i;
                 }
+                break;
             }
         }
     }
-    return false;
+    if (!appended) {
+        return "no argument is read as --appendconfig";
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -333,9 +550,9 @@ GuardVerdict LaunchGuard::check(const LaunchRequest& request) const {
     if (!m_active) {
         return GuardVerdict{GuardRule::Inactive, {}};
     }
-    const std::string shown = core::pathToUtf8Lossy(request.executable);
+    const std::string executable = core::pathToUtf8Lossy(request.executable);
     const auto refuse = [&](GuardRule rule, std::string_view why) {
-        return GuardVerdict{rule, fmt::format("{}: {}", why, shown)};
+        return GuardVerdict{rule, fmt::format("{}: {}", why, executable)};
     };
     if (const auto form = unsupportedForm(request.executable)) {
         return refuse(GuardRule::UnsupportedPath,
@@ -346,9 +563,9 @@ GuardVerdict LaunchGuard::check(const LaunchRequest& request) const {
     // Both names count: the one Windows opens (a link's own name, an 8.3 name) and the file it resolves to.
     const std::wstring normalized = normalizedForm(request.executable);
     std::string openError;
-    const std::optional<std::wstring> resolved = resolvedForm(request.executable, &openError);
+    const std::optional<ResolvedFile> resolved = resolvedFile(request.executable, &openError);
     const std::string requestedName = fileName(normalized);
-    const std::string resolvedName = resolved ? fileName(*resolved) : std::string();
+    const std::string resolvedName = resolved ? fileName(resolved->path) : std::string();
     const auto named = [&](std::string_view pattern) {
         return core::matchesWildcard(requestedName, pattern) ||
                (resolved && core::matchesWildcard(resolvedName, pattern));
@@ -361,16 +578,20 @@ GuardVerdict LaunchGuard::check(const LaunchRequest& request) const {
         return refuse(GuardRule::Unresolved,
                       fmt::format("the executable cannot be opened to see which file it is ({})", openError));
     }
-    if (named(kRetroArchPattern) && !isolatedRetroArch(request.arguments)) {
-        return refuse(GuardRule::RetroArchNotIsolated,
-                      "RetroArch starts in an automated run only isolated: --appendconfig naming existing "
-                      "configuration files by absolute paths");
+    if (named(kRetroArchPattern)) {
+        if (const auto problem = retroArchIsolationProblem(request)) {
+            return refuse(GuardRule::RetroArchNotIsolated,
+                          fmt::format("RetroArch starts in an automated run only isolated by --appendconfig naming "
+                                      "configuration files it opens ({})",
+                                      *problem));
+        }
     }
 
-    const std::wstring key = folded(*resolved);
+    // The same final path (folded) and the same file: an entry that cannot be opened allows nothing.
+    const std::wstring key = folded(resolved->path);
     for (const std::filesystem::path& entry : m_entries) {
-        const std::optional<std::wstring> entryResolved = resolvedForm(entry, nullptr);
-        if (folded(entryResolved ? *entryResolved : normalizedForm(entry)) == key) {
+        const std::optional<ResolvedFile> listed = resolvedFile(entry, nullptr);
+        if (listed && listed->identity == resolved->identity && folded(listed->path) == key) {
             return GuardVerdict{GuardRule::Allowed, {}};
         }
     }

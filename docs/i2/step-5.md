@@ -15,7 +15,7 @@ alone). The ES-DE command translation of step 10 calls into these types.
 | `src/launcher/include/rv/launcher/environment.hpp` | New: `processEnvironmentVariable()`, which reads the live environment (unset, empty and set are told apart). |
 | `assets/launcher/emulators.json` | The shipped defaults: one RetroArch profile with 50 systems. |
 | `src/platform_win/src/win32_process_runner.cpp` | `Win32ProcessRunner::start` calls the guard before it creates anything. |
-| `tests/unit/launcher/test_{arg_template,emulator_profile,launch_plan,launch_guard}.cpp` | 45 test cases. |
+| `tests/unit/launcher/test_{arg_template,emulator_profile,launch_plan,launch_guard}.cpp` | 52 test cases. |
 
 The rest of `rv_launcher` is unchanged. `launch_session.hpp` and `process_runner.hpp` only gained documentation about
 the guard. `FailureReason` keeps its values, so the catalog's `PlaySession` mapping is untouched.
@@ -166,6 +166,17 @@ looked up from the first scope again. A launch's `cores` therefore also changes 
 `{var:cores}\...`. A variable may not refer to itself, directly or through others (the cycle is named), and nesting
 stops at 32 levels.
 
+**The work is bounded.** Nesting alone does not bound it: when each variable uses the one before it twice, the work
+doubles with every level, 2^31 expansions within 32 levels (about an hour and 4 GiB of text for one check). Two limits
+apply to each element, also in `checkTemplateElement()`, and are checked as the expansion goes:
+
+- `kMaxTemplateTokens` (1,024): the tokens expanded, those in the values of its variables included. The error names
+  the token and the variable it is in (`... more than 1024 tokens ... at {var:v0} (in {var:v1})`).
+- `kMaxExpandedBytes` (98,298, three bytes per UTF-16 unit of the longest command line): the expansion's length. No
+  longer text fits a command line, a path or an environment value.
+
+Both are `ValidationFailed` errors (`TemplateError` blockers in a plan) and stop the expansion within milliseconds.
+
 **`{env:NAME}` is restricted to an allow-list of folders.** The allowed names are ALLUSERSPROFILE, APPDATA,
 COMMONPROGRAMFILES, COMMONPROGRAMFILES(X86), COMMONPROGRAMW6432, HOMEDRIVE, HOMEPATH, LOCALAPPDATA, PROGRAMDATA,
 PROGRAMFILES, PROGRAMFILES(X86), PROGRAMW6432, PUBLIC, SYSTEMDRIVE, SYSTEMROOT, TEMP, TMP, USERPROFILE and WINDIR.
@@ -195,13 +206,17 @@ readiness order of ADR-0008 §8, which step 10 maps one to one:
 | 3 | `locateExecutable()` | `ExecutableNotFound` | emulator not found |
 | 3 | not a command interpreter or launcher (`isRefusedProgram`: cmd, powershell, pwsh, wscript, cscript, mshta, rundll32, explorer, conhost, wt, wsl, bash, msiexec, regsvr32, by file name with the file-system casing) | `ProgramRefused` | requires launcher configuration |
 | 4 | the values: arguments, working directory (must be absolute), environment, wait strategy, window timeout, `hideConsoleWindow`, label `<title> with <display name>` | `TemplateError` | requires launcher configuration |
-| 5 | the required files exist (`ISystemProbe::fileExists`) | `RequiredFileMissing` | core not found |
-| 6 | `validateLaunchRequest()` (a PE `.exe`/`.com`, no batch file, the working directory exists, the command line length) | `InvalidRequest` | requires launcher configuration |
+| 5 | `validateLaunchRequest()` (a PE `.exe`/`.com`, no batch file, the working directory exists, the command line length) | `InvalidRequest` | requires launcher configuration |
+| 6 | the required files exist (`ISystemProbe::fileExists`) | `RequiredFileMissing` | core not found |
 
 These rules govern the result:
 
 - **Configuration before location.** A profile that cannot work for a system needs configuration, whether or not its
   emulator is installed.
+- **Configuration before the core.** A request Windows cannot start (a batch file, a missing working directory) is
+  reported before a missing required file, so a game never shows "core not found" first and "requires launcher
+  configuration" once the core is installed. What depends on the executable can only be told once it is found, so it
+  follows "emulator not found".
 - **Unserved systems.** `profile.systems` lists the systems a profile is offered for. A launch for another system, such
   as a per-game choice, is planned with the launch's and the profile's variables, so a missing core is reported by name.
 - **Ready plans.** A ready plan's request has already passed `validateLaunchRequest()`.
@@ -230,30 +245,47 @@ A request is checked in this order, and the first rule that fails refuses it:
    - the name Windows opens, normalized as Windows does it (trailing dots and spaces dropped, `..` resolved);
    - the name of the file it resolves to, through `GetFinalPathNameByHandleW`. This expands 8.3 short names, follows
      symbolic links and junctions, and resolves subst and mapped drives.
-3. **Resolution.** The file must exist and open for its attributes (`Unresolved`).
-4. **RetroArch.** Any `retroarch*.exe` (by either name) needs isolation (`RetroArchNotIsolated`). It is isolated when
-   two passes over the arguments both succeed:
-   - **Every occurrence is usable.** Every argument that spells `--appendconfig` or abbreviates it, wherever it stands,
-     is spelled out exactly: `--appendconfig=<files>`, or `--appendconfig` followed by `<files>`. Every `|`-separated
-     file must be an absolute path to an existing file. Whichever occurrence RetroArch takes last therefore isolates.
-     An abbreviation (which `getopt_long` may accept) or a missing value refuses.
-   - **One occurrence is an option.** At least one of them is read as the option when the arguments are read as
-     RetroArch's `getopt_long` reads them:
-     - only options before the first `--` count;
-     - non-options are permuted;
-     - the value of each option that takes one is skipped, by RetroArch's own option table (43 options), so
-       `-L --appendconfig` passes the core;
-     - grouped short options are read too;
-     - an option RetroArch does not know, or an ambiguous abbreviation, stops RetroArch with an error, and refuses here
-       as well.
+3. **Resolution.** The file must exist, open for its attributes and tell its file id (`Unresolved`).
+4. **RetroArch.** Any `retroarch*.exe` (by either name) needs isolation (`RetroArchNotIsolated`; the message names the
+   argument by its index and the reason, never an argument's value). The arguments are read as RetroArch 1.21.0 reads
+   them, conservatively. Its Windows builds parse with libretro-common's compat getopt, not GNU `getopt_long`
+   (`retroarch.c`, `compat_getopt.c` and the installed 1.21.0 binary were checked): every option is read wherever it
+   stands; long options match by exact name, no abbreviations, the name being the first run of characters other than
+   `=` after `--` (so `--=appendconfig` is `--appendconfig`), the value after the first `=` of the argument, else the
+   next argument; short options come from its option string `hs:fvVS:A:U:DN:d:e:P:R:M:HC:F:L:r:c:`, grouped; `--` is
+   no option; an unknown option stops RetroArch; the last `--appendconfig` read wins. It is isolated when all of these
+   hold:
+   - **The command line reaches it as written.** RetroArch's `main()` reads the ANSI code page's form of its command
+     line (its manifest declares no UTF-8 code page), which Windows makes with best-fit characters: a fullwidth
+     quotation mark (U+FF02) becomes `"` and splits an argument in two, so a ROM named `a＂ --appendconfig=bad ＂.gb`
+     would hand RetroArch an `--appendconfig` of its own. The executable's path and every argument must come back
+     unchanged from that code page (a Windows-1252 machine passes `Pokémon`, refuses `日本`; a UTF-8 code page passes
+     everything).
+   - **Every occurrence is spelled out.** Every argument that may select `--appendconfig` in any reading (its name
+     after `--`, or after `--` and any `=`, is `appendconfig`, an abbreviation of it or a name holding it), wherever
+     it stands, is `--appendconfig=<files>` or `--appendconfig` followed by `<files>`, with usable files.
+   - **The reading is sure.** Read as RetroArch reads them, the arguments hold no option it does not know (from its
+     option table of 44 long options; `--`, abbreviations and options of older versions such as `--bsvplay`
+     included), no lone `-`, no grouped short options running into a long one (`-v-appendconfig`), no option
+     without its value (RetroArch would take one from the arguments it moved behind: refused rather than modelled),
+     and at least one `--appendconfig`, each with usable files. A value is never taken for an option
+     (`-L --appendconfig` passes the core), and a value glued to an option without one is ignored (`--verbose=x`).
+   - **The appended files are files RetroArch opens.** RetroArch only logs a file it cannot append and then runs on
+     its own configuration, so each `|`-separated file must be an absolute drive or UNC path (no `\\?\` form, device
+     or stream), in ASCII (RetroArch opens the files named by its ANSI arguments as UTF-8 text; any text when the
+     code page is UTF-8), of at most 259 characters as written and once normalized (RetroArch is not long-path aware),
+     and an existing file; the whole value at most 4,095 bytes (RetroArch keeps no more of it).
 
    A different case (`--APPENDCONFIG`) is an unknown option.
-5. **The allow-list.** The request's resolved file must be the file a listed entry resolves to, compared with the
-   file-system casing (`NotListed`).
+5. **The allow-list.** The request's resolved file must be the file a listed entry resolves to: the same final path,
+   compared with the file-system casing, and the same file, by volume and file id (`FILE_ID_INFO`, else the older
+   64-bit index). A folder with case-sensitive names (NTFS, per folder) holds `emu.exe` and `EMU.EXE` as two files
+   whose paths fold alike; the identity keeps them apart. An entry that cannot be opened allows nothing (`NotListed`).
 
 The tests try to get past it in these ways:
 
 - another case;
+- a folder with case-sensitive names, holding two files whose names differ only in case;
 - an 8.3 short name, also in the list;
 - relative paths;
 - `..`;
@@ -263,7 +295,10 @@ The tests try to get past it in these ways:
 - symbolic links, including one with an innocent name that leads to DuckStation, and a look-alike name;
 - streams;
 - device paths;
-- the `\\?\` form.
+- the `\\?\` form;
+- for RetroArch: `--=appendconfig`, `--==appendconfig=x`, abbreviations, `--`, values taken for options, grouped short
+  options, an `--appendconfig` that is not the last one read, fullwidth characters, appended files with non-ASCII or
+  long paths, a value longer than RetroArch keeps.
 
 **Limit:** a hard link or a copy under another name is not recognized by name. Only the list keeps it from starting.
 The guard is a safety net for automation, not a security boundary.
@@ -296,6 +331,11 @@ The guard is a safety net for automation, not a security boundary.
 - `{rom_ext}` keeps its dot. Path tokens use `\` and drop a trailing separator.
 - Variables are scoped dynamically (the launch, then the system, then the profile, looked up again from the first
   scope inside values). They are never self-referential, and nest at most 32 levels.
+- An element expands at most 1,024 tokens and 98,298 bytes. A token budget, not a cache of expanded values: it also
+  bounds the variables whose values are empty (no text grows, the time still doubles) and the parsing of long values,
+  and no legitimate profile comes near it.
+- The plan validates the request before it checks the required files (review of the step): readiness puts "requires
+  launcher configuration" before "core not found".
 - `{env:NAME}` is limited to an allow-list of folder variables, and only those. Executable paths also take a leading `~`
   and wildcards in their last element, as ES-DE's static paths do.
 - `requiredFiles` is the generic form of "the core exists", so readiness can say "core not found" for any profile.
@@ -312,17 +352,29 @@ The guard is a safety net for automation, not a security boundary.
 - The guard is enforced in the runner, not in `LaunchSession`. Every real process start is covered, including the
   spikes, and the session tests stay independent of the environment. `FailureReason` is unchanged, so a refusal is
   `StartFailed`.
-- The allow-list matches resolved final paths, both for the request and for each entry. The name rules check both the
-  requested and the resolved name.
+- The allow-list matches resolved final paths and file ids, both for the request and for each entry; an entry that
+  cannot be opened matches nothing (its folded path alone would match another file in a folder with case-sensitive
+  names). The name rules check both the requested and the resolved name.
 - `retroarch*.exe`, not only `retroarch.exe`, needs isolation (`retroarch_angle.exe` and other builds).
 - The isolation rule is stricter than "`--appendconfig` among the arguments":
-  - every occurrence must be spelled out and name existing absolute files;
-  - one occurrence must be an option under RetroArch's own option table;
+  - every occurrence must be spelled out and name files RetroArch opens;
+  - the arguments are read as RetroArch 1.21.0 reads them, by its own option table and option string, and every
+    `--appendconfig` read must be usable;
   - unknown options refuse.
 
   A first version skipped the value of any option that might take one. That could hide a later, unusable
-  `--appendconfig` behind a flag (`--appendconfig=good --max-frames-ss -L --appendconfig=bad`), so the reading now
+  `--appendconfig` behind a flag (`--appendconfig=good --max-frames-ss -L --appendconfig=bad`), so the reading
   follows the table exactly and every occurrence is checked whatever its position.
+- The reading models libretro-common's compat getopt, which RetroArch's Windows builds compile (its configure check
+  for `getopt_long` fails with MinGW, and the installed 1.21.0 binary holds none of the MinGW `getopt` messages), not
+  GNU `getopt_long` (review of the step: `--=appendconfig` passed an earlier version). Where GNU `getopt_long` would
+  read the same arguments otherwise (abbreviations, `--`), it would stop with an error, which the reading refuses
+  anyway, so a build with either parser is covered. The table holds 1.21.0's options with every build option; a
+  newer RetroArch's new options are refused until the table learns them.
+- RetroArch reads the ANSI code page's form of its command line and opens the files of its arguments as UTF-8 text
+  without long path support (`main()`, `fopen_utf8`, its manifest): the guard refuses what would reach it as other
+  text and appended files it could not open. The guard's process has the system's code page, as RetroArch has:
+  Retroverse's manifests declare no active code page (a UTF-8 one there would hide the conversion from the guard).
 - An empty `RV_LAUNCH_ALLOWLIST` is active (fail closed).
 
 **Supporting API**
@@ -332,12 +384,15 @@ The guard is a safety net for automation, not a security boundary.
 
 ## Tests
 
-`build/msvc-x64-debug/bin/rv_tests.exe "launcher/*"` runs 78 test cases, 45 of them new, with about 8,000 assertions.
+`build/msvc-x64-debug/bin/rv_tests.exe "launcher/*"` runs 85 test cases, 52 of them new, with about 8,300 assertions.
 
 - **Templates:**
   - parsing and errors, with the token named;
   - every token, including folder ROMs, names without an extension and non-ASCII names;
   - variable scopes, cycles and depth;
+  - the limits: a 32-level chain of variables that each use the one before twice, with text and empty, expanded and
+    checked, stops within milliseconds; path tokens count; the byte limit for variables, literal text, the ROM path and
+    environment values;
   - the environment allow-list;
   - UTF-8 and NUL checks;
   - hostile ROM paths (spaces, `'`, `"`, `&`, `%`, `^`, `;`, `=`, non-ASCII, UNC, more than 300 characters) staying one
@@ -354,14 +409,20 @@ The guard is a safety net for automation, not a security boundary.
 - **Plans:**
   - a RetroArch request that passes `validateLaunchRequest` with a program stub;
   - real hostile ROM files, including one past 260 characters, round-tripped through `CommandLineToArgvW`;
-  - every blocker and its order (configuration before a missing emulator);
+  - every blocker and its order (configuration before a missing emulator; a batch file or a missing working
+    directory before a missing core);
+  - a chain of variables used over and over, in the profile or in the launch, blocks the plan at once;
   - `isRefusedProgram`;
   - the shipped profile on a fake machine, located through App Paths and through `~`;
   - an end-to-end run: a planned request for a ROM path of more than 260 characters reaches `rv_fake_emulator`
     argument for argument through `Win32ProcessRunner`, in the emulator's own folder.
 - **Guard:**
   - every rule;
-  - every bypass attempt listed above;
+  - every bypass attempt listed above (the folder with case-sensitive names is made with `FileCaseSensitiveInfo`, and
+    the test is skipped where Windows cannot);
+  - RetroArch's ANSI command line, against an independent check of the code page (`WC_NO_BEST_FIT_CHARS`), and the
+    files it opens;
+  - the refusal messages, which name the argument and never its value;
   - the environment (unset, set, empty, non-ASCII entries);
   - `processEnvironmentVariable`;
   - the runner refusing an unlisted program before the hand-over, then starting it once it is listed.
@@ -379,4 +440,9 @@ The guard is a safety net for automation, not a security boundary.
 - **`BACKLOG.md`:** candidates:
   - profile inheritance (`extends`);
   - a `startupGraceSeconds` per profile;
-  - hard links in the guard (compare file ids with known emulator installations).
+  - hard links in the guard (compare file ids with known emulator installations);
+  - best-fit argument mangling for every emulator, not only under the guard: an emulator whose `main()` reads the ANSI
+    code page receives a ROM path that the code page does not hold as other text, and a fullwidth quotation mark in
+    it splits the argument ("WorstFit"). Plans could refuse or warn for such paths, or prefer emulators known to read
+    UTF-16 (their manifest, `wmain`);
+  - the guard's RetroArch option table follows RetroArch releases (1.21.0 today).

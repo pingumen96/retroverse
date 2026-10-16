@@ -100,10 +100,21 @@ constexpr std::array<NamedToken, 7> kPlainTokens{{
     return path;
 }
 
-/// Expands elements and the variables they use, keeping the chain of variables being expanded (cycles, messages).
+/// Expands one element and the variables it uses, keeping the chain of variables being expanded (cycles, messages) and
+/// the work done: every token counts against kMaxTemplateTokens and the result never grows past kMaxExpandedBytes, so
+/// that variables used over and over (each value using the next variable twice doubles the work with every level)
+/// fail at once instead of taking hours and gigabytes.
 class Expander {
 public:
-    Expander(const TemplateContext& context, bool checkOnly) : m_context(context), m_checkOnly(checkOnly) {}
+    Expander(const TemplateContext& context, bool checkOnly) : m_context(context), m_checkOnly(checkOnly) {
+        // The paths of the tokens, prepared once rather than for each of the tokens.
+        if (context.rom) {
+            m_rom = tokenPath(*context.rom);
+        }
+        if (context.emulatorDirectory) {
+            m_emulatorDirectory = tokenPath(*context.emulatorDirectory);
+        }
+    }
 
     /// Appends the expansion of `element` to `out`.
     [[nodiscard]] Status expand(std::string& out, std::string_view element) {
@@ -145,6 +156,19 @@ private:
         return nullptr;
     }
 
+    /// Appends `text` unless the result would pass kMaxExpandedBytes.
+    [[nodiscard]] Status append(std::string& out, std::string_view text, std::string_view element) {
+        if (text.size() > kMaxExpandedBytes - out.size()) { // out.size() never passes the limit
+            return failure(ErrorCode::ValidationFailed,
+                           fmt::format("the element expands to more than {} bytes, longer than a command line, a path "
+                                       "or an environment value can be{}",
+                                       kMaxExpandedBytes, where()),
+                           element);
+        }
+        out += text;
+        return ok();
+    }
+
     [[nodiscard]] Status appendPath(std::string& out, const std::filesystem::path& path, std::string_view what,
                                     std::string_view element) {
         auto utf8 = core::tryPathToUtf8(path);
@@ -152,8 +176,7 @@ private:
             return failure(ErrorCode::ValidationFailed, fmt::format("{} cannot be represented in UTF-8", what),
                            element);
         }
-        out += *utf8;
-        return ok();
+        return append(out, *utf8, element);
     }
 
     [[nodiscard]] Status expandVariable(std::string& out, const TemplatePart& part, std::string_view element) {
@@ -211,14 +234,19 @@ private:
             return failure(ErrorCode::NotFound,
                            fmt::format("the environment variable {{env:{}}}{} is not set", name, where()), element);
         }
-        out += *value;
-        return ok();
+        return append(out, *value, element);
     }
 
     [[nodiscard]] Status expandPart(std::string& out, const TemplatePart& part, std::string_view element) {
         if (!part.token) {
-            out += part.text;
-            return ok();
+            return append(out, part.text, element);
+        }
+        if (++m_tokens > kMaxTemplateTokens) {
+            return failure(ErrorCode::ValidationFailed,
+                           fmt::format("the element expands more than {} tokens, those in the values of its variables "
+                                       "included (variables used over and over), at {}{}",
+                                       kMaxTemplateTokens, written(part), where()),
+                           element);
         }
         const auto missing = [&]() -> Status {
             if (m_checkOnly) {
@@ -233,10 +261,10 @@ private:
         case TemplateToken::RomName:
         case TemplateToken::RomFile:
         case TemplateToken::RomExt: {
-            if (!m_context.rom) {
+            if (!m_rom) {
                 return missing();
             }
-            const std::filesystem::path rom = tokenPath(*m_context.rom);
+            const std::filesystem::path& rom = *m_rom;
             switch (*part.token) {
             case TemplateToken::RomDir:
                 return appendPath(out, rom.parent_path(), "the ROM's folder", element);
@@ -251,16 +279,15 @@ private:
             }
         }
         case TemplateToken::EmulatorDir:
-            if (!m_context.emulatorDirectory) {
+            if (!m_emulatorDirectory) {
                 return missing();
             }
-            return appendPath(out, tokenPath(*m_context.emulatorDirectory), "the emulator's folder", element);
+            return appendPath(out, *m_emulatorDirectory, "the emulator's folder", element);
         case TemplateToken::System:
             if (!m_context.system) {
                 return missing();
             }
-            out += *m_context.system;
-            return ok();
+            return append(out, *m_context.system, element);
         case TemplateToken::Variable:
             return expandVariable(out, part, element);
         case TemplateToken::Environment:
@@ -271,7 +298,10 @@ private:
 
     const TemplateContext& m_context;
     bool m_checkOnly;
+    std::optional<std::filesystem::path> m_rom;
+    std::optional<std::filesystem::path> m_emulatorDirectory;
     std::vector<std::string> m_stack;
+    std::size_t m_tokens = 0; ///< tokens expanded so far, at every level
 };
 
 } // namespace

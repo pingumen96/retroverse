@@ -379,6 +379,56 @@ TEST_CASE("launcher/launch_plan: the executable", "[launcher][launch_plan]") {
     }
 }
 
+TEST_CASE("launcher/launch_plan: a request Windows cannot start comes before a missing core", "[launcher][launch_plan]") {
+    // Both require launcher configuration (ADR-0008 §8), which comes before "core not found": snes's core is missing on
+    // this machine, and the catalog maps the blockers one to one.
+    Machine machine;
+    const std::filesystem::path rom = machine.rom("snes/Game.sfc");
+    SECTION("a batch file") {
+        EmulatorProfile profile = retroArch();
+        profile.executable.appPathsName = "emu.bat";
+        const std::filesystem::path batch = machine.dir.file("Emulators/Retro Arch/emu.bat"); // beside the cores
+        std::ofstream(batch) << "@echo off\n";
+        machine.registerAppPath("emu.bat", batch);
+        requireBlocked(planLaunch(target(rom, "snes"), profile, machine.probe), BlockerKind::InvalidRequest,
+                       {"batch"});
+    }
+    SECTION("a working directory that does not exist") {
+        EmulatorProfile profile = retroArch();
+        profile.workingDirectory = "{emulator_dir}\\nope";
+        requireBlocked(planLaunch(target(rom, "snes"), profile, machine.probe), BlockerKind::InvalidRequest,
+                       {"working directory"});
+    }
+    // Once the request can start, the missing core is what blocks it.
+    requireBlocked(planLaunch(target(rom, "snes"), retroArch(), machine.probe), BlockerKind::RequiredFileMissing,
+                   {"snes9x_libretro.dll"});
+}
+
+TEST_CASE("launcher/launch_plan: variables used over and over block the launch at once", "[launcher][launch_plan]") {
+    // Each variable of the profile, or of the launch, uses the one before it twice: 2^31 expansions within the nesting
+    // limit, checked and then expanded by the plan. The token budget makes it a configuration error at once.
+    Machine machine;
+    const std::filesystem::path rom = machine.rom("gb/Game.gb");
+    rv::launcher::TemplateVariables doubling{{"v0", ""}};
+    for (int i = 1; i < 32; ++i) {
+        const std::string previous = "{var:v" + std::to_string(i - 1) + "}";
+        doubling["v" + std::to_string(i)] = previous + previous;
+    }
+    EmulatorProfile profile = retroArch();
+    profile.arguments.push_back("{var:v31}");
+    SECTION("in the profile") {
+        profile.variables.insert(doubling.begin(), doubling.end());
+        requireBlocked(planLaunch(target(rom), profile, machine.probe), BlockerKind::TemplateError,
+                       {"more than 1024 tokens", "profile 'retroarch'", "arguments[3]"});
+    }
+    SECTION("in the launch") {
+        LaunchTarget launch = target(rom);
+        launch.variables = doubling;
+        requireBlocked(planLaunch(launch, profile, machine.probe), BlockerKind::TemplateError,
+                       {"more than 1024 tokens", "arguments[3]"});
+    }
+}
+
 TEST_CASE("launcher/launch_plan: a required file that is missing", "[launcher][launch_plan]") {
     Machine machine;
     const std::filesystem::path rom = machine.rom("snes/Game.sfc");

@@ -76,10 +76,10 @@ std::string_view toString(BlockerKind kind) noexcept {
         return "executable not found";
     case BlockerKind::ProgramRefused:
         return "program refused";
-    case BlockerKind::RequiredFileMissing:
-        return "required file missing";
     case BlockerKind::InvalidRequest:
         return "invalid request";
+    case BlockerKind::RequiredFileMissing:
+        return "required file missing";
     }
     return "unknown";
 }
@@ -197,7 +197,16 @@ LaunchPlan planLaunch(const LaunchTarget& target, const EmulatorProfile& profile
     }
     request.label = fmt::format("{} with {}", title, profile.displayName);
 
-    // 5. The required files.
+    // 5. The request's own checks: a program Windows can start without a shell, its working directory, its command
+    // line. Before the required files: a request that can never start requires configuration (ADR-0008 §8), which
+    // comes before "core not found" whatever the files.
+    if (auto valid = validateLaunchRequest(request); !valid) {
+        return block(BlockerKind::InvalidRequest,
+                     fmt::format("{} cannot be started: {} (profile '{}')", request.label, valid.error().toString(),
+                                 profile.id));
+    }
+
+    // 6. The required files.
     for (; next < used.size(); ++next) {
         auto file = expand(used[next]);
         if (!file) {
@@ -211,14 +220,6 @@ LaunchPlan planLaunch(const LaunchTarget& target, const EmulatorProfile& profile
                                      profile.displayName, *file, profile.id, used[next].where, *used[next].text,
                                      target.system));
         }
-    }
-
-    // 6. The request's own checks: a program Windows can start without a shell, its working directory, its command
-    // line.
-    if (auto valid = validateLaunchRequest(request); !valid) {
-        return block(BlockerKind::InvalidRequest,
-                     fmt::format("{} cannot be started: {} (profile '{}')", request.label, valid.error().toString(),
-                                 profile.id));
     }
     plan.request = std::move(request);
     return plan;
