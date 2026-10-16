@@ -308,15 +308,17 @@ std::string esdeGenericText(const std::filesystem::path& folder) {
         text.erase(0, 4);
     }
     std::replace(text.begin(), text.end(), '\\', '/');
-    std::string generic;
-    generic.reserve(text.size());
-    for (const char c : text) {
-        if (c == '/' && !generic.empty() && generic.back() == '/') {
-            continue;
+    // A network path keeps its leading pair, which ES-DE collapses (and then cannot reach the share).
+    const std::size_t keep = text.starts_with("//") ? 2 : 0;
+    std::string generic = text.substr(0, keep);
+    for (std::size_t at = keep; at < text.size(); ++at) {
+        if (text[at] == '/' && !generic.empty() && generic.back() == '/') {
+            continue; // repeated separators collapsed
         }
-        generic += c;
+        generic += text[at];
     }
-    while (generic.size() > 1 && generic.back() == '/') {
+    // No trailing separator: "C:/" is "C:", as getGenericPath gives it.
+    while (generic.size() > std::max<std::size_t>(keep, 1) && generic.back() == '/') {
         generic.pop_back();
     }
     return generic;

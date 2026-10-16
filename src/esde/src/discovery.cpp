@@ -91,9 +91,6 @@ std::optional<std::filesystem::path> portableHome(const std::filesystem::path& i
     } else if (core::isValidUtf8(line)) {
         // ES-DE appends the line whatever it holds ("<install>/<line>"): an absolute path there names no folder.
         home = folderFromEsdeText(esdeGenericText(installFolder) + "/" + std::string(line));
-        if (home) {
-            home = tidyFolder(*home);
-        }
     }
     if (!home || checkFolder(*home).availability != catalog::Availability::Available) {
         issues.push_back(issueOf(

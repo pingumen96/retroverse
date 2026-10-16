@@ -3,11 +3,12 @@
 //    the overrides) and the ROM and media roots it gives with ES-DE's settings. Exit codes: 0, 1 when there is no
 //    library.json, 3 when it cannot be read or is invalid.
 //  - library create [--id <slug>] [--home <dir>] [--install <dir>] [--rom-root <dir>] [--media-root <dir>] [--force]
-//    [--json]: discovers ES-DE (--home and --install as discover takes them), refuses a user data directory inside the
-//    library's folders (core::checkUserDataDirectory: the ES-DE home and install folder, the ROM and media roots) and
-//    writes library.json atomically; an existing library.json is replaced only with --force. Exit codes: 0, 2 for
-//    invalid options and what they must change (no ES-DE home, a data directory inside the library, library.json
-//    already there), 3 when it cannot be written.
+//    [--json]: discovers ES-DE (--home and --install as discover takes them), resolves the ROM and media roots (from
+//    the settings, else the options must give them), refuses a user data directory inside the library's folders
+//    (core::checkUserDataDirectory: the ES-DE home and install folder, the ROM and media roots) and writes
+//    library.json atomically; an existing library.json is replaced only with --force. Exit codes: 0, 2 for invalid
+//    options and what they must change (no ES-DE home, a root that cannot be resolved, a data directory inside the
+//    library, library.json already there), 3 when it cannot be written.
 // The catalog database, the authority on the id, does not exist before I2 step 4: from then on the import refuses a
 // library.json whose id differs from the database's.
 
@@ -16,6 +17,7 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -36,45 +38,15 @@
 #include <rv/platform_win/system_probe.hpp>
 
 #include "commands.hpp"
+#include "esde_text.hpp"
 
 namespace rv::cli {
 namespace {
 
-using Json = nlohmann::ordered_json;
-
 constexpr std::string_view kName = "retroverse-cli library";
 
-/// An absolute folder from a path option (relative ones against the current folder), tidied as library.json keeps
-/// folders (esde::folderFromEsdeText). Errors (InvalidArgument): an empty value, text that is not UTF-8, a path that
-/// cannot be made absolute.
-Expected<std::optional<std::filesystem::path>> folderOption(const core::ParsedArgs& args, std::string_view name) {
-    if (!args.has(name)) {
-        return std::optional<std::filesystem::path>{};
-    }
-    const std::string option = "--" + std::string(name);
-    const std::string text = args.value(name).value_or("");
-    if (text.empty()) {
-        return makeError(ErrorCode::InvalidArgument, "value must not be empty", option);
-    }
-    auto path = core::tryPathFromUtf8(text);
-    if (!path) {
-        return makeError(ErrorCode::InvalidArgument, "value is not valid UTF-8", option);
-    }
-    std::error_code error;
-    const std::filesystem::path absolute = std::filesystem::absolute(*path, error);
-    auto folder = error ? std::nullopt : esde::folderFromEsdeText(core::pathToUtf8Lossy(absolute));
-    if (!folder) {
-        return makeError(ErrorCode::InvalidArgument, "cannot be made an absolute folder", option);
-    }
-    return std::optional<std::filesystem::path>(std::move(*folder));
-}
-
 std::string text(const std::filesystem::path& path) {
-    return core::pathToUtf8Lossy(path);
-}
-
-Json pathJson(const std::optional<std::filesystem::path>& path) {
-    return path ? Json(text(*path)) : Json(nullptr);
+    return pathText(path);
 }
 
 /// The roots a profile gives: its overrides, else ES-DE's settings (nothing when those cannot be read).
@@ -83,6 +55,11 @@ struct Roots {
     std::optional<esde::ResolvedRoot> media;
     /// Why the settings could not be read, when they could not.
     std::string settingsError;
+
+    /// "unknown (...)": what a root without settings reads as.
+    [[nodiscard]] std::string unknown() const {
+        return fmt::format("unknown (the settings cannot be read: {})", settingsError);
+    }
 };
 
 Roots rootsOf(const catalog::LibraryProfile& profile) {
@@ -105,37 +82,9 @@ Roots rootsOf(const catalog::LibraryProfile& profile) {
     return roots;
 }
 
-std::string rootText(const std::optional<esde::ResolvedRoot>& root, std::string_view setting,
-                     const std::string& settingsError) {
-    if (!root) {
-        return fmt::format("unknown (the settings cannot be read: {})", settingsError);
-    }
-    if (!root->path) {
-        return fmt::format("unresolved ({} \"{}\")", setting, root->configured);
-    }
-    switch (root->source) {
-    case esde::RootSource::Override:
-        return fmt::format("{} (override)", text(*root->path));
-    case esde::RootSource::Setting:
-        return fmt::format("{} ({} \"{}\")", text(*root->path), setting, root->configured);
-    case esde::RootSource::Default:
-        return fmt::format("{} (default: {} is empty)", text(*root->path), setting);
-    }
-    return text(*root->path);
-}
-
-Json rootJson(const std::optional<esde::ResolvedRoot>& root) {
-    if (!root) {
-        return nullptr;
-    }
-    return Json{{"path", pathJson(root->path)},
-                {"source", std::string(esde::toString(root->source))},
-                {"configured", root->configured}};
-}
-
-/// Prints a profile and the roots it gives, as text or JSON.
-void writeProfile(Output& out, const std::filesystem::path& file, const catalog::LibraryProfile& profile, bool json) {
-    const Roots roots = rootsOf(profile);
+/// Prints a profile and the roots it gives (rootsOf()), as text or JSON.
+void writeProfile(Output& out, const std::filesystem::path& file, const catalog::LibraryProfile& profile,
+                  const Roots& roots, bool json) {
     if (json) {
         const Json report{{"file", text(file)},
                           {"id", profile.id.str()},
@@ -156,8 +105,8 @@ void writeProfile(Output& out, const std::filesystem::path& file, const catalog:
     line("Adapter", std::string(catalog::toString(profile.adapter)));
     line("ES-DE home", text(profile.esdeHome));
     line("Install folder", profile.installFolder ? text(*profile.installFolder) : std::string("not known"));
-    line("ROM root", rootText(roots.rom, "ROMDirectory", roots.settingsError));
-    line("Media root", rootText(roots.media, "MediaDirectory", roots.settingsError));
+    line("ROM root", rootText(roots.rom, "ROMDirectory", roots.unknown()));
+    line("Media root", rootText(roots.media, "MediaDirectory", roots.unknown()));
 }
 
 /// The output a command's --output option names, else the context's.
@@ -209,7 +158,7 @@ ExitCode show(CommandContext& context, std::span<const std::string> arguments) {
         context.err.writeLine(fmt::format("{}: {}", kName, profile.error().toString()));
         return ExitCode::RuntimeFailure;
     }
-    writeProfile(*destination.out, file, *profile, args->has("json"));
+    writeProfile(*destination.out, file, *profile, rootsOf(*profile), args->has("json"));
     return finish(destination, context, ExitCode::Ok);
 }
 
@@ -283,16 +232,19 @@ ExitCode create(CommandContext& context, std::span<const std::string> arguments)
     profile->romRoot = *romRoot;
     profile->mediaRoot = *mediaRoot;
 
-    // Retroverse writes nowhere in what it reads (ADR-0008 §6, §7).
+    // Retroverse writes nowhere in what it reads (ADR-0008 §6, §7): the roots must be known to be kept out of.
     const Roots roots = rootsOf(*profile);
-    std::vector<std::filesystem::path> protectedRoots{profile->esdeHome};
+    for (const auto& [root, kind, setting, option] :
+         {std::tuple{&roots.rom, "ROM", "ROMDirectory", "--rom-root"},
+          std::tuple{&roots.media, "media", "MediaDirectory", "--media-root"}}) {
+        if (!*root || !(*root)->path) {
+            return usage(fmt::format("the library's {} root is {}: give it with {}", kind,
+                                     rootText(*root, setting, roots.unknown()), option));
+        }
+    }
+    std::vector<std::filesystem::path> protectedRoots{profile->esdeHome, *roots.rom->path, *roots.media->path};
     if (profile->installFolder) {
         protectedRoots.push_back(*profile->installFolder);
-    }
-    for (const auto* root : {&roots.rom, &roots.media}) {
-        if (*root && (*root)->path) {
-            protectedRoots.push_back(*(*root)->path);
-        }
     }
     if (const Status allowed = core::checkUserDataDirectory(context.paths.userDataRoot(), protectedRoots); !allowed) {
         return usage(fmt::format("the user data directory may not lie inside the library's folders: {}",
@@ -301,7 +253,13 @@ ExitCode create(CommandContext& context, std::span<const std::string> arguments)
 
     const std::filesystem::path file = context.paths.configDir() / esde::kLibraryFileName;
     std::error_code error;
-    if (std::filesystem::exists(file, error) && !args->has("force")) {
+    const bool present = std::filesystem::exists(file, error);
+    if (error) {
+        context.err.writeLine(fmt::format("{} create: cannot tell whether {} exists: {}", kName, text(file),
+                                          error.message()));
+        return ExitCode::RuntimeFailure;
+    }
+    if (present && !args->has("force")) {
         return usage(fmt::format("{} exists already: --force replaces it", text(file)));
     }
     Destination destination{std::move(*output), nullptr};
@@ -311,7 +269,7 @@ ExitCode create(CommandContext& context, std::span<const std::string> arguments)
         return ExitCode::RuntimeFailure;
     }
     spdlog::info("library create: library '{}' written", profile->id.str());
-    writeProfile(*destination.out, file, *profile, args->has("json"));
+    writeProfile(*destination.out, file, *profile, roots, args->has("json"));
     return finish(destination, context, ExitCode::Ok);
 }
 

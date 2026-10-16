@@ -134,7 +134,8 @@ struct ResolvedRoot {
 
 /// ES-DE's text of a folder (its "generic" form, Utils::FileSystem::getGenericPath): '/' between the elements,
 /// repeated separators collapsed, no trailing separator. What '~' (the home folder) and %ESPATH% (the install folder)
-/// expand to in ES-DE's paths.
+/// expand to in ES-DE's paths. The leading "//" of a network path is kept, where ES-DE collapses it too and then
+/// cannot reach the share: Retroverse reads it (as it reads a network root, "root-network-share").
 [[nodiscard]] std::string esdeGenericText(const std::filesystem::path& folder);
 
 /// ES-DE's Utils::String::replace: every `from` in `text` replaced with `to`, again and again until none is left

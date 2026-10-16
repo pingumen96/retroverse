@@ -20,6 +20,7 @@
 #include <rv/catalog/snapshot.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/arg_parser.hpp>
+#include <rv/core/case_fold.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
@@ -29,41 +30,15 @@
 #include <rv/platform_win/system_probe.hpp>
 
 #include "commands.hpp"
+#include "esde_text.hpp"
 
 namespace rv::cli {
 namespace {
 
-using Json = nlohmann::ordered_json;
-
 constexpr std::string_view kName = "retroverse-cli discover";
 
-/// An absolute folder from a path option (relative ones against the current folder), tidied as discovery keeps
-/// folders (esde::folderFromEsdeText). Errors (InvalidArgument): an empty value, text that is not UTF-8, a path that
-/// cannot be made absolute.
-Expected<std::optional<std::filesystem::path>> folderOption(const core::ParsedArgs& args, std::string_view name) {
-    if (!args.has(name)) {
-        return std::optional<std::filesystem::path>{};
-    }
-    const std::string option = "--" + std::string(name);
-    const std::string text = args.value(name).value_or("");
-    if (text.empty()) {
-        return makeError(ErrorCode::InvalidArgument, "value must not be empty", option);
-    }
-    auto path = core::tryPathFromUtf8(text);
-    if (!path) {
-        return makeError(ErrorCode::InvalidArgument, "value is not valid UTF-8", option);
-    }
-    std::error_code error;
-    const std::filesystem::path absolute = std::filesystem::absolute(*path, error);
-    auto folder = error ? std::nullopt : esde::folderFromEsdeText(core::pathToUtf8Lossy(absolute));
-    if (!folder) {
-        return makeError(ErrorCode::InvalidArgument, "cannot be made an absolute folder", option);
-    }
-    return std::optional<std::filesystem::path>(std::move(*folder));
-}
-
 std::string text(const std::filesystem::path& path) {
-    return core::pathToUtf8Lossy(path);
+    return pathText(path);
 }
 
 /// "1 core", "2 cores", "0 entries".
@@ -72,18 +47,6 @@ std::string counted(std::size_t count, std::string_view one, std::string_view ma
         return fmt::format("1 {}", one);
     }
     return many.empty() ? fmt::format("{} {}s", count, one) : fmt::format("{} {}", count, many);
-}
-
-Json pathJson(const std::optional<std::filesystem::path>& path) {
-    return path ? Json(text(*path)) : Json(nullptr);
-}
-
-Json issueJson(const catalog::Issue& issue) {
-    return Json{{"severity", std::string(catalog::toString(issue.severity))},
-                {"code", issue.code},
-                {"system", issue.system},
-                {"file", issue.file},
-                {"reason", issue.reason}};
 }
 
 /// Everything discover found.
@@ -120,13 +83,20 @@ catalog::Issue failureIssue(std::string code, const Error& error) {
     return catalog::Issue{catalog::IssueSeverity::Error, std::move(code), {}, error.context, error.message};
 }
 
-/// The gamelists ES-DE would read for the configured systems, then the gamelists of folders no system names.
+/// A folder name as the file system compares it (its upper case; the name itself when the system cannot case it).
+std::string folderKey(const std::string& name) {
+    auto upper = core::fileSystemUpperCase(name);
+    return upper ? std::move(*upper) : name;
+}
+
+/// The gamelists ES-DE would read for the configured systems, then the gamelists of folders no system names (the
+/// folder names compared as the file system compares them: gamelists\NES is nes's).
 std::vector<Report::Gamelist> findGamelists(const Report& report, const esde::EsdeSettings& settings,
                                             const std::filesystem::path& esdeHome) {
     std::vector<Report::Gamelist> found;
     std::vector<std::string> configured;
     for (const catalog::SystemInfo& system : report.systemInfos) {
-        configured.push_back(system.name.str());
+        configured.push_back(folderKey(system.name.str()));
         const std::optional<std::filesystem::path> folder =
             system.romFolder.empty() ? std::nullopt : std::optional(system.romFolder);
         std::filesystem::path file = esde::gamelistFile(system.name, folder, settings, esdeHome);
@@ -144,7 +114,7 @@ std::vector<Report::Gamelist> findGamelists(const Report& report, const esde::Es
             continue;
         }
         const auto name = core::tryPathToUtf8(it->path().filename());
-        if (!name || std::find(configured.begin(), configured.end(), *name) != configured.end()) {
+        if (!name || std::find(configured.begin(), configured.end(), folderKey(*name)) != configured.end()) {
             continue;
         }
         std::filesystem::path file = it->path() / "gamelist.xml";
@@ -205,24 +175,6 @@ std::string sourceText(const esde::EsdeDiscovery& discovery) {
         break;
     }
     return "not found";
-}
-
-std::string rootText(const std::optional<esde::ResolvedRoot>& root, std::string_view setting) {
-    if (!root) {
-        return "unknown (no settings)";
-    }
-    if (!root->path) {
-        return fmt::format("unresolved ({} \"{}\")", setting, root->configured);
-    }
-    switch (root->source) {
-    case esde::RootSource::Override:
-        return fmt::format("{} (override)", text(*root->path));
-    case esde::RootSource::Setting:
-        return fmt::format("{} ({} \"{}\")", text(*root->path), setting, root->configured);
-    case esde::RootSource::Default:
-        return fmt::format("{} (default: {} is empty)", text(*root->path), setting);
-    }
-    return text(*root->path);
 }
 
 std::vector<const catalog::SystemInfo*> withRomFolder(const Report& report) {
@@ -288,8 +240,8 @@ void writeText(const Report& report, Output& out) {
         }
     }
     if (report.profile) {
-        line("ROM root", rootText(report.romRoot, "ROMDirectory"));
-        line("Media root", rootText(report.mediaRoot, "MediaDirectory"));
+        line("ROM root", rootText(report.romRoot, "ROMDirectory", "unknown (the settings cannot be read)"));
+        line("Media root", rootText(report.mediaRoot, "MediaDirectory", "unknown (the settings cannot be read)"));
     }
     if (report.findRules) {
         line("Find rules", fmt::format("{}, {}, {}", counted(report.findRules->emulators.size(), "emulator"),
@@ -324,14 +276,6 @@ void writeText(const Report& report, Output& out) {
     }
 }
 
-Json rootJson(const std::optional<esde::ResolvedRoot>& root) {
-    if (!root) {
-        return nullptr;
-    }
-    return Json{{"path", pathJson(root->path)},
-                {"source", std::string(esde::toString(root->source))},
-                {"configured", root->configured}};
-}
 
 Json reportJson(const Report& report) {
     const esde::EsdeDiscovery& discovery = report.discovery;

@@ -14,7 +14,7 @@ Roadmap row: I2 step 2 (wave 1, needs 0b and 1). Decision: [ADR-0008](../decisio
 | `rv/esde/systems.hpp` | `loadSystems()` / `loadSystemsFiles()`: es_systems.xml, custom first (`SystemsConfiguration`: one `SystemDefinition` per name, the `fallbacks` ES-DE tries when a definition finds no game, `<loadExclusive/>`); `systemRomFolder()`; `systemInfos()` (the domain's `catalog::SystemInfo`, the ROM folder's availability checked); `gamelistFile()` |
 | `rv/esde/find_rules.hpp` | `loadFindRules()` / `loadFindRulesFiles()`: es_find_rules.xml, custom first (`FindRules`: emulators and cores, typed rules with their entries in order). Parsing only: step 10 evaluates them |
 | `rv/esde/command_template.hpp` | `splitCommandLine()` (exactly shell32's CommandLineToArgvW), `parseCommandTemplate()` (elements, tokens, the program's index), `scanCommandTokens()`, `censusKey()` |
-| `tools/cli/src/cmd_discover.cpp`, `cmd_library.cpp` | `retroverse-cli discover`, `library show`, `library create` |
+| `tools/cli/src/cmd_discover.cpp`, `cmd_library.cpp` | `retroverse-cli discover`, `library show`, `library create`; what both share (the folder options, how folders, roots and issues print) is in the private header `tools/cli/src/esde_text.hpp`, which no source list names |
 
 Tests: `tests/unit/esde/test_command_template.cpp`, `test_esde_settings.cpp`, `test_esde_discovery.cpp`,
 `test_esde_systems.cpp`, the hidden `test_esde_real.cpp` (`[.real-library]`), and `tests/unit/cli/test_cli_discover.cpp`.
@@ -172,7 +172,8 @@ rules, the MAME lists) is taken from `<ES-DE home>/resources/` when the file exi
   - a relative ROMDirectory or MediaDirectory, which ES-DE resolves against its own working folder;
   - `%ESPATH%` without a known install folder.
 - A network-share root (`\\server\share`) is kept and reported (`root-network-share`); ES-DE 3.4.1's generic paths
-  collapse its leading `\\`, so ES-DE itself cannot read it.
+  collapse its leading `\\`, so ES-DE itself cannot read it. A home or install folder on a share keeps its leading
+  pair too (`esdeGenericText()`), so `~` and `%ESPATH%` still give absolute folders.
 - `.` and `..` are resolved lexically in the folders kept, as Windows resolves them.
 - A system name that is no valid folder name (`SystemName`) is skipped (`system-name-invalid`).
 - An unparseable custom `es_find_rules.xml` is skipped as ES-DE skips it, but reported as an error issue.
@@ -196,8 +197,8 @@ rules, the MAME lists) is taken from `<ES-DE home>/resources/` when the file exi
 | Malformed | `%STARTDIR%` or `%INJECT%` without `=` |
 | Unknown | any other `%NAME%` (a letter or `_`, then letters, digits, `_-!.()`), with its `=` when one follows |
 
-Known tokens are matched exactly and case-sensitively, as ES-DE matches them, so a stray `%` never hides one:
-`50%-%ROM%` holds `%ROM%`.
+Known tokens are matched exactly and case-sensitively, as ES-DE matches them, so neither a stray `%` nor an unknown
+name before one hides it: `50%-%ROM%` and `x%y%ROM%` hold `%ROM%`.
 
 **Issue codes** (`catalog::Issue::code`):
 
@@ -270,7 +271,8 @@ retroverse-cli [global options] library create [--id <slug>] [--home <dir>] [--i
   - the ROM and media roots (`override`, `setting` with the value as written, or `default`);
   - the find rules (emulators, cores, entries);
   - the systems: configured, custom, commands, and those with a ROM folder (name, full name, folder);
-  - the gamelists ES-DE would read (and those of folders no system names);
+  - the gamelists ES-DE would read (and those of folders no system names, folder names compared as the file system
+    compares them);
   - the issues.
 - `--json` prints the same as one object. Its keys are `esdeHome`, `homeFolder`, `install`, `version`, `portable`,
   `settings`, `romRoot`, `mediaRoot`, `findRules`, `systems` (with `withRomFolder`), `gamelists` and `issues`; what is
@@ -287,13 +289,15 @@ retroverse-cli [global options] library create [--id <slug>] [--home <dir>] [--i
 - Exit codes: 0; 1 when there is no library.json; 3 when it cannot be read or is invalid.
 
 **`library create`** discovers ES-DE (with `--home` and `--install` as discover takes them), then records the result.
-- It requires an existing ES-DE home.
+- It requires an existing ES-DE home, and ROM and media roots it can resolve: from the settings, else `--rom-root` and
+  `--media-root` must give them (the data directory could not be kept out of an unknown root).
+- It prints discovery's warnings (an install folder not found, an ignored `portable.txt`) on stderr.
 - It refuses a user data directory inside the ES-DE home, the install folder or the effective ROM or media root
   (`core::checkUserDataDirectory`).
-- It writes library.json atomically and never replaces one without `--force`. Then it prints the library as `show`
-  does.
-- Exit codes: 0; 2 for invalid options and for what they must change (no ES-DE home, a data directory inside the
-  library, library.json already there, an invalid id); 3 when it cannot be written.
+- It writes library.json atomically and never replaces one without `--force` (nor when it cannot tell whether one
+  exists). Then it prints the library as `show` does.
+- Exit codes: 0; 2 for invalid options and for what they must change (no ES-DE home, a root that cannot be resolved, a
+  data directory inside the library, library.json already there, an invalid id); 3 when it cannot be written.
 
 ## Real library (`scripts/real-library.ps1`, with ES-DE closed)
 
@@ -353,6 +357,17 @@ Seven commands have a program other than one `%EMULATOR_X%` element:
   - Find rules are evaluated as described above.
   - The tokens to expand follow the token table; `~` is a token.
 - **Steps 4 and 11:** library.json's id against the database's.
+
+## Suggested ADR-0008 amendment
+
+§8 says `~` is ES-DE's home folder: "`%USERPROFILE%`, the `--home` folder, or the folder of `ES-DE.exe` when
+portable". ES-DE 3.4.1's source is more precise on two points:
+- the default is `%HOMEDRIVE%%HOMEPATH%`; Retroverse's probe falls back to `%USERPROFILE%` where ES-DE would use its
+  own working folder;
+- in portable mode it is the ES-DE.exe folder only for an empty `portable.txt`; otherwise it is that folder joined with
+  the file's first line.
+
+The code follows the source; the ADR's sentence could say so at the merge.
 
 ## Open issue for the merge
 

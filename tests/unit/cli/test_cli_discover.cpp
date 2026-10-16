@@ -198,6 +198,27 @@ TEST_CASE("cli/discover: the standard fixture as JSON and as text; nothing writt
     }
 }
 
+TEST_CASE("cli/discover: gamelists of folders no system names; folder names compared as the file system does",
+          "[cli][discover]") {
+    const rv::test::Fixture fixture = materialize("esde/standard");
+    const rv::test::TempDir dir("rv-cli-discover-gamelists");
+    const LoggingReset loggingReset;
+    // gamelists\GB is gb's (ES-DE opens gamelists\gb on a file system that ignores case); n64 is no system here.
+    std::error_code error;
+    fs::rename(fixture.path("ES-DE/gamelists/gb"), fixture.path("ES-DE/gamelists/GB"), error);
+    REQUIRE_FALSE(error);
+    REQUIRE(rv::core::writeTextFileAtomic(fixture.path("ES-DE/gamelists/n64/gamelist.xml"), "<gameList/>\n"));
+
+    const RunResult result = runCli({"--data-dir", utf8(dir.file("data")), "discover", "--home", utf8(fixture.root()),
+                                     "--install", utf8(fixture.path("Programs/ES-DE")), "--json"},
+                                    dir.path());
+    CHECK(result.code == ExitCode::Ok);
+    const nlohmann::json report = parsed(result.out);
+    CHECK(namesOf(report["gamelists"], "system") == std::vector<std::string>{"gb", "psx", "snes", "n64"});
+    CHECK(report["gamelists"][0]["configured"].get<bool>());
+    CHECK_FALSE(report["gamelists"][3]["configured"].get<bool>());
+}
+
 TEST_CASE("cli/discover: a portable installation, --output, problems and invalid options", "[cli][discover]") {
     const rv::test::Fixture fixture = materialize("esde/portable");
     const rv::test::TempDir dir("rv-cli-discover-portable");
@@ -336,6 +357,17 @@ TEST_CASE("cli/library: create records the library, show prints it; what create 
     CHECK(itself.code == ExitCode::UsageError);
     CHECK(contains(itself.err, "looks like the ES-DE home itself"));
     CHECK(library(with({"create", "--id", "Bad Id"}), dir.file("data3")).code == ExitCode::UsageError);
+
+    // A root the settings do not resolve must be given: the data directory could not be kept out of it otherwise.
+    REQUIRE(fixture.replaceText("ES-DE/settings/es_settings.xml", "name=\"ROMDirectory\" value=\"",
+                                "name=\"ROMDirectory\" value=\"relative\\"));
+    const RunResult unresolved = library(with({"create"}), dir.file("data5"));
+    CHECK(unresolved.code == ExitCode::UsageError);
+    CHECK(contains(unresolved.err, "the library's ROM root is unresolved (ROMDirectory \"relative\\"));
+    CHECK(contains(unresolved.err, "give it with --rom-root"));
+    CHECK_FALSE(fs::exists(dir.file("data5/config/library.json")));
+    const RunResult given = library(with({"create", "--rom-root", utf8(fixture.path("roms"))}), dir.file("data5"));
+    CHECK(given.code == ExitCode::Ok);
     CHECK(library({"frobnicate"}, data).code == ExitCode::UsageError);
     CHECK(library({"show", "--bogus"}, data).code == ExitCode::UsageError);
 

@@ -111,7 +111,8 @@ Expected<FileContent> readSystemsFile(const std::filesystem::path& systemsFile, 
         std::string fullName = esdeReplace(system.child("fullname").text().get(), "\n", "");
         const std::string path = system.child("path").text().get();
         std::vector<std::string> extensions = readList(system.child("extension").text().get());
-        std::vector<SystemCommand> commands = readCommands(system, name, file, issues);
+        std::vector<catalog::Issue> commandIssues; // reported for the systems kept only
+        std::vector<SystemCommand> commands = readCommands(system, name, file, commandIssues);
         if (name.empty()) {
             issues.push_back(issueOf(catalog::IssueSeverity::Error, "system-skipped", {}, file,
                                      "a system has no name: ES-DE skips it"));
@@ -129,6 +130,7 @@ Expected<FileContent> readSystemsFile(const std::filesystem::path& systemsFile, 
                                      fmt::format("the system name \"{}\" is no valid folder name: skipped", name)));
             continue;
         }
+        issues.insert(issues.end(), commandIssues.begin(), commandIssues.end());
         SystemDefinition definition;
         definition.name = std::move(*systemName);
         definition.fullName = std::move(fullName);

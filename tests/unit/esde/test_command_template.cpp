@@ -264,9 +264,16 @@ TEST_CASE("esde/command_template: the tokens of ES-DE's commands", "[esde][comma
               std::vector{token(CommandTokenKind::HomeFolder, 0, "~", "~")});
         CHECK(rv::esde::scanCommandTokens(R"(-cfg=%APPDATA%\x.cfg)") ==
               std::vector{token(CommandTokenKind::Unknown, 5, "%APPDATA%", "APPDATA")});
-        // A stray '%' never hides a token; ES-DE's tokens are upper-case.
+        // A stray '%' never hides a token, nor does an unknown name before it; ES-DE's tokens are upper-case.
         CHECK(rv::esde::scanCommandTokens("50%-%ROM%") ==
               std::vector{token(CommandTokenKind::Variable, 4, "%ROM%", "ROM")});
+        CHECK(rv::esde::scanCommandTokens("x%y%ROM%") ==
+              std::vector{token(CommandTokenKind::Variable, 3, "%ROM%", "ROM")});
+        CHECK(rv::esde::scanCommandTokens("%y%%ROM%") ==
+              std::vector{token(CommandTokenKind::Unknown, 0, "%y%", "y"),
+                          token(CommandTokenKind::Variable, 3, "%ROM%", "ROM")});
+        CHECK(rv::esde::scanCommandTokens("-x%A%EMULATOR_MAME%") ==
+              std::vector{token(CommandTokenKind::Emulator, 4, "%EMULATOR_MAME%", "EMULATOR_MAME", "MAME")});
         CHECK(rv::esde::scanCommandTokens("%rom%") == std::vector{token(CommandTokenKind::Unknown, 0, "%rom%", "rom")});
         CHECK(rv::esde::scanCommandTokens("100%").empty());
         CHECK(rv::esde::scanCommandTokens("%%").empty());

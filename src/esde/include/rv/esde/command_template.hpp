@@ -94,9 +94,9 @@ struct CommandTemplate {
     bool operator==(const CommandTemplate&) const = default;
 };
 
-/// The tokens of one element, in order. Known tokens are matched exactly (case-sensitively, as ES-DE does): a stray
-/// '%' never hides one ("50%-%ROM%" holds %ROM%); for %EMULATOR_, %CORE_ and %PRECOMMAND_ the name runs to the next
-/// '%', as ES-DE reads it.
+/// The tokens of one element, in order. Known tokens are matched exactly (case-sensitively, as ES-DE does), and
+/// neither a stray '%' nor an unknown name before them hides one ("50%-%ROM%" and "x%y%ROM%" hold %ROM%); for
+/// %EMULATOR_, %CORE_ and %PRECOMMAND_ the name runs to the next '%', as ES-DE reads it.
 [[nodiscard]] std::vector<CommandToken> scanCommandTokens(std::string_view element);
 
 /// Splits an ES-DE command into elements and lists their tokens. The elements are those of splitCommandLine(), with one

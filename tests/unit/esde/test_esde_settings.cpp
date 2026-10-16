@@ -347,6 +347,10 @@ TEST_CASE("esde/settings: ES-DE's texts of folders and its replacements", "[esde
     CHECK(rv::esde::esdeGenericText(fs::path(L"C:\\Users\\x\\")) == "C:/Users/x");
     CHECK(rv::esde::esdeGenericText(fs::path(L"C:\\")) == "C:");
     CHECK(rv::esde::esdeGenericText(fs::path(L"\\\\?\\C:\\a\\\\b")) == "C:/a/b");
+    CHECK(rv::esde::esdeGenericText(fs::path(L"\\\\nas\\emu\\\\ES-DE\\")) == "//nas/emu/ES-DE");
+    // A home or install folder on a share still gives absolute folders.
+    CHECK(folderFromEsdeText(rv::esde::esdeGenericText(fs::path(L"\\\\nas\\emu\\ES-DE")) + "/../ROMs") ==
+          fs::path(LR"(\\nas\emu\ROMs)"));
 
     CHECK(rv::esde::esdeReplace("a~b~", "~", "C:/x") == "aC:/xbC:/x");
     CHECK(rv::esde::esdeReplace("I:/Roms///gb", "//", "/") == "I:/Roms/gb"); // again until none is left

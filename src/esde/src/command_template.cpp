@@ -267,7 +267,17 @@ std::vector<CommandToken> scanCommandTokens(std::string_view element) {
             ++at;
             continue;
         }
-        if (auto token = tokenAt(element, at)) {
+        auto token = tokenAt(element, at);
+        if (token && token->kind == CommandTokenKind::Unknown) {
+            // The closing '%' of an unknown name may open a token ES-DE knows, which ES-DE finds anywhere: that one
+            // wins, and the '%' here is a stray one ("x%y%ROM%" holds %ROM%).
+            const std::size_t close = at + 1 + token->name.size();
+            if (const auto next = tokenAt(element, close); next && next->kind != CommandTokenKind::Unknown) {
+                at = close;
+                continue;
+            }
+        }
+        if (token) {
             at += token->text.size();
             tokens.push_back(std::move(*token));
         } else {
