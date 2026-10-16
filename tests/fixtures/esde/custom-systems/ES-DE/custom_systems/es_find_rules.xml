@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!-- The custom find rules of the custom-systems fixture: replacements, a new emulator and what ES-DE skips (see
+     README.md) -->
+<ruleList>
+    <emulator name="FAKE-EMULATOR">
+        <rule type="staticpath">
+            <entry>~\Custom Emulators\fake-emulator.exe</entry>
+        </rule>
+    </emulator>
+    <emulator name="CUSTOM-EMULATOR">
+        <rule type="winregistryvalue">
+            <entry>SOFTWARE\Custom Emulator\InstallDir|\custom-emulator.exe</entry>
+        </rule>
+        <rule type="systempath">
+            <entry>custom-emulator.exe</entry>
+        </rule>
+        <rule type="staticpath">
+            <entry>%ESPATH%\Emulators\Custom\custom-emulator-*.exe</entry>
+            <entry>%ROMPATH%\..\Emulators\custom-emulator.exe|"C:\Tools\launcher.exe" --run</entry>
+        </rule>
+        <rule type="winregistrypath">
+            <entry>custom-emulator.exe</entry>
+        </rule>
+    </emulator>
+    <emulator name="CUSTOM-EMULATOR">
+        <rule type="systempath">
+            <entry>repeated.exe</entry>
+        </rule>
+    </emulator>
+    <emulator>
+        <rule type="systempath">
+            <entry>nameless.exe</entry>
+        </rule>
+    </emulator>
+    <emulator name="ODD-RULES">
+        <rule type="corepath">
+            <entry>%EMUPATH%\cores</entry>
+        </rule>
+        <rule>
+            <entry>untyped.exe</entry>
+        </rule>
+        <rule type="androidpackage">
+            <entry>com.example.odd</entry>
+        </rule>
+        <rule type="staticpath">
+            <entry> spaced entry.exe </entry>
+        </rule>
+    </emulator>
+    <core name="RETROARCH">
+        <rule type="corepath">
+            <entry>~\Custom Cores</entry>
+        </rule>
+    </core>
+</ruleList>

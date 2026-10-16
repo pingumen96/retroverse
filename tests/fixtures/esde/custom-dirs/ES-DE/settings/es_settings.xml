@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<bool name="AlternativeEmulatorPerGame" value="false" />
+<bool name="LegacyGamelistFileLocation" value="false" />
+<bool name="ParseGamelistOnly" value="false" />
+<bool name="ShowHiddenFiles" value="false" />
+<bool name="ShowHiddenGames" value="true" />
+<int name="MaxPlayTimeTracking" value="8" />
+<string name="MediaDirectory" value="%ESPATH%\..\Media Store" />
+<string name="ROMDirectory" value="~/Games/ROM Library" />
+<string name="ScraperPasswordScreenScraper" value="custom-dirs-scraper-password-R2d7" />
+<string name="ScraperUsernameScreenScraper" value="custom-dirs-scraper-user-W8k3" />
+<string name="UIMode" value="kid" />
+<string name="UIMode_passkey" value="uuddlrlrba" />

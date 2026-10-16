@@ -1,0 +1,13 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe and one ROM in each system folder that exists.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 5000},
+        {"path": "roms/gb/Bundled Bounce (World).gb", "size": 32768, "seed": 5001},
+        {"path": "roms/gb-custom/Custom Climb (World).gbx", "size": 32768, "seed": 5002},
+        {"path": "roms/homebrew/Garage Racer.hb", "size": 4096, "seed": 5003},
+        {"path": "roms/nes/Lantern Run (USA).nes", "size": 24592, "seed": 5004},
+        {"path": "roms/pcfx/Paper Moon (Japan).chd", "size": 8192, "seed": 5005},
+        {"path": "roms/dirgames/runme", "size": 1024, "seed": 5006}
+    ],
+    "directories": ["ES-DE/gamelists"]
+}

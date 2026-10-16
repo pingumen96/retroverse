@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- The custom game systems of the custom-systems fixture: one replaces a bundled system, one is new (see README.md) -->
+<!-- LOAD-EXCLUSIVE -->
+<systemList>
+    <system>
+        <name>gb</name>
+        <fullname>Game Boy (custom)</fullname>
+        <path>%ROMPATH%\gb-custom</path>
+        <extension>.gb .gbx</extension>
+        <command label="Custom Emulator">%EMULATOR_CUSTOM-EMULATOR% %ROM%</command>
+        <command label="Bundled Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>gb</platform>
+        <theme>gb</theme>
+    </system>
+    <system>
+        <name>homebrew</name>
+        <fullname>Homebrew Collection</fullname>
+        <path>%ROMPATH%\homebrew</path>
+        <extension>.hb .HB</extension>
+        <command label="Custom Emulator">%EMULATOR_CUSTOM-EMULATOR% --homebrew %ROM%</command>
+        <platform>homebrew</platform>
+        <theme>homebrew</theme>
+    </system>
+</systemList>

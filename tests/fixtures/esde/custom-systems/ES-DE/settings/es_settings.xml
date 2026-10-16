@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<bool name="AlternativeEmulatorPerGame" value="true" />
+<bool name="ShowHiddenFiles" value="true" />
+<bool name="ShowHiddenGames" value="true" />
+<string name="MediaDirectory" value="" />
+<string name="ROMDirectory" value="{{FIXTURE_ROOT}}\roms" />
+<string name="ScraperPasswordScreenScraper" value="custom-systems-scraper-password-J6n4" />
+<string name="ScraperUsernameScreenScraper" value="custom-systems-scraper-user-B1q9" />
