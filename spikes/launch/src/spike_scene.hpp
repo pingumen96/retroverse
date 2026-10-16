@@ -16,9 +16,13 @@ class GLDevice;
 namespace rv::spikes::launch {
 
 /// The spike window's content: an animated full-window picture (a warm gradient, drifting shelf stripes, a bar that
-/// sweeps across in two seconds, so that dropped frames show) with a status band at the top, drawn with rv_render as
-/// one fullscreen triangle into the default framebuffer. Cheap on purpose: the frame rate measures the hand-over, not
-/// the renderer. Main thread only, while the GL context is current.
+/// sweeps across in two seconds, so that dropped frames show) with a status band at the top, drawn with rv_render's
+/// program, vertex array and state cache as one fullscreen triangle into the default framebuffer. Cheap on purpose:
+/// the frame rate measures the hand-over, not the renderer. Main thread only, while the GL context is current.
+///
+/// The one exception to "OpenGL calls only in rv_render, rv_devui and rv_app": its draw call (glDrawArrays). rv_render
+/// has no public fullscreen-pass helper (PostProcessor and SsaoPass each draw theirs privately), and this measurement
+/// tool may not change rv_render; a product feature would add the helper there instead.
 class SpikeScene {
 public:
     [[nodiscard]] static Expected<SpikeScene> create();

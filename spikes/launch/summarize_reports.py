@@ -53,28 +53,32 @@ def owner_kind(change, target_image):
 
 def foreground_gaps(launch):
     """Milliseconds another application held the foreground (a) between Retroverse and the target at the launch, from
-    the hook, and (b) at the return: from the target's last foreground change to Retroverse's first confirmed one,
-    when another application came in between (polled after the restore). Nothing when the target never took it."""
+    the hook, and (b) at the return: from the first other application's change after the target's last one to
+    Retroverse's first confirmed hook event or first poll in the foreground, whichever came first. Nothing for (a) when
+    the target never took the foreground; nothing for (b) when Retroverse's return was never recorded. (Processes are
+    told apart by image name: a copy of the target standing for another application counts as the target.)"""
     target = ntpath.basename(launch.get('target', {}).get('executable', '')).lower()
     hook = launch.get('handover', {}).get('foregroundChanges', [])
+    polled = launch.get('handover', {}).get('polledChanges', [])
     kinds = [owner_kind(c, target) for c in hook]
     targets = [i for i, kind in enumerate(kinds) if kind == 'target']
     if not targets:
         return None, None
     first, last = targets[0], targets[-1]
     launch_gap = 0.0
-    others = [i for i in range(first) if kinds[i] == 'other']
+    # Only confirmed events: the others never had the foreground (late, or activated in the background).
+    others = [i for i in range(first) if kinds[i] == 'other' and hook[i].get('confirmed', True)]
     if others:
         launch_gap = hook[first]['atMsFromLaunch'] - hook[others[0]]['atMsFromLaunch']
     # The return: the first application after the target's last change, then Retroverse's first confirmed one.
-    after = [c for c in hook[last + 1:]]
-    ours = next((c for c in after if c.get('ours') and c.get('confirmed', True)), None)
-    other = next((c for c in after if not c.get('ours') and owner_kind(c, target) == 'other'), None)
-    return_gap = 0.0
-    if other is not None and (ours is None or other['atMsFromLaunch'] < ours['atMsFromLaunch']):
-        end = ours['atMsFromLaunch'] if ours is not None else other['atMsFromLaunch']
-        return_gap = end - other['atMsFromLaunch']
-    return launch_gap, return_gap
+    after = hook[last + 1:]
+    other = next((c for c in after if owner_kind(c, target) == 'other' and c.get('confirmed', True)), None)
+    if other is None:
+        return launch_gap, 0.0
+    since = other['atMsFromLaunch']
+    back = [c['atMsFromLaunch'] for c in after if c.get('ours') and c.get('confirmed', True) and c['atMsFromLaunch'] >= since]
+    back += [c['atMsFromLaunch'] for c in polled if c.get('ours') and c['atMsFromLaunch'] >= since]
+    return launch_gap, (min(back) - since) if back else None
 
 
 def polled_losses(launch):
@@ -170,6 +174,7 @@ def main(paths):
             launch_gap, return_gap = foreground_gaps(launch)
             if launch_gap is not None:
                 gaps['launch'].append(launch_gap)
+            if return_gap is not None:
                 gaps['return'].append(return_gap)
             for key in KEYS:
                 if times.get(key) is not None:

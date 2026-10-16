@@ -73,7 +73,7 @@ void SpikeScene::render(gl::GLDevice& device, glm::ivec2 size, double timeSecond
     m_program.setVec4("uStatus", status);
     m_program.use();
     m_vertexArray.bind();
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawArrays(GL_TRIANGLES, 0, 3); // the spike's only direct GL call: see SpikeScene
 }
 
 } // namespace rv::spikes::launch
