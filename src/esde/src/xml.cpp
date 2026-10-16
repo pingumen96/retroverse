@@ -392,16 +392,22 @@ std::size_t XmlDocument::fileOffset(std::size_t textOffset) const {
     return m_bomBytes + pos;
 }
 
+std::size_t XmlDocument::lineAt(std::size_t textOffset) const {
+    textOffset = std::min(textOffset, m_text.size());
+    const std::size_t block = textOffset / kLineBlockBytes;
+    // parseXml() counts every block, the text's end included; a document it did not make has no text.
+    const std::size_t before = block < m_lineFeedsBefore.size() ? m_lineFeedsBefore[block] : 0;
+    const auto blockStart = m_text.begin() + static_cast<std::ptrdiff_t>(block * kLineBlockBytes);
+    return 1 + before +
+           static_cast<std::size_t>(std::count(blockStart, m_text.begin() + static_cast<std::ptrdiff_t>(textOffset),
+                                               '\n'));
+}
+
 std::string XmlDocument::locate(std::size_t textOffset) const {
     textOffset = std::min(textOffset, m_text.size());
-    std::size_t line = 1;
-    std::size_t lineStart = 0;
-    for (std::size_t i = 0; i < textOffset; ++i) {
-        if (m_text[i] == '\n') {
-            ++line;
-            lineStart = i + 1;
-        }
-    }
+    const std::size_t line = lineAt(textOffset);
+    const std::size_t lastLineFeed = std::string_view(m_text).substr(0, textOffset).rfind('\n');
+    const std::size_t lineStart = lastLineFeed == std::string_view::npos ? 0 : lastLineFeed + 1;
     std::size_t column = 1;
     for (std::size_t i = lineStart; i < textOffset; ++i) {
         if ((static_cast<unsigned char>(m_text[i]) & 0xC0u) != 0x80u) {
@@ -417,6 +423,11 @@ std::string XmlDocument::locate(pugi::xml_node node) const {
         return "an unknown place";
     }
     return locate(static_cast<std::size_t>(offset));
+}
+
+std::size_t XmlDocument::line(pugi::xml_node node) const {
+    const std::ptrdiff_t offset = node.offset_debug();
+    return offset < 0 ? 0 : lineAt(static_cast<std::size_t>(offset));
 }
 
 Expected<XmlDocument> parseXml(std::string bytes, std::string source) {
@@ -453,6 +464,15 @@ Expected<XmlDocument> parseXml(std::string bytes, std::string source) {
     }
 
     const std::string& text = document.m_text;
+    // The line feeds before each block (one more block than whole ones: the text's end has its own).
+    std::size_t lineFeeds = 0;
+    document.m_lineFeedsBefore.reserve(text.size() / kLineBlockBytes + 1);
+    for (std::size_t blockStart = 0; blockStart <= text.size(); blockStart += kLineBlockBytes) {
+        document.m_lineFeedsBefore.push_back(lineFeeds);
+        const std::size_t blockEnd = std::min(blockStart + kLineBlockBytes, text.size());
+        lineFeeds += static_cast<std::size_t>(std::count(text.begin() + static_cast<std::ptrdiff_t>(blockStart),
+                                                         text.begin() + static_cast<std::ptrdiff_t>(blockEnd), '\n'));
+    }
     const auto fail = [&](std::size_t textOffset, std::string_view what) {
         return makeError(ErrorCode::ParseError, fmt::format("{} at {}", what, document.locate(textOffset)), source);
     };
