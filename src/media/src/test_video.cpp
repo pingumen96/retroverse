@@ -4,8 +4,11 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <system_error>
 #include <utility>
@@ -24,6 +27,10 @@ namespace {
 constexpr int kMinTestVideoSide = 16;
 constexpr int kMaxTestVideoSide = 4096;
 constexpr int kMaxTestVideoFrames = 36000;
+constexpr double kMaxTestAudioSeconds = 600.0;
+/// Silent audio of the clips: 16-bit mono PCM at this rate, in packets of a tenth of a second.
+constexpr int kAudioSampleRate = 16000;
+constexpr int kAudioPacketSamples = kAudioSampleRate / 10;
 
 // --- The frame counter: kFrameCounterBits blocks, most significant first, in a row along the top
 // ------------------------
@@ -196,6 +203,60 @@ Status encodeAndWrite(AVCodecContext& encoder, AVFormatContext& output, const AV
     }
 }
 
+/// The silent audio stream of a clip: packets of zeros written up to a time, interleaved with the video by the muxer.
+class SilentAudio {
+public:
+    SilentAudio(AVStream& stream, std::int64_t totalSamples) noexcept : m_stream(stream), m_total(totalSamples) {}
+
+    /// Writes the packets that start before `seconds` (all of them for infinity).
+    Status writeUntil(AVFormatContext& output, AVPacket& packet, double seconds, const std::filesystem::path& path) {
+        while (m_written < m_total && static_cast<double>(m_written) / kAudioSampleRate < seconds) {
+            const auto samples = static_cast<int>(std::min<std::int64_t>(kAudioPacketSamples, m_total - m_written));
+            int result = av_new_packet(&packet, samples * 2);
+            if (result < 0) {
+                return ffmpegError("cannot allocate an audio packet", result, path);
+            }
+            std::memset(packet.data, 0, static_cast<std::size_t>(samples) * 2u);
+            packet.pts = m_written;
+            packet.dts = m_written;
+            packet.duration = samples;
+            packet.stream_index = m_stream.index;
+            packet.flags |= AV_PKT_FLAG_KEY;
+            av_packet_rescale_ts(&packet, AVRational{1, kAudioSampleRate}, m_stream.time_base);
+            result = av_interleaved_write_frame(&output, &packet); // takes the packet's data
+            if (result < 0) {
+                return ffmpegError("cannot write an audio packet", result, path);
+            }
+            m_written += samples;
+        }
+        return ok();
+    }
+
+private:
+    AVStream& m_stream;
+    std::int64_t m_total;
+    std::int64_t m_written = 0;
+};
+
+/// Adds the silent 16-bit mono PCM stream of `seconds` to `output`.
+Expected<SilentAudio> addSilentAudio(AVFormatContext& output, double seconds, const std::filesystem::path& path) {
+    AVStream* stream = avformat_new_stream(&output, nullptr);
+    if (stream == nullptr) {
+        return makeError(ErrorCode::IoError, "out of memory", core::pathToUtf8(path));
+    }
+    AVCodecParameters& parameters = *stream->codecpar;
+    parameters.codec_type = AVMEDIA_TYPE_AUDIO;
+    parameters.codec_id = AV_CODEC_ID_PCM_S16LE;
+    parameters.format = AV_SAMPLE_FMT_S16;
+    parameters.sample_rate = kAudioSampleRate;
+    av_channel_layout_default(&parameters.ch_layout, 1);
+    parameters.bits_per_coded_sample = 16;
+    parameters.block_align = 2;
+    parameters.bit_rate = static_cast<std::int64_t>(kAudioSampleRate) * 16;
+    stream->time_base = AVRational{1, kAudioSampleRate};
+    return SilentAudio(*stream, std::llround(seconds * kAudioSampleRate));
+}
+
 struct ContainerChoice {
     const char* format = nullptr;
     bool mp4 = false;
@@ -222,6 +283,9 @@ Status writeTestVideoUnchecked(const std::filesystem::path& path, const TestVide
     const AVCodecID codecId = spec.codec == TestVideoCodec::Mjpeg ? AV_CODEC_ID_MJPEG : AV_CODEC_ID_MPEG4;
     if (container.mp4 && spec.codec == TestVideoCodec::Mjpeg) {
         return makeError(ErrorCode::Unsupported, "Motion JPEG test clips go into .mkv or .avi files", context);
+    }
+    if (container.mp4 && spec.audioSeconds > 0.0) {
+        return makeError(ErrorCode::Unsupported, "test clips with audio go into .mkv or .avi files", context);
     }
     const AVCodec* codec = avcodec_find_encoder(codecId);
     if (codec == nullptr) {
@@ -274,6 +338,14 @@ Status writeTestVideoUnchecked(const std::filesystem::path& path, const TestVide
     }
     stream->time_base = encoder->time_base;
     stream->avg_frame_rate = encoder->framerate;
+    std::optional<SilentAudio> audio;
+    if (spec.audioSeconds > 0.0) {
+        auto added = addSilentAudio(*output, spec.audioSeconds, path);
+        if (!added) {
+            return propagate(added.error());
+        }
+        audio.emplace(*added);
+    }
 
     result = avio_open(&output->pb, url.c_str(), AVIO_FLAG_WRITE);
     if (result < 0) {
@@ -322,9 +394,22 @@ Status writeTestVideoUnchecked(const std::filesystem::path& path, const TestVide
         if (auto written = encodeAndWrite(*encoder, *output, *stream, picture.get(), *packet, path); !written) {
             return written;
         }
+        if (audio) {
+            if (auto written =
+                    audio->writeUntil(*output, *packet, static_cast<double>(index + 1) / spec.frameRate, path);
+                !written) {
+                return written;
+            }
+        }
     }
     if (auto flushed = encodeAndWrite(*encoder, *output, *stream, nullptr, *packet, path); !flushed) {
         return flushed;
+    }
+    if (audio) {
+        if (auto written = audio->writeUntil(*output, *packet, std::numeric_limits<double>::infinity(), path);
+            !written) {
+            return written;
+        }
     }
     result = av_write_trailer(output.get());
     if (result < 0) {
@@ -365,6 +450,11 @@ Status writeTestVideo(const std::filesystem::path& path, const TestVideoSpec& sp
     }
     if (spec.quantizer < 2 || spec.quantizer > 31) {
         return makeError(ErrorCode::InvalidArgument, fmt::format("quantizer {} is outside [2, 31]", spec.quantizer),
+                         context);
+    }
+    if (!std::isfinite(spec.audioSeconds) || spec.audioSeconds < 0.0 || spec.audioSeconds > kMaxTestAudioSeconds) {
+        return makeError(ErrorCode::InvalidArgument,
+                         fmt::format("audio of {} s is outside [0, {}] s", spec.audioSeconds, kMaxTestAudioSeconds),
                          context);
     }
     const std::optional<ContainerChoice> container = containerFor(path);

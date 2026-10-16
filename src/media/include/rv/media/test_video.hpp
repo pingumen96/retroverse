@@ -43,6 +43,9 @@ struct TestVideoSpec {
     int keyFrameInterval = 30;
     /// B-frames between reference frames (MPEG-4): decoding then reorders, so timestamps come from the decoder.
     int bFrames = 2;
+    /// Seconds of silent 16-bit mono PCM audio muxed beside the video (0..600, 0: no audio stream; .mkv and .avi
+    /// only). Longer than the video, it makes the container's duration exceed the video stream's.
+    double audioSeconds = 0.0;
 };
 
 /// Writes a clip whose frames show a moving pattern, the frame number in large digits (the font of
@@ -50,7 +53,8 @@ struct TestVideoSpec {
 /// that decodeFrameCounter() reads back, so tests can check order, timestamps and seeks frame by frame. Frame k has
 /// timestamp k / frameRate. The container follows the extension: ".mp4" (moov atom first, "faststart", so that a
 /// truncated copy still opens and fails mid-stream), ".mkv" or ".avi". Errors: InvalidArgument for a spec out of range,
-/// Unsupported for a codec the container or this FFmpeg build cannot take, IoError when the file cannot be written.
+/// Unsupported for a codec or an audio stream the container or this FFmpeg build cannot take, IoError when the file
+/// cannot be written.
 [[nodiscard]] Status writeTestVideo(const std::filesystem::path& path, const TestVideoSpec& spec);
 
 /// The frame counter of a frame made by writeTestVideo(), read from the block row at any scale; nothing when a block

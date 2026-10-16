@@ -39,17 +39,43 @@ VideoPlayback::~VideoPlayback() {
     m_pending.reset();
 }
 
+void VideoPlayback::followSeeks() noexcept {
+    const std::uint32_t generation = m_decoder->generation();
+    if (generation <= m_clock.generation()) {
+        return;
+    }
+    m_clock.beginGeneration(generation);
+    if (m_pending && m_pending->timing.generation < generation) {
+        m_pending.reset(); // presented before the seek and not uploaded yet: never shown now
+    }
+}
+
+bool VideoPlayback::drainedAfterFailure(double nowSeconds) const {
+    if (m_decoder->failure() == DecodeFailure::None || m_pending || !m_decoder->frames().empty()) {
+        return false;
+    }
+    // The decoder queues its last frames before it records the failure: once the queue is empty, the frame on screen
+    // is the last one, and the fallback replaces it when its time is over.
+    const std::optional<FrameTiming>& shown = m_clock.current();
+    const std::optional<double> media = m_clock.mediaTime(nowSeconds);
+    return !shown || !media || *media >= shown->ptsSeconds + shown->durationSeconds;
+}
+
 PlaybackUpdate VideoPlayback::update(double nowSeconds) {
     PlaybackUpdate result;
     if (!m_decoder) {
         return result;
     }
+    followSeeks();
     const DecoderState state = m_decoder->state();
     const bool sourceEnded =
         state == DecoderState::Ended || state == DecoderState::Failed || state == DecoderState::Stopped;
     QueueSource source(*this);
     result.clock = m_clock.update(nowSeconds, source, sourceEnded);
     result.frame = m_pending.get();
+    if (!m_failed) {
+        m_failed = drainedAfterFailure(nowSeconds);
+    }
     return result;
 }
 
@@ -71,8 +97,12 @@ void VideoPlayback::resume(double nowSeconds) {
     }
 }
 
-bool VideoPlayback::failed() const noexcept {
-    return m_decoder && m_decoder->failure() != DecodeFailure::None;
+void VideoPlayback::seek(double seconds) {
+    if (!m_decoder) {
+        return;
+    }
+    m_decoder->seek(seconds);
+    followSeeks();
 }
 
 } // namespace rv::media

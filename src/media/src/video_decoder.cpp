@@ -8,10 +8,12 @@
 #include <cmath>
 #include <condition_variable>
 #include <exception>
+#include <iterator>
 #include <limits>
 #include <mutex>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -22,6 +24,10 @@
 #include <rv/media/output_size.hpp>
 
 #include "ffmpeg_support.hpp"
+
+extern "C" {
+#include <libavutil/parseutils.h>
+}
 
 namespace rv::media {
 
@@ -95,9 +101,18 @@ constexpr double kTruncationSlackSeconds = 0.5;
 constexpr double kFallbackFrameSeconds = 1.0 / 30.0;
 /// Smallest step between two frames whose timestamps do not increase (broken files).
 constexpr double kTimestampNudgeSeconds = 0.001;
+/// A seek positions the demuxer this much before its target. MP4 indexes key frames by decoding time, which runs
+/// ahead of the presentation time by the reordering delay of B-frames (a few frames, under a second): positioned on
+/// the key frame at or before the target itself, the frames between the target and that key frame's presentation time
+/// would be lost (B-frames that need the previous key frame). The frames decoded before the target are dropped.
+constexpr double kSeekPrerollSeconds = 1.0;
 
 double milliseconds(Clock::duration duration) noexcept {
     return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+std::int64_t nanosecondsSince(Clock::time_point start) noexcept {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
 }
 
 double fileTimeSeconds(const FILETIME& time) noexcept {
@@ -163,8 +178,76 @@ double rationalOrZero(AVRational value) noexcept {
     return value.num > 0 && value.den > 0 ? av_q2d(value) : 0.0;
 }
 
+/// Duration of `stream` from the per-track "DURATION" tag that Matroska and WebM muxers write (those containers give no
+/// stream duration of their own), seconds; 0 when the tag is absent or unreadable.
+double taggedDurationSeconds(const AVStream& stream) noexcept {
+    const AVDictionaryEntry* tag = av_dict_get(stream.metadata, "DURATION", nullptr, 0);
+    if (tag == nullptr || tag->value == nullptr) {
+        return 0.0;
+    }
+    std::int64_t microseconds = 0;
+    if (av_parse_time(&microseconds, tag->value, 1) < 0 || microseconds <= 0) {
+        return 0.0;
+    }
+    return static_cast<double>(microseconds) * 1e-6;
+}
+
 std::wstring threadDescription(const std::string& name) {
     return core::pathFromUtf8("rv video: " + name).wstring();
+}
+
+/// The threads of stopped decoders: VideoDecoder::stop() hands its thread over instead of waiting for it. A thread is
+/// joined once it has ended (which then takes no time), at the next hand-over, or by joinAll().
+class StoppedThreads {
+public:
+    StoppedThreads() {
+        // The default logger is created first and so destroyed after this object: threads still ending at process
+        // exit can log.
+        static_cast<void>(spdlog::default_logger_raw());
+    }
+    StoppedThreads(const StoppedThreads&) = delete;
+    StoppedThreads& operator=(const StoppedThreads&) = delete;
+    ~StoppedThreads() { joinAll(); }
+
+    /// Keeps `thread` (asked to stop already) until it ends; joins the threads that have ended meanwhile.
+    void adopt(std::jthread thread) {
+        std::vector<std::jthread> ended;
+        {
+            const std::lock_guard lock(m_mutex);
+            const auto firstEnded = std::partition(m_threads.begin(), m_threads.end(), [](std::jthread& candidate) {
+                return WaitForSingleObject(static_cast<HANDLE>(candidate.native_handle()), 0) != WAIT_OBJECT_0;
+            });
+            ended.assign(std::make_move_iterator(firstEnded), std::make_move_iterator(m_threads.end()));
+            m_threads.erase(firstEnded, m_threads.end());
+            m_threads.push_back(std::move(thread));
+        }
+        for (std::jthread& done : ended) {
+            done.join(); // ended: returns at once
+        }
+    }
+
+    /// Waits for every thread kept.
+    void joinAll() {
+        std::vector<std::jthread> threads;
+        {
+            const std::lock_guard lock(m_mutex);
+            threads.swap(m_threads);
+        }
+        for (std::jthread& thread : threads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+    }
+
+private:
+    std::mutex m_mutex;
+    std::vector<std::jthread> m_threads;
+};
+
+StoppedThreads& stoppedThreads() {
+    static StoppedThreads threads;
+    return threads;
 }
 
 } // namespace
@@ -183,6 +266,7 @@ struct VideoDecoder::Shared {
     std::shared_ptr<FramePool> pool;
     FrameQueue queue;
 
+    /// Opening, Playing, Ended, Failed or Stopped; VideoDecoder::state() reports Paused from `paused`.
     std::atomic<DecoderState> state{DecoderState::Opening};
     std::atomic<DecodeFailure> failure{DecodeFailure::None};
 
@@ -190,10 +274,14 @@ struct VideoDecoder::Shared {
     std::optional<StreamInfo> info;
     std::optional<Error> error;
 
+    /// pause(), resume() and seek() change what follows under controlMutex and notify `control`, which the thread
+    /// waits on; `paused` and `generation` are also read without the lock.
     std::mutex controlMutex;
     std::condition_variable_any control;
-    bool paused = false;
+    std::atomic<bool> paused{false};
     std::optional<double> seekRequest;
+    /// Generation of the latest seek(): the thread drops the frames of older ones.
+    std::atomic<std::uint32_t> generation{0};
 
     std::atomic<std::uint64_t> packetsRead{0};
     std::atomic<std::uint64_t> framesDecoded{0};
@@ -206,8 +294,10 @@ struct VideoDecoder::Shared {
     std::atomic<std::uint64_t> seeks{0};
     std::atomic<std::uint64_t> frameAllocations{0};
     std::atomic<std::int64_t> queueWaitNanoseconds{0};
-    /// CPU time of the thread when it ended; negative while it runs.
-    std::atomic<double> finalCpuSeconds{-1.0};
+    /// start() time, and the delays from it to the stream being open and to the first frame queued (-1: not yet).
+    const Clock::time_point started = Clock::now();
+    std::atomic<std::int64_t> openNanoseconds{-1};
+    std::atomic<std::int64_t> firstFrameNanoseconds{-1};
 
     mutable std::mutex timingMutex;
     SampleRecorder decodeTimes;
@@ -235,6 +325,11 @@ public:
     [[nodiscard]] bool open();
 
 private:
+    struct SeekRequest {
+        double seconds = 0.0;
+        std::uint32_t generation = 0;
+    };
+
     static int interruptCallback(void* opaque) noexcept {
         return static_cast<const Worker*>(opaque)->m_stop.stop_requested() ? 1 : 0;
     }
@@ -251,17 +346,22 @@ private:
     [[nodiscard]] bool endOfPass();
     /// Seeks to `seconds` into the stream (from its start time) and flushes the decoder. False when seeking fails.
     [[nodiscard]] bool seekTo(double seconds);
-    [[nodiscard]] bool applySeek(double seconds);
+    [[nodiscard]] bool applySeek(const SeekRequest& request);
     /// Counts an FFmpeg error (decodeErrors) and notes it (noteError).
     [[nodiscard]] bool decodeError(int code, std::string_view what);
     /// Notes an error or a damaged frame; false (and the decoder fails as CorruptData) when too many came in a row or
     /// within the corruption window.
     [[nodiscard]] bool noteError(std::string_view what);
-    /// Waits while paused; processes nothing else. False on stop.
+    /// Waits while paused, unless the first frame after a seek is still to come; processes nothing else. False on
+    /// stop.
     [[nodiscard]] bool waitWhilePaused();
     /// Waits at the end of a stream that does not loop, until a seek or the stop. False on stop.
     [[nodiscard]] bool waitAfterEnd();
-    [[nodiscard]] std::optional<double> takeSeekRequest();
+    [[nodiscard]] std::optional<SeekRequest> takeSeekRequest();
+    /// A seek newer than the frames being decoded waits to be carried out: those frames are dropped.
+    [[nodiscard]] bool seekPending() const noexcept {
+        return m_shared.generation.load(std::memory_order_acquire) != m_generation;
+    }
     [[nodiscard]] bool ensureConverter(const AVFrame& frame);
     void resetPass(bool fromStart) noexcept;
     void fail(DecodeFailure failure, std::string message);
@@ -280,6 +380,10 @@ private:
     bool m_timestampsUsable = false;
     std::int64_t m_startTimestamp = 0;
     double m_nominalDuration = kFallbackFrameSeconds;
+    /// The video stream's own duration (stream duration, or the Matroska track's DURATION tag), 0 when unknown: what
+    /// a first pass is checked against for a cut (never the container's, which covers a longer audio stream too).
+    double m_streamDuration = 0.0;
+    /// m_streamDuration, or the container's duration when the stream gives none (StreamInfo, messages).
     double m_declaredDuration = 0.0;
     double m_streamSampleAspect = 1.0;
 
@@ -305,6 +409,8 @@ private:
     std::uint64_t m_serial = 0;
     std::uint32_t m_loop = 0;
     std::uint32_t m_generation = 0;
+    /// A seek was carried out and its first frame has not reached the queue yet: it is decoded even while paused.
+    bool m_seekFramePending = false;
 
     // Errors and end of stream.
     int m_consecutiveErrors = 0;
@@ -330,7 +436,6 @@ void VideoDecoder::Worker::run() noexcept {
     } catch (...) {
         fail(DecodeFailure::DecoderError, "unexpected exception");
     }
-    m_shared.finalCpuSeconds.store(threadCpuSecondsOf(GetCurrentThread()));
 }
 
 void VideoDecoder::Worker::fail(DecodeFailure failure, std::string message) {
@@ -345,7 +450,10 @@ void VideoDecoder::Worker::fail(DecodeFailure failure, std::string message) {
     }
     DecodeFailure none = DecodeFailure::None;
     m_shared.failure.compare_exchange_strong(none, failure);
-    m_shared.state.store(DecoderState::Failed);
+    // Final, except after stop(): the thread may still be finishing when the owner stopped it, and Stopped stays.
+    DecoderState current = m_shared.state.load();
+    while (current != DecoderState::Stopped && !m_shared.state.compare_exchange_weak(current, DecoderState::Failed)) {
+    }
 }
 
 bool VideoDecoder::Worker::open() {
@@ -463,8 +571,12 @@ bool VideoDecoder::Worker::open() {
     const double frameRate = rationalOrZero(av_guess_frame_rate(m_format.get(), stream, nullptr));
     m_nominalDuration = frameRate > 0.0 ? 1.0 / frameRate : kFallbackFrameSeconds;
     if (m_timestampsUsable && stream->duration != AV_NOPTS_VALUE && stream->duration > 0) {
-        m_declaredDuration = detail::toSeconds(stream->duration, m_timeBase);
-    } else if (m_format->duration != AV_NOPTS_VALUE && m_format->duration > 0) {
+        m_streamDuration = detail::toSeconds(stream->duration, m_timeBase);
+    } else {
+        m_streamDuration = taggedDurationSeconds(*stream);
+    }
+    m_declaredDuration = m_streamDuration;
+    if (m_declaredDuration <= 0.0 && m_format->duration != AV_NOPTS_VALUE && m_format->duration > 0) {
         m_declaredDuration = static_cast<double>(m_format->duration) / static_cast<double>(AV_TIME_BASE);
     }
     const double sampleAspect = rationalOrZero(av_guess_sample_aspect_ratio(m_format.get(), stream, nullptr));
@@ -490,6 +602,7 @@ bool VideoDecoder::Worker::open() {
         const std::lock_guard lock(m_shared.infoMutex);
         m_shared.info = std::move(info);
     }
+    m_shared.openNanoseconds.store(nanosecondsSince(m_shared.started), std::memory_order_relaxed);
     m_shared.setState(DecoderState::Playing);
     resetPass(true);
     return true;
@@ -508,25 +621,24 @@ void VideoDecoder::Worker::resetPass(bool fromStart) noexcept {
     m_truncatedRead = false;
 }
 
-std::optional<double> VideoDecoder::Worker::takeSeekRequest() {
+std::optional<VideoDecoder::Worker::SeekRequest> VideoDecoder::Worker::takeSeekRequest() {
     const std::lock_guard lock(m_shared.controlMutex);
-    return std::exchange(m_shared.seekRequest, std::nullopt);
+    if (!m_shared.seekRequest) {
+        return std::nullopt;
+    }
+    // The generation of the latest seek, set with the request under the same lock.
+    const SeekRequest request{*m_shared.seekRequest, m_shared.generation.load()};
+    m_shared.seekRequest.reset();
+    return request;
 }
 
 bool VideoDecoder::Worker::waitWhilePaused() {
+    if (m_seekFramePending) {
+        return true; // the paused picture follows a seek: its first frame is decoded before the pause holds
+    }
     std::unique_lock lock(m_shared.controlMutex);
-    if (!m_shared.paused) {
-        return true;
-    }
-    m_shared.setState(DecoderState::Paused);
-    m_shared.control.wait(lock, m_stop, [this] { return !m_shared.paused || m_shared.seekRequest.has_value(); });
-    if (m_stop.stop_requested()) {
-        return false;
-    }
-    if (!m_shared.paused) {
-        m_shared.setState(m_ended ? DecoderState::Ended : DecoderState::Playing);
-    }
-    return true;
+    m_shared.control.wait(lock, m_stop, [this] { return !m_shared.paused.load() || m_shared.seekRequest.has_value(); });
+    return !m_stop.stop_requested();
 }
 
 bool VideoDecoder::Worker::waitAfterEnd() {
@@ -540,8 +652,8 @@ void VideoDecoder::Worker::decodeLoop() {
         if (!waitWhilePaused()) {
             return;
         }
-        if (const std::optional<double> target = takeSeekRequest()) {
-            if (!applySeek(*target)) {
+        if (const std::optional<SeekRequest> request = takeSeekRequest()) {
+            if (!applySeek(*request)) {
                 return;
             }
             continue;
@@ -710,6 +822,11 @@ bool VideoDecoder::Worker::ensureConverter(const AVFrame& frame) {
 }
 
 bool VideoDecoder::Worker::emitFrame() {
+    if (seekPending()) {
+        // A newer seek waits: this frame belongs to the position it leaves. decodeLoop() carries the seek out next.
+        m_decodeTime = Clock::duration::zero();
+        return true;
+    }
     const AVFrame& frame = *m_frame;
     const double duration =
         m_timestampsUsable && frame.duration > 0 ? detail::toSeconds(frame.duration, m_timeBase) : m_nominalDuration;
@@ -779,14 +896,24 @@ bool VideoDecoder::Worker::emitFrame() {
     out->serial = m_serial++;
     out->loop = m_loop;
     const Clock::time_point pushStart = Clock::now();
-    const bool pushed = m_shared.queue.push(std::move(out), m_stop);
+    const PushResult pushed = m_shared.queue.push(std::move(out), m_stop);
     waited += Clock::now() - pushStart;
     m_shared.queueWaitNanoseconds.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(waited).count(),
                                             std::memory_order_relaxed);
-    if (pushed) {
+    switch (pushed) {
+    case PushResult::Queued:
         m_shared.framesQueued.fetch_add(1, std::memory_order_relaxed);
+        if (m_shared.firstFrameNanoseconds.load(std::memory_order_relaxed) < 0) {
+            m_shared.firstFrameNanoseconds.store(nanosecondsSince(m_shared.started), std::memory_order_relaxed);
+        }
+        m_seekFramePending = false;
+        return true;
+    case PushResult::Discarded:
+        return true; // a seek came while the frame waited for room: decodeLoop() carries it out next
+    case PushResult::Refused:
+        break;
     }
-    return pushed;
+    return false;
 }
 
 bool VideoDecoder::Worker::endOfStream() {
@@ -810,16 +937,19 @@ bool VideoDecoder::Worker::endOfPass() {
         fail(DecodeFailure::CorruptData, "no frame of the stream could be decoded");
         return false;
     }
-    if (m_firstPass && m_passFromStart && m_declaredDuration > 0.0) {
+    // Only the video stream's own duration tells a cut: the container's covers every stream (Matroska and WebM give
+    // no other when their tracks have no DURATION tag), and an audio track may outlast the video.
+    if (m_firstPass && m_passFromStart && m_streamDuration > 0.0) {
         const double span = m_passEnd - m_passStart.value_or(0.0);
-        if (span < m_declaredDuration * kTruncationRatio - kTruncationSlackSeconds) {
+        if (span < m_streamDuration * kTruncationRatio - kTruncationSlackSeconds) {
             fail(DecodeFailure::Truncated,
-                 fmt::format("the stream ends after {:.2f} s of the {:.2f} s it declares", span, m_declaredDuration));
+                 fmt::format("the stream ends after {:.2f} s of the {:.2f} s it declares", span, m_streamDuration));
             return false;
         }
     }
     if (!m_shared.settings.loop) {
         m_ended = true;
+        m_seekFramePending = false; // a seek past the end: no frame comes
         m_shared.setState(DecoderState::Ended);
         spdlog::info("Video '{}': end of stream after {} frame(s)", name, m_serial);
         return true;
@@ -856,12 +986,13 @@ bool VideoDecoder::Worker::seekTo(double seconds) {
     return true;
 }
 
-bool VideoDecoder::Worker::applySeek(double seconds) {
-    const double target = std::max(0.0, seconds);
-    m_shared.queue.clear();
-    ++m_generation;
+bool VideoDecoder::Worker::applySeek(const SeekRequest& request) {
+    // seek() already discarded the queued frames of the old position, on the consumer's thread: the thread only
+    // appends to the queue, so the consumer never sees frames vanish while it reads them.
+    const double target = std::max(0.0, request.seconds);
+    m_generation = request.generation;
     m_shared.seeks.fetch_add(1, std::memory_order_relaxed);
-    if (!seekTo(target)) {
+    if (!seekTo(std::max(0.0, target - kSeekPrerollSeconds))) {
         return false;
     }
     // A new generation: timestamps start again at the target, without the loop offset.
@@ -869,6 +1000,7 @@ bool VideoDecoder::Worker::applySeek(double seconds) {
     m_lastPts = -std::numeric_limits<double>::infinity();
     m_seekTarget = target;
     m_ended = false;
+    m_seekFramePending = true;
     resetPass(target <= 0.0);
     m_firstPass = false;
     m_shared.setState(DecoderState::Playing);
@@ -878,6 +1010,12 @@ bool VideoDecoder::Worker::applySeek(double seconds) {
 
 // --- VideoDecoder
 // -------------------------------------------------------------------------------------------------------
+
+void VideoDecoder::HandleCloser::operator()(void* handle) const noexcept {
+    if (handle != nullptr) {
+        CloseHandle(static_cast<HANDLE>(handle));
+    }
+}
 
 VideoDecoder::VideoDecoder(std::shared_ptr<Shared> shared) noexcept : m_shared(std::move(shared)) {}
 
@@ -918,13 +1056,18 @@ Expected<std::unique_ptr<VideoDecoder>> VideoDecoder::start(std::filesystem::pat
     detail::installLogBridge();
 
     auto shared = std::make_shared<Shared>(std::move(path), std::move(settings));
-    shared->paused = shared->settings.startPaused;
+    shared->paused.store(shared->settings.startPaused);
     std::unique_ptr<VideoDecoder> decoder(new VideoDecoder(shared));
     try {
         decoder->m_thread = std::jthread([shared](std::stop_token stop) { Worker(*shared, std::move(stop)).run(); });
-        decoder->m_threadHandle = decoder->m_thread.native_handle();
     } catch (const std::system_error& e) {
         return makeError(ErrorCode::Unknown, fmt::format("cannot start the decoder thread: {}", e.what()), context);
+    }
+    // A handle of the decoder's own: the jthread goes to stoppedThreads() on stop(), and its handle with it.
+    HANDLE duplicate = nullptr;
+    if (DuplicateHandle(GetCurrentProcess(), static_cast<HANDLE>(decoder->m_thread.native_handle()),
+                        GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS) != 0) {
+        decoder->m_threadHandle.reset(duplicate);
     }
     return decoder;
 }
@@ -935,11 +1078,15 @@ VideoDecoder::~VideoDecoder() {
 
 void VideoDecoder::stop() {
     if (m_thread.joinable()) {
-        m_thread.request_stop(); // wakes every wait and interrupts FFmpeg's I/O
+        m_thread.request_stop(); // wakes every wait of the thread and interrupts FFmpeg's I/O between reads
         m_shared->queue.close();
         m_shared->pool->close();
-        m_thread.join();
-        m_threadHandle = {};
+        try {
+            // Never joined here: the thread may be in a read of a slow disk or network share (spec §9.4).
+            stoppedThreads().adopt(std::move(m_thread));
+        } catch (...) {
+            // Out of memory to keep it: the thread was joined when adopt()'s argument was destroyed.
+        }
     }
     m_shared->setState(DecoderState::Stopped);
 }
@@ -953,11 +1100,19 @@ const FrameQueue& VideoDecoder::frames() const noexcept {
 }
 
 DecoderState VideoDecoder::state() const noexcept {
-    return m_shared->state.load(std::memory_order_acquire);
+    const DecoderState state = m_shared->state.load(std::memory_order_acquire);
+    if (state == DecoderState::Playing && m_shared->paused.load(std::memory_order_acquire)) {
+        return DecoderState::Paused;
+    }
+    return state;
 }
 
 DecodeFailure VideoDecoder::failure() const noexcept {
     return m_shared->failure.load(std::memory_order_acquire);
+}
+
+std::uint32_t VideoDecoder::generation() const noexcept {
+    return m_shared->generation.load(std::memory_order_acquire);
 }
 
 std::optional<Error> VideoDecoder::error() const {
@@ -972,6 +1127,9 @@ std::optional<StreamInfo> VideoDecoder::streamInfo() const {
 
 DecoderStats VideoDecoder::stats() const {
     const Shared& shared = *m_shared;
+    const auto toMilliseconds = [](std::int64_t nanoseconds) {
+        return nanoseconds >= 0 ? static_cast<double>(nanoseconds) * 1e-6 : -1.0;
+    };
     DecoderStats stats;
     stats.packetsRead = shared.packetsRead.load(std::memory_order_relaxed);
     stats.framesDecoded = shared.framesDecoded.load(std::memory_order_relaxed);
@@ -984,6 +1142,8 @@ DecoderStats VideoDecoder::stats() const {
     stats.seeks = shared.seeks.load(std::memory_order_relaxed);
     stats.frameAllocations = shared.frameAllocations.load(std::memory_order_relaxed);
     stats.queueWaitSeconds = static_cast<double>(shared.queueWaitNanoseconds.load(std::memory_order_relaxed)) * 1e-9;
+    stats.openMilliseconds = toMilliseconds(shared.openNanoseconds.load(std::memory_order_relaxed));
+    stats.firstFrameMilliseconds = toMilliseconds(shared.firstFrameNanoseconds.load(std::memory_order_relaxed));
     const std::lock_guard lock(shared.timingMutex);
     stats.decodeMilliseconds = shared.decodeTimes.summary();
     stats.convertMilliseconds = shared.convertTimes.summary();
@@ -991,13 +1151,11 @@ DecoderStats VideoDecoder::stats() const {
 }
 
 double VideoDecoder::threadCpuSeconds() const {
-    // The thread publishes its final CPU time before it ends, and stop() joins it (closing the handle) only after that:
-    // while nothing is published, the handle is valid.
-    const double final = m_shared->finalCpuSeconds.load();
-    if (final >= 0.0) {
-        return final;
-    }
-    return m_threadHandle != nullptr ? threadCpuSecondsOf(static_cast<HANDLE>(m_threadHandle)) : 0.0;
+    return m_threadHandle ? threadCpuSecondsOf(static_cast<HANDLE>(m_threadHandle.get())) : 0.0;
+}
+
+bool VideoDecoder::threadRunning() const noexcept {
+    return m_threadHandle && WaitForSingleObject(static_cast<HANDLE>(m_threadHandle.get()), 0) == WAIT_TIMEOUT;
 }
 
 const std::filesystem::path& VideoDecoder::path() const noexcept {
@@ -1014,26 +1172,37 @@ const DecoderSettings& VideoDecoder::settings() const noexcept {
 
 void VideoDecoder::pause() {
     const std::lock_guard lock(m_shared->controlMutex);
-    m_shared->paused = true;
+    m_shared->paused.store(true);
 }
 
 void VideoDecoder::resume() {
     {
         const std::lock_guard lock(m_shared->controlMutex);
-        m_shared->paused = false;
+        m_shared->paused.store(false);
     }
     m_shared->control.notify_all();
 }
 
-void VideoDecoder::seek(double seconds) {
+std::uint32_t VideoDecoder::seek(double seconds) {
+    std::uint32_t generation = 0;
     {
         const std::lock_guard lock(m_shared->controlMutex);
         m_shared->seekRequest = std::isfinite(seconds) ? std::max(0.0, seconds) : 0.0;
+        generation = m_shared->generation.load() + 1;
+        m_shared->generation.store(generation, std::memory_order_release);
         // An ended stream plays again from now on (the thread takes the request at once).
         DecoderState ended = DecoderState::Ended;
         m_shared->state.compare_exchange_strong(ended, DecoderState::Playing);
     }
+    // On the consumer's thread, which alone removes frames: the frames of the old position go back to the pool, and a
+    // thread waiting for room in the queue wakes and discards the frame it holds.
+    m_shared->queue.discardOlderThan(generation);
     m_shared->control.notify_all();
+    return generation;
+}
+
+void waitForStoppedDecoders() {
+    stoppedThreads().joinAll();
 }
 
 Expected<StreamInfo> probeVideo(const std::filesystem::path& path, int maxHeight) {

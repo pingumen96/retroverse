@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string_view>
 #include <utility>
 
@@ -16,6 +17,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/version.hpp>
+#include <rv/media/test_video.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/render/gl_device.hpp>
 
@@ -58,8 +60,12 @@ constexpr float kBorderPixels = 4.0f;
 constexpr double kRecorderFramesPerSecond = 2500.0;
 /// Criteria of the roadmap's row (c).
 constexpr double kMaxP99FrameMs = 16.7;
+/// The render rate the roadmap's criteria are stated for: a 60 FPS loop meets "p99 at most 16.7 ms" when at most 1% of
+/// its frames, 0.6 per second, take longer.
+constexpr double kCriteriaFramesPerSecond = 60.0;
+constexpr double kMaxLongFrameShare = 0.01;
 constexpr double kMaxUploadMs = 2.0;
-constexpr double kMaxLatePercent = 1.0;
+constexpr double kMaxLateOrDroppedPercent = 1.0;
 constexpr double kMaxDriftPercent = 2.0;
 constexpr double kMaxMemoryGrowthMiB = 16.0;
 
@@ -84,6 +90,31 @@ nlohmann::json summaryJson(const media::SampleSummary& summary) {
 glm::vec4 toNdc(const glm::vec4& pixels, glm::vec2 window) {
     return {pixels.x / window.x * 2.0f - 1.0f, 1.0f - pixels.w / window.y * 2.0f, pixels.z / window.x * 2.0f - 1.0f,
             1.0f - pixels.y / window.y * 2.0f};
+}
+
+/// The pixel rectangle (x0, y0, x1, y1 from the top-left) of picture `index` of `count` in a `window`: a grid of
+/// cells, the picture of `pictureSize` letterboxed in its cell inside a border. Nothing when the window is too small.
+std::optional<glm::vec4> pictureRect(int index, int count, glm::vec2 window, glm::ivec2 pictureSize) {
+    const int columns = std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count)))));
+    const int rows = std::max(1, (count + columns - 1) / columns);
+    const glm::vec2 cell((window.x - kMarginPixels * static_cast<float>(columns + 1)) / static_cast<float>(columns),
+                         (window.y - kMarginPixels * static_cast<float>(rows + 1)) / static_cast<float>(rows));
+    if (cell.x <= 2.0f * kBorderPixels || cell.y <= 2.0f * kBorderPixels) {
+        return std::nullopt;
+    }
+    const float aspect = static_cast<float>(pictureSize.x) / static_cast<float>(std::max(pictureSize.y, 1));
+    const glm::vec2 inner = cell - 2.0f * kBorderPixels;
+    const glm::vec2 fitted =
+        inner.x / inner.y > aspect ? glm::vec2(inner.y * aspect, inner.y) : glm::vec2(inner.x, inner.x / aspect);
+    const glm::vec2 cellMin(kMarginPixels + static_cast<float>(index % columns) * (cell.x + kMarginPixels),
+                            kMarginPixels + static_cast<float>(index / columns) * (cell.y + kMarginPixels));
+    const glm::vec2 pictureMin = cellMin + (cell - fitted) * 0.5f;
+    return glm::vec4(pictureMin, pictureMin + fitted);
+}
+
+/// Percent `part` of `whole`, 0 for an empty whole.
+double percentOf(double part, double whole) noexcept {
+    return whole > 0.0 ? 100.0 * part / whole : 0.0;
 }
 
 } // namespace
@@ -124,6 +155,9 @@ Status VideoSpikeApp::onInit(app::AppContext& context) {
             m_displayRefreshHz = mode->refresh_rate;
         }
     }
+    if (m_options.textureSelfTest) {
+        m_textureSelfTest = runTextureSelfTest();
+    }
 
     const auto capacity = static_cast<std::size_t>((m_options.seconds + 5.0) * kRecorderFramesPerSecond);
     m_frameIntervals = media::SampleRecorder(capacity);
@@ -131,6 +165,7 @@ Status VideoSpikeApp::onInit(app::AppContext& context) {
     m_uploadCpu = media::SampleRecorder(capacity);
     m_uploadCopy = media::SampleRecorder(capacity);
     m_uploadGpu = media::SampleRecorder(capacity);
+    m_uploadPerFrame = media::SampleRecorder(capacity);
     m_machineBusy = media::SampleRecorder(static_cast<std::size_t>(m_options.seconds) + 8);
     m_memory.reserve(static_cast<std::size_t>(m_options.seconds) + 8);
 
@@ -150,6 +185,7 @@ Status VideoSpikeApp::onInit(app::AppContext& context) {
         settings.threadCount = m_options.decoderThreads;
         settings.loop = true;
         settings.name = slot.name;
+        slot.startedAt = Clock::now();
         auto decoder = media::VideoDecoder::start(slot.path, settings);
         if (!decoder) {
             slot.startError = decoder.error().toString();
@@ -232,16 +268,20 @@ void VideoSpikeApp::updateSlot(Slot& slot, double now) {
         }
         return;
     }
-    if (slot.playback->failed() && !slot.failedAtSeconds) {
-        showFallback(slot, now);
-    }
     const media::PlaybackUpdate update = slot.playback->update(now);
+    if (update.clock.newFrame && !slot.firstShownAt) {
+        slot.firstShownAt = m_frameStart;
+    }
     if (update.clock.newFrame && update.clock.shown && m_measuring) {
         const glm::dvec2 shown(now, update.clock.shown->ptsSeconds);
         if (!slot.firstShown) {
             slot.firstShown = shown;
         }
         slot.lastShown = shown;
+    }
+    // The still picture replaces the video once the frames decoded before the failure have been shown (ADR-0004).
+    if (slot.playback->failed() && !slot.failedAtSeconds) {
+        showFallback(slot, now);
     }
     if (update.frame == nullptr || slot.textureFailed) {
         return;
@@ -269,8 +309,13 @@ void VideoSpikeApp::updateSlot(Slot& slot, double now) {
         return;
     }
     if (*uploaded == gl::VideoUpload::Uploaded) {
+        if (m_options.checkFrames) {
+            slot.lastUploadedCounter = media::decodeFrameCounter(frame); // before the frame goes back to the pool
+        }
         slot.playback->releaseFrame();
         ++slot.uploads;
+        m_frameUploadMs += uploadMs;
+        ++m_frameUploads;
         if (m_measuring) {
             m_uploadCpu.record(uploadMs);
             m_uploadCopy.record(slot.texture.stats().lastCopyMilliseconds);
@@ -285,19 +330,32 @@ void VideoSpikeApp::onUpdate(app::AppContext& context, double /*deltaSeconds*/) 
     }
     m_now = std::chrono::duration<double>(m_frameStart - *m_runStart).count();
     if (m_measuring && m_lastFrameStart) {
-        m_frameIntervals.record(milliseconds(m_frameStart - *m_lastFrameStart));
+        const double interval = milliseconds(m_frameStart - *m_lastFrameStart);
+        m_frameIntervals.record(interval);
+        if (interval > kMaxP99FrameMs) {
+            ++m_longFrames;
+        }
     }
     m_lastFrameStart = m_frameStart;
     if (!m_measuring && !m_finished && m_now >= m_options.warmupSeconds) {
         startMeasuring(m_now);
     }
 
+    m_frameUploadMs = 0.0;
+    m_frameUploads = 0;
     for (Slot& slot : m_slots) {
         updateSlot(slot, m_now);
         while (const std::optional<double> gpu = slot.texture.pollGpuMilliseconds()) {
             if (m_measuring) {
                 m_uploadGpu.record(*gpu);
             }
+        }
+    }
+    if (m_measuring && m_frameUploads > 0) {
+        m_uploadPerFrame.record(m_frameUploadMs);
+        ++m_framesWithUploads;
+        if (m_frameUploads > 1) {
+            ++m_framesWithSeveralUploads;
         }
     }
     if (m_measuring && m_now >= m_nextSample) {
@@ -325,13 +383,6 @@ void VideoSpikeApp::drawSlots(app::AppContext& context) {
     };
 
     const int count = static_cast<int>(m_slots.size());
-    const int columns = std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count)))));
-    const int rows = std::max(1, (count + columns - 1) / columns);
-    const glm::vec2 cell((window.x - kMarginPixels * static_cast<float>(columns + 1)) / static_cast<float>(columns),
-                         (window.y - kMarginPixels * static_cast<float>(rows + 1)) / static_cast<float>(rows));
-    if (cell.x <= 2.0f * kBorderPixels || cell.y <= 2.0f * kBorderPixels) {
-        return;
-    }
     for (int index = 0; index < count; ++index) {
         const Slot& slot = m_slots[static_cast<std::size_t>(index)];
         GLuint picture = m_white.id();
@@ -351,16 +402,14 @@ void VideoSpikeApp::drawSlots(app::AppContext& context) {
             pictureSize = slot.texture.size();
             tint = kWhite;
         }
-        const float aspect = static_cast<float>(pictureSize.x) / static_cast<float>(std::max(pictureSize.y, 1));
-        const glm::vec2 inner = cell - 2.0f * kBorderPixels;
-        const glm::vec2 fitted =
-            inner.x / inner.y > aspect ? glm::vec2(inner.y * aspect, inner.y) : glm::vec2(inner.x, inner.x / aspect);
-        const glm::vec2 cellMin(kMarginPixels + static_cast<float>(index % columns) * (cell.x + kMarginPixels),
-                                kMarginPixels + static_cast<float>(index / columns) * (cell.y + kMarginPixels));
-        const glm::vec2 pictureMin = cellMin + (cell - fitted) * 0.5f;
-        const glm::vec2 pictureMax = pictureMin + fitted;
-        draw(glm::vec4(pictureMin - kBorderPixels, pictureMax + kBorderPixels), m_white.id(), border);
-        draw(glm::vec4(pictureMin, pictureMax), picture, tint);
+        const std::optional<glm::vec4> rect = pictureRect(index, count, window, pictureSize);
+        if (!rect) {
+            return;
+        }
+        draw(glm::vec4(rect->x - kBorderPixels, rect->y - kBorderPixels, rect->z + kBorderPixels,
+                       rect->w + kBorderPixels),
+             m_white.id(), border);
+        draw(*rect, picture, tint);
     }
 }
 
@@ -397,11 +446,52 @@ void VideoSpikeApp::onRender(app::AppContext& context) {
     }
 }
 
+void VideoSpikeApp::readScreenCounters(const assets::ImageData& image) {
+    if (image.channels != 4 || !image.isValid()) {
+        return;
+    }
+    const glm::vec2 window(static_cast<float>(image.width), static_cast<float>(image.height));
+    const int count = static_cast<int>(m_slots.size());
+    for (int index = 0; index < count; ++index) {
+        Slot& slot = m_slots[static_cast<std::size_t>(index)];
+        if (slot.failedAtSeconds || !slot.texture.valid()) {
+            continue;
+        }
+        const std::optional<glm::vec4> rect = pictureRect(index, count, window, slot.texture.size());
+        if (!rect) {
+            continue;
+        }
+        const int x0 = std::clamp(static_cast<int>(std::lround(rect->x)), 0, image.width);
+        const int y0 = std::clamp(static_cast<int>(std::lround(rect->y)), 0, image.height);
+        const int x1 = std::clamp(static_cast<int>(std::lround(rect->z)), 0, image.width);
+        const int y1 = std::clamp(static_cast<int>(std::lround(rect->w)), 0, image.height);
+        media::VideoFrame picture;
+        if (!picture.resize(media::FrameSize{x1 - x0, y1 - y0})) {
+            continue;
+        }
+        double luma = 0.0;
+        for (int y = y0; y < y1; ++y) {
+            const std::uint8_t* source = image.pixels.data() + static_cast<std::size_t>(y) * image.rowBytes() +
+                                         static_cast<std::size_t>(x0) * 4u;
+            std::memcpy(picture.pixels() + static_cast<std::size_t>(y - y0) * picture.strideBytes(), source,
+                        picture.strideBytes());
+            for (int x = x0; x < x1; ++x, source += 4) {
+                luma += 0.299 * source[0] + 0.587 * source[1] + 0.114 * source[2];
+            }
+        }
+        slot.screenCounter = media::decodeFrameCounter(picture);
+        slot.screenMeanLuma = luma / (static_cast<double>(x1 - x0) * static_cast<double>(y1 - y0));
+    }
+}
+
 void VideoSpikeApp::writeScreenshot(app::AppContext& context) {
     const std::filesystem::path& path = *m_options.screenshot;
     auto pixels = m_target.valid()
                       ? m_target.readPixels()
                       : Expected<assets::ImageData>(makeError(ErrorCode::GraphicsError, "no output target"));
+    if (pixels && m_options.checkFrames) {
+        readScreenCounters(*pixels);
+    }
     Status written = pixels ? assets::writePng(path, assets::convertChannels(*pixels, 3)) : propagate(pixels.error());
     if (!written) {
         m_screenshotError = written.error().toString();
@@ -432,6 +522,7 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
         {"warmupSeconds", m_options.warmupSeconds},
         {"window", {context.framebufferSize().x, context.framebufferSize().y}},
         {"vsync", m_options.host.vsync},
+        {"vsyncMode", std::string(platform::toString(context.window().vsync()))},
         {"hidden", m_options.host.hidden},
         {"maxHeight", m_options.maxHeight},
         {"queueCapacity", m_options.queueCapacity},
@@ -444,6 +535,9 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
                                  {"high", device.debugMessageCount(gl::DebugSeverity::High)},
                                  {"mediumOrHigher", device.debugMessageCount(gl::DebugSeverity::Medium)},
                                  {"lowOrHigher", device.debugMessageCount(gl::DebugSeverity::Low)}};
+    if (m_textureSelfTest) {
+        report["textureSelfTest"] = m_textureSelfTest->toJson();
+    }
     report["run"] = {{"completed", m_finished},
                      {"framesRendered", m_frames},
                      {"framesMeasured", m_framesMeasured},
@@ -451,11 +545,25 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
                      {"framesPerSecond", rounded(m_finished ? static_cast<double>(m_framesMeasured) / window : 0.0)},
                      {"screenshot", m_screenshotWritten ? core::pathToUtf8(*m_options.screenshot) : std::string()}};
     report["frameIntervalMs"] = summaryJson(m_frameIntervals.summary());
+    // The p99 criterion read at the roadmap's 60 FPS: the intervals over 16.7 ms against 1% of the frames a 60 FPS loop
+    // renders in the window (a stall makes one long interval at any rate).
+    const double longFramesAllowed = kMaxLongFrameShare * kCriteriaFramesPerSecond * window;
+    report["framesOver16_7Ms"] = {
+        {"count", m_longFrames},
+        {"percentOf60HzFrames",
+         rounded(percentOf(static_cast<double>(m_longFrames), kCriteriaFramesPerSecond * window), 0.001)},
+        {"allowedAt60Hz", rounded(longFramesAllowed, 0.1)}};
     report["frameWorkMs"] = summaryJson(m_frameWork.summary());
     report["uploadCpuMs"] = summaryJson(m_uploadCpu.summary());
     report["uploadCopyCpuMs"] = summaryJson(m_uploadCopy.summary());
     report["uploadGpuMs"] = summaryJson(m_uploadGpu.summary());
-    report["samplesNotStored"] = m_frameIntervals.overflow() + m_frameWork.overflow() + m_uploadCpu.overflow();
+    // Every upload of a render frame together, over the frames that uploaded (videos due on the same frame add up).
+    const media::SampleSummary uploadPerFrame = m_uploadPerFrame.summary();
+    report["uploadPerFrameCpuMs"] = summaryJson(uploadPerFrame);
+    report["framesWithUploads"] = m_framesWithUploads;
+    report["framesWithSeveralUploads"] = m_framesWithSeveralUploads;
+    report["samplesNotStored"] =
+        m_frameIntervals.overflow() + m_frameWork.overflow() + m_uploadCpu.overflow() + m_uploadPerFrame.overflow();
 
     nlohmann::json memory;
     memory["workingSetAtInitMiB"] = rounded(m_memoryAtInit.workingSetMiB, 0.01);
@@ -524,6 +632,11 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
                                {"bitRate", info->bitRate}};
         }
         const media::DecoderStats stats = decoder.stats();
+        video["startup"] = {{"openMs", rounded(stats.openMilliseconds, 0.01)},
+                            {"firstFrameQueuedMs", rounded(stats.firstFrameMilliseconds, 0.01)},
+                            {"firstFrameShownMs", slot.firstShownAt
+                                                      ? rounded(milliseconds(*slot.firstShownAt - slot.startedAt), 0.01)
+                                                      : -1.0}};
         video["decoder"] = {
             {"framesDecoded", stats.framesDecoded},
             {"framesQueued", stats.framesQueued},
@@ -540,15 +653,21 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
         const media::PresentationStats& end = slot.clockAtEnd;
         const media::PresentationStats& start = slot.clockAtStart;
         const auto presented = static_cast<double>(end.presented - start.presented);
-        const double latePercent =
-            presented > 0.0 ? 100.0 * static_cast<double>(end.late - start.late) / presented : 0.0;
+        const auto late = static_cast<double>(end.late - start.late);
+        const auto dropped = static_cast<double>(end.dropped - start.dropped);
+        // A dropped frame was never shown: not on time either. The criterion counts both against every frame that
+        // fell due.
+        const double lateOrDroppedPercent = percentOf(late + dropped, presented + dropped);
         video["presentation"] = {
             {"presented", end.presented - start.presented},
             {"late", end.late - start.late},
-            {"latePercent", rounded(latePercent)},
+            {"latePercent", rounded(percentOf(late, presented))},
             {"dropped", end.dropped - start.dropped},
+            {"droppedPercent", rounded(percentOf(dropped, presented + dropped))},
+            {"lateOrDroppedPercent", rounded(lateOrDroppedPercent)},
             {"repeated", end.repeated - start.repeated},
             {"resyncs", end.resyncs - start.resyncs},
+            {"resyncSeconds", rounded(end.resyncSeconds - start.resyncSeconds)},
             {"stale", end.stale - start.stale},
             {"maxLatenessMs", rounded(end.maxLatenessSeconds * 1000.0)},
             {"meanLatenessMs",
@@ -565,17 +684,25 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
                               {"videoSeconds", rounded(ptsSpan)},
                               {"percent", rounded(driftPercent)}};
         }
-        video["upload"] = {{"uploads", slot.uploadsAtEnd - slot.uploadsAtStart},
-                           {"sync", std::string(gl::toString(slot.texture.sync()))},
-                           {"ringBusy", slot.texture.stats().ringBusy},
-                           {"reallocations", slot.texture.stats().reallocations},
-                           {"gpuTimingsLost", slot.texture.stats().gpuTimingsLost},
-                           {"errors", slot.uploadErrors},
-                           {"textureSize", {slot.texture.size().x, slot.texture.size().y}},
-                           {"gpuBytes", slot.texture.gpuBytes()}};
+        nlohmann::json upload = {{"uploads", slot.uploadsAtEnd - slot.uploadsAtStart},
+                                 {"sync", std::string(gl::toString(slot.texture.sync()))},
+                                 {"ringBusy", slot.texture.stats().ringBusy},
+                                 {"reallocations", slot.texture.stats().reallocations},
+                                 {"gpuTimingsLost", slot.texture.stats().gpuTimingsLost},
+                                 {"errors", slot.uploadErrors},
+                                 {"textureSize", {slot.texture.size().x, slot.texture.size().y}},
+                                 {"gpuBytes", slot.texture.gpuBytes()}};
+        if (m_options.checkFrames) {
+            // -1: no counter could be read (not a test clip, or a picture that is not a test frame).
+            upload["lastCounter"] =
+                slot.lastUploadedCounter ? static_cast<std::int64_t>(*slot.lastUploadedCounter) : -1;
+            upload["screenCounter"] = slot.screenCounter ? static_cast<std::int64_t>(*slot.screenCounter) : -1;
+            upload["screenMeanLuma"] = rounded(slot.screenMeanLuma.value_or(-1.0), 0.1);
+        }
+        video["upload"] = std::move(upload);
         if (!slot.failedAtSeconds) {
             ++playing;
-            everyPlayingVideoOnTime = everyPlayingVideoOnTime && latePercent < kMaxLatePercent;
+            everyPlayingVideoOnTime = everyPlayingVideoOnTime && lateOrDroppedPercent < kMaxLateOrDroppedPercent;
             everyPlayingVideoWithinDrift = everyPlayingVideoWithinDrift && std::abs(driftPercent) <= kMaxDriftPercent;
         }
         videos.push_back(video);
@@ -588,9 +715,11 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
     const double growth = m_memory.empty() ? 0.0 : m_memory.back().workingSetMiB - m_memory.front().workingSetMiB;
     nlohmann::json criteria;
     criteria["frameIntervalP99AtMost16_7Ms"] = m_finished && frames.p99 <= kMaxP99FrameMs;
+    criteria["framesOver16_7MsWithin1PercentOf60Hz"] =
+        m_finished && static_cast<double>(m_longFrames) <= longFramesAllowed;
     criteria["uploadCpuP99Under2Ms"] = m_finished && uploadCpu.p99 < kMaxUploadMs;
     criteria["uploadGpuP99Under2Ms"] = m_finished && uploadGpu.p99 < kMaxUploadMs;
-    criteria["lateUnder1Percent"] = m_finished && playing > 0 && everyPlayingVideoOnTime;
+    criteria["lateOrDroppedUnder1Percent"] = m_finished && playing > 0 && everyPlayingVideoOnTime;
     criteria["driftWithin2Percent"] = m_finished && playing > 0 && everyPlayingVideoWithinDrift;
     criteria["memoryGrowthAtMost16MiB"] = m_finished && growth <= kMaxMemoryGrowthMiB;
     criteria["completed"] = m_finished;
@@ -601,6 +730,8 @@ nlohmann::json VideoSpikeApp::buildReport(app::AppContext& context) const {
     criteria["all"] = all;
     criteria["playingVideos"] = playing;
     report["criteria"] = criteria;
+    // The upload budget read per render frame instead of per upload (not a criterion of the report: ADR-0004).
+    report["uploadPerFrameCpuP99Under2Ms"] = m_finished && uploadPerFrame.p99 < kMaxUploadMs;
     return report;
 }
 
@@ -626,13 +757,19 @@ void VideoSpikeApp::onShutdown(app::AppContext& context) {
         context.failRun(Error{ErrorCode::IoError, "the run ended before its last frame: no screenshot",
                               core::pathToUtf8(*m_options.screenshot)});
     }
-    // Decoder threads first, then the GPU resources (the context is still current).
+    if (m_textureSelfTest && !m_textureSelfTest->passed) {
+        context.failRun(Error{ErrorCode::GraphicsError,
+                              fmt::format("VideoTexture self-test failed: {}", m_textureSelfTest->failures.front())});
+    }
+    // Decoders stop without waiting; their threads are waited for once, here, before the GPU resources go (the
+    // context is still current).
     for (Slot& slot : m_slots) {
         if (slot.playback) {
             slot.playback->decoder().stop();
         }
     }
     m_slots.clear();
+    media::waitForStoppedDecoders();
     m_target = {};
     m_white = {};
     m_quad = {};

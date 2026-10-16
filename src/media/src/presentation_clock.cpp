@@ -24,11 +24,30 @@ void PresentationClock::skipStaleFrames(FrameSource& frames) {
     }
 }
 
+void PresentationClock::showFirstFrameWhilePaused(double nowSeconds, FrameSource& frames, ClockUpdate& result) {
+    // skipStaleFrames() ran: the front frame, if any, is of the current generation.
+    const std::optional<FrameTiming> first = frames.peek(0);
+    if (!first) {
+        return;
+    }
+    frames.pop(true);
+    m_current = *first;
+    m_anchor = Anchor{nowSeconds, first->ptsSeconds};
+    m_pausedMediaTime = first->ptsSeconds;
+    m_previousMediaTime.reset();
+    result.newFrame = true;
+    ++m_stats.presented;
+}
+
 ClockUpdate PresentationClock::update(double nowSeconds, FrameSource& frames, bool sourceEnded) {
     ClockUpdate result;
     ++m_stats.updates;
     skipStaleFrames(frames);
     if (m_paused) {
+        if (!m_current) {
+            // Paused before the first frame of the clip or of a seek: that frame becomes the paused picture.
+            showFirstFrameWhilePaused(nowSeconds, frames, result);
+        }
         result.shown = m_current;
         if (m_anchor) {
             result.mediaTime = m_pausedMediaTime;
@@ -57,25 +76,30 @@ ClockUpdate PresentationClock::update(double nowSeconds, FrameSource& frames, bo
         ++due;
     }
 
+    std::optional<FrameTiming> shown;
     if (due > 0) {
         for (std::size_t skipped = 0; skipped + 1 < due; ++skipped) {
             frames.pop(false);
             ++m_stats.dropped;
             ++result.dropped;
         }
-        const FrameTiming shown = *frames.peek(0);
+        // Still there: only the clock removes frames (FrameSource). Checked all the same: a source breaking that rule
+        // must not make the clock read a frame that is gone.
+        shown = frames.peek(0);
+    }
+    if (shown) {
         frames.pop(true);
         // Late: it was already due at the previous update but was not there yet.
         result.late = m_previousMediaTime.has_value() &&
-                      shown.ptsSeconds <= *m_previousMediaTime + m_settings.dueToleranceSeconds;
-        const double lateness = std::max(0.0, media - shown.ptsSeconds);
+                      shown->ptsSeconds <= *m_previousMediaTime + m_settings.dueToleranceSeconds;
+        const double lateness = std::max(0.0, media - shown->ptsSeconds);
         if (lateness > m_settings.resyncThresholdSeconds) {
             // Too far behind to catch up by skipping: the media time moves back to this frame.
-            m_anchor = Anchor{nowSeconds, shown.ptsSeconds};
+            m_anchor = Anchor{nowSeconds, shown->ptsSeconds};
             m_stats.resyncSeconds += lateness;
             ++m_stats.resyncs;
             result.resynced = true;
-            media = shown.ptsSeconds;
+            media = shown->ptsSeconds;
         }
         m_current = shown;
         result.newFrame = true;
@@ -121,6 +145,14 @@ void PresentationClock::restart() noexcept {
     m_anchor.reset();
     m_current.reset();
     m_previousMediaTime.reset();
+}
+
+void PresentationClock::beginGeneration(std::uint32_t generation) noexcept {
+    if (generation <= m_generation) {
+        return;
+    }
+    m_generation = generation;
+    restart();
 }
 
 std::optional<double> PresentationClock::mediaTime(double nowSeconds) const noexcept {

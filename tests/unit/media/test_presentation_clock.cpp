@@ -48,6 +48,36 @@ private:
     std::deque<FrameTiming> m_queue;
 };
 
+/// A source that breaks the FrameSource rule the way a producer clearing the queue would: `count` frames at 30 fps,
+/// all gone after the `vanishAfterPops`-th pop.
+class VanishingFrames final : public FrameSource {
+public:
+    VanishingFrames(std::size_t count, int vanishAfterPops) noexcept : m_count(count), m_popsLeft(vanishAfterPops) {}
+
+    [[nodiscard]] std::optional<FrameTiming> peek(std::size_t index) const override {
+        if (index >= m_count) {
+            return std::nullopt;
+        }
+        return FrameTiming{static_cast<double>(m_first + index) / 30.0, 1.0 / 30.0, 0};
+    }
+
+    void pop(bool /*present*/) override {
+        if (m_count == 0) {
+            return;
+        }
+        ++m_first;
+        --m_count;
+        if (--m_popsLeft == 0) {
+            m_count = 0;
+        }
+    }
+
+private:
+    std::size_t m_count;
+    std::size_t m_first = 0;
+    int m_popsLeft;
+};
+
 constexpr double kRefresh = 1.0 / 60.0;
 
 } // namespace
@@ -232,6 +262,88 @@ TEST_CASE("media/presentation_clock: a newer generation restarts the clock, olde
     CHECK(next.newFrame);
     REQUIRE(next.shown);
     CHECK(next.shown->ptsSeconds == Approx(5.0 + 1.0 / 30.0));
+}
+
+TEST_CASE("media/presentation_clock: a seek announced to the clock throws away the frames before it unseen",
+          "[media][presentation_clock]") {
+    PresentationClock clock;
+    FakeFrames frames;
+    frames.add(3, 30.0, 0.0, 0);
+    CHECK(clock.update(0.0, frames).newFrame);
+
+    clock.beginGeneration(1);
+    CHECK(clock.generation() == 1);
+    CHECK_FALSE(clock.current());
+    CHECK_FALSE(clock.mediaTime(0.05));
+    // Only frames of the old position are queued: thrown away, nothing shown, nothing counted as repeated.
+    const ClockUpdate waiting = clock.update(0.05, frames);
+    CHECK_FALSE(waiting.newFrame);
+    CHECK_FALSE(waiting.repeated);
+    CHECK_FALSE(waiting.shown);
+    CHECK(clock.stats().stale == 2);
+    CHECK(frames.size() == 0);
+    CHECK(frames.shown == std::vector<double>{0.0});
+
+    frames.add(2, 30.0, 4.0, 1);
+    const ClockUpdate first = clock.update(0.1, frames);
+    CHECK(first.newFrame);
+    REQUIRE(first.shown);
+    CHECK(first.shown->ptsSeconds == 4.0);
+    CHECK(clock.mediaTime(0.1) == Approx(4.0));
+    clock.beginGeneration(1); // not newer: no-op
+    clock.beginGeneration(0);
+    CHECK(clock.current());
+    CHECK(clock.generation() == 1);
+}
+
+TEST_CASE("media/presentation_clock: while paused, the first frame of a clip or of a seek becomes the picture",
+          "[media][presentation_clock]") {
+    PresentationClock clock;
+    FakeFrames frames;
+    clock.pause(0.0);
+    CHECK_FALSE(clock.update(0.0, frames).newFrame); // nothing decoded yet
+    frames.add(3, 30.0, 2.0, 0);
+    const ClockUpdate first = clock.update(0.5, frames);
+    CHECK(first.newFrame);
+    REQUIRE(first.shown);
+    CHECK(first.shown->ptsSeconds == 2.0);
+    CHECK(first.mediaTime == Approx(2.0));
+    CHECK_FALSE(clock.update(1.0, frames).newFrame); // still paused: the media time stands
+    CHECK(frames.size() == 2);
+    CHECK(clock.mediaTime(9.0) == Approx(2.0));
+
+    // A seek while paused: its first frame replaces the paused picture, the frames before it are never shown.
+    clock.beginGeneration(1);
+    frames.add(2, 30.0, 7.0, 1);
+    const ClockUpdate seeked = clock.update(1.5, frames);
+    CHECK(seeked.newFrame);
+    REQUIRE(seeked.shown);
+    CHECK(seeked.shown->ptsSeconds == 7.0);
+    CHECK(seeked.shown->generation == 1);
+    CHECK(clock.stats().stale == 2);
+    CHECK(frames.shown == std::vector<double>{2.0, 7.0});
+    CHECK(clock.mediaTime(10.0) == Approx(7.0));
+
+    clock.resume(2.0);
+    CHECK(clock.mediaTime(2.0 + 1.0 / 30.0) == Approx(7.0 + 1.0 / 30.0));
+    const ClockUpdate resumed = clock.update(2.0 + 1.0 / 30.0, frames);
+    CHECK(resumed.newFrame);
+    REQUIRE(resumed.shown);
+    CHECK(resumed.shown->ptsSeconds == Approx(7.0 + 1.0 / 30.0));
+    CHECK_FALSE(resumed.late);
+}
+
+TEST_CASE("media/presentation_clock: frames vanishing during an update are never read", "[media][presentation_clock]") {
+    PresentationClock clock;
+    VanishingFrames frames(6, 2);
+    CHECK(clock.update(0.0, frames).newFrame); // pop 1: frame 0 shown
+    // Frames 1 to 3 are due; the first frame skipped empties the source (pop 2), as a producer clearing the queue
+    // between the clock's steps would. The clock shows nothing new and keeps its frame.
+    const ClockUpdate update = clock.update(0.1, frames);
+    CHECK_FALSE(update.newFrame);
+    REQUIRE(update.shown);
+    CHECK(update.shown->ptsSeconds == 0.0);
+    CHECK(clock.stats().presented == 1);
 }
 
 TEST_CASE("media/presentation_clock: a frame within the due tolerance is shown", "[media][presentation_clock]") {

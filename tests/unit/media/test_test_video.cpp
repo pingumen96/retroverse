@@ -38,6 +38,26 @@ TEST_CASE("media/test_video: clips have the size, rate and length asked for", "[
     CHECK(frames[2].counter == 2u); // full-range JPEG colors read back as well
 }
 
+TEST_CASE("media/test_video: clips can carry a silent audio track longer than the video", "[media][test_video]") {
+    const MediaTestDir dir;
+    TestVideoSpec spec = smallClip(160, 120, 10, 10);
+    spec.audioSeconds = 3.0;
+    for (const char* name : {"audio.mkv", "audio.avi"}) {
+        INFO(name);
+        const auto path = rv::test::writeClip(dir, name, spec);
+        const auto info = rv::media::probeVideo(path);
+        REQUIRE(info.has_value());
+        CHECK(info->codedSize == FrameSize{160, 120});
+        auto decoder = rv::test::startDecoder(path);
+        const auto frames = rv::test::collectFrames(*decoder, 12);
+        REQUIRE(frames.size() == 12);
+        CHECK(frames[11].counter == 1u); // the second pass: 1 s of video, then the loop
+    }
+    CHECK(rv::media::writeTestVideo(dir.file("audio.mp4"), spec).error().code == rv::ErrorCode::Unsupported);
+    spec.audioSeconds = -1.0;
+    CHECK(rv::media::writeTestVideo(dir.file("bad.mkv"), spec).error().code == rv::ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("media/test_video: specs and containers out of range are refused", "[media][test_video]") {
     const MediaTestDir dir;
     TestVideoSpec spec = smallClip();

@@ -50,6 +50,11 @@ struct SpikeOptions {
     /// --upload-fences: guard the pixel buffers with fences (gl::VideoUploadSync::Fence) instead of the copies' end
     /// timestamps.
     bool uploadFences = false;
+    /// --check-frames: decode the frame counter of every uploaded frame (test clips) and of every picture in the
+    /// screenshot, so that a check can tell the texture shows the frame last uploaded (the whole upload path).
+    bool checkFrames = false;
+    /// --texture-self-test: run runTextureSelfTest() before playing.
+    bool textureSelfTest = false;
     /// --priority normal|above-normal|high: the process priority class (SetPriorityClass), so that measurements on a
     /// machine busy with other work can tell the pipeline's own cost from preemption. Decoder threads inherit it.
     std::string priority = "normal";

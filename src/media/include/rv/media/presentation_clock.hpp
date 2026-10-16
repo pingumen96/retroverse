@@ -9,7 +9,8 @@
 namespace rv::media {
 
 /// The frames waiting to be shown, oldest first, as the PresentationClock sees them: a FrameQueue in the application
-/// (VideoPlayback adapts it), a plain list of timings in tests. Only the clock removes frames.
+/// (VideoPlayback adapts it), a plain list of timings in tests. Only the clock removes frames while it updates: frames
+/// it peeked stay in place until it pops them (others may only be appended at the back).
 class FrameSource {
 public:
     virtual ~FrameSource() = default;
@@ -91,7 +92,8 @@ public:
 
     /// Advances to render time `nowSeconds` (any monotonic seconds) and takes from `frames` what is due. `sourceEnded`
     /// tells that no more frames will come (the decoder reached the end without looping, or failed): an expired frame
-    /// is then not counted as repeated. While paused nothing is taken.
+    /// is then not counted as repeated. While paused the media time stands still and nothing is taken, except the first
+    /// frame of a clip or of a seek, which becomes the paused picture.
     ClockUpdate update(double nowSeconds, FrameSource& frames, bool sourceEnded = false);
 
     /// Freezes the media time at render time `nowSeconds`. No-op when already paused.
@@ -103,6 +105,9 @@ public:
     /// Forgets the current frame and the media time: the next update starts again at the first frame available (a new
     /// clip). Keeps the statistics and the generation.
     void restart() noexcept;
+    /// A seek: from now on only frames of `generation` or later are shown (older ones are thrown away as stale) and the
+    /// clock starts again at the first of them, as restart(). No-op unless `generation` is newer than generation().
+    void beginGeneration(std::uint32_t generation) noexcept;
 
     /// Media time at render time `nowSeconds`; nothing before the first frame was shown.
     [[nodiscard]] std::optional<double> mediaTime(double nowSeconds) const noexcept;
@@ -123,6 +128,8 @@ private:
 
     /// Throws away frames of older generations and restarts on a newer one.
     void skipStaleFrames(FrameSource& frames);
+    /// Paused without a frame of the current generation: shows the first one available as the paused picture.
+    void showFirstFrameWhilePaused(double nowSeconds, FrameSource& frames, ClockUpdate& result);
 
     ClockSettings m_settings;
     std::optional<Anchor> m_anchor;

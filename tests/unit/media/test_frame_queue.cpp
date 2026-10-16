@@ -2,8 +2,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "media_test_support.hpp"
 #include <rv/media/frame_queue.hpp>
@@ -14,15 +16,17 @@ using rv::media::FrameQueue;
 using rv::media::FrameSize;
 using rv::media::FrameTiming;
 using rv::media::PooledFrame;
+using rv::media::PushResult;
 using rv::media::VideoFrame;
 
 namespace {
 
-/// Takes a frame from `pool` stamped with `pts`; empty when none is free. No assertion: also called on other threads.
-PooledFrame stamped(FramePool& pool, double pts) {
+/// Takes a frame from `pool` stamped with `pts` and `generation`; empty when none is free. No assertion: also called
+/// on other threads.
+PooledFrame stamped(FramePool& pool, double pts, std::uint32_t generation = 0) {
     PooledFrame frame = pool.tryAcquire();
     if (frame) {
-        frame->timing = FrameTiming{pts, 0.1, 0};
+        frame->timing = FrameTiming{pts, 0.1, generation};
     }
     return frame;
 }
@@ -122,7 +126,7 @@ TEST_CASE("media/frame_queue: frames come out in order, and peek reads their tim
     CHECK(queue.empty());
     CHECK_FALSE(queue.peek(0));
     for (int index = 0; index < 3; ++index) {
-        REQUIRE(queue.push(stamped(*pool, index * 0.1), std::stop_token{}));
+        REQUIRE(queue.push(stamped(*pool, index * 0.1), std::stop_token{}) == PushResult::Queued);
     }
     CHECK(queue.size() == 3);
     REQUIRE(queue.peek(0));
@@ -144,7 +148,7 @@ TEST_CASE("media/frame_queue: a full queue holds the producer back until the con
     std::atomic<int> pushed{0};
     std::jthread producer([&](std::stop_token stop) {
         for (int index = 0; index < 5; ++index) {
-            if (!queue.push(stamped(*pool, index), stop)) {
+            if (queue.push(stamped(*pool, index), stop) != PushResult::Queued) {
                 return;
             }
             ++pushed;
@@ -171,21 +175,23 @@ TEST_CASE("media/frame_queue: a waiting producer leaves on stop or close, its fr
           "[media][frame_queue]") {
     const auto pool = FramePool::create(4);
     FrameQueue queue(1);
-    REQUIRE(queue.push(stamped(*pool, 0.0), std::stop_token{}));
+    REQUIRE(queue.push(stamped(*pool, 0.0), std::stop_token{}) == PushResult::Queued);
 
     std::atomic<int> result{-1};
-    std::jthread producer([&](std::stop_token stop) { result = queue.push(stamped(*pool, 1.0), stop) ? 1 : 0; });
+    std::jthread producer(
+        [&](std::stop_token stop) { result = static_cast<int>(queue.push(stamped(*pool, 1.0), stop)); });
     REQUIRE(rv::test::waitUntil([&] { return pool->available() == 2; })); // the producer holds its frame
     producer.request_stop();
     producer.join();
-    CHECK(result.load() == 0);
+    CHECK(result.load() == static_cast<int>(PushResult::Refused));
     CHECK(pool->available() == 3);
 
-    std::jthread closing([&](std::stop_token stop) { result = queue.push(stamped(*pool, 2.0), stop) ? 1 : 0; });
+    std::jthread closing(
+        [&](std::stop_token stop) { result = static_cast<int>(queue.push(stamped(*pool, 2.0), stop)); });
     REQUIRE(rv::test::waitUntil([&] { return pool->available() == 2; }));
     queue.close();
     closing.join();
-    CHECK(result.load() == 0);
+    CHECK(result.load() == static_cast<int>(PushResult::Refused));
     CHECK(queue.closed());
     CHECK(queue.size() == 1); // queued frames can still be popped
     CHECK(queue.pop());
@@ -196,11 +202,51 @@ TEST_CASE("media/frame_queue: clear returns every frame to the pool", "[media][f
     const auto pool = FramePool::create(3);
     FrameQueue queue(3);
     for (int index = 0; index < 3; ++index) {
-        REQUIRE(queue.push(stamped(*pool, index), std::stop_token{}));
+        REQUIRE(queue.push(stamped(*pool, index), std::stop_token{}) == PushResult::Queued);
     }
     CHECK(pool->available() == 0);
     queue.clear();
     CHECK(queue.empty());
     CHECK(pool->available() == 3);
-    CHECK_FALSE(queue.push(PooledFrame{}, std::stop_token{})); // an empty handle is refused
+    CHECK(queue.push(PooledFrame{}, std::stop_token{}) == PushResult::Refused); // an empty handle is refused
+}
+
+TEST_CASE("media/frame_queue: frames of older generations are discarded, also by a producer waiting for room",
+          "[media][frame_queue]") {
+    const auto pool = FramePool::create(6);
+    FrameQueue queue(2);
+    CHECK(queue.generation() == 0);
+    REQUIRE(queue.push(stamped(*pool, 0.0, 0), std::stop_token{}) == PushResult::Queued);
+    REQUIRE(queue.push(stamped(*pool, 0.1, 0), std::stop_token{}) == PushResult::Queued);
+
+    // A producer waits for room with a frame of generation 0 when the consumer seeks: the queued frames go back to the
+    // pool and the producer wakes and discards its own, without the consumer popping anything.
+    std::atomic<int> result{-1};
+    std::jthread producer(
+        [&](std::stop_token stop) { result = static_cast<int>(queue.push(stamped(*pool, 0.2, 0), stop)); });
+    REQUIRE(rv::test::waitUntil([&] { return pool->available() == 3; })); // 2 queued, 1 held by the producer
+    queue.discardOlderThan(1);
+    producer.join();
+    CHECK(result.load() == static_cast<int>(PushResult::Discarded));
+    CHECK(queue.empty());
+    CHECK(queue.generation() == 1);
+    CHECK(pool->available() == 6);
+
+    // From now on frames of generation 0 are discarded at once; generation 1 is queued.
+    CHECK(queue.push(stamped(*pool, 0.3, 0), std::stop_token{}) == PushResult::Discarded);
+    REQUIRE(queue.push(stamped(*pool, 5.0, 1), std::stop_token{}) == PushResult::Queued);
+    REQUIRE(queue.push(stamped(*pool, 5.1, 1), std::stop_token{}) == PushResult::Queued);
+    queue.discardOlderThan(1); // not newer: nothing changes
+    queue.discardOlderThan(0);
+    CHECK(queue.size() == 2);
+    CHECK(queue.generation() == 1);
+
+    // Only the frames older than the new generation go: those of generation 2 stay, in order.
+    REQUIRE(queue.pop());
+    REQUIRE(queue.push(stamped(*pool, 9.0, 2), std::stop_token{}) == PushResult::Queued);
+    queue.discardOlderThan(2);
+    REQUIRE(queue.size() == 1);
+    CHECK(queue.peek(0)->generation == 2);
+    CHECK(queue.peek(0)->ptsSeconds == 9.0);
+    CHECK(pool->available() == 5);
 }

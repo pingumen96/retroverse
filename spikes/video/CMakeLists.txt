@@ -8,6 +8,7 @@ add_executable(spike_video
     src/spike_fixtures.cpp
     src/spike_options.cpp
     src/system_metrics.cpp
+    src/texture_self_test.cpp
     src/video_spike_app.cpp
 )
 rv_set_target_defaults(spike_video)
@@ -17,7 +18,9 @@ set_target_properties(spike_video PROPERTIES FOLDER "spikes")
 if(RV_BUILD_TESTS)
     # Automated checks (label "gpu"): check_spike_video.cmake runs spike_video hidden on fixtures it generates under the
     # build tree and checks its exit code, report and screenshot.
-    #   smoke   two 720p30 clips for 3 s: both play on time, with thresholds robust on a loaded reference machine
+    #   smoke   two 720p30 clips for 3 s: both play on time, the screenshot shows the frames uploaded last, no GL error,
+    #           VideoTexture's resize and busy-ring paths pass their self-test; timing thresholds when the machine is
+    #           mostly idle
     #   errors  the damaged files of SC-08 beside a good clip: each falls back for its reason, none crashes the run
     # The top-level CMakeLists.txt adds spikes/ before it enables testing, so a test added here would not be registered:
     # the tests are added at the end of the top-level directory instead (deferred), where testing is enabled.

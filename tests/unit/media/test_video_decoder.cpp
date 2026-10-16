@@ -156,20 +156,16 @@ TEST_CASE("media/video_decoder: a seek discards the queue and continues from the
     auto decoder = startDecoder(path, noLoop());
     const auto before = collectFrames(*decoder, 2);
     REQUIRE(before.size() == 2);
-    decoder->seek(1.25);
-    // Frames popped before the seek was taken may come first; the first of the new generation is the one showing
-    // 1.25 s: frame 12 (1.2 s to 1.3 s).
-    std::optional<rv::test::DecodedFrame> first;
-    REQUIRE(waitUntil([&] {
-        for (const auto& frame : collectFrames(*decoder, 1, std::chrono::milliseconds(1))) {
-            if (frame.timing.generation == 1) {
-                first = frame;
-            }
-        }
-        return first.has_value();
-    }));
-    CHECK(first->timing.ptsSeconds == Approx(1.2).margin(0.001));
-    CHECK(first->counter == 12u);
+    CHECK(decoder->generation() == 0);
+    CHECK(decoder->seek(1.25) == 1u);
+    CHECK(decoder->generation() == 1);
+    // seek() discards the frames of the old position at once: the next frame popped is the one showing 1.25 s, frame
+    // 12 (1.2 s to 1.3 s).
+    const auto first = collectFrames(*decoder, 1);
+    REQUIRE(first.size() == 1);
+    CHECK(first[0].timing.generation == 1);
+    CHECK(first[0].timing.ptsSeconds == Approx(1.2).margin(0.001));
+    CHECK(first[0].counter == 12u);
     const auto rest = collectFrames(*decoder, 7);
     REQUIRE(rest.size() == 7);
     CHECK(rest.back().counter == 19u);
@@ -179,12 +175,65 @@ TEST_CASE("media/video_decoder: a seek discards the queue and continues from the
     CHECK(decoder->stats().framesSkipped >= 1);
 
     // A seek also restarts an ended stream.
-    decoder->seek(0.0);
+    CHECK(decoder->seek(0.0) == 2u);
     CHECK(decoder->state() == DecoderState::Playing);
     const auto again = collectFrames(*decoder, 1);
     REQUIRE(again.size() == 1);
     CHECK(again[0].counter == 0u);
     CHECK(again[0].timing.generation == 2);
+}
+
+TEST_CASE("media/video_decoder: a seek is carried out at once while the decoder waits on a full queue",
+          "[media][video_decoder]") {
+    const MediaTestDir dir;
+    auto spec = smallClip(160, 120, 10, 30);
+    spec.keyFrameInterval = 10;
+    const auto path = writeClip(dir, "full_seek.mp4", spec);
+    auto decoder = startDecoder(path); // loops; nobody pops: the thread waits for room
+    REQUIRE(waitUntil([&] { return decoder->frames().size() == decoder->frames().capacity(); }));
+    const auto queuedBefore = decoder->stats().framesQueued;
+    decoder->seek(2.05);
+    // The frames of the old position are gone before seek() returns (frames of the target may follow at once).
+    const auto front = decoder->frames().peek(0);
+    CHECK((!front || front->generation == 1));
+    // The thread wakes without a pop, discards the frame it held and delivers frames from the target (frame 20).
+    REQUIRE(waitUntil([&] { return !decoder->frames().empty(); }));
+    const auto next = collectFrames(*decoder, 3);
+    REQUIRE(next.size() == 3);
+    for (std::size_t index = 0; index < next.size(); ++index) {
+        INFO("frame " << index);
+        CHECK(next[index].timing.generation == 1);
+        CHECK(next[index].counter == 20u + index);
+    }
+    CHECK(decoder->stats().seeks == 1);
+    CHECK(decoder->stats().framesQueued > queuedBefore);
+}
+
+TEST_CASE("media/video_decoder: a seek while paused delivers the frame at the target, then holds",
+          "[media][video_decoder]") {
+    const MediaTestDir dir;
+    auto spec = smallClip(160, 120, 10, 20);
+    spec.keyFrameInterval = 5;
+    const auto path = writeClip(dir, "paused_seek.mp4", spec);
+    auto decoder = startDecoder(path, noLoop());
+    REQUIRE(waitUntil([&] { return decoder->frames().size() == decoder->frames().capacity(); }));
+    decoder->pause();
+    CHECK(decoder->state() == DecoderState::Paused); // reported at once, also while the thread waits for room
+    decoder->seek(1.25);
+    CHECK(decoder->state() == DecoderState::Paused);
+    const auto target = collectFrames(*decoder, 1);
+    REQUIRE(target.size() == 1);
+    CHECK(target[0].timing.generation == 1);
+    CHECK(target[0].counter == 12u);
+    // Paused: nothing more is decoded until resume().
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK(decoder->frames().empty());
+    decoder->resume();
+    CHECK(decoder->state() == DecoderState::Playing);
+    const auto rest = collectFrames(*decoder, 7);
+    REQUIRE(rest.size() == 7);
+    CHECK(rest.front().counter == 13u);
+    CHECK(rest.back().counter == 19u);
 }
 
 TEST_CASE("media/video_decoder: a seek past the end of a looping clip continues from its start",
@@ -225,20 +274,40 @@ TEST_CASE("media/video_decoder: a paused decoder decodes nothing until resumed",
     CHECK(frames.size() == 5);
 }
 
-TEST_CASE("media/video_decoder: stop ends a decoder waiting on a full queue at once", "[media][video_decoder]") {
+TEST_CASE("media/video_decoder: stop returns without waiting and the thread ends on its own",
+          "[media][video_decoder]") {
     const MediaTestDir dir;
     const auto path = writeClip(dir, "full.mp4", smallClip(160, 120, 10, 10));
     auto decoder = startDecoder(path); // loops forever, nobody pops
     REQUIRE(waitUntil([&] { return decoder->frames().size() == decoder->frames().capacity(); }));
-    const auto start = std::chrono::steady_clock::now();
+    CHECK(decoder->threadRunning());
     decoder->stop();
-    const auto elapsed = std::chrono::steady_clock::now() - start;
-    CHECK(elapsed < std::chrono::seconds(2));
+    CHECK(decoder->state() == DecoderState::Stopped);
+    // The thread waiting for room wakes on the stop and ends promptly, without anyone joining it.
+    REQUIRE(waitUntil([&] { return !decoder->threadRunning(); }, std::chrono::seconds(5)));
     CHECK(decoder->state() == DecoderState::Stopped);
     CHECK(decoder->frames().size() == decoder->frames().capacity()); // what was queued can still be shown
     CHECK(decoder->frames().pop());
-    decoder->stop(); // idempotent
-    CHECK(decoder->threadCpuSeconds() >= 0.0);
+    decoder->stop();                                // idempotent
+    const double cpu = decoder->threadCpuSeconds(); // readable after the thread ended
+    CHECK(cpu >= 0.0);
+    rv::media::waitForStoppedDecoders();
+    CHECK(decoder->threadCpuSeconds() == cpu);
+}
+
+TEST_CASE("media/video_decoder: decoders destroyed while they open or decode never wait for their thread",
+          "[media][video_decoder]") {
+    const MediaTestDir dir;
+    const auto path = writeClip(dir, "short.mp4", smallClip(160, 120, 10, 10));
+    for (int round = 0; round < 8; ++round) {
+        auto decoder = startDecoder(path);
+        if (round % 2 == 1) {
+            REQUIRE(waitUntil([&] { return !decoder->frames().empty(); }));
+        }
+        decoder.reset(); // stop() without waiting; the thread keeps the shared state alive until it ends
+    }
+    rv::media::waitForStoppedDecoders(); // every thread has ended
+    rv::media::waitForStoppedDecoders(); // nothing left: returns at once
 }
 
 TEST_CASE("media/video_decoder: unusable files fail with their reason and never crash", "[media][video_decoder]") {
@@ -272,6 +341,37 @@ TEST_CASE("media/video_decoder: a file cut short shows its frames, then fails as
     const auto clip = writeClip(dir, "long.mp4", spec);
     REQUIRE(rv::media::writeTruncatedCopy(clip, dir.file("truncated.mp4"), 0.5));
     auto decoder = startDecoder(dir.file("truncated.mp4"), noLoop());
+    const auto frames = collectFrames(*decoder, 40);
+    CHECK(frames.size() > 5);
+    CHECK(frames.size() < 40);
+    REQUIRE(waitUntil([&] { return decoder->state() == DecoderState::Failed; }));
+    CHECK(decoder->failure() == DecodeFailure::Truncated);
+}
+
+TEST_CASE("media/video_decoder: a Matroska clip whose audio outlasts its video plays and loops",
+          "[media][video_decoder]") {
+    const MediaTestDir dir;
+    auto spec = smallClip(160, 120, 10, 10); // 1 s of video
+    spec.audioSeconds = 4.0;                 // the container lasts 4 s
+    const auto path = writeClip(dir, "longer_audio.mkv", spec);
+    auto decoder = startDecoder(path); // loops
+    const auto frames = collectFrames(*decoder, 25);
+    REQUIRE(frames.size() == 25);
+    CHECK(frames[24].counter == 4u);
+    CHECK(frames[24].loop == 2u);
+    CHECK(frames[24].timing.ptsSeconds == Approx(2.4).margin(0.001));
+    CHECK(decoder->failure() == DecodeFailure::None);
+    CHECK(decoder->state() == DecoderState::Playing);
+}
+
+TEST_CASE("media/video_decoder: a Matroska file cut short shows its frames, then fails as truncated",
+          "[media][video_decoder]") {
+    const MediaTestDir dir;
+    auto spec = smallClip(320, 240, 10, 40);
+    spec.quantizer = 2; // larger frames: the cut falls well inside the stream
+    const auto clip = writeClip(dir, "long.mkv", spec);
+    REQUIRE(rv::media::writeTruncatedCopy(clip, dir.file("truncated.mkv"), 0.5));
+    auto decoder = startDecoder(dir.file("truncated.mkv"), noLoop());
     const auto frames = collectFrames(*decoder, 40);
     CHECK(frames.size() > 5);
     CHECK(frames.size() < 40);

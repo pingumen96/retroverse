@@ -36,6 +36,12 @@ core::ArgParser makeParser() {
         .option("queue", "FRAMES", "frames each decoder decodes ahead", "4")
         .option("decoder-threads", "N", "FFmpeg threads per decoder", "1")
         .flag("upload-fences", "guard the pixel buffers with fences instead of the copies' end timestamps")
+        .flag("check-frames",
+              "read the frame counter of every uploaded test frame and of each picture in the screenshot (report: "
+              "upload.lastCounter, upload.screenCounter)")
+        .flag("texture-self-test",
+              "before playing, check gl::VideoTexture's resize and busy-ring paths with exact readbacks (report: "
+              "textureSelfTest)")
         .option("priority", "CLASS", "process priority: normal, above-normal or high", "normal")
         .option("report", "FILE.json", "write the measurements there")
         .option("screenshot", "FILE.png", "write the last frame there")
@@ -178,6 +184,8 @@ Expected<SpikeOptions> parseSpikeOptions(std::span<const std::string> arguments)
     options.queueCapacity = static_cast<std::size_t>(*queue);
     options.decoderThreads = *threads;
     options.uploadFences = args.has("upload-fences");
+    options.checkFrames = args.has("check-frames");
+    options.textureSelfTest = args.has("texture-self-test");
     options.priority = core::toLowerAscii(args.value("priority").value_or("normal"));
     if (options.priority != "normal" && options.priority != "above-normal" && options.priority != "high") {
         return propagate(
