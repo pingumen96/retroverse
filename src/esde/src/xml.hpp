@@ -33,6 +33,9 @@ inline constexpr std::uintmax_t kDefaultXmlLimitBytes = 64ull * 1024ull * 1024ul
 /// document recursively.
 inline constexpr std::size_t kMaxXmlDepth = 64;
 
+/// The text's line feeds are counted per block of this many bytes when it is parsed (XmlDocument::line()).
+inline constexpr std::size_t kLineBlockBytes = 1024;
+
 /// The encodings the loader reads, as pugixml's encoding_auto tells them apart.
 enum class XmlEncoding { Utf8, Utf16Le, Utf16Be, Utf32Le, Utf32Be, Latin1 };
 
@@ -55,16 +58,24 @@ public:
     [[nodiscard]] std::string locate(std::size_t textOffset) const;
     /// locate() of where a node starts ("an unknown place" for a text node whose value the loader decoded).
     [[nodiscard]] std::string locate(pugi::xml_node node) const;
+    /// The line (1-based) where a node starts, as locate() counts lines, at a cost bounded by kLineBlockBytes rather
+    /// than by the node's offset: the parsers cite the line of every entry they read. 0 for a text node whose value the
+    /// loader decoded (its place is unknown).
+    [[nodiscard]] std::size_t line(pugi::xml_node node) const;
 
 private:
     friend Expected<XmlDocument> parseXml(std::string bytes, std::string source);
 
     /// The byte offset in the file of a byte offset of m_text.
     [[nodiscard]] std::size_t fileOffset(std::size_t textOffset) const;
+    /// The line (1-based) of a byte offset of m_text.
+    [[nodiscard]] std::size_t lineAt(std::size_t textOffset) const;
 
     pugi::xml_document m_document;
     std::string m_source;
     std::string m_text; ///< the UTF-8 text parsed: lines and columns of messages
+    /// The line feeds of m_text before each block of kLineBlockBytes: lineAt() counts the rest within the block.
+    std::vector<std::size_t> m_lineFeedsBefore;
     /// The file as read, kept when m_text is not its bytes past the byte order mark (another encoding, bytes read as
     /// Windows-1252): byte offsets of messages.
     std::string m_file;
