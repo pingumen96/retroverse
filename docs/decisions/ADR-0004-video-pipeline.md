@@ -92,7 +92,10 @@ of the videos due on the same render frame add up: two 720p uploads reach 2.1 to
    from 51% on missed it (39 to 351, up to 5% of a video's frames dropped, the frame's own work, at most 2.7 ms at p99,
    taking up to 49 ms). At above-normal priority the frame's work never took longer than 6.1 ms and 7 of 9 runs at 36 to 70%
    met every criterion; the two that missed the pacing (50 and 46 long intervals) lost the time in the buffer swap,
-   which bursts of other programs delay at either priority. A boost of the render thread alone (`SetThreadPriority`,
+   which bursts of other programs delay at either priority. A third campaign with no other agent running (the machine
+   25 to 31% busy) met every criterion in all 12 runs, two 720p and three real videos at either priority (0 to 10 long
+   intervals at normal priority, none at above-normal): the priority protects the pacing from other programs' load,
+   not from the pipeline's own cost. A boost of the render thread alone (`SetThreadPriority`,
    MMCSS) and the boost Windows gives a foreground window (the spike's windows were hidden) were not measured; I5 may
    measure them as alternatives.
 10. **Failures fall back to a still picture** (spec §9.5, SC-08): the decoder reports `FileNotFound`, `InvalidFile`

@@ -7,11 +7,14 @@
   buffer ring, even at one upload per video and render frame. The 60 Hz frame pacing depends on the other programs:
   in the second campaign, at normal priority, every run with the machine at most 46% busy met it and every run from 51%
   on missed it; at above-normal priority 7 of 9 runs at 36 to 70% met every criterion. Two 720p videos met every
-  criterion in two of three runs at either priority, the median run included. ADR-0004 makes above-normal priority
-  while rendering a condition for I5 (first condition). Read per render frame instead of per upload, two 720p uploads
-  due together reach 2.1 to 2.7 ms at p99, so I5 staggers them (second condition). The first frame is on screen 8 to
-  20 ms after the decoder starts, also from a cold disk cache (NFR-06: 2 s). Corrupt, truncated and other unusable
-  files fall back to a still picture without a crash, after the frames decoded before the damage.
+  criterion in two of three runs at either priority, the median run included. A third campaign, after the merge of the
+  spikes with no other agent running (the machine 25 to 31% busy, a browser and the editor open), confirmed the load as
+  the cause: all 12 runs met every criterion, two 720p videos and the three real ones, at either priority (0 to 10
+  intervals over 16.7 ms at normal priority, none at above-normal, no frame late or dropped). ADR-0004 makes
+  above-normal priority while rendering a condition for I5 (first condition). Read per render frame instead of per
+  upload, two 720p uploads due together reach 2.1 to 2.7 ms at p99, so I5 staggers them (second condition). The first
+  frame is on screen 7 to 20 ms after the decoder starts, also from a cold disk cache (NFR-06: 2 s). Corrupt, truncated
+  and other unusable files fall back to a still picture without a crash, after the frames decoded before the damage.
 - Decision: [ADR-0004](../decisions/ADR-0004-video-pipeline.md)
 
 ## Goal
@@ -103,13 +106,17 @@ YUV planes converted in the shader, 480p or a single decoder, prebuilt LGPL FFmp
   criteria series with the metrics added (intervals over 16.7 ms, uploads per render frame, dropped frames, startup
   delays), a series at the display's rate, a single real video and the error cases. An idle machine was not to be had:
   besides a browser keeping about one core busy, other agents built and ran GPU tests during both campaigns, in bursts
-  that filled all 8 cores for seconds (each report's per-second load shows them). The rows of the first campaign are
-  marked; the changes between the campaigns touched neither decoding nor uploading.
-- **Fixtures**: generated at run time by `--generate-fixtures` under `build/spike_video/measurements*/fixtures` (never
-  committed): 10 s clips, 30 fps (165 fps for the ring series), 1280x720 (and 1920x1080 for the headroom series),
-  MPEG-4 Part 2 at quantizer 3 with 2 B-frames and a key frame every 30 frames, in MP4 (moov first); each loops six times
-  in a run. The LGPL build has no software H.264 encoder (`--list-encoders`: native encoders such as mpeg4, mjpeg, ffv1,
-  prores; Media Foundation and Direct3D 12 hardware encoders; no libx264).
+  that filled all 8 cores for seconds (each report's per-second load shows them). A third campaign (05:36 to 05:49,
+  after the merge of the I1 spikes) re-measured the two 720p fixtures and the three real videos at both priorities
+  with no other agent running: only the browser (about 13% of the machine) and the editor (about 4%) besides the spike,
+  the machine 25 to 31% busy, its busiest seconds 39 to 55%. The rows of the first and third campaigns are marked; the
+  changes between the campaigns touched neither decoding nor uploading.
+- **Fixtures**: generated at run time by `--generate-fixtures` under `build/spike_video/<campaign>/fixtures`
+  (`measurements`, `measurements2`, `quiet`; never committed): 10 s clips, 30 fps (165 fps for the ring series),
+  1280x720 (and 1920x1080 for the headroom series), MPEG-4 Part 2 at quantizer 3 with 2 B-frames and a key frame every
+  30 frames, in MP4 (moov first); each loops six times in a run. The LGPL build has no software H.264 encoder
+  (`--list-encoders`: native encoders such as mpeg4, mjpeg, ffv1, prores; Media Foundation and Direct3D 12 hardware
+  encoders; no libx264).
 - **Real videos**, read in place and read-only (FFmpeg's file protocol opens them with `O_RDONLY`) from
   `E:/Programmi/ES-DE_media/downloaded_media`: `snes/videos/1 US - S/Super Metroid (Japan, USA) (En,Ja).mp4`,
   `snes/videos/1 US - A-E/Donkey Kong Country (USA) (Rev 2).mp4`, `ps2/videos/Gran Turismo 4 (Europe, Australia)
@@ -186,6 +193,39 @@ machine at most 46% busy met the 60 Hz pacing (1 to 21 long intervals in 6 runs)
 never took longer than 6.1 ms. The two above-normal runs that missed the pacing (50 and 46 long intervals) lost the
 time outside the frame's work, in the buffer swap, which other programs' bursts delay at either priority.
 
+### The criteria with no other agent running (third campaign)
+
+The same series and the three real videos, after the merge, with only a browser and the editor running beside the spike
+(see Campaigns); the runs one by one, in the order they ran.
+
+| Criterion | Threshold | Two 720p30 videos, normal: runs 1, 2, 3 | Above-normal | Three real videos, normal | Above-normal |
+|---|---|---|---|---|---|
+| Machine busy (busiest second) | - | 31.5 (53.9), 25.2 (39.1), 26.0 (42.6)% | 25.3 (47.7), 25.7 (55.5), 26.7 (42.2)% | 28.3 (51.6), 27.6 (41.6), 26.9 (44.7)% | 28.3 (42.0), 27.7 (43.6), 27.3 (40.2)% |
+| Intervals over 16.7 ms (the 60 FPS p99) | at most 36 | 10, 2, 0 | 0, 0, 0 | 0, 0, 0 | 0, 0, 0 |
+| Longest interval / longest frame work | - | 32.3 / 32.2, 22.1 / 3.1, 7.2 / 2.9 ms | 7.3 / 2.5, 7.2 / 2.3, 6.6 / 2.6 ms | 7.4 / 1.6, 11.1 / 1.4, 7.6 / 1.3 ms | 6.9 / 1.2, 7.3 / 1.4, 11.8 / 1.3 ms |
+| p99 frame interval at 164.84 Hz | at most 16.7 ms | 6.34, 6.21, 6.22 ms | 6.19, 6.18, 6.19 ms | 6.22, 6.22, 6.21 ms | 6.18, 6.20, 6.18 ms |
+| Upload, CPU, per upload: p50 / p99 | under 2 ms | 0.83 / 1.30, 0.81 / 1.22, 0.81 / 1.21 ms | 0.80 / 1.21, 0.80 / 1.18, 0.81 / 1.20 ms | 0.21 / 0.37, 0.22 / 0.37, 0.22 / 0.37 ms | 0.21 / 0.36, 0.22 / 0.37, 0.21 / 0.35 ms |
+| Uploads of a render frame, CPU: p50 / p99 | (see below) | 1.65 / 2.33, 1.63 / 2.16, 1.62 / 2.17 ms | 1.61 / 2.13, 1.61 / 2.09, 1.62 / 2.10 ms | 0.64 / 0.99, 0.57 / 0.96, 0.64 / 0.99 ms | 0.62 / 0.97, 0.61 / 0.97, 0.63 / 0.96 ms |
+| Upload, GPU: p50 / p99 | under 2 ms | 0.51 / 0.65, 0.51 / 0.64, 0.51 / 0.64 ms | 0.51 / 0.64, 0.51 / 0.63, 0.51 / 0.63 ms | 0.28 / 0.36, 0.28 / 0.37, 0.29 / 0.36 ms | 0.28 / 0.37, 0.28 / 0.37, 0.28 / 0.36 ms |
+| Late or dropped, worst video | under 1% | 0% in every run | 0% | 0% | 0% |
+| Drift, worst video | within 2% | 0.003% in every run | 0.003% | 0.001% | 0.001% |
+| Working set over 60 s | stable | +0.79, -0.82, -1.04 MiB (153.3 to 155.8 MiB at the end) | -0.80, -0.61, -0.79 MiB (153.5 to 153.6 MiB) | +3.18, +3.10, +3.04 MiB (134.9 to 135.2 MiB) | +2.84, +2.50, +3.26 MiB (134.8 to 135.6 MiB) |
+| Every criterion met | - | yes, yes, yes | yes, yes, yes | yes, yes, yes | yes, yes, yes |
+
+Every run met every criterion, at either priority, and no frame was late, dropped or repeated in any of them. The
+pipeline's own numbers are those of the loaded campaigns (upload p99 1.18 to 1.30 ms for 720p and 0.35 to 0.37 ms for
+480p, GPU copy medians 0.51 and 0.28 ms, decoder threads 4.7 to 4.9% and 8.0 to 8.2% of a core); what changed is the
+frame pacing at normal priority, where only the fixtures' runs had long intervals: the run at 31.5% (busiest second
+53.9%, the busiest of the normal-priority runs) had 10, the longest a 32.3 ms frame whose own work took 32.2 ms, 31.4 ms
+of it in one upload (0.8 ms at the median: the thread most likely lost the CPU in the middle of it, as in the loaded
+runs); the run at 25.2% had 2, although its busiest second (39.1%) was the calmest of the campaign, the longest (22.1
+ms) outside the frame's work (at most 3.1 ms). The reports keep the distribution of the per-second load, not its
+timeline, so the long intervals cannot be tied to particular bursts. At above-normal priority the longest interval was
+11.8 ms and the longest frame work 2.6 ms, with busiest seconds up to 55.5%. The working set of the three real videos
+grew by about 3 MiB over the minute, as in the second campaign (Memory). Read per render frame, two 720p uploads due
+together still reach 2.09 to 2.33 ms at p99: the second condition of ADR-0004 does not depend on the load. The 30 starts
+of this campaign opened their streams in 2.6 to 6.7 ms and showed the first frame 6.7 to 13.0 ms after the start.
+
 ### Every series
 
 Medians of the 3 runs (the range of the runs in parentheses where it matters); the rows of the first campaign, at
@@ -256,6 +296,7 @@ render frame:
 | Start | Stream open | First frame queued | First frame shown |
 |---|---|---|---|
 | Every video of the second campaign (51 starts, 1 to 4 videos at once, files read before) | 2.4 to 14.0 ms | 6.2 to 19.1 ms | 7.8 to 19.9 ms |
+| Every video of the third campaign (30 starts, 2 or 3 videos at once, files read before) | 2.6 to 6.7 ms | 6.1 to 8.8 ms | 6.7 to 13.0 ms |
 | Cold disk cache: three SNES videos not opened for a month, one per run | 15.2 to 16.8 ms | 16.8 to 18.4 ms | 18.1 to 20.2 ms |
 | The same three again | 5.5 to 5.6 ms | 7.3 ms | 8.2 to 13.5 ms |
 
@@ -381,8 +422,9 @@ the fence did.
 
 ## Screenshots
 
-Written by the runs, under the build tree (not committed): `build/spike_video/measurements2/<series>/run<i>.png` and
-`build/spike_video/measurements/<series>/run<i>.png` (the last frame of every run of the two campaigns),
+Written by the runs, under the build tree (not committed): `build/spike_video/measurements/<series>/run<i>.png`,
+`build/spike_video/measurements2/<series>/run<i>.png` and `build/spike_video/quiet/<series>/run<i>.png` (the last frame
+of every run of the three campaigns),
 `build/msvc-x64-debug/spikes/video/smoke/last_frame.png` and `build/msvc-x64-debug/spikes/video/errors/last_frame.png`
 (the `gpu` checks, which also read the frame counters back from them). The two clips play side by side with their
 frame numbers in sync, letterboxed in green-bordered cells; in the error run the good clip plays, and the truncated and
@@ -396,14 +438,15 @@ shows the jungle level; the presentation is the same at the same timestamp in ev
 ## Observations
 
 - **At normal priority, other programs decide the frame pacing; the pipeline's own work does not move.** With the
-  machine 33 to 76% busy, the normal-priority runs met the 60 Hz pacing up to 46% and missed it from 51% on, while the
-  upload's p99 stayed at 1.1 to 1.4 ms (720p), the GPU copy at about 0.5 ms and the decoder threads at their few percent
-  of a core. Most long intervals fall outside the frame's own work, in the buffer swap: the frame's work stayed under
-  3.5 ms in runs with up to 251 long intervals. At above-normal priority the frame's work never took longer than 6.1 ms
-  (four 720p uploads included), and 7 of 9 runs met every criterion up to 70% load. The decoder's 4 frames of lookahead
-  absorb short stalls; after a longer one the clock drops the frames that became due, and after a stall over 250 ms it
-  resyncs instead of slowing the video down, so under load the 60 Hz criterion fails first, then the share of late or
-  dropped frames, while the upload and decoding times stay where they are.
+  machine 33 to 76% busy, the normal-priority runs met the 60 Hz pacing up to 46% and missed it from 51% on, and with no
+  other agent running (25 to 31%, the third campaign) all six met it, while the upload's p99 stayed at 1.1 to 1.4 ms
+  (720p), the GPU copy at about 0.5 ms and the decoder threads at their few percent of a core. Most long intervals fall
+  outside the frame's own work, in the buffer swap: the frame's work stayed under 3.5 ms in runs with up to 251 long
+  intervals. At above-normal priority the frame's work never took longer than 6.1 ms (four 720p uploads included), and 7
+  of 9 runs met every criterion up to 70% load. The decoder's 4 frames of lookahead absorb short stalls; after a longer
+  one the clock drops the frames that became due, and after a stall over 250 ms it resyncs instead of slowing the video
+  down, so under load the 60 Hz criterion fails first, then the share of late or dropped frames, while the upload and
+  decoding times stay where they are.
 - **Clips started together fall due together.** Both 720p fixtures (and the three real videos) usually start on the
   same render frame and keep the same rate, so every render frame that uploads uploads all of them: the per-frame sum,
   not one upload, is what the render thread pays (ADR-0004 budgets it).
@@ -433,16 +476,22 @@ shows the jungle level; the presentation is the same at the same timestamp in ev
   presentation time, so a seek positioned by the target alone lands after it; seeks go a second earlier.
 - **The real ES-DE videos are 60 fps** (640x480 H.264 at 59.94 fps), twice the frame rate of the fixtures but a third of
   their pixels.
-- **Build**: the configure step prints two CMake dev warnings (`CMP0174`) from vcpkg's `FindFFMPEG.cmake`, called by the
-  top-level `find_package(FFMPEG)` of the I1 foundation (already there before this spike). Tests added in `spikes/*` are
-  not registered by the top-level `CMakeLists.txt` as it stands (it adds `spikes/` before `enable_testing()`), so
-  `spikes/video` defers its `add_test` calls to the end of the top-level directory.
+- **Build**: the configure step printed two CMake dev warnings (`CMP0174`) from vcpkg's `FindFFMPEG.cmake`, called by
+  the top-level `find_package(FFMPEG)` of the I1 foundation, and tests added in `spikes/*` were not registered (the
+  top-level `CMakeLists.txt` added `spikes/` before `enable_testing()`), so `spikes/video` deferred its `add_test` calls
+  to the end of the top-level directory. Both were fixed at the merge of the spikes: the top-level file sets CMP0174 to
+  NEW before `project()` (vcpkg's `find_package` override is a macro defined while `project()` loads the toolchain, so
+  find modules run under the policies recorded then, those of `cmake_minimum_required(VERSION 3.28)`; a
+  `cmake_policy(SET)` after `project()` does not reach them), and the top level enables testing before it adds any
+  directory, so `spikes/video` adds its tests directly.
 
 ## Reproduce
 
 ```powershell
 ./scripts/build.ps1 -Preset msvc-x64-release
 ./spikes/video/run_measurements.ps1 -OutDir build/spike_video/measurements2   # the second campaign, summary.md there
+./spikes/video/run_measurements.ps1 -Series fixtures-2x720p30, fixtures-2x720p30@above-normal, real-snes-ps2, `
+  real-snes-ps2@above-normal -OutDir build/spike_video/quiet   # the third campaign: nothing else heavy running
 ./spikes/video/run_measurements.ps1 -Series fixtures-2x1080p30-full@above-normal, `
   fixtures-2x1080p30-to720@above-normal, fences-2x720p30@above-normal, novsync-2x720p30@above-normal   # first campaign
 build/msvc-x64-release/bin/spike_video.exe --generate-fixtures build/spike_video/fixtures --seconds 60 --hidden `
