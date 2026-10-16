@@ -302,10 +302,18 @@ void WindowHandover::restore() {
                      before.displayHeight, before.displayRefreshRate);
     }
 
-    // 3. Fullscreen and foreground: what is reached now is recorded; a plain raise, the remedies follow in update().
+    // 3. Fullscreen and foreground: what is reached now is recorded; a plain raise. When Windows refuses it, another
+    // window holds the foreground and nothing gives it back by itself: the input attachment follows at once (waiting
+    // for update() would wait for the next frame, which stalls for 100-400 ms after a return); the flash, which needs
+    // the user, comes from update() after kRemedyDelay.
     observe();
     if (!m_report.foreground) {
         attempt(ForegroundRemedy::Raise);
+        observe();
+    }
+    if (!m_report.foreground && m_nextRemedy < kRemedies.size() &&
+        kRemedies[m_nextRemedy] == ForegroundRemedy::AttachThreadInput) {
+        attempt(kRemedies[m_nextRemedy++]);
         observe();
     }
 }

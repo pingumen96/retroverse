@@ -259,28 +259,16 @@ private:
             reportTreeEmpty();
             return;
         }
-        if (onlyConsoleHostsLeft()) {
-            concludeTree();
-            return;
-        }
         auto nextWindowCheck = LaunchClock::now();
         while (!m_treeEmptyReported && !m_stopping.load()) {
-            const bool received = drainJobMessages(m_pollMilliseconds);
-            if (m_treeEmptyReported || m_stopping.load()) {
+            // Job notifications are not guaranteed (JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO can come late, or not at all):
+            // the processes left are counted at every wake-up, not only after a quiet poll interval.
+            if (jobEmpty() || onlyConsoleHostsLeft()) {
+                concludeTree();
                 break;
             }
-            if (!received) {
-                // Job notifications are not guaranteed: count the processes left.
-                JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
-                if (QueryInformationJobObject(m_job.get(), JobObjectBasicAccountingInformation, &accounting,
-                                              sizeof(accounting), nullptr) &&
-                    accounting.ActiveProcesses == 0) {
-                    concludeTree();
-                    break;
-                }
-            }
-            if (onlyConsoleHostsLeft()) {
-                concludeTree();
+            drainJobMessages(m_pollMilliseconds);
+            if (m_treeEmptyReported || m_stopping.load()) {
                 break;
             }
             if (const auto now = LaunchClock::now(); now >= nextWindowCheck) {
@@ -290,9 +278,17 @@ private:
         }
     }
 
-    /// Reports the tree's end found by counting its processes. The job's counts drop before the notifications of the
-    /// last exits are delivered: those are handled first, and the exits of tracked processes whose notification is
-    /// still to come are reported from their handles, so that no exit code is lost.
+    /// True when the job holds no process any more, by its own count.
+    bool jobEmpty() {
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
+        return QueryInformationJobObject(m_job.get(), JobObjectBasicAccountingInformation, &accounting,
+                                         sizeof(accounting), nullptr) &&
+               accounting.ActiveProcesses == 0;
+    }
+
+    /// Reports the tree's end found by counting its processes (jobEmpty, onlyConsoleHostsLeft). The job's counts drop
+    /// before the notifications of the last exits are delivered: those are handled first, and the exits of tracked
+    /// processes whose notification is still to come are reported from their handles, so that no exit code is lost.
     void concludeTree() {
         drainJobMessages(0);
         if (m_treeEmptyReported || m_stopping.load()) {

@@ -60,7 +60,7 @@ set(RV_LAUNCH_SPIKE_DESKTOP_CASES
     "fake_exclusive_minimize|--fake-exclusive --policy minimize --repeat 2"
     "fake_exclusive_keep|--fake-exclusive --policy keep --repeat 2"
     "fake_steal_focus_keep|--fake-steal-focus --policy keep --repeat 2"
-    "fake_other_window_keep|--fake-foreground-window 2500 --fake-input --policy keep --repeat 2"
+    "fake_other_window_keep|--fake-foreground-window 5000 --fake-input --policy keep --repeat 2"
     CACHE INTERNAL "spike_launch cases of the desktop tests")
 
 function(_rv_launch_spike_register_tests)

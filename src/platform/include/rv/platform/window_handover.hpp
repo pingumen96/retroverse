@@ -151,15 +151,15 @@ public:
     /// prepare() and handOver() at once.
     void leave();
     /// After the emulator is gone: restores a minimized window (SDL_RestoreWindow, then ShowWindow(SW_RESTORE) when
-    /// SDL left it minimized), then raises it (SDL_RaiseWindow) unless it is in the foreground already; update()
+    /// SDL left it minimized), then raises it (SDL_RaiseWindow) unless it is in the foreground already, and when
+    /// Windows refuses that, at once with this thread's input attached (ForegroundRemedy::AttachThreadInput); update()
     /// follows the rest of the return.
     void restore();
     /// After restore(), every frame: records when the window is restored, back in fullscreen over the monitor it was
     /// on (applying borderless fullscreen again, once, when the restored window does not cover it or came back on
     /// another monitor, which it is moved off) and in the foreground (whoever put it there, the user included);
-    /// while it is not in the foreground, tries the next remedy once the previous one has had kRemedyDelay
-    /// (AttachThreadInput, then Flash, which stays until the user comes back). True once restored, in fullscreen and
-    /// in the foreground.
+    /// while it is not in the foreground, tries the next remedy once the previous one has had kRemedyDelay (Flash,
+    /// which stays until the user comes back). True once restored, in fullscreen and in the foreground.
     bool update();
     /// GetForegroundWindow() is this window.
     [[nodiscard]] bool isForeground() const noexcept;
