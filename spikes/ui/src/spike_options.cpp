@@ -21,6 +21,7 @@ constexpr std::string_view kDescription =
     "text scaling and high contrast, then idle, taps and navigation phases for the measurements (1910 frames). Every\n"
     "focus change is logged; the CPU and GPU times of the UI pass (p50/p99, quiet frames and frames with changes), its\n"
     "heap allocations and the checks go to --report.\n"
+    "The window is 1920x1080 unless --width or --height is given (a side not given then takes the default below).\n"
     "Controls with --interactive: D-pad, left stick or arrows move the focus, A/Enter activates, B/Esc goes back,\n"
     "Y Vedi media, X Informazioni; with the catalog closed Y reopens it and B quits.\n"
     "Exit codes: 0 every check passed; 1 a --smoke run stopped early or hit an OpenGL error; 2 initialization failure;\n"

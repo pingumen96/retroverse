@@ -21,7 +21,8 @@ core::ArgParser makeParser() {
         "  --videos <file>...            videos to play, read in place (several files after one --videos)");
     parser
         .option("generate-fixtures", "DIR",
-                "write the test clips and the damaged files to DIR; plays the clips unless --videos is given")
+                "write the test clips to DIR (with --error-cases also the damaged files); plays the clips (with "
+                "--error-cases the damaged files beside clip A) unless --videos is given")
         .flag("error-cases", "with --generate-fixtures: play the damaged files beside one good clip")
         .flag("regenerate", "write the fixtures even when files of the same name exist")
         .option("count", "N", "videos to play (clips generated, or the --videos list repeated), 1..16", "2")
