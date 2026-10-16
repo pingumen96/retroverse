@@ -1,8 +1,9 @@
 // ES-DE gamelists read into the catalog's values (rv/esde/gamelist.hpp, I2 step 3): the standard fixture's three
 // gamelists and the legacy one that nobody reads, then gamelists generated at test time into a temporary folder (BOM,
 // CRLF and other encodings cannot be committed: .gitattributes would normalize them): paths and their traversal,
-// duplicates, files that are broken while ES-DE writes them, values as real gamelists write them, unknown, repeated
-// and ignored elements, huge fields, control characters and deep nesting.
+// duplicates and the entry a listed file takes, files that are broken while ES-DE writes them, values as real
+// gamelists write them, unknown, repeated and ignored elements, huge fields and paths, floods of issues kept bounded,
+// control characters, deep nesting, and the log, which never shows the user's path above debug level.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +17,8 @@
 
 #include <windows.h>
 
+#include <spdlog/spdlog.h>
+
 #include <rv/catalog/lookup_key.hpp>
 #include <rv/catalog/metadata.hpp>
 #include <rv/core/case_fold.hpp>
@@ -26,6 +29,7 @@
 #include <rv/esde/gamelist.hpp>
 
 #include "support/fixture.hpp"
+#include "support/log_capture.hpp"
 #include "support/temp_dir.hpp"
 
 namespace fs = std::filesystem;
@@ -492,7 +496,7 @@ TEST_CASE("esde/gamelist: paths resolved against the ROM folder, never leaving i
     CHECK(contains(issueAbout(read, withoutPath, "line 24").reason, "<folder> entry")); // blanks are no text
 }
 
-TEST_CASE("esde/gamelist: entries naming the same file, the last one counts", "[esde][gamelist]") {
+TEST_CASE("esde/gamelist: entries naming the same file, the last of a kind and path counts", "[esde][gamelist]") {
     const Scratch scratch;
     const Gamelist read = scratch.read(gameList("<game><path>./Same.gb</path><name>First</name></game>\n"         // 3
                                                 "<game><path>./Other.gb</path><name>Other</name></game>\n"        // 4
@@ -506,35 +510,102 @@ TEST_CASE("esde/gamelist: entries naming the same file, the last one counts", "[
                                                 "<game><path>./Exact.gb</path><name>E1</name></game>\n"          // 12
                                                 "<game><path>.\\Exact.gb</path><name>E2</name></game>\n"));      // 13
 
-    // The kept entries in document order: the last of each file (outside the folder: of each path as written).
-    CHECK(pathsOf(read) == std::vector<std::string>{"./Other.gb", "./Same.gb", "./Dir", "./../out.gb", "./../OUT.gb",
-                                                    ".\\Exact.gb"});
+    // In document order, the last entry of each kind and relative path (outside the folder: of each path as written).
+    // Entries of one file that differ in kind or in case all stay: ES-DE applies the one that matches the disk.
+    CHECK(pathsOf(read) == std::vector<std::string>{"./Other.gb", "./same.gb", "./Same.gb", "./Dir", "./Dir",
+                                                    "./../out.gb", "./../OUT.gb", ".\\Exact.gb"});
     std::vector<std::string> names;
     for (const GamelistEntry& entry : read.entries) {
         names.push_back(entry.metadata.name);
     }
-    CHECK(names == std::vector<std::string>{"Other", "Last", "Named like it", "Out 2", "Out 3", "E2"});
-    CHECK(entryAt(read, "./Dir").kind == GamelistEntryKind::Game); // across kinds too
+    CHECK(names ==
+          std::vector<std::string>{"Other", "Case only", "Last", "Folder", "Named like it", "Out 2", "Out 3", "E2"});
+    CHECK(entryAt(read, "./Same.gb").line == 6);
+    REQUIRE(read.find("./Dir", GamelistEntryKind::Folder) != nullptr);
+    CHECK(read.find("./Dir", GamelistEntryKind::Folder)->metadata.name == "Folder");
+    REQUIRE(read.find("./Dir", GamelistEntryKind::Game) != nullptr);
+    CHECK(read.find("./Dir", GamelistEntryKind::Game)->metadata.name == "Named like it");
+    CHECK(entryAt(read, "./same.gb").key.key() == entryAt(read, "./Same.gb").key.key());
 
     const auto duplicates = issuesWith(read, rv::esde::kGamelistIssueDuplicatePath);
     REQUIRE(duplicates.size() == 5);
     for (const rv::catalog::Issue& issue : duplicates) {
         CHECK(issue.severity == IssueSeverity::Warning);
     }
-    // Case only: the same file as the file system compares names (ES-DE would show two entries).
-    CHECK(duplicates[0].reason == "the <game> entry at line 3 (\"./Same.gb\") is superseded by the <game> entry at "
-                                  "line 5 (\"./same.gb\"), which names the same file (names compared as the file "
-                                  "system compares them): the last one counts (ES-DE would show both)");
-    CHECK(contains(duplicates[1].reason, "line 5 (\"./same.gb\") is superseded by the <game> entry at line 6"));
-    CHECK(contains(duplicates[2].reason, "the <folder> entry at line 7"));
-    CHECK(duplicates[3].reason == "the <game> entry at line 9 (\"./../out.gb\") is superseded by the <game> entry at "
-                                  "line 10 (\"./../out.gb\"), which names the same path: the last one counts, as in "
+    // Case only: one file as the file system compares names, two for ES-DE, which finds a file by its exact name.
+    CHECK(duplicates[0].reason == "the <game> entry at line 5 (\"./same.gb\") names the same file (names compared as "
+                                  "the file system compares them) as the <game> entry at line 3 (\"./Same.gb\"): both "
+                                  "kept, for the ROM scan to choose by what is on disk");
+    CHECK(duplicates[1].reason == "the <game> entry at line 3 (\"./Same.gb\") is superseded by the <game> entry at "
+                                  "line 6 (\"./Same.gb\"), which names the same path: the last one counts, as in "
                                   "ES-DE");
+    // Across kinds: ES-DE applies the one whose kind matches the file on disk.
+    CHECK(duplicates[2].reason == "the <game> entry at line 8 (\"./Dir\") names the same path as the <folder> entry "
+                                  "at line 7 (\"./Dir\"): both kept, for the ROM scan to choose by what is on disk");
+    // Outside the folder, by path as written (ES-DE skips them all).
+    CHECK(duplicates[3].reason == "the <game> entry at line 9 (\"./../out.gb\") is superseded by the <game> entry at "
+                                  "line 10 (\"./../out.gb\"), which names the same path: the last one is kept");
     // Written differently, the same relative path.
     CHECK(duplicates[4].reason == "the <game> entry at line 12 (\"./Exact.gb\") is superseded by the <game> entry at "
                                   "line 13 (\".\\Exact.gb\"), which names the same file: the last one counts, as in "
                                   "ES-DE");
     CHECK(issuesWith(read, rv::esde::kGamelistIssuePathOutsideFolder).size() == 3);
+
+    // Superseding entries take the places of earlier ones as they are read; the entries end in document order.
+    const Gamelist interleaved = scratch.read(gameList("<game><path>./a.gb</path><name>A1</name></game>\n"
+                                                       "<game><path>./b.gb</path><name>B1</name></game>\n"
+                                                       "<game><path>./c.gb</path><name>C1</name></game>\n"
+                                                       "<game><path>./b.gb</path><name>B2</name></game>\n"
+                                                       "<game><path>./a.gb</path><name>A2</name></game>\n"
+                                                       "<game><path>./d.gb</path><name>D1</name></game>\n"
+                                                       "<game><path>./c.gb</path><name>C2</name></game>\n"));
+    std::vector<std::string> kept;
+    for (const GamelistEntry& entry : interleaved.entries) {
+        kept.push_back(entry.metadata.name + "@" + std::to_string(entry.line));
+    }
+    CHECK(kept == std::vector<std::string>{"B2@6", "A2@7", "D1@8", "C2@9"});
+}
+
+TEST_CASE("esde/gamelist: the entry that applies to a listed file, as ES-DE applies them", "[esde][gamelist]") {
+    const Scratch scratch;
+    const Gamelist read = scratch.read(gameList("<game><path>./Same.gb</path><name>Exact</name></game>\n"
+                                                "<game><path>./SAME.GB</path><name>Upper</name></game>\n"
+                                                "<folder><path>./Pack.zip</path><name>Pack folder</name></folder>\n"
+                                                "<game><path>./Pack.zip</path><name>Pack game</name></game>\n"
+                                                "<folder><path>./Lone.gb</path><name>Lone folder</name></folder>\n"));
+    REQUIRE(read.entries.size() == 5);
+    // What the ROM scan does with a file it lists: the entries of its key, in the order of Gamelist::entries.
+    const auto entryFor = [&](std::string_view listed, GamelistEntryKind kind) -> const GamelistEntry* {
+        auto key = rv::catalog::makeLookupKey(listed);
+        REQUIRE(key.has_value());
+        std::vector<const GamelistEntry*> sameKey;
+        for (const GamelistEntry& entry : read.entries) {
+            if (entry.key.key() == key->key()) {
+                sameKey.push_back(&entry);
+            }
+        }
+        return rv::esde::entryForListed(sameKey, *key, kind);
+    };
+    const auto nameFor = [&](std::string_view listed, GamelistEntryKind kind) {
+        const GamelistEntry* entry = entryFor(listed, kind);
+        return entry == nullptr ? std::string("(none)") : entry->metadata.name;
+    };
+
+    // A file takes the entry of its kind spelled exactly like it, the one ES-DE applies...
+    CHECK(nameFor("Same.gb", GamelistEntryKind::Game) == "Exact");
+    CHECK(nameFor("SAME.GB", GamelistEntryKind::Game) == "Upper");
+    // ...else the last one of its kind: a case-only difference matches it (ES-DE would show a second entry).
+    CHECK(nameFor("same.gb", GamelistEntryKind::Game) == "Upper");
+    // A directory ES-DE enters takes the <folder> entry, one named with a configured extension (a game) the <game> one.
+    CHECK(nameFor("Pack.zip", GamelistEntryKind::Folder) == "Pack folder");
+    CHECK(nameFor("Pack.zip", GamelistEntryKind::Game) == "Pack game");
+    CHECK(nameFor("pack.ZIP", GamelistEntryKind::Folder) == "Pack folder");
+    // No entry of its kind: the last one of the other kind, which the scan skips as ES-DE does (Game/folder mismatch).
+    const GamelistEntry* lone = entryFor("Lone.gb", GamelistEntryKind::Game);
+    REQUIRE(lone != nullptr);
+    CHECK(lone->kind == GamelistEntryKind::Folder);
+    // No entry of its key.
+    CHECK(entryFor("Other.gb", GamelistEntryKind::Game) == nullptr);
 }
 
 TEST_CASE("esde/gamelist: files that are broken, as while ES-DE writes them, are failures to retry",
@@ -908,6 +979,180 @@ TEST_CASE("esde/gamelist: a huge field near the size cap", "[esde][gamelist]") {
     // One byte more is refused before anything is parsed.
     CHECK(scratch.failureOfFile(scratch.write(head + body + "x" + tail, "over.xml"), kCap).code ==
           rv::ErrorCode::OutOfRange);
+}
+
+TEST_CASE("esde/gamelist: what a broken file makes is bounded", "[esde][gamelist]") {
+    const Scratch scratch;
+    constexpr std::size_t kListed = rv::esde::kGamelistIssuesListedPerCode;
+    static_assert(kListed == 100);
+    const auto summary = [](std::size_t more, std::size_t lastLine) {
+        return std::to_string(more) + " more issue(s) of this kind, not listed one by one after the first 100; the "
+                                      "last at line " +
+               std::to_string(lastLine);
+    };
+
+    SECTION("entries without a path: the first ones listed, the others counted") {
+        // About 1 MiB of empty entries, one per line from line 3: an issue each, unbounded.
+        constexpr std::size_t kEntries = 150000;
+        std::string body;
+        for (std::size_t i = 0; i < kEntries; ++i) {
+            body += "<game/>\n";
+        }
+        const Gamelist read = scratch.read(gameList(body));
+        CHECK(read.entries.empty());
+        REQUIRE(read.issues.size() == kListed + 1);
+        for (const rv::catalog::Issue& issue : read.issues) {
+            CHECK(issue.code == rv::esde::kGamelistIssueEntryWithoutPath);
+            CHECK(issue.severity == IssueSeverity::Warning);
+        }
+        CHECK(read.issues[kListed - 1].reason ==
+              "the <game> entry at line 102 has no <path>: skipped, as ES-DE skips it");
+        CHECK(read.issues.back().reason == summary(kEntries - kListed, kEntries + 2));
+    }
+    SECTION("one entry written again and again: kept once, in the place of the first") {
+        std::string body;
+        for (int i = 0; i < 300; ++i) {
+            body += "<game><path>./a.gb</path><name>N" + std::to_string(i) + "</name></game>\n";
+        }
+        const Gamelist read = scratch.read(gameList(body));
+        REQUIRE(read.entries.size() == 1);
+        CHECK(read.entries[0].metadata.name == "N299");
+        CHECK(read.entries[0].line == 302);
+        REQUIRE(read.issues.size() == kListed + 1);
+        CHECK(read.issues[0].reason == "the <game> entry at line 3 (\"./a.gb\") is superseded by the <game> entry at "
+                                       "line 4 (\"./a.gb\"), which names the same path: the last one counts, as in "
+                                       "ES-DE");
+        CHECK(read.issues.back().code == rv::esde::kGamelistIssueDuplicatePath);
+        CHECK(read.issues.back().reason == summary(299 - kListed, 302));
+    }
+    SECTION("entries outside the folder: every one kept, their issues listed then counted") {
+        std::string body;
+        for (int i = 0; i < 150; ++i) {
+            body += "<game><path>./../other/" + std::to_string(i) + ".gb</path></game>\n";
+        }
+        const Gamelist read = scratch.read(gameList(body));
+        REQUIRE(read.entries.size() == 150);
+        CHECK(std::all_of(read.entries.begin(), read.entries.end(),
+                          [](const GamelistEntry& entry) { return entry.outsideSystemFolder(); }));
+        REQUIRE(read.issues.size() == kListed + 1);
+        CHECK(read.issues.back().code == rv::esde::kGamelistIssuePathOutsideFolder);
+        CHECK(read.issues.back().reason == summary(50, 152));
+    }
+    SECTION("ignored elements of many names: counted apart up to the limit, then together") {
+        static_assert(rv::esde::kGamelistNamesCountedPerKind == 16);
+        std::string content = "<?xml version=\"1.0\"?>\n<alternativeEmulator>\n<label>A</label>\n"; // lines 1-3
+        for (int i = 0; i < 40; ++i) {
+            content += "<a" + std::to_string(i) + "/>\n"; // lines 4-43
+        }
+        content += "</alternativeEmulator>\n<gameList>\n"; // lines 44-45
+        for (int i = 0; i < 40; ++i) {
+            content += "<x" + std::to_string(i) + "/>\n"; // lines 46-85
+        }
+        content += "<x0/>\n</gameList>\n"; // lines 86-87: a name counted apart, once more
+        for (int i = 0; i < 40; ++i) {
+            content += "<t" + std::to_string(i) + "/>\n"; // lines 88-127
+        }
+        const Gamelist read = scratch.read(content);
+        CHECK(read.alternativeEmulator == "A");
+        REQUIRE(read.issues.size() == 3 * 17);
+        for (const rv::catalog::Issue& issue : read.issues) {
+            CHECK(issue.code == rv::esde::kGamelistIssueIgnoredElement);
+            CHECK(issue.severity == IssueSeverity::Info);
+        }
+        CHECK(read.issues[15].reason == "1 <a15> element(s) inside <alternativeEmulator> besides its first <label>, "
+                                        "which ES-DE ignores; the first at line 19");
+        CHECK(read.issues[16].reason == "24 element(s) of other names inside <alternativeEmulator> besides its first "
+                                        "<label>, which ES-DE ignores; the first, <a16>, at line 20");
+        CHECK(read.issues[17].reason == "2 <x0> element(s) inside <gameList> besides <game> and <folder>, which ES-DE "
+                                        "ignores; the first at line 46");
+        CHECK(read.issues[33].reason == "24 element(s) of other names inside <gameList> besides <game> and <folder>, "
+                                        "which ES-DE ignores; the first, <x16>, at line 62");
+        CHECK(read.issues[50].reason == "24 top-level element(s) of other names besides the first <gameList> and the "
+                                        "first <alternativeEmulator>, which ES-DE ignores; the first, <t16>, at line "
+                                        "104");
+    }
+    SECTION("unknown elements of an entry beyond the limit") {
+        static_assert(rv::esde::kGamelistUnknownElementsPerEntry == 256);
+        std::string body = "<game>\n<path>./u.gb</path>\n"; // lines 3-4
+        for (int i = 0; i < 300; ++i) {
+            body += "<u" + std::to_string(i) + ">t</u" + std::to_string(i) + ">\n"; // lines 5-304
+        }
+        body += "<name>After</name>\n</game>\n";
+        const Gamelist read = scratch.read(gameList(body));
+        const GamelistEntry& entry = entryAt(read, "./u.gb");
+        CHECK(entry.metadata.name == "After");
+        REQUIRE(entry.raw.unknownElements.size() == 256);
+        CHECK(entry.raw.unknownElements.front() == RawElement{"u0", "t"});
+        CHECK(entry.raw.unknownElements.back() == RawElement{"u255", "t"});
+        REQUIRE(read.issues.size() == 1);
+        CHECK(read.issues[0].code == rv::esde::kGamelistIssueIgnoredElement);
+        CHECK(read.issues[0].reason == "44 unknown element(s) of an entry beyond its first 256, which ES-DE ignores "
+                                       "and Retroverse does not keep; the first at line 261");
+    }
+}
+
+TEST_CASE("esde/gamelist: a path longer than any path Windows can name is skipped before it is resolved",
+          "[esde][gamelist]") {
+    static_assert(rv::esde::kGamelistMaxPathUtf16Units == 32767);
+    const Scratch scratch;
+    // Counted in UTF-16 code units: one per character, two beyond U+FFFF.
+    const std::string atLimit = "./" + std::string(32767 - 5, 'a') + ".gb";
+    std::string euros = "./"; // three bytes, one code unit each
+    std::string pads = "./";  // four bytes, two code units each
+    for (int i = 0; i < 32767 - 5; ++i) {
+        euros += "\xE2\x82\xAC";
+    }
+    for (int i = 0; i < (32767 - 5) / 2; ++i) {
+        pads += "\xF0\x9F\x8E\xAE";
+    }
+    euros += ".gb";
+    pads += ".gb";
+    std::string deep = "./"; // as many elements as a path holds: the costliest path to resolve
+    while (deep.size() < 32767) {
+        deep += "a/";
+    }
+    deep += "z.gb";
+
+    const Gamelist read = scratch.read(gameList("<game><path>" + atLimit + "</path><name>A</name></game>\n" +    // 3
+                                                "<game><path>" + atLimit + "a</path></game>\n" +                 // 4
+                                                "<game><path>" + euros + "</path><name>E</name></game>\n" +      // 5
+                                                "<game><path>./\xE2\x82\xAC" + euros.substr(2) + "</path></game>\n" +
+                                                "<game><path>" + pads + "</path><name>P</name></game>\n" +       // 7
+                                                "<game><path>" + pads + "x</path></game>\n" +                    // 8
+                                                "<game><path>" + deep + "</path></game>\n"));                    // 9
+    CHECK(pathsOf(read) == std::vector<std::string>{atLimit, euros, pads});
+    CHECK(relativePathOf(entryAt(read, atLimit)) == atLimit.substr(2));
+    const auto malformed = issuesWith(read, rv::esde::kGamelistIssuePathMalformed);
+    REQUIRE(malformed.size() == 4);
+    CHECK(contains(malformed[0].reason, "the <game> entry at line 4 is skipped: its path \"./aaaa"));
+    CHECK(contains(malformed[0].reason, "...\" is longer than any path Windows can name (32768 UTF-16 code units, at "
+                                        "most 32767)"));
+    CHECK(contains(malformed[1].reason, "line 6"));
+    CHECK(contains(malformed[1].reason, "(32768 UTF-16 code units"));
+    CHECK(contains(malformed[2].reason, "line 8"));
+    CHECK(contains(malformed[2].reason, "(32768 UTF-16 code units"));
+    CHECK(contains(malformed[3].reason, "line 9"));
+    CHECK(malformed[3].reason.size() < 400);
+}
+
+TEST_CASE("esde/gamelist: what was read leniently is an issue, logged at debug level only", "[esde][gamelist]") {
+    const Scratch scratch;
+    const fs::path file = scratch.write(gameList("<game><path>./Caf\xE9.gb</path><name>&#0;</name></game>\n"));
+    const std::string path = rv::core::pathToUtf8(file);
+    const rv::test::LogCapture log;
+    spdlog::default_logger()->set_level(spdlog::level::trace); // the capture's own logger, every level
+    const Gamelist read = scratch.readFile(file);
+
+    REQUIRE(read.issues.size() == 2);
+    CHECK(read.issues[0].code == rv::esde::kGamelistIssueReadLeniently);
+    CHECK(read.issues[1].code == rv::esde::kGamelistIssueReadLeniently);
+    // The file's path is the user's (C:\Users\<name>\ES-DE\gamelists\...): never logged above debug level.
+    CHECK(log.count("debug " + path + ": ") == 2); // each warning, at debug level
+    const std::string text = log.text();
+    for (const std::string_view line : rv::core::split(text, '\n')) {
+        INFO(line);
+        CHECK((line.empty() || line.starts_with("debug ") || line.starts_with("trace ")));
+    }
 }
 
 TEST_CASE("esde/gamelist: control characters", "[esde][gamelist]") {
