@@ -6,8 +6,10 @@
 //   RV_REAL_ROM_ROOT      the ROM root es_settings.xml's ROMDirectory gives
 //   RV_REAL_MEDIA_ROOT    the media root MediaDirectory gives
 // It discovers ES-DE as `retroverse-cli discover` does without options, then checks the reference machine's figures
-// (ES-DE 3.4.1, 195 systems with 889 commands, 119 emulators and 1 core in the find rules, docs/i2/step-2.md), splits
-// every command as CommandLineToArgvW does and prints a census of the command tokens. Nothing is written anywhere.
+// (ES-DE 3.4.1, 195 systems with 889 commands, 119 emulators and 1 core in the find rules with 444 entries, the token
+// census, the commands whose program is not one %EMULATOR_X% element, the user's hand-added PCSX2 entry:
+// docs/i2/step-2.md), splits every command as CommandLineToArgvW does and prints the census. Nothing is written
+// anywhere.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -198,5 +200,25 @@ TEST_CASE("esde/real: the real installation's discovery, settings, systems, find
     for (const std::string& command : notEmulatorPrograms) {
         fmt::print("  {}\n", command);
     }
+    // The reference machine's figures docs/i2/step-2.md reports: the commands whose program is not one %EMULATOR_X%
+    // element (the placeholders and the user's hand edits of gc and ps2), the census, the user's hand-added PCSX2 entry.
     CHECK(placeholders == 4);
+    CHECK(notEmulatorPrograms == std::vector<std::string>{"androidapps / ", "androidgames / ", "gc / Dolphin",
+                                                          "gc / Dolphin (Standalone)", "lutris / ",
+                                                          "ps2 / PCSX2 (Standalone)", "xboxone / "});
+    const std::map<std::string, std::pair<std::size_t, std::size_t>> expectedCensus{
+        {"%EMULATOR_X%", {882, 882}},  {"%ROM%", {799, 799}},           {"%CORE_X%", {413, 413}},
+        {"%STARTDIR%=", {176, 176}},   {"%EMUDIR%", {158, 158}},        {"%GAMEDIR%", {116, 110}},
+        {"%HIDEWINDOW%", {115, 115}},  {"%ROMPATH%", {110, 107}},       {"%BASENAME%", {98, 89}},
+        {"%INJECT%=", {41, 41}},       {"%ESCAPESPECIALS%", {34, 34}},  {"%GAMEDIRRAW%", {25, 22}},
+        {"%ROMRAW%", {18, 18}},        {"%RUNINBACKGROUND%", {13, 13}}, {"%FILENAME%", {3, 3}},
+        {"%RPCS3_GAMEID%", {2, 2}},
+    };
+    CHECK(census == expectedCensus);
+    CHECK(rules.entryCount() == 444);
+    const rv::esde::FindRuleSet* pcsx2 = rules.findEmulator("PCSX2");
+    REQUIRE(pcsx2 != nullptr);
+    const std::vector<std::string> staticPaths = pcsx2->entries(rv::esde::FindRuleType::StaticPath);
+    REQUIRE_FALSE(staticPaths.empty());
+    CHECK(staticPaths.front() == R"(K:\Giochi\Emulatori\PS2\pcsx2-qt.exe)");
 }

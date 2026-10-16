@@ -1,5 +1,6 @@
 #include <rv/esde/command_template.hpp>
 
+#include <algorithm>
 #include <array>
 #include <utility>
 
@@ -203,11 +204,10 @@ std::optional<CommandToken> tokenAt(std::string_view element, std::size_t at) {
     return token;
 }
 
-/// The flags and assignments ES-DE removes from the start of a command before it launches it.
-bool leadsCommand(std::string_view element) noexcept {
-    return element == "%HIDEWINDOW%" || element == "%ESCAPESPECIALS%" || element == "%RUNINBACKGROUND%" ||
-           element.starts_with("%STARTDIR%=");
-}
+/// The flags ES-DE removes from a command before it launches it (FileData::launchGame on Windows).
+constexpr std::array<std::string_view, 3> kFlags{"%RUNINBACKGROUND%", "%HIDEWINDOW%", "%ESCAPESPECIALS%"};
+/// The start folder ES-DE removes from a command, with its value.
+constexpr std::string_view kStartDir = "%STARTDIR%=";
 
 CommandElement elementOf(std::string text) {
     CommandElement element;
@@ -291,21 +291,43 @@ CommandTemplate parseCommandTemplate(std::string_view command) {
     CommandTemplate result;
     const std::string_view line = command.substr(0, command.find('\0'));
     std::size_t pos = 0;
-    // The elements ES-DE removes before it launches the command, which it then trims.
+    // What ES-DE removes before it launches the command, read as its launchGame() reads it: a flag where the text
+    // starts with one, then the blanks it trims (std::isspace); %STARTDIR%= and its value, quoted (to the next '"', no
+    // escapes, and ES-DE also drops the one character after that quote) or not (to the next space: a tab is part of the
+    // value).
     while (true) {
         while (pos < line.size() && isTrimmed(line[pos])) {
             ++pos;
         }
-        if (pos >= line.size()) {
+        const std::string_view rest = line.substr(pos);
+        const auto flag =
+            std::find_if(kFlags.begin(), kFlags.end(), [&](std::string_view name) { return rest.starts_with(name); });
+        if (flag != kFlags.end()) {
+            result.elements.push_back(elementOf(std::string(*flag)));
+            pos += flag->size();
+            continue;
+        }
+        if (!rest.starts_with(kStartDir)) {
             break;
         }
-        std::size_t next = pos;
-        std::string element = laterElement(line, next);
-        if (!leadsCommand(element)) {
-            break;
+        const std::size_t valueStart = pos + kStartDir.size();
+        std::string_view value;
+        if (valueStart < line.size() && line[valueStart] == '"') {
+            const std::size_t close = line.find('"', valueStart + 1);
+            if (close == std::string_view::npos) {
+                // ES-DE refuses the entry ("invalid %STARTDIR% entry"): the rest is the value, and no program follows.
+                value = line.substr(valueStart + 1);
+                pos = line.size();
+            } else {
+                value = line.substr(valueStart + 1, close - valueStart - 1);
+                pos = std::min(close + 2, line.size());
+            }
+        } else {
+            const std::size_t space = line.find(' ', valueStart);
+            value = line.substr(valueStart, space == std::string_view::npos ? space : space - valueStart);
+            pos = space == std::string_view::npos ? line.size() : space + 1;
         }
-        result.elements.push_back(elementOf(std::move(element)));
-        pos = next;
+        result.elements.push_back(elementOf(std::string(kStartDir) + std::string(value)));
     }
     result.programIndex = result.elements.size();
     if (pos < line.size()) {

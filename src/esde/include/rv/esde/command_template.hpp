@@ -100,11 +100,15 @@ struct CommandTemplate {
 [[nodiscard]] std::vector<CommandToken> scanCommandTokens(std::string_view element);
 
 /// Splits an ES-DE command into elements and lists their tokens. The elements are those of splitCommandLine(), with one
-/// difference that follows ES-DE: elements that lead the command and that ES-DE removes before it launches (the flags
-/// %HIDEWINDOW%, %ESCAPESPECIALS% and %RUNINBACKGROUND%, and %STARTDIR%=...) are read by the rule of the elements after
-/// the first (so %STARTDIR%="C:\Games dir" is one element), together with the blanks ES-DE trims, and the program-name
-/// rule applies to the element after them, the program of the command line ES-DE runs. For a command that starts with
-/// its program, the elements are exactly splitCommandLine()'s.
+/// difference that follows ES-DE: what leads the command and ES-DE removes before it launches it is read as ES-DE's
+/// launchGame() reads it, one element each, and the program-name rule applies to what follows, the program of the
+/// command line ES-DE runs. A flag (%HIDEWINDOW%, %ESCAPESPECIALS%, %RUNINBACKGROUND%) is removed where the text starts
+/// with it, whatever follows ("%HIDEWINDOW%%EMULATOR_X%"), then the blanks ES-DE trims (std::isspace: a line feed
+/// too). %STARTDIR%= takes a value to the next space when it does not start with '"' (a tab is part of it), else the
+/// text up to the next '"', escapes and all, and the one character after that quote is dropped; the element is
+/// "%STARTDIR%=" and the value (%STARTDIR%="C:\Games dir" gives "%STARTDIR%=C:\Games dir"). A quoted value without its
+/// closing quote, which ES-DE refuses, takes the rest of the command: no program follows (programIndex is
+/// elements.size()). For a command that starts with its program, the elements are exactly splitCommandLine()'s.
 [[nodiscard]] CommandTemplate parseCommandTemplate(std::string_view command);
 
 /// The key a census of tokens counts a token under: "%EMULATOR_X%", "%CORE_X%" and "%PRECOMMAND_X%" for the named

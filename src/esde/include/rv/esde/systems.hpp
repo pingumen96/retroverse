@@ -122,11 +122,29 @@ inline constexpr std::uintmax_t kMaxSystemsBytes = 16ull * 1024ull * 1024ull;
                                                               const std::filesystem::path& bundledFile);
 
 /// The ROM folder of `system` as ES-DE builds it: %ROMPATH% replaced with the ROM root's text (ResolvedRoot::esdeText),
-/// then '~' with ES-DE's home folder (profile.esdeHome's parent); '\' between the elements. Nothing when the path uses
-/// %ROMPATH% and the root is not resolved, or does not give an absolute folder.
+/// then '~' with ES-DE's home folder (profile.esdeHome's parent), so that a '~' of ROMDirectory is replaced twice, as
+/// ES-DE replaces it; '\' between the elements. An override (RootSource::Override), which ES-DE never sees, is put in
+/// after the '~' of the path: a '~' of its own ("D:\EMULAT~1") stays. Nothing when the path uses %ROMPATH% and the root
+/// is not resolved, or does not give an absolute folder.
 [[nodiscard]] std::optional<std::filesystem::path> systemRomFolder(const SystemDefinition& system,
                                                                    const ResolvedRoot& romRoot,
                                                                    const catalog::LibraryProfile& profile);
+
+/// The folders of a library that Retroverse only reads (ADR-0008 §6, §7), which its user data directory must stay out
+/// of (core::checkUserDataDirectory()): the ES-DE home, the install folder when known, the ROM and media roots when
+/// resolved, then the ROM folder of every system of `systems` (the definitions and their fallbacks) that lies outside
+/// them (an absolute <path>, or one using '~'), since the ROM scan reads those too. A folder inside one listed already
+/// is left out. `romRoot`, `mediaRoot` and `systems` may be missing (not known: settings or systems that cannot be
+/// read); the folders known are still given.
+[[nodiscard]] std::vector<std::filesystem::path> readOnlyFolders(const catalog::LibraryProfile& profile,
+                                                                 const std::optional<ResolvedRoot>& romRoot,
+                                                                 const std::optional<ResolvedRoot>& mediaRoot,
+                                                                 const SystemsConfiguration* systems);
+
+/// readOnlyFolders() of the library `profile` describes, its settings and systems read (readSettings(),
+/// resolveRomRoot(), resolveMediaRoot(), loadSystems()); what cannot be read is left out, the overrides need no
+/// settings. Nothing is written.
+[[nodiscard]] std::vector<std::filesystem::path> readOnlyFolders(const catalog::LibraryProfile& profile);
 
 /// The systems as the domain keeps them, one per name, by name: name, full name, platforms, theme, the path as written
 /// and the ROM folder (systemRomFolder()), whether that folder is there (checkFolder(): Available, or SourceUnavailable

@@ -1,9 +1,10 @@
 // retroverse-cli discover and library (I2 step 2) through the dispatcher, on the ES-DE fixtures: the text and JSON
 // results; discover writes nothing; the scraper credentials are never shown, logged or recorded; library create's
-// library.json and its refusals; library show.
+// library.json and its refusals; library show; nothing, not even the log file, written in the folders a library reads.
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -336,13 +337,16 @@ TEST_CASE("cli/library: create records the library, show prints it; what create 
     CHECK(plain.code == ExitCode::Ok);
     CHECK(contains(plain.out, "Library           my-games ("));
 
-    // A user data directory inside the library's folders, an ES-DE home that is not there, an invalid id or action.
+    // A user data directory inside the library's folders: refused before anything is written there, not even the log
+    // file. Then an ES-DE home that is not there, an invalid id or action.
     for (const fs::path& inside : {fixture.path("roms/data"), fixture.path("media/rv"), fixture.path("ES-DE/rv"),
                                    fixture.path("Programs/ES-DE")}) {
+        INFO(utf8(inside));
+        const auto before = treeOf(fixture.root());
         const RunResult refused = library(with({"create"}), inside);
         CHECK(refused.code == ExitCode::UsageError);
         CHECK(contains(refused.err, "may not lie inside the library's folders"));
-        CHECK_FALSE(fs::exists(inside / "config" / "library.json"));
+        CHECK(treeOf(fixture.root()) == before);
     }
     const RunResult noHome = library({"create", "--home", utf8(fixture.path("roms")), "--install",
                                       utf8(fixture.path("Programs/ES-DE"))},
@@ -376,4 +380,95 @@ TEST_CASE("cli/library: create records the library, show prints it; what create 
     const RunResult broken = library({"show"}, data);
     CHECK(broken.code == ExitCode::RuntimeFailure);
     CHECK(contains(broken.err, "parse-error"));
+}
+
+TEST_CASE("cli/data-dir: nothing is written in the folders a library reads, not even the log file",
+          "[cli][library][discover]") {
+    const rv::test::Fixture fixture = materialize("esde/custom-dirs");
+    const rv::test::TempDir dir("rv-cli-data-dir");
+    const LoggingReset loggingReset;
+    const auto run = [&](const fs::path& dataDir, std::vector<std::string> arguments, bool where) {
+        arguments.insert(arguments.begin(), {"--data-dir", utf8(dataDir)});
+        if (where) {
+            arguments.insert(arguments.end(),
+                             {"--home", utf8(fixture.root()), "--install", utf8(fixture.path("Programs/ES-DE"))});
+        }
+        return runCli(arguments, dir.path());
+    };
+    const auto hasCode = [](const nlohmann::json& issues, std::string_view code) {
+        const std::vector<std::string> codes = namesOf(issues, "code");
+        return std::find(codes.begin(), codes.end(), code) != codes.end();
+    };
+
+    // The roots, and the ROM folders of the systems outside the ROM root: vectrex's absolute path, pico8's '~'. library
+    // create refuses them; discover reports them and keeps its log file out.
+    for (const fs::path& inside :
+         {fixture.path("Games/ROM Library/rv"), fixture.path("Programs/Media Store/rv"),
+          fixture.path("Elsewhere/vectrex/rvdata"), fixture.path("Homebrew/pico8/rv"), fixture.path("ES-DE/rv")}) {
+        INFO(utf8(inside));
+        const auto before = treeOf(fixture.root());
+        const RunResult refused = run(inside, {"library", "create"}, true);
+        CHECK(refused.code == ExitCode::UsageError);
+        CHECK(contains(refused.err, "may not lie inside the library's folders"));
+        const RunResult discovered = run(inside, {"discover"}, true);
+        CHECK(discovered.code == ExitCode::ProblemsFound);
+        CHECK(contains(discovered.out, "error    user-data-inside-library: the user data directory lies inside "));
+        CHECK(contains(discovered.out, "; no log file was written [" + utf8(inside) + "]"));
+        CHECK(treeOf(fixture.root()) == before);
+    }
+    const RunResult elsewhere = run(dir.file("data"), {"discover", "--json"}, true);
+    CHECK_FALSE(hasCode(parsed(elsewhere.out)["issues"], "user-data-inside-library"));
+    CHECK(fs::exists(dir.file("data/logs/retroverse-cli.log")));
+
+    // A library recorded in a user data directory inside its own folders (by hand: library create refuses that): the
+    // dispatcher refuses every command there before it runs, library show refuses it too.
+    rv::catalog::LibraryProfile profile;
+    profile.esdeHome = fixture.path("ES-DE");
+    profile.installFolder = fixture.path("Programs/ES-DE");
+    const fs::path recorded = fixture.path("Elsewhere/vectrex/rvdata");
+    REQUIRE(rv::esde::writeLibraryFile(recorded / "config" / "library.json", profile, rv::esde::ExistingFile::Keep)
+                .has_value());
+    const auto before = treeOf(fixture.root());
+    for (const std::vector<std::string>& arguments : {std::vector<std::string>{"db", "--bogus-option"},
+                                                      std::vector<std::string>{"sessions", "--bogus-option"},
+                                                      std::vector<std::string>{"library", "show"}}) {
+        INFO(arguments.front());
+        const RunResult refused = run(recorded, arguments, false);
+        CHECK(refused.code == ExitCode::UsageError);
+        CHECK(refused.out.empty());
+        CHECK(contains(refused.err, "may not lie inside the library's folders"));
+        CHECK(contains(refused.err, utf8(fixture.path("Elsewhere/vectrex"))));
+    }
+    CHECK(treeOf(fixture.root()) == before);
+    CHECK_FALSE(fs::exists(recorded / "logs"));
+
+    // The same library recorded outside its folders: the commands run and log.
+    const fs::path outside = dir.file("outside");
+    REQUIRE(rv::esde::writeLibraryFile(outside / "config" / "library.json", profile, rv::esde::ExistingFile::Keep)
+                .has_value());
+    const RunResult other = run(outside, {"db", "--bogus-option"}, false);
+    CHECK(other.code == ExitCode::UsageError);
+    CHECK_FALSE(contains(other.err, "may not lie inside"));
+    CHECK(run(outside, {"library", "show"}, false).code == ExitCode::Ok);
+    const auto log = rv::core::readTextFile(outside / "logs" / "retroverse-cli.log");
+    REQUIRE(log.has_value());
+    CHECK(contains(*log, "retroverse-cli db"));
+    CHECK(contains(*log, "retroverse-cli library"));
+}
+
+TEST_CASE("cli/discover: a bare drive given as a folder is that drive's root, as ES-DE reads one", "[cli][discover]") {
+    const rv::test::TempDir dir("rv-cli-discover-drive");
+    const LoggingReset loggingReset;
+    const std::string drive = rv::core::pathToUtf8(dir.path().root_name());
+    if (drive.size() != 2 || drive[1] != ':') {
+        SKIP("the temporary folder is on no drive letter");
+    }
+    // ES-DE's --home E: makes E:\ES-DE the ES-DE home, whatever the current folder of drive E: is.
+    const RunResult result = runCli({"--data-dir", utf8(dir.file("data")), "discover", "--home", drive, "--install",
+                                     utf8(dir.file("install")), "--json"},
+                                    dir.path());
+    const nlohmann::json report = parsed(result.out);
+    CHECK(report["esdeHome"]["path"] == drive + "\\ES-DE");
+    CHECK(report["homeFolder"] == drive + "\\");
+    CHECK(report["install"]["path"] == utf8(dir.file("install")));
 }

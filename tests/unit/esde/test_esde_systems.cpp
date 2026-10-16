@@ -1,12 +1,13 @@
 // es_systems.xml and es_find_rules.xml (I2 step 2), read as ES-DE 3.4.1 reads them: the standard fixture's systems and
 // their SystemInfo values; custom systems replacing bundled ones, <loadExclusive/>, ES-DE's label rules and the
-// upstream quirks (custom-systems fixture); ROM folders built as ES-DE builds them (custom-dirs fixture); find rules,
-// custom ones first.
+// upstream quirks (custom-systems fixture); ROM folders built as ES-DE builds them (custom-dirs fixture) and the folders
+// a library only reads; find rules, custom ones first.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -326,6 +327,60 @@ TEST_CASE("esde/systems: ROM folders built as ES-DE builds them, from %ROMPATH%,
     CHECK(codesOf(relative) == std::vector<std::string>{"rom-folder-unresolved"});
     CHECK(relative[0].system == "pico8");
     CHECK(relativeInfos[2].availability == rv::catalog::Availability::SourceUnavailable);
+}
+
+TEST_CASE("esde/systems: a ROM root override is put in after the path's '~': a '~' of its own stays",
+          "[esde][systems]") {
+    rv::catalog::LibraryProfile profile;
+    profile.esdeHome = fs::path(L"C:\\Users\\me\\ES-DE");
+    profile.romRoot = fs::path(L"D:\\EMULAT~1\\ROMs");
+    const rv::esde::ResolvedRoot romRoot = rv::esde::resolveRomRoot(rv::esde::EsdeSettings{}, profile);
+    REQUIRE(romRoot.source == rv::esde::RootSource::Override);
+    SystemDefinition system;
+    system.path = "%ROMPATH%\\gb";
+    CHECK(rv::esde::systemRomFolder(system, romRoot, profile) == fs::path(L"D:\\EMULAT~1\\ROMs\\gb"));
+    system.path = "~\\Homebrew\\pico8";
+    CHECK(rv::esde::systemRomFolder(system, romRoot, profile) == fs::path(L"C:\\Users\\me\\Homebrew\\pico8"));
+    // ROMDirectory is ES-DE's own text: ES-DE replaces its '~' twice (getROMDirectory, then loadConfig), and so does
+    // Retroverse.
+    rv::esde::EsdeSettings settings;
+    settings.romDirectory = "~\\ROMs";
+    profile.romRoot.reset();
+    const rv::esde::ResolvedRoot setting = rv::esde::resolveRomRoot(settings, profile);
+    system.path = "%ROMPATH%\\gb";
+    CHECK(rv::esde::systemRomFolder(system, setting, profile) == fs::path(L"C:\\Users\\me\\ROMs\\gb"));
+}
+
+TEST_CASE("esde/systems: the folders a library only reads: the ES-DE home and install, the roots, the ROM folders of "
+          "systems outside them",
+          "[esde][systems]") {
+    const rv::test::Fixture fixture = materialize("esde/custom-dirs");
+    auto profile = profileOf(fixture);
+    const std::vector<fs::path> expected{fixture.path("ES-DE"),
+                                         fixture.path("Programs/ES-DE"),
+                                         fixture.path("Games/ROM Library"),
+                                         fixture.path("Programs/Media Store"),
+                                         fixture.path("Homebrew/pico8"),
+                                         fixture.path("Elsewhere/vectrex")};
+    CHECK(rv::esde::readOnlyFolders(profile) == expected);
+    const SystemsConfiguration systems = systemsOf(profile);
+    const auto settings = rv::esde::readSettings(profile.esdeHome);
+    REQUIRE(settings.has_value());
+    const auto romRoot = std::optional(rv::esde::resolveRomRoot(*settings, profile));
+    const auto mediaRoot = std::optional(rv::esde::resolveMediaRoot(*settings, profile));
+    CHECK(rv::esde::readOnlyFolders(profile, romRoot, mediaRoot, &systems) == expected);
+    // What is not known is left out: the systems, the roots.
+    CHECK(rv::esde::readOnlyFolders(profile, romRoot, mediaRoot, nullptr) ==
+          std::vector<fs::path>(expected.begin(), expected.begin() + 4));
+    CHECK(rv::esde::readOnlyFolders(profile, std::nullopt, std::nullopt, &systems) ==
+          std::vector<fs::path>{fixture.path("ES-DE"), fixture.path("Programs/ES-DE"), fixture.path("Homebrew/pico8"),
+                                fixture.path("Elsewhere/vectrex")});
+    // An override needs no settings; a folder inside one listed already is left out.
+    profile.romRoot = fixture.root();
+    REQUIRE(rv::core::writeTextFileAtomic(fixture.path("ES-DE/settings/es_settings.xml"), "").has_value());
+    REQUIRE_FALSE(rv::esde::readSettings(profile.esdeHome).has_value());
+    CHECK(rv::esde::readOnlyFolders(profile) == std::vector<fs::path>{fixture.path("ES-DE"),
+                                                                       fixture.path("Programs/ES-DE"), fixture.root()});
 }
 
 TEST_CASE("esde/find_rules: the standard fixture's emulators and core, their rules typed and in order",

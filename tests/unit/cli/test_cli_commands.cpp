@@ -267,10 +267,12 @@ TEST_CASE("cli/run: a command runs with its directories resolved and logs to std
         }
     }
 
-    // The log file is <user data>/logs/retroverse-cli.log, closed when the run ends.
+    // The log file is <user data>/logs/retroverse-cli.log, closed when the run ends. The commands that check the user
+    // data directory themselves (discover, library) start it only once that passed: not on a usage error.
     const auto log = rv::core::readTextFile(data / "logs" / "retroverse-cli.log");
     REQUIRE(log.has_value());
-    CHECK(contains(*log, "retroverse-cli discover"));
+    CHECK(contains(*log, "retroverse-cli db"));
+    CHECK_FALSE(contains(*log, "retroverse-cli discover"));
     CHECK(contains(*log, "retroverse-cli sessions: exit code 2"));
     CHECK(rv::core::activeLogFile().empty());
 }

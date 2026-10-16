@@ -24,17 +24,22 @@ namespace rv::cli {
 using Json = nlohmann::ordered_json;
 
 /// An absolute folder from a path option (relative ones against the current folder), tidied as discovery and
-/// library.json keep folders (esde::folderFromEsdeText). Errors (InvalidArgument, naming the option): an empty value,
-/// text that is not UTF-8, a path that cannot be made absolute.
+/// library.json keep folders (esde::folderFromEsdeText). A bare drive ("E:") is its root, as ES-DE reads one (its
+/// --home E: makes E:\ES-DE the ES-DE home, a ROMDirectory "I:" is I:\), not that drive's current folder. Errors
+/// (InvalidArgument, naming the option): an empty value, text that is not UTF-8, a path that cannot be made absolute.
 inline Expected<std::optional<std::filesystem::path>> folderOption(const core::ParsedArgs& args,
                                                                    std::string_view name) {
     if (!args.has(name)) {
         return std::optional<std::filesystem::path>{};
     }
     const std::string option = "--" + std::string(name);
-    const std::string text = args.value(name).value_or("");
+    std::string text = args.value(name).value_or("");
     if (text.empty()) {
         return makeError(ErrorCode::InvalidArgument, "value must not be empty", option);
+    }
+    const auto isLetter = [](char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); };
+    if (text.size() == 2 && isLetter(text[0]) && text[1] == ':') {
+        text += '\\';
     }
     auto path = core::tryPathFromUtf8(text);
     if (!path) {

@@ -1,14 +1,18 @@
 // retroverse-cli library (I2 step 2): the library profile, <user data>/config/library.json (ADR-0008 §4, §6).
 //  - library [show] [--json] [--output <file>]: prints the profile (its id, adapter, ES-DE home and install folder,
 //    the overrides) and the ROM and media roots it gives with ES-DE's settings. Exit codes: 0, 1 when there is no
-//    library.json, 3 when it cannot be read or is invalid.
+//    library.json, 2 when the user data directory lies inside the library's folders, 3 when library.json cannot be
+//    read or is invalid.
 //  - library create [--id <slug>] [--home <dir>] [--install <dir>] [--rom-root <dir>] [--media-root <dir>] [--force]
 //    [--json]: discovers ES-DE (--home and --install as discover takes them), resolves the ROM and media roots (from
 //    the settings, else the options must give them), refuses a user data directory inside the library's folders
-//    (core::checkUserDataDirectory: the ES-DE home and install folder, the ROM and media roots) and writes
-//    library.json atomically; an existing library.json is replaced only with --force. Exit codes: 0, 2 for invalid
-//    options and what they must change (no ES-DE home, a root that cannot be resolved, a data directory inside the
-//    library, library.json already there), 3 when it cannot be written.
+//    (checkDataDirectory with esde::readOnlyFolders: the ES-DE home and install folder, the ROM and media roots, the
+//    ROM folders of systems outside them) and writes library.json atomically; an existing library.json, also one
+//    created meanwhile, is replaced only with --force. Exit codes: 0, 2 for invalid options and what they must change
+//    (no ES-DE home, a root that cannot be resolved, a data directory inside the library, library.json already there),
+//    3 when it cannot be written.
+// Both start the log file (startFileLog) only once the user data directory has passed that check: until then, and when
+// it fails, nothing is written.
 // The catalog database, the authority on the id, does not exist before I2 step 4: from then on the import refuses a
 // library.json whose id differs from the database's.
 
@@ -35,6 +39,7 @@
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/esde/settings.hpp>
+#include <rv/esde/systems.hpp>
 #include <rv/platform_win/system_probe.hpp>
 
 #include "commands.hpp"
@@ -80,6 +85,18 @@ Roots rootsOf(const catalog::LibraryProfile& profile) {
         roots.media = esde::resolveMediaRoot(none, profile);
     }
     return roots;
+}
+
+/// The folders of the library a profile describes, which Retroverse only reads (esde::readOnlyFolders()): its ES-DE home
+/// and install folder, the roots, the ROM folders of its systems outside them (when the systems can be read).
+std::vector<std::filesystem::path> foldersOf(const catalog::LibraryProfile& profile, const Roots& roots) {
+    const auto systems = esde::loadSystems(profile);
+    return esde::readOnlyFolders(profile, roots.rom, roots.media, systems ? &*systems : nullptr);
+}
+
+/// Why checkDataDirectory() refused the user data directory.
+std::string insideMessage(const Error& error) {
+    return fmt::format("the user data directory may not lie inside the library's folders: {}", error.toString());
 }
 
 /// Prints a profile and the roots it gives (rootsOf()), as text or JSON.
@@ -149,6 +166,7 @@ ExitCode show(CommandContext& context, std::span<const std::string> arguments) {
     const std::filesystem::path file = context.paths.configDir() / esde::kLibraryFileName;
     const auto profile = esde::readLibraryFile(file);
     if (!profile) {
+        startFileLog(context); // no library: no folders to keep out of
         if (profile.error().code == ErrorCode::NotFound) {
             context.err.writeLine(fmt::format("{}: no library yet ({} does not exist): run 'retroverse-cli library "
                                               "create'",
@@ -158,7 +176,13 @@ ExitCode show(CommandContext& context, std::span<const std::string> arguments) {
         context.err.writeLine(fmt::format("{}: {}", kName, profile.error().toString()));
         return ExitCode::RuntimeFailure;
     }
-    writeProfile(*destination.out, file, *profile, rootsOf(*profile), args->has("json"));
+    const Roots roots = rootsOf(*profile);
+    if (const Status allowed = checkDataDirectory(context, foldersOf(*profile, roots)); !allowed) {
+        context.err.writeLine(fmt::format("{} show: {}", kName, insideMessage(allowed.error())));
+        return ExitCode::UsageError;
+    }
+    startFileLog(context);
+    writeProfile(*destination.out, file, *profile, roots, args->has("json"));
     return finish(destination, context, ExitCode::Ok);
 }
 
@@ -242,16 +266,13 @@ ExitCode create(CommandContext& context, std::span<const std::string> arguments)
                                      rootText(*root, setting, roots.unknown()), option));
         }
     }
-    std::vector<std::filesystem::path> protectedRoots{profile->esdeHome, *roots.rom->path, *roots.media->path};
-    if (profile->installFolder) {
-        protectedRoots.push_back(*profile->installFolder);
+    if (const Status allowed = checkDataDirectory(context, foldersOf(*profile, roots)); !allowed) {
+        return usage(insideMessage(allowed.error()));
     }
-    if (const Status allowed = core::checkUserDataDirectory(context.paths.userDataRoot(), protectedRoots); !allowed) {
-        return usage(fmt::format("the user data directory may not lie inside the library's folders: {}",
-                                 allowed.error().toString()));
-    }
+    startFileLog(context);
 
     const std::filesystem::path file = context.paths.configDir() / esde::kLibraryFileName;
+    const bool force = args->has("force");
     std::error_code error;
     const bool present = std::filesystem::exists(file, error);
     if (error) {
@@ -259,12 +280,19 @@ ExitCode create(CommandContext& context, std::span<const std::string> arguments)
                                           error.message()));
         return ExitCode::RuntimeFailure;
     }
-    if (present && !args->has("force")) {
-        return usage(fmt::format("{} exists already: --force replaces it", text(file)));
+    const std::string exists = fmt::format("{} exists already: --force replaces it", text(file));
+    if (present && !force) {
+        return usage(exists);
     }
     Destination destination{std::move(*output), nullptr};
     destination.out = destination.file ? &*destination.file : &context.out;
-    if (const Status written = esde::writeLibraryFile(file, *profile); !written) {
+    // Without --force, a library.json created meanwhile (another library create) is kept too.
+    if (const Status written =
+            esde::writeLibraryFile(file, *profile, force ? esde::ExistingFile::Replace : esde::ExistingFile::Keep);
+        !written) {
+        if (written.error().code == ErrorCode::Conflict) {
+            return usage(exists);
+        }
         context.err.writeLine(fmt::format("{} create: {}", kName, written.error().toString()));
         return ExitCode::RuntimeFailure;
     }

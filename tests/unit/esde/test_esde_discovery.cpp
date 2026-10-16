@@ -316,7 +316,7 @@ TEST_CASE("esde/discovery: library.json is written and read back; what it may no
     profile.esdeHome = fs::path(L"C:\\Users\\Someone\\ES-DE");
     profile.installFolder = fs::path(L"D:\\Programs\\ES-DE");
     profile.romRoot = fs::path(L"\\\\nas\\roms");
-    REQUIRE(rv::esde::writeLibraryFile(file, profile).has_value());
+    REQUIRE(rv::esde::writeLibraryFile(file, profile, rv::esde::ExistingFile::Keep).has_value());
     const auto text = rv::core::readTextFile(file);
     REQUIRE(text.has_value());
     CHECK(text->starts_with("// The library Retroverse reads"));
@@ -326,6 +326,22 @@ TEST_CASE("esde/discovery: library.json is written and read back; what it may no
     INFO((read ? "read" : read.error().toString()));
     REQUIRE(read.has_value());
     CHECK(*read == profile);
+
+    // Kept: the file there stays as it is, and nothing is left beside it; replaced only when asked to.
+    rv::catalog::LibraryProfile other = profile;
+    other.id = rv::catalog::LibraryId::parse("other").value();
+    const auto kept = rv::esde::writeLibraryFile(file, other, rv::esde::ExistingFile::Keep);
+    REQUIRE_FALSE(kept.has_value());
+    CHECK(kept.error().code == rv::ErrorCode::Conflict);
+    CHECK(rv::core::readTextFile(file).value() == *text);
+    std::size_t entries = 0;
+    for (const auto& entry : fs::directory_iterator(dir.file("config"))) {
+        CHECK(entry.path().filename() == fs::path(L"library.json"));
+        ++entries;
+    }
+    CHECK(entries == 1);
+    REQUIRE(rv::esde::writeLibraryFile(file, other, rv::esde::ExistingFile::Replace).has_value());
+    CHECK(rv::esde::readLibraryFile(file)->id.str() == "other");
 
     // Hand-written: comments, optional keys left out, folders tidied.
     const auto write = [&](std::string_view json) {

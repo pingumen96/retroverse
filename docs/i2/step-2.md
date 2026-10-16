@@ -9,12 +9,13 @@ Roadmap row: I2 step 2 (wave 1, needs 0b and 1). Decision: [ADR-0008](../decisio
 
 | File | What it does |
 |---|---|
-| `rv/esde/discovery.hpp` | `discoverEsde()`: the install folder (explicit, else the ES-DE uninstall entry through `core::ISystemProbe`, its DisplayVersion as the version) and the ES-DE home (explicit, else `portable.txt`, else the user's home folder), each with its source (`InstallSource`, `HomeSource`) and the issues met; `profileOf()` (a `catalog::LibraryProfile`); `bundledResource()` (ES-DE's resource lookup); `checkFolder()` (a folder there, missing, unreachable or not listable); library.json: `readLibraryFile()`, `libraryFileText()`, `writeLibraryFile()` |
+| `rv/esde/discovery.hpp` | `discoverEsde()`: the install folder (explicit, else the ES-DE uninstall entry through `core::ISystemProbe`, its DisplayVersion as the version) and the ES-DE home (explicit, else `portable.txt`, else the user's home folder), each with its source (`InstallSource`, `HomeSource`) and the issues met; `profileOf()` (a `catalog::LibraryProfile`); `bundledResource()` (ES-DE's resource lookup); `checkFolder()` (a folder there, missing, unreachable or not listable); library.json: `readLibraryFile()`, `libraryFileText()`, `writeLibraryFile()` (`ExistingFile::Keep`: a rename that replaces nothing, so a file there or created meanwhile is kept, Conflict) |
 | `rv/esde/settings.hpp` | `readSettings()` / `readSettingsFile()`: the whitelisted keys of es_settings.xml (`settingKeys()`: ROMDirectory, MediaDirectory, ShowHiddenFiles, ShowHiddenGames, ParseGamelistOnly, LegacyGamelistFileLocation, AlternativeEmulatorPerGame, UIMode) with ES-DE's defaults; `resolveRomRoot()`, `resolveMediaRoot()` (`ResolvedRoot`: the folder, its source, the setting as written, ES-DE's own text of it); `esdeGenericText()`, `esdeReplace()`, `folderFromEsdeText()` (ES-DE's path texts) |
-| `rv/esde/systems.hpp` | `loadSystems()` / `loadSystemsFiles()`: es_systems.xml, custom first (`SystemsConfiguration`: one `SystemDefinition` per name, the `fallbacks` ES-DE tries when a definition finds no game, `<loadExclusive/>`); `systemRomFolder()`; `systemInfos()` (the domain's `catalog::SystemInfo`, the ROM folder's availability checked); `gamelistFile()` |
+| `rv/esde/systems.hpp` | `loadSystems()` / `loadSystemsFiles()`: es_systems.xml, custom first (`SystemsConfiguration`: one `SystemDefinition` per name, the `fallbacks` ES-DE tries when a definition finds no game, `<loadExclusive/>`); `systemRomFolder()`; `systemInfos()` (the domain's `catalog::SystemInfo`, the ROM folder's availability checked); `gamelistFile()`; `readOnlyFolders()` (the folders a library only reads, for the data-directory guard) |
 | `rv/esde/find_rules.hpp` | `loadFindRules()` / `loadFindRulesFiles()`: es_find_rules.xml, custom first (`FindRules`: emulators and cores, typed rules with their entries in order). Parsing only: step 10 evaluates them |
 | `rv/esde/command_template.hpp` | `splitCommandLine()` (exactly shell32's CommandLineToArgvW), `parseCommandTemplate()` (elements, tokens, the program's index), `scanCommandTokens()`, `censusKey()` |
 | `tools/cli/src/cmd_discover.cpp`, `cmd_library.cpp` | `retroverse-cli discover`, `library show`, `library create`; what both share (the folder options, how folders, roots and issues print) is in the private header `tools/cli/src/esde_text.hpp`, which no source list names |
+| `tools/cli/src/command.cpp`, `commands.hpp`, `rv/cli/command.hpp` (step 0a's dispatcher) | the data-directory guard before the log file: `Command::checksDataDirectory`, `checkDataDirectory()`, `startFileLog()` (see "The user data directory and the log file" below) |
 
 Tests: `tests/unit/esde/test_command_template.cpp`, `test_esde_settings.cpp`, `test_esde_discovery.cpp`,
 `test_esde_systems.cpp`, the hidden `test_esde_real.cpp` (`[.real-library]`), and `tests/unit/cli/test_cli_discover.cpp`.
@@ -135,8 +136,10 @@ rules, the MAME lists) is taken from `<ES-DE home>/resources/` when the file exi
   `%ESCAPESPECIALS%`.
 - `"%CORE_` loses its quote, then `~` is expanded in the whole command.
 - Find rules: `%PRECOMMAND_X%`, then `%EMULATOR_X%` (named up to the next `%`), `%CORE_X%` with `%EMUPATH%`.
-- `%STARTDIR%=` must be followed by `=`; its value runs to the next space, or is quoted. It accepts `~`, `%EMUDIR%`,
-  `%GAMEDIR%` and `%GAMEENTRYDIR%`. ES-DE creates the folder.
+- `%STARTDIR%` must be followed by `=` and at least two characters. A value starting with `"` runs to the next `"`
+  (no escapes) and ES-DE removes the one character after that quote with it; otherwise it runs to the next space (a
+  tab is part of it), removed with that space. Nothing is trimmed after it. It accepts `~`, `%EMUDIR%`, `%GAMEDIR%`
+  and `%GAMEENTRYDIR%`. ES-DE creates the folder.
 - `%INJECT%=`: a file of at most 4,096 bytes, relative to the game's folder. Its value may use `%BASENAME%` or be
   exactly `%ROM%`.
 - Values: `%ROM%`, `%BASENAME%`, `%FILENAME%`, `%ROMRAW%`, `%ROMPATH%`, then `%ESPATH%`, `%EMUDIR%`, `%GAMEDIR%`,
@@ -177,10 +180,21 @@ rules, the MAME lists) is taken from `<ES-DE home>/resources/` when the file exi
 - `.` and `..` are resolved lexically in the folders kept, as Windows resolves them.
 - A system name that is no valid folder name (`SystemName`) is skipped (`system-name-invalid`).
 - An unparseable custom `es_find_rules.xml` is skipped as ES-DE skips it, but reported as an error issue.
-- `parseCommandTemplate()` reads leading flags and a leading `%STARTDIR%=…` element by the rule of the later elements,
-  and applies the program-name rule to the element after them. This is the command line ES-DE runs once it removed
-  them: `%STARTDIR%="C:\Games dir" "C:\Emu dir\emu.exe" %ROM%` gives three elements. For any command that starts with
-  its program, the elements are exactly `splitCommandLine()`'s.
+- `parseCommandTemplate()` reads what leads a command as `launchGame()` reads it, one element each: a flag where the
+  text starts with it (`%HIDEWINDOW%%EMULATOR_X%` too), then the blanks `std::isspace` knows (a line feed too);
+  `%STARTDIR%=` with its value by ES-DE's rule above (`%STARTDIR%="C:\Games\" %EMULATOR_X%` gives `%STARTDIR%=C:\Games\`
+  and the program `%EMULATOR_X%`; an unquoted value takes a tab and what follows it). The program-name rule applies to
+  what follows: the command line ES-DE runs once it removed them, so `%STARTDIR%="C:\Games dir" "C:\Emu dir\emu.exe"
+  %ROM%` gives three elements. Retroverse also skips blanks after the start folder, which ES-DE leaves at the start of
+  the command line it runs. A quoted value without its closing quote (ES-DE refuses the command) leaves no program
+  (`programIndex == elements.size()`). For any command that starts with its program, the elements are exactly
+  `splitCommandLine()`'s. Flags and start folders elsewhere in a command stay elements (step 10 removes them).
+- A ROM root override is no text of ES-DE's: `systemRomFolder()` replaces the `~` of a system's path first and puts
+  the override in after it, so a `~` of the override's own (`D:\EMULAT~1\ROMs`) stays. ROMDirectory keeps ES-DE's
+  order, in which its `~` is replaced twice.
+- The folder options of `discover` and `library create` (`--home`, `--install`, `--rom-root`, `--media-root`) take a
+  bare drive (`E:`) as its root, as ES-DE does (its `--home E:` makes `E:\ES-DE` the ES-DE home), never as that
+  drive's current folder.
 - The version comes from the uninstall entry's DisplayVersion when that entry describes the install folder; otherwise
   it is unknown. ES-DE.exe's version resource is not read, since that would need a new probe function.
 - `checkFolder()` reads the folder's attributes only; whether it can be listed is the ROM scan's.
@@ -217,6 +231,7 @@ name before one hides it: `50%-%ROM%` and `x%y%ROM%` hold `%ROM%`.
 | `find-rules-unreadable` | error |
 | `find-rules-missing`, `find-rule-skipped`, `find-rule-repeated` | warning |
 | `find-rule-replaced` | info |
+| `user-data-inside-library` (discover) | error |
 
 The settings reader extracts only the whitelisted keys, so their values are the only ones an issue may name. The
 scraper credentials and the UI mode's passkey are never read, logged or returned. The tests check this on three
@@ -281,23 +296,41 @@ retroverse-cli [global options] library create [--id <slug>] [--home <dir>] [--i
   says so, and `library create` repeats it.
 - Settings or systems that cannot be read are reported as `settings-unreadable` or `systems-unreadable` (error), with
   the reason; discover still prints what it found.
-- It writes nothing: the tests compare the fixture's files (content hashes) and folders before and after.
-- Exit codes: 0; 1 when an error issue was met (no ES-DE home, a configuration that cannot be read); 2 for invalid
-  options; 3 when `--output` cannot be written.
+- It writes nothing but its log file: the tests compare the fixture's files (content hashes) and folders before and
+  after. The log file is written only when the user data directory lies outside the folders discover found
+  (`esde::readOnlyFolders()`); otherwise the error `user-data-inside-library` says so, and nothing is written.
+- Exit codes: 0; 1 when an error issue was met (no ES-DE home, a configuration that cannot be read, a user data
+  directory inside the library); 2 for invalid options; 3 when `--output` cannot be written.
 
 **`library show`** (also plain `library`) prints the profile and the roots it gives with ES-DE's settings.
-- Exit codes: 0; 1 when there is no library.json; 3 when it cannot be read or is invalid.
+- Exit codes: 0; 1 when there is no library.json; 2 when the user data directory lies inside the library's folders; 3
+  when library.json cannot be read or is invalid.
 
 **`library create`** discovers ES-DE (with `--home` and `--install` as discover takes them), then records the result.
 - It requires an existing ES-DE home, and ROM and media roots it can resolve: from the settings, else `--rom-root` and
   `--media-root` must give them (the data directory could not be kept out of an unknown root).
 - It prints discovery's warnings (an install folder not found, an ignored `portable.txt`) on stderr.
-- It refuses a user data directory inside the ES-DE home, the install folder or the effective ROM or media root
-  (`core::checkUserDataDirectory`).
-- It writes library.json atomically and never replaces one without `--force` (nor when it cannot tell whether one
-  exists). Then it prints the library as `show` does.
+- It refuses a user data directory inside the folders the library reads (`esde::readOnlyFolders()` through
+  `checkDataDirectory()`, which is `core::checkUserDataDirectory`): the ES-DE home, the install folder, the effective
+  ROM and media roots, and the ROM folder of every system outside them (an absolute `<path>` or one using `~`, which
+  the ROM scan reads too). It refuses before anything is written, the log file included.
+- It writes library.json atomically and never replaces one without `--force`: not when it is there (nor when it cannot
+  tell whether one exists), and not when another `library create` writes one meanwhile (the final rename replaces
+  nothing: `ExistingFile::Keep`). Then it prints the library as `show` does.
 - Exit codes: 0; 2 for invalid options and for what they must change (no ES-DE home, a root that cannot be resolved, a
   data directory inside the library, library.json already there, an invalid id); 3 when it cannot be written.
+
+**The user data directory and the log file.** Retroverse writes nothing in the folders of the library it reads
+(ADR-0008 §6, §7), and that includes its log file. The dispatcher (step 0a's `command.cpp`) therefore logs to stderr
+only until the user data directory has passed the guard, then `startFileLog()` opens
+`<user data>/logs/retroverse-cli.log`:
+- For `discover` and `library` (`Command::checksDataDirectory`), whose options can name the library, the command
+  checks the folders it found and starts the log file itself. A usage error, found before any folder is known, leaves
+  no log file (the process test `unit.cmake/cli_process` exempts these two from its log-file check).
+- For every other command the dispatcher, before the command runs, reads `<user data>/config/library.json` when there
+  is one and refuses a user data directory inside that library's folders (`esde::readOnlyFolders(profile)`: its
+  settings and systems read, what cannot be read left out): the message on stderr, exit 2, nothing written. Without a
+  library.json there is nothing to keep out of.
 
 ## Real library (`scripts/real-library.ps1`, with ES-DE closed)
 
@@ -305,7 +338,7 @@ retroverse-cli [global options] library create [--id <slug>] [--home <dir>] [--i
 -MediaRoot E:\Programmi\ES-DE_media\downloaded_media` (Release, the script's default; also run with
 `-Preset msvc-x64-debug`)
 
-Both `[real-library]` tests passed (2,703 assertions) in both builds, and the snapshots showed 0 differences among
+Both `[real-library]` tests passed (2,709 assertions) in both builds, and the snapshots showed 0 differences among
 542,082 entries each time.
 
 What discovery found, with no options:
@@ -345,6 +378,12 @@ Seven commands have a program other than one `%EMULATOR_X%` element:
 - the four placeholders: androidapps, androidgames, lutris, xboxone;
 - three hand edits: gc "Dolphin" and "Dolphin (Standalone)", ps2 "PCSX2 (Standalone)".
 
+The user also added a staticpath entry to the bundled find rules: PCSX2's first one is `K:\Giochi\Emulatori\PS2\
+pcsx2-qt.exe`, ahead of the two upstream `pcsx2-qt*.exe` wildcards.
+
+The hidden test checks every figure above, not only prints them: the counts, the census table, the seven commands and
+the PCSX2 entry. A change to the token classification or the program detection fails the gate run.
+
 ## For the later steps
 
 - **Step 7 (ROM scan):**
@@ -358,22 +397,39 @@ Seven commands have a program other than one `%EMULATOR_X%` element:
   - The tokens to expand follow the token table; `~` is a token.
 - **Steps 4 and 11:** library.json's id against the database's.
 
-## Suggested ADR-0008 amendment
+## Suggested ADR-0008 amendments
 
-§8 says `~` is ES-DE's home folder: "`%USERPROFILE%`, the `--home` folder, or the folder of `ES-DE.exe` when
-portable". ES-DE 3.4.1's source is more precise on two points:
+The code follows ES-DE 3.4.1's source and the guard below; the ADR's sentences could say so at the merge.
+
+**§8, `~`.** §8 says `~` is ES-DE's home folder: "`%USERPROFILE%`, the `--home` folder, or the folder of `ES-DE.exe`
+when portable". ES-DE 3.4.1's source is more precise on three points:
 - the default is `%HOMEDRIVE%%HOMEPATH%`; Retroverse's probe falls back to `%USERPROFILE%` where ES-DE would use its
   own working folder;
 - in portable mode it is the ES-DE.exe folder only for an empty `portable.txt`; otherwise it is that folder joined with
-  the file's first line.
+  the file's first line;
+- a bare drive given as `--home` (`E:`) is that drive's root: the ES-DE home is `E:\ES-DE`.
 
-The code follows the source; the ADR's sentence could say so at the merge.
+**§8, find rules.** The sentence on static paths ("`~` ..., `%ESPATH%` the install folder; a wildcard only in the last
+component with matches taken in sorted order") leaves out two facts step 10 needs:
+- static paths expand `~`, `%ESPATH%` and `%ROMPATH%` (ROMDirectory as ES-DE's `getROMDirectory()` gives it);
+- a `*` in the last element is matched as ES-DE's regular expression over the generic path (`*` becomes `.*`, `.`
+  stays a wildcard character, `()[]` escaped), case-sensitively, the first match in ordinal order winning.
 
-## Open issue for the merge
+**§6 and §7, the data-directory guard.** The folders the user data directory may not lie in are the ES-DE home, the
+install folder, the ROM root and the media root, and also the ROM folder of every system outside the ROM root (an
+absolute `<path>`, or one using `~`): the ROM scan reads those too (`esde::readOnlyFolders()`). The guard also comes
+before the log file: retroverse-cli logs to stderr only until the user data directory has passed it.
 
-The dispatcher (`command.cpp`, step 0a) starts the log file in `<user data>/logs` before any command runs. So a
-`--data-dir` inside a library's folders receives a log file before `library create` can refuse it. Other commands do
-not check the data directory at all.
+## For the merge
 
-Suggestion: when library.json exists, the dispatcher checks the data directory against that library's folders
-(`core::checkUserDataDirectory`) before it opens the log file.
+This step changed three files of step 0a's CLI skeleton besides its own commands, to put the guard before the log file
+(see "The user data directory and the log file"):
+- `tools/cli/include/rv/cli/command.hpp`: `Command::checksDataDirectory` (a new last field, `true` in the rows of
+  `discover` and `library`), and `run()`'s description;
+- `tools/cli/src/command.cpp` and `commands.hpp`: `checkDataDirectory()`, `startFileLog()`, the dispatcher's guard on
+  library.json's folders;
+- `tests/unit/cli/test_cli_commands.cpp` and `tests/cmake/test_cli_process.cmake`: a usage error of `discover` or
+  `library` leaves no log file.
+
+A command another step implements needs nothing new: the dispatcher still starts its log file before it runs, once
+the guard has passed.

@@ -10,6 +10,7 @@
 
 #include <rv/core/case_fold.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
@@ -276,10 +277,65 @@ std::optional<std::filesystem::path> systemRomFolder(const SystemDefinition& sys
         return std::nullopt;
     }
     // SystemData::loadConfig: %ROMPATH%, then '~'; ES-DE also turns '\' into '/' and collapses "//", which
-    // folderFromEsdeText() does but for a network path's leading pair.
+    // folderFromEsdeText() does but for a network path's leading pair. An override is no text of ES-DE's, which never
+    // sees it: '~' is replaced in the system's path alone, never in the override's folder ("D:\EMULAT~1").
+    const std::string home = esdeGenericText(profile.esdeHome.parent_path());
+    if (romRoot.source == RootSource::Override) {
+        return folderFromEsdeText(esdeReplace(esdeReplace(system.path, "~", home), "%ROMPATH%", romRoot.esdeText));
+    }
     std::string text = esdeReplace(system.path, "%ROMPATH%", romRoot.esdeText);
-    text = esdeReplace(std::move(text), "~", esdeGenericText(profile.esdeHome.parent_path()));
+    text = esdeReplace(std::move(text), "~", home);
     return folderFromEsdeText(text);
+}
+
+std::vector<std::filesystem::path> readOnlyFolders(const catalog::LibraryProfile& profile,
+                                                   const std::optional<ResolvedRoot>& romRoot,
+                                                   const std::optional<ResolvedRoot>& mediaRoot,
+                                                   const SystemsConfiguration* systems) {
+    std::vector<std::filesystem::path> folders;
+    const auto add = [&](const std::filesystem::path& folder) {
+        const bool listed = std::any_of(folders.begin(), folders.end(), [&](const std::filesystem::path& known) {
+            return core::pathIsWithin(folder, known);
+        });
+        if (!folder.empty() && !listed) {
+            folders.push_back(folder);
+        }
+    };
+    add(profile.esdeHome);
+    if (profile.installFolder) {
+        add(*profile.installFolder);
+    }
+    for (const std::optional<ResolvedRoot>* root : {&romRoot, &mediaRoot}) {
+        if (*root && (*root)->path) {
+            add(*(*root)->path);
+        }
+    }
+    if (systems != nullptr) {
+        const ResolvedRoot unknown;
+        for (const std::vector<SystemDefinition>* list : {&systems->systems, &systems->fallbacks}) {
+            for (const SystemDefinition& system : *list) {
+                if (const auto folder = systemRomFolder(system, romRoot ? *romRoot : unknown, profile)) {
+                    add(*folder);
+                }
+            }
+        }
+    }
+    return folders;
+}
+
+std::vector<std::filesystem::path> readOnlyFolders(const catalog::LibraryProfile& profile) {
+    std::optional<ResolvedRoot> romRoot;
+    std::optional<ResolvedRoot> mediaRoot;
+    const auto settings = readSettings(profile.esdeHome);
+    const EsdeSettings none;
+    if (settings || profile.romRoot) {
+        romRoot = resolveRomRoot(settings ? *settings : none, profile);
+    }
+    if (settings || profile.mediaRoot) {
+        mediaRoot = resolveMediaRoot(settings ? *settings : none, profile);
+    }
+    const auto systems = loadSystems(profile);
+    return readOnlyFolders(profile, romRoot, mediaRoot, systems ? &*systems : nullptr);
 }
 
 std::vector<catalog::SystemInfo> systemInfos(const SystemsConfiguration& systems, const ResolvedRoot& romRoot,

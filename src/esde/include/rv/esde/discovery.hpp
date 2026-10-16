@@ -140,8 +140,17 @@ inline constexpr int kLibraryFileSchemaVersion = 1;
 /// optional ones null when not set.
 [[nodiscard]] std::string libraryFileText(const catalog::LibraryProfile& profile);
 
-/// Writes libraryFileText() to `file` atomically (core::writeTextFileAtomic, its folder created when missing),
-/// replacing what is there: the caller decides whether an existing file may be replaced.
-[[nodiscard]] Status writeLibraryFile(const std::filesystem::path& file, const catalog::LibraryProfile& profile);
+/// Whether writeLibraryFile() may replace a library.json that is there.
+enum class ExistingFile : std::uint8_t {
+    Keep,    ///< never replaced, also when it appears while the new one is written
+    Replace, ///< replaced
+};
+
+/// Writes libraryFileText() to `file` atomically (its folder created when missing; readers never see part of it). With
+/// ExistingFile::Keep the new file is written beside it and moved into place by a rename that replaces nothing, so a
+/// library.json there, or one created meanwhile (another `library create`), is kept: Conflict. Other errors: IoError
+/// and those of core::writeTextFileAtomic().
+[[nodiscard]] Status writeLibraryFile(const std::filesystem::path& file, const catalog::LibraryProfile& profile,
+                                      ExistingFile existing);
 
 } // namespace rv::esde

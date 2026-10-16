@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <system_error>
 #include <utility>
 
 #include <windows.h>
@@ -420,8 +421,32 @@ std::string libraryFileText(const catalog::LibraryProfile& profile) {
            json.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n";
 }
 
-Status writeLibraryFile(const std::filesystem::path& file, const catalog::LibraryProfile& profile) {
-    return core::writeTextFileAtomic(file, libraryFileText(profile));
+Status writeLibraryFile(const std::filesystem::path& file, const catalog::LibraryProfile& profile,
+                        ExistingFile existing) {
+    const std::string text = libraryFileText(profile);
+    if (existing == ExistingFile::Replace) {
+        return core::writeTextFileAtomic(file, text);
+    }
+    // Written whole under a name of this process's, then moved into place without MOVEFILE_REPLACE_EXISTING: the
+    // rename fails rather than replace a library.json there, whenever it appeared.
+    std::filesystem::path written = file;
+    written += fmt::format(".new-{}", GetCurrentProcessId());
+    if (const Status status = core::writeTextFileAtomic(written, text); !status) {
+        return status;
+    }
+    if (MoveFileExW(core::extendedLengthPath(written).c_str(), core::extendedLengthPath(file).c_str(),
+                    MOVEFILE_WRITE_THROUGH)) {
+        return ok();
+    }
+    const DWORD error = GetLastError();
+    std::error_code ignored;
+    std::filesystem::remove(written, ignored);
+    const std::string context = core::pathToUtf8Lossy(file);
+    if (error == ERROR_ALREADY_EXISTS || error == ERROR_FILE_EXISTS) {
+        return makeError(ErrorCode::Conflict, "the file exists already", context);
+    }
+    return makeError(ErrorCode::IoError, "cannot move the new file into place: " + core::systemErrorMessage(error),
+                     context);
 }
 
 } // namespace rv::esde

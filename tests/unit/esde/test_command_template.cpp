@@ -245,6 +245,47 @@ TEST_CASE("esde/command_template: the tokens of ES-DE's commands", "[esde][comma
         CHECK(elementTexts(parseCommandTemplate("  %EMULATOR_X% %ROM%")) ==
               std::vector<std::string>{"%EMULATOR_X%", "%ROM%"});
     }
+    SECTION("what leads the command is read as ES-DE's launchGame() reads it, not as CommandLineToArgvW would") {
+        struct Case {
+            std::string_view command;
+            std::vector<std::string> elements;
+            std::size_t programIndex;
+        };
+        for (const Case& expected : {
+                 // A quoted start folder runs to the next '"': a backslash before it escapes nothing.
+                 Case{R"(%STARTDIR%="C:\Games\" %EMULATOR_X% %ROM%)",
+                      {R"(%STARTDIR%=C:\Games\)", "%EMULATOR_X%", "%ROM%"},
+                      1},
+                 // ES-DE drops the one character after the closing quote, whatever it is.
+                 Case{R"(%STARTDIR%="C:\Games"x %EMULATOR_X% %ROM%)",
+                      {R"(%STARTDIR%=C:\Games)", "%EMULATOR_X%", "%ROM%"},
+                      1},
+                 // An unquoted start folder runs to the next space: a tab is part of it.
+                 Case{"%STARTDIR%=C:\\Games\t%EMULATOR_X% %ROM%", {"%STARTDIR%=C:\\Games\t%EMULATOR_X%", "%ROM%"}, 1},
+                 // A quoted start folder without its closing quote (ES-DE refuses it): no program.
+                 Case{R"(%STARTDIR%="C:\Games %EMULATOR_X% %ROM%)", {R"(%STARTDIR%=C:\Games %EMULATOR_X% %ROM%)"}, 1},
+                 // A flag is removed where the text starts with it, then every blank std::isspace knows.
+                 Case{"%HIDEWINDOW%\n%EMULATOR_X% %ROM%", {"%HIDEWINDOW%", "%EMULATOR_X%", "%ROM%"}, 1},
+                 Case{"%HIDEWINDOW%%EMULATOR_X% %ROM%", {"%HIDEWINDOW%", "%EMULATOR_X%", "%ROM%"}, 1},
+                 Case{"%RUNINBACKGROUND%\r\n\v\f%STARTDIR%=%EMUDIR% %HIDEWINDOW% \"C:\\Emu dir\\emu.exe\" %ROM%",
+                      {"%RUNINBACKGROUND%", "%STARTDIR%=%EMUDIR%", "%HIDEWINDOW%", R"(C:\Emu dir\emu.exe)", "%ROM%"},
+                      3},
+                 // A flag's name followed by more name is no flag: the program.
+                 Case{"%HIDEWINDOWS% %ROM%", {"%HIDEWINDOWS%", "%ROM%"}, 0},
+                 Case{"%STARTDIR%=", {"%STARTDIR%="}, 1},
+             }) {
+            INFO("command: [" << shown(expected.command) << "]");
+            const auto parsed = parseCommandTemplate(expected.command);
+            CHECK(elementTexts(parsed) == expected.elements);
+            CHECK(parsed.programIndex == expected.programIndex);
+        }
+        const auto startDir = parseCommandTemplate(R"(%STARTDIR%="C:\Games\" %EMULATOR_X% %ROM%)");
+        REQUIRE(startDir.elements.size() == 3);
+        CHECK(startDir.elements[0].tokens ==
+              std::vector{token(CommandTokenKind::Assignment, 0, "%STARTDIR%=", "STARTDIR")});
+        CHECK(startDir.elements[1].tokens ==
+              std::vector{token(CommandTokenKind::Emulator, 0, "%EMULATOR_X%", "EMULATOR_X", "X")});
+    }
     SECTION("assignments, find-rule names, unknown tokens, '~', malformed tokens") {
         CHECK(rv::esde::scanCommandTokens("%RPCS3_GAMEID%:%INJECT%=%BASENAME%.ps3") ==
               std::vector{token(CommandTokenKind::Unknown, 0, "%RPCS3_GAMEID%", "RPCS3_GAMEID"),

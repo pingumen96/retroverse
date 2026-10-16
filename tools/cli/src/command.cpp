@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <exception>
+#include <filesystem>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -14,6 +16,8 @@
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/version.hpp>
+#include <rv/esde/discovery.hpp>
+#include <rv/esde/systems.hpp>
 
 #include "commands.hpp"
 
@@ -26,9 +30,9 @@ constexpr std::string_view kLogFileName = "retroverse-cli.log";
 /// The command table: the order of --help, the step of docs/roadmap.md that implements each command. The rows never
 /// change when a command is implemented: its cmd_<name>.cpp does.
 constexpr std::array<Command, 14> kCommands{{
-    {"discover", "Find the ES-DE installation: its home, install, ROM and media folders", 2, runDiscover},
+    {"discover", "Find the ES-DE installation: its home, install, ROM and media folders", 2, runDiscover, true},
     {"library", "Show the library: its id, the ES-DE folders it reads and their overrides (library.json)", 2,
-     runLibrary},
+     runLibrary, true},
     {"db", "Maintain the catalog database: migrate, check, rebuild-index", 4, runDb},
     {"import", "Import the ES-DE collection into the catalog (--dry-run: what would change)", 7, runImport},
     {"systems", "List the systems of the catalog with their game counts", 9, runSystems},
@@ -104,11 +108,21 @@ core::LogConfig logConfig(const GlobalOptions& global) {
     return config;
 }
 
+/// The folders of the library <user data>/config/library.json records (esde::readOnlyFolders()); none when there is no
+/// library.json or it cannot be read (the commands that read it say why).
+std::vector<std::filesystem::path> recordedLibraryFolders(const core::Paths& paths) {
+    const auto profile = esde::readLibraryFile(paths.configDir() / esde::kLibraryFileName);
+    if (!profile) {
+        return {};
+    }
+    return esde::readOnlyFolders(*profile);
+}
+
 ExitCode runCommand(const Command& command, const Invocation& invocation, Output& out, Output& err,
                     const core::PathEnvironment& environment) {
-    // Until the directories are known, logging goes to stderr only: nothing a run logs ever reaches stdout.
-    core::LogConfig config = logConfig(invocation.global);
-    core::initLogging(config);
+    // Until the user data directory has passed the guard, logging goes to stderr only: nothing a run logs ever reaches
+    // stdout, and nothing is written in a library's folders.
+    core::initLogging(logConfig(invocation.global));
 
     core::PathOptions pathOptions;
     pathOptions.assetRootOverride = invocation.global.assetRoot;
@@ -120,16 +134,19 @@ ExitCode runCommand(const Command& command, const Invocation& invocation, Output
         core::shutdownLogging();
         return ExitCode::UsageError;
     }
-    config.directory = paths->logsDir();
-    core::initLogging(config);
-    spdlog::info("{}: {} {}", core::versionBanner(), kProgram, command.name);
-    spdlog::info("Asset root: {} ({})", core::pathToUtf8(paths->assetRoot()),
-                 core::toString(paths->assetRootSource()));
-    spdlog::info("User data: {}{}", core::pathToUtf8(paths->userDataRoot()), paths->isPortable() ? " (portable)" : "");
 
     ExitCode code = ExitCode::RuntimeFailure;
     try {
         CommandContext context{command, invocation.global, invocation.arguments, *paths, out, err};
+        if (!command.checksDataDirectory) {
+            if (const Status allowed = checkDataDirectory(context, recordedLibraryFolders(*paths)); !allowed) {
+                err.writeLine(fmt::format("{} {}: the user data directory may not lie inside the library's folders: {}",
+                                          kProgram, command.name, allowed.error().toString()));
+                core::shutdownLogging();
+                return ExitCode::UsageError;
+            }
+            startFileLog(context);
+        }
         code = command.run(context);
     } catch (const std::exception& e) {
         spdlog::error("{} {}: unexpected failure: {}", kProgram, command.name, e.what());
@@ -239,6 +256,23 @@ std::string helpText() {
             "\n"
             "Exit codes: 0 ok; 1 a check found problems; 2 usage or initialization error; 3 runtime failure.\n";
     return text;
+}
+
+Status checkDataDirectory(const CommandContext& context, std::span<const std::filesystem::path> folders) {
+    return core::checkUserDataDirectory(context.paths.userDataRoot(), folders);
+}
+
+void startFileLog(const CommandContext& context) {
+    if (!core::activeLogFile().empty()) {
+        return;
+    }
+    core::LogConfig config = logConfig(context.global);
+    config.directory = context.paths.logsDir();
+    core::initLogging(config);
+    const core::Paths& paths = context.paths;
+    spdlog::info("{}: {} {}", core::versionBanner(), kProgram, context.command.name);
+    spdlog::info("Asset root: {} ({})", core::pathToUtf8(paths.assetRoot()), core::toString(paths.assetRootSource()));
+    spdlog::info("User data: {}{}", core::pathToUtf8(paths.userDataRoot()), paths.isPortable() ? " (portable)" : "");
 }
 
 ExitCode notImplemented(CommandContext& context) {

@@ -1,9 +1,11 @@
 // retroverse-cli discover (I2 step 2): finds the ES-DE installation the way ES-DE 3.4.1 finds itself (ADR-0008 §6, §8)
 // and prints what a library would read: the ES-DE home and install folder with their sources, ES-DE's version, the
 // settings Retroverse uses, the ROM and media roots with their sources, the find rules, the systems that have a ROM
-// folder and the gamelists found, then the issues met on the way. It only reads: nothing is written (library create
-// records a library). Exit codes: 0, 1 when an error was met (no ES-DE home, a configuration that cannot be read), 2
-// for invalid options, 3 when the results cannot be written.
+// folder and the gamelists found, then the issues met on the way. It only reads (library create records a library):
+// it writes its log file alone, and only when the user data directory lies outside the folders it found (else the
+// error "user-data-inside-library", and no log file). Exit codes: 0, 1 when an error was met (no ES-DE home, a
+// configuration that cannot be read, a user data directory inside the library), 2 for invalid options, 3 when the
+// results cannot be written.
 
 #include <algorithm>
 #include <filesystem>
@@ -161,6 +163,19 @@ Report discover(const esde::EsdeDiscovery& discovery) {
         report.gamelists = findGamelists(report, **report.settings, report.profile->esdeHome);
     }
     return report;
+}
+
+/// The folders discover found, which Retroverse only reads (esde::readOnlyFolders()).
+std::vector<std::filesystem::path> readOnlyFoldersOf(const Report& report) {
+    if (!report.profile) {
+        std::vector<std::filesystem::path> folders;
+        if (report.discovery.installFolder) {
+            folders.push_back(*report.discovery.installFolder);
+        }
+        return folders;
+    }
+    const esde::SystemsConfiguration* systems = report.systems && *report.systems ? &**report.systems : nullptr;
+    return esde::readOnlyFolders(*report.profile, report.romRoot, report.mediaRoot, systems);
 }
 
 std::string sourceText(const esde::EsdeDiscovery& discovery) {
@@ -397,7 +412,16 @@ ExitCode runDiscover(CommandContext& context) {
         context.err.writeLine(fmt::format("{}: {}", kName, discovery.error().toString()));
         return ExitCode::UsageError;
     }
-    const Report report = discover(*discovery);
+    Report report = discover(*discovery);
+    // The log file is all discover writes: never in the folders it found (ADR-0008 §6, §7).
+    if (const Status allowed = checkDataDirectory(context, readOnlyFoldersOf(report)); allowed) {
+        startFileLog(context);
+    } else {
+        report.issues.push_back(catalog::Issue{catalog::IssueSeverity::Error, "user-data-inside-library", {},
+                                               allowed.error().context,
+                                               allowed.error().message + "; no log file was written"});
+        spdlog::warn("discover: {}: no log file was written", allowed.error().toString());
+    }
     spdlog::info("discover: ES-DE home {} ({}), install folder {} ({}), {} issue(s)",
                  discovery->esdeHome ? "found" : "not found", esde::toString(discovery->homeSource),
                  discovery->installFolder ? "found" : "not found", esde::toString(discovery->installSource),
