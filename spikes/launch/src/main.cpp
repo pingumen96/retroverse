@@ -4,12 +4,14 @@
 // hands the window over (rv::platform::WindowHandover: minimized, or kept without rendering), starts the target through
 // rv::launcher::LaunchSession and rv::platform::Win32ProcessRunner, waits without rendering and without input, then
 // takes the window back and measures, from the system's exit time of the emulator: (a) the window restored, (b) the
-// foreground regained, (c) borderless fullscreen re-applied, (d) the first frame presented, (e) frame pacing back at
-// 60 FPS, (f) a press of an SDL virtual gamepad, injected after the return, reaching the input collector. The JSON
-// report holds every launch, the remedies the foreground needed and the machine's load.
+// foreground regained, (c) borderless fullscreen re-applied, (d) the first frame submitted (SwapBuffers returned: with
+// vsync the frame reaches the screen later, which (e) includes), (e) frame pacing back at 60 FPS, (f) a press of an SDL
+// virtual gamepad, injected after the return, reaching the input collector. The JSON report holds every launch, the
+// remedies the foreground needed, the machine's load and the build that measured.
 //
 // Exit codes: 0 every launch met the criteria, 1 some did not, 2 bad options or initialization failure, 3 runtime
-// failure. The harness ends a target only when it outlives --timeout-s (recorded); the product never does.
+// failure. The harness ends a target only when it outlives --timeout-s (recorded), and only processes still known to
+// run in its tree; the product never ends one.
 
 #include <SDL3/SDL_main.h>
 
@@ -21,6 +23,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -104,6 +107,8 @@ struct SpikeOptions {
     std::chrono::seconds timeout{60};
     std::chrono::milliseconds windowTimeout{30000};
     bool windowed = false;
+    /// What the build was made from (measure.ps1 passes the git commit and the state of the working tree).
+    std::string sourceRevision;
     std::vector<std::string> extraArguments;
     std::vector<std::string> commandLine;
 };
@@ -138,18 +143,54 @@ nlohmann::json describeWindowState(const platform::WindowState& state) {
                           {"coversMonitor", platform::coversMonitor(state)}};
 }
 
-/// When the window was the foreground window again after losing it to the emulator: the foreground hook's record,
-/// else the moment the hand-over saw it there.
+/// When the window was the foreground window again after losing it to the emulator: the earlier of the hook's first
+/// confirmed record of it (delivered while the window was the foreground window) and the moment the hand-over saw it
+/// there. Both are upper bounds: an event is delivered after it happened (its own time stamp is too coarse, 10-30 ms),
+/// and polling sees it once per frame. Unconfirmed events do not count: a refused raise reports the window too.
 std::optional<Clock::time_point> foregroundBack(const platform::HandoverReport& report) {
+    std::optional<Clock::time_point> back = report.foreground;
     bool lost = !report.before.foreground;
     for (const platform::ForegroundChange& change : report.foregroundChanges) {
         if (!change.ours) {
             lost = true;
-        } else if (lost) {
-            return change.at;
+        } else if (lost && change.confirmed) {
+            if (!back || change.at < *back) {
+                back = change.at;
+            }
+            break;
         }
     }
-    return report.foreground;
+    return back;
+}
+
+nlohmann::json describeChanges(const std::vector<platform::ForegroundChange>& changes, Clock::time_point origin) {
+    nlohmann::json list = nlohmann::json::array();
+    for (const platform::ForegroundChange& change : changes) {
+        list.push_back({{"atMsFromLaunch", optionalMs(origin, change.at)},
+                        {"eventMsFromLaunch", optionalMs(origin, change.eventAt)},
+                        {"processId", change.processId},
+                        {"image", change.image},
+                        {"ours", change.ours},
+                        {"confirmed", change.confirmed}});
+    }
+    return list;
+}
+
+/// The last-write time of a file, UTC ("2026-10-16T02:47:18Z"), or empty.
+std::string modifiedUtc(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto written = std::filesystem::last_write_time(path, ec);
+    if (ec) {
+        return {};
+    }
+    const std::time_t seconds = std::chrono::system_clock::to_time_t(
+        std::chrono::floor<std::chrono::seconds>(std::chrono::clock_cast<std::chrono::system_clock>(written)));
+    std::tm utc{};
+    if (gmtime_s(&utc, &seconds) != 0) {
+        return {};
+    }
+    return fmt::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
+                       utc.tm_hour, utc.tm_min, utc.tm_sec);
 }
 
 /// What the harness does with a Notepad launch: finds the window Notepad opened on the launch's file, leaves it open
@@ -289,6 +330,11 @@ private:
         m_report["spike"] = "I1 (f): emulator launch and return to the borderless fullscreen window";
         m_report["version"] = std::string(rv::core::kVersion);
         m_report["buildType"] = std::string(rv::core::kBuildType);
+        const std::filesystem::path executable = rv::core::executablePath();
+        m_report["build"] = {{"sourceRevision", m_options.sourceRevision},
+                             {"executable", utf8(executable)},
+                             {"executableModifiedUtc", modifiedUtc(executable)},
+                             {"fakeEmulatorModifiedUtc", modifiedUtc(executable.parent_path() / "rv_fake_emulator.exe")}};
         m_report["commandLine"] = m_options.commandLine;
         m_report["machine"] = {{"foregroundLockTimeoutMs", spike::harness::foregroundLockTimeoutMs()},
                                {"glRenderer", caps.renderer},
@@ -431,6 +477,8 @@ private:
             request.arguments = spike::fakeArguments(scenario);
             request.label = scenario.wrapper ? "fake emulator (through a wrapper)" : "fake emulator";
             request.outputLog = m_options.dataDir / "logs" / fmt::format("fake-{}.out.log", number);
+            // A console program standing for a windowed emulator: its own console, without a window.
+            request.hideConsoleWindow = true;
             target = {{"kind", "fake"}, {"log", scenario.log}};
             break;
         }
@@ -552,10 +600,17 @@ private:
                 harnessTerminated = true;
                 spdlog::warn("Harness: the target outlived {} s; ending it (never done by the product)",
                              m_options.timeout.count());
-                spike::harness::terminateProcess(session.processId(), kHarnessExitCode);
-                for (const launcher::ProcessEvent& observed : session.history()) {
-                    if (observed.kind == launcher::ProcessEventKind::ChildStarted) {
-                        spike::harness::terminateProcess(observed.processId, kHarnessExitCode);
+                // Only processes still known to run in the tree, each checked against what was recorded of it: an id
+                // whose process has exited may already name an unrelated program of the user's.
+                session.poll(Clock::now());
+                if (session.times().started) {
+                    spike::harness::terminateProcessIf(session.processId(), utf8(request->executable.filename()),
+                                                       *session.times().started, kHarnessExitCode);
+                }
+                for (const launcher::TreeProcess& child : session.liveChildren()) {
+                    if (!child.image.empty()) { // unverified ones are left alone
+                        spike::harness::terminateProcessIf(child.processId, child.image, child.seenAt,
+                                                           kHarnessExitCode);
                     }
                 }
                 if (session.strategy() == launcher::WaitStrategy::UserConfirmReturn) {
@@ -564,8 +619,10 @@ private:
             }
         }
         const Clock::time_point noticedAt = Clock::now();
-        // Windows' foreground lock holds while the last keyboard or mouse input is recent.
+        // Windows lets the process that received the last keyboard or mouse input take the foreground: the spike's own
+        // process may only have received it if it came after the spike started.
         const std::uint32_t idleAtExit = spike::harness::millisecondsSinceLastInput();
+        const double uptimeAtExit = spike::millisecondsBetween(m_start, noticedAt);
 
         // Return.
         handover.restore();
@@ -660,7 +717,8 @@ private:
                              {"processesSeen", outcome.processesSeen},
                              {"processesRemained", outcome.processesRemained},
                              {"wasStillRunning", outcome.wasStillRunning}};
-        record["timesFromLaunchMs"] = {{"started", optionalMs(launchAt, times.started)},
+        record["timesFromLaunchMs"] = {{"begun", optionalMs(launchAt, times.begun)},
+                                       {"started", optionalMs(launchAt, times.started)},
                                        {"firstWindow", optionalMs(launchAt, times.firstWindow)},
                                        {"mainExited", optionalMs(launchAt, times.mainExited)},
                                        {"exited", optionalMs(launchAt, times.exited)},
@@ -671,7 +729,9 @@ private:
                                        {"restoreBegun", optionalMs(launchAt, handoverReport.restoreBegun)}};
         record["exitReference"] = exitReference;
         record["idleAtExitMs"] = idleAtExit;
-        record["foregroundLockActive"] = idleAtExit < spike::harness::foregroundLockTimeoutMs();
+        record["spikeUptimeAtExitMs"] = std::round(uptimeAtExit);
+        // The last input happened before the spike's process existed: the spike cannot have received it.
+        record["lastInputBeforeSpike"] = static_cast<double>(idleAtExit) > uptimeAtExit;
         record["detectionLatencyMs"] = times.exited && times.exitObserved
                                            ? optionalMs(*times.exited, times.exitObserved)
                                            : nlohmann::json(nullptr);
@@ -688,13 +748,6 @@ private:
                                 {"atMsFromExit", optionalMs(exitAt, attempt.at)},
                                 {"foregroundAfter", attempt.foregroundAfter}});
         }
-        nlohmann::json changes = nlohmann::json::array();
-        for (const platform::ForegroundChange& change : handoverReport.foregroundChanges) {
-            changes.push_back({{"atMsFromLaunch", optionalMs(launchAt, change.at)},
-                               {"processId", change.processId},
-                               {"image", change.image},
-                               {"ours", change.ours}});
-        }
         record["handover"] = {{"before", describeWindowState(handoverReport.before)},
                               {"afterReturn", describeWindowState(handoverReport.afterReturn)},
                               {"restoredByWin32", handoverReport.restoredByWin32},
@@ -703,7 +756,8 @@ private:
                               {"displayModeChanged", handoverReport.displayModeChanged},
                               {"userActionNeeded", handoverReport.userActionNeeded},
                               {"attempts", attempts},
-                              {"foregroundChanges", changes}};
+                              {"foregroundChanges", describeChanges(handoverReport.foregroundChanges, launchAt)},
+                              {"polledChanges", describeChanges(handoverReport.polledChanges, launchAt)}};
         nlohmann::json firstIntervals = nlohmann::json::array();
         for (std::size_t i = 1; i < m_presents.size() && i <= 12; ++i) {
             firstIntervals.push_back(std::round(spike::millisecondsBetween(m_presents[i - 1], m_presents[i]) * 100.0) /
@@ -844,6 +898,10 @@ std::optional<SpikeOptions> parseOptions(int argc, char** argv, int& exitCode) {
         .flag("fake-exclusive", "fake: exclusive fullscreen in another display mode")
         .flag("fake-steal-focus", "fake: forces itself into the foreground")
         .flag("fake-input", "fake: a key tap into its window before it closes (the foreground lock holds)")
+        .option("fake-foreground-window", "ms",
+                "fake: leaves another application's window in the foreground for this long when it exits", "0")
+        .flag("fake-lock-foreground", "fake: that window also calls LockSetForegroundWindow")
+        .flag("fake-hung-foreground", "fake: that window stops responding (the fake exits once Windows sees it hung)")
         .option("retroarch", "file", "retroarch: retroarch.exe")
         .option("core", "file", "retroarch: the libretro core")
         .option("rom", "file", "retroarch: the game, only read")
@@ -854,6 +912,7 @@ std::optional<SpikeOptions> parseOptions(int argc, char** argv, int& exitCode) {
         .option("warmup-ms", "ms", "Rendering before the first launch", "1500")
         .option("timeout-s", "seconds", "The harness ends a target still running after this", "60")
         .option("window-timeout-ms", "ms", "The session's window timeout (StillRunning)", "30000")
+        .option("source-revision", "text", "What the build was made from, recorded in the report (measure.ps1)")
         .flag("windowed", "A 1280x720 window instead of borderless fullscreen");
     const auto parsed = parser.parse(arguments);
     if (!parsed) {
@@ -910,9 +969,10 @@ std::optional<SpikeOptions> parseOptions(int argc, char** argv, int& exitCode) {
     const auto warm = integer("warmup-ms", 1500, 0, 600000);
     const auto timeout = integer("timeout-s", 60, 1, 3600);
     const auto windowTimeout = integer("window-timeout-ms", 30000, 0, 3600000);
+    const auto foregroundWindow = integer("fake-foreground-window", 0, 0, 600000);
     const auto exitCodeValue = parsed->intValue("fake-exit-code", 0);
     if (!repeat || !frames || !maxFrames || !targetRun || !settle || !warm || !timeout || !windowTimeout ||
-        !exitCodeValue) {
+        !foregroundWindow || !exitCodeValue) {
         return fail("a numeric option is out of range");
     }
     options.repeat = *repeat;
@@ -922,6 +982,10 @@ std::optional<SpikeOptions> parseOptions(int argc, char** argv, int& exitCode) {
     options.fake.exclusive = parsed->has("fake-exclusive");
     options.fake.stealFocus = parsed->has("fake-steal-focus");
     options.fake.inputAtEnd = parsed->has("fake-input");
+    options.fake.foregroundWindowMs = *foregroundWindow;
+    options.fake.lockForeground = parsed->has("fake-lock-foreground");
+    options.fake.hungForeground = parsed->has("fake-hung-foreground");
+    options.sourceRevision = parsed->value("source-revision").value_or("");
     options.maxFrames = *maxFrames;
     options.targetRun = std::chrono::milliseconds(*targetRun);
     options.settle = std::chrono::milliseconds(*settle);

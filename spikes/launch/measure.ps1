@@ -6,8 +6,10 @@
     Each session is one spike_launch run (its own window, warm-up and --repeat launches) writing its JSON report to
     <OutDir>/<Name>-<session>.json. The CPU load of the whole machine (and the GPU's utilization, when nvidia-smi is
     available) is sampled once per second during the sessions, since other builds or GPU work may run in parallel,
-    and written to <OutDir>/<Name>-load.json. Run from the repository root, with nothing else in the foreground that
-    could take it during the launches. -SpikeArgs go to spike_launch (target, strategy, policy, repeat, ...).
+    and written to <OutDir>/<Name>-load.json. Every report records the build (--source-revision: the git commit, and
+    whether tracked files differed from it, with a hash of that difference). Run from the repository root, with nothing
+    else in the foreground that could take it during the launches. -SpikeArgs go to spike_launch (target, strategy,
+    policy, repeat, ...).
 
 .EXAMPLE
     ./spikes/launch/measure.ps1 -Name fake-keep -Sessions 3 -SpikeArgs '--target','fake','--policy','keep','--repeat','5','--fake-input'
@@ -25,6 +27,18 @@ $spike = Join-Path $root "build/$Preset/bin/spike_launch.exe"
 if (-not (Test-Path $spike)) { throw "spike_launch.exe not found: build the $Preset preset first" }
 $out = Join-Path $root $OutDir
 New-Item -ItemType Directory -Force $out | Out-Null
+
+# The build's source: the commit, plus a hash of the uncommitted changes to tracked files when there are any.
+$revision = (& git -C $root rev-parse HEAD 2>$null | Select-Object -First 1)
+if (-not $revision) { $revision = 'unknown' }
+$changes = (& git -C $root diff HEAD 2>$null | Out-String)
+if ($changes.Trim()) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $digest = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($changes)) | ForEach-Object { $_.ToString('x2') })
+    $revision += " with uncommitted changes (git diff HEAD sha256 $($digest.Substring(0, 16)))"
+}
+$built = (Get-Item $spike).LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+Write-Host "Source: $revision; spike_launch.exe built $built"
 
 # Load sampler: Win32_PerfFormattedData (language-neutral, unlike Get-Counter's localized counter paths) and nvidia-smi.
 $loadFile = Join-Path $out "$Name-load.json"
@@ -50,7 +64,7 @@ try {
         $report = Join-Path $out "$Name-$session.json"
         $data = Join-Path $root "build/spike-launch/data/$Name-$session"
         Write-Host "Session $session of ${Sessions}: $Name"
-        & $spike @SpikeArgs --data-dir $data --report $report | Out-Null
+        & $spike @SpikeArgs --data-dir $data --report $report --source-revision $revision | Out-Null
         $exitCodes += $LASTEXITCODE
         Write-Host "  exit code $LASTEXITCODE, report $report"
     }

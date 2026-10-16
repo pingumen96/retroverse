@@ -57,8 +57,9 @@ struct LaunchRequest {
     /// Empty: output not captured. Otherwise the program's standard output and error are appended to this file (its
     /// directory is created when missing).
     std::filesystem::path outputLog;
-    /// Console programs run without a console window (CREATE_NO_WINDOW, what ES-DE's %HIDEWINDOW% does); no effect on
-    /// windowed programs.
+    /// A console program always gets a console of its own, never Retroverse's (whose closing would end it): with a
+    /// window, as when ES-DE starts it, or without one when true (CREATE_NO_WINDOW, what ES-DE's %HIDEWINDOW% does).
+    /// No effect on windowed (GUI) programs.
     bool hideConsoleWindow = false;
     /// Names the launch in logs and reports ("Mole Mania with RetroArch (gambatte)").
     std::string label;

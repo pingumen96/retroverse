@@ -63,7 +63,11 @@ struct LaunchOutcome {
     ExitKind exitKind = ExitKind::Success;
     /// One sentence for the user and the log.
     std::string message;
-    /// A clean exit within the startup grace: a launcher stub, or a wrapper waited for as a direct process.
+    /// A clean exit of the started process within the startup grace while its tree was not waited for (DirectProcess,
+    /// UserConfirmReturn): a launcher stub, a wrapper waited for as a direct process, or an emulator that gave up at
+    /// once without an error code (a missing BIOS shown in its own dialog). Not a failure to start, since the emulator
+    /// may still run: the product tells the user that the game ended right away (ADR-0006). Never set for ProcessTree,
+    /// whose end is the whole tree's.
     bool quickExit = false;
     /// Ended by confirmReturn().
     bool confirmedByUser = false;
@@ -78,7 +82,9 @@ struct LaunchOutcome {
 /// Time points of a session (LaunchClock), present once reached.
 struct SessionTimes {
     std::optional<LaunchClock::time_point> begun;            ///< start() was called
-    std::optional<LaunchClock::time_point> started;          ///< the process was created
+    std::optional<LaunchClock::time_point> started;          ///< the process started running (IRunningProcess::
+                                                             ///< startedAt: after the window's hand-over); the
+                                                             ///< startup grace and the durations count from it
     std::optional<LaunchClock::time_point> firstWindow;      ///< the tree first showed a window
     std::optional<LaunchClock::time_point> mainExited;       ///< the started process exited (its exit time)
     std::optional<LaunchClock::time_point> exited;           ///< the authoritative exit (its exit time)
@@ -87,9 +93,19 @@ struct SessionTimes {
     std::optional<LaunchClock::time_point> ended;            ///< the final state was reached
 };
 
+/// A process of the tree other than the started one, known to run (its exit has not been observed).
+struct TreeProcess {
+    std::uint32_t processId = 0;
+    /// The executable's file name; empty when the runner could not verify that the process is in the tree.
+    std::string image;
+    /// When the runner noticed it (the ChildStarted event's observedAt).
+    LaunchClock::time_point seenAt{};
+};
+
 /// One launch, from validation to the emulator's end, driven by the observations of an IProcessRunner. Main thread
 /// only; never terminates a process. Typical use: start(), then poll() every frame (or whenever the runner's wake
-/// callback fires) until finished(); confirmReturn() when the user says they are back.
+/// callback fires) until finished(); confirmReturn() when the user says they are back. Once the session is final it
+/// stops following the processes (IRunningProcess::stopWatching): whatever still runs is left alone.
 ///
 /// The authoritative end depends on the effective strategy (effectiveStrategy(): ProcessTree without a followed tree
 /// becomes UserConfirmReturn):
@@ -97,9 +113,11 @@ struct SessionTimes {
 ///  - ProcessTree: the tree's end (TreeEmpty); a crash of any of its processes makes the session Crashed;
 ///  - UserConfirmReturn: confirmReturn(); a crash, a loader error or an unclean exit within the startup grace of the
 ///    started process still end the session at once.
-/// Classification of the authoritative exit (classifyExitCode): a crash -> Crashed; a loader error -> FailedToStart; an
-/// unclean exit within LaunchTimeouts::startupGrace -> FailedToStart (EarlyExit); anything else -> Returned, with
-/// quickExit set for a clean exit within the grace.
+/// Classification of the authoritative exit (classifyExitCode), times counted from the moment the process started
+/// running (SessionTimes::started): a crash -> Crashed; a loader error -> FailedToStart; an unclean exit within
+/// LaunchTimeouts::startupGrace -> FailedToStart (EarlyExit); anything else -> Returned. A clean exit within the grace
+/// is Returned too, not a failure to start (deliberately, see LaunchOutcome::quickExit): with quickExit set unless the
+/// whole tree was waited for (ProcessTree).
 class LaunchSession {
 public:
     LaunchSession(LaunchRequest request, IProcessRunner& runner);
@@ -110,8 +128,10 @@ public:
     /// Stops following the process (it keeps running).
     ~LaunchSession();
 
-    /// Idle -> Validating -> Starting -> Running, or FailedToStart (InvalidRequest, StartFailed). `callbacks` go to the
-    /// runner (IProcessRunner::start); beforeResume is not called when nothing is started. Ignored unless Idle.
+    /// Idle -> Validating -> Starting -> Running, or FailedToStart (InvalidRequest, StartFailed; also when the runner
+    /// throws). `callbacks` go to the runner (IProcessRunner::start); beforeResume is not called when nothing is
+    /// started. `now` is SessionTimes::begun; SessionTimes::started is the runner's IRunningProcess::startedAt().
+    /// Ignored unless Idle.
     void start(LaunchClock::time_point now, StartCallbacks callbacks = {});
     /// Applies the events the runner observed since the last call, then the timeouts at `now`.
     void poll(LaunchClock::time_point now);
@@ -139,6 +159,9 @@ public:
     [[nodiscard]] std::uint32_t processId() const noexcept;
     /// Processes of the tree known to run (the started one included until it exits).
     [[nodiscard]] std::size_t liveProcessCount() const noexcept;
+    /// The processes of the tree other than the started one known to run, in the order they were noticed (cleared
+    /// when the tree is empty). Not updated once the session is final.
+    [[nodiscard]] const std::vector<TreeProcess>& liveChildren() const noexcept { return m_liveChildren; }
     /// Every event applied, oldest first (the first kMaxHistory).
     [[nodiscard]] const std::vector<ProcessEvent>& history() const noexcept { return m_history; }
 
@@ -176,7 +199,7 @@ private:
     std::optional<Exit> m_mainExit;
     std::optional<Exit> m_lastExit;  ///< the latest exit in the tree (ProcessTree)
     std::optional<Exit> m_treeCrash; ///< the first crash in the tree (ProcessTree)
-    std::vector<std::uint32_t> m_liveChildren;
+    std::vector<TreeProcess> m_liveChildren;
     bool m_treeEmpty = false;
     bool m_windowVisible = false;
     LaunchClock::time_point m_windowClockStart{};

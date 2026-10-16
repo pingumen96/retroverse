@@ -47,7 +47,8 @@ struct ReturnTimes {
     std::optional<double> restored;   ///< (a) the window is no longer minimized
     std::optional<double> foreground; ///< (b) the window is the foreground window again
     std::optional<double> fullscreen; ///< (c) borderless fullscreen over its monitor again
-    std::optional<double> firstFrame; ///< (d) the first frame presented after the return
+    std::optional<double> firstFrame; ///< (d) the first frame submitted after the return (SwapBuffers returned; with
+                                      ///< vsync it reaches the screen later, which steady60 includes)
     std::optional<double> steady60;   ///< (e) frame pacing back at 60 FPS (steadyFrom)
     std::optional<double> input;      ///< (f) a gamepad press injected after the return reached the input collector
 

@@ -4,6 +4,7 @@
 // load, ending a target that outlived the run's limit, closing the Notepad window it opened. The product never ends
 // or closes an emulator: these helpers exist only in the spike. Windows-only.
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -29,8 +30,11 @@ private:
 };
 
 /// Ends a process the spike started (TerminateProcess with `exitCode`) and waits for it: the harness's clean-up of a
-/// target past the run's time limit, never something the product does. True when it is gone.
-bool terminateProcess(std::uint32_t processId, std::uint32_t exitCode);
+/// target past the run's time limit, never something the product does. Only when the id still names that process:
+/// it runs, its executable's file name is `expectedImage` (case-insensitive) and it was created no later than
+/// `createdBy` (once a process has exited its id can be given to any new process). True when it was ended.
+bool terminateProcessIf(std::uint32_t processId, std::string_view expectedImage,
+                        std::chrono::steady_clock::time_point createdBy, std::uint32_t exitCode);
 
 /// True when a process whose executable file name is `imageName` (case-insensitive, "notepad.exe") runs.
 [[nodiscard]] bool isProcessRunning(std::string_view imageName);

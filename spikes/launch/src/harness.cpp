@@ -117,15 +117,46 @@ std::uint32_t millisecondsSinceLastInput() {
     return GetTickCount() - info.dwTime;
 }
 
-bool terminateProcess(std::uint32_t processId, std::uint32_t exitCode) {
-    HANDLE process = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, processId);
+bool terminateProcessIf(std::uint32_t processId, std::string_view expectedImage,
+                        std::chrono::steady_clock::time_point createdBy, std::uint32_t exitCode) {
+    HANDLE process =
+        OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
     if (process == nullptr) {
         return false;
     }
-    TerminateProcess(process, exitCode);
-    const bool gone = WaitForSingleObject(process, 10000) == WAIT_OBJECT_0;
+    bool same = WaitForSingleObject(process, 0) == WAIT_TIMEOUT; // still running
+    if (same) {
+        std::array<wchar_t, 1024> buffer{};
+        DWORD size = static_cast<DWORD>(buffer.size());
+        std::string image;
+        if (QueryFullProcessImageNameW(process, 0, buffer.data(), &size)) {
+            const std::wstring_view path(buffer.data(), size);
+            const std::size_t slash = path.find_last_of(L"\\/");
+            image = narrow(slash == std::wstring_view::npos ? path : path.substr(slash + 1));
+        }
+        same = core::equalsIgnoreCaseAscii(image, expectedImage);
+    }
+    FILETIME creation{};
+    FILETIME exited{};
+    FILETIME kernel{};
+    FILETIME user{};
+    if (same && GetProcessTimes(process, &creation, &exited, &kernel, &user)) {
+        // Its creation time on the steady clock: now, minus how long ago it was created.
+        FILETIME now{};
+        GetSystemTimePreciseAsFileTime(&now);
+        const std::uint64_t ago = ticks(now) > ticks(creation) ? ticks(now) - ticks(creation) : 0;
+        const auto createdAt = std::chrono::steady_clock::now() -
+                               std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                   std::chrono::nanoseconds(static_cast<std::int64_t>(ago * 100u)));
+        same = createdAt <= createdBy + std::chrono::milliseconds(1); // the clocks' conversion error
+    }
+    bool ended = false;
+    if (same) {
+        TerminateProcess(process, exitCode);
+        ended = WaitForSingleObject(process, 10000) == WAIT_OBJECT_0;
+    }
     CloseHandle(process);
-    return gone;
+    return ended;
 }
 
 std::string processImageName(std::uint32_t processId) {

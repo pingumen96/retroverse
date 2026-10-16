@@ -28,6 +28,10 @@ struct FakeScenario {
     bool stealFocus = false;   ///< forces itself into the foreground on its first frame
     bool inputAtEnd = false;   ///< a key tap into its own window before it closes: the player's last input,
                                ///< which keeps Windows' foreground lock active when it exits
+    int foregroundWindowMs = 0; ///< > 0: leaves another application's window in the foreground for this long when
+                                ///< it exits (the foreground remedies at the return)
+    bool lockForeground = false; ///< that window also calls LockSetForegroundWindow
+    bool hungForeground = false; ///< that window stops responding (the emulator exits once Windows sees it hung)
     bool wrapper = false;      ///< starts a copy of itself and exits at once (ProcessTree waiting)
     std::string log;           ///< where it writes what it saw (JSON), empty for none
     std::string color = "7A2E8C";

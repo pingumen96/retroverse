@@ -17,18 +17,19 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 constexpr std::size_t kMaxForegroundChanges = 64;
-/// The remedies update() tries after restore()'s plain raise, in order.
-constexpr std::array kRemedies{ForegroundRemedy::AttachThreadInput, ForegroundRemedy::AltKey,
-                               ForegroundRemedy::Flash};
+/// The remedies update() tries after restore()'s plain raise, in order. No injected key press (the Alt key trick): in
+/// the launch spike it never helped where AttachThreadInput did not (a hung foreground window), and a key it injects
+/// when the raise still fails reaches the foreground application (Alt opens a classic menu bar).
+constexpr std::array kRemedies{ForegroundRemedy::AttachThreadInput, ForegroundRemedy::Flash};
 
 /// The hand-over whose hook is installed (WinEvent callbacks carry no context; they run on the hooking thread).
 thread_local WindowHandover* t_hookOwner = nullptr;
 
 void CALLBACK onForegroundChanged(HWINEVENTHOOK /*hook*/, DWORD /*event*/, HWND window, LONG objectId, LONG /*child*/,
-                                  DWORD /*thread*/, DWORD /*time*/) {
+                                  DWORD /*thread*/, DWORD time) {
     if (t_hookOwner != nullptr && objectId == OBJID_WINDOW) {
         try {
-            t_hookOwner->recordForegroundChange(window);
+            t_hookOwner->recordForegroundChange(window, time);
         } catch (...) {
             // Called from the system: nothing may escape.
         }
@@ -75,25 +76,29 @@ void raiseAttached(HWND window) {
     }
 }
 
-/// SetForegroundWindow between an injected Alt key press and release: Windows lets the target of a keyboard menu
-/// interaction take the foreground.
-void raiseWithAltKey(HWND window) {
-    INPUT press{};
-    press.type = INPUT_KEYBOARD;
-    press.ki.wVk = VK_MENU;
-    INPUT release = press;
-    release.ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(1, &press, sizeof(INPUT));
-    SetForegroundWindow(window);
-    SendInput(1, &release, sizeof(INPUT));
-}
-
 void flash(HWND window) {
     FLASHWINFO info{};
     info.cbSize = sizeof(info);
     info.hwnd = window;
     info.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG; // until the window comes to the foreground
     FlashWindowEx(&info);
+}
+
+/// A foreground change to `hwnd`, seen now.
+ForegroundChange describeForeground(void* hwnd, void* ours) {
+    ForegroundChange change;
+    change.at = Clock::now();
+    change.eventAt = change.at;
+    DWORD processId = 0;
+    if (hwnd != nullptr) {
+        GetWindowThreadProcessId(static_cast<HWND>(hwnd), &processId);
+    }
+    change.processId = processId;
+    change.ours = hwnd != nullptr && hwnd == ours;
+    change.image = change.ours ? std::string("(this window)")
+                               : (hwnd == nullptr ? std::string("(no foreground window)") : imageName(processId));
+    change.confirmed = GetForegroundWindow() == static_cast<HWND>(hwnd);
+    return change;
 }
 
 } // namespace
@@ -124,8 +129,6 @@ std::string_view toString(ForegroundRemedy remedy) noexcept {
         return "raise";
     case ForegroundRemedy::AttachThreadInput:
         return "attach-thread-input";
-    case ForegroundRemedy::AltKey:
-        return "alt-key";
     case ForegroundRemedy::Flash:
         return "flash";
     }
@@ -210,23 +213,22 @@ void WindowHandover::removeHook() noexcept {
     }
 }
 
-void WindowHandover::recordForegroundChange(void* hwnd) {
+void WindowHandover::recordForegroundChange(void* hwnd, std::uint32_t eventTimeMs) {
     if (m_report.foregroundChanges.size() >= kMaxForegroundChanges) {
         return;
     }
-    ForegroundChange change;
-    change.at = Clock::now();
-    DWORD processId = 0;
-    GetWindowThreadProcessId(static_cast<HWND>(hwnd), &processId);
-    change.processId = processId;
-    change.ours = hwnd == m_hwnd;
-    change.image = change.ours ? std::string("(this window)") : imageName(processId);
+    ForegroundChange change = describeForeground(hwnd, m_hwnd);
+    // The event's time stamp, on GetTickCount's clock (the unsigned difference survives its wrap-around).
+    const DWORD age = GetTickCount() - static_cast<DWORD>(eventTimeMs);
+    change.eventAt = age < 60000 ? change.at - std::chrono::milliseconds(age) : change.at;
     m_report.foregroundChanges.push_back(std::move(change));
 }
 
 void WindowHandover::prepare() {
     m_report = HandoverReport{};
     m_report.foregroundChanges.reserve(kMaxForegroundChanges);
+    m_report.polledChanges.reserve(kMaxForegroundChanges);
+    m_polledForeground = nullptr;
     m_restoring = false;
     m_nextRemedy = 0;
     m_report.before = captureWindowState(m_window);
@@ -236,6 +238,10 @@ void WindowHandover::prepare() {
     if (!m_report.before.foreground) {
         spdlog::warn("Window hand-over: Retroverse is not in the foreground at the launch; the emulator may not be "
                      "allowed to take it");
+    }
+    if (m_report.before.fullscreen && !m_report.before.desktopFullscreen) {
+        spdlog::warn("Window hand-over: the window is in exclusive fullscreen; it will come back in borderless "
+                     "fullscreen");
     }
 }
 
@@ -344,8 +350,15 @@ void WindowHandover::observe() {
             }
         }
     }
-    if (!m_report.foreground && hwnd != nullptr && GetForegroundWindow() == hwnd) {
+    const HWND foreground = GetForegroundWindow();
+    if (!m_report.foreground && hwnd != nullptr && foreground == hwnd) {
         m_report.foreground = now;
+    }
+    if (foreground != static_cast<HWND>(m_polledForeground) || m_report.polledChanges.empty()) {
+        m_polledForeground = foreground;
+        if (m_report.polledChanges.size() < kMaxForegroundChanges) {
+            m_report.polledChanges.push_back(describeForeground(foreground, m_hwnd));
+        }
     }
     m_report.afterReturn = state;
 }
@@ -358,9 +371,6 @@ void WindowHandover::attempt(ForegroundRemedy remedy) {
         break;
     case ForegroundRemedy::AttachThreadInput:
         raiseAttached(hwnd);
-        break;
-    case ForegroundRemedy::AltKey:
-        raiseWithAltKey(hwnd);
         break;
     case ForegroundRemedy::Flash:
         flash(hwnd);

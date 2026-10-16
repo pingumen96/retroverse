@@ -45,10 +45,11 @@ struct Win32StartInfo {
 ///  - CreateProcessW with lpApplicationName = the executable and the command line of launcher::commandLineOf()
 ///    (arguments quoted as the inverse of CommandLineToArgvW), the request's working directory and, when it has
 ///    environment overrides, a Unicode environment block (launcher::mergeEnvironment of Retroverse's own);
-///  - flags CREATE_SUSPENDED (nothing runs before the process is in its job), CREATE_UNICODE_ENVIRONMENT,
-///    CREATE_DEFAULT_ERROR_MODE (the program gets the default error mode, not Retroverse's),
-///    CREATE_NEW_PROCESS_GROUP (a Ctrl+C in Retroverse's console never reaches it) and CREATE_NO_WINDOW for
-///    LaunchRequest::hideConsoleWindow;
+///  - flags (processCreationFlags()) CREATE_SUSPENDED (nothing runs before the process is in its job),
+///    CREATE_UNICODE_ENVIRONMENT, CREATE_DEFAULT_ERROR_MODE (the program gets the default error mode, not
+///    Retroverse's), CREATE_NEW_PROCESS_GROUP, and a console of its own for a console program: CREATE_NEW_CONSOLE, or
+///    CREATE_NO_WINDOW for LaunchRequest::hideConsoleWindow (never Retroverse's console, whose closing or Ctrl+Break
+///    would end it; ignored for GUI programs);
 ///  - standard output and error appended to LaunchRequest::outputLog when set, standard input from NUL; only those two
 ///    handles are inherited (PROC_THREAD_ATTRIBUTE_HANDLE_LIST), nothing else of Retroverse's;
 ///  - the suspended process is assigned to a job object WITHOUT JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (closing Retroverse,
@@ -58,11 +59,12 @@ struct Win32StartInfo {
 ///    be set up (nested jobs refused, ...) the process runs without one: followsTree() is false and the session falls
 ///    back to the user's confirmation for ProcessTree (launcher::effectiveStrategy);
 ///  - AllowSetForegroundWindow for the process (Win32ProcessRunnerOptions::allowSetForeground), the caller's
-///    StartCallbacks::beforeResume, then ResumeThread.
+///    StartCallbacks::beforeResume, then ResumeThread (IRunningProcess::startedAt). Until then any failure, an
+///    exception from beforeResume included, ends the suspended process, which never ran; start() never throws.
 /// A watcher thread per process blocks on the process handle and the completion port (no busy loop) and queues
-/// launcher::ProcessEvent values for the main thread (IRunningProcess::takeEvents), calling the wake callback after
-/// each batch. Exit times are the system's (GetProcessTimes), converted to launcher::LaunchClock. Nothing is ever
-/// terminated: the running process object only stops watching when destroyed.
+/// launcher::ProcessEvent values for the main thread (IRunningProcess::takeEvents), calling the wake callback once per
+/// event, until IRunningProcess::stopWatching() or the destruction of the running process object. Exit times are the
+/// system's (GetProcessTimes), converted to launcher::LaunchClock. A program that ran is never terminated.
 class Win32ProcessRunner final : public launcher::IProcessRunner {
 public:
     explicit Win32ProcessRunner(Win32ProcessRunnerOptions options = {}) noexcept : m_options(options) {}
@@ -74,9 +76,16 @@ public:
     [[nodiscard]] const Win32StartInfo& lastStart() const noexcept { return m_lastStart; }
 
 private:
+    /// start() without its exception barrier.
+    [[nodiscard]] Expected<std::unique_ptr<launcher::IRunningProcess>>
+    startProcess(const launcher::LaunchRequest& request, launcher::StartCallbacks callbacks);
+
     Win32ProcessRunnerOptions m_options;
     Win32StartInfo m_lastStart;
 };
+
+/// The CreateProcessW creation flags of a request (see Win32ProcessRunner).
+[[nodiscard]] std::uint32_t processCreationFlags(const launcher::LaunchRequest& request) noexcept;
 
 /// The environment of the current process as UTF-8 variables (GetEnvironmentStringsW; per-drive entries such as "=C:"
 /// included). Unpaired UTF-16 surrogates become U+FFFD.

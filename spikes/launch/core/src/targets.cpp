@@ -59,6 +59,15 @@ std::vector<std::string> fakeArguments(const FakeScenario& scenario) {
     if (scenario.inputAtEnd) {
         arguments.emplace_back("--input-at-end");
     }
+    if (scenario.foregroundWindowMs > 0) {
+        arguments.insert(arguments.end(), {"--leave-foreground-window", std::to_string(scenario.foregroundWindowMs)});
+        if (scenario.lockForeground) {
+            arguments.emplace_back("--lock-foreground");
+        }
+        if (scenario.hungForeground) {
+            arguments.emplace_back("--hung-foreground");
+        }
+    }
     if (!scenario.log.empty()) {
         arguments.insert(arguments.end(), {"--log", scenario.log});
     }

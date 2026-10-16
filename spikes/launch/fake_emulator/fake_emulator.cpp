@@ -56,11 +56,19 @@ struct Options {
     int sleepMs = 0;
     bool crash = false;
     bool hang = false;
+    int hangLimitMs = 0;
     bool spawnChildAndExit = false;
     bool childBreakaway = false;
+    int spawnChildren = 0;
+    int leaveForegroundWindowMs = 0;
+    int foregroundWindowMs = 0;
+    bool lockForeground = false;
+    bool hungForeground = false;
+    std::string readyEvent;
     std::string printArgs;
     std::string printEnv;
     std::string printCwd;
+    std::string printConsole;
     std::string stdoutText;
     std::string log;
     std::uint32_t color = 0x7A2E8C;
@@ -75,14 +83,29 @@ constexpr std::string_view kUsage =
     "  --steal-focus            with --frames: force the window into the foreground on its first frame\n"
     "  --input-at-end           with --frames: a Shift key tap into its window before it closes (the\n"
     "                           player's last key press: the foreground lock is active when it exits)\n"
+    "  --leave-foreground-window MS\n"
+    "                           with --frames: before exiting, start a copy of this program that shows a small\n"
+    "                           window holding the foreground for MS ms (another application in the foreground\n"
+    "                           when the emulator is gone), and wait until it has the foreground\n"
+    "  --lock-foreground        with --leave-foreground-window: that window also calls LockSetForegroundWindow\n"
+    "  --hung-foreground        with --leave-foreground-window: that window stops responding once it has the\n"
+    "                           foreground, and this program exits 5.5 s later, once Windows considers it hung\n"
+    "  --foreground-window MS   (the copy) a small window that takes the foreground and keeps it for MS ms\n"
+    "  --ready-event NAME       (the copy) the event it sets once its window has the foreground\n"
     "  --sleep-ms N             wait N ms (without a window) before exiting\n"
-    "  --crash                  end with an access violation (0xC0000005) after the frames and the sleep\n"
+    "  --crash                  end with an access violation (0xC0000005) after the frames and the sleep; Windows'\n"
+    "                           error dialogs and error reporting are turned off for it\n"
     "  --hang                   never exit (the test harness ends the process)\n"
+    "  --hang-limit-ms N        with --hang: exit after N ms anyway (with --exit-code), so that a test harness that\n"
+    "                           is killed before its clean-up leaves nothing running for long\n"
+    "  --spawn-children N       first start N copies of this program without options (each exits at once), at\n"
+    "                           most 16 at a time, and wait for them\n"
     "  --spawn-child-and-exit   start a copy of this program with the other options and exit at once\n"
     "  --child-breakaway        with --spawn-child-and-exit: the copy leaves the job (CREATE_BREAKAWAY_FROM_JOB)\n"
     "  --print-args FILE        write the payload, argv and the raw command line to FILE (JSON)\n"
     "  --print-env FILE         write the RV_FAKE_* environment variables to FILE (JSON)\n"
     "  --print-cwd FILE         write the current directory to FILE (JSON)\n"
+    "  --print-console FILE     write the processes attached to its console to FILE (JSON)\n"
     "  --stdout TEXT            print TEXT on standard output and standard error\n"
     "  --log FILE               write what the run saw (foreground, display modes, times) to FILE (JSON)\n"
     "  --color RRGGBB           window color\n";
@@ -161,6 +184,38 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
                 return false;
             }
             options.sleepMs = static_cast<int>(std::min<std::uint64_t>(n, 600000));
+        } else if (arg == "--hang-limit-ms") {
+            if (!number(n)) {
+                return false;
+            }
+            options.hangLimitMs = static_cast<int>(std::min<std::uint64_t>(n, 3600000));
+        } else if (arg == "--spawn-children") {
+            if (!number(n)) {
+                return false;
+            }
+            options.spawnChildren = static_cast<int>(std::min<std::uint64_t>(n, 4096));
+        } else if (arg == "--leave-foreground-window") {
+            if (!number(n)) {
+                return false;
+            }
+            options.leaveForegroundWindowMs = static_cast<int>(std::min<std::uint64_t>(n, 600000));
+        } else if (arg == "--foreground-window") {
+            if (!number(n)) {
+                return false;
+            }
+            options.foregroundWindowMs = static_cast<int>(std::min<std::uint64_t>(n, 600000));
+        } else if (arg == "--lock-foreground") {
+            options.lockForeground = true;
+        } else if (arg == "--hung-foreground") {
+            options.hungForeground = true;
+        } else if (arg == "--ready-event") {
+            if (!value(options.readyEvent)) {
+                return false;
+            }
+        } else if (arg == "--print-console") {
+            if (!value(options.printConsole)) {
+                return false;
+            }
         } else if (arg == "--color") {
             std::string text;
             if (!value(text)) {
@@ -246,13 +301,13 @@ nlohmann::json describeMode(const SDL_DisplayMode* mode) {
                           {"pixelDensity", mode->pixel_density}};
 }
 
-/// Starts a copy of this program with `args` (its own options minus --spawn-child-and-exit) and returns at once.
-bool spawnChild(const std::vector<std::string>& args, bool breakaway) {
+/// Starts a copy of this program with `args`; its process handle (to be closed by the caller), or nullptr.
+HANDLE startCopy(const std::vector<std::string>& args, DWORD flags, DWORD* processId = nullptr) {
     const std::filesystem::path self = rv::core::executablePath();
     const auto commandLine = rv::launcher::buildCommandLine(rv::core::pathToUtf8(self), args);
     if (!commandLine) {
         std::fprintf(stderr, "rv_fake_emulator: %s\n", commandLine.error().toString().c_str());
-        return false;
+        return nullptr;
     }
     const int units = MultiByteToWideChar(CP_UTF8, 0, commandLine->data(), static_cast<int>(commandLine->size()),
                                           nullptr, 0);
@@ -266,15 +321,186 @@ bool spawnChild(const std::vector<std::string>& args, bool breakaway) {
     startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     PROCESS_INFORMATION info{};
-    const DWORD flags = breakaway ? CREATE_BREAKAWAY_FROM_JOB : 0;
     if (!CreateProcessW(self.c_str(), wide.data(), nullptr, nullptr, TRUE, flags, nullptr, nullptr, &startup, &info)) {
         std::fprintf(stderr, "rv_fake_emulator: CreateProcessW failed with error %lu\n", GetLastError());
-        return false;
+        return nullptr;
     }
     CloseHandle(info.hThread);
-    CloseHandle(info.hProcess);
-    std::printf("rv_fake_emulator: started process %lu\n", info.dwProcessId);
+    if (processId != nullptr) {
+        *processId = info.dwProcessId;
+    }
+    return info.hProcess;
+}
+
+/// Starts a copy of this program with `args` (its own options minus --spawn-child-and-exit) and returns at once.
+bool spawnChild(const std::vector<std::string>& args, bool breakaway) {
+    DWORD processId = 0;
+    const HANDLE process = startCopy(args, breakaway ? CREATE_BREAKAWAY_FROM_JOB : 0, &processId);
+    if (process == nullptr) {
+        return false;
+    }
+    CloseHandle(process);
+    std::printf("rv_fake_emulator: started process %lu\n", processId);
     return true;
+}
+
+/// Starts `count` copies without options (each exits at once), at most 16 at a time, and waits for them all.
+bool spawnChildren(int count) {
+    std::vector<HANDLE> running;
+    bool ok = true;
+    const auto waitForAll = [&] {
+        if (!running.empty()) {
+            WaitForMultipleObjects(static_cast<DWORD>(running.size()), running.data(), TRUE, INFINITE);
+            for (const HANDLE process : running) {
+                CloseHandle(process);
+            }
+            running.clear();
+        }
+    };
+    for (int i = 0; i < count && ok; ++i) {
+        const HANDLE process = startCopy({}, 0);
+        ok = process != nullptr;
+        if (ok) {
+            running.push_back(process);
+        }
+        if (running.size() == 16) {
+            waitForAll();
+        }
+    }
+    waitForAll();
+    return ok;
+}
+
+/// The process owning the foreground window, 0 when there is none.
+DWORD foregroundProcess() {
+    DWORD processId = 0;
+    if (const HWND window = GetForegroundWindow(); window != nullptr) {
+        GetWindowThreadProcessId(window, &processId);
+    }
+    return processId;
+}
+
+/// Windows considers a window hung once its thread has not read its messages for this long (IsHungAppWindow).
+constexpr int kHungAfterMs = 5000;
+
+/// Starts the copy that holds the foreground after this process exits (--leave-foreground-window) and waits, at most
+/// 3 s, until its window has the foreground (its ready event); with --hung-foreground, also until Windows considers
+/// that window hung. Fills `log`.
+void leaveForegroundWindow(const Options& options, nlohmann::json& log) {
+    const std::string eventName =
+        "Local\\rv-fake-emulator-foreground-" + std::to_string(GetCurrentProcessId()) + "-" +
+        std::to_string(GetTickCount64());
+    const std::wstring wideName(eventName.begin(), eventName.end()); // ASCII
+    const HANDLE ready = CreateEventW(nullptr, TRUE, FALSE, wideName.c_str());
+    std::vector<std::string> args{"--foreground-window", std::to_string(options.leaveForegroundWindowMs),
+                                  "--ready-event", eventName};
+    if (options.lockForeground) {
+        args.emplace_back("--lock-foreground");
+    }
+    if (options.hungForeground) {
+        args.emplace_back("--hung-foreground");
+    }
+    if (!options.log.empty()) {
+        args.insert(args.end(), {"--log", options.log + ".helper.json"});
+    }
+    DWORD processId = 0;
+    const Clock::time_point start = Clock::now();
+    const HANDLE helper = ready != nullptr ? startCopy(args, 0, &processId) : nullptr;
+    if (helper == nullptr) {
+        log["foregroundHelper"] = {{"started", false}};
+        if (ready != nullptr) {
+            CloseHandle(ready);
+        }
+        return;
+    }
+    const std::array<HANDLE, 2> handles{ready, helper};
+    const bool isReady = WaitForMultipleObjects(static_cast<DWORD>(handles.size()), handles.data(), FALSE, 3000) ==
+                         WAIT_OBJECT_0;
+    const double readyMs = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    if (isReady && options.hungForeground) {
+        Sleep(kHungAfterMs + 500);
+    }
+    log["foregroundHelper"] = {{"started", true},
+                               {"processId", processId},
+                               {"ready", isReady},
+                               {"readyMs", readyMs},
+                               {"foregroundAtExit", foregroundProcess() == processId}};
+    CloseHandle(helper);
+    CloseHandle(ready);
+}
+
+/// The copy started by --leave-foreground-window: a small window that takes the foreground (its parent, the
+/// foreground process, started it), keeps it for `options.foregroundWindowMs` and sets the ready event once it has it
+/// (and has locked it, with --lock-foreground). With --hung-foreground it then stops reading its messages until its
+/// time is up. Fills `log`.
+void runForegroundWindow(const Options& options, nlohmann::json& log) {
+    const Clock::time_point start = Clock::now();
+    const auto sinceStart = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        log["error"] = std::string("SDL_Init failed: ") + SDL_GetError();
+        return;
+    }
+    SDL_SetHint(SDL_HINT_FORCE_RAISEWINDOW, "1");
+    SDL_Window* window = SDL_CreateWindow("Retroverse fake emulator: another application", 640, 360, 0);
+    SDL_Renderer* renderer = window != nullptr ? SDL_CreateRenderer(window, nullptr) : nullptr;
+    if (renderer == nullptr) {
+        log["error"] = std::string("no window: ") + SDL_GetError();
+        if (window != nullptr) {
+            SDL_DestroyWindow(window);
+        }
+        SDL_Quit();
+        return;
+    }
+    SDL_SetRenderVSync(renderer, 1);
+    const auto hwnd = static_cast<HWND>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    const std::wstring eventName(options.readyEvent.begin(), options.readyEvent.end()); // ASCII
+    const HANDLE ready = eventName.empty() ? nullptr : OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName.c_str());
+    SDL_RaiseWindow(window);
+    std::optional<double> foregroundAt;
+    std::optional<double> lostAt;
+    bool locked = false;
+    bool hung = false;
+    while (sinceStart() < options.foregroundWindowMs) {
+        if (hung) {
+            Sleep(10); // not reading its messages: Windows soon considers the window hung
+            continue;
+        }
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+        }
+        const bool foreground = hwnd != nullptr && GetForegroundWindow() == hwnd;
+        if (foreground && !foregroundAt) {
+            foregroundAt = sinceStart();
+            if (options.lockForeground) {
+                locked = LockSetForegroundWindow(LSFW_LOCK) != FALSE;
+            }
+            if (ready != nullptr) {
+                SetEvent(ready);
+            }
+            hung = options.hungForeground;
+        }
+        if (!foreground && foregroundAt && !lostAt) {
+            lostAt = sinceStart();
+        }
+        SDL_SetRenderDrawColor(renderer, 40, 90, 160, 255);
+        SDL_RenderClear(renderer);
+        SDL_RenderPresent(renderer);
+    }
+    log["foregroundWindow"] = {{"foregroundAtMs", foregroundAt ? nlohmann::json(*foregroundAt) : nlohmann::json()},
+                               {"lostAtMs", lostAt ? nlohmann::json(*lostAt) : nlohmann::json()},
+                               {"locked", locked},
+                               {"hung", hung},
+                               {"foregroundAtEnd", hwnd != nullptr && GetForegroundWindow() == hwnd}};
+    if (locked) {
+        LockSetForegroundWindow(LSFW_UNLOCK);
+    }
+    if (ready != nullptr) {
+        CloseHandle(ready);
+    }
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
 }
 
 [[noreturn]] void crashNow() {
@@ -285,7 +511,12 @@ bool spawnChild(const std::vector<std::string>& args, bool breakaway) {
     std::abort();
 }
 
-[[noreturn]] void hangForever() {
+/// Never returns, unless `limitMs` is positive: then it returns after that long.
+void hang(int limitMs) {
+    if (limitMs > 0) {
+        Sleep(static_cast<DWORD>(limitMs));
+        return;
+    }
     while (true) {
         Sleep(INFINITE);
     }
@@ -412,6 +643,9 @@ void runWindow(const Options& options, nlohmann::json& log) {
         }
         log["inputAtEnd"] = {{"sent", sent == tap.size()}, {"foreground", foreground}};
     }
+    if (options.leaveForegroundWindowMs > 0) {
+        leaveForegroundWindow(options, log);
+    }
     log["frames"] = frame;
     log["foreground"]["firstMs"] = firstForeground ? nlohmann::json(*firstForeground) : nlohmann::json(nullptr);
     log["foreground"]["samples"] = samples;
@@ -473,6 +707,14 @@ int main(int argc, char* argv[]) {
         writeJson(options.printCwd,
                   nlohmann::json{{"cwd", rv::core::pathToUtf8(std::filesystem::current_path(ec))}});
     }
+    if (!options.printConsole.empty()) {
+        std::array<DWORD, 64> processes{};
+        const DWORD count = GetConsoleProcessList(processes.data(), static_cast<DWORD>(processes.size()));
+        writeJson(options.printConsole,
+                  nlohmann::json{{"hasConsole", count > 0},
+                                 {"processes", std::vector<DWORD>(processes.begin(),
+                                                                  processes.begin() + std::min<DWORD>(count, 64))}});
+    }
     if (!options.stdoutText.empty()) {
         std::printf("%s\n", options.stdoutText.c_str());
         std::fprintf(stderr, "%s\n", options.stdoutText.c_str());
@@ -480,11 +722,21 @@ int main(int argc, char* argv[]) {
         std::fflush(stderr);
     }
 
+    if (options.foregroundWindowMs > 0) {
+        runForegroundWindow(options, log);
+        writeJson(options.log, log);
+        return 0;
+    }
+    if (options.spawnChildren > 0 && !spawnChildren(options.spawnChildren)) {
+        return 3;
+    }
+
     if (options.spawnChildAndExit) {
         std::vector<std::string> childArgs;
         bool removed = false;
         bool inPayload = false;
-        for (const std::string& arg : args) {
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            const std::string& arg = args[i];
             if (arg == "--") {
                 inPayload = true;
             }
@@ -493,6 +745,10 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             if (!inPayload && arg == "--child-breakaway") {
+                continue;
+            }
+            if (!inPayload && arg == "--spawn-children") {
+                ++i; // and its count: the wrapper started them
                 continue;
             }
             childArgs.push_back(arg);
@@ -516,7 +772,7 @@ int main(int argc, char* argv[]) {
         crashNow();
     }
     if (options.hang) {
-        hangForever();
+        hang(options.hangLimitMs);
     }
     return static_cast<int>(options.exitCode);
 }

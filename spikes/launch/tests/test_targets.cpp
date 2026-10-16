@@ -63,6 +63,19 @@ TEST_CASE("launch_spike/targets: the fake emulator's arguments", "[launch_spike]
                                             "--log",
                                             "C:\\data dir\\fake-1.json"};
     CHECK(fakeArguments(scenario) == expected);
+
+    FakeScenario other;
+    other.frames = 30;
+    other.color.clear();
+    other.lockForeground = true; // nothing without the window that would hold the foreground
+    CHECK(fakeArguments(other) == std::vector<std::string>{"--frames", "30"});
+    other.foregroundWindowMs = 2500;
+    CHECK(fakeArguments(other) ==
+          std::vector<std::string>{"--frames", "30", "--leave-foreground-window", "2500", "--lock-foreground"});
+    other.lockForeground = false;
+    other.hungForeground = true;
+    CHECK(fakeArguments(other) ==
+          std::vector<std::string>{"--frames", "30", "--leave-foreground-window", "2500", "--hung-foreground"});
 }
 
 TEST_CASE("launch_spike/targets: RetroArch writes nothing outside its scratch directory", "[launch_spike][targets]") {

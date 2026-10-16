@@ -56,12 +56,12 @@ struct WindowState {
 [[nodiscard]] void* nativeWindowHandle(SDL_Window* window) noexcept;
 
 /// Ways to bring a window to the foreground when Windows' foreground lock refuses the plain request, tried one at a
-/// time in this order.
+/// time in this order. (The Alt key trick, an injected key press around SetForegroundWindow, is deliberately not one:
+/// see ADR-0006.)
 enum class ForegroundRemedy : std::uint8_t {
     Raise,             ///< SDL_RaiseWindow: SetForegroundWindow
     AttachThreadInput, ///< SetForegroundWindow with this thread's input attached to the foreground window's thread
                        ///< (never to a hung thread, always detached afterwards)
-    AltKey,            ///< an Alt key press injected (SendInput) before SetForegroundWindow, released after
     Flash,             ///< the last resort, a notification: the taskbar button flashes until the user comes back
 };
 
@@ -74,13 +74,22 @@ struct ForegroundAttempt {
     bool foregroundAfter = false;
 };
 
-/// A change of the foreground window seen by the hand-over's event hook (EVENT_SYSTEM_FOREGROUND).
+/// A change of the foreground window: seen by the hand-over's event hook (EVENT_SYSTEM_FOREGROUND), or polled.
 struct ForegroundChange {
+    /// When it was seen: for the hook, when the event was delivered, which happens only while the thread pumps its
+    /// messages and can come late when the thread is busy (a display mode change); for a polled change, the poll.
     std::chrono::steady_clock::time_point at{};
+    /// When the system generated the hook's event, from its time stamp: coarse (GetTickCount's clock, 10-30 ms off),
+    /// for the order of late events only; `at` for a polled change.
+    std::chrono::steady_clock::time_point eventAt{};
     std::uint32_t processId = 0;
-    /// The executable file name of that process, read when the change happened.
+    /// The executable file name of that process, read when the change was seen.
     std::string image;
     bool ours = false; ///< the hand-over's window
+    /// The window was the foreground window when the change was seen (always, for a polled change). A hook event can
+    /// name a window that never was: a refused SetForegroundWindow activates its window in the background and still
+    /// reports it (its taskbar button flashes instead); a late event can also be overtaken by a later change.
+    bool confirmed = false;
 };
 
 /// What a hand-over did, with its time points (steady clock).
@@ -106,8 +115,12 @@ struct HandoverReport {
     /// The display's mode at restore() differs from the one at prepare() (an emulator's exclusive mode still set).
     bool displayModeChanged = false;
     std::vector<ForegroundAttempt> attempts;
-    /// Foreground changes from prepare() on (the emulator taking it, Windows or a remedy giving it back), at most 64.
+    /// Foreground changes from prepare() on (the emulator taking it, Windows or a remedy giving it back), as the hook
+    /// delivered them, at most 64.
     std::vector<ForegroundChange> foregroundChanges;
+    /// The foreground window as restore() and every update() found it (GetForegroundWindow), each time it changed:
+    /// what the window really had after the return, whatever the hook's delivery; at most 64.
+    std::vector<ForegroundChange> polledChanges;
     /// Every remedy failed: the taskbar button flashes and the user has to come back.
     bool userActionNeeded = false;
 };
@@ -115,7 +128,8 @@ struct HandoverReport {
 /// Hands Retroverse's window over to an emulator and takes it back (specification §11.4: "Minimize/Hide Retroverse",
 /// "Recover foreground/window/display state"). Main thread only; `window` must outlive the object. From prepare() on,
 /// an EVENT_SYSTEM_FOREGROUND hook records the foreground changes (delivered while the thread pumps its messages, as
-/// SDL does); at most one WindowHandover hooks at a time.
+/// SDL does); at most one WindowHandover hooks at a time. Retroverse's window is in borderless fullscreen (the desktop's
+/// display mode): that is what the return re-applies; a window in exclusive fullscreen would come back borderless.
 ///
 /// Order of a launch: prepare() before starting the process; handOver() once the process exists but before it runs
 /// (rv::launcher::StartCallbacks::beforeResume: Retroverse is still the foreground process when it allows the emulator
@@ -144,8 +158,8 @@ public:
     /// on (applying borderless fullscreen again, once, when the restored window does not cover it or came back on
     /// another monitor, which it is moved off) and in the foreground (whoever put it there, the user included);
     /// while it is not in the foreground, tries the next remedy once the previous one has had kRemedyDelay
-    /// (AttachThreadInput, then AltKey, then Flash, which stays until the user comes back). True once restored, in
-    /// fullscreen and in the foreground.
+    /// (AttachThreadInput, then Flash, which stays until the user comes back). True once restored, in fullscreen and
+    /// in the foreground.
     bool update();
     /// GetForegroundWindow() is this window.
     [[nodiscard]] bool isForeground() const noexcept;
@@ -155,8 +169,8 @@ public:
     /// The window's HWND.
     [[nodiscard]] void* nativeWindow() const noexcept { return m_hwnd; }
 
-    /// Called by the event hook.
-    void recordForegroundChange(void* hwnd);
+    /// Called by the event hook: `hwnd` took the foreground at `eventTimeMs` (GetTickCount's clock).
+    void recordForegroundChange(void* hwnd, std::uint32_t eventTimeMs);
 
 private:
     void observe();
@@ -169,6 +183,7 @@ private:
     HandoverPolicy m_policy = HandoverPolicy::Minimize;
     HandoverReport m_report;
     void* m_hook = nullptr;
+    void* m_polledForeground = nullptr; ///< the foreground window at the last observe()
     bool m_prepared = false;
     bool m_restoring = false;
     std::size_t m_nextRemedy = 0;

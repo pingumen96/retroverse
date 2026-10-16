@@ -7,6 +7,7 @@
 #include <cwchar>
 #include <exception>
 #include <filesystem>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <system_error>
@@ -33,12 +34,15 @@ using win32::UniqueHandle;
 /// Completion keys of the job's port: the job's notifications, and the packet that stops the watcher.
 constexpr ULONG_PTR kJobKey = 1;
 constexpr ULONG_PTR kStopKey = 2;
-/// Processes of a tree whose exit codes and image names are kept (the rest are still counted by the job).
+/// Running processes of a tree tracked at once for their exit codes and image names (an entry leaves at its process's
+/// exit; processes beyond it are still counted by the job).
 constexpr std::size_t kMaxTrackedProcesses = 256;
 /// Processes of a tree whose windows are looked for.
 constexpr std::size_t kMaxWindowProcesses = 64;
 /// How long an exiting process may take to be signaled after the job reported its exit.
 constexpr DWORD kExitSettleMilliseconds = 2000;
+/// How long start() waits for a process it ends before it ran (a suspended process ends at once).
+constexpr DWORD kNeverRunExitMilliseconds = 5000;
 
 /// LaunchClock time of a past system time (UTC FILETIME): now, minus how long ago it was.
 LaunchClock::time_point toLaunchClock(const FILETIME& systemTime) noexcept {
@@ -67,16 +71,37 @@ LaunchClock::time_point exitTimeOf(HANDLE process, LaunchClock::time_point fallb
     return std::min(toLaunchClock(exit), fallback);
 }
 
-/// File name of a process's executable, or empty.
-std::string imageName(HANDLE process) {
+/// Full path of a process's executable, or empty.
+std::wstring imagePath(HANDLE process) {
     std::array<wchar_t, 1024> buffer{};
     DWORD size = static_cast<DWORD>(buffer.size());
     if (!QueryFullProcessImageNameW(process, 0, buffer.data(), &size)) {
         return {};
     }
-    const std::wstring_view path(buffer.data(), size);
+    return std::wstring(buffer.data(), size);
+}
+
+/// The file name of a path, in UTF-8.
+std::string fileNameOf(std::wstring_view path) {
     const std::size_t slash = path.find_last_of(L"\\/");
     return win32::narrow(slash == std::wstring_view::npos ? path : path.substr(slash + 1));
+}
+
+/// True for the system's console host (System32\conhost.exe). A console program that gets a console of its own
+/// (CREATE_NEW_CONSOLE, CREATE_NO_WINDOW) starts one as its child, inside the job: it serves the console, lives as long
+/// as a program is attached to it (possibly one that left the job) and is no part of the emulator.
+bool isConsoleHost(const std::wstring& path) {
+    static const std::wstring consoleHost = [] {
+        std::array<wchar_t, MAX_PATH> directory{};
+        const UINT length = GetSystemDirectoryW(directory.data(), static_cast<UINT>(directory.size()));
+        if (length == 0 || length >= directory.size()) {
+            return std::wstring();
+        }
+        return std::wstring(directory.data(), length) + L"\\conhost.exe";
+    }();
+    return !consoleHost.empty() && !path.empty() &&
+           CompareStringOrdinal(path.c_str(), static_cast<int>(path.size()), consoleHost.c_str(),
+                                static_cast<int>(consoleHost.size()), TRUE) == CSTR_EQUAL;
 }
 
 struct WindowSearch {
@@ -117,13 +142,7 @@ public:
     Win32RunningProcess& operator=(const Win32RunningProcess&) = delete;
 
     ~Win32RunningProcess() override {
-        m_stopping.store(true);
-        if (m_stopEvent) {
-            SetEvent(m_stopEvent.get());
-        }
-        if (m_port) {
-            PostQueuedCompletionStatus(m_port.get(), 0, kStopKey, nullptr);
-        }
+        stopWatching();
         if (m_thread.joinable()) {
             m_thread.join();
         }
@@ -131,8 +150,11 @@ public:
     }
 
     [[nodiscard]] std::uint32_t processId() const noexcept override { return m_processId; }
+    [[nodiscard]] LaunchClock::time_point startedAt() const noexcept override { return m_startedAt; }
     [[nodiscard]] bool followsTree() const noexcept override { return m_job.valid(); }
     [[nodiscard]] HANDLE processHandle() const noexcept { return m_process.get(); }
+    /// The moment the main thread was resumed (start(), before the object is handed out).
+    void setStartedAt(LaunchClock::time_point at) noexcept { m_startedAt = at; }
 
     void takeEvents(std::vector<ProcessEvent>& out) override {
         const std::lock_guard lock(m_mutex);
@@ -143,6 +165,20 @@ public:
             out.push_back(std::move(event));
         }
         m_queue.clear();
+    }
+
+    void stopWatching() noexcept override {
+        {
+            const std::lock_guard lock(m_mutex);
+            m_stopped = true; // push() queues nothing and wakes nobody from now on
+        }
+        m_stopping.store(true);
+        if (m_stopEvent) {
+            SetEvent(m_stopEvent.get());
+        }
+        if (m_port) {
+            PostQueuedCompletionStatus(m_port.get(), 0, kStopKey, nullptr);
+        }
     }
 
     /// Starts the watcher thread (before the process is resumed).
@@ -164,6 +200,8 @@ private:
         std::uint32_t processId = 0;
         UniqueHandle handle;
         std::string image;
+        /// The console host of a console program of the tree: followed, never reported (isConsoleHost).
+        bool consoleHost = false;
     };
 
     void watch() noexcept {
@@ -221,6 +259,10 @@ private:
             reportTreeEmpty();
             return;
         }
+        if (onlyConsoleHostsLeft()) {
+            concludeTree();
+            return;
+        }
         auto nextWindowCheck = LaunchClock::now();
         while (!m_treeEmptyReported && !m_stopping.load()) {
             const bool received = drainJobMessages(m_pollMilliseconds);
@@ -233,15 +275,66 @@ private:
                 if (QueryInformationJobObject(m_job.get(), JobObjectBasicAccountingInformation, &accounting,
                                               sizeof(accounting), nullptr) &&
                     accounting.ActiveProcesses == 0) {
-                    reportTreeEmpty();
+                    concludeTree();
                     break;
                 }
+            }
+            if (onlyConsoleHostsLeft()) {
+                concludeTree();
+                break;
             }
             if (const auto now = LaunchClock::now(); now >= nextWindowCheck) {
                 checkWindows();
                 nextWindowCheck = now + std::chrono::milliseconds(m_pollMilliseconds);
             }
         }
+    }
+
+    /// Reports the tree's end found by counting its processes. The job's counts drop before the notifications of the
+    /// last exits are delivered: those are handled first, and the exits of tracked processes whose notification is
+    /// still to come are reported from their handles, so that no exit code is lost.
+    void concludeTree() {
+        drainJobMessages(0);
+        if (m_treeEmptyReported || m_stopping.load()) {
+            return;
+        }
+        std::vector<std::uint32_t> ended;
+        for (const Tracked& entry : m_tracked) {
+            if (!entry.consoleHost && entry.handle && WaitForSingleObject(entry.handle.get(), 0) == WAIT_OBJECT_0) {
+                ended.push_back(entry.processId);
+            }
+        }
+        for (const std::uint32_t processId : ended) {
+            reportChildExit(processId);
+        }
+        reportTreeEmpty();
+    }
+
+    /// True when the job still holds processes, all of them console hosts of the tree's console programs: such a host
+    /// lives on while a program that left the job (breaking away) still uses its console, but no part of the
+    /// emulator runs in the tree any more.
+    bool onlyConsoleHostsLeft() {
+        constexpr std::size_t kListBytes =
+            sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST) + (kMaxWindowProcesses - 1) * sizeof(ULONG_PTR);
+        alignas(JOBOBJECT_BASIC_PROCESS_ID_LIST) std::array<std::byte, kListBytes> storage{};
+        auto* list = reinterpret_cast<JOBOBJECT_BASIC_PROCESS_ID_LIST*>(storage.data());
+        if (!QueryInformationJobObject(m_job.get(), JobObjectBasicProcessIdList, list, static_cast<DWORD>(kListBytes),
+                                       nullptr) ||
+            list->NumberOfProcessIdsInList == 0 ||
+            list->NumberOfProcessIdsInList != list->NumberOfAssignedProcesses) {
+            return false; // empty (reported by the job), unknown, or longer than this buffer: not only hosts
+        }
+        for (std::size_t i = 0; i < list->NumberOfProcessIdsInList; ++i) {
+            const auto processId = static_cast<std::uint32_t>(list->ProcessIdList[i]);
+            const bool host = std::any_of(m_tracked.begin(), m_tracked.end(), [&](const Tracked& entry) {
+                return entry.processId == processId && entry.consoleHost && entry.handle &&
+                       WaitForSingleObject(entry.handle.get(), 0) == WAIT_TIMEOUT;
+            });
+            if (!host) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// Handles the job's queued notifications, waiting up to `timeoutMilliseconds` for the first. True when at least
@@ -311,6 +404,7 @@ private:
         event.observedAt = now;
         event.occurredAt = now;
         event.processId = processId;
+        bool consoleHost = false;
         if (m_tracked.size() < kMaxTrackedProcesses) {
             UniqueHandle handle(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, processId));
             BOOL inJob = FALSE;
@@ -318,15 +412,19 @@ private:
                 handle.reset(); // the id was reused by a process outside the tree
             }
             if (handle) {
-                event.image = imageName(handle.get());
+                const std::wstring path = imagePath(handle.get());
+                event.image = fileNameOf(path);
+                consoleHost = isConsoleHost(path);
             } else {
                 m_untrackedExit = true;
             }
-            m_tracked.push_back(Tracked{processId, std::move(handle), event.image});
+            m_tracked.push_back(Tracked{processId, std::move(handle), event.image, consoleHost});
         } else {
             m_untrackedExit = true;
         }
-        push(std::move(event));
+        if (!consoleHost) {
+            push(std::move(event));
+        }
     }
 
     void reportChildExit(std::uint32_t processId) {
@@ -336,21 +434,31 @@ private:
         event.observedAt = now;
         event.occurredAt = now;
         event.processId = processId;
-        const auto tracked = std::find_if(m_tracked.begin(), m_tracked.end(),
+        // The latest entry of that id: once a process's exit is handled its id may be given to a new process of the
+        // tree, which then has its own entry.
+        const auto tracked = std::find_if(m_tracked.rbegin(), m_tracked.rend(),
                                           [&](const Tracked& entry) { return entry.processId == processId; });
-        if (tracked != m_tracked.end() && tracked->handle) {
+        if (tracked != m_tracked.rend() && tracked->consoleHost) {
+            m_tracked.erase(std::next(tracked).base()); // gone with the last program attached to its console
+            return;
+        }
+        if (tracked != m_tracked.rend() && tracked->handle) {
             event.image = tracked->image;
             DWORD code = 0;
             // The job reports the exit while the process is being torn down, a moment before its handle is
-            // signaled and its exit code final.
-            if (WaitForSingleObject(tracked->handle.get(), kExitSettleMilliseconds) == WAIT_OBJECT_0 &&
+            // signaled and its exit code final. Watching may stop meanwhile.
+            const std::array<HANDLE, 2> handles{tracked->handle.get(), m_stopEvent.get()};
+            if (WaitForMultipleObjects(static_cast<DWORD>(handles.size()), handles.data(), FALSE,
+                                       kExitSettleMilliseconds) == WAIT_OBJECT_0 &&
                 GetExitCodeProcess(tracked->handle.get(), &code)) {
                 event.exitCode = code;
             }
             event.occurredAt = exitTimeOf(tracked->handle.get(), now);
-            tracked->handle.reset();
         } else {
             m_untrackedExit = true;
+        }
+        if (tracked != m_tracked.rend()) {
+            m_tracked.erase(std::next(tracked).base()); // only running processes are tracked: closes its handle
         }
         m_lastExitTime = std::max(m_lastExitTime, event.occurredAt);
         push(std::move(event));
@@ -433,10 +541,12 @@ private:
     }
 
     void push(ProcessEvent event) {
-        {
-            const std::lock_guard lock(m_mutex);
-            m_queue.push_back(std::move(event));
+        const std::lock_guard lock(m_mutex);
+        if (m_stopped) {
+            return;
         }
+        m_queue.push_back(std::move(event));
+        // Under the lock: once stopWatching() has returned, the caller is never woken again.
         if (m_wake) {
             m_wake();
         }
@@ -449,9 +559,11 @@ private:
     UniqueHandle m_stopEvent;
     std::function<void()> m_wake;
     DWORD m_pollMilliseconds = 100;
+    LaunchClock::time_point m_startedAt{};
     std::atomic<bool> m_stopping{false};
     std::mutex m_mutex;
-    std::vector<ProcessEvent> m_queue;
+    std::vector<ProcessEvent> m_queue; // guarded by m_mutex
+    bool m_stopped = false;            // guarded by m_mutex
     std::thread m_thread;
 
     // Watcher thread only.
@@ -585,8 +697,32 @@ std::vector<launcher::EnvironmentVariable> currentEnvironment() {
     return variables;
 }
 
+std::uint32_t processCreationFlags(const launcher::LaunchRequest& request) noexcept {
+    // A console program gets a console of its own, as when a GUI program such as ES-DE starts it, windowless on
+    // request: never Retroverse's console, whose closing (CTRL_CLOSE_EVENT) or Ctrl+Break would reach every process
+    // attached to it. Both flags are ignored for GUI programs.
+    DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_DEFAULT_ERROR_MODE | CREATE_NEW_PROCESS_GROUP |
+                  (request.hideConsoleWindow ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE);
+    if (!request.outputLog.empty()) {
+        flags |= EXTENDED_STARTUPINFO_PRESENT;
+    }
+    return flags;
+}
+
 Expected<std::unique_ptr<launcher::IRunningProcess>> Win32ProcessRunner::start(const launcher::LaunchRequest& request,
                                                                                launcher::StartCallbacks callbacks) {
+    // Nothing escapes: startProcess() ends a process that never ran before an exception leaves it.
+    try {
+        return startProcess(request, std::move(callbacks));
+    } catch (const std::exception& e) {
+        return makeError(ErrorCode::PlatformError, std::string("the program could not be started: ") + e.what());
+    } catch (...) {
+        return makeError(ErrorCode::PlatformError, "the program could not be started: unexpected error");
+    }
+}
+
+Expected<std::unique_ptr<launcher::IRunningProcess>>
+Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launcher::StartCallbacks callbacks) {
     const auto begin = std::chrono::steady_clock::now();
     const auto commandLineUtf8 = launcher::commandLineOf(request);
     if (!commandLineUtf8) {
@@ -631,10 +767,7 @@ Expected<std::unique_ptr<launcher::IRunningProcess>> Win32ProcessRunner::start(c
     std::array<HANDLE, 2> inheritedHandles{};
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(STARTUPINFOW);
-    DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_DEFAULT_ERROR_MODE | CREATE_NEW_PROCESS_GROUP;
-    if (request.hideConsoleWindow) {
-        flags |= CREATE_NO_WINDOW;
-    }
+    const DWORD flags = processCreationFlags(request);
     BOOL inheritHandles = FALSE;
     if (!request.outputLog.empty()) {
         if (auto opened = openOutputLog(request.outputLog, *commandLineUtf8, output, input); !opened) {
@@ -655,8 +788,7 @@ Expected<std::unique_ptr<launcher::IRunningProcess>> Win32ProcessRunner::start(c
         startup.StartupInfo.hStdInput = input.get();
         startup.StartupInfo.hStdOutput = output.get();
         startup.StartupInfo.hStdError = output.get();
-        startup.lpAttributeList = attributes.list();
-        flags |= EXTENDED_STARTUPINFO_PRESENT;
+        startup.lpAttributeList = attributes.list(); // EXTENDED_STARTUPINFO_PRESENT is in the flags
         inheritHandles = TRUE;
     }
 
@@ -690,51 +822,73 @@ Expected<std::unique_ptr<launcher::IRunningProcess>> Win32ProcessRunner::start(c
     }
     UniqueHandle process(info.hProcess);
     const UniqueHandle thread(info.hThread);
-
-    if (job && !AssignProcessToJobObject(job.get(), process.get())) {
-        jobError = "AssignProcessToJobObject failed: " + win32::lastErrorMessage();
-        job.reset();
-        port.reset();
-    }
+    std::unique_ptr<Win32RunningProcess> running;
+    // Until its main thread is resumed the program has not run: every failure from here on, an exception from the
+    // caller's beforeResume or an allocation included, ends it, so that no frozen process stays behind.
+    const auto endNeverRun = [&]() noexcept {
+        if (running) {
+            running->stopWatching();
+        }
+        const HANDLE handle = running ? running->processHandle() : process.get();
+        if (handle != nullptr) {
+            TerminateProcess(handle, ERROR_CANCELLED);
+            WaitForSingleObject(handle, kNeverRunExitMilliseconds);
+        }
+    };
     bool foregroundAllowed = false;
     std::string foregroundError;
-    if (m_options.allowSetForeground) {
-        foregroundAllowed = AllowSetForegroundWindow(info.dwProcessId) != FALSE;
-        if (!foregroundAllowed) {
-            foregroundError = win32::lastErrorMessage();
+    try {
+        if (job && !AssignProcessToJobObject(job.get(), process.get())) {
+            jobError = "AssignProcessToJobObject failed: " + win32::lastErrorMessage();
+            job.reset();
+            port.reset();
         }
+        if (m_options.allowSetForeground) {
+            foregroundAllowed = AllowSetForegroundWindow(info.dwProcessId) != FALSE;
+            if (!foregroundAllowed) {
+                foregroundError = win32::lastErrorMessage();
+            }
+        }
+        running = std::make_unique<Win32RunningProcess>(std::move(process), info.dwProcessId, std::move(job),
+                                                        std::move(port), std::move(callbacks.wake),
+                                                        m_options.pollInterval);
+        if (auto watching = running->startWatching(); !watching) {
+            endNeverRun();
+            return makeError(ErrorCode::PlatformError, watching.error().message, executableUtf8);
+        }
+        if (callbacks.beforeResume) {
+            callbacks.beforeResume(info.dwProcessId);
+        }
+    } catch (...) {
+        endNeverRun();
+        throw; // start() reports it
     }
+    if (ResumeThread(thread.get()) == static_cast<DWORD>(-1)) {
+        const std::string error = win32::lastErrorMessage();
+        endNeverRun();
+        return makeError(ErrorCode::PlatformError, "ResumeThread failed: " + error, executableUtf8);
+    }
+    running->setStartedAt(LaunchClock::now());
 
-    auto running = std::make_unique<Win32RunningProcess>(std::move(process), info.dwProcessId, std::move(job),
-                                                         std::move(port), std::move(callbacks.wake),
-                                                         m_options.pollInterval);
-    auto watching = running->startWatching();
-    if (watching && callbacks.beforeResume) {
-        callbacks.beforeResume(info.dwProcessId);
+    // The program runs: what follows is bookkeeping for logs and reports, which must not lose the running process.
+    try {
+        m_lastStart = Win32StartInfo{};
+        m_lastStart.processId = info.dwProcessId;
+        m_lastStart.jobAssigned = running->followsTree();
+        m_lastStart.jobError = jobError;
+        m_lastStart.foregroundAllowed = foregroundAllowed;
+        m_lastStart.foregroundError = foregroundError;
+        m_lastStart.commandLine = *commandLineUtf8;
+        m_lastStart.startDuration =
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begin);
+        spdlog::info("Started process {} in {:.1f} ms ({}; AllowSetForegroundWindow {})", info.dwProcessId,
+                     static_cast<double>(m_lastStart.startDuration.count()) / 1000.0,
+                     m_lastStart.jobAssigned ? std::string("process tree followed")
+                                             : "process tree not followed: " + jobError,
+                     foregroundAllowed ? std::string("granted") : "refused: " + foregroundError);
+    } catch (...) {
+        m_lastStart.processId = info.dwProcessId;
     }
-    if (watching && ResumeThread(thread.get()) == static_cast<DWORD>(-1)) {
-        watching = makeError(ErrorCode::PlatformError, "ResumeThread failed: " + win32::lastErrorMessage());
-    }
-    if (!watching) {
-        // The program never ran (still suspended): end it, so that no frozen process stays behind.
-        TerminateProcess(running->processHandle(), ERROR_CANCELLED);
-        return makeError(ErrorCode::PlatformError, watching.error().message, executableUtf8);
-    }
-
-    m_lastStart = Win32StartInfo{};
-    m_lastStart.processId = info.dwProcessId;
-    m_lastStart.jobAssigned = running->followsTree();
-    m_lastStart.jobError = jobError;
-    m_lastStart.foregroundAllowed = foregroundAllowed;
-    m_lastStart.foregroundError = foregroundError;
-    m_lastStart.commandLine = *commandLineUtf8;
-    m_lastStart.startDuration =
-        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begin);
-    spdlog::info("Started process {} in {:.1f} ms ({}; AllowSetForegroundWindow {})", info.dwProcessId,
-                 static_cast<double>(m_lastStart.startDuration.count()) / 1000.0,
-                 m_lastStart.jobAssigned ? std::string("process tree followed")
-                                         : "process tree not followed: " + jobError,
-                 foregroundAllowed ? std::string("granted") : "refused: " + foregroundError);
     return std::unique_ptr<launcher::IRunningProcess>(std::move(running));
 }
 

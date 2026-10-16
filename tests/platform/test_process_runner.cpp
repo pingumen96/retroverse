@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -11,8 +12,10 @@
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -33,9 +36,9 @@
 #include <rv/platform/win32_process_runner.hpp>
 
 // The Win32 process runner against real processes: rv_fake_emulator.exe (spikes/launch), started from the directory of
-// this executable in its windowless modes, so nothing appears on screen. Every process a test starts is gone when the
-// test ends; the runner itself never terminates one, so the tests that leave one running end it themselves (the test
-// harness, not the product).
+// this executable in its windowless modes and without a console window (hideConsoleWindow), so nothing appears on
+// screen. Every process a test starts is gone when the test ends; the runner itself never terminates one, so the tests
+// that leave one running end it themselves (the test harness, not the product), whatever way the test ends.
 
 using namespace std::chrono_literals;
 using rv::launcher::ExitKind;
@@ -123,8 +126,65 @@ LaunchRequest fakeRequest(std::vector<std::string> arguments, WaitStrategy strat
     request.arguments = std::move(arguments);
     request.waitStrategy = strategy;
     request.label = "fake emulator";
+    request.hideConsoleWindow = true; // a console program: its own console, without a window
     return request;
 }
+
+/// The arguments of a fake that hangs: never exits by itself within a test, and gives up after two minutes should
+/// the test binary be killed before its clean-up.
+std::vector<std::string> hangArguments() {
+    return {"--hang", "--hang-limit-ms", "120000"};
+}
+
+/// An owned process handle.
+class ProcessHandle {
+public:
+    explicit ProcessHandle(HANDLE handle = nullptr) noexcept : m_handle(handle) {}
+    ProcessHandle(const ProcessHandle&) = delete;
+    ProcessHandle& operator=(const ProcessHandle&) = delete;
+    ~ProcessHandle() { reset(); }
+    [[nodiscard]] HANDLE get() const noexcept { return m_handle; }
+    void reset(HANDLE handle = nullptr) noexcept {
+        if (m_handle != nullptr) {
+            CloseHandle(m_handle);
+        }
+        m_handle = handle;
+    }
+
+private:
+    HANDLE m_handle;
+};
+
+/// The harness's clean-up of a process the product leaves running on purpose: ends it when the guard goes, however the
+/// test ends (a failed REQUIRE included). It holds a handle opened while the runner still held one, so the id it was
+/// given can never name another process meanwhile.
+class EndAtScopeExit {
+public:
+    explicit EndAtScopeExit(std::uint32_t processId)
+        : m_process(OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                processId)) {}
+    EndAtScopeExit(const EndAtScopeExit&) = delete;
+    EndAtScopeExit& operator=(const EndAtScopeExit&) = delete;
+    ~EndAtScopeExit() { end(); }
+
+    [[nodiscard]] bool valid() const noexcept { return m_process.get() != nullptr; }
+    [[nodiscard]] bool running() const noexcept {
+        return valid() && WaitForSingleObject(m_process.get(), 0) == WAIT_TIMEOUT;
+    }
+    /// Ends the process (exit code 0xDEAD) and waits for it; true when it is gone.
+    bool end() noexcept {
+        if (!valid()) {
+            return true;
+        }
+        TerminateProcess(m_process.get(), 0xDEAD);
+        const bool gone = WaitForSingleObject(m_process.get(), 30000) == WAIT_OBJECT_0;
+        m_process.reset();
+        return gone;
+    }
+
+private:
+    ProcessHandle m_process;
+};
 
 nlohmann::json readJson(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
@@ -135,17 +195,6 @@ nlohmann::json readJson(const std::filesystem::path& path) {
 std::string readText(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-}
-
-/// The harness's own clean-up of a process the product left running on purpose.
-void terminateForTest(std::uint32_t processId) {
-    HANDLE process = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, processId);
-    if (process == nullptr) {
-        return;
-    }
-    TerminateProcess(process, 0xDEAD);
-    WaitForSingleObject(process, 30000);
-    CloseHandle(process);
 }
 
 bool isRunning(std::uint32_t processId) {
@@ -294,16 +343,17 @@ TEST_CASE("platform/process_runner: DirectProcess returns with the wrapper and r
 TEST_CASE("platform/process_runner: a hang becomes StillRunning and is never terminated",
           "[platform][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
-    std::uint32_t processId = 0;
+    std::optional<EndAtScopeExit> cleanUp; // outlives the session: the process must survive it
     {
         rv::platform::Win32ProcessRunner runner;
         WakeSignal wake;
-        LaunchRequest request = fakeRequest({"--hang"});
+        LaunchRequest request = fakeRequest(hangArguments());
         request.timeouts.windowTimeout = 300ms; // a windowless hang: no window for 300 ms
         LaunchSession session(request, runner);
         session.start(LaunchClock::now(), {wake.callback()});
-        processId = session.processId();
-        REQUIRE(processId != 0);
+        REQUIRE(session.processId() != 0);
+        cleanUp.emplace(session.processId()); // the runner's handle keeps the id from being reused meanwhile
+        REQUIRE(cleanUp->valid());
         REQUIRE(driveUntil(session, wake, [&] { return session.state() == SessionState::StillRunning; }));
         CHECK(session.outcome().wasStillRunning);
         CHECK(session.liveProcessCount() == 1);
@@ -316,22 +366,23 @@ TEST_CASE("platform/process_runner: a hang becomes StillRunning and is never ter
         CHECK_FALSE(session.outcome().exitCode.has_value());
     }
     // The session, its runner and their job handles are gone: the process still runs.
-    CHECK(isRunning(processId));
-    terminateForTest(processId);
-    CHECK_FALSE(isRunning(processId));
+    CHECK(cleanUp->running());
+    CHECK(cleanUp->end());
 }
 
 TEST_CASE("platform/process_runner: the harness's termination of a hang is observed", "[platform][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
     rv::platform::Win32ProcessRunner runner;
     WakeSignal wake;
-    LaunchRequest request = fakeRequest({"--hang"});
+    LaunchRequest request = fakeRequest(hangArguments());
     request.timeouts.windowTimeout = 0ms;
     request.timeouts.startupGrace = 0ms;
     LaunchSession session(request, runner);
     session.start(LaunchClock::now(), {wake.callback()});
+    REQUIRE(session.processId() != 0);
+    EndAtScopeExit cleanUp(session.processId());
     REQUIRE(session.state() == SessionState::Running);
-    terminateForTest(session.processId());
+    CHECK(cleanUp.end());
     REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
     CHECK(session.state() == SessionState::Returned);
     CHECK(session.outcome().exitCode == 0xDEADu);
@@ -553,4 +604,147 @@ TEST_CASE("platform/process_runner: a child that breaks away from the job is not
     const auto child = static_cast<std::uint32_t>(std::stoul(log.substr(at + 16)));
     CHECK(isRunning(child));
     waitForExit(child);
+}
+
+TEST_CASE("platform/process_runner: an exception before the program runs ends it and is reported as an error",
+          "[platform][process_runner]") {
+    REQUIRE_FAKE_EMULATOR();
+    ScratchDir scratch;
+    const std::filesystem::path output = scratch.path() / "args.json";
+    const LaunchRequest request = fakeRequest({"--print-args", rv::core::pathToUtf8(output), "--", "payload"});
+
+    SECTION("the runner on its own") {
+        rv::platform::Win32ProcessRunner runner;
+        ProcessHandle observed;
+        rv::launcher::StartCallbacks callbacks;
+        callbacks.beforeResume = [&](std::uint32_t processId) {
+            observed.reset(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId));
+            throw std::runtime_error("the hand-over failed");
+        };
+        const auto started = runner.start(request, std::move(callbacks));
+        REQUIRE_FALSE(started.has_value());
+        CHECK(started.error().message.find("the hand-over failed") != std::string::npos);
+        REQUIRE(observed.get() != nullptr);
+        // Ended before start() returned, with the code of a cancelled operation, without having run.
+        CHECK(WaitForSingleObject(observed.get(), 0) == WAIT_OBJECT_0);
+        DWORD code = 0;
+        CHECK(GetExitCodeProcess(observed.get(), &code));
+        CHECK(code == ERROR_CANCELLED);
+        CHECK_FALSE(std::filesystem::exists(output));
+    }
+    SECTION("through a session: a failure to start, not an exception") {
+        rv::platform::Win32ProcessRunner runner;
+        LaunchSession session(request, runner);
+        session.start(LaunchClock::now(), {nullptr, [](std::uint32_t) { throw std::runtime_error("no window"); }});
+        CHECK(session.state() == SessionState::FailedToStart);
+        CHECK(session.outcome().failure == FailureReason::StartFailed);
+        CHECK(session.outcome().message.find("no window") != std::string::npos);
+        CHECK(session.process() == nullptr);
+        CHECK_FALSE(std::filesystem::exists(output));
+    }
+}
+
+TEST_CASE("platform/process_runner: the start time is the moment the program runs, after the hand-over",
+          "[platform][process_runner]") {
+    REQUIRE_FAKE_EMULATOR();
+    rv::platform::Win32ProcessRunner runner;
+    WakeSignal wake;
+    LaunchSession session(fakeRequest({}), runner);
+    const LaunchClock::time_point begin = LaunchClock::now();
+    session.start(begin, {wake.callback(), [](std::uint32_t) { std::this_thread::sleep_for(200ms); }});
+    REQUIRE(session.state() == SessionState::Running);
+    CHECK(session.times().begun == begin);
+    REQUIRE(session.times().started.has_value());
+    CHECK(*session.times().started >= begin + 200ms); // the hand-over took 200 ms
+    CHECK(session.process()->startedAt() == *session.times().started);
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+    CHECK(session.state() == SessionState::Returned);
+    CHECK(*session.times().exited >= *session.times().started - 50ms);
+}
+
+TEST_CASE("platform/process_runner: a finished session stops following what it leaves running",
+          "[platform][process_runner]") {
+    REQUIRE_FAKE_EMULATOR();
+    rv::platform::Win32ProcessRunner runner;
+    std::atomic<int> wakes{0};
+    WakeSignal wake;
+    const auto signal = wake.callback();
+    // DirectProcess with a wrapper: the session ends at once; the wrapper's child runs on for a second.
+    LaunchSession session(fakeRequest({"--spawn-child-and-exit", "--sleep-ms", "1000"}), runner);
+    session.start(LaunchClock::now(), {[&] {
+                                           ++wakes;
+                                           signal();
+                                       }});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+    REQUIRE(session.state() == SessionState::Returned);
+    REQUIRE(session.liveChildren().size() == 1);
+    const std::uint32_t child = session.liveChildren().front().processId;
+    CHECK(session.liveChildren().front().image == "rv_fake_emulator.exe");
+    const int wakesAtEnd = wakes.load();
+
+    // The child's exit empties the tree: a runner still following it would queue both events and wake the caller for
+    // each (it queues nothing without waking).
+    waitForExit(child);
+    wake.wait(1000ms);
+    CHECK(wakes.load() == wakesAtEnd);
+}
+
+TEST_CASE("platform/process_runner: a crash after hundreds of processes in the tree is still classified",
+          "[platform][process_runner]") {
+    REQUIRE_FAKE_EMULATOR();
+    rv::platform::Win32ProcessRunner runner;
+    WakeSignal wake;
+    // The wrapper runs 300 short-lived copies of itself, then starts the one that crashes after 500 ms, and exits.
+    // Only running processes are tracked (an id given to a new process names the new one), so no count of processes
+    // before it keeps the crash from being seen.
+    LaunchRequest request = fakeRequest(
+        {"--spawn-children", "300", "--spawn-child-and-exit", "--sleep-ms", "500", "--crash"},
+        WaitStrategy::ProcessTree);
+    request.timeouts.startupGrace = 0ms;
+    LaunchSession session(request, runner);
+    session.start(LaunchClock::now(), {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+    CHECK(session.state() == SessionState::Crashed);
+    CHECK(session.outcome().exitCode == 0xC0000005u);
+    CHECK(session.outcome().exitProcessId != session.processId());
+    CHECK(session.outcome().processesSeen > 256);
+}
+
+TEST_CASE("platform/process_runner: a console program never shares Retroverse's console", "[platform][process_runner]") {
+    SECTION("its own console, windowless on request; GUI programs ignore both flags") {
+        LaunchRequest visible;
+        const std::uint32_t shown = rv::platform::processCreationFlags(visible);
+        CHECK((shown & CREATE_NEW_CONSOLE) != 0);
+        CHECK((shown & CREATE_NO_WINDOW) == 0);
+        LaunchRequest hidden;
+        hidden.hideConsoleWindow = true;
+        const std::uint32_t windowless = rv::platform::processCreationFlags(hidden);
+        CHECK((windowless & CREATE_NO_WINDOW) != 0);
+        CHECK((windowless & CREATE_NEW_CONSOLE) == 0);
+        for (const std::uint32_t flags : {shown, windowless}) {
+            CHECK((flags & CREATE_SUSPENDED) != 0);
+            CHECK((flags & CREATE_DEFAULT_ERROR_MODE) != 0);
+            CHECK((flags & CREATE_UNICODE_ENVIRONMENT) != 0);
+            CHECK((flags & DETACHED_PROCESS) == 0);
+            CHECK((flags & EXTENDED_STARTUPINFO_PRESENT) == 0);
+        }
+        hidden.outputLog = "C:\\logs\\launch.log";
+        CHECK((rv::platform::processCreationFlags(hidden) & EXTENDED_STARTUPINFO_PRESENT) != 0);
+    }
+    SECTION("the processes attached to the started program's console") {
+        REQUIRE_FAKE_EMULATOR();
+        ScratchDir scratch;
+        const std::filesystem::path output = scratch.path() / "console.json";
+        rv::platform::Win32ProcessRunner runner;
+        WakeSignal wake;
+        LaunchSession session(fakeRequest({"--print-console", rv::core::pathToUtf8(output)}), runner);
+        session.start(LaunchClock::now(), {wake.callback()});
+        const std::uint32_t started = session.processId();
+        REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+        const nlohmann::json console = readJson(output);
+        const auto processes = console.at("processes").get<std::vector<std::uint32_t>>();
+        CHECK(console.at("hasConsole").get<bool>());
+        CHECK(std::find(processes.begin(), processes.end(), started) != processes.end());
+        CHECK(std::find(processes.begin(), processes.end(), GetCurrentProcessId()) == processes.end());
+    }
 }

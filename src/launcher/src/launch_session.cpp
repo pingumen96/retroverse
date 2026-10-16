@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
+#include <string>
 #include <utility>
 
 #include <fmt/format.h>
@@ -103,6 +105,9 @@ void LaunchSession::setState(SessionState state, std::string_view why) {
     m_state = state;
     if (isFinal(state)) {
         m_outcome.state = state;
+        if (m_process) {
+            m_process->stopWatching(); // whatever still runs is left alone, and no longer followed
+        }
     }
 }
 
@@ -136,16 +141,28 @@ void LaunchSession::start(LaunchClock::time_point now, StartCallbacks callbacks)
     }
     spdlog::info("Launching {} ({}, working directory {}): {}", describeLaunch(), toString(m_request.waitStrategy),
                  workingDirectory, m_commandLine);
-    auto process = m_runner->start(m_request, std::move(callbacks));
-    if (!process) {
+    // Runners report failures as errors; an exception (a broken implementation) must not leave the session Starting.
+    Expected<std::unique_ptr<IRunningProcess>> process = [&]() -> Expected<std::unique_ptr<IRunningProcess>> {
+        try {
+            return m_runner->start(m_request, std::move(callbacks));
+        } catch (const std::exception& e) {
+            return makeError(ErrorCode::PlatformError, std::string("unexpected error: ") + e.what());
+        } catch (...) {
+            return makeError(ErrorCode::PlatformError, "unexpected error");
+        }
+    }();
+    if (!process || !*process) {
         fail(FailureReason::StartFailed,
-             fmt::format("{} could not be started: {}", describeLaunch(), process.error().toString()), now);
+             fmt::format("{} could not be started: {}", describeLaunch(),
+                         process ? std::string("the runner returned no process") : process.error().toString()),
+             now);
         return;
     }
     m_process = std::move(*process);
-    m_times.started = now;
+    // The startup grace and the durations count from the moment the process runs, after the window's hand-over.
+    m_times.started = m_process->startedAt();
     m_outcome.processesSeen = 1;
-    m_windowClockStart = now;
+    m_windowClockStart = *m_times.started;
     m_strategy = effectiveStrategy(m_request.waitStrategy, m_process->followsTree());
     if (m_strategy != m_request.waitStrategy) {
         spdlog::warn("Launch session: the process tree of {} cannot be followed; waiting for the started process, "
@@ -184,8 +201,9 @@ void LaunchSession::apply(const ProcessEvent& event) {
         break;
     case ProcessEventKind::ChildStarted:
         if (event.processId != processId() && !m_treeEmpty &&
-            std::find(m_liveChildren.begin(), m_liveChildren.end(), event.processId) == m_liveChildren.end()) {
-            m_liveChildren.push_back(event.processId);
+            std::none_of(m_liveChildren.begin(), m_liveChildren.end(),
+                         [&](const TreeProcess& child) { return child.processId == event.processId; })) {
+            m_liveChildren.push_back(TreeProcess{event.processId, event.image, event.observedAt});
             ++m_outcome.processesSeen;
             spdlog::info("Launch session: process {} ({}) joined the tree", event.processId,
                          event.image.empty() ? std::string_view("?") : std::string_view(event.image));
@@ -269,7 +287,7 @@ void LaunchSession::onMainExited(const ProcessEvent& event) {
 }
 
 void LaunchSession::onChildExited(const ProcessEvent& event) {
-    std::erase(m_liveChildren, event.processId);
+    std::erase_if(m_liveChildren, [&](const TreeProcess& child) { return child.processId == event.processId; });
     if (!event.exitCode) {
         spdlog::info("Launch session: process {} of the tree exited (exit code unknown)", event.processId);
         return;
@@ -318,6 +336,8 @@ void LaunchSession::conclude(const Exit& exit) {
     const double ranFor = m_times.started ? secondsBetween(*m_times.started, exit.occurredAt) : 0.0;
     const std::string code = describeExitCode(exit.code);
     const bool early = withinStartupGrace(exit.occurredAt);
+    // ProcessTree waited for the whole tree: a quick end of it is no hint at a launcher left running.
+    const bool quick = early && m_strategy != WaitStrategy::ProcessTree;
 
     if (status.kind == ExitKind::Crash) {
         m_outcome.message = fmt::format("{} crashed after {:.1f} s: {}", describeLaunch(), ranFor, code);
@@ -338,11 +358,11 @@ void LaunchSession::conclude(const Exit& exit) {
         setState(SessionState::FailedToStart, m_outcome.message);
         return;
     }
-    m_outcome.quickExit = early;
+    m_outcome.quickExit = quick;
     if (m_outcome.confirmedByUser) {
         m_outcome.message =
             fmt::format("{} exited after {:.1f} s ({}); the user confirmed the return", describeLaunch(), ranFor, code);
-    } else if (early) {
+    } else if (quick) {
         m_outcome.message = fmt::format("{} exited {:.0f} ms after it started ({}): if the emulator is still running, "
                                         "it was started by a launcher; wait for its process tree or for a confirmation",
                                         describeLaunch(), ranFor * 1000.0, code);
