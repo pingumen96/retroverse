@@ -2,6 +2,10 @@
 
 - Status: accepted
 - Date: 2026-10-16
+- Amended: 2026-10-17, at I2 step 6: the Input paragraph says that `NavInput` reads the UI actions of the action map
+  (`ui_activate` among them; the stick read whole, so the hysteresis thresholds stay fractions of its travel;
+  `NavBindings` gone); the Consequences record the virtualized quick catalog and the cost of a held direction that
+  scrolls it (about a tap), within the accepted deviation
 
 ## Context
 
@@ -46,18 +50,24 @@ RmlUi is the product UI toolkit; the fallback is not taken. Four criteria were m
   `ui::UiView` (an RmlUi context) per output, sized to its drawable with dp ratio = display scale x text scale; screens
   such as `ui::QuickCatalogScreen` bind GPU-free view models (`ui::QuickCatalogModel`) via RmlUi data models. Screens
   never hold domain state, so a different toolkit could bind the same models.
-- **Input:** keys bound to UI commands (arrows, Enter, Esc) and every gamepad event reach the UI as `ui::UiCommand`s
-  from `ui::NavInput` (D-pad, left stick with hysteresis 0.55 / 0.35 and a 1.25 axis-switch ratio, repeat after 0.4 s
-  every 0.1 s, every 0.05 s after 1.5 s; A Activate, B Back, Y Media, X Info), the same path for pad and keyboard.
-  Mouse, wheel, text input and the other keys go to the context through the SDL backend. Focus moves use RmlUi's
-  spatial navigation (`nav: auto`) confined to regions that are scroll containers, `ui::FocusRegions` links between
-  regions (with the last focused element of each) and `ui::FocusHistory` for Back. `NavInput` reads the raw device
-  input (`input::RawInputFrame`) through its own binding table, `ui::NavBindings::defaults()` (the defaults of
-  specification §12.1), not through `rv::input`'s action map, which has no UI navigation actions yet; the roadmap's
-  "navigation and focus from the action map" is not met by the spike. Consequence: the user's `bindings.json` does not
-  reach the product UI. When the first product screen is wired into the app, UI actions (`ui_up`, `ui_down`, `ui_left`,
-  `ui_right`, `ui_activate`, `ui_back`, `ui_media`, `ui_info`) join `assets/config/default_bindings.json` and
-  `NavBindings` is built from the action map; `NavInput` keeps the stick hysteresis and the repeat on top of it.
+- **Input:** keys bound to UI actions (arrows, Enter, Esc, Page Up/Down, Home, End) and every gamepad event reach the
+  UI as `ui::UiCommand`s from `ui::NavInput` (D-pad, left stick with hysteresis 0.55 / 0.35 and a 1.25 axis-switch
+  ratio, repeat after 0.4 s every 0.1 s, every 0.05 s after 1.5 s; A Activate, B Back, Y Media, X Info), the same path
+  for pad and keyboard. Mouse, wheel, text input and the other keys go to the context through the SDL backend. Focus
+  moves use RmlUi's spatial navigation (`nav: auto`) confined to regions that are scroll containers, `ui::FocusRegions`
+  links between regions (with the last focused element of each) and `ui::FocusHistory` for Back. The spike's
+  `NavInput` read the raw device input through a binding table of its own (`ui::NavBindings`), so the user's
+  `bindings.json` did not reach the product UI. This ADR planned eight UI actions (`ui_up`, `ui_down`, `ui_left`,
+  `ui_right`, `ui_activate`, `ui_back`, `ui_media`, `ui_info`) in `assets/config/default_bindings.json`, with
+  `NavBindings` built from the action map. Since I2 step 6 `NavInput` reads the UI actions of the action map (`ui_up`
+  ... `ui_filter_next`, `assets/config/default_bindings.json`, the user's `bindings.json` over them) from
+  `input::ActionState`, keeping the stick hysteresis (the stick read whole by `ui_nav_x`/`ui_nav_y`, without a dead
+  zone: 0.55 / 0.35 of its travel, unchanged) and the repeat, with a release threshold for the triggers that page;
+  `NavBindings` is gone, since reading `ActionState` made that table unnecessary; the user's bindings and
+  `--input-script` reach the product UI. The activate action is `ui_activate`, after `ui::UiCommand::Activate`. Beyond
+  the eight planned actions, the defaults page with the triggers and Page Up/Down, jump to the first and last game with
+  the stick clicks and Home/End, and change the filter with the shoulders: a list of 100,000 games needs jumps on the
+  pad.
 - **Rendering:** the UI is drawn after the scene into the window with `GL_FRAMEBUFFER_SRGB` off (RmlUi's colors are
   sRGB and blend in sRGB like a browser), then `gl::RenderStateCache::invalidate()`; into screenshots scaled uniformly
   like the developer overlay. CPU and GPU times are measured per view.
@@ -76,20 +86,28 @@ RmlUi is the product UI toolkit; the fallback is not taken. Four criteria were m
   (1 run in 16 here, 7 in 37 before) a quiet frame costs 0.49 ms of CPU, 0.43 to 0.71 ms in the earlier runs: the
   conservative figure, still under the budget. Frames with changes: 1.2 to 1.5 ms per focus move with the D-pad held,
   3.0 to 4.2 ms per single tap (the card laid out again), at p50; under the other spikes' load single frames reached
-  tens and once hundreds of milliseconds.
+  tens and once hundreds of milliseconds. Over the virtualized list of I2 step 6 (100,000 games, `docs/i2/step-6.md`;
+  informative figures on a loaded machine) quiet frames cost 0.13 to 0.15 ms of CPU and a single tap what it cost,
+  while a held direction that scrolls the list costs about a tap, 2.8 to 3.0 ms at p50: RmlUi 6.3 formats the whole
+  document and generates every text's mesh again for the entering row's text; documents of their own for the list and
+  the card and the pooled vertex buffer are the levers. The accepted deviation holds: a change stays under a quarter of
+  a 60 Hz frame and comes only with input.
 - RmlUi is retained-mode: quiet frames are cheap, changes cost, and a change of layout (a new text) formats the whole
   document again from its root (`ElementDocument::UpdateLayout`). Its 6.3 renderer builds new OpenGL buffers for every
   compiled geometry, so color transitions re-mesh on every animated frame (0.9 ms of CPU per frame while the focus
   moved, against 0.2 ms without them): product style sheets avoid color and size animations; transforms are the cheap
   way to animate. To bring changes under 1 ms: new geometry into a pooled vertex buffer in the vendored renderer, the
-  card in a document of its own, the selected row marked without re-evaluating the bound list. Work deferred while the
-  focus runs (the card) is done at once whenever something acts on it.
+  card and the list in documents of their own, the selected row marked without re-evaluating the bound list (done in
+  I2 step 6, with a class on the two rows concerned). Work deferred while the focus runs (the card) is done at once
+  whenever something acts on it.
 - Allocations: in Release RmlUi allocates 3 times per quiet frame, 2,600 and 350 more (update, render) when a tap lays
   the card out; Retroverse's code allocates nothing in any measured frame, the vendored renderer one object per new
   geometry. Counted in Release by patching the import tables of `spike_ui.exe` and `rmlui.dll`; the Debug counts (554
   per quiet frame) are inflated by the debug iterators' proxies.
-- A catalog of 40,000 games needs a virtualized list (a window of rows bound to a slice of the model) and deferred work
-  while the focus runs (the card already follows only once the focus rests); `QuickCatalogModel` is ready for it.
+- A catalog of 40,000 games needs a virtualized list and deferred work while the focus runs (the card follows only
+  once the focus rests). Done in I2 step 6: `QuickCatalogModel` is a window over a paged `ui::CatalogSource`, whose
+  queries may answer later from the catalog worker, and the screen binds a pool of as many rows as fit, in which a game
+  keeps its row while the window holds it, so a scroll step binds one row.
 - Text entry with the pad needs an on-screen keyboard (I7); localization moves the documents' strings into a table
   bound like the rest (`assets/ui/locale`); covers and videos can be shown by mapping an image source scheme to our GL
   textures in the render interface (I3, I5).

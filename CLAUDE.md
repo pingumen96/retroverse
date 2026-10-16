@@ -6,7 +6,8 @@ collection into an explorable, procedurally generated 3D world. Authoritative de
 - `specification.md`: product, architecture, data model, milestones M0-M6, requirements FR/NFR.
 - `style.md`: art bible (palette, lighting, prefab catalog, glTF conventions, asset licensing).
 - `example.png`: approved visual concept.
-- `docs/roadmap.md`: iteration plan and M0 step checklist. `docs/architecture.md`: modules and layering.
+- `docs/roadmap.md`: iteration plan and step checklists. `docs/architecture.md`: modules and layering.
+  `docs/i2/step-<n>.md`: what each I2 step built and decided (ES-DE's behaviour as verified, issue codes, measurements).
 - `docs/decisions/ADR-*.md`: binding technical decisions (toolchain, coordinates/units/UV, ...).
 
 ## Build and test (PowerShell)
@@ -31,13 +32,12 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 
 - Outputs: `build/<preset>/bin` holds `retroverse.exe`, `retroverse-asset-preview.exe` (developer builds only, see
   "Asset preview"), `retroverse-screenshot-diff.exe`, `retroverse-cli.exe` (the ES-DE catalog from the command line,
-  I2: `--help` lists its commands, each a stub that exits 2 until its step; results on stdout or `--output`, logs on
-  stderr and `<user data>/logs/retroverse-cli.log`; pass `--data-dir build/rvdata`), `rv_tests.exe`,
+  see "retroverse-cli"), `rv_tests.exe`,
   `rv_platform_tests.exe`, `rv_smoke_tests.exe`, `rv_fake_emulator.exe` (the stand-in emulator the launch tests start,
   `tests/fake_emulator`: exit codes, crashes, hangs, wrappers, windows, `--out`/`--err` text, `--exit-timeout-ms` so
   that an abandoned copy ends by itself; `--help` lists its options), the I1 spike executables (`spike_video.exe`,
   `spike_ui.exe`, `spike_launch.exe`, `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi included: every
-  preset enables the vcpkg features `video` and `ui`; `pugixml.dll`, and `sqlite3.dll` once code calls it).
+  preset enables the vcpkg features `video` and `ui`; `pugixml.dll` and `sqlite3.dll`).
   Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the source tree (target
   `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed, `staging` and the golden
   screenshots left out), so an edit of the assets alone reaches the next Release build.
@@ -171,6 +171,14 @@ report not written). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>`
   walker collides with walls and furniture and can step into a doorway but not leave the room. Developer builds also
   reload a shader within ~0.5 s of saving any of its files (`assets/shaders`); a broken edit logs
   `<file>:<line>: error ...` and the previous program stays in use.
+- The product UI reads sixteen `ui_*` actions from the same map (`rv/input/action.hpp`, `input::isUiAction`; defaults
+  in `default_bindings.json` and `ActionMap::defaults()`, which a test keeps equal): `ui_up` ... `ui_right` (arrows,
+  D-pad), `ui_nav_x`/`ui_nav_y` (the left stick, bound without a dead zone: `ui::NavInput`'s hysteresis of 0.55 / 0.35
+  of the travel is its dead zone), `ui_page_up`/`ui_page_down` (Page Up/Down, the triggers), `ui_home`/`ui_end` (Home,
+  End, the stick clicks), `ui_activate` (Enter, A), `ui_back` (Esc, B), `ui_media` (Y), `ui_info` (X),
+  `ui_filter_previous`/`ui_filter_next` (the shoulders). They share keys and buttons with the world's actions; letters,
+  digits, space, Backspace, Delete and Tab stay with RmlUi's text fields. A user's `bindings.json` overrides them per
+  action like any other. Only `spike_ui` reads them until the app shell (I2 step A1).
 - Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about the
   two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation, screenshots).
   Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the shadow map, the
@@ -198,7 +206,8 @@ report not written). Logs: `<user data>/logs/retroverse.log` (`--data-dir <dir>`
   0,0,3.2,0,-6`, on the way in of the test room, so they do not depend on its scene camera.
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,
-  both included) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window
+  both included; UI actions too, `{"ui_down": 1}`, `{"ui_nav_y": -0.9}`, in [-1, 1], a button action held at the press
+  threshold) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window
   with focus, keys and pads still drive the others, so automated runs add `--hidden`. `--fixed-dt <seconds>`
   replaces the measured frame time, for the walker and the shader time alike, so scripted runs are reproducible.
   Frame-limited runs log the final camera (`Final camera after N frame(s) (T s simulated): feet ..., yaw ..., pitch
@@ -250,7 +259,8 @@ build/msvc-x64-debug/bin/retroverse.exe --scene instancing_growth --exit-after-f
 ```
 
 Other viewpoints and movement are scripted: `tests/input_scripts/*.json` (each file names its expected result; the
-unit tests in `tests/unit/integration/test_free_roam_navigation.cpp` play the same scripts):
+unit tests in `tests/unit/integration/test_free_roam_navigation.cpp` play the walk scripts; `quick_catalog_select.json`
+drives `spike_ui`'s quick catalog, see "I1 spikes"):
 
 ```powershell
 build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom --spawn 0,0,3.2,0,-6 --exit-after-frames --frames 120 `
@@ -353,6 +363,31 @@ lies outside the default framing; a second F shows it) and the color bars on its
 `prefab:crt` and reports one warning (the placeholder hash), and with `--panel Materials` shows that tab instead of the
 Manifest one; a copy under `build/` whose `runtime.sockets.screen` names a missing socket reports that error.
 
+## retroverse-cli
+
+`retroverse-cli [--data-dir <dir> | --portable] [--asset-root <dir>] [--log-level <level>] <command> [options]` is the
+ES-DE catalog from the command line (`tools/cli`, one `src/cmd_<name>.cpp` per command; `--help`, `<command> --help`).
+Results go to stdout, or atomically to `--output <file>`, as text or with `--json` as one object; logs go to stderr and
+`<user data>/logs/retroverse-cli.log`. Pass `--data-dir build/rvdata`. The commands not listed here are stubs that exit
+2 until their I2 step.
+
+- `discover [--home <dir>] [--install <dir>] [--json]` finds ES-DE as ES-DE finds itself (`--home` is ES-DE's own
+  option: the ES-DE home is `<dir>\ES-DE`; `--install` defaults to the uninstall entry) and prints the ES-DE home, `~`,
+  the install and version, the settings it uses, the roots, find rules, systems, gamelists and issues, each with its
+  source. It reads ES-DE's files and writes nothing but its log; exit 1 on an error issue.
+- `library [show]` prints `<user data>/config/library.json` and the roots it gives; `library create [--id <slug>]
+  [--home <dir>] [--install <dir>] [--rom-root <dir>] [--media-root <dir>] [--force]` discovers ES-DE and writes it
+  atomically, never over an existing file without `--force`; the roots must resolve, from the settings or the options.
+  The folder options take a bare drive (`E:`) as its root, as ES-DE does.
+- `db migrate | check | info [--json]` on `<user data>/database/retroverse.sqlite`: `migrate` creates it or brings it to
+  the program's schema (backed up first when it holds anything, the newest 3 backups kept in `database/backups`);
+  `check` (integrity, foreign keys, FTS5, the schema against the program's; exit 1 on a problem) and `info` (versions,
+  sizes, `rv_meta`, row counts, backups) write nothing into it. Schema v1 stays open until the M1 gate: delete a
+  database an earlier build made (`db check` shows the difference), never migrate it.
+- Nothing is written, the log file included, until the user data directory has passed the guard against the library's
+  folders (the ES-DE home, the install, the ROM and media roots, the ROM folder of a system outside the ROM root):
+  `discover` and `library` check the folders they find, every other command those of `library.json`.
+
 ## I1 spikes
 
 Measurement executables for the three integration risks of I1 (`spikes/`, reports in `docs/spikes/`, decisions in
@@ -365,11 +400,19 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   card naming its failure; also `--count`, `--max-height`, `--no-vsync`, `--upload-fences`, `--priority above-normal`,
   `--list-encoders`. `./spikes/video/run_measurements.ps1` runs the Release series (3 x 60 s, interleaved). GPU checks:
   `./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter spike/video`.
-- Product UI (`docs/spikes/i1-ui.md`): `spike_ui.exe --exit-after-frames --frames 1910 --hidden --no-vsync --fixed-dt
-  0.016667 --data-dir build/rvdata --report build/spike_ui/report.json` drives the quick catalog over the test room with
-  a scripted SDL virtual gamepad (80 checks; exit 3 when one fails), with `--screenshot-at <frame>:<png>` (repeatable),
-  `--ui-scale`, `--high-contrast` and `--interactive` (a real pad or keyboard). The documents in `assets/ui` reload when
-  saved in developer builds. GPU check: `./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter spike_ui`.
+- Product UI (`docs/spikes/i1-ui.md`, `docs/i2/step-6.md`): `spike_ui.exe --smoke --frames 2271 --hidden --no-vsync
+  --fixed-dt 0.016667 --data-dir build/rvdata --report build/spike_ui/report.json` drives the virtualized quick catalog
+  over the test room and 100,000 generated games (fixed seed; the only game by "Studio Mezzanotte" sits at position
+  50,000) with a scripted SDL virtual gamepad through the UI actions (`--scenario quick-catalog`, the default: 153
+  checks; exit 3 when one fails), with `--screenshot-at <frame>:<png>` (repeatable), `--ui-scale`, `--high-contrast`
+  and `--interactive` (a real pad or keyboard). `--scenario user-bindings --frames 80 --data-dir
+  build/spike_ui/user_bindings` needs `spikes/ui/fixtures/user_bindings.json` copied to that directory's
+  `config/bindings.json` (never into `build/rvdata`, which the other runs share: the fixture moves `ui_down` off the
+  D-pad); `--input-script <json>` drives the screen with UI actions alone and `--expect-selection <position>` fails the
+  run unless the selection ends there (`--frames 120 --input-script tests/input_scripts/quick_catalog_select.json
+  --expect-selection 99998`). The documents in `assets/ui` reload when saved in developer builds. GPU checks
+  `gpu.spike_ui.scenario`, `gpu.spike_ui.input_script` and `gpu.spike_ui.user_bindings`: `./scripts/test.ps1 -Preset
+  msvc-x64-debug-gpu -Filter spike_ui`.
 - Emulator return (`docs/spikes/i1-launch.md`): `spike_launch.exe --target fake|retroarch|notepad --strategy
   direct|tree|confirm --policy minimize|keep --repeat N --report <json> --data-dir build/...`;
   `./spikes/launch/measure.ps1` measures. RetroArch only ever runs with the isolated append configuration `spike_launch`
@@ -390,8 +433,9 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   hand-over; links `platform_win`) -> `render` (OpenGL through glad; never includes SDL) -> `devui` (Dear ImGui,
   developer builds; its GPU-free part `rv_devui_model` is always built), `ui` (RmlUi product UI; its GPU-free part
   `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. `catalog` holds the domain, the
-  identities and one header per port (I2 step 1); its services, `esde` and `catalog_db` are GPU-free skeletons that the
-  I2 steps fill (each file names its step; `esde` has its XML loader); the system probe's
+  identities and one header per port (I2 step 1); `esde` reads ES-DE's configuration and gamelists (steps 2 and 3),
+  `catalog_db` holds the database and the catalog store (step 4); the catalog's services and the rest of `esde` and
+  `catalog_db` are skeletons that later I2 steps fill (each file names its step); the system probe's
   port is in `core` (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA <library>...)`
   forbids more libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under `#if
   defined(RV_DEV_UI)`. `rv_app` does not use `rv_media`, `rv_launcher` or `rv_ui` yet: the I1 spikes do.
@@ -399,14 +443,15 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
 - `tools/cli`: `retroverse-cli.exe` and its GPU-free core `rv_cli_core` (`include/rv/cli/*.hpp`, namespace `rv::cli`:
-  the command table, the dispatcher, the output contract; one `src/cmd_<name>.cpp` per command), built in every
-  configuration and tested by `tests/unit/cli` and, as a process, by `tests/cmake/test_cli_process.cmake`.
+  the command table, the dispatcher with the data-directory guard, the output contract; one `src/cmd_<name>.cpp` per
+  command), built in every configuration and tested by `tests/unit/cli` and, as a process, by
+  `tests/cmake/test_cli_process.cmake`.
 - `tools/screenshot-diff`: `retroverse-screenshot-diff.exe` and its GPU-free core `rv_screenshot_diff_core`
   (`include/rv/screenshot_diff/*.hpp`, namespace `rv::screenshot_diff`), built in every configuration, tested by
   `tests/unit/screenshot_diff` and linked by the GPU smoke tests.
 - Tests: `tests/unit/<module>/test_*.cpp` (globbed into `rv_tests`, label `unit`, no SDL or OpenGL; GLB files for
-  tests come from `rv/assets/glb_writer.hpp`; `tests/unit/platform_win` and `tests/unit/support` start
-  `rv_fake_emulator.exe` from the directory of `rv_tests.exe`),
+  tests come from `rv/assets/glb_writer.hpp`; `tests/unit/platform_win`, `tests/unit/launcher` and
+  `tests/unit/support` start `rv_fake_emulator.exe` from the directory of `rv_tests.exe`),
   `tests/platform/test_*.cpp` (globbed into `rv_platform_tests`, label `unit`: SDL platform layer, no OpenGL),
   `tests/support/*` helpers (globbed into `rv_test_support`, namespace `rv::test`: `TempDir`, `LogCapture`, `Fixture`
   (`fixture.hpp`: `tests/fixtures/<name>/` materialized into a fresh folder under `build/<preset>/test-fixtures`,
@@ -421,8 +466,11 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `tests/fixtures/<name>/` (original, minimal fixtures; text committed as LF, so CRLF, BOM and oversized files are
   written at test time; `tests/fixtures/esde/standard` is the ES-DE installation the catalog steps share: its README
   lists what each part exercises and the counts they assert, and it only ever grows additively; a step that needs
-  another situation adds a fixture folder of its own), `tests/fake_emulator` (`rv_fake_emulator`, built with the tests
-  or the spikes),
+  another situation adds a fixture folder of its own: `esde/portable` (a portable installation, `portable.txt` variants
+  written into the copy), `esde/custom-dirs` (ROM and media roots and system folders moved with `~` and `%ESPATH%`),
+  `esde/custom-systems` (the user's `custom_systems` with ES-DE's quirks), each README stating its expectations; their
+  settings hold fake scraper credentials that nothing may show, log or record), `tests/fake_emulator`
+  (`rv_fake_emulator`, built with the tests or the spikes),
   `tests/input_scripts` (scripted verification runs),
   `tests/smoke/*.cpp` GPU smoke tests (globbed into `rv_smoke_tests`, label `gpu`: GPU-free itself, it starts the
   executables of its build with `tests/support/child_process.hpp` and reads their run reports and screenshots;
@@ -430,6 +478,13 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `tests/smoke/scenes`, `tests/cmake/test_*.cmake` (label `unit`, listed in `tests/cmake/CMakeLists.txt`, run by ctest
   in CMake script mode: the build's CMake scripts, e.g. the Release asset mirror, and `retroverse-cli` as a process,
   its exit codes with stdout and stderr apart).
+- Configuration files, JSON with comments: shipped defaults under the asset root, the user's under
+  `<user data>/config`, which Retroverse reads and never writes: `assets/config/default_bindings.json` under
+  `bindings.json` (per action), `assets/launcher/emulators.json` (the emulator profiles: one RetroArch profile for 50
+  systems, `rv/launcher/emulator_profile.hpp`) under `emulators.json` (a user profile replaces the shipped one with its
+  id whole; a broken user file or profile is left out with an issue). The one exception, `library.json` (the library's
+  id, the ES-DE home and install, root overrides), is written only by `retroverse-cli library create`; choices made
+  later go to the database (ADR-0008 §6).
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 
 ## Conventions
@@ -468,11 +523,29 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `tests/unit/catalog/test_identity.cpp` come from `scripts/game_id_oracle.py` (Python's hashlib): a change of the
   derivation changes both, and `python -I scripts/game_id_oracle.py --check tests/unit/catalog/test_identity.cpp`
   must pass.
+- ES-DE files (`rv_esde`, ADR-0008; ES-DE 3.4.1's behaviour as verified in its source is in `docs/i2/step-2.md` and
+  `step-3.md`): follow ES-DE, and report every deliberate difference as a `catalog::Issue` or in the header. `~` is
+  ES-DE's home folder (the parent of the ES-DE home) and every `~` of a text is replaced. The settings reader extracts
+  only its whitelisted keys (`esde::settingKeys()`): never read, log or return the scraper credentials or the UI mode's
+  passkey. `rv/esde/gamelist.hpp`: `readGamelist` (NotFound means no gamelist; any other error is retried by the
+  caller), `gamelistPath`, `entryForListed`; issue codes `gamelist-*`, those about single entries listed up to 100 per
+  code; of the entries of one kind and path the last counts, entries of one file that differ in kind or case are all
+  kept for the scan to choose. The user's paths are logged at debug level only: parse files under the user's folders
+  with `core::readFileShared` and `detail::parseXml`, as `readGamelist` does (`detail::loadXmlFile` still logs the
+  loader's warnings with the path at warning level, BACKLOG).
+- Catalog database (`rv_catalog_db`, `docs/i2/step-4.md`): only `src/catalog_db/src/database.cpp` includes `sqlite3.h`;
+  other code uses `Connection`, `Statement` (kept statements reset after each use, `ScopedReset`) and `Transaction`.
+  One writer per process on one thread (`Database::writer()`), read-only readers on other threads
+  (`Database::openReader()`). Schema v1 stays open until the M1 gate: a step adds its tables to v1 (`AreaStep{1, ...}`)
+  in its area's source (`schema_search.cpp`, `schema_launch.cpp`), STRICT, foreign keys only into `rv_*` (never into
+  `idx_*`) and never cascading; writes are upserts, never `REPLACE`; tests keep databases under their temporary folder.
 - OpenGL calls only in `rv_render`/`rv_devui`/`rv_ui`/`rv_app` (and the I1 spike executables), only on the main
   thread, DSA style (GL 4.5; the vendored RmlUi GL3 renderer in `third_party/rmlui_backends` excepted).
 - Determinism: no `rand()`, no iteration over unordered containers into outputs, explicit seeds.
 - Product code starts processes only through `rv_launcher` and `rv_platform_win` (`Win32ProcessRunner`): argv, never a
-  shell string, no batch files; the product never terminates an emulator. (Test harnesses start their own children:
+  shell string, no batch files; the product never terminates an emulator. An emulator profile's argument template
+  gives one argument per element, never split again (`rv/launcher/arg_template.hpp`); `{env:NAME}` takes only the
+  allow-listed folder variables, since command lines are logged. (Test harnesses start their own children:
   `tests/support/child_process.hpp`, `rv_fake_emulator`.)
 - Product UI strings live in the RML documents under `assets/ui` (Italian until localization tables exist); sizes in dp,
   bundled fonts only, no color transitions (RmlUi rebuilds the geometry of every animated frame).
@@ -486,6 +559,16 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   snapshots before and after, 0 differences). Product code never names this machine's library paths (they come from
   ES-DE's configuration, discovery or the user), and no test but those reads them (strings shaped like them, such as
   quoting cases, are only data; new tests use invented paths).
+- Anything automated that may start an emulator (harnesses, agents) runs with `RV_LAUNCH_ALLOWLIST` set (absolute
+  executable paths separated by `;`; set but empty allows nothing). `Win32ProcessRunner::start` then refuses, before
+  creating anything, every executable the list does not name (matched by final path and file id;
+  `rv/launcher/launch_guard.hpp`); any other code that starts a `LaunchRequest` calls `launcher::checkLaunchGuard()`
+  first. Unset, the guard does nothing: `scripts/gate.ps1` and `scripts/test.ps1` do not set it yet (BACKLOG). A run
+  that sets it lists `build/<preset>/bin/rv_fake_emulator.exe`, which the runner, launcher and I1 spike tests start.
+  DuckStation (`duckstation*.exe`) never starts, listed or not; RetroArch (`retroarch*.exe`) only isolated, every
+  `--appendconfig` naming an existing ASCII file (the isolated configuration under `build/`, as `spike_launch` writes
+  it). The guard is a safety net, not a security boundary: a hard link or copy under another name is kept out by the
+  list alone.
 - No brand logos, commercial artwork or trademarked names in `assets/` (style §1, §17.2). Every third-party asset
   needs provenance and license entries in `assets/registry/` before it is committed; `assets/staging/` is never
   committed or packaged.

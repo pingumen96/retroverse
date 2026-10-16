@@ -8,6 +8,12 @@
 - Amended: 2026-10-16, at I2 step 1: §3 names `ShowHiddenGames` among the settings that exclude entries and says what
   becomes of a `<folder>` entry that names no folder; §8 says that `~` is ES-DE's home folder, the parent of the ES-DE
   home (ES-DE's own meaning, which the earlier wording misstated)
+- Amended: 2026-10-17, at I2 wave 1 (steps 2-4): §8 gives the exact meaning of `~` as ES-DE 3.4.1 finds it (every `~`
+  replaced, a bare drive as `--home`) and how static paths are expanded and their wildcards matched; §6 and §7 extend
+  the data-directory guard to the ROM folders of systems outside the ROM root and run it before any file is written;
+  §3 says that of several gamelist entries for one path the last counts, as ES-DE applies them; §4 makes an identity
+  unique by (library, system, relative path); §5 backs a database up once per migration run, before its first
+  migration, and not when it holds nothing yet (a new database)
 
 ## Context
 
@@ -92,7 +98,10 @@ frontends agree:
   ignored;
 - MAME BIOS and device sets skipped for the arcade and neogeo platforms, from ES-DE's `resources/MAME` lists, and
   unscraped arcade zips titled from `mamenames.xml`; other unscraped files titled from their cleaned file name;
-- gamelist metadata matched to files by path; gamelists inside ROM folders ignored (`LegacyGamelistFileLocation` off);
+- gamelist metadata matched to files by path: of several entries of one kind for the same path the last counts, as
+  ES-DE applies them in turn (and moves an entry it updates to the end of the file); entries that differ in kind or
+  only in case are all kept, and the files on disk decide which one applies; gamelists inside ROM folders ignored
+  (`LegacyGamelistFileLocation` off);
   a `<folder>` entry that names no folder (gone, or a file) is skipped with an issue, as ES-DE skips it: a folder is no
   game, and nothing is kept for it as unavailable.
 
@@ -112,7 +121,9 @@ one; a gamelist path that differs from the file only in case matches it (ES-DE w
   file-system casing table (`LCMapStringEx`, `LOCALE_NAME_INVARIANT`, file-system casing) and never Unicode-normalized,
   as NTFS and exFAT compare names. Identities match on the exact stored relative path first, then on the key; the
   casing table's NLS version is stored and keys are re-computed in place when it changes. Two names that fold to one
-  key keep distinct identities, disambiguated deterministically and reported as an import issue.
+  key keep distinct identities, disambiguated deterministically and reported as an import issue. An identity is
+  therefore unique by (library, system, exact relative path), never by its key: a file has one identity, whatever
+  casing table its stored key was computed with.
 - **GameId**: assigned the first time a key is seen, then persisted. SHA-256 over the UTF-8, NUL-separated tuple
   (`rv-game/1`, library id, ES-DE system name, key); the first 8 bytes big-endian with the top bit cleared, 0 excluded.
   On a collision the tuple gains a fourth element, a counter n = 1, 2, ... written in decimal ASCII after a fourth NUL,
@@ -147,8 +158,9 @@ one; a gamelist path that differs from the file only in case matches it (ES-DE w
   statements are reset after each page; an import lock keeps two imports (also from two processes) from overlapping;
   `sqlite3_interrupt` at shutdown.
 - **Migrations**: `PRAGMA user_version`, forward-only, each in one transaction, under a process-level lock that every
-  Retroverse process holds while the database is open; before each, a uniquely named backup (the last 3 kept, free space
-  checked); table rebuilds follow SQLite's documented procedure. A database newer than the program is refused.
+  Retroverse process holds while the database is open; before the first of a run, a uniquely named backup of a database
+  that holds anything (the last 3 kept, free space checked); table rebuilds follow SQLite's documented procedure. A
+  database newer than the program is refused.
 - **Search**: an FTS5 table with external content (`unicode61 remove_diacritics 2`, prefix indexes 2 and 3) over the
   title, sort title, developer, publisher, genre, year and the system's full name; descriptions are not searched in M1.
   The input is split into words with the same tokenizer and becomes one quoted token per word, joined with AND, the last
@@ -168,21 +180,24 @@ JSON with comments under `<user data>/config`: `library.json` (the library's id 
 folders, optional ROM and media root overrides) and `emulators.json` (the user's emulator profiles and per-system
 choices); shipped defaults under `assets/launcher/`. Choices made through the CLI (`assign`) and per-game choices are
 stored in the database, never written into the user's commented files. The user data directory may not lie inside the
-ES-DE home, its install folder, the ROM root or the media root, compared as the file system compares names and again
-with links, junctions, subst and mapped drives resolved (`rv::core::checkUserDataDirectory`).
+ES-DE home, its install folder, the ROM root or the media root, nor inside the ROM folder of a system outside the ROM
+root (an absolute `<path>`, or one using `~`: the ROM scan reads those too, `esde::readOnlyFolders()`), compared as the
+file system compares names and again with links, junctions, subst and mapped drives resolved
+(`rv::core::checkUserDataDirectory`). The guard runs before anything is written, the log file included:
+`retroverse-cli` logs to stderr only until the user data directory has passed it.
 
 ### 7. Read-only towards ES-DE
 
 ADR-0003 and NFR-10: the adapter opens ES-DE's files for reading only, with full sharing, and never writes under the
-ES-DE home, the install, the ROM root or the media root (reading cue sheets may update last-access times, which is
-accepted); `<favorite>`, `<playcount>` and `<lastplayed>` are read, never updated. ES-DE's XML files are decoded as its
-pugixml decodes them (UTF-8, UTF-16 or UTF-32 by their byte order mark or first character, a declared ISO-8859-1), and
-what it reads leniently is read too, as UTF-8 and reported: bytes that are not UTF-8 as Windows-1252 characters,
-character references to no character as U+FFFD. The settings reader extracts only the keys it uses and never reads,
-logs or copies the scraper credentials. A gamelist that fails to parse (it is cut short or padded with NUL characters
-while ES-DE writes it, among others), is empty, or has no `<gameList>` element is retried after a delay and then keeps
-that system's previous rows; on a first import that system is marked "metadata pending" rather than imported
-unscraped.
+ES-DE home, the install, the ROM root, the media root or a system's ROM folder outside the ROM root (reading cue sheets
+may update last-access times, which is accepted); `<favorite>`, `<playcount>` and `<lastplayed>` are read, never
+updated. ES-DE's XML files are decoded as its pugixml decodes them (UTF-8, UTF-16 or UTF-32 by their byte order mark or
+first character, a declared ISO-8859-1), and what it reads leniently is read too, as UTF-8 and reported: bytes that are
+not UTF-8 as Windows-1252 characters, character references to no character as U+FFFD. The settings reader extracts only
+the keys it uses and never reads, logs or copies the scraper credentials. A gamelist that fails to parse (it is cut
+short or padded with NUL characters while ES-DE writes it, among others), is empty, or has no `<gameList>` element is
+retried after a delay and then keeps that system's previous rows; on a first import that system is marked "metadata
+pending" rather than imported unscraped.
 
 ### 8. Launch translation
 
@@ -203,12 +218,20 @@ unscraped.
   game "requires launcher configuration" (conservative). Anything else (`%RUNINBACKGROUND%`, `%PRECOMMAND_X%`,
   `%RPCS3_GAMEID%` and other unknown `%X%` text, placeholder commands, a static path with `|`) makes the game "requires
   launcher configuration" with the token named; nothing runs.
+- **`~`** is ES-DE's home folder (`Utils::FileSystem::getHomePath`), the parent of the ES-DE home: the `--home` folder
+  (a bare drive such as `E:` is that drive's root, so the ES-DE home is `E:\ES-DE`), else the portable home (the folder
+  of `ES-DE.exe` for an empty `portable.txt`, otherwise that folder joined with the file's first line), else
+  `%HOMEDRIVE%%HOMEPATH%`; where ES-DE would fall back to its own working folder, Retroverse falls back to
+  `%USERPROFILE%`. ES-DE replaces every `~` of a text, not only a leading one (in ROMDirectory, MediaDirectory,
+  `es_systems.xml` paths, static paths, `%STARTDIR%` values and whole commands); so does Retroverse, which reports a `~`
+  past the start of ROMDirectory or MediaDirectory (`root-tilde-inside`).
 - **Find rules**: in ES-DE's order: App Paths (HKCU, then HKLM when the HKCU key is absent), registry values (the value
-  plus the suffix appended verbatim), the executable search, static paths (`~` is ES-DE's home folder, the parent of
-  the ES-DE home: `%USERPROFILE%`, the `--home` folder, or the folder of `ES-DE.exe` when portable; `%ESPATH%` the
-  install folder; a wildcard only in the last component with matches taken in sorted order), and the core path
-  (`%EMUPATH%\cores`); `custom_systems/es_find_rules.xml` is read first and its emulators replace the bundled ones. The
-  executable search looks in the ES-DE install folder, System32, the Windows folder and the absolute entries of PATH,
+  plus the suffix appended verbatim), the executable search, static paths (`~`, `%ESPATH%` the install folder and
+  `%ROMPATH%` the ROM root as ES-DE's `getROMDirectory()` gives it, expanded; a `*` only in the last element, matched as
+  ES-DE's regular expression over the generic path: `*` becomes `.*`, `.` stays a wildcard character, `()[]` escaped,
+  case-sensitively, the first match in ordinal order winning), and the core path (`%EMUPATH%\cores`);
+  `custom_systems/es_find_rules.xml` is read first and its emulators replace the bundled ones. The executable search
+  looks in the ES-DE install folder, System32, the Windows folder and the absolute entries of PATH,
   never in Retroverse's folder or the current directory (the ROM tree here holds emulators named like find-rule entries).
   `%ESPATH%` with an unknown install folder makes the game "requires launcher configuration".
 - **Working directory** without `%STARTDIR%`: the emulator's folder (ADR-0006). ES-DE leaves emulators in its own

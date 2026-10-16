@@ -37,7 +37,8 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de` (read-only 
   Retroverse's probe falls back to `%USERPROFILE%` instead of a working folder it cannot know.
 - `~` is expanded by `expandHomePath()`, which replaces **every** `~` of the text, not only a leading one. This holds
   in ROMDirectory, MediaDirectory, es_systems.xml paths, staticpath find rules, `%STARTDIR%` values and whole
-  commands. Retroverse replaces every `~` too and reports one past the start (`root-tilde-inside`).
+  commands. Retroverse replaces every `~` too and reports one past the start of ROMDirectory or
+  MediaDirectory (`root-tilde-inside`); a system's `<path>` is replaced without a report.
 
 **`--home`.** `--home <folder>` must name an existing folder (or a drive) that is not a file, else ES-DE exits. It
 names the home folder, not the ES-DE home: ES-DE then uses `<folder>\ES-DE`. It wins over portable mode.

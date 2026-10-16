@@ -195,14 +195,18 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 
 ### Product UI
 
-- **UI actions in the action map:** `ui_*` actions in `assets/config/default_bindings.json`, with `ui::NavBindings`
-  built from the action map, so user rebindings reach the product UI (ADR-0005).
-- **Per-change cost under 1 ms:** a pooled vertex buffer in the vendored GL3 renderer, the detail card in its own
-  document, the selected row marked by class; profile RmlUi with Tracy (`RMLUI_TRACY_PROFILING` is off in vcpkg's
-  build).
-- **Large collections:** a virtualized game list; tune the card's settle delay (0.15 s) on a TV.
+- **Per-change cost under 1 ms:** the selected row is marked by class and the list's rows are recycled (I2 step 6),
+  yet a held direction that scrolls the list costs about a tap (2.8 to 3.0 ms at p50): RmlUi 6.3 lays the whole screen
+  out again for the entering row's text. Remaining: the list and the detail card each in a document of their own, a
+  pooled vertex buffer in the vendored GL3 renderer; profile RmlUi with Tracy (`RMLUI_TRACY_PROFILING` is off in
+  vcpkg's build).
+- **Card settle delay:** tune it (0.15 s) on a TV.
 - **Text entry with the pad:** an on-screen keyboard (I7); the hint bar built from the active bindings.
-- **Localization:** tables in `assets/ui/locale` bound through RmlUi's data model.
+- **Keyboard defaults for Vedi media, Informazioni and the filters:** they have pad buttons only (I2 step 6), since
+  letters, digits, the space bar, Backspace, Delete and Tab stay with RmlUi's text fields; bind keys if any can be
+  spared from text entry.
+- **Localization:** tables in `assets/ui/locale` bound through RmlUi's data model, and number formatting with them (the
+  quick catalog's count reads "100000 giochi").
 - **Pictures in the UI:** an image source scheme (`rv-texture:<key>`) mapping covers and video frames to
   `gl::TextureCache` textures in the render interface (I3, I5).
 - **Upstream:** propose the vendored renderer's three local changes to RmlUi (output target, state-backup opt-out,
@@ -229,8 +233,8 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Batch launchers:** `.bat` files need a verified profile kind with cmd-specific escaping (the BatBadBut class of
   injection); until then only PE programs start.
 - **More emulators:** DuckStation and real exclusive-fullscreen emulators from an isolated copy; an emulator on another
-  monitor than Retroverse's; a window timeout per profile for windowless console emulators; re-grant
-  `AllowSetForegroundWindow` once a console emulator's window exists (it fails with error 87 while suspended).
+  monitor than Retroverse's; re-grant `AllowSetForegroundWindow` once a console emulator's window exists (it fails with
+  error 87 while suspended).
 - **Crash and loader-error returns under the default error mode:** not measured (the spike's crash return ran with the
   fake emulator's own error dialogs off), because on this machine a crash opens the Visual Studio JIT debugger prompt
   and a missing DLL the loader's modal box; decide Retroverse's error-mode policy (hard-error dialogs are disabled only
@@ -244,3 +248,28 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Sort keys that fold diacritics** (`kSortKeyVersion` 2, `rv/catalog/metadata.hpp`): version 1 only lower-cases with
   the invariant locale, so accented titles sort after "z" ("Écran" after "Zone"); fold accents to their base letters
   (Windows' normalization functions can decompose them) and consider a natural order of numbers ("2" before "10").
+- **XML warnings with the user's paths:** `detail::loadXmlFile` (`src/esde/src/xml.cpp`, used by the settings, systems
+  and find rules readers) logs what it read leniently at warning level with the file's path, under the user's ES-DE
+  home; log it at debug level, as `readGamelist` does (I2 step 3), and report it as issues.
+
+### Launcher
+
+The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; these come from the I2 steps.
+
+- **The gate and test scripts under the automation guard** (ADR-0008 §8): `scripts/gate.ps1` and `scripts/test.ps1`
+  set no `RV_LAUNCH_ALLOWLIST`, so the guard does nothing in their runs. Set it to
+  `build/<preset>/bin/rv_fake_emulator.exe`, and check that the runner tests that start unlisted files on purpose (a
+  text file or a broken program named `.exe`) still test what they mean to, since the guard refuses them first.
+- **Derived profiles:** an `extends` field, so that a user profile changes a few fields of a shipped one instead of
+  replacing it whole by id (I2 step 5), if users ask for it.
+- **Startup grace per profile:** a `startupGraceSeconds` beside `windowTimeoutSeconds` in `emulators.json`; today every
+  emulator gets `LaunchTimeouts::startupGrace` (2 s, within which an unclean exit is a failure to start and a clean one
+  a quick exit).
+- **Hard links in the automation guard:** a hard link or copy of DuckStation or RetroArch under another name is kept
+  out by the allow-list only; compare file ids with known emulator installations.
+- **Best-fit argument mangling ("WorstFit") for every emulator:** an emulator whose `main()` reads the ANSI code page
+  receives a ROM path the code page does not hold as other text, and a fullwidth quotation mark splits the argument;
+  the guard refuses that for RetroArch only. Plans could refuse or warn for such paths, or prefer emulators known to
+  read UTF-16 (their manifest, `wmain`).
+- **The guard's RetroArch option table** (`launch_guard.cpp`) holds RetroArch 1.21.0's options: newer options are
+  refused until the table learns them, so follow RetroArch releases.
