@@ -123,12 +123,14 @@
 		<p class="blocker" data-if="card.blocker == 'core-repeated'">Il comando indica più di un core.</p>
 		<p id="card-description" class="description" data-class-expanded="card.expanded">{{ card.description }}</p>
 		<div class="rows">
-			<div class="row"><span class="key">Piattaforma</span><span class="value">{{ card.platform }}<span data-if="card.platform == ''">n.d.</span></span></div>
-			<div class="row"><span class="key">Genere</span><span class="value">{{ card.genre }}<span data-if="card.genre == ''">n.d.</span></span></div>
-			<div class="row"><span class="key">Giocatori</span><span class="value">{{ card.players }}<span data-if="card.players == ''">n.d.</span></span></div>
-			<div class="row"><span class="key">Sviluppatore</span><span class="value">{{ card.developer }}<span data-if="card.developer == ''">n.d.</span></span></div>
-			<div class="row" data-if="card.expanded"><span class="key">Editore</span><span class="value">{{ card.publisher }}<span data-if="card.publisher == ''">n.d.</span></span></div>
-			<div class="row" data-if="card.expanded"><span class="key">Anno</span><span class="value">{{ card.year }}<span data-if="card.year == ''">n.d.</span></span></div>
+			<div class="rows-list">
+				<div class="row"><span class="key">Piattaforma</span><span class="value">{{ card.platform }}<span data-if="card.platform == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Genere</span><span class="value">{{ card.genre }}<span data-if="card.genre == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Giocatori</span><span class="value">{{ card.players }}<span data-if="card.players == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Sviluppatore</span><span class="value">{{ card.developer }}<span data-if="card.developer == ''">n.d.</span></span></div>
+				<div class="row" data-if="card.expanded"><span class="key">Editore</span><span class="value">{{ card.publisher }}<span data-if="card.publisher == ''">n.d.</span></span></div>
+				<div class="row" data-if="card.expanded"><span class="key">Anno</span><span class="value">{{ card.year }}<span data-if="card.year == ''">n.d.</span></span></div>
+			</div>
 		</div>
 		<div id="actions" class="region" nav-region="actions">
 			<button id="act-play" class="action primary" data-event-click="launch()">Avvia</button>

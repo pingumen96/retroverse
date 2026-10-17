@@ -374,18 +374,25 @@ h2 {
 	max-height: none;
 }
 
-/* The rows give way by whole rows: a column that wraps moves the rows that do not fit into a next column, beyond the
-   card's edge (hidden), so that no row is cut through its text. */
+/* The rows give way by whole rows: the list inside is a column that wraps at the box's height, moving the rows that
+   do not fit into a next column, beyond the card's edge (hidden), so that no row is cut through its text. The list's
+   bottom margin is inside the box: without that slack a list that fits exactly would wrap its last row (RmlUi). */
 .rows {
 	flex: 0 1 auto;
+	overflow: hidden;
+	border-top: 2dp #F4EFE61F;
+	padding-top: 14dp;
+	margin-bottom: 18dp;
+}
+
+.rows-list {
 	display: flex;
 	flex-direction: column;
 	flex-wrap: wrap;
 	align-content: flex-start;
-	overflow: hidden;
-	border-top: 2dp #F4EFE61F;
-	padding-top: 14dp;
-	margin-bottom: 22dp;
+	width: 100%;
+	max-height: 100%;
+	margin-bottom: 4dp;
 }
 
 .row {
@@ -533,7 +540,7 @@ body.high-contrast .fade-after {
 	.state { font-size: 19dp; margin-bottom: 8dp; }
 	.blocker, .ready { font-size: 18dp; margin-bottom: 6dp; }
 	.description { font-size: 19dp; max-height: 2.8em; margin-bottom: 10dp; }
-	.rows { padding-top: 8dp; margin-bottom: 12dp; }
+	.rows { padding-top: 8dp; margin-bottom: 8dp; }
 	.row { font-size: 19dp; padding: 1dp 0dp; }
 	.action { font-size: 20dp; padding: 7dp 14dp; margin-right: 8dp; margin-bottom: 8dp; }
 	.status { font-size: 18dp; margin-top: 2dp; }

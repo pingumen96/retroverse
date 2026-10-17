@@ -199,8 +199,6 @@ private:
         opened.at = std::chrono::system_clock::now();
         if (m_state == CatalogState::Ready) {
             opened.firstList = firstList();
-        }
-        if (m_state == CatalogState::Ready) {
             spdlog::info("Catalog opened on the worker in {:.0f} ms: library '{}', {} system(s) with games{}",
                          opened.milliseconds, opened.library.str(), opened.systems.size(),
                          opened.interrupted.empty()
@@ -787,20 +785,24 @@ CatalogWorker::CatalogWorker(Options options) : m_shared(std::make_shared<Shared
             failure = Error{ErrorCode::Unknown, "the catalog worker failed", {}};
         }
         // Nothing it was asked is left waiting: an opening never posted is Unavailable, and the main thread learns that
-        // no other answer will come (CatalogResults::ended).
-        shared->post([&](CatalogResults& results) {
-            if (!shared->openedPosted) {
-                CatalogOpened opened;
-                opened.state = CatalogState::Unavailable;
-                opened.error = failure.value_or(Error{ErrorCode::Cancelled, "the catalog worker stopped", {}});
-                opened.at = std::chrono::system_clock::now();
-                results.opened = std::move(opened);
-                shared->openedPosted = true;
-            }
-            results.ended = true;
-            shared->finished = true;
-            shared->busy = false;
-        });
+        // no other answer will come (CatalogResults::ended). The state is set before the wake, which must not throw.
+        try {
+            shared->post([&](CatalogResults& results) {
+                if (!shared->openedPosted) {
+                    CatalogOpened opened;
+                    opened.state = CatalogState::Unavailable;
+                    opened.error = failure.value_or(Error{ErrorCode::Cancelled, "the catalog worker stopped", {}});
+                    opened.at = std::chrono::system_clock::now();
+                    results.opened = std::move(opened);
+                    shared->openedPosted = true;
+                }
+                results.ended = true;
+                shared->finished = true;
+                shared->busy = false;
+            });
+        } catch (...) {
+            spdlog::error("The catalog worker's last wake of the host failed");
+        }
         shared->ended.notify_all();
     });
 }

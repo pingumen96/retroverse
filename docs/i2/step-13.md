@@ -10,7 +10,8 @@ page is folded into the shared documentation at the wave merge.
 Outcome: `retroverse.exe` shows the ES-DE catalog of its user data directory in the quick catalog. A catalog worker
 thread owns the database's writer and runs the queries; the main thread fetches pages on its own read-only connection
 and never waits on the database. The card shows each game's launch readiness (each system's resolved once when the
-catalog opens, a game's own only where it can differ) with an Italian sentence for every readiness and blocker code.
+catalog opens, a game's own only where it can differ) with an Italian label for every readiness and a sentence for
+every blocker code.
 Avvia resolves the game again on the worker right before the launch (its file on disk now, the database's choices) and
 hands the request to A1's LaunchFlow; a game that is not ready shows why instead. Every launch is recorded as a play
 session on the worker. After the return the catalog's selection, search, filter and the walker's camera are what they
@@ -34,16 +35,16 @@ catalog is what `retroverse-cli import` made (step 13r may add a refresh on the 
 | `src/app/include/rv/app/run_report.hpp`, `src/run_report.cpp` | `CatalogView`, `TimeSummary`, `summarizeTimes()`; `CatalogRecord` gains `notice`, `library`, `systems`, `search`, `filter`, `times` {`openedMs`, `firstListMs`, `firstPageMs`}, `pages`, `frames`, `interruptedSessions`; `LaunchRecord` gains `before`, `after`, `session` {`id`, `error`, `verified`} (schema version 1: keys only added, all optional when read) |
 | `src/ui/include/rv/ui/catalog_source.hpp` | `CatalogEntry::readiness`, `blocker`, `blockerDetail`, `verified` |
 | `src/ui/include/rv/ui/quick_catalog_model.hpp`, `src/quick_catalog_model.cpp` | `QuickCatalogModel::reread()`, `contentRevision()`: rows changed in place (a readiness learned later) |
-| `src/ui/include/rv/ui/quick_catalog_screen.hpp`, `src/quick_catalog_screen.cpp` | the card's `readiness`, `blocker`, `detail`, `verified`; `setNotice()`/`notice()`; rows and card bound again on a content revision |
-| `src/ui/include/rv/ui/ui_assets.hpp` | `kReadinessKeys`, `kBlockerCodes` (32), `kNotice*`, `kNotices` |
+| `src/ui/include/rv/ui/quick_catalog_screen.hpp`, `src/quick_catalog_screen.cpp` | the card's `readiness`, `blocker`, `detail`, `verified`; `setNotice()`/`notice()`; rows and card bound again on a content revision; `squeezedCardBlocks()` (the card's blocks the layout cuts) |
+| `src/ui/include/rv/ui/ui_assets.hpp` | `kReadinessKeys`, `kBlockerCodes` (33), `kNotice*`, `kNotices`, `kCardId` |
 | `src/input/include/rv/input/input_script.hpp`, `src/input_script.cpp` | input script steps with `"text"` (typed once on `fromFrame`), `InputScript::textAt()`, `kMaxTextBytes` |
-| `assets/ui/quick_catalog.rml`, `.rcss` | the notices, a sentence per readiness and per blocker code, the "Dettagli" line, "Pronto: già avviato e tornato senza errori" |
+| `assets/ui/quick_catalog.rml`, `.rcss` | the notices, a one-line label per readiness, a sentence per blocker code, "Pronto: già avviato e tornato senza errori"; the card's blocks kept whole (the rows give way by whole rows); the rows' platform ending in an ellipsis before the title does |
 | `assets/ui/game_session.rml` | the outcome `not-ready` with a text per readiness |
 | `tests/unit/app/test_catalog_worker.cpp`, `test_catalog_sessions.cpp`, `test_catalog_real.cpp` (hidden) | the tests (below) |
 | `tests/unit/ui/test_ui_documents.cpp`, `tests/unit/app/test_game_session_document.cpp` | the new texts checked |
 | `tests/smoke/test_catalog.cpp`, `tests/smoke/CMakeLists.txt` | the GPU smoke cases (below); `rv_smoke_tests` depends on `retroverse-cli` |
 | `tests/smoke/test_launch.cpp` | the closed-catalog case: a run without `--mock-catalog` has the ES-DE catalog (notice `no-library`) |
-| `tests/input_scripts/catalog_search_launch.json`, `catalog_blocked_launch.json`, `catalog_open.json` | the scripts |
+| `tests/input_scripts/catalog_search_launch.json`, `catalog_blocked_launch.json`, `catalog_open.json`, `catalog_card_info.json` | the scripts |
 
 ## Threading
 
@@ -55,14 +56,18 @@ EsdeAppCatalog made at onInit's start  ------------> open: library.json, the dat
                                                           writer, closeInterrupted(processLiveness), a
                                                           SqliteCatalogQuery on its reader, another reader for the
                                                           main thread, systems() for the chips, library mismatch,
-                                                          the library's configuration, each system's readiness
-ProductUi::update / onIdle: AppCatalog::poll() <---- CatalogOpened (the main thread's SqliteCatalogQuery moved over)
-  model.refresh() on opened                    
+                                                          the library's configuration, each system's readiness,
+                                                          then the default list (every game, Title order)
+ProductUi::update / onIdle: AppCatalog::poll() <---- CatalogOpened (the main thread's SqliteCatalogQuery moved over,
+  model.refresh() on opened: the default list         the first list)
+  taken from CatalogOpened::firstList
 CatalogDatabaseSource::query() -> Pending  --------> run() on the worker's query (its kept list narrows typing)
+  (held until the catalog opened)
   model.poll() switches lists                  <---- CatalogList {serial, ids, (id, position) sorted}
 rows(): fetch(page) on the main thread's reader
   (timed); unknown games' readiness asked  --------> details(), gameChoice(): the system's state or the game's own
-  model.reread() when a row's state changed    <---- GameReadiness {state, ownState}
+  model.reread() when a row's state changed    <---- GameReadiness {state, ownState, known}: every game asked is
+                                                      answered (known false: gone, or unreadable now)
 Avvia: requestLaunch(token) ---------------------> resolve right before the launch: details (an alias resolved),
                                                       gameChoice, systemChoices (read again), resolveLaunch with the
                                                       file on disk now, the guard's verdict
@@ -74,22 +79,35 @@ LaunchFlowEvents::ended   -> finishSession -------> update + flush; pending writ
 ProductUi::finish: flow.quit, then stop()  -------> interrupt the running query (sqlite3_interrupt through
   (bounded: 5 s; the worker detached if not)          Connection::interrupt), queued lists dropped, queued and
                                                       pending session writes tried for 3 s, then the thread ends
+                                               <---- CatalogResults::ended (last; with an Unavailable opening if the
+                                                      thread failed before it posted one)
 ```
 
 - **One writer, on the worker.** The worker's `Database` holds the writer (session writes, `closeInterrupted`) and its
   own `SqliteCatalogQuery` on a reader (lists, `systems()`, `details()`); the main thread holds the other
-  `SqliteCatalogQuery` (pages only, `fetch()`), created by the worker and handed over in `CatalogOpened`. No GL or SDL
-  call happens on the worker; it wakes the host with `AppContext::wakeCallback()` after it posts results.
+  `SqliteCatalogQuery` (pages only, `fetch()`), created by the worker and handed over in `CatalogOpened`. No GL call
+  happens on the worker, and one SDL call only: it wakes the host after it posts results through
+  `AppContext::wakeCallback()`, which is `SDL_PushEvent` (documented as thread-safe; A1's process runner wakes the host
+  the same way). Nothing else on the worker may call SDL.
+- **Every request is answered.** A game whose readiness was asked is answered also when the catalog no longer has it or
+  its details cannot be read now (`GameReadiness::known` false: its rows keep their system's and ask again when read
+  again). When the worker's thread ends (stopped, or an exception it did not expect), its last post says so
+  (`CatalogResults::ended`), with an `Unavailable` opening if none was posted: the source stops waiting, a pending list
+  fails with `Unavailable`, a launch being resolved and any later Avvia are refused (`not-ready`/`unresolved`). A
+  `Runner` that unwinds also clears the connection `stop()` would interrupt.
 - **The main thread never waits.** Requests are queued; results are collected by `AppCatalog::poll()` every frame and
   every idle wake. A query queued behind another is replaced (typing coalesces); `CatalogDatabaseSource` switches only
   to the list of the latest serial. Session writes that meet a busy database stay pending on the worker
   (`SessionRecorder`), tried again every `sessionRetryInterval` (2 s), never on the main thread.
 - **Lockstep runs.** With `--fixed-dt` (scripted, reproducible runs) the host idles after each frame while something
   the screen waits for is with the worker (`AppCatalog::busy()`: the opening, a list, readiness, a decision), woken by
-  the worker's results: the frames of an input script see the same lists and launches on every run. Other runs never
-  wait for the worker; the screen shows the previous list until the new one arrives. A decision that arrives during an
+  the worker's results: the frames of an input script see the same lists and launches on every run. The wait is
+  bounded: after 10 s without the answers (`kLockstepWaitLimit`) the next frame is rendered all the same, with a
+  warning, so that a frame-limited run never hangs. Other runs never wait for the worker; the screen shows the previous
+  list until the new one arrives. A decision that arrives during an
   idle wait is applied by the next frame's update, so that "Gioco in corso" is presented before the emulator starts
-  (A1's rule).
+  (A1's rule). A decision is pending from Avvia until ProductUi takes it (`AppCatalog::deciding()`), so a second Avvia
+  in the frame that brought it asks nothing.
 - **Quitting** (`ProductUi::finish`, the quit hook): `LaunchFlow::quit` ends a running session (its `ended` event queues
   the session's end), then `EsdeAppCatalog::shutdown()` stops the worker: queued lists and readiness are dropped, the
   query connection is interrupted (`sqlite3_interrupt`), the session writes queued and pending are tried for
@@ -107,7 +125,8 @@ ProductUi::finish: flow.quit, then stop()  -------> interrupt the running query 
   `esde::readOnlyFolders(profile)`, as the CLI's dispatcher has it) before anything is written into the database, then
   `openCatalogDatabase` with `create = false` (migrated when older; a newer one is refused).
 - What the list says instead of games (`CatalogState`, `ui::quick_catalog::kNotice*`, Italian in `quick_catalog.rml`):
-  `opening` ("Apertura del catalogo..."), `no-library` (how to run `retroverse-cli library create` then `import`),
+  `opening` ("Apertura del catalogo...", also once the catalog opened, until its first list is shown: never "Nessun
+  gioco nel catalogo" before it), `no-library` (how to run `retroverse-cli library create` then `import`),
   `no-database` (`retroverse-cli import`), `data-directory` (choose another `--data-dir`), `library-mismatch`
   (re-associate with `library create --id ... --force`, then import), `unavailable` (`retroverse-cli db check` says
   why). Nothing is written in the data directory then (tested). The run's log still goes to `<user data>/logs` before the
@@ -117,11 +136,16 @@ ProductUi::finish: flow.quit, then stop()  -------> interrupt the running query 
   "requires launcher configuration" with the blocker `library-unreadable`.
 - **Chips**: one per system with available games, in SortOrder::System's order, keyed by the ES-DE system name,
   labelled with its full name, counting its games. **Rows**: title, the system's full name as the platform, the year of
-  the release date, players (`formatPlayers`), developer, publisher, genre, description.
+  the release date, players (`formatPlayers`), developer, publisher, genre, description. In the list the platform and
+  the year take at most 45% of a row (40% in the compact layout): a long full name ("Multiple Arcade Machine
+  Emulator") ends in an ellipsis, the year always shows, and the title keeps the rest.
 - **NFR-01 times** in the run report (`CatalogRecord::times`), from the process's creation
   (`platform_win::currentProcessIdentity().creationTime`): `openedMs` and `firstListMs` when the worker finished them,
   `firstPageMs` when a frame first showed rows of the catalog (the quick catalog open). The worker starts at the top of
-  `RetroverseApp::onInit`, before the scene's procedural surfaces are generated.
+  `RetroverseApp::onInit`, before the scene's procedural surfaces are generated, and materializes the default list
+  right after the opening (`CatalogOpened::firstList`): the screen's first query takes it without a round trip, and
+  `firstListMs` is the opening's. Later lists, the default one too, come from the worker (the first list is dropped
+  once shown: an import may have changed the catalog since).
 
 ## Readiness on the card
 
@@ -138,24 +162,29 @@ choice for a game resolved on its own); a session that returns normally verifies
 
 The card (`quick_catalog.rml`; keys in `ui::quick_catalog::kReadinessKeys`, `kBlockerCodes`):
 
-| Readiness | Card |
+| Readiness | Card (one line) |
 |---|---|
-| `source-unavailable` | Non disponibile: la cartella dei giochi non è raggiungibile |
-| `rom-missing` | Non disponibile: il file del gioco non si trova |
-| `requires-configuration` | Da configurare: il comando di avvio non si può eseguire così com'è |
+| `source-unavailable` | Non disponibile: cartella non raggiungibile |
+| `rom-missing` | Non disponibile: file del gioco assente |
+| `requires-configuration` | Da configurare |
 | `emulator-not-found` | Emulatore non trovato |
 | `core-not-found` | Core dell'emulatore non trovato |
 | `ready` (verified) | Pronto: già avviato e tornato senza errori |
 
-then the first blocker's code as a sentence (one per code: `source-unavailable`, `rom-missing`, `rom-folder-unresolved`,
+then the first blocker's code as a sentence of one or two lines (one per code: `source-unavailable`, `rom-missing`, `rom-folder-unresolved`,
 `rom-root-unknown`, `system-unknown`/`system-not-configured`, `library-unreadable`, `no-command`, `choice-stale`,
 `profile-unknown`, `profile-template`, `profile-variable-missing`, `profile-invalid-request`/`invalid-request`,
 `program-not-allowed`, `program-refused`, `program-repeated`, `program-missing`, `install-unknown`, `token-unsupported`,
 `token-malformed`, `command-placeholder`, `inject-file`, `start-folder-missing`, `start-folder-repeated`,
 `start-folder-glued`, `start-folder-relative`, `find-rules-missing`, `find-rule-undecided`, `emulator-not-found`,
-`core-not-found`, `core-malformed`), then the blocker's own English sentence on a smaller "Dettagli:" line, as the
-game-session panel shows the runner's words. The mock catalog's games have no readiness: their card shows A1's state
-texts. The rows keep A1's state keys (`stateKeyOf()`: `unavailable`, `needs-configuration`, `emulator-missing`).
+`core-not-found`, `core-malformed`, `core-repeated`). A unit test collects the codes the sources of `rv_catalog`,
+`rv_esde` and `rv_app` report and checks that `kBlockerCodes` names each. The blocker's own English words are not on
+the card: Avvia shows them in the game-session panel. The card's title, readiness, blocker sentence, description (whole
+lines: three, two in the compact layout) and actions keep their height; when the card is too tall the metadata rows
+give way first, by whole rows (a column that wraps moves the rows that do not fit beyond the card's edge), then (a large
+text scale) the description. `QuickCatalogScreen::squeezedCardBlocks()` names the blocks the layout still cuts, and the
+run report records them (`catalog.cardSqueezed`); the smoke cases check that it stays empty. The mock catalog's games
+have no readiness: their card shows A1's state texts. The rows keep A1's state keys (`stateKeyOf()`: `unavailable`, `needs-configuration`, `emulator-missing`).
 
 Avvia on a game that is not ready right before the launch: the game-session panel's outcome `not-ready`, its reason the
 readiness (a text each in `game_session.rml`, a fallback for others), its detail the first blocker's words; the attempt
@@ -211,11 +240,20 @@ list's first game (the chips), then `ui_up` again.
   - no library.json (nothing written), no database, a data directory inside the ROM root (the guard), another library;
     ES-DE's systems unreadable (browsable, `library-unreadable`);
   - stopping during an endless query: interrupted (`Cancelled`) and joined in under 2 s;
+  - the first list with the opening: no query on the worker for it, the notice `opening` until it is shown, later lists
+    (the default one too) from the worker;
+  - every request answered: the readiness of a game the catalog does not have (`known` false); a worker whose thread
+    throws on a query (the source stops waiting, the list fails `Unavailable`, Avvia refused `unresolved`) or while it
+    opens (an `Unavailable` opening);
+  - a decision made and not taken yet still refuses a second Avvia;
+  - every blocker code the sources report (`block(LaunchReadiness::X, "code"`, `ReadinessBlocker{...}`, `code = "..."`
+    in `src/catalog`, `src/esde`, `src/app`) is in `kBlockerCodes`;
   - the flow's events and the session mapping on a scripted runner: a return (Running then Returned, its run time and
     end), the user's return, quitting and the wait limit (left running with their reasons), UserConfirmReturn confirmed
     (a verified return) and stopped while awaited (left running), a failed start (the guard's refusal told apart), a
     blocked session and the panel's message;
-  - the documents: a text for every notice, readiness and blocker code (`[documents]`), the panel's `not-ready`.
+  - the documents: a text for every notice, readiness and blocker code, no blocker detail on the card (`[documents]`),
+    the panel's `not-ready`; the run report's `cardSqueezed` read back.
 - **GPU smoke** (`gpu.catalog: ...`, hidden, `--fixed-dt`, `RV_LAUNCH_ALLOWLIST` = the fake): the standard fixture
   imported with `retroverse-cli` into the case's data directory, an emulators.json whose `fake-return` profile runs the
   build's fake (2.5 s), `assign gb --profile fake-return`, `assign psx --command "Fake Emulator (Inject)"`:
@@ -229,6 +267,9 @@ list's first game (the chips), then `ui_up` again.
     `requires-configuration`/`inject-file` before; the blocked session in the database; a screenshot of the card;
   - no library.json (`catalog_open.json`): the notice `no-library`, a screenshot, nothing written but the log and the
     report;
+  - the card of a blocked game with a description (`catalog_card_info.json`, ES-DE's `es_systems.xml` removed after the
+    import: Tiny Tennis `requires-configuration`/`library-unreadable`, the longest blocker sentence), on frame 22 and
+    with Informazioni on frame 26: `cardSqueezed` empty, screenshots of both; the other cases check `cardSqueezed` too;
   - A1's closed-catalog case now compares the mock catalog's frames with the ES-DE catalog's (`no-library`): 0 pixels
     apart. Golden G01's runs have the ES-DE catalog of an empty data directory, closed: unchanged.
 
@@ -300,7 +341,9 @@ user's own; not an automated run, so no allow-list), the library created and imp
    row shows its system's meanwhile, and a game whose own differs makes the rows read again (`reread()`, a new model
    operation: the same list, other data).
 3. **The card's readiness comes with the row** (`CatalogEntry::readiness`, `blocker`, `blockerDetail`, `verified`),
-   beside A1's state keys, which the rows and the mock keep; the blocker's own words show as data on a "Dettagli" line.
+   beside A1's state keys, which the rows and the mock keep. The card shows a one-line readiness label and the blocker's
+   Italian sentence; the blocker's own English words (`blockerDetail`, still bound as `card.detail`) are left to the
+   game-session panel of Avvia, so that the card keeps its description and rows whole.
 4. **Avvia's decision comes from the worker** and is applied on the next frame: the request frame is the frame after
    Avvia, and "Gioco in corso" is still presented before the emulator starts.
 5. **Lockstep only with `--fixed-dt`**: scripted runs wait between frames for the worker so that their frames are
@@ -314,6 +357,12 @@ user's own; not an automated run, so no allow-list), the library created and imp
 9. **Input scripts can type text**, so that the smoke tests search through the real search field.
 10. **The frame and page times are in the run report** (`TimeSummary` with p50, p95, p99, max), for NFR-01's
     measurement without scraping the log.
+11. **The default list comes with the opening** (`CatalogOpened::firstList`), served to the screen's first default
+    query and dropped once shown; queries asked while the catalog opens are held until it opened.
+12. **Lockstep waits are bounded** (10 s between two frames), and the worker answers everything it is asked, also when
+    its thread fails (`CatalogResults::ended`).
+13. **The card's layout is checked from the document's layout** (`QuickCatalogScreen::squeezedCardBlocks()`: a block
+    laid out less tall than its content or its max-height), not from pixels, and recorded in the run report.
 
 ## Notes for step 13r (the refresh on a worker)
 
@@ -322,7 +371,8 @@ user's own; not an automated run, so no allow-list), the library created and imp
   readiness must be resolved again (the opening's part after `systems()`), the readiness cache cleared
   (`CatalogDatabaseSource`), and the main thread told (a `CatalogChanges` flag) to `QuickCatalogModel::refresh()`: the
   list is materialized again (the kept list is dropped by `data_version`) and the selection restored by GameId (tested
-  here with an import made outside the app).
+  here with an import made outside the app). The opening's first list is dropped once shown, so a refresh never sees
+  it; a refresh that reopens the catalog may post a new one.
 - A long import blocks the queue: queries and session writes would wait behind it; run it in slices or let lists jump
   the queue (they only read).
 - `IdentityPairing` and `runQuickHashPass()` (step 11b's notes) take turns on the same worker.
@@ -334,20 +384,39 @@ user's own; not an automated run, so no allow-list), the library created and imp
 - The manual pad-only checklist above, with RetroArch; decide on the pad-only search (an on-screen keyboard is not
   in M1's plan).
 
+## Review findings addressed
+
+Two reviews of the committed step; every finding was verified in the code before it was changed.
+
+| Finding | Verdict | Change |
+|---|---|---|
+| F1: a readiness request for a game without details is never answered (lockstep hang, a stale system state) | real | every game asked is answered (`GameReadiness::known` false); the source forgets it and asks again when its row is read again |
+| F2: an Avvia in the frame that brought the decision asks again with the same token and overwrites the started session | real | `deciding()` holds until the decision is taken (both catalogs); `requestLaunch` refuses meanwhile; a resolution never overwrites a session that began |
+| F3: `core-repeated` has no card sentence | real | added (33 codes, "Il comando indica più di un core."); a unit test scans `src/catalog`, `src/esde`, `src/app` for the codes they report and checks `kBlockerCodes` covers them |
+| F4: a worker whose thread throws leaves the source Opening or pending for good | real | the thread's last post is `CatalogResults::ended` (with an `Unavailable` opening if none was posted); the source stops waiting, pending lists fail, launches are refused; `Runner`'s destructor clears the interruptible connection |
+| F5: "no SDL call on the worker" is false (the wake is `SDL_PushEvent`) | real (documentation) | the header and these notes state the one SDL call and why it is safe |
+| S13-UX-1: the card's text cut through lines on a blocked game | real | one-line readiness labels, shorter blocker sentences, the English detail off the card (Avvia's panel shows it), description in whole lines, the rows give way by whole rows (a wrapping column); `squeezedCardBlocks()` in the run report, checked by the smoke cases, with a new case of a blocked game with a description, also with Informazioni |
+| S13-UX-2: long system names squeeze the titles of the rows | real | the platform and year take at most 45% of a row (40% compact), the platform ending in an ellipsis, the year always shown |
+| S13-UX-3: "Nessun gioco nel catalogo" before the first list | real | the notice stays `opening` until the first list is shown |
+| S13-PERF-1: unbounded lockstep waits | real | F1 and F4, and the wait bounded to 10 s between two frames (a warning, the frame rendered) |
+| S13-PERF-2: the first list asked only once ProductUi exists | partly adopted | the default list is materialized with the opening and served to the first query (no round trip; queries asked while opening are held). Making the screen itself before the scene's surfaces was not done: no frame is rendered before the scene is ready, so the first page still follows the scene's loading, which is most of NFR-01's time and well inside its 5 s |
+
 ## For the merge
 
 - **CLAUDE.md**, "Running the app": without `--mock-catalog` the quick catalog shows the ES-DE catalog of the user data
   directory (`library.json` and the database made by `retroverse-cli`; the notices otherwise); runs with `--fixed-dt` wait
-  between frames for the catalog worker (lockstep); input scripts' `"text"`; the run report's catalog (`notice`,
-  `library`, `systems`, `search`, `filter`, `times`, `pages`, `frames`, `interruptedSessions`) and launch records
-  (`before`, `after`, `session`). GPU smoke tests: the catalog cases (`tests/smoke/test_catalog.cpp`, the fixture
+  between frames for the catalog worker (lockstep, at most 10 s at a time); input scripts' `"text"`; the run report's
+  catalog (`notice`, `library`, `systems`, `search`, `filter`, `times`, `pages`, `frames`, `interruptedSessions`,
+  `cardSqueezed`) and launch records (`before`, `after`, `session`). GPU smoke tests: the catalog cases (`tests/smoke/test_catalog.cpp`, the fixture
   imported with `retroverse-cli`). Layout: `rv_app_catalog` (GPU-free, `tools`-free) between `rv_app_cli` and `rv_app`;
   `rv_app` uses `rv_catalog`, `rv_esde`, `rv_catalog_db`. Real-library runs: `-Filter '[real-library][app]'` (NFR-01).
 - **docs/architecture.md**: the app layer's catalog worker and `AppCatalog`; the threading diagram above.
 - **docs/roadmap.md**: step 13 done, with NFR-01's figures.
 - **ADR-0008 §5** is met as written (the worker owns the writer, the main thread's reader fetches pages, `sqlite3_interrupt`
   at shutdown); a sentence may record the lockstep of `--fixed-dt` runs.
-- **ADR-0005**: the card shows the launch readiness and the blocker in its own words on a "Dettagli" line.
+- **ADR-0005**: the card shows the launch readiness (a one-line label) and the blocker's Italian sentence; the blocker's
+  own words are in the game-session panel of Avvia. The card's text is never cut through a line (the run report's
+  `catalog.cardSqueezed`).
 - **BACKLOG** candidates: an on-screen keyboard (pad-only search); the app's log before the data-directory guard (the CLI
   logs to stderr until it passes); one shared launch library for the CLI and the app (`CatalogLaunchLibrary`); a refresh
   when another process imports (13r, a file watcher in I7); the card's "Vedi media" (I3/I5); readiness for every game in
