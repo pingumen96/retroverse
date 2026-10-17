@@ -427,6 +427,24 @@ snapshot records which kind of gamelist entry named an entry and keeps the `<gam
 entries, or as a count per system), and `inPopulation()` takes the kind instead of the state. It is step 1's domain and
 step 7's source, outside this step: a candidate for BACKLOG.
 
+**Review findings addressed (step 7-8i).**
+- **F1 (the `<game>` entry populations over the snapshot).** Confirmed on a scratch copy of nested-roms (the figures
+  under "Left open"). Documented, not fixed, since the fix needs the gamelist entry kind in the snapshot (step 1's
+  domain, step 7's source). "What changed" now limits "entry for entry" to the reference library and the coverage
+  tests' fixtures. "Left open" covers both directions, and so do `coverage.hpp`'s `GamelistEntries` and the BACKLOG
+  candidate in "For the merge".
+- **F2 and S78i-R1 (the scraped games' figure).** `coverage.hpp`'s header gives 38,986 and why the survey's 38,995
+  differs (it also gives the 90,246 games). "ADR-0003's denominator, checked" gives 38,995 as the survey and
+  `GamelistSource` count them, and 38,986 over the snapshot. The exit-code bullet names a ROM folder, as
+  `cmd_media.cpp`'s header does: the snapshot reports one that cannot be listed as an error.
+- **F3 (the entry count only in the text).** The JSON has `entries` beside `source`. `test_cli_media.cpp` checks 23 for
+  the standard fixture, and `test_cli_media_real.cpp` checks 105,130 (step 7's entries: 90,246 games, 12,821 disc
+  members, 1,038 missing files, 870 entries that are no game, 155 folders).
+- Verification: Debug and Release build without a warning, and the 1,094 unit tests pass in both. `real-library.ps1`
+  with the four folders, Release, ES-DE closed: with `-Filter '[real-library][media]'` 2 test cases, 2,111 assertions;
+  with the default filter 8 test cases (6 passed, the two launch tests skipped), 226,414 assertions. Both runs showed 0
+  differences among 542,082 entries.
+
 ## For the merge
 
 - **ADR-0003.** Amend its context table with the reproducible figures, the population named: "On the reference

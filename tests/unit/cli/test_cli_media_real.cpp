@@ -337,9 +337,8 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
     const nlohmann::json& total = report["total"];
     std::cout << "cli/media real library: coverage in " << seconds << " s (the library snapshot read, "
               << report["entries"] << " entries: every ROM folder listed, the gamelists, the cue sheets and playlists; "
-              << report["listed"]["systems"]
-              << " systems looked up in the media root, " << report["listed"]["files"] << " files; "
-              << report["listed"]["caseChecks"] << " folders asked for their case rule, "
+              << report["listed"]["systems"] << " systems looked up in the media root, " << report["listed"]["files"]
+              << " files; " << report["listed"]["caseChecks"] << " folders asked for their case rule, "
               << report["listed"]["fileChecks"] << " media files looked up on disk)\n";
     for (const char* population : {"gamelist-entries", "gamelist-entries-with-file", "scraped-games", "games"}) {
         std::cout << "  " << population << ": " << total[population].dump() << "\n";
