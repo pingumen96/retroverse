@@ -129,7 +129,23 @@ python -I scripts/focus_watch.py --watch build/msvc-x64-release --out build/focu
 
 ## Measurements
 
-FIGURES
+On the reference machine (Windows 11, Windows Terminal as the default terminal application), the user working at it
+during the runs; `focus_watch.py --watch build/<preset>` around `scripts/test.ps1`:
+
+| Run | Tests | Watched | Foreground changes (to test processes) | Windows shown (visible of test processes, allowed) |
+|---|---|---|---|---|
+| Before: `rv_tests` one CLI launch test, `main`'s runner | 1 | 3.5 s | 4 (**2**: Windows Terminal windows of the fake's and `home-emulator.exe`'s consoles) | 4 (**2**, 2 hidden `PseudoConsoleWindow`s) |
+| After: `test.ps1` (msvc-x64-debug) | 1240 passed | 292 s | 1 (0) | 1 (0, 1) |
+| After: `test.ps1 -Preset msvc-x64-debug-gpu` | 1266 passed | 506 s | 23 (0) | 10 (0, 1) |
+| After: `test.ps1 -Preset msvc-x64-release-gpu` | 1264 passed | 350 s | 22 (0) | 7 (0, 1) |
+
+The foreground changes after the fix all went to the user's own programs (Chrome, VS Code, Explorer, Settings, an
+installer). The one allowed window in each run is the fake emulator's background window of
+`platform_win/process_runner: in the background the fake's window is seen ...`, at (-1600, 0)-(-1330, 182), off every
+monitor. The hidden SDL windows of `retroverse.exe`, the asset preview and the spikes (`--hidden`) never become
+visible, so the watcher does not even list them. The msvc-x64-debug unit run used the build before the error-mode change
+(the gpu presets, which include every unit test, ran the final code). `scripts/gate.ps1` runs these same presets; it
+was not run in full for this step.
 
 ## Decisions taken within the step
 
