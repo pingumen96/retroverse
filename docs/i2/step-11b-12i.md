@@ -131,8 +131,8 @@ without a code or the reverse.
 
 ## Tests
 
-With this step, `./scripts/test.ps1` passes every unit test in Debug (1,238, 284 s) and in Release (1,238, 169 s), both
-built without a warning; the cross-step tests take 21 s in Debug and 19 s in Release (the fake's 2.6 s runs, five of
+With this step, `./scripts/test.ps1` passes every unit test in Debug (1,238, 280 s) and in Release (1,238, 169 s), both
+built without a warning (two full runs each, all green); the cross-step tests take 21 s in Debug and 19 s in Release (the fake's 2.6 s runs, five of
 them), step 12's write-lock test 6 s. `rv_tests "[sessions],[identities],[reconciliation],[catalog][domain]"` runs what
 this step touched.
 
