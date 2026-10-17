@@ -23,8 +23,12 @@ constexpr std::string_view kVersion1 = R"sql(
 -- interrupted session. run_ms: how long the game ran (a monotonic clock: from the moment its process ran to its
 -- authoritative exit, or to the moment its owner stopped following it), NULL when nothing ran. The outcome
 -- (PlaySessionOutcome), with the readiness that blocked a launch that never started, why a game was left running
--- (LeftRunningReason), and the launcher's details (launcher::FailureReason and ExitKind by toString(), the exit code,
--- quick exit, the user's confirmation, processes left in the tree, a refusal by the automation guard, its sentence).
+-- (LeftRunningReason), and the launcher's details (launcher::FailureReason by toString(), the exit code and its
+-- launcher::ExitKind by toString(), quick exit, the user's confirmation, processes left in the tree, a refusal by the
+-- automation guard, its sentence). The exit code and its kind are both NULL when nothing exited (I2 step 11b-12i): so
+-- always for an attempt that never started (blocked before the launch; a request refused or a process that could not
+-- be created, failure 'invalid request' or 'start failed', a refusal by the guard among them), never for a crash. A
+-- running or interrupted row may hold one (an exit seen while the return awaits the user's confirmation).
 -- The started process's id, and the owner: the process that recorded the session (its id and creation time in
 -- FILETIME ticks), so that a later start closes as interrupted only the open sessions whose owner is gone.
 CREATE TABLE rv_play_sessions (
@@ -47,7 +51,7 @@ CREATE TABLE rv_play_sessions (
                                                                 'quit')),
     failure            TEXT    NOT NULL,
     exit_code          INTEGER CHECK (exit_code BETWEEN 0 AND 4294967295),
-    exit_kind          TEXT    NOT NULL,
+    exit_kind          TEXT,
     quick_exit         INTEGER NOT NULL CHECK (quick_exit IN (0, 1)),
     confirmed_by_user  INTEGER NOT NULL CHECK (confirmed_by_user IN (0, 1)),
     processes_remained INTEGER NOT NULL CHECK (processes_remained IN (0, 1)),
@@ -59,7 +63,11 @@ CREATE TABLE rv_play_sessions (
     CHECK ((outcome IN ('running', 'interrupted')) = (ended_at IS NULL)),
     CHECK ((outcome = 'interrupted') = (closed_at IS NOT NULL)),
     CHECK ((outcome = 'blocked') = (readiness IS NOT NULL)),
-    CHECK ((outcome = 'left-running') = (left_running <> 'none'))
+    CHECK ((outcome = 'left-running') = (left_running <> 'none')),
+    CHECK ((exit_code IS NULL) = (exit_kind IS NULL)),
+    CHECK (exit_code IS NULL OR (outcome <> 'blocked' AND refused_by_guard = 0 AND
+                                 failure NOT IN ('invalid request', 'start failed'))),
+    CHECK (outcome <> 'crashed' OR exit_code IS NOT NULL)
 ) STRICT;
 -- A game's sessions, newest first (retroverse-cli sessions --game), and the re-pointing of an alias's rows (I2 step 11b).
 CREATE INDEX rv_play_sessions_game ON rv_play_sessions (game, id);

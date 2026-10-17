@@ -175,10 +175,13 @@ void writeText(const Report& report, Output& out) {
     const auto line = [&](std::string_view label, const std::string& text) {
         out.writeLine(fmt::format("{:<20}{}", label, text));
     };
-    const std::string target = report.game ? fmt::format("game {} ({} \"{}\")", report.game->id.toString(),
-                                                         report.system->name.str(),
-                                                         report.game->details.indexed.entry.key.relativePath())
-                                           : fmt::format("system {}", report.system->name.str());
+    std::string target = report.game ? fmt::format("game {} ({} \"{}\")", report.game->id.toString(),
+                                                   report.system->name.str(),
+                                                   report.game->details.indexed.entry.key.relativePath())
+                                     : fmt::format("system {}", report.system->name.str());
+    if (report.game && report.game->requested != report.game->id) {
+        target += fmt::format(" (for {}, an alias)", report.game->requested.toString()); // as launch says it
+    }
     line("For", target);
     const auto stored = [](const std::optional<catalog_db::StoredChoice>& choice) {
         return choice ? fmt::format("{} (chosen {})", choiceText(choice->choice),

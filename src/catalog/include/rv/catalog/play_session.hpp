@@ -131,8 +131,16 @@ struct PlaySession {
     LeftRunningReason leftRunning = LeftRunningReason::None;
     /// The details of launcher::LaunchOutcome, once the session is no longer Running.
     launcher::FailureReason failure = launcher::FailureReason::None;
+    /// The exit code of the authoritative process (launcher::LaunchOutcome::exitCode) and its kind
+    /// (launcher::classifyExitCode()). The store and the schema enforce: both present or both absent; absent for an
+    /// attempt that never started (Blocked; a request the launcher refused or a process that could not be created,
+    /// FailureReason::InvalidRequest or StartFailed, a refusal by the automation guard among them); present for
+    /// Crashed. Absent too when the user returned before any process of the game exited. The CLI records none while
+    /// Running or for Interrupted, but the store accepts one there: the app (I2 step 13) may record the started
+    /// process's exit while the return awaits the user's confirmation, and an interrupted session keeps what its open
+    /// row held.
     std::optional<std::uint32_t> exitCode;
-    launcher::ExitKind exitKind = launcher::ExitKind::Success;
+    std::optional<launcher::ExitKind> exitKind;
     bool quickExit = false;
     /// The user confirmed the return (never set when the owner quit or a limit ended the session).
     bool confirmedByUser = false;
@@ -173,7 +181,8 @@ inline void recordOutcome(PlaySession& session, const launcher::LaunchOutcome& o
     session.ended = ended;
     session.failure = outcome.failure;
     session.exitCode = outcome.exitCode;
-    session.exitKind = outcome.exitKind;
+    // LaunchOutcome::exitKind defaults to Success: it says something only of an exit code.
+    session.exitKind = outcome.exitCode ? std::optional<launcher::ExitKind>(outcome.exitKind) : std::nullopt;
     session.quickExit = outcome.quickExit;
     session.confirmedByUser =
         outcome.confirmedByUser && (ownerReason == LeftRunningReason::None || ownerReason == LeftRunningReason::Confirmed);
@@ -192,7 +201,8 @@ inline void recordOutcome(PlaySession& session, const launcher::LaunchOutcome& o
 /// its choice for its system (ADR-0008 §8: "verified" is shown; a launch test, retroverse-cli launch --test, asks for
 /// it).
 [[nodiscard]] inline bool returnedNormally(const PlaySession& session) noexcept {
-    return session.outcome == PlaySessionOutcome::Returned && session.exitKind == launcher::ExitKind::Success &&
+    return session.outcome == PlaySessionOutcome::Returned &&
+           session.exitKind.value_or(launcher::ExitKind::Success) == launcher::ExitKind::Success &&
            (!session.exitCode || *session.exitCode == 0) && (!session.quickExit || session.confirmedByUser) &&
            !session.processesRemained;
 }

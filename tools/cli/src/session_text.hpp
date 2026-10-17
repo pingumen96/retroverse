@@ -276,7 +276,7 @@ inline Json sessionJson(const catalog::PlaySession& session) {
     json["leftRunning"] = std::string(catalog::toString(session.leftRunning));
     json["failure"] = std::string(launcher::toString(session.failure));
     json["exitCode"] = session.exitCode ? Json(*session.exitCode) : Json(nullptr);
-    json["exitKind"] = std::string(launcher::toString(session.exitKind));
+    json["exitKind"] = session.exitKind ? Json(std::string(launcher::toString(*session.exitKind))) : Json(nullptr);
     json["exitDescription"] =
         session.exitCode ? Json(launcher::describeExitCode(*session.exitCode)) : Json(nullptr);
     json["quickExit"] = session.quickExit;

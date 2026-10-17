@@ -392,6 +392,7 @@ TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][l
     common(returned, "fake-return");
     CHECK(returned.at("session").at("outcome") == "returned");
     CHECK(returned.at("session").at("exitCode") == 0);
+    CHECK(returned.at("session").at("exitKind") == "success");
     CHECK(returned.at("session").at("quickExit") == false);
     CHECK(returned.at("session").at("durationMs").get<std::int64_t>() >= 2500);
     CHECK(returned.at("session").at("processId").get<std::uint32_t>() != 0);
@@ -447,6 +448,8 @@ TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][l
     CHECK(broken.at("session").at("outcome") == "failed-to-start");
     CHECK(broken.at("session").at("failure") == "start failed");
     CHECK(broken.at("session").at("refusedByGuard") == false);
+    CHECK(broken.at("session").at("exitCode").is_null()); // nothing ran, so nothing exited
+    CHECK(broken.at("session").at("exitKind").is_null());
     const json refused = launchWith("fake-unlisted", ExitCode::ProblemsFound);
     common(refused, "fake-unlisted");
     CHECK(refused.at("started") == false);
@@ -455,6 +458,9 @@ TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][l
     CHECK(refused.at("session").at("failure") == "start failed");
     CHECK(refused.at("session").at("processId") == 0);
     CHECK(refused.at("session").at("durationMs").is_null());
+    CHECK(refused.at("session").at("exitCode").is_null());
+    CHECK(refused.at("session").at("exitKind").is_null());
+    CHECK(refused.at("session").at("exitDescription").is_null());
     CHECK(refused.at("guard").at("rule") == "not listed");
 
     // The executable not there: blocked before the launch, with its readiness.
@@ -464,6 +470,9 @@ TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][l
     CHECK(missingProgram.at("session").at("outcome") == "blocked");
     CHECK(missingProgram.at("session").at("readiness") == "emulator-not-found");
     CHECK(missingProgram.at("session").at("processId") == 0);
+    CHECK(missingProgram.at("session").at("exitCode").is_null());
+    CHECK(missingProgram.at("session").at("exitKind").is_null());
+    CHECK(missingProgram.at("session").at("exitDescription").is_null());
 
     // A game whose file is gone: blocked (ROM missing) with its first command, recorded too.
     const std::string gone = setup.gameAt("gb", "Gone Fishing (USA).gb").toString();
@@ -476,6 +485,7 @@ TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][l
     CHECK(missing.at("session").at("choice").at("value") == "Fake Emulator");
     CHECK(missing.at("session").at("choice").at("source") == "first-command");
     CHECK(contains(missing.at("session").at("message").get<std::string>(), "rom-missing"));
+    CHECK(missing.at("session").at("exitKind").is_null());
 
     // The sessions, newest first, as recorded.
     CHECK(setup.sessionRows() == made.size());
@@ -497,6 +507,19 @@ TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][l
     CHECK(textList.code == ExitCode::Ok);
     CHECK(contains(textList.out, "failed to start: refused by the automation guard"));
     CHECK(contains(textList.out, "blocked before the launch: emulator not found"));
+    // The attempts that never started say nothing of an exit in text either.
+    for (const std::string_view line : rv::core::split(textList.out, '\n')) {
+        if (contains(line, "blocked before the launch") || contains(line, "refused by the automation guard")) {
+            INFO(line);
+            CHECK_FALSE(contains(line, "exit"));
+            CHECK_FALSE(contains(line, "success"));
+        }
+    }
+    // As stored: no exit kind for them, a kind for every session with an exit code.
+    CHECK(setup.query("SELECT count(*) FROM rv_play_sessions WHERE (outcome = 'blocked' OR refused_by_guard = 1) AND "
+                      "exit_kind IS NOT NULL") == std::vector<std::string>{"0"});
+    CHECK(setup.query("SELECT count(*) FROM rv_play_sessions WHERE (exit_code IS NULL) <> (exit_kind IS NULL)") ==
+          std::vector<std::string>{"0"});
     CHECK(contains(textList.out, fmt::format("{} sessions.", made.size())));
     CHECK(setup.run({"sessions", "--game", "g0000000000000001"}).code == ExitCode::ProblemsFound);
     CHECK(setup.run({"sessions", "--limit", "-1"}).code == ExitCode::UsageError);
@@ -876,7 +899,21 @@ TEST_CASE("cli/launch: a session is recorded while another process holds the dat
     INFO(text(logFile));
     CHECK(contains(text(logFile), "stays pending")); // the session's first write met the lock and was kept
     // The game (a quick exit) ends meanwhile; the end of its session meets the lock too: the CLI tries it again, for as
-    // long as its patient retry allows, rather than giving the session up.
+    // long as its patient retry allows, rather than giving the session up. The lock is held until the game has ended
+    // and for 3 s more (the CLI's 1 s busy timeout and its poll included): on a loaded machine the Debug fake can take
+    // longer than a fixed wait to start and end, and an end written after the commit would need no retry.
+    const std::string started = "fake-quick started (process ";
+    while (!contains(text(logFile), started) && !child->waitForExit(0ms) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(100ms);
+    }
+    const std::string log = text(logFile);
+    const std::size_t at = log.find(started);
+    REQUIRE(at != std::string::npos);
+    const Watched game(static_cast<std::uint32_t>(std::stoul(log.substr(at + started.size()))));
+    if (game.handle) { // else it has ended already, its id given up
+        REQUIRE(game.waitForExit(60s).has_value());
+    }
     std::this_thread::sleep_for(3s);
     CHECK_FALSE(child->waitForExit(0ms).has_value());
     REQUIRE(held->commit().has_value());
