@@ -634,11 +634,12 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead
     }
     Statement& select = **prepared;
     std::vector<ListRow> rows;
-    std::vector<std::pair<std::string, std::string>> groups; // System: (library, system) by group index
+    std::vector<std::pair<std::string, std::string>> groups;   // System: (library, system) by group index
     std::unordered_map<std::string, std::uint32_t> groupIndex; // looked up only: never iterated
     std::string key;
     // One pass, or one per form of a first character: the forms are ascending and neither begins the other, so every
-    // sort key of one range sorts before every key of the next, and the passes' rows follow one another in Title's order.
+    // sort key of one range sorts before every key of the next, and the passes' rows follow one another in Title's
+    // order.
     const std::size_t passes = list.character ? list.forms.size() : 1;
     for (std::size_t pass = 0; pass < passes; ++pass) {
         const ScopedReset reset(select);

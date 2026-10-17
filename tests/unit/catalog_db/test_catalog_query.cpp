@@ -417,9 +417,9 @@ TEST_CASE("catalog_db/search: a generated catalog written with the search index 
         REQUIRE(database.has_value());
         Connection& writer = database->writer();
         CHECK(rv::catalog_db::searchIndexFollowsWrites(writer).value());
-        REQUIRE(writer
-                    .execute("CREATE VIRTUAL TABLE temp.search_terms USING fts5vocab(main, idx_game_search, instance)")
-                    .has_value());
+        REQUIRE(
+            writer.execute("CREATE VIRTUAL TABLE temp.search_terms USING fts5vocab(main, idx_game_search, instance)")
+                .has_value());
         auto terms = writer.prepare("SELECT term, doc FROM temp.search_terms ORDER BY term, doc");
         REQUIRE(terms.has_value());
         std::vector<std::pair<std::string, std::int64_t>> index;
@@ -1145,10 +1145,11 @@ TEST_CASE("catalog_db/query: a game's details are what the store wrote, with its
     CHECK(fixture.query->hasSystem(systemNamed("snes")).value());
     CHECK(fixture.query->hasSystem(systemNamed("nosystem")).value());
     CHECK_FALSE(fixture.query->hasSystem(systemNamed("n64")).value());
-    REQUIRE(fixture.database.writer().execute("INSERT INTO idx_systems SELECT library, 'n64', full_name, platforms, "
-                                              "theme, rom_folder_configured, rom_folder, availability, "
-                                              "unavailable_reason, gamelist, alternative_emulator FROM idx_systems "
-                                              "WHERE name = 'gb'")
+    REQUIRE(fixture.database.writer()
+                .execute("INSERT INTO idx_systems SELECT library, 'n64', full_name, platforms, "
+                         "theme, rom_folder_configured, rom_folder, availability, "
+                         "unavailable_reason, gamelist, alternative_emulator FROM idx_systems "
+                         "WHERE name = 'gb'")
                 .has_value());
     CHECK(fixture.query->hasSystem(systemNamed("n64")).value()); // a system without entries
 }

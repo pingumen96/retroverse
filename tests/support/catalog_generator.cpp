@@ -502,13 +502,13 @@ Expected<GeneratedCatalog> generateCatalogDatabase(const std::filesystem::path& 
         return propagate(store.error());
     }
     catalog_db::Connection* bulk = options.suspendSearchIndex ? &database->writer() : nullptr;
-    const Status written =
-        keepEntries ? writeEntries(
-                          **store, catalog.library, catalog.systems, catalog.entries.size(),
-                          [&](std::size_t i) { return catalog.entries[i]; }, bulk)
-                    : writeEntries(
-                          **store, catalog.library, catalog.systems, order.size(),
-                          [&](std::size_t i) { return generatedEntry(options, order[i].second); }, bulk);
+    const Status written = keepEntries
+                               ? writeEntries(
+                                     **store, catalog.library, catalog.systems, catalog.entries.size(),
+                                     [&](std::size_t i) { return catalog.entries[i]; }, bulk)
+                               : writeEntries(
+                                     **store, catalog.library, catalog.systems, order.size(),
+                                     [&](std::size_t i) { return generatedEntry(options, order[i].second); }, bulk);
     if (!written) {
         return propagate(written.error());
     }

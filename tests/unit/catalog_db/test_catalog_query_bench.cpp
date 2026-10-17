@@ -319,8 +319,8 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
         REQUIRE(count->step().value());
         return count->columnInt(0);
     };
-    for (const std::string_view text : {"su", "pi", "ch", "19", "an", "sup", "pixel", "drago", "super pi", "neon samurai",
-                                        "super m", "pixel zz", "ro", "ga", "dr"}) {
+    for (const std::string_view text : {"su", "pi", "ch", "19", "an", "sup", "pixel", "drago", "super pi",
+                                        "neon samurai", "super m", "pixel zz", "ro", "ga", "dr"}) {
         const CatalogQuery search = request(std::string(text));
         const std::string label = fmt::format("'{}' ({} matches)", text, matchesOf(text));
         timeRun(fmt::format("{} after a commit (default)", label), query, search, true);
