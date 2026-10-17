@@ -12,16 +12,20 @@
 // to its end), and in the transaction: the bulk write hint (prepareWrites()), the index cleared (`db rebuild-index`),
 // systems and disc groups written and removed, identities turned into aliases (putAlias(), the step where step 11b's
 // moved-back pairings free a path), the import's issues, and the import records kept for the user (ImportRecord).
-// Step 11b adds what else reconciliation needs (history, review rows, quick hashes); play sessions have their own store
-// (rv_catalog_db's session store, step 12).
+// Step 11b (reconciliation, reconciliation.hpp) adds: the quick hash of an identity's file, read with the identity
+// (StoredIdentity::quickHash) and written with it, or alone (IImportTransaction::putQuickHash(), the quick-hash pass);
+// the identities' history (IdentityEvent: moves with their reason, aliases, keys computed again, reviews resolved), the
+// aliases kept (StoredAlias) and the review rows (StoredReview), read and written; putAlias() moving every state row
+// that names the holder to the identity it stands for. Play sessions have their own store (rv_catalog_db's session
+// store, step 12).
 //
 // Reads and the import transaction: an instance has one connection. Its reads made while one of its import
 // transactions is open see that transaction's writes; other connections and processes see them only once committed.
 // Whatever writes identities, aliases or index rows holds the import lock (the import; step 11b's quick-hash pass and
-// review resolution take it too), so the import reads the identities, the taken GameIds and the index rows it compares
-// with the snapshot under the import lock alone, before its write transaction: nothing can change them between its
-// reads and its writes, and the other writers of the database (play sessions, launch choices) wait only for its
-// writes.
+// review resolution take it too, and write through import transactions of their own), so the import reads the
+// identities, the taken GameIds and the index rows it compares with the snapshot under the import lock alone, before
+// its write transaction: nothing can change them between its reads and its writes, and the other writers of the
+// database (play sessions, launch choices) wait only for its writes.
 
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +39,7 @@
 #include <rv/catalog/change_set.hpp>
 #include <rv/catalog/disc_group.hpp>
 #include <rv/catalog/entry.hpp>
+#include <rv/catalog/fingerprint.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/library.hpp>
 #include <rv/catalog/lookup_key.hpp>
@@ -60,6 +65,9 @@ struct StoredIdentity {
     bool present = false;
     /// Size and time of its file at the last import that saw it.
     std::optional<FileFacts> file;
+    /// The quick hash of its file (fingerprint.hpp) with the size and time of the file it was computed from: current
+    /// while they are those of `file` (isCurrent()), stale once the file changed. Nothing until a pass hashed it.
+    std::optional<QuickHash> quickHash;
 
     bool operator==(const StoredIdentity&) const = default;
 };
@@ -144,6 +152,118 @@ struct IdentityAlias {
     bool operator==(const IdentityAlias&) const = default;
 };
 
+/// What happened to an identity (rv_identity_history, ADR-0008 §5: history).
+enum class IdentityEventKind : std::uint8_t {
+    Moved,          ///< it followed its file to a new path (`reason` says why; `from` and `to` the paths)
+    Alias,          ///< another identity became its alias (`alias`; `from` the alias's last path; `reason` why)
+    Rekeyed,        ///< its key was computed again with another key rule or casing table (`detail`: the versions)
+    ReviewResolved, ///< a review row of it was resolved (`review`; `detail`: how)
+};
+
+/// "moved", "alias", "rekeyed", "review-resolved".
+[[nodiscard]] constexpr std::string_view toString(IdentityEventKind kind) noexcept {
+    switch (kind) {
+    case IdentityEventKind::Moved:
+        return "moved";
+    case IdentityEventKind::Alias:
+        return "alias";
+    case IdentityEventKind::Rekeyed:
+        return "rekeyed";
+    case IdentityEventKind::ReviewResolved:
+        return "review-resolved";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<IdentityEventKind> parseIdentityEventKind(std::string_view text) noexcept {
+    return detail::enumFromString(text, IdentityEventKind::ReviewResolved);
+}
+
+/// One row of an identity's history, as written and read back.
+struct IdentityEvent {
+    /// The store's id (AUTOINCREMENT: the order events happened in); 0 until stored.
+    std::int64_t id = 0;
+    /// The identity it happened to.
+    GameId game;
+    /// UTC ISO-8601 (core::formatUtcIso8601); written empty, the store gives it the transaction's time.
+    std::string at;
+    IdentityEventKind kind = IdentityEventKind::Moved;
+    /// Why it moved, or why the alias was recorded; nothing for the other kinds.
+    std::optional<MoveReason> reason;
+    /// The key and relative path before and after (empty: none). Moved: the old path and the new one. Alias: the
+    /// alias's last path. Rekeyed: the path and the key computed now (the key before is not kept: the store computes
+    /// keys again from their paths when it reads them).
+    std::string fromKey;
+    std::string fromPath;
+    std::string toKey;
+    std::string toPath;
+    /// The other identity of an Alias event (the GameId that became an alias of `game`).
+    std::optional<GameId> alias;
+    /// The review row of a ReviewResolved event (and of the Moved and Alias events its pairing wrote).
+    std::optional<std::int64_t> review;
+    /// For people: what a move rested on ("quick hash"), the key versions of a re-keying, how a review was resolved.
+    std::string detail;
+
+    bool operator==(const IdentityEvent&) const = default;
+};
+
+/// A GameId that stands for another identity (rv_identity_aliases): never given out again.
+struct StoredAlias {
+    GameId alias;
+    /// The identity it stands for now (when that one became an alias in turn, the alias was moved to the identity it
+    /// stands for: aliases never chain).
+    GameId game;
+    /// The key and relative path it had when it became an alias.
+    LookupKey key;
+    /// UTC ISO-8601.
+    std::string at;
+    MoveReason reason = MoveReason::MovedBack;
+
+    bool operator==(const StoredAlias&) const = default;
+};
+
+/// How a review row was resolved.
+enum class ReviewResolution : std::uint8_t {
+    Paired,       ///< the user paired the vanished identity with another one, which became its alias
+    KeptSeparate, ///< the user kept them apart: nothing changed
+    Returned,     ///< the vanished identity's file came back (an import saw it at its path or key again)
+    Aliased,      ///< the vanished identity became an alias of another (a file moved back onto its path or key)
+};
+
+/// "paired", "kept-separate", "returned", "aliased".
+[[nodiscard]] constexpr std::string_view toString(ReviewResolution resolution) noexcept {
+    switch (resolution) {
+    case ReviewResolution::Paired:
+        return "paired";
+    case ReviewResolution::KeptSeparate:
+        return "kept-separate";
+    case ReviewResolution::Returned:
+        return "returned";
+    case ReviewResolution::Aliased:
+        return "aliased";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<ReviewResolution> parseReviewResolution(std::string_view text) noexcept {
+    return detail::enumFromString(text, ReviewResolution::Aliased);
+}
+
+/// A review row as the store keeps it (rv_identity_reviews).
+struct StoredReview {
+    /// Its id (the store's), the vanished identity (`game`: when that identity became an alias, the identity it stands
+    /// for), its system, its last path, the candidates in key order and why no pairing was safe.
+    ReviewRow review;
+    /// UTC ISO-8601: when the import made it, and when it was resolved (nothing while it is open).
+    std::string createdAt;
+    std::optional<std::string> resolvedAt;
+    std::optional<ReviewResolution> resolution;
+    /// Paired: the identity that became the vanished one's alias; Aliased: the identity it became an alias of.
+    std::optional<GameId> resolvedWith;
+
+    [[nodiscard]] bool open() const noexcept { return !resolvedAt.has_value(); }
+
+    bool operator==(const StoredReview&) const = default;
+};
+
 /// The import lock, held apart from an import transaction (ICatalogStore::lockImport()): released when the object goes.
 class IImportLock {
 public:
@@ -189,14 +309,32 @@ public:
     [[nodiscard]] virtual Status putDiscGroup(const IndexedDiscGroup& group) = 0;
     /// Removes the disc group headed by `head` (nothing when there is none).
     [[nodiscard]] virtual Status removeDiscGroup(GameId head) = 0;
-    /// Turns the identity `alias.alias` into an alias of `alias.game`: the index rows that name it (its entry and
-    /// media, the disc group it heads, its place among the members of other groups, which the import writes again) are
-    /// removed, its GameId recorded among the aliases with its key and relative path, and its identity row removed,
-    /// which frees its relative path for the identity that moves back there. The import calls it before it writes any
-    /// identity. Errors: InvalidArgument (an alias of itself, either identity not in the store, the two of different
-    /// libraries or systems), and the store's (a state row that still names the identity, such as its history or its
-    /// play sessions: step 11b moves those to `game` first).
+    /// Turns the identity `alias.alias` into an alias of `alias.game`: its open review rows are resolved (Aliased);
+    /// every state row that names it is moved to `alias.game` (its history, its review rows, the aliases that stand for
+    /// it, play sessions and launch choices: whatever state table names an identity, rv_catalog_db finds them in the
+    /// schema), a row of `alias.game` taking precedence in a table that holds one per game; the index rows that name it
+    /// (its entry and media, the disc group it heads, its place among the members of other groups, which the import
+    /// writes again) are removed; its GameId is recorded among the aliases with its key and relative path; and its
+    /// identity row is removed, which frees its relative path for the identity that moves back there. The import calls
+    /// it before it writes any identity. Errors: InvalidArgument (an alias of itself, either identity not in the store,
+    /// the two of different libraries or systems), and the store's.
     [[nodiscard]] virtual Status putAlias(const IdentityAlias& alias) = 0;
+    /// Writes the quick hash of the identity `id`'s file, and nothing else of it (the quick-hash pass). Errors:
+    /// InvalidArgument (no identity has that GameId; a size beyond 2^63 - 1), the store's.
+    [[nodiscard]] virtual Status putQuickHash(GameId id, const QuickHash& hash) = 0;
+    /// Adds an event to its identity's history (`event.id` is ignored: the store gives the next; an empty `event.at`
+    /// takes the transaction's time). Errors: InvalidArgument (no identity has `event.game`), the store's.
+    [[nodiscard]] virtual Status putHistory(const IdentityEvent& event) = 0;
+    /// Adds a review row (`review.id` is ignored) and returns its id, which the user names to resolve it. Errors:
+    /// InvalidArgument (no identity has `review.game`, a candidate without a path), the store's.
+    [[nodiscard]] virtual Expected<std::int64_t> putReview(const ReviewRow& review) = 0;
+    /// Resolves the open review row `id`: when, how, and the identity it was resolved with. Errors: NotFound (no such
+    /// row), Conflict (resolved already), the store's.
+    [[nodiscard]] virtual Status resolveReview(std::int64_t id, ReviewResolution resolution,
+                                               std::optional<GameId> with) = 0;
+    /// Resolves every open review row of the identity `game` (an identity whose file came back: Returned); nothing when
+    /// it has none.
+    [[nodiscard]] virtual Status resolveReviewsOf(GameId game, ReviewResolution resolution) = 0;
     /// Replaces the library's import issues (the issues of its last import, in order) with `issues`; when `systems` is
     /// not empty (a partial import), only the issues of those systems are replaced, those of other systems and of the
     /// library as a whole stay.
@@ -241,6 +379,20 @@ public:
     [[nodiscard]] virtual Expected<std::vector<IndexedDiscGroup>> discGroups(const LibraryId& library) = 0;
     /// The record of `library`'s last import, nothing when none was recorded.
     [[nodiscard]] virtual Expected<std::optional<ImportRecord>> lastImport(const LibraryId& library) = 0;
+
+    /// The history of the identity `game`, oldest first (the history of the identities that became its aliases
+    /// included: putAlias() moves it).
+    [[nodiscard]] virtual Expected<std::vector<IdentityEvent>> history(GameId game) = 0;
+    /// The aliases that stand for the identity `game`, by alias GameId.
+    [[nodiscard]] virtual Expected<std::vector<StoredAlias>> aliasesOf(GameId game) = 0;
+    /// The alias `alias`; nothing when that GameId is no alias.
+    [[nodiscard]] virtual Expected<std::optional<StoredAlias>> alias(GameId alias) = 0;
+    /// The review rows of `library` (those of its identities), by id; only the open ones when `openOnly`.
+    [[nodiscard]] virtual Expected<std::vector<StoredReview>> reviews(const LibraryId& library, bool openOnly) = 0;
+    /// The review row `id`, of any library; nothing when there is none.
+    [[nodiscard]] virtual Expected<std::optional<StoredReview>> review(std::int64_t id) = 0;
+    /// The review rows of the identity `game` (those of the identities that became its aliases included), by id.
+    [[nodiscard]] virtual Expected<std::vector<StoredReview>> reviewsOf(GameId game) = 0;
 
     /// Takes the import lock without waiting and holds it until the returned object goes, apart from any transaction:
     /// an import holds it while it reads the library (seconds, minutes on a cold drive) and the store, and begins its

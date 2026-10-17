@@ -74,11 +74,18 @@
 // in ChangeSet::moved); a MissingFile entry that named the moved identity at its old path then has no identity and gets
 // a new GameId (a counter: the tuple's own value is the moved identity's); an identity that held the new file
 // (NewFile::heldBy) becomes an alias of the moved one (ADR-0008 §4's moved-back rule: MovedGame::alias,
-// IImportTransaction::putAlias(), written before any identity so that its path is free; its index rows leave). The
+// IImportTransaction::putAlias(), written before any identity so that its path is free; its index rows leave), which
+// is allowed only for a holder never seen with a file (NewFile::holderFile empty: a SC-05 return never merges). The
 // guard counts what stays gone after the pairing. Identities that exist are written before new ones, so that the old
 // path of a moved identity is free when the new identity of that path is written. Without a pairing pass (11a), a moved
-// file is a vanished identity and a new one. The pass runs under the import lock, outside the write transaction: what it
-// reads of the store (quick hashes) cannot change meanwhile, and hashing new files keeps no other writer waiting.
+// file is a vanished identity and a new one. The pass runs under the import lock, outside the write transaction: what
+// it reads of the store (quick hashes) cannot change meanwhile, and hashing new files keeps no other writer waiting.
+// What the import writes of reconciliation (I2 step 11b), after the identities: the history of each move (its reason
+// and evidence) and of each alias (MoveReason::MovedBack), of each identity re-keyed; the review rows
+// (ChangeSet::reviews take their ids); the open review rows of identities whose file came back resolved
+// (ReviewResolution::Returned); and, with the identities, the quick hashes the pairing pass read
+// (IdentityPairs::hashes), on the identities their files end with. catalog::IdentityPairing (reconciliation.hpp) is the
+// pass of ADR-0008 §4.
 
 #include <atomic>
 #include <chrono>
@@ -148,6 +155,8 @@ struct ImportStatistics {
     std::size_t mediaUnknown = 0;      ///< entries whose media presence() could not know (their stored media kept)
     std::size_t identitiesWritten = 0; ///< identities written (new, changed, re-keyed, moved)
     std::size_t aliasesWritten = 0;    ///< identities turned into aliases (IImportTransaction::putAlias())
+    std::size_t historyWritten = 0;    ///< history events written (moves, aliases, re-keyed identities; I2 step 11b)
+    std::size_t reviewsWritten = 0;    ///< review rows written (IImportTransaction::putReview())
     std::size_t entriesWritten = 0;    ///< index rows written
     std::size_t entriesRemoved = 0;    ///< index rows removed
     std::size_t discGroupsWritten = 0;
@@ -187,6 +196,11 @@ struct NewFile {
     /// with a vanished identity (MoveReason::MovedBack), the file takes the vanished identity and this one becomes its
     /// alias; left unpaired, the file keeps this identity.
     std::optional<GameId> heldBy;
+    /// The holder's last file facts (StoredIdentity::file): nothing when it was never seen with a file (the identity a
+    /// gamelist entry left at an old path got: the moved-back rule may alias it). A holder that had a file of its own
+    /// is never aliased by the import: such a file is its holder's (its own file came back, or the user put another
+    /// file where it was), and a pairing that gives it to a vanished identity is refused (InvalidArgument).
+    std::optional<FileFacts> holderFile;
 
     bool operator==(const NewFile&) const = default;
 };
@@ -208,9 +222,21 @@ struct IdentityPair {
     GameId identity;
     /// The new file's key (NewFile::key).
     LookupKey newFile;
+    /// What the pairing rests on (QuickHash, SizeTimeName, IdenticalCopies): the move's reason. When the new file had a
+    /// holder (NewFile::heldBy), the import records the holder's alias with MoveReason::MovedBack.
     MoveReason reason = MoveReason::QuickHash;
 
     bool operator==(const IdentityPair&) const = default;
+};
+
+/// The quick hash of a new file that the pairing pass read (I2 step 11b): the import stores it with the identity the
+/// file ends with (moved, held or new), sparing the quick-hash pass that file.
+struct NewFileHash {
+    /// NewFile::key.
+    LookupKey file;
+    QuickHash hash;
+
+    bool operator==(const NewFileHash&) const = default;
 };
 
 /// What the pairing pass decided for one system.
@@ -220,6 +246,8 @@ struct IdentityPairs {
     /// Vanished identities no pairing was safe for (ChangeSet::reviews).
     std::vector<ReviewRow> reviews;
     std::vector<Issue> issues;
+    /// The quick hashes of the new files it read, each file at most once (a file it was not given: InvalidArgument).
+    std::vector<NewFileHash> hashes;
 };
 
 /// The seam where I2 step 11b pairs vanished identities with new files (ADR-0008 §4: quick hashes, size, time and
@@ -245,7 +273,8 @@ public:
     /// Imports the library `profile` describes, as above. Errors: Conflict (library.json names a library the store
     /// does not hold while it holds another: the message names both; another import holds the import lock),
     /// InvalidArgument (a system of ImportOptions::systems the snapshot does not give; a pairing that names what it was
-    /// not given), Cancelled, the source's errors (the library cannot be read at all) and the store's.
+    /// not given, or gives a vanished identity a file whose holder had a file of its own), Cancelled, the source's
+    /// errors (the library cannot be read at all) and the store's.
     [[nodiscard]] Expected<ImportResult> run(const LibraryProfile& profile, const ImportOptions& options = {});
 
 private:

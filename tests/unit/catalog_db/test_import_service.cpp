@@ -674,6 +674,44 @@ TEST_CASE("catalog_db/import: the seam for reconciliation moves a paired identit
     }
 }
 
+TEST_CASE("catalog_db/import: a file whose holder had a file of its own is never given to a vanished identity",
+          "[catalog_db][import]") {
+    const rv::test::TempDir dir("rv-import-seam-holder");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::scriptedLibrary();
+    ScriptedSource source;
+    source.snapshot.systems = {scriptedSystem("gb")};
+    const auto put = [&](std::vector<CatalogEntry> entries) {
+        entries.push_back(diskGame("gb", "Other (USA).gb", 88));
+        source.snapshot.entries = std::move(entries);
+        rv::test::sortEntries(source.snapshot);
+    };
+    ScriptedMedia media;
+    NamePairing pairing;
+    put({diskGame("gb", "Dir1/Game (USA).gb", 77), diskGame("gb", "Dir2/Game (USA).gb", 77)});
+    importOk(catalog, source, media, profile, {}, &pairing);
+    const StoredIdentity first = identityAt(catalog, profile, "gb", "Dir1/Game (USA).gb");
+    // Dir1's file leaves for one import, then comes back while Dir2's goes: the pass is offered Dir1's file with its
+    // holder's file facts, and a pairing that gives it to Dir2's identity is refused, nothing written.
+    put({diskGame("gb", "Dir2/Game (USA).gb", 77)});
+    importOk(catalog, source, media, profile, {}, &pairing);
+    put({diskGame("gb", "Dir1/Game (USA).gb", 77)});
+    const auto before = rv::test::dumpIndex(catalog.database->writer());
+    rv::catalog::ImportService service(source, media, *catalog.store, &pairing);
+    const auto refused = service.run(profile);
+    REQUIRE(pairing.newFilesSeen.size() == 1);
+    CHECK(pairing.newFilesSeen[0].heldBy == first.id);
+    CHECK(pairing.newFilesSeen[0].holderFile == first.file);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().code == rv::ErrorCode::InvalidArgument);
+    CHECK(refused.error().message.find("had a file of its own") != std::string::npos);
+    CHECK(rv::test::dumpIndex(catalog.database->writer()) == before);
+    // Without that pairing, the file is its own identity's again.
+    const ImportResult back = importOk(catalog, source, media, profile);
+    CHECK(changesOf(back.changes, "gb").returned == 1);
+    CHECK(identityAt(catalog, profile, "gb", "Dir1/Game (USA).gb").id == first.id);
+}
+
 TEST_CASE("catalog_db/import: the guard counts what stays gone once the pairing pass has run", "[catalog_db][import]") {
     const rv::test::TempDir dir("rv-import-seam-guard");
     ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
@@ -737,6 +775,15 @@ public:
         rv::Status putDiscGroup(const IndexedDiscGroup& group) override { return m_inner->putDiscGroup(group); }
         rv::Status removeDiscGroup(GameId head) override { return m_inner->removeDiscGroup(head); }
         rv::Status putAlias(const IdentityAlias& alias) override { return m_inner->putAlias(alias); }
+        rv::Status putQuickHash(GameId id, const QuickHash& hash) override { return m_inner->putQuickHash(id, hash); }
+        rv::Status putHistory(const IdentityEvent& event) override { return m_inner->putHistory(event); }
+        rv::Expected<std::int64_t> putReview(const ReviewRow& review) override { return m_inner->putReview(review); }
+        rv::Status resolveReview(std::int64_t id, ReviewResolution resolution, std::optional<GameId> with) override {
+            return m_inner->resolveReview(id, resolution, with);
+        }
+        rv::Status resolveReviewsOf(GameId game, ReviewResolution resolution) override {
+            return m_inner->resolveReviewsOf(game, resolution);
+        }
         rv::Status putImportIssues(const LibraryId& library, std::span<const Issue> issues,
                                    std::span<const SystemName> systems) override {
             return m_inner->putImportIssues(library, issues, systems);
@@ -787,6 +834,14 @@ public:
     rv::Expected<std::optional<ImportRecord>> lastImport(const LibraryId& library) override {
         return m_inner.lastImport(library);
     }
+    rv::Expected<std::vector<IdentityEvent>> history(GameId game) override { return m_inner.history(game); }
+    rv::Expected<std::vector<StoredAlias>> aliasesOf(GameId game) override { return m_inner.aliasesOf(game); }
+    rv::Expected<std::optional<StoredAlias>> alias(GameId alias) override { return m_inner.alias(alias); }
+    rv::Expected<std::vector<StoredReview>> reviews(const LibraryId& library, bool openOnly) override {
+        return m_inner.reviews(library, openOnly);
+    }
+    rv::Expected<std::optional<StoredReview>> review(std::int64_t id) override { return m_inner.review(id); }
+    rv::Expected<std::vector<StoredReview>> reviewsOf(GameId game) override { return m_inner.reviewsOf(game); }
     rv::Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId& library) override {
         calls.emplace_back("lockImport");
         return m_inner.lockImport(library);

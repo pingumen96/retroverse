@@ -16,7 +16,9 @@
 // (putEntry(), removeEntry()) runs in a savepoint, undone whole when SQLite refuses one of them. When SQLite rolls the
 // whole transaction back on its own (a full disk, an I/O error, an interrupt), it ends there and every later call fails
 // (InvalidArgument), so that nothing is ever written outside it. Commits run a WAL checkpoint (ADR-0008 §5: a
-// checkpoint after each import) that waits briefly for readers and is otherwise left to the next one. Writes are
+// checkpoint after each import) that waits briefly for readers and is otherwise left to the next one; a commit that
+// wrote only reconciliation's state rows (quick hashes, history, review rows: the quick-hash pass's batches) is light,
+// with neither the checkpoint (SQLite's automatic one and the next import's do it) nor rv_meta's versions. Writes are
 // upserts (INSERT ... ON CONFLICT DO UPDATE), never REPLACE, so that triggers on the index tables (the search index, I2
 // step 9) see updates as updates.
 //
@@ -36,7 +38,7 @@
 // casing_table_version, the lookup key version of every identity's key, recorded by each commit ("mixed" while the
 // identities hold keys of several versions, a re-keying not finished; the versions of the system that made the schema
 // until an identity exists); sort_key_version, the version of idx_games' sort keys (catalog::kSortKeyVersion), recorded
-// by each commit too.
+// by each commit too (but the light ones, which write no key).
 //
 // The import's writes (I2 step 11a): disc groups in idx_disc_groups, idx_disc_members (by GameId) and
 // idx_disc_references (by relative path: what the head says, files that are not there included), read back joined to
@@ -46,6 +48,18 @@
 // the database's lock file, as beginImport() does), so that an import holds it while it reads the library and the
 // store and begins its write transaction (BEGIN IMMEDIATE) only for the writes. prepareWrites() suspends the search
 // index (search_index.hpp) for a bulk write, as StoreOptions::searchIndex says, and commit() rebuilds it.
+//
+// Reconciliation (I2 step 11b): an identity is read and written with its quick hash (rv_game_identities' quick_hash,
+// quick_hash_size, quick_hash_time; putQuickHash() writes those alone); the history (rv_identity_history), the review
+// rows (rv_identity_reviews, read with their identity's system: a review is of its identity's library and system) and
+// the aliases (rv_identity_aliases) are written and read. putAlias() first resolves the holder's open review rows
+// (Aliased), then moves every state row that names the holder to the identity it stands for: the columns of the state
+// tables (rv_*, never idx_*) with a single-column foreign key into rv_game_identities are found in the schema
+// (pragma_foreign_key_list over sqlite_schema, once per store), so that the tables later steps add (play sessions,
+// launch choices) are covered without this store knowing them; for each, an UPDATE OR IGNORE then a DELETE of what is
+// left: a table that holds one row per game keeps the row the moved identity has and drops the holder's (the moved
+// identity's choice wins), every other row follows. Aliases that stood for the holder thus stand for the moved identity
+// (aliases never chain).
 
 #include <cstddef>
 #include <cstdint>
@@ -111,6 +125,13 @@ public:
     [[nodiscard]] Expected<std::vector<catalog::IndexedDiscGroup>>
     discGroups(const catalog::LibraryId& library) override;
     [[nodiscard]] Expected<std::optional<catalog::ImportRecord>> lastImport(const catalog::LibraryId& library) override;
+    [[nodiscard]] Expected<std::vector<catalog::IdentityEvent>> history(catalog::GameId game) override;
+    [[nodiscard]] Expected<std::vector<catalog::StoredAlias>> aliasesOf(catalog::GameId game) override;
+    [[nodiscard]] Expected<std::optional<catalog::StoredAlias>> alias(catalog::GameId alias) override;
+    [[nodiscard]] Expected<std::vector<catalog::StoredReview>> reviews(const catalog::LibraryId& library,
+                                                                       bool openOnly) override;
+    [[nodiscard]] Expected<std::optional<catalog::StoredReview>> review(std::int64_t id) override;
+    [[nodiscard]] Expected<std::vector<catalog::StoredReview>> reviewsOf(catalog::GameId game) override;
     /// Errors: Conflict (this store's lock or transaction is held; another holder of the database's lock imports).
     [[nodiscard]] Expected<std::unique_ptr<catalog::IImportLock>> lockImport(const catalog::LibraryId& library) override;
     /// Errors: Conflict (this store's transaction is open; another holder of the database's lock imports; another

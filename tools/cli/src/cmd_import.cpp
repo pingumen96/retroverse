@@ -4,9 +4,11 @@
 //    into <user data>/database/retroverse.sqlite (made and migrated when needed) with catalog::ImportService
 //    (runCatalogImport(), import_text.hpp, shared with `db rebuild-index`): identities given out and matched, the
 //    index rows written where they changed, the disc groups with their references, the media presence, the
-//    availability of every folder, the mass-disappearance guard, the gamelists that failed kept; then prints the
-//    ChangeSet per system (added, changed, removed, unchanged, unavailable, kept, issues, the outcome), the identities'
-//    changes, the issues and the times. --system imports that system only (the others stay as they are);
+//    availability of every folder, the mass-disappearance guard, the gamelists that failed kept, files moved or renamed
+//    paired with their identities (catalog::IdentityPairing, I2 step 11b: by quick hash, or a unique size, time and
+//    name; the rest left as review rows for `retroverse-cli identities`); then prints the ChangeSet per system (added,
+//    changed, removed, unchanged, unavailable, kept, issues, the outcome), the identities' changes with each move and
+//    review row, the issues and the times. --system imports that system only (the others stay as they are);
 //    --accept-removals applies the removals the guard holds back. The library must be the catalog's: a library.json
 //    naming another library is refused until it names the catalog's again (re-association: `retroverse-cli library
 //    create --id <the catalog's library> --force`).
@@ -42,6 +44,7 @@
 #include <rv/catalog/change_set.hpp>
 #include <rv/catalog/entry.hpp>
 #include <rv/catalog/import_service.hpp>
+#include <rv/catalog/reconciliation.hpp>
 #include <rv/catalog/snapshot.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
@@ -342,7 +345,7 @@ bool foundProblems(const catalog::ChangeSet& changes) {
 
 std::string importJson(const CatalogImportRequest& request, const catalog::LibraryProfile& profile,
                        const std::filesystem::path& database, const catalog::ImportResult& result,
-                       const esde::EsdeLoadStatistics& load) {
+                       const esde::EsdeLoadStatistics& load, const catalog::IdentityPairing::Statistics& pairing) {
     const catalog::ChangeSet& changes = result.changes;
     const catalog::ImportStatistics& statistics = result.statistics;
     Json systems = Json::array();
@@ -366,7 +369,8 @@ std::string importJson(const CatalogImportRequest& request, const catalog::Libra
         for (const catalog::LookupKey& candidate : review.candidates) {
             candidates.push_back(candidate.relativePath());
         }
-        reviews.push_back(Json{{"id", review.game.toString()},
+        reviews.push_back(Json{{"review", review.id},
+                               {"game", review.game.toString()},
                                {"system", review.system.str()},
                                {"vanished", review.vanished.relativePath()},
                                {"candidates", std::move(candidates)},
@@ -403,16 +407,21 @@ std::string importJson(const CatalogImportRequest& request, const catalog::Libra
               {"discGroupsWritten", statistics.discGroupsWritten},
               {"discGroupsRemoved", statistics.discGroupsRemoved},
               {"systemsWritten", statistics.systemsWritten},
+              {"historyWritten", statistics.historyWritten},
+              {"reviewsWritten", statistics.reviewsWritten},
               {"searchIndexRebuilt", statistics.searchIndexRebuilt},
               {"filesListed", load.filesListed},
               {"sheetsRead", load.sheetsRead},
-              {"sheetsFromCache", load.sheetsFromCache}}}};
+              {"sheetsFromCache", load.sheetsFromCache},
+              {"quickHashesRead", pairing.filesHashed},
+              {"quickHashesUnreadable", pairing.filesUnreadable},
+              {"quickHashBytesRead", pairing.bytesRead}}}};
     return report.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n";
 }
 
 std::string importText(const CatalogImportRequest& request, const catalog::LibraryProfile& profile,
                        const std::filesystem::path& database, const catalog::ImportResult& result,
-                       const esde::EsdeLoadStatistics& load) {
+                       const esde::EsdeLoadStatistics& load, const catalog::IdentityPairing::Statistics& pairing) {
     const catalog::ChangeSet& changes = result.changes;
     const catalog::ImportStatistics& statistics = result.statistics;
     std::string text;
@@ -450,8 +459,23 @@ std::string importText(const CatalogImportRequest& request, const catalog::Libra
     line("");
     line(fmt::format("{} systems looked at, {} listed above; the catalog holds {} rows of them", changes.systems.size(),
                      listed, total.rows()));
-    line(fmt::format("Identities: {} new, {} vanished, {} back, {} re-keyed, {} moved", total.newIdentities,
-                     total.vanished, total.returned, total.rekeyed, total.moved));
+    line(fmt::format("Identities: {} new, {} vanished, {} back, {} re-keyed, {} moved, {} to review",
+                     total.newIdentities, total.vanished, total.returned, total.rekeyed, total.moved,
+                     changes.reviews.size()));
+    for (const catalog::MovedGame& move : changes.moved) {
+        line(fmt::format("  moved {} {}: {} -> {} ({}{})", move.id.toString(), move.system.str(),
+                         move.from.relativePath(), move.to.relativePath(), catalog::toString(move.reason),
+                         move.alias ? fmt::format("; {} is its alias now", move.alias->toString()) : std::string()));
+    }
+    for (const catalog::ReviewRow& review : changes.reviews) {
+        line(fmt::format("  review {}: {} {}: {} vanished, {} candidate(s): {}", review.id, review.game.toString(),
+                         review.system.str(), review.vanished.relativePath(), review.candidates.size(),
+                         review.reason));
+    }
+    if (!changes.reviews.empty()) {
+        line("  Resolve them with 'retroverse-cli identities resolve <review> (--with <gameId> | --keep-separate)'; "
+             "'retroverse-cli identities reviews' lists them with their candidates.");
+    }
     for (const catalog::SystemChanges& system : changes.systems) {
         if (system.outcome == catalog::SystemOutcome::KeptByGuard) {
             line(fmt::format("{}: nothing changed, more than half of its present files are gone ({} of {}): run the "
@@ -468,12 +492,12 @@ std::string importText(const CatalogImportRequest& request, const catalog::Libra
     line("");
     line(fmt::format("{} in {:.2f} s (library read {:.2f} s, media {:.2f} s, comparison {:.2f} s, writes {:.2f} s): {} "
                      "identities and {} entries written, {} entries removed, {} disc groups written; {} files listed, "
-                     "{} sheets read, {} from the catalog{}",
+                     "{} sheets read, {} from the catalog; {} quick hash(es) read for the pairing{}",
                      request.rebuildIndex ? "Rebuilt" : "Imported", secondsOf(statistics.totalTime),
                      secondsOf(statistics.loadTime), secondsOf(statistics.mediaTime),
                      secondsOf(statistics.compareTime), secondsOf(statistics.writeTime), statistics.identitiesWritten,
                      statistics.entriesWritten, statistics.entriesRemoved, statistics.discGroupsWritten,
-                     load.filesListed, load.sheetsRead, load.sheetsFromCache,
+                     load.filesListed, load.sheetsRead, load.sheetsFromCache, pairing.filesHashed,
                      statistics.searchIndexRebuilt ? "; the search index rebuilt" : ""));
     return text;
 }
@@ -549,7 +573,10 @@ ExitCode runCatalogImport(CommandContext& context, const CatalogImportRequest& r
     }
     esde::EsdeLibrarySource source(std::move(sourceOptions));
     esde::EsdeMediaResolver resolver(mediaRoot);
-    catalog::ImportService service(source, resolver, **store);
+    // Reconciliation (I2 step 11b): moved and renamed files keep their identity, by quick hash, or by a unique size,
+    // time and name; the rest becomes review rows.
+    catalog::IdentityPairing pairing;
+    catalog::ImportService service(source, resolver, **store, &pairing);
     catalog::ImportOptions options;
     options.acceptRemovals = request.acceptRemovals;
     options.rebuildIndex = request.rebuildIndex;
@@ -573,9 +600,10 @@ ExitCode runCatalogImport(CommandContext& context, const CatalogImportRequest& r
         }
         return failure(ExitCode::RuntimeFailure, error.toString());
     }
-    const std::string text = request.json
-                                 ? importJson(request, *profile, database->path(), *result, source.lastStatistics())
-                                 : importText(request, *profile, database->path(), *result, source.lastStatistics());
+    const std::string text =
+        request.json
+            ? importJson(request, *profile, database->path(), *result, source.lastStatistics(), pairing.statistics())
+            : importText(request, *profile, database->path(), *result, source.lastStatistics(), pairing.statistics());
     Output& out = request.file != nullptr && *request.file ? **request.file : context.out;
     out.write(text);
     if (request.file != nullptr && *request.file) {

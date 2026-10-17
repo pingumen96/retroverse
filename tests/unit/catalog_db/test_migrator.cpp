@@ -315,7 +315,7 @@ TEST_CASE("catalog_db/migrator: a failing migration rolls back and leaves the pr
                                            [](Connection& connection) {
                                                return connection.execute(
                                                    "INSERT INTO rv_identity_history (game, at, event) "
-                                                   "VALUES (12345, '2026-10-16T13:00:00.000Z', 'test')");
+                                                   "VALUES (12345, '2026-10-16T13:00:00.000Z', 'moved')");
                                            },
                                            true});
     const auto broken = migrate(*database, orphans);
