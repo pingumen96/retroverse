@@ -87,8 +87,9 @@ struct MediaKindListing {
     /// The folder's name as the file system spells it ("covers", or "Covers": ES-DE finds either, unless the system's
     /// folder has case-sensitive names); empty when Missing.
     std::string folderName;
-    /// Whether the folder has case-sensitive names (NTFS's per-folder flag): ES-DE finds a media file in it only spelled
-    /// as the entry's file, with the extension in lower case. Its sub-folders have their own flag, asked when needed.
+    /// Whether the folder has case-sensitive names (NTFS's per-folder flag): ES-DE finds a media file in it only
+    /// spelled as the entry's file, with the extension in lower case. Its sub-folders have their own flag, asked when
+    /// needed.
     bool caseSensitive = false;
     /// Names (stems) that have a file of the kind, compared folded: one each, whatever the files of the other
     /// extensions beside it.

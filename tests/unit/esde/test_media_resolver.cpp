@@ -394,8 +394,7 @@ TEST_CASE("esde/media: names compared as the file system compares them, every ex
     CHECK(resolver.stats().fileChecks == 0);
 }
 
-TEST_CASE("esde/media: folders with case-sensitive names, where ES-DE finds only its own spelling",
-          "[esde][media]") {
+TEST_CASE("esde/media: folders with case-sensitive names, where ES-DE finds only its own spelling", "[esde][media]") {
     const rv::test::TempDir dir("rv-media-case");
     const fs::path root = dir.file("media");
     // A kind folder with case-sensitive names below folders without them; its sub-folders made since get the flag.
@@ -427,7 +426,7 @@ TEST_CASE("esde/media: folders with case-sensitive names, where ES-DE finds only
         {"TWIN.nes", EntryMedia{}},
         {"Sub/Deep.nes", withMedia({{MediaKind::Cover, ".png"}})},
         {"sub/Deep.nes", EntryMedia{}},
-        {"PLAIN.nes", withMedia({{MediaKind::Screenshot, ".png"}})},  // a folder without the flag folds names
+        {"PLAIN.nes", withMedia({{MediaKind::Screenshot, ".png"}})},       // a folder without the flag folds names
         {"STRICT/game.nes", withMedia({{MediaKind::Screenshot, ".png"}})}, // "STRICT" is "Strict" for screenshots
         {"Strict/Game.nes", EntryMedia{}},
         {"Plain Folder/game.nes", withMedia({{MediaKind::Screenshot, ".PNG"}})},

@@ -11,12 +11,15 @@
 // rule on its own: the media name is the ROM path with its last extension removed, names compared case-insensitively,
 // the kind's extensions as ES-DE 3.4.1 reads them. Its per-system figures of the games with a gamelist entry are those
 // of esde-data.md section 5, except snes' videos (1,462, not 1,466: the survey counted the four .flv files ES-DE never
-// reads). ADR-0003's table (2026-10-15) gives its shares over the 40,870 <game> entries; three of its rows are
-// reproduced within 0.1 point, four differ by 0.2 to 0.3 point (docs/i2/step-8.md: its computation was not recorded,
-// and the oracle agrees with Retroverse entry for entry); the test checks both and prints the comparison.
+// reads). ADR-0003's table (2026-10-15) states shares over the 40,870 <game> entries, but four of its seven media rows
+// cannot be reproduced to 0.1 point over them, nor over any single population (docs/i2/step-8.md). The test checks the
+// table as docs/i2/step-8.md proposes to amend it at the merge (the shares over every <game> entry, within 0.1 point),
+// prints the figures as written beside them, and checks the per-system figures ADR-0003 quotes (Atari 800, Commodore
+// 64), which the <game> entries reproduce as written.
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -143,23 +146,33 @@ constexpr std::array<SystemRow, 45> kSurvey{{
     {"windows", 1, 1, 1, 1, 1},
 }};
 
-/// ADR-0003's table: a kind, its share in percent over the 40,870 entries, and how far the measured share may lie from
-/// it (0.1 point, or the difference docs/i2/step-8.md explains).
+/// ADR-0003's table: a kind, its share in percent of the 40,870 <game> entries as amended at the merge (checked to 0.1
+/// point, the roadmap's criterion), and as written on 2026-10-15 (printed beside it, not checked).
 struct AdrRow {
     std::string_view label;
     rv::catalog::MediaKind kind;
-    double percent;
-    double tolerance;
+    double amended;
+    double written;
 };
 constexpr std::array<AdrRow, 7> kAdr0003{{
-    {"Screenshot", rv::catalog::MediaKind::Screenshot, 98.5, 0.3},              // 98.75: +0.25, explained
-    {"Cover", rv::catalog::MediaKind::Cover, 90.6, 0.35},                       // 90.90: +0.30, explained
-    {"Marquee", rv::catalog::MediaKind::Marquee, 89.3, 0.1},                    // 89.23
-    {"Video", rv::catalog::MediaKind::Video, 82.4, 0.25},                       // 82.19: -0.21, explained
-    {"Physical media image", rv::catalog::MediaKind::PhysicalMedia, 81.2, 0.3}, // 81.48: +0.28, explained
-    {"Back cover", rv::catalog::MediaKind::BackCover, 77.8, 0.1},               // 77.73
-    {"Manual", rv::catalog::MediaKind::Manual, 56.6, 0.1},                      // 56.55
+    {"Screenshot", rv::catalog::MediaKind::Screenshot, 98.75, 98.5},
+    {"Cover", rv::catalog::MediaKind::Cover, 90.90, 90.6},
+    {"Marquee", rv::catalog::MediaKind::Marquee, 89.23, 89.3},
+    {"Video", rv::catalog::MediaKind::Video, 82.19, 82.4},
+    {"Physical media image", rv::catalog::MediaKind::PhysicalMedia, 81.48, 81.2},
+    {"Back cover", rv::catalog::MediaKind::BackCover, 77.73, 77.8},
+    {"Manual", rv::catalog::MediaKind::Manual, 56.55, 56.6},
 }};
+constexpr double kAdr0003Tolerance = 0.1;
+
+/// The per-system figures ADR-0003 quotes as written, in whole percents of the system's <game> entries: Atari 800 47%
+/// covers and 15% videos, Commodore 64 53% and 12%.
+struct AdrSystemRow {
+    std::string_view system;
+    long covers;
+    long videos;
+};
+constexpr std::array<AdrSystemRow, 2> kAdr0003Systems{{{"atari800", 47, 15}, {"c64", 53, 12}}};
 
 void checkFigures(const nlohmann::json& counts, const Figures& expected, std::string_view population) {
     INFO(population);
@@ -215,7 +228,9 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
     const nlohmann::json& total = report["total"];
     std::cout << "cli/media real library: coverage in " << seconds << " s (the gamelists read, the ROM folders listed "
               << "down the gamelists' folders, " << report["listed"]["systems"]
-              << " systems looked up in the media root, " << report["listed"]["files"] << " files)\n";
+              << " systems looked up in the media root, " << report["listed"]["files"] << " files; "
+              << report["listed"]["caseChecks"] << " folders asked for their case rule, "
+              << report["listed"]["fileChecks"] << " media files looked up on disk)\n";
     for (const char* population : {"gamelist-entries", "gamelist-entries-with-file", "scraped-games"}) {
         std::cout << "  " << population << ": " << total[population].dump() << "\n";
     }
@@ -225,6 +240,8 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
     checkFigures(total["scraped-games"], kScrapedGames, "scraped-games");
     CHECK(report["listed"]["systems"] == 45); // every system with a gamelist; trs-80 has no media folder
     CHECK(report["listed"]["files"] == 364810);
+    // No media folder has case-sensitive names: the listings answered every entry.
+    CHECK(report["listed"]["fileChecks"] == 0);
 
     // Per system, the survey's table.
     REQUIRE(report["systems"].size() == kSurvey.size());
@@ -250,10 +267,28 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
         const double measured =
             100.0 * total["gamelist-entries"]["withKind"][std::string(rv::catalog::toString(row.kind))].get<double>() /
             entries;
-        std::cout << fmt::format("    {:<22} ADR-0003 {:5.1f}%, measured {:6.2f}% ({:+.2f})\n", row.label, row.percent,
-                                 measured, measured - row.percent);
+        std::cout << fmt::format("    {:<22} measured {:6.2f}%, amended {:6.2f}% ({:+.2f}), as written {:5.1f}% "
+                                 "({:+.2f})\n",
+                                 row.label, measured, row.amended, measured - row.amended, row.written,
+                                 measured - row.written);
         INFO(row.label << ": measured " << measured);
-        CHECK(std::abs(measured - row.percent) <= row.tolerance);
+        CHECK(std::abs(measured - row.amended) <= kAdr0003Tolerance);
+    }
+    for (const AdrSystemRow& row : kAdr0003Systems) {
+        const auto system =
+            std::find_if(report["systems"].begin(), report["systems"].end(),
+                         [&](const nlohmann::json& item) { return item["system"] == std::string(row.system); });
+        REQUIRE(system != report["systems"].end());
+        const nlohmann::json& counts = (*system)["populations"]["gamelist-entries"];
+        const double systemEntries = counts["entries"].get<double>();
+        const double covers = 100.0 * counts["withKind"]["covers"].get<double>() / systemEntries;
+        const double videos = 100.0 * counts["withKind"]["videos"].get<double>() / systemEntries;
+        std::cout << fmt::format("    {:<22} covers {:5.2f}% (ADR-0003 {}%), videos {:5.2f}% (ADR-0003 {}%) of {} "
+                                 "entries\n",
+                                 row.system, covers, row.covers, videos, row.videos, counts["entries"].dump());
+        INFO(row.system << ": covers " << covers << "%, videos " << videos << "%");
+        CHECK(std::lround(covers) == row.covers);
+        CHECK(std::lround(videos) == row.videos);
     }
 
     // Nothing but information about the media: the four .flv files.

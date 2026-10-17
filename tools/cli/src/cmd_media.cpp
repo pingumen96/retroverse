@@ -434,14 +434,14 @@ std::string spelledOnDisk(const fs::path& romFolder, std::string_view relative) 
     std::size_t start = 0;
     while (true) {
         const std::size_t slash = relative.find('/', start);
-        std::string element(relative.substr(start, slash == std::string_view::npos ? std::string_view::npos
-                                                                                     : slash - start));
+        std::string element(
+            relative.substr(start, slash == std::string_view::npos ? std::string_view::npos : slash - start));
         if (there && element.find_first_of("*?") == std::string::npos) {
             const auto path = core::extendedLengthPathBelow(romFolder, spelled + element);
             WIN32_FIND_DATAW data{};
-            const HANDLE find = path ? FindFirstFileExW(path->c_str(), FindExInfoBasic, &data, FindExSearchNameMatch,
-                                                        nullptr, 0)
-                                     : INVALID_HANDLE_VALUE;
+            const HANDLE find =
+                path ? FindFirstFileExW(path->c_str(), FindExInfoBasic, &data, FindExSearchNameMatch, nullptr, 0)
+                     : INVALID_HANDLE_VALUE;
             there = find != INVALID_HANDLE_VALUE;
             if (there) {
                 FindClose(find);

@@ -113,8 +113,8 @@ std::optional<bool> caseSensitiveFolder(const fs::path& folder) {
 /// ES-DE's existence test of a media file (Utils::FileSystem::exists(): std::filesystem::exists()) on `file`, an
 /// extended-length path: the file system's own lookup, which compares each name as the folder holding it does, a link
 /// followed to its target (one whose target cannot be opened is not there). A folder is no media file (Retroverse's
-/// rule, as in the listings). Errors: Unavailable when the lookup fails otherwise than for a missing name (a drive gone,
-/// access denied).
+/// rule, as in the listings). Errors: Unavailable when the lookup fails otherwise than for a missing name (a drive
+/// gone, access denied).
 Expected<bool> mediaFileExists(const fs::path& file) {
     WIN32_FILE_ATTRIBUTE_DATA data{};
     if (GetFileAttributesExW(file.c_str(), GetFileExInfoStandard, &data) == FALSE) {
@@ -474,11 +474,11 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
 
         // What ES-DE never shows of this folder, or shows only under its own spelling.
         if (kindListing.caseSensitive) {
-            listing.issues.push_back(issueOf(
-                IssueSeverity::Info, kMediaIssueCaseSensitiveFolder, system, kindText,
-                fmt::format("the media folder {} has case-sensitive names: ES-DE finds a media file in it only "
-                            "spelled as the game's file, with the extension in lower case",
-                            kindFolderText(system, kind))));
+            listing.issues.push_back(
+                issueOf(IssueSeverity::Info, kMediaIssueCaseSensitiveFolder, system, kindText,
+                        fmt::format("the media folder {} has case-sensitive names: ES-DE finds a media file in it only "
+                                    "spelled as the game's file, with the extension in lower case",
+                                    kindFolderText(system, kind))));
         }
         if (kindListing.unlistedFolders.size() > kUnlistedFoldersListed) {
             listing.issues.push_back(issueOf(
@@ -621,8 +621,8 @@ Expected<catalog::EntryMedia> EsdeMediaResolver::presence(const catalog::SystemN
         }
         // A folder of the way has case-sensitive names: ES-DE's own lookups, in its order.
         for (const std::string_view extension : mediaExtensions(kind)) {
-            const auto candidate = core::extendedLengthPathBelow(
-                *m_root, mediaRelativePath(system, key, directory, kind, extension));
+            const auto candidate =
+                core::extendedLengthPathBelow(*m_root, mediaRelativePath(system, key, directory, kind, extension));
             if (!candidate) {
                 break; // a media name the file system cannot hold (an element "." or ".."): ES-DE finds nothing
             }

@@ -96,10 +96,12 @@ TEST_CASE("esde/media: the real library's media tree", "[esde][media][.real-libr
         const rv::esde::SystemMediaListing& systemListing = **listing;
         CHECK(systemListing.state == MediaFolderState::Listed);
         CHECK(systemListing.folderName == folder); // ES-DE's names: the system folders are spelled as the systems
+        CHECK_FALSE(systemListing.caseSensitive);
         listedSystems += systemListing.state == MediaFolderState::Listed ? 1 : 0;
         for (const MediaKind kind : rv::catalog::kMediaKinds) {
             const rv::esde::MediaKindListing& kindListing = systemListing[kind];
             CHECK(kindListing.state != MediaFolderState::Unavailable);
+            CHECK_FALSE(kindListing.caseSensitive); // no folder made by WSL here
             media[kind] += kindListing.media;
             shadowed[kind] += kindListing.shadowedFiles;
             unlisted += kindListing.unlistedFolders.size();
@@ -115,7 +117,8 @@ TEST_CASE("esde/media: the real library's media tree", "[esde][media][.real-libr
 
     std::cout << "esde/media real library: " << folders.size() << " system folders, " << stats.files << " files in "
               << stats.folders << " folders, listed in " << seconds << " s (warm: the snapshot just listed the tree; "
-              << stats.seconds << " s in the walks), private bytes +" << (privateBytes() - memoryBefore) / 1024 / 1024
+              << stats.seconds << " s in the walks, " << stats.caseChecks
+              << " folders asked for their case rule), private bytes +" << (privateBytes() - memoryBefore) / 1024 / 1024
               << " MiB\n";
     for (const MediaKind kind : rv::catalog::kMediaKinds) {
         std::cout << "  " << rv::catalog::toString(kind) << ": " << media[kind] << " media, " << shadowed[kind]
