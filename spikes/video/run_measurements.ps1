@@ -10,7 +10,8 @@
     (GetSystemTimes). A series named "<series>@above-normal" (or "@high") runs at that process priority, which tells the
     pipeline's own cost from the preemption by other programs. The summary (console and -OutDir/summary.md) gives, per
     series and metric, the median of the runs and the best value any run reached (the best values of a series may come
-    from different runs). The real ES-DE videos are read in place, read-only, from -MediaRoot.
+    from different runs). The real ES-DE videos are read in place, read-only, from -MediaRoot (default: the
+    RV_REAL_MEDIA_ROOT variable, as scripts/real-library.ps1 takes it; the real series refuse to run without one).
 
     Series: fixtures-<n>x720p30 (generated 1280x720 30 fps clips), fixtures-2x720p165 (165 fps clips: about one upload
     per video and render frame at the reference display's 164.84 Hz, the pixel buffer ring reused every third render
@@ -30,7 +31,7 @@ param(
                           'real-snes-ps2@above-normal', 'fixtures-2x720p165', 'real-1',
                           'fixtures-4x720p30@above-normal', 'errors'),
     [string]$OutDir = 'build/spike_video/measurements',
-    [string]$MediaRoot = 'E:/Programmi/ES-DE_media/downloaded_media',
+    [string]$MediaRoot = $env:RV_REAL_MEDIA_ROOT,
     [string[]]$RealVideos = @(
         'snes/videos/1 US - S/Super Metroid (Japan, USA) (En,Ja).mp4',
         'snes/videos/1 US - A-E/Donkey Kong Country (USA) (Rev 2).mp4',
@@ -45,6 +46,11 @@ if (-not (Test-Path $exe)) { throw "spike_video not built: $exe (./scripts/build
 $OutDir = Join-Path $root $OutDir
 $fixtures = Join-Path $OutDir 'fixtures'
 $dataDir = Join-Path $OutDir 'data'
+
+function Get-MediaRoot {
+    if (-not $MediaRoot) { throw 'the real series need the ES-DE media folder: -MediaRoot or RV_REAL_MEDIA_ROOT' }
+    return $MediaRoot
+}
 
 function Get-SeriesArguments([string]$series) {
     # "<series>@above-normal" or "<series>@high": the same series at that process priority (spike_video --priority).
@@ -68,12 +74,13 @@ function Get-SeriesArguments([string]$series) {
         'fences-2x720p30' { return $common + @('--generate-fixtures', $fixtures, '--count', '2', '--upload-fences') }
         'novsync-2x720p30' { return $common + @('--generate-fixtures', $fixtures, '--count', '2', '--no-vsync') }
         'real-snes-ps2' {
-            $videos = $RealVideos | ForEach-Object { Join-Path $MediaRoot $_ }
+            $media = Get-MediaRoot
+            $videos = $RealVideos | ForEach-Object { Join-Path $media $_ }
             foreach ($video in $videos) { if (-not (Test-Path -LiteralPath $video)) { throw "missing video: $video" } }
             return $common + @('--videos') + $videos
         }
         'real-1' {
-            $video = Join-Path $MediaRoot $RealVideos[0]
+            $video = Join-Path (Get-MediaRoot) $RealVideos[0]
             if (-not (Test-Path -LiteralPath $video)) { throw "missing video: $video" }
             return $common + @('--videos', $video)
         }
