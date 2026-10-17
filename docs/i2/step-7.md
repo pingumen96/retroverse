@@ -214,7 +214,7 @@ Timings (Release, informative: other worktrees were building meanwhile):
 |---|---|---|---|---|---|
 | the hidden test, sheets one by one (an earlier build) | listing warm (the snapshot had just walked the tree), sheets cold | 22.2 s | 0.9 s | 0.6 s | 19.9 s (2,520) |
 | `import --dry-run`, 8 readers | warm | 3.1 s | 1.3 s | 0.7 s | 0.06 s |
-| the hidden test, 8 readers (the final run, every `[real-library]` test) | warm | 3.0 s | 1.3 s | 0.7 s | 0.04 s |
+| the hidden test, 8 readers (every `[real-library]` test, twice: the second while other worktrees built) | warm | 3.0 s, 4.8 s | 1.3 s, 1.6 s | 0.7 s, 1.3 s | 0.04 s, 0.18 s |
 
 The sheets dominate a cold first load on the external drive. With 8 readers they were not measured cold: once read
 they stayed in the cache of the 64 GB machine for the rest of the session. From the cold ps2 measurement (4.5 times
