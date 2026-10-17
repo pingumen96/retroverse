@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Watches the Windows desktop for test processes that take the foreground or show windows (read-only).
+
+While a wrapped command runs (or for a fixed duration), polls GetForegroundWindow and EnumWindows every 20 ms and
+records every foreground change and every top-level window that becomes visible: the owning process id, its image
+path, its parent chain, the window's title, class, rectangle and state, with timestamps. A process is a *test process*
+when its image lies under one of the --watch folders, or when an ancestor's does (a console host, a copy started by a
+test program, ...); a window is also counted as a test process's when its title names a watched folder (a console
+window handed to Windows Terminal belongs to the terminal, but its title is the program's path).
+
+Findings, which make the exit code 1:
+  - a foreground change to a window of a test process;
+  - a visible top-level window of a test process on a monitor (minimized windows count: they sit in the taskbar).
+Recorded but allowed: windows of test processes that are cloaked, off every monitor or of zero size.
+
+  python -I scripts/focus_watch.py --watch build/msvc-x64-debug --out build/focus/unit.json -- \
+      pwsh -NoProfile -File scripts/test.ps1
+  python -I scripts/focus_watch.py --watch build --duration 30 --out build/focus/idle.json
+
+Exit codes: 0 nothing found, 1 findings, 2 usage error or the command could not start, 3 nothing found but the
+wrapped command failed (its exit code is in the report and on stdout).
+
+It never sends input, never activates, moves or closes a window and never ends a process: it only reads.
+Python 3.10 or later, standard library only (ctypes); Windows only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+import datetime
+import json
+import os
+import subprocess
+import sys
+import time
+from ctypes import wintypes
+from dataclasses import dataclass, field
+
+if sys.platform != "win32":  # pragma: no cover - the tool is Windows-only
+    print("focus_watch.py runs on Windows only", file=sys.stderr)
+    sys.exit(2)
+
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+try:
+    dwmapi = ctypes.WinDLL("dwmapi")
+except OSError:  # pragma: no cover - present on every supported Windows
+    dwmapi = None
+
+TH32CS_SNAPPROCESS = 0x00000002
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+MONITOR_DEFAULTTONULL = 0
+DWMWA_CLOAKED = 14
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_NOACTIVATE = 0x08000000
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.c_size_t),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * 260),
+    ]
+
+
+WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+user32.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
+user32.IsIconic.argtypes = [wintypes.HWND]
+user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+user32.MonitorFromRect.argtypes = [ctypes.POINTER(wintypes.RECT), wintypes.DWORD]
+user32.MonitorFromRect.restype = wintypes.HANDLE
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongW.restype = ctypes.c_long
+kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                ctypes.POINTER(wintypes.DWORD)]
+kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+if dwmapi is not None:
+    dwmapi.DwmGetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+    dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
+
+
+@dataclass
+class ProcessInfo:
+    pid: int
+    parent: int
+    name: str
+    image: str = ""
+    created: int = 0  # FILETIME ticks, 0 when unknown
+
+
+@dataclass
+class Watch:
+    folders: list[str]
+    processes: dict[int, ProcessInfo] = field(default_factory=dict)
+    last_snapshot: float = 0.0
+
+    def snapshot(self) -> None:
+        """Adds the running processes to the cache (the cache keeps those that have exited since)."""
+        handle = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if handle is None or handle == INVALID_HANDLE_VALUE:
+            return
+        try:
+            entry = PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+            ok = kernel32.Process32FirstW(handle, ctypes.byref(entry))
+            while ok:
+                pid = int(entry.th32ProcessID)
+                known = self.processes.get(pid)
+                if known is None or known.parent != entry.th32ParentProcessID or known.name != entry.szExeFile:
+                    info = ProcessInfo(pid, int(entry.th32ParentProcessID), entry.szExeFile)
+                    info.image, info.created = query_process(pid)
+                    self.processes[pid] = info
+                ok = kernel32.Process32NextW(handle, ctypes.byref(entry))
+        finally:
+            kernel32.CloseHandle(handle)
+        self.last_snapshot = time.monotonic()
+
+    def process(self, pid: int) -> ProcessInfo:
+        if pid not in self.processes:
+            self.snapshot()
+        return self.processes.get(pid) or ProcessInfo(pid, 0, "", *query_process(pid))
+
+    def chain(self, pid: int) -> list[ProcessInfo]:
+        """The process and its ancestors, oldest last; a parent created after its child (a reused id) ends it."""
+        result: list[ProcessInfo] = []
+        seen: set[int] = set()
+        current = self.process(pid)
+        while current.pid not in seen and len(result) < 32:
+            result.append(current)
+            seen.add(current.pid)
+            parent = self.processes.get(current.parent)
+            if current.parent == 0 or parent is None:
+                break
+            if parent.created and current.created and parent.created > current.created:
+                break
+            current = parent
+        return result
+
+    def under_watch(self, path: str) -> bool:
+        if not path:
+            return False
+        normalized = os.path.normcase(os.path.abspath(path))
+        return any(normalized.startswith(folder + os.sep) for folder in self.folders)
+
+    def classify(self, pid: int, title: str) -> tuple[bool, str, list[ProcessInfo]]:
+        """Whether a window of `pid` titled `title` belongs to a test process, and why."""
+        chain = self.chain(pid)
+        for depth, info in enumerate(chain):
+            if self.under_watch(info.image):
+                return True, ("image under a watched folder" if depth == 0 else
+                              f"ancestor {info.name} ({info.pid}) under a watched folder"), chain
+        lowered = os.path.normcase(title)
+        for folder in self.folders:
+            if folder in lowered:
+                return True, "title names a watched folder", chain
+        return False, "", chain
+
+
+def query_process(pid: int) -> tuple[str, int]:
+    """The image path and creation time of a running process ('', 0 when it cannot be opened)."""
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return "", 0
+    try:
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        image = buffer.value if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)) else ""
+        times = [wintypes.FILETIME() for _ in range(4)]
+        created = 0
+        if kernel32.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+            created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        return image, created
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def window_pid(hwnd: int) -> int:
+    pid = wintypes.DWORD(0)
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return int(pid.value)
+
+
+def window_text(hwnd: int, getter) -> str:
+    buffer = ctypes.create_unicode_buffer(512)
+    getter(hwnd, buffer, len(buffer))
+    return buffer.value
+
+
+def window_state(hwnd: int) -> dict:
+    rect = wintypes.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    cloaked = wintypes.DWORD(0)
+    if dwmapi is not None:
+        dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+    iconic = bool(user32.IsIconic(hwnd))
+    width = rect.right - rect.left
+    height = rect.bottom - rect.top
+    on_monitor = bool(user32.MonitorFromRect(ctypes.byref(rect), MONITOR_DEFAULTTONULL))
+    ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & 0xFFFFFFFF
+    return {
+        "rect": [rect.left, rect.top, rect.right, rect.bottom],
+        "minimized": iconic,
+        "cloaked": bool(cloaked.value),
+        "onMonitor": on_monitor,
+        "noActivate": bool(ex_style & WS_EX_NOACTIVATE),
+        "toolWindow": bool(ex_style & WS_EX_TOOLWINDOW),
+        # Where the user would see it: on a monitor (or in the taskbar when minimized), not cloaked, not empty.
+        "seen": not cloaked.value and (iconic or (on_monitor and width > 0 and height > 0)),
+    }
+
+
+def visible_windows() -> list[int]:
+    found: list[int] = []
+
+    def collect(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            found.append(int(hwnd))
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(collect), 0)
+    return found
+
+
+def describe(watch: Watch, hwnd: int, started: float) -> dict:
+    pid = window_pid(hwnd)
+    title = window_text(hwnd, user32.GetWindowTextW)
+    matched, reason, chain = watch.classify(pid, title)
+    return {
+        "t": round(time.monotonic() - started, 3),
+        "time": datetime.datetime.now().astimezone().isoformat(timespec="milliseconds"),
+        "hwnd": hex(hwnd),
+        "pid": pid,
+        "image": chain[0].image if chain else "",
+        "chain": [{"pid": p.pid, "name": p.name, "image": p.image} for p in chain],
+        "title": title,
+        "class": window_text(hwnd, user32.GetClassNameW),
+        "testProcess": matched,
+        "reason": reason,
+        **window_state(hwnd),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
+                                     formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     epilog="Everything after -- is the command to run and watch.")
+    parser.add_argument("--watch", action="append", required=True, metavar="DIR",
+                        help="a folder whose programs (and their descendants) are test processes; repeatable")
+    parser.add_argument("--out", metavar="JSON", help="write the report there (UTF-8)")
+    parser.add_argument("--duration", type=float, help="watch for this many seconds (instead of, or after, a command)")
+    parser.add_argument("--tail", type=float, default=1.0,
+                        help="seconds to keep watching after the command exits (default 1)")
+    parser.add_argument("--interval-ms", type=int, default=20, help="poll interval (default 20 ms)")
+    argv = sys.argv[1:]
+    command: list[str] = []
+    if "--" in argv:
+        split = argv.index("--")
+        argv, command = argv[:split], argv[split + 1:]
+    args = parser.parse_args(argv)
+    if not command and args.duration is None:
+        parser.error("give a command after -- or --duration")
+
+    folders = [os.path.normcase(os.path.abspath(folder)) for folder in args.watch]
+    watch = Watch(folders)
+    watch.snapshot()
+    started = time.monotonic()
+    started_at = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+    baseline = set(visible_windows())
+    shown: set[int] = set(baseline)
+    windows: list[dict] = []
+    foreground_changes: list[dict] = []
+    last_foreground = int(user32.GetForegroundWindow() or 0)
+
+    child = None
+    if command:
+        try:
+            child = subprocess.Popen(command)  # inherits this console: no window of its own
+        except OSError as error:
+            print(f"focus_watch: cannot start {command[0]}: {error}", file=sys.stderr)
+            return 2
+        print(f"focus_watch: watching {' '.join(command)} (process {child.pid})", flush=True)
+
+    deadline = started + args.duration if args.duration is not None and not command else None
+    tail_until = None
+    interval = max(args.interval_ms, 5) / 1000.0
+    exit_code = None
+    try:
+        while True:
+            now = time.monotonic()
+            if now - watch.last_snapshot > 0.25:
+                watch.snapshot()
+            foreground = int(user32.GetForegroundWindow() or 0)
+            if foreground != last_foreground and foreground:
+                foreground_changes.append(describe(watch, foreground, started))
+            last_foreground = foreground
+            current = set(visible_windows())
+            for hwnd in sorted(current - shown):
+                windows.append(describe(watch, hwnd, started))
+            shown = current
+            if child is not None and exit_code is None:
+                exit_code = child.poll()
+                if exit_code is not None:
+                    tail_until = now + max(args.tail, 0.0)
+                    if args.duration is not None:
+                        tail_until = max(tail_until, started + args.duration)
+            if tail_until is not None and now >= tail_until:
+                break
+            if deadline is not None and now >= deadline:
+                break
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("focus_watch: interrupted", file=sys.stderr)
+
+    found_foreground = [event for event in foreground_changes if event["testProcess"]]
+    found_windows = [window for window in windows if window["testProcess"] and window["seen"]]
+    allowed_windows = [window for window in windows if window["testProcess"] and not window["seen"]]
+    report = {
+        "command": command,
+        "watch": args.watch,
+        "startedAt": started_at,
+        "seconds": round(time.monotonic() - started, 3),
+        "commandExitCode": exit_code,
+        "intervalMs": args.interval_ms,
+        "counts": {
+            "foregroundChanges": len(foreground_changes),
+            "foregroundChangesToTestProcesses": len(found_foreground),
+            "windowsShown": len(windows),
+            "visibleWindowsOfTestProcesses": len(found_windows),
+            "allowedWindowsOfTestProcesses": len(allowed_windows),
+        },
+        "findings": {"foreground": found_foreground, "windows": found_windows},
+        "allowed": allowed_windows,
+        "foregroundChanges": foreground_changes,
+        "windowsShown": windows,
+    }
+    if args.out:
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2, ensure_ascii=False)
+            stream.write("\n")
+
+    counts = report["counts"]
+    print(f"focus_watch: {report['seconds']:.1f} s, {counts['foregroundChanges']} foreground change(s) "
+          f"({counts['foregroundChangesToTestProcesses']} to test processes), {counts['windowsShown']} window(s) "
+          f"shown ({counts['visibleWindowsOfTestProcesses']} visible of test processes, "
+          f"{counts['allowedWindowsOfTestProcesses']} hidden or off-screen)"
+          + (f"; command exit code {exit_code}" if command else ""))
+    for event in found_foreground:
+        print(f"  FOREGROUND +{event['t']:.3f}s pid {event['pid']} {event['image'] or '?'} '{event['title']}' "
+              f"({event['reason']})")
+    for window in found_windows:
+        print(f"  WINDOW     +{window['t']:.3f}s pid {window['pid']} {window['image'] or '?'} '{window['title']}' "
+              f"[{window['class']}] ({window['reason']})")
+    if found_foreground or found_windows:
+        return 1
+    if command and exit_code not in (0, None):
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

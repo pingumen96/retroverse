@@ -723,12 +723,23 @@ std::vector<launcher::EnvironmentVariable> currentEnvironment() {
     return variables;
 }
 
-std::uint32_t processCreationFlags(const launcher::LaunchRequest& request) noexcept {
+bool backgroundLaunchesRequested() noexcept {
+    std::array<wchar_t, 8> value{};
+    const DWORD length = GetEnvironmentVariableW(L"RV_LAUNCH_BACKGROUND", value.data(), static_cast<DWORD>(value.size()));
+    if (length == 0) {
+        return false; // unset or empty
+    }
+    // Longer values do not fit (length is then the size needed): anything but "0" asks for it.
+    return length >= value.size() || std::wstring_view(value.data(), length) != L"0";
+}
+
+std::uint32_t processCreationFlags(const launcher::LaunchRequest& request, bool background) noexcept {
     // A console program gets a console of its own, as when a GUI program such as ES-DE starts it, windowless on
-    // request: never Retroverse's console, whose closing (CTRL_CLOSE_EVENT) or Ctrl+Break would reach every process
-    // attached to it. Both flags are ignored for GUI programs.
+    // request and in the background (a console window would be activated over whatever the user is doing): never
+    // Retroverse's console, whose closing (CTRL_CLOSE_EVENT) or Ctrl+Break would reach every process attached to it.
+    // Both flags are ignored for GUI programs.
     DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_DEFAULT_ERROR_MODE | CREATE_NEW_PROCESS_GROUP |
-                  (request.hideConsoleWindow ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE);
+                  (request.hideConsoleWindow || background ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE);
     if (!request.outputLog.empty()) {
         flags |= EXTENDED_STARTUPINFO_PRESENT;
     }
@@ -894,8 +905,14 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     std::array<HANDLE, 2> inheritedHandles{};
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(STARTUPINFOW);
-    const DWORD flags = processCreationFlags(request);
+    // In the background (automated runs): no console window, a GUI program's first window minimized and inactive.
+    const bool background = m_options.background.value_or(backgroundLaunchesRequested());
+    const DWORD flags = processCreationFlags(request, background);
     BOOL inheritHandles = FALSE;
+    if (background) {
+        startup.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW;
+        startup.StartupInfo.wShowWindow = SW_SHOWMINNOACTIVE;
+    }
     if (!request.outputLog.empty()) {
         if (auto opened = openOutputLog(request.outputLog, *commandLineUtf8, output, input); !opened) {
             return propagate(opened.error());
@@ -911,7 +928,7 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
                              "UpdateProcThreadAttribute failed: " + lastErrorMessage());
         }
         startup.StartupInfo.cb = sizeof(STARTUPINFOEXW);
-        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
         startup.StartupInfo.hStdInput = input.get();
         startup.StartupInfo.hStdOutput = output.get();
         startup.StartupInfo.hStdError = output.get();
@@ -970,7 +987,9 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
             job.reset();
             port.reset();
         }
-        if (m_options.allowSetForeground) {
+        if (background) {
+            foregroundError = "not asked for: started in the background";
+        } else if (m_options.allowSetForeground) {
             foregroundAllowed = AllowSetForegroundWindow(info.dwProcessId) != FALSE;
             if (!foregroundAllowed) {
                 foregroundError = lastErrorMessage();
@@ -1005,14 +1024,17 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
         m_lastStart.jobError = jobError;
         m_lastStart.foregroundAllowed = foregroundAllowed;
         m_lastStart.foregroundError = foregroundError;
+        m_lastStart.background = background;
         m_lastStart.commandLine = *commandLineUtf8;
         m_lastStart.startDuration =
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begin);
-        spdlog::info("Started process {} in {:.1f} ms ({}; AllowSetForegroundWindow {})", info.dwProcessId,
+        spdlog::info("Started process {} in {:.1f} ms ({}; {})", info.dwProcessId,
                      static_cast<double>(m_lastStart.startDuration.count()) / 1000.0,
                      m_lastStart.jobAssigned ? std::string("process tree followed")
                                              : "process tree not followed: " + jobError,
-                     foregroundAllowed ? std::string("granted") : "refused: " + foregroundError);
+                     background          ? std::string("in the background: RV_LAUNCH_BACKGROUND")
+                     : foregroundAllowed ? std::string("AllowSetForegroundWindow granted")
+                                         : "AllowSetForegroundWindow refused: " + foregroundError);
     } catch (...) {
         m_lastStart.processId = info.dwProcessId;
     }
