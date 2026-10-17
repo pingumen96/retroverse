@@ -636,12 +636,15 @@ void runWindow(const Options& options, nlohmann::json& log) {
     const auto hwnd = static_cast<HWND>(
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     if (background) {
-        // Off every monitor, left of the virtual screen, shown without activation at the bottom of the z-order.
+        // Off every monitor, left of the virtual screen, shown without activation at the bottom of the z-order. Shown by
+        // SetWindowPos, never by a first ShowWindow: Windows applies the STARTUPINFO's show command to a process's
+        // first ShowWindow, and ShowWindow(SW_SHOWNOACTIVATE) was seen to activate the window in its own thread
+        // (GetActiveWindow, an EVENT_SYSTEM_FOREGROUND that focus_watch.py reports) though it never took the
+        // foreground.
         if (hwnd != nullptr) {
             const int x = GetSystemMetrics(SM_XVIRTUALSCREEN) - 2000;
             const int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-            SetWindowPos(hwnd, HWND_BOTTOM, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            SetWindowPos(hwnd, HWND_BOTTOM, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         }
         log["display"]["requestedExclusive"] = nullptr;
         if (options.exclusive) {
