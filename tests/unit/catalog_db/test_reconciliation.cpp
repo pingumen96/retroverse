@@ -5,8 +5,10 @@
 // then by the longest common path suffix; identical copies paired in key order; ambiguous cases as review rows with
 // nothing merged; reviews resolved by pairing and by keeping separate, then a re-import that changes nothing; a file
 // moved back (the holder becomes an alias, every state row naming it follows, a table unique per game keeping the moved
-// identity's row); the history of moves, aliases and re-keyed identities; the quick-hash pass resumed after a cancel,
-// bounded, deterministic; the pass, the resolution and an import never overlapping.
+// identity's row), and a file back at its own path, or at the path of an identity that had another file, never given to
+// a vanished identity; an equal quick hash confirmed by the file name or the time, else reviewed; a resolution only
+// with a candidate unless forced; the history of moves, aliases and re-keyed identities; the quick-hash pass resumed
+// after a cancel, bounded, deterministic; the pass, the resolution and an import never overlapping.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -234,8 +236,9 @@ TEST_CASE("catalog_db/reconciliation: a renamed file keeps its identity by its q
     CHECK(pass.hashed == 6);
     CHECK(library.at("Old Name (USA).gb").quickHash == hashOf(File{"", 100, kTime + 1, "game"}));
 
-    // Renamed, its time changed too (no size, time and name could pair it); a new file of another size beside it.
-    library.put({File{"New Name (USA).gb", 100, kTime + 9, "game"}, File{"Other (USA).gb", 200, kTime + 2, "other"},
+    // Renamed, its time kept as a rename keeps it (no size, time and name could pair it: the name changed); a new file
+    // of another size beside it.
+    library.put({File{"New Name (USA).gb", 100, kTime + 1, "game"}, File{"Other (USA).gb", 200, kTime + 2, "other"},
                  File{"Big (USA).gb", 300, kTime + 3, "big"}});
     const ImportResult moved = library.import();
     // Only the new file of the stored hash's size was read.
@@ -252,7 +255,7 @@ TEST_CASE("catalog_db/reconciliation: a renamed file keeps its identity by its q
     CHECK(identity.id == game);
     CHECK(identity.present);
     // The hash the pairing read is the moved identity's now, current for its new file.
-    CHECK(identity.quickHash == hashOf(File{"", 100, kTime + 9, "game"}));
+    CHECK(identity.quickHash == hashOf(File{"", 100, kTime + 1, "game"}));
     CHECK(currentQuickHash(identity).has_value());
     CHECK_FALSE(library.has("Old Name (USA).gb"));
     CHECK(library.rowOf(game).entry.key.relativePath() == "New Name (USA).gb");
@@ -459,8 +462,9 @@ TEST_CASE("catalog_db/reconciliation: identical copies moved together pair in ke
     const GameId second = library.at("Copies/Second (USA).gb").id;
 
     SECTION("as many copies as identities, nothing to tell them apart: key order") {
+        // Renamed and moved, their times kept.
         library.put(
-            {File{"Moved/One (USA).gb", 500, kTime + 6, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"}});
+            {File{"Moved/One (USA).gb", 500, kTime + 5, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 5, "copy"}});
         const ImportResult result = library.import();
         REQUIRE(result.changes.moved.size() == 2);
         CHECK(result.changes.moved[0].reason == MoveReason::IdenticalCopies);
@@ -469,6 +473,19 @@ TEST_CASE("catalog_db/reconciliation: identical copies moved together pair in ke
         CHECK(library.at("Moved/Two (USA).gb").id == second);
         CHECK(library.history(first).at(0).reason == MoveReason::IdenticalCopies);
         library.checkSteady();
+    }
+    SECTION("as many files, but neither their names nor their times confirm the hash: reviewed, nothing merged") {
+        library.put(
+            {File{"Moved/One (USA).gb", 500, kTime + 6, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"}});
+        const ImportResult result = library.import();
+        CHECK(result.changes.moved.empty());
+        REQUIRE(result.changes.reviews.size() == 2);
+        for (const ReviewRow& review : result.changes.reviews) {
+            CHECK(review.candidates.size() == 2);
+            CHECK(review.reason.find("neither its file name nor its time") != std::string::npos);
+        }
+        CHECK(library.at("Moved/One (USA).gb").id != first);
+        CHECK(library.at("Moved/Two (USA).gb").id != second);
     }
     SECTION("more copies than identities: reviewed, nothing merged") {
         library.put({File{"Moved/One (USA).gb", 500, kTime + 6, "copy"},
@@ -526,6 +543,8 @@ TEST_CASE("catalog_db/reconciliation: a review resolved by pairing applies the m
         refused({review + 100, std::nullopt}, rv::ErrorCode::NotFound);
         refused({review, GameId::fromValue(42).value()}, rv::ErrorCode::NotFound); // no such identity
         refused({review, vanished}, rv::ErrorCode::InvalidArgument);                // itself
+        // A present identity of the system that is none of the review's candidates (a mistyped GameId).
+        refused({review, library.at("Other/Game (USA).gb").id}, rv::ErrorCode::InvalidArgument);
         CHECK(rv::test::dumpIndex(library.writer()) == indexBefore);
         CHECK(library.reviews().size() == 1);
     }
@@ -572,6 +591,18 @@ TEST_CASE("catalog_db/reconciliation: a review resolved by pairing applies the m
         CHECK(again.error().code == rv::ErrorCode::Conflict);
         library.checkSteady();
         CHECK(library.at("B/Kept (USA).gb").id == vanished);
+    }
+    SECTION("paired with an identity that is none of the candidates: only when forced") {
+        const GameId other = library.at("Other/Game (USA).gb").id;
+        ReviewDecision forced{review, other};
+        forced.force = true;
+        const auto resolved = resolveReview(*library.catalog.store, library.profile.id, forced);
+        INFO((resolved ? std::string("resolved") : resolved.error().toString()));
+        REQUIRE(resolved.has_value());
+        CHECK(resolved->review.resolvedWith == other);
+        CHECK(library.at("Other/Game (USA).gb").id == vanished);
+        CHECK(library.catalog.store->alias(other).value().has_value());
+        library.checkSteady();
     }
     SECTION("kept separate") {
         const auto stateBefore = rv::test::dumpState(library.writer());
@@ -741,6 +772,146 @@ TEST_CASE("catalog_db/reconciliation: a file moved back keeps its identity; the 
     CHECK(reviews[0].resolvedWith == game);
     CHECK(library.count("PRAGMA foreign_key_check") == -1); // no row breaks a key
     library.checkSteady();
+}
+
+TEST_CASE("catalog_db/reconciliation: a file back at its own path keeps its identity when an identical copy vanishes "
+          "meanwhile; nothing is merged",
+          "[catalog_db][reconciliation]") {
+    Library library("rv-reconcile-own-back");
+    REQUIRE(library.writer()
+                .execute("CREATE TABLE rv_test_sessions (id INTEGER PRIMARY KEY, game INTEGER NOT NULL REFERENCES "
+                         "rv_game_identities (id), note TEXT NOT NULL) STRICT")
+                .has_value());
+    // Two identical copies of one name, size and time.
+    const File a{"A/Tetris (USA).gb", 400, kTime + 4, "tetris"};
+    const File b{"B/Tetris (USA).gb", 400, kTime + 4, "tetris"};
+    library.put({a, b});
+    library.import();
+    SECTION("their quick hashes stored") {
+        library.hashPass();
+    }
+    SECTION("no quick hash stored") {}
+    const GameId first = library.at(a.path).id;
+    const GameId second = library.at(b.path).id;
+    for (const GameId id : {first, second}) {
+        REQUIRE(library.writer()
+                    .execute(fmt::format("INSERT INTO rv_test_sessions (game, note) VALUES ({}, 'played')", id.value()))
+                    .has_value());
+    }
+    const auto sessions = [&](GameId id) {
+        return library.count(fmt::format("SELECT count(*) FROM rv_test_sessions WHERE game = {}", id.value()));
+    };
+
+    // A leaves the library for one import...
+    library.put({b});
+    CHECK(changesOf(library.import().changes, "gb").vanished == 1);
+    CHECK_FALSE(library.at(a.path).present);
+    // ... and comes back unchanged while B is deleted: A's own identity takes its file back (SC-05), B's is not given
+    // it, whatever its hash or its size, time and name say.
+    library.put({a});
+    const ImportResult back = library.import();
+    CHECK(back.changes.moved.empty());
+    CHECK(back.statistics.aliasesWritten == 0);
+    CHECK(changesOf(back.changes, "gb").returned == 1);
+    CHECK(changesOf(back.changes, "gb").vanished == 1);
+    const StoredIdentity returned = library.at(a.path);
+    CHECK(returned.id == first);
+    CHECK(returned.present);
+    CHECK(library.at(b.path).id == second);
+    CHECK_FALSE(library.at(b.path).present);
+    CHECK(library.catalog.store->aliasesOf(first).value().empty());
+    CHECK(library.catalog.store->aliasesOf(second).value().empty());
+    CHECK(library.history(first).empty());
+    CHECK(library.history(second).empty());
+    CHECK(sessions(first) == 1);
+    CHECK(sessions(second) == 1);
+    // The vanished copy is offered the file for review (the user may know that B moved there), never given it.
+    REQUIRE(back.changes.reviews.size() == 1);
+    const ReviewRow& review = back.changes.reviews[0];
+    CHECK(review.game == second);
+    REQUIRE(review.candidates.size() == 1);
+    CHECK(review.candidates[0].relativePath() == a.path);
+    CHECK(review.reason.find("at the path of another identity") != std::string::npos);
+    library.checkSteady();
+}
+
+TEST_CASE("catalog_db/reconciliation: a vanished identity's file at the path of an identity that had another file "
+          "there is reviewed, never merged",
+          "[catalog_db][reconciliation]") {
+    Library library("rv-reconcile-contested");
+    library.put({File{"A/Game (USA).gb", 400, kTime + 4, "first game"},
+                 File{"B/Game (USA).gb", 500, kTime + 5, "second game"}});
+    library.import();
+    library.hashPass();
+    const GameId first = library.at("A/Game (USA).gb").id;
+    const GameId second = library.at("B/Game (USA).gb").id;
+    // A is deleted...
+    library.put({File{"B/Game (USA).gb", 500, kTime + 5, "second game"}});
+    library.import();
+    // ... then B is moved where A was: its quick hash says B, the path says A.
+    library.put({File{"A/Game (USA).gb", 500, kTime + 5, "second game"}});
+    const ImportResult result = library.import();
+    CHECK(result.changes.moved.empty());
+    CHECK(result.statistics.aliasesWritten == 0);
+    // The path's identity takes the file, as without a pairing pass; B's identity vanished, with a review row.
+    CHECK(library.at("A/Game (USA).gb").id == first);
+    CHECK(library.at("A/Game (USA).gb").present);
+    CHECK_FALSE(library.at("B/Game (USA).gb").present);
+    REQUIRE(result.changes.reviews.size() == 1);
+    const ReviewRow& review = result.changes.reviews[0];
+    CHECK(review.game == second);
+    REQUIRE(review.candidates.size() == 1);
+    CHECK(review.candidates[0].relativePath() == "A/Game (USA).gb");
+    CHECK(review.reason.find("its quick hash but is at the path of another identity") != std::string::npos);
+
+    // The user pairs them: the identity that had the path becomes the alias, as the user decided.
+    const auto resolved = resolveReview(*library.catalog.store, library.profile.id, {review.id, first});
+    INFO((resolved ? std::string("resolved") : resolved.error().toString()));
+    REQUIRE(resolved.has_value());
+    CHECK(library.at("A/Game (USA).gb").id == second);
+    const auto alias = library.catalog.store->alias(first).value();
+    REQUIRE(alias.has_value());
+    CHECK(alias->game == second);
+    library.checkSteady();
+}
+
+TEST_CASE("catalog_db/reconciliation: an equal quick hash under another file name and another time is reviewed, never "
+          "paired",
+          "[catalog_db][reconciliation]") {
+    // Hacks, translations and alternative dumps of one game often share their first and last 64 KiB.
+    Library library("rv-reconcile-hash-names");
+    library.put({File{"Base Tweaks (Hack).gb", 300, kTime + 3, "same ends"}});
+    library.import();
+    library.hashPass();
+    const GameId hack = library.at("Base Tweaks (Hack).gb").id;
+
+    SECTION("another name, another time: a review row") {
+        library.put({File{"Other Tweaks (Hack).gb", 300, kTime + 30, "same ends"}});
+        const ImportResult result = library.import();
+        CHECK(result.changes.moved.empty());
+        CHECK_FALSE(library.at("Base Tweaks (Hack).gb").present);
+        CHECK(library.at("Other Tweaks (Hack).gb").id != hack);
+        REQUIRE(result.changes.reviews.size() == 1);
+        CHECK(result.changes.reviews[0].game == hack);
+        REQUIRE(result.changes.reviews[0].candidates.size() == 1);
+        CHECK(result.changes.reviews[0].candidates[0].relativePath() == "Other Tweaks (Hack).gb");
+        CHECK(result.changes.reviews[0].reason.find("neither its file name nor its time") != std::string::npos);
+        library.checkSteady();
+    }
+    SECTION("another name, its time kept (a rename): paired") {
+        library.put({File{"Renamed Tweaks (Hack).gb", 300, kTime + 3, "same ends"}});
+        const ImportResult result = library.import();
+        REQUIRE(result.changes.moved.size() == 1);
+        CHECK(result.changes.moved[0].reason == MoveReason::QuickHash);
+        CHECK(library.at("Renamed Tweaks (Hack).gb").id == hack);
+    }
+    SECTION("its name, another time (moved elsewhere): paired") {
+        library.put({File{"Sub/Base Tweaks (Hack).gb", 300, kTime + 30, "same ends"}});
+        const ImportResult result = library.import();
+        REQUIRE(result.changes.moved.size() == 1);
+        CHECK(result.changes.moved[0].reason == MoveReason::QuickHash);
+        CHECK(library.at("Sub/Base Tweaks (Hack).gb").id == hack);
+    }
 }
 
 TEST_CASE("catalog_db/reconciliation: re-keyed identities and files that come back are in the history and resolve "

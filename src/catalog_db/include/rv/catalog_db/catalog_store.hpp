@@ -16,7 +16,9 @@
 // (putEntry(), removeEntry()) runs in a savepoint, undone whole when SQLite refuses one of them. When SQLite rolls the
 // whole transaction back on its own (a full disk, an I/O error, an interrupt), it ends there and every later call fails
 // (InvalidArgument), so that nothing is ever written outside it. Commits run a WAL checkpoint (ADR-0008 §5: a
-// checkpoint after each import) that waits briefly for readers and is otherwise left to the next one. Writes are
+// checkpoint after each import) that waits briefly for readers and is otherwise left to the next one; a commit that
+// wrote only reconciliation's state rows (quick hashes, history, review rows: the quick-hash pass's batches) is light,
+// with neither the checkpoint (SQLite's automatic one and the next import's do it) nor rv_meta's versions. Writes are
 // upserts (INSERT ... ON CONFLICT DO UPDATE), never REPLACE, so that triggers on the index tables (the search index, I2
 // step 9) see updates as updates.
 //
@@ -36,7 +38,7 @@
 // casing_table_version, the lookup key version of every identity's key, recorded by each commit ("mixed" while the
 // identities hold keys of several versions, a re-keying not finished; the versions of the system that made the schema
 // until an identity exists); sort_key_version, the version of idx_games' sort keys (catalog::kSortKeyVersion), recorded
-// by each commit too.
+// by each commit too (but the light ones, which write no key).
 //
 // The import's writes (I2 step 11a): disc groups in idx_disc_groups, idx_disc_members (by GameId) and
 // idx_disc_references (by relative path: what the head says, files that are not there included), read back joined to

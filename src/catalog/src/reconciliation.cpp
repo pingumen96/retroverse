@@ -157,18 +157,32 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
 
     // The new files by what the rules compare (each list in entry order, which is key order): their quick hash (digest
     // and size), their kind, size, time and name, their name alone, and the unreadable ones by size. Names are the last
-    // element of the keys, folded as the file systems compare them.
+    // element of the keys, folded as the file systems compare them. A file at the path or key of an identity that had a
+    // file of its own (NewFile::holderFile: it was seen present once) is that identity's, its own file back or another
+    // one the user put where it was: no rule gives it to a vanished identity, which is only offered it for review
+    // (heldByHash, heldByFacts). Only a holder never seen with a file (the identity a gamelist entry left at an old
+    // path got) lets its file pair like a new one: the moved-back rule.
     using HashKey = std::pair<core::Sha256Digest, std::uint64_t>;
     using FactsKey = std::tuple<bool, std::uint64_t, std::int64_t, std::string_view>;
     std::map<HashKey, std::vector<std::size_t>> filesByHash;
     std::map<FactsKey, std::vector<std::size_t>> filesByFacts;
     std::map<std::string_view, std::vector<std::size_t>> filesByName;
     std::map<std::uint64_t, std::vector<std::size_t>> unreadableBySize;
+    std::map<HashKey, std::vector<std::size_t>> heldByHash;
+    std::map<FactsKey, std::vector<std::size_t>> heldByFacts;
     for (std::size_t f = 0; f < files.size(); ++f) {
         const FileFacts& file = files[f].file;
         const std::string_view name = lastElement(files[f].key.key());
+        const FactsKey facts{file.directory, file.size, file.lastWriteTime, name};
+        if (files[f].heldBy && files[f].holderFile) {
+            heldByFacts[facts].push_back(f);
+            if (fileHash[f]) {
+                heldByHash[HashKey{fileHash[f]->digest, fileHash[f]->size}].push_back(f);
+            }
+            continue;
+        }
         filesByName[name].push_back(f);
-        filesByFacts[FactsKey{file.directory, file.size, file.lastWriteTime, name}].push_back(f);
+        filesByFacts[facts].push_back(f);
         if (fileHash[f]) {
             filesByHash[HashKey{fileHash[f]->digest, fileHash[f]->size}].push_back(f);
         }
@@ -192,7 +206,12 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         result.pairs.push_back(IdentityPair{vanished[v].identity.id, files[f].key, reason});
     };
 
-    // 1. The quick hash, a group per digest and size, in the order of their first identity.
+    // 1. The quick hash, a group per digest and size, in the order of their first identity. The quick hash reads two
+    // ends of a file, which hacks, translations and other dumps of one game often share: a pair needs the same file
+    // name (a score of 1 or more) or the same last write time (a rename or a move keeps it) besides the hash.
+    const auto confirmed = [&](std::size_t v, std::size_t f, std::uint32_t score) {
+        return score >= 1 || files[f].file.lastWriteTime == stored[v]->lastWriteTime;
+    };
     std::map<HashKey, std::vector<std::size_t>> identitiesByHash;
     std::vector<HashKey> groupOrder;
     for (std::size_t v = 0; v < vanished.size(); ++v) {
@@ -221,7 +240,8 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
             continue;
         }
         // Ties: the scores of the group computed once (rows: identities, columns: files); a pair whose identity's best
-        // file and whose file's best identity are each other alone is paired, repeatedly.
+        // file and whose file's best identity are each other alone is paired when its name or time confirms the hash,
+        // repeatedly.
         const std::size_t columns = group.size();
         std::vector<std::uint32_t> scores(identities.size() * columns);
         for (std::size_t a = 0; a < identities.size(); ++a) {
@@ -264,7 +284,8 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
             bool paired = false;
             for (std::size_t a = 0; a < identities.size(); ++a) {
                 const std::size_t b = rowArg[a];
-                if (rowOpen[a] && rowCount[a] == 1 && columnCount[b] == 1 && columnBest[b] == rowBest[a]) {
+                if (rowOpen[a] && rowCount[a] == 1 && columnCount[b] == 1 && columnBest[b] == rowBest[a] &&
+                    confirmed(identities[a], group[b], rowBest[a])) {
                     pairWith(identities[a], group[b], MoveReason::QuickHash);
                     rowOpen[a] = false;
                     columnOpen[b] = false;
@@ -291,7 +312,7 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
             continue;
         }
         // What ties could not tell apart: identical copies moved together when every score is equal and the counts
-        // are; otherwise the user decides.
+        // are, each pair in key order confirmed by its name or time; otherwise the user decides.
         const std::uint32_t level = score(openRows.front(), openColumns.front());
         const bool even = std::all_of(openRows.begin(), openRows.end(), [&](std::size_t a) {
             return std::all_of(openColumns.begin(), openColumns.end(),
@@ -307,16 +328,30 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         }
         identities = std::move(leftIdentities);
         group = std::move(leftFiles);
-        if (even && identities.size() == group.size()) {
+        bool inKeyOrder = even && identities.size() == group.size();
+        for (std::size_t k = 0; inKeyOrder && k < identities.size(); ++k) {
+            inKeyOrder = confirmed(identities[k], group[k], level);
+        }
+        if (inKeyOrder) {
             for (std::size_t k = 0; k < identities.size(); ++k) {
                 pairWith(identities[k], group[k], MoveReason::IdenticalCopies);
             }
             continue;
         }
         for (const std::size_t v : identities) {
-            drafts[v].add(group, fmt::format("{} its quick hash, and neither name nor path tells which is its file "
-                                             "({} vanished identities have it)",
-                                             newFilesHave(group.size()), identities.size()));
+            const bool anyConfirmed = std::any_of(group.begin(), group.end(), [&](std::size_t f) {
+                return confirmed(
+                    v, f, static_cast<std::uint32_t>(commonSuffix(vanished[v].identity.key.key(), files[f].key.key())));
+            });
+            if (anyConfirmed) {
+                drafts[v].add(group, fmt::format("{} its quick hash, and neither name nor path tells which is its file "
+                                                 "({} vanished identities have it)",
+                                                 newFilesHave(group.size()), identities.size()));
+            } else {
+                drafts[v].add(group, fmt::format("{} its quick hash but neither its file name nor its time (hacks and "
+                                                 "other dumps of a game often share their first and last 64 KiB)",
+                                                 newFilesHave(group.size())));
+            }
         }
     }
 
@@ -372,6 +407,19 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
                                       "candidate too");
             }
         }
+        // The files their holder keeps whose quick hash, or size, time and name, are its own: the user may know that
+        // its file moved there.
+        static const std::vector<std::size_t> kNoFiles;
+        const std::vector<std::size_t>& heldMatches =
+            stored[v] ? listed(heldByHash, HashKey{stored[v]->digest, stored[v]->size})
+            : identity.file
+                ? listed(heldByFacts, FactsKey{identity.file->directory, identity.file->size,
+                                               identity.file->lastWriteTime, lastElement(identity.key.key())})
+                : kNoFiles;
+        draft.add(heldMatches,
+                  fmt::format("{} its {} but {} at the path of another identity, which keeps {}",
+                              newFilesHave(heldMatches.size()), stored[v] ? "quick hash" : "size, time and name",
+                              heldMatches.size() == 1 ? "is" : "are", heldMatches.size() == 1 ? "it" : "them"));
         // The new files of its file name, whatever their content: the user may know them for its file.
         std::vector<std::size_t> named;
         for (const std::size_t f : listed(filesByName, lastElement(identity.key.key()))) {
@@ -707,6 +755,17 @@ Expected<ReviewResolutionResult> resolveReview(ICatalogStore& store, const Libra
         if (!chosen.present || !chosen.file) {
             return withContext(ErrorCode::InvalidArgument,
                                fmt::format("the file of {} is not present", chosen.id.toString()), decision.review);
+        }
+        // A GameId mistyped or misread would merge two games for good: only a candidate, unless forced.
+        const auto& candidates = stored.review.candidates;
+        if (!decision.force && std::none_of(candidates.begin(), candidates.end(), [&](const LookupKey& candidate) {
+                return candidate.relativePath() == chosen.key.relativePath() || candidate.key() == chosen.key.key();
+            })) {
+            return withContext(ErrorCode::InvalidArgument,
+                               fmt::format("{} ({}) is none of the review's {}: pair with a candidate, or force it",
+                                           chosen.id.toString(), chosen.key.relativePath(),
+                                           plural(candidates.size(), "candidate", "candidates")),
+                               decision.review);
         }
 
         // What the import would write for this move, read before the transaction (the import lock is held).

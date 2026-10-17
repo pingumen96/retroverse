@@ -2,8 +2,8 @@
 // (scripts/quick_hash_oracle.py, Python's hashlib; `python -I scripts/quick_hash_oracle.py --check
 // tests/unit/catalog/test_fingerprint.cpp` must pass), on generated contents and on files; what a file reads (its two
 // ends, never more than 128 KiB, never written), names ending with a dot or a space, paths past MAX_PATH, a file
-// another program holds open for writing, the errors (missing, a folder, denied); a hash current or stale for file
-// facts.
+// another program holds open for writing, the errors (missing, a folder, denied, replaced or written while read); a
+// hash current or stale for file facts.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,9 +13,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include <windows.h>
@@ -225,6 +227,54 @@ TEST_CASE("catalog/fingerprint: a file that cannot be read is an error, never a 
         CHECK(refused.error().code != rv::ErrorCode::NotFound);
     }
     CHECK(readQuickHash(denied).has_value());
+}
+
+TEST_CASE("catalog/fingerprint: a file replaced or written while its quick hash is read is an error, never a hash "
+          "stored with another file's facts",
+          "[catalog][fingerprint]") {
+    const rv::test::TempDir dir("rv-quick-hash-races");
+    const fs::path file = dir.file("Game.gb");
+    const std::string data = content(200'000);
+    using detail::QuickHashReadStage;
+    const auto readWith = [&](QuickHashReadStage at, const std::function<void()>& change) {
+        writeFile(file, data);
+        return detail::readQuickHashObserved(file, [&](QuickHashReadStage stage) {
+            if (stage == at) {
+                change();
+            }
+        });
+    };
+    // Replaced whole (another file renamed over it, as an atomic replace or an extraction does) after the listing,
+    // before the open: the handle reads the new file alone, but the facts listed first are the old one's.
+    const auto replace = [&] {
+        const fs::path temporary = dir.file("Game.gb.new");
+        writeFile(temporary, content(150'000));
+        REQUIRE(MoveFileExW(temporary.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING));
+    };
+    // Written in place through another handle (sharing reads, as the reader shares writes).
+    const auto append = [&] {
+        std::ofstream writer(file, std::ios::binary | std::ios::app);
+        REQUIRE(writer.is_open());
+        writer << "more";
+    };
+    for (const auto& [stage, change, what] :
+         {std::tuple{QuickHashReadStage::Listed, std::function<void()>(replace), "replaced before the open"},
+          std::tuple{QuickHashReadStage::Listed, std::function<void()>(append), "written before the open"},
+          std::tuple{QuickHashReadStage::Opened, std::function<void()>(append), "written before the reads"},
+          std::tuple{QuickHashReadStage::Read, std::function<void()>(append), "written after the reads"}}) {
+        INFO(what);
+        const auto hash = readWith(stage, change);
+        REQUIRE_FALSE(hash.has_value());
+        CHECK(hash.error().code == rv::ErrorCode::IoError);
+    }
+    // Left alone, each stage is reached once, in order, and the hash is the file's.
+    writeFile(file, data);
+    std::vector<QuickHashReadStage> stages;
+    const auto hash = detail::readQuickHashObserved(file, [&](QuickHashReadStage stage) { stages.push_back(stage); });
+    REQUIRE(hash.has_value());
+    CHECK(hash->digest == quickHashDigest(bytesOf(data)));
+    CHECK(stages == std::vector<QuickHashReadStage>{QuickHashReadStage::Listed, QuickHashReadStage::Opened,
+                                                    QuickHashReadStage::Read});
 }
 
 TEST_CASE("catalog/fingerprint: a quick hash is current while the file has its size and time",

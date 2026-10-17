@@ -17,8 +17,9 @@
 // At most 128 KiB is read per file, opened for reading only with full sharing (core::SharedFileReader). The hash is
 // stored with the size and time a listing gives (core::listedFileFacts(): the directory entry, as walkTree() and so
 // the import see the file; on NTFS it may lag behind the file record), so that isCurrent() compares like with like; the
-// handle's own facts are taken before the reads and checked again after them, so that a file written meanwhile is
-// reported (IoError) rather than hashed half old, half new.
+// handle's own facts are taken before the reads and checked again after them, and the listing is taken again after
+// them too, so that a file written meanwhile, or replaced between the listing and the open (an atomic replace, an
+// extraction), is reported (IoError) rather than hashed half old, half new or stored with another file's facts.
 
 #include <cstdint>
 #include <filesystem>
@@ -69,8 +70,23 @@ struct QuickHash {
 
 /// Reads the quick hash of the file `file` (any path; a \\?\ path is used as it is), as defined above. Errors:
 /// core::SharedFileReader's (NotFound, Unavailable, InvalidArgument for a folder or a device, Conflict for a locked
-/// range, IoError for a file denied or written while it was read).
+/// range, IoError for a file denied), IoError for a file written or replaced while it was read.
 [[nodiscard]] Expected<QuickHash> readQuickHash(const std::filesystem::path& file);
+
+namespace detail {
+
+/// The moments at which readQuickHash() lets a test change the file.
+enum class QuickHashReadStage : std::uint8_t {
+    Listed, ///< the listed facts taken, the file not opened yet
+    Opened, ///< opened and its handle's facts taken, nothing read yet
+    Read,   ///< both ends read, nothing checked again yet
+};
+
+/// readQuickHash() calling `observer` (when not empty) at each stage: tests replace or write the file there.
+[[nodiscard]] Expected<QuickHash> readQuickHashObserved(const std::filesystem::path& file,
+                                                        const std::function<void(QuickHashReadStage)>& observer);
+
+} // namespace detail
 
 /// Reads the quick hash of the file `relativePath` (as a walk lists it: LookupKey::relativePath()) below `folder` (a
 /// system's ROM folder), reached through core::extendedLengthPathBelow(): any length, names ending with a dot or a

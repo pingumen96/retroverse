@@ -1,9 +1,10 @@
 // retroverse-cli identities (I2 step 11b) through the dispatcher, on the standard ES-DE fixture: the quick-hash pass
 // (figures, resumed with nothing left, an unreadable file reported with exit 1), SC-07 on disk (a file renamed and one
 // moved, their gamelist entries left behind: the import pairs them by quick hash, `list` and `show` give the history),
-// review rows (identical copies of one name: `reviews`, `resolve --with`, `resolve --keep-separate`, then an import
-// that changes nothing), usage errors and exit codes, and the import lock: the pass and a resolution refused while an
-// import holds it, also from a second process, and an import of a second process refused while the pass runs.
+// review rows (identical copies of one name: `reviews`, `resolve --with` (a candidate's identity only), `resolve
+// --keep-separate`, then an import that changes nothing), usage errors and exit codes, and the import lock: the pass
+// and a resolution refused while an import holds it, also from a second process, and an import of a second process
+// refused while the pass runs.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -174,6 +175,8 @@ TEST_CASE("cli/identities: usage errors exit 2 and name the problem", "[cli][ide
     CHECK(session.run({"identities", "resolve", "3", "--with", "g0000000000000001", "--keep-separate"}).code ==
           ExitCode::UsageError);
     CHECK(session.run({"identities", "resolve", "-4", "--keep-separate"}).code == ExitCode::UsageError);
+    CHECK(contains(session.run({"identities", "resolve", "3", "--keep-separate", "--force"}).err,
+                   "--force goes with --with <gameId>"));
     CHECK(session.run({"identities", "hash", "--limit", "0"}).code == ExitCode::UsageError);
     // No catalog yet: nothing to read (exit 3), and nothing made.
     const RunResult noCatalog = session.run({"identities", "hash"});
@@ -305,6 +308,12 @@ TEST_CASE("cli/identities: identical copies of one name become a review row, res
         CHECK(session.run({"identities", "resolve", "999", "--keep-separate"}).code == ExitCode::ProblemsFound);
         CHECK(session.run({"identities", "resolve", id, "--with", gameIdOf("snes", "Alpha Quest (USA).sfc")}).code ==
               ExitCode::UsageError);
+        // An identity of the system that is none of the candidates (a mistyped GameId): refused (2), nothing merged.
+        const RunResult other =
+            session.run({"identities", "resolve", id, "--with", gameIdOf("gb", "Tiny Tennis (Europe).gb")});
+        CHECK(other.code == ExitCode::UsageError);
+        CHECK(contains(other.err, "none of the review's 2 candidates"));
+        CHECK(session.json({"identities", "reviews", "--json"})["open"] == 1);
         const RunResult resolved = session.run({"identities", "resolve", id, "--with", chosen});
         INFO(resolved.err);
         CHECK(resolved.code == ExitCode::Ok);

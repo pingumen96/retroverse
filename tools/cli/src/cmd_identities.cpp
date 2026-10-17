@@ -8,19 +8,21 @@
 //    needs no library.json: a GameId names its library.
 //  - identities reviews [--system <name>] [--all]: the open review rows (with --all, the resolved ones too), each with
 //    its vanished identity, the candidates (with the GameId each has now) and why no pairing was safe.
-//  - identities resolve <review> (--with <gameId> | --keep-separate): resolves a review row (catalog::resolveReview(),
-//    under the import lock): paired, the vanished identity takes the chosen identity's file and the chosen one becomes
-//    its alias, as an import applies a pairing; kept separate, nothing changes but the row.
+//  - identities resolve <review> (--with <gameId> [--force] | --keep-separate): resolves a review row
+//    (catalog::resolveReview(), under the import lock): paired, the vanished identity takes the chosen identity's file
+//    and the chosen one becomes its alias, as an import applies a pairing (only a candidate's identity, unless
+//    --force); kept separate, nothing changes but the row.
 //  - identities hash [--system <name>] [--limit <files>]: the progressive quick-hash pass (catalog::runQuickHashPass(),
 //    under the import lock): the present files without a current quick hash, at most 128 KiB read each and never
-//    written, committed in batches; resumable (a later run hashes what is left). Progress goes to the log (stderr at
-//    --log-level info or below, and the log file).
+//    written, committed in batches; resumable (a later run hashes what is left). A progress line goes to stderr every
+//    two seconds (not at --log-level warn or error; at debug and trace the log line shows it) and to the log file.
 // Each takes --json and --output <file>. list, show and reviews only read the catalog (nothing is written into it);
 // resolve and hash write state rows and refuse while an import (of this or another process) holds the import lock.
 // Exit codes: 0; 1 show: the catalog has no such identity or alias; resolve: no such review row, resolved already, or
 // its vanished identity's file is present again; hash: files that could not be read or reached; 2 usage errors (no
 // library.json, a library.json naming another library than the catalog's, a system without identities, an identity to
-// pair with that cannot be: an alias, of another system, its file not present); 3 the catalog cannot be read or
+// pair with that cannot be: an alias, of another system, its file not present, none of the review's candidates without
+// --force); 3 the catalog cannot be read or
 // written, another import runs, the results cannot be written.
 
 #include <algorithm>
@@ -74,12 +76,15 @@ constexpr std::string_view kUsage =
     "  show <gameId>                      One identity: state, last path, file, quick hash, aliases, history and\n"
     "                                     review rows (an alias: the identity it stands for).\n"
     "  reviews [--system <name>] [--all]  The open review rows with their candidates (--all: resolved ones too).\n"
-    "  resolve <review> --with <gameId>   Pair the review's vanished identity with that identity, which becomes its\n"
-    "                                     alias (the move applied as an import applies it).\n"
+    "  resolve <review> --with <gameId> [--force]\n"
+    "                                     Pair the review's vanished identity with that candidate's identity, which\n"
+    "                                     becomes its alias (the move applied as an import applies it; for good).\n"
+    "                                     --force: an identity that is none of the review's candidates.\n"
     "  resolve <review> --keep-separate   Keep them apart: the row is resolved, nothing else changes.\n"
     "  hash [--system <name>] [--limit <files>]\n"
     "                                     Compute the quick hashes the catalog lacks (128 KiB read per file, never\n"
     "                                     written), committed in batches; a later run goes on with what is left.\n"
+    "                                     Progress on stderr every two seconds.\n"
     "\n"
     "Options:\n"
     "  --json           Write the results as JSON.\n"
@@ -88,8 +93,8 @@ constexpr std::string_view kUsage =
     "\n"
     "Exit codes: 0 ok; 1 show: no such identity; resolve: no such review row, resolved already, or its file is\n"
     "present again; hash: files that could not be read; 2 usage error (no library.json, another library, a system\n"
-    "without identities, an identity that cannot be paired with); 3 the catalog could not be read or written, another\n"
-    "import runs, or the results could not be written.\n";
+    "without identities, an identity that cannot be paired with, none of the review's candidates without --force);\n"
+    "3 the catalog could not be read or written, another import runs, or the results could not be written.\n";
 
 /// A subcommand's parsed arguments.
 struct Arguments {
@@ -647,8 +652,13 @@ ExitCode resolveReviewRow(CommandContext& context, Arguments& arguments) {
         return failure(context, arguments.subcommand, ExitCode::UsageError,
                        "give either --with <gameId> or --keep-separate");
     }
+    const bool force = arguments.args.has("force");
+    if (force && !with) {
+        return failure(context, arguments.subcommand, ExitCode::UsageError, "--force goes with --with <gameId>");
+    }
     catalog::ReviewDecision decision;
     decision.review = review;
+    decision.force = force;
     if (with) {
         const auto id = catalog::GameId::parse(*with);
         if (!id) {
@@ -751,16 +761,24 @@ ExitCode hashFiles(CommandContext& context, Arguments& arguments) {
     if (!library) {
         return code;
     }
-    // Progress in the log, every two seconds.
+    // Progress every two seconds, in the log and on stderr (stdout keeps the results): the console shows the log's info
+    // lines only at debug and trace, and a whole library's first pass reads for most of an hour. --log-level warn or
+    // error silences it.
     auto lastReport = std::chrono::steady_clock::now();
+    const bool toConsole = context.global.logLevel == spdlog::level::info;
     options.progress = [&](const catalog::QuickHashProgress& progress) {
         const auto now = std::chrono::steady_clock::now();
         if (now - lastReport < std::chrono::seconds(2)) {
             return;
         }
         lastReport = now;
-        spdlog::info("Quick hashes: {} of {} file(s) looked at, {} hashed, {:.1f} MiB read", progress.done,
-                     progress.total, progress.hashed, static_cast<double>(progress.bytesRead) / (1024.0 * 1024.0));
+        const std::string line =
+            fmt::format("Quick hashes: {} of {} file(s) looked at, {} hashed, {:.1f} MiB read", progress.done,
+                        progress.total, progress.hashed, static_cast<double>(progress.bytesRead) / (1024.0 * 1024.0));
+        spdlog::info("{}", line);
+        if (toConsole) {
+            context.err.writeLine(line);
+        }
     };
     const auto result = catalog::runQuickHashPass(*catalog->store, *library, options);
     if (!result) {
@@ -858,6 +876,7 @@ ExitCode runIdentities(CommandContext& context) {
         runner = resolveReviewRow;
         parser.positional("review", "The review row's id.")
             .option("with", "gameId", "Pair the vanished identity with this identity, which becomes its alias.")
+            .flag("force", "With --with: an identity that is none of the review's candidates.")
             .flag("keep-separate", "Keep them apart.");
     } else if (subcommand == "hash") {
         runner = hashFiles;

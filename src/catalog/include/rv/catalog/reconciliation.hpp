@@ -16,26 +16,34 @@
 // entry order, which within a system is key order):
 //  1. The quick hash: a vanished identity whose stored quick hash is current (isCurrent() against its last file facts:
 //     a hash that is stale says nothing of the content that vanished) pairs with a new file of the same digest and
-//     size. Only the new files whose size equals one of those hashes' sizes are read (folders never), each once; a
-//     cancel flag set meanwhile ends the pass (Cancelled). The identities and files of one digest form a group, paired
-//     by ties: the score of a pair is the number of trailing path elements their keys share (1 or more: the same file
-//     name; more: the same folders above it too), and a pair whose identity's best file and whose file's best identity
-//     are each other alone is paired (QuickHash), repeatedly; what is left with every score equal and as many files as
-//     identities is a group of identical copies that moved together, paired in key order (IdenticalCopies); anything
-//     else is left to review. A group of more than 4,194,304 (identity, file) pairs is not compared: all to review.
-//     The quick hash reads a file's two ends only: two files over 128 KiB of one size that share their first and last
-//     64 KiB count as identical (ADR-0008's evidence).
+//     size, confirmed by the same file name or the same last write time. Only the new files whose size equals one of
+//     those hashes' sizes are read (folders never), each once; a cancel flag set meanwhile ends the pass (Cancelled).
+//     The identities and files of one digest form a group, paired by ties: the score of a pair is the number of
+//     trailing path elements their keys share (1 or more: the same file name; more: the same folders above it too),
+//     and a pair whose identity's best file and whose file's best identity are each other alone is paired (QuickHash)
+//     when it is confirmed (a score of 1 or more, or equal times), repeatedly; what is left with every score equal and
+//     as many files as identities is a group of identical copies that moved together, paired in key order
+//     (IdenticalCopies) when each of those pairs is confirmed; anything else is left to review. A group of more than
+//     4,194,304 (identity, file) pairs is not compared: all to review. The confirmation exists because the quick hash
+//     reads a file's two ends only: hacks, translations and alternative dumps of one game over 128 KiB often share
+//     their first and last 64 KiB (on the reference library, files of one quick hash with different contents were
+//     found in 13 of 120 sampled groups), while a rename or a move keeps either the name or the time.
 //  2. Size, time and name, for the vanished identities without a current hash: the new files (not paired, whose quick
 //     hash, if read, matched no stored hash) of equal size, last write time and file name (the last element of the key:
 //     names folded as the file systems compare them), and of the same kind (file or folder). An identity pairs only
 //     with a unique such file that no other such identity has (SizeTimeName); no ties are broken here.
 //  3. Review rows (never a silent merge) for the vanished identities left unpaired that have candidates: the files of
-//     their quick hash that ties could not tell apart, the new files of their hash's size that could not be read, the
-//     files of equal size, time and name that were not unique, and the new files of the same file name (other content,
-//     size or time). The candidates are in key order, at most kMaxReviewCandidates. A vanished identity without any
-//     candidate is left vanished.
-// A new file with a holder (NewFile::heldBy, a file moved back) pairs like any other; the import records the holder as
-// the moved identity's alias (MoveReason::MovedBack). Statistics say what was read.
+//     their quick hash that ties could not tell apart or that neither name nor time confirm, the new files of their
+//     hash's size that could not be read, the files of equal size, time and name that were not unique, the files
+//     their holder keeps (below) whose quick hash, or size, time and name, are theirs, and the new files of the same
+//     file name (other content, size or time). The candidates are in key order, at most kMaxReviewCandidates. A
+//     vanished identity without any candidate is left vanished.
+// A new file with a holder (NewFile::heldBy) that was never seen with a file (NewFile::holderFile empty: the identity a
+// gamelist entry left at an old path got) pairs like any other, and the import records the holder as the moved
+// identity's alias (MoveReason::MovedBack: the file moved back). A new file whose holder had a file of its own is that
+// holder's (its own file came back to its path, SC-05, or the user put another file where it was): no rule pairs it, it
+// is only a review candidate (resolving the review with its holder makes the holder the alias, as the user decides).
+// Statistics say what was read.
 
 #include <atomic>
 #include <chrono>
@@ -112,9 +120,11 @@ struct QuickHashPassOptions {
     std::optional<SystemName> system;
     /// At most this many files read (hashed or not); 0: no limit.
     std::size_t limit = 0;
-    /// A batch is committed once it holds this many hashes, or once this long has passed since the last commit.
-    std::size_t batchFiles = 256;
-    std::chrono::milliseconds batchTime{2000};
+    /// A batch is committed once it holds this many hashes, or once this long has passed since the last commit (each
+    /// commit changes the database's data_version, which readers refreshing their queries see; a commit of quick
+    /// hashes alone is light: catalog_db's store neither checkpoints nor scans the identities for it).
+    std::size_t batchFiles = 1000;
+    std::chrono::milliseconds batchTime{10000};
     /// Read between files when not null: once it holds true, the pass commits what it hashed and ends (cancelled).
     const std::atomic<bool>* cancel = nullptr;
     /// Called after each file (and once at the end).
@@ -162,9 +172,12 @@ struct QuickHashPassResult {
 struct ReviewDecision {
     /// The review row's id (StoredReview::review.id).
     std::int64_t review = 0;
-    /// Pair the vanished identity with this identity (of the same library and system, its file present); nothing:
-    /// keep them separate.
+    /// Pair the vanished identity with this identity (of the same library and system, its file present, at one of the
+    /// review's candidate paths); nothing: keep them separate.
     std::optional<GameId> pairWith;
+    /// Pair with `pairWith` although its path is none of the review's candidates (a candidate beyond the
+    /// kMaxReviewCandidates listed, or one that moved since the review was made). The merge cannot be undone.
+    bool force = false;
 };
 
 /// What resolveReview() did.
@@ -188,7 +201,8 @@ struct ReviewResolutionResult {
 /// the history records it; nothing else changes. Either way the next import changes nothing. Errors: NotFound (no such
 /// review row, no identity of that GameId), Conflict (the row is resolved already, the vanished identity's file is
 /// present again, an import holds the import lock), InvalidArgument (a review of another library; an identity to pair
-/// with that is the vanished one, an alias, of another library or system, or whose file is not present), the store's.
+/// with that is the vanished one, an alias, of another library or system, whose file is not present, or, unless
+/// ReviewDecision::force, whose relative path or key is none of the review's candidates), the store's.
 [[nodiscard]] Expected<ReviewResolutionResult> resolveReview(ICatalogStore& store, const LibraryId& library,
                                                              const ReviewDecision& decision);
 

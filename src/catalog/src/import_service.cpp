@@ -430,9 +430,10 @@ Status ImportRun::match(SystemPlan& plan) {
             (holder != kNone && identities[static_cast<std::size_t>(holder)].present)) {
             continue;
         }
-        NewFile file{entry.key, *entry.file, entry.state, std::nullopt};
+        NewFile file{entry.key, *entry.file, entry.state, std::nullopt, std::nullopt};
         if (holder != kNone) {
             file.heldBy = identities[static_cast<std::size_t>(holder)].id;
+            file.holderFile = identities[static_cast<std::size_t>(holder)].file;
         }
         newFiles.push_back(std::move(file));
         newFileIndex.push_back(i);
@@ -479,6 +480,15 @@ Status ImportRun::match(SystemPlan& plan) {
             fileUsed[*f] = true;
             const std::size_t j = vanishedIndex[*v];
             const std::size_t i = newFileIndex[*f];
+            // Only a holder never seen with a file may become an alias: one that had a file of its own keeps the
+            // file at its path (its own file came back, SC-05), or the user decides (a review row).
+            if (const std::ptrdiff_t holder = plan.entryIdentity[i];
+                holder != kNone && identities[static_cast<std::size_t>(holder)].file) {
+                return makeError(ErrorCode::InvalidArgument,
+                                 "the pairing pass gave a vanished identity the file of an identity that had a file of "
+                                 "its own",
+                                 pair.identity.toString() + " " + pair.newFile.relativePath());
+            }
             // A MissingFile entry left at the old path loses the identity: it gets a new GameId.
             if (const std::ptrdiff_t old = plan.identityEntry[j]; old != kNone) {
                 plan.entryIdentity[static_cast<std::size_t>(old)] = kNone;

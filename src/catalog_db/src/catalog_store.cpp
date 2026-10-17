@@ -1511,6 +1511,10 @@ private:
     bool m_ownsLock = true;
     /// prepareWrites() suspended the search index: commit() rebuilds it.
     bool m_searchSuspended = false;
+    /// It wrote what only an import writes (the library, identities, aliases, systems, index rows, issues, the import
+    /// record), not only reconciliation's state rows (quick hashes, history, review rows): commit() then records the
+    /// key versions in rv_meta and checkpoints the WAL.
+    bool m_importWrites = false;
 };
 
 SqliteCatalogStore::ImportLock::~ImportLock() {
@@ -1529,6 +1533,7 @@ Status SqliteCatalogStore::ImportTransaction::putLibrary(const LibraryProfile& p
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     const auto home = pathText(profile.esdeHome, "the ES-DE home");
     const auto install = optionalPathText(profile.installFolder, "the ES-DE install folder");
     const auto romRoot = optionalPathText(profile.romRoot, "the ROM root");
@@ -1639,6 +1644,7 @@ Status SqliteCatalogStore::ImportTransaction::putIdentity(const StoredIdentity& 
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     const std::string context = identity.id.toString();
     if (!identity.id.isValid() || identity.system.empty() || identity.key.empty()) {
         return makeError(ErrorCode::InvalidArgument, "an identity needs a GameId, a system and a key", context);
@@ -1695,6 +1701,7 @@ Status SqliteCatalogStore::ImportTransaction::putSystem(const LibraryId& library
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     const std::string context = library.str() + "/" + system.name.str();
     if (system.name.empty()) {
         return makeError(ErrorCode::InvalidArgument, "a system needs a name", context);
@@ -1734,6 +1741,7 @@ Status SqliteCatalogStore::ImportTransaction::putEntry(const IndexedEntry& index
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     const CatalogEntry& entry = indexed.entry;
     // Made for errors only: an import indexes every entry of the library.
     const auto context = [&] {
@@ -1819,6 +1827,7 @@ Status SqliteCatalogStore::ImportTransaction::removeEntry(GameId id) {
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     if (!id.isValid()) {
         return makeError(ErrorCode::InvalidArgument, "no GameId to remove");
     }
@@ -1850,6 +1859,7 @@ Expected<bool> SqliteCatalogStore::ImportTransaction::prepareWrites(std::size_t 
     if (auto open = active(); !open) {
         return propagate(open.error());
     }
+    m_importWrites = true;
     if (m_searchSuspended) {
         return true;
     }
@@ -1901,6 +1911,7 @@ Status SqliteCatalogStore::ImportTransaction::clearIndex(const LibraryId& librar
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     // The rows that refer to games first, then the games, the systems and the issues; the state rows stay.
     constexpr std::array<Sql, 7> kClears{Sql::ClearMedia,     Sql::ClearDiscMembers, Sql::ClearDiscReferences,
                                          Sql::ClearDiscGroups, Sql::ClearGames,      Sql::ClearSystems,
@@ -1919,6 +1930,7 @@ Status SqliteCatalogStore::ImportTransaction::removeSystem(const LibraryId& libr
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     auto remove = statement(Sql::DeleteSystem);
     if (!remove) {
         return propagate(remove.error());
@@ -1935,6 +1947,7 @@ Status SqliteCatalogStore::ImportTransaction::putDiscGroup(const catalog::Indexe
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     const catalog::DiscGroup& group = indexed.group;
     const std::string context = indexed.head.toString() + " " + group.system.str() + "/" + group.head.relativePath();
     if (!indexed.head.isValid() || indexed.members.size() != group.members.size() ||
@@ -2016,6 +2029,7 @@ Status SqliteCatalogStore::ImportTransaction::removeDiscGroup(GameId head) {
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     constexpr std::array<Sql, 3> kRemovals{Sql::DeleteDiscMembers, Sql::DeleteDiscReferences, Sql::DeleteDiscGroup};
     std::array<Statement*, kRemovals.size()> removals{};
     for (std::size_t i = 0; i < kRemovals.size(); ++i) {
@@ -2041,6 +2055,7 @@ Status SqliteCatalogStore::ImportTransaction::putAlias(const catalog::IdentityAl
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     const StoredIdentity& identity = alias.alias;
     const std::string context = identity.id.toString() + " -> " + alias.game.toString();
     if (!identity.id.isValid() || !alias.game.isValid() || identity.id == alias.game) {
@@ -2303,6 +2318,7 @@ Status SqliteCatalogStore::ImportTransaction::putImportIssues(const LibraryId& l
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     auto clearAll = statement(Sql::DeleteImportIssues);
     auto clearSystem = statement(Sql::DeleteSystemImportIssues);
     auto insert = statement(Sql::InsertImportIssue);
@@ -2350,6 +2366,7 @@ Status SqliteCatalogStore::ImportTransaction::recordImport(const catalog::Import
     if (auto open = active(); !open) {
         return open;
     }
+    m_importWrites = true;
     nlohmann::json asked = nlohmann::json::array();
     for (const SystemName& system : record.systemsAsked) {
         asked.push_back(system.str());
@@ -2406,6 +2423,17 @@ Status SqliteCatalogStore::ImportTransaction::commit() {
             return propagate(withPrefix(resumed.error(), "cannot rebuild the search index (the import was rolled back)"));
         }
         m_searchSuspended = false;
+    }
+    // A commit of reconciliation's state rows alone (a batch of the quick-hash pass, a review kept separate) is light:
+    // no key changed, so rv_meta stays as it is (recordKeyVersion() scans every identity), and the WAL is left to
+    // SQLite's automatic checkpoint and the next import's (ADR-0008 §5: a checkpoint after each import).
+    if (!m_importWrites) {
+        auto committed = m_transaction.commit();
+        finish();
+        if (!committed) {
+            return propagate(withPrefix(committed.error(), "cannot commit (it was rolled back)"));
+        }
+        return ok();
     }
     // rv_meta says which lookup key version the keys are of, as this import leaves them, and which sort keys.
     if (auto recorded = recordKeyVersion(); !recorded) {
