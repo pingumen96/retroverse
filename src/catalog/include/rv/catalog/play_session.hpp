@@ -132,12 +132,13 @@ struct PlaySession {
     /// The details of launcher::LaunchOutcome, once the session is no longer Running.
     launcher::FailureReason failure = launcher::FailureReason::None;
     /// The exit code of the authoritative process (launcher::LaunchOutcome::exitCode) and its kind
-    /// (launcher::classifyExitCode()), both present or both absent, as the store and the schema enforce. Absent for an
+    /// (launcher::classifyExitCode()). The store and the schema enforce: both present or both absent; absent for an
     /// attempt that never started (Blocked; a request the launcher refused or a process that could not be created,
-    /// FailureReason::InvalidRequest or StartFailed, a refusal by the automation guard among them) and when the user
-    /// returned before any process of the game exited; always present for Crashed. The CLI records none while Running
-    /// or for Interrupted, but the store accepts one there: the app (I2 step 13) may record the started process's exit
-    /// while the return awaits the user's confirmation, and an interrupted session keeps what its open row held.
+    /// FailureReason::InvalidRequest or StartFailed, a refusal by the automation guard among them); present for
+    /// Crashed. Absent too when the user returned before any process of the game exited. The CLI records none while
+    /// Running or for Interrupted, but the store accepts one there: the app (I2 step 13) may record the started
+    /// process's exit while the return awaits the user's confirmation, and an interrupted session keeps what its open
+    /// row held.
     std::optional<std::uint32_t> exitCode;
     std::optional<launcher::ExitKind> exitKind;
     bool quickExit = false;
