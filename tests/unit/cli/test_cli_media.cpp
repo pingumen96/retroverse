@@ -223,10 +223,17 @@ TEST_CASE("cli/media: the media of a ROM path of the standard fixture, as JSON a
     CHECK(contains(tennis.out, "Media         3 of 12 kinds\n"));
     CHECK(contains(tennis.out, "  covers        " + media("gb/covers/Tiny Tennis (Europe).png") + "\n"));
     CHECK(contains(tennis.out, "  backcovers    none\n"));
+    // A path in another case is the file as the disk spells it, whose spelling ES-DE gives its media.
     const RunResult lower = cli.media({"--system", "gb", "--path", "collection a/pocket puzzle (world).gb", "--json"});
     REQUIRE(lower.code == ExitCode::Ok);
     CHECK(parsed(lower.out)["romPath"] == "file");
-    CHECK(parsed(lower.out)["media"][0]["path"] == media("gb/covers/collection a/pocket puzzle (world).png"));
+    CHECK(parsed(lower.out)["path"] == "Collection A/Pocket Puzzle (World).gb");
+    CHECK(parsed(lower.out)["mediaName"] == "Collection A/Pocket Puzzle (World)");
+    CHECK(parsed(lower.out)["media"][0]["path"] == media("gb/covers/Collection A/Pocket Puzzle (World).png"));
+    const RunResult lowerGone = cli.media({"--system", "gb", "--path", "collection a/gone (world).gb", "--json"});
+    REQUIRE(lowerGone.code == ExitCode::Ok);
+    CHECK(parsed(lowerGone.out)["romPath"] == "missing");
+    CHECK(parsed(lowerGone.out)["path"] == "Collection A/gone (world).gb"); // as far as the disk holds it
     const RunResult namesake = cli.media({"--system", "gb", "--path", "Collection B/Pocket Puzzle (World).gb"});
     CHECK(contains(namesake.out, "Media         0 of 12 kinds\n"));
     const RunResult flv = cli.media({"--system", "snes", "--path", "Beta Run (Europe).SMC"});

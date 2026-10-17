@@ -110,6 +110,24 @@ wchar_t unusedDriveLetter() {
     return 0;
 }
 
+/// Makes `folder` (made if missing, still empty) tell names apart by case, as NTFS can per folder: what WSL does to the
+/// folders it makes on Windows drives. The folders made in it later get the flag too. False when this machine cannot.
+bool makeCaseSensitive(const fs::path& folder) {
+    if (!rv::test::createFoldersAnyLength(folder).has_value()) {
+        return false;
+    }
+    const HANDLE handle =
+        CreateFileW(folder.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    FILE_CASE_SENSITIVE_INFO info{FILE_CS_FLAG_CASE_SENSITIVE_DIR};
+    const bool done = SetFileInformationByHandle(handle, FileCaseSensitiveInfo, &info, sizeof(info)) != FALSE;
+    CloseHandle(handle);
+    return done;
+}
+
 bool hasIssue(const rv::esde::SystemMediaListing& listing, std::string_view code, std::string_view part) {
     for (const rv::catalog::Issue& issue : listing.issues) {
         if (issue.code == code && issue.reason.find(part) != std::string::npos) {
@@ -367,6 +385,104 @@ TEST_CASE("esde/media: names compared as the file system compares them, every ex
     REQUIRE(path.has_value());
     CHECK(*path == (root / "gb" / "covers" / "Collection A" / "Pocket Puzzle (World).PNG").make_preferred());
     CHECK(fs::exists(rv::core::extendedLengthPath(*path)));
+
+    // No folder here has case-sensitive names: the listings answered everything, nothing was looked up on disk. The
+    // folders asked for their case rule: the root, GB, its 10 kind folders, and "Collection A", spelled otherwise
+    // than on disk, on the way to Pocket Puzzle's cover.
+    CHECK_FALSE(gb.caseSensitive);
+    CHECK(resolver.stats().caseChecks == 13);
+    CHECK(resolver.stats().fileChecks == 0);
+}
+
+TEST_CASE("esde/media: folders with case-sensitive names, where ES-DE finds only its own spelling",
+          "[esde][media]") {
+    const rv::test::TempDir dir("rv-media-case");
+    const fs::path root = dir.file("media");
+    // A kind folder with case-sensitive names below folders without them; its sub-folders made since get the flag.
+    if (!makeCaseSensitive(root / "nes" / "covers")) {
+        SKIP("this machine cannot make a folder with case-sensitive names");
+    }
+    write(root / "nes" / "covers" / "case game.png"); // ES-DE asks for "Case Game.png": not there
+    write(root / "nes" / "covers" / "Exact.png");
+    write(root / "nes" / "covers" / "Upper.PNG"); // ES-DE asks for "Upper.png", then finds "Upper.jpg"
+    write(root / "nes" / "covers" / "Upper.jpg");
+    write(root / "nes" / "covers" / "Twin.png"); // two names that differ in case only
+    write(root / "nes" / "covers" / "twin.png");
+    write(root / "nes" / "covers" / "Sub" / "Deep.png");
+    // A sub-folder with the flag below a kind folder without it, and one without it.
+    write(root / "nes" / "screenshots" / "Plain.png");
+    REQUIRE(makeCaseSensitive(root / "nes" / "screenshots" / "Strict"));
+    write(root / "nes" / "screenshots" / "Strict" / "game.png");
+    write(root / "nes" / "screenshots" / "plain folder" / "GAME.PNG");
+
+    EsdeMediaResolver resolver(root);
+    const std::vector<std::pair<std::string_view, EntryMedia>> expected{
+        {"Case Game.nes", EntryMedia{}},
+        {"case game.nes", withMedia({{MediaKind::Cover, ".png"}})},
+        {"Exact.nes", withMedia({{MediaKind::Cover, ".png"}})},
+        {"EXACT.nes", EntryMedia{}},
+        {"Upper.nes", withMedia({{MediaKind::Cover, ".jpg"}})},
+        {"Twin.nes", withMedia({{MediaKind::Cover, ".png"}})},
+        {"twin.nes", withMedia({{MediaKind::Cover, ".png"}})},
+        {"TWIN.nes", EntryMedia{}},
+        {"Sub/Deep.nes", withMedia({{MediaKind::Cover, ".png"}})},
+        {"sub/Deep.nes", EntryMedia{}},
+        {"PLAIN.nes", withMedia({{MediaKind::Screenshot, ".png"}})},  // a folder without the flag folds names
+        {"STRICT/game.nes", withMedia({{MediaKind::Screenshot, ".png"}})}, // "STRICT" is "Strict" for screenshots
+        {"Strict/Game.nes", EntryMedia{}},
+        {"Plain Folder/game.nes", withMedia({{MediaKind::Screenshot, ".PNG"}})},
+    };
+    for (const auto& [relative, media] : expected) {
+        INFO(relative);
+        const EntryMedia found = mediaOf(resolver, "nes", relative);
+        CHECK(found == media);
+        // Every file presence() finds is reached by the path derived for it: ES-DE's spelling in a folder that has
+        // case-sensitive names.
+        for (const MediaKind kind : rv::catalog::kMediaKinds) {
+            if (!found[kind].present) {
+                continue;
+            }
+            const auto path = resolver.path(systemNamed("nes"), keyOf(relative), false, kind, found[kind]);
+            REQUIRE(path.has_value());
+            CHECK(fs::exists(rv::core::extendedLengthPath(*path)));
+        }
+    }
+    const rv::esde::SystemMediaListing& nes = listingOf(resolver, "nes");
+    CHECK_FALSE(nes.caseSensitive);
+    CHECK(nes[MediaKind::Cover].caseSensitive);
+    CHECK_FALSE(nes[MediaKind::Screenshot].caseSensitive);
+    CHECK(nes[MediaKind::Cover].media == 5);         // the folded names: CASE GAME, EXACT, UPPER, TWIN, SUB/DEEP
+    CHECK(nes[MediaKind::Cover].shadowedFiles == 2); // Upper.jpg, twin.png (folded alike)
+    CHECK(hasIssue(nes, rv::esde::kMediaIssueCaseSensitiveFolder, "nes/covers has case-sensitive names"));
+    // Asked for their case rule: the root, nes, its two kind folders, then "STRICT" and "Plain Folder", spelled
+    // otherwise than on disk below screenshots (once each). Looked up on disk, extension by extension: Case Game 3,
+    // EXACT 3, Upper 2, twin 1, TWIN 3, sub/Deep 3, STRICT/game 1, Strict/Game 3.
+    CHECK(resolver.stats().caseChecks == 6);
+    CHECK(resolver.stats().fileChecks == 19);
+
+    // A media root with case-sensitive names, and in it a system folder that has them too (made inside it): ES-DE takes
+    // only the folders spelled as it asks for them.
+    const fs::path strictRoot = dir.file("strict media");
+    REQUIRE(makeCaseSensitive(strictRoot));
+    write(strictRoot / "NES" / "covers" / "Game.png"); // not nes's folder
+    write(strictRoot / "snes" / "covers" / "Game.png");
+    write(strictRoot / "gb" / "Covers" / "Game.png"); // not gb's covers folder
+    write(strictRoot / "gb" / "videos" / "Game.mp4");
+    EsdeMediaResolver strict(strictRoot);
+    CHECK(mediaOf(strict, "nes", "Game.nes") == EntryMedia{});
+    const rv::esde::SystemMediaListing& strictNes = listingOf(strict, "nes");
+    CHECK(strictNes.state == MediaFolderState::Missing);
+    CHECK(hasIssue(strictNes, rv::esde::kMediaIssueCaseSensitiveFolder,
+                   "ES-DE does not take the folder \"NES\" for the media folder of nes"));
+    CHECK(mediaOf(strict, "snes", "Game.sfc") == withMedia({{MediaKind::Cover, ".png"}}));
+    CHECK(mediaOf(strict, "gb", "Game.gb") == withMedia({{MediaKind::Video, ".mp4"}}));
+    const rv::esde::SystemMediaListing& strictGb = listingOf(strict, "gb");
+    CHECK(strictGb.caseSensitive);
+    CHECK(strictGb[MediaKind::Cover].state == MediaFolderState::Missing);
+    CHECK(strictGb[MediaKind::Video].caseSensitive);
+    CHECK(hasIssue(strictGb, rv::esde::kMediaIssueCaseSensitiveFolder,
+                   "ES-DE does not take \"Covers\" for its covers folder"));
+    CHECK(strict.stats().fileChecks == 0); // every name spelled as ES-DE asks for it
 }
 
 TEST_CASE("esde/media: the listings stay until refresh(), then the folders are read again", "[esde][media]") {

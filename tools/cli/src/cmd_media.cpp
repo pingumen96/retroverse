@@ -2,7 +2,8 @@
 // ES-DE's media folders (ADR-0008 §5, ADR-0003) with esde::EsdeMediaResolver, read-only.
 //  - media --system <name> --path <relative path> [--json] [--output <file>]: the media of a ROM path of a system (as
 //    listed on disk, or as a gamelist writes it: "./Collection A/Pocket Puzzle (World).gb"), kind by kind: the file
-//    ES-DE shows, or none. A folder (on disk) keeps its whole name, a file loses its last extension, a path that is not
+//    ES-DE shows, or none. The path is taken as the disk spells it, as far as it is there (ES-DE names media after the
+//    file it lists). A folder (on disk) keeps its whole name, a file loses its last extension, a path that is not
 //    there is named as a file is (a gamelist entry whose file is gone keeps its media).
 //  - media --coverage [--system <name>] [--json] [--output <file>]: per system and kind, the share of the entries that
 //    have a file of the kind, over the populations of catalog::CoveragePopulation (every gamelist entry, those whose
@@ -28,6 +29,8 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include <windows.h>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -421,6 +424,43 @@ RomPathKind romPathKind(const fs::path& romFolder, std::string_view relative) {
     return fs::is_directory(status) ? RomPathKind::Folder : RomPathKind::File;
 }
 
+/// `relative` (a path below `romFolder`, '/' between the elements) spelled as the file system holds it, element by
+/// element while they are there: the file ES-DE lists, whose spelling names its media (which matters in a media folder
+/// with case-sensitive names). The elements from the first one that is not there, or that holds a wildcard character,
+/// stay as given.
+std::string spelledOnDisk(const fs::path& romFolder, std::string_view relative) {
+    std::string spelled;
+    bool there = true;
+    std::size_t start = 0;
+    while (true) {
+        const std::size_t slash = relative.find('/', start);
+        std::string element(relative.substr(start, slash == std::string_view::npos ? std::string_view::npos
+                                                                                     : slash - start));
+        if (there && element.find_first_of("*?") == std::string::npos) {
+            const auto path = core::extendedLengthPathBelow(romFolder, spelled + element);
+            WIN32_FIND_DATAW data{};
+            const HANDLE find = path ? FindFirstFileExW(path->c_str(), FindExInfoBasic, &data, FindExSearchNameMatch,
+                                                        nullptr, 0)
+                                     : INVALID_HANDLE_VALUE;
+            there = find != INVALID_HANDLE_VALUE;
+            if (there) {
+                FindClose(find);
+                if (auto name = core::wideToUtf8(data.cFileName)) {
+                    element = std::move(*name);
+                }
+            }
+        } else {
+            there = false;
+        }
+        spelled += element;
+        if (slash == std::string_view::npos) {
+            return spelled;
+        }
+        spelled += '/';
+        start = slash + 1;
+    }
+}
+
 ExitCode showPath(CommandContext& context, Output& out, const Library& library, const catalog::SystemName& system,
                   std::string_view romPath, bool json) {
     const auto failure = [&](ExitCode code, const std::string& message) {
@@ -445,6 +485,9 @@ ExitCode showPath(CommandContext& context, Output& out, const Library& library, 
     auto key = catalog::makeLookupKey(*relative);
     if (!key) {
         return failure(ExitCode::UsageError, fmt::format("--path: {}", key.error().toString()));
+    }
+    if (auto onDisk = catalog::makeLookupKey(spelledOnDisk(*romFolder, key->relativePath()))) {
+        key = std::move(onDisk);
     }
     const RomPathKind kind = romPathKind(*romFolder, key->relativePath());
     const bool directory = kind == RomPathKind::Folder;
@@ -582,8 +625,9 @@ ExitCode showCoverage(CommandContext& context, Output& out, const Library& libra
     }
     issues.insert(issues.end(), coverage->issues.begin(), coverage->issues.end());
     const esde::MediaListingStats& stats = resolver.stats();
-    spdlog::info("Media coverage: the media folders of {} system(s) looked up, {} files, {:.2f} s", stats.systemsListed,
-                 stats.files, stats.seconds);
+    spdlog::info("Media coverage: the media folders of {} system(s) looked up, {} files, {:.2f} s; {} folder(s) asked "
+                 "for their case rule, {} media file(s) looked up by ES-DE's spelling",
+                 stats.systemsListed, stats.files, stats.seconds, stats.caseChecks, stats.fileChecks);
     const ExitCode code = hasErrors(issues) ? ExitCode::ProblemsFound : ExitCode::Ok;
 
     if (json) {
@@ -613,7 +657,10 @@ ExitCode showCoverage(CommandContext& context, Output& out, const Library& libra
                           {"source", "gamelists"},
                           {"kinds", std::move(kinds)},
                           {"populations", std::move(populations)},
-                          {"listed", Json{{"systems", stats.systemsListed}, {"files", stats.files}}},
+                          {"listed", Json{{"systems", stats.systemsListed},
+                                          {"files", stats.files},
+                                          {"caseChecks", stats.caseChecks},
+                                          {"fileChecks", stats.fileChecks}}},
                           {"total", populationsJson(coverage->total)},
                           {"systems", std::move(systems)},
                           {"issues", std::move(issueList)}};

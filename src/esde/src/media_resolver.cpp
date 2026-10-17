@@ -5,11 +5,14 @@
 #include <tuple>
 #include <utility>
 
+#include <windows.h>
+
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/core/case_fold.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/system_error.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/tree_walk.hpp>
 #include <rv/core/utf8.hpp>
@@ -68,14 +71,76 @@ std::string kindFolderText(const catalog::SystemName& system, MediaKind kind) {
     return fmt::format("{}/{}", system.str(), catalog::toString(kind));
 }
 
-/// Of `names`, the names as listed that fold to one folded name: the one spelled exactly like `name`, else the first
-/// (the walk's ordinal order); nothing when there is none.
-const std::string* pick(const std::vector<std::string>& names, std::string_view name) {
-    if (names.empty()) {
-        return nullptr;
-    }
+/// Of `names`, the names as listed that fold to one folded name, the one ES-DE takes for `name`: the one spelled
+/// exactly like it, else, in a folder without case-sensitive names, the first (the walk's ordinal order; there can be
+/// only one there); nothing when there is none.
+const std::string* pick(const std::vector<std::string>& names, std::string_view name, bool caseSensitive) {
     const auto exact = std::find(names.begin(), names.end(), name);
-    return exact != names.end() ? &*exact : &names.front();
+    if (exact != names.end()) {
+        return &*exact;
+    }
+    return names.empty() || caseSensitive ? nullptr : &names.front();
+}
+
+/// FNV-1a, 64 bits: what detail::MediaFile keeps of a name's spelling.
+std::uint64_t spellingHash(std::string_view text) noexcept {
+    std::uint64_t hash = 14695981039346656037ull;
+    for (const char c : text) {
+        hash ^= static_cast<unsigned char>(c);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+/// Whether `folder` has case-sensitive names: NTFS's per-folder flag (FILE_CS_FLAG_CASE_SENSITIVE_DIR), which
+/// `fsutil file setCaseSensitiveInfo` sets and WSL sets on the folders it makes on Windows drives (folders made inside
+/// such a folder get it too). False on a file system without it (exFAT, FAT32, most shares); nothing when the folder
+/// cannot be opened. Only the folder's attributes are read.
+std::optional<bool> caseSensitiveFolder(const fs::path& folder) {
+    const HANDLE handle =
+        CreateFileW(folder.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return std::nullopt;
+    }
+    FILE_CASE_SENSITIVE_INFO info{};
+    const bool sensitive = GetFileInformationByHandleEx(handle, FileCaseSensitiveInfo, &info, sizeof(info)) != FALSE &&
+                           (info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR) != 0;
+    CloseHandle(handle);
+    return sensitive;
+}
+
+/// ES-DE's existence test of a media file (Utils::FileSystem::exists(): std::filesystem::exists()) on `file`, an
+/// extended-length path: the file system's own lookup, which compares each name as the folder holding it does, a link
+/// followed to its target (one whose target cannot be opened is not there). A folder is no media file (Retroverse's
+/// rule, as in the listings). Errors: Unavailable when the lookup fails otherwise than for a missing name (a drive gone,
+/// access denied).
+Expected<bool> mediaFileExists(const fs::path& file) {
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (GetFileAttributesExW(file.c_str(), GetFileExInfoStandard, &data) == FALSE) {
+        const DWORD error = GetLastError();
+        if (core::fileErrorCode(error) == ErrorCode::NotFound) {
+            return false;
+        }
+        return makeError(ErrorCode::Unavailable, core::systemErrorMessage(error), core::pathToUtf8Lossy(file));
+    }
+    DWORD attributes = data.dwFileAttributes;
+    if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+        const HANDLE handle =
+            CreateFileW(file.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        if (handle == INVALID_HANDLE_VALUE) {
+            return false;
+        }
+        BY_HANDLE_FILE_INFORMATION information{};
+        const bool read = GetFileInformationByHandle(handle, &information) != FALSE;
+        CloseHandle(handle);
+        if (!read) {
+            return false;
+        }
+        attributes = information.dwFileAttributes;
+    }
+    return (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
 /// A walk's root error as a folder state: NotFound (gone) and InvalidArgument (a file) are a missing folder,
@@ -195,8 +260,8 @@ Status EsdeMediaResolver::checkRoot() {
         }
         return core::WalkAction::Continue;
     });
-    m_stats.seconds += stopwatch.seconds();
     if (!walked) {
+        m_stats.seconds += stopwatch.seconds();
         const std::string why = walked.error().code == ErrorCode::NotFound ? "the media root does not exist"
                                 : walked.error().code == ErrorCode::InvalidArgument
                                     ? "the media root is not a folder"
@@ -204,6 +269,9 @@ Status EsdeMediaResolver::checkRoot() {
         m_rootStatus = makeError(ErrorCode::Unavailable, why, core::pathToUtf8Lossy(*m_root));
         return *m_rootStatus;
     }
+    ++m_stats.caseChecks;
+    m_rootCaseSensitive = caseSensitiveFolder(fs::path(core::extendedLengthPath(*m_root))).value_or(false);
+    m_stats.seconds += stopwatch.seconds();
     m_systemFolders = std::move(folders);
     m_rootStatus = Status{};
     return *m_rootStatus;
@@ -223,8 +291,16 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
 
     const auto systemFolded = folded(system.str());
     const auto found = systemFolded ? m_systemFolders.find(*systemFolded) : m_systemFolders.end();
-    const std::string* folderName = found == m_systemFolders.end() ? nullptr : pick(found->second, system.str());
+    const std::string* folderName =
+        found == m_systemFolders.end() ? nullptr : pick(found->second, system.str(), m_rootCaseSensitive);
     if (folderName == nullptr) {
+        if (found != m_systemFolders.end()) {
+            listing.issues.push_back(issueOf(
+                IssueSeverity::Info, kMediaIssueCaseSensitiveFolder, system, core::pathToUtf8Lossy(*m_root),
+                fmt::format("the media root has case-sensitive names: ES-DE does not take the folder \"{}\" for the "
+                            "media folder of {}, which it asks for as \"{}\"",
+                            found->second.front(), system.str(), system.str())));
+        }
         finish(); // no media folder: no media
         return index;
     }
@@ -260,6 +336,15 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
         return index;
     }
     listing.state = MediaFolderState::Listed;
+    ++m_stats.caseChecks;
+    listing.caseSensitive = caseSensitiveFolder(*systemFolder).value_or(false);
+    if (listing.caseSensitive) {
+        listing.issues.push_back(
+            issueOf(IssueSeverity::Info, kMediaIssueCaseSensitiveFolder, system, systemText,
+                    fmt::format("the media folder of {} has case-sensitive names: ES-DE finds its kind folders only "
+                                "spelled in lower case, as \"covers\" or \"videos\"",
+                                system.str())));
+    }
 
     const auto& extensions = foldedExtensions();
     for (const MediaKind kind : catalog::kMediaKinds) {
@@ -267,9 +352,18 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
         MediaKindListing& kindListing = listing.kinds[k];
         const auto kindFolded = folded(catalog::toString(kind));
         const auto candidates = kindFolded ? kindFolders.find(*kindFolded) : kindFolders.end();
-        const std::string* kindName =
-            candidates == kindFolders.end() ? nullptr : pick(candidates->second, catalog::toString(kind));
+        const std::string* kindName = candidates == kindFolders.end()
+                                          ? nullptr
+                                          : pick(candidates->second, catalog::toString(kind), listing.caseSensitive);
         if (kindName == nullptr) {
+            if (candidates != kindFolders.end()) {
+                listing.issues.push_back(issueOf(
+                    IssueSeverity::Info, kMediaIssueCaseSensitiveFolder, system, systemText,
+                    fmt::format("the media folder of {} has case-sensitive names: ES-DE does not take \"{}\" for its "
+                                "{} folder, which it asks for as \"{}\"",
+                                system.str(), candidates->second.front(), catalog::toString(kind),
+                                catalog::toString(kind))));
+            }
             continue; // Missing: no media of the kind
         }
         kindListing.folderName = *kindName;
@@ -333,7 +427,8 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
             }
             const auto place = static_cast<std::uint8_t>(rank - accepted.begin());
             files.push_back(detail::MediaFile{std::move(*name), std::string(extension), place,
-                                              extension == mediaExtensions(kind)[place]});
+                                              extension == mediaExtensions(kind)[place],
+                                              spellingHash(std::string_view(path).substr(0, dot))});
             return core::WalkAction::Continue;
         };
         auto walkedKind = kindFolder ? core::walkTree(*kindFolder, visit)
@@ -356,6 +451,8 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
         }
         kindListing.state = MediaFolderState::Listed;
         ++m_stats.folders;
+        ++m_stats.caseChecks;
+        kindListing.caseSensitive = caseSensitiveFolder(*kindFolder).value_or(false);
 
         // One file per media name: the first of ES-DE's extensions, then the one spelled as ES-DE spells it, then the
         // first listed (stable: the walk's ordinal order).
@@ -375,7 +472,14 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
             kindListing.ignored.push_back(IgnoredExtension{extension, count});
         }
 
-        // What ES-DE never shows of this folder.
+        // What ES-DE never shows of this folder, or shows only under its own spelling.
+        if (kindListing.caseSensitive) {
+            listing.issues.push_back(issueOf(
+                IssueSeverity::Info, kMediaIssueCaseSensitiveFolder, system, kindText,
+                fmt::format("the media folder {} has case-sensitive names: ES-DE finds a media file in it only "
+                            "spelled as the game's file, with the extension in lower case",
+                            kindFolderText(system, kind))));
+        }
         if (kindListing.unlistedFolders.size() > kUnlistedFoldersListed) {
             listing.issues.push_back(issueOf(
                 IssueSeverity::Error, kMediaIssueFolderUnlisted, system, kindText,
@@ -412,7 +516,7 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
     return index;
 }
 
-Expected<const EsdeMediaResolver::SystemIndex*> EsdeMediaResolver::index(const catalog::SystemName& system) {
+Expected<EsdeMediaResolver::SystemIndex*> EsdeMediaResolver::index(const catalog::SystemName& system) {
     if (const Status root = checkRoot(); !root) {
         return propagate(root.error());
     }
@@ -421,6 +525,34 @@ Expected<const EsdeMediaResolver::SystemIndex*> EsdeMediaResolver::index(const c
         found = m_systems.emplace(system, listSystem(system)).first;
     }
     return &found->second;
+}
+
+bool EsdeMediaResolver::caseSensitiveOnTheWay(SystemIndex& index, MediaKind kind, std::string_view stem) {
+    const std::size_t k = static_cast<std::size_t>(kind);
+    const MediaKindListing& kindListing = index.listing.kinds[k];
+    if (kindListing.caseSensitive) {
+        return true;
+    }
+    // Each folder of the entry's spelling of the way, reached through folders without the flag: the file system
+    // finds it under that spelling, and its folded path names it.
+    for (std::size_t slash = stem.find('/'); slash != std::string_view::npos; slash = stem.find('/', slash + 1)) {
+        const std::string_view folder = stem.substr(0, slash);
+        const auto folderFolded = folded(folder);
+        if (!folderFolded) {
+            return true;
+        }
+        auto [known, inserted] = index.folderCase[k].try_emplace(*folderFolded, true);
+        if (inserted) {
+            ++m_stats.caseChecks;
+            const auto path = core::extendedLengthPathBelow(
+                *m_root, fmt::format("{}/{}/{}", index.listing.folderName, kindListing.folderName, folder));
+            known->second = !path || caseSensitiveFolder(*path).value_or(true);
+        }
+        if (known->second) {
+            return true;
+        }
+    }
+    return false;
 }
 
 Expected<const SystemMediaListing*> EsdeMediaResolver::listing(const catalog::SystemName& system) {
@@ -440,7 +572,7 @@ Expected<catalog::EntryMedia> EsdeMediaResolver::presence(const catalog::SystemN
     if (!found) {
         return propagate(found.error());
     }
-    const SystemIndex& systemIndex = **found;
+    SystemIndex& systemIndex = **found;
     const SystemMediaListing& listing = systemIndex.listing;
     catalog::EntryMedia media;
     if (listing.state == MediaFolderState::Unavailable) {
@@ -452,6 +584,8 @@ Expected<catalog::EntryMedia> EsdeMediaResolver::presence(const catalog::SystemN
         return media;
     }
     const std::string name = catalog::mediaStem(key.key(), directory);
+    const std::string spelled = catalog::mediaStem(key.relativePath(), directory);
+    const std::uint64_t spelling = spellingHash(spelled);
     for (const MediaKind kind : catalog::kMediaKinds) {
         const std::size_t k = static_cast<std::size_t>(kind);
         const MediaKindListing& kindListing = listing.kinds[k];
@@ -475,8 +609,35 @@ Expected<catalog::EntryMedia> EsdeMediaResolver::presence(const catalog::SystemN
         const std::vector<detail::MediaFile>& files = systemIndex.files[k];
         const auto file = std::lower_bound(files.begin(), files.end(), name,
                                            [](const detail::MediaFile& a, const std::string& b) { return a.name < b; });
-        if (file != files.end() && file->name == name) {
+        if (file == files.end() || file->name != name) {
+            continue;
+        }
+        // Spelled as ES-DE asks for it, or matched through the folding where every folder of the way folds names:
+        // the listing's answer is ES-DE's.
+        if ((file->spelling == spelling && file->exactExtension) ||
+            !caseSensitiveOnTheWay(systemIndex, kind, spelled)) {
             media[kind] = catalog::MediaPresence{true, file->extension};
+            continue;
+        }
+        // A folder of the way has case-sensitive names: ES-DE's own lookups, in its order.
+        for (const std::string_view extension : mediaExtensions(kind)) {
+            const auto candidate = core::extendedLengthPathBelow(
+                *m_root, mediaRelativePath(system, key, directory, kind, extension));
+            if (!candidate) {
+                break; // a media name the file system cannot hold (an element "." or ".."): ES-DE finds nothing
+            }
+            ++m_stats.fileChecks;
+            const auto exists = mediaFileExists(*candidate);
+            if (!exists) {
+                return makeError(ErrorCode::Unavailable,
+                                 fmt::format("the media file of {} cannot be looked up: {}",
+                                             kindFolderText(system, kind), exists.error().message),
+                                 key.relativePath());
+            }
+            if (*exists) {
+                media[kind] = catalog::MediaPresence{true, std::string(extension)};
+                break;
+            }
         }
     }
     return media;
@@ -512,6 +673,7 @@ Expected<std::filesystem::path> EsdeMediaResolver::path(const catalog::SystemNam
 
 void EsdeMediaResolver::refresh() noexcept {
     m_rootStatus.reset();
+    m_rootCaseSensitive = false;
     m_systemFolders.clear();
     m_systems.clear();
     m_stats = MediaListingStats{};
