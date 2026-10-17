@@ -347,6 +347,11 @@ The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; 
 
 These come from the I2 step focus (`docs/i2/step-focus.md`).
 
+- **The video spike's timing bound under load:** `gpu.spike/video: two generated 720p clips play on time for 3 s`
+  (Debug) failed once in Gate M1's verification with its p99 upload CPU time at 4.02 ms against 3 ms, while the user
+  worked at the machine, and passed on four reruns; the gate measures on a machine in use, so a bound like this
+  should allow for load (a retry, a looser Debug bound, or the figure reported rather than failed).
+
 - **`focus_watch.py` in Gate A and the test script:** `scripts/gate.ps1 -Gate M1` runs under
   `scripts/focus_watch.py --watch build` since I2 step 14 and fails on a finding; Gate A and `scripts/test.ps1` could
   do the same, so that a test that takes the foreground is caught when it is added rather than by the user at the
