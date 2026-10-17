@@ -91,10 +91,13 @@ struct SearchPlan {
 
 /// How SqliteCatalogQuery reads its lists.
 struct QueryOptions {
-    /// A search whose list without the search is not kept: up to this many matching rows, the list is read by looking
-    /// each of them up (a few rows of a large catalog); beyond it, the list without the search is read from the order
-    /// index, kept, and narrowed (a common prefix, a large share of the catalog). Both give the same list; the
-    /// benchmarks of docs/i2/step-9.md chose the default. 0: always the list without the search, kept.
+    /// A search whose list without the search is not kept: when FTS5 matches up to this many rows (every row it
+    /// matches, of any state, availability and system, before the filters), the list is read by looking each of them
+    /// up (a few rows of a large catalog); beyond it, the list without the search is read from the order index, kept,
+    /// and narrowed (a common prefix, a large share of the catalog). Both give the same list. The default is the
+    /// crossover the benchmarks of docs/i2/step-9.md measured on 100,000 entries, where a list read whole takes about
+    /// 30 ms; a smaller catalog, or a filter that keeps few of the matches, reads its list faster than the lookups of
+    /// as many matches, which the limit does not weigh. 0: always the list without the search, kept.
     std::size_t lookupLimit = 5000;
 };
 

@@ -5,7 +5,7 @@
 // lists on 100,000 games: every game in each order, a common one-letter and two-letter prefix (both ways of reading a
 // search's list, with the rows FTS5 matches), longer searches, the position of an id deep in a list; what the search
 // area (its triggers and the order index) costs the writes of 100,000 entries, row by row and with the search index
-// suspended (search_index.hpp), with the segments FTS5 wrote. The catalogs are generated
+// suspended (search_index.hpp), with the leaf pages FTS5 flushed. The catalogs are generated
 // (tests/support/catalog_generator.hpp). Timings taken while other work runs are informative; the gate measures on a
 // quiet machine (docs/i2/step-9.md records the figures).
 
@@ -56,14 +56,20 @@ double percentile(std::vector<double> values, double share) {
     return values[std::min(values.size(), std::max<std::size_t>(rank, 1)) - 1];
 }
 
-/// The segments the search index has written since it was made: the write counter of FTS5's structure record (row 10
-/// of idx_game_search_data; fts5_index.c: a 4-byte cookie, the 4-byte marker of a version 2 record when present, then
-/// SQLite varints: levels, segments, writes). 0 for an index never written.
-std::int64_t segmentsWritten(rv::catalog_db::Connection& connection) {
+/// What FTS5's structure record (row 10 of idx_game_search_data; fts5_index.c: a 4-byte cookie, the 4-byte marker of a
+/// version 2 record when present, then SQLite varints: levels, segments, the write counter) says of the search index.
+struct SearchIndexStructure {
+    std::uint64_t segments = 0; ///< the segments it has now, after its merges
+    /// The write counter: the leaf pages written by its flushes since it was made (a 'rebuild' starts it again). A
+    /// row's terms flushed alone take one leaf: a transaction that flushes after every row counts one per row.
+    std::uint64_t leavesFlushed = 0;
+};
+
+SearchIndexStructure searchIndexStructure(rv::catalog_db::Connection& connection) {
     auto block = connection.prepare("SELECT block FROM idx_game_search_data WHERE id = 10");
     REQUIRE(block.has_value());
     if (!block->step().value()) {
-        return 0;
+        return {};
     }
     const std::span<const std::byte> bytes = block->columnBlob(0);
     std::size_t at = 4;
@@ -86,8 +92,10 @@ std::int64_t segmentsWritten(rv::catalog_db::Connection& connection) {
         return value;
     };
     varint(); // levels
-    varint(); // segments
-    return static_cast<std::int64_t>(varint());
+    SearchIndexStructure structure;
+    structure.segments = varint();
+    structure.leavesFlushed = varint();
+    return structure;
 }
 
 /// A generated catalog database in a temporary folder, opened, with queries on a reader.
@@ -453,9 +461,10 @@ TEST_CASE("catalog_db/bench: what the search area costs the writes of 100,000 en
         const double elapsed = millisecondsSince(started);
         auto database = rv::catalog_db::Database::open(file);
         REQUIRE(database.has_value());
-        report += fmt::format("  {:<56} {:7.0f} ms, {} pages, {} search index segments written\n", label, elapsed,
-                              database->writer().queryInt("PRAGMA page_count").value().value_or(0),
-                              segmentsWritten(database->writer()));
+        const SearchIndexStructure structure = searchIndexStructure(database->writer());
+        report += fmt::format("  {:<56} {:7.0f} ms, {} pages; search index: {} leaf pages flushed, {} segments\n",
+                              label, elapsed, database->writer().queryInt("PRAGMA page_count").value().value_or(0),
+                              structure.leavesFlushed, structure.segments);
     };
     for (std::size_t i = 0; i < variants.size(); ++i) {
         const std::filesystem::path file = dir.file(fmt::format("v{}/retroverse.sqlite", i));

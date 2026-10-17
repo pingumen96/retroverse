@@ -4,9 +4,9 @@
 // FTS5 index in step with idx_games and idx_systems row by row. FTS5 holds the terms of the rows written in a
 // transaction in memory, and writes them out as a new segment of the index whenever a statement opens a savepoint: every
 // statement that writes an index row does (its triggers may fail half-way), so a transaction that writes rows one by
-// one, as the store does, makes a segment per row, which FTS5 then merges again and again. That costs about 80 µs a row
-// (100,000 rows written take three times as long as without the triggers), where tokenizing every row of the catalog
-// once from the index tables takes about 15 µs a row (docs/i2/step-9.md has the measurements).
+// one, as the store does, makes a segment per row, which FTS5 then merges again and again: 100,000 rows written take two
+// to three times as long as without the triggers, where tokenizing every row of the catalog once from the index tables
+// takes under 2 s (docs/i2/step-9.md has the measurements).
 //
 // For a bulk write (a first import, `db rebuild-index`: rows written in the thousands), suspendSearchIndex() drops the
 // search triggers inside the writer's transaction, and resumeSearchIndex() rebuilds the index from the index tables
