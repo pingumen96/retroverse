@@ -35,6 +35,11 @@ using launcher::SessionState;
     return panel == SessionPanel::Playing || panel == SessionPanel::StillRunning || panel == SessionPanel::Confirm;
 }
 
+/// Nothing asks the user: the game has the screen (the window keeps the "Gioco in corso" notice behind it).
+[[nodiscard]] bool gameHasScreen(SessionPanel panel) noexcept {
+    return panel == SessionPanel::None || panel == SessionPanel::Launching;
+}
+
 } // namespace
 
 std::string_view toString(SessionPanel panel) noexcept {
@@ -106,8 +111,7 @@ void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks cal
     }
     m_session.emplace(std::move(*m_pending), m_runner);
     m_pending.reset();
-    // The Launching frame was presented: from here the window shows it while the emulator runs.
-    m_panel = SessionPanel::None;
+    // The Launching frame was presented: the window keeps it behind the emulator while it runs.
     LaunchRecord& record = current();
     record.startFrame = frame;
     m_session->start(now, std::move(callbacks));
@@ -137,13 +141,13 @@ void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
         if (state == SessionState::StillRunning || state == SessionState::AwaitingConfirmation) {
             show(askingPanel(state));
         } else if (state == SessionState::Running && m_panel == SessionPanel::StillRunning) {
-            // The game shows a window again: it has the screen, the host waits again.
-            m_panel = SessionPanel::None;
+            // The game shows a window again: it has the screen, the host waits again after a frame with the notice.
+            m_panel = SessionPanel::Launching;
         }
         m_seenState = state;
         current().state = std::string(launcher::toString(state));
     }
-    if (m_panel == SessionPanel::None && m_focusSince && now - *m_focusSince >= kComeBackDelay) {
+    if (gameHasScreen(m_panel) && m_focusSince && now - *m_focusSince >= kComeBackDelay) {
         spdlog::info("Back in Retroverse while '{}' runs: asking whether to return", m_info.title);
         show(askingPanel(state));
     }
@@ -171,7 +175,8 @@ void LaunchFlow::returnToRetroverse(LaunchClock::time_point now, std::uint64_t f
 
 void LaunchFlow::backToGame() noexcept {
     if (sessionActive() && asksUser(m_panel)) {
-        m_panel = SessionPanel::None;
+        // One frame with the "Gioco in corso" notice, which the window then keeps behind the game.
+        m_panel = SessionPanel::Launching;
         // Asked again only once the user comes back again (a new focus gain), or the session's state changes.
         m_focusSince.reset();
     }
@@ -216,10 +221,10 @@ void LaunchFlow::frameRendered() noexcept {
         return;
     }
     LaunchRecord& record = m_records.back();
-    if (m_panel == SessionPanel::None) {
-        ++record.framesWhileRunning;
-    } else {
+    if (asksUser(m_panel)) {
         ++record.framesWithPanel;
+    } else {
+        ++record.framesWhileRunning;
     }
 }
 
@@ -242,7 +247,7 @@ bool LaunchFlow::sessionActive() const noexcept {
 }
 
 bool LaunchFlow::hostIdle() const noexcept {
-    return m_pending.has_value() || (sessionActive() && m_panel == SessionPanel::None);
+    return m_pending.has_value() || (sessionActive() && gameHasScreen(m_panel));
 }
 
 bool LaunchFlow::takeReturned() noexcept {

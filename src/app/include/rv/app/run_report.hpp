@@ -112,8 +112,9 @@ struct LaunchRecord {
     std::uint64_t requestFrame = 0;
     std::optional<std::uint64_t> startFrame;
     std::optional<std::uint64_t> endFrame;
-    /// Frames rendered during the session: for the game-session panel (StillRunning, a confirmation, the user back in
-    /// Retroverse), and with nothing to show, while the emulator had the screen (always 0: the host waits instead).
+    /// Frames rendered during the session: for a question of the game-session panel (StillRunning, a confirmation, the
+    /// user back in Retroverse), and while the game had the screen: none (the host waits instead), but the frame after a
+    /// choice to go back to the game (it shows the "Gioco in corso" notice, which the window keeps behind it).
     std::uint64_t framesWithPanel = 0;
     std::uint64_t framesWhileRunning = 0;
     /// Times the host woke from its wait while the session ran (the runner's wake events, other events, the polling

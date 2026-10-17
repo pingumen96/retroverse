@@ -20,8 +20,9 @@ namespace rv::app {
 /// What the game-session panel shows over the quick catalog (assets/ui/game_session.rml).
 enum class SessionPanel : std::uint8_t {
     None,
-    /// "Gioco in corso", without choices: the frame that asked for the launch, the last one presented before the
-    /// emulator starts, which the window kept behind it shows while it runs (ADR-0006: the keep policy renders nothing).
+    /// "Gioco in corso", without choices: the game has the screen. The frame that asked for the launch shows it, the last
+    /// one presented before the emulator starts, and so does the frame after a choice to go back to the game: the
+    /// window kept behind the emulator shows that frame while it runs (ADR-0006: the keep policy renders nothing).
     Launching,
     /// The user came back to Retroverse while the game runs (the window kept the focus for kComeBackDelay): return,
     /// leaving the game running, or go back to it.
@@ -61,7 +62,8 @@ struct LaunchInfo {
 ///     StillRunning (no window for the window timeout), AwaitingConfirmation (UserConfirmReturn), the user back in
 ///     Retroverse (focusChanged(): the window kept the focus for kComeBackDelay). The panel's choices: return
 ///     (returnToRetroverse(): LaunchSession::confirmReturn, the emulator left running when it runs) or back to the game
-///     (backToGame(): the panel hides, the host waits again). A window the game shows again ends StillRunning's panel.
+///     (backToGame(): a frame with the notice again, then the host waits). A window the game shows again ends
+///     StillRunning's question the same way.
 ///  4. The end: the outcome (messageForOutcome()), the Outcome panel when it has something to say (showsMessage()),
 ///     takeReturned() once.
 /// refuse() records a launch that cannot start (a plan's blocker, an unknown profile, no launch target) and shows its
@@ -98,8 +100,8 @@ public:
     /// The panel's "return to Retroverse" (Playing, StillRunning) and "I am back" (Confirm): the session ends
     /// (LaunchSession::confirmReturn), the emulator left running when it still runs.
     void returnToRetroverse(launcher::LaunchClock::time_point now, std::uint64_t frame);
-    /// The panel's "back to the game": the panel hides and the host waits again; it shows again when the session's
-    /// state changes or the user comes back once more (a new focus gain).
+    /// The panel's "back to the game": one frame with the "Gioco in corso" notice, then the host waits again; the panel
+    /// asks again when the session's state changes or the user comes back once more (a new focus gain).
     void backToGame() noexcept;
     /// The Outcome panel dismissed.
     void dismissOutcome() noexcept;
@@ -111,7 +113,8 @@ public:
     /// pending launch never starts (recorded as "Pending").
     void quit(launcher::LaunchClock::time_point now, std::uint64_t frame);
 
-    /// A frame was rendered: counted for the running session (LaunchRecord::framesWithPanel, framesWhileRunning).
+    /// A frame was rendered: counted for the running session, as a frame of a question (LaunchRecord::framesWithPanel)
+    /// or of a game that has the screen (framesWhileRunning: only the one after a choice to go back to the game).
     void frameRendered() noexcept;
     /// The host woke from its wait while the session ran (LaunchRecord::idleWakes).
     void idleWake() noexcept;
@@ -122,8 +125,8 @@ public:
     [[nodiscard]] bool pending() const noexcept { return m_pending.has_value(); }
     /// A session exists and has not ended.
     [[nodiscard]] bool sessionActive() const noexcept;
-    /// The host waits instead of rendering: a launch is pending (start() at its next wake), or a session runs with no
-    /// panel to show.
+    /// The host waits instead of rendering: a launch is pending (start() at its next wake), or a session runs with
+    /// nothing to ask (the panel shows the "Gioco in corso" notice, or nothing).
     [[nodiscard]] bool hostIdle() const noexcept;
     [[nodiscard]] SessionPanel panel() const noexcept { return m_panel; }
     /// The game of the current or last launch.

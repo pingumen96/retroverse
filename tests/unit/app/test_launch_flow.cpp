@@ -137,8 +137,9 @@ TEST_CASE("app/launch_flow: the host waits while the emulator runs and the frame
     f.launch();
     REQUIRE(f.flow.sessionActive());
     CHECK_FALSE(f.flow.pending());
-    // The Launching frame was presented: nothing more to show, the host waits.
-    CHECK(f.flow.panel() == SessionPanel::None);
+    // The Launching frame ("Gioco in corso") was presented and stays behind the emulator: nothing to ask, the host
+    // waits.
+    CHECK(f.flow.panel() == SessionPanel::Launching);
     CHECK(f.flow.hostIdle());
     REQUIRE(f.runner.wake); // the host's wake event reaches the runner
 
@@ -283,14 +284,16 @@ TEST_CASE("app/launch_flow: StillRunning asks the user, who returns leaving the 
     // The panel's frames count apart from the emulator's.
     f.flow.frameRendered();
     f.flow.frameRendered();
-    // "Continua ad aspettare": the host waits again; the game's window resumes Running, a new timeout asks again.
+    // "Continua ad aspettare": a frame with the notice, then the host waits again; the game's window resumes Running,
+    // a new timeout asks again.
     f.flow.backToGame();
-    CHECK(f.flow.panel() == SessionPanel::None);
+    CHECK(f.flow.panel() == SessionPanel::Launching);
     CHECK(f.flow.hostIdle());
+    f.flow.frameRendered(); // the frame of the notice: the game has the screen again
     f.runner.queue.push_back(event(ProcessEventKind::WindowShown, 1500));
     f.runner.queue.push_back(event(ProcessEventKind::WindowsGone, 2000));
     f.flow.poll(at(2100), 11);
-    CHECK(f.flow.panel() == SessionPanel::None);
+    CHECK(f.flow.panel() == SessionPanel::Launching);
     f.flow.poll(at(3100), 11);
     CHECK(f.flow.panel() == SessionPanel::StillRunning);
     // "Torna a Retroverse": the session ends, the emulator left running, nothing to tell.
@@ -307,7 +310,7 @@ TEST_CASE("app/launch_flow: StillRunning asks the user, who returns leaving the 
     CHECK(record.wasStillRunning);
     CHECK_FALSE(record.quitDuringGame);
     CHECK(record.framesWithPanel == 2);
-    CHECK(record.framesWhileRunning == 0);
+    CHECK(record.framesWhileRunning == 1);
     CHECK(record.startFrame == 9u);
     CHECK(record.endFrame == 13u);
     CHECK(record.panels == std::vector<std::string>{"still-running", "still-running"});
@@ -324,7 +327,7 @@ TEST_CASE("app/launch_flow: StillRunning ends by itself when the game shows a wi
     REQUIRE(f.flow.panel() == SessionPanel::StillRunning);
     f.runner.queue.push_back(event(ProcessEventKind::WindowShown, 1200));
     f.flow.poll(at(1210), 10);
-    CHECK(f.flow.panel() == SessionPanel::None);
+    CHECK(f.flow.panel() == SessionPanel::Launching);
     CHECK(f.flow.hostIdle());
 }
 
@@ -339,12 +342,12 @@ TEST_CASE("app/launch_flow: UserConfirmReturn asks for the confirmation once the
     CHECK_FALSE(f.flow.hostIdle());
     // Back on the panel: back to the game, the host waits again (the confirmation is still owed).
     f.flow.panelBack();
-    CHECK(f.flow.panel() == SessionPanel::None);
+    CHECK(f.flow.panel() == SessionPanel::Launching);
     CHECK(f.flow.hostIdle());
     // The user comes back to Retroverse and stays: asked again, after the delay.
     f.flow.focusChanged(true, at(4000));
     f.flow.poll(at(4000 + 1000), 9);
-    CHECK(f.flow.panel() == SessionPanel::None);
+    CHECK(f.flow.panel() == SessionPanel::Launching);
     f.flow.poll(at(4000 + 1500), 9);
     CHECK(f.flow.panel() == SessionPanel::Confirm);
     // "Sono tornato".
@@ -363,7 +366,7 @@ TEST_CASE("app/launch_flow: the user back in Retroverse while the game runs is a
     // The emulator's window closing hands the focus back before its process ends: no panel within the delay.
     f.flow.focusChanged(true, at(5000));
     f.flow.poll(at(5300), 9);
-    CHECK(f.flow.panel() == SessionPanel::None);
+    CHECK(f.flow.panel() == SessionPanel::Launching);
     f.runner.queue.push_back(event(ProcessEventKind::MainExited, 5350, 0));
     f.flow.poll(at(5400), 9);
     CHECK_FALSE(f.flow.sessionActive());
@@ -375,7 +378,7 @@ TEST_CASE("app/launch_flow: the user back in Retroverse while the game runs is a
     g.flow.focusChanged(true, at(1000));
     g.flow.focusChanged(false, at(1200));
     g.flow.poll(at(3000), 9);
-    CHECK(g.flow.panel() == SessionPanel::None);
+    CHECK(g.flow.panel() == SessionPanel::Launching);
     g.flow.focusChanged(true, at(3000));
     g.flow.poll(at(3000 + 1500), 9);
     CHECK(g.flow.panel() == SessionPanel::Playing);
@@ -384,7 +387,7 @@ TEST_CASE("app/launch_flow: the user back in Retroverse while the game runs is a
     CHECK(g.flow.hostIdle());
     // Not asked again until the user comes back once more.
     g.flow.poll(at(9000), 9);
-    CHECK(g.flow.panel() == SessionPanel::None);
+    CHECK(g.flow.panel() == SessionPanel::Launching);
     // The emulator exits while the user looks at the panel: the return as usual.
     g.flow.focusChanged(true, at(9100));
     g.flow.poll(at(10700), 9);

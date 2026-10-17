@@ -272,5 +272,5 @@ TEST_CASE("launch: a visible launch hands the window over and takes it back", "[
     // The fake had the foreground while it ran.
     const auto log = rv::core::readJsonFile(dir / "roms" / "fake-window-log.json");
     REQUIRE(log.has_value());
-    CHECK(log->at("frames").get<int>() == 150);
+    CHECK(log->at("frames").get<int>() == 500);
 }
