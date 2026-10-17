@@ -99,7 +99,8 @@ struct LaunchRecord {
     std::string strategy;
     /// The started process's id (0 when nothing started).
     std::uint32_t processId = 0;
-    /// launcher::LaunchOutcome's flags.
+    /// launcher::LaunchOutcome's flags; confirmedByUser only for the user's own confirmation (false when quitting or the
+    /// wait limit ended the session, which LaunchSession::confirmReturn records as confirmed).
     bool quickExit = false;
     bool processesRemained = false;
     bool confirmedByUser = false;

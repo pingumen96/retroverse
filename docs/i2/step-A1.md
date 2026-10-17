@@ -302,6 +302,12 @@ game.
   among them, Release rendering from its deployed assets), golden G01 0 pixels apart in both. Launch cases in Debug:
   the return 17 s, the eight failures 96 s, the panel's questions 18 s, quitting 24 s (the fake's own 12 s exit
   timeout included), the closed catalog 10 s; in Release 5, 16, 12, 14 and 5 s.
+- **After the review fixes** (`./scripts/test.ps1 -Preset msvc-x64-debug-gpu` and `msvc-x64-release-gpu`, both builds
+  without a warning): 1,047 unit tests in both, 25 GPU checks in Debug and 23 in Release, all passed, golden G01
+  among them; the seven launch cases in Debug: Back on the question 9 s, the closed catalog 11 s, the wait limit 16 s
+  (the fake's 12 s exit timeout included), the return 7 s, quitting 16 s, the nine failures 40 s, the questions 21 s;
+  in Release 6, 4, 13, 4, 13, 17 and 14 s. The visible case was not rerun (it takes over the screen); run directly
+  without its ctest registration, it skips (exit code 77).
 
 ## For the merge
 
