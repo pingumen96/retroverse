@@ -426,6 +426,9 @@ command.
 
 `tests/unit/catalog_db/test_catalog_query_bench.cpp`: the benchmarks above (`[.bench]`, hidden).
 
+After the review's fixes, `./scripts/test.ps1` passes the 1,035 unit tests in `msvc-x64-debug` and in
+`msvc-x64-release`, both built without a warning; the benchmarks pass in Release.
+
 ## Notes for the steps that build on it
 
 - **Step 11** (import): the search area follows the store's writes by itself (upserts, removals, systems at any point
