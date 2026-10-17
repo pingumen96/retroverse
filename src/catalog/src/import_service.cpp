@@ -85,6 +85,9 @@ struct SystemPlan {
     std::vector<std::ptrdiff_t> identityEntry; ///< per identity: an index into entries, or kNone
     std::vector<std::optional<MoveReason>> moved; ///< per identity: paired with a new file
     std::vector<GameId> entryIds;              ///< per entries[i], once given out
+    /// What the pairing pass decided, reported once the guard lets the system be applied.
+    std::vector<MovedGame> moves;
+    std::vector<ReviewRow> reviews;
 
     /// The system's changes are written (false: kept as it was).
     bool apply = true;
@@ -262,6 +265,9 @@ void ImportRun::keepAsItWas(SystemPlan& plan, SystemOutcome outcome) {
     plan.apply = false;
     plan.changes.outcome = outcome;
     plan.changes.kept = plan.rows.size();
+    plan.changes.moved = 0; // what the pairing pass decided is not applied, nor reported
+    plan.moves.clear();
+    plan.reviews.clear();
 }
 
 Status ImportRun::match(SystemPlan& plan) {
@@ -379,13 +385,10 @@ Status ImportRun::match(SystemPlan& plan) {
             plan.identityEntry[j] = static_cast<std::ptrdiff_t>(i);
             plan.entryIdentity[i] = static_cast<std::ptrdiff_t>(j);
             plan.moved[j] = pair.reason;
-            m_result.changes.moved.push_back(
-                MovedGame{identities[j].id, plan.name, identities[j].key, entryAt(i).key, pair.reason});
+            plan.moves.push_back(MovedGame{identities[j].id, plan.name, identities[j].key, entryAt(i).key, pair.reason});
             ++paired;
         }
-        for (ReviewRow& review : pairs->reviews) {
-            m_result.changes.reviews.push_back(std::move(review));
-        }
+        plan.reviews = std::move(pairs->reviews);
         for (Issue& issue : pairs->issues) {
             m_issues.push_back(std::move(issue));
         }
@@ -951,6 +954,8 @@ Expected<ImportResult> ImportRun::run() {
             std::count_if(changes.issues.begin(), changes.issues.end(),
                           [&](const Issue& issue) { return issue.system == plan.name.str(); }));
         changes.systems.push_back(plan.changes);
+        changes.moved.insert(changes.moved.end(), plan.moves.begin(), plan.moves.end());
+        changes.reviews.insert(changes.reviews.end(), plan.reviews.begin(), plan.reviews.end());
     }
     statistics.compareTime = Clock::now() - compareStart;
     if (cancelled()) {

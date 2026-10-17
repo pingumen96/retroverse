@@ -608,6 +608,36 @@ TEST_CASE("catalog_db/import: the seam for reconciliation moves a paired identit
     }
 }
 
+TEST_CASE("catalog_db/import: the guard counts what stays gone once the pairing pass has run", "[catalog_db][import]") {
+    const rv::test::TempDir dir("rv-import-seam-guard");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::scriptedLibrary();
+    ScriptedSource source;
+    source.snapshot.systems = {scriptedSystem("nes")};
+    source.snapshot.entries = {diskGame("nes", "Old/Solo (USA).nes", 55)};
+    ScriptedMedia media;
+    NamePairing pairing;
+    importOk(catalog, source, media, profile);
+    const GameId solo = identityAt(catalog, profile, "nes", "Old/Solo (USA).nes").id;
+    source.snapshot.entries = {diskGame("nes", "New/Solo (USA).nes", 55)}; // the only file, moved
+
+    SECTION("without a pairing pass the move is a disappearance: kept, no move reported") {
+        const ImportResult held = importOk(catalog, source, media, profile);
+        CHECK(changesOf(held.changes, "nes").outcome == SystemOutcome::KeptByGuard);
+        CHECK(changesOf(held.changes, "nes").gone == 1);
+        CHECK(held.changes.moved.empty());
+    }
+    SECTION("paired, nothing is gone: applied") {
+        const ImportResult moved = importOk(catalog, source, media, profile, {}, &pairing);
+        CHECK(changesOf(moved.changes, "nes").outcome == SystemOutcome::Applied);
+        CHECK(changesOf(moved.changes, "nes").gone == 0);
+        CHECK(changesOf(moved.changes, "nes").moved == 1);
+        REQUIRE(moved.changes.moved.size() == 1);
+        CHECK(identityAt(catalog, profile, "nes", "New/Solo (USA).nes").id == solo);
+        CHECK(rowCount(catalog, profile, "nes") == 1);
+    }
+}
+
 namespace {
 
 /// A store that hands out a transaction which sets `cancel` after `writesBeforeCancel` entries written: a cancellation

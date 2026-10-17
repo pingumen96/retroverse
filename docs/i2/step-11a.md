@@ -15,7 +15,7 @@ folded into the shared documentation at the wave merge.
 | `rv/catalog/import_service.hpp`, `src/import_service.cpp` (`rv_catalog`) | `ImportService` over the ports `ILibrarySource`, `IMediaResolver`, `ICatalogStore`: `run(profile, ImportOptions)` gives `ImportResult` (`ChangeSet` + `ImportStatistics`); `ImportOptions` (cancel flag, `acceptRemovals`, `systems` for a partial import, `rebuildIndex`); the seam for step 11b: `IIdentityPairing`, `PairingRequest`, `VanishedIdentity`, `NewFile`, `IdentityPair`, `IdentityPairs`; the import's issue codes `kImportIssue...` |
 | `rv/catalog/change_set.hpp` (step 1's, extended) | `SystemOutcome`, `SystemChanges` (per system: added, changed, removed, unchanged, unavailable, kept, the identities' changes, the guard's figures, issues), `ChangeSet::systems`, `firstImport`, `total()`, `findSystem()` |
 | `rv/catalog/catalog_store.hpp` (step 1's, extended) | `IndexedDiscGroup`, `ImportKind`, `ImportRecord`, `IImportLock`; `ICatalogStore::systems`, `identitySystems`, `discGroups`, `lastImport`, `lockImport`; `IImportTransaction::prepareWrites`, `clearIndex`, `removeSystem`, `putDiscGroup`, `removeDiscGroup`, `putImportIssues`, `recordImport` |
-| `rv/catalog_db/catalog_store.hpp`, `src/catalog_store.cpp` (`rv_catalog_db`) | the store's side of all of the above (21 new statements in its `Sql` enumeration); `StoreOptions` with `SearchIndexPolicy` (`Automatic`, `Suspend`, `FollowWrites`) and `kBulkWriteShare`; `removeEntry()` also removes the references of the group it heads; each commit records `sort_key_version` |
+| `rv/catalog_db/catalog_store.hpp`, `src/catalog_store.cpp` (`rv_catalog_db`) | the store's side of all of the above (22 new statements in its `Sql` enumeration); `StoreOptions` with `SearchIndexPolicy` (`Automatic`, `Suspend`, `FollowWrites`) and `kBulkWriteShare`; `removeEntry()` also removes the references of the group it heads; each commit records `sort_key_version` |
 | `src/catalog_db/src/schema_identity.cpp` | `rv_imports` (state: the import records) |
 | `src/catalog_db/src/schema_index.cpp` | `idx_disc_references` (index: what a head says, by relative path) |
 | `tools/cli/src/import_text.hpp` (new private header), `cmd_import.cpp` | `runCatalogImport()`: the import that `import` and `db rebuild-index` share, its summary as text and JSON |
@@ -276,7 +276,8 @@ them where it applies the pairs. Without a pairing pass (11a), a moved file is a
 
 ## Tests
 
-`./scripts/test.ps1` (Debug): every unit test passes; the import's (`rv_tests "[import]"`, 30 test cases):
+`./scripts/test.ps1` passes every unit test in Debug and in Release (1,182), both built without a warning; the
+import's (`rv_tests "[import]"`: 31 test cases, and the hidden real-library one):
 
 - `tests/unit/catalog_db/test_import_service.cpp` (scripted snapshots and media on the SQLite store): a first import
   (GameIds as their tuples derive them, a key collision and its counter, the entry outside its folder never indexed, a
@@ -287,7 +288,9 @@ them where it applies the pairs. Without a pairing pass (11a), a moved file is a
   a failed gamelist (metadata pending on a first import, rows kept after, system row "failed" with its alternative
   emulator); folders that cannot be listed, a system folder unreachable, the folders back (same GameIds); the guard
   (half gone applied, more than half held, then accepted); a system no longer configured (held, then removed, then
-  back with its id); the seam (a move, the old path's new GameId, a bogus pairing refused with nothing written);
+  back with its id); the seam (a move, the old path's new GameId, a bogus pairing refused with nothing written; the
+  guard counting after the pairing: a system's only file moved is kept by the guard without a pairing pass, with no
+  move reported, and applied with one);
   cancellation while the library is read, while the media are asked, in the middle of the writes (index and state as
   they were, no record; the lock released); one import at a time (another holder's lock or transaction, a lock that goes
   while its transaction is open); a partial import; disc groups with references, given back as the cache, rewritten,
@@ -322,7 +325,37 @@ at once), so that they compare imports exactly; the reference library's folders,
 
 ## Real library
 
-(Filled after the run of `./scripts/real-library.ps1`.)
+`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
+-MediaRoot E:\Programmi\ES-DE_media\downloaded_media` (Release, ES-DE closed), twice: with `-Filter
+'[real-library][import]'` (the step's test, `test_import_real.cpp`: 1 test case passed) and with the default filter (9
+test cases: 7 passed, the two launch tests skipped without `-RetroArchExe`). Both runs: 0 differences among 542,082
+entries. The database is made anew under `build/msvc-x64-release/real-library/import`.
+
+- **The first import** gives step 7's figures: 105,130 identities and index rows (90,246 games, 12,821 disc members,
+  1,038 missing files, 870 not games, 155 folders), 2,513 disc groups (12,821 member rows, 12,841 references: psx's cue
+  sheets that name tracks not there among them), 388,098 media rows, 195 systems, 13 import issues (step 7's 12
+  `disc-reference-missing` and pcfx's `extension-without-dot`), no row source unavailable; the search index suspended
+  and rebuilt (966,896 (term, row) pairs). The database: 33,650 pages of 4 KiB (131 MiB).
+- **The second import** changes no identity and writes no row (0 identity rows, 0 entry rows, 0 removed, 0 disc groups,
+  0 systems): 105,130 rows unchanged; 2,513 sheets taken from the catalog, 7 read (heads that make no group are not
+  cached and are read at every load, step 7).
+- **`db rebuild-index`** writes the 105,130 rows again and gives the same index (SHA-256 of every index table and of
+  the search index's terms equal) and the same state.
+
+Timings (informative: the drive and the media tree were warm from the snapshots the script takes just before, and other
+work may have run; the gate measures on a quiet machine):
+
+| Run | Total | Library read (of it sheets) | Media | Comparison | Writes and commit |
+|---|---|---|---|---|---|
+| first import | 10.57 s, 10.74 s | 1.61 s (0.04 s: 2,520 sheets read, warm) | 0.97 s, 1.00 s | 0.58 s, 0.59 s | 7.39 s, 7.53 s (the search index rebuilt in it) |
+| second import | 4.54 s, 4.57 s | 1.69 s, 1.70 s (7 sheets read) | 1.01 s | 1.77 s, 1.79 s | 0.05 s |
+| `db rebuild-index` | 13.05 s, 13.65 s | 1.68 s, 1.74 s | 1.00 s, 1.09 s | 1.98 s, 2.08 s | 8.38 s, 8.73 s |
+
+The second import's comparison is the reads of 105,130 identities and index rows with their 388,098 media rows (step 4
+measured about 1 s per 100,000 in Release) and the comparison in memory; the first import's writes are step 4's and 9's
+figures (identities and rows in ascending GameId order, the search index rebuilt once). A cold first import adds the
+cold listing (about 10 s on the external drive, ADR-0008) and the sheets (step 7's estimate: 4 to 5 s with 8 readers),
+which later imports take from the catalog.
 
 ## Notes for the steps that build on it
 
