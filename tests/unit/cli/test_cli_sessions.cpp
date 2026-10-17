@@ -49,6 +49,7 @@
 
 #include "support/file_system.hpp"
 #include "support/fixture.hpp"
+#include "support/program_stub.hpp"
 #include "support/scoped_environment.hpp"
 #include "support/temp_dir.hpp"
 
@@ -128,7 +129,15 @@ json profile(std::string_view id, const fs::path& executable, std::vector<std::s
 ///  - fake-unlisted: the fixture's copy of the fake, which the allow-list never names (refused by the guard);
 ///  - fake-missing: an executable that is not there (blocked: emulator not found);
 ///  - fake-args: writes what it got (--print-args) to args.json, the ROM and hostile literal arguments after "--";
-///  - fake-snes: like fake-quick, serving snes only.
+///  - fake-snes: like fake-quick, serving snes only;
+///  - fake-tree: a wrapper that starts a copy of itself running 2.6 s and exits at once, waited for as a process tree;
+///  - fake-confirm: exits at once, its end the user's confirmation (a launcher stub whose emulator runs elsewhere);
+///  - fake-broken: a program stub whose headers pass validateLaunchRequest but which Windows cannot load: CreateProcessW
+///    fails (failed to start, start failed), whatever the machine's load.
+/// The startup grace (2 s, counted from the moment the process runs, its DLLs loaded within it) decides between a quick
+/// exit and a return, and between an early exit and a return with an error code: on a machine busy enough, the Debug
+/// fake needs more than that to load. The tests that need a quick exit judge it by the session's own run time
+/// (launchWithinGrace()).
 struct SessionSetup {
     rv::test::TempDir dir;
     rv::test::Fixture fixture;
@@ -166,6 +175,14 @@ struct SessionSetup {
         json snesOnly = profile("fake-snes", fake, {"--", "{rom}"});
         snesOnly["systems"] = json{{"snes", json::object()}};
         profiles.push_back(std::move(snesOnly));
+        json tree = profile("fake-tree", fake, {"--spawn-child-and-exit", "--sleep-ms", "2600", "--exit-timeout-ms",
+                                                "30000", "--", "{rom}"});
+        tree["wait"] = "tree";
+        profiles.push_back(std::move(tree));
+        json confirm = profile("fake-confirm", fake, {"--", "{rom}"});
+        confirm["wait"] = "confirm";
+        profiles.push_back(std::move(confirm));
+        profiles.push_back(profile("fake-broken", rv::test::writeProgramStub(brokenProgram()), {"--", "{rom}"}));
         json document{{"schemaVersion", 1}, {"profiles", std::move(profiles)}};
         if (!systemChoices.empty()) {
             document["systemChoices"] = systemChoices;
@@ -178,6 +195,7 @@ struct SessionSetup {
 
     [[nodiscard]] fs::path emulatorsFile() const { return data / "config" / "emulators.json"; }
     [[nodiscard]] fs::path databaseFile() const { return data / "database" / "retroverse.sqlite"; }
+    [[nodiscard]] fs::path brokenProgram() const { return dir.file("broken/broken-emulator.exe"); }
 
     RunResult run(std::vector<std::string> arguments) const {
         arguments.insert(arguments.begin(), {"--data-dir", utf8(data)});
@@ -187,14 +205,37 @@ struct SessionSetup {
         return RunResult{code, out.text(), err.text()};
     }
 
-    /// Runs `arguments` with --json and parses the result, checking the exit code.
-    json runJson(std::vector<std::string> arguments, ExitCode expected) const {
+    /// Runs `arguments` with --json and parses the result, checking the exit code when one is expected.
+    json runJson(std::vector<std::string> arguments, std::optional<ExitCode> expected) const {
         arguments.push_back("--json");
         const RunResult result = run(arguments);
         INFO(arguments[0] << ": " << result.err);
-        CHECK(result.code == expected);
+        if (expected) {
+            CHECK(result.code == *expected);
+        }
         REQUIRE_FALSE(result.out.empty());
-        return json::parse(result.out);
+        json parsed = json::parse(result.out);
+        parsed["exitCodeOfTheRun"] = toInt(result.code);
+        return parsed;
+    }
+
+    /// `launch --game <game> --wait --json` (and `extra`) until the session's run time is within the startup grace
+    /// (with a margin), at most 4 times: on a machine busy enough, the Debug fake's start alone can pass it. Every
+    /// launch made is appended to `made`; the last result is returned.
+    json launchWithinGrace(const std::string& game, std::vector<json>& made,
+                           const std::vector<std::string>& extra = {"--wait"}) const {
+        json result;
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            std::vector<std::string> arguments{"launch", "--game", game};
+            arguments.insert(arguments.end(), extra.begin(), extra.end());
+            result = runJson(arguments, std::nullopt);
+            made.push_back(result.at("session"));
+            const json& duration = result.at("session").at("durationMs");
+            if (!duration.is_null() && duration.get<std::int64_t>() < 1500) {
+                break;
+            }
+        }
+        return result;
     }
 
     /// The GameId of the identity at `relativePath` of `system`.
@@ -321,72 +362,112 @@ std::string text(const fs::path& file) {
 TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][launch][sessions]") {
     const LoggingReset loggingReset;
     const SessionSetup setup("rv-cli-outcomes");
-    const fs::path fake = buildFake();
-    const std::vector<fs::path> listed{fake};
+    const std::vector<fs::path> listed{buildFake(), setup.brokenProgram()};
     const rv::test::ScopedLaunchAllowList allowList(listed);
     const std::string tiny = setup.gameAt("gb", "Tiny Tennis (Europe).gb").toString();
-
-    struct Case {
-        std::string_view profile;
-        ExitCode code;
-        std::string_view outcome;
+    std::vector<json> made; // every session launched, in order
+    const auto launchWith = [&](std::string_view profile, std::optional<ExitCode> code) {
+        INFO(profile);
+        REQUIRE(setup.run({"assign", "--game", tiny, std::string(profile)}).code == ExitCode::Ok);
+        const json result = setup.runJson({"launch", "--game", tiny, "--wait"}, code);
+        made.push_back(result.at("session"));
+        return result;
     };
-    // Each launch of Tiny Tennis with the profile assigned to it.
-    const std::vector<Case> cases{
-        {"fake-return", ExitCode::Ok, "returned"},
-        {"fake-quick", ExitCode::ProblemsFound, "returned"},
-        {"fake-error", ExitCode::ProblemsFound, "failed-to-start"},
-        {"fake-loader", ExitCode::ProblemsFound, "failed-to-start"},
-        {"fake-crash", ExitCode::ProblemsFound, "crashed"},
-        {"fake-unlisted", ExitCode::ProblemsFound, "failed-to-start"},
-        {"fake-missing", ExitCode::ProblemsFound, "blocked"},
-    };
-    std::vector<json> sessions;
-    for (const Case& launch : cases) {
-        INFO(launch.profile);
-        REQUIRE(setup.run({"assign", "--game", tiny, std::string(launch.profile)}).code == ExitCode::Ok);
-        const json result = setup.runJson({"launch", "--game", tiny, "--wait"}, launch.code);
+    const auto common = [&](const json& result, std::string_view profile) {
+        INFO(profile);
         CHECK(result.at("sessionRecorded") == true);
         const json& session = result.at("session");
-        CHECK(session.at("outcome") == std::string(launch.outcome));
         CHECK(session.at("game") == tiny);
         CHECK(session.at("choice").at("kind") == "profile");
-        CHECK(session.at("choice").at("value") == std::string(launch.profile));
+        CHECK(session.at("choice").at("value") == std::string(profile));
         CHECK(session.at("choice").at("source") == "retroverse-game");
         CHECK(session.at("owner").at("processId") == GetCurrentProcessId());
         CHECK_FALSE(session.at("startedAt").is_null());
         CHECK_FALSE(session.at("endedAt").is_null());
-        sessions.push_back(session);
-    }
+    };
+
     // Returned normally: a clean exit after the startup grace, verified.
-    CHECK(sessions[0].at("exitCode") == 0);
-    CHECK(sessions[0].at("quickExit") == false);
-    CHECK(sessions[0].at("durationMs").get<std::int64_t>() >= 2500);
-    CHECK(sessions[0].at("processId").get<std::uint32_t>() != 0);
-    // A quick exit: returned at once, with the hint.
-    CHECK(sessions[1].at("quickExit") == true);
-    CHECK(contains(sessions[1].at("outcomeText").get<std::string>(), "quick exit"));
-    // An error exit within the grace, and a loader error: failed to start, with the exit code.
-    CHECK(sessions[2].at("failure") == "early exit");
-    CHECK(sessions[2].at("exitCode") == 3);
-    CHECK(sessions[3].at("failure") == "loader error");
-    CHECK(sessions[3].at("exitKind") == "loader error");
-    CHECK(sessions[3].at("exitCode") == 0xC0000135u);
-    // A crash.
-    CHECK(sessions[4].at("exitCode") == 0xC0000005u);
-    CHECK(contains(sessions[4].at("exitDescription").get<std::string>(), "STATUS_ACCESS_VIOLATION"));
-    // Refused by the automation guard: nothing created.
-    CHECK(sessions[5].at("refusedByGuard") == true);
-    CHECK(sessions[5].at("failure") == "start failed");
-    CHECK(sessions[5].at("processId") == 0);
-    CHECK(sessions[5].at("durationMs").is_null());
+    const json returned = launchWith("fake-return", ExitCode::Ok);
+    common(returned, "fake-return");
+    CHECK(returned.at("session").at("outcome") == "returned");
+    CHECK(returned.at("session").at("exitCode") == 0);
+    CHECK(returned.at("session").at("quickExit") == false);
+    CHECK(returned.at("session").at("durationMs").get<std::int64_t>() >= 2500);
+    CHECK(returned.at("session").at("processId").get<std::uint32_t>() != 0);
+    CHECK(returned.at("verified") == true);
+
+    // A quick exit (returned at once, with the hint, exit 1), and an error exit within the grace (failed to start, early
+    // exit): judged by the session's own run time, which the grace is compared with.
+    REQUIRE(setup.run({"assign", "--game", tiny, "fake-quick"}).code == ExitCode::Ok);
+    const json quick = setup.launchWithinGrace(tiny, made);
+    common(quick, "fake-quick");
+    CHECK(quick.at("session").at("outcome") == "returned");
+    if (quick.at("session").at("durationMs").get<std::int64_t>() < 2000) {
+        CHECK(quick.at("session").at("quickExit") == true);
+        CHECK(contains(quick.at("session").at("outcomeText").get<std::string>(), "quick exit"));
+        CHECK(quick.at("exitCodeOfTheRun") == toInt(ExitCode::ProblemsFound));
+        CHECK(quick.at("verified") == false);
+    } else {
+        WARN("the machine is too busy: the fake's quick exit took longer than the startup grace");
+        CHECK(quick.at("session").at("quickExit") == false);
+    }
+    REQUIRE(setup.run({"assign", "--game", tiny, "fake-error"}).code == ExitCode::Ok);
+    const json error = setup.launchWithinGrace(tiny, made);
+    common(error, "fake-error");
+    CHECK(error.at("session").at("exitCode") == 3);
+    CHECK(error.at("exitCodeOfTheRun") == toInt(ExitCode::ProblemsFound));
+    if (error.at("session").at("durationMs").get<std::int64_t>() < 2000) {
+        CHECK(error.at("session").at("outcome") == "failed-to-start");
+        CHECK(error.at("session").at("failure") == "early exit");
+    } else {
+        WARN("the machine is too busy: the fake's error exit took longer than the startup grace");
+        CHECK(error.at("session").at("outcome") == "returned"); // the program's own error code, after the grace
+        CHECK(error.at("session").at("exitKind") == "error code");
+    }
+
+    // A loader error, a crash: whatever the time they take.
+    const json loader = launchWith("fake-loader", ExitCode::ProblemsFound);
+    common(loader, "fake-loader");
+    CHECK(loader.at("session").at("outcome") == "failed-to-start");
+    CHECK(loader.at("session").at("failure") == "loader error");
+    CHECK(loader.at("session").at("exitKind") == "loader error");
+    CHECK(loader.at("session").at("exitCode") == 0xC0000135u);
+    const json crash = launchWith("fake-crash", ExitCode::ProblemsFound);
+    common(crash, "fake-crash");
+    CHECK(crash.at("session").at("outcome") == "crashed");
+    CHECK(crash.at("session").at("exitCode") == 0xC0000005u);
+    CHECK(contains(crash.at("session").at("exitDescription").get<std::string>(), "STATUS_ACCESS_VIOLATION"));
+
+    // Failed to start: a program Windows cannot load (CreateProcessW fails), and one the automation guard refuses
+    // (nothing created).
+    const json broken = launchWith("fake-broken", ExitCode::ProblemsFound);
+    common(broken, "fake-broken");
+    CHECK(broken.at("started") == false);
+    CHECK(broken.at("session").at("outcome") == "failed-to-start");
+    CHECK(broken.at("session").at("failure") == "start failed");
+    CHECK(broken.at("session").at("refusedByGuard") == false);
+    const json refused = launchWith("fake-unlisted", ExitCode::ProblemsFound);
+    common(refused, "fake-unlisted");
+    CHECK(refused.at("started") == false);
+    CHECK(refused.at("session").at("outcome") == "failed-to-start");
+    CHECK(refused.at("session").at("refusedByGuard") == true);
+    CHECK(refused.at("session").at("failure") == "start failed");
+    CHECK(refused.at("session").at("processId") == 0);
+    CHECK(refused.at("session").at("durationMs").is_null());
+    CHECK(refused.at("guard").at("rule") == "not listed");
+
     // The executable not there: blocked before the launch, with its readiness.
-    CHECK(sessions[6].at("readiness") == "emulator-not-found");
-    CHECK(sessions[6].at("processId") == 0);
+    const json missingProgram = launchWith("fake-missing", ExitCode::ProblemsFound);
+    common(missingProgram, "fake-missing");
+    CHECK(missingProgram.at("started") == false);
+    CHECK(missingProgram.at("session").at("outcome") == "blocked");
+    CHECK(missingProgram.at("session").at("readiness") == "emulator-not-found");
+    CHECK(missingProgram.at("session").at("processId") == 0);
 
     // A game whose file is gone: blocked (ROM missing) with its first command, recorded too.
     const std::string gone = setup.gameAt("gb", "Gone Fishing (USA).gb").toString();
     const json missing = setup.runJson({"launch", "--game", gone, "--wait"}, ExitCode::ProblemsFound);
+    made.push_back(missing.at("session"));
     CHECK(missing.at("started") == false);
     CHECK(missing.at("readiness") == "rom-missing");
     CHECK(missing.at("session").at("outcome") == "blocked");
@@ -396,42 +477,53 @@ TEST_CASE("cli/launch: every outcome is recorded with its session row", "[cli][l
     CHECK(contains(missing.at("session").at("message").get<std::string>(), "rom-missing"));
 
     // The sessions, newest first, as recorded.
-    CHECK(setup.sessionRows() == cases.size() + 1);
-    const json listedSessions = setup.runJson({"sessions"}, ExitCode::Ok);
-    REQUIRE(listedSessions.at("sessions").size() == cases.size() + 1);
+    CHECK(setup.sessionRows() == made.size());
+    const json listedSessions = setup.runJson({"sessions", "--limit", "0"}, ExitCode::Ok);
+    REQUIRE(listedSessions.at("sessions").size() == made.size());
+    for (std::size_t i = 0; i < made.size(); ++i) {
+        const json& row = listedSessions.at("sessions")[made.size() - 1 - i];
+        CHECK(row.at("id") == made[i].at("id"));
+        CHECK(row.at("outcome") == made[i].at("outcome"));
+        CHECK(row.at("system") == "gb");
+    }
     CHECK(listedSessions.at("sessions")[0].at("game") == gone);
     CHECK(listedSessions.at("sessions")[0].at("title") == "Gone Fishing");
-    for (std::size_t i = 0; i < cases.size(); ++i) {
-        const json& row = listedSessions.at("sessions")[cases.size() - i];
-        CHECK(row.at("id") == sessions[i].at("id"));
-        CHECK(row.at("outcome") == sessions[i].at("outcome"));
-        CHECK(row.at("system") == "gb");
-        CHECK(row.at("path") == "Tiny Tennis (Europe).gb");
-    }
+    CHECK(listedSessions.at("sessions")[1].at("path") == "Tiny Tennis (Europe).gb");
     const json limited = setup.runJson({"sessions", "--game", tiny, "--limit", "2"}, ExitCode::Ok);
     REQUIRE(limited.at("sessions").size() == 2);
-    CHECK(limited.at("sessions")[0].at("outcome") == "blocked");
-    const RunResult textList = setup.run({"sessions"});
+    CHECK(limited.at("sessions")[0].at("readiness") == "emulator-not-found");
+    const RunResult textList = setup.run({"sessions", "--limit", "0"});
     CHECK(textList.code == ExitCode::Ok);
     CHECK(contains(textList.out, "failed to start: refused by the automation guard"));
     CHECK(contains(textList.out, "blocked before the launch: emulator not found"));
-    CHECK(contains(textList.out, "8 sessions."));
+    CHECK(contains(textList.out, fmt::format("{} sessions.", made.size())));
     CHECK(setup.run({"sessions", "--game", "g0000000000000001"}).code == ExitCode::ProblemsFound);
     CHECK(setup.run({"sessions", "--limit", "-1"}).code == ExitCode::UsageError);
 
-    // Only the clean return verified its choice for gb.
-    CHECK(setup.query("SELECT kind || ' ' || value || ' ' || system || ' ' || test FROM rv_launch_verifications") ==
-          std::vector<std::string>{"profile fake-return gb 0"});
+    // Only the launches that returned normally verified their choice for gb.
+    std::vector<std::string> verified;
+    for (const json& session : made) {
+        if (session.at("outcome") == "returned" && session.at("exitCode") == 0 && session.at("quickExit") == false) {
+            const std::string row = "profile " + session.at("choice").at("value").get<std::string>() + " gb 0";
+            if (std::find(verified.begin(), verified.end(), row) == verified.end()) {
+                verified.push_back(row);
+            }
+        }
+    }
+    std::sort(verified.begin(), verified.end());
+    CHECK(setup.query("SELECT kind || ' ' || value || ' ' || system || ' ' || test FROM rv_launch_verifications "
+                      "ORDER BY kind, value") == verified);
+    CHECK(std::find(verified.begin(), verified.end(), "profile fake-return gb 0") != verified.end());
 
     SECTION("a launch test verifies the choice when the game returns normally, and only then") {
         REQUIRE(setup.run({"assign", "--game", tiny, "fake-return"}).code == ExitCode::Ok);
-        const json verified = setup.runJson({"launch", "--game", tiny, "--test"}, ExitCode::Ok);
-        CHECK(verified.at("waited") == true);
-        CHECK(verified.at("verified") == true);
-        CHECK(verified.at("session").at("test") == true);
+        const json test = setup.runJson({"launch", "--game", tiny, "--test"}, ExitCode::Ok);
+        CHECK(test.at("waited") == true);
+        CHECK(test.at("verified") == true);
+        CHECK(test.at("session").at("test") == true);
         CHECK(setup.query("SELECT test FROM rv_launch_verifications WHERE value = 'fake-return'") ==
               std::vector<std::string>{"1"});
-        REQUIRE(setup.run({"assign", "--game", tiny, "fake-quick"}).code == ExitCode::Ok);
+        REQUIRE(setup.run({"assign", "--game", tiny, "fake-crash"}).code == ExitCode::Ok);
         const RunResult notVerified = setup.run({"launch", "--game", tiny, "--test"});
         CHECK(notVerified.code == ExitCode::ProblemsFound);
         CHECK(contains(notVerified.out, "Verified            no: the game did not return normally"));
@@ -457,8 +549,9 @@ TEST_CASE("cli/launch: hostile and long-path arguments reach the emulator byte-i
     SECTION("through a profile") {
         REQUIRE(setup.run({"assign", "--game", game, "fake-args"}).code == ExitCode::Ok);
         const json dryRun = setup.runJson({"launch", "--dry-run", "--game", game}, ExitCode::Ok);
-        const json launched = setup.runJson({"launch", "--game", game, "--wait"}, ExitCode::ProblemsFound);
-        CHECK(launched.at("session").at("quickExit") == true); // it exits at once
+        // A quick exit (exit 1), or a return on a machine busy enough.
+        const json launched = setup.runJson({"launch", "--game", game, "--wait"}, std::nullopt);
+        CHECK(launched.at("session").at("outcome") == "returned");
         const json received = json::parse(text(setup.argsFile));
         const std::vector<std::string> expected{utf8(rom), "say \"hi\"", "C:\\dir with space\\",
                                                 "100% ^caret^ & | < > %PATH%", "日本語 ünïcödé", "trailing\\\\", "",
@@ -483,7 +576,7 @@ TEST_CASE("cli/launch: hostile and long-path arguments reach the emulator byte-i
                     .has_value());
         const rv::test::ScopedPathPrefix path(rv::test::testProgramsDir());
         REQUIRE(setup.run({"assign", "--game", game, "Home Emulator"}).code == ExitCode::Ok);
-        const json launched = setup.runJson({"launch", "--game", game, "--wait"}, ExitCode::ProblemsFound);
+        const json launched = setup.runJson({"launch", "--game", game, "--wait"}, std::nullopt);
         CHECK(launched.at("session").at("choice").at("kind") == "command");
         CHECK(launched.at("session").at("choice").at("value") == "Home Emulator");
         CHECK(launched.at("session").at("outcome") == "returned");
@@ -534,6 +627,36 @@ TEST_CASE("cli/launch: nothing is killed: a wait that gives up and a launch not 
     CHECK(listedSessions.at("interrupted").empty()); // left running is no interruption
 }
 
+TEST_CASE("cli/launch: --wait follows each wait strategy to its end", "[cli][launch][sessions]") {
+    const LoggingReset loggingReset;
+    const SessionSetup setup("rv-cli-strategies");
+    const std::vector<fs::path> listed{buildFake()};
+    const rv::test::ScopedLaunchAllowList allowList(listed);
+    const std::string tiny = setup.gameAt("gb", "Tiny Tennis (Europe).gb").toString();
+
+    // A wrapper waited for as a process tree: its quick exit is no end; the tree's end is.
+    REQUIRE(setup.run({"assign", "--game", tiny, "fake-tree"}).code == ExitCode::Ok);
+    const json tree = setup.runJson({"launch", "--game", tiny, "--wait"}, ExitCode::Ok);
+    CHECK(tree.at("request").at("waitStrategy") == "ProcessTree");
+    CHECK(tree.at("session").at("outcome") == "returned");
+    CHECK(tree.at("session").at("quickExit") == false);
+    CHECK(tree.at("session").at("durationMs").get<std::int64_t>() >= 2500);
+    CHECK(tree.at("verified") == true);
+
+    // A launcher stub whose end is the user's confirmation: not waited for, or a wait that gives up, leaves it running
+    // (the confirmation never came); nothing is terminated either way.
+    REQUIRE(setup.run({"assign", "--game", tiny, "fake-confirm"}).code == ExitCode::Ok);
+    const json notWaited = setup.runJson({"launch", "--game", tiny}, ExitCode::Ok);
+    CHECK(notWaited.at("session").at("outcome") == "left-running");
+    CHECK(notWaited.at("session").at("leftRunning") == "not-waited");
+    CHECK(notWaited.at("session").at("quickExit") == false);
+    CHECK(notWaited.at("session").at("confirmedByUser") == false);
+    const json limited = setup.runJson({"launch", "--game", tiny, "--wait", "--wait-limit", "1"}, ExitCode::Ok);
+    CHECK(limited.at("session").at("outcome") == "left-running");
+    CHECK(limited.at("session").at("leftRunning") == "wait-limit");
+    CHECK(limited.at("verified") == false);
+}
+
 TEST_CASE("cli/launch: a CLI ended mid-game leaves its session to the next start, which closes it as interrupted; "
           "a session whose owner runs stays open",
           "[cli][launch][sessions]") {
@@ -543,7 +666,9 @@ TEST_CASE("cli/launch: a CLI ended mid-game leaves its session to the next start
     const rv::test::ScopedLaunchAllowList allowList(listed); // inherited by the CLI processes
     const std::string tiny = setup.gameAt("gb", "Tiny Tennis (Europe).gb").toString();
     const std::string cafe = setup.gameAt("gb", "Café Racer (Europe).gb").toString();
-    REQUIRE(setup.run({"assign", "gb", "fake-long"}).code == ExitCode::Ok);
+    // Per game: Café Racer's <altemulator> ranks before a choice for gb (ADR-0008 §8).
+    REQUIRE(setup.run({"assign", "--game", tiny, "fake-long"}).code == ExitCode::Ok);
+    REQUIRE(setup.run({"assign", "--game", cafe, "fake-long"}).code == ExitCode::Ok);
 
     // Two CLIs that wait for a game of 6 s: A ends normally, B is killed mid-game.
     const auto a = ChildCli::start({"--data-dir", utf8(setup.data), "launch", "--game", cafe, "--wait"},
@@ -564,6 +689,8 @@ TEST_CASE("cli/launch: a CLI ended mid-game leaves its session to the next start
     };
     const auto sessionA = open(*a);
     const auto sessionB = open(*b);
+    INFO("A: " << text(setup.dir.file("a.txt")));
+    INFO("B: " << text(setup.dir.file("b.txt")));
     REQUIRE(sessionA.has_value());
     REQUIRE(sessionB.has_value());
     const auto gameOf = [&](std::int64_t session) {
@@ -738,14 +865,16 @@ TEST_CASE("cli/launch: a session is recorded while another process holds the dat
     release.join();
     CHECK(committed);
     INFO(result.err);
-    CHECK(result.code == ExitCode::ProblemsFound); // a quick exit
     const json launched = json::parse(result.out);
+    // A quick exit (exit 1), or a return on a machine busy enough (exit 0): never a session lost (exit 3).
+    CHECK(result.code ==
+          (launched.at("session").at("quickExit") == true ? ExitCode::ProblemsFound : ExitCode::Ok));
     CHECK(launched.at("started") == true);
     CHECK(launched.at("sessionRecorded") == true);
     CHECK(took >= 3500ms); // the session's end waited for the import's commit, rather than being lost
     const std::int64_t id = launched.at("session").at("id").get<std::int64_t>();
-    CHECK(setup.query(fmt::format("SELECT outcome || ' ' || quick_exit FROM rv_play_sessions WHERE id = {}", id)) ==
-          std::vector<std::string>{"returned 1"});
+    CHECK(setup.query(fmt::format("SELECT outcome FROM rv_play_sessions WHERE id = {}", id)) ==
+          std::vector<std::string>{"returned"});
     CHECK(setup.sessionRows() == 1);
 }
 

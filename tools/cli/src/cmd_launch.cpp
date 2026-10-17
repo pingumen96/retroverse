@@ -489,18 +489,19 @@ void startAndFollow(CommandContext& context, catalog_db::SessionStore& store, co
                     const LaunchOptions& options, LaunchReport& report) {
     catalog::PlaySession& session = report.session;
     session.outcome = catalog::PlaySessionOutcome::Running;
+    // The wall-clock start and the monotonic one, taken together: the end's wall-clock time is derived from both.
     session.started = std::chrono::system_clock::now();
+    const launcher::LaunchClock::time_point begun = launcher::LaunchClock::now();
     catalog_db::SessionRecorder recorder(store, session);
     // One attempt (the writer's short busy timeout): a busy database never holds the game back for long.
-    if (auto begun = recorder.begin(); !begun) {
+    if (auto recorded = recorder.begin(); !recorded) {
         spdlog::warn("The start of the play session of {} is not recorded yet: {}", session.game.toString(),
-                     begun.error().toString());
+                     recorded.error().toString());
     }
 
     platform_win::Win32ProcessRunner runner;
     launcher::LaunchSession launch(request, runner);
     const auto wake = std::make_shared<WakeSignal>();
-    const launcher::LaunchClock::time_point begun = launcher::LaunchClock::now();
     launch.start(begun, launcher::StartCallbacks{[wake] { wake->notify(); }, {}});
     report.started = launch.process() != nullptr;
     if (report.started) {
@@ -521,6 +522,15 @@ void startAndFollow(CommandContext& context, catalog_db::SessionStore& store, co
         interrupt.emplace();
     }
     catalog::LeftRunningReason reason = catalog::LeftRunningReason::None;
+    // The owner stopped following a session that waited for the user's confirmation (UserConfirmReturn): its end is
+    // that confirmation, which never came, so the game is left running whatever the tree says.
+    bool stoppedAwaiting = false;
+    const auto stop = [&](catalog::LeftRunningReason why, launcher::LaunchClock::time_point now) {
+        reason = why;
+        stoppedAwaiting = why != catalog::LeftRunningReason::None &&
+                          launch.state() == launcher::SessionState::AwaitingConfirmation;
+        launch.confirmReturn(now); // never a kill: the session stops following the processes
+    };
     auto lastFlush = std::chrono::steady_clock::now();
     bool toldStillRunning = false;
     bool toldConfirm = false;
@@ -533,20 +543,19 @@ void startAndFollow(CommandContext& context, catalog_db::SessionStore& store, co
         }
         const launcher::SessionTimes& times = launch.times();
         if (options.wait && StopOnInterrupt::requested()) {
-            reason = launch.state() == launcher::SessionState::AwaitingConfirmation ? catalog::LeftRunningReason::None
-                                                                                     : catalog::LeftRunningReason::Quit;
-            launch.confirmReturn(now);
+            // Ctrl+C: the user's confirmation that the game is over when the session asks for it, else stop waiting.
+            stop(launch.state() == launcher::SessionState::AwaitingConfirmation ? catalog::LeftRunningReason::None
+                                                                                : catalog::LeftRunningReason::Quit,
+                 now);
             break;
         }
         if (!options.wait &&
             now >= times.started.value_or(begun) + request.timeouts.startupGrace + kGraceMargin) {
-            reason = catalog::LeftRunningReason::NotWaited;
-            launch.confirmReturn(now);
+            stop(catalog::LeftRunningReason::NotWaited, now);
             break;
         }
         if (options.waitLimit.count() > 0 && now - begun >= options.waitLimit) {
-            reason = catalog::LeftRunningReason::WaitLimit;
-            launch.confirmReturn(now);
+            stop(catalog::LeftRunningReason::WaitLimit, now);
             break;
         }
         if (launch.state() == launcher::SessionState::StillRunning && !toldStillRunning) {
@@ -583,6 +592,11 @@ void startAndFollow(CommandContext& context, catalog_db::SessionStore& store, co
                   session.started + std::chrono::duration_cast<std::chrono::system_clock::duration>(
                                         std::max(end - begun, launcher::LaunchClock::duration::zero())),
                   reason);
+    if (stoppedAwaiting && session.outcome == catalog::PlaySessionOutcome::Returned) {
+        session.outcome = catalog::PlaySessionOutcome::LeftRunning;
+        session.leftRunning = reason;
+        session.quickExit = false; // a launcher stub's quick exit is no hint while the user's word is awaited
+    }
     if (times.started) {
         session.runTime = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::max(end - *times.started, launcher::LaunchClock::duration::zero()));

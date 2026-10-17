@@ -437,8 +437,8 @@ struct SessionStore::State {
             ++busyRetries;
             if (attempt == 1) {
                 spdlog::warn("Session store: the catalog database is busy (another process writes, an import?): "
-                             "{} is tried again for up to {} s",
-                             what, std::chrono::duration_cast<std::chrono::seconds>(retry.retryFor).count());
+                             "{} is tried again for up to {:.1f} s",
+                             what, std::chrono::duration<double>(retry.retryFor).count());
             }
             std::this_thread::sleep_for(
                 std::min<std::chrono::steady_clock::duration>(retry.interval, deadline - now));
