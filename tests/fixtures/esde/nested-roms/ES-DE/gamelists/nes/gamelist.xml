@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Shelf B/Hero Quest (USA).nes</path>
+		<name>Hero Quest</name>
+		<developer>Pixel Orchard</developer>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./L1/L2/L3/L4/L5/L6/Deep Diver (World).nes</path>
+		<name>Deep Diver</name>
+		<releasedate>19880101T000000</releasedate>
+	</game>
+	<game>
+		<path>./L1/L2/Lost Level (USA).nes</path>
+		<name>Lost Level</name>
+	</game>
+	<game>
+		<path>./Collection.zip</path>
+		<name>Collection Box</name>
+		<desc>A folder named like an archive: ES-DE lists it as one game and never looks inside.</desc>
+	</game>
+	<game>
+		<path>./Collection.zip/Inside One (USA).nes</path>
+		<name>Inside One</name>
+	</game>
+	<game>
+		<path>./Shelf B</path>
+		<name>Not a game</name>
+	</game>
+	<folder>
+		<path>./Shelf A</path>
+		<name>Shelf A</name>
+	</folder>
+	<folder>
+		<path>./Empty Shelf</path>
+		<name>Empty Shelf</name>
+	</folder>
+	<folder>
+		<path>./L1/L2</path>
+		<name>Second Level</name>
+	</folder>
+	<folder>
+		<path>./Gone Shelf</path>
+		<name>Gone Shelf</name>
+	</folder>
+	<folder>
+		<path>./Collection.zip</path>
+		<name>Collection as a folder</name>
+	</folder>
+</gameList>

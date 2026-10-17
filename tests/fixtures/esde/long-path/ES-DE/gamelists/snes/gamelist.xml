@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./A Very Long Folder Name Made To Exceed The Classic Windows Path Limit Of Two Hundred And Sixty (Part One)/Another Long Folder Name For The Same Purpose So That The Whole Path Is Well Past It (Part Two)/Long Road Of An Invented Game With Many Words In Its Title (USA) (Rev 1).sfc</path>
+		<name>Long Road</name>
+	</game>
+	<game>
+		<path>./A Very Long Folder Name Made To Exceed The Classic Windows Path Limit Of Two Hundred And Sixty (Part One)/Another Long Folder Name For The Same Purpose So That The Whole Path Is Well Past It (Part Two)/Gone Far Away Into A Folder Nobody Can Reach Anymore (Europe) (Rev 2).sfc</path>
+		<name>Gone Far Away</name>
+	</game>
+</gameList>

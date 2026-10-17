@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./rocketpig.zip</path>
+		<name>Rocket Pig Deluxe</name>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./fakebios.zip</path>
+		<name>Fake BIOS</name>
+	</game>
+	<game>
+		<path>./gonegame.zip</path>
+		<name>Gone Game</name>
+	</game>
+	<game>
+		<path>./zapzonej.zip</path>
+		<players>1-2</players>
+	</game>
+</gameList>

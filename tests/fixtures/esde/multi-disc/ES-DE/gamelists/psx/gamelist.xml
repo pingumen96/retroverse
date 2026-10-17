@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Twin Peak (Europe).cue</path>
+		<name>Twin Peak</name>
+		<players>1-2</players>
+	</game>
+	<game>
+		<path>./Saga (USA).m3u</path>
+		<name>Saga</name>
+		<desc>Two discs, each a cue sheet with its track.</desc>
+	</game>
+	<game>
+		<path>./Hollow Vale (Italy) (Disc 1).bin</path>
+		<name>Hollow Vale</name>
+		<desc>The track carries the metadata; its cue sheet has none of its own.</desc>
+		<developer>Quiet Fox</developer>
+	</game>
+	<game>
+		<path>./Rift (USA).bin</path>
+		<name>Rift</name>
+		<desc>A playlist, a cue sheet and a track: only the track has an entry.</desc>
+	</game>
+	<game>
+		<path>./Lost Saga (USA).m3u</path>
+		<name>Lost Saga</name>
+	</game>
+</gameList>

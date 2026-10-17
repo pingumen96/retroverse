@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Moon Race (Europe).cue</path>
+		<name>Moon Race</name>
+		<desc>ps2 does not configure .cue: this entry is not a game, and its track is.</desc>
+	</game>
+	<game>
+		<path>./Moon Race (Europe).bin</path>
+		<name>Moon Race</name>
+	</game>
+</gameList>

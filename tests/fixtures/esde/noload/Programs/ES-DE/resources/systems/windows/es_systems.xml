@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!-- The game systems of the noload fixture: ES-DE's format with an invented emulator (see README.md) -->
+<systemList>
+    <system>
+        <name>gba</name>
+        <fullname>Nintendo Game Boy Advance</fullname>
+        <path>%ROMPATH%\gba</path>
+        <extension>.gba .GBA .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>gba</platform>
+        <theme>gba</theme>
+    </system>
+    <system>
+        <name>n64</name>
+        <fullname>Nintendo 64</fullname>
+        <path>%ROMPATH%\n64</path>
+        <extension>.n64 .N64 .z64 .Z64</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>n64</platform>
+        <theme>n64</theme>
+    </system>
+    <system>
+        <name>pcengine</name>
+        <fullname>NEC PC Engine</fullname>
+        <path>%ROMPATH%\pcengine</path>
+        <extension>.pce .PCE</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>pcengine</platform>
+        <theme>pcengine</theme>
+    </system>
+</systemList>

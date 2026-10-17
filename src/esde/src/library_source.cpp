@@ -1,6 +1,7 @@
 #include <rv/esde/library_source.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <iterator>
 #include <map>
 #include <optional>
@@ -32,6 +33,9 @@ using Clock = std::chrono::steady_clock;
 using catalog::CatalogEntry;
 using catalog::EntryState;
 using catalog::NotAGameReason;
+
+/// How many sheets are read at once (Loader::addDiscGroups).
+constexpr std::size_t kSheetReaders = 8;
 
 constexpr std::string_view kShowHiddenFiles = "ShowHiddenFiles";
 constexpr std::string_view kShowHiddenGames = "ShowHiddenGames";
@@ -516,93 +520,137 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
         }
     }
 
-    std::vector<DiscHeadLinks> links;
+    // The heads: the games that are cue sheets or playlists, each with the group the last import stored for it.
+    struct Head {
+        std::size_t entry = 0;
+        catalog::DiscGroupKind kind = catalog::DiscGroupKind::Cue;
+        const catalog::CachedDiscGroup* stored = nullptr;
+        bool read = false; ///< the sheet is read; otherwise the stored group, if any, stands
+    };
+    std::vector<Head> heads;
     std::map<catalog::LookupKey, std::size_t> indexOf;
     for (std::size_t i = 0; i < entries.size(); ++i) {
-        const CatalogEntry& head = entries[i];
-        if (!head.key.empty()) {
-            indexOf.emplace(head.key, i);
+        const CatalogEntry& entry = entries[i];
+        if (!entry.key.empty()) {
+            indexOf.emplace(entry.key, i);
         }
-        if (head.state != EntryState::Game || (head.file && head.file->directory)) {
+        if (entry.state != EntryState::Game || (entry.file && entry.file->directory)) {
             continue;
         }
-        const auto kind = discSheetKind(nameOf(head.key.relativePath()));
+        const auto kind = discSheetKind(nameOf(entry.key.relativePath()));
         if (!kind) {
             continue;
         }
+        const auto cache = cached.find(entry.key.key());
+        const catalog::CachedDiscGroup* stored = cache == cached.end() ? nullptr : cache->second;
+        // A head whose folder cannot be listed keeps its stored group; one that kept its size and time too.
+        const bool listed = entry.availability == catalog::Availability::Available && entry.file.has_value();
+        const bool current = stored != nullptr && listed && stored->headSize == entry.file->size &&
+                             stored->headLastWriteTime == entry.file->lastWriteTime;
+        m_statistics.sheetsFromCache += current ? 1 : 0;
+        heads.push_back(Head{i, *kind, stored, listed && !current});
+    }
+
+    // The sheets to read, by a few readers at once: on a hard drive their seeks overlap (on the reference machine's
+    // external drive about four times faster than one by one). The results are taken in the heads' order below.
+    std::vector<std::optional<Expected<DiscSheet>>> sheets(heads.size());
+    {
+        std::vector<std::size_t> toRead;
+        for (std::size_t h = 0; h < heads.size(); ++h) {
+            if (heads[h].read) {
+                toRead.push_back(h);
+            }
+        }
+        const Clock::time_point start = Clock::now();
+        std::atomic<std::size_t> next{0};
+        const auto reader = [&] {
+            for (std::size_t n = next++; n < toRead.size() && !cancelled(); n = next++) {
+                const Head& head = heads[toRead[n]];
+                try {
+                    sheets[toRead[n]].emplace(readDiscSheet(folder, entries[head.entry].key, head.kind));
+                } catch (const std::bad_alloc&) {
+                    sheets[toRead[n]].emplace(makeError(ErrorCode::OutOfRange, "out of memory while reading it"));
+                }
+            }
+        };
+        std::vector<std::thread> readers;
+        for (std::size_t k = 1; k < std::min(kSheetReaders, toRead.size()); ++k) {
+            try {
+                readers.emplace_back(reader);
+            } catch (const std::system_error&) {
+                break; // no more threads: the readers there are share the work
+            }
+        }
+        reader();
+        for (std::thread& thread : readers) {
+            thread.join();
+        }
+        m_statistics.sheetTime += Clock::now() - start;
         if (cancelled()) {
             return cancelledError();
         }
-        const auto cache = cached.find(head.key.key());
-        const catalog::CachedDiscGroup* stored = cache == cached.end() ? nullptr : cache->second;
-        std::vector<std::string> memberKeys; // folded keys, in the head's order
+    }
+
+    std::vector<DiscHeadLinks> links;
+    for (std::size_t h = 0; h < heads.size(); ++h) {
+        const Head& head = heads[h];
+        const CatalogEntry& entry = entries[head.entry];
+        const std::string headFile = fileText(folder, entry.key.relativePath());
+        std::vector<catalog::LookupKey> references; // as the sheet names them, in its order
         const auto takeStored = [&] {
-            for (const catalog::LookupKey& member : stored->group.members) {
-                memberKeys.push_back(member.key());
+            if (head.stored != nullptr) {
+                references = head.stored->group.members;
             }
         };
-        const std::string headFile = fileText(folder, head.key.relativePath());
-        if (head.availability != catalog::Availability::Available || !head.file) {
-            // Its folder cannot be listed: the group read before, if any, stands.
-            if (stored != nullptr) {
-                takeStored();
-            }
-        } else if (stored != nullptr && stored->headSize == head.file->size &&
-                   stored->headLastWriteTime == head.file->lastWriteTime) {
-            ++m_statistics.sheetsFromCache;
+        if (!head.read) {
+            takeStored();
+        } else if (const Expected<DiscSheet>& sheet = *sheets[h]; !sheet) {
+            ++m_statistics.sheetsUnreadable;
+            issues.add(catalog::Issue{
+                catalog::IssueSeverity::Warning, std::string(kDiscIssueSheetUnreadable), system.str(), headFile,
+                head.stored != nullptr
+                    ? fmt::format("cannot be read ({}): the group read before is kept", sheet.error().message)
+                    : fmt::format("cannot be read ({}): the files it names stay what they are", sheet.error().message)});
             takeStored();
         } else {
-            const Clock::time_point start = Clock::now();
-            auto sheet = readDiscSheet(folder, head.key, *kind);
-            m_statistics.sheetTime += Clock::now() - start;
-            if (!sheet) {
-                ++m_statistics.sheetsUnreadable;
-                issues.add(catalog::Issue{
-                    catalog::IssueSeverity::Warning, std::string(kDiscIssueSheetUnreadable), system.str(), headFile,
-                    stored != nullptr
-                        ? fmt::format("cannot be read ({}): the group read before is kept", sheet.error().message)
-                        : fmt::format("cannot be read ({}): the files it names stay what they are",
-                                      sheet.error().message)});
-                if (stored != nullptr) {
-                    takeStored();
-                }
-            } else {
-                ++m_statistics.sheetsRead;
-                for (const std::string& reference : sheet->references) {
-                    auto relative = resolveSheetReference(reference, head.key.relativePath(), folder);
-                    auto key = relative ? catalog::makeLookupKey(*relative)
-                                        : Expected<catalog::LookupKey>(propagate(relative.error()));
-                    if (!key) {
-                        issues.add(catalog::Issue{catalog::IssueSeverity::Warning,
-                                                  std::string(kDiscIssueReferenceInvalid), system.str(), headFile,
-                                                  fmt::format("its reference \"{}\" is ignored: {}", reference,
-                                                              key.error().message)});
-                        continue;
-                    }
-                    if (listing != nullptr && listing->sameKey(key->key()).empty()) {
-                        issues.add(catalog::Issue{
-                            catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceMissing), system.str(),
-                            headFile, fmt::format("names \"{}\", which is not there", *relative)});
-                        continue;
-                    }
-                    memberKeys.push_back(key->key());
+            ++m_statistics.sheetsRead;
+            for (const std::string& reference : sheet->references) {
+                auto relative = resolveSheetReference(reference, entry.key.relativePath(), folder);
+                auto key = relative ? catalog::makeLookupKey(*relative)
+                                    : Expected<catalog::LookupKey>(propagate(relative.error()));
+                if (!key) {
+                    issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceInvalid),
+                                              system.str(), headFile,
+                                              fmt::format("its reference \"{}\" is ignored: {}", reference,
+                                                          key.error().message)});
+                } else if (listing != nullptr && listing->sameKey(key->key()).empty()) {
+                    issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceMissing),
+                                              system.str(), headFile,
+                                              fmt::format("names \"{}\", which is not there", *relative)});
+                } else {
+                    references.push_back(std::move(*key));
                 }
             }
         }
         // The members: the games of those keys (the one spelled like the reference first), the head excluded, once.
-        DiscHeadLinks link{head.key, *kind, {}};
-        for (const std::string& memberKey : memberKeys) {
-            const auto found = byKey.find(memberKey);
+        DiscHeadLinks link{entry.key, head.kind, {}};
+        for (const catalog::LookupKey& reference : references) {
+            const auto found = byKey.find(reference.key());
             if (found == byKey.end()) {
                 continue;
             }
+            std::optional<std::size_t> member;
             for (const std::size_t m : found->second) {
-                const CatalogEntry& member = entries[m];
-                if (m != i && member.state == EntryState::Game &&
-                    std::find(link.members.begin(), link.members.end(), member.key) == link.members.end()) {
-                    link.members.push_back(member.key);
-                    break;
+                if (m == head.entry || entries[m].state != EntryState::Game) {
+                    continue;
                 }
+                if (!member || entries[m].key.relativePath() == reference.relativePath()) {
+                    member = m;
+                }
+            }
+            if (member && std::find(link.members.begin(), link.members.end(), entries[*member].key) ==
+                              link.members.end()) {
+                link.members.push_back(entries[*member].key);
             }
         }
         links.push_back(std::move(link));

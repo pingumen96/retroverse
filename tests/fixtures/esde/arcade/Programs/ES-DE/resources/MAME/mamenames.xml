@@ -1,0 +1,29 @@
+<!-- Invented sets for the arcade fixture, in the format of ES-DE's resources/MAME/mamenames.xml -->
+<game>
+	<mamename>zapzone</mamename>
+	<realname>Zap Zone (World, set 1)</realname>
+</game>
+<game>
+	<mamename>zapzonej</mamename>
+	<realname>Zap Zone (Japan) [bootleg]</realname>
+</game>
+<game>
+	<mamename>rocketpig</mamename>
+	<realname>Rocket Pig</realname>
+</game>
+<game>
+	<mamename>empty1</mamename>
+	<realname></realname>
+</game>
+<game>
+	<mamename>dup1</mamename>
+	<realname>First Name</realname>
+</game>
+<game>
+	<mamename>dup1</mamename>
+	<realname>Second Name &amp; Co.</realname>
+</game>
+<game>
+	<mamename>glimmer</mamename>
+	<realname>Glimmer (Neo Geo MVS)</realname>
+</game>

@@ -1,0 +1,3 @@
+<!-- Invented BIOS sets, in the format of ES-DE's resources/MAME/mamebioses.xml -->
+<bios>fakebios</bios>
+<bios>neobios</bios>
