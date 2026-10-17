@@ -33,6 +33,23 @@ target_link_libraries(rv_app_cli PUBLIC
     rv_core rv_geometry rv_input rv_assets rv_scene rv_launcher rv_ui_model rv_render_uniforms)
 rv_forbid_link(rv_app_cli)
 
+# GPU-free part of the application layer over the ES-DE catalog (I2 step 13): the catalog worker (the database's writer
+# and the queries on its own thread), the quick catalog's source over it, the launches of the catalog resolved with the
+# library's configuration, their play sessions, and the AppCatalog the product UI drives (the ES-DE catalog, or the mock
+# catalog of the tests). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
+add_library(rv_app_catalog STATIC
+    src/app_catalog.cpp
+    src/catalog_database_source.cpp
+    src/catalog_launch_library.cpp
+    src/catalog_worker.cpp
+)
+add_library(rv::app_catalog ALIAS rv_app_catalog)
+rv_set_target_defaults(rv_app_catalog)
+target_include_directories(rv_app_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(rv_app_catalog PUBLIC
+    rv_app_cli rv_core rv_launcher rv_ui_model rv_catalog rv_esde rv_catalog_db rv_platform_win)
+rv_forbid_link(rv_app_catalog)
+
 add_library(rv_app STATIC
     src/app.cpp
     src/app_host.cpp
@@ -57,6 +74,7 @@ target_include_directories(rv_app PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # (GPU-free, in every build).
 target_link_libraries(rv_app PUBLIC
     rv_app_cli
+    rv_app_catalog
     rv_core
     rv_geometry
     rv_input

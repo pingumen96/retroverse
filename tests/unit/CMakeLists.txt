@@ -24,6 +24,7 @@ target_link_libraries(rv_tests PRIVATE
     rv_assets
     rv_scene
     rv_app_cli             # GPU-free part of rv_app (command line, exit codes, self-check verdicts, draw plan)
+    rv_app_catalog         # GPU-free part of rv_app over the ES-DE catalog (the catalog worker, its source; I2 step 13)
     rv_devui_model         # GPU-free part of rv_devui (frame times, input routing, log view)
     rv_render_debug_filter # GPU-free part of rv_render (GL debug message policy)
     rv_render_uniforms     # GPU-free part of rv_render (std140 blocks, light and material packing, tonemap)

@@ -18,6 +18,7 @@
 
 #include <SDL3/SDL_events.h>
 
+#include <rv/app/app_catalog.hpp>
 #include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/debug_line_selection.hpp>
@@ -36,7 +37,9 @@
 #include <rv/devui/overlay_input.hpp>
 #include <rv/input/action.hpp>
 #include <rv/input/input_script.hpp>
+#include <rv/launcher/emulator_profile.hpp>
 #include <rv/platform/graphics_window.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/scene_renderer.hpp>
@@ -365,9 +368,10 @@ struct RetroverseApp::State {
     /// The product UI had the input at the last syncCaptureLayers(): opening it frees a mouse captured under the
     /// developer overlay too.
     bool productLayerOpen = false;
-    /// QuickCatalog pressed in a run without a catalog: logged once.
+    /// QuickCatalog pressed in a run without a catalog (the model viewer): logged once.
     bool catalogNoticeLogged = false;
-    /// The product UI (the quick catalog, the game-session panel) and its launches; only with --mock-catalog.
+    /// The product UI (the quick catalog, the game-session panel) and its launches: over the ES-DE catalog of the user
+    /// data directory, or --mock-catalog's; none in the model viewer.
     std::unique_ptr<ProductUi> product;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
@@ -486,8 +490,7 @@ struct RetroverseApp::State {
         if (!product) {
             if (!catalogNoticeLogged) {
                 catalogNoticeLogged = true;
-                spdlog::info("QuickCatalog: no catalog in this run (--mock-catalog <file.json> until the ES-DE catalog "
-                             "reaches the application)");
+                spdlog::info("QuickCatalog: no catalog in the model viewer");
             }
             return;
         }
@@ -695,9 +698,23 @@ Status RetroverseApp::onInit(AppContext& context) {
     if (!script) {
         return propagate(std::move(script.error()));
     }
-    auto catalog = loadCatalog(options);
-    if (!catalog) {
-        return propagate(std::move(catalog.error()));
+    auto mock = loadCatalog(options);
+    if (!mock) {
+        return propagate(std::move(mock.error()));
+    }
+    // The catalog first: the ES-DE catalog's worker opens the database while the scene loads (NFR-01: the first page
+    // within 5 s of the start). --mock-catalog takes precedence; the model viewer has none.
+    std::unique_ptr<AppCatalog> appCatalog;
+    if (*mock) {
+        appCatalog = std::make_unique<MockAppCatalog>(std::move(**mock), launcher::loadEmulatorProfiles(paths));
+    } else if (!options.model) {
+        EsdeAppCatalog::Options esde;
+        esde.paths = paths;
+        esde.wake = context.wakeCallback();
+        const platform_win::ProcessIdentity process = platform_win::currentProcessIdentity();
+        esde.owner = catalog::SessionOwner{process.processId, process.creationTime};
+        esde.processCreated = process.creationTime;
+        appCatalog = std::make_unique<EsdeAppCatalog>(std::move(esde));
     }
     auto state = std::make_unique<State>();
     state->description = std::move(source->description);
@@ -728,10 +745,11 @@ Status RetroverseApp::onInit(AppContext& context) {
 
     input::ActionMap bindings = loadBindings(paths);
     state->input = std::make_unique<AppInput>(context.window(), bindings, std::move(*script));
-    if (*catalog) {
+    if (appCatalog) {
         State* raw = state.get();
-        auto product = ProductUi::create(context, std::move(**catalog), bindings,
-                                         [raw, &context] { raw->back(context); });
+        auto product = ProductUi::create(
+            context, std::move(appCatalog), bindings, [raw, &context] { raw->back(context); },
+            [raw]() -> std::optional<SpawnPoint> { return raw->freeRoam->pose(); });
         if (!product) {
             Error error = product.error();
             error.message = "the quick catalog could not start: " + error.message;
@@ -857,6 +875,12 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     state.freeRoam->setCollisionEnabled(state.collision);
     state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);
     if (state.product) {
+        // Text an --input-script types on this frame, into the product UI's focused field (the catalog's search).
+        if (const input::InputScript* script = state.input->script()) {
+            if (const std::string text = script->textAt(frame); !text.empty()) {
+                state.product->typeText(text);
+            }
+        }
         // The UI commands only when the frame began in the UI's context (UI Back goes through back()).
         const input::ActionState uiActions = actionsFor(InputContext::Ui, actions);
         state.product->update(inputContext == InputContext::Ui ? &uiActions : nullptr, deltaSeconds,
