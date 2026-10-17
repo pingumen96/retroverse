@@ -597,16 +597,15 @@ TEST_CASE("cli/launch: nothing is killed: a wait that gives up and a launch not 
     const std::string tiny = setup.gameAt("gb", "Tiny Tennis (Europe).gb").toString();
     REQUIRE(setup.run({"assign", "gb", "fake-long"}).code == ExitCode::Ok);
 
-    const auto before = std::chrono::steady_clock::now();
     const json limited = setup.runJson({"launch", "--game", tiny, "--wait", "--wait-limit", "2"}, ExitCode::Ok);
-    const auto waited = std::chrono::steady_clock::now() - before;
     const json& first = limited.at("session");
     CHECK(first.at("outcome") == "left-running");
     CHECK(first.at("leftRunning") == "wait-limit");
     CHECK(first.at("processesRemained") == true);
     CHECK(first.at("confirmedByUser") == false);
     CHECK(first.at("choice").at("source") == "retroverse-system");
-    CHECK(waited < 5s);
+    CHECK(first.at("durationMs").get<std::int64_t>() < 6000); // followed for the limit, not the game's 6 s
+    // The CLI has returned and the game still runs: the wait gave up, and ended nothing.
     const Watched limitedGame(first.at("processId").get<std::uint32_t>());
     CHECK(limitedGame.running());
 

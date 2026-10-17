@@ -198,17 +198,22 @@ changed (the launch spike reports its command line from `Win32StartInfo`).
   back after):
   - every outcome with its session row: returned (2.6 s, verified), a quick exit (exit 1 and the hint), an error exit
     within the grace (failed to start, early exit, 3), a loader error (the fake exits 0xC0000135: the real loader's
-    missing-DLL dialog would hold a test), a crash (0xC0000005), the guard's refusal (the fixture's unlisted copy:
-    nothing created, `refusedByGuard`), an executable that is not there (blocked, emulator not found), a missing file
-    (blocked, ROM missing, with the first command); the listing newest first, `--game`, `--limit`, the text; the
-    verification of the clean return only; a launch test verified, and one that is not (exit 1);
+    missing-DLL dialog would hold a test), a crash (0xC0000005), a program Windows cannot load (a program stub:
+    CreateProcessW fails, failed to start, start failed), the guard's refusal (the fixture's unlisted copy: nothing
+    created, `refusedByGuard`), an executable that is not there (blocked, emulator not found), a missing file (blocked,
+    ROM missing, with the first command); the listing newest first, `--game`, `--limit`, the text; the verifications of
+    the launches that returned normally only; a launch test verified, and one that is not (exit 1). The startup grace
+    (2 s from the moment the process runs, its DLLs loaded within it) separates a quick exit from a return and an early
+    exit from a return with an error code; with another worktree's build holding the processor at 100%, the Debug fake
+    needed 2.0 to 2.6 s to start and exit, so the test judges those two by the session's own run time (the time the
+    grace is compared with), launching again up to four times to get a run within it, and warns when it never does;
+  - each wait strategy followed to its end: a wrapper waited for as a process tree (returned after the tree's 2.6 s, no
+    quick exit, verified), a launcher stub awaiting the user's confirmation not waited for or given up on (left running);
   - hostile and long-path arguments byte-identical in the fake's argv (`--print-args`): a ROM past MAX_PATH named with
     `%`, `^`, `&`, `'`, parentheses, brackets and Unicode, and literal arguments with quotes, a trailing backslash after a
     space, `%PATH%`, `^`, `&`, `|`, `<`, `>`, Unicode, an empty argument and literal braces, through a profile (equal to
     the dry run's argv too) and through an ES-DE command (the fixture's Home Emulator command with `--print-args`, the
     copy finding its DLLs through PATH);
-  - each wait strategy followed to its end: a wrapper waited for as a process tree (returned after the tree's 2.6 s, no
-    quick exit, verified), a launcher stub awaiting the user's confirmation not waited for or given up on (left running);
   - nothing killed: `--wait --wait-limit 2` and a launch not waited for both leave their 6 s game running, which then
     ends by itself with exit code 0;
   - crash recovery with two retroverse-cli processes waiting for 6 s games: one killed mid-game (its game runs on; the
@@ -232,7 +237,36 @@ RESULTS_PLACEHOLDER
 
 ## RetroArch by hand, isolated
 
-RETROARCH_PLACEHOLDER
+Run once, by hand, on the reference machine (2026-10-17, ES-DE and RetroArch closed, another worktree building), with
+the Release `retroverse-cli` of this step, everything Retroverse wrote under `build/step12-real` of the worktree:
+
+1. **Snapshots before** (`scripts/snapshot_tree.py snapshot before.json --hash E:\Programmi\Retroarch --hash
+   C:\Users\sinhu\ES-DE --listing I:\Giochi\Emulatori\GB`): RetroArch's folder with its configuration, playlists,
+   saves, states and logs hashed (48,524 files, 1,419 folders), the ES-DE home hashed (14,676 files), Mole Mania's ROM
+   folder listed (8,629 files, 54 folders): 74,261 entries, taken before the library was even read.
+2. **The library** (`library create`: the ES-DE home, the install, ROMDirectory and MediaDirectory found as ES-DE finds
+   them) and **the import** (`import`, 34.5 s with the machine loaded and the drive cold: step 11a's figures, 105,130
+   rows and identities, 13 issues, 195 systems).
+3. **The isolated profile**: the append configuration written first, with the content `spikes/launch` writes for its
+   isolated runs (`retroArchAppendConfig()`: nothing saved on RetroArch's own initiative, every directory and file it
+   could write moved into `build/step12-real/launch-scratch`, fullscreen, muted, offline) and its scratch folders
+   (`retroArchScratchDirectories()`); a user `emulators.json` in the data directory holding step 5's
+   `retroarch-isolated` profile with the spike's arguments: `-L {var:core} --appendconfig=<scratch>\retroverse-isolated.cfg
+   --max-frames=240 --sram-mode=noload-nosave --log-file=<scratch>\logs\retroarch.log --verbose {rom}`, gambatte for gb.
+4. **`assign gb retroarch-isolated`**: stored, ready for the system. Mole Mania is
+   `g1aeae0b244ed5501` (`1 GB US - H-Q/Mole Mania (USA, Europe) (SGB Enhanced).gb`, of the two USA entries of the
+   gamelist the first; no `<altemulator>`, so the system's choice applies). `launch --dry-run --game g1aeae0b244ed5501`
+   with `RV_LAUNCH_ALLOWLIST=E:\Programmi\Retroarch\retroarch.exe`: ready, "Retroverse's choice for the system
+   (assign)", RetroArch found through App Paths, the core in `%EMUPATH%\cores`, the guard "allowed".
+5. **`launch --game g1aeae0b244ed5501 --wait --wait-limit 120 --json`** with the same allow-list: RetroArch started
+   (process 32204), ran the game fullscreen for 240 frames ("Content ran for a total of: 00 hours, 00 minutes, 04
+   seconds" in its own log) and exited by itself; the CLI returned after 14.1 s, exit 0. Session 1: `returned`, exit
+   code 0, no quick exit, nothing left running, 13.1 s from the moment the process ran to its exit, choice `profile
+   retroarch-isolated` (`retroverse-system`), owner the CLI's process; verified (`rv_launch_verifications`: gb,
+   retroarch-isolated). `sessions` lists it.
+6. **RetroArch wrote only into the scratch folder**: its log, and the core options `config\Gambatte\Gambatte.opt`; its
+   log says SRAM was neither loaded nor saved.
+7. **Snapshots after**, compared: **0 differences among 74,261 entries**.
 
 ## Decisions taken within the step
 
