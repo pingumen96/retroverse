@@ -44,14 +44,14 @@ public:
     /// A folder below the system folder, by its key.
     void add(std::string key, SourceUnavailableReason reason) { m_folders.emplace_back(std::move(key), reason); }
 
-    /// The reason the file or folder of `key` cannot be known, or nothing when its folder was listed.
+    /// The reason the file or folder of `key` cannot be known, or nothing when its folder was listed: what lies below a
+    /// folder that could not be listed (the folder itself was listed by its parent).
     [[nodiscard]] std::optional<SourceUnavailableReason> reasonFor(std::string_view key) const {
         if (m_all) {
             return m_all;
         }
         for (const auto& [folder, reason] : m_folders) {
-            if (key.size() >= folder.size() && key.substr(0, folder.size()) == folder &&
-                (key.size() == folder.size() || key[folder.size()] == '/')) {
+            if (key.size() > folder.size() && key.substr(0, folder.size()) == folder && key[folder.size()] == '/') {
                 return reason;
             }
         }

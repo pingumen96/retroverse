@@ -1,6 +1,7 @@
 // retroverse-cli media (I2 step 8) through the dispatcher: the media of a ROM path of the standard fixture's systems
 // (a file, a folder, a missing file, a gamelist's "./" form, another case) as text and JSON, the coverage of its
-// library snapshot (the ROM scan of I2 step 7) over the four populations, the usage errors and --game until step 11;
+// library snapshot (the ROM scan of I2 step 7) over the four populations, the usage errors (--game's on an imported
+// catalog are in test_cli_import.cpp, I2 step 11a);
 // the media-roots fixture's empty, missing and unreachable media roots. The command only reads: the fixture's files
 // are unchanged after it.
 
@@ -267,7 +268,13 @@ TEST_CASE("cli/media: the media of a ROM path of the standard fixture, as JSON a
     refused({}, "give --system and --path");
     refused({"--coverage", "--path", "x"}, "--coverage takes no --path");
     refused({"--system", "snes", "--path", ""}, "--path must not be empty");
-    refused({"--game", "g0000000000000001"}, "retroverse-cli media: --game: not implemented yet (I2 step 11)");
+    refused({"--game", "g0000000000000001", "--system", "snes"}, "--game takes neither --system, --path nor --coverage");
+    refused({"--game", "g0000000000000001", "--coverage"}, "--game takes neither");
+    refused({"--game", "Tiny Tennis"}, "--game: ");
+    // A game of a catalog that does not exist yet (I2 step 11a: test_cli_import.cpp has the imported ones).
+    const RunResult noCatalog = cli.media({"--game", "g0000000000000001"});
+    CHECK(noCatalog.code == ExitCode::RuntimeFailure);
+    CHECK(contains(noCatalog.err, "'retroverse-cli import' makes it"));
     refused({"--no-such-option"}, "--no-such-option");
 
     const RunResult help = cli.media({"--help"});

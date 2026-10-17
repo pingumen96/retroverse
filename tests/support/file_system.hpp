@@ -50,6 +50,12 @@ private:
     std::filesystem::path m_folder;
 };
 
+/// While alive, the data of the file it is applied to cannot be read by this user (I2 step 11a: a first import reads no
+/// ROM byte): the same protected DACL as ListingDenied's, since FILE_READ_DATA is FILE_LIST_DIRECTORY's bit. The file's
+/// attributes, size and times stay readable (FILE_READ_ATTRIBUTES), its folder listable, and opening it for reading
+/// (GENERIC_READ) fails with access denied. The destructor puts the file's permissions back.
+using DataReadDenied = ListingDenied;
+
 /// Sets or clears FILE_ATTRIBUTE_HIDDEN.
 [[nodiscard]] Status setHidden(const std::filesystem::path& path, bool hidden);
 

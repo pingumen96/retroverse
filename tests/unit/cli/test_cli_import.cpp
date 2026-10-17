@@ -152,9 +152,9 @@ TEST_CASE("cli/import: --dry-run prints the standard fixture's entries by system
         CHECK((*json)["statistics"]["sheetsRead"] == 1);
     }
     SECTION("refusals") {
-        const RunResult stub = runCli(withGlobal({"import"}), dir.path());
-        CHECK(stub.code == ExitCode::UsageError);
-        CHECK(stub.err == "retroverse-cli import: not implemented yet (I2 step 11)\n");
+        const RunResult accepting = runCli(withGlobal({"import", "--dry-run", "--accept-removals"}), dir.path());
+        CHECK(accepting.code == ExitCode::UsageError);
+        CHECK(contains(accepting.err, "--accept-removals is for the import"));
         const RunResult unknown = runCli(withGlobal({"import", "--dry-run", "--system", "nosuch"}), dir.path());
         CHECK(unknown.code == ExitCode::UsageError);
         CHECK(contains(unknown.err, "nosuch"));
