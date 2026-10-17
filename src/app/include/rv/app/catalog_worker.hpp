@@ -104,8 +104,9 @@ struct CatalogOpened {
     std::vector<catalog::PlaySession> interrupted;
     /// ES-DE's configuration could not be read: the catalog can be browsed, nothing launches (kLibraryUnreadableCode).
     std::optional<Error> libraryError;
-    /// How long the worker took to open it.
+    /// How long the worker took to open it, and when it was done.
     double milliseconds = 0.0;
+    std::chrono::system_clock::time_point at;
 };
 
 /// A materialized list (CatalogWorker::query).
@@ -116,7 +117,9 @@ struct CatalogList {
     std::vector<catalog::GameId> ids;
     /// The list's (GameId value, position) pairs sorted by the value: positions found without a scan.
     std::vector<std::pair<std::uint64_t, std::uint32_t>> byId;
+    /// How long the materialization took on the worker, and when it was done.
     double milliseconds = 0.0;
+    std::chrono::system_clock::time_point at;
 };
 
 /// A launch resolved right before it starts (CatalogWorker::resolve).

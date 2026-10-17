@@ -191,8 +191,8 @@ EsdeAppCatalog::~EsdeAppCatalog() {
     shutdown();
 }
 
-double EsdeAppCatalog::sinceProcessStart() const {
-    const std::uint64_t now = fileTimeTicksOf(std::chrono::system_clock::now());
+double EsdeAppCatalog::sinceProcessStart(std::chrono::system_clock::time_point at) const {
+    const std::uint64_t now = fileTimeTicksOf(at);
     if (m_options.processCreated == 0 || now < m_options.processCreated) {
         return 0.0;
     }
@@ -226,14 +226,14 @@ CatalogChanges EsdeAppCatalog::poll() {
     if (results.empty()) {
         return {};
     }
-    const bool hadList = results.list.has_value();
+    // NFR-01's times are the worker's: when it was done, whenever the main thread looks.
+    if (results.opened && results.opened->state == CatalogState::Ready && !m_openedMs) {
+        m_openedMs = sinceProcessStart(results.opened->at);
+    }
+    if (results.list && !results.list->error && !m_firstListMs) {
+        m_firstListMs = sinceProcessStart(results.list->at);
+    }
     const CatalogDatabaseSource::Collected collected = m_source.collect(results);
-    if (collected.opened && !m_openedMs) {
-        m_openedMs = sinceProcessStart();
-    }
-    if (hadList && !m_firstListMs) {
-        m_firstListMs = sinceProcessStart();
-    }
     for (ResolvedLaunch& resolved : results.launches) {
         if (!m_resolving || *m_resolving != resolved.token) {
             continue; // a decision nobody waits for any more
@@ -320,7 +320,7 @@ void EsdeAppCatalog::shutdown() {
 
 void EsdeAppCatalog::pageShown() {
     if (!m_firstPageMs) {
-        m_firstPageMs = sinceProcessStart();
+        m_firstPageMs = sinceProcessStart(std::chrono::system_clock::now());
         spdlog::info("Catalog: first page shown {:.0f} ms after the process started", *m_firstPageMs);
     }
 }
@@ -329,7 +329,7 @@ void EsdeAppCatalog::record(CatalogRecord& record) const {
     record.source = "esde";
     record.file = catalog_db::databaseFile(m_options.paths);
     record.notice = std::string(notice());
-    record.library = m_source.library().str();
+    record.library = m_source.state() == CatalogState::Ready ? m_source.library().str() : std::string();
     record.systems = m_source.systems().size();
     record.games = 0;
     for (const CatalogSystem& system : m_source.systems()) {

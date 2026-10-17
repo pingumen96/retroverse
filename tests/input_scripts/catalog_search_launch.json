@@ -1,0 +1,23 @@
+// I2 step 13: the quick catalog of retroverse.exe over the ES-DE catalog (the standard fixture imported), driven by UI
+// actions and typed text alone. QuickCatalog opens it on frame 2 (the first game selected); ui_up on frames 5 and 8
+// takes the focus to the filter chips, then to the search field; "nintendo" is typed on frame 11 (the systems' full
+// names are searched too: the gb and snes games match); ui_activate on frame 14 (Enter in the search field) moves to
+// the list; ui_filter_next on frame 17 picks the first system's chip (Nintendo Game Boy, gb); ui_end on frame 20 selects
+// the list's last game (Tiny Tennis (Europe), last by title); ui_activate on frame 23 launches it (Avvia): the catalog
+// worker resolves it right before the launch, the next frame shows "Gioco in corso", then Retroverse renders nothing
+// until the emulator returns. Expected with --fixed-dt (frames wait for the catalog worker) and --frames 40: the launch
+// recorded Returned with its play session, and the catalog's selection, search ("nintendo"), filter ("gb") and the
+// walker's camera equal before and after it.
+//   retroverse --input-script tests/input_scripts/catalog_search_launch.json --exit-after-frames --frames 40 --hidden
+//     --fixed-dt 0.016667 --data-dir <a data directory with library.json, the imported catalog, an emulators.json>
+// tests/smoke/test_catalog.cpp runs it against the fake emulator.
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 5, "toFrame": 5, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_up": 1}},
+  {"fromFrame": 11, "toFrame": 11, "text": "nintendo"},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_activate": 1}},
+  {"fromFrame": 17, "toFrame": 17, "actions": {"ui_filter_next": 1}},
+  {"fromFrame": 20, "toFrame": 20, "actions": {"ui_end": 1}},
+  {"fromFrame": 23, "toFrame": 23, "actions": {"ui_activate": 1}}
+]

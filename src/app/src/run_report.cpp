@@ -307,6 +307,8 @@ Json viewToJson(const CatalogView& view) {
     if (view.selectedPosition) {
         json["selectedPosition"] = *view.selectedPosition;
     }
+    json["readiness"] = view.readiness;
+    json["blocker"] = view.blocker;
     json["search"] = view.search;
     json["filter"] = view.filter;
     if (view.camera) {
@@ -321,6 +323,8 @@ CatalogView readView(FieldReader& fields) {
     if (const auto position = fields.optionalCount("selectedPosition", kMaxSize)) {
         view.selectedPosition = static_cast<std::size_t>(*position);
     }
+    view.readiness = fields.string("readiness");
+    view.blocker = fields.string("blocker");
     view.search = fields.string("search");
     view.filter = fields.string("filter");
     if (auto camera = fields.optionalObject("camera")) {

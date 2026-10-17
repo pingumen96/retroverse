@@ -46,6 +46,11 @@ if(TARGET retroverse-asset-preview)
         RV_SMOKE_ASSET_PREVIEW="$<TARGET_FILE:retroverse-asset-preview>")
 endif()
 
+# The catalog tests (test_catalog.cpp) import the standard fixture with retroverse-cli, started as a process.
+if(TARGET retroverse-cli)
+    add_dependencies(rv_smoke_tests retroverse-cli)
+endif()
+
 # The launch tests (test_launch.cpp) start the fake emulator, which they also need built. Every run of these tests has
 # the automation guard on (ADR-0008 §8): RV_LAUNCH_ALLOWLIST lists the fake alone, so nothing else could start.
 add_dependencies(rv_smoke_tests rv_fake_emulator)

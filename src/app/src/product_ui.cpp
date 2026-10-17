@@ -94,6 +94,8 @@ struct ProductUi::Impl {
         CatalogView shown;
         if (const ui::CatalogEntry* selected = model->selected()) {
             shown.selectedId = selected->id;
+            shown.readiness = selected->readiness;
+            shown.blocker = selected->blocker;
         }
         shown.selectedPosition = model->selectedPosition();
         shown.search = model->search();

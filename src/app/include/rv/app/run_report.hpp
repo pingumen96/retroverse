@@ -67,6 +67,10 @@ struct CatalogView {
     /// The selected game's id and position; empty and none while nothing is selected.
     std::string selectedId;
     std::optional<std::size_t> selectedPosition;
+    /// The selected game's launch readiness and first blocker as its card showed them (ui::CatalogEntry::readiness,
+    /// ::blocker; empty for the mock catalog's games and a ready game's blocker).
+    std::string readiness;
+    std::string blocker;
     /// The search text and the active filter's key (empty: every game; else the ES-DE system's name, or the mock's
     /// platform).
     std::string search;

@@ -170,7 +170,8 @@ private:
         std::optional<StoredSession> stored;
     };
 
-    [[nodiscard]] double sinceProcessStart() const;
+    /// Milliseconds from the process's creation to `at`.
+    [[nodiscard]] double sinceProcessStart(std::chrono::system_clock::time_point at) const;
     void collectSessions(CatalogResults& results);
 
     Options m_options;

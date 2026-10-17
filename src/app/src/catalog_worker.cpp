@@ -187,6 +187,7 @@ private:
         }
         m_state = opened.state;
         opened.milliseconds = millisecondsSince(start);
+        opened.at = std::chrono::system_clock::now();
         if (m_state == CatalogState::Ready) {
             spdlog::info("Catalog opened on the worker in {:.0f} ms: library '{}', {} system(s) with games{}",
                          opened.milliseconds, opened.library.str(), opened.systems.size(),
@@ -415,6 +416,7 @@ private:
             spdlog::warn("Catalog query failed: {}", ids.error().toString());
         }
         list.milliseconds = millisecondsSince(start);
+        list.at = std::chrono::system_clock::now();
         spdlog::debug("Catalog query {} ('{}', {} system(s)): {} game(s) in {:.1f} ms", job.serial, job.query.text,
                       job.query.systems.size(), list.ids.size(), list.milliseconds);
         m_shared->post([&](CatalogResults& results) {
