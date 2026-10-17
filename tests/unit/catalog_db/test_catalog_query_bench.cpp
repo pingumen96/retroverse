@@ -357,25 +357,38 @@ TEST_CASE("catalog_db/bench: what the search area costs the writes of 100,000 en
     const double generation = millisecondsSince(started);
     REQUIRE(made == 2 * options.entries);
 
-    // The same writes into a database with the search area, then into one without its triggers and order index.
-    started = Clock::now();
-    REQUIRE(rv::test::generateCatalogDatabase(dir.file("with/retroverse.sqlite"), options, false).has_value());
-    const double withSearch = millisecondsSince(started);
-    {
-        auto database = rv::catalog_db::openCatalogDatabase(dir.file("without/retroverse.sqlite"));
+    // The same writes into a database with the search area, and into ones without parts of it.
+    constexpr std::string_view kDropTriggers =
+        "DROP TRIGGER idx_games_search_insert; DROP TRIGGER idx_games_search_delete; "
+        "DROP TRIGGER idx_games_search_update; DROP TRIGGER idx_systems_search_insert; "
+        "DROP TRIGGER idx_systems_search_delete; DROP TRIGGER idx_systems_search_update;";
+    struct Variant {
+        std::string_view label;
+        std::string setup;
+    };
+    const std::vector<Variant> variants{
+        {"with the search area", ""},
+        {"without the search triggers", std::string(kDropTriggers)},
+        {"without the order index", "DROP INDEX idx_games_sort"},
+        {"without either", std::string(kDropTriggers) + " DROP INDEX idx_games_sort"},
+    };
+    std::string report = fmt::format("Informative timings (I2 step 9): 100,000 entries generated twice in {:.0f} ms; "
+                                     "generated and written in one transaction:\n",
+                                     generation);
+    for (std::size_t i = 0; i < variants.size(); ++i) {
+        const std::filesystem::path file = dir.file(fmt::format("v{}/retroverse.sqlite", i));
+        if (!variants[i].setup.empty()) {
+            auto database = rv::catalog_db::openCatalogDatabase(file);
+            REQUIRE(database.has_value());
+            REQUIRE(database->writer().execute(variants[i].setup).has_value());
+        }
+        started = Clock::now();
+        REQUIRE(rv::test::generateCatalogDatabase(file, options, false).has_value());
+        const double elapsed = millisecondsSince(started);
+        auto database = rv::catalog_db::Database::open(file);
         REQUIRE(database.has_value());
-        REQUIRE(database->writer()
-                    .execute("DROP TRIGGER idx_games_search_insert; DROP TRIGGER idx_games_search_delete; "
-                             "DROP TRIGGER idx_games_search_update; DROP TRIGGER idx_systems_search_insert; "
-                             "DROP TRIGGER idx_systems_search_delete; DROP TRIGGER idx_systems_search_update; "
-                             "DROP INDEX idx_games_sort")
-                    .has_value());
+        report += fmt::format("  {:<44} {:7.0f} ms, {} pages\n", variants[i].label, elapsed,
+                              database->writer().queryInt("PRAGMA page_count").value().value_or(0));
     }
-    started = Clock::now();
-    REQUIRE(rv::test::generateCatalogDatabase(dir.file("without/retroverse.sqlite"), options, false).has_value());
-    const double withoutSearch = millisecondsSince(started);
-    WARN(fmt::format("Informative timing (I2 step 9): 100,000 entries generated twice in {:.0f} ms; generated and "
-                     "written in one transaction in {:.0f} ms with the search area, {:.0f} ms without its triggers "
-                     "and order index",
-                     generation, withSearch, withoutSearch));
+    WARN(report);
 }

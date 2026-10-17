@@ -4,8 +4,8 @@ The catalog's lists and search of ADR-0008 §5 on the catalog database: the sear
 `idx_games` and `idx_systems`, kept in step by triggers, and the order index of the lists), `SqliteCatalogQuery`
 (rv_catalog's `ICatalogQuery` with its filters, search, total orders, materialized lists, rows fetched by ids, and the
 catalog's systems and a game's details), `retroverse-cli systems`, `games`, `search` and `show`, a catalog database
-generator in `tests/support`, and the benchmarks. NFR-02 holds with a wide margin (p95 of indexed queries 6.8 ms on
-10,000 games, Release, on a loaded machine), and a UI page of 30 rows fetched by ids takes 0.1 ms at p95 on 100,000
+generator in `tests/support`, and the benchmarks. NFR-02 holds with a wide margin (p95 of indexed queries 4.8 to 6.8 ms
+on 10,000 games, Release, on a loaded machine), and a UI page of 30 rows fetched by ids takes 0.1 ms at p95 on 100,000
 games (ADR-0008's budget is 5 ms).
 
 ## What was built
@@ -52,8 +52,8 @@ const auto rows = query->fetch(rv::catalog::pageOf(list, 0, 30)).value();   // a
   `idx_systems` (a system's full name is indexed with each of its games: a changed full name re-indexes the system's
   games; a system written after its games gives them its full name; a removed or renamed one takes it away). Writes are
   upserts, never `REPLACE` (step 4), so updates reach the update triggers. A full `rebuild` from the view is a repair
-  (tested to give the same index); `db check` runs FTS5's integrity-check with rank 1 (step 4), which compares the
-  index with the view: every test of the triggers ends with it.
+  (tested: the same answers after it, `db check` passing); `db check` runs FTS5's integrity-check with rank 1 (step
+  4), which compares the index with the view: every step of the triggers' test ends with it.
 - **`idx_games_sort`** on `idx_games (sort_key, state, availability, library, system, release_date)`: the total order
   (sort key, GameId: the rowid ends every index entry) of the lists, covering their filters and the columns of the
   other orders, so that a list is read in order from the index alone.
@@ -158,41 +158,50 @@ catalog in one import transaction, entries in ascending GameId order (step 4: mu
 the options, GameIds included (`stableGameId()` of each entry's key, as a first import gives them). It holds eleven
 systems (ES-DE's names and full names, `fictif` "Système Fictif (Éditions Pixel)" and `archive`, whose folder is
 missing: its games are SourceUnavailable); invented titles of one to five words from French, Spanish, German, Swedish
-and Japanese-sounding words with their accents (5% of them decomposed, NFD), "The X of Y" with sort titles; works
-drawn among two thirds as many as entries, so that most titles recur (namesakes within a system and across
-systems); every indexed state
-(Game 87%, MissingFile 4%, NotAGame 3% with each reason, DiscMember 4% under psx, Folder 2%); unscraped files (15%)
-titled from their names; companies with accents, genres, release dates (10% undated), players, ratings, favorites,
-covers and videos, original forms of the normalized fields; descriptions holding `quixotry`, which nothing searched
-holds. `generatedWords()` is the oracle's folding of generated text (the generator's accented letters, ASCII words).
+and Japanese-sounding words with their accents (5% of them decomposed, NFD), "The X of Y" with sort titles; works drawn
+among two thirds as many as entries, so that most titles recur (namesakes within a system and across systems); every
+indexed state (Game 87%, MissingFile 4%, NotAGame 3% with each reason, DiscMember 4% under psx, Folder 2%); unscraped
+files (15%) titled from their names; companies with accents, genres, release dates (10% undated), players, ratings,
+favorites, covers and videos, original forms of the normalized fields; descriptions holding `quixotry`, which nothing
+searched holds. `generatedWords()` is the oracle's folding of generated text (the generator's accented letters, ASCII
+words).
 
 ## Benchmarks
 
 `build/msvc-x64-release/bin/rv_tests.exe "[bench]"` (hidden tag; Release). Taken while other worktrees built and ran
-their tests (the processor near 100%): informative, the gate measures on a quiet machine.
+their tests: informative, the gate measures on a quiet machine. The figures are those of the last run, with the final
+code; earlier runs under heavier load took up to 1.5 times as long (NFR-02's p95 6.8 ms).
 
 | Measure | Result |
 |---|---|
-| NFR-02: 828 indexed queries on 10,000 games (68 searches: words, prefixes of 1 to 5 characters, two and three words, years, companies, system names; each in Title order, System order, ReleaseDate with the unavailable, and with a filter of two systems) | p50 0.9 ms, p95 6.8 ms, max 9.7 ms (limit 100 ms) |
-| UI page on 100,000 entries: 30 rows fetched by ids, 503 pages spread over the list | p50 0.10 ms, p95 0.13 ms, max 0.23 ms; the first page of a new reader 0.7 ms (limit 5 ms) |
-| Every game (81,829 ids) read after a commit: Title, System, ReleaseDate | 47, 86, 90 ms (median) |
-| The same, kept | 0.03 to 0.07 ms |
-| One letter, no FTS5: `s` (9,999 ids), `p` in System order (5,888) | 6.7 ms, 5.7 ms |
-| Two letters after a commit (default limit): `su` (14,004), `pi` (20,823), `ch` (4,428), `19` (44,628), `an` (10,081) | 60, 124, 61, 60, 62 ms |
-| The same narrowing the kept list | 17, 10, 5.5, 25, 7.4 ms |
-| Longer searches after a commit: `pixel` (17,275), `drago` (2,234), `super pi` (2,728), `neon samurai` (55), `super m` (3,978) | 69, 97, 51, 3.9, 131 ms |
-| The same narrowing the kept list | 27, 7.4, 6.9, 4.6, 37 ms |
-| `systems()` with the counts | 196 ms |
-| Position of the last of 81,829 ids (`positionOf`) | 0.03 ms |
+| NFR-02: 828 indexed queries on 10,000 games (69 searches: words, prefixes of 1 to 5 characters, two and three words, years, companies, system names; each in Title order, System order, ReleaseDate with the unavailable, and with a filter of two systems) | p50 0.84 ms, p95 4.8 ms, max 11.4 ms (limit 100 ms) |
+| UI page on 100,000 entries: 30 rows fetched by ids, 503 pages spread over the list | p50 0.10 ms, p95 0.12 ms, max 0.43 ms; the first page of a new reader 0.56 ms (limit 5 ms) |
+| Every game (81,829 ids) read after a commit: Title, System, ReleaseDate | 47, 67, 61 ms (median) |
+| The same, kept | 0.03 ms |
+| One letter, no FTS5: `s` (9,999 ids), `p` in System order (5,888) | 5.9 ms, 4.5 ms |
+| Two letters after a commit (default limit): `su` (14,004), `pi` (20,823), `ch` (4,428), `19` (44,628), `an` (10,081) | 58, 62, 53, 66, 51 ms |
+| The same narrowing the kept list | 8.2, 9.3, 5.9, 11.8, 6.7 ms |
+| Longer searches after a commit: `pixel` (17,275), `drago` (2,234), `super pi` (2,728), `neon samurai` (55), `super m` (3,978) | 66, 17, 18, 3.5, 52 ms |
+| The same narrowing the kept list | 23, 6.9, 6.2, 4.3, 35 ms |
+| `systems()` with the counts | 110 ms |
+| Position of the last of 81,829 ids (`positionOf`) | 0.025 ms |
 
-Rows looked up against the list read and narrowed, after a commit (median ms; the crossover chose the default limit of
-5,000): `ch` (4,428 matches) 37 against 54, `drago` (2,234) 38 against 72, `super pi` (2,728) 21 against 56, `su`
-(14,004) 84 against 87, `an` (10,081) 139 against 84, `pixel` (17,275) 191 against 113, `19` (44,628) 169 against 116.
-`super m` costs most: FTS5 has no index for the one-character prefix `m`* that ends it and merges every term that
-starts with m (ADR-0008 keeps prefix indexes 2 and 3). An earlier version that read every list again on every query
-(SQLite's default page cache, bound lists of states) took 72 to 270 ms for the same searches on the same machine.
+Rows looked up against the list read and narrowed, after a commit (median ms), which chose the default limit of 5,000
+matches: `drago` (2,234 matches) 17 against 49, `super pi` (2,728) 18 against 51, `super m` (3,978) 53 against 78,
+`ch` (4,428) 33 against 57, `an` (10,081) 62 against 50, `su` (14,004) 70 against 60, `pixel` (17,275) 88 against 66,
+`pi` (20,823) 88 against 57, `19` (44,628) 119 against 56. `super m` costs most when narrowed too: FTS5 has no index
+for the one-character prefix `m`* that ends it and merges every term that starts with m (ADR-0008 keeps prefix indexes
+2 and 3). An earlier version that read every list again on every query (SQLite's default page cache, the states and
+availabilities bound as lists) took 72 to 270 ms for the same searches on the same machine, and 80 ms for every game.
 
-<!-- the write-cost line is filled below -->
+**What the search area costs the writes** (the third benchmark: the generator writing 100,000 entries in one import
+transaction, with the search area and without parts of it): 16.6 s with it against 5.2 s without its triggers and order
+index in one run (the entries' generation, twice, 0.9 s); in a run under heavier load, 24.5 s with it, 15.0 s without
+the search triggers, 21.0 s without the order index, 11.8 s without either. The FTS5 triggers take about two thirds of
+the extra time, the order index a third; FTS5's `hashsize` raised to 32 MiB changed nothing (24.6 s), so the cost is
+the tokenizing and the index writes, not flushes of the pending terms. Step 4's timed test of 10,000 rows in Debug went
+from 3.1 to 4.8 s. An import that writes rows again unchanged skips the triggers (their WHEN clauses); a first import
+pays the whole cost.
 
 ## Decisions taken within the step
 
@@ -283,8 +292,12 @@ none made), a database of version 0, `--output`, `--help`. The command table tes
 ## Notes for the steps that build on it
 
 - **Step 11** (import): the search area follows the store's writes by itself (upserts, removals, systems at any point
-  of the import). Its cost on the writes is measured above. `db rebuild-index` can end with `INSERT INTO
-  idx_game_search (idx_game_search) VALUES ('rebuild')` if it rewrites the index tables by other means than the store.
+  of the import). Its cost on the writes is measured above: a first import of 100,000 entries takes two to three
+  times as long as without it, two thirds of that in the FTS5 triggers; if the first import's time matters, dropping
+  the search triggers for it and ending it with FTS5's `rebuild` from the view is the lever to measure (the triggers
+  created again in the same transaction). `db rebuild-index` can end with `INSERT INTO idx_game_search
+  (idx_game_search) VALUES ('rebuild')` if it rewrites the index tables by other means than the store. Write entries
+  in ascending GameId order (step 4): FTS5 also appends its rowids then.
 - **Step 13** (the app): one `SqliteCatalogQuery` on the worker (`run`, `systems` for the chips) and one on the main
   thread for `fetch` (each with its own reader); the worker's instance keeps the open list, so typing narrows it in
   memory; after an import, `run` again (the kept list is dropped by `data_version`) and restore the selection with

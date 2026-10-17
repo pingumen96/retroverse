@@ -686,7 +686,7 @@ Expected<std::unique_ptr<SqliteCatalogQuery>> SqliteCatalogQuery::open(Connectio
                                            *version, programSchemaVersion()),
                          core::pathToUtf8Lossy(connection.path()));
     }
-    // A page cache that holds the order index and the search index of a large catalog (100,000 games: about 6 and 4
+    // A page cache that holds the order index and the search index of a large catalog (100,000 entries: about 6 and 22
     // MiB), instead of SQLite's 2 MiB, which every list read whole would cycle through.
     if (auto cache = connection.execute(fmt::format("PRAGMA cache_size = -{}", kQueryCacheKiB)); !cache) {
         return propagate(cache.error());

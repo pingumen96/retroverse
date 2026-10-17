@@ -647,8 +647,8 @@ TEST_CASE("catalog_db/check: pages SQLite cannot read are problems the checks fi
     std::filesystem::create_directories(shadowDamaged.parent_path());
     std::filesystem::copy_file(file, shadowDamaged);
 
-    // The root page of every table and index overwritten, the schema's own pages left as they are: the tables' B-trees
-    // are garbage.
+    // The root page of every table and index but the FTS5 shadow tables' overwritten, the schema's own pages left as
+    // they are: the tables' B-trees are garbage.
     const auto overwrite = [&](const std::filesystem::path& target, const std::vector<std::int64_t>& pages) {
         std::fstream bytes(target, std::ios::in | std::ios::out | std::ios::binary);
         const std::string garbage(static_cast<std::size_t>(pageSize), '\xAB');
