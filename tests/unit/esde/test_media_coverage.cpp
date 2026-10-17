@@ -55,8 +55,8 @@ CatalogEntry entryOf(std::string_view system, std::string_view relativePath, Ent
         entry.key = *key;
     }
     if (gamelist) {
-        entry.gamelistPath = relativePath.empty() ? std::string("./../snes/Alpha Quest (USA).sfc")
-                                                  : "./" + std::string(relativePath);
+        entry.gamelistPath =
+            relativePath.empty() ? std::string("./../snes/Alpha Quest (USA).sfc") : "./" + std::string(relativePath);
     }
     if (state == EntryState::MissingFile) {
         entry.availability = Availability::Missing;

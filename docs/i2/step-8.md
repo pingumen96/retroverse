@@ -143,10 +143,10 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
   `path`).
 - `--coverage` prints the media root, the populations' totals (one row each: members, then the share of each kind in
   percent), then per system the gamelist entries whose file exists and the games, then the issues. JSON: `mediaRoot`,
-  `entries` (where the entries come from: `gamelists`, see below), `kinds`, `populations` (their descriptions),
-  `listed` (`systemFolders`, `files`), `total` and `systems[]` (`system`, `mediaFolder`: `listed`, `missing`,
-  `unavailable` or null when the root cannot be read, `populations`), each population as `entries`, `unknown`,
-  `withAny`, `withKind` (counts, never shares), and `issues`.
+  `source` (where the entries come from: `gamelists`, see below), `kinds`, `populations` (their descriptions),
+  `listed` (`systems` whose media folder was looked up, `files` in those folders), `total` and `systems[]` (`system`,
+  `mediaFolder`: `listed`, `missing`, `unavailable` or null when the root cannot be read, `populations`), each
+  population as `entries`, `unknown`, `withAny`, `withKind` (counts, never shares), and `issues`.
 - **Where the coverage's entries come from until step 7 is merged.** The ROM scan and the library snapshot
   (`esde::EsdeLibrarySource`) are step 7's, in the same wave. `cmd_media.cpp` reads the entries through
   `catalog::ILibrarySource`, implemented there by `GamelistSource`: every `<game>` entry of the gamelists looked up in
@@ -169,7 +169,7 @@ REAL_LIBRARY_RESULTS
 
 - **Step 7.** In `tools/cli/src/cmd_media.cpp`, `showCoverage()` makes a `GamelistSource`: replace it with
   `esde::EsdeLibrarySource` (the same `catalog::ILibrarySource::load()` call) and delete `GamelistSource`, `ListedFile`,
-  `extensionOf()` and `parentsOf()`. Then: the JSON's `entries` becomes the snapshot's source (say `rom-scan`), the text's
+  `extensionOf()` and `parentsOf()`. Then: the JSON's `source` becomes the snapshot's (say `rom-scan`), the text's
   "Entries" line and the games table's title lose their "until the ROM scan" notes, and `tests/unit/cli/
   test_cli_media.cpp` expects the games of the snapshot: 15 for the standard fixture (gb 8, snes 5, psx 2, covers 4,
   videos 5: `tests/unit/esde/test_media_coverage.cpp` already checks them on a snapshot built by hand), 3 for the

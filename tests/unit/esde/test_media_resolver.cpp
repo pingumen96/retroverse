@@ -167,8 +167,8 @@ TEST_CASE("esde/media: the standard fixture's media, kind by kind", "[esde][medi
     EsdeMediaResolver resolver(root);
     REQUIRE(resolver.checkRoot().has_value());
 
-    // gb: png before jpg, a jpg screenshot, mp4, avi and mkv videos, a namesake in another sub-folder without media, the
-    // missing file's cover, the games without media.
+    // gb: png before jpg, a jpg screenshot, mp4, avi and mkv videos, a namesake in another sub-folder without media,
+    // the missing file's cover, the games without media.
     CHECK(mediaOf(resolver, "gb", "Tiny Tennis (Europe).gb") ==
           withMedia({{MediaKind::Cover, ".png"}, {MediaKind::Screenshot, ".jpg"}, {MediaKind::Video, ".mp4"}}));
     CHECK(mediaOf(resolver, "gb", "Collection A/Pocket Puzzle (World).gb") == withMedia({{MediaKind::Cover, ".png"}}));
@@ -184,9 +184,9 @@ TEST_CASE("esde/media: the standard fixture's media, kind by kind", "[esde][medi
 
     // snes: all 12 kinds for one game, the flv that ES-DE never reads, the folder covers named with the whole name.
     const EntryMedia alpha = mediaOf(resolver, "snes", "Alpha Quest (USA).sfc");
-    CHECK(extensionsOf(alpha) == std::array<std::string, rv::catalog::kMediaKindCount>{
-                                     ".png", ".png", ".png", ".png", ".jpg", ".jpg", ".png", ".png", ".jpg", ".pdf",
-                                     ".mov", ".png"});
+    CHECK(extensionsOf(alpha) == std::array<std::string, rv::catalog::kMediaKindCount>{".png", ".png", ".png", ".png",
+                                                                                       ".jpg", ".jpg", ".png", ".png",
+                                                                                       ".jpg", ".pdf", ".mov", ".png"});
     CHECK(alpha.presenceMask() == 0xFFFu);
     CHECK(mediaOf(resolver, "snes", "Beta Run (Europe).SMC") == EntryMedia{});
     CHECK(mediaOf(resolver, "snes", "Hacks", true) == withMedia({{MediaKind::Cover, ".png"}}));
@@ -262,8 +262,7 @@ TEST_CASE("esde/media: the standard fixture's media, kind by kind", "[esde][medi
     // What path() refuses.
     const auto gbName = systemNamed("gb");
     const auto tennis = keyOf("Tiny Tennis (Europe).gb");
-    CHECK(resolver.path(gbName, tennis, false, MediaKind::Manual, MediaPresence{}).error().code ==
-          ErrorCode::NotFound);
+    CHECK(resolver.path(gbName, tennis, false, MediaKind::Manual, MediaPresence{}).error().code == ErrorCode::NotFound);
     CHECK(resolver.path(gbName, rv::catalog::LookupKey{}, false, MediaKind::Cover, MediaPresence{true, ".png"})
               .error()
               .code == ErrorCode::InvalidArgument);
@@ -353,8 +352,7 @@ TEST_CASE("esde/media: names compared as the file system compares them, every ex
     CHECK(gb[MediaKind::Cover].folderName == "COVERS");
     CHECK(gb[MediaKind::Cover].media == 4); // Pocket Puzzle, Gem, Webby, Boxed
     CHECK(gb[MediaKind::Cover].shadowedFiles == 1);
-    CHECK(gb[MediaKind::Cover].ignored ==
-          std::vector<rv::esde::IgnoredExtension>{{"", 1}, {".gif", 1}, {".txt", 1}});
+    CHECK(gb[MediaKind::Cover].ignored == std::vector<rv::esde::IgnoredExtension>{{"", 1}, {".gif", 1}, {".txt", 1}});
     CHECK(gb[MediaKind::Video].media == 5);
     CHECK(gb[MediaKind::Video].shadowedFiles == 4);
     CHECK(gb[MediaKind::Video].ignored == std::vector<rv::esde::IgnoredExtension>{{".flv", 1}});

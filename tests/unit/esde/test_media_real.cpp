@@ -1,11 +1,11 @@
 // The real library's media tree through rv::esde::EsdeMediaResolver (I2 step 8, ADR-0008 §10). Hidden
 // ([.real-library]): ctest never runs it; scripts/real-library.ps1 does, with ES-DE closed, read-only snapshots of the
 // library before and after, and the folder in an environment variable:
-//   RV_REAL_MEDIA_ROOT  ES-DE's MediaDirectory: every system folder under it is listed (folders only; no file is opened)
+//   RV_REAL_MEDIA_ROOT  ES-DE's MediaDirectory: every system folder under it is listed (no file is opened)
 // The expected figures are the reference library's, from the survey's listing of 2026-10-16 (esde-data.md section 5:
-// 44 system folders, 364,810 files, 11 kinds, the png and jpg counts, four .flv videos); a library scraped since changes
-// them, and the test prints what it listed. It also prints the time the listing took: the snapshot the script takes
-// just before has listed the same tree, so the time is a warm one (informative: the gate times the import).
+// 44 system folders, 364,810 files, 11 kinds, the png and jpg counts, four .flv videos); a library scraped since
+// changes them, and the test prints what it listed. It also prints the time the listing took: the snapshot the script
+// takes just before has listed the same tree, so the time is a warm one (informative: the gate times the import).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -131,10 +131,10 @@ TEST_CASE("esde/media: the real library's media tree", "[esde][media][.real-libr
     CHECK(stats.systemsListed == 44);
     CHECK(stats.files == 364810);
     CHECK(media[MediaKind::Box3d] == 36250);
-    CHECK(media[MediaKind::BackCover] == 31081);   // png 31,034, jpg 47
-    CHECK(media[MediaKind::Cover] == 36388);       // png 36,287, jpg 101
-    CHECK(media[MediaKind::FanArt] == 19636);      // jpg only
-    CHECK(media[MediaKind::Manual] == 22768);      // pdf
+    CHECK(media[MediaKind::BackCover] == 31081); // png 31,034, jpg 47
+    CHECK(media[MediaKind::Cover] == 36388);     // png 36,287, jpg 101
+    CHECK(media[MediaKind::FanArt] == 19636);    // jpg only
+    CHECK(media[MediaKind::Manual] == 22768);    // pdf
     CHECK(media[MediaKind::Marquee] == 35705);
     CHECK(media[MediaKind::MixImage] == 39674);
     CHECK(media[MediaKind::PhysicalMedia] == 32569);

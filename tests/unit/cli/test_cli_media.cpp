@@ -119,8 +119,8 @@ wchar_t unusedDriveLetter() {
 class Cli {
 public:
     Cli(const rv::test::Fixture& fixture, std::string_view prefix) : m_dir(prefix), m_data(m_dir.file("data")) {
-        const RunResult created = run({"library", "create", "--home", utf8(fixture.root()), "--install",
-                                       utf8(fixture.path("Programs/ES-DE"))});
+        const RunResult created = run(
+            {"library", "create", "--home", utf8(fixture.root()), "--install", utf8(fixture.path("Programs/ES-DE"))});
         INFO(created.err);
         REQUIRE(created.code == ExitCode::Ok);
     }
@@ -148,8 +148,8 @@ std::vector<std::string> mediaItems(const nlohmann::json& report) {
     std::vector<std::string> items;
     for (const auto& item : report.at("media")) {
         items.push_back(item.at("present").get<bool>()
-                            ? item.at("kind").get<std::string>() + " " + item.at("extension").get<std::string>() +
-                                  " " + item.at("path").get<std::string>()
+                            ? item.at("kind").get<std::string>() + " " + item.at("extension").get<std::string>() + " " +
+                                  item.at("path").get<std::string>()
                             : item.at("kind").get<std::string>() + " none");
     }
     return items;
@@ -162,7 +162,9 @@ TEST_CASE("cli/media: the media of a ROM path of the standard fixture, as JSON a
     const LoggingReset loggingReset;
     const auto before = treeOf(fixture.root());
     const Cli cli(fixture, "rv-cli-media");
-    const auto media = [&](std::string_view relative) { return utf8(fixture.path("media") / rv::core::pathFromUtf8(relative)); };
+    const auto media = [&](std::string_view relative) {
+        return utf8(fixture.path("media") / rv::core::pathFromUtf8(relative));
+    };
 
     // All 12 kinds of Alpha Quest.
     const RunResult alpha = cli.media({"--system", "snes", "--path", "Alpha Quest (USA).sfc", "--json"});
@@ -279,10 +281,10 @@ TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", 
     REQUIRE(json.code == ExitCode::Ok);
     const nlohmann::json report = parsed(json.out);
     CHECK(report["mediaRoot"]["path"] == utf8(fixture.path("media")));
-    CHECK(report["entries"] == "gamelists");
+    CHECK(report["source"] == "gamelists");
     CHECK(report["kinds"].size() == 12);
     CHECK(report["kinds"][2] == "3dboxes");
-    CHECK(report["listed"]["systemFolders"] == 3);
+    CHECK(report["listed"]["systems"] == 3);
     CHECK(report["listed"]["files"] == 25);
     const nlohmann::json& total = report["total"];
     // gb: Tiny Tennis, Pocket Puzzle A, Café Racer, Gone Fishing (missing), Wrong Way (outside); snes: Alpha Quest,
@@ -317,11 +319,13 @@ TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", 
     CHECK(std::find(codes.begin(), codes.end(), "media-ignored-extension") != codes.end());
 
     const RunResult text = cli.media({"--coverage"});
-    CHECK(text.code == ExitCode::Ok);    CHECK(contains(text.out, "Media root    " + utf8(fixture.path("media")) + " (MediaDirectory \""));
-    CHECK(contains(text.out, "Listed        3 system folder(s) listed, 25 files\n"));
+    CHECK(text.code == ExitCode::Ok);
+    CHECK(contains(text.out, "Media root    " + utf8(fixture.path("media")) + " (MediaDirectory \""));
+    CHECK(contains(text.out, "Listed        3 system(s), 25 files in their media folders\n"));
     // 5 covers of 11 entries: 45.5%; 4 videos: 36.4%.
-    CHECK(contains(text.out, "gamelist-entries                  11   45.5    9.1    9.1    9.1   18.2    9.1    9.1    9.1"
-                             "    9.1    9.1   36.4    9.1\n"));
+    CHECK(contains(text.out,
+                   "gamelist-entries                  11   45.5    9.1    9.1    9.1   18.2    9.1    9.1    9.1"
+                   "    9.1    9.1   36.4    9.1\n"));
     CHECK(contains(text.out, "The gamelist entries whose file exists, per system\n"));
     CHECK(contains(text.out, "gb                   3   66.7    0.0    0.0    0.0   33.3    0.0    0.0    0.0    0.0"
                              "    0.0   66.7    0.0\n"));
@@ -335,7 +339,7 @@ TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", 
     const nlohmann::json one = parsed(psx.out);
     REQUIRE(one["systems"].size() == 1);
     CHECK(one["systems"][0]["system"] == "psx");
-    CHECK(one["listed"]["systemFolders"] == 1);
+    CHECK(one["listed"]["systems"] == 1);
     CHECK(one["total"]["games"]["entries"] == 2);
     CHECK(one["total"]["games"]["withKind"]["videos"] == 1);
 
@@ -368,7 +372,8 @@ TEST_CASE("cli/media: an empty media root, a missing one, an unreachable one; no
     CHECK(contains(rocket.out, "Media         0 of 12 kinds\n"));
 
     // Missing: nothing can be known.
-    const std::string committed = R"(name="MediaDirectory" value=")" + rv::core::pathToUtf8(fixture.root()) + R"(\media")";
+    const std::string committed =
+        R"(name="MediaDirectory" value=")" + rv::core::pathToUtf8(fixture.root()) + R"(\media")";
     REQUIRE(fixture
                 .replaceText("ES-DE/settings/es_settings.xml", committed,
                              R"(name="MediaDirectory" value=")" + rv::core::pathToUtf8(fixture.root()) +
@@ -411,8 +416,9 @@ TEST_CASE("cli/media: an empty media root, a missing one, an unreachable one; no
     const rv::test::TempDir other("rv-cli-media-none");
     Output out = Output::memory();
     Output err = Output::memory();
-    const ExitCode code = rv::cli::run(std::vector<std::string>{"--data-dir", utf8(other.file("data")), "media", "--coverage"},
-                                       out, err, testEnvironment(other.path()));
+    const ExitCode code =
+        rv::cli::run(std::vector<std::string>{"--data-dir", utf8(other.file("data")), "media", "--coverage"}, out, err,
+                     testEnvironment(other.path()));
     CHECK(code == ExitCode::UsageError);
     CHECK(contains(err.text(), "no library yet"));
     CHECK(out.text().empty());

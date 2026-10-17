@@ -59,6 +59,15 @@ SystemCoverage& CoverageBuilder::systemOf(const SystemName& system) {
     return *found;
 }
 
+CoverageBuilder::Unknown& CoverageBuilder::unknownOf(const SystemName& system) {
+    auto found = std::lower_bound(m_unknown.begin(), m_unknown.end(), system,
+                                  [](const Unknown& a, const SystemName& b) { return a.system < b; });
+    if (found == m_unknown.end() || found->system != system) {
+        found = m_unknown.insert(found, Unknown{system, 0, std::string()});
+    }
+    return *found;
+}
+
 void CoverageBuilder::add(const CatalogEntry& entry, const EntryMedia* media) {
     bool member = false;
     for (const CoveragePopulation population : kCoveragePopulations) {
@@ -66,6 +75,9 @@ void CoverageBuilder::add(const CatalogEntry& entry, const EntryMedia* media) {
     }
     if (!member) {
         return;
+    }
+    if (media == nullptr) {
+        ++unknownOf(entry.system).entries;
     }
     SystemCoverage& system = systemOf(entry.system);
     for (const CoveragePopulation population : kCoveragePopulations) {
@@ -86,10 +98,9 @@ void CoverageBuilder::add(const CatalogEntry& entry, const EntryMedia* media) {
 }
 
 void CoverageBuilder::noteUnknown(const SystemName& system, std::string_view reason) {
-    const bool noted = std::any_of(m_reasons.begin(), m_reasons.end(),
-                                   [&](const std::pair<SystemName, std::string>& item) { return item.first == system; });
-    if (!noted) {
-        m_reasons.emplace_back(system, std::string(reason));
+    Unknown& unknown = unknownOf(system);
+    if (unknown.reason.empty()) {
+        unknown.reason = reason;
     }
 }
 
@@ -101,21 +112,15 @@ MediaCoverage CoverageBuilder::finish() const {
             coverage.total[population].add(system[population]);
         }
     }
-    std::vector<std::pair<SystemName, std::string>> reasons = m_reasons;
-    std::sort(reasons.begin(), reasons.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (const auto& [system, reason] : reasons) {
-        const SystemCoverage* counts = coverage.find(system);
-        std::uint64_t unknown = 0;
-        if (counts != nullptr) {
-            for (const CoverageCounts& population : counts->populations) {
-                unknown = std::max(unknown, population.unknown);
-            }
+    for (const Unknown& unknown : m_unknown) {
+        if (unknown.entries == 0) {
+            continue; // a reason noted for no member
         }
-        coverage.issues.push_back(Issue{
-            IssueSeverity::Warning, std::string(kCoverageIssueMediaUnknown), system.str(), std::string(),
-            fmt::format("the media of {} entr{} of {} are not known, and no share counts them: {}", unknown,
-                        unknown == 1 ? "y" : "ies", system.str(), reason)});
+        coverage.issues.push_back(
+            Issue{IssueSeverity::Warning, std::string(kCoverageIssueMediaUnknown), unknown.system.str(), std::string(),
+                  fmt::format("the media of {} entr{} of {} are not known, and no share counts them{}{}",
+                              unknown.entries, unknown.entries == 1 ? "y" : "ies", unknown.system.str(),
+                              unknown.reason.empty() ? "" : ": ", unknown.reason)});
     }
     return coverage;
 }

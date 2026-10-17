@@ -13,7 +13,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include <rv/catalog/entry.hpp>
@@ -84,9 +83,7 @@ struct CoverageCounts {
 
     /// The members whose media are known: the denominator of the shares.
     [[nodiscard]] std::uint64_t known() const noexcept { return entries - unknown; }
-    [[nodiscard]] std::uint64_t with(MediaKind kind) const noexcept {
-        return withKind[static_cast<std::size_t>(kind)];
-    }
+    [[nodiscard]] std::uint64_t with(MediaKind kind) const noexcept { return withKind[static_cast<std::size_t>(kind)]; }
     /// with(kind) / known(), from 0 to 1; nothing when no member's media are known.
     [[nodiscard]] std::optional<double> share(MediaKind kind) const noexcept;
     /// withAny / known(); nothing when no member's media are known.
@@ -145,10 +142,18 @@ public:
     [[nodiscard]] MediaCoverage finish() const;
 
 private:
+    /// The members of a system whose media are not known, and why.
+    struct Unknown {
+        SystemName system;
+        std::uint64_t entries = 0;
+        std::string reason;
+    };
+
     std::vector<SystemCoverage> m_systems; ///< by name (ordinal)
-    std::vector<std::pair<SystemName, std::string>> m_reasons;
+    std::vector<Unknown> m_unknown;        ///< by name (ordinal)
 
     SystemCoverage& systemOf(const SystemName& system);
+    Unknown& unknownOf(const SystemName& system);
 };
 
 /// The coverage of `snapshot`'s entries (only those of `system` when it is given), each member's media asked of

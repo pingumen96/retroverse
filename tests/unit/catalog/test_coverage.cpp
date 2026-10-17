@@ -87,8 +87,8 @@ public:
         const auto found = media.find(name);
         return found == media.end() ? EntryMedia{} : found->second;
     }
-    Expected<std::filesystem::path> path(const rv::catalog::SystemName&, const rv::catalog::LookupKey&, bool,
-                                         MediaKind, const rv::catalog::MediaPresence&) const override {
+    Expected<std::filesystem::path> path(const rv::catalog::SystemName&, const rv::catalog::LookupKey&, bool, MediaKind,
+                                         const rv::catalog::MediaPresence&) const override {
         return makeError(ErrorCode::Unsupported, "not scripted");
     }
 };

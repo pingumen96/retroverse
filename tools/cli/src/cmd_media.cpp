@@ -120,10 +120,10 @@ std::vector<std::string> parentsOf(std::string_view key) {
 /// step 7 (esde::EsdeLibrarySource) is merged, which this source then gives way to. It knows the states the gamelist
 /// and the listing tell: Game, NotAGame for an extension the system does not configure (compared with its case, as
 /// ES-DE compares it) and for what ShowHiddenFiles and ShowHiddenGames exclude, MissingFile, OutsideSystemFolder, and
-/// SourceUnavailable under a folder that cannot be listed. It leaves to the ROM scan the files without a gamelist entry,
-/// the disc groups (a track a gamelist names is a game here), noload.txt and the MAME BIOS sets; <folder> entries are
-/// left out (a folder is in no coverage population). A gamelist that cannot be read fails its system at once (no
-/// retry).
+/// SourceUnavailable under a folder that cannot be listed. It leaves to the ROM scan the files without a gamelist
+/// entry, the disc groups (a track a gamelist names is a game here), noload.txt and the MAME BIOS sets; <folder>
+/// entries are left out (a folder is in no coverage population). A gamelist that cannot be read fails its system at
+/// once (no retry).
 class GamelistSource final : public catalog::ILibrarySource {
 public:
     explicit GamelistSource(std::optional<catalog::SystemName> only) : m_only(std::move(only)) {}
@@ -218,9 +218,8 @@ private:
                 }
                 if (wanted.contains(key->key())) {
                     listed[key->key()].push_back(ListedFile{
-                        key->relativePath(),
-                        catalog::FileFacts{directory, entry.size, catalog::fileTimeTicks(entry.lastWriteTime),
-                                           hidden}});
+                        key->relativePath(), catalog::FileFacts{directory, entry.size,
+                                                                catalog::fileTimeTicks(entry.lastWriteTime), hidden}});
                 }
                 if (!directory) {
                     return core::WalkAction::Continue;
@@ -270,8 +269,8 @@ private:
                 const ListedFile& onDisk = exact != found->second.end() ? *exact : found->second.front();
                 out.key = catalog::makeLookupKey(onDisk.relativePath).value_or(entry.key);
                 out.file = onDisk.facts;
-                const bool configured =
-                    std::find(extensions.begin(), extensions.end(), extensionOf(onDisk.relativePath)) != extensions.end();
+                const bool configured = std::find(extensions.begin(), extensions.end(),
+                                                  extensionOf(onDisk.relativePath)) != extensions.end();
                 if (!configured) {
                     out.state = catalog::EntryState::NotAGame;
                     out.notAGameReason = catalog::NotAGameReason::ExtensionNotConfigured;
@@ -315,7 +314,7 @@ private:
     std::optional<catalog::SystemName> m_only;
 };
 
-// --- What both forms share ---------------------------------------------------------------------------------------------
+// --- What both forms share -------------------------------------------------------------------------------------------
 
 /// The library, its settings and roots, its systems.
 struct Library {
@@ -384,7 +383,7 @@ bool hasErrors(std::span<const catalog::Issue> issues) {
                        [](const catalog::Issue& issue) { return issue.severity == catalog::IssueSeverity::Error; });
 }
 
-// --- media --system --path ----------------------------------------------------------------------------------------
+// --- media --system --path -------------------------------------------------------------------------------------------
 
 /// What the ROM folder holds at a path.
 enum class RomPathKind { File, Folder, Missing, Unknown };
@@ -414,7 +413,7 @@ RomPathKind romPathKind(const fs::path& romFolder, std::string_view relative) {
         // The folder above it may be gone too, or its drive: only a folder that is there makes the path missing.
         std::error_code folderError;
         return fs::is_directory(core::extendedLengthPath(romFolder), folderError) ? RomPathKind::Missing
-                                                                                   : RomPathKind::Unknown;
+                                                                                  : RomPathKind::Unknown;
     }
     if (error) {
         return RomPathKind::Unknown;
@@ -437,11 +436,11 @@ ExitCode showPath(CommandContext& context, Output& out, const Library& library, 
     }
     auto relative = core::resolveRelativePath(romPath, *romFolder);
     if (!relative) {
-        return failure(ExitCode::UsageError,
-                       relative.error().code == ErrorCode::OutOfRange
-                           ? fmt::format("--path leads out of the ROM folder of {}: {}", system.str(),
-                                         relative.error().toString())
-                           : fmt::format("--path is no path below a ROM folder: {}", relative.error().toString()));
+        return failure(
+            ExitCode::UsageError,
+            relative.error().code == ErrorCode::OutOfRange
+                ? fmt::format("--path leads out of the ROM folder of {}: {}", system.str(), relative.error().toString())
+                : fmt::format("--path is no path below a ROM folder: {}", relative.error().toString()));
     }
     auto key = catalog::makeLookupKey(*relative);
     if (!key) {
@@ -511,7 +510,7 @@ ExitCode showPath(CommandContext& context, Output& out, const Library& library, 
     return ExitCode::Ok;
 }
 
-// --- media --coverage -------------------------------------------------------------------------------------------------
+// --- media --coverage ------------------------------------------------------------------------------------------------
 
 void writeCoverageTable(Output& out, std::string_view title, const catalog::MediaCoverage& coverage,
                         CoveragePopulation population) {
@@ -583,8 +582,8 @@ ExitCode showCoverage(CommandContext& context, Output& out, const Library& libra
     }
     issues.insert(issues.end(), coverage->issues.begin(), coverage->issues.end());
     const esde::MediaListingStats& stats = resolver.stats();
-    spdlog::info("Media coverage: {} system folder(s) listed, {} files, {:.2f} s", stats.systemsListed, stats.files,
-                 stats.seconds);
+    spdlog::info("Media coverage: the media folders of {} system(s) looked up, {} files, {:.2f} s", stats.systemsListed,
+                 stats.files, stats.seconds);
     const ExitCode code = hasErrors(issues) ? ExitCode::ProblemsFound : ExitCode::Ok;
 
     if (json) {
@@ -600,21 +599,21 @@ ExitCode showCoverage(CommandContext& context, Output& out, const Library& libra
         for (const catalog::SystemCoverage& systemCoverage : coverage->systems) {
             const auto folder = std::find_if(folders.begin(), folders.end(),
                                              [&](const Folder& f) { return f.system == systemCoverage.system; });
-            systems.push_back(Json{
-                {"system", systemCoverage.system.str()},
-                {"mediaFolder", folder != folders.end() ? Json(std::string(esde::toString(folder->state)))
-                                                         : Json(nullptr)},
-                {"populations", populationsJson(systemCoverage)}});
+            systems.push_back(
+                Json{{"system", systemCoverage.system.str()},
+                     {"mediaFolder",
+                      folder != folders.end() ? Json(std::string(esde::toString(folder->state))) : Json(nullptr)},
+                     {"populations", populationsJson(systemCoverage)}});
         }
         Json issueList = Json::array();
         for (const catalog::Issue& issue : issues) {
             issueList.push_back(issueJson(issue));
         }
         const Json report{{"mediaRoot", rootJson(library.mediaRoot)},
-                          {"entries", "gamelists"},
+                          {"source", "gamelists"},
                           {"kinds", std::move(kinds)},
                           {"populations", std::move(populations)},
-                          {"listed", Json{{"systemFolders", stats.systemsListed}, {"files", stats.files}}},
+                          {"listed", Json{{"systems", stats.systemsListed}, {"files", stats.files}}},
                           {"total", populationsJson(coverage->total)},
                           {"systems", std::move(systems)},
                           {"issues", std::move(issueList)}};
@@ -623,13 +622,15 @@ ExitCode showCoverage(CommandContext& context, Output& out, const Library& libra
     }
 
     out.writeLine(fmt::format("{:<14}{}", "Media root", rootText(library.mediaRoot, "MediaDirectory", "unknown")));
-    out.writeLine(fmt::format("{:<14}{}", "Entries",
-                              "from the gamelists (the ROM scan of I2 step 7 adds the games without a gamelist entry)"));
-    out.writeLine(fmt::format("{:<14}{} system folder(s) listed, {} files", "Listed", stats.systemsListed,
-                              stats.files));
+    out.writeLine(
+        fmt::format("{:<14}{}", "Entries",
+                    "from the gamelists (the ROM scan of I2 step 7 adds the games without a gamelist entry)"));
+    out.writeLine(
+        fmt::format("{:<14}{} system(s), {} files in their media folders", "Listed", stats.systemsListed, stats.files));
     std::string legend;
     for (std::size_t i = 0; i < kKindColumns.size(); ++i) {
-        legend += fmt::format("{}{} {}", i == 0 ? "" : ", ", kKindColumns[i], catalog::toString(catalog::kMediaKinds[i]));
+        legend +=
+            fmt::format("{}{} {}", i == 0 ? "" : ", ", kKindColumns[i], catalog::toString(catalog::kMediaKinds[i]));
     }
     out.writeLine(fmt::format("{:<14}{}", "Columns", legend));
     out.writeLine(fmt::format("{:<14}{}", "", "a share of the entries whose media are known, in percent"));
@@ -671,8 +672,9 @@ ExitCode runMedia(CommandContext& context) {
     core::ArgParser parser(std::string(kName),
                            "Shows the media of a ROM path of a system, or the media coverage of the library.");
     parser.option("system", "name", "The ES-DE system (its name in es_systems.xml).")
-        .option("path", "relative path", "A ROM path of the system, relative to its ROM folder (or as a gamelist "
-                                         "writes it: \"./...\").")
+        .option("path", "relative path",
+                "A ROM path of the system, relative to its ROM folder (or as a gamelist "
+                "writes it: \"./...\").")
         .flag("coverage", "Show the share of the entries that have each kind of media, per system.")
         .option("game", "id", "A game of the catalog (from I2 step 11).")
         .flag("json", "Print the results as JSON.");
@@ -724,8 +726,8 @@ ExitCode runMedia(CommandContext& context) {
     auto profile = esde::readLibraryFile(file);
     if (!profile) {
         if (profile.error().code == ErrorCode::NotFound) {
-            return usage(fmt::format("no library yet ({} does not exist): run 'retroverse-cli library create'",
-                                     pathText(file)));
+            return usage(
+                fmt::format("no library yet ({} does not exist): run 'retroverse-cli library create'", pathText(file)));
         }
         context.err.writeLine(fmt::format("{}: {}", kName, profile.error().toString()));
         return ExitCode::RuntimeFailure;
@@ -735,8 +737,8 @@ ExitCode runMedia(CommandContext& context) {
     if (auto settings = esde::readSettings(library.profile.esdeHome)) {
         library.settings = std::move(*settings);
     } else {
-        context.err.writeLine(fmt::format("{}: the ES-DE settings cannot be read: {}", kName,
-                                          settings.error().toString()));
+        context.err.writeLine(
+            fmt::format("{}: the ES-DE settings cannot be read: {}", kName, settings.error().toString()));
         return ExitCode::ProblemsFound;
     }
     library.romRoot = esde::resolveRomRoot(library.settings, library.profile);

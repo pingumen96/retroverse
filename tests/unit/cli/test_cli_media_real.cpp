@@ -79,14 +79,15 @@ struct Figures {
     std::uint64_t withAny;
 };
 
-// The oracle's figures over every <game> entry, those whose file exists, the games with a gamelist entry.
-//                                     covers  back   3dbox  phys   shot   title  marq   mix    fanart manual video  cust
-constexpr Figures kGamelistEntries{40870, {37151, 31768, 37012, 33302, 40359, 38842, 36468, 40357, 20002, 23110, 33592, 0},
-                                   40561};
-constexpr Figures kWithFile{39832, {36549, 31442, 36502, 33003, 39413, 38058, 36003, 39411, 19780, 22803, 33249, 0},
-                            39563};
-constexpr Figures kScrapedGames{38995, {35719, 30730, 35672, 32223, 38581, 37314, 35175, 38579, 19436, 22453, 32424, 0},
-                                38729};
+// The oracle's figures over every <game> entry, those whose file exists, the games with a gamelist entry: the members,
+// then covers, backcovers, 3dboxes, physicalmedia, screenshots, titlescreens, marquees, miximages, fanart, manuals,
+// videos, custom, then the members with any kind.
+constexpr Figures kGamelistEntries{
+    40870, {37151, 31768, 37012, 33302, 40359, 38842, 36468, 40357, 20002, 23110, 33592, 0}, 40561};
+constexpr Figures kWithFile{
+    39832, {36549, 31442, 36502, 33003, 39413, 38058, 36003, 39411, 19780, 22803, 33249, 0}, 39563};
+constexpr Figures kScrapedGames{
+    38995, {35719, 30730, 35672, 32223, 38581, 37314, 35175, 38579, 19436, 22453, 32424, 0}, 38729};
 
 /// esde-data.md section 5 per system: the games with a gamelist entry, and those of them with a cover, a screenshot,
 /// a video and a marquee (snes' videos without the four .flv files).
@@ -95,28 +96,50 @@ struct SystemRow {
     std::uint64_t games, covers, screenshots, videos, marquees;
 };
 constexpr std::array<SystemRow, 45> kSurvey{{
-    {"amiga", 2189, 1975, 2182, 1669, 1810},     {"amigacd32", 1, 1, 1, 1, 1},
-    {"amstradcpc", 2397, 1936, 2397, 2013, 1889}, {"apple2", 662, 505, 653, 491, 513},
-    {"atari2600", 569, 569, 569, 567, 569},       {"atari5200", 96, 96, 96, 96, 95},
-    {"atari7800", 216, 216, 216, 216, 216},       {"atari800", 2523, 1249, 2460, 392, 858},
-    {"atarijaguar", 339, 338, 338, 337, 338},     {"atarilynx", 360, 327, 360, 313, 360},
-    {"atarist", 312, 304, 312, 209, 272},         {"c64", 1012, 535, 914, 118, 296},
-    {"channelf", 27, 27, 27, 27, 27},             {"colecovision", 1010, 886, 1008, 720, 1010},
-    {"dos", 20, 10, 10, 6, 10},                   {"dreamcast", 89, 87, 87, 87, 87},
-    {"fds", 190, 190, 190, 190, 190},             {"gb", 4452, 4374, 4448, 4211, 4439},
-    {"gba", 4512, 4443, 4504, 4224, 4504},        {"gbc", 2676, 2499, 2664, 2205, 2549},
-    {"gc", 538, 536, 536, 536, 536},              {"intellivision", 156, 156, 155, 154, 155},
-    {"mame", 76, 36, 36, 35, 36},                 {"mastersystem", 2237, 2237, 2229, 2221, 2237},
-    {"megadrive", 1000, 997, 998, 996, 998},      {"n64", 2, 2, 2, 2, 2},
-    {"nds", 115, 115, 114, 108, 114},             {"neogeo", 1, 0, 0, 0, 0},
-    {"nes", 4065, 4042, 4060, 3356, 4060},        {"ngpc", 36, 28, 34, 35, 28},
-    {"odyssey2", 83, 83, 83, 82, 83},             {"pcengine", 4, 1, 1, 1, 1},
-    {"pokemini", 11, 11, 11, 11, 11},             {"ps2", 3061, 2993, 2973, 2979, 3001},
-    {"ps3", 6, 6, 2, 0, 2},                       {"psp", 12, 12, 12, 12, 12},
-    {"psx", 2233, 2228, 2228, 2223, 2227},        {"saturn", 8, 2, 2, 2, 2},
-    {"segacd", 1, 1, 1, 1, 1},                    {"snes", 1560, 1535, 1535, 1462, 1507},
-    {"trs-80", 1, 0, 0, 0, 0},                    {"vic20", 7, 3, 7, 7, 1},
-    {"virtualboy", 126, 125, 123, 106, 125},      {"wii", 3, 2, 2, 2, 2},
+    {"amiga", 2189, 1975, 2182, 1669, 1810},
+    {"amigacd32", 1, 1, 1, 1, 1},
+    {"amstradcpc", 2397, 1936, 2397, 2013, 1889},
+    {"apple2", 662, 505, 653, 491, 513},
+    {"atari2600", 569, 569, 569, 567, 569},
+    {"atari5200", 96, 96, 96, 96, 95},
+    {"atari7800", 216, 216, 216, 216, 216},
+    {"atari800", 2523, 1249, 2460, 392, 858},
+    {"atarijaguar", 339, 338, 338, 337, 338},
+    {"atarilynx", 360, 327, 360, 313, 360},
+    {"atarist", 312, 304, 312, 209, 272},
+    {"c64", 1012, 535, 914, 118, 296},
+    {"channelf", 27, 27, 27, 27, 27},
+    {"colecovision", 1010, 886, 1008, 720, 1010},
+    {"dos", 20, 10, 10, 6, 10},
+    {"dreamcast", 89, 87, 87, 87, 87},
+    {"fds", 190, 190, 190, 190, 190},
+    {"gb", 4452, 4374, 4448, 4211, 4439},
+    {"gba", 4512, 4443, 4504, 4224, 4504},
+    {"gbc", 2676, 2499, 2664, 2205, 2549},
+    {"gc", 538, 536, 536, 536, 536},
+    {"intellivision", 156, 156, 155, 154, 155},
+    {"mame", 76, 36, 36, 35, 36},
+    {"mastersystem", 2237, 2237, 2229, 2221, 2237},
+    {"megadrive", 1000, 997, 998, 996, 998},
+    {"n64", 2, 2, 2, 2, 2},
+    {"nds", 115, 115, 114, 108, 114},
+    {"neogeo", 1, 0, 0, 0, 0},
+    {"nes", 4065, 4042, 4060, 3356, 4060},
+    {"ngpc", 36, 28, 34, 35, 28},
+    {"odyssey2", 83, 83, 83, 82, 83},
+    {"pcengine", 4, 1, 1, 1, 1},
+    {"pokemini", 11, 11, 11, 11, 11},
+    {"ps2", 3061, 2993, 2973, 2979, 3001},
+    {"ps3", 6, 6, 2, 0, 2},
+    {"psp", 12, 12, 12, 12, 12},
+    {"psx", 2233, 2228, 2228, 2223, 2227},
+    {"saturn", 8, 2, 2, 2, 2},
+    {"segacd", 1, 1, 1, 1, 1},
+    {"snes", 1560, 1535, 1535, 1462, 1507},
+    {"trs-80", 1, 0, 0, 0, 0},
+    {"vic20", 7, 3, 7, 7, 1},
+    {"virtualboy", 126, 125, 123, 106, 125},
+    {"wii", 3, 2, 2, 2, 2},
     {"windows", 1, 1, 1, 1, 1},
 }};
 
@@ -129,13 +152,13 @@ struct AdrRow {
     double tolerance;
 };
 constexpr std::array<AdrRow, 7> kAdr0003{{
-    {"Screenshot", rv::catalog::MediaKind::Screenshot, 98.5, 0.3},       // 98.75: +0.25, explained
-    {"Cover", rv::catalog::MediaKind::Cover, 90.6, 0.35},                // 90.90: +0.30, explained
-    {"Marquee", rv::catalog::MediaKind::Marquee, 89.3, 0.1},             // 89.23
-    {"Video", rv::catalog::MediaKind::Video, 82.4, 0.25},                // 82.19: -0.21, explained
+    {"Screenshot", rv::catalog::MediaKind::Screenshot, 98.5, 0.3},              // 98.75: +0.25, explained
+    {"Cover", rv::catalog::MediaKind::Cover, 90.6, 0.35},                       // 90.90: +0.30, explained
+    {"Marquee", rv::catalog::MediaKind::Marquee, 89.3, 0.1},                    // 89.23
+    {"Video", rv::catalog::MediaKind::Video, 82.4, 0.25},                       // 82.19: -0.21, explained
     {"Physical media image", rv::catalog::MediaKind::PhysicalMedia, 81.2, 0.3}, // 81.48: +0.28, explained
-    {"Back cover", rv::catalog::MediaKind::BackCover, 77.8, 0.1},        // 77.73
-    {"Manual", rv::catalog::MediaKind::Manual, 56.6, 0.1},               // 56.55
+    {"Back cover", rv::catalog::MediaKind::BackCover, 77.8, 0.1},               // 77.73
+    {"Manual", rv::catalog::MediaKind::Manual, 56.6, 0.1},                      // 56.55
 }};
 
 void checkFigures(const nlohmann::json& counts, const Figures& expected, std::string_view population) {
@@ -191,8 +214,8 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
     const nlohmann::json& report = *parsed;
     const nlohmann::json& total = report["total"];
     std::cout << "cli/media real library: coverage in " << seconds << " s (the gamelists read, the ROM folders listed "
-              << "down the gamelists' folders, " << report["listed"]["systemFolders"] << " media folders listed, "
-              << report["listed"]["files"] << " files)\n";
+              << "down the gamelists' folders, " << report["listed"]["systems"]
+              << " systems looked up in the media root, " << report["listed"]["files"] << " files)\n";
     for (const char* population : {"gamelist-entries", "gamelist-entries-with-file", "scraped-games"}) {
         std::cout << "  " << population << ": " << total[population].dump() << "\n";
     }
@@ -200,7 +223,7 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
     checkFigures(total["gamelist-entries"], kGamelistEntries, "gamelist-entries");
     checkFigures(total["gamelist-entries-with-file"], kWithFile, "gamelist-entries-with-file");
     checkFigures(total["scraped-games"], kScrapedGames, "scraped-games");
-    CHECK(report["listed"]["systemFolders"] == 45); // every system with a gamelist; trs-80 has no media folder
+    CHECK(report["listed"]["systems"] == 45); // every system with a gamelist; trs-80 has no media folder
     CHECK(report["listed"]["files"] == 364810);
 
     // Per system, the survey's table.
