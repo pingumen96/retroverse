@@ -32,10 +32,10 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de`: `es-app/sr
     `gb` its media);
   - the sub-folders are the ROM's parent path with the system's ROM folder removed (`Utils::String::replace(getParent
     (mPath), mStartPath, "")`), so the ROM tree's sub-folders are mirrored as they are spelled on disk;
-  - the display name is `Utils::FileSystem::getStem(mPath)`: the file name from its last dot removed, nothing removed
-    for a name without a dot, and the **whole name of a directory** (`getStem` tests `isDirectory()` first). Never
-    trimmed: `Galactic Disk .atr` gives `Galactic Disk .png`; a file named `.gb` gives `.png`. This is step 1's
-    `catalog::mediaStem()`.
+  - the display name is `Utils::FileSystem::getStem(mPath)`: the file name without what follows its last dot (the dot
+    included), the whole name for a name without a dot, and the **whole name of a directory** (`getStem` tests
+    `isDirectory()` first). Never trimmed: `Galactic Disk .atr` gives `Galactic Disk .png`; a file named `.gb` gives the
+    media file `.png`. This is step 1's `catalog::mediaStem()`.
 - **The kinds and their folders.** `getMediafilePath()` serves `covers`, `backcovers`, `3dboxes`, `physicalmedia`,
   `screenshots`, `titlescreens`, `marquees`, `miximages`, `fanart` and `custom` (`getCustomImagePath()`); `videos` has
   `getVideoPath()` and `manuals` `getManualPath()`. The 12 kinds of specification §4.4, `catalog::MediaKind`.
@@ -90,8 +90,8 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de`: `es-app/sr
 **Listings in memory.** The root is listed once (its folders found case-insensitively), each system's folder on the
 first question about the system, and the answers come from those listings until `refresh()`, which forgets them all
 (the root's listing too: a system folder made since is seen after it). One import therefore lists each folder once;
-the memory is about 100 bytes per media file (the folded name and the extension; a sorted vector per kind, searched by
-binary search).
+the listings take about 150 bytes per media file (the folded name and the extension, in a sorted vector per kind
+searched by binary search): 53 MiB for the reference machine's 364,810 files.
 
 **Issues** (`catalog::Issue::code`, each naming the system and the folder):
 
@@ -163,7 +163,98 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
 
 ## Real library (`scripts/real-library.ps1`, with ES-DE closed)
 
-REAL_LIBRARY_RESULTS
+`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
+-MediaRoot E:\Programmi\ES-DE_media\downloaded_media`, Release, run twice: with `-Filter '[real-library][media]'` (this
+step's two tests) and with the default filter (every `[real-library]` test, 5 test cases, 4,145 assertions). Both
+passed; the snapshots showed 0 differences among 542,082 entries each time.
+
+**The media tree** (`esde/media: the real library's media tree`, `test_media_real.cpp`):
+- 44 system folders, each spelled as its system; 364,810 files in 6,878 folders, every folder listed (none that could
+  not be, no entry that could not be read).
+- Media per kind, equal to the survey's file counts (esde-data.md section 5): covers 36,388, backcovers 31,081, 3dboxes
+  36,250, physicalmedia 32,569, screenshots 39,691, titlescreens 38,235, marquees 35,705, miximages 39,674, fanart
+  19,636, manuals 22,768, videos 32,809, custom none. No name has both a `.png` and a `.jpg` (0 shadowed files); the four
+  `.flv` of snes/videos are ignored (`media-ignored-extension`).
+- The listing took 1.19 s and 1.63 s (the two runs), **warm**: the snapshot the script takes just before had listed the
+  same tree (the survey measured 5.8 s cold and 1.2 to 1.3 s warm with Python). The listings cost 53 MiB of private
+  bytes, about 150 bytes per media file. Informative: the gate times the import on a quiet machine.
+
+**The coverage** (`cli/media: the real library's media coverage ...`, `test_cli_media_real.cpp`: `library create` with
+the four folders into a temporary user data directory, then `media --coverage --json`; 2.5 and 3.0 s, warm, the
+gamelists read, the ROM folders listed down the gamelists' folders and the media of 45 systems listed). Every count
+equals an independent oracle's (a Python count over the survey's read-only listings of 2026-10-16: ElementTree over the
+gamelists, `os.scandir` listings of both trees, its own media-name rule, ES-DE's extensions, `str.upper()` folding;
+run once on those machine-local listings, its figures are frozen in the test):
+
+| Kind | Every `<game>` entry (40,870) | Their file exists (39,832) | Scraped games (38,995) |
+|---|---|---|---|
+| covers | 37,151 (90.90%) | 36,549 (91.76%) | 35,719 (91.60%) |
+| backcovers | 31,768 (77.73%) | 31,442 (78.94%) | 30,730 (78.80%) |
+| 3dboxes | 37,012 (90.56%) | 36,502 (91.64%) | 35,672 (91.48%) |
+| physicalmedia | 33,302 (81.48%) | 33,003 (82.86%) | 32,223 (82.63%) |
+| screenshots | 40,359 (98.75%) | 39,413 (98.95%) | 38,581 (98.94%) |
+| titlescreens | 38,842 (95.04%) | 38,058 (95.55%) | 37,314 (95.69%) |
+| marquees | 36,468 (89.23%) | 36,003 (90.39%) | 35,175 (90.20%) |
+| miximages | 40,357 (98.74%) | 39,411 (98.94%) | 38,579 (98.93%) |
+| fanart | 20,002 (48.94%) | 19,780 (49.66%) | 19,436 (49.84%) |
+| manuals | 23,110 (56.55%) | 22,803 (57.25%) | 22,453 (57.58%) |
+| videos | 33,592 (82.19%) | 33,249 (83.47%) | 32,424 (83.15%) |
+| custom | 0 | 0 | 0 |
+| any kind | 40,561 (99.24%) | 39,563 (99.32%) | 38,729 (99.32%) |
+
+Per system, the scraped games and their covers, screenshots, videos and marquees are esde-data.md section 5's table for
+all 45 systems with a gamelist, but one cell: snes has 1,462 games with a video, not 1,466, since the survey counted
+the four `.flv` files that ES-DE never reads. trs-80 has a gamelist and no media folder (`missing`).
+
+**ADR-0003's table**, over the same 40,870 entries (its denominator: every `<game>` entry, those whose file is gone
+included):
+
+| ADR-0003's row | ADR-0003 | Measured | Difference (in entries, about: ADR-0003 rounds to 0.1 point) |
+|---|---|---|---|
+| Screenshot | 98.5% | 98.75% | +0.25 point (+102 entries) |
+| Cover | 90.6% | 90.90% | +0.30 point (+123) |
+| Marquee | 89.3% | 89.23% | -0.07 point |
+| Video | 82.4% | 82.19% | -0.21 point (-85) |
+| Physical media image | 81.2% | 81.48% | +0.28 point (+116) |
+| Back cover | 77.8% | 77.73% | -0.07 point |
+| Manual | 56.6% | 56.55% | -0.05 point |
+
+Three rows are reproduced within 0.1 point; four differ by 0.21 to 0.30 point, and the test allows those four
+differences (with 0.02 to 0.05 point to spare) and 0.1 point for the three others. Why they differ:
+- The measured figures are not in doubt: the oracle, written independently of the C++ code, gives the same counts
+  entry for entry, on all three populations and per system against the survey's own table.
+- ADR-0003 (2026-10-15, a day before the survey) does not record its method beyond "matching every entry to
+  downloaded_media with ES-DE's naming rule". The data have not changed since: the media tree was last written on
+  2026-09-04 and the gamelists on 2026-09-06 (ES-DE has not run since), and the snapshots match the survey's counts.
+- No other population or rule gives its rows either: its differences run both ways (cover +123 entries, video -85), so
+  neither adding nor removing entries explains them, and the only extension that ES-DE does not read (`.flv`) accounts
+  for 4 entries. Over the 41,025 entries `<folder>` ones included (with their media) the shares are 98.47, 90.65,
+  88.97, 81.95, 81.23, 77.52 and 56.37%: screenshot, cover and physical media within 0.1 point of ADR-0003, the four
+  others 0.2 to 0.45 point off. Counting files per kind instead of entries gives 97.1, 89.0, 87.4, 80.3, 79.7, 76.1 and
+  55.7%.
+- "Description and metadata" (90.5%) is no media kind: 37,128 of the 40,870 entries have a `<desc>` (90.84%).
+So ADR-0003's figures are close approximations whose computation is lost; the figures above are the reproducible ones
+(see "Suggested amendments").
+
+## Verification
+
+- `rv_tests "[esde][media],[catalog][coverage],[esde][coverage],[cli][media]"` (14 test cases, 1,460 assertions):
+  - the extension lists and their order; the media paths (dotted names, folders, trailing spaces, an empty media name);
+  - the standard fixture: every entry of its README's media table, the 12 kinds of Alpha Quest, png before jpg, the
+    ignored flv, the folder covers (Hacks, Sports Vol. 2 with its whole name), the namesake without media, the missing
+    file's cover, the listings and their issues, the derived paths, path()'s refusals;
+  - trees written at test time: system, kind and media names in another case (`GB/COVERS/collection a/...PNG`), every
+    image and video extension in ES-DE's order (`.webp` and `.webm` included), manuals in `.PDF`, a folder named like
+    a media file, files without an extension, non-ASCII names (é and É), punctuation, a hidden file, a media path past
+    MAX_PATH, refresh() after files and a system folder appear;
+  - media roots: empty, without kind folders, missing, a file, an unmapped drive letter, unresolved; folders that
+    cannot be listed (`ListingDenied`) below a kind folder, a kind folder, a system folder;
+  - the coverage domain on a scripted resolver (populations, counts, unknown members, what is asked), the standard
+    fixture's 23 entries over the four populations, the media-roots fixture's empty and missing roots;
+  - `retroverse-cli media` as text and JSON on both fixtures, its usage errors, `--game`, `--output`, the exit codes,
+    and the fixture's files unchanged after it.
+- Debug and Release build without a warning; the unit tests (1,027) pass in both.
+- The real library: see above.
 
 ## For the merge
 
