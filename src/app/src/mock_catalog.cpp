@@ -282,7 +282,9 @@ Expected<MockCatalog> loadMockCatalog(const std::filesystem::path& file) {
 }
 
 launcher::EmulatorProfiles mockCatalogProfiles(launcher::EmulatorProfiles base, const MockCatalog& catalog) {
-    launcher::ProfileDocument effective{std::move(base.profiles), std::move(base.issues)};
+    launcher::ProfileDocument effective{.profiles = std::move(base.profiles),
+                                        .systemChoices = std::move(base.systemChoices),
+                                        .issues = std::move(base.issues)};
     return launcher::mergeProfileDocuments(std::move(effective), catalog.profiles);
 }
 
