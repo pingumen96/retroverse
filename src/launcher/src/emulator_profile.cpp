@@ -22,6 +22,7 @@ using Json = nlohmann::json;
 
 constexpr std::string_view kSchemaVersionField = "schemaVersion";
 constexpr std::string_view kProfilesField = "profiles";
+constexpr std::string_view kSystemChoicesField = "systemChoices";
 
 /// Where a value sits: the document's name and a JSON pointer (RFC 6901).
 class Location {
@@ -513,7 +514,53 @@ private:
     return full.lexically_normal();
 }
 
+/// One choice of "systemChoices": {"command": "<label>"} or {"profile": "<id>"}.
+[[nodiscard]] Expected<LaunchChoice> parseSystemChoice(const Json& value, const Location& at) {
+    if (!value.is_object() || value.size() != 1) {
+        return fail(ErrorCode::ParseError, "expected {\"command\": \"<label>\"} or {\"profile\": \"<id>\"}", at);
+    }
+    const auto field = value.begin();
+    const std::string& key = field.key();
+    const Json& text = field.value();
+    const Location valueAt = at.child(key);
+    LaunchChoice choice;
+    if (key == toString(LaunchChoiceKind::EsdeCommand)) {
+        choice.kind = LaunchChoiceKind::EsdeCommand;
+    } else if (key == toString(LaunchChoiceKind::Profile)) {
+        choice.kind = LaunchChoiceKind::Profile;
+    } else {
+        return fail(ErrorCode::ParseError, "unknown field " + inQuotes(key) + " (command or profile)", valueAt);
+    }
+    if (!text.is_string()) {
+        return fail(ErrorCode::ParseError, "expected a string", valueAt);
+    }
+    choice.value = text.get<std::string>();
+    if (!core::isValidUtf8(choice.value) || choice.value.find('\0') != std::string::npos) {
+        return fail(ErrorCode::ValidationFailed, "not valid UTF-8 text", valueAt);
+    }
+    if (choice.kind == LaunchChoiceKind::EsdeCommand && choice.value.empty()) {
+        // ES-DE's alternative emulators are labelled: an unlabelled command is a system's only one, its default.
+        return fail(ErrorCode::ValidationFailed, "an empty command label", valueAt);
+    }
+    if (choice.kind == LaunchChoiceKind::Profile && !isValidProfileId(choice.value)) {
+        return fail(ErrorCode::ValidationFailed,
+                    "invalid profile id " + inQuotes(choice.value) + " ([a-z0-9][a-z0-9._-]*, at most 64 characters)",
+                    valueAt);
+    }
+    return choice;
+}
+
 } // namespace
+
+std::string_view toString(LaunchChoiceKind kind) noexcept {
+    switch (kind) {
+    case LaunchChoiceKind::EsdeCommand:
+        return "command";
+    case LaunchChoiceKind::Profile:
+        return "profile";
+    }
+    return "unknown";
+}
 
 std::string_view toString(ProfileOrigin origin) noexcept {
     switch (origin) {
@@ -578,11 +625,10 @@ ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string
         return result;
     }
     for (const auto& item : document.items()) {
-        if (item.key() != kSchemaVersionField && item.key() != kProfilesField) {
+        if (item.key() != kSchemaVersionField && item.key() != kProfilesField && item.key() != kSystemChoicesField) {
             issue({}, fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), root.child(item.key())));
         }
     }
-
     const Location profilesAt = root.child(kProfilesField);
     const auto profiles = document.find(kProfilesField);
     if (profiles == document.end()) {
@@ -611,6 +657,28 @@ ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string
             continue;
         }
         result.profiles.push_back(std::move(*profile));
+    }
+    // The per-system choices (I2 step 10): each one that is valid is kept, whatever the others hold.
+    if (const auto choices = document.find(kSystemChoicesField); choices != document.end()) {
+        const Location choicesAt = root.child(kSystemChoicesField);
+        if (!choices->is_object()) {
+            issue({}, fail(ErrorCode::ParseError, "expected an object of systems", choicesAt));
+        } else {
+            for (const auto& item : choices->items()) {
+                const Location choiceAt = choicesAt.child(item.key());
+                if (!isValidSystemName(item.key())) {
+                    issue({}, fail(ErrorCode::ValidationFailed,
+                                   "invalid system name " + inQuotes(item.key()) + " (one folder name)", choiceAt));
+                    continue;
+                }
+                auto choice = parseSystemChoice(item.value(), choiceAt);
+                if (!choice) {
+                    result.issues.push_back(ProfileIssue{std::string(file), {}, std::move(choice.error())});
+                    continue;
+                }
+                result.systemChoices.insert_or_assign(item.key(), std::move(*choice));
+            }
+        }
     }
     return result;
 }
@@ -642,6 +710,11 @@ std::vector<const EmulatorProfile*> EmulatorProfiles::serving(std::string_view s
     return serving;
 }
 
+const LaunchChoice* EmulatorProfiles::systemChoice(std::string_view system) const noexcept {
+    const auto found = systemChoices.find(system);
+    return found == systemChoices.end() ? nullptr : &found->second;
+}
+
 EmulatorProfiles mergeProfileDocuments(ProfileDocument shipped, ProfileDocument user) {
     EmulatorProfiles merged;
     merged.profiles = std::move(shipped.profiles);
@@ -653,6 +726,10 @@ EmulatorProfiles mergeProfileDocuments(ProfileDocument shipped, ProfileDocument 
         } else {
             merged.profiles.push_back(std::move(profile));
         }
+    }
+    merged.systemChoices = std::move(shipped.systemChoices);
+    for (auto& [system, choice] : user.systemChoices) {
+        merged.systemChoices.insert_or_assign(system, std::move(choice));
     }
     merged.issues = std::move(shipped.issues);
     merged.issues.insert(merged.issues.end(), std::make_move_iterator(user.issues.begin()),

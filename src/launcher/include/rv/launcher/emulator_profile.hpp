@@ -30,12 +30,22 @@
 //           "systems": {"gb": {"variables": {"core": "{var:cores}\\gambatte_libretro.dll"}}},
 //           "verified": false                     // informational: a launch was tested (specification §11.3)
 //         }
-//       ]
+//       ],
+//       "systemChoices": {                        // optional (I2 step 10): how a system launches, by Retroverse's
+//         "snes": {"command": "bsnes"},           //   choice: an ES-DE command of the system, by its label,
+//         "gb": {"profile": "retroarch"}          //   or one of these profiles, by its id
+//       }
 //     }
 //
 // Paths of "executable": absolute once expanded; a leading '~' is the user's home folder (ISystemProbe::homeFolder),
 // {env:NAME} tokens of the allow-list are expanded (no other token), and the last element may hold the wildcards '*'
 // and '?' (the first match in sorted order).
+//
+// "systemChoices" is Retroverse's choice for a system (ADR-0008 §8: after the game's own choices, before the gamelist's
+// <alternativeEmulator>); the user's document replaces the shipped one's per system. A choice is stored as a label or an
+// id, never as a copied command: the catalog's launch resolution translates it again from the current es_systems.xml
+// at every refresh and launch, and a label or id that no longer exists makes the system "requires launcher
+// configuration", naming it. Choices made through retroverse-cli (assign) and per-game choices live in the database.
 
 #include <chrono>
 #include <cstdint>
@@ -152,18 +162,44 @@ struct ProfileIssue {
     [[nodiscard]] std::string toString() const;
 };
 
-/// The profiles of one document, in their order, and an issue for each problem: a profile with an error is left out
-/// (the others are kept); a document that cannot be read, is not an object, has another schemaVersion or no "profiles"
-/// array gives no profile.
+/// What a stored launch choice names (ADR-0008 §8).
+enum class LaunchChoiceKind : std::uint8_t {
+    EsdeCommand, ///< one of the system's ES-DE commands, by its label (es_systems.xml's <command label>)
+    Profile,     ///< a Retroverse emulator profile, by its id
+};
+
+/// "command", "profile": the keys of a choice in emulators.json.
+[[nodiscard]] std::string_view toString(LaunchChoiceKind kind) noexcept;
+
+/// A choice of how a system or a game launches, as Retroverse stores it: an ES-DE command label of the system or a
+/// profile id, never a copy of a command, so that the current configuration translates it at every refresh and launch.
+struct LaunchChoice {
+    LaunchChoiceKind kind = LaunchChoiceKind::EsdeCommand;
+    /// The label (compared exactly, as ES-DE compares labels) or the profile id.
+    std::string value;
+
+    friend bool operator==(const LaunchChoice&, const LaunchChoice&) = default;
+};
+
+/// The per-system choices of a document: ES-DE system name (compared exactly) -> choice.
+using SystemChoices = std::map<std::string, LaunchChoice, std::less<>>;
+
+/// The profiles of one document, in their order, its per-system choices, and an issue for each problem: a profile or a
+/// choice with an error is left out (the others are kept); a document that cannot be read, is not an object, has
+/// another schemaVersion or no "profiles" array gives no profile and no choice.
 struct ProfileDocument {
     std::vector<EmulatorProfile> profiles;
+    /// "systemChoices": {"<system>": {"command": "<label>"} or {"profile": "<id>"}}. Whether the label or the profile
+    /// exists is the launch resolution's to tell (the profile may come from the other document).
+    SystemChoices systemChoices;
     std::vector<ProfileIssue> issues;
 };
 
 /// Parses a profile document (`file` names it in issues and EmulatorProfile::source). Issues: ParseError (wrong JSON
 /// types, missing or unknown fields), ValidationFailed (an invalid id or name, a template that does not parse, an
 /// environment variable outside the allow-list, a relative executable path, a negative timeout, a second profile with
-/// the same id), Unsupported (another schemaVersion, checked first).
+/// the same id; a choice for a system name that is no folder name, an empty label, a malformed profile id),
+/// Unsupported (another schemaVersion, checked first).
 [[nodiscard]] ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string_view file,
                                                    ProfileOrigin origin);
 
@@ -176,13 +212,17 @@ struct EmulatorProfiles {
     /// The shipped profiles in their order, each replaced in place by the user's profile with the same id, then the
     /// user's other profiles in their order.
     std::vector<EmulatorProfile> profiles;
+    /// The shipped document's choices, each system's replaced by the user's choice for it.
+    SystemChoices systemChoices;
     /// The shipped document's issues, then the user's. A user profile left out for an error does not replace the
-    /// shipped one with its id.
+    /// shipped one with its id, nor does a user choice left out replace the shipped choice of its system.
     std::vector<ProfileIssue> issues;
 
     [[nodiscard]] const EmulatorProfile* find(std::string_view id) const noexcept;
     /// The profiles that serve `system`, in order.
     [[nodiscard]] std::vector<const EmulatorProfile*> serving(std::string_view system) const;
+    /// Retroverse's choice for `system` (emulators.json's "systemChoices"), or null.
+    [[nodiscard]] const LaunchChoice* systemChoice(std::string_view system) const noexcept;
 };
 
 /// Merges two documents as EmulatorProfiles describes.
