@@ -437,6 +437,23 @@ TEST_CASE("esde/rom_scan: noload and hidden folders", "[esde][rom_scan]") {
         CHECK(reasonOf(snapshot, "gba", ".secret/Inner/Unlisted (USA).gba") == "ShowHiddenFiles");
         CHECK(reasonOf(snapshot, "gba", "Keep (USA).gba") == "game");
     }
+    SECTION("folders with the hidden attribute, ShowHiddenFiles off") {
+        setSetting(fixture, "ShowHiddenFiles", true, false);
+        REQUIRE(rv::test::setHidden(fixture.path("roms/gba/Skip Me"), true));
+        REQUIRE(rv::test::setHidden(fixture.path("roms/pcengine"), true));
+        const LibrarySnapshot snapshot = load(fixture);
+        // Hidden before noload: ES-DE skips the hidden folder before it looks for a noload.txt in it.
+        CHECK(reasonOf(snapshot, "gba", "Skip Me") == "ShowHiddenFiles");
+        CHECK(reasonOf(snapshot, "gba", "Skip Me/Hidden Away (USA).gba") == "ShowHiddenFiles");
+        CHECK(reasonOf(snapshot, "gba", "Skip Me/Deeper/Lost (USA).gba") == "ShowHiddenFiles");
+        // A hidden system folder: ES-DE does not load the system.
+        CHECK(reasonOf(snapshot, "pcengine", "Bounce Kid (Japan).pce") == "ShowHiddenFiles");
+        std::vector<std::string> notLoaded;
+        for (const rv::catalog::Issue& issue : issuesOf(snapshot.issues, "system-not-loaded")) {
+            notLoaded.push_back(issue.system);
+        }
+        CHECK(notLoaded == std::vector<std::string>{"n64", "pcengine"});
+    }
     SECTION("ParseGamelistOnly on") {
         setSetting(fixture, "ParseGamelistOnly", false, true);
         const LibrarySnapshot snapshot = load(fixture);
