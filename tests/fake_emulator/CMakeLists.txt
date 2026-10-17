@@ -9,4 +9,5 @@ add_executable(rv_fake_emulator fake_emulator.cpp)
 rv_set_target_defaults(rv_fake_emulator)
 # It receives library-like paths in the launch tests of I2 (ADR-0008 §1).
 rv_enable_long_paths(rv_fake_emulator)
-target_link_libraries(rv_fake_emulator PRIVATE rv_core rv_launcher SDL3::SDL3)
+# rv_platform_win: RV_LAUNCH_BACKGROUND as the runner reads it, and no failure dialogs.
+target_link_libraries(rv_fake_emulator PRIVATE rv_core rv_launcher rv_platform_win SDL3::SDL3)

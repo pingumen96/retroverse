@@ -26,6 +26,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// After windows.h: the C runtime's report modes (the failure dialogs of rv_tests).
+#include <crtdbg.h>
+#include <stdlib.h>
 
 #include <nlohmann/json.hpp>
 
@@ -790,6 +793,18 @@ TEST_CASE("platform_win/process_runner: background launches never open a console
         // console window or hand the foreground to a program it starts, whoever runs it.
         CHECK(rv::platform_win::backgroundLaunchesRequested());
     }
+    SECTION("rv_tests itself shows no failure dialog") {
+        // The same file turns them off (disableFailureDialogs): a failed assertion or abort() of a test reaches
+        // standard error, never a message box that takes the foreground and waits for a click.
+        constexpr UINT kNoDialogs = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX;
+        CHECK((GetErrorMode() & kNoDialogs) == kNoDialogs);
+        CHECK((_set_abort_behavior(0, 0) & (_WRITE_ABORT_MSG | _CALL_REPORTFAULT)) == 0);
+        CHECK(_set_error_mode(_REPORT_ERRMODE) == _OUT_TO_STDERR);
+#if defined(_DEBUG)
+        CHECK(_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_REPORT_MODE) == (_CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG));
+        CHECK(_CrtSetReportMode(_CRT_ERROR, _CRTDBG_REPORT_MODE) == (_CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG));
+#endif
+    }
     SECTION("a console program whose request shows its console gets one without a window") {
         REQUIRE_FAKE_EMULATOR();
         ScratchDir scratch;
@@ -831,6 +846,21 @@ TEST_CASE("platform_win/process_runner: in the background a program missing a DL
     REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }, 30s));
     CHECK(session.outcome().exitCode == 0xC0000135u); // STATUS_DLL_NOT_FOUND, no dialog waited for
     CHECK((GetErrorMode() & SEM_FAILCRITICALERRORS) != 0);
+}
+
+TEST_CASE("platform_win/process_runner: a failed assertion and abort() of a program end it without a dialog",
+          "[platform_win][process_runner][background]") {
+    REQUIRE_FAKE_EMULATOR();
+    // The fake turns failure dialogs off as the product's programs do when a test runs them (disableFailureDialogs): in
+    // a Debug build the failed _ASSERTE would otherwise show the C runtime's "Debug Assertion Failed" box, and abort()
+    // its own box and error reporting, each over the user's work until clicked. --exit-timeout-ms ends it if one did.
+    rv::platform_win::Win32ProcessRunner runner(rv::platform_win::Win32ProcessRunnerOptions{.background = true});
+    WakeSignal wake;
+    LaunchRequest request = fakeRequest({"--abort", "--exit-timeout-ms", "30000"});
+    LaunchSession session(request, runner);
+    session.start(LaunchClock::now(), {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }, 40s));
+    CHECK(session.outcome().exitCode == 3u); // abort()'s exit code, not --exit-timeout-ms's 124
 }
 
 TEST_CASE("platform_win/process_runner: in the background the fake's window is seen but never takes the foreground",

@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <exception>
@@ -25,6 +26,8 @@
 
 #include <rv/platform_win/win32_util.hpp>
 
+// After windows.h: the C runtime's debug reports (disableFailureDialogs).
+#include <crtdbg.h>
 // After windows.h (win32_util.hpp): NtQuerySystemInformation and SYSTEM_PROCESS_INFORMATION (ntdll).
 #include <winternl.h>
 
@@ -725,18 +728,29 @@ std::vector<launcher::EnvironmentVariable> currentEnvironment() {
 
 namespace {
 
-/// For background launches, once per process: this process's error mode fails critical errors and shows no fault
-/// dialog, and the programs it starts inherit it (no CREATE_DEFAULT_ERROR_MODE), so that a program that misses a DLL
-/// (STATUS_DLL_NOT_FOUND) or crashes ends with its status instead of a modal dialog over the user's work.
-void setBackgroundErrorMode() noexcept {
-    static const bool set = [] {
-        SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
-        return true;
-    }();
-    static_cast<void>(set);
-}
+/// How far left of the virtual screen a GUI program started in the background opens its first window: wider than any
+/// window it could open there, short of the -32000 where Windows parks minimized windows.
+constexpr int kBackgroundWindowOffset = 8000;
 
 } // namespace
+
+void disableFailureDialogs() noexcept {
+    static const bool disabled = [] {
+        // The loader's and the crash dialogs; programs started without CREATE_DEFAULT_ERROR_MODE inherit the mode, so
+        // that one that misses a DLL (STATUS_DLL_NOT_FOUND) or crashes ends with its status.
+        SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+        // The C runtime's own message boxes, which the error mode does not cover (task-modal, MB_SETFOREGROUND: the
+        // run would also block until a timeout). The report modes exist in Debug builds only (no-ops in Release).
+        _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+        _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+        _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+        _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+        _set_error_mode(_OUT_TO_STDERR);
+        _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+        return true;
+    }();
+    static_cast<void>(disabled);
+}
 
 bool backgroundLaunchesRequested() noexcept {
     try {
@@ -752,7 +766,7 @@ std::uint32_t processCreationFlags(const launcher::LaunchRequest& request, bool 
     // request and in the background (a console window would be activated over whatever the user is doing): never
     // Retroverse's console, whose closing (CTRL_CLOSE_EVENT) or Ctrl+Break would reach every process attached to it.
     // Both flags are ignored for GUI programs. In the background the program inherits this process's error mode
-    // (setBackgroundErrorMode) instead of the default one, which shows the loader's and the crash dialogs.
+    // (disableFailureDialogs) instead of the default one, which shows the loader's and the crash dialogs.
     DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP |
                   (background ? 0 : CREATE_DEFAULT_ERROR_MODE) |
                   (request.hideConsoleWindow || background ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE);
@@ -921,14 +935,21 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     std::array<HANDLE, 2> inheritedHandles{};
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(STARTUPINFOW);
-    // In the background (automated runs): no console window, a GUI program's first window minimized and inactive.
+    // In the background (automated runs): no console window; a GUI program's first window, when the program lets
+    // Windows place it (CW_USEDEFAULT) and show it (its first ShowWindow), opens inactive and left of every monitor,
+    // as rv_fake_emulator's background window: still a visible window for the window detection, never one the user
+    // sees, and no minimized window in the taskbar. A program that places or activates its window itself is a desktop
+    // test's (focus_watch.py reports it).
     const bool background = m_options.background.value_or(backgroundLaunchesRequested());
     const DWORD flags = processCreationFlags(request, background);
     BOOL inheritHandles = FALSE;
     if (background) {
-        startup.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW;
-        startup.StartupInfo.wShowWindow = SW_SHOWMINNOACTIVE;
-        setBackgroundErrorMode();
+        startup.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW | STARTF_USEPOSITION;
+        startup.StartupInfo.wShowWindow = SW_SHOWNOACTIVATE;
+        // dwX and dwY are read back as signed coordinates.
+        startup.StartupInfo.dwX = static_cast<DWORD>(GetSystemMetrics(SM_XVIRTUALSCREEN) - kBackgroundWindowOffset);
+        startup.StartupInfo.dwY = static_cast<DWORD>(GetSystemMetrics(SM_YVIRTUALSCREEN));
+        disableFailureDialogs();
     }
     if (!request.outputLog.empty()) {
         if (auto opened = openOutputLog(request.outputLog, *commandLineUtf8, output, input); !opened) {

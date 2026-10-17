@@ -24,6 +24,16 @@ inline constexpr std::string_view kLaunchBackgroundVariable = "RV_LAUNCH_BACKGRO
 /// Whether RV_LAUNCH_BACKGROUND asks for background launches: set, and neither empty nor "0".
 [[nodiscard]] bool backgroundLaunchesRequested() noexcept;
 
+/// Turns off, for the rest of this process's life, the modal dialogs that a failure would show over the user's work
+/// (automated runs: the test executables, the fake emulator, and the product's programs in the background or
+/// frame-limited): the error mode gets SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX and SEM_NOOPENFILEERRORBOX (no
+/// loader or crash dialog; programs started without CREATE_DEFAULT_ERROR_MODE inherit it); the C runtime's reports go
+/// to standard error and the debugger instead of a message box (_CrtSetReportMode for _CRT_ASSERT and _CRT_ERROR in
+/// Debug builds: failed _ASSERTE, debug iterators, invalid parameters; _set_error_mode(_OUT_TO_STDERR): assert() and
+/// runtime error messages of GUI programs); abort() shows no message box and calls no fault report (it ends the
+/// process with exit code 3). Idempotent.
+void disableFailureDialogs() noexcept;
+
 /// Options of the Windows process runner beyond the launch request.
 struct Win32ProcessRunnerOptions {
     /// How often the watcher thread checks the tree when no notification arrives: the job's process count (the
@@ -34,11 +44,12 @@ struct Win32ProcessRunnerOptions {
     /// foreground even when it appears late. Effective only while Retroverse is the foreground process.
     bool allowSetForeground = true;
     /// Starts every program in the background: a console program without a console window (CREATE_NO_WINDOW, as for
-    /// LaunchRequest::hideConsoleWindow), a GUI program told to show its first window minimized and inactive
-    /// (STARTF_USESHOWWINDOW with SW_SHOWMINNOACTIVE, which a program that shows its window as Windows tells it
-    /// follows), no AllowSetForegroundWindow, and an error mode without dialogs: this process's error mode gets
-    /// SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX and SEM_NOOPENFILEERRORBOX (once), which the program inherits
-    /// instead of the default one (a missing DLL or a crash ends it with its status, no modal dialog appears).
+    /// LaunchRequest::hideConsoleWindow), a GUI program told to show its first window inactive and off every
+    /// monitor (STARTF_USESHOWWINDOW with SW_SHOWNOACTIVATE and STARTF_USEPOSITION left of the virtual screen, which
+    /// a program that lets Windows place and show its window follows: a visible window for the window detection, no
+    /// minimized window in the taskbar), no AllowSetForegroundWindow, and an error mode without dialogs
+    /// (disableFailureDialogs() in this process, once, whose error mode the program inherits instead of the default
+    /// one: a missing DLL or a crash ends it with its status, no modal dialog appears).
     /// nullopt: as RV_LAUNCH_BACKGROUND says when start() is called.
     std::optional<bool> background;
 };
@@ -74,8 +85,9 @@ struct Win32StartInfo {
 ///    program: CREATE_NEW_CONSOLE, or CREATE_NO_WINDOW for LaunchRequest::hideConsoleWindow and for background launches
 ///    (never Retroverse's console, whose closing or Ctrl+Break would end it; ignored for GUI programs);
 ///  - for background launches only (Win32ProcessRunnerOptions::background, RV_LAUNCH_BACKGROUND: automated runs),
-///    STARTF_USESHOWWINDOW with SW_SHOWMINNOACTIVE (a GUI program that shows its first window as Windows tells it shows
-///    it minimized and inactive) and this process's error mode without dialogs, inherited;
+///    STARTF_USESHOWWINDOW with SW_SHOWNOACTIVATE and STARTF_USEPOSITION off the virtual screen (a GUI program that lets
+///    Windows place and show its first window shows it inactive and off every monitor) and this process's error mode
+///    without dialogs (disableFailureDialogs()), inherited;
 ///  - standard output and error appended to LaunchRequest::outputLog when set, standard input from NUL; only those two
 ///    handles are inherited (PROC_THREAD_ATTRIBUTE_HANDLE_LIST), nothing else of Retroverse's;
 ///  - the suspended process is assigned to a job object WITHOUT JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (closing Retroverse,

@@ -7,7 +7,8 @@
 //   rv_fake_emulator [options] [-- payload arguments...]
 //
 // With RV_LAUNCH_BACKGROUND set (automated test runs; docs/i2/step-focus.md) it never takes the foreground and never
-// injects input: its window is an inactive tool window off every monitor, and the foreground options are skipped.
+// injects input: its window is an inactive tool window off every monitor, and the foreground options are skipped. It
+// never shows a failure dialog (rv::platform_win::disableFailureDialogs, first thing in main).
 //
 // Options are read up to the first "--"; everything after it is payload, echoed by --print-args and never interpreted.
 // The program never terminates another process; with --exit-timeout-ms it ends itself.
@@ -38,6 +39,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// After windows.h: _ASSERTE (--abort).
+#include <crtdbg.h>
 
 #include <nlohmann/json.hpp>
 
@@ -46,6 +49,7 @@
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/launcher/command_line.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 
 namespace {
 
@@ -59,6 +63,7 @@ struct Options {
     bool inputAtEnd = false;
     int sleepMs = 0;
     bool crash = false;
+    bool abort = false;
     bool hang = false;
     int hangLimitMs = 0;
     int exitTimeoutMs = 0;
@@ -102,6 +107,9 @@ constexpr std::string_view kUsage =
     "  --sleep-ms N             wait N ms (without a window) before exiting\n"
     "  --crash                  end with an access violation (0xC0000005) after the frames and the sleep; Windows'\n"
     "                           error dialogs and error reporting are turned off for it\n"
+    "  --abort                  end through a failed debug assertion (_ASSERTE, Debug builds) and abort() after\n"
+    "                           the frames and the sleep: both are reported on standard error, never in a message\n"
+    "                           box, and the program exits with code 3\n"
     "  --hang                   never exit (the test harness ends the process)\n"
     "  --hang-limit-ms N        with --hang: exit after N ms anyway (with --exit-code), so that a test harness that\n"
     "                           is killed before its clean-up leaves nothing running for long\n"
@@ -256,6 +264,8 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
             options.inputAtEnd = true;
         } else if (arg == "--crash") {
             options.crash = true;
+        } else if (arg == "--abort") {
+            options.abort = true;
         } else if (arg == "--hang") {
             options.hang = true;
         } else if (arg == "--spawn-child-and-exit") {
@@ -305,11 +315,7 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
 /// rv::platform_win::backgroundLaunchesRequested reads it): an automated test run that must leave the foreground, the
 /// keyboard and the screen to the user at the machine.
 bool inBackground() {
-    static const bool background = [] {
-        wchar_t value[8] = {};
-        const DWORD length = GetEnvironmentVariableW(L"RV_LAUNCH_BACKGROUND", value, 8);
-        return length != 0 && !(length == 1 && value[0] == L'0');
-    }();
+    static const bool background = rv::platform_win::backgroundLaunchesRequested();
     return background;
 }
 
@@ -559,6 +565,15 @@ void runForegroundWindow(const Options& options, nlohmann::json& log) {
     std::abort();
 }
 
+[[noreturn]] void abortNow() {
+    // With the report modes and the abort behaviour of disableFailureDialogs (main), the failed assertion is written to
+    // standard error and the run goes on, and abort() ends the process with exit code 3, without a message box (which
+    // would take the foreground and wait for a click) and without error reporting.
+    volatile bool holds = false;
+    _ASSERTE(holds);
+    std::abort();
+}
+
 /// Never returns, unless `limitMs` is positive: then it returns after that long.
 void hang(int limitMs) {
     if (limitMs > 0) {
@@ -737,6 +752,8 @@ void runWindow(const Options& options, nlohmann::json& log) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    // A test program never wants a modal failure dialog, in the background or not.
+    rv::platform_win::disableFailureDialogs();
     std::vector<std::string> args;
     for (int i = 1; i < argc; ++i) {
         args.emplace_back(argv[i] != nullptr ? argv[i] : "");
@@ -855,11 +872,14 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(options.sleepMs));
     }
     log["durationMs"] = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
-    log["exit"] = options.crash ? "crash" : (options.hang ? "hang" : "code");
+    log["exit"] = options.crash ? "crash" : (options.abort ? "abort" : (options.hang ? "hang" : "code"));
     log["exitCode"] = options.exitCode;
     writeJson(options.log, log);
     if (options.crash) {
         crashNow();
+    }
+    if (options.abort) {
+        abortNow();
     }
     if (options.hang) {
         hang(options.hangLimitMs);

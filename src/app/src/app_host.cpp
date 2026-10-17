@@ -23,6 +23,7 @@
 #include <rv/platform/event_pump.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/sdl_platform.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/gl_device.hpp>
 
 namespace rv::app {
@@ -273,6 +274,11 @@ ExitCode AppHost::finishReport(ExitCode exitCode) noexcept {
 
 ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     core::markMainThread();
+    // An unattended run (frame-limited or --no-dialogs, or started by a test: RV_LAUNCH_BACKGROUND) shows no failure
+    // dialog at all: neither its own message boxes (noDialogs) nor the loader's, the crash or the C runtime's.
+    if (m_options.noDialogs || platform_win::backgroundLaunchesRequested()) {
+        platform_win::disableFailureDialogs();
+    }
 
     // --- Directories and logging (§16.1) -----------------------------------------------------------------------------
     core::PathOptions pathOptions;
