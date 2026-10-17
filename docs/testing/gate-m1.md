@@ -7,7 +7,7 @@ decisions it rests on are in [ADR-0008](../decisions/ADR-0008-esde-catalog.md) (
 what each I2 step built and measured is in [docs/i2/](../i2/). This page says what the gate checks, how to run it, the
 figures of its run on the reference machine, where each M1 requirement is proven, and the manual session the user signs.
 
-**Status: gate passed, manual checklist pending** (@@DATE@@, reference machine: `./scripts/gate.ps1 -Gate M1` and
+**Status: gate passed, manual checklist pending** (October 17, 2026, reference machine: `./scripts/gate.ps1 -Gate M1` and
 `./scripts/gate.ps1 -Gate M1 -RealLibrary`). M1 is done once the user has signed the manual checklist below.
 
 ## What the gate checks
@@ -67,18 +67,63 @@ each command's output and log).
 ## How to run it
 
 ```powershell
-./scripts/gate.ps1 -Gate M1                         # fixtures only (about @@FIXTURE_MIN@@ minutes incremental)
+./scripts/gate.ps1 -Gate M1                         # fixtures only (about 20 minutes incremental)
 ./scripts/gate.ps1 -Gate M1 -RealLibrary -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root> `
-    -MediaRoot <media root>                          # also the real library, ES-DE closed
+    -MediaRoot <media root> -RetroArchExe <RetroArch folder>\retroarch.exe   # also the real library, ES-DE closed
 ./scripts/gate.ps1 -Gate M1 -RealLibrary -FullHashPass   # also the whole library's quick-hash pass (about 45 min cold)
 ./scripts/gate.ps1 -Gate M1 -Clean                  # every target rebuilt first
 ```
 
 Close ES-DE first, and run it on a quiet machine: the timings are the gate's figures. The gate exits 0 when no step
 failed (a skipped step, no OpenGL 4.5 context or another GPU than the golden's, is reported, not failed), 1 otherwise,
-2 when it cannot start (ES-DE running, Python missing, wrong options).
+2 when it cannot start (ES-DE running, Python missing, wrong options). `-RetroArchExe` (optional, or
+`RV_REAL_RETROARCH_EXE`) lets the two launch-translation tests of `[real-library]` run (the readiness of the real
+systems and the launches ES-DE logged, read from the git-ignored
+`tests/real_library/local/esde_logged_launches.json`): they compute and never start anything;
+without it they skip.
 
-@@FIGURES@@
+## The figures of this run
+
+October 17, 2026, on the reference machine ([reference-hardware.md](reference-hardware.md): Intel Core i7-9700K, 8
+cores, 64 GB, RTX 2080 SUPER with OpenGL 4.5.0 NVIDIA 617.42, Windows 11 Home 10.0.29671). The library: the ES-DE home
+on the system SATA SSD, ES-DE's install and the media root on a second SATA SSD (with the repository), the ROM root on a
+20 TB external USB hard drive (exFAT); ES-DE 3.4.1, 45 gamelists, 105,130 entries (90,246 games). Nothing else of the
+project ran meanwhile (this step's builds were done before each run), so the figures count as taken on a quiet machine;
+the user's own programs ran (the focus watcher saw 13 foreground changes, all to the user's windows, none to a test
+process).
+
+Both gate runs passed: `./scripts/gate.ps1 -Gate M1` (16 steps, 1,218 s) and `./scripts/gate.ps1 -Gate M1 -RealLibrary
+... -RetroArchExe ...` (28 steps, 1,050 s, its builds incremental). The logs are in `build/gate-m1` (the earlier runs in
+`build/gate-m1/earlier-runs`: the fixtures-only run, and a first `-RealLibrary` run without `-RetroArchExe`, whose two
+launch-translation tests skipped and whose figures agree with these within a few percent).
+
+| Step | Result | Limit | Details |
+|---|---|---|---|
+| Build `msvc-x64-debug`, `-relwithdebinfo`, `-release` | passed | 0 warnings | 0 warnings each |
+| Unit tests Debug / Release | passed | | 1,266 passed each (289 s / 160 s) |
+| GPU smoke tests Debug / Release | passed | | 28 / 26 passed (Release has neither the overlay nor the asset preview) |
+| Golden G01 Debug / Release | passed | 0.5% | 0 of 2,073,600 pixels differ by more than 6/255 (largest difference 0/255) |
+| M1 unit tests Debug / Release | passed | | 630 passed each (of the unit runs) |
+| M1 GPU catalog and launch Debug / Release | passed | | 11 passed each (4 `gpu.catalog`, 7 `gpu.launch`) |
+| M1 CLI as a process Debug / Release | passed | | `cli/process` passed (5 s / 4 s) |
+| NFR-02 benchmark, 10,000 games | passed | <= 100 ms | p95 **3.44 ms** (p50 0.59, max 5.32) over 828 indexed queries |
+| Real library: snapshots (NFR-10) | passed | 0 differences | **0 differences among 542,082 entries** (the ES-DE home and install hashed, the ROM and media roots listed) |
+| Real library: `[real-library]` tests, Release | passed | | 12 test cases, 6,497,746 assertions |
+| NFR-01, start to the first page | passed | < 5,000 ms | **1,585, 1,170 and 1,144 ms** from the process's creation (the catalog opened on the worker at 619 to 622 ms, its first list at 643 to 648 ms); the `[real-library][app]` test: 1,075 and 1,068 ms, then 6,099 frames scrolling the 90,246 games at p50 1.44 to 1.47 ms, p99 4.3 to 4.9 ms |
+| NFR-02 on the real catalog | passed | <= 100 ms | p95 **42.05 ms** (p50 4.30, max 317.75: one pass of `arcade` in release-date order with the unavailable, 7,434 games, a single outlier; the next slowest `europe` 90 ms once, `nintendo`, 36,490 games, 65 to 68 ms) over 564 indexed queries on 90,246 games; a page of 30 rows p95 0.243 ms |
+| ROM scan (`import --dry-run`) | info | | 2.0 s: listing 0.7 s (147,107 files, 191 systems), gamelists 0.5 s, sheets 0.03 s (2,520 read); **warm**: 51 h after the boot, the library read by earlier runs of the day (the snapshot before it lists the folders only) |
+| First import | info | | 14.3 s (in the import 14.0 s: the library read 2.0 s, media 1.1 s, writes 10.1 s): 105,130 identities and entries, 2,513 disc groups |
+| Second import | passed | nothing written | 5.6 s: 0 identities, 0 entries written or removed, 0 disc groups |
+| `db rebuild-index` | info | | 14.7 s: 105,130 entries written again, 0 identities |
+| Media coverage | info | | 2.7 s: 39,404 of 90,246 games with a medium (43.7%): covers 39.9%, screenshots 43.5%, miximages 43.5%, videos 36.1%, manuals 25.1%, fanart 21.6%; 13 issues, exit 0 |
+| Quick-hash pass, sample (gb) | info | | 8,611 files, 980.9 MiB in 8.22 s, 1,047 files/s (**warm**; step 11b measured it cold: 268.8 s, 32 files/s); the whole library (103,937 files, 9,857.9 MiB) estimated at 83 to 99 s warm, about 45 minutes cold |
+| Quick-hash pass, whole library | off | | not run (`-FullHashPass`) |
+| Focus watch (whole gate) | passed | no finding | 13 foreground changes, 0 to test processes; 10 windows shown, 0 visible of test processes, 2 hidden or off-screen (the fake emulator's) |
+
+The cold figures (the ROM scan's sheets after a reboot, estimated at 4 to 5 s by I2 step 7, and the whole library's
+quick-hash pass, about 45 minutes) need a gate run that is the first large read after a boot: run `./scripts/gate.ps1
+-Gate M1 -RealLibrary` (with `-FullHashPass` for the pass) right after restarting the machine, without flushing caches
+by other means. NFR-01 and NFR-02 do not depend on it: the catalog is read from the database on the SSD.
 
 ## Requirements
 

@@ -5,8 +5,8 @@
 // (words, prefixes of one to five characters, two and three words, years, companies, system names, words found nowhere)
 // run with every order and a system filter, on a reader as the app's catalog worker runs them, three passes after one
 // that warms the page cache: the p95 of the indexed queries must stay within 100 ms (NFR-02, specification §18.1, which
-// asks it of 10,000 games; the reference library has 90,246). Pages of 30 rows fetched by ids at spread positions of the
-// default list must stay within 5 ms at p95 (ADR-0008 §5). The figures are printed for scripts/gate.ps1 -Gate M1
+// asks it of 10,000 games; the reference library has 90,246). Pages of 30 rows fetched by ids at spread positions of
+// the default list must stay within 5 ms at p95 (ADR-0008 §5). The figures are printed for scripts/gate.ps1 -Gate M1
 // -RealLibrary, which reads the line starting "NFR-02 on the real catalog:".
 
 #include <catch2/catch_test_macros.hpp>
@@ -191,8 +191,8 @@ TEST_CASE("catalog_db/query: NFR-02 on the real library's catalog: indexed queri
     const double pageP95 = percentile(pages, 0.95);
 
     std::cout << fmt::format("NFR-02 on the real catalog: {} games listed, {} indexed queries ({} rows in all): p50 "
-                             "{:.2f} ms, p95 {:.2f} ms, max {:.2f} ms; the default list {:.1f} ms; {} pages of {} rows: "
-                             "p50 {:.3f} ms, p95 {:.3f} ms, max {:.3f} ms\n",
+                             "{:.2f} ms, p95 {:.2f} ms, max {:.2f} ms; the default list {:.1f} ms; {} pages of {} "
+                             "rows: p50 {:.3f} ms, p95 {:.3f} ms, max {:.3f} ms\n",
                              all->size(), times.size(), rows, percentile(times, 0.5), p95, percentile(times, 1.0),
                              listMs, pages.size(), kPage, percentile(pages, 0.5), pageP95, percentile(pages, 1.0));
     CHECK(p95 <= 100.0);   // NFR-02
