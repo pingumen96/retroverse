@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <iterator>
+#include <map>
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include <fmt/format.h>
@@ -150,6 +152,33 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         result.hashes.push_back(NewFileHash{file.key, *hash});
     }
 
+    // The new files by what the rules compare (each list in entry order, which is key order): their quick hash (digest
+    // and size), their kind, size, time and name, their name alone, and the unreadable ones by size. Names are the last
+    // element of the keys, folded as the file systems compare them.
+    using HashKey = std::pair<core::Sha256Digest, std::uint64_t>;
+    using FactsKey = std::tuple<bool, std::uint64_t, std::int64_t, std::string_view>;
+    std::map<HashKey, std::vector<std::size_t>> filesByHash;
+    std::map<FactsKey, std::vector<std::size_t>> filesByFacts;
+    std::map<std::string_view, std::vector<std::size_t>> filesByName;
+    std::map<std::uint64_t, std::vector<std::size_t>> unreadableBySize;
+    for (std::size_t f = 0; f < files.size(); ++f) {
+        const FileFacts& file = files[f].file;
+        const std::string_view name = lastElement(files[f].key.key());
+        filesByName[name].push_back(f);
+        filesByFacts[FactsKey{file.directory, file.size, file.lastWriteTime, name}].push_back(f);
+        if (fileHash[f]) {
+            filesByHash[HashKey{fileHash[f]->digest, fileHash[f]->size}].push_back(f);
+        }
+        if (unreadable[f]) {
+            unreadableBySize[file.size].push_back(f);
+        }
+    }
+    const auto listed = [](const auto& map, const auto& key) -> const std::vector<std::size_t>& {
+        static const std::vector<std::size_t> kNone;
+        const auto found = map.find(key);
+        return found == map.end() ? kNone : found->second;
+    };
+
     std::vector<bool> identityUsed(vanished.size(), false);
     std::vector<bool> fileUsed(files.size(), false);
     std::vector<bool> fileMatchesHash(files.size(), false); // its hash is a vanished identity's: rule 1's alone
@@ -161,27 +190,22 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
     };
 
     // 1. The quick hash, a group per digest and size, in the order of their first identity.
-    std::vector<bool> grouped(vanished.size(), false);
-    for (std::size_t first = 0; first < vanished.size(); ++first) {
-        if (!stored[first] || grouped[first]) {
-            continue;
-        }
-        const auto sameHash = [&](const QuickHash& hash) {
-            return hash.digest == stored[first]->digest && hash.size == stored[first]->size;
-        };
-        std::vector<std::size_t> identities;
-        for (std::size_t v = first; v < vanished.size(); ++v) {
-            if (stored[v] && sameHash(*stored[v])) {
-                identities.push_back(v);
-                grouped[v] = true;
+    std::map<HashKey, std::vector<std::size_t>> identitiesByHash;
+    std::vector<HashKey> groupOrder;
+    for (std::size_t v = 0; v < vanished.size(); ++v) {
+        if (stored[v]) {
+            std::vector<std::size_t>& members = identitiesByHash[HashKey{stored[v]->digest, stored[v]->size}];
+            if (members.empty()) {
+                groupOrder.push_back(HashKey{stored[v]->digest, stored[v]->size});
             }
+            members.push_back(v);
         }
-        std::vector<std::size_t> group;
-        for (std::size_t f = 0; f < files.size(); ++f) {
-            if (fileHash[f] && sameHash(*fileHash[f])) {
-                group.push_back(f);
-                fileMatchesHash[f] = true;
-            }
+    }
+    for (const HashKey& hash : groupOrder) {
+        std::vector<std::size_t> identities = identitiesByHash.at(hash);
+        std::vector<std::size_t> group = listed(filesByHash, hash);
+        for (const std::size_t f : group) {
+            fileMatchesHash[f] = true;
         }
         // Ties: a pair whose identity's best file and whose file's best identity are each other alone, repeatedly.
         const auto score = [&](std::size_t v, std::size_t f) {
@@ -251,12 +275,10 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         if (identityUsed[v] || stored[v] || !identity.file) {
             continue;
         }
-        const std::string_view name = lastElement(identity.key.key());
-        for (std::size_t f = 0; f < files.size(); ++f) {
-            const FileFacts& file = files[f].file;
-            if (fileUsed[f] || fileMatchesHash[f] || file.directory != identity.file->directory ||
-                file.size != identity.file->size || file.lastWriteTime != identity.file->lastWriteTime ||
-                lastElement(files[f].key.key()) != name) {
+        const FactsKey facts{identity.file->directory, identity.file->size, identity.file->lastWriteTime,
+                             lastElement(identity.key.key())};
+        for (const std::size_t f : listed(filesByFacts, facts)) {
+            if (fileUsed[f] || fileMatchesHash[f]) {
                 continue;
             }
             sizeTimeName[v].push_back(f);
@@ -284,12 +306,7 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         };
         // Rule 1's ties are in the draft already (the files of a hash group are never paired by rule 2).
         if (stored[v]) {
-            std::vector<std::size_t> denied;
-            for (std::size_t f = 0; f < files.size(); ++f) {
-                if (unreadable[f] && !fileUsed[f] && files[f].file.size == stored[v]->size) {
-                    denied.push_back(f);
-                }
-            }
+            const std::vector<std::size_t> denied = unpaired(listed(unreadableBySize, stored[v]->size));
             draft.add(denied, fmt::format("{} of its size could not be read for its quick hash",
                                           plural(denied.size(), "new file", "new files")));
         } else {
@@ -303,9 +320,8 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         }
         // The new files of its file name, whatever their content: the user may know them for its file.
         std::vector<std::size_t> named;
-        const std::string_view name = lastElement(identity.key.key());
-        for (std::size_t f = 0; f < files.size(); ++f) {
-            if (!fileUsed[f] && !draft.candidates.contains(f) && lastElement(files[f].key.key()) == name) {
+        for (const std::size_t f : listed(filesByName, lastElement(identity.key.key()))) {
+            if (!fileUsed[f] && !draft.candidates.contains(f)) {
                 named.push_back(f);
             }
         }
