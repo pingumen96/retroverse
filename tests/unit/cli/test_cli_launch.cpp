@@ -19,9 +19,11 @@
 
 #include <rv/cli/command.hpp>
 #include <rv/cli/output.hpp>
+#include <rv/core/file_io.hpp>
 #include <rv/core/log.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/core/tree_walk.hpp>
 #include <rv/esde/discovery.hpp>
 
@@ -82,8 +84,14 @@ struct RunResult {
     std::string err;
 };
 
+/// A path's UTF-8 text with '\' separators, as the results print it.
 std::string utf8(const fs::path& path) {
-    return rv::core::pathToUtf8(path);
+    return rv::core::pathToUtf8(fs::path(path).make_preferred());
+}
+
+/// A path from UTF-8 text (std::filesystem reads a narrow literal in the ANSI code page).
+fs::path u8path(std::string_view text) {
+    return rv::core::pathFromUtf8(text);
 }
 
 /// The standard fixture recorded as the library of a user data directory outside it.
@@ -115,26 +123,36 @@ Setup standardSetup() {
     return Setup(std::move(*fixture));
 }
 
-/// The fixture's files and folders, with sizes and times: what a run must leave as it was.
+/// The fixture's folders by name and its files by name, size and content (folder times follow their content lazily on
+/// NTFS, so they are not compared): what a run must leave as it was.
 std::vector<std::string> treeOf(const fs::path& root) {
     const auto listed = rv::core::listTree(root);
     REQUIRE(listed.has_value());
     std::vector<std::string> entries;
     for (const rv::core::TreeEntry& entry : *listed) {
-        entries.push_back(entry.relativePath + "|" + std::to_string(entry.size) + "|" +
-                          std::to_string(entry.lastWriteTime.time_since_epoch().count()));
+        if (entry.kind != rv::core::TreeEntryKind::File) {
+            entries.push_back(entry.relativePath + "/");
+            continue;
+        }
+        const auto path = rv::core::extendedLengthPathBelow(root, entry.relativePath);
+        REQUIRE(path.has_value());
+        const auto bytes = rv::core::readFileShared(*path, 16ull * 1024ull * 1024ull);
+        REQUIRE(bytes.has_value());
+        entries.push_back(entry.relativePath + " " + std::to_string(entry.size) + " " + rv::core::sha256Hex(*bytes));
     }
     return entries;
 }
 
 const nlohmann::json& systemNamed(const nlohmann::json& json, std::string_view name) {
+    const nlohmann::json* found = nullptr;
     for (const nlohmann::json& system : json.at("systems")) {
-        if (system.at("name") == name) {
-            return system;
+        if (system.at("name").get<std::string>() == name) {
+            found = &system;
         }
     }
-    FAIL("no system " << name);
-    return json;
+    INFO("system " << name);
+    REQUIRE(found != nullptr);
+    return *found;
 }
 
 } // namespace
@@ -207,7 +225,7 @@ TEST_CASE("cli/launch: --dry-run on the standard fixture", "[cli][launch]") {
         CHECK(json.at("chosen").at("value") == "Fake Emulator (Game Folder)");
         CHECK(json.at("command") == "%STARTDIR%=%GAMEDIR% %EMULATOR_FAKE-EMULATOR% -- %ROM%");
         CHECK(json.at("request").at("argv") ==
-              nlohmann::json::array({utf8(emulator), "--", utf8(roms / "gb" / "Café Racer (Europe).gb")}));
+              nlohmann::json::array({utf8(emulator), "--", utf8(roms / "gb" / u8path("Café Racer (Europe).gb"))}));
         CHECK(json.at("request").at("workingDirectory") == utf8(roms / "gb"));
         CHECK(json.at("request").at("environment").empty());
         CHECK(json.at("started") == false);

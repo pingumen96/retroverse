@@ -37,8 +37,14 @@ using rv::catalog::LaunchReadiness;
 
 namespace {
 
+/// A path's UTF-8 text with '\' separators, as the translation gives paths.
 std::string text(const fs::path& path) {
-    return rv::core::pathToUtf8(path);
+    return rv::core::pathToUtf8(fs::path(path).make_preferred());
+}
+
+/// A path from UTF-8 text (std::filesystem reads a narrow literal in the ANSI code page).
+fs::path u8path(std::string_view text) {
+    return rv::core::pathFromUtf8(text);
 }
 
 /// A fixture's library read as `profiles` and `launch` read it.
@@ -218,7 +224,7 @@ TEST_CASE("esde/launch fixtures: the standard fixture's games", "[esde][launch]"
     CHECK(cafe.readiness() == LaunchReadiness::Ready);
     CHECK(cafe.chosen.source == ChoiceSource::EsdeGame);
     CHECK(cafe.chosen.choice.value == "Fake Emulator (Game Folder)");
-    CHECK(argvOf(cafe) == std::vector<std::string>{text(emulator), "--", text(roms / "gb" / "Café Racer (Europe).gb")});
+    CHECK(argvOf(cafe) == std::vector<std::string>{text(emulator), "--", text(roms / "gb" / u8path("Café Racer (Europe).gb"))});
     CHECK(cafe.request()->workingDirectory == roms / "gb");
 
     // snes: the gamelist's <alternativeEmulator>, a hidden console, the emulator's folder.
@@ -344,7 +350,9 @@ TEST_CASE("esde/launch fixtures: the custom-systems fixture's custom find rules 
 
     // A placeholder, a game without an extension, the labels ES-DE keeps.
     const auto android = custom->resolveSystem("androidgames");
-    CHECK(rv::test::blockerCodes(android.translation) == std::vector<std::string>{"command-placeholder"});
+    // Its ROM folder does not exist either.
+    CHECK(rv::test::blockerCodes(android.translation) ==
+          std::vector<std::string>{"source-unavailable", "command-placeholder"});
     const auto runme = custom->resolveGame("dirgames", "runme");
     CHECK(runme.readiness() == LaunchReadiness::Ready); // found through the custom rule, ~\Custom Emulators
     CHECK(argvOf(runme) == std::vector<std::string>{text(fake), text(roms / "dirgames" / "runme")});

@@ -1009,7 +1009,8 @@ Expected<ListedPath> listedPath(const std::filesystem::path& romFolder, std::str
     if (!core::isValidUtf8(relativePath)) {
         return makeError(ErrorCode::InvalidArgument, "the path is not valid UTF-8 text");
     }
-    ListedPath listed;
+    // Every element checked before any is looked up: FindFirstFileExW reads '*', '?', '<', '>' and '"' as wildcards.
+    std::vector<std::string_view> elements;
     std::size_t start = 0;
     while (start <= relativePath.size()) {
         std::size_t end = relativePath.find_first_of("/\\", start);
@@ -1024,6 +1025,11 @@ Expected<ListedPath> listedPath(const std::filesystem::path& romFolder, std::str
             return makeError(ErrorCode::InvalidArgument, "not a path below the ROM folder",
                              std::string(relativePath));
         }
+        elements.push_back(element);
+        start = end + 1;
+    }
+    ListedPath listed;
+    for (const std::string_view element : elements) {
         const std::string candidate =
             listed.relativePath.empty() ? std::string(element) : listed.relativePath + "/" + std::string(element);
         auto full = core::extendedLengthPathBelow(romFolder, candidate);
@@ -1045,7 +1051,6 @@ Expected<ListedPath> listedPath(const std::filesystem::path& romFolder, std::str
         listed.relativePath =
             listed.relativePath.empty() ? std::move(*name) : listed.relativePath + "/" + std::move(*name);
         listed.directory = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        start = end + 1;
     }
     return listed;
 }
