@@ -16,9 +16,11 @@
 // is one token, matched anywhere in the row: catalog_query.cpp); columnsize=0: no per-row token counts (nothing is
 // ranked by relevance, lists are ordered by sort key). Descriptions are not searched in M1.
 //
-// idx_games_sort orders the queries' lists: (sort key, GameId) is the total order of ADR-0008 §5, the rowid being the
-// index's last column; the filter columns and the release date make it covering, so a list is materialized from the
-// index alone, in order, without visiting the rows.
+// idx_games_sort orders the queries' lists: its first two columns, (sort key, GameId), are the total order of ADR-0008
+// §5, so that a list, or the sort key range of a first character, is read in order from the index alone, without a
+// sort (SQLite keeps the rowid at the end of every index entry, which orders ties only after every column before it:
+// the GameId must be named second). The filter columns and the release date after them make it covering: a list is
+// materialized, and the systems' entries counted, without visiting the rows.
 
 #include "schema.hpp"
 
@@ -125,7 +127,7 @@ BEGIN
 END;
 
 -- The order of the queries' lists, (sort key, GameId), covering their filters and the release date order.
-CREATE INDEX idx_games_sort ON idx_games (sort_key, state, availability, library, system, release_date);
+CREATE INDEX idx_games_sort ON idx_games (sort_key, id, state, availability, library, system, release_date);
 )sql";
 
 constexpr std::array<AreaStep, 1> kSteps{{

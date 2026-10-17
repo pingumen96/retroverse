@@ -35,8 +35,8 @@
 // Orders (catalog::SortOrder), each total: Title, (sort key, GameId); System, the system's full name folded as sort
 // keys are (catalog::sortKeyOf), then its name, then Title's order (games of a system without an idx_systems row sort
 // as a system with an empty full name); ReleaseDate, oldest first, undated entries last, then Title's order. Lists are
-// read in Title's order from the index idx_games_sort (schema_search.cpp), the other orders made from it by a stable
-// sort.
+// read in Title's order from the index idx_games_sort (schema_search.cpp), whose first columns are (sort key, GameId),
+// without a sort in SQLite; the other orders are made from it by a stable sort.
 //
 // Errors of every read: Conflict (SQLite reports the database busy or locked, which a reader meets only in rare cases),
 // Cancelled (interrupted), ParseError (a damaged file, or a row the catalog cannot read back), IoError and SQLite's
@@ -146,8 +146,13 @@ public:
     [[nodiscard]] Expected<std::vector<std::string>> searchWords(std::string_view text);
 
     /// Every system of the catalog with its counts, in SortOrder::System's order (the full name folded as sort keys
-    /// are, the name, the library), systems known only from their entries included; in one read.
+    /// are, the name, the library), systems known only from their entries included; in one read (the entries counted
+    /// from the order index, every one of them read).
     [[nodiscard]] Expected<std::vector<SystemSummary>> systems();
+
+    /// True when the catalog knows a system of this name, in any library: an idx_systems row, or entries of it (a
+    /// system systems() lists); a lookup per library, without counting anything.
+    [[nodiscard]] Expected<bool> hasSystem(const catalog::SystemName& name);
 
     /// Everything the catalog holds about the game `id`, in one read; nothing when it has no idx_games row.
     [[nodiscard]] Expected<std::optional<GameDetails>> details(catalog::GameId id);

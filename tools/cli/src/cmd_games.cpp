@@ -271,14 +271,11 @@ ExitCode runGameList(CommandContext& context, bool search) {
     catalog_db::SqliteCatalogQuery& queries = *reader->query;
     if (!query.systems.empty()) {
         // A system the catalog does not have is a mistake worth naming, not an empty list.
-        const auto systems = queries.systems();
-        if (!systems) {
-            return catalogFailure(context, systems.error());
-        }
-        const bool known = std::any_of(systems->begin(), systems->end(), [&](const catalog_db::SystemSummary& s) {
-            return s.system.name == query.systems.front();
-        });
+        const auto known = queries.hasSystem(query.systems.front());
         if (!known) {
+            return catalogFailure(context, known.error());
+        }
+        if (!*known) {
             context.err.writeLine(fmt::format("retroverse-cli {}: the catalog has no system '{}' ('retroverse-cli "
                                               "systems' lists them)",
                                               name, query.systems.front().str()));

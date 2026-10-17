@@ -202,8 +202,45 @@ TEST_CASE("catalog_db/search: the search area: an FTS5 index with ADR-0008's tok
               "trigger");
     }
     CHECK(writer.queryText("SELECT sql FROM sqlite_schema WHERE name = 'idx_games_sort'").value() ==
-          "CREATE INDEX idx_games_sort ON idx_games (sort_key, state, availability, library, system, release_date)");
+          "CREATE INDEX idx_games_sort ON idx_games (sort_key, id, state, availability, library, system, "
+          "release_date)");
     CHECK(fixture.checked());
+}
+
+TEST_CASE("catalog_db/search: the order index gives the lists' total order: a list, a first character's range and the "
+          "systems' counts are read from it without a sort",
+          "[catalog_db][search]") {
+    QueryFixture fixture("rv-search-plans");
+    Connection& writer = fixture.database.writer();
+    // The plan SQLite makes for a statement: its steps' details, one per line.
+    const auto plan = [&](std::string_view sql) {
+        auto explain = writer.prepare(fmt::format("EXPLAIN QUERY PLAN {}", sql));
+        REQUIRE(explain.has_value());
+        std::string steps;
+        while (explain->step().value()) {
+            steps += fmt::format("{}\n", explain->columnText(3));
+        }
+        return steps;
+    };
+    // The statements of catalog_query.cpp's readList() and systems(), for each order's columns, with the systems filter
+    // and with a first character's range.
+    const std::string filters = "g.state IN ('game', 'missing-file') AND g.availability = 'available'";
+    for (const std::string_view columns : {"g.id", "g.id, g.library, g.system", "g.id, g.release_date"}) {
+        for (const std::string_view extra :
+             {"", " AND g.system IN (SELECT value FROM json_each(?3))", " AND g.sort_key >= ?5 AND g.sort_key < ?6"}) {
+            const std::string steps = plan(fmt::format("SELECT {} FROM idx_games AS g INDEXED BY idx_games_sort WHERE "
+                                                       "{}{} ORDER BY g.sort_key, g.id",
+                                                       columns, filters, extra));
+            INFO(steps);
+            CHECK(contains(steps, "USING COVERING INDEX idx_games_sort"));
+            CHECK_FALSE(contains(steps, "TEMP B-TREE"));
+        }
+    }
+    const std::string counts = plan("SELECT library, system, state, availability FROM idx_games INDEXED BY "
+                                    "idx_games_sort");
+    INFO(counts);
+    CHECK(contains(counts, "USING COVERING INDEX idx_games_sort"));
+    CHECK_FALSE(contains(counts, "TEMP B-TREE"));
 }
 
 TEST_CASE("catalog_db/search: the triggers keep the index in step: upserts that change or keep a row, removals, a "
@@ -888,6 +925,18 @@ TEST_CASE("catalog_db/query: a game's details are what the store wrote, with its
     CHECK((*systems)[2].games == 0);
     CHECK((*systems)[2].unavailable == 1);
     CHECK((*systems)[2].entries == 2);
+
+    // The systems it knows: those with a row, those known from their entries only; no other.
+    CHECK(fixture.query->hasSystem(systemNamed("gb")).value());
+    CHECK(fixture.query->hasSystem(systemNamed("snes")).value());
+    CHECK(fixture.query->hasSystem(systemNamed("nosystem")).value());
+    CHECK_FALSE(fixture.query->hasSystem(systemNamed("n64")).value());
+    REQUIRE(fixture.database.writer().execute("INSERT INTO idx_systems SELECT library, 'n64', full_name, platforms, "
+                                              "theme, rom_folder_configured, rom_folder, availability, "
+                                              "unavailable_reason, gamelist, alternative_emulator FROM idx_systems "
+                                              "WHERE name = 'gb'")
+                .has_value());
+    CHECK(fixture.query->hasSystem(systemNamed("n64")).value()); // a system without entries
 }
 
 TEST_CASE("catalog_db/query: a generated catalog: every query as an oracle over its entries answers it",

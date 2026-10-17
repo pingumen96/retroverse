@@ -980,15 +980,17 @@ Expected<std::vector<SystemSummary>> SqliteCatalogQuery::systems() {
         }
     }
     {
-        // Counted from the order index, which holds the columns counted: no row of idx_games is read.
-        auto counts = state.statement("SELECT library, system, state, availability, count(*) "
-                                      "FROM idx_games INDEXED BY idx_games_sort GROUP BY library, system, state, "
-                                      "availability");
+        // Counted here from the order index, which holds the columns counted: no row of idx_games is read, and no
+        // GROUP BY makes SQLite sort every entry of the index by system first (its order is the lists').
+        auto counts = state.statement("SELECT library, system, state, availability FROM idx_games INDEXED BY "
+                                      "idx_games_sort");
         if (!counts) {
             return propagate(counts.error());
         }
         Statement& statement = **counts;
         const ScopedReset reset(statement);
+        std::unordered_map<std::string, SystemSummary*> byGroup; // looked up only: never iterated
+        std::string key;
         while (true) {
             const auto row = statement.step();
             if (!row) {
@@ -997,34 +999,37 @@ Expected<std::vector<SystemSummary>> SqliteCatalogQuery::systems() {
             if (!*row) {
                 break;
             }
-            std::pair<std::string, std::string> key(statement.columnText(0), statement.columnText(1));
-            auto found = summaries.find(key);
-            if (found == summaries.end()) {
-                // Entries of a system without an idx_systems row: listed by name.
-                const std::string context = fmt::format("idx_games of {}/{}", key.first, key.second);
-                auto library = LibraryId::parse(key.first);
-                auto name = SystemName::parse(key.second);
-                if (!library || !name) {
-                    return unreadable("an invalid library id or system name", context);
+            groupKey(key, statement.columnText(0), statement.columnText(1));
+            auto group = byGroup.find(key);
+            if (group == byGroup.end()) {
+                std::pair<std::string, std::string> name(statement.columnText(0), statement.columnText(1));
+                auto found = summaries.find(name);
+                if (found == summaries.end()) {
+                    // Entries of a system without an idx_systems row: listed by name.
+                    const std::string context = fmt::format("idx_games of {}/{}", name.first, name.second);
+                    auto library = LibraryId::parse(name.first);
+                    auto system = SystemName::parse(name.second);
+                    if (!library || !system) {
+                        return unreadable("an invalid library id or system name", context);
+                    }
+                    SystemSummary summary;
+                    summary.library = std::move(*library);
+                    summary.system.name = std::move(*system);
+                    found = summaries.emplace(std::move(name), std::move(summary)).first;
                 }
-                SystemSummary summary;
-                summary.library = std::move(*library);
-                summary.system.name = std::move(*name);
-                found = summaries.emplace(std::move(key), std::move(summary)).first;
+                group = byGroup.emplace(key, &found->second).first; // std::map never moves its values
             }
             const std::string_view entryState = statement.columnText(2);
-            const std::string_view availability = statement.columnText(3);
-            const auto count = static_cast<std::size_t>(std::max<std::int64_t>(statement.columnInt(4), 0));
             const bool listedState = entryState == catalog::toString(EntryState::Game) ||
                                      entryState == catalog::toString(EntryState::MissingFile);
-            const bool available = availability == catalog::toString(Availability::Available);
-            SystemSummary& summary = found->second;
+            const bool available = statement.columnText(3) == catalog::toString(Availability::Available);
+            SystemSummary& summary = *group->second;
             if (entryState == catalog::toString(EntryState::Game) && available) {
-                summary.games += count;
+                ++summary.games;
             } else if (listedState && !available) {
-                summary.unavailable += count;
+                ++summary.unavailable;
             }
-            summary.entries += count;
+            ++summary.entries;
         }
     }
     if (auto finished = scope->finish(); !finished) {
@@ -1049,6 +1054,25 @@ Expected<std::vector<SystemSummary>> SqliteCatalogQuery::systems() {
         result.push_back(std::move(summary));
     }
     return result;
+}
+
+Expected<bool> SqliteCatalogQuery::hasSystem(const SystemName& name) {
+    // One statement: idx_systems is small (a row per system), idx_games is looked up through idx_games_system for each
+    // library (its first column), never scanned.
+    auto exists = m_state->statement(
+        "SELECT EXISTS (SELECT 1 FROM idx_systems WHERE name = ?1) OR EXISTS (SELECT 1 FROM rv_libraries AS l "
+        "WHERE EXISTS (SELECT 1 FROM idx_games WHERE library = l.id AND system = ?1))");
+    if (!exists) {
+        return propagate(exists.error());
+    }
+    Statement& statement = **exists;
+    const ScopedReset reset(statement);
+    statement.bindText(1, name.str());
+    const auto row = statement.step();
+    if (!row) {
+        return propagate(row.error());
+    }
+    return *row && statement.columnInt(0) != 0;
 }
 
 Expected<std::optional<GameDetails>> SqliteCatalogQuery::details(GameId id) {
