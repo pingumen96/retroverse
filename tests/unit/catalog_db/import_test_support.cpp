@@ -11,7 +11,10 @@
 #include <rv/catalog_db/migrator.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/tree_walk.hpp>
 #include <rv/core/utf8.hpp>
+
+#include "support/file_system.hpp"
 
 namespace rv::test {
 
@@ -118,6 +121,27 @@ std::map<std::string, std::string> digestOf(const TableDump& dump) {
         digests[table] = fmt::format("{} rows, {}", rows.size(), core::toHex(hash.finish()));
     }
     return digests;
+}
+
+void settleFolderTimes(const fs::path& root) {
+    const auto listed = core::listTree(root);
+    REQUIRE(listed.has_value());
+    std::vector<fs::path> folders;
+    for (const core::TreeEntry& entry : *listed) {
+        if (entry.kind == core::TreeEntryKind::Directory) {
+            folders.push_back(root / core::pathFromUtf8(entry.relativePath));
+        }
+    }
+    // The deepest first (a longer path is never above a shorter one), the root last.
+    std::sort(folders.begin(), folders.end(),
+              [](const fs::path& a, const fs::path& b) { return a.native().size() > b.native().size(); });
+    folders.push_back(root);
+    // A fixed time in February 2001, in FILETIME ticks.
+    const auto time = fs::file_time_type(fs::file_time_type::duration(126'255'987'060'000'000));
+    for (const fs::path& folder : folders) {
+        INFO(core::pathToUtf8Lossy(folder));
+        REQUIRE(setLastWriteTimeAnyLength(folder, time).has_value());
+    }
 }
 
 void checkSameDump(const TableDump& expected, const TableDump& actual) {

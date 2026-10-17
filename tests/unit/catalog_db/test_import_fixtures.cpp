@@ -43,6 +43,13 @@ using rv::test::systemName;
 
 namespace {
 
+/// A fixture materialized, its ROM folders' times settled (settleFolderTimes()): imports compare exactly.
+rv::test::Fixture materializeSettled(std::string_view name) {
+    rv::test::Fixture fixture = rv::test::esde::materialize(name);
+    rv::test::settleFolderTimes(fixture.path("roms"));
+    return fixture;
+}
+
 /// An import of a fixture as retroverse-cli makes one: the ES-DE adapter (gamelists read again at once after a
 /// failure: no delay in tests) and the media resolver over the fixture's media root.
 ImportResult importFixture(ImportCatalog& catalog, const LibraryProfile& profile, const ImportOptions& options = {}) {
@@ -115,9 +122,7 @@ std::string mediaOf(const IndexedEntry& row) {
 }
 
 /// Every index row of the library, one line each: GameId, system, path, state, availability, the file's size (and, for a
-/// file, its time), title, media. A folder's last write time is left out: Windows lists it from the parent folder's
-/// index, a copy that may catch up with the folder later (when the parent folder changes), so two imports of an
-/// unchanged tree may see two times for a folder.
+/// file, its time), title, media: what two imports of one tree compare, readably.
 std::vector<std::string> projectionOf(ImportCatalog& catalog) {
     std::vector<std::string> lines;
     const std::vector<SystemInfo> systems = catalog.store->systems(LibraryId()).value();
@@ -165,7 +170,7 @@ std::string databaseBytes(const fs::path& file) {
 } // namespace
 
 TEST_CASE("catalog_db/import: the standard fixture imported", "[catalog_db][import][fixture]") {
-    const rv::test::Fixture fixture = rv::test::esde::materialize("esde/standard");
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
     const rv::test::TempDir dir("rv-import-standard");
     const fs::path file = dir.file("data/database/retroverse.sqlite");
     ImportCatalog catalog = ImportCatalog::open(file);
@@ -256,7 +261,7 @@ TEST_CASE("catalog_db/import: the standard fixture imported", "[catalog_db][impo
 }
 
 TEST_CASE("catalog_db/import: ROMs added and removed between imports (SC-05)", "[catalog_db][import][fixture]") {
-    const rv::test::Fixture fixture = rv::test::esde::materialize("esde/standard");
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
     const rv::test::TempDir dir("rv-import-sc05-disk");
     ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
     const LibraryProfile profile = rv::test::esde::profileOf(fixture);
@@ -275,12 +280,10 @@ TEST_CASE("catalog_db/import: ROMs added and removed between imports (SC-05)", "
     CHECK(changesOf(changed.changes, "gb").vanished == 1);
     CHECK(changesOf(changed.changes, "snes").added == 1);
     CHECK(changed.changes.total().newIdentities == 2);
-    // The nine others are as they were; a folder's time as Windows lists it may catch up meanwhile (projectionOf()).
-    CHECK(changesOf(changed.changes, "gb").unchanged + changesOf(changed.changes, "gb").changed == 9);
-    for (const ChangedGame& game : changed.changes.metadataChanged) {
-        INFO(game.key.relativePath());
-        CHECK(rowOf(catalog, game.system.str(), game.key.relativePath())->entry.state == EntryState::Folder);
-    }
+    // The nine others are as they were: not written again.
+    CHECK(changesOf(changed.changes, "gb").unchanged == 9);
+    CHECK(changesOf(changed.changes, "gb").changed == 0);
+    CHECK(changed.statistics.entriesWritten == 2);
     CHECK(rowOf(catalog, "gb", "New Arrivals/Fresh Start (World).gb")->id ==
           idOf("gb", "New Arrivals/Fresh Start (World).gb"));
     CHECK_FALSE(rowOf(catalog, "gb", "LOUD CART (USA).GB").has_value());
@@ -295,7 +298,7 @@ TEST_CASE("catalog_db/import: ROMs added and removed between imports (SC-05)", "
 
 TEST_CASE("catalog_db/import: folders unplugged or that cannot be listed keep their rows (SC-06)",
           "[catalog_db][import][fixture]") {
-    const rv::test::Fixture fixture = rv::test::esde::materialize("esde/standard");
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
     const rv::test::TempDir dir("rv-import-sc06-disk");
     ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
     const LibraryProfile profile = rv::test::esde::profileOf(fixture);
@@ -316,13 +319,7 @@ TEST_CASE("catalog_db/import: folders unplugged or that cannot be listed keep th
         CHECK(gb.removed == 0);
         CHECK(gb.unavailable == 10);
         CHECK(gb.vanished == 0);
-        // snes as it was (a folder's listed time may catch up meanwhile: projectionOf()).
-        CHECK(changesOf(away.changes, "snes").unchanged + changesOf(away.changes, "snes").changed == 8);
-        for (const ChangedGame& game : away.changes.metadataChanged) {
-            if (game.system.str() == "snes") {
-                CHECK(rowOf(catalog, "snes", game.key.relativePath())->entry.state == EntryState::Folder);
-            }
-        }
+        CHECK(changesOf(away.changes, "snes").unchanged == 8);
         for (const IndexedEntry& row : rowsOf(catalog, "gb")) {
             CHECK(row.entry.availability == Availability::SourceUnavailable);
             CHECK(row.entry.unavailableReason == SourceUnavailableReason::FolderMissing);
@@ -377,7 +374,7 @@ TEST_CASE("catalog_db/import: folders unplugged or that cannot be listed keep th
 }
 
 TEST_CASE("catalog_db/import: a gamelist cut short while ES-DE writes it", "[catalog_db][import][fixture]") {
-    const rv::test::Fixture fixture = rv::test::esde::materialize("esde/standard");
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
     const rv::test::TempDir dir("rv-import-cut");
     ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
     const LibraryProfile profile = rv::test::esde::profileOf(fixture);
@@ -413,7 +410,7 @@ TEST_CASE("catalog_db/import: a gamelist cut short while ES-DE writes it", "[cat
 }
 
 TEST_CASE("catalog_db/import: a first import reads no ROM byte", "[catalog_db][import][fixture]") {
-    const rv::test::Fixture fixture = rv::test::esde::materialize("esde/standard");
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
     const rv::test::TempDir dir("rv-import-bytes");
     const LibraryProfile profile = rv::test::esde::profileOf(fixture);
     // Every file under roms/ and media/ denies reading its data (its attributes, size and times stay readable;
@@ -446,17 +443,12 @@ TEST_CASE("catalog_db/import: a first import reads no ROM byte", "[catalog_db][i
     ImportCatalog readable = ImportCatalog::open(dir.file("readable/retroverse.sqlite"));
     importFixture(readable, profile);
     CHECK(projectionOf(readable) == deniedRows);
-    auto readableIndex = rv::test::dumpIndex(readable.database->writer());
-    for (const std::string_view table : {"idx_media", "idx_disc_groups", "idx_disc_members", "idx_disc_references",
-                                         "idx_import_issues", "idx_systems"}) {
-        INFO(table);
-        CHECK(readableIndex.at(std::string(table)) == deniedIndex.at(std::string(table)));
-    }
+    rv::test::checkSameDump(deniedIndex, rv::test::dumpIndex(readable.database->writer()));
 }
 
 TEST_CASE("catalog_db/import: the standard fixture's search index, bulk or by the triggers",
           "[catalog_db][import][fixture][search]") {
-    const rv::test::Fixture fixture = rv::test::esde::materialize("esde/standard");
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
     const rv::test::TempDir dir("rv-import-search-disk");
     const LibraryProfile profile = rv::test::esde::profileOf(fixture);
     rv::catalog_db::StoreOptions triggers;
@@ -465,17 +457,15 @@ TEST_CASE("catalog_db/import: the standard fixture's search index, bulk or by th
     ImportCatalog rowByRow = ImportCatalog::open(dir.file("rows/retroverse.sqlite"), triggers);
     CHECK(importFixture(bulk, profile).statistics.searchIndexRebuilt);
     CHECK_FALSE(importFixture(rowByRow, profile).statistics.searchIndexRebuilt);
-    // The same rows, so the same terms for the same GameIds (the search indexes no file facts).
-    CHECK(projectionOf(rowByRow) == projectionOf(bulk));
     const auto index = rv::test::dumpIndex(bulk.database->writer());
     CHECK(index.at("idx_game_search").size() > 50);
-    CHECK(rv::test::dumpIndex(rowByRow.database->writer()).at("idx_game_search") == index.at("idx_game_search"));
+    rv::test::checkSameDump(index, rv::test::dumpIndex(rowByRow.database->writer()));
     CHECK(rv::catalog_db::checkDatabase(*bulk.database).value().passed());
     CHECK(rv::catalog_db::checkDatabase(*rowByRow.database).value().passed());
 }
 
 TEST_CASE("catalog_db/import: the long-path fixture", "[catalog_db][import][fixture]") {
-    const rv::test::Fixture fixture = rv::test::esde::materialize("esde/long-path");
+    const rv::test::Fixture fixture = materializeSettled("esde/long-path");
     const std::string folders = "A Very Long Folder Name Made To Exceed The Classic Windows Path Limit Of Two Hundred "
                                 "And Sixty (Part One)/Another Long Folder Name For The Same Purpose So That The Whole "
                                 "Path Is Well Past It (Part Two)";

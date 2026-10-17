@@ -51,6 +51,13 @@ using TableDump = std::map<std::string, std::vector<std::string>>;
 /// CHECKs that two dumps hold the same tables with the same rows, table by table, naming the first row that differs.
 void checkSameDump(const TableDump& expected, const TableDump& actual);
 
+/// Sets the last write time of `root` and of every folder below it (the deepest first) to one fixed time. Windows lists
+/// a folder's time from its parent folder's index, a copy of the folder's own that a freshly made tree brings up to date
+/// later, on its own (seconds after the folder's last change, or when the parent changes): two imports a moment apart
+/// may then see two times for one folder (a Folder entry's file facts). A time set through a handle is written to both
+/// at once, so that the fixture tests compare imports exactly.
+void settleFolderTimes(const std::filesystem::path& root);
+
 /// A library source that gives the snapshot a test scripts.
 class ScriptedSource final : public catalog::ILibrarySource {
 public:
