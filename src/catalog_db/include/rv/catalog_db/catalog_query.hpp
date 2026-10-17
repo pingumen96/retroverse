@@ -28,10 +28,14 @@
 //    in any column and any order; case and diacritics are ignored ("eclair" finds "Éclair", "ECLAIR" and "Eclair"). The
 //    words become one quoted FTS5 string each, joined with AND, the last one with '*': whatever the user types (quotes,
 //    '*', '-', ':', parentheses, NEAR, OR, NOT, '^', '+') is never FTS5 syntax, only text that the tokenizer splits.
-//    Text that is blank, or holds no word (punctuation only), matches every entry. A one-character text (one code point
-//    once ASCII white space is trimmed) is a filter without FTS5, which has no index for one-character prefixes: the
-//    entries whose sort key starts with that character lower-cased as sort keys are (case ignored, diacritics not: "é"
-//    finds "Éclair", "e" does not). Text that is not UTF-8, or holds more than 64 words, is InvalidArgument.
+//    Text that is blank, or holds no word (punctuation only), matches every entry. The text is composed (Unicode NFC)
+//    first, so that its normalization form never matters. A one-character text (one code point once composed and ASCII
+//    white space is trimmed) is a filter without FTS5, which has no index for one-character prefixes: the entries whose
+//    sort key starts with that character lower-cased as sort keys are, the sort key read as composed text (case
+//    ignored, diacritics not: "é" finds "Éclair", "e" does not, whether the title was written composed or decomposed:
+//    sort keys are not normalized, so the sort keys that start with either form of the character are read, and those
+//    whose first character combines with what follows it into another one are left out). Text that is not UTF-8, or
+//    holds more than 64 words, is InvalidArgument.
 //
 // Orders (catalog::SortOrder), each total: Title, (sort key, GameId); System, the system's full name folded as sort
 // keys are (catalog::sortKeyOf), then its name, then Title's order (games of a system without an idx_systems row sort
@@ -72,8 +76,11 @@ struct SearchPlan {
     };
 
     Kind kind = Kind::Everything;
-    /// FirstCharacter: the character as sort keys hold it (catalog::sortKeyOf of the trimmed text).
+    /// FirstCharacter: the character as sort keys hold it (catalog::sortKeyOf of the trimmed text), composed.
     std::string prefix;
+    /// FirstCharacter: the forms the sort keys of titles that start with it begin with, ascending: `prefix`, and its
+    /// canonical decomposition when it has one ("e" + U+0301 for "é": a title written decomposed).
+    std::vector<std::string> forms;
     /// Words: the words of the text as the search index's tokenizer gives them (folded: lower case, no diacritics).
     std::vector<std::string> words;
     /// Words: the FTS5 query, one quoted string per word joined with AND, the last one a prefix ('"super" AND "pix"*').
@@ -139,7 +146,8 @@ public:
     /// idx_games row has none. A page of 30 rows takes well under ADR-0008's 5 ms on 100,000 games in Release.
     [[nodiscard]] Expected<std::vector<catalog::CatalogRow>> fetch(std::span<const catalog::GameId> ids) override;
 
-    /// How run() matches `text` (see above). Errors: text that is not UTF-8 (InvalidArgument), SQLite's.
+    /// How run() matches `text` (see above). Errors: text that is not UTF-8 (InvalidArgument), a failure of the
+    /// normalization's system call (PlatformError), SQLite's.
     [[nodiscard]] Expected<SearchPlan> searchPlan(std::string_view text);
 
     /// The words of `text` as the search index's tokenizer splits and folds them, in order (repeated words kept).

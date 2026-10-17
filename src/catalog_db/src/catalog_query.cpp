@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <windows.h>
+
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
@@ -20,6 +22,7 @@
 #include <rv/catalog/metadata.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/migrator.hpp>
+#include <rv/core/system_error.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 
@@ -113,6 +116,66 @@ std::string jsonIds(std::span<const std::int64_t> ids) {
 std::size_t codePointCount(std::string_view utf8) noexcept {
     return static_cast<std::size_t>(
         std::count_if(utf8.begin(), utf8.end(), [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }));
+}
+
+bool isAscii(unsigned char c) noexcept {
+    return c < 0x80;
+}
+
+/// Valid UTF-8 text in a Unicode normalization form (NormalizeString): NormalizationC composes ("e" + U+0301 becomes
+/// "é"), NormalizationD decomposes. ASCII text is returned as it is: every form of it is itself.
+Expected<std::string> normalizedText(std::string_view utf8, NORM_FORM form) {
+    if (std::all_of(utf8.begin(), utf8.end(), [](char c) { return isAscii(static_cast<unsigned char>(c)); })) {
+        return std::string(utf8);
+    }
+    const auto wide = core::utf8ToWide(utf8);
+    if (!wide) {
+        return propagate(wide.error());
+    }
+    const int size = static_cast<int>(wide->size());
+    // The first call estimates the length; a buffer that proves too short is grown to the estimate the failed call
+    // returns (negated), as NormalizeString's documentation describes.
+    int length = NormalizeString(form, wide->data(), size, nullptr, 0);
+    for (int attempt = 0; attempt < 8 && length > 0; ++attempt) {
+        std::wstring normalized(static_cast<std::size_t>(length), L'\0');
+        const int written = NormalizeString(form, wide->data(), size, normalized.data(), length);
+        if (written > 0) {
+            normalized.resize(static_cast<std::size_t>(written));
+            return core::wideToUtf8(normalized);
+        }
+        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+            break;
+        }
+        length = -written;
+    }
+    return makeError(ErrorCode::PlatformError, "NormalizeString failed: " + core::lastSystemErrorMessage());
+}
+
+/// The longest run of code points after a sort key's first character that startsWithCharacter() composes (Unicode's
+/// stream-safe text has at most 30 combining marks in a row, each of 2 to 4 bytes).
+constexpr std::size_t kMaxCombiningBytes = 128;
+
+/// True when `key`, whose first `matched` bytes are a form of `character` (one code point, composed), starts with that
+/// character once composed: the code points after it do not combine with it into another character. The sort key of a
+/// title written decomposed, "e" + U+0301 + "clair", starts with "é", not with "e". Only the key up to its next ASCII
+/// character is composed (an ASCII character never combines with the one before it), and only when a code point that is
+/// not ASCII follows the character, which is rare.
+Expected<bool> startsWithCharacter(std::string_view key, std::size_t matched, std::string_view character) {
+    if (matched >= key.size() || isAscii(static_cast<unsigned char>(key[matched]))) {
+        return true;
+    }
+    std::size_t end = matched;
+    while (end < key.size() && !isAscii(static_cast<unsigned char>(key[end])) && end < matched + kMaxCombiningBytes) {
+        ++end;
+    }
+    while (end < key.size() && (static_cast<unsigned char>(key[end]) & 0xC0) == 0x80) { // a whole code point
+        ++end;
+    }
+    const auto composed = normalizedText(key.substr(0, end), NormalizationC);
+    if (!composed) {
+        return propagate(composed.error());
+    }
+    return composed->starts_with(character); // UTF-8: a code point's bytes never begin another code point's
 }
 
 /// A word as an FTS5 string: in double quotes, a double quote doubled (the tokenizer never leaves one in a token, as
@@ -449,8 +512,10 @@ struct ListRead {
     std::string filters;
     std::string systemsJson;
     SortOrder sort = SortOrder::Title;
-    /// FirstCharacter: the sort keys' first character.
-    std::optional<std::string> prefix;
+    /// FirstCharacter: the sort keys' first character, composed (SearchPlan::prefix), and the forms keys hold it in,
+    /// ascending (SearchPlan::forms): each form's range of sort keys is read in turn, in Title's order.
+    std::optional<std::string> character;
+    std::vector<std::string> forms;
     /// A search's matching rows, ascending, looked up one by one; null: the order index read whole.
     const std::vector<std::int64_t>* lookUp = nullptr;
 };
@@ -545,15 +610,21 @@ struct SqliteCatalogQuery::State {
 
 Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead& list) {
     std::string sql = "SELECT g.id";
+    int sortKeyColumn = 1;
     if (list.sort == SortOrder::System) {
         sql += ", g.library, g.system";
+        sortKeyColumn = 3;
     } else if (list.sort == SortOrder::ReleaseDate) {
         sql += ", g.release_date";
+        sortKeyColumn = 2;
+    }
+    if (list.character) {
+        sql += ", g.sort_key";
     }
     sql += list.lookUp != nullptr ? " FROM json_each(?4) AS j CROSS JOIN idx_games AS g ON g.id = j.value"
                                   : " FROM idx_games AS g INDEXED BY idx_games_sort";
     sql += " WHERE " + list.filters;
-    if (list.prefix) {
+    if (list.character) {
         sql += " AND g.sort_key >= ?5 AND g.sort_key < ?6";
     }
     sql += " ORDER BY g.sort_key, g.id";
@@ -564,7 +635,12 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead
     Statement& select = **prepared;
     std::vector<ListRow> rows;
     std::vector<std::pair<std::string, std::string>> groups; // System: (library, system) by group index
-    {
+    std::unordered_map<std::string, std::uint32_t> groupIndex; // looked up only: never iterated
+    std::string key;
+    // One pass, or one per form of a first character: the forms are ascending and neither begins the other, so every
+    // sort key of one range sorts before every key of the next, and the passes' rows follow one another in Title's order.
+    const std::size_t passes = list.character ? list.forms.size() : 1;
+    for (std::size_t pass = 0; pass < passes; ++pass) {
         const ScopedReset reset(select);
         if (!list.systemsJson.empty()) {
             select.bindText(3, list.systemsJson);
@@ -572,12 +648,10 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead
         if (list.lookUp != nullptr) {
             select.bindText(4, jsonIds(*list.lookUp));
         }
-        if (list.prefix) {
-            // Every sort key that starts with the prefix, and only those: valid UTF-8 never holds the byte 0xFF.
-            select.bindText(5, *list.prefix).bindText(6, *list.prefix + '\xFF');
+        if (list.character) {
+            // Every sort key that starts with the form, and only those: valid UTF-8 never holds the byte 0xFF.
+            select.bindText(5, list.forms[pass]).bindText(6, list.forms[pass] + '\xFF');
         }
-        std::unordered_map<std::string, std::uint32_t> groupIndex; // looked up only: never iterated
-        std::string key;
         while (true) {
             const auto row = select.step();
             if (!row) {
@@ -585,6 +659,16 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead
             }
             if (!*row) {
                 break;
+            }
+            if (list.character) {
+                const auto starts =
+                    startsWithCharacter(select.columnText(sortKeyColumn), list.forms[pass].size(), *list.character);
+                if (!starts) {
+                    return propagate(starts.error());
+                }
+                if (!*starts) {
+                    continue; // another character that begins with this one's bytes ("e" + U+0301 under "e")
+                }
             }
             const auto id = readGameId(select.columnInt(0), "idx_games");
             if (!id) {
@@ -754,20 +838,34 @@ Expected<SearchPlan> SqliteCatalogQuery::searchPlan(std::string_view text) {
         return makeError(ErrorCode::InvalidArgument, "the search text is not valid UTF-8");
     }
     SearchPlan plan;
-    const std::string_view trimmed = core::trim(text);
+    // Composed first, so that a character typed decomposed is one character, as it is on screen.
+    const auto composed = normalizedText(text, NormalizationC);
+    if (!composed) {
+        return propagate(composed.error());
+    }
+    const std::string_view trimmed = core::trim(*composed);
     if (trimmed.empty()) {
         return plan;
     }
     if (codePointCount(trimmed) == 1) {
-        auto prefix = catalog::sortKeyOf(trimmed);
+        auto prefix = catalog::sortKeyOf(trimmed); // lower-cased code point by code point: still one
         if (!prefix) {
             return propagate(prefix.error());
         }
+        auto decomposed = normalizedText(*prefix, NormalizationD);
+        if (!decomposed) {
+            return propagate(decomposed.error());
+        }
         plan.kind = SearchPlan::Kind::FirstCharacter;
         plan.prefix = std::move(*prefix);
+        plan.forms.push_back(plan.prefix);
+        if (*decomposed != plan.prefix) {
+            plan.forms.push_back(std::move(*decomposed));
+            std::sort(plan.forms.begin(), plan.forms.end());
+        }
         return plan;
     }
-    auto words = searchWords(text);
+    auto words = searchWords(*composed);
     if (!words) {
         return propagate(words.error());
     }
@@ -876,7 +974,8 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::run(const CatalogQuery& query)
         break;
     }
     case SearchPlan::Kind::FirstCharacter: {
-        list.prefix = plan->prefix;
+        list.character = plan->prefix;
+        list.forms = plan->forms;
         auto read = state.readList(list);
         if (!read) {
             return propagate(read.error());

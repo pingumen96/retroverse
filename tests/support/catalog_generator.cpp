@@ -165,25 +165,29 @@ Work makeWork(const CatalogGeneratorOptions& options, std::size_t work) {
     return result;
 }
 
-/// `text` with its precomposed accented letters decomposed (a base letter and U+0301, U+0300, U+0302, U+0308, U+0303,
-/// U+0327, U+030A, U+0304), as text written in NFD holds them.
-std::string decomposed(std::string_view text) {
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 30> kDecompositions{{
-        {"é", "e\xCC\x81"}, {"É", "E\xCC\x81"}, {"è", "e\xCC\x80"}, {"ê", "e\xCC\x82"}, {"ë", "e\xCC\x88"},
-        {"à", "a\xCC\x80"}, {"â", "a\xCC\x82"}, {"ä", "a\xCC\x88"}, {"á", "a\xCC\x81"}, {"å", "a\xCC\x8A"},
-        {"Å", "A\xCC\x8A"}, {"ç", "c\xCC\xA7"}, {"ñ", "n\xCC\x83"}, {"ü", "u\xCC\x88"}, {"Ü", "U\xCC\x88"},
-        {"ö", "o\xCC\x88"}, {"ô", "o\xCC\x82"}, {"ō", "o\xCC\x84"}, {"û", "u\xCC\x82"}, {"î", "i\xCC\x82"},
-        {"ï", "i\xCC\x88"}, {"í", "i\xCC\x81"}, {"ó", "o\xCC\x81"}, {"ú", "u\xCC\x81"}, {"ù", "u\xCC\x80"},
-        {"ã", "a\xCC\x83"}, {"õ", "o\xCC\x83"}, {"ÿ", "y\xCC\x88"}, {"ò", "o\xCC\x80"}, {"ì", "i\xCC\x80"},
-    }};
+/// The precomposed accented letters that decomposed() decomposes, each with its decomposition (a base letter and
+/// U+0301, U+0300, U+0302, U+0308, U+0303, U+0327, U+030A, U+0304), as text written in NFD holds them.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 30> kDecompositions{{
+    {"é", "e\xCC\x81"}, {"É", "E\xCC\x81"}, {"è", "e\xCC\x80"}, {"ê", "e\xCC\x82"}, {"ë", "e\xCC\x88"},
+    {"à", "a\xCC\x80"}, {"â", "a\xCC\x82"}, {"ä", "a\xCC\x88"}, {"á", "a\xCC\x81"}, {"å", "a\xCC\x8A"},
+    {"Å", "A\xCC\x8A"}, {"ç", "c\xCC\xA7"}, {"ñ", "n\xCC\x83"}, {"ü", "u\xCC\x88"}, {"Ü", "U\xCC\x88"},
+    {"ö", "o\xCC\x88"}, {"ô", "o\xCC\x82"}, {"ō", "o\xCC\x84"}, {"û", "u\xCC\x82"}, {"î", "i\xCC\x82"},
+    {"ï", "i\xCC\x88"}, {"í", "i\xCC\x81"}, {"ó", "o\xCC\x81"}, {"ú", "u\xCC\x81"}, {"ù", "u\xCC\x80"},
+    {"ã", "a\xCC\x83"}, {"õ", "o\xCC\x83"}, {"ÿ", "y\xCC\x88"}, {"ò", "o\xCC\x80"}, {"ì", "i\xCC\x80"},
+}};
+
+/// `text` with every letter of kDecompositions replaced by its decomposition (`decompose`), or every decomposition by
+/// its letter.
+std::string replacedLetters(std::string_view text, bool decompose) {
     std::string result;
     std::size_t at = 0;
     while (at < text.size()) {
         bool replaced = false;
-        for (const auto& [composed, parts] : kDecompositions) {
-            if (text.substr(at).starts_with(composed)) {
-                result += parts;
-                at += composed.size();
+        for (const auto& [letter, parts] : kDecompositions) {
+            const std::string_view from = decompose ? letter : parts;
+            if (text.substr(at).starts_with(from)) {
+                result += decompose ? parts : letter;
+                at += from.size();
                 replaced = true;
                 break;
             }
@@ -193,6 +197,11 @@ std::string decomposed(std::string_view text) {
         }
     }
     return result;
+}
+
+/// `text` with its precomposed accented letters decomposed, as text written in NFD holds them.
+std::string decomposed(std::string_view text) {
+    return replacedLetters(text, true);
 }
 
 /// A file name stem from a title: what a file system takes (no ':').
@@ -486,6 +495,10 @@ Expected<GeneratedCatalog> generateCatalogDatabase(const std::filesystem::path& 
         return propagate(written.error());
     }
     return catalog;
+}
+
+std::string generatedComposed(std::string_view text) {
+    return replacedLetters(text, false);
 }
 
 std::vector<std::string> generatedWords(std::string_view text) {

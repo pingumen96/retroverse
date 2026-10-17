@@ -398,7 +398,21 @@ TEST_CASE("catalog_db/search: one character filters by the sort key's first char
                                      "clair"); // Éclair
     const IndexedEntry plain = game(library, "gb", "Echo.gb", "Echo");
     const IndexedEntry quoted = game(library, "gb", "Quoted.gb", "\"Quoted\" Title");
-    fixture.import({system("gb", "Portable Console")}, {pixel, puzzle, superPixel, eclair, plain, quoted});
+    // Written decomposed (NFD, as gamelists written on some systems hold it): "e" + U+0301, the sort key's first
+    // character "é" once composed.
+    const IndexedEntry nocturne = game(library, "gb", "Nocturne.gb",
+                                       "E\xCC\x81"
+                                       "clair Nocturne");
+    const IndexedEntry decomposedEcho = game(library, "gb", "Echo 2.gb",
+                                             "E\xCC\x81"
+                                             "\xCC\x81"
+                                             "cho"); // two acute accents: "é" and one that composes with nothing
+    // "e" + U+0332 (a low line, which composes with no letter): the first character stays "e".
+    const IndexedEntry underlined = game(library, "gb", "Underlined.gb",
+                                         "e\xCC\xB2"
+                                         "cho Line");
+    fixture.import({system("gb", "Portable Console")},
+                   {pixel, puzzle, superPixel, eclair, plain, quoted, nocturne, decomposedEcho, underlined});
 
     for (const std::string_view text : {"p", "P", " p ", "\tP\n"}) {
         INFO(text);
@@ -406,13 +420,32 @@ TEST_CASE("catalog_db/search: one character filters by the sort key's first char
         REQUIRE(plan.has_value());
         CHECK(plan->kind == SearchPlan::Kind::FirstCharacter);
         CHECK(plan->prefix == "p");
+        CHECK(plan->forms == std::vector<std::string>{"p"});
         CHECK(fixture.search(text) == titleOrder({pixel, puzzle})); // not "Super Pixel"
     }
-    CHECK(fixture.search("\xC3\xA9") == std::vector{eclair.id}); // é
-    CHECK(fixture.search("\xC3\x89") == std::vector{eclair.id}); // É
-    CHECK(fixture.search("e") == std::vector{plain.id});         // diacritics are not folded here
-    CHECK(fixture.search("\"") == std::vector{quoted.id});       // any character, never FTS5 syntax
+    // "é" typed composed or decomposed, in either case: one character, the titles that start with it whichever form
+    // they were written in; "e" only those that start with "e" once composed. Diacritics are not folded here.
+    const std::vector<GameId> acute = titleOrder({eclair, nocturne, decomposedEcho});
+    for (const std::string_view text : {"\xC3\xA9", "\xC3\x89", "e\xCC\x81", " E\xCC\x81 "}) {
+        INFO(text);
+        const auto plan = fixture.query->searchPlan(text);
+        REQUIRE(plan.has_value());
+        CHECK(plan->kind == SearchPlan::Kind::FirstCharacter);
+        CHECK(plan->prefix == "\xC3\xA9");
+        CHECK(plan->forms == std::vector<std::string>{"e\xCC\x81", "\xC3\xA9"}); // ascending
+        CHECK(fixture.search(text) == acute);
+    }
+    CHECK(fixture.search("e") == titleOrder({plain, underlined}));
+    CHECK(fixture.search("E") == titleOrder({plain, underlined}));
+    CHECK(fixture.search("\"") == std::vector{quoted.id}); // any character, never FTS5 syntax
     CHECK(fixture.search("z").empty());
+    // Every order and a filter keep the rule (the System order is made from the list of the forms read in turn).
+    CatalogQuery bySystem{"\xC3\xA9"};
+    bySystem.sort = SortOrder::System;
+    CHECK(fixture.run(bySystem) == acute);
+    bySystem.systems = {systemNamed("gb")};
+    bySystem.sort = SortOrder::ReleaseDate;
+    CHECK(fixture.run(bySystem) == acute);
     // Two characters are two words or one: FTS5 again.
     CHECK(fixture.query->searchPlan("pi").value().kind == SearchPlan::Kind::Words);
     CHECK(fixture.query->searchPlan("p q").value().kind == SearchPlan::Kind::Words);
@@ -1014,16 +1047,19 @@ TEST_CASE("catalog_db/query: a generated catalog: every query as an oracle over 
     std::set<std::string> titles;
     std::size_t namesakes = 0;
     std::size_t decomposed = 0;
+    std::size_t decomposedFirst = 0; // sort keys whose first character is decomposed ("e" + U+0301)
     for (const IndexedEntry& e : generated->entries) {
         ++states[e.entry.state];
         ++availabilities[e.entry.availability];
         namesakes += titles.insert(e.sortKey).second ? 0 : 1;
         decomposed += contains(e.entry.title, "\xCC") ? 1 : 0;
+        decomposedFirst += e.sortKey.size() > 1 && e.sortKey[1] == '\xCC' ? 1 : 0;
     }
     CHECK(states.size() == 5);
     CHECK(availabilities.size() == 3);
     CHECK(namesakes > options.entries / 10);
     CHECK(decomposed > 0);
+    CHECK(decomposedFirst > 0);
 
     // The oracle: the entry's words per searched field, and the order keys.
     std::map<std::pair<std::string, std::string>, std::string> fullNames;
@@ -1071,7 +1107,10 @@ TEST_CASE("catalog_db/query: a generated catalog: every query as an oracle over 
                 std::find(request.systems.begin(), request.systems.end(), e.system) == request.systems.end()) {
                 continue;
             }
-            if (plan.kind == SearchPlan::Kind::FirstCharacter && !f.entry->sortKey.starts_with(plan.prefix)) {
+            // The sort key's first character once composed (the generator decomposes the titles it writes in NFD
+            // with its own table, which composes them back).
+            if (plan.kind == SearchPlan::Kind::FirstCharacter &&
+                !rv::test::generatedComposed(f.entry->sortKey).starts_with(plan.prefix)) {
                 continue;
             }
             if (plan.kind == SearchPlan::Kind::Words) {
@@ -1151,6 +1190,10 @@ TEST_CASE("catalog_db/query: a generated catalog: every query as an oracle over 
                                    "p",
                                    "S",
                                    "é",
+                                   "e\xCC\x81", // é typed decomposed
+                                   "e",
+                                   "a",
+                                   "o",
                                    "Ö",
                                    "2",
                                    "a b",

@@ -76,6 +76,10 @@ struct GeneratedCatalog {
                                                                  const CatalogGeneratorOptions& options,
                                                                  bool keepEntries = true);
 
+/// Generated text with the accented letters the generator writes decomposed (5% of its titles) composed again, for test
+/// oracles: the generator's own table, read backwards. Only meant for generated text.
+[[nodiscard]] std::string generatedComposed(std::string_view text);
+
 /// The search folding of the text the generator writes, for test oracles: ASCII lower case, the generator's accented
 /// letters without their diacritics (as FTS5's unicode61 with remove_diacritics 2 folds them), decomposed accents
 /// dropped; then the words, runs of ASCII letters and digits. Only meant for generated text.
