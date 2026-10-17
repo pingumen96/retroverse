@@ -849,6 +849,63 @@ TEST_CASE("catalog_db/query: a reader never waits on the writer: during an impor
     CHECK(narrowing->run(CatalogQuery{"quest"}).value() == std::vector{quest.id});
 }
 
+TEST_CASE("catalog_db/query: lists are kept on a reader only: on a connection that writes, every query reads its own "
+          "writes, committed or not",
+          "[catalog_db][query]") {
+    QueryFixture fixture("rv-query-writer");
+    const LibraryId& library = fixture.library.id;
+    const IndexedEntry alpha = game(library, "gb", "Alpha Quest.gb", "Alpha Quest");
+    fixture.import({system("gb", "Portable Console")}, {alpha});
+
+    // The queries on a writer: a second Database of the file (both hold its lock shared), its writer moved into them.
+    // With a lookup limit of 0, every search narrows the list without the search, which a reader would keep.
+    auto second = Database::open(rv::test::databaseFileIn(fixture.dir));
+    REQUIRE(second.has_value());
+    auto query = SqliteCatalogQuery::open(std::move(second->writer()), rv::catalog_db::QueryOptions{0});
+    REQUIRE(query.has_value());
+    Connection& connection = (*query)->connection();
+    REQUIRE(connection.role() == rv::catalog_db::ConnectionRole::Writer);
+    const auto titles = [&](std::string_view text) {
+        const std::vector<GameId> ids = (*query)->run(CatalogQuery{std::string(text)}).value();
+        const std::vector<CatalogRow> rows = (*query)->fetch(ids).value();
+        std::vector<std::string> result;
+        for (const CatalogRow& row : rows) {
+            result.push_back(row.title);
+        }
+        return result;
+    };
+    // A game written by hand on the connection: its identity, then its index row (the triggers index it).
+    const auto write = [&](std::int64_t id, std::string_view title) {
+        REQUIRE(connection
+                    .execute(fmt::format(
+                        "INSERT INTO rv_game_identities (id, library, system, lookup_key, relative_path, key_rule, "
+                        "key_casing, present, first_seen) SELECT {0}, library, system, '{1}', '{1}', key_rule, "
+                        "key_casing, present, first_seen FROM rv_game_identities WHERE id = {2}; "
+                        "INSERT INTO idx_games (id, library, system, relative_path, state, not_a_game_reason, "
+                        "excluding_setting, availability, unavailable_reason, gamelist_path, title, sort_key, name, "
+                        "sort_name, description, developer, publisher, genre, alt_emulator, favorite, hidden, "
+                        "kid_game, completed, broken, play_count, play_time) SELECT {0}, library, system, '{1}', "
+                        "state, not_a_game_reason, excluding_setting, availability, unavailable_reason, '', '{1}', "
+                        "lower('{1}'), '', '', '', '', '', '', '', 0, 0, 0, 0, 0, 0, 0 FROM idx_games WHERE id = {2}",
+                        id, title, alpha.id.value()))
+                    .has_value());
+    };
+    CHECK(titles("") == std::vector<std::string>{"Alpha Quest"});
+    CHECK(titles("quest") == std::vector<std::string>{"Alpha Quest"});
+
+    write(4242, "Beta Quest"); // committed at once
+    CHECK(titles("") == std::vector<std::string>{"Alpha Quest", "Beta Quest"});
+    CHECK(titles("quest") == std::vector<std::string>{"Alpha Quest", "Beta Quest"});
+
+    REQUIRE(connection.execute("BEGIN").has_value());
+    write(4343, "Gamma Quest"); // not committed: the connection's reads see it
+    CHECK(titles("") == std::vector<std::string>{"Alpha Quest", "Beta Quest", "Gamma Quest"});
+    CHECK(titles("quest") == std::vector<std::string>{"Alpha Quest", "Beta Quest", "Gamma Quest"});
+    REQUIRE(connection.execute("ROLLBACK").has_value());
+    CHECK(titles("quest") == std::vector<std::string>{"Alpha Quest", "Beta Quest"});
+    CHECK(titles("") == std::vector<std::string>{"Alpha Quest", "Beta Quest"});
+}
+
 TEST_CASE("catalog_db/query: the queries need the program's schema and an open connection; the writer's own open "
           "transaction is read as it stands",
           "[catalog_db][query]") {

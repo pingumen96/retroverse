@@ -455,8 +455,8 @@ struct ListRead {
     const std::vector<std::int64_t>* lookUp = nullptr;
 };
 
-/// The list run() read last without a search, kept while the database is unchanged: a search with the same filters
-/// and order narrows it instead of reading it again.
+/// The list run() read last without a search, kept while the database is unchanged (on a reader only: run()): a search
+/// with the same filters and order narrows it instead of reading it again.
 struct KeptList {
     /// The filters and the order it was read with.
     std::string key;
@@ -835,30 +835,46 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::run(const CatalogQuery& query)
     if (!scope) {
         return propagate(scope.error());
     }
-    const auto version = state.dataVersion();
-    if (!version) {
-        return propagate(version.error());
+    // PRAGMA data_version changes when another connection commits, never with the connection's own writes, committed
+    // or not: only a reader, which cannot write, keeps its lists; any other connection reads every list again.
+    const bool keeps = state.connection.role() == ConnectionRole::Reader;
+    std::int64_t version = 0;
+    if (keeps) {
+        const auto read = state.dataVersion();
+        if (!read) {
+            return propagate(read.error());
+        }
+        version = *read;
     }
-    const bool kept = state.kept && state.kept->key == key && state.kept->dataVersion == *version;
-    const auto readAndKeep = [&]() -> Status {
+    const bool kept = keeps && state.kept && state.kept->key == key && state.kept->dataVersion == version;
+    // The list without the search: the kept one, or read (and kept, on a reader).
+    std::vector<GameId> unkept;
+    const auto wholeList = [&]() -> Expected<const std::vector<GameId>*> {
+        if (kept) {
+            return &state.kept->ids;
+        }
         auto read = state.readList(list);
         if (!read) {
             return propagate(read.error());
         }
-        state.kept = KeptList{key, *version, std::move(*read)};
-        return ok();
+        if (!keeps) {
+            unkept = std::move(*read);
+            return &unkept;
+        }
+        state.kept = KeptList{key, version, std::move(*read)};
+        return &state.kept->ids;
     };
 
     std::vector<GameId> ids;
     switch (plan->kind) {
-    case SearchPlan::Kind::Everything:
-        if (!kept) {
-            if (auto read = readAndKeep(); !read) {
-                return propagate(read.error());
-            }
+    case SearchPlan::Kind::Everything: {
+        const auto whole = wholeList();
+        if (!whole) {
+            return propagate(whole.error());
         }
-        ids = state.kept->ids;
+        ids = **whole;
         break;
+    }
     case SearchPlan::Kind::FirstCharacter: {
         list.prefix = plan->prefix;
         auto read = state.readList(list);
@@ -887,12 +903,11 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::run(const CatalogQuery& query)
             break;
         }
         // The list without the search, narrowed to the rows that match it, keeps its order.
-        if (!kept) {
-            if (auto read = readAndKeep(); !read) {
-                return propagate(read.error());
-            }
+        const auto whole = wholeList();
+        if (!whole) {
+            return propagate(whole.error());
         }
-        for (const GameId id : state.kept->ids) {
+        for (const GameId id : **whole) {
             if (std::binary_search(matches->begin(), matches->end(), static_cast<std::int64_t>(id.value()))) {
                 ids.push_back(id);
             }

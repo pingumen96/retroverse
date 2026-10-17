@@ -9,10 +9,11 @@
 // filters, in its total order. Every read runs on one snapshot: a single statement, or several in one read transaction
 // (Transaction::Mode::Deferred), so that a list is never made of two states of the database; on a reader it never waits
 // on the writer (WAL: a reader sees the last committed snapshot while a write transaction is open). Statements are
-// prepared once, kept, and reset after each use (ScopedReset), so that no read transaction outlives a call. The list
-// of the last query read without a search is kept with the snapshot's PRAGMA data_version, and reused while no other
-// connection has committed: a search with the same filters and order narrows it to the rows FTS5 matches, in memory,
-// instead of reading the list again (the connection itself must therefore never write; a reader cannot).
+// prepared once, kept, and reset after each use (ScopedReset), so that no read transaction outlives a call. On a
+// reader, the list of the last query read without a search is kept with the snapshot's PRAGMA data_version, and reused
+// while no other connection has committed: a search with the same filters and order narrows it to the rows FTS5
+// matches, in memory, instead of reading the list again. PRAGMA data_version does not change with a connection's own
+// writes, so on a connection of another role (the writer, whose reads see its own writes) every list is read again.
 //
 // Filters (catalog::CatalogQuery):
 //  - states: the listed entry states; none listed: Game and MissingFile (OutsideSystemFolder matches nothing: such
