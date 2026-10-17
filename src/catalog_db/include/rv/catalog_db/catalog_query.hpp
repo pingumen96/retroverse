@@ -77,6 +77,14 @@ struct SearchPlan {
     bool operator==(const SearchPlan&) const = default;
 };
 
+/// How SqliteCatalogQuery reads its lists.
+struct QueryOptions {
+    /// Up to this many rows matching a search, a list is read by looking each of them up (a few rows of a large
+    /// catalog); beyond it, by reading the order index whole and keeping the matching rows (a common prefix, a large
+    /// share of the catalog). Both give the same list; the benchmarks of docs/i2/step-9.md chose the default.
+    std::size_t lookupLimit = 2000;
+};
+
 /// A system of the catalog with the number of its indexed entries (SqliteCatalogQuery::systems()).
 struct SystemSummary {
     catalog::LibraryId library;
@@ -109,7 +117,8 @@ public:
     /// in-memory database splits search text into words. Used from one thread at a time, as the connection. Errors:
     /// Conflict when the database's schema version is not programSchemaVersion() (older: migrate() it first, which a
     /// reader cannot; newer: written by a newer Retroverse); InvalidArgument for a connection that is not open; SQLite's.
-    [[nodiscard]] static Expected<std::unique_ptr<SqliteCatalogQuery>> open(Connection connection);
+    [[nodiscard]] static Expected<std::unique_ptr<SqliteCatalogQuery>> open(Connection connection,
+                                                                            const QueryOptions& options = {});
 
     SqliteCatalogQuery(const SqliteCatalogQuery&) = delete;
     SqliteCatalogQuery& operator=(const SqliteCatalogQuery&) = delete;

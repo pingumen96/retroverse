@@ -47,10 +47,6 @@ CREATE VIRTUAL TABLE search_words USING fts5(text, tokenize = 'unicode61 remove_
 CREATE VIRTUAL TABLE search_word_list USING fts5vocab(search_words, instance);
 )sql";
 
-/// Up to this many rows matching a search, a list is read by looking each of them up (a few rows of a large catalog);
-/// beyond it, by reading the order index whole and keeping the matching rows (a common prefix: a large share of it).
-constexpr std::size_t kLookupLimit = 2000;
-
 /// Statements kept per connection: the queries' SQL varies with their filters and order, a few dozen forms in all.
 constexpr std::size_t kStatementCacheLimit = 64;
 
@@ -430,6 +426,7 @@ struct ListRow {
 
 struct SqliteCatalogQuery::State {
     Connection connection;
+    QueryOptions options;
     /// The private in-memory database of the words (kWordsSchema).
     Connection words;
     Statement clearWords;
@@ -454,7 +451,8 @@ struct SqliteCatalogQuery::State {
     }
 };
 
-Expected<std::unique_ptr<SqliteCatalogQuery>> SqliteCatalogQuery::open(Connection connection) {
+Expected<std::unique_ptr<SqliteCatalogQuery>> SqliteCatalogQuery::open(Connection connection,
+                                                                       const QueryOptions& options) {
     if (!connection.isOpen()) {
         return makeError(ErrorCode::InvalidArgument, "the catalog's queries need an open connection");
     }
@@ -482,6 +480,7 @@ Expected<std::unique_ptr<SqliteCatalogQuery>> SqliteCatalogQuery::open(Connectio
     }
     auto state = std::make_unique<State>();
     state->connection = std::move(connection);
+    state->options = options;
     state->words = std::move(*words);
     auto clear = state->words.prepare("DELETE FROM search_words");
     auto insert = state->words.prepare("INSERT INTO search_words (rowid, text) VALUES (1, ?1)");
@@ -631,7 +630,7 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::run(const CatalogQuery& query)
             return std::vector<GameId>{};
         }
         std::sort(matches.begin(), matches.end());
-        lookUp = matches.size() <= kLookupLimit;
+        lookUp = matches.size() <= state.options.lookupLimit;
     }
 
     // The list in Title's order, with what the other orders need.

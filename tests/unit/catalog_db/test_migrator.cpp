@@ -629,28 +629,48 @@ TEST_CASE("catalog_db/check: pages SQLite cannot read are problems the checks fi
     const std::filesystem::path file = rv::test::databaseFileIn(dir);
     std::int64_t pageSize = 0;
     std::vector<std::int64_t> roots;
+    std::vector<std::int64_t> shadowRoots; // of the FTS5 tables' shadow tables (the search index, I2 step 9)
     {
         auto database = openCatalogDatabase(file);
         REQUIRE(database.has_value());
         pageSize = database->writer().queryInt("PRAGMA page_size").value().value();
-        auto select = database->writer().prepare("SELECT rootpage FROM sqlite_schema WHERE rootpage > 1");
+        auto select = database->writer().prepare(
+            "SELECT rootpage, tbl_name IN (SELECT name FROM pragma_table_list WHERE type = 'shadow') "
+            "FROM sqlite_schema WHERE rootpage > 1");
         REQUIRE(select.has_value());
         while (select->step().value()) {
-            roots.push_back(select->columnInt(0));
+            (select->columnInt(1) != 0 ? shadowRoots : roots).push_back(select->columnInt(0));
         }
     } // closed: the WAL is copied into the file and removed
     REQUIRE_FALSE(roots.empty());
+    const std::filesystem::path shadowDamaged = dir.file("shadow/retroverse.sqlite");
+    std::filesystem::create_directories(shadowDamaged.parent_path());
+    std::filesystem::copy_file(file, shadowDamaged);
 
     // The root page of every table and index overwritten, the schema's own pages left as they are: the tables' B-trees
     // are garbage.
-    {
-        std::fstream bytes(file, std::ios::in | std::ios::out | std::ios::binary);
+    const auto overwrite = [&](const std::filesystem::path& target, const std::vector<std::int64_t>& pages) {
+        std::fstream bytes(target, std::ios::in | std::ios::out | std::ios::binary);
         const std::string garbage(static_cast<std::size_t>(pageSize), '\xAB');
-        for (const std::int64_t root : roots) {
+        for (const std::int64_t root : pages) {
             bytes.seekp(static_cast<std::streamoff>((root - 1) * pageSize));
             bytes.write(garbage.data(), static_cast<std::streamsize>(garbage.size()));
         }
         REQUIRE(bytes.good());
+    };
+    overwrite(file, roots);
+    // Those of an FTS5 table's shadow tables too, in a copy: SQLite cannot even connect the FTS5 table, and its
+    // integrity_check, which connects every virtual table, then fails whole: one problem, the damage it met.
+    if (!shadowRoots.empty()) {
+        overwrite(shadowDamaged, shadowRoots);
+        auto damaged = Database::open(shadowDamaged);
+        REQUIRE(damaged.has_value());
+        const auto shadowReport = checkDatabase(*damaged);
+        REQUIRE(shadowReport.has_value());
+        CHECK_FALSE(shadowReport->passed());
+        CHECK_FALSE(shadowReport->checks[0].passed);
+        CHECK(shadowReport->checks[0].problems >= 1);
+        CHECK_FALSE(shadowReport->checks[2].passed); // fts5
     }
     auto database = Database::open(file);
     REQUIRE(database.has_value());
@@ -697,7 +717,7 @@ TEST_CASE("catalog_db/check: a check that cannot run while another connection wr
     const auto busy = checkDatabase(*checking);
     REQUIRE_FALSE(busy.has_value());
     CHECK(busy.error().code == ErrorCode::Conflict);
-    CHECK(contains(busy.error().message, "cannot run FTS5's integrity-check of search_test"));
+    CHECK(contains(busy.error().message, "cannot run FTS5's integrity-check of ")); // the schema's, or search_test
     transaction->rollback();
     const auto checked = checkDatabase(*checking);
     REQUIRE(checked.has_value());
