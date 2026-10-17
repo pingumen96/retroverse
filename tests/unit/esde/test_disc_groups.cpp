@@ -88,6 +88,10 @@ TEST_CASE("esde/disc_groups: the entries of a playlist", "[esde][disc_groups]") 
     CHECK(rv::esde::m3uFiles(
               "#EXTM3U\r\n# Disc list\r\nDisc 1.cue\r\n\r\n  Disc 2.cue  \n\t#indented comment\nsub\\Disc 3.chd") ==
           std::vector<std::string>{"Disc 1.cue", "Disc 2.cue", "sub\\Disc 3.chd"});
+    // RetroArch's disc labels: the path before the first '|', trimmed.
+    CHECK(rv::esde::m3uFiles("Saga (Disc 1).cue|Disc One\nSaga (Disc 2).cue | Disc Two | extra\n|Only a label\n"
+                             "  | \nSaga (Disc 3).chd|\n") ==
+          std::vector<std::string>{"Saga (Disc 1).cue", "Saga (Disc 2).cue", "Saga (Disc 3).chd"});
 }
 
 TEST_CASE("esde/disc_groups: references resolve against the sheet's folder, inside the system folder",

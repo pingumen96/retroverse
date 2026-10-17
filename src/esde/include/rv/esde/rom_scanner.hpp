@@ -22,8 +22,8 @@
 //    directory that is a game loses its extension.
 // What is excluded keeps its place in the listing with the reason, so that the library source can say why a file the
 // user sees on disk is not a game. Deliberate differences from ES-DE: a link loop is found by the identity of the
-// folders (core::walkTree) rather than ES-DE's canonical-path and 20-level checks; folders that cannot be listed are
-// reported (RomFolderListing::unavailableFolders), never taken as empty.
+// folders (core::walkTree) rather than ES-DE's canonical-path and 20-level checks (either way the link is skipped with a
+// warning); folders that cannot be listed are reported (RomFolderListing::unavailableFolders), never taken as empty.
 
 #include <atomic>
 #include <cstddef>
@@ -45,10 +45,13 @@ namespace rv::esde {
 
 /// The codes of the issues scanRomFolder() reports (catalog::Issue::code), each naming the system and the file or
 /// folder.
-/// A folder below the system folder that cannot be listed (access denied, an I/O error, a link that loops or whose
-/// target cannot be opened): its content is unknown, "source unavailable" (RomFolderListing::unavailableFolders).
-/// Error.
+/// A folder below the system folder that cannot be listed (access denied, an I/O error, a link whose target cannot be
+/// opened): its content is unknown, "source unavailable" (RomFolderListing::unavailableFolders). Error.
 inline constexpr std::string_view kRomIssueFolderUnavailable = "rom-folder-unavailable";
+/// A link to a folder that leads back to a folder the walk is inside (a loop): not followed, as ES-DE skips a recursive
+/// link and loads the system. Not an unavailable folder: what it leads to is listed by its own path, and a gamelist
+/// entry that names a path through it names nothing listed (a missing file). Warning.
+inline constexpr std::string_view kRomIssueLinkLoop = "rom-link-loop";
 /// An entry that cannot be listed: a name without a UTF-8 form (an unpaired UTF-16 surrogate), a link to a file whose
 /// target cannot be opened. It is left out. Warning.
 inline constexpr std::string_view kRomIssueEntryUnreadable = "rom-entry-unreadable";
@@ -155,8 +158,8 @@ struct RomFolderListing {
     std::vector<ScannedItem> items;
     /// The folders below the system folder that could not be listed, by relative path: their content is unknown.
     std::vector<catalog::UnavailableFolder> unavailableFolders;
-    /// kRomIssueFolderUnavailable, kRomIssueEntryUnreadable, kRomIssueNameUnsupported, kRomIssueNameEmpty, in the order
-    /// of the walk.
+    /// kRomIssueFolderUnavailable, kRomIssueLinkLoop, kRomIssueEntryUnreadable, kRomIssueNameUnsupported,
+    /// kRomIssueNameEmpty, in the order of the walk.
     std::vector<catalog::Issue> issues;
     /// The system folder itself is hidden (the attribute): with ShowHiddenFiles off ES-DE skips the whole system.
     bool systemFolderHidden = false;

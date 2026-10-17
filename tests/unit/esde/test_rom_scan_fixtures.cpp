@@ -165,14 +165,23 @@ TEST_CASE("esde/rom_scan: links are followed unless they loop; a folder that can
     REQUIRE(linked.has_value());
     auto denied = rv::test::ListingDenied::apply(fixture.path("roms/nes/L1/L2"));
     REQUIRE(denied.has_value());
+    // A gamelist entry that names a file through the loop.
+    REQUIRE(fixture.replaceText("ES-DE/gamelists/nes/gamelist.xml", "</gameList>",
+                                "\t<game>\n\t\t<path>./Loop/Hero Quest (USA).nes</path>\n\t</game>\n</gameList>"));
 
     const LibrarySnapshot snapshot = load(fixture);
-    REQUIRE(snapshot.unavailableFolders.size() == 2);
+    REQUIRE(snapshot.unavailableFolders.size() == 1);
     CHECK(snapshot.unavailableFolders[0].relativePath == "L1/L2");
     CHECK(snapshot.unavailableFolders[0].reason == rv::catalog::SourceUnavailableReason::NotListable);
-    CHECK(snapshot.unavailableFolders[1].relativePath == "Loop");
-    CHECK(snapshot.unavailableFolders[1].reason == rv::catalog::SourceUnavailableReason::NotListable);
-    CHECK(issuesOf(snapshot.issues, "rom-folder-unavailable").size() == 2);
+    CHECK(issuesOf(snapshot.issues, "rom-folder-unavailable").size() == 1);
+    // The loop is not followed, as ES-DE skips a recursive link: a warning, nothing unknown below it. The entry through
+    // it names nothing listed (its file is listed by its own path): a missing file, not source unavailable.
+    const auto loops = issuesOf(snapshot.issues, "rom-link-loop");
+    REQUIRE(loops.size() == 1);
+    CHECK(loops[0].severity == rv::catalog::IssueSeverity::Warning);
+    CHECK(loops[0].file.ends_with("nes\\Loop"));
+    CHECK(findEntry(snapshot, "nes", "Loop") == nullptr);
+    CHECK(entryAt(snapshot, "nes", "Loop/Hero Quest (USA).nes").state == EntryState::MissingFile);
 
     // Through the junction: one more game.
     CHECK(entryAt(snapshot, "nes", "Linked/Linked Game (USA).nes").state == EntryState::Game);
@@ -188,7 +197,7 @@ TEST_CASE("esde/rom_scan: links are followed unless they loop; a folder that can
     CHECK(lost.availability == Availability::SourceUnavailable);
     CHECK(entryAt(snapshot, "nes", "L1/L2").state == EntryState::Folder);
     CHECK(entryAt(snapshot, "nes", "L1/L2").availability == Availability::Available);
-    CHECK(countsOf(snapshot, "nes") == StateCounts{11, 8, 0, 0, 0, 3, 0});
+    CHECK(countsOf(snapshot, "nes") == StateCounts{12, 8, 1, 0, 0, 3, 0});
 }
 
 TEST_CASE("esde/rom_scan: a missing ROM folder keeps its gamelist's entries as source unavailable",
@@ -229,9 +238,9 @@ TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     rv::esde::EsdeLibrarySource source = quickSource();
     const LibrarySnapshot snapshot = loadSnapshot(source, profileOf(fixture));
 
-    CHECK(countsOf(snapshot, "psx") == StateCounts{33, 15, 1, 0, 17, 0, 0});
+    CHECK(countsOf(snapshot, "psx") == StateCounts{36, 16, 1, 0, 19, 0, 0});
     CHECK(countsOf(snapshot, "ps2") == StateCounts{3, 2, 0, 1, 0, 0, 0});
-    CHECK(snapshot.discGroups.size() == 15);
+    CHECK(snapshot.discGroups.size() == 16);
 
     const auto headOf = [&](std::string_view member) {
         return entryAt(snapshot, "psx", member).discHead.relativePath();
@@ -255,6 +264,9 @@ TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     CHECK(headOf("Saga (USA) (Disc 1).cue") == "Saga (USA).m3u");
     CHECK(headOf("Saga (USA) (Disc 2).bin") == "Saga (USA) (Disc 2).cue");
     CHECK(entryAt(snapshot, "psx", "Saga (USA).m3u").state == EntryState::Game);
+    // RetroArch's disc labels ("<path>|<label>"): the paths are the members.
+    CHECK(membersOf("Labels (USA).m3u") ==
+          std::vector<std::string>{"Labels (USA) (Disc 1).chd", "Labels (USA) (Disc 2).chd"});
     // The cycle: Loop A stays a game, Loop B its member, Loop B's own track Loop B's.
     CHECK(entryAt(snapshot, "psx", "Loop A (World).m3u").state == EntryState::Game);
     CHECK(headOf("Loop B (World).m3u") == "Loop A (World).m3u");
@@ -289,7 +301,7 @@ TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     CHECK(moon.state == EntryState::NotAGame);
     CHECK(moon.notAGameReason == NotAGameReason::ExtensionNotConfigured);
     CHECK(entryAt(snapshot, "ps2", "Moon Race (Europe).bin").state == EntryState::Game);
-    CHECK(source.lastStatistics().sheetsRead == 16); // 17 heads (13 cue sheets, 4 playlists), the oversized one unread
+    CHECK(source.lastStatistics().sheetsRead == 17); // 18 heads (13 cue sheets, 5 playlists), the oversized one unread
     CHECK(source.lastStatistics().sheetsUnreadable == 1);
 
     // The groups handed back as the cache: nothing read again, the same snapshot.
@@ -303,7 +315,7 @@ TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     const LibrarySnapshot again = loadSnapshot(source, profileOf(fixture), options);
     CHECK(again.entries == snapshot.entries);
     CHECK(again.discGroups == snapshot.discGroups);
-    CHECK(source.lastStatistics().sheetsFromCache == 15);
+    CHECK(source.lastStatistics().sheetsFromCache == 16);
     // The heads without a group are read again: Broken Link, and the oversized sheet, again unreadable.
     CHECK(source.lastStatistics().sheetsRead == 1);
     CHECK(source.lastStatistics().sheetsUnreadable == 1);

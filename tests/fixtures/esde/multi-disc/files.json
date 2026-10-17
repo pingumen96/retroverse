@@ -17,6 +17,8 @@
         {"path": "roms/psx/Plain Words (USA).bin", "size": 2352, "seed": 5014},
         {"path": "roms/psx/Rift (USA).bin", "size": 2352, "seed": 5015},
         {"path": "roms/psx/Solo (USA).chd", "size": 4096, "seed": 5016},
+        {"path": "roms/psx/Labels (USA) (Disc 1).chd", "size": 4096, "seed": 5017},
+        {"path": "roms/psx/Labels (USA) (Disc 2).chd", "size": 4096, "seed": 5018},
 
         {"path": "roms/ps2/Moon Race (Europe).bin", "size": 70560, "seed": 5101},
         {"path": "roms/ps2/Star Hop (USA).iso", "size": 65536, "seed": 5102}

@@ -3,9 +3,9 @@
 Cue sheets and playlists as the ROM scan (I2 step 7) groups them into disc groups (ADR-0008 §3): a file a `.cue` or
 `.m3u` references is a disc member of it when that sheet is itself a game of the same system. Chains (a playlist naming
 cue sheets that name tracks), a cycle, a sheet that cannot be read, names matched with the key's case folding, a
-reference through `..\`, a track two sheets share, a reference to nothing, a head whose metadata is a member's, and the
-ps2 case where `.cue` is not a configured extension. Invented titles; the layout of the `standard` fixture; tracks and
-the oversized sheet generated from `files.json`; default settings.
+reference through `..\`, a track two sheets share, a reference to nothing, a head whose metadata is a member's,
+RetroArch's disc labels in a playlist, and the ps2 case where `.cue` is not a configured extension. Invented titles; the
+layout of the `standard` fixture; tracks and the oversized sheet generated from `files.json`; default settings.
 
 The test writes one more sheet before it loads, in Windows-1252 (hostile encodings are generated at test time, ADR-0008
 §10): `roms/psx/Café Noir (France).cue`, whose `FILE "Café Noir (France).bin" BINARY` holds the byte E9 for `é`. The
@@ -37,19 +37,20 @@ counts below include it.
 | `Broken Link (USA).cue` | cue | `Broken Link (USA).bin`, which is not there (`disc-reference-missing`) | none |
 | `Plain Words (USA).cue` | cue | `FILE Plain Words (USA).bin BINARY`, unquoted | `Plain Words (USA).bin` |
 | `Rift (USA).m3u` (no gamelist entry) | m3u | `Rift (USA).cue` | `Rift (USA).cue`, itself the head of `Rift (USA).bin`, which has the gamelist entry: the cue shows "Rift", then the playlist |
+| `Labels (USA).m3u` | m3u | `Labels (USA) (Disc 1).chd\|Disc One`, `Labels (USA) (Disc 2).chd \| Disc Two` (RetroArch's disc labels) | `Labels (USA) (Disc 1).chd`, `(Disc 2).chd` |
 
 Also `Solo (USA).chd`, a game alone, and `./Lost Saga (USA).m3u`, a gamelist entry whose file is gone.
 
 | | psx | ps2 |
 |---|---|---|
-| Entries | 33 | 3 |
-| Games | 15 | 2 |
-| Disc members | 17 | 0 |
+| Entries | 36 | 3 |
+| Games | 16 | 2 |
+| Disc members | 19 | 0 |
 | Missing files | 1 | 0 |
 | Not a game: extension not configured | 0 | 1 (`Moon Race (Europe).cue`, a gamelist entry) |
-| Disc groups | 15 | 0 |
+| Disc groups | 16 | 0 |
 
-ES-DE itself lists the 32 psx files that exist (games and members alike) and 2 ps2 files (`Moon Race (Europe).bin`,
+ES-DE itself lists the 35 psx files that exist (games and members alike) and 2 ps2 files (`Moon Race (Europe).bin`,
 `Star Hop (USA).iso`).
 
 ## The cache (LibraryLoadOptions::discGroups)

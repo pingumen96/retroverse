@@ -157,7 +157,14 @@ Expected<RomFolderListing> scanRomFolder(const std::filesystem::path& romFolder,
         romFolder,
         [&](const core::TreeEntry& entry) {
             if (entry.kind == core::TreeEntryKind::Error) {
-                if (lastWasDirectory && entry.relativePath == lastDirectory) {
+                if (lastWasDirectory && entry.relativePath == lastDirectory &&
+                    entry.error.code == ErrorCode::Unsupported) {
+                    // A link that leads back to a folder the walk is inside (the walker's loop): not followed, as
+                    // ES-DE skips a recursive link with a warning and loads the system. Its content is that folder's,
+                    // listed already: nothing is unknown.
+                    issue(catalog::IssueSeverity::Warning, kRomIssueLinkLoop, entry.relativePath,
+                          fmt::format("{}, as ES-DE skips a recursive link", entry.error.message));
+                } else if (lastWasDirectory && entry.relativePath == lastDirectory) {
                     listing.unavailableFolders.push_back(catalog::UnavailableFolder{
                         system, entry.relativePath, unavailableReasonOf(entry.error.code), entry.error.message});
                     issue(catalog::IssueSeverity::Error, kRomIssueFolderUnavailable, entry.relativePath,

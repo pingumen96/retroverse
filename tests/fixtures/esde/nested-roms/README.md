@@ -64,8 +64,9 @@ uses the one that matches the disk), `rom-name-empty` (`nes/.nes`), `gamelist-ki
   drop the dot, as Windows' plain paths do): its extension is `.`, so it is one more xbox360 game, titled "Odd Name".
 - `nes` removed: the system folder is missing; the gamelist's entries are kept, source unavailable, one per key, with
   the state the gamelist alone tells (`./Shelf B` names no configured extension: not a game).
-- A junction `roms/nes/Loop` leading back to `roms/nes`: not followed, an unavailable folder (`not-listable`,
-  `rom-folder-unavailable`); nothing else changes.
+- A junction `roms/nes/Loop` leading back to `roms/nes`: not followed, as ES-DE skips a recursive link (`rom-link-loop`,
+  a warning); no unavailable folder, nothing else changes. A `<game>` entry the test adds for
+  `./Loop/Hero Quest (USA).nes` names nothing listed: a missing file.
 - A junction `roms/nes/Linked` leading to `extra`: followed, `Linked/Linked Game (USA).nes` is one more game.
 - `roms/nes/L1/L2` made unlistable: an unavailable folder; Deep Diver and Lost Level are then games "source
   unavailable" (from the gamelist alone), never missing; the `L1/L2` folder entry stays a folder (its parent lists it).

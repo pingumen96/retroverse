@@ -289,7 +289,8 @@ class System:
             return
         attributes = getattr(st, 'st_file_attributes', 0)
         self.hidden_folder = bool(attributes & FILE_ATTRIBUTE_HIDDEN) or os.path.basename(self.folder).startswith('.')
-        # Depth first; each folder with the identities of the folders above it (links that loop are not entered).
+        # Depth first; each folder with the identities of the folders above it (links that loop are not entered, and
+        # are no folder that cannot be listed).
         stack = [('', None, [(st.st_dev, st.st_ino)])]
         first = True
         while stack:
@@ -336,8 +337,7 @@ class System:
                     continue
                 identity = (target.st_dev, target.st_ino)
                 if attributes & FILE_ATTRIBUTE_REPARSE_POINT and identity in identities:
-                    self.unavailable[fold(rel)] = 'a link that loops'
-                    continue
+                    continue  # a link that loops: skipped, as ES-DE skips a recursive link (nothing is unknown)
                 stack.append((rel, index, identities + [identity]))
         # A folder is listed before its content (the rules below need that order).
         for item in self.items:
@@ -668,8 +668,16 @@ def cue_files(text):
 
 
 def m3u_files(text):
-    lines = [line.strip(' \t') for line in text.splitlines()]
-    return [line for line in lines if line and not line.startswith('#')]
+    """A playlist's lines but blank ones and comments; of a line '<path>|<label>' (RetroArch's disc label) its path."""
+    files = []
+    for line in text.splitlines():
+        line = line.strip(' \t')
+        if not line or line.startswith('#'):
+            continue
+        path = line.split('|', 1)[0].strip(' \t')
+        if path:
+            files.append(path)
+    return files
 
 
 def sheet_reference(reference, folder):

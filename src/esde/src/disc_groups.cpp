@@ -116,8 +116,13 @@ std::vector<std::string> m3uFiles(std::string_view text) {
     std::vector<std::string> files;
     for (const std::string_view rawLine : linesOf(text)) {
         const std::string_view line = trimBlanks(rawLine);
-        if (!line.empty() && !line.starts_with('#')) {
-            files.emplace_back(line);
+        if (line.empty() || line.starts_with('#')) {
+            continue;
+        }
+        // RetroArch's disc label: "<path>|<label>" ('|' is no character of a Windows name).
+        const std::string_view path = trimBlanks(line.substr(0, line.find('|')));
+        if (!path.empty()) {
+            files.emplace_back(path);
         }
     }
     return files;

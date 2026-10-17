@@ -71,7 +71,8 @@ struct SheetText {
 [[nodiscard]] std::vector<std::string> cueSheetFiles(std::string_view text);
 
 /// The entries of an .m3u playlist, in order: every line trimmed of blanks, but empty lines and comments (lines that
-/// start with '#', the extended M3U directives among them).
+/// start with '#', the extended M3U directives among them). A line "<path>|<label>" (RetroArch's disc label) gives its
+/// path, cut at the first '|' and trimmed; a line whose path is empty gives nothing.
 [[nodiscard]] std::vector<std::string> m3uFiles(std::string_view text);
 
 /// A sheet's reference as a path below the system folder ('/' between the elements, as LookupKey::relativePath()):
