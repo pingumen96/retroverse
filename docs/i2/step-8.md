@@ -343,8 +343,9 @@ Made once both steps were on main (I2 step 7-8i).
   snapshot's keys keep the disk's spelling too (`EsdeLibrarySource` keys an entry by the listed file, also when its
   gamelist entry spells it in another case), so in a folder with case-sensitive names the coverage asks for the
   spelling ES-DE asks for.
-- Cost: the coverage now walks every ROM folder whole and reads the cue sheets and playlists: 3.6 s on the reference
-  machine (Release, warm; 5.2 s within the run of every real-library test), against 2.1 s through the gamelists.
+- Cost: the coverage now walks every ROM folder whole and reads the cue sheets and playlists: 3.0 and 3.6 s on the
+  reference machine (Release, warm; 5.2 s once, within a run of every real-library test), against 2.1 s through the
+  gamelists.
 
 **Tests.** `test_cli_media.cpp`: the standard fixture's coverage has the snapshot's 15 games (gb 8, snes 5, psx 2) with
 covers 4, videos 5 and any kind 6, as `test_media_coverage.cpp` counts them on a snapshot built by hand, with their text
@@ -352,15 +353,16 @@ rows, and the gamelist populations as before (11, 9, 8); the media-roots fixture
 systems (gb, whose game has no gamelist entry, is now in the report, its media folder missing), all unknown when the
 root is unplugged. The media-roots README gives the games in its table instead of the paragraph about the temporary
 source. `test_cli_media_real.cpp` checks the games population in total and for each of the 48 systems, and the scraped
-games as step 8's figures less the scraped tracks.
+games as step 8's figures less the scraped tracks. Debug and Release build without a warning; the 1,094 unit tests pass
+in both.
 
 **The real library** (`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE
 -RomRoot I:\Giochi\Emulatori -MediaRoot E:\Programmi\ES-DE_media\downloaded_media`, Release, ES-DE closed): with
-`-Filter '[real-library][media]'` 2 test cases, 2,110 assertions; with the default filter 8 test cases (6 passed, the
-two launch tests skipped without `-RetroArchExe`), 226,413 assertions; 0 differences among 542,082 entries both times.
-`media --coverage` exits 0 and lists 48 systems: the 45 with a gamelist, and pc (21 games), pcfx (12) and switch (229),
-which have neither a gamelist nor a media folder (`missing`, as trs-80's); 364,810 files in their media folders, 520
-folders asked for their case rule, no media file looked up on disk.
+`-Filter '[real-library][media]'` 2 test cases, 2,110 assertions; with the default filter, twice, 8 test cases (6
+passed, the two launch tests skipped without `-RetroArchExe`), 226,413 assertions; 0 differences among 542,082 entries
+every time. `media --coverage` exits 0 and lists 48 systems: the 45 with a gamelist, and pc (21 games), pcfx (12) and
+switch (229), which have neither a gamelist nor a media folder (`missing`, as trs-80's); 364,810 files in their media
+folders, 520 folders asked for their case rule, no media file looked up on disk.
 
 | Kind | Every game (90,246) | Scraped games (38,986) |
 |---|---|---|
