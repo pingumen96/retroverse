@@ -159,6 +159,7 @@ TEST_CASE("catalog_db/sessions: every outcome is written and read back unchanged
 
     PlaySession returned = ended(sessionOf(id(1)), PlaySessionOutcome::Returned, "2026-10-17T10:05:00.250Z");
     returned.exitCode = 0;
+    returned.exitKind = rv::launcher::ExitKind::Success;
     returned.runTime = 299'750ms;
     returned.test = true;
     returned.choice = kProfile;
@@ -169,6 +170,7 @@ TEST_CASE("catalog_db/sessions: every outcome is written and read back unchanged
 
     PlaySession quick = ended(sessionOf(id(2)), PlaySessionOutcome::Returned, "2026-10-17T10:00:00.100Z");
     quick.exitCode = 0;
+    quick.exitKind = rv::launcher::ExitKind::Success;
     quick.quickExit = true;
     sessions.push_back(quick);
 
@@ -210,6 +212,17 @@ TEST_CASE("catalog_db/sessions: every outcome is written and read back unchanged
         session.id = *stored;
         CHECK(store.session(*stored).value() == session);
     }
+    // Nothing exited for the attempts that never started (blocked, refused by the guard), nor for the open session:
+    // no exit code and no exit kind, NULL in both columns.
+    for (const PlaySession* none : {&sessions[0], &sessions[4], &sessions[6]}) {
+        INFO(toString(none->outcome));
+        CHECK_FALSE(store.session(none->id).value()->exitKind.has_value());
+        CHECK(count(f.database.writer(),
+                    fmt::format("SELECT count(*) FROM rv_play_sessions WHERE id = {} AND exit_code IS NULL AND "
+                                "exit_kind IS NULL",
+                                none->id)) == 1);
+    }
+    CHECK(store.session(sessions[3].id).value()->exitKind == rv::launcher::ExitKind::Crash);
     // Ids increase; the running session ends as an update.
     CHECK(sessions[1].id > sessions[0].id);
     PlaySession finished = ended(sessions[0], PlaySessionOutcome::LeftRunning, "2026-10-17T10:30:00.000Z");
@@ -250,12 +263,56 @@ TEST_CASE("catalog_db/sessions: what the store refuses", "[catalog_db][sessions]
     refusedAs(badText, ErrorCode::InvalidArgument);
     refusedAs(sessionOf(GameId()), ErrorCode::InvalidArgument);
     refusedAs(sessionOf(id(99)), ErrorCode::NotFound); // neither an identity nor an alias
+    // An exit code and its kind go together; an attempt that never started has neither; a crash has both.
+    PlaySession codeWithoutKind = ended(sessionOf(id(1)), PlaySessionOutcome::Returned, "2026-10-17T10:00:01Z");
+    codeWithoutKind.exitCode = 0;
+    refusedAs(codeWithoutKind, ErrorCode::InvalidArgument);
+    PlaySession kindWithoutCode = ended(sessionOf(id(1)), PlaySessionOutcome::Returned, "2026-10-17T10:00:01Z");
+    kindWithoutCode.exitKind = rv::launcher::ExitKind::Success;
+    refusedAs(kindWithoutCode, ErrorCode::InvalidArgument);
+    PlaySession blockedWithExit = ended(sessionOf(id(1)), PlaySessionOutcome::Blocked, "2026-10-17T10:00:00Z");
+    blockedWithExit.readiness = LaunchReadiness::RomMissing;
+    blockedWithExit.exitCode = 0;
+    blockedWithExit.exitKind = rv::launcher::ExitKind::Success;
+    refusedAs(blockedWithExit, ErrorCode::InvalidArgument);
+    PlaySession refusedWithExit = ended(sessionOf(id(1)), PlaySessionOutcome::FailedToStart, "2026-10-17T10:00:00Z");
+    refusedWithExit.failure = rv::launcher::FailureReason::StartFailed;
+    refusedWithExit.refusedByGuard = true;
+    refusedWithExit.exitCode = 0;
+    refusedWithExit.exitKind = rv::launcher::ExitKind::Success;
+    refusedAs(refusedWithExit, ErrorCode::InvalidArgument);
+    refusedAs(ended(sessionOf(id(1)), PlaySessionOutcome::Crashed, "2026-10-17T10:00:01Z"), ErrorCode::InvalidArgument);
     PlaySession unknown = ended(sessionOf(id(1)), PlaySessionOutcome::Returned, "2026-10-17T10:00:01Z");
     unknown.id = 12345;
     CHECK(codeOf(store.updateSession(unknown)) == ErrorCode::NotFound);
     unknown.id = 0;
     CHECK(codeOf(store.updateSession(unknown)) == ErrorCode::InvalidArgument);
     CHECK(count(f.database.writer(), "SELECT count(*) FROM rv_play_sessions") == 0);
+
+    // The schema's checks say the same of rows written past the store: a blocked attempt or a refusal by the guard with
+    // an exit, a kind without its code, a code without its kind, a crash without one.
+    const std::string columns = "game, choice_kind, choice, choice_source, test, started_at, ended_at, outcome, "
+                                "readiness, left_running, failure, exit_code, exit_kind, quick_exit, confirmed_by_user, "
+                                "processes_remained, refused_by_guard, message, process_id, owner_pid, owner_created";
+    const auto insertRow = [&](std::string_view outcome, std::string_view readiness, std::string_view exitCode,
+                               std::string_view exitKind, int refusedByGuard) {
+        return f.database.writer().execute(
+            fmt::format("INSERT INTO rv_play_sessions ({}) VALUES (1, 'command', 'Fake Emulator', 'first-command', 0, "
+                        "'2026-10-17T10:00:00.000Z', '2026-10-17T10:00:00.000Z', '{}', {}, 'none', 'none', {}, {}, 0, "
+                        "0, 0, {}, '', 0, 1, 1)",
+                        columns, outcome, readiness, exitCode, exitKind, refusedByGuard));
+    };
+    CHECK_FALSE(insertRow("blocked", "'rom-missing'", "0", "'success'", 0).has_value());
+    CHECK_FALSE(insertRow("failed-to-start", "NULL", "0", "'success'", 1).has_value());
+    CHECK_FALSE(insertRow("returned", "NULL", "NULL", "'success'", 0).has_value());
+    CHECK_FALSE(insertRow("returned", "NULL", "0", "NULL", 0).has_value());
+    CHECK_FALSE(insertRow("crashed", "NULL", "NULL", "NULL", 0).has_value());
+    CHECK(count(f.database.writer(), "SELECT count(*) FROM rv_play_sessions") == 0);
+    // As the store writes them: no exit for the blocked attempt and the refusal, a code and its kind for a return.
+    CHECK(insertRow("blocked", "'rom-missing'", "NULL", "NULL", 0).has_value());
+    CHECK(insertRow("failed-to-start", "NULL", "NULL", "NULL", 1).has_value());
+    CHECK(insertRow("returned", "NULL", "0", "'success'", 0).has_value());
+    CHECK(count(f.database.writer(), "SELECT count(*) FROM rv_play_sessions") == 3);
 }
 
 TEST_CASE("catalog_db/sessions: only the open sessions whose owner is gone are closed as interrupted",
@@ -441,6 +498,7 @@ TEST_CASE("catalog_db/sessions: a write that meets a busy database is tried agai
     CHECK_FALSE(recorder.stored());
     PlaySession end = ended(sessionOf(id(2)), PlaySessionOutcome::Returned, "2026-10-17T10:00:05Z");
     end.exitCode = 0;
+    end.exitKind = rv::launcher::ExitKind::Success;
     recorder.update(end);
     // finish() with too little patience gives the busy error back and keeps it pending.
     const auto impatient = recorder.finish(BusyRetry{200ms, 50ms});

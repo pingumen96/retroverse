@@ -306,6 +306,7 @@ TEST_CASE("catalog/domain: play sessions mirror the launcher's outcomes", "[cata
     CHECK(session.outcome == PlaySessionOutcome::Returned);
     CHECK(session.ended == ended);
     CHECK(session.exitCode == 0u);
+    CHECK(session.exitKind == rv::launcher::ExitKind::Success);
     CHECK(session.quickExit);
     CHECK(session.message == "The game ended right away.");
     CHECK(session.owner == SessionOwner{1234, 133'000'000'000'000'000});
@@ -330,6 +331,9 @@ TEST_CASE("catalog/domain: play sessions mirror the launcher's outcomes", "[cata
     recordOutcome(session, confirmed, ended, LeftRunningReason::WaitLimit);
     CHECK(session.outcome == PlaySessionOutcome::LeftRunning);
     CHECK(session.leftRunning == LeftRunningReason::WaitLimit);
+    // Nothing exited: no exit code, and no exit kind (LaunchOutcome::exitKind's default says nothing).
+    CHECK_FALSE(session.exitCode.has_value());
+    CHECK_FALSE(session.exitKind.has_value());
     CHECK_FALSE(session.confirmedByUser);
     CHECK_FALSE(returnedNormally(session));
     recordOutcome(session, confirmed, ended);

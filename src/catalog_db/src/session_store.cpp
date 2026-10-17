@@ -263,6 +263,15 @@ Status checkSession(const PlaySession& session) {
         return refuse(session.leftRunning == LeftRunningReason::None ? "says no reason it was left running"
                                                                      : "has a reason it was left running");
     }
+    if (session.exitCode.has_value() != session.exitKind.has_value()) {
+        return refuse(session.exitCode ? "has an exit code without its kind" : "has an exit kind without an exit code");
+    }
+    if (session.exitCode && (session.outcome == PlaySessionOutcome::Blocked || session.refusedByGuard)) {
+        return refuse("has an exit code, which an attempt that never started has not");
+    }
+    if (session.outcome == PlaySessionOutcome::Crashed && !session.exitCode) {
+        return refuse("has no exit code");
+    }
     if (session.runTime && session.runTime->count() < 0) {
         return refuse("ran for a negative time");
     }
@@ -291,7 +300,8 @@ void bindSessionFields(Statement& statement, const PlaySession& session) {
         .bindText(12, catalog::toString(session.leftRunning))
         .bindText(13, launcher::toString(session.failure))
         .bindOptionalInt(14, session.exitCode ? std::optional<std::int64_t>(*session.exitCode) : std::nullopt)
-        .bindText(15, launcher::toString(session.exitKind))
+        .bindOptionalText(15, session.exitKind ? std::optional<std::string_view>(launcher::toString(*session.exitKind))
+                                               : std::nullopt)
         .bindBool(16, session.quickExit)
         .bindBool(17, session.confirmedByUser)
         .bindBool(18, session.processesRemained)
@@ -357,13 +367,13 @@ Expected<PlaySession> readSession(const Statement& row) {
     }
     const auto leftRunning = catalog::parseLeftRunningReason(row.columnText(12));
     const auto failure = failureFrom(row.columnText(13));
-    const auto exitKind = exitKindFrom(row.columnText(15));
-    if (!leftRunning || !failure || !exitKind) {
+    const auto exitKind = row.isNull(15) ? std::optional<launcher::ExitKind>() : exitKindFrom(row.columnText(15));
+    if (!leftRunning || !failure || (!row.isNull(15) && !exitKind)) {
         return unreadable("a play session detail it does not know", context);
     }
     session.leftRunning = *leftRunning;
     session.failure = *failure;
-    session.exitKind = *exitKind;
+    session.exitKind = exitKind;
     if (const auto code = row.columnOptionalInt(14)) {
         session.exitCode = static_cast<std::uint32_t>(*code);
     }
