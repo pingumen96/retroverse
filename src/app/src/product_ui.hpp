@@ -28,7 +28,8 @@ class AppContext;
 /// on the Win32 process runner (the automation guard applies there), the window kept behind the emulator
 /// (platform::WindowHandover, HandoverPolicy::Keep) and taken back at the return. Hidden windows (--hidden: automated
 /// runs) have no hand-over: nothing is visible to hand over or bring back, and the foreground remedies must never raise
-/// a window nobody can see.
+/// a window nobody can see; they count as focused (the input script stands for the user in front of them). Frame-limited
+/// runs stop waiting for a game after --launch-wait-limit (LaunchFlow::setWaitLimit).
 ///
 /// The application keeps the input contexts, the Back levels and the host's idle mode: it reads the UI actions only
 /// while hasInput() and gives them to update(), turns every UI Back into its own levels (the `back` callback, then
