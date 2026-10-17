@@ -1,14 +1,14 @@
-// Reconciliation (I2 step 11b) meeting launches and sessions (I2 step 12), on the real code paths: retroverse-cli import,
-// identities, launch, assign, sessions and db through the dispatcher, on the standard ES-DE fixture imported into a user
-// data directory whose emulators.json holds profiles of the fake emulator (tests/fake_emulator; RV_LAUNCH_ALLOWLIST
-// lists it for each test's duration, support/scoped_environment.hpp). Step 12's launch tables are the state rows that
-// step 11b's putAlias() re-points, found from the schema: the moved-back case of ADR-0008 §4 (the holder's session and
-// per-game choice follow the moved identity, whose own choice wins; the holder's GameId launches, dry-runs and lists
-// sessions as the moved identity's; `identities show` reports the alias), then `db rebuild-index` keeping every state
-// row with `db check` passing; SC-07 (a moved identity keeps its GameId, so its sessions, choice and verification need no
-// re-pointing and follow it to its new path); a review resolved with `identities resolve --with` whose chosen identity
-// has sessions, a choice and a verification (they follow, the other candidate keeps its own). Sessions that never
-// started (blocked) report no exit kind (I2 step 11b-12i).
+// Reconciliation (I2 step 11b) meeting launches and sessions (I2 step 12), on the real code paths: retroverse-cli
+// import, identities, launch, assign, sessions and db through the dispatcher, on the standard ES-DE fixture imported
+// into a user data directory whose emulators.json holds profiles of the fake emulator (tests/fake_emulator;
+// RV_LAUNCH_ALLOWLIST lists it for each test's duration, support/scoped_environment.hpp). Step 12's launch tables are
+// the state rows that step 11b's putAlias() re-points, found from the schema: the moved-back case of ADR-0008 §4 (the
+// holder's session and per-game choice follow the moved identity, whose own choice wins; the holder's GameId launches,
+// dry-runs and lists sessions as the moved identity's; `identities show` reports the alias), then `db rebuild-index`
+// keeping every state row with `db check` passing; SC-07 (a moved identity keeps its GameId, so its sessions, choice
+// and verification need no re-pointing and follow it to its new path); a review resolved with `identities resolve
+// --with` whose chosen identity has sessions, a choice and a verification (they follow, the other candidate keeps its
+// own). Sessions that never started (blocked) report no exit kind (I2 step 11b-12i).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -113,7 +113,8 @@ std::string gameIdOf(std::string_view relativePath, std::uint32_t counter = 0) {
 class Setup {
 public:
     explicit Setup(std::string_view prefix)
-        : m_dir(prefix), m_fixture(rv::test::Fixture::materialize("esde/standard").value()), m_data(m_dir.file("data")) {
+        : m_dir(prefix), m_fixture(rv::test::Fixture::materialize("esde/standard").value()),
+          m_data(m_dir.file("data")) {
         rv::test::settleFolderTimes(m_fixture.path("roms")); // imports a moment apart compare exactly
         rv::catalog::LibraryProfile library;
         library.esdeHome = m_fixture.path("ES-DE");
@@ -181,7 +182,7 @@ public:
         rv::test::settleFolderTimes(m_fixture.path("roms")); // the folder's time is a Folder entry's file fact
     }
 
-    /// Each row of `sql` as one line of text (columns separated by " | ", NULL as "NULL", blobs as their size), read
+    /// Each row of `sql` as one line of text (columns separated by " | ", NULL as "NULL", blobs in hexadecimal), read
     /// through a reader of the database.
     [[nodiscard]] std::vector<std::string> rows(std::string_view sql) const {
         rv::catalog_db::DatabaseOptions options;
@@ -208,7 +209,11 @@ public:
                     line += std::to_string(statement->columnInt(column));
                     break;
                 case rv::catalog_db::ColumnType::Blob:
-                    line += fmt::format("blob of {} bytes", statement->columnBlob(column).size());
+                    line += "x'";
+                    for (const std::byte byte : statement->columnBlob(column)) {
+                        line += fmt::format("{:02x}", static_cast<unsigned>(byte));
+                    }
+                    line += "'";
                     break;
                 default:
                     line += std::string(statement->columnText(column));
@@ -372,7 +377,8 @@ TEST_CASE("cli/reconciled sessions: a file moved back makes the holder an alias;
     CHECK(dryRun.at("chosen").at("source") == "retroverse-game");
     CHECK(dryRun.at("chosen").at("origin") == "assign");
     CHECK(dryRun.at("ready") == true);
-    CHECK(contains(setup.run({"launch", "--dry-run", "--game", holder}).out, fmt::format("(for {}, an alias)", holder)));
+    CHECK(contains(setup.run({"launch", "--dry-run", "--game", holder}).out,
+                   fmt::format("(for {}, an alias)", holder)));
     const json launched = setup.runJson({"launch", "--game", holder, "--wait"});
     CHECK(launched.at("game") == tiny);
     CHECK(launched.at("requestedGame") == holder);

@@ -292,8 +292,9 @@ TEST_CASE("catalog_db/sessions: what the store refuses", "[catalog_db][sessions]
     // The schema's checks say the same of rows written past the store: a blocked attempt or a refusal by the guard with
     // an exit, a kind without its code, a code without its kind, a crash without one.
     const std::string columns = "game, choice_kind, choice, choice_source, test, started_at, ended_at, outcome, "
-                                "readiness, left_running, failure, exit_code, exit_kind, quick_exit, confirmed_by_user, "
-                                "processes_remained, refused_by_guard, message, process_id, owner_pid, owner_created";
+                                "readiness, left_running, failure, exit_code, exit_kind, quick_exit, "
+                                "confirmed_by_user, processes_remained, refused_by_guard, message, process_id, "
+                                "owner_pid, owner_created";
     const auto insertRow = [&](std::string_view outcome, std::string_view readiness, std::string_view exitCode,
                                std::string_view exitKind, int refusedByGuard) {
         return f.database.writer().execute(
