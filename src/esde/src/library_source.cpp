@@ -188,8 +188,8 @@ struct SystemResult {
     std::vector<catalog::DiscGroup> groups;
     std::vector<catalog::UnavailableFolder> unavailableFolders;
     std::vector<catalog::Issue> issues;
-    /// The keys of the folders whose <folder> entry ES-DE applies with <hidden> while ShowHiddenGames is off: it deletes
-    /// them with everything below (excludeBelowHiddenFolders()).
+    /// The keys of the folders whose <folder> entry ES-DE applies with <hidden> while ShowHiddenGames is off: it
+    /// deletes them with everything below (excludeBelowHiddenFolders()).
     std::vector<std::string> hiddenFolders;
     /// The games ES-DE would list (disc members included): whether ES-DE loads the definition.
     std::size_t esdeGames = 0;
@@ -731,8 +731,12 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
         entry.state = EntryState::DiscMember;
         entry.discHead = head;
     }
-    // A head without a gamelist entry of its own shows the metadata of its first member that has some, members first
-    // along a chain (a playlist takes it from a cue sheet that took it from a track).
+    // Members first along a chain (a playlist takes from a cue sheet what that took from its tracks):
+    //  - a head without a gamelist entry of its own shows the metadata of its first member that has some;
+    //  - a head adds to its ES-DE play data that of the members shown under it (CatalogEntry::discHead): ES-DE lists
+    //    every track as a game, so a game launched from a track counts there, and a track may be the favourite. The
+    //    play counts and times are summed, the latest last played time and any favourite taken; the members keep their
+    //    own (a cue sheet in a playlist with its tracks' added), so that a group's play data is its head's alone.
     std::vector<bool> hasMetadata(entries.size());
     for (std::size_t i = 0; i < entries.size(); ++i) {
         hasMetadata[i] = entries[i].fromGamelist();
@@ -740,6 +744,19 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
     for (const std::size_t g : grouping.membersFirst) {
         const catalog::DiscGroup& group = grouping.groups[g];
         const std::size_t h = indexOf.at(group.head);
+        catalog::EsdeFlags& flags = entries[h].flags;
+        for (const catalog::LookupKey& memberKey : group.members) {
+            const CatalogEntry& member = entries[indexOf.at(memberKey)];
+            if (member.discHead != group.head) {
+                continue; // shown under another head, which takes its play data
+            }
+            flags.favorite = flags.favorite || member.flags.favorite;
+            flags.playCount += member.flags.playCount;
+            flags.playTimeSeconds += member.flags.playTimeSeconds;
+            if (member.flags.lastPlayed && (!flags.lastPlayed || *flags.lastPlayed < *member.flags.lastPlayed)) {
+                flags.lastPlayed = member.flags.lastPlayed;
+            }
+        }
         if (hasMetadata[h]) {
             continue;
         }

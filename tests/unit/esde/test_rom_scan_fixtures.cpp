@@ -276,8 +276,8 @@ TEST_CASE("esde/rom_scan: ShowHiddenGames off, a hidden folder entry hides what 
         CHECK(entryAt(snapshot, "nes", "Shelf B/Hero Quest (USA).nes").state == EntryState::Game);
     }
     SECTION("an entry spelled in another case: ES-DE does not apply it to the folder") {
-        REQUIRE(fixture.replaceText("ES-DE/gamelists/nes/gamelist.xml", "<path>./L1/L2</path>",
-                                    "<path>./l1/l2</path>"));
+        REQUIRE(
+            fixture.replaceText("ES-DE/gamelists/nes/gamelist.xml", "<path>./L1/L2</path>", "<path>./l1/l2</path>"));
         const LibrarySnapshot snapshot = load(fixture);
         CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2"))); // its metadata, matched by key
         CHECK(entryAt(snapshot, "nes", "L1/L2/L3/L4/L5/L6/Deep Diver (World).nes").state == EntryState::Game);
@@ -352,6 +352,22 @@ TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     CHECK(entryAt(snapshot, "psx", "Rift (USA).cue").title == "Rift");
     CHECK(entryAt(snapshot, "psx", "Rift (USA).m3u").title == "Rift");
     CHECK(entryAt(snapshot, "psx", "Lost Saga (USA).m3u").state == EntryState::MissingFile);
+    // ES-DE's play data of the members goes to the head they are shown under; the members keep their own.
+    const rv::catalog::EsdeFlags& twinFlags = entryAt(snapshot, "psx", "Twin Peak (Europe).cue").flags;
+    CHECK(twinFlags.favorite);
+    CHECK(twinFlags.playCount == 5);
+    CHECK(twinFlags.playTimeSeconds == 1500);
+    CHECK(twinFlags.lastPlayed == rv::catalog::LocalDateTime{2026, 3, 1, 10, 0, 0});
+    const rv::catalog::EsdeFlags& trackFlags = entryAt(snapshot, "psx", "Twin Peak (Europe) (Track 1).bin").flags;
+    CHECK(trackFlags.playCount == 3);
+    CHECK(trackFlags.playTimeSeconds == 900);
+    CHECK(entryAt(snapshot, "psx", "Rift (USA).cue").flags.playCount == 1);
+    CHECK(entryAt(snapshot, "psx", "Rift (USA).m3u").flags.playCount == 1);
+    CHECK(entryAt(snapshot, "psx", "Rift (USA).m3u").flags.lastPlayed ==
+          rv::catalog::LocalDateTime{2025, 5, 5, 5, 5, 5});
+    CHECK(entryAt(snapshot, "psx", "Shared A (USA).cue").flags.playCount == 4);
+    CHECK(entryAt(snapshot, "psx", "Shared B (USA).cue").flags.playCount == 0);
+    CHECK_FALSE(entryAt(snapshot, "psx", "Saga (USA).m3u").flags.favorite);
     // ps2: .cue is not configured, so its track is a game and no group forms.
     const CatalogEntry& moon = entryAt(snapshot, "ps2", "Moon Race (Europe).cue");
     CHECK(moon.state == EntryState::NotAGame);

@@ -35,7 +35,9 @@
 //    each sheet read once per import (LibraryLoadOptions::discGroups: the references of a group read before are used
 //    while its head keeps its size and time, and kept, with an issue, while the sheet cannot be read; the members are
 //    picked from them again on every load); a head without a gamelist entry of its own shows the metadata of the first
-//    of its members that has some (members first along a chain).
+//    of its members that has some, and every head adds to its flags the ES-DE play data of the members shown under it
+//    (play counts and times summed, the latest last played time, any favourite), members first along a chain: ES-DE
+//    lists each track as a game, so its play data may be a track's.
 // Deliberate differences, besides the missing files and the disc members: a gamelist path that differs from its file
 // in case only matches it (ES-DE would show a second entry); flatten.txt is ignored; gamelists inside ROM folders
 // (LegacyGamelistFileLocation) are never read.

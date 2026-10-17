@@ -41,6 +41,13 @@ counts below include it.
 
 Also `Solo (USA).chd`, a game alone, and `./Lost Saga (USA).m3u`, a gamelist entry whose file is gone.
 
+ES-DE's play data, as ES-DE records it on the files it lists (every track is a game there): a head adds that of the
+members shown under it to its own. `Twin Peak (Europe).cue` (2 plays, 600 s, last played 2026-01-01) and its Track 1
+(a favourite, 3 plays, 900 s, last played 2026-03-01) give the cue sheet a favourite, 5 plays, 1,500 s, last played
+2026-03-01; `Rift (USA).bin` (1 play, last played 2025-05-05) gives it to its cue sheet and from there to the playlist;
+`Shared (USA) (Track 1).bin` (4 plays, no name) gives its plays to `Shared A (USA).cue`, the head it is shown under, and
+none to `Shared B (USA).cue`. The members keep their own.
+
 | | psx | ps2 |
 |---|---|---|
 | Entries | 36 | 3 |

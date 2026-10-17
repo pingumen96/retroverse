@@ -22,8 +22,8 @@
 //    directory that is a game loses its extension.
 // What is excluded keeps its place in the listing with the reason, so that the library source can say why a file the
 // user sees on disk is not a game. Deliberate differences from ES-DE: a link loop is found by the identity of the
-// folders (core::walkTree) rather than ES-DE's canonical-path and 20-level checks (either way the link is skipped with a
-// warning); folders that cannot be listed are reported (RomFolderListing::unavailableFolders), never taken as empty.
+// folders (core::walkTree) rather than ES-DE's canonical-path and 20-level checks (either way the link is skipped with
+// a warning); folders that cannot be listed are reported (RomFolderListing::unavailableFolders), never taken as empty.
 
 #include <atomic>
 #include <cstddef>
