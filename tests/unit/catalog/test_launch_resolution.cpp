@@ -172,20 +172,38 @@ TEST_CASE("catalog/launch: stale labels and AlternativeEmulatorPerGame", "[catal
         choices.game = command("first");
         CHECK(rv::catalog::chooseLaunch(choices, labels, profiles).blocker->code == "choice-stale");
     }
-    SECTION("ES-DE's own stale labels fall back, with ES-DE's warning, as ES-DE does") {
+    SECTION("ES-DE's own stale labels fall back to the first command, with ES-DE's warning, as ES-DE does") {
+        // An invalid game's <altemulator>: ES-DE launches the first command, never the gamelist's
+        // <alternativeEmulator> (an "else if" of the game's in FileData::launchGame).
         LaunchChoices choices;
         choices.gameAltEmulator = "Gone (Game)";
         choices.systemAlternativeEmulator = "Second";
         auto chosen = rv::catalog::chooseLaunch(choices, labels, profiles);
-        CHECK(chosen.source == ChoiceSource::EsdeSystem);
-        CHECK(chosen.choice == command("Second"));
+        CHECK(chosen.source == ChoiceSource::FirstCommand);
+        CHECK(chosen.choice == command("First"));
         REQUIRE(chosen.warnings.size() == 1);
         CHECK(chosen.warnings[0].find("Gone (Game)") != std::string::npos);
+        CHECK(chosen.warnings[0].find("first command") != std::string::npos);
+        CHECK_FALSE(chosen.blocker);
+        // An invalid gamelist's label is not looked at either then: one warning.
         choices.systemAlternativeEmulator = "Gone (System)";
         chosen = rv::catalog::chooseLaunch(choices, labels, profiles);
         CHECK(chosen.source == ChoiceSource::FirstCommand);
+        REQUIRE(chosen.warnings.size() == 1);
+        // Retroverse's choice for the system stands in for ES-DE's default.
+        choices.system = command("Second");
+        chosen = rv::catalog::chooseLaunch(choices, labels, profiles);
+        CHECK(chosen.source == ChoiceSource::RetroverseSystem);
+        CHECK(chosen.choice == command("Second"));
+        CHECK(chosen.warnings.size() == 1);
+        // An invalid gamelist's <alternativeEmulator> alone: ES-DE marks it invalid and launches the first command.
+        LaunchChoices systemOnly;
+        systemOnly.systemAlternativeEmulator = "Gone (System)";
+        chosen = rv::catalog::chooseLaunch(systemOnly, labels, profiles);
+        CHECK(chosen.source == ChoiceSource::FirstCommand);
         CHECK(chosen.choice == command("First"));
-        CHECK(chosen.warnings.size() == 2);
+        REQUIRE(chosen.warnings.size() == 1);
+        CHECK(chosen.warnings[0].find("Gone (System)") != std::string::npos);
         CHECK_FALSE(chosen.blocker);
     }
     SECTION("AlternativeEmulatorPerGame off leaves the game's <altemulator> unused") {

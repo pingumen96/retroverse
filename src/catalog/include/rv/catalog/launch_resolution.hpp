@@ -10,8 +10,10 @@
 // <altemulator> while ES-DE's AlternativeEmulatorPerGame is on, Retroverse's choice for the system (emulators.json's
 // "systemChoices", or the database's), the gamelist's <alternativeEmulator>, the system's first command. Retroverse's
 // choices are stored as a label or a profile id and translated again at every refresh and launch: one that no longer
-// exists makes the game "requires launcher configuration", naming it; ES-DE's own labels that name no command are
-// skipped with ES-DE's warning, as ES-DE skips them, down to the first command.
+// exists makes the game "requires launcher configuration", naming it; ES-DE's own labels that name no command fall back
+// to the first command with ES-DE's warning, as ES-DE's do: an invalid <alternativeEmulator> to the first command, an
+// invalid game's <altemulator> past the gamelist's <alternativeEmulator> too (ES-DE never looks at it then), so to
+// Retroverse's choice for the system when there is one, else to the first command.
 //
 // Readiness is the first that applies, in LaunchReadiness's order: source unavailable, ROM missing, requires launcher
 // configuration, emulator not found, core not found, ready. It is computed at refresh (for a system, without a game, or
@@ -179,8 +181,9 @@ struct ChosenLaunch {
     ChoiceSource source = ChoiceSource::FirstCommand;
     /// An ES-DE command label (empty for a system's single unlabelled command) or a profile id.
     launcher::LaunchChoice choice;
-    /// ES-DE's own labels that name no command of the system, skipped as ES-DE skips them, each with what ES-DE warns
-    /// about it; and a game's <altemulator> left unused while AlternativeEmulatorPerGame is off.
+    /// ES-DE's own labels that name no command of the system, passed over as ES-DE passes over them (the header
+    /// comment says where each falls back to), each with what ES-DE warns about it; and a game's <altemulator> left
+    /// unused while AlternativeEmulatorPerGame is off.
     std::vector<std::string> warnings;
     /// A Retroverse choice naming a label or a profile that no longer exists (or a system without commands): requires
     /// launcher configuration, naming it. Nothing is translated then.

@@ -140,9 +140,10 @@ search undecided rather than "not found".
 
 A Retroverse choice is honoured or blocks, never skipped: a label the system no longer has is `choice-stale`, a profile
 id that does not exist `profile-unknown` ("requires launcher configuration", naming it). ES-DE's own labels that name
-no command are skipped with ES-DE's warning and the next level applies, as ES-DE does: an invalid `<altemulator>` falls
-to the system's alternative emulator, an invalid `<alternativeEmulator>` (ES-DE marks it `<INVALID>`) to the first
-command.
+no command fall back to the first command with ES-DE's warning, as ES-DE's do: an invalid `<alternativeEmulator>` (ES-DE
+marks it `<INVALID>`) to the first command; an invalid game's `<altemulator>` to the first command too, never to the
+gamelist's `<alternativeEmulator>`, which ES-DE does not look at then. Retroverse's choice for the system stands in for
+ES-DE's default: when there is one, an invalid game's `<altemulator>` falls to it.
 
 **Readiness** (`resolveLaunch()`): the system's folder unavailable, or the game's (`source-unavailable`); the game's
 file missing (`rom-missing`); the choice's blocker; then the translation's blockers. The readiness is the first of
@@ -230,15 +231,26 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de` (read-only 
   it; `%BASENAME%` is replaced in it, a value of exactly `%ROM%` is the game's file, `\` becomes `/`, and a value
   without `X:/` lies in the game's folder; the file is read line by line, each line's `\r` removed, the lines joined;
   empty content and content over 4,096 bytes inject nothing.
-- An invalid per-game `<altemulator>` logs a warning and the system's alternative emulator applies; an invalid system
-  alternative emulator logs a warning and the first command applies.
+- An invalid per-game `<altemulator>` (with `AlternativeEmulatorPerGame` on) logs a warning and the first command
+  applies: the system's alternative emulator is the `else if` of the game's, never reached once a game's label is
+  set; an invalid system alternative emulator logs a warning and the first command applies.
+- A game that is a folder holding a regular file (or a link) of exactly its own name, compared case-sensitively, is
+  launched through that file: `romPath` becomes the inner file, `baseName` the folder's name up to its first `.`, so
+  `%ROM%`, `%BASENAME%`, `%FILENAME%`, `%GAMEDIR%`, `%GAMEDIRRAW%`, `%STARTDIR%=%GAMEDIR%` and the folder of a relative
+  `%INJECT%` file follow it, while `romRaw` (`%ROMRAW%`, `%INJECT%=%ROM%`) stays the folder.
+- `%CORE_X%`: when a corepath entry uses `%EMUPATH%` or `%ESPATH%` (each replaced once), every `/` of the core's path
+  becomes `\`; a path holding a space goes through `getEscapedPath` (quoted, so its generic form with `\`); the core
+  file ends at the next space after the token (the closing quote when a quote opens it), and without one ES-DE refuses
+  the command ("invalid entry in systems configuration file"). A `<core>` without corepath entries is "missing core
+  configuration", an `<emulator>` without entries of the four types `NO_RULES`.
 
 ## Decisions taken within the step
 
 **ES-DE behaviour followed:** the find rules' order and HKCU/HKLM rule, registry values with their quotes, the suffix
 appended verbatim, static paths with `%ROMPATH%`, wildcards with ES-DE's regular expression and case-sensitive names,
 the `|` replacement only once its path exists, `%FILENAME%` and `%BASENAME%` as ES-DE builds them, `%INJECT%`'s content
-rules, ES-DE's stale labels skipped level by level.
+rules, ES-DE's stale labels falling back to the first command, folder games launched through their inner file, core
+paths normalized as ES-DE normalizes them.
 
 **Deliberate differences, each documented in the headers:**
 
@@ -337,8 +349,7 @@ a temporary user data directory):
   launch translation (find rules on the probe, `EsdeCommandTranslator`), the `launcher` row the per-system choices.
 - **`docs/roadmap.md`:** step 10 done.
 - **ADR-0008 §8, suggested amendments:** an `%INJECT%` file is dropped when its content is over 4,096 bytes once
-  its line ends are removed (ES-DE measures the content, not the file); ES-DE's invalid per-game `<altemulator>` falls
-  to the system's alternative emulator before the first command; App Paths values are read with their quotes, as ES-DE
+  its line ends are removed (ES-DE measures the content, not the file); App Paths values are read with their quotes, as ES-DE
   reads them; an unknown install folder makes a `systempath` search undecided too (ES-DE's SearchPathW looks there
   first); a static path's `|` replacement requires configuration once its path exists.
 - **`BACKLOG.md`:** candidates: `%GAMEENTRYDIR%` in `%STARTDIR%` (unused by ES-DE 3.4.1's commands); a suggestion for a

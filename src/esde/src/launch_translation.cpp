@@ -31,12 +31,111 @@ using catalog::ReadinessBlocker;
 /// Where App Paths registers executables (ES-DE's winregistrypath rule), under HKCU and HKLM.
 constexpr std::string_view kAppPathsKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\";
 constexpr std::string_view kStartDirToken = "%STARTDIR%=";
-/// The most of an %INJECT% file that is read. ES-DE reads it to its end unless its content passes 4,096 bytes;
-/// only line ends could keep a larger file within that, and such a file is taken as one ES-DE may inject.
-constexpr std::uintmax_t kMaxInjectReadBytes = 1024 * 1024;
+/// The most of an %INJECT% file that is read. ES-DE reads it until its content passes 4,096 bytes; only line ends could
+/// keep a longer prefix within that, and a file whose first MiB is mostly line ends is taken as one ES-DE may inject.
+constexpr std::size_t kMaxInjectReadBytes = 1024 * 1024;
 
 std::string inQuotes(std::string_view text) {
     return fmt::format("\"{}\"", text);
+}
+
+/// The first `from` in `text` replaced with `to`, as ES-DE's find() and replace() expand %EMUPATH% and %ESPATH% in a
+/// core's path (once, where Utils::String::replace would replace them all).
+std::string replaceFirst(std::string text, std::string_view from, std::string_view to) {
+    if (const std::size_t at = text.find(from); at != std::string::npos) {
+        text.replace(at, from.size(), to);
+    }
+    return text;
+}
+
+/// The file `path` opens, as the file system names it: 8.3 aliases expanded, symbolic links and junctions followed
+/// (GetFinalPathNameByHandleW, without the \\?\ prefix). Nothing when it cannot be opened, such as a program only the
+/// probe describes.
+std::optional<std::filesystem::path> finalPathOf(const std::filesystem::path& path) {
+    const std::wstring target = core::extendedLengthPath(path);
+    const HANDLE handle =
+        CreateFileW(target.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return std::nullopt;
+    }
+    std::wstring resolved(MAX_PATH, L'\0');
+    DWORD length = 0;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        length = GetFinalPathNameByHandleW(handle, resolved.data(), static_cast<DWORD>(resolved.size()),
+                                           FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+        if (length == 0 || length < resolved.size()) {
+            break;
+        }
+        resolved.resize(length + 1); // the size it needs, its terminator included
+    }
+    CloseHandle(handle);
+    if (length == 0 || length >= resolved.size()) {
+        return std::nullopt;
+    }
+    resolved.resize(length);
+    if (resolved.starts_with(L"\\\\?\\UNC\\")) {
+        resolved = L"\\\\" + resolved.substr(8);
+    } else if (resolved.starts_with(L"\\\\?\\")) {
+        resolved.erase(0, 4);
+    }
+    return std::filesystem::path(std::move(resolved));
+}
+
+/// At most `maxBytes` from the start of `file`, opened as core::readFileShared() opens it (reading only, sharing
+/// everything), and whether more follows. Errors as readFileShared()'s, without OutOfRange: NotFound, Unavailable,
+/// InvalidArgument (a folder or a device), Conflict, IoError.
+struct FilePrefix {
+    std::string bytes;
+    bool truncated = false;
+};
+Expected<FilePrefix> readPrefixShared(const std::filesystem::path& file, std::size_t maxBytes) {
+    const std::string context = core::pathToUtf8Lossy(file);
+    const std::wstring target = core::extendedLengthPath(file);
+    const HANDLE handle =
+        CreateFileW(target.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        const DWORD error = GetLastError();
+        const DWORD attributes = GetFileAttributesW(target.c_str());
+        if (error == ERROR_ACCESS_DENIED && attributes != INVALID_FILE_ATTRIBUTES &&
+            (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            return makeError(ErrorCode::InvalidArgument, "not a regular file (a folder)", context);
+        }
+        return makeError(core::fileErrorCode(error, file), core::systemErrorMessage(error), context);
+    }
+    FilePrefix prefix;
+    Status status;
+    if (GetFileType(handle) != FILE_TYPE_DISK) {
+        status = makeError(ErrorCode::InvalidArgument, "not a regular file (a device)", context);
+    } else {
+        // One byte more than wanted tells whether the file goes on.
+        prefix.bytes.resize(maxBytes + 1);
+        std::size_t done = 0;
+        while (done < prefix.bytes.size()) {
+            DWORD read = 0;
+            const auto wanted = static_cast<DWORD>(std::min<std::size_t>(prefix.bytes.size() - done, 64 * 1024));
+            if (!ReadFile(handle, prefix.bytes.data() + done, wanted, &read, nullptr)) {
+                const DWORD error = GetLastError();
+                status = makeError(core::fileErrorCode(error, file), core::systemErrorMessage(error), context);
+                break;
+            }
+            if (read == 0) {
+                break; // the end of the file
+            }
+            done += read;
+        }
+        prefix.bytes.resize(done);
+    }
+    CloseHandle(handle);
+    if (!status) {
+        return propagate(status.error());
+    }
+    if (prefix.bytes.size() > maxBytes) {
+        prefix.bytes.resize(maxBytes);
+        prefix.truncated = true;
+    }
+    return prefix;
 }
 
 /// ES-DE's preferred form of a path's text (Utils::FileSystem::getPreferredPath on Windows): '\' between the elements.
@@ -76,6 +175,29 @@ std::string folderText(const std::filesystem::path& folder) {
 /// ES-DE's home folder as '~' expands to it (Utils::FileSystem::getHomePath: the generic form).
 std::string homeText(const TranslationContext& context) {
     return esdeGenericText(context.profile.esdeHome.parent_path());
+}
+
+/// The find rules of the emulator `name`, or null when es_find_rules.xml defines none, or none of the four types ES-DE
+/// searches for a program on Windows (its NO_RULES: "missing emulator find rules configuration").
+const FindRuleSet* emulatorRules(const TranslationContext& context, std::string_view name) {
+    const FindRuleSet* rules = context.findRules != nullptr ? context.findRules->findEmulator(name) : nullptr;
+    if (rules == nullptr) {
+        return nullptr;
+    }
+    for (const FindRuleType type : {FindRuleType::WinRegistryPath, FindRuleType::WinRegistryValue,
+                                    FindRuleType::SystemPath, FindRuleType::StaticPath}) {
+        if (!rules->entries(type).empty()) {
+            return rules;
+        }
+    }
+    return nullptr;
+}
+
+/// The find rules of the core `name`, or null when es_find_rules.xml defines no corepath entry for it (ES-DE's
+/// "missing core configuration").
+const FindRuleSet* coreRules(const TranslationContext& context, std::string_view name) {
+    const FindRuleSet* rules = context.findRules != nullptr ? context.findRules->findCore(name) : nullptr;
+    return rules != nullptr && !rules->entries(FindRuleType::CorePath).empty() ? rules : nullptr;
 }
 
 /// Evaluates one emulator's find rules in ES-DE's order (FileData::findEmulator), on the probe.
@@ -138,6 +260,12 @@ public:
             attempt(FindRuleType::SystemPath, entry, "not a file name");
             return false;
         }
+        if (!name->is_absolute() && (name->has_root_name() || name->has_root_directory())) {
+            // "D:emu.exe" or "\emu.exe": relative to a drive's current folder or to the current drive's root, which
+            // Windows would take from Retroverse's own state.
+            attempt(FindRuleType::SystemPath, entry, "not a file name (a path relative to a drive's current folder)");
+            return false;
+        }
         std::vector<std::filesystem::path> folders{*m_context.profile.installFolder, probe().system32Folder(),
                                                    probe().windowsFolder()};
         const std::vector<std::filesystem::path> pathEntries = probe().pathEntries();
@@ -150,6 +278,9 @@ public:
                 file += L".exe";
             }
             file = file.lexically_normal();
+            if (!file.is_absolute()) {
+                continue; // a relative folder: never resolved against the current one
+            }
             if (probe().fileExists(file)) {
                 m_result.found = FoundLocation{std::move(file), std::string(toString(FindRuleType::SystemPath)), entry,
                                                core::pathToUtf8Lossy(folder)};
@@ -306,38 +437,41 @@ enum class InjectContent : std::uint8_t {
 };
 
 /// Reads an %INJECT% file as ES-DE does: line by line in text mode (so up to a Ctrl+Z), each line's '\r' removed, the
-/// lines joined without a separator, until the content passes kMaxInjectBytes.
+/// lines joined without a separator, until the content passes kMaxInjectBytes. Only a prefix is read: a large file
+/// is decided by its first kMaxInjectReadBytes (too long as soon as its content passes the limit).
 InjectContent injectContent(const std::filesystem::path& file) {
-    auto text = core::readFileShared(file, kMaxInjectReadBytes);
-    if (!text) {
-        switch (text.error().code) {
+    auto prefix = readPrefixShared(file, kMaxInjectReadBytes);
+    if (!prefix) {
+        switch (prefix.error().code) {
         case ErrorCode::NotFound:
         case ErrorCode::InvalidArgument: // a folder or a device
             return InjectContent::None;
-        case ErrorCode::OutOfRange:
-            return InjectContent::Injected;
         default:
             return InjectContent::Unreadable;
         }
     }
     std::size_t bytes = 0;
-    for (const char c : *text) {
+    for (const char c : prefix->bytes) {
         if (c == '\x1A') {
-            break;
+            return bytes == 0 ? InjectContent::Empty : InjectContent::Injected;
         }
         if (c != '\r' && c != '\n' && ++bytes > kMaxInjectBytes) {
             return InjectContent::TooLong;
         }
+    }
+    if (prefix->truncated) {
+        return InjectContent::Injected; // line ends mostly, and more to come: what ES-DE does is not decided yet
     }
     return bytes == 0 ? InjectContent::Empty : InjectContent::Injected;
 }
 
 /// The values of the tokens that depend on the game, as ES-DE's launchGame() computes them from the game's path.
 struct GameValues {
-    std::string rom;      ///< %ROM%, %ROMRAW%: the path, '\' between the elements
+    std::string rom;      ///< %ROM%: the path, '\' between the elements (a folder game's inner file)
+    std::string romRaw;   ///< %ROMRAW% and %INJECT%=%ROM%: the game's path (a folder game's folder)
     std::string baseName; ///< %BASENAME%
     std::string fileName; ///< %FILENAME%
-    std::string gameDir;  ///< %GAMEDIR%, %GAMEDIRRAW%
+    std::string gameDir;  ///< %GAMEDIR%, %GAMEDIRRAW%: the folder holding %ROM%
     std::string gameDirGeneric;
     std::string title; ///< for the request's label
 };
@@ -361,12 +495,15 @@ std::optional<std::string> romFolderText(const TranslationContext& context, cons
     return genericText(text);
 }
 
-GameValues gameValuesOf(const std::string& romFolder, const catalog::LaunchGame& game) {
+/// The values for `game` in ES-DE's text of its ROM folder. `throughInnerFile`: the game is a folder holding a file of
+/// its own name, which ES-DE launches instead (launchGame's "directories interpreted as files" shortcut).
+GameValues gameValuesOf(const std::string& romFolder, const catalog::LaunchGame& game, bool throughInnerFile) {
     GameValues values;
     std::string relative = game.relativePath;
     std::replace(relative.begin(), relative.end(), '\\', '/');
     const std::string generic = genericText(romFolder + "/" + relative);
     values.rom = preferred(generic);
+    values.romRaw = values.rom;
     const std::size_t slash = generic.rfind('/');
     const std::string name = slash == std::string::npos ? generic : generic.substr(slash + 1);
     const std::string folder = slash == std::string::npos ? std::string() : generic.substr(0, slash);
@@ -378,9 +515,33 @@ GameValues gameValuesOf(const std::string& romFolder, const catalog::LaunchGame&
     values.baseName = name == "." || game.directory || dot == std::string::npos ? name : name.substr(0, dot);
     const std::string extension = name == "." ? std::string(".") : dot == std::string::npos ? std::string(".")
                                                                                               : name.substr(dot);
+    if (throughInnerFile) {
+        // romPath becomes the inner file, so its parent (%GAMEDIR%, a relative %INJECT% file's folder) is the game's
+        // folder itself; baseName is cut at its first '.'; romRaw stays the folder.
+        values.rom = preferred(generic + "/" + name);
+        values.gameDirGeneric = generic;
+        values.gameDir = preferred(generic);
+        values.baseName = name.substr(0, name.find('.'));
+    }
     values.fileName = values.baseName + extension;
     values.title = game.title.empty() ? name : game.title;
     return values;
+}
+
+/// Whether the folder `folder` (a \\?\ path) lists a regular file, or a symbolic link, named exactly `name` (compared
+/// case-sensitively, as ES-DE compares getFileName()s): ES-DE then launches the folder game through it.
+bool holdsFileNamed(const std::filesystem::path& folder, const std::filesystem::path& name) {
+    std::error_code error;
+    std::filesystem::directory_iterator entries(folder, error);
+    for (; !error && entries != std::filesystem::directory_iterator(); entries.increment(error)) {
+        const std::filesystem::directory_entry& entry = *entries;
+        if (entry.path().filename().native() != name.native()) {
+            continue;
+        }
+        std::error_code status;
+        return entry.is_symlink(status) || entry.is_regular_file(status);
+    }
+    return false;
 }
 
 /// One command's translation (translateCommand()).
@@ -455,7 +616,21 @@ private:
                               inQuotes(m_system.path)));
             return;
         }
-        m_values = gameValuesOf(*folder, *m_game);
+        bool throughInnerFile = false;
+        if (m_game->directory) {
+            // ES-DE lists a folder game and launches the file inside that has exactly the folder's name.
+            if (const auto romFolder = folderFromEsdeText(*folder)) {
+                if (const auto gameFolder = core::extendedLengthPathBelow(*romFolder, m_game->relativePath)) {
+                    throughInnerFile = holdsFileNamed(*gameFolder, gameFolder->filename());
+                }
+            }
+        }
+        m_values = gameValuesOf(*folder, *m_game, throughInnerFile);
+        if (throughInnerFile) {
+            m_translation.notes.push_back(fmt::format("the folder game holds a file of its own name, which ES-DE "
+                                                      "launches: %ROM% is {}, %ROMRAW% the folder",
+                                                      m_values->rom));
+        }
     }
 
     /// What leads the command and ES-DE removes before it launches it: flags and the start folder.
@@ -552,11 +727,18 @@ private:
         }
         if (m_translation.program) {
             m_programFolder = m_translation.program->path.parent_path();
-            if (launcher::isRefusedProgram(m_translation.program->path)) {
+            // By the name found and by the file it opens: an 8.3 alias ("POWERS~1.EXE") or a link named like an
+            // emulator would hide a shell's name. The request keeps the path as found, which Windows opens alike.
+            const std::filesystem::path& found = m_translation.program->path;
+            const auto opened = finalPathOf(found);
+            const bool refused = launcher::isRefusedProgram(found) || (opened && launcher::isRefusedProgram(*opened));
+            if (refused) {
+                const std::string name = core::pathToUtf8Lossy(found.filename());
+                const std::string openedName = opened ? core::pathToUtf8Lossy(opened->filename()) : name;
                 block(LaunchReadiness::RequiresConfiguration, "program-refused",
-                      fmt::format("{} is a command interpreter or a launcher, which Retroverse never starts: choose "
+                      fmt::format("{}{} is a command interpreter or a launcher, which Retroverse never starts: choose "
                                   "another command or an emulator profile for {}",
-                                  core::pathToUtf8Lossy(m_translation.program->path.filename()),
+                                  name, openedName == name ? std::string() : fmt::format(" (it opens {})", openedName),
                                   m_system.name.str()));
             }
         }
@@ -565,8 +747,11 @@ private:
     /// The value of a variable token in an argument.
     std::string variable(const CommandToken& token) {
         const std::string& name = token.name;
-        if (name == "ROM" || name == "ROMRAW") {
+        if (name == "ROM") {
             return m_values ? m_values->rom : token.text;
+        }
+        if (name == "ROMRAW") {
+            return m_values ? m_values->romRaw : token.text;
         }
         if (name == "BASENAME") {
             return m_values ? m_values->baseName : token.text;
@@ -721,16 +906,25 @@ private:
             return literal;
         }
         const std::string coreFile = esdeReplace(std::string(written), "~", homeText(m_context));
+        // What ES-DE refuses before it looks for the core: no corepath rule ("missing core configuration"), then a core
+        // file that does not end ("invalid entry in systems configuration file").
+        if (coreRules(m_context, token.target) == nullptr) {
+            block(LaunchReadiness::RequiresConfiguration, "find-rules-missing",
+                  fmt::format("no corepath rule defines the core {} (es_find_rules.xml)", token.target));
+            return literal;
+        }
+        if (!coreFileEnds()) {
+            block(LaunchReadiness::RequiresConfiguration, "core-malformed",
+                  fmt::format("the command's {} ends the command, with no space after its file: ES-DE refuses it as "
+                              "an invalid entry",
+                              token.text));
+            return literal;
+        }
         if (!m_programFolder) {
             return literal; // no program: the core cannot be looked for
         }
         FindResult found = findCore(m_context, token.target, *m_programFolder, coreFile);
         m_translation.attempts.insert(m_translation.attempts.end(), found.attempts.begin(), found.attempts.end());
-        if (found.noRules) {
-            block(LaunchReadiness::RequiresConfiguration, "find-rules-missing",
-                  fmt::format("no find rule defines the core {} (es_find_rules.xml)", token.target));
-            return literal;
-        }
         if (found.undecided) {
             block(LaunchReadiness::RequiresConfiguration, "find-rule-undecided", *found.undecided);
             return literal;
@@ -742,6 +936,21 @@ private:
         }
         m_translation.core = std::move(found.found);
         return found.text;
+    }
+
+    /// Whether ES-DE finds where the core file ends (FileData::launchGame): at the next '"' after the %CORE_X% token
+    /// when a quote opens the token, else at the next space, in the command as it stands then ('~' replaced; the flags
+    /// it removed leave their spaces).
+    [[nodiscard]] bool coreFileEnds() const {
+        const std::string command = esdeReplace(m_command.text, "~", homeText(m_context));
+        const std::size_t entry = command.find("%CORE_");
+        const std::size_t close = entry == std::string::npos ? std::string::npos : command.find('%', entry + 6);
+        if (close == std::string::npos) {
+            return false;
+        }
+        const bool quoted = command.find("\"%CORE_") != std::string::npos;
+        return (quoted && command.find('"', close) != std::string::npos) ||
+               command.find(' ', close) != std::string::npos;
     }
 
     /// %INJECT%=<value>: dropped when ES-DE would inject nothing, else "requires launcher configuration".
@@ -756,11 +965,12 @@ private:
             return;
         }
         // ES-DE: '~' already replaced in the whole command, then %BASENAME%; a value of exactly %ROM% is the game's
-        // file; '\' turned into '/'; a value without a drive ("X:/") lies in the game's folder.
+        // path (romRaw: a folder game's folder); '\' turned into '/'; a value without a drive ("X:/") lies in the
+        // folder holding %ROM%.
         std::string file = esdeReplace(std::string(value), "~", homeText(m_context));
         file = esdeReplace(std::move(file), "%BASENAME%", m_values->baseName);
         if (file == "%ROM%") {
-            file = m_values->rom;
+            file = m_values->romRaw;
         }
         std::replace(file.begin(), file.end(), '\\', '/');
         const bool absolute = file.size() >= 3 && file[1] == ':' && file[2] == '/';
@@ -841,16 +1051,16 @@ private:
                               inQuotes(out)));
             return {};
         }
-        if (m_game != nullptr) {
-            std::error_code error;
-            const std::filesystem::path extended(core::extendedLengthPath(*folder));
-            if (!std::filesystem::is_directory(extended, error)) {
-                m_startFolderMissing = true;
-                block(LaunchReadiness::RequiresConfiguration, "start-folder-missing",
-                      fmt::format("the working folder {} (%STARTDIR%) does not exist: ES-DE creates it, Retroverse "
-                                  "writes nothing there",
-                                  core::pathToUtf8Lossy(*folder)));
-            }
+        // Checked for a system too: a folder reached here holds no %GAMEDIR% (a system returned above), so every game of
+        // the system shares it.
+        std::error_code error;
+        const std::filesystem::path extended(core::extendedLengthPath(*folder));
+        if (!std::filesystem::is_directory(extended, error)) {
+            m_startFolderMissing = true;
+            block(LaunchReadiness::RequiresConfiguration, "start-folder-missing",
+                  fmt::format("the working folder {} (%STARTDIR%) does not exist: ES-DE creates it, Retroverse "
+                              "writes nothing there",
+                              core::pathToUtf8Lossy(*folder)));
         }
         return *folder;
     }
@@ -904,7 +1114,7 @@ private:
 
 FindResult findEmulator(const TranslationContext& context, std::string_view name) {
     FindResult result;
-    const FindRuleSet* rules = context.findRules != nullptr ? context.findRules->findEmulator(name) : nullptr;
+    const FindRuleSet* rules = emulatorRules(context, name);
     if (rules == nullptr) {
         result.noRules = true;
         return result;
@@ -936,23 +1146,26 @@ FindResult findEmulator(const TranslationContext& context, std::string_view name
 FindResult findCore(const TranslationContext& context, std::string_view name,
                     const std::filesystem::path& programFolder, std::string_view coreFile) {
     FindResult result;
-    const FindRuleSet* rules = context.findRules != nullptr ? context.findRules->findCore(name) : nullptr;
+    const FindRuleSet* rules = coreRules(context, name);
     if (rules == nullptr) {
         result.noRules = true;
         return result;
     }
     const std::string emulatorFolder = folderText(programFolder);
     for (const std::string& entry : rules->entries(FindRuleType::CorePath)) {
-        // ES-DE: <entry>\<file>, '~' replaced, then %EMUPATH% (the program's folder) and %ESPATH%, both with '\'.
+        // ES-DE: <entry>\<file> with '~' replaced; then the first %EMUPATH% (the program's folder) and the first
+        // %ESPATH%, each followed by every '/' of the text turned into '\'.
         std::string text = esdeReplace(entry + "\\" + std::string(coreFile), "~", homeText(context));
-        text = esdeReplace(std::move(text), "%EMUPATH%", emulatorFolder);
+        if (text.find("%EMUPATH%") != std::string::npos) {
+            text = preferred(replaceFirst(std::move(text), "%EMUPATH%", emulatorFolder));
+        }
         if (text.find("%ESPATH%") != std::string::npos) {
             if (!context.profile.installFolder) {
                 result.undecided = fmt::format("corepath {} uses %ESPATH%, ES-DE's install folder, which is not known",
                                                inQuotes(entry));
                 return result;
             }
-            text = esdeReplace(std::move(text), "%ESPATH%", folderText(*context.profile.installFolder));
+            text = preferred(replaceFirst(std::move(text), "%ESPATH%", folderText(*context.profile.installFolder)));
         }
         const auto file = folderFromEsdeText(text);
         if (!file) {
@@ -961,7 +1174,8 @@ FindResult findCore(const TranslationContext& context, std::string_view name,
         }
         if (context.probe->fileExists(*file)) {
             result.found = FoundLocation{*file, std::string(toString(FindRuleType::CorePath)), entry, {}};
-            result.text = std::move(text);
+            // A path holding a space goes through getEscapedPath: quoted (one argument), in its generic form with '\'.
+            result.text = text.find(' ') != std::string::npos ? preferred(genericText(text)) : std::move(text);
             return result;
         }
         result.attempts.push_back(

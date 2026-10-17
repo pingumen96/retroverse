@@ -9,18 +9,20 @@
 //
 // The program is decided on the unexpanded command: it must be exactly one %EMULATOR_X% element, found through the
 // find rules of X, or a literal absolute path whose only tokens are '~' and %ESPATH%. Command interpreters and launchers
-// are refused by name even when a find rule finds them (launcher::isRefusedProgram: cmd, powershell, explorer, ...), and
-// the request must pass launcher::validateLaunchRequest (a PE .exe or .com, the working folder there).
+// are refused by name even when a find rule finds them (launcher::isRefusedProgram: cmd, powershell, explorer, ...), by
+// the name found and by the name of the file it opens (an 8.3 alias or a symbolic link resolved), and the request must
+// pass launcher::validateLaunchRequest (a PE .exe or .com, the working folder there).
 //
 // The find rules are evaluated as ES-DE evaluates them, on the machine core::ISystemProbe describes (findEmulator(),
 // findCore()): every winregistrypath entry (App Paths: HKCU, and HKLM only when the HKCU key does not exist), then every
 // winregistryvalue entry ("<key>\<value>|<suffix>": the suffix appended verbatim to the value), every systempath entry
 // (the executable search: the ES-DE install folder, System32, the Windows folder, then PATH's absolute entries; never
 // Retroverse's folder or the current one, unlike ES-DE's SearchPathW, since a ROM tree may hold emulators named like the
-// entries), every staticpath entry ('~', %ESPATH% and %ROMPATH% expanded; a '*' in the last element matched as ES-DE's
+// entries; an entry relative to a drive, "D:emu.exe" or "\emu.exe", is no file name), every staticpath entry ('~', %ESPATH% and %ROMPATH% expanded; a '*' in the last element matched as ES-DE's
 // regular expression, case-sensitively, the first match in ordinal order winning; a '|' replacement program requires
 // launcher configuration); for a core, each corepath entry with %EMUPATH% the program's folder. The custom find rules
-// come first (loadFindRules()).
+// come first (loadFindRules()). An emulator without entries of those four types, or a core without corepath entries,
+// has no rules, as for ES-DE ("missing ... configuration": requires launcher configuration).
 //
 // Tokens and their values, for a game "<ROM folder>\<relative path>" (ES-DE's text of it: ROMDirectory as configured,
 // the system's <path> with %ROMPATH% expanded, the relative path as listed on disk; '\' between the elements):
@@ -33,13 +35,20 @@
 //   %EMUDIR%                 the program's folder
 //   %ESPATH%                 the ES-DE install folder ("requires launcher configuration" when it is not known)
 //   ~                        ES-DE's home folder, the ES-DE home's parent (ES-DE's text of it, '/' separators)
-//   %CORE_X%\<file>          the core: <corepath entry>\<file>, the first that exists ("core not found" otherwise)
+//   %CORE_X%\<file>          the core: <corepath entry>\<file>, the first that exists ("core not found" otherwise), with
+//                            ES-DE's text of it ('/' turned into '\' once %EMUPATH% or %ESPATH% is replaced; a path
+//                            holding a space in its generic form); the file must end at a space or a closing quote
 //   %STARTDIR%=<folder>      the working folder ('~', %EMUDIR%, %GAMEDIR% in it); without it, the program's folder
-//                            (ES-DE leaves emulators in its own working folder; Retroverse keeps them out of it)
+//                            (ES-DE leaves emulators in its own working folder; Retroverse keeps them out of it). A
+//                            folder that does not exist requires configuration (ES-DE creates it), for a system too
+//                            when it does not depend on the game
 //   %HIDEWINDOW%             a console program runs without a window (LaunchRequest::hideConsoleWindow)
 //   %INJECT%=<file>          the element (or its value, glued to a prefix) is dropped when the file (relative to the
 //                            game's folder, %BASENAME% expanded) is missing, empty or over 4,096 bytes, as ES-DE
 //                            then injects nothing; a file ES-DE would inject requires launcher configuration
+// A folder game holding a regular file (or a link) of exactly its own name is launched through that file, as ES-DE
+// launches it: %ROM% is that file, %BASENAME% the folder's name up to its first '.', %FILENAME% that and the extension,
+// %GAMEDIR% and a relative %INJECT% file's folder the game's folder itself; %ROMRAW% and %INJECT%=%ROM% stay the folder.
 // Anything else requires launcher configuration with the token named: %RUNINBACKGROUND%, %ESCAPESPECIALS%,
 // %PRECOMMAND_X%, %GAMEENTRYDIR% and %EMUPATH% in a command, %STARTDIR% or %INJECT% without '=', a second program or core,
 // unknown %X% text (%RPCS3_GAMEID%, the tokens of ES-DE's other platforms), placeholder commands.
@@ -78,7 +87,8 @@ inline constexpr std::size_t kMaxInjectBytes = 4096;
 struct FindResult {
     /// The file and the rule and entry that found it.
     std::optional<catalog::FoundLocation> found;
-    /// For a core: its text as the command gets it (ES-DE's: the corepath entry expanded, '\' and the file name).
+    /// For a core: its text as the command gets it (ES-DE's: the corepath entry expanded, '\' and the file name, '/'
+    /// turned into '\' once %EMUPATH% or %ESPATH% is replaced, a path holding a space in its generic form).
     std::string text;
     /// What was tried and why it failed, in ES-DE's order ("winregistrypath \"retroarch.exe\": not registered").
     std::vector<std::string> attempts;
@@ -86,7 +96,8 @@ struct FindResult {
     /// and whose '|' replaces the program, or an entry that needs %ESPATH% (an unknown install folder) or %ROMPATH%
     /// (an unresolved ROM root) before anything was found. Requires launcher configuration, with this reason.
     std::optional<std::string> undecided;
-    /// No find rules define the name.
+    /// No find rules define the name, or none of the types searched (an emulator without winregistrypath,
+    /// winregistryvalue, systempath or staticpath entries, a core without corepath entries), as for ES-DE.
     bool noRules = false;
 };
 

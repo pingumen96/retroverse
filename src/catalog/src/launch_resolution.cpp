@@ -142,6 +142,7 @@ ChosenLaunch chooseLaunch(const LaunchChoices& choices, std::span<const std::str
     if (choices.game) {
         return stored(*choices.game, ChoiceSource::RetroverseGame);
     }
+    bool gameLabelInvalid = false;
     if (!choices.gameAltEmulator.empty()) {
         if (!choices.alternativeEmulatorPerGame) {
             warnings.push_back(fmt::format("the game's <altemulator> \"{}\" is not used: ES-DE's "
@@ -150,16 +151,20 @@ ChosenLaunch chooseLaunch(const LaunchChoices& choices, std::span<const std::str
         } else if (hasLabel(choices.gameAltEmulator)) {
             return esde(choices.gameAltEmulator, ChoiceSource::EsdeGame);
         } else {
-            // ES-DE logs that the game's alternative emulator is invalid and goes on to the system's.
+            // ES-DE logs that the game's alternative emulator is invalid and launches the system's first command: the
+            // gamelist's <alternativeEmulator> is an "else if" of the game's in FileData::launchGame, never reached
+            // then. Retroverse's choice for the system, which stands in for ES-DE's default, still applies.
+            gameLabelInvalid = true;
             warnings.push_back(fmt::format("the game's <altemulator> \"{}\" names no command of the system: ES-DE "
-                                           "ignores it as invalid",
+                                           "ignores it as invalid and launches the first command, not the gamelist's "
+                                           "<alternativeEmulator>",
                                            choices.gameAltEmulator));
         }
     }
     if (choices.system) {
         return stored(*choices.system, ChoiceSource::RetroverseSystem);
     }
-    if (!choices.systemAlternativeEmulator.empty()) {
+    if (!gameLabelInvalid && !choices.systemAlternativeEmulator.empty()) {
         if (hasLabel(choices.systemAlternativeEmulator)) {
             return esde(choices.systemAlternativeEmulator, ChoiceSource::EsdeSystem);
         }
