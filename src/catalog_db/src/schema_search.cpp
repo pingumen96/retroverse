@@ -6,9 +6,10 @@
 // tables: FTS5 removes a row's tokens only when it is given the values it indexed ('delete' with the old values), so
 // the index must never miss a change of an indexed value, in idx_games or in idx_systems (a system's full name is
 // indexed with each of its games). The store writes with upserts, never REPLACE (which deletes without firing delete
-// triggers), so an existing row fires the UPDATE triggers, which skip the rows whose indexed values did not change. A
-// full rebuild ('rebuild', from the view) is a repair; `db check` runs FTS5's integrity-check with rank 1, which
-// compares the index with the view.
+// triggers), so an existing row fires the UPDATE triggers, whose WHEN clauses leave the index alone for the rows whose
+// indexed values did not change. A full rebuild ('rebuild', from the view) is a repair, and what ends a bulk write
+// (search_index.hpp: the triggers dropped for it and created again, from the same text); `db check` runs FTS5's
+// integrity-check with rank 1, which compares the index with the view.
 //
 // Tokenizer: unicode61 with remove_diacritics 2 (case and diacritics folded, also on letters that carry several; NFD
 // text indexed as NFC text), prefix indexes of 2 and 3 characters for the last word of a search, which is a prefix.
@@ -26,7 +27,11 @@
 
 #include <array>
 
-namespace rv::catalog_db::schema {
+#include <fmt/format.h>
+
+#include <rv/catalog_db/search_index.hpp>
+
+namespace rv::catalog_db {
 namespace {
 
 constexpr std::string_view kVersion1 = R"sql(
@@ -44,14 +49,28 @@ CREATE VIRTUAL TABLE idx_game_search USING fts5(
     tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3', detail = none, columnsize = 0
 );
 
--- A new idx_games row: its values, with its system's full name as idx_systems holds it now.
+-- The order of the queries' lists, (sort key, GameId), covering their filters and the release date order.
+CREATE INDEX idx_games_sort ON idx_games (sort_key, id, state, availability, library, system, release_date);
+)sql";
+
+/// A trigger of the search index: its name and the statement that creates it, run by the migration (createTriggers())
+/// and by resumeSearchIndex(), so that the schema holds the same text either way (`db check` compares it).
+struct SearchTrigger {
+    std::string_view name;
+    std::string_view sql;
+};
+
+constexpr std::array<SearchTrigger, 6> kTriggers{{
+    // A new idx_games row: its values, with its system's full name as idx_systems holds it now.
+    {"idx_games_search_insert", R"sql(
 CREATE TRIGGER idx_games_search_insert AFTER INSERT ON idx_games BEGIN
     INSERT INTO idx_game_search (rowid, title, sort_name, developer, publisher, genre, year, system_full_name)
     VALUES (new.id, new.title, new.sort_name, new.developer, new.publisher, new.genre, new.release_date / 10000,
             (SELECT full_name FROM idx_systems WHERE library = new.library AND name = new.system));
 END;
-
--- A removed idx_games row: the values it was indexed with.
+)sql"},
+    // A removed idx_games row: the values it was indexed with.
+    {"idx_games_search_delete", R"sql(
 CREATE TRIGGER idx_games_search_delete AFTER DELETE ON idx_games BEGIN
     INSERT INTO idx_game_search (idx_game_search, rowid, title, sort_name, developer, publisher, genre, year,
                                  system_full_name)
@@ -59,9 +78,10 @@ CREATE TRIGGER idx_games_search_delete AFTER DELETE ON idx_games BEGIN
             old.release_date / 10000,
             (SELECT full_name FROM idx_systems WHERE library = old.library AND name = old.system));
 END;
-
--- An updated idx_games row whose indexed values changed (an upsert sets every column; most are unchanged): out with the
--- old values, in with the new ones.
+)sql"},
+    // An updated idx_games row whose indexed values changed (an upsert sets every column; most are unchanged): out with
+    // the old values, in with the new ones.
+    {"idx_games_search_update", R"sql(
 CREATE TRIGGER idx_games_search_update
 AFTER UPDATE OF id, library, system, title, sort_name, developer, publisher, genre, release_date ON idx_games
 WHEN old.id IS NOT new.id OR old.library IS NOT new.library OR old.system IS NOT new.system
@@ -77,9 +97,10 @@ BEGIN
     VALUES (new.id, new.title, new.sort_name, new.developer, new.publisher, new.genre, new.release_date / 10000,
             (SELECT full_name FROM idx_systems WHERE library = new.library AND name = new.system));
 END;
-
--- A new system: its games already indexed (an import may write a system after its games) were indexed without a full
--- name; they get this one.
+)sql"},
+    // A new system: its games already indexed (an import may write a system after its games) were indexed without a
+    // full name; they get this one.
+    {"idx_systems_search_insert", R"sql(
 CREATE TRIGGER idx_systems_search_insert AFTER INSERT ON idx_systems BEGIN
     INSERT INTO idx_game_search (idx_game_search, rowid, title, sort_name, developer, publisher, genre, year,
                                  system_full_name)
@@ -89,8 +110,9 @@ CREATE TRIGGER idx_systems_search_insert AFTER INSERT ON idx_systems BEGIN
     SELECT id, title, sort_name, developer, publisher, genre, release_date / 10000, new.full_name
     FROM idx_games WHERE library = new.library AND system = new.name;
 END;
-
--- A removed system: its games lose its full name.
+)sql"},
+    // A removed system: its games lose its full name.
+    {"idx_systems_search_delete", R"sql(
 CREATE TRIGGER idx_systems_search_delete AFTER DELETE ON idx_systems BEGIN
     INSERT INTO idx_game_search (idx_game_search, rowid, title, sort_name, developer, publisher, genre, year,
                                  system_full_name)
@@ -100,10 +122,11 @@ CREATE TRIGGER idx_systems_search_delete AFTER DELETE ON idx_systems BEGIN
     SELECT id, title, sort_name, developer, publisher, genre, release_date / 10000, NULL
     FROM idx_games WHERE library = old.library AND system = old.name;
 END;
-
--- A system whose full name changed (an upsert sets it every time; the store's upsert never renames a system, but an
--- UPDATE may): the games of the system as it was take the full name they have now (its new one, or none when it was
--- renamed away); renamed, the games of its new name, which no system had, take its full name.
+)sql"},
+    // A system whose full name changed (an upsert sets it every time; the store's upsert never renames a system, but
+    // an UPDATE may): the games of the system as it was take the full name they have now (its new one, or none when it
+    // was renamed away); renamed, the games of its new name, which no system had, take its full name.
+    {"idx_systems_search_update", R"sql(
 CREATE TRIGGER idx_systems_search_update AFTER UPDATE OF library, name, full_name ON idx_systems
 WHEN old.full_name IS NOT new.full_name OR old.library IS NOT new.library OR old.name IS NOT new.name
 BEGIN
@@ -125,19 +148,93 @@ BEGIN
     FROM idx_games
     WHERE library = new.library AND system = new.name AND (old.library IS NOT new.library OR old.name IS NOT new.name);
 END;
+)sql"},
+}};
 
--- The order of the queries' lists, (sort key, GameId), covering their filters and the release date order.
-CREATE INDEX idx_games_sort ON idx_games (sort_key, id, state, availability, library, system, release_date);
-)sql";
+/// Creates every search trigger (the migration's step, after kVersion1).
+Status createTriggers(Connection& connection) {
+    for (const SearchTrigger& trigger : kTriggers) {
+        if (auto created = connection.execute(trigger.sql); !created) {
+            return created;
+        }
+    }
+    return ok();
+}
 
-constexpr std::array<AreaStep, 1> kSteps{{
-    {1, kVersion1, nullptr, false},
+/// Drops the search triggers that exist.
+Status dropTriggers(Connection& connection) {
+    for (const SearchTrigger& trigger : kTriggers) {
+        if (auto dropped = connection.execute(fmt::format("DROP TRIGGER IF EXISTS {}", trigger.name)); !dropped) {
+            return dropped;
+        }
+    }
+    return ok();
+}
+
+/// Suspending and resuming change the schema of an open write transaction only: outside one, the triggers would be
+/// gone, or the index rebuilt, for good in a statement of its own.
+Status requireTransaction(Connection& connection, std::string_view what) {
+    if (!connection.isOpen() || !connection.inTransaction()) {
+        return makeError(ErrorCode::InvalidArgument,
+                         fmt::format("{} the search index needs a write transaction open on the connection", what));
+    }
+    return ok();
+}
+
+constexpr std::array<schema::AreaStep, 1> kSteps{{
+    {1, kVersion1, &createTriggers, false},
 }};
 
 } // namespace
+
+namespace schema {
 
 Area searchArea() {
     return Area{"search", kSteps};
 }
 
-} // namespace rv::catalog_db::schema
+} // namespace schema
+
+Status suspendSearchIndex(Connection& connection) {
+    if (auto required = requireTransaction(connection, "suspending"); !required) {
+        return required;
+    }
+    return dropTriggers(connection);
+}
+
+Status resumeSearchIndex(Connection& connection) {
+    if (auto required = requireTransaction(connection, "resuming"); !required) {
+        return required;
+    }
+    // Dropped first, the triggers that are still there (a repair without a suspension) are created again like the
+    // others; the index is rebuilt in between, which fires none of them.
+    if (auto dropped = dropTriggers(connection); !dropped) {
+        return dropped;
+    }
+    if (auto rebuilt = connection.execute("INSERT INTO idx_game_search (idx_game_search) VALUES ('rebuild')");
+        !rebuilt) {
+        return rebuilt;
+    }
+    return createTriggers(connection);
+}
+
+Expected<bool> searchIndexFollowsWrites(Connection& connection) {
+    auto count = connection.prepare("SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name IN "
+                                    "(SELECT value FROM json_each(?1))");
+    if (!count) {
+        return propagate(count.error());
+    }
+    std::string names = "[";
+    for (std::size_t i = 0; i < kTriggers.size(); ++i) {
+        names += fmt::format("{}\"{}\"", i == 0 ? "" : ",", kTriggers[i].name);
+    }
+    names += ']';
+    count->bindText(1, names);
+    const auto row = count->step();
+    if (!row) {
+        return propagate(row.error());
+    }
+    return *row && count->columnInt(0) == static_cast<std::int64_t>(kTriggers.size());
+}
+
+} // namespace rv::catalog_db

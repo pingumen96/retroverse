@@ -32,6 +32,7 @@
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/migrator.hpp>
+#include <rv/catalog_db/search_index.hpp>
 
 #include "catalog_db_test_support.hpp"
 #include "support/catalog_generator.hpp"
@@ -316,6 +317,129 @@ TEST_CASE("catalog_db/search: the triggers keep the index in step: upserts that 
     REQUIRE(writer.execute("INSERT INTO idx_game_search (idx_game_search) VALUES ('rebuild')").has_value());
     CHECK(fixture.search("renamed station") == std::vector{disc.id});
     CHECK(fixture.checked());
+}
+
+TEST_CASE("catalog_db/search: a bulk write suspends the search index and rebuilds it before its commit; a rollback "
+          "keeps it; a commit in between is caught by db check and repaired",
+          "[catalog_db][search]") {
+    using rv::catalog_db::resumeSearchIndex;
+    using rv::catalog_db::searchIndexFollowsWrites;
+    using rv::catalog_db::suspendSearchIndex;
+    QueryFixture fixture("rv-search-bulk");
+    const LibraryId& library = fixture.library.id;
+    Connection& writer = fixture.database.writer();
+    const IndexedEntry quest = game(library, "gb", "Pixel Quest.gb", "Pixel Quest");
+    const IndexedEntry racer = game(library, "gb", "Harbor Racer.gb", "Harbor Racer");
+    fixture.import({system("gb", "Portable Console")}, {quest, racer});
+    CHECK(searchIndexFollowsWrites(writer).value());
+
+    // Outside a transaction both are refused: the triggers would be gone, or the index rebuilt, for good.
+    CHECK(codeOf(suspendSearchIndex(writer)) == ErrorCode::InvalidArgument);
+    CHECK(codeOf(resumeSearchIndex(writer)) == ErrorCode::InvalidArgument);
+    CHECK(searchIndexFollowsWrites(writer).value());
+
+    // A bulk import: a row changed, one added, one removed, a system's full name changed and a system added, all
+    // written without the triggers; a reader meanwhile reads the last commit.
+    const IndexedEntry tower = edited(quest, [](CatalogEntry& e) {
+        e.title = "Tower Quest";
+        e.metadata.developer = "Kumo Works";
+    });
+    const IndexedEntry disc = game(library, "psx", "Neon Circus.chd", "Neon Circus");
+    {
+        auto transaction = fixture.store->beginImport(library);
+        REQUIRE(transaction.has_value());
+        REQUIRE(suspendSearchIndex(writer).has_value());
+        CHECK_FALSE(searchIndexFollowsWrites(writer).value());
+        REQUIRE(suspendSearchIndex(writer).has_value()); // nothing more to drop
+        REQUIRE((*transaction)->putEntry(tower).has_value());
+        REQUIRE((*transaction)->putIdentity(rv::test::identityOf(disc.id, library, disc.entry)).has_value());
+        REQUIRE((*transaction)->putEntry(disc).has_value());
+        REQUIRE((*transaction)->removeEntry(racer.id).has_value());
+        REQUIRE((*transaction)->putSystem(library, system("gb", "Pocket Handheld")).has_value());
+        REQUIRE((*transaction)->putSystem(library, system("psx", "Disc Station")).has_value());
+        CHECK(fixture.search("pixel") == std::vector{quest.id});
+        CHECK(fixture.search("harbor") == std::vector{racer.id});
+        REQUIRE(resumeSearchIndex(writer).has_value());
+        CHECK(searchIndexFollowsWrites(writer).value());
+        REQUIRE((*transaction)->commit().has_value());
+    }
+    CHECK(fixture.search("pixel").empty());
+    CHECK(fixture.search("tower kumo") == std::vector{quest.id});
+    CHECK(fixture.search("harbor").empty());
+    CHECK(fixture.search("pocket handheld") == std::vector{quest.id});
+    CHECK(fixture.search("portable").empty());
+    CHECK(fixture.search("disc station neon") == std::vector{disc.id});
+    CHECK(fixture.checked()); // the triggers' text as the program's schema has it, the index as its content
+    // The triggers follow the writes again.
+    const IndexedEntry finalQuest = edited(quest, [](CatalogEntry& e) { e.title = "Final Quest"; });
+    fixture.import({}, {finalQuest});
+    CHECK(fixture.search("final") == std::vector{quest.id});
+    CHECK(fixture.search("tower").empty());
+
+    // Rolled back: the triggers and the index as they were.
+    {
+        auto transaction = fixture.store->beginImport(library);
+        REQUIRE(transaction.has_value());
+        REQUIRE(suspendSearchIndex(writer).has_value());
+        REQUIRE((*transaction)->putEntry(edited(quest, [](CatalogEntry& e) { e.title = "Lost Title"; })).has_value());
+    } // never committed
+    CHECK(searchIndexFollowsWrites(writer).value());
+    CHECK(fixture.search("lost").empty());
+    CHECK(fixture.search("final") == std::vector{quest.id});
+    CHECK(fixture.checked());
+
+    // Committed while suspended, a mistake: the index is behind its tables, db check says so, and a resume in a later
+    // transaction repairs it.
+    REQUIRE(writer.execute("BEGIN IMMEDIATE").has_value());
+    REQUIRE(suspendSearchIndex(writer).has_value());
+    REQUIRE(writer.execute(fmt::format("UPDATE idx_games SET title = 'Stale Title' WHERE id = {}", quest.id.value()))
+                .has_value());
+    REQUIRE(writer.execute("COMMIT").has_value());
+    CHECK_FALSE(searchIndexFollowsWrites(writer).value());
+    CHECK(fixture.search("stale").empty());
+    CHECK_FALSE(fixture.checked());
+    REQUIRE(writer.execute("BEGIN IMMEDIATE").has_value());
+    REQUIRE(resumeSearchIndex(writer).has_value());
+    REQUIRE(writer.execute("COMMIT").has_value());
+    CHECK(fixture.search("stale") == std::vector{quest.id});
+    CHECK(fixture.search("final").empty());
+    CHECK(fixture.checked());
+}
+
+TEST_CASE("catalog_db/search: a generated catalog written with the search index suspended holds the index its "
+          "triggers make row by row",
+          "[catalog_db][search][generated]") {
+    const rv::test::TempDir dir("rv-search-bulk-generated");
+    // Every term of the index with the rows that hold it (the whole index: detail=none keeps nothing else), and the
+    // database's checks.
+    const auto indexOf = [](const std::filesystem::path& file) {
+        auto database = rv::catalog_db::openCatalogDatabase(file);
+        REQUIRE(database.has_value());
+        Connection& writer = database->writer();
+        CHECK(rv::catalog_db::searchIndexFollowsWrites(writer).value());
+        REQUIRE(writer
+                    .execute("CREATE VIRTUAL TABLE temp.search_terms USING fts5vocab(main, idx_game_search, instance)")
+                    .has_value());
+        auto terms = writer.prepare("SELECT term, doc FROM temp.search_terms ORDER BY term, doc");
+        REQUIRE(terms.has_value());
+        std::vector<std::pair<std::string, std::int64_t>> index;
+        while (terms->step().value()) {
+            index.emplace_back(terms->columnText(0), terms->columnInt(1));
+        }
+        terms = rv::catalog_db::Statement{};
+        auto report = rv::catalog_db::checkDatabase(*database);
+        REQUIRE(report.has_value());
+        CHECK(report->passed());
+        return index;
+    };
+    rv::test::CatalogGeneratorOptions options{800, 5};
+    options.suspendSearchIndex = false;
+    REQUIRE(rv::test::generateCatalogDatabase(dir.file("rows/retroverse.sqlite"), options, false).has_value());
+    options.suspendSearchIndex = true;
+    REQUIRE(rv::test::generateCatalogDatabase(dir.file("bulk/retroverse.sqlite"), options, false).has_value());
+    const auto rows = indexOf(dir.file("rows/retroverse.sqlite"));
+    CHECK(rows.size() > 800);
+    CHECK(rows == indexOf(dir.file("bulk/retroverse.sqlite")));
 }
 
 TEST_CASE("catalog_db/search: case and diacritics are ignored, decomposed text found as composed text",

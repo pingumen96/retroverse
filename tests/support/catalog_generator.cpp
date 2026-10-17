@@ -17,6 +17,7 @@
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/migrator.hpp>
+#include <rv/catalog_db/search_index.hpp>
 #include <rv/core/text.hpp>
 
 namespace rv::test {
@@ -238,12 +239,20 @@ catalog::StoredIdentity identityOf(const catalog::LibraryId& library, const cata
 }
 
 /// Writes the library and the systems, then the entries `entry(i)` gives for i in [0, count), in one transaction.
+/// Writes the library, the systems and `count` entries (entryAt(i)) in one import transaction of `store`; with `bulk`,
+/// the connection the store writes on, the search index is suspended for the writes and rebuilt before the commit.
 template <class EntryAt>
 Status writeEntries(catalog::ICatalogStore& store, const catalog::LibraryProfile& library,
-                    const std::vector<catalog::SystemInfo>& systems, std::size_t count, EntryAt entryAt) {
+                    const std::vector<catalog::SystemInfo>& systems, std::size_t count, EntryAt entryAt,
+                    catalog_db::Connection* bulk = nullptr) {
     auto transaction = store.beginImport(library.id);
     if (!transaction) {
         return propagate(transaction.error());
+    }
+    if (bulk != nullptr) {
+        if (auto suspended = catalog_db::suspendSearchIndex(*bulk); !suspended) {
+            return suspended;
+        }
     }
     if (auto put = (*transaction)->putLibrary(library); !put) {
         return put;
@@ -260,6 +269,11 @@ Status writeEntries(catalog::ICatalogStore& store, const catalog::LibraryProfile
         }
         if (auto put = (*transaction)->putEntry(indexed); !put) {
             return put;
+        }
+    }
+    if (bulk != nullptr) {
+        if (auto resumed = catalog_db::resumeSearchIndex(*bulk); !resumed) {
+            return resumed;
         }
     }
     return (*transaction)->commit();
@@ -487,10 +501,14 @@ Expected<GeneratedCatalog> generateCatalogDatabase(const std::filesystem::path& 
     if (!store) {
         return propagate(store.error());
     }
-    const Status written = keepEntries
-                               ? writeCatalog(**store, catalog)
-                               : writeEntries(**store, catalog.library, catalog.systems, order.size(),
-                                              [&](std::size_t i) { return generatedEntry(options, order[i].second); });
+    catalog_db::Connection* bulk = options.suspendSearchIndex ? &database->writer() : nullptr;
+    const Status written =
+        keepEntries ? writeEntries(
+                          **store, catalog.library, catalog.systems, catalog.entries.size(),
+                          [&](std::size_t i) { return catalog.entries[i]; }, bulk)
+                    : writeEntries(
+                          **store, catalog.library, catalog.systems, order.size(),
+                          [&](std::size_t i) { return generatedEntry(options, order[i].second); }, bulk);
     if (!written) {
         return propagate(written.error());
     }

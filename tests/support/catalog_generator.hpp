@@ -34,6 +34,9 @@ struct CatalogGeneratorOptions {
     std::uint64_t seed = 9;
     /// The library's id.
     std::string library = "esde";
+    /// generateCatalogDatabase(): the entries written with the search index suspended and rebuilt before the commit
+    /// (catalog_db/search_index.hpp), as a bulk import writes them; off, its triggers index them row by row.
+    bool suspendSearchIndex = true;
 };
 
 /// A generated catalog: its library, its systems and its entries.
@@ -69,7 +72,8 @@ struct GeneratedCatalog {
 [[nodiscard]] Status writeCatalog(catalog::ICatalogStore& store, const GeneratedCatalog& catalog);
 
 /// Creates the catalog database at `file` (openCatalogDatabase(): made and migrated) holding the generated catalog, in
-/// one import transaction, entries written in ascending GameId order; the database is closed when it returns. With
+/// one import transaction, entries written in ascending GameId order (the search index suspended for them unless
+/// options.suspendSearchIndex is off); the database is closed when it returns. With
 /// `keepEntries` off, the entries are generated again as they are written instead of being kept (100,000 entries hold
 /// about 200 MB): the result's entries are then empty. Errors: those of generateCatalog() and of the store.
 [[nodiscard]] Expected<GeneratedCatalog> generateCatalogDatabase(const std::filesystem::path& file,

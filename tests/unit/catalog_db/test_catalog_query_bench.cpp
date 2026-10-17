@@ -1,11 +1,13 @@
 // I2 step 9: benchmarks of the catalog's queries (ADR-0008 §5), hidden ([.bench]) and meant for Release builds:
 //   build/msvc-x64-release/bin/rv_tests.exe "[bench]"
 // NFR-02: the p95 of indexed queries at most 100 ms on 10,000 games; a UI page (30 rows fetched by ids) within 5 ms on
-// 100,000 games; and, informative, the materialization of lists on 100,000 games: every game in each order, a common
-// one-letter and two-letter prefix (both ways of reading a search's list), longer searches, the position of an id deep
-// in a list; what the search area (its triggers and the order index) costs the writes of 100,000 entries. The catalogs
-// are generated (tests/support/catalog_generator.hpp). Timings taken while other work runs are
-// informative; the gate measures on a quiet machine (docs/i2/step-9.md records the figures).
+// 100,000 games, pages fetched again and pages first fetched after a commit; and, informative, the materialization of
+// lists on 100,000 games: every game in each order, a common one-letter and two-letter prefix (both ways of reading a
+// search's list, with the rows FTS5 matches), longer searches, the position of an id deep in a list; what the search
+// area (its triggers and the order index) costs the writes of 100,000 entries, row by row and with the search index
+// suspended (search_index.hpp), with the segments FTS5 wrote. The catalogs are generated
+// (tests/support/catalog_generator.hpp). Timings taken while other work runs are informative; the gate measures on a
+// quiet machine (docs/i2/step-9.md records the figures).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +18,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,6 +29,7 @@
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/migrator.hpp>
+#include <rv/catalog_db/search_index.hpp>
 
 #include "catalog_db_test_support.hpp"
 #include "support/catalog_generator.hpp"
@@ -50,6 +54,40 @@ double percentile(std::vector<double> values, double share) {
     std::sort(values.begin(), values.end());
     const auto rank = static_cast<std::size_t>(share * static_cast<double>(values.size()) + 0.999999);
     return values[std::min(values.size(), std::max<std::size_t>(rank, 1)) - 1];
+}
+
+/// The segments the search index has written since it was made: the write counter of FTS5's structure record (row 10
+/// of idx_game_search_data; fts5_index.c: a 4-byte cookie, the 4-byte marker of a version 2 record when present, then
+/// SQLite varints: levels, segments, writes). 0 for an index never written.
+std::int64_t segmentsWritten(rv::catalog_db::Connection& connection) {
+    auto block = connection.prepare("SELECT block FROM idx_game_search_data WHERE id = 10");
+    REQUIRE(block.has_value());
+    if (!block->step().value()) {
+        return 0;
+    }
+    const std::span<const std::byte> bytes = block->columnBlob(0);
+    std::size_t at = 4;
+    if (bytes.size() >= 8 && bytes[4] == std::byte{0xFF} && bytes[5] == std::byte{0} && bytes[6] == std::byte{0} &&
+        bytes[7] == std::byte{1}) {
+        at = 8;
+    }
+    const auto varint = [&]() {
+        std::uint64_t value = 0;
+        for (int i = 0; i < 9 && at < bytes.size(); ++i) {
+            const auto c = static_cast<std::uint8_t>(bytes[at++]);
+            if (i == 8) {
+                return (value << 8) | c;
+            }
+            value = (value << 7) | (c & 0x7Fu);
+            if ((c & 0x80u) == 0) {
+                break;
+            }
+        }
+        return value;
+    };
+    varint(); // levels
+    varint(); // segments
+    return static_cast<std::int64_t>(varint());
 }
 
 /// A generated catalog database in a temporary folder, opened, with queries on a reader.
@@ -262,14 +300,26 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
     timeRun("one letter 'p' (no FTS5), System", query, request("p", SortOrder::System), true);
     const auto lookUpAll = catalog.open(QueryOptions{std::numeric_limits<std::size_t>::max()});
     const auto readAll = catalog.open(QueryOptions{0});
-    for (const std::string_view text :
-         {"su", "pi", "ch", "19", "an", "sup", "pixel", "drago", "super pi", "neon samurai", "super m", "pixel zz"}) {
+    // The rows FTS5 matches for a search, of every state, availability and system: what QueryOptions::lookupLimit is
+    // compared with.
+    const auto matchesOf = [&](std::string_view text) {
+        const auto plan = query.searchPlan(text);
+        REQUIRE(plan.has_value());
+        auto count = writer.prepare("SELECT count(*) FROM idx_game_search WHERE idx_game_search MATCH ?1");
+        REQUIRE(count.has_value());
+        count->bindText(1, plan->match);
+        REQUIRE(count->step().value());
+        return count->columnInt(0);
+    };
+    for (const std::string_view text : {"su", "pi", "ch", "19", "an", "sup", "pixel", "drago", "super pi", "neon samurai",
+                                        "super m", "pixel zz", "ro", "ga", "dr"}) {
         const CatalogQuery search = request(std::string(text));
-        timeRun(fmt::format("'{}' after a commit (default)", text), query, search, true);
-        timeRun(fmt::format("'{}' after a commit, rows looked up", text), *lookUpAll, search, true);
-        timeRun(fmt::format("'{}' after a commit, list read and narrowed", text), *readAll, search, true);
+        const std::string label = fmt::format("'{}' ({} matches)", text, matchesOf(text));
+        timeRun(fmt::format("{} after a commit (default)", label), query, search, true);
+        timeRun(fmt::format("{} after a commit, rows looked up", label), *lookUpAll, search, true);
+        timeRun(fmt::format("{} after a commit, list read and narrowed", label), *readAll, search, true);
         REQUIRE(readAll->run(CatalogQuery{}).has_value()); // the list without the search, kept
-        timeRun(fmt::format("'{}', kept list narrowed", text), *readAll, search, false);
+        timeRun(fmt::format("{}, kept list narrowed", label), *readAll, search, false);
     }
     {
         std::vector<double> times;
@@ -318,9 +368,25 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
     REQUIRE(cold->fetch(pageOf(list, list.size() - 30, 30)).has_value());
     const double coldPage = millisecondsSince(coldStarted);
     const double p95 = percentile(pages, 0.95);
-    report += fmt::format("  UI page, 30 rows by ids ({} pages): p50 {:.3f} ms, p95 {:.3f} ms, max {:.3f} ms; "
-                          "first page of a new reader {:.3f} ms\n",
+    report += fmt::format("  UI page, 30 rows by ids, fetched again ({} pages): p50 {:.3f} ms, p95 {:.3f} ms, max "
+                          "{:.3f} ms; first page of a new reader {:.3f} ms\n",
                           pages.size(), percentile(pages, 0.5), p95, percentile(pages, 1.0), coldPage);
+    // Pages fetched for the first time, each right after a commit of the writer: a reader drops its whole page cache
+    // when another connection has committed, as after every import in the app (the files stay in the system's cache).
+    std::vector<double> firstPages;
+    for (std::size_t i = 0; i < 200; ++i) {
+        const std::size_t offset = (i * 104'729 + 17) % (list.size() - 30);
+        commit();
+        const auto started = Clock::now();
+        const auto rows = query.fetch(pageOf(list, offset, 30));
+        firstPages.push_back(millisecondsSince(started));
+        REQUIRE(rows.has_value());
+        REQUIRE(rows->size() == 30);
+    }
+    const double firstP95 = percentile(firstPages, 0.95);
+    report += fmt::format("  UI page, 30 rows by ids, first fetched after a commit ({} pages): p50 {:.3f} ms, p95 "
+                          "{:.3f} ms, max {:.3f} ms\n",
+                          firstPages.size(), percentile(firstPages, 0.5), firstP95, percentile(firstPages, 1.0));
 
     // Sizes: what a copy of the database loses without the order index, then without the search index.
     const std::filesystem::path copy = catalog.dir.file("sizes/copy.sqlite");
@@ -340,11 +406,12 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
     }
     WARN(report);
     CHECK(p95 <= 5.0);
+    CHECK(firstP95 <= 5.0);
 }
 
 TEST_CASE("catalog_db/bench: what the search area costs the writes of 100,000 entries (informative)", "[.bench]") {
     const rv::test::TempDir dir("rv-bench-writes");
-    const rv::test::CatalogGeneratorOptions options{100'000, 9};
+    rv::test::CatalogGeneratorOptions options{100'000, 9};
 
     // The entries alone, generated twice as generateCatalogDatabase() does (GameId order, then the writes).
     auto started = Clock::now();
@@ -357,7 +424,9 @@ TEST_CASE("catalog_db/bench: what the search area costs the writes of 100,000 en
     const double generation = millisecondsSince(started);
     REQUIRE(made == 2 * options.entries);
 
-    // The same writes into a database with the search area, and into ones without parts of it.
+    // The same writes into a database with the search area, row by row and with the search index suspended, and into
+    // ones without parts of it; then, into the first, the same entries written again unchanged, both ways, and a
+    // rebuild of the search index alone.
     constexpr std::string_view kDropTriggers =
         "DROP TRIGGER idx_games_search_insert; DROP TRIGGER idx_games_search_delete; "
         "DROP TRIGGER idx_games_search_update; DROP TRIGGER idx_systems_search_insert; "
@@ -365,16 +434,29 @@ TEST_CASE("catalog_db/bench: what the search area costs the writes of 100,000 en
     struct Variant {
         std::string_view label;
         std::string setup;
+        bool suspend = false;
     };
     const std::vector<Variant> variants{
-        {"with the search area", ""},
-        {"without the search triggers", std::string(kDropTriggers)},
-        {"without the order index", "DROP INDEX idx_games_sort"},
-        {"without either", std::string(kDropTriggers) + " DROP INDEX idx_games_sort"},
+        {"with the search area, its triggers row by row", "", false},
+        {"with the search area, suspended and rebuilt", "", true},
+        {"without the search triggers", std::string(kDropTriggers), false},
+        {"without the order index", "DROP INDEX idx_games_sort", false},
+        {"without either", std::string(kDropTriggers) + " DROP INDEX idx_games_sort", false},
     };
     std::string report = fmt::format("Informative timings (I2 step 9): 100,000 entries generated twice in {:.0f} ms; "
                                      "generated and written in one transaction:\n",
                                      generation);
+    const auto written = [&](std::string_view label, const std::filesystem::path& file, bool suspend) {
+        options.suspendSearchIndex = suspend;
+        started = Clock::now();
+        REQUIRE(rv::test::generateCatalogDatabase(file, options, false).has_value());
+        const double elapsed = millisecondsSince(started);
+        auto database = rv::catalog_db::Database::open(file);
+        REQUIRE(database.has_value());
+        report += fmt::format("  {:<56} {:7.0f} ms, {} pages, {} search index segments written\n", label, elapsed,
+                              database->writer().queryInt("PRAGMA page_count").value().value_or(0),
+                              segmentsWritten(database->writer()));
+    };
     for (std::size_t i = 0; i < variants.size(); ++i) {
         const std::filesystem::path file = dir.file(fmt::format("v{}/retroverse.sqlite", i));
         if (!variants[i].setup.empty()) {
@@ -382,13 +464,23 @@ TEST_CASE("catalog_db/bench: what the search area costs the writes of 100,000 en
             REQUIRE(database.has_value());
             REQUIRE(database->writer().execute(variants[i].setup).has_value());
         }
-        started = Clock::now();
-        REQUIRE(rv::test::generateCatalogDatabase(file, options, false).has_value());
-        const double elapsed = millisecondsSince(started);
-        auto database = rv::catalog_db::Database::open(file);
+        written(variants[i].label, file, variants[i].suspend);
+    }
+    // Written again unchanged (an import that finds nothing new): the upserts set every column, so the UPDATE trigger
+    // runs for each row (its WHEN clause writes nothing) and every order index entry is written again.
+    const std::filesystem::path first = dir.file("v0/retroverse.sqlite");
+    written("the same entries again, unchanged, row by row", first, false);
+    written("the same entries again, unchanged, suspended and rebuilt", first, true);
+    {
+        auto database = rv::catalog_db::Database::open(first);
         REQUIRE(database.has_value());
-        report += fmt::format("  {:<44} {:7.0f} ms, {} pages\n", variants[i].label, elapsed,
-                              database->writer().queryInt("PRAGMA page_count").value().value_or(0));
+        rv::catalog_db::Connection& writer = database->writer();
+        started = Clock::now();
+        REQUIRE(writer.execute("BEGIN IMMEDIATE").has_value());
+        REQUIRE(rv::catalog_db::resumeSearchIndex(writer).has_value());
+        REQUIRE(writer.execute("COMMIT").has_value());
+        report += fmt::format("  {:<56} {:7.0f} ms\n", "a rebuild of the search index alone (resumeSearchIndex)",
+                              millisecondsSince(started));
     }
     WARN(report);
 }
