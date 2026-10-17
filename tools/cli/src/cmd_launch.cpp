@@ -504,8 +504,13 @@ void startAndFollow(CommandContext& context, catalog_db::SessionStore& store, co
     launch.start(begun, launcher::StartCallbacks{[wake] { wake->notify(); }, {}});
     report.started = launch.process() != nullptr;
     if (report.started) {
+        // The running row names the started process (one quick attempt again; a busy database keeps it pending).
         session.processId = launch.processId();
         recorder.update(session);
+        if (auto flushed = recorder.flush(); !flushed) {
+            spdlog::warn("The play session of {} is not recorded yet: {}", session.game.toString(),
+                         flushed.error().toString());
+        }
         context.err.writeLine(fmt::format(
             "{}: {} started (process {}){}", kName, request.label, launch.processId(),
             options.wait ? ": waiting for it to end (Ctrl+C stops waiting; the game runs on)" : ""));

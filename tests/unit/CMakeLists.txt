@@ -52,6 +52,11 @@ rv_forbid_link(rv_tests)
 # The process runner tests (tests/unit/platform_win) and the child runner's (tests/unit/support) start the fake emulator
 # from the directory of rv_tests.exe; it is only started, never linked.
 add_dependencies(rv_tests rv_fake_emulator)
+# The play session tests (tests/unit/cli/test_cli_sessions.cpp) start retroverse-cli.exe as a process, which they end
+# mid-game (crash recovery) or run again (a restart): it is only started, never linked.
+if(TARGET retroverse-cli)
+    add_dependencies(rv_tests retroverse-cli)
+endif()
 
 catch_discover_tests(rv_tests
     DISCOVERY_MODE PRE_TEST

@@ -310,6 +310,49 @@ TEST_CASE("catalog/domain: play sessions mirror the launcher's outcomes", "[cata
     CHECK(session.message == "The game ended right away.");
     CHECK(session.owner == SessionOwner{1234, 133'000'000'000'000'000});
     CHECK(SessionOwner{1234, 1} != SessionOwner{1234, 2}); // the same id reused by a later process
+    CHECK_FALSE(returnedNormally(session)); // a quick exit verifies nothing
+
+    // A clean return after the startup grace verifies its choice.
+    outcome.quickExit = false;
+    recordOutcome(session, outcome, ended);
+    CHECK(returnedNormally(session));
+    outcome.exitCode = 1;
+    outcome.exitKind = rv::launcher::ExitKind::ErrorCode;
+    recordOutcome(session, outcome, ended);
+    CHECK_FALSE(returnedNormally(session));
+
+    // The owner ended the session with confirmReturn() while the game still ran: left running, for its reason; the user's
+    // confirmation is recorded only when it was the user's.
+    rv::launcher::LaunchOutcome confirmed;
+    confirmed.state = rv::launcher::SessionState::Returned;
+    confirmed.confirmedByUser = true;
+    confirmed.processesRemained = true;
+    recordOutcome(session, confirmed, ended, LeftRunningReason::WaitLimit);
+    CHECK(session.outcome == PlaySessionOutcome::LeftRunning);
+    CHECK(session.leftRunning == LeftRunningReason::WaitLimit);
+    CHECK_FALSE(session.confirmedByUser);
+    CHECK_FALSE(returnedNormally(session));
+    recordOutcome(session, confirmed, ended);
+    CHECK(session.outcome == PlaySessionOutcome::LeftRunning);
+    CHECK(session.leftRunning == LeftRunningReason::Confirmed);
+    CHECK(session.confirmedByUser);
+    // The user confirmed with nothing left running (a launcher stub's return): a plain return, its quick exit no hint.
+    confirmed.processesRemained = false;
+    confirmed.quickExit = true;
+    confirmed.exitCode = 0;
+    recordOutcome(session, confirmed, ended);
+    CHECK(session.outcome == PlaySessionOutcome::Returned);
+    CHECK(session.leftRunning == LeftRunningReason::None);
+    CHECK(returnedNormally(session));
+    // A process that ended on its own while its children ran: returned, processes remained, not the owner's doing.
+    rv::launcher::LaunchOutcome wrapper;
+    wrapper.state = rv::launcher::SessionState::Returned;
+    wrapper.exitCode = 0;
+    wrapper.processesRemained = true;
+    recordOutcome(session, wrapper, ended, LeftRunningReason::Quit);
+    CHECK(session.outcome == PlaySessionOutcome::Returned);
+    CHECK(session.processesRemained);
+    CHECK_FALSE(returnedNormally(session));
 }
 
 TEST_CASE("catalog/domain: change sets count what they hold", "[catalog][domain]") {
