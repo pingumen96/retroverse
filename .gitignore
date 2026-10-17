@@ -29,3 +29,6 @@ CLAUDE.local.md
 /screenshots/
 imgui.ini
 RetroverseData/
+
+# Python bytecode of the scripts (scripts/esde_census.py imported by an oracle, for example)
+__pycache__/
