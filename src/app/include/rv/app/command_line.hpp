@@ -130,8 +130,8 @@ struct CommandLineOptions {
     bool screenshotIncludeUi = false;
 
     /// --mock-catalog <json>: the quick catalog's games, invented, with their launch targets and emulator profiles
-    /// (MockCatalog), until the ES-DE catalog reaches the application (I2 step 13). Without it the run has no catalog
-    /// and no product UI.
+    /// (MockCatalog), for tests: it takes precedence over the ES-DE catalog of the user data directory (I2 step 13),
+    /// which runs without it show.
     std::optional<std::filesystem::path> mockCatalog;
     /// --launch-wait-limit <seconds>, frame-limited runs only, where it defaults to kDefaultLaunchWaitLimitSeconds: a
     /// launch still running after this long is ended as left running (never terminated: LaunchFlow::setWaitLimit), so

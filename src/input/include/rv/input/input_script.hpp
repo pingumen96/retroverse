@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -25,6 +26,9 @@ struct InputScriptStep {
     std::uint64_t toFrame = 0;
     /// Scripted (action, value) pairs, ordered by action name (the order of a parsed JSON object).
     std::vector<std::pair<Action, float>> values;
+    /// Text typed on fromFrame, once (UTF-8): what the product UI's focused text field receives, as if typed on a
+    /// keyboard (the quick catalog's search). Empty: none.
+    std::string text;
 
     [[nodiscard]] bool covers(std::uint64_t frame) const noexcept { return frame >= fromFrame && frame <= toFrame; }
 };
@@ -41,9 +45,12 @@ struct InputScriptStep {
 ///     ]
 ///
 ///  - "fromFrame", "toFrame": integers with 0 <= fromFrame <= toFrame <= kMaxFrame; both frames are included.
-///  - "actions": at least one entry keyed by actionName(). look_delta_x and look_delta_y take any finite number (mouse
-///    pixels this frame, see Action); every other action takes a number in [-1, 1], the range InputSystem produces
-///    (1 holds a button).
+///  - "actions": entries keyed by actionName(). look_delta_x and look_delta_y take any finite number (mouse pixels this
+///    frame, see Action); every other action takes a number in [-1, 1], the range InputSystem produces (1 holds a
+///    button).
+///  - "text" (I2 step 13): a string typed once, on fromFrame, into the product UI's focused text field (the quick
+///    catalog's search: {"fromFrame": 9, "toFrame": 9, "text": "nintendo"}); valid UTF-8, 1 to kMaxTextBytes bytes,
+///    no control characters. A step has "actions", "text" or both, and an "actions" it has is not empty.
 ///  - Steps may overlap. On a frame where several steps set the same action, the step that comes later in the file
 ///    wins.
 /// Every field is required, unknown fields are errors and a script holds 1 to kMaxSteps steps. Error contexts are
@@ -56,6 +63,8 @@ public:
     static constexpr std::uint64_t kMaxFrame = 0xFFFFFFFFu;
     /// Bound on the number of steps, so a hostile file cannot make every frame slow.
     static constexpr std::size_t kMaxSteps = 10000;
+    /// Longest "text" of a step, in bytes (the quick catalog's search field holds 64 characters).
+    static constexpr std::size_t kMaxTextBytes = 256;
 
     /// Parses a script document; `context` prefixes error locations (usually the file name).
     [[nodiscard]] static Expected<InputScript> fromJson(const nlohmann::json& document, std::string_view context);
@@ -68,6 +77,9 @@ public:
     /// Scripted value of `action` on `frame`: the value of the last step in file order that covers the frame and sets
     /// the action, or nothing.
     [[nodiscard]] std::optional<float> valueAt(std::uint64_t frame, Action action) const noexcept;
+    /// The text typed on `frame`: the "text" of every step whose fromFrame it is, in file order, joined; empty when
+    /// none.
+    [[nodiscard]] std::string textAt(std::uint64_t frame) const;
 
 private:
     std::vector<InputScriptStep> m_steps;

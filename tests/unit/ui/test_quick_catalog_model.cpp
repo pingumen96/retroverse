@@ -616,3 +616,38 @@ TEST_CASE("ui/quick_catalog_model: a model over a source that answers later star
     CHECK(model.count() == 30);
     CHECK(placement(model) == at(0, 0, 7));
 }
+
+TEST_CASE("ui/quick_catalog_model: reread shows rows the source changed in place, the list and selection kept",
+          "[ui][quick_catalog_model]") {
+    // I2 step 13: a game's launch readiness learned later on the catalog worker: the same list, other data.
+    std::vector<CatalogEntry> games = catalog(100);
+    InMemoryCatalogSource source(games);
+    QuickCatalogModel model(source, 7);
+    REQUIRE(model.selectPosition(40));
+    const std::size_t first = model.windowFirst();
+    const std::uint64_t list = model.listRevision();
+    const std::uint64_t window = model.windowRevision();
+    const std::uint64_t selection = model.selectionRevision();
+    REQUIRE(model.contentRevision() == 0);
+    CHECK(model.selected()->readiness.empty());
+
+    games[40].readiness = "requires-configuration";
+    games[40].blocker = "inject-file";
+    source.replaceEntries(games);
+    model.reread();
+    CHECK(model.contentRevision() == 1);
+    CHECK(model.windowRevision() == window + 1);
+    CHECK(model.listRevision() == list);
+    CHECK(model.selectionRevision() == selection); // the same game
+    CHECK(model.windowFirst() == first);
+    REQUIRE(model.selected() != nullptr);
+    CHECK(model.selected()->id == gameId(40));
+    CHECK(model.selected()->readiness == "requires-configuration");
+    CHECK(model.selected()->blocker == "inject-file");
+
+    // Nothing to read again in an empty list.
+    InMemoryCatalogSource empty;
+    QuickCatalogModel none(empty);
+    none.reread();
+    CHECK(none.contentRevision() == 0);
+}

@@ -1,5 +1,6 @@
 #include <rv/app/run_report.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -275,6 +276,77 @@ void putOptional(Json& json, const char* key, const std::optional<double>& value
     }
 }
 
+Json timesToJson(const TimeSummary& times) {
+    return Json{{"count", times.count},
+                {"p50Ms", times.p50Ms},
+                {"p95Ms", times.p95Ms},
+                {"p99Ms", times.p99Ms},
+                {"maxMs", times.maxMs}};
+}
+
+TimeSummary readTimes(FieldReader& fields) {
+    return TimeSummary{fields.count("count"), fields.number("p50Ms"), fields.number("p95Ms"), fields.number("p99Ms"),
+                       fields.number("maxMs")};
+}
+
+Json spawnToJson(const SpawnPoint& pose) {
+    Json camera;
+    // Floats widened to double print with enough digits to read back exactly.
+    camera["feet"] =
+        Json::array({static_cast<double>(pose.feet.x), static_cast<double>(pose.feet.y), static_cast<double>(pose.feet.z)});
+    if (pose.yawDeg) {
+        camera["yawDeg"] = static_cast<double>(*pose.yawDeg);
+    }
+    if (pose.pitchDeg) {
+        camera["pitchDeg"] = static_cast<double>(*pose.pitchDeg);
+    }
+    return camera;
+}
+
+SpawnPoint readSpawn(FieldReader& camera) {
+    SpawnPoint pose;
+    pose.feet = camera.vec3("feet");
+    if (const auto yaw = camera.optionalNumber("yawDeg")) {
+        pose.yawDeg = static_cast<float>(*yaw);
+    }
+    if (const auto pitch = camera.optionalNumber("pitchDeg")) {
+        pose.pitchDeg = static_cast<float>(*pitch);
+    }
+    return pose;
+}
+
+Json viewToJson(const CatalogView& view) {
+    Json json;
+    json["selectedId"] = view.selectedId;
+    if (view.selectedPosition) {
+        json["selectedPosition"] = *view.selectedPosition;
+    }
+    json["readiness"] = view.readiness;
+    json["blocker"] = view.blocker;
+    json["search"] = view.search;
+    json["filter"] = view.filter;
+    if (view.camera) {
+        json["camera"] = spawnToJson(*view.camera);
+    }
+    return json;
+}
+
+CatalogView readView(FieldReader& fields) {
+    CatalogView view;
+    view.selectedId = fields.string("selectedId");
+    if (const auto position = fields.optionalCount("selectedPosition", kMaxSize)) {
+        view.selectedPosition = static_cast<std::size_t>(*position);
+    }
+    view.readiness = fields.string("readiness");
+    view.blocker = fields.string("blocker");
+    view.search = fields.string("search");
+    view.filter = fields.string("filter");
+    if (auto camera = fields.optionalObject("camera")) {
+        view.camera = readSpawn(*camera);
+    }
+    return view;
+}
+
 Json catalogToJson(const CatalogRecord& catalog) {
     Json json;
     json["source"] = catalog.source;
@@ -286,6 +358,25 @@ Json catalogToJson(const CatalogRecord& catalog) {
         json["selectedPosition"] = *catalog.selectedPosition;
     }
     json["selectedId"] = catalog.selectedId;
+    // I2 step 13 (keys only added: a report without them reads as before).
+    json["notice"] = catalog.notice;
+    json["library"] = catalog.library;
+    json["systems"] = catalog.systems;
+    json["search"] = catalog.search;
+    json["filter"] = catalog.filter;
+    Json times = Json::object();
+    putOptional(times, "openedMs", catalog.openedMs);
+    putOptional(times, "firstListMs", catalog.firstListMs);
+    putOptional(times, "firstPageMs", catalog.firstPageMs);
+    json["times"] = std::move(times);
+    if (catalog.pages) {
+        json["pages"] = timesToJson(*catalog.pages);
+    }
+    if (catalog.frames) {
+        json["frames"] = timesToJson(*catalog.frames);
+    }
+    json["interruptedSessions"] = catalog.interruptedSessions;
+    json["cardSqueezed"] = catalog.cardSqueezed;
     return json;
 }
 
@@ -327,6 +418,21 @@ Json launchToJson(const LaunchRecord& launch) {
     putOptional(times, "foregroundMs", launch.foregroundMs);
     json["times"] = std::move(times);
     json["panels"] = launch.panels;
+    if (launch.before) {
+        json["before"] = viewToJson(*launch.before);
+    }
+    if (launch.after) {
+        json["after"] = viewToJson(*launch.after);
+    }
+    if (launch.sessionId || !launch.sessionError.empty() || launch.verified) {
+        Json session;
+        if (launch.sessionId) {
+            session["id"] = *launch.sessionId;
+        }
+        session["error"] = launch.sessionError;
+        session["verified"] = launch.verified;
+        json["session"] = std::move(session);
+    }
     return json;
 }
 
@@ -341,6 +447,28 @@ CatalogRecord readCatalog(FieldReader& fields) {
         catalog.selectedPosition = static_cast<std::size_t>(*position);
     }
     catalog.selectedId = fields.string("selectedId");
+    // Written since I2 step 13: optional, so that the reports of earlier builds read.
+    catalog.notice = fields.optionalString("notice").value_or("");
+    catalog.library = fields.optionalString("library").value_or("");
+    catalog.systems = static_cast<std::size_t>(fields.optionalCount("systems", kMaxSize).value_or(0));
+    catalog.search = fields.optionalString("search").value_or("");
+    catalog.filter = fields.optionalString("filter").value_or("");
+    if (auto times = fields.optionalObject("times")) {
+        catalog.openedMs = times->optionalNumber("openedMs");
+        catalog.firstListMs = times->optionalNumber("firstListMs");
+        catalog.firstPageMs = times->optionalNumber("firstPageMs");
+    }
+    if (auto pages = fields.optionalObject("pages")) {
+        catalog.pages = readTimes(*pages);
+    }
+    if (auto frames = fields.optionalObject("frames")) {
+        catalog.frames = readTimes(*frames);
+    }
+    catalog.interruptedSessions =
+        static_cast<std::size_t>(fields.optionalCount("interruptedSessions", kMaxSize).value_or(0));
+    if (fields.has("cardSqueezed")) {
+        catalog.cardSqueezed = fields.stringArray("cardSqueezed");
+    }
     return catalog;
 }
 
@@ -383,10 +511,37 @@ LaunchRecord readLaunch(FieldReader& fields) {
         fields.fail("times", "missing required key");
     }
     launch.panels = fields.stringArray("panels");
+    if (auto before = fields.optionalObject("before")) {
+        launch.before = readView(*before);
+    }
+    if (auto after = fields.optionalObject("after")) {
+        launch.after = readView(*after);
+    }
+    if (auto session = fields.optionalObject("session")) {
+        if (const auto id = session->optionalCount("id", static_cast<std::uint64_t>(
+                                                             std::numeric_limits<std::int64_t>::max()))) {
+            launch.sessionId = static_cast<std::int64_t>(*id);
+        }
+        launch.sessionError = session->string("error");
+        launch.verified = session->boolean("verified");
+    }
     return launch;
 }
 
 } // namespace
+
+std::optional<TimeSummary> summarizeTimes(std::vector<double>& milliseconds) {
+    if (milliseconds.empty()) {
+        return std::nullopt;
+    }
+    std::sort(milliseconds.begin(), milliseconds.end());
+    const auto rank = [&](double fraction) {
+        const auto index = static_cast<std::size_t>(std::ceil(fraction * static_cast<double>(milliseconds.size())));
+        return milliseconds[std::min(milliseconds.size() - 1, index > 0 ? index - 1 : 0)];
+    };
+    return TimeSummary{static_cast<std::uint64_t>(milliseconds.size()), rank(0.50), rank(0.95), rank(0.99),
+                       milliseconds.back()};
+}
 
 std::string formatRunReport(const RunReport& report) {
     Json json;
@@ -437,18 +592,7 @@ std::string formatRunReport(const RunReport& report) {
                                   {"height", report.screenshot->height}};
     }
     if (report.finalCamera) {
-        const glm::vec3& feet = report.finalCamera->feet;
-        Json camera;
-        // Floats widened to double print with enough digits to read back exactly.
-        camera["feet"] = Json::array({static_cast<double>(feet.x), static_cast<double>(feet.y),
-                                      static_cast<double>(feet.z)});
-        if (report.finalCamera->yawDeg) {
-            camera["yawDeg"] = static_cast<double>(*report.finalCamera->yawDeg);
-        }
-        if (report.finalCamera->pitchDeg) {
-            camera["pitchDeg"] = static_cast<double>(*report.finalCamera->pitchDeg);
-        }
-        json["finalCamera"] = std::move(camera);
+        json["finalCamera"] = spawnToJson(*report.finalCamera);
     }
     if (report.selfCheck) {
         json["selfCheck"] = Json{{"name", std::string(toString(report.selfCheck->check))},
@@ -527,15 +671,7 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
                                              static_cast<int>(screenshot->count("height", extent))};
     }
     if (auto camera = fields.optionalObject("finalCamera")) {
-        SpawnPoint pose;
-        pose.feet = camera->vec3("feet");
-        if (const auto yaw = camera->optionalNumber("yawDeg")) {
-            pose.yawDeg = static_cast<float>(*yaw);
-        }
-        if (const auto pitch = camera->optionalNumber("pitchDeg")) {
-            pose.pitchDeg = static_cast<float>(*pitch);
-        }
-        report.finalCamera = pose;
+        report.finalCamera = readSpawn(*camera);
     }
     if (auto check = fields.optionalObject("selfCheck")) {
         const std::string name = check->string("name");

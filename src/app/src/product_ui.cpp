@@ -18,12 +18,9 @@
 #include <rv/app/launch_outcome.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/utf8.hpp>
-#include <rv/launcher/launch_plan.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/window_handover.hpp>
-#include <rv/platform_win/system_probe.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
-#include <rv/ui/in_memory_catalog_source.hpp>
 #include <rv/ui/nav_input.hpp>
 #include <rv/ui/quick_catalog_model.hpp>
 #include <rv/ui/quick_catalog_screen.hpp>
@@ -36,7 +33,6 @@
 namespace rv::app {
 namespace {
 
-namespace lo = launch_outcome;
 using launcher::LaunchClock;
 
 /// Developer builds read the assets from the source tree: the quick catalog's document reloads when saved.
@@ -52,16 +48,17 @@ enum class PanelChoice : std::uint8_t { None, ReturnHome, Resume, Dismiss };
 } // namespace
 
 struct ProductUi::Impl {
-    Impl(AppContext& context, MockCatalog catalog, std::function<void()> back)
-        : context(context), back(std::move(back)), catalog(std::move(catalog)) {}
+    Impl(AppContext& context, std::unique_ptr<AppCatalog> catalog, std::function<void()> back,
+         std::function<std::optional<SpawnPoint>()> pose)
+        : context(context), back(std::move(back)), pose(std::move(pose)), catalog(std::move(catalog)) {}
 
     // Declared in the order they are created; destroyed in reverse: the screens before the model and the view, the
-    // model before its source, the view before RmlUi, the launch (its session) before the runner it started from.
+    // model before the catalog (its source), the view before RmlUi, the launch (its session) before the runner it
+    // started from.
     AppContext& context;
     std::function<void()> back;
-    MockCatalog catalog;
-    launcher::EmulatorProfiles profiles;
-    platform_win::Win32SystemProbe probe;
+    std::function<std::optional<SpawnPoint>()> pose;
+    std::unique_ptr<AppCatalog> catalog;
     platform_win::Win32ProcessRunner runner;
     LaunchFlow flow{runner};
     std::optional<platform::WindowHandover> handover;
@@ -70,7 +67,6 @@ struct ProductUi::Impl {
 
     std::unique_ptr<ui::UiSystem> system;
     std::unique_ptr<ui::UiView> view;
-    std::unique_ptr<ui::InMemoryCatalogSource> source;
     std::unique_ptr<ui::QuickCatalogModel> model;
     std::unique_ptr<ui::QuickCatalogScreen> screen;
     std::unique_ptr<GameSessionPanel> panel;
@@ -82,39 +78,94 @@ struct ProductUi::Impl {
     /// The screen asked to close (Back at its root), applied after the frame's commands.
     bool closeRequested = false;
     PanelChoice choice = PanelChoice::None;
+    /// Runs with --fixed-dt wait between frames for what they asked of the catalog worker (lockstep), at most
+    /// kLockstepWaitLimit at a time: past it a frame is rendered all the same (a warning logged), so that a
+    /// frame-limited run never hangs on an answer that does not come.
+    bool lockstep = false;
+    static constexpr std::chrono::seconds kLockstepWaitLimit{10};
+    std::optional<std::chrono::steady_clock::time_point> catalogWaitSince;
+    /// What the quick catalog and the walker showed when Avvia asked for the launch being decided, until its record
+    /// exists; a launch whose record waits for what they show after its end (the next frame).
+    std::optional<CatalogView> before;
+    bool afterPending = false;
+    /// The launch whose session the flow follows: its token, its index among the run's launches.
+    std::uint64_t sessionToken = 0;
+    /// The wall-clock times of the frames that showed games of the catalog (CatalogRecord::frames; at most
+    /// kMaxFrameSamples), and when the last frame's update began (none after an idle wait, which is no frame time).
+    std::vector<double> frameMs;
+    std::optional<std::chrono::steady_clock::time_point> lastFrame;
+    static constexpr std::size_t kMaxFrameSamples = 100000;
 
     [[nodiscard]] bool visible() const noexcept { return catalogOpen || panel->visible(); }
 
-    /// Avvia on `entry`: its launch planned with its profile, then requested, or refused with the reason.
+    /// What the quick catalog and the walker show now.
+    [[nodiscard]] CatalogView currentView() const {
+        CatalogView shown;
+        if (const ui::CatalogEntry* selected = model->selected()) {
+            shown.selectedId = selected->id;
+            shown.readiness = selected->readiness;
+            shown.blocker = selected->blocker;
+        }
+        shown.selectedPosition = model->selectedPosition();
+        shown.search = model->search();
+        shown.filter = model->activeFilter();
+        if (pose) {
+            shown.camera = pose();
+        }
+        return shown;
+    }
+
+    /// Avvia on `entry`: the catalog decides, at once (the mock) or on its worker; applyDecision() acts on it.
     void launch(const ui::CatalogEntry& entry) {
-        if (flow.pending() || flow.sessionActive()) {
+        if (flow.pending() || flow.sessionActive() || catalog->deciding()) {
+            return;
+        }
+        const std::uint64_t token = flow.records().size();
+        if (catalog->requestLaunch(token, entry)) {
+            before = currentView();
+        }
+    }
+
+    /// A decision the catalog made: the launch requested, or refused with its message (and its play session).
+    void applyDecision() {
+        std::optional<LaunchDecision> decision = catalog->takeDecision();
+        if (!decision) {
             return;
         }
         const std::uint64_t frame = context.frameIndex();
-        LaunchInfo info{entry.id, entry.title, {}};
-        const MockGame* game = catalog.find(entry.id);
-        if (game == nullptr || !game->launch) {
-            flow.refuse(LaunchMessage{std::string(lo::kNotConfigured), std::string(lo::kReasonNoLaunch), {}},
-                        std::move(info), frame);
-            return;
+        if (decision->request) {
+            sessionToken = decision->token;
+            flow.request(std::move(*decision->request), std::move(decision->info), frame);
+        } else if (flow.refuse(std::move(decision->refusal), std::move(decision->info), frame)) {
+            catalog->sessionRefused(decision->token);
+            afterPending = true;
         }
-        const MockLaunch& target = *game->launch;
-        info.profile = target.profile;
-        const launcher::EmulatorProfile* profile = profiles.find(target.profile);
-        if (profile == nullptr) {
-            flow.refuse(LaunchMessage{std::string(lo::kNotConfigured), std::string(lo::kReasonUnknownProfile),
-                                      target.profile},
-                        std::move(info), frame);
-            return;
+        if (before) {
+            flow.noteBefore(std::move(*before));
+            before.reset();
         }
-        launcher::LaunchPlan plan = launcher::planLaunch(target.target, *profile, probe);
-        if (!plan.ready()) {
-            spdlog::warn("Launch of '{}' blocked ({}): {}", entry.title, launcher::toString(plan.blocker->kind),
-                         plan.blocker->message);
-            flow.refuse(messageForBlocker(*plan.blocker, target.target, profile->displayName), std::move(info), frame);
-            return;
+    }
+
+    /// What the catalog worker answered: the catalog opened (the platforms and the list read again), rows that show
+    /// other data now (read again), the list of a query (collected by the model, which the screen shows after its
+    /// update). Polled here rather than only by the screen, which does not exist before the catalog first opens.
+    void syncCatalog() {
+        const CatalogChanges changes = catalog->poll();
+        if (changes.opened) {
+            model->refresh();
         }
-        flow.request(std::move(*plan.request), std::move(info), frame);
+        if (changes.rowsChanged) {
+            model->reread();
+        }
+        model->poll();
+    }
+
+    /// The lockstep run waits for the catalog worker (within kLockstepWaitLimit).
+    [[nodiscard]] bool waitsForCatalog() const noexcept {
+        if (!lockstep || !catalog->busy()) {
+            return false;
+        }
+        return !catalogWaitSince || std::chrono::steady_clock::now() - *catalogWaitSince < kLockstepWaitLimit;
     }
 
     /// The window's hand-over for the launch about to start (visible windows only).
@@ -137,6 +188,7 @@ struct ProductUi::Impl {
             return;
         }
         nav.reset();
+        afterPending = true;
         if (!handover) {
             return;
         }
@@ -219,15 +271,13 @@ ProductUi::ProductUi(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(imp
 
 ProductUi::~ProductUi() = default;
 
-Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, MockCatalog catalog,
-                                                       const input::ActionMap& bindings, std::function<void()> back) {
+Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std::unique_ptr<AppCatalog> catalog,
+                                                       const input::ActionMap& bindings, std::function<void()> back,
+                                                       std::function<std::optional<SpawnPoint>()> pose) {
     const core::Paths& paths = context.paths();
-    auto impl = std::make_unique<Impl>(context, std::move(catalog), std::move(back));
+    auto impl = std::make_unique<Impl>(context, std::move(catalog), std::move(back), std::move(pose));
     Impl& s = *impl;
-    s.profiles = mockCatalogProfiles(launcher::loadEmulatorProfiles(paths), s.catalog);
-    for (const launcher::ProfileIssue& issue : s.catalog.profiles.issues) {
-        spdlog::warn("Mock catalog profiles: {}", issue.toString());
-    }
+    s.lockstep = context.options().fixedDeltaSeconds.has_value();
     // The focus the window starts with (its later changes come as events); a hidden window counts as focused: the
     // input script stands for the user in front of it.
     const bool focused = context.options().hidden ||
@@ -236,6 +286,15 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, Mock
     if (const std::optional<double> limit = context.options().launchWaitLimitSeconds) {
         s.flow.setWaitLimit(std::chrono::milliseconds(static_cast<std::int64_t>(*limit * 1000.0)));
     }
+    Impl* state = impl.get();
+    LaunchFlowEvents flowEvents;
+    flowEvents.started = [state](const launcher::LaunchSession& session) {
+        state->catalog->sessionStarted(state->sessionToken, session);
+    };
+    flowEvents.ended = [state](const launcher::LaunchSession& session, LaunchEndCause cause, bool stoppedAwaiting) {
+        state->catalog->sessionEnded(state->sessionToken, session, cause, stoppedAwaiting);
+    };
+    s.flow.setEvents(std::move(flowEvents));
 
     auto system = ui::UiSystem::create(context.window(), ui::UiSystemConfig{paths.assetRoot()});
     if (!system) {
@@ -249,11 +308,9 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, Mock
     s.view = std::move(*view);
     s.view->setCommandKeys(ui::commandKeys(bindings));
 
-    s.source = std::make_unique<ui::InMemoryCatalogSource>(s.catalog.entries());
-    s.model = std::make_unique<ui::QuickCatalogModel>(*s.source);
+    s.model = std::make_unique<ui::QuickCatalogModel>(s.catalog->source());
     // The catalog's screen is created when it first opens (openCatalog), as a screen shown from the start: created
     // hidden, its pool of rows would never be laid out before it shows.
-    Impl* state = impl.get();
 
     GameSessionPanelEvents panelEvents;
     panelEvents.returnHome = [state] { state->choice = PanelChoice::ReturnHome; };
@@ -264,9 +321,8 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, Mock
         return propagate(panel.error());
     }
     s.panel = std::move(*panel);
-    spdlog::info("Quick catalog: {} game(s) from the mock catalog {}, {} emulator profile(s) in effect; QuickCatalog "
-                 "(Tab, gamepad Y) opens it",
-                 s.source->count(), core::pathToUtf8Lossy(s.catalog.file), s.profiles.profiles.size());
+    spdlog::info("Quick catalog ready{}; QuickCatalog (Tab, gamepad Y) opens it",
+                 s.lockstep ? " (lockstep: frames wait for the catalog worker's answers)" : "");
     return std::unique_ptr<ProductUi>(new ProductUi(std::move(impl)));
 }
 
@@ -296,6 +352,7 @@ void ProductUi::openCatalog() {
             return;
         }
         s.screen = std::move(*screen);
+        s.screen->setNotice(s.catalog->notice());
     } else {
         // QuickCatalogScreen::show() learns the focus it restores from RmlUi's focus event, which RmlUi sends only when
         // the focus moves; hide() left RmlUi's focus on the catalog's element, so the context's root takes it first
@@ -309,7 +366,8 @@ void ProductUi::openCatalog() {
     s.nav.reset();
     s.catalogOpen = true;
     ++s.opened;
-    spdlog::info("Quick catalog opened ({} game(s))", s.model->count());
+    spdlog::info("Quick catalog opened ({} game(s){})", s.model->count(),
+                 s.catalog->notice().empty() ? std::string() : ", " + std::string(s.catalog->notice()));
 }
 
 void ProductUi::closeCatalog() {
@@ -339,8 +397,29 @@ void ProductUi::userPressed() {
     static_cast<void>(m_impl->flow.userPressed());
 }
 
+void ProductUi::typeText(std::string_view text) {
+    if (hasInput() && !text.empty()) {
+        m_impl->view->context().ProcessTextInput(Rml::String(text));
+    }
+}
+
 void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds, double timeSeconds) {
     Impl& s = *m_impl;
+    const auto frameStart = std::chrono::steady_clock::now();
+    if (s.lastFrame && s.catalogOpen && !s.model->window().empty() && s.frameMs.size() < Impl::kMaxFrameSamples) {
+        s.frameMs.push_back(std::chrono::duration<double, std::milli>(frameStart - *s.lastFrame).count());
+    }
+    s.lastFrame = frameStart;
+    if (const auto since = std::exchange(s.catalogWaitSince, std::nullopt);
+        since && frameStart - *since >= Impl::kLockstepWaitLimit && s.catalog->busy()) {
+        spdlog::warn("Frame {}: the catalog worker did not answer within {} s; the frame goes on without its answer",
+                     s.context.frameIndex(), Impl::kLockstepWaitLimit.count());
+    }
+    // The first frame after a launch ended (or was refused): what the catalog and the walker show now.
+    if (std::exchange(s.afterPending, false)) {
+        s.flow.noteAfter(s.currentView());
+    }
+    s.syncCatalog();
     // A session whose panel shows renders frames: it is followed every frame (it may end, or ask something else).
     s.flow.poll(LaunchClock::now(), s.context.frameIndex());
     s.afterReturn();
@@ -364,6 +443,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             }
         }
     }
+    s.applyDecision();
     s.applyChoice();
     s.afterReturn(); // a return the panel confirmed
     if (std::exchange(s.closeRequested, false)) {
@@ -376,9 +456,13 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         s.view->resize(s.context.framebufferSize(), s.context.window().displayScale());
         s.view->update();
         if (s.screen) {
+            s.screen->setNotice(s.catalog->notice());
             s.screen->afterUpdate();
             if constexpr (kWatchDocuments) {
                 s.screen->reloadIfChanged();
+            }
+            if (s.catalogOpen && !s.model->window().empty() && s.catalog->notice().empty()) {
+                s.catalog->pageShown();
             }
         }
     }
@@ -397,11 +481,17 @@ void ProductUi::catalogBack() {
 }
 
 bool ProductUi::wantsIdle() const noexcept {
-    return m_impl->flow.hostIdle();
+    return m_impl->flow.hostIdle() || m_impl->waitsForCatalog();
 }
 
 void ProductUi::onIdle() {
     Impl& s = *m_impl;
+    s.lastFrame.reset(); // the wait is no frame time
+    if (s.lockstep && !s.catalogWaitSince && !s.flow.hostIdle() && s.catalog->busy()) {
+        s.catalogWaitSince = std::chrono::steady_clock::now();
+    }
+    // A decision the worker brings is applied by the next frame's update, which renders its "Gioco in corso" first.
+    s.syncCatalog();
     const LaunchClock::time_point now = LaunchClock::now();
     const std::uint64_t frame = s.context.frameIndex();
     if (s.flow.pending()) {
@@ -441,19 +531,33 @@ void ProductUi::finish() {
     Impl& s = *m_impl;
     s.flow.quit(LaunchClock::now(), s.context.frameIndex());
     s.handover.reset();
+    if (std::exchange(s.afterPending, false)) {
+        s.flow.noteAfter(s.currentView());
+    }
+    // The worker ends (within its bound) once the sessions the quit just ended are queued to it.
+    s.catalog->shutdown();
     CatalogRecord record;
-    record.source = "mock";
-    record.file = s.catalog.file;
-    record.games = s.source->entries().size();
+    s.catalog->record(record);
     record.opened = s.opened;
     record.open = s.catalogOpen;
     record.selectedPosition = s.model->selectedPosition();
     if (const ui::CatalogEntry* selected = s.model->selected()) {
         record.selectedId = selected->id;
     }
+    record.search = s.model->search();
+    record.filter = s.model->activeFilter();
+    if (s.screen && s.catalogOpen) {
+        record.cardSqueezed = s.screen->squeezedCardBlocks();
+    }
+    if (!s.lockstep) {
+        record.frames = summarizeTimes(s.frameMs);
+    }
     RunReport& report = s.context.report();
     report.catalog = std::move(record);
     report.launches = s.flow.records();
+    for (std::size_t index = 0; index < report.launches.size(); ++index) {
+        s.catalog->recordLaunch(index, report.launches[index]);
+    }
 }
 
 } // namespace rv::app

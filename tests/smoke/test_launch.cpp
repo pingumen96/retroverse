@@ -299,8 +299,8 @@ TEST_CASE("launch: closing Retroverse while the game runs leaves the game runnin
 }
 
 TEST_CASE("launch: a closed catalog draws nothing over the scene", "[gpu][launch]") {
-    // The same frames with and without a catalog that never opens: the product UI adds nothing to them (golden G01's
-    // runs have no catalog at all).
+    // The same frames with the mock catalog and with the ES-DE catalog of an empty data directory, neither opened: the
+    // product UI adds nothing to them (golden G01's runs have the latter).
     ensureLaunchAllowList();
     const std::filesystem::path dir = freshCaseDir("launch/closed_catalog");
     const std::filesystem::path catalog = writeFakeCatalog(dir, {fake_games::kReturns});
@@ -315,7 +315,11 @@ TEST_CASE("launch: a closed catalog draws nothing over the scene", "[gpu][launch
                {"--mock-catalog", arg(catalog), "--smoke", "--frames", "5", "--fixed-dt", "0.016667", "--screenshot",
                 arg(with)});
     requireCleanRun(withCatalog);
-    CHECK_FALSE(plain.report->catalog.has_value());
+    // Without --mock-catalog the run's catalog is the ES-DE catalog of its data directory, which has none.
+    REQUIRE(plain.report->catalog.has_value());
+    CHECK(plain.report->catalog->source == "esde");
+    CHECK(plain.report->catalog->notice == "no-library");
+    CHECK(plain.report->catalog->opened == 0);
     REQUIRE(withCatalog.report->catalog.has_value());
     CHECK(withCatalog.report->catalog->opened == 0);
     CHECK(withCatalog.report->launches.empty());

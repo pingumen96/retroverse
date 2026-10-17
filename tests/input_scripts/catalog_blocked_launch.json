@@ -1,0 +1,17 @@
+// I2 step 13: a game of the ES-DE catalog that is not ready. QuickCatalog opens the catalog on frame 2; ui_up on frames
+// 5 and 8 reaches the search field; "solo" is typed on frame 11 (Solo Disc (USA), psx); ui_activate on frame 14 moves to
+// the list, ui_activate on frame 17 is Avvia on it. With psx assigned "Fake Emulator (Inject)" its card says it requires
+// launcher configuration (its %INJECT% file is usable: inject-file), and Avvia shows why on the game-session panel
+// instead of launching; ui_back on frame 22 dismisses the panel, leaving the card in view. Expected with --fixed-dt and
+// --frames 30: the launch recorded Blocked (not-ready, requires-configuration) with its blocked play session, nothing
+// started.
+// tests/smoke/test_catalog.cpp runs it.
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 5, "toFrame": 5, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_up": 1}},
+  {"fromFrame": 11, "toFrame": 11, "text": "solo"},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_activate": 1}},
+  {"fromFrame": 17, "toFrame": 17, "actions": {"ui_activate": 1}},
+  {"fromFrame": 22, "toFrame": 22, "actions": {"ui_back": 1}}
+]

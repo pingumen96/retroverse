@@ -1,0 +1,7 @@
+// I2 step 13: QuickCatalog opens the quick catalog on frame 2 and leaves it open: what the catalog shows (its first
+// page, or the notice of a catalog that is not there: no library.json, no database). NFR-01's measurement opens it on
+// frame 1 instead (tests/unit/app/test_catalog_real.cpp writes its own script).
+// tests/smoke/test_catalog.cpp runs it.
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}}
+]

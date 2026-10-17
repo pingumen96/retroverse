@@ -99,6 +99,15 @@ void QuickCatalogModel::refresh() {
     materialize(Restore::NearestPosition);
 }
 
+void QuickCatalogModel::reread() {
+    if (m_count == 0) {
+        return;
+    }
+    m_error.reset();
+    ++m_contentRevision;
+    show(m_selected, m_first, Fetch::All);
+}
+
 void QuickCatalogModel::materialize(Restore restore) {
     Expected<QueryState> asked = m_source.query(CatalogSourceQuery{m_search, m_activeFilter});
     if (asked && *asked == QueryState::Pending) {

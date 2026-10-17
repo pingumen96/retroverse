@@ -23,8 +23,9 @@ constexpr std::string_view kDescription =
     "\n"
     "Controls: WASD or arrows walk, Left Shift sprints, the mouse looks around while captured (at startup in\n"
     "          interactive runs, or after a click into the window); gamepad: left stick walks, right stick\n"
-    "          looks, left stick click sprints. Tab (gamepad Y) opens the quick catalog of --mock-catalog, where\n"
-    "          arrows or the D-pad move and Enter (A) launches the selected game. Esc (gamepad B) leaves one\n"
+    "          looks, left stick click sprints. Tab (gamepad Y) opens the quick catalog (the ES-DE catalog that\n"
+    "          retroverse-cli imported into the user data directory, or --mock-catalog's), where arrows or the\n"
+    "          D-pad move and Enter (A) launches the selected game. Esc (gamepad B) leaves one\n"
     "          level: it closes a popup of the developer overlay, else the game panel, else steps back through\n"
     "          the quick catalog and closes it, else releases the mouse, else closes the overlay, else quits. F1\n"
     "          toggles the developer overlay (developer builds), F5 reloads the shaders, F12 saves a screenshot\n"
@@ -74,9 +75,10 @@ core::ArgParser makeParser() {
               "only by default), scaled uniformly to fit the screenshot and centered. A frame-limited run fails (exit "
               "code 3) when the overlay cannot start.")
         .option("mock-catalog", "json",
-                "Games of the quick catalog (Tab or gamepad Y opens it), invented, each with a launch target: an "
-                "emulator profile and a ROM (a JSON file, schemaVersion 1, with \"profiles\" and \"games\"). Avvia "
-                "launches the selected game; Retroverse renders nothing until the emulator returns.")
+                "Games of the quick catalog (Tab or gamepad Y opens it) instead of the ES-DE catalog of the user data "
+                "directory: invented, each with a launch target, an emulator profile and a ROM (a JSON file, "
+                "schemaVersion 1, with \"profiles\" and \"games\"; for tests). Avvia launches the selected game; "
+                "Retroverse renders nothing until the emulator returns.")
         .option("launch-wait-limit", "seconds",
                 fmt::format("Only with --smoke or --exit-after-frames: a launched game still running after this many "
                             "seconds is left running (never ended) and the run goes on to its --frames (default {:g}, "

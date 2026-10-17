@@ -42,14 +42,29 @@
 		     element, as RmlUi updates the views on the repeated element in the same pass as the data-for view. An empty
 		     list says why: the catalog could not be read, nothing matches the search, or the catalog has no game. -->
 		<div id="game-list" class="region" nav-region="list">
-			<p class="empty" data-if="unavailable">Catalogo non disponibile: non è stato possibile leggerlo.</p>
-			<p class="empty" data-if="count == 0 && !unavailable && search != ''">Nessun gioco corrisponde alla ricerca.</p>
-			<p class="empty" data-if="count == 0 && !unavailable && search == ''">Nessun gioco nel catalogo.</p>
+			<p class="empty" data-if="unavailable && notice == ''">Catalogo non disponibile: non è stato possibile leggerlo.</p>
+			<p class="empty" data-if="count == 0 && !unavailable && notice == '' && search != ''">Nessun gioco corrisponde alla ricerca.</p>
+			<p class="empty" data-if="count == 0 && !unavailable && notice == '' && search == ''">Nessun gioco nel catalogo.</p>
+			<!-- The catalog database itself (notice: rv::ui::quick_catalog::kNotice*): being opened, or not there yet and
+			     how to make it (retroverse-cli, I2 steps 2 and 11a). -->
+			<p id="notice" class="empty" data-if="notice == 'opening' && count == 0">Apertura del catalogo...</p>
+			<p class="empty" data-if="notice == 'no-library'">Nessuna libreria ES-DE collegata. Collegala con
+				"retroverse-cli library create", importala con "retroverse-cli import", poi riapri Retroverse.</p>
+			<p class="empty" data-if="notice == 'no-database'">Il catalogo non è ancora stato importato. Importalo con
+				"retroverse-cli import", poi riapri Retroverse.</p>
+			<p class="empty" data-if="notice == 'data-directory'">La cartella dei dati di Retroverse è dentro le cartelle
+				della libreria ES-DE, che Retroverse non modifica mai: scegline un'altra (--data-dir) e riapri Retroverse.</p>
+			<p class="empty" data-if="notice == 'library-mismatch'">library.json indica una libreria diversa da quella del
+				catalogo. Ricollegala con "retroverse-cli library create --id" (con --force), importala con
+				"retroverse-cli import", poi riapri Retroverse.</p>
+			<p class="empty" data-if="notice == 'unavailable'">Catalogo non disponibile: non è stato possibile aprirlo.
+				"retroverse-cli db check" dice perché.</p>
 			<div class="game-slot" data-for="row : rows">
 				<div class="game" data-attr-id="row.elementId" data-class-vacant="!row.present"
 					data-class-unavailable="row.state == 'unavailable'">
 					<span class="game-title">{{ row.title }}</span>
-					<span class="game-meta">{{ row.platform }}<span class="dot"> · </span>{{ row.year }}<span data-if="row.year == ''">n.d.</span></span>
+					<!-- The title comes first: a long platform name ends in an ellipsis, the year always shows. -->
+					<span class="game-meta"><span class="game-platform">{{ row.platform }}</span><span class="game-year"><span class="dot">·</span>{{ row.year }}<span data-if="row.year == ''">n.d.</span></span></span>
 				</div>
 			</div>
 			<!-- Where the window lies in the list: the thumb's top and height in percent of the track. -->
@@ -62,17 +77,60 @@
 	<div id="card" class="panel" data-if="card.present">
 		<h2 id="card-title">{{ card.title }}</h2>
 		<p class="subtitle">{{ card.developer }}<span data-if="card.developer == ''">n.d.</span>, {{ card.year }}<span data-if="card.year == ''">n.d.</span></p>
-		<p id="card-state" class="state" data-if="card.state == 'unavailable'">Non disponibile: il file del gioco non si trova</p>
-		<p class="state" data-if="card.state == 'needs-configuration'">Da configurare: l'emulatore non è impostato</p>
-		<p class="state" data-if="card.state == 'emulator-missing'">Emulatore non trovato</p>
+		<!-- Without a readiness (mock-ups) the state key alone; with one (the ES-DE catalog, ADR-0008 §8) the readiness as a
+		     one-line label, then a sentence for its first blocker's code. The blocker's own words (English) are not
+		     shown here, so that the card keeps its description and rows whole: Avvia shows them in the game-session
+		     panel. -->
+		<p id="card-state" class="state" data-if="card.readiness == '' && card.state == 'unavailable'">Non disponibile: il file del gioco non si trova</p>
+		<p class="state" data-if="card.readiness == '' && card.state == 'needs-configuration'">Da configurare: l'emulatore non è impostato</p>
+		<p class="state" data-if="card.readiness == '' && card.state == 'emulator-missing'">Emulatore non trovato</p>
+		<p id="card-readiness" class="state" data-if="card.readiness == 'source-unavailable'">Non disponibile: cartella non raggiungibile</p>
+		<p class="state" data-if="card.readiness == 'rom-missing'">Non disponibile: file del gioco assente</p>
+		<p class="state" data-if="card.readiness == 'requires-configuration'">Da configurare</p>
+		<p class="state" data-if="card.readiness == 'emulator-not-found'">Emulatore non trovato</p>
+		<p class="state" data-if="card.readiness == 'core-not-found'">Core dell'emulatore non trovato</p>
+		<p id="card-verified" class="ready" data-if="card.readiness == 'ready' && card.verified">Pronto: già avviato e tornato senza errori</p>
+		<p id="card-blocker" class="blocker" data-if="card.blocker == 'source-unavailable'">La cartella del sistema o del gioco non è raggiungibile: controlla che il disco sia collegato.</p>
+		<p class="blocker" data-if="card.blocker == 'rom-missing'">Il file del gioco non c'è più: forse è stato spostato o cancellato.</p>
+		<p class="blocker" data-if="card.blocker == 'rom-folder-unresolved'">La cartella dei giochi del sistema non è definita: controlla ROMDirectory in ES-DE.</p>
+		<p class="blocker" data-if="card.blocker == 'rom-root-unknown'">La cartella principale dei giochi (ROMDirectory) non è nota.</p>
+		<p class="blocker" data-if="card.blocker == 'system-unknown' || card.blocker == 'system-not-configured'">ES-DE non configura più questo sistema.</p>
+		<p class="blocker" data-if="card.blocker == 'library-unreadable'">La configurazione di ES-DE non si legge: controlla che ES-DE sia dove library.json lo indica.</p>
+		<p class="blocker" data-if="card.blocker == 'no-command'">Il sistema non ha nessun comando di avvio.</p>
+		<p class="blocker" data-if="card.blocker == 'choice-stale'">Il comando scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
+		<p class="blocker" data-if="card.blocker == 'profile-unknown'">Il profilo d'emulatore scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
+		<p class="blocker" data-if="card.blocker == 'profile-template'">Il profilo dell'emulatore contiene argomenti scritti male.</p>
+		<p class="blocker" data-if="card.blocker == 'profile-variable-missing'">Il profilo dell'emulatore usa una variabile che non ha un valore.</p>
+		<p class="blocker" data-if="card.blocker == 'profile-invalid-request' || card.blocker == 'invalid-request'">Windows non può avviare l'emulatore così com'è configurato.</p>
+		<p class="blocker" data-if="card.blocker == 'program-not-allowed'">Il comando non avvia un emulatore che Retroverse sappia trovare: serve un profilo d'emulatore.</p>
+		<p class="blocker" data-if="card.blocker == 'program-refused'">Il comando avvia un interprete di comandi o un programma di avvio, che Retroverse non esegue mai.</p>
+		<p class="blocker" data-if="card.blocker == 'program-repeated'">Il comando indica più di un emulatore.</p>
+		<p class="blocker" data-if="card.blocker == 'program-missing'">Il comando non indica l'emulatore in modo leggibile.</p>
+		<p class="blocker" data-if="card.blocker == 'install-unknown'">La cartella di ES-DE non è nota: indicala con "retroverse-cli library create --install".</p>
+		<p class="blocker" data-if="card.blocker == 'token-unsupported'">Il comando usa una funzione di ES-DE che Retroverse non esegue.</p>
+		<p class="blocker" data-if="card.blocker == 'token-malformed'">Il comando contiene un segnaposto scritto male.</p>
+		<p class="blocker" data-if="card.blocker == 'command-placeholder'">Il comando di questo sistema è solo un segnaposto: va configurato in ES-DE.</p>
+		<p class="blocker" data-if="card.blocker == 'inject-file'">ES-DE aggiungerebbe argomenti presi da un file del gioco: scegli un altro comando o un profilo.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-missing'">La cartella di lavoro indicata dal comando non esiste.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-repeated'">Il comando indica più di una cartella di lavoro.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-glued'">Il comando indica la cartella di lavoro dentro un altro argomento.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-relative'">La cartella di lavoro indicata dal comando non è un percorso completo.</p>
+		<p class="blocker" data-if="card.blocker == 'find-rules-missing'">Le regole di ricerca di ES-DE non dicono dove cercare l'emulatore o il core.</p>
+		<p class="blocker" data-if="card.blocker == 'find-rule-undecided'">Una regola di ricerca di ES-DE dipende da un programma sostitutivo, che Retroverse non usa.</p>
+		<p class="blocker" data-if="card.blocker == 'emulator-not-found'">L'emulatore non si trova in nessuno dei posti dove ES-DE lo cerca.</p>
+		<p class="blocker" data-if="card.blocker == 'core-not-found'">Il core richiesto dal comando non si trova.</p>
+		<p class="blocker" data-if="card.blocker == 'core-malformed'">Il comando indica il core in modo non leggibile.</p>
+		<p class="blocker" data-if="card.blocker == 'core-repeated'">Il comando indica più di un core.</p>
 		<p id="card-description" class="description" data-class-expanded="card.expanded">{{ card.description }}</p>
 		<div class="rows">
-			<div class="row"><span class="key">Piattaforma</span><span class="value">{{ card.platform }}<span data-if="card.platform == ''">n.d.</span></span></div>
-			<div class="row"><span class="key">Genere</span><span class="value">{{ card.genre }}<span data-if="card.genre == ''">n.d.</span></span></div>
-			<div class="row"><span class="key">Giocatori</span><span class="value">{{ card.players }}<span data-if="card.players == ''">n.d.</span></span></div>
-			<div class="row"><span class="key">Sviluppatore</span><span class="value">{{ card.developer }}<span data-if="card.developer == ''">n.d.</span></span></div>
-			<div class="row" data-if="card.expanded"><span class="key">Editore</span><span class="value">{{ card.publisher }}<span data-if="card.publisher == ''">n.d.</span></span></div>
-			<div class="row" data-if="card.expanded"><span class="key">Anno</span><span class="value">{{ card.year }}<span data-if="card.year == ''">n.d.</span></span></div>
+			<div class="rows-list">
+				<div class="row"><span class="key">Piattaforma</span><span class="value">{{ card.platform }}<span data-if="card.platform == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Genere</span><span class="value">{{ card.genre }}<span data-if="card.genre == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Giocatori</span><span class="value">{{ card.players }}<span data-if="card.players == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Sviluppatore</span><span class="value">{{ card.developer }}<span data-if="card.developer == ''">n.d.</span></span></div>
+				<div class="row" data-if="card.expanded"><span class="key">Editore</span><span class="value">{{ card.publisher }}<span data-if="card.publisher == ''">n.d.</span></span></div>
+				<div class="row" data-if="card.expanded"><span class="key">Anno</span><span class="value">{{ card.year }}<span data-if="card.year == ''">n.d.</span></span></div>
+			</div>
 		</div>
 		<div id="actions" class="region" nav-region="actions">
 			<button id="act-play" class="action primary" data-event-click="launch()">Avvia</button>

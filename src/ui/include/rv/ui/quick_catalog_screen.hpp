@@ -4,7 +4,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <rv/core/expected.hpp>
 #include <rv/ui/focus_history.hpp>
@@ -101,6 +103,10 @@ public:
     bool focusElement(std::string_view id);
     /// The line under the card's actions ("Avvio di ..."), until another game is selected; empty hides it.
     void setStatus(std::string_view text);
+    /// What the list says about the catalog itself while it shows no game of it (quick_catalog::kNotice*: the catalog
+    /// being opened, no library, no catalog database, ...), in the document's words; empty says nothing.
+    void setNotice(std::string_view key);
+    [[nodiscard]] std::string_view notice() const noexcept;
     /// The high-contrast theme (specification §12.4).
     void setHighContrast(bool enabled);
     [[nodiscard]] const FocusHistory& history() const noexcept;
@@ -110,6 +116,10 @@ public:
     [[nodiscard]] std::uint64_t windowBinds() const noexcept;
     /// Rows of the pool bound to another game, in all: a scroll by one row binds one.
     [[nodiscard]] std::uint64_t rowBinds() const noexcept;
+    /// The card's blocks laid out less tall than they want (their content, at most their max-height: whole lines), so
+    /// that a line or a row of them is cut: each by its id, else its first class ("rows"). Empty when the card shows
+    /// everything it holds whole, or is not shown. As the last layout left them (after afterUpdate()).
+    [[nodiscard]] std::vector<std::string> squeezedCardBlocks() const;
 
     /// With watchFiles, reloads the document when it or its style sheet changed on disk (polled every 500 ms), keeping
     /// the focus; true when it reloaded. A document that no longer loads keeps the screen empty until fixed (logged).

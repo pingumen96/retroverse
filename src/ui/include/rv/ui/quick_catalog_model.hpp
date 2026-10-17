@@ -71,6 +71,12 @@ public:
     /// the window on it; true when a list (or the error of its query) arrived. Call once per frame: the screen does, in
     /// QuickCatalogScreen::afterUpdate.
     bool poll();
+    /// The source's rows changed in place: the same list, other data for some of its games (a game's launch readiness
+    /// learned later, on the catalog worker). Reads the window's rows again, keeping the list, the selection and the
+    /// window; contentRevision() and windowRevision() say so, and the view binds every row and fills the card again.
+    /// Nothing while the list is empty.
+    void reread();
+
     /// A query runs on the source's worker: the list shown is the previous one until poll() collects the new one.
     [[nodiscard]] bool pending() const noexcept { return m_pending.has_value(); }
 
@@ -116,6 +122,8 @@ public:
     [[nodiscard]] std::uint64_t windowRevision() const noexcept { return m_windowRevision; }
     /// Incremented whenever the selected game changes (another id, or none).
     [[nodiscard]] std::uint64_t selectionRevision() const noexcept { return m_selectionRevision; }
+    /// Incremented whenever reread() read the rows again: the games shown may show other data.
+    [[nodiscard]] std::uint64_t contentRevision() const noexcept { return m_contentRevision; }
 
     /// The first error of the source in the latest operation that read it (a query, the platforms, the window's rows),
     /// until an operation reads it without one.
@@ -183,6 +191,7 @@ private:
     std::uint64_t m_listRevision = 0;
     std::uint64_t m_windowRevision = 0;
     std::uint64_t m_selectionRevision = 0;
+    std::uint64_t m_contentRevision = 0;
 };
 
 } // namespace rv::ui

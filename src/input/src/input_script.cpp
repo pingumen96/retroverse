@@ -11,6 +11,7 @@
 
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 #include <rv/input/input_system.hpp>
 
 #include "json_location.hpp"
@@ -26,7 +27,8 @@ using detail::JsonLocation;
 constexpr std::string_view kFromFrameField = "fromFrame";
 constexpr std::string_view kToFrameField = "toFrame";
 constexpr std::string_view kActionsField = "actions";
-constexpr std::array<std::string_view, 3> kStepFields{kFromFrameField, kToFrameField, kActionsField};
+constexpr std::string_view kTextField = "text";
+constexpr std::array<std::string_view, 4> kStepFields{kFromFrameField, kToFrameField, kActionsField, kTextField};
 
 Expected<std::uint64_t> parseFrame(const Json& step, std::string_view field, const JsonLocation& stepAt) {
     const JsonLocation at = stepAt.child(field);
@@ -105,10 +107,35 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
     parsed.fromFrame = *from;
     parsed.toFrame = *to;
 
+    const JsonLocation textAt = at.child(kTextField);
+    if (const auto text = step.find(kTextField); text != step.end()) {
+        if (!text->is_string()) {
+            return fail(ErrorCode::ParseError, "expected the text to type (a string)", textAt);
+        }
+        parsed.text = text->get<std::string>();
+        if (parsed.text.empty() || parsed.text.size() > InputScript::kMaxTextBytes) {
+            return fail(ErrorCode::ValidationFailed,
+                        "the text must hold 1 to " + std::to_string(InputScript::kMaxTextBytes) + " bytes", textAt);
+        }
+        if (!core::isValidUtf8(parsed.text)) {
+            return fail(ErrorCode::ValidationFailed, "the text is not valid UTF-8", textAt);
+        }
+        const bool control = std::any_of(parsed.text.begin(), parsed.text.end(), [](char c) {
+            const auto byte = static_cast<unsigned char>(c);
+            return byte < 0x20 || byte == 0x7F;
+        });
+        if (control) {
+            return fail(ErrorCode::ValidationFailed, "the text holds a control character", textAt);
+        }
+    }
+
     const JsonLocation actionsAt = at.child(kActionsField);
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
-        return fail(ErrorCode::ParseError, "missing field \"actions\"", actionsAt);
+        if (!parsed.text.empty()) {
+            return parsed;
+        }
+        return fail(ErrorCode::ParseError, "missing field \"actions\" (or \"text\")", actionsAt);
     }
     if (!actions->is_object()) {
         return fail(ErrorCode::ParseError, "expected an object mapping action names to values", actionsAt);
@@ -198,6 +225,16 @@ std::optional<float> InputScript::valueAt(std::uint64_t frame, Action action) co
         }
     }
     return std::nullopt;
+}
+
+std::string InputScript::textAt(std::uint64_t frame) const {
+    std::string text;
+    for (const InputScriptStep& step : m_steps) {
+        if (step.fromFrame == frame) {
+            text += step.text;
+        }
+    }
+    return text;
 }
 
 InputScriptPlayer::InputScriptPlayer(InputScript script) : m_script(std::move(script)) {}

@@ -36,7 +36,7 @@ struct MockGame {
     std::optional<MockLaunch> launch;
 };
 
-/// The quick catalog's games until the ES-DE catalog reaches the application (I2 step 13): invented games in a JSON
+/// The quick catalog's games of the tests, instead of the ES-DE catalog (I2 step 13): invented games in a JSON
 /// file (--mock-catalog), each with a launch target, and the emulator profiles they use, so that the application shell
 /// launches emulators (the fake emulator of the tests, tests/fake_emulator) end to end. Format, schemaVersion 1, JSON
 /// with comments:

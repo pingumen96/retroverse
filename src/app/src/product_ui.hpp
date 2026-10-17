@@ -2,8 +2,11 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string_view>
 
-#include <rv/app/mock_catalog.hpp>
+#include <rv/app/app_catalog.hpp>
+#include <rv/app/command_line.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
@@ -19,17 +22,20 @@ namespace rv::app {
 
 class AppContext;
 
-/// The product UI of retroverse.exe and what it launches (I2 step A1; specification §12.2 QuickLibrary, §13, §15.5
-/// ExternalEmulatorRunning; ADR-0005, ADR-0006): RmlUi over the window (ui::UiSystem, one ui::UiView), the quick
-/// catalog (ui::QuickCatalogScreen over a ui::QuickCatalogModel over the mock catalog's games in a
-/// ui::InMemoryCatalogSource), the game-session panel over it (GameSessionPanel), and the launches: Avvia plans the
-/// selected game's launch target with its emulator profile (launcher::planLaunch: the shipped and the user's profiles,
-/// the catalog's over them, executables found through the Windows system probe) and hands the request to a LaunchFlow
-/// on the Win32 process runner (the automation guard applies there), the window kept behind the emulator
-/// (platform::WindowHandover, HandoverPolicy::Keep) and taken back at the return. Hidden windows (--hidden: automated
+/// The product UI of retroverse.exe and what it launches (I2 steps A1 and 13; specification §12.2 QuickLibrary, §13,
+/// §15.5 ExternalEmulatorRunning; ADR-0005, ADR-0006): RmlUi over the window (ui::UiSystem, one ui::UiView), the quick
+/// catalog (ui::QuickCatalogScreen over a ui::QuickCatalogModel over the AppCatalog's source: the ES-DE catalog through
+/// the catalog worker, or the mock catalog of the tests), the game-session panel over it (GameSessionPanel), and the
+/// launches: Avvia asks the AppCatalog for its decision (the mock plans the game's launch with its emulator profile at
+/// once; the ES-DE catalog resolves it on the worker right before the launch, with the database's choices) and hands a
+/// ready request to a LaunchFlow on the Win32 process runner (the automation guard applies there), the window kept
+/// behind the emulator (platform::WindowHandover, HandoverPolicy::Keep) and taken back at the return; a game that cannot
+/// start shows why. The play sessions are the AppCatalog's (recorded on the worker). Hidden windows (--hidden: automated
 /// runs) have no hand-over: nothing is visible to hand over or bring back, and the foreground remedies must never raise
 /// a window nobody can see; they count as focused (the input script stands for the user in front of them). Frame-limited
-/// runs stop waiting for a game after --launch-wait-limit (LaunchFlow::setWaitLimit).
+/// runs stop waiting for a game after --launch-wait-limit (LaunchFlow::setWaitLimit). Runs with --fixed-dt wait between
+/// frames for what they asked of the catalog worker (lockstep: the host idles until it answered), so that scripted runs
+/// see the same lists and launches on the same frames; other runs never wait for it.
 ///
 /// The application keeps the input contexts, the Back levels and the host's idle mode: it reads the UI actions only
 /// while hasInput() and gives them to update(), turns every UI Back into its own levels (the `back` callback, then
@@ -37,14 +43,15 @@ class AppContext;
 /// developer overlay, in screenshots too. Main thread only; destroy it while the OpenGL context is current.
 class ProductUi {
 public:
-    /// Creates RmlUi over `context`'s window, the quick catalog's model over `catalog`'s games (closed: its screen is
-    /// made the first time it opens), the panel (hidden) and the emulator profiles in effect (mockCatalogProfiles over
-    /// launcher::loadEmulatorProfiles; their issues are logged). `bindings` give the keys RmlUi leaves to the UI
-    /// commands (ui::commandKeys). `back` is called for every UI Back command. Errors: RmlUi, the view or the panel's
-    /// document cannot be created.
-    [[nodiscard]] static Expected<std::unique_ptr<ProductUi>> create(AppContext& context, MockCatalog catalog,
+    /// Creates RmlUi over `context`'s window, the quick catalog's model over `catalog`'s source (closed: its screen is
+    /// made the first time it opens) and the panel (hidden). `bindings` give the keys RmlUi leaves to the UI commands
+    /// (ui::commandKeys). `back` is called for every UI Back command; `pose` gives the walker's pose for the launch
+    /// records (LaunchRecord::before, ::after). Errors: RmlUi, the view or the panel's document cannot be created.
+    [[nodiscard]] static Expected<std::unique_ptr<ProductUi>> create(AppContext& context,
+                                                                     std::unique_ptr<AppCatalog> catalog,
                                                                      const input::ActionMap& bindings,
-                                                                     std::function<void()> back);
+                                                                     std::function<void()> back,
+                                                                     std::function<std::optional<SpawnPoint>()> pose);
     ~ProductUi();
     ProductUi(const ProductUi&) = delete;
     ProductUi& operator=(const ProductUi&) = delete;
@@ -72,6 +79,9 @@ public:
     /// (LaunchFlow::userPressed).
     void userPressed();
 
+    /// Text typed into the product UI's focused text field (an --input-script step's "text"), while hasInput().
+    void typeText(std::string_view text);
+
     /// One frame: follows a session whose panel shows and the window's return, applies the UI commands of
     /// `uiActions` (the frame's actions in the UI context; null: the product UI had no input when the frame began),
     /// shows the panel the launch wants and updates the view at `timeSeconds` (the simulated time).
@@ -81,10 +91,11 @@ public:
     void panelBack();
     void catalogBack();
 
-    /// The host must idle: a launch waits for the frame boundary, or a game has the screen (LaunchFlow::hostIdle).
+    /// The host must idle: a launch waits for the frame boundary, or a game has the screen (LaunchFlow::hostIdle), or a
+    /// lockstep run waits for the catalog worker.
     [[nodiscard]] bool wantsIdle() const noexcept;
-    /// One wake of the host's idle wait: starts a pending launch (the window handed over before the process runs),
-    /// follows the session, takes the window back once it ends.
+    /// One wake of the host's idle wait: collects the catalog worker's answers, starts a pending launch (the window
+    /// handed over before the process runs), follows the session, takes the window back once it ends.
     void onIdle();
     /// A frame was rendered.
     void frameRendered() noexcept;
@@ -93,8 +104,9 @@ public:
     void renderToWindow(gl::GLDevice& device);
     void renderTo(gl::GLDevice& device, const gl::Framebuffer& target);
 
-    /// The end of the run (IAppLogic::onShutdown): a running launch is left running (LaunchFlow::quit), the catalog and
-    /// the launches go into the run report.
+    /// The end of the run (IAppLogic::onShutdown): a running launch is left running (LaunchFlow::quit), the catalog
+    /// ends (its worker within a bound, the pending session writes tried), the catalog and the launches go into the run
+    /// report.
     void finish();
 
 private:

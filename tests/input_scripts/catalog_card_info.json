@@ -1,0 +1,17 @@
+// I2 step 13: the card of a game of the ES-DE catalog, then Informazioni on it. As catalog_search_launch.json up to
+// frame 20 (QuickCatalog on frame 2, the search field reached on frames 5 and 8, "nintendo" typed on frame 11, the list on
+// frame 14, the gb chip on frame 17, End on frame 20: Tiny Tennis (Europe), which has a description); ui_info on frame
+// 23 shows the card's secondary details (Editore, Anno, the whole description). Expected with --fixed-dt: --frames 22
+// shows the card as it first fills, --frames 26 the expanded card; no launch.
+// tests/smoke/test_catalog.cpp runs it with gb blocked (ES-DE's configuration unreadable), so that the card also shows
+// its readiness and its blocker's sentence: the run report's catalog.cardSqueezed must stay empty (no line cut).
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 5, "toFrame": 5, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_up": 1}},
+  {"fromFrame": 11, "toFrame": 11, "text": "nintendo"},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_activate": 1}},
+  {"fromFrame": 17, "toFrame": 17, "actions": {"ui_filter_next": 1}},
+  {"fromFrame": 20, "toFrame": 20, "actions": {"ui_end": 1}},
+  {"fromFrame": 23, "toFrame": 23, "actions": {"ui_info": 1}}
+]
