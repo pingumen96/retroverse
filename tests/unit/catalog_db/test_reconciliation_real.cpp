@@ -106,13 +106,13 @@ TEST_CASE("catalog_db/reconciliation: the quick-hash pass on the real library's 
     CHECK(pass.unavailable == 0);
     CHECK(pass.bytesRead <= static_cast<std::uint64_t>(pass.hashed) * kQuickHashWholeFileLimit);
     const double passSeconds = seconds(pass.time);
-    std::cout << fmt::format("quick-hash pass, gb: {} identities ({} not present, {} folders), {} files hashed, {} "
-                             "changed, {} gone, {} unreadable; {:.1f} MiB read in {:.2f} s ({} batches): {:.0f} files/s, "
-                             "{:.1f} MiB/s\n",
-                             pass.identities, pass.notPresent, pass.folders, pass.hashed, pass.changed, pass.gone,
-                             pass.unreadable, static_cast<double>(pass.bytesRead) / kMiB, passSeconds, pass.batches,
-                             static_cast<double>(pass.hashed) / passSeconds,
-                             static_cast<double>(pass.bytesRead) / kMiB / passSeconds);
+    std::cout << fmt::format(
+        "quick-hash pass, gb: {} identities ({} not present, {} folders), {} files hashed, {} "
+        "changed, {} gone, {} unreadable; {:.1f} MiB read in {:.2f} s ({} batches): {:.0f} files/s, "
+        "{:.1f} MiB/s\n",
+        pass.identities, pass.notPresent, pass.folders, pass.hashed, pass.changed, pass.gone, pass.unreadable,
+        static_cast<double>(pass.bytesRead) / kMiB, passSeconds, pass.batches,
+        static_cast<double>(pass.hashed) / passSeconds, static_cast<double>(pass.bytesRead) / kMiB / passSeconds);
     for (const Issue& issue : pass.issues) {
         std::cout << fmt::format("  [{}] {}: {}\n", toString(issue.severity), issue.code, issue.reason);
     }
@@ -151,9 +151,10 @@ TEST_CASE("catalog_db/reconciliation: the quick-hash pass on the real library's 
     }
     const double perFile = passSeconds / static_cast<double>(pass.hashed);
     const double perByte = passSeconds / static_cast<double>(pass.bytesRead);
-    std::cout << fmt::format("whole library: {} files, {:.1f} MiB to read for their quick hashes; estimated {:.0f} s at "
-                             "gb's rate per file, {:.0f} s at its rate per byte\n",
-                             files, static_cast<double>(bytes) / kMiB, perFile * static_cast<double>(files),
-                             perByte * static_cast<double>(bytes));
+    std::cout << fmt::format(
+        "whole library: {} files, {:.1f} MiB to read for their quick hashes; estimated {:.0f} s at "
+        "gb's rate per file, {:.0f} s at its rate per byte\n",
+        files, static_cast<double>(bytes) / kMiB, perFile * static_cast<double>(files),
+        perByte * static_cast<double>(bytes));
     CHECK(files > 100'000);
 }

@@ -73,7 +73,8 @@ public:
             onRead(relativePath);
         }
         if (denied.contains(std::string(relativePath))) {
-            return rv::makeError(rv::ErrorCode::IoError, "cannot open the file: access denied", std::string(relativePath));
+            return rv::makeError(rv::ErrorCode::IoError, "cannot open the file: access denied",
+                                 std::string(relativePath));
         }
         const auto found = files.find(std::string(relativePath));
         if (found == files.end()) {
@@ -107,7 +108,8 @@ public:
         source.snapshot.systems = {rv::test::scriptedSystem("gb")};
     }
 
-    /// The snapshot holds `present` on disk (and the fillers), and the gamelist entries of `missing` whose files are gone.
+    /// The snapshot holds `present` on disk (and the fillers), and the gamelist entries of `missing` whose files are
+    /// gone.
     void put(std::vector<File> present, const std::vector<std::string>& missing = {}) {
         files.files.clear();
         source.snapshot.entries.clear();
@@ -178,7 +180,9 @@ public:
         return std::move(*found);
     }
     std::vector<IdentityEvent> history(GameId id) { return catalog.store->history(id).value(); }
-    std::vector<StoredReview> reviews(bool openOnly = true) { return catalog.store->reviews(profile.id, openOnly).value(); }
+    std::vector<StoredReview> reviews(bool openOnly = true) {
+        return catalog.store->reviews(profile.id, openOnly).value();
+    }
     rv::catalog_db::Connection& writer() { return catalog.database->writer(); }
     std::int64_t count(const std::string& sql) { return writer().queryInt(sql).value().value_or(-1); }
 
@@ -382,7 +386,8 @@ TEST_CASE("catalog_db/reconciliation: without a stored hash a unique new file of
         }
     }
     SECTION("its name, another time: reviewed") {
-        library.put({File{"C/Game (USA).gb", 700, kTime + 70, "game"}, File{"A/Twin (USA).gb", 800, kTime + 8, "twin 1"},
+        library.put({File{"C/Game (USA).gb", 700, kTime + 70, "game"},
+                     File{"A/Twin (USA).gb", 800, kTime + 8, "twin 1"},
                      File{"B/Twin (USA).gb", 800, kTime + 8, "twin 2"}});
         const ImportResult result = library.import();
         CHECK(result.changes.moved.empty());
@@ -390,7 +395,8 @@ TEST_CASE("catalog_db/reconciliation: without a stored hash a unique new file of
         CHECK(result.changes.reviews[0].reason.find("its file name but not its size or time") != std::string::npos);
     }
     SECTION("nothing it could be: vanished, no review") {
-        library.put({File{"A/Twin (USA).gb", 800, kTime + 8, "twin 1"}, File{"B/Twin (USA).gb", 800, kTime + 8, "twin 2"},
+        library.put({File{"A/Twin (USA).gb", 800, kTime + 8, "twin 1"},
+                     File{"B/Twin (USA).gb", 800, kTime + 8, "twin 2"},
                      File{"Unrelated (USA).gb", 700, kTime + 7, "other"}});
         const ImportResult result = library.import();
         CHECK(result.changes.moved.empty());
@@ -402,13 +408,15 @@ TEST_CASE("catalog_db/reconciliation: without a stored hash a unique new file of
 TEST_CASE("catalog_db/reconciliation: ties go to the equal file name, then to the longest common path suffix",
           "[catalog_db][reconciliation]") {
     Library library("rv-reconcile-ties");
-    library.put({File{"A/Sub/Game (USA).gb", 900, kTime + 9, "game"}, File{"P/Quest (USA).gb", 901, kTime + 10, "quest"}});
+    library.put(
+        {File{"A/Sub/Game (USA).gb", 900, kTime + 9, "game"}, File{"P/Quest (USA).gb", 901, kTime + 10, "quest"}});
     library.import();
     library.hashPass();
     const GameId game = library.at("A/Sub/Game (USA).gb").id;
     const GameId quest = library.at("P/Quest (USA).gb").id;
     // Copies of each, every one with the hash: the paths alone tell them apart.
-    library.put({File{"B/Sub/Game (USA).gb", 900, kTime + 1, "game"}, File{"C/Other/Game (USA).gb", 900, kTime + 2, "game"},
+    library.put({File{"B/Sub/Game (USA).gb", 900, kTime + 1, "game"},
+                 File{"C/Other/Game (USA).gb", 900, kTime + 2, "game"},
                  File{"D/Renamed (USA).gb", 900, kTime + 3, "game"}, File{"R/Quest (USA).gb", 901, kTime + 4, "quest"},
                  File{"S/Elsewhere (USA).gb", 901, kTime + 5, "quest"}});
     const ImportResult result = library.import();
@@ -427,14 +435,16 @@ TEST_CASE("catalog_db/reconciliation: ties go to the equal file name, then to th
 TEST_CASE("catalog_db/reconciliation: identical copies moved together pair in key order; uneven copies are reviewed",
           "[catalog_db][reconciliation]") {
     Library library("rv-reconcile-copies");
-    library.put({File{"Copies/First (USA).gb", 500, kTime + 5, "copy"}, File{"Copies/Second (USA).gb", 500, kTime + 5, "copy"}});
+    library.put({File{"Copies/First (USA).gb", 500, kTime + 5, "copy"},
+                 File{"Copies/Second (USA).gb", 500, kTime + 5, "copy"}});
     library.import();
     library.hashPass();
     const GameId first = library.at("Copies/First (USA).gb").id;
     const GameId second = library.at("Copies/Second (USA).gb").id;
 
     SECTION("as many copies as identities, nothing to tell them apart: key order") {
-        library.put({File{"Moved/One (USA).gb", 500, kTime + 6, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"}});
+        library.put(
+            {File{"Moved/One (USA).gb", 500, kTime + 6, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"}});
         const ImportResult result = library.import();
         REQUIRE(result.changes.moved.size() == 2);
         CHECK(result.changes.moved[0].reason == MoveReason::IdenticalCopies);
@@ -445,7 +455,8 @@ TEST_CASE("catalog_db/reconciliation: identical copies moved together pair in ke
         library.checkSteady();
     }
     SECTION("more copies than identities: reviewed, nothing merged") {
-        library.put({File{"Moved/One (USA).gb", 500, kTime + 6, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"},
+        library.put({File{"Moved/One (USA).gb", 500, kTime + 6, "copy"},
+                     File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"},
                      File{"Moved/Three (USA).gb", 500, kTime + 6, "copy"}});
         const ImportResult result = library.import();
         CHECK(result.changes.moved.empty());
@@ -458,7 +469,8 @@ TEST_CASE("catalog_db/reconciliation: identical copies moved together pair in ke
         CHECK_FALSE(library.at("Copies/Second (USA).gb").present);
     }
     SECTION("a copy that cannot be read: reviewed, not paired by its hash") {
-        library.put({File{"Moved/One (USA).gb", 500, kTime + 6, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"}});
+        library.put(
+            {File{"Moved/One (USA).gb", 500, kTime + 6, "copy"}, File{"Moved/Two (USA).gb", 500, kTime + 6, "copy"}});
         library.files.denied = {"Moved/Two (USA).gb"};
         const ImportResult result = library.import();
         // One copy readable for two identities: neither is safe; the unreadable one is an issue and a candidate.
@@ -475,7 +487,8 @@ TEST_CASE("catalog_db/reconciliation: a review resolved by pairing applies the m
           "the next import changes nothing either",
           "[catalog_db][reconciliation]") {
     Library library("rv-reconcile-resolve");
-    library.put({File{"Kept (USA).gb", 600, kTime + 6, "kept", true}, File{"Other/Game (USA).gb", 610, kTime + 1, "g"}});
+    library.put(
+        {File{"Kept (USA).gb", 600, kTime + 6, "kept", true}, File{"Other/Game (USA).gb", 610, kTime + 1, "g"}});
     library.import();
     const GameId vanished = library.at("Kept (USA).gb").id;
     // Two copies of equal size, time and name elsewhere; the gamelist entry stays at the old path.
@@ -694,8 +707,10 @@ TEST_CASE("catalog_db/reconciliation: a file moved back keeps its identity; the 
     const std::vector<IdentityEvent> history = library.history(game);
     CHECK(std::any_of(history.begin(), history.end(),
                       [](const IdentityEvent& event) { return event.detail == "the holder's own"; }));
-    const std::size_t moves = static_cast<std::size_t>(std::count_if(
-        history.begin(), history.end(), [](const IdentityEvent& event) { return event.kind == IdentityEventKind::Moved; }));
+    const std::size_t moves =
+        static_cast<std::size_t>(std::count_if(history.begin(), history.end(), [](const IdentityEvent& event) {
+            return event.kind == IdentityEventKind::Moved;
+        }));
     CHECK(moves == 2);
     const auto aliasEvent = std::find_if(history.begin(), history.end(), [](const IdentityEvent& event) {
         return event.kind == IdentityEventKind::Alias;
@@ -856,8 +871,8 @@ TEST_CASE("catalog_db/reconciliation: the pass skips files changed or gone since
     CHECK_FALSE(currentQuickHash(stale).has_value());
 
     // A stale hash says nothing of the content that vanished: moved now, it pairs by size, time and name.
-    library.put({File{"Sub/Stable (USA).gb", 101, kTime + 30, "stable 2"}, File{"Changed (USA).gb", 111, kTime + 20, "c2"},
-                 File{"Denied (USA).gb", 130, kTime + 4, "d"}});
+    library.put({File{"Sub/Stable (USA).gb", 101, kTime + 30, "stable 2"},
+                 File{"Changed (USA).gb", 111, kTime + 20, "c2"}, File{"Denied (USA).gb", 130, kTime + 4, "d"}});
     const ImportResult moved = library.import();
     REQUIRE(moved.changes.moved.size() == 1);
     CHECK(moved.changes.moved[0].reason == MoveReason::SizeTimeName);
@@ -867,7 +882,8 @@ TEST_CASE("catalog_db/reconciliation: the pass skips files changed or gone since
     CHECK(currentQuickHash(library.at("Sub/Stable (USA).gb")).has_value());
 }
 
-TEST_CASE("catalog_db/reconciliation: the quick-hash pass and an import never overlap", "[catalog_db][reconciliation]") {
+TEST_CASE("catalog_db/reconciliation: the quick-hash pass and an import never overlap",
+          "[catalog_db][reconciliation]") {
     Library library("rv-reconcile-overlap");
     library.put({File{"One (USA).gb", 100, kTime + 1, "one"}, File{"Two (USA).gb", 200, kTime + 2, "two"}});
     library.import();

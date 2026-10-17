@@ -49,14 +49,16 @@ Expected<QuickHash> readQuickHash(const std::filesystem::path& file) {
         digest = core::sha256(whole);
     } else {
         const std::span<std::byte> head(buffer.data(), static_cast<std::size_t>(kQuickHashPartBytes));
-        const std::span<std::byte> tail(buffer.data() + kQuickHashPartBytes, static_cast<std::size_t>(kQuickHashPartBytes));
+        const std::span<std::byte> tail(buffer.data() + kQuickHashPartBytes,
+                                        static_cast<std::size_t>(kQuickHashPartBytes));
         if (auto read = reader->read(0, head); !read) {
             return propagate(read.error());
         }
         if (auto read = reader->read(size - kQuickHashPartBytes, tail); !read) {
             return propagate(read.error());
         }
-        digest = core::sha256(std::span<const std::byte>(buffer.data(), static_cast<std::size_t>(kQuickHashWholeFileLimit)));
+        digest =
+            core::sha256(std::span<const std::byte>(buffer.data(), static_cast<std::size_t>(kQuickHashWholeFileLimit)));
     }
     // A file written while it was read would give a hash of neither its old nor its new content.
     const auto after = reader->facts();

@@ -626,7 +626,8 @@ std::string sqlOf(Sql which) {
         return "INSERT INTO rv_game_identities (id, library, system, lookup_key, relative_path, key_rule, key_casing, "
                "present, is_directory, file_size, file_time, file_hidden, first_seen, last_seen, quick_hash, "
                "quick_hash_size, quick_hash_time) "
-               "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, CASE WHEN ?8 THEN ?13 END, ?14, ?15, ?16) "
+               "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, CASE WHEN ?8 THEN ?13 END, ?14, ?15, "
+               "?16) "
                "ON CONFLICT (id) DO UPDATE SET library = excluded.library, system = excluded.system, "
                "lookup_key = excluded.lookup_key, relative_path = excluded.relative_path, "
                "key_rule = excluded.key_rule, key_casing = excluded.key_casing, present = excluded.present, "
@@ -742,7 +743,8 @@ std::string sqlOf(Sql which) {
     case Sql::DeleteIdentity:
         return "DELETE FROM rv_game_identities WHERE id = ?1";
     case Sql::UpdateQuickHash:
-        return "UPDATE rv_game_identities SET quick_hash = ?2, quick_hash_size = ?3, quick_hash_time = ?4 WHERE id = ?1";
+        return "UPDATE rv_game_identities SET quick_hash = ?2, quick_hash_size = ?3, quick_hash_time = ?4 WHERE id = "
+               "?1";
     case Sql::InsertHistory:
         return "INSERT INTO rv_identity_history (game, at, event, reason, from_key, from_path, to_key, to_path, alias, "
                "review, detail) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)";
@@ -774,7 +776,8 @@ std::string sqlOf(Sql which) {
     case Sql::SelectStateReferences:
         // Every column of a state table (rv_*) that names an identity through a foreign key of its own, whatever step
         // made the table: what putAlias() moves to the identity an alias stands for. Index tables (idx_*) are not
-        // state: putAlias() removes their rows. Only single-column keys into the identity's GameId (or its primary key).
+        // state: putAlias() removes their rows. Only single-column keys into the identity's GameId (or its primary
+        // key).
         return "SELECT m.name, f.\"from\" FROM sqlite_schema AS m JOIN pragma_foreign_key_list(m.name) AS f "
                "WHERE m.type = 'table' AND substr(m.name, 1, 3) = 'rv_' AND f.\"table\" = 'rv_game_identities' "
                "COLLATE NOCASE AND (f.\"to\" IS NULL OR f.\"to\" = 'id' COLLATE NOCASE) AND f.seq = 0 "
@@ -1322,8 +1325,9 @@ struct SqliteCatalogStore::State {
     }
 
     /// The statements that move the state rows naming an identity to another (putAlias()): per column of a state table
-    /// with a foreign key into rv_game_identities, an UPDATE OR IGNORE and a DELETE of what it left. Found in the schema
-    /// on first use (the schema does not change while the database is open: a migration needs it closed elsewhere).
+    /// with a foreign key into rv_game_identities, an UPDATE OR IGNORE and a DELETE of what it left. Found in the
+    /// schema on first use (the schema does not change while the database is open: a migration needs it closed
+    /// elsewhere).
     struct Repoint {
         std::string table;
         std::string column;
@@ -2198,8 +2202,8 @@ Expected<std::int64_t> SqliteCatalogStore::ImportTransaction::putReview(const ca
         return propagate(open.error());
     }
     const std::string context = review.game.toString();
-    if (review.vanished.empty() ||
-        std::any_of(review.candidates.begin(), review.candidates.end(), [](const LookupKey& key) { return key.empty(); })) {
+    if (review.vanished.empty() || std::any_of(review.candidates.begin(), review.candidates.end(),
+                                               [](const LookupKey& key) { return key.empty(); })) {
         return makeError(ErrorCode::InvalidArgument, "a review row needs the vanished path and its candidates' paths",
                          context);
     }
@@ -2247,7 +2251,8 @@ Status SqliteCatalogStore::ImportTransaction::resolveReview(std::int64_t id, cat
         ->bindInt(1, id)
         .bindText(2, m_now)
         .bindText(3, catalog::toString(resolution))
-        .bindOptionalInt(4, with ? std::optional<std::int64_t>(static_cast<std::int64_t>(with->value())) : std::nullopt);
+        .bindOptionalInt(4,
+                         with ? std::optional<std::int64_t>(static_cast<std::int64_t>(with->value())) : std::nullopt);
     if (auto stored = (*update)->run(); !stored) {
         return propagate(failed(withPrefix(stored.error(), "cannot resolve the " + context)));
     }

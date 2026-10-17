@@ -1,9 +1,9 @@
 // retroverse-cli identities (I2 step 11b) through the dispatcher, on the standard ES-DE fixture: the quick-hash pass
 // (figures, resumed with nothing left, an unreadable file reported with exit 1), SC-07 on disk (a file renamed and one
 // moved, their gamelist entries left behind: the import pairs them by quick hash, `list` and `show` give the history),
-// review rows (identical copies of one name: `reviews`, `resolve --with`, `resolve --keep-separate`, then an import that
-// changes nothing), usage errors and exit codes, and the import lock: the pass and a resolution refused while an import
-// holds it, also from a second process, and an import of a second process refused while the pass runs.
+// review rows (identical copies of one name: `reviews`, `resolve --with`, `resolve --keep-separate`, then an import
+// that changes nothing), usage errors and exit codes, and the import lock: the pass and a resolution refused while an
+// import holds it, also from a second process, and an import of a second process refused while the pass runs.
 
 #include <catch2/catch_test_macros.hpp>
 

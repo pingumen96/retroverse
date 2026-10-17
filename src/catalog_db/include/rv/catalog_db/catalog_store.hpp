@@ -53,11 +53,11 @@
 // the aliases (rv_identity_aliases) are written and read. putAlias() first resolves the holder's open review rows
 // (Aliased), then moves every state row that names the holder to the identity it stands for: the columns of the state
 // tables (rv_*, never idx_*) with a single-column foreign key into rv_game_identities are found in the schema
-// (pragma_foreign_key_list over sqlite_schema, once per store), so that the tables later steps add (play sessions, launch
-// choices) are covered without this store knowing them; for each, an UPDATE OR IGNORE then a DELETE of what is left: a
-// table that holds one row per game keeps the row the moved identity has and drops the holder's (the moved identity's
-// choice wins), every other row follows. Aliases that stood for the holder thus stand for the moved identity (aliases
-// never chain).
+// (pragma_foreign_key_list over sqlite_schema, once per store), so that the tables later steps add (play sessions,
+// launch choices) are covered without this store knowing them; for each, an UPDATE OR IGNORE then a DELETE of what is
+// left: a table that holds one row per game keeps the row the moved identity has and drops the holder's (the moved
+// identity's choice wins), every other row follows. Aliases that stood for the holder thus stand for the moved identity
+// (aliases never chain).
 
 #include <cstddef>
 #include <cstdint>

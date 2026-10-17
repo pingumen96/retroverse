@@ -109,8 +109,8 @@ CREATE INDEX rv_identity_aliases_game ON rv_identity_aliases (game);
 
 -- Vanished identities no pairing was safe for (ReviewRow, StoredReview, I2 step 11b): the user decides; the ids are
 -- shown to the user. The candidates are the new files' relative paths in key order (a JSON array). Resolved: when, how
--- (ReviewResolution) and with which identity (the one paired with, now an alias; or the one the vanished identity became
--- an alias of): a GameId that may name no identity any more, hence no foreign key.
+-- (ReviewResolution) and with which identity (the one paired with, now an alias; or the one the vanished identity
+-- became an alias of): a GameId that may name no identity any more, hence no foreign key.
 CREATE TABLE rv_identity_reviews (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     game          INTEGER NOT NULL REFERENCES rv_game_identities (id),

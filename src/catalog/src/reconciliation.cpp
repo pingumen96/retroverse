@@ -301,7 +301,8 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         ReviewDraft& draft = drafts[v];
         const auto unpaired = [&](const std::vector<std::size_t>& from) {
             std::vector<std::size_t> left;
-            std::copy_if(from.begin(), from.end(), std::back_inserter(left), [&](std::size_t f) { return !fileUsed[f]; });
+            std::copy_if(from.begin(), from.end(), std::back_inserter(left),
+                         [&](std::size_t f) { return !fileUsed[f]; });
             return left;
         };
         // Rule 1's ties are in the draft already (the files of a hash group are never paired by rule 2).
@@ -598,7 +599,8 @@ Expected<ReviewResolutionResult> resolveReview(ICatalogStore& store, const Libra
         if (auto put = (*transaction)->putHistory(event); !put) {
             return propagate(put.error());
         }
-        if (auto resolved = (*transaction)->resolveReview(decision.review, ReviewResolution::KeptSeparate, std::nullopt);
+        if (auto resolved =
+                (*transaction)->resolveReview(decision.review, ReviewResolution::KeptSeparate, std::nullopt);
             !resolved) {
             return propagate(resolved.error());
         }

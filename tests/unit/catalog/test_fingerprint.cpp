@@ -1,8 +1,9 @@
 // The quick hash (I2 step 11b, rv/catalog/fingerprint.hpp): its golden vectors, computed by an independent oracle
 // (scripts/quick_hash_oracle.py, Python's hashlib; `python -I scripts/quick_hash_oracle.py --check
 // tests/unit/catalog/test_fingerprint.cpp` must pass), on generated contents and on files; what a file reads (its two
-// ends, never more than 128 KiB, never written), names ending with a dot or a space, paths past MAX_PATH, a file another
-// program holds open for writing, the errors (missing, a folder, denied); a hash current or stale for file facts.
+// ends, never more than 128 KiB, never written), names ending with a dot or a space, paths past MAX_PATH, a file
+// another program holds open for writing, the errors (missing, a folder, denied); a hash current or stale for file
+// facts.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -77,7 +78,8 @@ void writeFile(const fs::path& path, const std::string& text) {
     REQUIRE(rv::test::writeFileAnyLength(path, text).has_value());
 }
 
-/// Creates `relativeUtf8` ('/' between the elements) below `root` with `text`, every element exactly as written (through
+/// Creates `relativeUtf8` ('/' between the elements) below `root` with `text`, every element exactly as written
+/// (through
 /// \\?\ paths: a trailing dot or space kept), the folders above it included.
 void writeExact(const fs::path& root, std::string_view relativeUtf8, const std::string& text) {
     std::wstring path = rv::core::extendedLengthPath(root);
@@ -91,7 +93,8 @@ void writeExact(const fs::path& root, std::string_view relativeUtf8, const std::
         REQUIRE((CreateDirectoryW(path.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS));
         rest.remove_prefix(slash + 1);
     }
-    const HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    const HANDLE file =
+        CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     REQUIRE(file != INVALID_HANDLE_VALUE);
     DWORD written = 0;
     const BOOL done = WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
@@ -213,7 +216,8 @@ TEST_CASE("catalog/fingerprint: a file that cannot be read is an error, never a 
     CHECK(readQuickHash(denied).has_value());
 }
 
-TEST_CASE("catalog/fingerprint: a quick hash is current while the file has its size and time", "[catalog][fingerprint]") {
+TEST_CASE("catalog/fingerprint: a quick hash is current while the file has its size and time",
+          "[catalog][fingerprint]") {
     const QuickHash hash{quickHashDigest({}), 1024, 5000};
     CHECK(isCurrent(hash, FileFacts{false, 1024, 5000, false}));
     CHECK(isCurrent(hash, FileFacts{false, 1024, 5000, true})); // hidden or not

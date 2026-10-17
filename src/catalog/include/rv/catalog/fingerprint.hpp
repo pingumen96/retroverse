@@ -8,7 +8,8 @@
 //
 // The quick hash, exactly (rule kQuickHashRule; scripts/quick_hash_oracle.py computes the golden vectors with Python's
 // hashlib, tests/unit/catalog/test_fingerprint.cpp holds them):
-//  - a file of n bytes, n <= 131,072 (2 x 64 KiB): SHA-256 of its whole content, each byte once; the empty file hashes to
+//  - a file of n bytes, n <= 131,072 (2 x 64 KiB): SHA-256 of its whole content, each byte once; the empty file hashes
+//  to
 //    SHA-256 of nothing (e3b0c442...b855);
 //  - a file of n > 131,072 bytes: SHA-256 of its bytes [0, 65,536) followed by its bytes [n - 65,536, n);
 //  - nothing else enters the digest (neither the size nor the name): the pairing compares sizes before it compares
@@ -71,11 +72,13 @@ struct QuickHash {
 
 /// Reads the quick hash of the file `relativePath` (as a walk lists it: LookupKey::relativePath()) below `folder` (a
 /// system's ROM folder), reached through core::extendedLengthPathBelow(): any length, names ending with a dot or a
-/// space included. Errors: InvalidArgument for a relative path that names no file below `folder`, and readQuickHash()'s.
-[[nodiscard]] Expected<QuickHash> readQuickHashBelow(const std::filesystem::path& folder, std::string_view relativePath);
+/// space included. Errors: InvalidArgument for a relative path that names no file below `folder`, and
+/// readQuickHash()'s.
+[[nodiscard]] Expected<QuickHash> readQuickHashBelow(const std::filesystem::path& folder,
+                                                     std::string_view relativePath);
 
-/// How the reconciliation passes read quick hashes: readQuickHashBelow() unless a test gives its own (to count the files
-/// read, to fail some, to cancel in the middle).
+/// How the reconciliation passes read quick hashes: readQuickHashBelow() unless a test gives its own (to count the
+/// files read, to fail some, to cancel in the middle).
 using QuickHashReader =
     std::function<Expected<QuickHash>(const std::filesystem::path& folder, std::string_view relativePath)>;
 

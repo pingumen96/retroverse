@@ -161,7 +161,8 @@ void moveEvents(const MovedGame& move, const IdentityAlias* alias, std::vector<I
     moved.toPath = move.to.relativePath();
     moved.detail = moveDetail(move.reason);
     if (alias != nullptr) {
-        moved.detail += fmt::format("; back where {} held its path meanwhile, now its alias", alias->alias.id.toString());
+        moved.detail +=
+            fmt::format("; back where {} held its path meanwhile, now its alias", alias->alias.id.toString());
     }
     history.push_back(std::move(moved));
     if (alias != nullptr) {
@@ -497,15 +498,18 @@ Status ImportRun::match(SystemPlan& plan) {
             fileHashed[f - newFiles.begin()] = true;
             plan.entryHash[newFileIndex[static_cast<std::size_t>(f - newFiles.begin())]] = hashed.hash;
         }
-        // Review rows name vanished identities it left unpaired.
+        // Review rows name vanished identities it left unpaired, each once.
+        std::vector<bool> reviewed(vanished.size(), false);
         for (ReviewRow& review : pairs->reviews) {
-            const auto v = std::find_if(vanished.begin(), vanished.end(),
-                                        [&](const VanishedIdentity& candidate) { return candidate.identity.id == review.game; });
-            if (v == vanished.end() || identityUsed[v - vanished.begin()]) {
+            const auto v = std::find_if(vanished.begin(), vanished.end(), [&](const VanishedIdentity& candidate) {
+                return candidate.identity.id == review.game;
+            });
+            if (v == vanished.end() || identityUsed[v - vanished.begin()] || reviewed[v - vanished.begin()]) {
                 return makeError(ErrorCode::InvalidArgument,
-                                 "the pairing pass made a review row of an identity it was not given, or paired",
+                                 "the pairing pass made a review row of an identity it was not given, paired, or twice",
                                  review.game.toString());
             }
+            reviewed[v - vanished.begin()] = true;
             review.id = 0;
             review.system = plan.name;
         }

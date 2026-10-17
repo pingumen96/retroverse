@@ -293,7 +293,8 @@ Status SharedFileReader::read(std::uint64_t offset, std::span<std::byte> out) co
         position.Offset = static_cast<DWORD>(at & 0xFFFF'FFFFu);
         position.OffsetHigh = static_cast<DWORD>(at >> 32);
         DWORD read = 0;
-        if (m_handle == nullptr || !ReadFile(static_cast<HANDLE>(m_handle), out.data() + done, wanted, &read, &position)) {
+        if (m_handle == nullptr ||
+            !ReadFile(static_cast<HANDLE>(m_handle), out.data() + done, wanted, &read, &position)) {
             const DWORD error = m_handle == nullptr ? ERROR_INVALID_HANDLE : GetLastError();
             if (error == ERROR_HANDLE_EOF) {
                 return makeError(ErrorCode::IoError,

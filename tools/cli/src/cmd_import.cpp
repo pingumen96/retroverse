@@ -4,9 +4,11 @@
 //    into <user data>/database/retroverse.sqlite (made and migrated when needed) with catalog::ImportService
 //    (runCatalogImport(), import_text.hpp, shared with `db rebuild-index`): identities given out and matched, the
 //    index rows written where they changed, the disc groups with their references, the media presence, the
-//    availability of every folder, the mass-disappearance guard, the gamelists that failed kept; then prints the
-//    ChangeSet per system (added, changed, removed, unchanged, unavailable, kept, issues, the outcome), the identities'
-//    changes, the issues and the times. --system imports that system only (the others stay as they are);
+//    availability of every folder, the mass-disappearance guard, the gamelists that failed kept, files moved or renamed
+//    paired with their identities (catalog::IdentityPairing, I2 step 11b: by quick hash, or a unique size, time and
+//    name; the rest left as review rows for `retroverse-cli identities`); then prints the ChangeSet per system (added,
+//    changed, removed, unchanged, unavailable, kept, issues, the outcome), the identities' changes with each move and
+//    review row, the issues and the times. --system imports that system only (the others stay as they are);
 //    --accept-removals applies the removals the guard holds back. The library must be the catalog's: a library.json
 //    naming another library is refused until it names the catalog's again (re-association: `retroverse-cli library
 //    create --id <the catalog's library> --force`).
@@ -457,8 +459,9 @@ std::string importText(const CatalogImportRequest& request, const catalog::Libra
     line("");
     line(fmt::format("{} systems looked at, {} listed above; the catalog holds {} rows of them", changes.systems.size(),
                      listed, total.rows()));
-    line(fmt::format("Identities: {} new, {} vanished, {} back, {} re-keyed, {} moved, {} to review", total.newIdentities,
-                     total.vanished, total.returned, total.rekeyed, total.moved, changes.reviews.size()));
+    line(fmt::format("Identities: {} new, {} vanished, {} back, {} re-keyed, {} moved, {} to review",
+                     total.newIdentities, total.vanished, total.returned, total.rekeyed, total.moved,
+                     changes.reviews.size()));
     for (const catalog::MovedGame& move : changes.moved) {
         line(fmt::format("  moved {} {}: {} -> {} ({}{})", move.id.toString(), move.system.str(),
                          move.from.relativePath(), move.to.relativePath(), catalog::toString(move.reason),

@@ -211,14 +211,15 @@ std::string_view hashStateOf(const catalog::StoredIdentity& identity) {
 }
 
 Json identityJson(const catalog::StoredIdentity& identity) {
-    Json json{{"id", identity.id.toString()},
-              {"library", identity.library.str()},
-              {"system", identity.system.str()},
-              {"relativePath", identity.key.relativePath()},
-              {"key", identity.key.key()},
-              {"keyVersion", Json{{"rule", identity.keyVersion.rule}, {"casingTable", identity.keyVersion.casingTable}}},
-              {"state", stateOf(identity)},
-              {"present", identity.present}};
+    Json json{
+        {"id", identity.id.toString()},
+        {"library", identity.library.str()},
+        {"system", identity.system.str()},
+        {"relativePath", identity.key.relativePath()},
+        {"key", identity.key.key()},
+        {"keyVersion", Json{{"rule", identity.keyVersion.rule}, {"casingTable", identity.keyVersion.casingTable}}},
+        {"state", stateOf(identity)},
+        {"present", identity.present}};
     json["file"] = identity.file ? Json{{"directory", identity.file->directory},
                                         {"size", identity.file->size},
                                         {"lastWriteTime", fileTimeText(identity.file->lastWriteTime)},
@@ -591,8 +592,8 @@ ExitCode listReviews(CommandContext& context, Arguments& arguments) {
     if (system) {
         std::erase_if(*reviews, [&](const catalog::StoredReview& review) { return review.review.system != *system; });
     }
-    const std::size_t open = static_cast<std::size_t>(
-        std::count_if(reviews->begin(), reviews->end(), [](const catalog::StoredReview& review) { return review.open(); }));
+    const std::size_t open = static_cast<std::size_t>(std::count_if(
+        reviews->begin(), reviews->end(), [](const catalog::StoredReview& review) { return review.open(); }));
     IdentitiesByPath byPath(*catalog->store, *library);
     if (arguments.json) {
         Json list = Json::array();
@@ -805,17 +806,19 @@ ExitCode hashFiles(CommandContext& context, Arguments& arguments) {
                                      {"issues", std::move(issues)}}),
                        exit);
     }
-    std::string text = fmt::format("Quick hashes of library {}{}: {} identities: {} not present, {} folder(s), {} with "
-                                   "a current quick hash, {} to hash{}\n",
-                                   library->str(), options.system ? " (" + options.system->str() + ")" : std::string(),
-                                   pass.identities, pass.notPresent, pass.folders, pass.current, pass.candidates,
-                                   options.limit == 0 ? std::string() : fmt::format(" (at most {} now)", options.limit));
+    std::string text =
+        fmt::format("Quick hashes of library {}{}: {} identities: {} not present, {} folder(s), {} with "
+                    "a current quick hash, {} to hash{}\n",
+                    library->str(), options.system ? " (" + options.system->str() + ")" : std::string(),
+                    pass.identities, pass.notPresent, pass.folders, pass.current, pass.candidates,
+                    options.limit == 0 ? std::string() : fmt::format(" (at most {} now)", options.limit));
     text += fmt::format("Hashed {} file(s) in {} batch(es): {} changed since the last import, {} gone, {} unreadable, "
                         "{} out of reach, {} left; {:.1f} MiB read in {:.2f} s\n",
                         pass.hashed, pass.batches, pass.changed, pass.gone, pass.unreadable, pass.unavailable,
                         pass.remaining, mebibytes, seconds);
     if (pass.changed > 0 || pass.gone > 0) {
-        text += "Files changed or gone since the last import are hashed after the next one ('retroverse-cli import').\n";
+        text +=
+            "Files changed or gone since the last import are hashed after the next one ('retroverse-cli import').\n";
     }
     if (pass.remaining > 0) {
         text += "Run 'retroverse-cli identities hash' again to go on with what is left.\n";

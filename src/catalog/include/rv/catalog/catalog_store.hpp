@@ -15,17 +15,17 @@
 // Step 11b (reconciliation, reconciliation.hpp) adds: the quick hash of an identity's file, read with the identity
 // (StoredIdentity::quickHash) and written with it, or alone (IImportTransaction::putQuickHash(), the quick-hash pass);
 // the identities' history (IdentityEvent: moves with their reason, aliases, keys computed again, reviews resolved), the
-// aliases kept (StoredAlias) and the review rows (StoredReview), read and written; putAlias() moving every state row that
-// names the holder to the identity it stands for. Play sessions have their own store (rv_catalog_db's session store,
-// step 12).
+// aliases kept (StoredAlias) and the review rows (StoredReview), read and written; putAlias() moving every state row
+// that names the holder to the identity it stands for. Play sessions have their own store (rv_catalog_db's session
+// store, step 12).
 //
 // Reads and the import transaction: an instance has one connection. Its reads made while one of its import
 // transactions is open see that transaction's writes; other connections and processes see them only once committed.
 // Whatever writes identities, aliases or index rows holds the import lock (the import; step 11b's quick-hash pass and
-// review resolution take it too, and write through import transactions of their own), so the import reads the identities, the taken GameIds and the index rows it compares
-// with the snapshot under the import lock alone, before its write transaction: nothing can change them between its
-// reads and its writes, and the other writers of the database (play sessions, launch choices) wait only for its
-// writes.
+// review resolution take it too, and write through import transactions of their own), so the import reads the
+// identities, the taken GameIds and the index rows it compares with the snapshot under the import lock alone, before
+// its write transaction: nothing can change them between its reads and its writes, and the other writers of the
+// database (play sessions, launch choices) wait only for its writes.
 
 #include <cstddef>
 #include <cstdint>
@@ -309,9 +309,9 @@ public:
     [[nodiscard]] virtual Status putDiscGroup(const IndexedDiscGroup& group) = 0;
     /// Removes the disc group headed by `head` (nothing when there is none).
     [[nodiscard]] virtual Status removeDiscGroup(GameId head) = 0;
-    /// Turns the identity `alias.alias` into an alias of `alias.game`: its open review rows are resolved (Aliased); every
-    /// state row that names it is moved to `alias.game` (its history, its review rows, the aliases that stand for it,
-    /// play sessions and launch choices: whatever state table names an identity, rv_catalog_db finds them in the
+    /// Turns the identity `alias.alias` into an alias of `alias.game`: its open review rows are resolved (Aliased);
+    /// every state row that names it is moved to `alias.game` (its history, its review rows, the aliases that stand for
+    /// it, play sessions and launch choices: whatever state table names an identity, rv_catalog_db finds them in the
     /// schema), a row of `alias.game` taking precedence in a table that holds one per game; the index rows that name it
     /// (its entry and media, the disc group it heads, its place among the members of other groups, which the import
     /// writes again) are removed; its GameId is recorded among the aliases with its key and relative path; and its

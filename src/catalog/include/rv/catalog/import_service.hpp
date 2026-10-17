@@ -77,13 +77,14 @@
 // IImportTransaction::putAlias(), written before any identity so that its path is free; its index rows leave). The
 // guard counts what stays gone after the pairing. Identities that exist are written before new ones, so that the old
 // path of a moved identity is free when the new identity of that path is written. Without a pairing pass (11a), a moved
-// file is a vanished identity and a new one. The pass runs under the import lock, outside the write transaction: what it
-// reads of the store (quick hashes) cannot change meanwhile, and hashing new files keeps no other writer waiting.
+// file is a vanished identity and a new one. The pass runs under the import lock, outside the write transaction: what
+// it reads of the store (quick hashes) cannot change meanwhile, and hashing new files keeps no other writer waiting.
 // What the import writes of reconciliation (I2 step 11b), after the identities: the history of each move (its reason
-// and evidence) and of each alias (MoveReason::MovedBack), of each identity re-keyed; the review rows (ChangeSet::reviews
-// take their ids); the open review rows of identities whose file came back resolved (ReviewResolution::Returned); and,
-// with the identities, the quick hashes the pairing pass read (IdentityPairs::hashes), on the identities their files end
-// with. catalog::IdentityPairing (reconciliation.hpp) is the pass of ADR-0008 §4.
+// and evidence) and of each alias (MoveReason::MovedBack), of each identity re-keyed; the review rows
+// (ChangeSet::reviews take their ids); the open review rows of identities whose file came back resolved
+// (ReviewResolution::Returned); and, with the identities, the quick hashes the pairing pass read
+// (IdentityPairs::hashes), on the identities their files end with. catalog::IdentityPairing (reconciliation.hpp) is the
+// pass of ADR-0008 §4.
 
 #include <atomic>
 #include <chrono>
@@ -222,8 +223,8 @@ struct IdentityPair {
     bool operator==(const IdentityPair&) const = default;
 };
 
-/// The quick hash of a new file that the pairing pass read (I2 step 11b): the import stores it with the identity the file
-/// ends with (moved, held or new), sparing the quick-hash pass that file.
+/// The quick hash of a new file that the pairing pass read (I2 step 11b): the import stores it with the identity the
+/// file ends with (moved, held or new), sparing the quick-hash pass that file.
 struct NewFileHash {
     /// NewFile::key.
     LookupKey file;
