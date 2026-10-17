@@ -11,7 +11,8 @@ window (Windows Terminal as the default terminal application: it belongs to the 
 tree) when it owns, or appears with, the pseudo console window of a test process.
 
 Findings, which make the exit code 1:
-  - a foreground change to a window of a test process;
+  - a foreground change to a window of a test process (also a window activated in its own thread without taking the
+    foreground: Windows raises EVENT_SYSTEM_FOREGROUND for it too, and automated tests never activate a window);
   - a visible top-level window of a test process on a monitor (minimized windows count: they sit in the taskbar), at
     any time while it stays visible: a window first shown off-screen, cloaked or empty is looked at again on every
     poll, and becomes a finding when it moves onto a monitor, is uncloaked or grows;

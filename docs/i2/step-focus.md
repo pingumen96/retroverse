@@ -74,7 +74,7 @@ user's run, never sets it; ADR-0006's behaviour is unchanged without it):
   like the fake's background window: still a visible window for the runner's window detection, no taskbar button of a
   minimized window. Checked with a scratch Win32 program (`CW_USEDEFAULT`, then `ShowWindow` with the `WinMain`
   value, `SW_SHOW`, `SW_SHOWNORMAL` and `SW_SHOWDEFAULT`): each window opened at (-8000, 0), visible, not minimized,
-  not in the foreground. A program that places or activates its window itself escapes this, and `focus_watch.py`
+  not in the foreground and not even active in its own thread (`GetActiveWindow`). A program that places or activates its window itself escapes this, and `focus_watch.py`
   reports it: such a test is a desktop test;
 - no `AllowSetForegroundWindow` (`Win32StartInfo::foregroundError` says why, the log line reads `in the background:
   RV_LAUNCH_BACKGROUND`);
@@ -124,8 +124,13 @@ defaults (an assertion failing in them would still show its box: BACKLOG candida
 `rv_fake_emulator` reads the same variable. With it:
 
 - `--frames` shows a 320x180 tool window (`SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY`: no taskbar button), placed
-  2000 px left of the virtual screen at the bottom of the z-order and shown with `SW_SHOWNOACTIVATE`; no fullscreen, no
-  exclusive mode (a warning in its log). It is still a visible top-level window with a non-empty rectangle, so the
+  2000 px left of the virtual screen at the bottom of the z-order and shown by `SetWindowPos(..., SWP_NOACTIVATE |
+  SWP_SHOWWINDOW)`; no fullscreen, no exclusive mode (a warning in its log). It used to be shown by
+  `ShowWindow(SW_SHOWNOACTIVATE)`, which (as the process's first `ShowWindow`, which Windows gives the STARTUPINFO's
+  show command) activated it in its own thread: it never took the foreground (a tight `GetForegroundWindow` poll saw
+  no change), but Windows raised `EVENT_SYSTEM_FOREGROUND` for it, which the fixed `focus_watch.py` reported as a
+  foreground change to a test process in every run of the window test (found after the review, fixed: the window is
+  now never active, `GetActiveWindow` checked). It is still a visible top-level window with a non-empty rectangle, so the
   runner's window detection (`WindowShown`, the window timeout) sees it;
 - `--steal-focus`, `--input-at-end` (no `SendInput`), `--leave-foreground-window` and `--foreground-window` are skipped;
   its `--log` records `background: true` and `skipped` for each;
@@ -140,7 +145,8 @@ failed `_ASSERTE` (Debug builds) and `abort()`: both are reported on standard er
 [--interval-ms 20] [-- <command...>]` (Python 3.10+, standard library and ctypes; read-only: it never sends input, never
 activates, moves or closes a window and never ends a process). It runs the command (inheriting its console) or watches
 for `--duration` seconds. It follows the foreground with an out-of-context `EVENT_SYSTEM_FOREGROUND` hook (so that a
-foreground change shorter than a poll is recorded too; the report's `foregroundHook` says whether it was set) and a
+foreground change shorter than a poll is recorded too, and a window activated in its own thread without taking the
+foreground, for which Windows raises the event as well; the report's `foregroundHook` says whether it was set) and a
 `GetForegroundWindow` poll every 20 ms, polls `EnumWindows`, and records each foreground change and each top-level
 window that becomes visible: time, window handle, title, class, rectangle, minimized, cloaked, on a monitor,
 `WS_EX_NOACTIVATE`/`WS_EX_TOOLWINDOW`, the owning process id, its image path and its parent chain. A window first seen
@@ -306,3 +312,6 @@ Two reviews of the committed step reported eight findings (two pairs were the sa
 - The C runtime's message boxes were not covered by the error mode: `disableFailureDialogs()` (above).
 - The runner's `SW_SHOWMINNOACTIVE` for GUI programs contradicted the checker: off-screen and inactive instead.
 - `tests/unit/support/background_launches.cpp` named a test file that does not exist: it names the real check.
+
+The first full run with the fixed watcher found one more culprit, which polling alone had missed: the fake's background
+window was activated in its own thread when shown (above, "The fake emulator in the background"). Fixed in the fake.

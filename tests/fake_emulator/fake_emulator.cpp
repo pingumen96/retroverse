@@ -569,8 +569,10 @@ void runForegroundWindow(const Options& options, nlohmann::json& log) {
     // With the report modes and the abort behaviour of disableFailureDialogs (main), the failed assertion is written to
     // standard error and the run goes on, and abort() ends the process with exit code 3, without a message box (which
     // would take the foreground and wait for a click) and without error reporting.
+#if defined(_DEBUG)
     volatile bool holds = false;
     _ASSERTE(holds);
+#endif
     std::abort();
 }
 
