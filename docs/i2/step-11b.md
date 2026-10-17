@@ -53,8 +53,12 @@ Rule 1 (`kQuickHashRule`), `quickHashDigest()`:
 `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`, through `\\?\` paths; `readQuickHashBelow()` reaches a name a
 walk listed with `core::extendedLengthPathBelow()`, trailing dots and spaces kept), reads at most 128 KiB (two
 positioned reads, or one), checks that the handle's size and time are the same after the reads as before (a file written
-meanwhile is an `IoError`, never a hash half old, half new), and writes nothing. The hash is stored with the size and
-time **a listing gives** (`core::listedFileFacts()`: the file's directory entry, or for a symbolic link the file it
+meanwhile is an `IoError`, never a hash half old, half new), and, when the handle's facts differ from the listing's,
+lists the file again after the reads: a listing that changed is an `IoError` too (a file replaced between the listing
+and the open, by an atomic replace or an extraction, never a hash of the new content stored with the old file's facts),
+a listing that stayed as it was is a directory entry lagging behind (below); it writes nothing.
+`detail::readQuickHashObserved()` calls an observer after the listing, the open and the reads, so that tests change the
+file at those moments. The hash is stored with the size and time **a listing gives** (`core::listedFileFacts()`: the file's directory entry, or for a symbolic link the file it
 leads to, exactly as `walkTree()` and so the import see it; on NTFS a directory entry's copy can lag behind the file
 record the handle reads, for a hard link written through another name), in `QuickHash::size`, `lastWriteTime` and the
 schema's `quick_hash_size`, `quick_hash_time`; it is **current** while they equal the identity's file facts
@@ -80,10 +84,15 @@ KiB + 1, 192 KiB, 1 MiB + 7 bytes; a linear congruential generator, no short per
    hashes it); a file no longer there is `gone`; a file that cannot be read (denied, locked) is an issue
    (`quick-hash-unreadable`, warning) and the pass goes on; a drive that goes (`Unavailable`) leaves the system's other
    files for later (`quick-hash-unavailable`).
-4. Commits the hashes in batches (256 files or 2 s, whichever first), each in an import transaction of its own
+4. Commits the hashes in batches (1,000 files or 10 s, whichever first), each in an import transaction of its own
    (`IImportTransaction::putQuickHash()`, which writes the three hash columns alone: `last_seen` does not move), so that
-   other writers (play sessions) wait only for a batch. Cancelled (`options.cancel`), it commits what it read and ends
-   (`cancelled`); `--limit` bounds the files read. **Resumable**: a later run starts with what is left.
+   other writers (play sessions) wait only for a batch. A batch's commit is **light**: catalog_db's store commits a
+   transaction that wrote only reconciliation's state rows (quick hashes, history, review rows) without recording the
+   key versions in `rv_meta` (which scans every identity: 0.1 s on the reference catalog) and without the TRUNCATE
+   checkpoint, which SQLite's automatic checkpoint (1,000 pages) and the next import's commit do. Each commit changes
+   `data_version`, which readers refreshing their queries see: 10 s between batches keeps that rare. Cancelled
+   (`options.cancel`), it commits what it read and ends (`cancelled`); `--limit` bounds the files read. **Resumable**: a
+   later run starts with what is left.
 
 The figures: identities, not present, folders, current, candidates, then of the candidates hashed, changed, gone,
 unreadable, unavailable and remaining; batches, bytes read, time. A first import still reads no ROM byte: the pass is
@@ -101,11 +110,18 @@ files (in entry order, which within a system is key order):
    form a group. **Ties**: the score of a pair is the number of trailing path elements their keys share (folded as the
    file systems compare names): 0 when the file names differ, 1 for the same file name, more when the folders above are
    the same too; a pair whose identity's best file and whose file's best identity are each other alone is paired
-   (`QuickHash`), repeatedly. So the equal file name wins, then the longest common path suffix. **Identical copies**:
-   what is left with every score equal and as many files as identities moved together and is paired in key order
-   (`IdenticalCopies`). Anything else in the group is left to review. A stale hash says nothing of the content that
-   vanished: such an identity goes to rule 2. The quick hash reads a file's two ends only: two files over 128 KiB of
-   one size that share their first and last 64 KiB count as one content (ADR-0008's evidence).
+   (`QuickHash`), repeatedly, **when the pair is confirmed**: the same file name (a score of 1 or more) or the same last
+   write time. So the equal file name wins, then the longest common path suffix. **Identical copies**: what is left
+   with every score equal and as many files as identities moved together and is paired in key order
+   (`IdenticalCopies`), when each pair in key order is confirmed. Anything else in the group is left to review. A stale
+   hash says nothing of the content that vanished: such an identity goes to rule 2. **Why the confirmation**: the quick
+   hash reads a file's two ends only, and on the reference library files over 128 KiB that share them are often
+   different ROMs: the review found 5,140 groups of one quick hash among 23,164 hashed identities (gb, gba, nds, snes),
+   and files of different full contents in 13 of 120 sampled groups (gb 6 of 40, gba 2, snes 5: `[a]` dumps, hacks,
+   translations, debug builds); one gba hash covers 16 distinct contents (Final Fantasy Tactics Advance (USA), its
+   Virtual Console release and 14 hacks; checked again for this page with full SHA-256). A rename or a move keeps the
+   name or the time; another hack of the same base usually has neither. Equal times alone still leave a risk (five of
+   those hacks share their modification second), hence the ADR amendment proposed below.
 2. **Size, time and name**, for the vanished identities without a current hash: the new files of the same kind (file or
    folder), size, last write time and file name, not paired by rule 1 and whose hash, if read, matched no stored hash.
    An identity pairs only with a **unique** such file that no other such identity has (`SizeTimeName`); no ties are
@@ -117,11 +133,23 @@ files (in entry order, which within a system is key order):
    The candidates are in key order (at most 100: `kMaxReviewCandidates`), the reason a sentence per kind. A vanished
    identity without any candidate stays vanished (deleted, or changed beyond recognition), with no review row.
 
-The new files with a holder (`NewFile::heldBy`: a file moved back where a gamelist entry kept another identity) pair
-like any other; the import makes the holder an alias of the moved identity (`MoveReason::MovedBack` on the alias; the
-move keeps the reason it rests on). The hashes the pass read (`IdentityPairs::hashes`) are stored with the identities
-the files end with (moved, held or new), sparing the quick-hash pass those files. The import validates what the pass
-returns (a pair, a hash or a review naming what it was not given: `InvalidArgument`, nothing written).
+**Files with a holder** (`NewFile::heldBy`: the path or key of the file has an identity that was not present at the
+last import). The import also gives the pass the holder's last file facts (`NewFile::holderFile`):
+
+- **a holder never seen with a file** (no file facts: the identity a gamelist entry left at an old path got, SC-07):
+  the file pairs like any new one, and the import makes the holder an alias of the moved identity (the moved-back rule;
+  `MoveReason::MovedBack` on the alias, the move keeps the reason it rests on);
+- **a holder that had a file of its own** (it was seen present once): the file is the holder's, whether its own file
+  came back unchanged (SC-05: it gets its GameId back) or the user put another file where it was. No rule gives it to a
+  vanished identity, whatever its hash or its size, time and name say; a vanished identity left unpaired whose quick
+  hash (or, without one, size, time and name) the file has lists it among its review candidates ("... but is at the
+  path of another identity, which keeps it"), and resolving that review with the holder makes the holder the alias, as
+  the user decides. The import refuses a pairing that gives such a file to a vanished identity (`InvalidArgument`,
+  nothing written), so that another pairing pass cannot merge a returning game either.
+
+The hashes the pass read (`IdentityPairs::hashes`) are stored with the identities the files end with (moved, held or
+new), sparing the quick-hash pass those files. The import validates what the pass returns (a pair, a hash or a review
+naming what it was not given, a held file given away: `InvalidArgument`, nothing written).
 
 Scale: the new files are indexed by hash, by (kind, size, time, name) and by name, and the import finds what the pass
 returns by GameId and key, so a mass move (a renamed folder of thousands of files) pairs in about n log n; a group of
@@ -170,7 +198,9 @@ FOREIGN KEY error, and the import rolls back.
 `resolveReview(store, library, {review, pairWith})` under the import lock, in one import transaction:
 
 - **paired** (`identities resolve <review> --with <gameId>`): the chosen identity (same library and system, its file
-  present, not the vanished one, not an alias) becomes an alias of the vanished one (`putAlias()`: its state rows move,
+  present, not the vanished one, not an alias, **at one of the review's candidate paths**: its relative path or key is
+  a candidate's, unless `ReviewDecision::force`, `--force`, for a candidate beyond the 100 listed or one that moved since)
+  becomes an alias of the vanished one (`putAlias()`: its state rows move,
   its index rows go, its path is freed); the vanished identity takes its path, file facts and quick hash, present; its
   index row is written again under the vanished identity's GameId; a row still at the old path (a gamelist entry left
   there) gets a new identity as the import gives one (`assignGameIds()`: the tuple's counter); the disc groups that
@@ -180,8 +210,9 @@ FOREIGN KEY error, and the import rolls back.
   changes.
 
 Refused: no such row or identity (`NotFound`), resolved already, the vanished identity's file present again, an import
-holding the lock (`Conflict`), a row of another library, an identity of another system, an alias, a file not present
-(`InvalidArgument`).
+holding the lock (`Conflict`), a row of another library, an identity of another system, an alias, a file not present,
+an identity that is none of the candidates without `force` (`InvalidArgument`): a mistyped GameId would merge two games
+for good.
 
 ## `retroverse-cli identities`
 
@@ -189,7 +220,7 @@ holding the lock (`Conflict`), a row of another library, an identity of another 
 retroverse-cli [global options] identities list --system <name> [--json] [--output <file>]
 retroverse-cli [global options] identities show <gameId> [--json] [--output <file>]
 retroverse-cli [global options] identities reviews [--system <name>] [--all] [--json] [--output <file>]
-retroverse-cli [global options] identities resolve <review> (--with <gameId> | --keep-separate) [--json] [--output <file>]
+retroverse-cli [global options] identities resolve <review> (--with <gameId> [--force] | --keep-separate) [--json] [--output <file>]
 retroverse-cli [global options] identities hash [--system <name>] [--limit <files>] [--json] [--output <file>]
 ```
 
@@ -202,14 +233,18 @@ retroverse-cli [global options] identities hash [--system <name>] [--limit <file
   unless an alias was asked), `identity`, `aliases`, `history`, `reviews`.
 - `reviews`: the open rows (`--all`: the resolved ones too), each with its vanished identity and path, why, and the
   candidates with the GameId each has now (what `--with` takes).
-- `resolve`: as above; prints the move and the old path's new identity, or "kept separate".
-- `hash`: the pass, its figures and issues; progress goes to the log every 2 s (stderr at `--log-level info` or below,
-  and the log file).
+- `resolve`: as above (`--with` takes a candidate's GameId, `--force` any identity of the system; `--force` without
+  `--with` is a usage error); prints the move and the old path's new identity (and, forced with an identity that was
+  none of the candidates, a line saying so), or "kept separate".
+- `hash`: the pass, its figures and issues; a progress line (`Quick hashes: <done> of <total> file(s) looked at, <n>
+  hashed, <MiB> MiB read`) every 2 s on stderr (stdout keeps the results; not at `--log-level warn` or `error`; at
+  `debug` and `trace` the log's own line shows it) and in the log file.
 - `list`, `show` and `reviews` open the catalog without writing into it (no WAL switch, never made); `resolve` and
   `hash` write state rows under the import lock.
 - Exit codes: 0; 1 `show`: no such identity or alias; `resolve`: no such review row, resolved already, its file present
   again; `hash`: files that could not be read or reached; 2 usage errors, no library.json, a library.json naming another
-  library than the catalog's, a system without identities, an identity that cannot be paired with; 3 no catalog, the
+  library than the catalog's, a system without identities, an identity that cannot be paired with (none of the
+  review's candidates without `--force` included); 3 no catalog, the
   catalog cannot be read or written, another import runs (in this or another process), the results cannot be written.
 - `import` now pairs (`IdentityPairing`): its text lists each move (`moved <id> <system>: <from> -> <to> (<reason>)`,
   the alias when there is one) and each review row, the totals line counts `to review`; its JSON's `reviews` carry
@@ -256,8 +291,23 @@ retroverse-cli [global options] identities hash [--system <name>] [--limit <file
     goes to review whole.
 16. **`identities show` needs no library.json** (a GameId names its library), as `retroverse-cli show`; the other
     subcommands work on the library library.json records and refuse another one.
+17. **A file whose holder had a file of its own is the holder's** (the second review): only a holder never seen with a
+    file is aliased by the moved-back rule; the others keep their file, and the vanished identity it could be gets a
+    review row. The import enforces it at the seam (`NewFile::holderFile`, `InvalidArgument`).
+18. **A quick-hash pair needs the same file name or the same time** (the second review's real-data finding): the quick
+    hash alone is not enough evidence on a library of hacks and dumps; unconfirmed matches are review rows. This
+    narrows ADR-0008 §4's "pairs with a new file whose quick hash equals its stored one": an amendment is proposed.
+19. **A resolution pairs only with a candidate** unless forced (`--force`): the merge cannot be undone.
+20. **Light commits for reconciliation's state rows** and batches of 1,000 files or 10 s (the second review): a batch
+    no longer scans the identities for `rv_meta` nor checkpoints; the WAL is SQLite's automatic checkpoint's and the
+    next import's.
+21. **The listing is checked again after the reads when the handle disagrees with it**: a hash is stored only with
+    the facts of the file it was computed from. When they agree, the handle read the file listed and a second listing
+    is spared (on the external exFAT drive the warm gb pass took 12.77 s listing every file twice, 8.49 s without). The
+    listed size is not required to equal the handle's (a directory entry lagging behind on NTFS would then never be
+    hashed: decision 14).
 
-## The review's findings
+## The first review's findings
 
 One review of the committed step (ten findings). Fixed:
 
@@ -286,18 +336,44 @@ Kept, with the reason:
   identity before writing its hash; on the app's catalog worker the pass and the imports take turns on one thread, and
   the CLI bounds a run with `--limit` (decision 4).
 
+## The second review's findings
+
+Two reviewers, six findings on the committed step, each verified (four reproduced by new tests that failed before the
+fix, the real-data one also on the library itself):
+
+- **Fixed: a file back at its own path was given to another vanished identity** (high). `pair()` ignored the holder:
+  with identical copies A and B, A removed for one import, then restored while B was deleted, B's identity took A's file
+  (by quick hash, or by size, time and name without one) and A's identity became its alias, its state rows and history
+  merged for good. Now decision 17; tested with and without stored hashes, and with a holder that had another file.
+- **Fixed: an equal quick hash paired different games** (medium, real data). Decision 18; tested (another name and time:
+  a review row; a rename keeping the time, a move keeping the name: paired; identical copies of other names and times:
+  reviewed).
+- **Fixed: a resolution accepted any identity of the system** (medium). Decision 19; tested in the store and the CLI
+  (exit 2, the row still open; forced: paired).
+- **Fixed: a file replaced between the listing and the open was hashed under the old listing's facts** (low). Decision
+  21; tested through `detail::readQuickHashObserved()` (replaced before the open, written before the open, before and
+  after the reads).
+- **Fixed: no progress on the terminal** (low): the progress line goes to stderr.
+- **Fixed: every batch committed like an import** (low): decision 20.
+- **Not taken, with the reason**: requiring the listed size to equal the handle's size (F2's optional part): on NTFS a
+  hard-linked file's directory entry can lag behind its file record for good, and the pass would then report it
+  unreadable at every run instead of hashing it (decision 14); the digest is the content's either way, and both sides
+  of a pairing label it with the listed size.
+
 ## Tests
 
-`./scripts/test.ps1` passes every unit test in Debug and in Release (1,211), both built without a warning; the step's
-(`rv_tests "[fingerprint],[reconciliation],[identities]"`: 22 new test cases, and the hidden real-library one):
+`./scripts/test.ps1` passes every unit test in Debug and in Release (1,216), both built without a warning; the step's
+(`rv_tests "[fingerprint],[reconciliation],[identities]"`: 26 new test cases, one more in `test_import_service.cpp`,
+and the hidden real-library one):
 
 - `tests/unit/catalog/test_fingerprint.cpp`: the 11 golden vectors equal the oracle's, on generated contents and on
   files (with the size and time a listing gives: those of `listTree()`); beyond 128 KiB only the two ends count (another
   middle, the same hash; another byte at either end, another one); names ending with a dot or a space and a path past
   MAX_PATH read through `\\?\` (the sibling a plain path would reach left alone); nothing written (content and time as
   they were); a file another program holds open for writing is read; a missing file (`NotFound`), a folder and a
-  relative path leaving the folder (`InvalidArgument`), a file whose data is denied are errors; a hash current or stale
-  for file facts.
+  relative path leaving the folder (`InvalidArgument`), a file whose data is denied are errors; a file replaced or
+  written while it is read (after the listing, after the open, after the reads) is an `IoError`, never a hash; a hash
+  current or stale for file facts.
 - `tests/unit/catalog_db/test_reconciliation.cpp` (scripted snapshots on the SQLite store, a scripted file reader that
   says what each file holds, which files are denied and which were read): a renamed file paired by its quick hash, only
   the new file of the stored hash's size read, the hash it read stored with the moved identity, the move in the history,
@@ -309,10 +385,16 @@ Kept, with the reason:
   could be makes two rows, the same name at another time a row, 102 files of its name a row of the first 100 in key
   order (its reason says 102), nothing of its name no row; **ties** (the longest common path suffix, then the equal file
   name, among copies of one hash); **identical copies** paired in key order, more copies than identities reviewed, an
-  unreadable copy reported and offered for review; **a review resolved by pairing** (the move, the alias, the old path's
+  unreadable copy reported and offered for review, copies of other names and another time reviewed; **an equal quick
+  hash confirmed** (another name and another time: a review row, nothing merged; a rename keeping the time and a move
+  keeping the name: paired); **a file back at its own path** while an identical copy vanishes, with and without stored
+  hashes (its own GameId, no alias, history and state rows untouched, the copy's identity a review row offering it),
+  and **a vanished identity's file at the path of an identity that had another file** (a review row, nothing merged;
+  resolved with the holder, the holder the alias); **a review resolved by pairing** (the move, the alias, the old path's
   new identity as the import gives it, the history's three events, resolved once only) and **kept separate** (only the
   row and the history change), each followed by an import that changes nothing; the refusals (no such row or identity,
-  itself, another system, a file not present, an alias, resolved already, another holder's import lock); **a file moved
+  itself, another system, a file not present, an alias, resolved already, another holder's import lock, an identity
+  that is none of the candidates; forced, it pairs); **a file moved
   back**: the holder an alias, its sessions moved, a table unique per game keeping the moved identity's choice, the
   alias that stood for the holder standing for the moved identity, the holder's history moved, its open review row
   resolved `aliased` and moved, no foreign key broken, the next import steady; **re-keyed identities** in the history
@@ -329,10 +411,15 @@ Kept, with the reason:
   path's entry a new GameId, `list` and `show` with the history as text and JSON, the next import steady); **review rows
   on disk** (Collection A's Pocket Puzzle copied into two folders and deleted: a review with both candidates; resolved
   with `--with` (the alias shown by `show`, the next import steady, resolving again exit 1, an unknown row exit 1,
-  another system's identity exit 2) or `--keep-separate`); a denied ROM (exit 1, the issue, 17 hashed; the next pass
+  another system's identity exit 2, an identity of the system that is none of the candidates exit 2 with the row still
+  open; forced with it, paired with the warning line) or `--keep-separate`; `--force` without `--with` exit 2); a
+  denied ROM (exit 1, the issue, 17 hashed; the next pass
   hashes it); **the import lock across processes** (the pass and a resolution exit 3 while another holder imports, also
   as a second `retroverse-cli` process; an import of a second process exits 3 while this process's pass reads).
 - `scripts/quick_hash_oracle.py --check tests/unit/catalog/test_fingerprint.cpp`: 11 of 11 found.
+- `tests/unit/catalog_db/test_import_service.cpp`: the seam gives the pass a held file's holder file facts, and refuses
+  a pairing that gives a vanished identity the file of a holder that had a file of its own (nothing written; without
+  that pairing the file returns to its identity).
 - Followed: `test_catalog_store.cpp` (the quick hash written alone, read with the identity, kept by a write that carries
   it, cleared by one that does not), `test_migrator.cpp` (an orphan history row with a valid event), the port stand-ins
   of `test_domain.cpp` and `test_import_service.cpp`.
@@ -356,6 +443,13 @@ still in the system's cache: 8,611 hashed, 0 changed, **10.60 s** (812 files/s, 
 why the pass is progressive and resumable rather than part of the import: an import reads no ROM byte, and only the new
 files of a vanished hash's size when files move. 0 differences again.
 
+After the second review's fixes (light commits, batches of 1,000 files or 10 s, the listing checked again only when the
+handle disagrees with it), Release, the default filter: 8 passed, the two launch tests skipped, **0 differences among
+542,082 entries**; then `-Filter '[real-library][reconciliation]'`: the gb pass, warm, **8,611 files hashed in 8.49 s**
+(9 batches; 1,014 files/s, 115.5 MiB/s), the second pass 0 files in 0.02 s, the import after it pairing nothing; 0
+differences. The whole library estimated at 85 to 102 s warm. (An intermediate build that listed every file a second
+time took 12.77 s, warm too: decision 21.)
+
 The import with this step's changes (identities written with their quick hash, the pairing pass, the history), on a
 quiet machine: the first import 13.06 s (writes 9.36 s), the second 7.17 s (writes 0.15 s), `db rebuild-index` 18.94 s,
 the ROM root unplugged 11.86 s and back 11.81 s: step 11a's figures within the variance of the machine (a first run
@@ -364,12 +458,15 @@ taken while a Debug build ran beside it took 40.71 s, the writes 30.12 s: disk c
 ## Notes for the steps that build on it
 
 - **Step 13 (the app):** construct one `catalog::IdentityPairing` with the catalog worker's `ImportService` and keep it;
+  a returning file is never merged into another identity (decision 17), so the selection by GameId survives an import;
   `ChangeSet::moved` and `ChangeSet::reviews` (with their ids) say what moved and what waits. Run
   `catalog::runQuickHashPass()` on the catalog worker between imports (it holds the import lock for its run: an import
   started meanwhile from another process is refused), with the quit flag as `cancel` (what was read stays committed) and
-  a `limit` per idle slice if the worker must stay responsive; its progress callback runs on the worker. Review rows are
-  shown and resolved through `ICatalogStore::reviews()` and `catalog::resolveReview()` (a later UI; the CLI has them
-  now). After a resolution, run the queries again (`data_version` changes at the commit) and restore the selection by
+  a `limit` per idle slice if the worker must stay responsive; its progress callback runs on the worker; each batch
+  (at most every 10 s) changes `data_version`, though it changes nothing a query shows (quick hashes only): a refresh
+  may skip it. Review rows are shown and resolved through `ICatalogStore::reviews()` and `catalog::resolveReview()` (a
+  later UI; the CLI has them now): offer the review's candidates only (`ReviewDecision::force` exists for the CLI's
+  `--force`). After a resolution, run the queries again (`data_version` changes at the commit) and restore the selection by
   GameId: the chosen identity's GameId is an alias from then on (`ICatalogStore::alias()` names the identity it stands
   for).
 - **Step 12 (sessions, choices):** nothing to do for aliases: `putAlias()` finds step 12's tables by their foreign keys
@@ -378,8 +475,8 @@ taken while a Debug build ran beside it took 40.71 s, the writes 30.12 s: disk c
 
 ## For the merge
 
-- **CLAUDE.md**, the retroverse-cli section: `identities list | show | reviews | resolve | hash` (options, exit codes);
-  `import` pairs moved files and prints moves and review rows. "Catalog database": `StoredIdentity::quickHash` (read and
+- **CLAUDE.md**, the retroverse-cli section: `identities list | show | reviews | resolve [--force] | hash` (options, exit
+  codes, the pass's progress on stderr); `import` pairs moved files and prints moves and review rows. "Catalog database": `StoredIdentity::quickHash` (read and
   written with the identity), `putQuickHash()`, the history, aliases and review rows, `putAlias()`'s generic re-pointing
   of state rows (a later step's state table needs a single-column foreign key into `rv_game_identities (id)` to follow
   aliases); core helpers: `core::SharedFileReader` and `core::listedFileFacts()` in `file_io.hpp`. Oracles:
@@ -393,7 +490,11 @@ taken while a Debug build ran beside it took 40.71 s, the writes 30.12 s: disk c
 - **docs/roadmap.md**: step 11b done, with the figures below.
 - **ADR-0008**, suggested amendments: §4 "the quick hash: SHA-256 of a file's whole content up to 128 KiB, else of its
   first and last 64 KiB (rule 1); only a current hash (the size and time it was taken at are the file's last facts)
-  pairs"; §4 "ties: the number of trailing path elements shared; identical copies pair in key order when the counts are
+  pairs, and only when the file name or the last write time is equal too (decision 18): the quick hash is weak evidence
+  on a library of hacks and dumps, which share their two ends; a stronger fingerprint (a full hash of files up to some
+  size, or of a middle part) would be a decision of its own"; §4 "a file at the path of an identity that had a file of
+  its own is that identity's: the moved-back rule aliases only an identity never seen with a file"; §4 "a review is
+  resolved with one of its candidates"; §4 "ties: the number of trailing path elements shared; identical copies pair in key order when the counts are
   equal; the size-time-name rule breaks no ties"; §4 "review candidates include the new files of the same file name"; §5
   "an identity that becomes an alias moves every state row naming it to the identity it stands for (a table holding one
   row per game keeps the latter's)".

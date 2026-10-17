@@ -41,7 +41,7 @@ Expected<QuickHash> detail::readQuickHashObserved(const std::filesystem::path& f
     };
     // The facts the hash is stored with are those a listing gives (what an import records and isCurrent() compares
     // with), which on NTFS may lag behind the file record the handle reads; the handle's are only checked for a write
-    // during the read, the listing's again after it for a file replaced before the open.
+    // during the read, and against the listing for a file replaced before the open.
     const auto listed = core::listedFileFacts(file);
     if (!listed) {
         return propagate(listed.error());
@@ -91,17 +91,23 @@ Expected<QuickHash> detail::readQuickHashObserved(const std::filesystem::path& f
                                      after->size),
                          core::pathToUtf8Lossy(file));
     }
-    // A file replaced or written between the listing and the open was hashed whole, but the facts listed first are
-    // another file's: the hash would be stored as current for content the listing never described.
-    const auto relisted = core::listedFileFacts(file);
-    if (!relisted) {
-        return propagate(relisted.error());
-    }
-    if (!(*relisted == *listed)) {
-        return makeError(ErrorCode::IoError,
-                         fmt::format("the file was replaced or written while it was read ({} bytes listed, then {})",
-                                     listed->size, relisted->size),
-                         core::pathToUtf8Lossy(file));
+    // A file replaced or written between the listing and the open was hashed whole, but the facts listed first may be
+    // another file's: when the handle does not agree with the listing, the file is listed again, and a listing that
+    // changed means the hash would be stored as current for content the listing never described. A listing that stays
+    // as it was is a directory entry lagging behind its file record (NTFS): the hash is the content's and keeps the
+    // listed facts, those the import records. (Agreeing, they need no second listing: the handle read the file listed.)
+    if (!(*before == *listed)) {
+        const auto relisted = core::listedFileFacts(file);
+        if (!relisted) {
+            return propagate(relisted.error());
+        }
+        if (!(*relisted == *listed)) {
+            return makeError(ErrorCode::IoError,
+                             fmt::format("the file was replaced or written while it was read ({} bytes listed, then "
+                                         "{})",
+                                         listed->size, relisted->size),
+                             core::pathToUtf8Lossy(file));
+        }
     }
     return QuickHash{digest, listed->size, listed->lastWriteTime};
 }

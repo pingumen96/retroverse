@@ -761,11 +761,12 @@ Expected<ReviewResolutionResult> resolveReview(ICatalogStore& store, const Libra
         if (!decision.force && std::none_of(candidates.begin(), candidates.end(), [&](const LookupKey& candidate) {
                 return candidate.relativePath() == chosen.key.relativePath() || candidate.key() == chosen.key.key();
             })) {
-            return withContext(ErrorCode::InvalidArgument,
-                               fmt::format("{} ({}) is none of the review's {}: pair with a candidate, or force it",
-                                           chosen.id.toString(), chosen.key.relativePath(),
-                                           plural(candidates.size(), "candidate", "candidates")),
-                               decision.review);
+            return withContext(
+                ErrorCode::InvalidArgument,
+                fmt::format("{} ({}) is not a candidate of the review ({}): pair with a candidate, or force it",
+                            chosen.id.toString(), chosen.key.relativePath(),
+                            plural(candidates.size(), "candidate", "candidates")),
+                decision.review);
         }
 
         // What the import would write for this move, read before the transaction (the import lock is held).

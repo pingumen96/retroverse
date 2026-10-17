@@ -17,9 +17,10 @@
 // At most 128 KiB is read per file, opened for reading only with full sharing (core::SharedFileReader). The hash is
 // stored with the size and time a listing gives (core::listedFileFacts(): the directory entry, as walkTree() and so
 // the import see the file; on NTFS it may lag behind the file record), so that isCurrent() compares like with like; the
-// handle's own facts are taken before the reads and checked again after them, and the listing is taken again after
-// them too, so that a file written meanwhile, or replaced between the listing and the open (an atomic replace, an
-// extraction), is reported (IoError) rather than hashed half old, half new or stored with another file's facts.
+// handle's own facts are taken before the reads and checked again after them, and when they differ from the listing's
+// the file is listed again after the reads, so that a file written meanwhile, or replaced between the listing and the
+// open (an atomic replace, an extraction), is reported (IoError) rather than hashed half old, half new or stored with
+// another file's facts (a listing that stays as it was is a directory entry lagging behind: the hash keeps its facts).
 
 #include <cstdint>
 #include <filesystem>

@@ -48,6 +48,7 @@
 #include <rv/catalog/entry.hpp>
 #include <rv/catalog/fingerprint.hpp>
 #include <rv/catalog/ids.hpp>
+#include <rv/catalog/lookup_key.hpp>
 #include <rv/catalog/reconciliation.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
@@ -723,6 +724,13 @@ ExitCode resolveReviewRow(CommandContext& context, Arguments& arguments) {
         if (result->leftAtOldPath) {
             text += fmt::format("The gamelist entry left at {} has a new identity: {}\n", move.from.relativePath(),
                                 result->leftAtOldPath->toString());
+        }
+        const auto& candidates = resolved.review.candidates;
+        if (std::none_of(candidates.begin(), candidates.end(), [&](const catalog::LookupKey& candidate) {
+                return candidate.relativePath() == move.to.relativePath() || candidate.key() == move.to.key();
+            })) {
+            text += fmt::format("Forced: {} was none of the review's candidates; the alias is for good.\n",
+                                move.alias ? move.alias->toString() : std::string("?"));
         }
     } else {
         text += fmt::format("Review {} resolved: {} kept separate from its candidates.\n", review,

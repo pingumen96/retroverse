@@ -312,7 +312,7 @@ TEST_CASE("cli/identities: identical copies of one name become a review row, res
         const RunResult other =
             session.run({"identities", "resolve", id, "--with", gameIdOf("gb", "Tiny Tennis (Europe).gb")});
         CHECK(other.code == ExitCode::UsageError);
-        CHECK(contains(other.err, "none of the review's 2 candidates"));
+        CHECK(contains(other.err, "is not a candidate of the review (2 candidates)"));
         CHECK(session.json({"identities", "reviews", "--json"})["open"] == 1);
         const RunResult resolved = session.run({"identities", "resolve", id, "--with", chosen});
         INFO(resolved.err);
@@ -335,6 +335,14 @@ TEST_CASE("cli/identities: identical copies of one name become a review row, res
         CHECK(steady["statistics"]["entriesWritten"] == 0);
         CHECK(steady["moved"].empty());
         CHECK(steady["reviews"].empty());
+    }
+    SECTION("forced with an identity that is none of the candidates: paired, with a warning") {
+        const std::string other = gameIdOf("gb", "Tiny Tennis (Europe).gb");
+        const RunResult forced = session.run({"identities", "resolve", id, "--with", other, "--force"});
+        INFO(forced.err);
+        CHECK(forced.code == ExitCode::Ok);
+        CHECK(contains(forced.out, fmt::format("Forced: {} was none of the review's candidates", other)));
+        CHECK(session.json({"identities", "show", other, "--json"})["alias"]["game"] == vanished);
     }
     SECTION("kept separate") {
         const nlohmann::json resolved = session.json({"identities", "resolve", id, "--keep-separate", "--json"});
