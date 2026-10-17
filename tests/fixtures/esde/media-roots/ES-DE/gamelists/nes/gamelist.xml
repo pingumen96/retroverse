@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Rocket Ranger (USA).nes</path>
+		<name>Rocket Ranger</name>
+		<developer>Invented Works</developer>
+	</game>
+	<game>
+		<path>./Lost Lagoon (Europe).nes</path>
+		<name>Lost Lagoon</name>
+	</game>
+</gameList>

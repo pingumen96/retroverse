@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- The find rules of the media-roots fixture: one invented emulator that nothing finds (see README.md) -->
+<ruleList>
+    <emulator name="ROOTS-EMULATOR">
+        <rule type="staticpath">
+            <entry>%ESPATH%\Emulators\RootsEmulator\roots-emulator.exe</entry>
+        </rule>
+    </emulator>
+</ruleList>
