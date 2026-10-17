@@ -238,8 +238,14 @@ game.
   ending by its exit timeout with 124); a closed catalog draws nothing (the same frames with and without
   `--mock-catalog`, 0 pixels apart).
 - **Desktop** (`desktop.smoke.launch_visible`, on demand): Retroverse in borderless fullscreen launches the fake with a
-  fullscreen window; the run records the window back in the foreground after the exit.
-- Golden G01 runs without a catalog: unchanged.
+  fullscreen window (500 frames, about 3 s at 165 Hz); the run records the window back in the foreground after the exit
+  (on the reference machine: frames 9 to 9, no panel, back in the foreground 7 ms after the fake's exit).
+- Golden G01 runs without a catalog: unchanged (0 pixels apart in Debug and Release).
+- **Gate A** (`./scripts/gate.ps1 -Gate A`, on the reference machine, with other worktrees building): the three builds
+  without a warning, 1,041 unit tests in Debug and Release, 22 GPU checks in Debug and 20 in Release (the launch cases
+  among them, Release rendering from its deployed assets), golden G01 0 pixels apart in both. Launch cases in Debug:
+  the return 17 s, the eight failures 96 s, the panel's questions 18 s, quitting 24 s (the fake's own 12 s exit
+  timeout included), the closed catalog 10 s; in Release 5, 16, 12, 14 and 5 s.
 
 ## For the merge
 

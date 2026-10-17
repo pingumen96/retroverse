@@ -85,9 +85,9 @@ struct LaunchRecord {
     std::string gameId;
     /// The emulator profile's id.
     std::string profile;
-    /// The session's final state (launcher::toString(SessionState): "Returned", "Crashed", "FailedToStart"), "Blocked"
-    /// for a launch the plan refused (nothing started), "Pending" when the run ended before it could start, the
-    /// session's current state when the run ended while it ran.
+    /// The session's final state (launcher::toString(SessionState): "Returned", "Crashed", "FailedToStart"; a run that
+    /// ends while the game runs ends its session too, as Returned with quitDuringGame), "Blocked" for a launch the plan
+    /// refused (nothing started), "Pending" when the run ended before it could start.
     std::string state;
     /// The outcome as the product UI tells it (LaunchMessage: launch_outcome::k*, its reason and detail).
     std::string outcome;

@@ -36,10 +36,11 @@ class AppContext;
 /// developer overlay, in screenshots too. Main thread only; destroy it while the OpenGL context is current.
 class ProductUi {
 public:
-    /// Creates RmlUi over `context`'s window, the quick catalog over `catalog`'s games (closed), the panel (hidden) and
-    /// the emulator profiles in effect (mockCatalogProfiles over launcher::loadEmulatorProfiles; their issues are
-    /// logged). `bindings` give the keys RmlUi leaves to the UI commands (ui::commandKeys). `back` is called for every
-    /// UI Back command. Errors: RmlUi, the view or a document cannot be created.
+    /// Creates RmlUi over `context`'s window, the quick catalog's model over `catalog`'s games (closed: its screen is
+    /// made the first time it opens), the panel (hidden) and the emulator profiles in effect (mockCatalogProfiles over
+    /// launcher::loadEmulatorProfiles; their issues are logged). `bindings` give the keys RmlUi leaves to the UI
+    /// commands (ui::commandKeys). `back` is called for every UI Back command. Errors: RmlUi, the view or the panel's
+    /// document cannot be created.
     [[nodiscard]] static Expected<std::unique_ptr<ProductUi>> create(AppContext& context, MockCatalog catalog,
                                                                      const input::ActionMap& bindings,
                                                                      std::function<void()> back);
@@ -53,7 +54,8 @@ public:
     /// The product UI has the input (InputContext::Ui): the catalog or the panel is open.
     [[nodiscard]] bool hasInput() const noexcept { return catalogOpen() || panelOpen(); }
 
-    /// Opens the quick catalog where it was left (its focus and selection), the UI's held directions forgotten.
+    /// Opens the quick catalog where it was left (its focus and selection), the UI's held directions forgotten; the
+    /// first time, its screen is made (a screen that cannot be made is logged and the catalog stays closed).
     void openCatalog();
     /// Closes it; nothing while the panel shows over it.
     void closeCatalog();
