@@ -38,6 +38,18 @@ struct CatalogEntry {
     /// catalog's availability and launch readiness, ADR-0008 §4, §8); empty for a game ready to start. The text is the
     /// documents' (Italian strings stay in assets/ui), so a key they do not name shows no label.
     std::string state;
+    /// The launch readiness behind `state`, when the source knows it (the ES-DE catalog, ADR-0008 §8: one of
+    /// quick_catalog::kReadinessKeys, "ready" included); empty when it does not (mock-ups), and the card then labels
+    /// `state` alone.
+    std::string readiness;
+    /// The first reason the game cannot start (a blocker code: one of quick_catalog::kBlockerCodes, which the card
+    /// labels) and that reason's own sentence, shown as it comes on the card's "Dettagli" line; empty for a game that
+    /// can start.
+    std::string blocker;
+    std::string blockerDetail;
+    /// The command or profile the game starts with returned normally from a launch of its system (ADR-0008 §8:
+    /// "verified" is shown).
+    bool verified = false;
 
     bool operator==(const CatalogEntry&) const = default;
 };

@@ -52,6 +52,11 @@ inline constexpr std::string_view kEmulatorMissing = "emulator-missing";
 inline constexpr std::string_view kCoreMissing = "core-missing";
 /// The game's file does not exist; the detail is its file name.
 inline constexpr std::string_view kRomMissing = "rom-missing";
+/// A game of the ES-DE catalog that is not ready, resolved again right before the launch (I2 step 13, ADR-0008 §8):
+/// the reason is its readiness (catalog::toString(LaunchReadiness): "source-unavailable", "rom-missing",
+/// "requires-configuration", "emulator-not-found", "core-not-found"), the detail its first blocker's own words; nothing
+/// was started.
+inline constexpr std::string_view kNotReady = "not-ready";
 
 /// kFailedToStart: validateLaunchRequest() refused the request at the start.
 inline constexpr std::string_view kReasonInvalidRequest = "invalid-request";

@@ -101,6 +101,10 @@ public:
     bool focusElement(std::string_view id);
     /// The line under the card's actions ("Avvio di ..."), until another game is selected; empty hides it.
     void setStatus(std::string_view text);
+    /// What the list says about the catalog itself while it shows no game of it (quick_catalog::kNotice*: the catalog
+    /// being opened, no library, no catalog database, ...), in the document's words; empty says nothing.
+    void setNotice(std::string_view key);
+    [[nodiscard]] std::string_view notice() const noexcept;
     /// The high-contrast theme (specification §12.4).
     void setHighContrast(bool enabled);
     [[nodiscard]] const FocusHistory& history() const noexcept;

@@ -322,6 +322,33 @@ h2 {
 	margin-bottom: 16dp;
 }
 
+/* Why it cannot start (the first blocker's sentence), the blocker's own words, and a game whose command was verified. */
+.blocker {
+	flex: 0 0 auto;
+	font-size: 20dp;
+	color: #F4EFE6E6;
+	margin-top: -8dp;
+	margin-bottom: 10dp;
+}
+
+.details {
+	flex: 0 1 auto;
+	font-size: 17dp;
+	color: #F4EFE6B3;
+	max-height: 2.8em;
+	overflow: hidden;
+	word-break: break-word;
+	line-height: 1.3em;
+	margin-bottom: 14dp;
+}
+
+.ready {
+	flex: 0 0 auto;
+	font-size: 20dp;
+	color: #A8E6B0;
+	margin-bottom: 14dp;
+}
+
 /* Three lines, the rest with Informazioni (X). */
 .description {
 	flex: 0 1 auto;
@@ -486,6 +513,8 @@ body.high-contrast .fade-after {
 	.game-meta { font-size: 18dp; }
 	.subtitle { font-size: 20dp; margin-bottom: 10dp; }
 	.state { font-size: 19dp; margin-bottom: 8dp; }
+	.blocker, .ready { font-size: 18dp; margin-bottom: 6dp; }
+	.details { font-size: 16dp; margin-bottom: 8dp; }
 	.description { font-size: 19dp; max-height: 2.8em; margin-bottom: 10dp; }
 	.rows { padding-top: 8dp; margin-bottom: 12dp; }
 	.row { font-size: 19dp; padding: 1dp 0dp; }

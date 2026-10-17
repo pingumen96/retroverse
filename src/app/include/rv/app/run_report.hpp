@@ -61,14 +61,41 @@ struct SelfCheckRecord {
     bool operator==(const SelfCheckRecord&) const = default;
 };
 
-/// The quick catalog of a run of retroverse.exe (the product UI exists only when the run has a catalog).
+/// What the quick catalog and the walker showed at one moment of a launch (LaunchRecord::before, ::after; I2 step 13:
+/// a launch and its return leave them as they were).
+struct CatalogView {
+    /// The selected game's id and position; empty and none while nothing is selected.
+    std::string selectedId;
+    std::optional<std::size_t> selectedPosition;
+    /// The search text and the active filter's key (empty: every game; else the ES-DE system's name, or the mock's
+    /// platform).
+    std::string search;
+    std::string filter;
+    /// The walker's pose as --spawn takes it.
+    std::optional<SpawnPoint> camera;
+
+    bool operator==(const CatalogView&) const = default;
+};
+
+/// How long the page fetches of the quick catalog took on the main thread (ui::CatalogSource::rows over the catalog
+/// database: ADR-0008 §5's 5 ms budget), in milliseconds.
+struct PageFetchTimes {
+    std::uint64_t count = 0;
+    double p50Ms = 0.0;
+    double p95Ms = 0.0;
+    double maxMs = 0.0;
+
+    bool operator==(const PageFetchTimes&) const = default;
+};
+
+/// The quick catalog of a run of retroverse.exe: absent only in runs without the product UI (the model viewer).
 struct CatalogRecord {
-    /// Where its games come from: "mock" (--mock-catalog, until the ES-DE catalog reaches the application in I2 step
-    /// 13).
+    /// Where its games come from: "esde" (the catalog database of the user data directory, I2 step 13), "mock"
+    /// (--mock-catalog).
     std::string source;
-    /// The --mock-catalog file, as given.
+    /// The --mock-catalog file, as given; for "esde", the catalog database.
     std::filesystem::path file;
-    /// Games the source lists.
+    /// Games the source lists (the whole catalog's default list: the available games).
     std::size_t games = 0;
     /// Times the catalog was opened, and whether it was open when the run ended.
     std::uint64_t opened = 0;
@@ -76,6 +103,26 @@ struct CatalogRecord {
     /// The selected game when the run ended: its position in the list and its id; none while the list is empty.
     std::optional<std::size_t> selectedPosition;
     std::string selectedId;
+    /// "esde": what the list says instead of games (ui::quick_catalog::kNotice*: "no-library", "no-database",
+    /// "data-directory", "library-mismatch", "unavailable", "opening" when the run ended before the catalog opened);
+    /// empty when the catalog opened.
+    std::string notice;
+    /// "esde": the library (library.json's id) and the systems with games the chips show.
+    std::string library;
+    std::size_t systems = 0;
+    /// The search text and the active filter's key when the run ended.
+    std::string search;
+    std::string filter;
+    /// "esde", milliseconds from the process's creation (NFR-01): the catalog opened on the worker (the database, the
+    /// library's configuration, the systems' readiness), its first list materialized, and the first frame that showed
+    /// a page of it (the quick catalog open with rows of the catalog bound); absent when it did not happen.
+    std::optional<double> openedMs;
+    std::optional<double> firstListMs;
+    std::optional<double> firstPageMs;
+    /// "esde": the page fetches on the main thread; absent when there was none.
+    std::optional<PageFetchTimes> pages;
+    /// "esde": play sessions closed as interrupted when the catalog opened (their owner was gone: ADR-0008 §9).
+    std::size_t interruptedSessions = 0;
 
     bool operator==(const CatalogRecord&) const = default;
 };
@@ -136,6 +183,16 @@ struct LaunchRecord {
     /// The panels the launch showed, in order (toString(SessionPanel): "still-running", "confirm", "playing",
     /// "outcome").
     std::vector<std::string> panels;
+    /// The quick catalog and the walker when Avvia asked for the launch, and on the first frame after its end (the
+    /// return, or the refusal); absent when the run ended first.
+    std::optional<CatalogView> before;
+    std::optional<CatalogView> after;
+    /// "esde" catalogs: the play session recorded for the launch (catalog_db::SessionStore, on the catalog worker),
+    /// absent while it was not; the error that kept it from being recorded; a launch verification recorded with it
+    /// (a normal return, ADR-0008 §8).
+    std::optional<std::int64_t> sessionId;
+    std::string sessionError;
+    bool verified = false;
 
     bool operator==(const LaunchRecord&) const = default;
 };
@@ -203,7 +260,7 @@ struct RunReport {
     std::optional<SpawnPoint> finalCamera;
     /// The --self-check of the run.
     std::optional<SelfCheckRecord> selfCheck;
-    /// The quick catalog; absent in runs without one (no --mock-catalog).
+    /// The quick catalog; absent in runs without the product UI (the model viewer).
     std::optional<CatalogRecord> catalog;
     /// The launches from the quick catalog, in order.
     std::vector<LaunchRecord> launches;

@@ -60,6 +60,32 @@ std::string_view toString(SessionPanel panel) noexcept {
     return "unknown";
 }
 
+std::string_view toString(LaunchEndCause cause) noexcept {
+    switch (cause) {
+    case LaunchEndCause::Session:
+        return "session";
+    case LaunchEndCause::User:
+        return "user";
+    case LaunchEndCause::Quit:
+        return "quit";
+    case LaunchEndCause::WaitLimit:
+        return "wait-limit";
+    }
+    return "unknown";
+}
+
+void LaunchFlow::noteBefore(CatalogView view) {
+    if (!m_records.empty()) {
+        m_records.back().before = std::move(view);
+    }
+}
+
+void LaunchFlow::noteAfter(CatalogView view) {
+    if (!m_records.empty()) {
+        m_records.back().after = std::move(view);
+    }
+}
+
 bool LaunchFlow::request(launcher::LaunchRequest request, LaunchInfo info, std::uint64_t frame) {
     if (m_pending || sessionActive()) {
         return false;
@@ -79,6 +105,7 @@ bool LaunchFlow::request(launcher::LaunchRequest request, LaunchInfo info, std::
     m_takeForeground = true;
     m_quitting = false;
     m_waitLimitReached = false;
+    m_stoppedAwaiting = false;
     m_focusSince.reset();
     m_askOnPress = false;
     show(SessionPanel::Launching);
@@ -122,6 +149,9 @@ void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks cal
     record.state = std::string(launcher::toString(m_seenState));
     record.strategy = std::string(launcher::toString(m_session->strategy()));
     record.processId = m_session->processId();
+    if (m_events.started) {
+        m_events.started(*m_session);
+    }
     if (m_session->finished()) {
         finish(now, frame);
         return;
@@ -146,6 +176,7 @@ void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
                      m_info.title, launcher::toString(m_session->state()),
                      std::chrono::duration<double>(*m_waitLimit).count());
         m_waitLimitReached = true;
+        m_stoppedAwaiting = m_session->state() == SessionState::AwaitingConfirmation;
         m_session->confirmReturn(now);
         if (m_session->finished()) {
             finish(now, frame);
@@ -260,6 +291,7 @@ void LaunchFlow::quit(LaunchClock::time_point now, std::uint64_t frame) {
                  launcher::toString(m_session->state()));
     m_quitting = true;
     current().quitDuringGame = true;
+    m_stoppedAwaiting = m_session->state() == SessionState::AwaitingConfirmation;
     m_session->confirmReturn(now);
     if (m_session->finished()) {
         finish(now, frame);
@@ -363,6 +395,13 @@ void LaunchFlow::finish(LaunchClock::time_point now, std::uint64_t frame) {
                  m_info.title, record.state, record.outcome, record.reason.empty() ? "" : " (" + record.reason + ")",
                  record.detail.empty() ? std::string() : ": " + record.detail, record.startFrame.value_or(frame),
                  frame, record.framesWhileRunning, record.framesWithPanel);
+    if (m_events.ended) {
+        const LaunchEndCause cause = m_quitting           ? LaunchEndCause::Quit
+                                     : m_waitLimitReached ? LaunchEndCause::WaitLimit
+                                     : endedByUser        ? LaunchEndCause::User
+                                                          : LaunchEndCause::Session;
+        m_events.ended(*m_session, cause, m_stoppedAwaiting);
+    }
     // Quitting shows nothing: the run is ending.
     if (!m_quitting && showsMessage(m_message)) {
         show(SessionPanel::Outcome);

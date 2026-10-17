@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -44,8 +45,32 @@ enum class SessionPanel : std::uint8_t {
 struct LaunchInfo {
     std::string gameId;
     std::string title;
-    /// The emulator profile's id.
+    /// The emulator profile's id; for an ES-DE command, its label.
     std::string profile;
+};
+
+/// Why a started launch's session ended (I2 step 13: its play session's outcome, catalog::LeftRunningReason in the
+/// catalog's words).
+enum class LaunchEndCause : std::uint8_t {
+    Session,   ///< on its own: the emulator exited, or the launch failed to start
+    User,      ///< the user's return: "Torna a Retroverse", "Sono tornato" (returnToRetroverse())
+    Quit,      ///< Retroverse quit while it ran (quit())
+    WaitLimit, ///< a frame-limited run stopped waiting for it (setWaitLimit())
+};
+
+/// "session", "user", "quit", "wait-limit".
+[[nodiscard]] std::string_view toString(LaunchEndCause cause) noexcept;
+
+/// What a LaunchFlow tells its owner besides its state (I2 step 13: the play session records), on the main thread,
+/// within the flow's own calls. Each is optional.
+struct LaunchFlowEvents {
+    /// The session began: LaunchSession::start() returned (the process runs, or the launch already failed: ended
+    /// follows at once).
+    std::function<void(const launcher::LaunchSession&)> started;
+    /// The session reached its final state. `stoppedAwaiting`: Retroverse stopped following a session that awaited the
+    /// user's confirmation (UserConfirmReturn) when it quit or its wait limit passed: its end is that confirmation, which
+    /// never came, so the game was left running whatever its tree says.
+    std::function<void(const launcher::LaunchSession&, LaunchEndCause cause, bool stoppedAwaiting)> ended;
 };
 
 /// A launch from the quick catalog, from Avvia to the return (specification §11.4, §15.5 ExternalEmulatorRunning;
@@ -86,6 +111,9 @@ public:
     explicit LaunchFlow(launcher::IProcessRunner& runner) noexcept : m_runner(runner) {}
     LaunchFlow(const LaunchFlow&) = delete;
     LaunchFlow& operator=(const LaunchFlow&) = delete;
+
+    /// The owner's events (replacing any given before).
+    void setEvents(LaunchFlowEvents events) { m_events = std::move(events); }
 
     /// Avvia with a ready request (launcher::planLaunch accepted it) on frame `frame`: it starts at the host's next wake
     /// (start()). False, and nothing changes, while another launch is pending or running.
@@ -171,6 +199,10 @@ public:
     [[nodiscard]] const launcher::LaunchSession* session() const noexcept { return m_session ? &*m_session : nullptr; }
     /// Every launch of the run, the current one last.
     [[nodiscard]] const std::vector<LaunchRecord>& records() const noexcept { return m_records; }
+    /// What the quick catalog and the walker showed when the current or last launch was asked for, and after it ended
+    /// (LaunchRecord::before, ::after); nothing before the first launch.
+    void noteBefore(CatalogView view);
+    void noteAfter(CatalogView view);
 
 private:
     /// Shows `panel`, recording it when it differs from the one shown.
@@ -197,6 +229,9 @@ private:
     std::optional<std::chrono::milliseconds> m_waitLimit;
     /// The current session ended because it outlived m_waitLimit.
     bool m_waitLimitReached = false;
+    /// Quitting or the wait limit stopped following the current session while it awaited the user's confirmation.
+    bool m_stoppedAwaiting = false;
+    LaunchFlowEvents m_events;
     bool m_quitting = false;
     bool m_returned = false;
     bool m_takeForeground = true;

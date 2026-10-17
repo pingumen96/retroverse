@@ -54,6 +54,7 @@
 			<h1 data-if="code == 'core-missing'">File dell'emulatore mancante</h1>
 			<h1 data-if="code == 'rom-missing'">Gioco non trovato</h1>
 			<h1 data-if="code == 'left-running'">Il gioco è rimasto aperto</h1>
+			<h1 data-if="code == 'not-ready'">Il gioco non si può avviare</h1>
 			<p class="game">{{ title }}</p>
 			<p id="session-message" data-if="code == 'quick-exit'">Il gioco è terminato appena avviato. Se in realtà è ancora
 				aperto, il profilo del suo emulatore deve attendere tutti i processi che avvia ("wait": "tree").</p>
@@ -92,7 +93,21 @@
 				gioco è rimasto aperto.</p>
 			<p data-if="code == 'left-running' && reason == 'wait-limit'">Questa esecuzione automatica ha smesso di
 				aspettare il gioco dopo il suo tempo massimo: il gioco è rimasto aperto, Retroverse non lo chiude.</p>
-			<p id="session-details" class="details" data-if="reason == 'start-failed' || reason == 'invalid-request' || reason == 'program-refused' || code == 'core-missing'">Dettagli: {{ detail }}</p>
+			<!-- A game of the ES-DE catalog that is not ready (I2 step 13): its readiness, checked again right before the
+			     launch; the card of the quick catalog explains the blocker, the detail is its own words. -->
+			<p data-if="code == 'not-ready' && reason == 'source-unavailable'">La cartella dei giochi di questo sistema non è
+				raggiungibile. Controlla che il disco o la cartella dei giochi sia collegata.</p>
+			<p data-if="code == 'not-ready' && reason == 'rom-missing'">Il file del gioco non si trova più. Controlla che il
+				disco sia collegato, o importa di nuovo il catalogo ("retroverse-cli import").</p>
+			<p data-if="code == 'not-ready' && reason == 'requires-configuration'">Il comando di avvio di questo gioco non si
+				può eseguire così com'è. Scegli un altro comando o un profilo d'emulatore ("retroverse-cli assign").</p>
+			<p data-if="code == 'not-ready' && reason == 'emulator-not-found'">L'emulatore di questo gioco non è installato,
+				o non si trova dove ES-DE lo cerca.</p>
+			<p data-if="code == 'not-ready' && reason == 'core-not-found'">L'emulatore c'è, ma manca il core che il comando
+				richiede. Installalo, o scegli un altro comando.</p>
+			<p data-if="code == 'not-ready' && reason != 'source-unavailable' && reason != 'rom-missing' && reason != 'requires-configuration' && reason != 'emulator-not-found' && reason != 'core-not-found'">Il gioco
+				non è pronto per l'avvio.</p>
+			<p id="session-details" class="details" data-if="reason == 'start-failed' || reason == 'invalid-request' || reason == 'program-refused' || code == 'core-missing' || (code == 'not-ready' && detail != '')">Dettagli: {{ detail }}</p>
 		</div>
 
 		<!-- The choices. Each row is a scroll container: RmlUi's spatial navigation stays inside it. -->

@@ -80,6 +80,12 @@ struct CardData {
     Rml::String players;
     Rml::String description;
     Rml::String state;
+    /// CatalogEntry::readiness, blocker, blockerDetail and verified: the launch readiness, its first blocker's code and
+    /// sentence ("Dettagli"), and whether the game's command returned normally once.
+    Rml::String readiness;
+    Rml::String blocker;
+    Rml::String detail;
+    bool verified = false;
 };
 
 /// The scroll indicator beside the list: its thumb's top and height in percent of the track.
@@ -221,6 +227,10 @@ struct QuickCatalogScreen::Impl {
             cardStruct.RegisterMember("players", &CardData::players);
             cardStruct.RegisterMember("description", &CardData::description);
             cardStruct.RegisterMember("state", &CardData::state);
+            cardStruct.RegisterMember("readiness", &CardData::readiness);
+            cardStruct.RegisterMember("blocker", &CardData::blocker);
+            cardStruct.RegisterMember("detail", &CardData::detail);
+            cardStruct.RegisterMember("verified", &CardData::verified);
         }
         if (auto scrollStruct = constructor.RegisterStruct<ScrollData>()) {
             scrollStruct.RegisterMember("shown", &ScrollData::shown);
@@ -234,6 +244,7 @@ struct QuickCatalogScreen::Impl {
         constructor.Bind("status", &status);
         constructor.Bind("count", &count);
         constructor.Bind("unavailable", &unavailable);
+        constructor.Bind("notice", &notice);
         constructor.BindFunc(
             "search", [this](Rml::Variant& value) { value = Rml::String(model.search()); },
             [this](const Rml::Variant& value) { setSearch(value.Get<Rml::String>()); });
@@ -268,7 +279,7 @@ struct QuickCatalogScreen::Impl {
     /// show; nothing to do when the model did not change.
     void catchUp() {
         if (shownFilter == model.filterRevision() && shownWindow == model.windowRevision() &&
-            shownSelection == model.selectionRevision()) {
+            shownSelection == model.selectionRevision() && shownContent == model.contentRevision()) {
             return;
         }
         logError("catalog");
@@ -312,9 +323,11 @@ struct QuickCatalogScreen::Impl {
             resizePool(shown);
             bound = true;
         }
-        // Another list binds every row (the same position may hold another game, the same game other data).
-        const bool newList = !boundList || *boundList != model.listRevision();
+        // Another list binds every row (the same position may hold another game, the same game other data), and so do
+        // rows the source changed in place (QuickCatalogModel::reread).
+        const bool newList = !boundList || *boundList != model.listRevision() || boundContent != model.contentRevision();
         boundList = model.listRevision();
+        boundContent = model.contentRevision();
         const std::span<const CatalogEntry> window = model.window();
         const std::size_t first = model.windowFirst();
         for (std::size_t slot = 0; slot < shown; ++slot) {
@@ -461,9 +474,15 @@ struct QuickCatalogScreen::Impl {
     /// The status line and the card when the selected game changed.
     void syncSelection() {
         if (shownSelection && *shownSelection == model.selectionRevision()) {
+            // The same game, other data (QuickCatalogModel::reread): the card shows it at once, the status line stays.
+            if (shownContent != model.contentRevision()) {
+                shownContent = model.contentRevision();
+                refreshCard();
+            }
             return;
         }
         shownSelection = model.selectionRevision();
+        shownContent = model.contentRevision();
         // The status line speaks of the game it was set for: another game clears it.
         if (!status.empty()) {
             status.clear();
@@ -524,6 +543,10 @@ struct QuickCatalogScreen::Impl {
             card.players = selected->players;
             card.description = selected->description;
             card.state = selected->state;
+            card.readiness = selected->readiness;
+            card.blocker = selected->blocker;
+            card.detail = selected->blockerDetail;
+            card.verified = selected->verified;
         }
         handle.DirtyVariable("card");
     }
@@ -1061,10 +1084,15 @@ struct QuickCatalogScreen::Impl {
     int count = 0;
     /// The list is empty because the source could not be read (the document says so instead of "no match").
     bool unavailable = false;
+    /// What the list says about the catalog itself (setNotice: quick_catalog::kNotice*); empty: nothing.
+    Rml::String notice;
     /// The model's revisions the document shows.
     std::optional<std::uint64_t> shownFilter;
     std::optional<std::uint64_t> shownWindow;
     std::optional<std::uint64_t> shownSelection;
+    std::uint64_t shownContent = 0;
+    /// The content revision (QuickCatalogModel::reread) the pool's rows were bound with.
+    std::uint64_t boundContent = 0;
     /// The list the rows were bound from (QuickCatalogModel::listRevision), and what each slot shows.
     std::optional<std::uint64_t> boundList;
     std::array<SlotShown, qc::kPoolRows> slots;
@@ -1233,6 +1261,17 @@ void QuickCatalogScreen::setStatus(std::string_view text) {
         m_impl->status = Rml::String(text);
         m_impl->handle.DirtyVariable("status");
     }
+}
+
+void QuickCatalogScreen::setNotice(std::string_view key) {
+    if (m_impl->notice != key) {
+        m_impl->notice = Rml::String(key);
+        m_impl->handle.DirtyVariable("notice");
+    }
+}
+
+std::string_view QuickCatalogScreen::notice() const noexcept {
+    return m_impl->notice;
 }
 
 void QuickCatalogScreen::setHighContrast(bool enabled) {
