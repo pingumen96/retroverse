@@ -3,7 +3,8 @@
 // NFR-02: the p95 of indexed queries at most 100 ms on 10,000 games; a UI page (30 rows fetched by ids) within 5 ms on
 // 100,000 games; and, informative, the materialization of lists on 100,000 games: every game in each order, a common
 // one-letter and two-letter prefix (both ways of reading a search's list), longer searches, the position of an id deep
-// in a list. The catalogs are generated (tests/support/catalog_generator.hpp). Timings taken while other work runs are
+// in a list; what the search area (its triggers and the order index) costs the writes of 100,000 entries. The catalogs
+// are generated (tests/support/catalog_generator.hpp). Timings taken while other work runs are
 // informative; the gate measures on a quiet machine (docs/i2/step-9.md records the figures).
 
 #include <catch2/catch_test_macros.hpp>
@@ -327,16 +328,54 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
     {
         auto copied = rv::catalog_db::Database::open(copy);
         REQUIRE(copied.has_value());
-        rv::catalog_db::Connection& writer = copied->writer();
-        const std::int64_t whole = writer.queryInt("PRAGMA page_count").value().value_or(0);
-        REQUIRE(writer.execute("DROP INDEX idx_games_sort; VACUUM").has_value());
-        const std::int64_t withoutOrder = writer.queryInt("PRAGMA page_count").value().value_or(0);
-        REQUIRE(writer.execute("DROP TABLE idx_game_search; VACUUM").has_value());
-        const std::int64_t withoutSearch = writer.queryInt("PRAGMA page_count").value().value_or(0);
+        rv::catalog_db::Connection& copyWriter = copied->writer();
+        const std::int64_t whole = copyWriter.queryInt("PRAGMA page_count").value().value_or(0);
+        REQUIRE(copyWriter.execute("DROP INDEX idx_games_sort; VACUUM").has_value());
+        const std::int64_t withoutOrder = copyWriter.queryInt("PRAGMA page_count").value().value_or(0);
+        REQUIRE(copyWriter.execute("DROP TABLE idx_game_search; VACUUM").has_value());
+        const std::int64_t withoutSearch = copyWriter.queryInt("PRAGMA page_count").value().value_or(0);
         report += fmt::format("  sizes: database {} pages of 4 KiB (vacuumed), order index {} pages, search index {} "
                               "pages\n",
                               whole, whole - withoutOrder, withoutOrder - withoutSearch);
     }
     WARN(report);
     CHECK(p95 <= 5.0);
+}
+
+TEST_CASE("catalog_db/bench: what the search area costs the writes of 100,000 entries (informative)", "[.bench]") {
+    const rv::test::TempDir dir("rv-bench-writes");
+    const rv::test::CatalogGeneratorOptions options{100'000, 9};
+
+    // The entries alone, generated twice as generateCatalogDatabase() does (GameId order, then the writes).
+    auto started = Clock::now();
+    std::size_t made = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (std::size_t i = 0; i < options.entries; ++i) {
+            made += rv::test::generatedEntry(options, i).sortKey.empty() ? 0 : 1;
+        }
+    }
+    const double generation = millisecondsSince(started);
+    REQUIRE(made == 2 * options.entries);
+
+    // The same writes into a database with the search area, then into one without its triggers and order index.
+    started = Clock::now();
+    REQUIRE(rv::test::generateCatalogDatabase(dir.file("with/retroverse.sqlite"), options, false).has_value());
+    const double withSearch = millisecondsSince(started);
+    {
+        auto database = rv::catalog_db::openCatalogDatabase(dir.file("without/retroverse.sqlite"));
+        REQUIRE(database.has_value());
+        REQUIRE(database->writer()
+                    .execute("DROP TRIGGER idx_games_search_insert; DROP TRIGGER idx_games_search_delete; "
+                             "DROP TRIGGER idx_games_search_update; DROP TRIGGER idx_systems_search_insert; "
+                             "DROP TRIGGER idx_systems_search_delete; DROP TRIGGER idx_systems_search_update; "
+                             "DROP INDEX idx_games_sort")
+                    .has_value());
+    }
+    started = Clock::now();
+    REQUIRE(rv::test::generateCatalogDatabase(dir.file("without/retroverse.sqlite"), options, false).has_value());
+    const double withoutSearch = millisecondsSince(started);
+    WARN(fmt::format("Informative timing (I2 step 9): 100,000 entries generated twice in {:.0f} ms; generated and "
+                     "written in one transaction in {:.0f} ms with the search area, {:.0f} ms without its triggers "
+                     "and order index",
+                     generation, withSearch, withoutSearch));
 }

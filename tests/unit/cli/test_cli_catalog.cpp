@@ -352,10 +352,18 @@ TEST_CASE("cli/catalog: search finds by words in any order, the last one a prefi
     CHECK(json.at("games").at(0).at("id") == idOf(cli.quest));
     CHECK(nlohmann::json::parse(cli.run({"search", "p", "--json"}).out).at("query").at("search") == "first-character");
 
-    // A search needs its text.
+    // A search needs its text, of 64 words at most.
     const RunResult none = cli.run({"search"});
     CHECK(none.code == ExitCode::UsageError);
     CHECK(none.out.empty());
+    std::string many;
+    for (int i = 0; i < 65; ++i) {
+        many += "pixel ";
+    }
+    const RunResult tooMany = cli.run({"search", many});
+    CHECK(tooMany.code == ExitCode::UsageError);
+    CHECK(tooMany.out.empty());
+    CHECK(contains(tooMany.err, "more than the 64 a search takes"));
 }
 
 TEST_CASE("cli/catalog: show prints everything the catalog holds about a game; an unknown game exits 1",

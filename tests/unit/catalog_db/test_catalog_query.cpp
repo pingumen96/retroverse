@@ -473,6 +473,13 @@ TEST_CASE("catalog_db/search: FTS5 syntax in user text is inert: quotes, '*', '-
     // Text that is not UTF-8 is refused.
     CHECK(codeOf(fixture.query->run(CatalogQuery{"pixel \xFF"})) == ErrorCode::InvalidArgument);
     CHECK(codeOf(fixture.query->searchWords("\xC3")) == ErrorCode::InvalidArgument);
+    // So is text of more than 64 words (no title has as many; an FTS5 query would have as many terms).
+    std::string many;
+    for (int i = 0; i < 64; ++i) {
+        many += "pixel ";
+    }
+    CHECK(fixture.query->run(CatalogQuery{many}).value() == titleOrder({quest, racer}));
+    CHECK(codeOf(fixture.query->run(CatalogQuery{many + "pixel"})) == ErrorCode::InvalidArgument);
 }
 
 TEST_CASE("catalog_db/search: the words are FTS5's own tokens of the text, as the index holds them",

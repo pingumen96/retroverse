@@ -287,7 +287,9 @@ ExitCode runGameList(CommandContext& context, bool search) {
     }
     const auto plan = catalog.searchPlan(query.text);
     if (!plan) {
-        return catalogFailure(context, plan.error());
+        // Text the search refuses (more words than it takes) is the user's to change.
+        return plan.error().code == ErrorCode::InvalidArgument ? usageError(context, plan.error().message)
+                                                               : catalogFailure(context, plan.error());
     }
     const auto ids = catalog.run(query);
     if (!ids) {

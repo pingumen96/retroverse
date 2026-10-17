@@ -53,6 +53,10 @@ constexpr std::size_t kStatementCacheLimit = 64;
 /// The page cache of the query connection, in KiB (PRAGMA cache_size = -kQueryCacheKiB).
 constexpr std::int64_t kQueryCacheKiB = 32 * 1024;
 
+/// The words a search takes (searchPlan()): beyond them, text is refused rather than made into an FTS5 query of as many
+/// terms (no title has that many words).
+constexpr std::size_t kMaxSearchWords = 64;
+
 /// A value the database holds that the catalog cannot read back: a damaged or foreign row.
 tl::unexpected<Error> unreadable(std::string_view what, std::string context) {
     return makeError(ErrorCode::ParseError, fmt::format("the catalog database holds {}", what), std::move(context));
@@ -474,7 +478,8 @@ struct SqliteCatalogQuery::State {
     /// The statements of `connection`, by their SQL.
     std::map<std::string, Statement, std::less<>> statements;
 
-    /// The kept statement of `sql`, prepared on first use.
+    /// The kept statement of `sql`, prepared on first use. Valid until the next call (which may empty the cache): each
+    /// read uses its statements one after the other.
     Expected<Statement*> statement(std::string_view sql) {
         if (const auto found = statements.find(sql); found != statements.end()) {
             return &found->second;
@@ -768,6 +773,11 @@ Expected<SearchPlan> SqliteCatalogQuery::searchPlan(std::string_view text) {
     }
     if (words->empty()) {
         return plan;
+    }
+    if (words->size() > kMaxSearchWords) {
+        return makeError(ErrorCode::InvalidArgument,
+                         fmt::format("the search text holds {} words, more than the {} a search takes", words->size(),
+                                     kMaxSearchWords));
     }
     plan.kind = SearchPlan::Kind::Words;
     plan.words = std::move(*words);

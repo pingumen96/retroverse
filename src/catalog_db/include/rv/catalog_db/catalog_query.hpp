@@ -9,7 +9,10 @@
 // filters, in its total order. Every read runs on one snapshot: a single statement, or several in one read transaction
 // (Transaction::Mode::Deferred), so that a list is never made of two states of the database; on a reader it never waits
 // on the writer (WAL: a reader sees the last committed snapshot while a write transaction is open). Statements are
-// prepared once, kept, and reset after each use (ScopedReset), so that no read transaction outlives a call.
+// prepared once, kept, and reset after each use (ScopedReset), so that no read transaction outlives a call. The list
+// of the last query read without a search is kept with the snapshot's PRAGMA data_version, and reused while no other
+// connection has committed: a search with the same filters and order narrows it to the rows FTS5 matches, in memory,
+// instead of reading the list again (the connection itself must therefore never write; a reader cannot).
 //
 // Filters (catalog::CatalogQuery):
 //  - states: the listed entry states; none listed: Game and MissingFile (OutsideSystemFolder matches nothing: such
@@ -27,7 +30,7 @@
 //    Text that is blank, or holds no word (punctuation only), matches every entry. A one-character text (one code point
 //    once ASCII white space is trimmed) is a filter without FTS5, which has no index for one-character prefixes: the
 //    entries whose sort key starts with that character lower-cased as sort keys are (case ignored, diacritics not: "é"
-//    finds "Éclair", "e" does not). Text that is not UTF-8 is InvalidArgument.
+//    finds "Éclair", "e" does not). Text that is not UTF-8, or holds more than 64 words, is InvalidArgument.
 //
 // Orders (catalog::SortOrder), each total: Title, (sort key, GameId); System, the system's full name folded as sort
 // keys are (catalog::sortKeyOf), then its name, then Title's order (games of a system without an idx_systems row sort
@@ -80,10 +83,11 @@ struct SearchPlan {
 
 /// How SqliteCatalogQuery reads its lists.
 struct QueryOptions {
-    /// Up to this many rows matching a search, a list is read by looking each of them up (a few rows of a large
-    /// catalog); beyond it, by reading the order index whole and keeping the matching rows (a common prefix, a large
-    /// share of the catalog). Both give the same list; the benchmarks of docs/i2/step-9.md chose the default.
-    std::size_t lookupLimit = 2000;
+    /// A search whose list without the search is not kept: up to this many matching rows, the list is read by looking
+    /// each of them up (a few rows of a large catalog); beyond it, the list without the search is read from the order
+    /// index, kept, and narrowed (a common prefix, a large share of the catalog). Both give the same list; the
+    /// benchmarks of docs/i2/step-9.md chose the default. 0: always the list without the search, kept.
+    std::size_t lookupLimit = 5000;
 };
 
 /// A system of the catalog with the number of its indexed entries (SqliteCatalogQuery::systems()).
