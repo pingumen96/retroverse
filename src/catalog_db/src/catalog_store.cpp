@@ -509,7 +509,16 @@ constexpr int parameter(GameColumn value) noexcept {
 
 /// The columns of an identity, as the store's identity SELECTs return them.
 constexpr std::string_view kIdentityColumns = "id, library, system, relative_path, key_rule, key_casing, present, "
-                                              "is_directory, file_size, file_time, file_hidden";
+                                              "is_directory, file_size, file_time, file_hidden, quick_hash, "
+                                              "quick_hash_size, quick_hash_time";
+
+/// The columns of a history row, as the history SELECT returns them.
+constexpr std::string_view kHistoryColumns =
+    "id, game, at, event, reason, from_key, from_path, to_key, to_path, alias, review, detail";
+
+/// The columns of a review row with its identity's system, as the review SELECTs return them.
+constexpr std::string_view kReviewColumns = "r.id, r.game, i.system, r.vanished_path, r.candidates, r.reason, "
+                                            "r.created_at, r.resolved_at, r.resolution, r.resolved_with";
 
 /// The statements of the store, prepared on first use and kept.
 enum class Sql : std::size_t {
@@ -562,6 +571,19 @@ enum class Sql : std::size_t {
     DeleteDiscMembership,
     InsertAlias,
     DeleteIdentity,
+    // I2 step 11b: reconciliation's reads and writes.
+    UpdateQuickHash,
+    InsertHistory,
+    SelectHistory,
+    InsertReview,
+    ResolveReview,
+    ResolveReviewsOf,
+    SelectReviewState,
+    SelectReviews,
+    SelectReview,
+    SelectAliasesOf,
+    SelectAlias,
+    SelectStateReferences,
     Count,
 };
 
@@ -599,16 +621,19 @@ std::string sqlOf(Sql which) {
         return "SELECT id FROM rv_game_identities UNION SELECT alias FROM rv_identity_aliases ORDER BY 1";
     case Sql::UpsertIdentity:
         // first_seen once, when the identity is made; last_seen whenever it is written with its file present (an
-        // import writes an identity only when it changes: first seen, its path or file facts changed, re-keyed).
+        // import writes an identity only when it changes: first seen, its path, file facts or quick hash changed,
+        // re-keyed). The quick hash is the identity's (StoredIdentity::quickHash, read with it).
         return "INSERT INTO rv_game_identities (id, library, system, lookup_key, relative_path, key_rule, key_casing, "
-               "present, is_directory, file_size, file_time, file_hidden, first_seen, last_seen) "
-               "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, CASE WHEN ?8 THEN ?13 END) "
+               "present, is_directory, file_size, file_time, file_hidden, first_seen, last_seen, quick_hash, "
+               "quick_hash_size, quick_hash_time) "
+               "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, CASE WHEN ?8 THEN ?13 END, ?14, ?15, ?16) "
                "ON CONFLICT (id) DO UPDATE SET library = excluded.library, system = excluded.system, "
                "lookup_key = excluded.lookup_key, relative_path = excluded.relative_path, "
                "key_rule = excluded.key_rule, key_casing = excluded.key_casing, present = excluded.present, "
                "is_directory = excluded.is_directory, file_size = excluded.file_size, "
                "file_time = excluded.file_time, file_hidden = excluded.file_hidden, "
-               "last_seen = coalesce(excluded.last_seen, last_seen)";
+               "last_seen = coalesce(excluded.last_seen, last_seen), quick_hash = excluded.quick_hash, "
+               "quick_hash_size = excluded.quick_hash_size, quick_hash_time = excluded.quick_hash_time";
     case Sql::SelectKeyVersions:
         return "SELECT key_rule, key_casing FROM rv_game_identities GROUP BY key_rule, key_casing LIMIT 2";
     case Sql::UpsertMeta:
@@ -716,6 +741,45 @@ std::string sqlOf(Sql which) {
                "VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
     case Sql::DeleteIdentity:
         return "DELETE FROM rv_game_identities WHERE id = ?1";
+    case Sql::UpdateQuickHash:
+        return "UPDATE rv_game_identities SET quick_hash = ?2, quick_hash_size = ?3, quick_hash_time = ?4 WHERE id = ?1";
+    case Sql::InsertHistory:
+        return "INSERT INTO rv_identity_history (game, at, event, reason, from_key, from_path, to_key, to_path, alias, "
+               "review, detail) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)";
+    case Sql::SelectHistory:
+        return fmt::format("SELECT {} FROM rv_identity_history WHERE game = ?1 ORDER BY id", kHistoryColumns);
+    case Sql::InsertReview:
+        return "INSERT INTO rv_identity_reviews (game, vanished_key, vanished_path, candidates, reason, created_at) "
+               "VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+    case Sql::ResolveReview:
+        return "UPDATE rv_identity_reviews SET resolved_at = ?2, resolution = ?3, resolved_with = ?4 "
+               "WHERE id = ?1 AND resolved_at IS NULL";
+    case Sql::ResolveReviewsOf:
+        return "UPDATE rv_identity_reviews SET resolved_at = ?2, resolution = ?3, resolved_with = ?4 "
+               "WHERE game = ?1 AND resolved_at IS NULL";
+    case Sql::SelectReviewState:
+        return "SELECT resolved_at IS NULL FROM rv_identity_reviews WHERE id = ?1";
+    case Sql::SelectReviews:
+        return fmt::format("SELECT {} FROM rv_identity_reviews AS r JOIN rv_game_identities AS i ON i.id = r.game "
+                           "WHERE i.library = ?1 AND (?2 = 0 OR r.resolved_at IS NULL) ORDER BY r.id",
+                           kReviewColumns);
+    case Sql::SelectReview:
+        return fmt::format("SELECT {} FROM rv_identity_reviews AS r JOIN rv_game_identities AS i ON i.id = r.game "
+                           "WHERE r.id = ?1",
+                           kReviewColumns);
+    case Sql::SelectAliasesOf:
+        return "SELECT alias, game, relative_path, at, reason FROM rv_identity_aliases WHERE game = ?1 ORDER BY alias";
+    case Sql::SelectAlias:
+        return "SELECT alias, game, relative_path, at, reason FROM rv_identity_aliases WHERE alias = ?1";
+    case Sql::SelectStateReferences:
+        // Every column of a state table (rv_*) that names an identity through a foreign key of its own, whatever step
+        // made the table: what putAlias() moves to the identity an alias stands for. Index tables (idx_*) are not
+        // state: putAlias() removes their rows. Only single-column keys into the identity's GameId (or its primary key).
+        return "SELECT m.name, f.\"from\" FROM sqlite_schema AS m JOIN pragma_foreign_key_list(m.name) AS f "
+               "WHERE m.type = 'table' AND substr(m.name, 1, 3) = 'rv_' AND f.\"table\" = 'rv_game_identities' "
+               "COLLATE NOCASE AND (f.\"to\" IS NULL OR f.\"to\" = 'id' COLLATE NOCASE) AND f.seq = 0 "
+               "AND NOT EXISTS (SELECT 1 FROM pragma_foreign_key_list(m.name) AS g WHERE g.id = f.id AND g.seq > 0) "
+               "ORDER BY m.name, f.id";
     case Sql::Count:
         break;
     }
@@ -755,7 +819,148 @@ Expected<StoredIdentity> readIdentity(const Statement& row, const LibraryId& lib
         }
         identity.file = FileFacts{row.columnInt(7) != 0, *size, row.columnInt(9), row.columnInt(10) != 0};
     }
+    if (!row.isNull(11)) {
+        const std::span<const std::byte> digest = row.columnBlob(11);
+        const auto size = readUnsigned(row.columnInt(12), "quick hash size", context);
+        if (!size) {
+            return propagate(size.error());
+        }
+        if (digest.size() != std::tuple_size_v<core::Sha256Digest>) {
+            return unreadable(fmt::format("a quick hash of {} bytes", digest.size()), context);
+        }
+        catalog::QuickHash hash;
+        std::transform(digest.begin(), digest.end(), hash.digest.begin(),
+                       [](std::byte b) { return static_cast<std::uint8_t>(b); });
+        hash.size = *size;
+        hash.lastWriteTime = row.columnInt(13);
+        identity.quickHash = hash;
+    }
     return identity;
+}
+
+/// Binds a quick hash to three parameters from `first` (digest, size, time), or NULL to all three. Errors:
+/// InvalidArgument for a size beyond 2^63 - 1.
+Status bindQuickHash(Statement& statement, int first, const std::optional<catalog::QuickHash>& hash) {
+    if (!hash) {
+        statement.bindNull(first).bindNull(first + 1).bindNull(first + 2);
+        return ok();
+    }
+    const auto size = storedInteger(hash->size, "the quick hash's size");
+    if (!size) {
+        return propagate(size.error());
+    }
+    statement.bindBlob(first, std::as_bytes(std::span<const std::uint8_t>(hash->digest)))
+        .bindInt(first + 1, *size)
+        .bindInt(first + 2, hash->lastWriteTime);
+    return ok();
+}
+
+/// A history row from a row of the history SELECT (kHistoryColumns).
+Expected<catalog::IdentityEvent> readHistory(const Statement& row) {
+    const std::string context = fmt::format("rv_identity_history row {}", row.columnInt(0));
+    catalog::IdentityEvent event;
+    event.id = row.columnInt(0);
+    const std::int64_t game = row.columnInt(1);
+    const auto id = GameId::fromValue(game < 0 ? 0 : static_cast<std::uint64_t>(game));
+    if (!id) {
+        return unreadable("a history row of no GameId", context);
+    }
+    event.game = *id;
+    event.at = std::string(row.columnText(2));
+    const auto kind = readEnum<catalog::IdentityEventKind>(row.columnText(3), catalog::parseIdentityEventKind,
+                                                           "history event", context);
+    if (!kind) {
+        return propagate(kind.error());
+    }
+    event.kind = *kind;
+    if (!row.columnText(4).empty()) {
+        const auto reason = readEnum<catalog::MoveReason>(row.columnText(4), catalog::parseMoveReason, "move reason",
+                                                         context);
+        if (!reason) {
+            return propagate(reason.error());
+        }
+        event.reason = *reason;
+    }
+    event.fromKey = std::string(row.columnText(5));
+    event.fromPath = std::string(row.columnText(6));
+    event.toKey = std::string(row.columnText(7));
+    event.toPath = std::string(row.columnText(8));
+    if (const auto alias = row.columnOptionalInt(9)) {
+        event.alias = GameId::fromValue(*alias < 0 ? 0 : static_cast<std::uint64_t>(*alias));
+        if (!event.alias) {
+            return unreadable("a history row whose alias is no GameId", context);
+        }
+    }
+    event.review = row.columnOptionalInt(10);
+    event.detail = std::string(row.columnText(11));
+    return event;
+}
+
+/// A review row from a row of the review SELECTs (kReviewColumns).
+Expected<catalog::StoredReview> readReview(const Statement& row) {
+    const std::string context = fmt::format("rv_identity_reviews row {}", row.columnInt(0));
+    catalog::StoredReview stored;
+    catalog::ReviewRow& review = stored.review;
+    review.id = row.columnInt(0);
+    const std::int64_t game = row.columnInt(1);
+    const auto id = GameId::fromValue(game < 0 ? 0 : static_cast<std::uint64_t>(game));
+    auto system = SystemName::parse(row.columnText(2));
+    auto vanished = readKey(row.columnText(3), context);
+    if (!id || !system || !vanished) {
+        return !id ? unreadable("a review row of no GameId", context)
+               : !system ? unreadable("a review row of an invalid system", context)
+                         : propagate(vanished.error());
+    }
+    review.game = *id;
+    review.system = std::move(*system);
+    review.vanished = std::move(*vanished);
+    try {
+        for (const nlohmann::json& candidate : nlohmann::json::parse(row.columnText(4))) {
+            auto key = readKey(candidate.get<std::string>(), context);
+            if (!key) {
+                return propagate(key.error());
+            }
+            review.candidates.push_back(std::move(*key));
+        }
+    } catch (const nlohmann::json::exception&) {
+        return unreadable("a review row whose candidates are not a JSON array of paths", context);
+    }
+    review.reason = std::string(row.columnText(5));
+    stored.createdAt = std::string(row.columnText(6));
+    if (!row.isNull(7)) {
+        stored.resolvedAt = std::string(row.columnText(7));
+        const auto resolution = readEnum<catalog::ReviewResolution>(row.columnText(8), catalog::parseReviewResolution,
+                                                                    "review resolution", context);
+        if (!resolution) {
+            return propagate(resolution.error());
+        }
+        stored.resolution = *resolution;
+    }
+    if (const auto with = row.columnOptionalInt(9)) {
+        stored.resolvedWith = GameId::fromValue(*with < 0 ? 0 : static_cast<std::uint64_t>(*with));
+        if (!stored.resolvedWith) {
+            return unreadable("a review row resolved with no GameId", context);
+        }
+    }
+    return stored;
+}
+
+/// An alias from a row of the alias SELECTs (alias, game, relative_path, at, reason).
+Expected<catalog::StoredAlias> readAlias(const Statement& row) {
+    const std::string context = fmt::format("rv_identity_aliases row {}", row.columnInt(0));
+    const std::int64_t aliasValue = row.columnInt(0);
+    const std::int64_t gameValue = row.columnInt(1);
+    const auto alias = GameId::fromValue(aliasValue < 0 ? 0 : static_cast<std::uint64_t>(aliasValue));
+    const auto game = GameId::fromValue(gameValue < 0 ? 0 : static_cast<std::uint64_t>(gameValue));
+    auto key = readKey(row.columnText(2), context);
+    const auto reason = readEnum<catalog::MoveReason>(row.columnText(4), catalog::parseMoveReason, "alias reason",
+                                                     context);
+    if (!alias || !game || !key || !reason) {
+        return !alias || !game ? unreadable("an alias of no GameId", context)
+               : !key          ? propagate(key.error())
+                               : propagate(reason.error());
+    }
+    return catalog::StoredAlias{*alias, *game, std::move(*key), std::string(row.columnText(3)), *reason};
 }
 
 /// An identity from a row whose library and system are not known yet (identity(id)).
@@ -1116,9 +1321,67 @@ struct SqliteCatalogStore::State {
         return &kept;
     }
 
+    /// The statements that move the state rows naming an identity to another (putAlias()): per column of a state table
+    /// with a foreign key into rv_game_identities, an UPDATE OR IGNORE and a DELETE of what it left. Found in the schema
+    /// on first use (the schema does not change while the database is open: a migration needs it closed elsewhere).
+    struct Repoint {
+        std::string table;
+        std::string column;
+        Statement update;
+        Statement remove;
+    };
+    Expected<std::vector<Repoint>*> repoints() {
+        if (repointsFound) {
+            return &repointStatements;
+        }
+        auto select = statement(Sql::SelectStateReferences);
+        if (!select) {
+            return propagate(select.error());
+        }
+        std::vector<std::pair<std::string, std::string>> columns;
+        {
+            Statement& row = **select;
+            const ScopedReset reset(row);
+            while (true) {
+                const auto next = row.step();
+                if (!next) {
+                    return propagate(next.error());
+                }
+                if (!*next) {
+                    break;
+                }
+                columns.emplace_back(std::string(row.columnText(0)), std::string(row.columnText(1)));
+            }
+        }
+        // Identifiers quoted, a '"' doubled: names read from the schema itself.
+        const auto quoted = [](std::string_view name) {
+            std::string text = "\"";
+            for (const char c : name) {
+                text += c == '"' ? std::string("\"\"") : std::string(1, c);
+            }
+            return text + "\"";
+        };
+        std::vector<Repoint> found;
+        for (const auto& [table, column] : columns) {
+            auto update = database.writer().prepare(fmt::format("UPDATE OR IGNORE {0} SET {1} = ?2 WHERE {1} = ?1",
+                                                                quoted(table), quoted(column)));
+            auto remove =
+                database.writer().prepare(fmt::format("DELETE FROM {0} WHERE {1} = ?1", quoted(table), quoted(column)));
+            if (!update || !remove) {
+                return propagate(!update ? update.error() : remove.error());
+            }
+            found.push_back(Repoint{table, column, std::move(*update), std::move(*remove)});
+        }
+        repointStatements = std::move(found);
+        repointsFound = true;
+        return &repointStatements;
+    }
+
     Database& database;
     StoreOptions options;
     std::array<Statement, static_cast<std::size_t>(Sql::Count)> statements;
+    std::vector<Repoint> repointStatements;
+    bool repointsFound = false;
     /// The import transaction this store has open, if any.
     ImportTransaction* open = nullptr;
     /// The import lock lockImport() holds, if any.
@@ -1161,6 +1424,11 @@ public:
     Status putDiscGroup(const catalog::IndexedDiscGroup& group) override;
     Status removeDiscGroup(GameId head) override;
     Status putAlias(const catalog::IdentityAlias& alias) override;
+    Status putQuickHash(GameId id, const catalog::QuickHash& hash) override;
+    Status putHistory(const catalog::IdentityEvent& event) override;
+    Expected<std::int64_t> putReview(const catalog::ReviewRow& review) override;
+    Status resolveReview(std::int64_t id, catalog::ReviewResolution resolution, std::optional<GameId> with) override;
+    Status resolveReviewsOf(GameId game, catalog::ReviewResolution resolution) override;
     Status putImportIssues(const LibraryId& library, std::span<const catalog::Issue> issues,
                            std::span<const SystemName> systems) override;
     Status recordImport(const catalog::ImportRecord& record) override;
@@ -1394,6 +1662,10 @@ Status SqliteCatalogStore::ImportTransaction::putIdentity(const StoredIdentity& 
             .bindBool(12, identity.file->hidden);
     } else {
         row.bindNull(9).bindNull(10).bindNull(11).bindNull(12);
+    }
+    if (auto bound = bindQuickHash(row, 14, identity.quickHash); !bound) {
+        row.reset();
+        return propagate(withPrefix(bound.error(), "cannot store the identity " + context));
     }
     if (auto stored = row.run(); !stored) {
         Error error = stored.error();
@@ -1803,8 +2075,41 @@ Status SqliteCatalogStore::ImportTransaction::putAlias(const catalog::IdentityAl
         }
         statements[i] = *prepared;
     }
+    auto closeReviews = statement(Sql::ResolveReviewsOf);
+    auto repoints = m_state->repoints();
+    if (!closeReviews || !repoints) {
+        return propagate(!closeReviews ? closeReviews.error() : repoints.error());
+    }
     const auto id = static_cast<std::int64_t>(identity.id.value());
+    const auto game = static_cast<std::int64_t>(alias.game.value());
     return asOne([&]() -> Status {
+        // Its open review rows are resolved: it is no identity any more (the rows move to `game` below).
+        (*closeReviews)
+            ->bindInt(1, id)
+            .bindText(2, m_now)
+            .bindText(3, catalog::toString(catalog::ReviewResolution::Aliased))
+            .bindInt(4, game);
+        if (auto closed = (*closeReviews)->run(); !closed) {
+            return propagate(failed(withPrefix(closed.error(), "cannot resolve the review rows of " + context)));
+        }
+        // Every state row that names it moves to `game`, whatever table holds it (found in the schema: the history, the
+        // review rows, the aliases that stood for it, and the tables of later steps, play sessions and launch choices
+        // among them). UPDATE OR IGNORE then DELETE: where a table holds one row per game and `game` has its own, the
+        // row of `game` stays and the alias's goes.
+        for (State::Repoint& repoint : **repoints) {
+            repoint.update.bindInt(1, id).bindInt(2, game);
+            if (auto moved = repoint.update.run(); !moved) {
+                return propagate(failed(withPrefix(
+                    moved.error(), fmt::format("cannot move the rows of {}.{} that name {}", repoint.table,
+                                               repoint.column, context))));
+            }
+            repoint.remove.bindInt(1, id);
+            if (auto removed = repoint.remove.run(); !removed) {
+                return propagate(failed(withPrefix(
+                    removed.error(), fmt::format("cannot remove the rows of {}.{} that name {}", repoint.table,
+                                                 repoint.column, context))));
+            }
+        }
         // The index rows that name it (its own, the group it heads, its places among other groups' members), the alias
         // recorded with its last key and path, then the identity row, which frees its relative path.
         for (std::size_t i = 0; i < kStatements.size(); ++i) {
@@ -1827,6 +2132,158 @@ Status SqliteCatalogStore::ImportTransaction::putAlias(const catalog::IdentityAl
         }
         return ok();
     });
+}
+
+Status SqliteCatalogStore::ImportTransaction::putQuickHash(GameId id, const catalog::QuickHash& hash) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    const std::string context = id.toString();
+    auto update = statement(Sql::UpdateQuickHash);
+    if (!update) {
+        return propagate(update.error());
+    }
+    Statement& row = **update;
+    row.bindInt(1, static_cast<std::int64_t>(id.value()));
+    if (auto bound = bindQuickHash(row, 2, hash); !bound) {
+        row.reset();
+        return propagate(withPrefix(bound.error(), "cannot store the quick hash of " + context));
+    }
+    if (auto stored = row.run(); !stored) {
+        return propagate(failed(withPrefix(stored.error(), "cannot store the quick hash of " + context)));
+    }
+    if (m_state->database.writer().changes() != 1) {
+        return makeError(ErrorCode::InvalidArgument, "no identity has this GameId", context);
+    }
+    return ok();
+}
+
+Status SqliteCatalogStore::ImportTransaction::putHistory(const catalog::IdentityEvent& event) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    const std::string context = event.game.toString();
+    auto insert = statement(Sql::InsertHistory);
+    if (!insert) {
+        return propagate(insert.error());
+    }
+    const auto optionalText = [](const std::string& text) {
+        return text.empty() ? std::nullopt : std::optional<std::string_view>(text);
+    };
+    (*insert)
+        ->bindInt(1, static_cast<std::int64_t>(event.game.value()))
+        .bindText(2, event.at.empty() ? std::string_view(m_now) : std::string_view(event.at))
+        .bindText(3, catalog::toString(event.kind))
+        .bindText(4, event.reason ? catalog::toString(*event.reason) : std::string_view())
+        .bindOptionalText(5, optionalText(event.fromKey))
+        .bindOptionalText(6, optionalText(event.fromPath))
+        .bindOptionalText(7, optionalText(event.toKey))
+        .bindOptionalText(8, optionalText(event.toPath))
+        .bindOptionalInt(9, event.alias ? std::optional<std::int64_t>(static_cast<std::int64_t>(event.alias->value()))
+                                        : std::nullopt)
+        .bindOptionalInt(10, event.review)
+        .bindText(11, event.detail);
+    if (auto stored = (*insert)->run(); !stored) {
+        Error error = stored.error();
+        if (isConstraintFailure(error, "FOREIGN KEY")) {
+            error.message = fmt::format("no identity has this GameId, or no review row that id ({})", error.message);
+        }
+        return propagate(failed(withPrefix(std::move(error), "cannot record the history of " + context)));
+    }
+    return ok();
+}
+
+Expected<std::int64_t> SqliteCatalogStore::ImportTransaction::putReview(const catalog::ReviewRow& review) {
+    if (auto open = active(); !open) {
+        return propagate(open.error());
+    }
+    const std::string context = review.game.toString();
+    if (review.vanished.empty() ||
+        std::any_of(review.candidates.begin(), review.candidates.end(), [](const LookupKey& key) { return key.empty(); })) {
+        return makeError(ErrorCode::InvalidArgument, "a review row needs the vanished path and its candidates' paths",
+                         context);
+    }
+    nlohmann::json candidates = nlohmann::json::array();
+    for (const LookupKey& candidate : review.candidates) {
+        candidates.push_back(candidate.relativePath());
+    }
+    const auto candidatesText = jsonText(candidates, "the review's candidates");
+    if (!candidatesText) {
+        return propagate(candidatesText.error());
+    }
+    auto insert = statement(Sql::InsertReview);
+    if (!insert) {
+        return propagate(insert.error());
+    }
+    (*insert)
+        ->bindInt(1, static_cast<std::int64_t>(review.game.value()))
+        .bindText(2, review.vanished.key())
+        .bindText(3, review.vanished.relativePath())
+        .bindText(4, *candidatesText)
+        .bindText(5, review.reason)
+        .bindText(6, m_now);
+    if (auto stored = (*insert)->run(); !stored) {
+        Error error = stored.error();
+        if (isConstraintFailure(error, "FOREIGN KEY")) {
+            error.message = fmt::format("no identity has this GameId ({})", error.message);
+        }
+        return propagate(failed(withPrefix(std::move(error), "cannot store the review row of " + context)));
+    }
+    return m_state->database.writer().lastInsertRowId();
+}
+
+Status SqliteCatalogStore::ImportTransaction::resolveReview(std::int64_t id, catalog::ReviewResolution resolution,
+                                                            std::optional<GameId> with) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    const std::string context = fmt::format("review {}", id);
+    auto update = statement(Sql::ResolveReview);
+    auto state = statement(Sql::SelectReviewState);
+    if (!update || !state) {
+        return propagate(!update ? update.error() : state.error());
+    }
+    (*update)
+        ->bindInt(1, id)
+        .bindText(2, m_now)
+        .bindText(3, catalog::toString(resolution))
+        .bindOptionalInt(4, with ? std::optional<std::int64_t>(static_cast<std::int64_t>(with->value())) : std::nullopt);
+    if (auto stored = (*update)->run(); !stored) {
+        return propagate(failed(withPrefix(stored.error(), "cannot resolve the " + context)));
+    }
+    if (m_state->database.writer().changes() == 1) {
+        return ok();
+    }
+    (*state)->bindInt(1, id);
+    const auto open = readSingleRow(**state, [](const Statement& row, bool hasRow) -> Expected<std::optional<bool>> {
+        return hasRow ? std::optional<bool>(row.columnInt(0) != 0) : std::nullopt;
+    });
+    if (!open) {
+        return propagate(failed(open.error()));
+    }
+    if (!open->has_value()) {
+        return makeError(ErrorCode::NotFound, "no review row has this id", context);
+    }
+    return makeError(ErrorCode::Conflict, "the review row was resolved already", context);
+}
+
+Status SqliteCatalogStore::ImportTransaction::resolveReviewsOf(GameId game, catalog::ReviewResolution resolution) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    auto update = statement(Sql::ResolveReviewsOf);
+    if (!update) {
+        return propagate(update.error());
+    }
+    (*update)
+        ->bindInt(1, static_cast<std::int64_t>(game.value()))
+        .bindText(2, m_now)
+        .bindText(3, catalog::toString(resolution))
+        .bindNull(4);
+    if (auto stored = (*update)->run(); !stored) {
+        return propagate(failed(withPrefix(stored.error(), "cannot resolve the review rows of " + game.toString())));
+    }
+    return ok();
 }
 
 Status SqliteCatalogStore::ImportTransaction::putImportIssues(const LibraryId& library,
@@ -2450,6 +2907,96 @@ Expected<std::optional<catalog::ImportRecord>> SqliteCatalogStore::lastImport(co
             }
             return std::optional<catalog::ImportRecord>(std::move(record));
         });
+}
+
+namespace {
+
+/// Every row `statement` (its parameters bound) returns, each read by `read`, in its order; the statement is reset.
+template <class T, class Read>
+Expected<std::vector<T>> readRows(Statement& statement, Read read) {
+    const ScopedReset reset(statement);
+    std::vector<T> rows;
+    while (true) {
+        const auto next = statement.step();
+        if (!next) {
+            return propagate(next.error());
+        }
+        if (!*next) {
+            return rows;
+        }
+        auto row = read(statement);
+        if (!row) {
+            return propagate(row.error());
+        }
+        rows.push_back(std::move(*row));
+    }
+}
+
+} // namespace
+
+Expected<std::vector<catalog::IdentityEvent>> SqliteCatalogStore::history(GameId game) {
+    auto select = m_state->statement(Sql::SelectHistory);
+    if (!select) {
+        return propagate(select.error());
+    }
+    (*select)->bindInt(1, static_cast<std::int64_t>(game.value()));
+    return readRows<catalog::IdentityEvent>(**select, readHistory);
+}
+
+Expected<std::vector<catalog::StoredAlias>> SqliteCatalogStore::aliasesOf(GameId game) {
+    auto select = m_state->statement(Sql::SelectAliasesOf);
+    if (!select) {
+        return propagate(select.error());
+    }
+    (*select)->bindInt(1, static_cast<std::int64_t>(game.value()));
+    return readRows<catalog::StoredAlias>(**select, readAlias);
+}
+
+Expected<std::optional<catalog::StoredAlias>> SqliteCatalogStore::alias(GameId alias) {
+    auto select = m_state->statement(Sql::SelectAlias);
+    if (!select) {
+        return propagate(select.error());
+    }
+    (*select)->bindInt(1, static_cast<std::int64_t>(alias.value()));
+    return readSingleRow(**select,
+                         [](const Statement& row, bool hasRow) -> Expected<std::optional<catalog::StoredAlias>> {
+                             if (!hasRow) {
+                                 return std::optional<catalog::StoredAlias>();
+                             }
+                             auto read = readAlias(row);
+                             if (!read) {
+                                 return propagate(read.error());
+                             }
+                             return std::optional<catalog::StoredAlias>(std::move(*read));
+                         });
+}
+
+Expected<std::vector<catalog::StoredReview>> SqliteCatalogStore::reviews(const LibraryId& library, bool openOnly) {
+    auto select = m_state->statement(Sql::SelectReviews);
+    if (!select) {
+        return propagate(select.error());
+    }
+    (*select)->bindText(1, library.str()).bindBool(2, openOnly);
+    return readRows<catalog::StoredReview>(**select, readReview);
+}
+
+Expected<std::optional<catalog::StoredReview>> SqliteCatalogStore::review(std::int64_t id) {
+    auto select = m_state->statement(Sql::SelectReview);
+    if (!select) {
+        return propagate(select.error());
+    }
+    (*select)->bindInt(1, id);
+    return readSingleRow(**select,
+                         [](const Statement& row, bool hasRow) -> Expected<std::optional<catalog::StoredReview>> {
+                             if (!hasRow) {
+                                 return std::optional<catalog::StoredReview>();
+                             }
+                             auto read = readReview(row);
+                             if (!read) {
+                                 return propagate(read.error());
+                             }
+                             return std::optional<catalog::StoredReview>(std::move(*read));
+                         });
 }
 
 Expected<std::unique_ptr<catalog::IImportLock>> SqliteCatalogStore::lockImport(const LibraryId& library) {

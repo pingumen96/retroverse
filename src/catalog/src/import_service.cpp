@@ -100,6 +100,8 @@ struct SystemPlan {
     std::vector<std::optional<MoveReason>> moved; ///< per identity: paired with a new file
     std::vector<bool> aliased;                 ///< per identity: becomes an alias of a moved identity
     std::vector<GameId> entryIds;              ///< per entries[i], once given out
+    /// Per entries[i]: the quick hash the pairing pass read of its file (a new file), stored with its identity.
+    std::vector<std::optional<QuickHash>> entryHash;
     /// What the pairing pass decided, applied and reported once the guard lets the system be applied.
     std::vector<MovedGame> moves;
     std::vector<IdentityAlias> aliases;
@@ -124,7 +126,57 @@ struct Writes {
     std::vector<GameId> removals;
     std::vector<IndexedDiscGroup> groups;
     std::vector<GameId> groupRemovals;
+    /// The history of reconciliation (I2 step 11b): moves, aliases, re-keyed identities, in the order they happened.
+    std::vector<IdentityEvent> history;
+    /// Identities whose file came back: their open review rows are resolved.
+    std::vector<GameId> returned;
 };
+
+/// What a move rested on, for the history.
+std::string moveDetail(MoveReason reason) {
+    switch (reason) {
+    case MoveReason::QuickHash:
+        return "the new file has its quick hash";
+    case MoveReason::SizeTimeName:
+        return "no quick hash was stored: the only new file of its size, time and name";
+    case MoveReason::IdenticalCopies:
+        return "identical copies (one quick hash) moved together, paired in key order";
+    case MoveReason::MovedBack:
+        return "its file came back onto the path or key of another identity";
+    case MoveReason::ReviewResolved:
+        return "a review resolved";
+    }
+    return {};
+}
+
+/// The history events of one pairing's move: the move, then the alias it made (when the file had a holder).
+void moveEvents(const MovedGame& move, const IdentityAlias* alias, std::vector<IdentityEvent>& history) {
+    IdentityEvent moved;
+    moved.game = move.id;
+    moved.kind = IdentityEventKind::Moved;
+    moved.reason = move.reason;
+    moved.fromKey = move.from.key();
+    moved.fromPath = move.from.relativePath();
+    moved.toKey = move.to.key();
+    moved.toPath = move.to.relativePath();
+    moved.detail = moveDetail(move.reason);
+    if (alias != nullptr) {
+        moved.detail += fmt::format("; back where {} held its path meanwhile, now its alias", alias->alias.id.toString());
+    }
+    history.push_back(std::move(moved));
+    if (alias != nullptr) {
+        IdentityEvent aliased;
+        aliased.game = move.id;
+        aliased.kind = IdentityEventKind::Alias;
+        aliased.reason = alias->reason;
+        aliased.fromKey = alias->alias.key.key();
+        aliased.fromPath = alias->alias.key.relativePath();
+        aliased.alias = alias->alias.id;
+        aliased.detail = fmt::format("{} held the path without its file and stands for this identity from now on",
+                                     alias->alias.id.toString());
+        history.push_back(std::move(aliased));
+    }
+}
 
 /// One run of ImportService.
 class ImportRun {
@@ -298,6 +350,7 @@ Status ImportRun::match(SystemPlan& plan) {
     plan.identityEntry.assign(identities.size(), kNone);
     plan.moved.assign(identities.size(), std::nullopt);
     plan.aliased.assign(identities.size(), false);
+    plan.entryHash.assign(entryCount, std::nullopt);
     const auto entryAt = [&](std::size_t i) -> const CatalogEntry& { return m_snapshot.entries[plan.entries[i]]; };
 
     // The exact stored relative path first (a file has one identity: paths are unique per system) ...
@@ -414,13 +467,14 @@ Status ImportRun::match(SystemPlan& plan) {
             if (const std::ptrdiff_t old = plan.identityEntry[j]; old != kNone) {
                 plan.entryIdentity[static_cast<std::size_t>(old)] = kNone;
             }
-            // The identity that held the file without it (NewFile::heldBy) becomes an alias of the moved one.
+            // The identity that held the file without it (NewFile::heldBy) becomes an alias of the moved one: the
+            // moved-back rule (ADR-0008 §4), whatever the pairing rested on (the move's reason).
             std::optional<GameId> alias;
             if (const std::ptrdiff_t holder = plan.entryIdentity[i]; holder != kNone) {
                 const auto h = static_cast<std::size_t>(holder);
                 plan.identityEntry[h] = kNone;
                 plan.aliased[h] = true;
-                plan.aliases.push_back(IdentityAlias{identities[h], identities[j].id, pair.reason});
+                plan.aliases.push_back(IdentityAlias{identities[h], identities[j].id, MoveReason::MovedBack});
                 alias = identities[h].id;
             }
             plan.identityEntry[j] = static_cast<std::ptrdiff_t>(i);
@@ -429,6 +483,31 @@ Status ImportRun::match(SystemPlan& plan) {
             plan.moves.push_back(
                 MovedGame{identities[j].id, plan.name, identities[j].key, entryAt(i).key, pair.reason, alias});
             ++paired;
+        }
+        // The quick hashes it read of new files, stored with the identities those files end with.
+        std::vector<bool> fileHashed(newFiles.size(), false);
+        for (const NewFileHash& hashed : pairs->hashes) {
+            const auto f = std::find_if(newFiles.begin(), newFiles.end(),
+                                        [&](const NewFile& candidate) { return candidate.key == hashed.file; });
+            if (f == newFiles.end() || fileHashed[f - newFiles.begin()]) {
+                return makeError(ErrorCode::InvalidArgument,
+                                 "the pairing pass gave the quick hash of a file it was not given, or twice",
+                                 hashed.file.relativePath());
+            }
+            fileHashed[f - newFiles.begin()] = true;
+            plan.entryHash[newFileIndex[static_cast<std::size_t>(f - newFiles.begin())]] = hashed.hash;
+        }
+        // Review rows name vanished identities it left unpaired.
+        for (ReviewRow& review : pairs->reviews) {
+            const auto v = std::find_if(vanished.begin(), vanished.end(),
+                                        [&](const VanishedIdentity& candidate) { return candidate.identity.id == review.game; });
+            if (v == vanished.end() || identityUsed[v - vanished.begin()]) {
+                return makeError(ErrorCode::InvalidArgument,
+                                 "the pairing pass made a review row of an identity it was not given, or paired",
+                                 review.game.toString());
+            }
+            review.id = 0;
+            review.system = plan.name;
         }
         plan.reviews = std::move(pairs->reviews);
         for (Issue& issue : pairs->issues) {
@@ -476,6 +555,12 @@ Status ImportRun::assignIds() {
 void ImportRun::buildIdentityWrites(SystemPlan& plan) {
     // Identities that become aliases go first (IImportTransaction::putAlias()), which frees their paths.
     m_writes.aliases.insert(m_writes.aliases.end(), plan.aliases.begin(), plan.aliases.end());
+    // The history of the moves, each with the alias it made, in the order the pairing pass gave them.
+    for (const MovedGame& move : plan.moves) {
+        const auto alias = std::find_if(plan.aliases.begin(), plan.aliases.end(),
+                                        [&](const IdentityAlias& made) { return move.alias == made.alias.id; });
+        moveEvents(move, alias == plan.aliases.end() ? nullptr : &*alias, m_writes.history);
+    }
     for (std::size_t j = 0; j < plan.identities.size(); ++j) {
         if (plan.aliased[j]) {
             continue;
@@ -485,11 +570,15 @@ void ImportRun::buildIdentityWrites(SystemPlan& plan) {
         const std::ptrdiff_t matched = plan.identityEntry[j];
         const bool unknown = plan.unavailable.reasonFor(stored.key.key()).has_value();
         if (matched != kNone) {
-            const CatalogEntry& entry = m_snapshot.entries[plan.entries[static_cast<std::size_t>(matched)]];
+            const auto i = static_cast<std::size_t>(matched);
+            const CatalogEntry& entry = m_snapshot.entries[plan.entries[i]];
             if (entry.file && entry.availability == Availability::Available) {
                 identity.key = entry.key; // seen: the path as listed now
                 identity.present = true;
                 identity.file = entry.file;
+                if (plan.entryHash[i]) {
+                    identity.quickHash = plan.entryHash[i]; // read by the pairing pass: the file's hash now
+                }
             } else if (entry.availability != Availability::SourceUnavailable) {
                 identity.present = false; // its file gone, its gamelist entry left: last path and facts kept
             }
@@ -497,9 +586,24 @@ void ImportRun::buildIdentityWrites(SystemPlan& plan) {
             identity.present = false; // vanished, or left the snapshot: last path and facts kept
         }
         identity.keyVersion = m_keyVersion; // stored keys of another version are computed again, in place
-        plan.changes.rekeyed += stored.keyVersion != m_keyVersion ? 1 : 0;
+        if (stored.keyVersion != m_keyVersion) {
+            ++plan.changes.rekeyed;
+            IdentityEvent rekeyed;
+            rekeyed.game = stored.id;
+            rekeyed.kind = IdentityEventKind::Rekeyed;
+            rekeyed.fromPath = stored.key.relativePath();
+            rekeyed.toKey = stored.key.key();
+            rekeyed.toPath = stored.key.relativePath();
+            rekeyed.detail = fmt::format("key rule {}, casing table '{}' -> key rule {}, casing table '{}'",
+                                         stored.keyVersion.rule, stored.keyVersion.casingTable, m_keyVersion.rule,
+                                         m_keyVersion.casingTable);
+            m_writes.history.push_back(std::move(rekeyed));
+        }
         plan.changes.vanished += stored.present && !identity.present ? 1 : 0;
-        plan.changes.returned += !stored.present && identity.present ? 1 : 0;
+        if (!stored.present && identity.present) {
+            ++plan.changes.returned;
+            m_writes.returned.push_back(stored.id);
+        }
         if (identity != stored) {
             m_writes.identitiesBefore.push_back(std::move(identity));
         }
@@ -517,6 +621,7 @@ void ImportRun::buildIdentityWrites(SystemPlan& plan) {
         identity.keyVersion = m_keyVersion;
         identity.present = entry.file.has_value() && entry.availability == Availability::Available;
         identity.file = identity.present ? entry.file : std::nullopt;
+        identity.quickHash = identity.present ? plan.entryHash[i] : std::nullopt;
         m_writes.identitiesNew.push_back(std::move(identity));
     }
 }
@@ -803,6 +908,33 @@ Status ImportRun::write() {
             if (auto checked = step(); !checked) {
                 return checked;
             }
+        }
+    }
+    // Reconciliation's state rows, which name identities: the history, the review rows (the change set's take their
+    // ids), the open review rows of identities whose file came back.
+    for (const IdentityEvent& event : m_writes.history) {
+        if (auto put = transaction.putHistory(event); !put) {
+            return put;
+        }
+        ++statistics.historyWritten;
+        if (auto checked = step(); !checked) {
+            return checked;
+        }
+    }
+    for (ReviewRow& review : m_result.changes.reviews) {
+        auto id = transaction.putReview(review);
+        if (!id) {
+            return propagate(id.error());
+        }
+        review.id = *id;
+        ++statistics.reviewsWritten;
+    }
+    for (const GameId id : m_writes.returned) {
+        if (auto resolved = transaction.resolveReviewsOf(id, ReviewResolution::Returned); !resolved) {
+            return resolved;
+        }
+        if (auto checked = step(); !checked) {
+            return checked;
         }
     }
     for (const IndexedEntry& row : m_writes.rows) {

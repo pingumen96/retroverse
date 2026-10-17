@@ -4,6 +4,7 @@
 #include <atomic>
 #include <fstream>
 #include <system_error>
+#include <utility>
 
 #include <windows.h>
 
@@ -219,6 +220,99 @@ Expected<std::string> readFileShared(const std::filesystem::path& path, std::uin
         done += read;
     }
     return data;
+}
+
+Expected<SharedFileReader> SharedFileReader::open(const std::filesystem::path& path) {
+    std::string context = pathToUtf8Lossy(path);
+    const std::wstring target = extendedLengthPath(path);
+    // Reading only, sharing everything, as readFileShared(): the program that owns the file is never blocked.
+    HANDLE file = CreateFileW(target.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_RANDOM_ACCESS, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        const DWORD error = GetLastError();
+        if (error == ERROR_ACCESS_DENIED) {
+            const DWORD attributes = GetFileAttributesW(target.c_str());
+            if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+                return makeError(ErrorCode::InvalidArgument, "not a regular file (a folder)", std::move(context));
+            }
+        }
+        return makeError(fileErrorCode(error, path), "cannot open the file: " + systemErrorMessage(error),
+                         std::move(context));
+    }
+    SharedFileReader reader(file, std::move(context));
+    if (GetFileType(file) != FILE_TYPE_DISK) {
+        return makeError(ErrorCode::InvalidArgument, "not a regular file (a device)", reader.m_context);
+    }
+    return reader;
+}
+
+SharedFileReader::SharedFileReader(SharedFileReader&& other) noexcept
+    : m_handle(std::exchange(other.m_handle, nullptr)), m_context(std::move(other.m_context)) {}
+
+SharedFileReader& SharedFileReader::operator=(SharedFileReader&& other) noexcept {
+    if (this != &other) {
+        close();
+        m_handle = std::exchange(other.m_handle, nullptr);
+        m_context = std::move(other.m_context);
+    }
+    return *this;
+}
+
+SharedFileReader::~SharedFileReader() {
+    close();
+}
+
+void SharedFileReader::close() noexcept {
+    if (m_handle != nullptr) {
+        CloseHandle(static_cast<HANDLE>(m_handle));
+        m_handle = nullptr;
+    }
+}
+
+Expected<SharedFileReader::Facts> SharedFileReader::facts() const {
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (m_handle == nullptr || !GetFileInformationByHandle(static_cast<HANDLE>(m_handle), &info)) {
+        const DWORD error = m_handle == nullptr ? ERROR_INVALID_HANDLE : GetLastError();
+        return makeError(fileErrorCode(error), "cannot query the file: " + systemErrorMessage(error), m_context);
+    }
+    Facts facts;
+    facts.size = (static_cast<std::uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+    facts.lastWriteTime = static_cast<std::int64_t>((static_cast<std::uint64_t>(info.ftLastWriteTime.dwHighDateTime)
+                                                     << 32) |
+                                                    info.ftLastWriteTime.dwLowDateTime);
+    return facts;
+}
+
+Status SharedFileReader::read(std::uint64_t offset, std::span<std::byte> out) const {
+    std::size_t done = 0;
+    while (done < out.size()) {
+        const DWORD wanted = static_cast<DWORD>(std::min<std::size_t>(out.size() - done, kReadChunkBytes));
+        // A positioned read on a synchronous handle: the offset in the OVERLAPPED structure, the call waits.
+        const std::uint64_t at = offset + done;
+        OVERLAPPED position{};
+        position.Offset = static_cast<DWORD>(at & 0xFFFF'FFFFu);
+        position.OffsetHigh = static_cast<DWORD>(at >> 32);
+        DWORD read = 0;
+        if (m_handle == nullptr || !ReadFile(static_cast<HANDLE>(m_handle), out.data() + done, wanted, &read, &position)) {
+            const DWORD error = m_handle == nullptr ? ERROR_INVALID_HANDLE : GetLastError();
+            if (error == ERROR_HANDLE_EOF) {
+                return makeError(ErrorCode::IoError,
+                                 fmt::format("short read: {} of {} bytes at offset {} (the file shrank while it was "
+                                             "read)",
+                                             done, out.size(), offset),
+                                 m_context);
+            }
+            return makeError(fileErrorCode(error), "cannot read the file: " + systemErrorMessage(error), m_context);
+        }
+        if (read == 0) {
+            return makeError(ErrorCode::IoError,
+                             fmt::format("short read: {} of {} bytes at offset {} (the file shrank while it was read)",
+                                         done, out.size(), offset),
+                             m_context);
+        }
+        done += read;
+    }
+    return ok();
 }
 
 Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data) {

@@ -79,6 +79,11 @@
 // path of a moved identity is free when the new identity of that path is written. Without a pairing pass (11a), a moved
 // file is a vanished identity and a new one. The pass runs under the import lock, outside the write transaction: what it
 // reads of the store (quick hashes) cannot change meanwhile, and hashing new files keeps no other writer waiting.
+// What the import writes of reconciliation (I2 step 11b), after the identities: the history of each move (its reason
+// and evidence) and of each alias (MoveReason::MovedBack), of each identity re-keyed; the review rows (ChangeSet::reviews
+// take their ids); the open review rows of identities whose file came back resolved (ReviewResolution::Returned); and,
+// with the identities, the quick hashes the pairing pass read (IdentityPairs::hashes), on the identities their files end
+// with. catalog::IdentityPairing (reconciliation.hpp) is the pass of ADR-0008 §4.
 
 #include <atomic>
 #include <chrono>
@@ -148,6 +153,8 @@ struct ImportStatistics {
     std::size_t mediaUnknown = 0;      ///< entries whose media presence() could not know (their stored media kept)
     std::size_t identitiesWritten = 0; ///< identities written (new, changed, re-keyed, moved)
     std::size_t aliasesWritten = 0;    ///< identities turned into aliases (IImportTransaction::putAlias())
+    std::size_t historyWritten = 0;    ///< history events written (moves, aliases, re-keyed identities; I2 step 11b)
+    std::size_t reviewsWritten = 0;    ///< review rows written (IImportTransaction::putReview())
     std::size_t entriesWritten = 0;    ///< index rows written
     std::size_t entriesRemoved = 0;    ///< index rows removed
     std::size_t discGroupsWritten = 0;
@@ -208,9 +215,21 @@ struct IdentityPair {
     GameId identity;
     /// The new file's key (NewFile::key).
     LookupKey newFile;
+    /// What the pairing rests on (QuickHash, SizeTimeName, IdenticalCopies): the move's reason. When the new file had a
+    /// holder (NewFile::heldBy), the import records the holder's alias with MoveReason::MovedBack.
     MoveReason reason = MoveReason::QuickHash;
 
     bool operator==(const IdentityPair&) const = default;
+};
+
+/// The quick hash of a new file that the pairing pass read (I2 step 11b): the import stores it with the identity the file
+/// ends with (moved, held or new), sparing the quick-hash pass that file.
+struct NewFileHash {
+    /// NewFile::key.
+    LookupKey file;
+    QuickHash hash;
+
+    bool operator==(const NewFileHash&) const = default;
 };
 
 /// What the pairing pass decided for one system.
@@ -220,6 +239,8 @@ struct IdentityPairs {
     /// Vanished identities no pairing was safe for (ChangeSet::reviews).
     std::vector<ReviewRow> reviews;
     std::vector<Issue> issues;
+    /// The quick hashes of the new files it read, each file at most once (a file it was not given: InvalidArgument).
+    std::vector<NewFileHash> hashes;
 };
 
 /// The seam where I2 step 11b pairs vanished identities with new files (ADR-0008 §4: quick hashes, size, time and

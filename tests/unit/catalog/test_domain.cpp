@@ -533,6 +533,16 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
             rv::Status putDiscGroup(const IndexedDiscGroup&) override { return m_active ? rv::ok() : ended(); }
             rv::Status removeDiscGroup(GameId) override { return m_active ? rv::ok() : ended(); }
             rv::Status putAlias(const IdentityAlias&) override { return m_active ? rv::ok() : ended(); }
+            // What reconciliation adds (I2 step 11b), kept minimal too: no history, review rows or quick hashes kept.
+            rv::Status putQuickHash(GameId, const QuickHash&) override { return m_active ? rv::ok() : ended(); }
+            rv::Status putHistory(const IdentityEvent&) override { return m_active ? rv::ok() : ended(); }
+            rv::Expected<std::int64_t> putReview(const ReviewRow&) override {
+                return m_active ? rv::Expected<std::int64_t>(1) : rv::Expected<std::int64_t>(ended());
+            }
+            rv::Status resolveReview(std::int64_t, ReviewResolution, std::optional<GameId>) override {
+                return m_active ? rv::ok() : ended();
+            }
+            rv::Status resolveReviewsOf(GameId, ReviewResolution) override { return m_active ? rv::ok() : ended(); }
             rv::Status putImportIssues(const LibraryId&, std::span<const Issue>, std::span<const SystemName>) override {
                 return m_active ? rv::ok() : ended();
             }
@@ -615,6 +625,15 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
         }
         rv::Expected<std::optional<ImportRecord>> lastImport(const LibraryId&) override {
             return std::optional<ImportRecord>{};
+        }
+        rv::Expected<std::vector<IdentityEvent>> history(GameId) override { return std::vector<IdentityEvent>{}; }
+        rv::Expected<std::vector<StoredAlias>> aliasesOf(GameId) override { return std::vector<StoredAlias>{}; }
+        rv::Expected<std::optional<StoredAlias>> alias(GameId) override { return std::optional<StoredAlias>{}; }
+        rv::Expected<std::vector<StoredReview>> reviews(const LibraryId&, bool) override {
+            return std::vector<StoredReview>{};
+        }
+        rv::Expected<std::optional<StoredReview>> review(std::int64_t) override {
+            return std::optional<StoredReview>{};
         }
         rv::Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId&) override {
             if (m_open) {

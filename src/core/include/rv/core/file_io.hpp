@@ -34,6 +34,45 @@ inline constexpr std::uintmax_t kDefaultBinaryLimitBytes = 1024ull * 1024ull * 1
 /// Never throws.
 [[nodiscard]] Expected<std::string> readFileShared(const std::filesystem::path& path, std::uintmax_t maxBytes);
 
+/// A file opened for reading only, with full sharing, as readFileShared() opens it (I2 step 11b: the quick hash of a
+/// ROM file reads its two ends), to read parts of it at given offsets: nothing is ever written to it. Move-only; the
+/// handle closes when the object goes.
+class SharedFileReader {
+public:
+    /// The file's size and last write time as its open handle reports them (the file record): the last write time in
+    /// FILETIME ticks, 100 ns since 1601-01-01 UTC, as walkTree() lists it.
+    struct Facts {
+        std::uint64_t size = 0;
+        std::int64_t lastWriteTime = 0;
+
+        bool operator==(const Facts&) const = default;
+    };
+
+    /// Opens `path` through extendedLengthPath() (a \\?\ path, such as extendedLengthPathBelow() gives for a name a
+    /// walk listed, is used as it is: names ending with a dot or a space are reached). Errors as readFileShared():
+    /// NotFound, Unavailable, InvalidArgument (a folder or a device), Conflict, IoError (access denied included).
+    [[nodiscard]] static Expected<SharedFileReader> open(const std::filesystem::path& path);
+
+    SharedFileReader(SharedFileReader&& other) noexcept;
+    SharedFileReader& operator=(SharedFileReader&& other) noexcept;
+    SharedFileReader(const SharedFileReader&) = delete;
+    SharedFileReader& operator=(const SharedFileReader&) = delete;
+    ~SharedFileReader();
+
+    /// The size and last write time now. Errors: IoError, Unavailable (the drive went).
+    [[nodiscard]] Expected<Facts> facts() const;
+    /// Reads exactly `out.size()` bytes from `offset`. Errors: IoError on a short read (the file shrank meanwhile),
+    /// Conflict (another program locked the range), Unavailable (the drive went), IoError otherwise.
+    [[nodiscard]] Status read(std::uint64_t offset, std::span<std::byte> out) const;
+
+private:
+    SharedFileReader(void* handle, std::string context) noexcept : m_handle(handle), m_context(std::move(context)) {}
+    void close() noexcept;
+
+    void* m_handle = nullptr; ///< a Win32 HANDLE; null once moved from
+    std::string m_context;    ///< the path, for messages
+};
+
 /// The \\?\ form of `path` for the Win32 file functions, which then accept it at any length whatever the system's
 /// long path setting and never normalize it again: made absolute against the current directory and normalized as
 /// Windows does ("." and ".." resolved, '/' turned into '\'), "\\?\" put in front ("\\?\UNC\server\share\..." for a

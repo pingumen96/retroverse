@@ -533,34 +533,56 @@ TEST_CASE("catalog_db/store: an identity keeps when it was first seen and its qu
     const auto firstSeen = seen("first_seen");
     REQUIRE(firstSeen.has_value());
     CHECK(seen("last_seen") == firstSeen);
-    // The quick hash of I2 step 11, written beside the store's columns.
-    REQUIRE(writer
-                .execute(fmt::format("UPDATE rv_game_identities SET quick_hash = zeroblob(32), quick_hash_size = 1, "
-                                     "quick_hash_time = 2 WHERE id = {}",
-                                     entry.id.value()))
-                .has_value());
+    // The quick hash of I2 step 11b, written alone (the quick-hash pass), read back with the identity.
+    QuickHash hash;
+    hash.digest.fill(0xA5);
+    hash.size = entry.entry.file->size;
+    hash.lastWriteTime = entry.entry.file->lastWriteTime;
+    {
+        auto transaction = fixture.store->beginImport(library.id);
+        REQUIRE(transaction.has_value());
+        REQUIRE((*transaction)->putQuickHash(entry.id, hash).has_value());
+        const auto nobody = (*transaction)->putQuickHash(GameId::fromValue(12345).value(), hash);
+        REQUIRE_FALSE(nobody.has_value());
+        CHECK(nobody.error().code == rv::ErrorCode::InvalidArgument); // no identity has that GameId
+        REQUIRE((*transaction)->commit().has_value());
+    }
+    CHECK(fixture.store->identity(entry.id).value()->quickHash == hash);
+    CHECK(seen("last_seen") == firstSeen); // the hash alone moves nothing else
 
     std::this_thread::sleep_for(5ms); // the times have milliseconds
+    StoredIdentity gone = fixture.store->identity(entry.id).value().value();
     {
-        // Its file gone at the next import: present no more, last seen kept.
-        StoredIdentity gone = identityOf(entry.id, library.id, entry.entry);
+        // Its file gone at the next import: present no more, last seen kept; the identity written as read keeps its
+        // quick hash.
         gone.present = false;
         auto transaction = fixture.store->beginImport(library.id);
         REQUIRE(transaction.has_value());
         REQUIRE((*transaction)->putIdentity(gone).has_value());
         REQUIRE((*transaction)->commit().has_value());
         CHECK(fixture.store->identity(entry.id).value() == gone);
+        CHECK(gone.quickHash == hash);
     }
     CHECK(seen("first_seen") == firstSeen);
     CHECK(seen("last_seen") == firstSeen);
     std::this_thread::sleep_for(5ms);
-    importAll(*fixture.store, library, {}, {entry}); // back
+    {
+        StoredIdentity back = gone; // back
+        back.present = true;
+        auto transaction = fixture.store->beginImport(library.id);
+        REQUIRE(transaction.has_value());
+        REQUIRE((*transaction)->putIdentity(back).has_value());
+        REQUIRE((*transaction)->commit().has_value());
+    }
     CHECK(seen("first_seen") == firstSeen);
     CHECK(seen("last_seen").value() > firstSeen.value()); // ISO-8601 UTC text sorts like the times
     CHECK(
         writer
             .queryInt(fmt::format("SELECT length(quick_hash) FROM rv_game_identities WHERE id = {}", entry.id.value()))
             .value() == 32);
+    // An identity written without a hash has none: the identity is its row.
+    importAll(*fixture.store, library, {}, {entry});
+    CHECK_FALSE(fixture.store->identity(entry.id).value()->quickHash.has_value());
 }
 
 TEST_CASE("catalog_db/store: removeEntry removes the index rows and the group the entry heads, keeps its identity and "

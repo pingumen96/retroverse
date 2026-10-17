@@ -737,6 +737,15 @@ public:
         rv::Status putDiscGroup(const IndexedDiscGroup& group) override { return m_inner->putDiscGroup(group); }
         rv::Status removeDiscGroup(GameId head) override { return m_inner->removeDiscGroup(head); }
         rv::Status putAlias(const IdentityAlias& alias) override { return m_inner->putAlias(alias); }
+        rv::Status putQuickHash(GameId id, const QuickHash& hash) override { return m_inner->putQuickHash(id, hash); }
+        rv::Status putHistory(const IdentityEvent& event) override { return m_inner->putHistory(event); }
+        rv::Expected<std::int64_t> putReview(const ReviewRow& review) override { return m_inner->putReview(review); }
+        rv::Status resolveReview(std::int64_t id, ReviewResolution resolution, std::optional<GameId> with) override {
+            return m_inner->resolveReview(id, resolution, with);
+        }
+        rv::Status resolveReviewsOf(GameId game, ReviewResolution resolution) override {
+            return m_inner->resolveReviewsOf(game, resolution);
+        }
         rv::Status putImportIssues(const LibraryId& library, std::span<const Issue> issues,
                                    std::span<const SystemName> systems) override {
             return m_inner->putImportIssues(library, issues, systems);
@@ -787,6 +796,13 @@ public:
     rv::Expected<std::optional<ImportRecord>> lastImport(const LibraryId& library) override {
         return m_inner.lastImport(library);
     }
+    rv::Expected<std::vector<IdentityEvent>> history(GameId game) override { return m_inner.history(game); }
+    rv::Expected<std::vector<StoredAlias>> aliasesOf(GameId game) override { return m_inner.aliasesOf(game); }
+    rv::Expected<std::optional<StoredAlias>> alias(GameId alias) override { return m_inner.alias(alias); }
+    rv::Expected<std::vector<StoredReview>> reviews(const LibraryId& library, bool openOnly) override {
+        return m_inner.reviews(library, openOnly);
+    }
+    rv::Expected<std::optional<StoredReview>> review(std::int64_t id) override { return m_inner.review(id); }
     rv::Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId& library) override {
         calls.emplace_back("lockImport");
         return m_inner.lockImport(library);

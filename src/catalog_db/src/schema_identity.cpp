@@ -73,18 +73,22 @@ CREATE UNIQUE INDEX rv_game_identities_path ON rv_game_identities (library, syst
 -- Reconciliation pairs a vanished identity with a new file of the same quick hash (I2 step 11).
 CREATE INDEX rv_game_identities_quick_hash ON rv_game_identities (quick_hash) WHERE quick_hash IS NOT NULL;
 
--- What happened to identities (I2 step 11): moves with their reason (MoveReason), keys computed again, aliases
--- recorded, reviews resolved; the key and path before and after.
+-- What happened to identities (IdentityEvent, I2 step 11b): moves with their reason (MoveReason), aliases recorded
+-- (alias: the GameId that became one, which names no identity any more), keys computed again, reviews resolved (review:
+-- the row); the key and path before and after (NULL: none); a sentence for people. The rows of an identity that becomes
+-- an alias move to the identity it stands for (IImportTransaction::putAlias()).
 CREATE TABLE rv_identity_history (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     game      INTEGER NOT NULL REFERENCES rv_game_identities (id),
     at        TEXT    NOT NULL,
-    event     TEXT    NOT NULL,
+    event     TEXT    NOT NULL CHECK (event IN ('moved', 'alias', 'rekeyed', 'review-resolved')),
     reason    TEXT    NOT NULL DEFAULT '',
     from_key  TEXT,
     from_path TEXT,
     to_key    TEXT,
     to_path   TEXT,
+    alias     INTEGER CHECK (alias > 0),
+    review    INTEGER REFERENCES rv_identity_reviews (id),
     detail    TEXT    NOT NULL DEFAULT ''
 ) STRICT;
 CREATE INDEX rv_identity_history_game ON rv_identity_history (game, id);
@@ -103,8 +107,10 @@ CREATE TABLE rv_identity_aliases (
 ) STRICT;
 CREATE INDEX rv_identity_aliases_game ON rv_identity_aliases (game);
 
--- Vanished identities no pairing was safe for (ReviewRow, I2 step 11): the user decides; the ids are shown to the user.
--- The candidates are the new files' relative paths in key order (a JSON array).
+-- Vanished identities no pairing was safe for (ReviewRow, StoredReview, I2 step 11b): the user decides; the ids are
+-- shown to the user. The candidates are the new files' relative paths in key order (a JSON array). Resolved: when, how
+-- (ReviewResolution) and with which identity (the one paired with, now an alias; or the one the vanished identity became
+-- an alias of): a GameId that may name no identity any more, hence no foreign key.
 CREATE TABLE rv_identity_reviews (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     game          INTEGER NOT NULL REFERENCES rv_game_identities (id),
@@ -114,7 +120,9 @@ CREATE TABLE rv_identity_reviews (
     reason        TEXT    NOT NULL,
     created_at    TEXT    NOT NULL,
     resolved_at   TEXT,
-    resolution    TEXT
+    resolution    TEXT,
+    resolved_with INTEGER CHECK (resolved_with > 0),
+    CHECK ((resolved_at IS NULL) = (resolution IS NULL))
 ) STRICT;
 CREATE INDEX rv_identity_reviews_game ON rv_identity_reviews (game);
 CREATE INDEX rv_identity_reviews_open ON rv_identity_reviews (id) WHERE resolved_at IS NULL;
