@@ -1,8 +1,8 @@
 // retroverse-cli profiles and launch --dry-run (I2 step 10) through the dispatcher, on the standard ES-DE fixture
 // recorded in library.json: each system's command and readiness, why it was chosen, the rule and entry that found the
 // program; a dry run's argv, working folder, readiness and exit code, the path spelled as the folder lists it, the
-// automation guard's verdict; launch without --dry-run is not implemented yet; nothing is started or written in the
-// library's folders.
+// automation guard's verdict; a launch names a game of the catalog (--game, I2 step 12: test_cli_sessions.cpp);
+// nothing is started or written in the library's folders.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -274,9 +274,17 @@ TEST_CASE("cli/launch: --dry-run on the standard fixture", "[cli][launch]") {
         }
     }
     SECTION("usage errors") {
+        // A launch names a game of the catalog (I2 step 12): --system and --path are the dry run's.
         RunResult run = setup.run({"launch", "--system", "gb", "--path", "Tiny Tennis (Europe).gb"});
         CHECK(run.code == ExitCode::UsageError);
-        CHECK(run.err.find("not implemented yet (I2 step 12)") != std::string::npos);
+        CHECK(run.err.find("for --dry-run only") != std::string::npos);
+        CHECK(setup.run({"launch"}).code == ExitCode::UsageError);
+        CHECK(setup.run({"launch", "--game", "g0000000000000001", "--system", "gb"}).code == ExitCode::UsageError);
+        CHECK(setup.run({"launch", "--game", "x"}).code == ExitCode::UsageError);
+        CHECK(setup.run({"launch", "--dry-run", "--game", "g0000000000000001", "--wait"}).code == ExitCode::UsageError);
+        CHECK(setup.run({"launch", "--game", "g0000000000000001", "--wait-limit", "5"}).code == ExitCode::UsageError);
+        CHECK(setup.run({"launch", "--game", "g0000000000000001", "--wait", "--wait-limit", "0"}).code ==
+              ExitCode::UsageError);
         CHECK(setup.run({"launch", "--dry-run", "--system", "gb"}).code == ExitCode::UsageError);
         CHECK(setup.run({"launch", "--dry-run", "--system", "vectrex", "--path", "x.vec"}).code ==
               ExitCode::UsageError);

@@ -6,9 +6,11 @@
 // rules); Retroverse's own emulator profiles are planned here with rv_launcher (planLaunch). Nothing is started: the
 // result is a launcher::LaunchRequest for a LaunchSession, or the blockers that say why the game cannot start.
 //
-// The choice, most specific first: Retroverse's choice for the game (the database's, I2 step 12), the game's
-// <altemulator> while ES-DE's AlternativeEmulatorPerGame is on, Retroverse's choice for the system (emulators.json's
-// "systemChoices", or the database's), the gamelist's <alternativeEmulator>, the system's first command. Retroverse's
+// The choice, most specific first: Retroverse's choice for the game (the catalog database's, retroverse-cli assign
+// --game: I2 step 12), the game's <altemulator> while ES-DE's AlternativeEmulatorPerGame is on, Retroverse's choice for
+// the system (the catalog database's from retroverse-cli assign, the user's latest explicit choice, which ranks before
+// emulators.json's "systemChoices" for the same system: the caller fills LaunchChoices::system with the first of the
+// two), the gamelist's <alternativeEmulator>, the system's first command. Retroverse's
 // choices are stored as a label or a profile id and translated again at every refresh and launch: one that no longer
 // exists makes the game "requires launcher configuration", naming it; ES-DE's own labels that name no command fall back
 // to the first command with ES-DE's warning, as ES-DE's do: an invalid <alternativeEmulator> to the first command, an
@@ -131,9 +133,10 @@ struct LaunchTranslation {
 
 /// Where the choice of a launch comes from, most specific first.
 enum class ChoiceSource : std::uint8_t {
-    RetroverseGame,   ///< Retroverse's choice for the game (the database's, I2 step 12)
+    RetroverseGame,   ///< Retroverse's choice for the game (the catalog database's: assign --game, I2 step 12)
     EsdeGame,         ///< the game's <altemulator>, while ES-DE's AlternativeEmulatorPerGame is on
-    RetroverseSystem, ///< Retroverse's choice for the system (emulators.json's "systemChoices", the database's)
+    RetroverseSystem, ///< Retroverse's choice for the system (the catalog database's from assign, else emulators.json's
+                      ///< "systemChoices")
     EsdeSystem,       ///< the gamelist's top-level <alternativeEmulator>
     FirstCommand,     ///< the system's first command: ES-DE's default
 };
@@ -164,13 +167,14 @@ enum class ChoiceSource : std::uint8_t {
 
 /// What a launch is chosen from.
 struct LaunchChoices {
-    /// Retroverse's choice for the game (the database's, from I2 step 12).
+    /// Retroverse's choice for the game (the catalog database's: catalog_db::SessionStore::gameChoice(), I2 step 12).
     std::optional<launcher::LaunchChoice> game;
     /// The game's <altemulator> as written (CatalogEntry::altEmulator); empty when none.
     std::string gameAltEmulator;
     /// ES-DE's AlternativeEmulatorPerGame: false leaves the game's <altemulator> unused, as ES-DE leaves it.
     bool alternativeEmulatorPerGame = true;
-    /// Retroverse's choice for the system (launcher::EmulatorProfiles::systemChoice(), later also the database's).
+    /// Retroverse's choice for the system: the catalog database's (catalog_db::SessionStore::systemChoice(), from
+    /// retroverse-cli assign) when there is one, else launcher::EmulatorProfiles::systemChoice() (I2 step 12).
     std::optional<launcher::LaunchChoice> system;
     /// The gamelist's <alternativeEmulator> label (SystemInfo::alternativeEmulator); empty when none.
     std::string systemAlternativeEmulator;

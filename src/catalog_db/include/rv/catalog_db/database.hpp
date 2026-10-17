@@ -57,6 +57,12 @@ inline constexpr std::int64_t kWriterCacheKiB = 32 * 1024;
 /// The version of the SQLite library in use ("3.53.4").
 [[nodiscard]] std::string_view sqliteVersion() noexcept;
 
+/// True when `error` is SQLite's report of a database another connection keeps busy (SQLITE_BUSY or SQLITE_LOCKED,
+/// extended codes included: a write lock held past the busy timeout, by another process's import say), as Statement,
+/// Connection and Transaction report it: a Conflict that trying again later may get past, unlike a UNIQUE constraint,
+/// which is a Conflict too (I2 step 12: the session store tries such writes again).
+[[nodiscard]] bool isBusyError(const Error& error) noexcept;
+
 namespace detail {
 struct StatementHandle;  ///< SQLite's statement, opaque outside database.cpp
 struct ConnectionHandle; ///< SQLite's connection, opaque outside database.cpp

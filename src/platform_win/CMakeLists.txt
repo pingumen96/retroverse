@@ -12,6 +12,7 @@ add_library(rv_platform_win STATIC
 add_library(rv::platform_win ALIAS rv_platform_win)
 rv_set_target_defaults(rv_platform_win)
 target_include_directories(rv_platform_win PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-# advapi32: the registry (the system probe).
-target_link_libraries(rv_platform_win PUBLIC rv_core rv_launcher PRIVATE advapi32)
+# advapi32: the registry (the system probe); ntdll: the system's process list (the liveness of a process this user may
+# not open).
+target_link_libraries(rv_platform_win PUBLIC rv_core rv_launcher PRIVATE advapi32 ntdll)
 rv_forbid_link(rv_platform_win)

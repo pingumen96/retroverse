@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -88,6 +89,50 @@ private:
 
 /// The CreateProcessW creation flags of a request (see Win32ProcessRunner).
 [[nodiscard]] std::uint32_t processCreationFlags(const launcher::LaunchRequest& request) noexcept;
+
+/// A process as the owner of a play session knows it (ADR-0008 §9): its id and its creation time (GetProcessTimes, in
+/// FILETIME ticks), which tells it from a later process that reuses the id.
+struct ProcessIdentity {
+    std::uint32_t processId = 0;
+    std::uint64_t creationTime = 0;
+
+    auto operator<=>(const ProcessIdentity&) const = default;
+};
+
+/// This process's identity.
+[[nodiscard]] ProcessIdentity currentProcessIdentity() noexcept;
+
+/// What processLiveness() found.
+enum class ProcessLiveness : std::uint8_t {
+    Running, ///< the process runs: its id is in use by a process created at its creation time, which has not exited
+    Gone,    ///< it does not: no process has the id, the one that has it was created at another time, or it exited
+    Unknown, ///< a process has the id but neither it nor the system's process list can be asked: taken as running
+};
+
+/// "running", "gone", "unknown".
+[[nodiscard]] std::string_view toString(ProcessLiveness liveness) noexcept;
+
+/// A process as the system's process list shows it.
+struct ListedProcess {
+    /// FILETIME ticks, as GetProcessTimes reads them.
+    std::uint64_t creationTime = 0;
+    /// 0 for a process that exited while handles to it are still open.
+    std::uint32_t threadCount = 0;
+
+    bool operator==(const ListedProcess&) const = default;
+};
+
+/// The process that has `processId` now, as the system's process list shows it (NtQuerySystemInformation with
+/// SystemProcessInformation, which needs no access right to the process): what processLiveness() reads of a process
+/// this user may not open. nullopt when no process has the id. Errors: PlatformError when the list cannot be read.
+[[nodiscard]] Expected<std::optional<ListedProcess>> listedProcess(std::uint32_t processId);
+
+/// Whether `process` still runs (OpenProcess with PROCESS_QUERY_LIMITED_INFORMATION, GetProcessTimes,
+/// GetExitCodeProcess). A process with the id that this user may not open (access denied: a service, another user's
+/// process) is compared through listedProcess() instead: another creation time is gone, the same one running. A
+/// process whose exit code is STILL_ACTIVE (259) reads as running even after it exited with that code, which no
+/// emulator does on purpose.
+[[nodiscard]] ProcessLiveness processLiveness(const ProcessIdentity& process) noexcept;
 
 /// The environment of the current process as UTF-8 variables (GetEnvironmentStringsW; per-drive entries such as "=C:"
 /// included). Unpaired UTF-16 surrogates become U+FFFD.
