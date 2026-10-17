@@ -6,6 +6,9 @@
 //
 //   rv_fake_emulator [options] [-- payload arguments...]
 //
+// With RV_LAUNCH_BACKGROUND set (automated test runs; docs/i2/step-focus.md) it never takes the foreground and never
+// injects input: its window is an inactive tool window off every monitor, and the foreground options are skipped.
+//
 // Options are read up to the first "--"; everything after it is payload, echoed by --print-args and never interpreted.
 // The program never terminates another process; with --exit-timeout-ms it ends itself.
 
@@ -117,7 +120,11 @@ constexpr std::string_view kUsage =
     "  --out TEXT               print TEXT on standard output only\n"
     "  --err TEXT               print TEXT on standard error only\n"
     "  --log FILE               write what the run saw (foreground, display modes, times) to FILE (JSON)\n"
-    "  --color RRGGBB           window color\n";
+    "  --color RRGGBB           window color\n"
+    "With RV_LAUNCH_BACKGROUND set (and neither empty nor 0: every automated test run but the desktop tests), the\n"
+    "program never takes the foreground and never injects input: the --frames window is a small inactive tool window\n"
+    "off every monitor (no fullscreen, no exclusive mode, no raise), and --steal-focus, --input-at-end,\n"
+    "--leave-foreground-window and --foreground-window are skipped (the log says so).\n";
 
 std::optional<std::uint64_t> parseNumber(std::string_view text) {
     int base = 10;
@@ -294,6 +301,18 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
     return true;
 }
 
+/// Whether this run is in the background (RV_LAUNCH_BACKGROUND set, and neither empty nor "0", as
+/// rv::platform_win::backgroundLaunchesRequested reads it): an automated test run that must leave the foreground, the
+/// keyboard and the screen to the user at the machine.
+bool inBackground() {
+    static const bool background = [] {
+        wchar_t value[8] = {};
+        const DWORD length = GetEnvironmentVariableW(L"RV_LAUNCH_BACKGROUND", value, 8);
+        return length != 0 && !(length == 1 && value[0] == L'0');
+    }();
+    return background;
+}
+
 /// The exit code of a run ended by --exit-timeout-ms (as GNU timeout's).
 constexpr UINT kExitTimeoutCode = 124;
 
@@ -459,6 +478,10 @@ void leaveForegroundWindow(const Options& options, nlohmann::json& log) {
 /// (and has locked it, with --lock-foreground). With --hung-foreground it then stops reading its messages until its
 /// time is up. Fills `log`.
 void runForegroundWindow(const Options& options, nlohmann::json& log) {
+    if (inBackground()) {
+        log["foregroundWindow"] = {{"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+        return;
+    }
     const Clock::time_point start = Clock::now();
     const auto sinceStart = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -575,20 +598,41 @@ void runWindow(const Options& options, nlohmann::json& log) {
         log["error"] = std::string("SDL_Init failed: ") + SDL_GetError();
         return;
     }
-    if (options.stealFocus) {
+    const bool background = inBackground();
+    if (options.stealFocus && !background) {
         SDL_SetHint(SDL_HINT_FORCE_RAISEWINDOW, "1");
     }
     const SDL_DisplayID display = SDL_GetPrimaryDisplay();
     const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
     log["display"]["desktop"] = describeMode(desktop);
+    log["background"] = background;
 
-    SDL_Window* window = SDL_CreateWindow("Retroverse fake emulator", 1280, 720, SDL_WINDOW_HIDDEN);
+    // In the background: a small tool window (no taskbar button) that never takes the focus, still a visible window
+    // of the process for the launcher's window detection.
+    const SDL_WindowFlags flags =
+        SDL_WINDOW_HIDDEN | (background ? SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY : SDL_WindowFlags{0});
+    SDL_Window* window =
+        SDL_CreateWindow("Retroverse fake emulator", background ? 320 : 1280, background ? 180 : 720, flags);
     if (window == nullptr) {
         log["error"] = std::string("SDL_CreateWindow failed: ") + SDL_GetError();
         SDL_Quit();
         return;
     }
-    if (options.exclusive) {
+    const auto hwnd = static_cast<HWND>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    if (background) {
+        // Off every monitor, left of the virtual screen, shown without activation at the bottom of the z-order.
+        if (hwnd != nullptr) {
+            const int x = GetSystemMetrics(SM_XVIRTUALSCREEN) - 2000;
+            const int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            SetWindowPos(hwnd, HWND_BOTTOM, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        }
+        log["display"]["requestedExclusive"] = nullptr;
+        if (options.exclusive) {
+            log["warning"] = "background (RV_LAUNCH_BACKGROUND): an inactive window off-screen, no exclusive mode";
+        }
+    } else if (options.exclusive) {
         int count = 0;
         SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(display, &count);
         const SDL_DisplayMode* mode = modes != nullptr ? pickExclusiveMode(desktop, modes, count) : nullptr;
@@ -600,8 +644,10 @@ void runWindow(const Options& options, nlohmann::json& log) {
         }
         SDL_free(modes);
     }
-    SDL_SetWindowFullscreen(window, true);
-    SDL_ShowWindow(window);
+    if (!background) {
+        SDL_SetWindowFullscreen(window, true);
+        SDL_ShowWindow(window);
+    }
     SDL_SyncWindow(window);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
     if (renderer == nullptr) {
@@ -611,8 +657,6 @@ void runWindow(const Options& options, nlohmann::json& log) {
         return;
     }
     SDL_SetRenderVSync(renderer, 1);
-    const auto hwnd = static_cast<HWND>(
-        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     log["display"]["current"] = describeMode(SDL_GetCurrentDisplayMode(display));
     log["windowShownMs"] = sinceStart();
 
@@ -630,7 +674,7 @@ void runWindow(const Options& options, nlohmann::json& log) {
                 quit = true;
             }
         }
-        if (frame == 0 && options.stealFocus) {
+        if (frame == 0 && options.stealFocus && !background) {
             SDL_RaiseWindow(window);
         }
         const bool foreground = hwnd != nullptr && GetForegroundWindow() == hwnd;
@@ -653,7 +697,13 @@ void runWindow(const Options& options, nlohmann::json& log) {
         SDL_RenderPresent(renderer);
         ++frame;
     }
-    if (options.inputAtEnd) {
+    if (options.stealFocus && background) {
+        log["stealFocus"] = {{"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+    }
+    if (options.inputAtEnd && background) {
+        // Never input into whatever the user is doing.
+        log["inputAtEnd"] = {{"sent", false}, {"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+    } else if (options.inputAtEnd) {
         // While the window is in the foreground, the tap is its input: the last input event belongs to this
         // process, as when a player presses a key in the emulator.
         std::array<INPUT, 2> tap{};
@@ -668,7 +718,9 @@ void runWindow(const Options& options, nlohmann::json& log) {
         }
         log["inputAtEnd"] = {{"sent", sent == tap.size()}, {"foreground", foreground}};
     }
-    if (options.leaveForegroundWindowMs > 0) {
+    if (options.leaveForegroundWindowMs > 0 && background) {
+        log["foregroundHelper"] = {{"started", false}, {"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+    } else if (options.leaveForegroundWindowMs > 0) {
         leaveForegroundWindow(options, log);
     }
     log["frames"] = frame;
@@ -739,8 +791,11 @@ int main(int argc, char* argv[]) {
     if (!options.printConsole.empty()) {
         std::array<DWORD, 64> processes{};
         const DWORD count = GetConsoleProcessList(processes.data(), static_cast<DWORD>(processes.size()));
+        // A console started with CREATE_NO_WINDOW has no window at all (GetConsoleWindow is null).
+        const HWND consoleWindow = GetConsoleWindow();
         writeJson(options.printConsole,
                   nlohmann::json{{"hasConsole", count > 0},
+                                 {"hasWindow", consoleWindow != nullptr},
                                  {"processes", std::vector<DWORD>(processes.begin(),
                                                                   processes.begin() + std::min<DWORD>(count, 64))}});
     }

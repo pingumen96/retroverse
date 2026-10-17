@@ -5,8 +5,9 @@ While a wrapped command runs (or for a fixed duration), polls GetForegroundWindo
 records every foreground change and every top-level window that becomes visible: the owning process id, its image
 path, its parent chain, the window's title, class, rectangle and state, with timestamps. A process is a *test process*
 when its image lies under one of the --watch folders, or when an ancestor's does (a console host, a copy started by a
-test program, ...); a window is also counted as a test process's when its title names a watched folder (a console
-window handed to Windows Terminal belongs to the terminal, but its title is the program's path).
+test program, ...); a window is also counted as a test process's when its title names a watched folder, and a
+terminal window (Windows Terminal as the default terminal application: it belongs to the terminal's process, outside
+the test's tree) when it owns, or appears with, the pseudo console window of a test process.
 
 Findings, which make the exit code 1:
   - a foreground change to a window of a test process;
@@ -55,7 +56,12 @@ DWMWA_CLOAKED = 14
 GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
+GW_OWNER = 4
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+# The hidden window of a console that a terminal application shows (ConPTY), and the windows of console hosts.
+PSEUDO_CONSOLE_CLASS = "PseudoConsoleWindow"
+TERMINAL_CLASSES = ("CASCADIA_HOSTING_WINDOW_CLASS", "ConsoleWindowClass")
+TERMINAL_WINDOW_SECONDS = 3.0
 
 
 class PROCESSENTRY32W(ctypes.Structure):
@@ -81,6 +87,9 @@ user32.GetWindowThreadProcessId.restype = wintypes.DWORD
 user32.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
 user32.IsWindowVisible.argtypes = [wintypes.HWND]
 user32.IsIconic.argtypes = [wintypes.HWND]
+user32.IsWindow.argtypes = [wintypes.HWND]
+user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetWindow.restype = wintypes.HWND
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
@@ -264,6 +273,31 @@ def describe(watch: Watch, hwnd: int, started: float) -> dict:
     }
 
 
+def attribute_terminal_windows(events: list[dict], pseudo_consoles: dict[int, dict],
+                               terminal_windows: dict[int, dict]) -> None:
+    """Counts as a test process's the terminal window that hosts its console.
+
+    With a default terminal application (Windows Terminal), a console program started with a console of its own gets
+    a hidden PseudoConsoleWindow of its own, and its console is shown by a window of the terminal's process (started by
+    the system, outside the test's process tree, titled by the terminal). That window owns the pseudo console window
+    once the terminal attached to it; before that (or when the console is gone first) a terminal window shown within
+    TERMINAL_WINDOW_SECONDS of a test's pseudo console is taken as its own.
+    """
+    appeared = sorted(window["t"] for window in pseudo_consoles.values())
+    for event in events:
+        if event["testProcess"]:
+            continue
+        hwnd = int(event["hwnd"], 16)
+        owner_of = terminal_windows.get(hwnd)
+        if owner_of is not None:
+            event["testProcess"] = True
+            event["reason"] = f"terminal window of the console of test process {owner_of['pid']} ({owner_of['image']})"
+            continue
+        if event["class"] in TERMINAL_CLASSES and any(abs(event["t"] - t) <= TERMINAL_WINDOW_SECONDS for t in appeared):
+            event["testProcess"] = True
+            event["reason"] = "terminal window shown with the console of a test process (by timing)"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -293,6 +327,8 @@ def main() -> int:
     shown: set[int] = set(baseline)
     windows: list[dict] = []
     foreground_changes: list[dict] = []
+    pseudo_consoles: dict[int, dict] = {}
+    terminal_windows: dict[int, dict] = {}
     last_foreground = int(user32.GetForegroundWindow() or 0)
 
     child = None
@@ -319,8 +355,17 @@ def main() -> int:
             last_foreground = foreground
             current = set(visible_windows())
             for hwnd in sorted(current - shown):
-                windows.append(describe(watch, hwnd, started))
+                window = describe(watch, hwnd, started)
+                windows.append(window)
+                if window["class"] == PSEUDO_CONSOLE_CLASS and window["testProcess"]:
+                    pseudo_consoles[hwnd] = window
             shown = current
+            # The terminal window that shows a test's pseudo console owns it (once the terminal has attached).
+            for hwnd, window in pseudo_consoles.items():
+                if user32.IsWindow(hwnd):
+                    owner = int(user32.GetWindow(hwnd, GW_OWNER) or 0)
+                    if owner:
+                        terminal_windows.setdefault(owner, window)
             if child is not None and exit_code is None:
                 exit_code = child.poll()
                 if exit_code is not None:
@@ -335,6 +380,7 @@ def main() -> int:
     except KeyboardInterrupt:
         print("focus_watch: interrupted", file=sys.stderr)
 
+    attribute_terminal_windows(foreground_changes + windows, pseudo_consoles, terminal_windows)
     found_foreground = [event for event in foreground_changes if event["testProcess"]]
     found_windows = [window for window in windows if window["testProcess"] and window["seen"]]
     allowed_windows = [window for window in windows if window["testProcess"] and not window["seen"]]

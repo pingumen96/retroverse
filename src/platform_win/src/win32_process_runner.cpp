@@ -724,13 +724,12 @@ std::vector<launcher::EnvironmentVariable> currentEnvironment() {
 }
 
 bool backgroundLaunchesRequested() noexcept {
-    std::array<wchar_t, 8> value{};
-    const DWORD length = GetEnvironmentVariableW(L"RV_LAUNCH_BACKGROUND", value.data(), static_cast<DWORD>(value.size()));
-    if (length == 0) {
-        return false; // unset or empty
+    try {
+        const std::optional<std::string> value = launcher::processEnvironmentVariable(kLaunchBackgroundVariable);
+        return value.has_value() && !value->empty() && *value != "0";
+    } catch (...) {
+        return false; // out of memory reading it: the product's behaviour
     }
-    // Longer values do not fit (length is then the size needed): anything but "0" asks for it.
-    return length >= value.size() || std::wstring_view(value.data(), length) != L"0";
 }
 
 std::uint32_t processCreationFlags(const launcher::LaunchRequest& request, bool background) noexcept {
