@@ -97,10 +97,12 @@ Expected<FilePrefix> readPrefixShared(const std::filesystem::path& file, std::si
                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
     if (handle == INVALID_HANDLE_VALUE) {
         const DWORD error = GetLastError();
-        const DWORD attributes = GetFileAttributesW(target.c_str());
-        if (error == ERROR_ACCESS_DENIED && attributes != INVALID_FILE_ATTRIBUTES &&
-            (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-            return makeError(ErrorCode::InvalidArgument, "not a regular file (a folder)", context);
+        if (error == ERROR_ACCESS_DENIED) {
+            // CreateFileW refuses to open a folder this way with "access denied".
+            const DWORD attributes = GetFileAttributesW(target.c_str());
+            if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+                return makeError(ErrorCode::InvalidArgument, "not a regular file (a folder)", context);
+            }
         }
         return makeError(core::fileErrorCode(error, file), core::systemErrorMessage(error), context);
     }
