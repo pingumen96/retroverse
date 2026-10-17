@@ -103,16 +103,6 @@ std::string esdeDefaultName(std::string_view relativePath, EsdeNameKind kind, co
     return shown.empty() ? catalog::titleFromFileStem(relativePath, kind == EsdeNameKind::Folder) : shown;
 }
 
-const ScannedItem* RomFolderListing::find(const catalog::LookupKey& key) const noexcept {
-    const std::span<const ScannedItem> same = sameKey(key.key());
-    for (const ScannedItem& item : same) {
-        if (item.key.relativePath() == key.relativePath()) {
-            return &item;
-        }
-    }
-    return same.empty() ? nullptr : &same.front();
-}
-
 std::span<const ScannedItem> RomFolderListing::sameKey(std::string_view key) const noexcept {
     const auto lower = std::lower_bound(items.begin(), items.end(), key,
                                         [](const ScannedItem& item, std::string_view k) { return item.key.key() < k; });

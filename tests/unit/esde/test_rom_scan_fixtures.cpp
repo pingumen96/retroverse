@@ -342,6 +342,21 @@ TEST_CASE("esde/rom_scan: a cue sheet that cannot be read keeps its cached group
     CHECK(entryAt(uncached, "psx", "Twin Peak (Europe) (Track 1).bin").state == EntryState::Game);
 }
 
+TEST_CASE("esde/rom_scan: a sheet's reference below a folder that cannot be listed is not missing",
+          "[esde][rom_scan][disc_groups]") {
+    const rv::test::Fixture fixture = materialize("esde/multi-disc");
+    auto denied = rv::test::ListingDenied::apply(fixture.path("roms/psx/Tracks"));
+    REQUIRE(denied.has_value());
+    const LibrarySnapshot snapshot = load(fixture);
+    REQUIRE(snapshot.unavailableFolders.size() == 1);
+    CHECK(snapshot.unavailableFolders[0].relativePath == "Tracks");
+    // Echo's track is not known: no member, and no reference reported missing but Broken Link's.
+    CHECK(entryAt(snapshot, "psx", "Discs/Echo (Japan).cue").state == EntryState::Game);
+    const auto missing = issuesOf(snapshot.issues, "disc-reference-missing");
+    REQUIRE(missing.size() == 1);
+    CHECK(missing[0].file.ends_with("Broken Link (USA).cue"));
+}
+
 TEST_CASE("esde/rom_scan: arcade", "[esde][rom_scan][mame]") {
     const rv::test::Fixture fixture = materialize("esde/arcade");
     SECTION("as committed") {

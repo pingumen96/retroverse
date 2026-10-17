@@ -167,9 +167,6 @@ struct RomFolderListing {
     std::uint64_t filesListed = 0;
     std::uint64_t foldersListed = 0;
 
-    /// The item whose key is `key` and relative path exactly `key`'s, or else the first of its key (a name that
-    /// differs in case only); null when none.
-    [[nodiscard]] const ScannedItem* find(const catalog::LookupKey& key) const noexcept;
     /// The items whose key is `key` (several when names differ in case only, on a case-sensitive folder).
     [[nodiscard]] std::span<const ScannedItem> sameKey(std::string_view key) const noexcept;
 };

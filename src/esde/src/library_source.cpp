@@ -142,6 +142,31 @@ std::string titleOf(const catalog::GameMetadata& metadata, std::string fallback)
     return title.empty() ? std::move(fallback) : title;
 }
 
+/// The keys of the folders of a listing that could not be listed, with why.
+using UnavailableKeys = std::map<std::string, catalog::SourceUnavailableReason, std::less<>>;
+
+UnavailableKeys unavailableKeysOf(const RomFolderListing& listing) {
+    UnavailableKeys keys;
+    for (const catalog::UnavailableFolder& folder : listing.unavailableFolders) {
+        if (auto key = catalog::makeLookupKey(folder.relativePath)) {
+            keys.emplace(key->key(), folder.reason);
+        }
+    }
+    return keys;
+}
+
+/// Why nothing is known of `key` (a lookup key): a folder above it could not be listed; nothing when every folder
+/// above it was listed.
+std::optional<catalog::SourceUnavailableReason> unavailableAbove(const UnavailableKeys& folders, std::string_view key) {
+    for (std::size_t slash = key.find('/'); slash != std::string_view::npos && !folders.empty();
+         slash = key.find('/', slash + 1)) {
+        if (const auto folder = folders.find(key.substr(0, slash)); folder != folders.end()) {
+            return folder->second;
+        }
+    }
+    return std::nullopt;
+}
+
 /// Why ES-DE does not load a whole system.
 enum class SystemBlock : std::uint8_t {
     None,
@@ -434,12 +459,7 @@ void Loader::mergeListing(SystemResult& result, const RomFolderListing& listing,
     }
 
     // The entries that name nothing listed, a key at a time, in document order.
-    std::map<std::string, catalog::SourceUnavailableReason, std::less<>> unavailableFolders; // by key
-    for (const catalog::UnavailableFolder& folder : listing.unavailableFolders) {
-        if (auto key = catalog::makeLookupKey(folder.relativePath)) {
-            unavailableFolders.emplace(key->key(), folder.reason);
-        }
-    }
+    const UnavailableKeys unavailableFolders = unavailableKeysOf(listing);
     for (const GamelistEntry& source : entries) {
         if (used[&source]) {
             continue;
@@ -458,14 +478,11 @@ void Loader::mergeListing(SystemResult& result, const RomFolderListing& listing,
         }
         // Where the path leads: below a folder that could not be listed, inside a game directory, or to nothing.
         const std::string& key = source.key.key();
-        std::optional<catalog::SourceUnavailableReason> unavailable;
+        const std::optional<catalog::SourceUnavailableReason> unavailable = unavailableAbove(unavailableFolders, key);
         const ScannedItem* gameDirectory = nullptr;
         for (std::size_t slash = key.find('/'); slash != std::string::npos && !unavailable && !gameDirectory;
              slash = key.find('/', slash + 1)) {
             const std::string_view prefix(key.data(), slash);
-            if (const auto folder = unavailableFolders.find(prefix); folder != unavailableFolders.end()) {
-                unavailable = folder->second;
-            }
             for (const ScannedItem& item : listing.sameKey(prefix)) {
                 if (item.facts.directory && !item.enteredFolder()) {
                     gameDirectory = &item;
@@ -591,6 +608,8 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
         }
     }
 
+    // A reference below a folder that could not be listed may name an entry the gamelist alone tells of: not missing.
+    const UnavailableKeys unavailableFolders = listing != nullptr ? unavailableKeysOf(*listing) : UnavailableKeys{};
     std::vector<DiscHeadLinks> links;
     for (std::size_t h = 0; h < heads.size(); ++h) {
         const Head& head = heads[h];
@@ -623,7 +642,8 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
                     issues.add(catalog::Issue{
                         catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceInvalid), system.str(),
                         headFile, fmt::format("its reference \"{}\" is ignored: {}", reference, key.error().message)});
-                } else if (listing != nullptr && listing->sameKey(key->key()).empty()) {
+                } else if (listing != nullptr && listing->sameKey(key->key()).empty() &&
+                           !unavailableAbove(unavailableFolders, key->key())) {
                     issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceMissing),
                                               system.str(), headFile,
                                               fmt::format("names \"{}\", which is not there", *relative)});

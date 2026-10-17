@@ -210,11 +210,15 @@ Timings (Release, informative: other worktrees were building meanwhile):
 
 | Run | Cache | Total | Walk | Gamelists | Sheets |
 |---|---|---|---|---|---|
-| the hidden test, sheets one by one | listing warm (the snapshot had just walked the tree), sheets cold | 22.2 s | 0.9 s | 0.6 s | 19.9 s (2,520) |
+| the hidden test, sheets one by one (an earlier build) | listing warm (the snapshot had just walked the tree), sheets cold | 22.2 s | 0.9 s | 0.6 s | 19.9 s (2,520) |
 | `import --dry-run`, 8 readers | warm | 3.1 s | 1.3 s | 0.7 s | 0.06 s |
+| the hidden test, 8 readers (the final run, every `[real-library]` test) | warm | 3.0 s | 1.3 s | 0.7 s | 0.04 s |
 
-The sheets dominate a first load on the external drive; with 8 readers a cold first load should take about a quarter of
-that (the ps2 measurement above), and step 11's cache skips them on every later import.
+The sheets dominate a cold first load on the external drive. With 8 readers they were not measured cold: once read
+they stayed in the cache of the 64 GB machine for the rest of the session. From the cold ps2 measurement (4.5 times
+faster per file with 8 readers), a cold first load should take about 4 to 5 s of sheets instead of 20; the gate
+measures it on a quiet machine, and step 11's cache skips the sheets on every later import. The census takes 49 s cold
+(its walk and its sheets one by one, in Python) and 6.5 s warm.
 
 ## Decisions taken within the step
 
