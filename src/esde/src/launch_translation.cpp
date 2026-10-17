@@ -31,7 +31,7 @@ using catalog::ReadinessBlocker;
 /// Where App Paths registers executables (ES-DE's winregistrypath rule), under HKCU and HKLM.
 constexpr std::string_view kAppPathsKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\";
 constexpr std::string_view kStartDirToken = "%STARTDIR%=";
-/// The most of an %INJECT% file that is read. ES-DE reads it to its end unless its content passes 4,096 characters;
+/// The most of an %INJECT% file that is read. ES-DE reads it to its end unless its content passes 4,096 bytes;
 /// only line ends could keep a larger file within that, and such a file is taken as one ES-DE may inject.
 constexpr std::uintmax_t kMaxInjectReadBytes = 1024 * 1024;
 
@@ -300,13 +300,13 @@ private:
 enum class InjectContent : std::uint8_t {
     None,       ///< no such file (or not a regular file): nothing injected
     Empty,      ///< nothing once its line ends are removed: nothing injected
-    TooLong,    ///< more than kMaxInjectCharacters: ES-DE warns and injects nothing
+    TooLong,    ///< more than kMaxInjectBytes: ES-DE warns and injects nothing
     Injected,   ///< ES-DE injects it
     Unreadable, ///< it cannot be read: what ES-DE does is not known
 };
 
 /// Reads an %INJECT% file as ES-DE does: line by line in text mode (so up to a Ctrl+Z), each line's '\r' removed, the
-/// lines joined without a separator, until the content passes kMaxInjectCharacters.
+/// lines joined without a separator, until the content passes kMaxInjectBytes.
 InjectContent injectContent(const std::filesystem::path& file) {
     auto text = core::readFileShared(file, kMaxInjectReadBytes);
     if (!text) {
@@ -320,16 +320,16 @@ InjectContent injectContent(const std::filesystem::path& file) {
             return InjectContent::Unreadable;
         }
     }
-    std::size_t characters = 0;
+    std::size_t bytes = 0;
     for (const char c : *text) {
         if (c == '\x1A') {
             break;
         }
-        if (c != '\r' && c != '\n' && ++characters > kMaxInjectCharacters) {
+        if (c != '\r' && c != '\n' && ++bytes > kMaxInjectBytes) {
             return InjectContent::TooLong;
         }
     }
-    return characters == 0 ? InjectContent::Empty : InjectContent::Injected;
+    return bytes == 0 ? InjectContent::Empty : InjectContent::Injected;
 }
 
 /// The values of the tokens that depend on the game, as ES-DE's launchGame() computes them from the game's path.
@@ -781,8 +781,8 @@ private:
             break;
         case InjectContent::TooLong:
             m_translation.notes.push_back(fmt::format(
-                "%INJECT%: {} holds more than {} characters, so ES-DE injects nothing: the element is left out", file,
-                kMaxInjectCharacters));
+                "%INJECT%: {} holds more than {} bytes, so ES-DE injects nothing: the element is left out", file,
+                kMaxInjectBytes));
             break;
         case InjectContent::Injected:
             block(LaunchReadiness::RequiresConfiguration, "inject-file",

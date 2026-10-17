@@ -380,12 +380,12 @@ TEST_CASE("esde/launch translation: %INJECT% files", "[esde][launch]") {
         CHECK(translation.readiness() == LaunchReadiness::Ready);
         CHECK(translation.notes.at(0).find("is empty") != std::string::npos);
     }
-    SECTION("more than 4,096 characters: dropped") {
+    SECTION("more than 4,096 bytes: dropped") {
         ra.machine.file(inject, std::string(4097, 'a'));
         const auto translation = translate(command);
         CHECK(translation.readiness() == LaunchReadiness::Ready);
         CHECK(translation.notes.at(0).find("4096") != std::string::npos);
-        // Line ends do not count: 4,096 characters over many lines are injected.
+        // Line ends do not count: 4,096 bytes over many lines are injected.
         std::string lines;
         for (int i = 0; i < 64; ++i) {
             lines += std::string(64, 'b') + "\r\n";

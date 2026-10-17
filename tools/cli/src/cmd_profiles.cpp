@@ -131,9 +131,9 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
         for (const std::string& warning : resolution.chosen.warnings) {
             out.writeLine(fmt::format("    {:<18}{}", "warning", warning));
         }
-        writeTranslationDetails(out, resolution.translation, "    ");
+        writeTranslationDetails(out, resolution.translation, "    ", 18, false);
         if (!system.commands.empty()) {
-            out.writeLine(fmt::format("    {:<18}", "commands"));
+            out.writeLine("    commands");
             for (const SystemReport::Command& command : system.commands) {
                 const bool chosen = resolution.chosen.choice.kind == launcher::LaunchChoiceKind::EsdeCommand &&
                                     resolution.chosen.choice.value == command.label && !resolution.chosen.blocker;
@@ -146,7 +146,7 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
             }
         }
         if (!system.profiles.empty()) {
-            out.writeLine(fmt::format("    {:<18}", "profiles"));
+            out.writeLine("    profiles");
             for (const SystemReport::Profile& profile : system.profiles) {
                 const bool chosen = resolution.chosen.choice.kind == launcher::LaunchChoiceKind::Profile &&
                                     resolution.chosen.choice.value == profile.id;

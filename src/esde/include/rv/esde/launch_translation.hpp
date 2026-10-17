@@ -38,7 +38,7 @@
 //                            (ES-DE leaves emulators in its own working folder; Retroverse keeps them out of it)
 //   %HIDEWINDOW%             a console program runs without a window (LaunchRequest::hideConsoleWindow)
 //   %INJECT%=<file>          the element (or its value, glued to a prefix) is dropped when the file (relative to the
-//                            game's folder, %BASENAME% expanded) is missing, empty or over 4,096 characters, as ES-DE
+//                            game's folder, %BASENAME% expanded) is missing, empty or over 4,096 bytes, as ES-DE
 //                            then injects nothing; a file ES-DE would inject requires launcher configuration
 // Anything else requires launcher configuration with the token named: %RUNINBACKGROUND%, %ESCAPESPECIALS%,
 // %PRECOMMAND_X%, %GAMEENTRYDIR% and %EMUPATH% in a command, %STARTDIR% or %INJECT% without '=', a second program or core,
@@ -70,8 +70,9 @@ struct TranslationContext {
     const core::ISystemProbe* probe = nullptr;
 };
 
-/// The largest %INJECT% content ES-DE injects (characters, line ends removed); a longer one injects nothing.
-inline constexpr std::size_t kMaxInjectCharacters = 4096;
+/// The largest %INJECT% content ES-DE injects (bytes of UTF-8 text, line ends removed); a longer one injects
+/// nothing.
+inline constexpr std::size_t kMaxInjectBytes = 4096;
 
 /// What a find-rule search found.
 struct FindResult {

@@ -173,7 +173,7 @@ void writeText(const DryRun& run, Output& out) {
         line("Warning", warning);
     }
     line("Readiness", std::string(catalog::describe(resolution.readiness())));
-    writeTranslationDetails(out, resolution.translation, "");
+    writeTranslationDetails(out, resolution.translation, "", 20, true);
     if (const auto& request = resolution.translation.request) {
         out.writeLine(resolution.readiness() == catalog::LaunchReadiness::Ready ? "Argv:"
                                                                                 : "Argv (blocked, not runnable):");

@@ -196,11 +196,16 @@ inline Json translationJson(const catalog::LaunchTranslation& translation) {
                 {"notes", translation.notes}};
 }
 
-/// The lines of a translation's details, each "<label><text>" with `indent` before it.
+/// The lines of a translation's details, "<label><text>", the labels `width` wide after `indent`; `capitalized`: the
+/// labels begin with a capital ("Program"), as the lines around them do.
 inline void writeTranslationDetails(Output& out, const catalog::LaunchTranslation& translation,
-                                    std::string_view indent) {
+                                    std::string_view indent, std::size_t width, bool capitalized) {
     const auto line = [&](std::string_view label, const std::string& text) {
-        out.writeLine(fmt::format("{}{:<18}{}", indent, label, text));
+        std::string name(label);
+        if (capitalized && !name.empty()) {
+            name.front() = static_cast<char>(name.front() - 'a' + 'A');
+        }
+        out.writeLine(fmt::format("{}{:<{}}{}", indent, name, width, text));
     };
     if (translation.program) {
         line("program", foundText(*translation.program));

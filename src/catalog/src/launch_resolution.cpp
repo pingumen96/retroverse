@@ -16,8 +16,9 @@ ReadinessBlocker blockerOf(LaunchReadiness readiness, std::string code, std::str
     return ReadinessBlocker{readiness, std::move(code), std::move(message)};
 }
 
-/// A launcher plan's blocker as the catalog's readiness (launch_plan.hpp keeps the order this maps to).
-ReadinessBlocker blockerOfPlan(const launcher::LaunchBlocker& blocker, std::string_view profileId) {
+/// A launcher plan's blocker as the catalog's readiness (launch_plan.hpp keeps the order this maps to); its message
+/// names the profile, the field and the system already.
+ReadinessBlocker blockerOfPlan(const launcher::LaunchBlocker& blocker) {
     LaunchReadiness readiness = LaunchReadiness::RequiresConfiguration;
     std::string_view code = "profile-invalid-request";
     switch (blocker.kind) {
@@ -47,7 +48,7 @@ ReadinessBlocker blockerOfPlan(const launcher::LaunchBlocker& blocker, std::stri
         code = "core-not-found";
         break;
     }
-    return blockerOf(readiness, std::string(code), fmt::format("profile '{}': {}", profileId, blocker.message));
+    return blockerOf(readiness, std::string(code), blocker.message);
 }
 
 /// Why a folder is unavailable, for people.
@@ -215,7 +216,7 @@ LaunchTranslation translateProfile(const SystemInfo& system, const LaunchGame* g
                                             plan.executable->entry, {}};
     }
     if (plan.blocker) {
-        translation.blockers.push_back(blockerOfPlan(*plan.blocker, profile.id));
+        translation.blockers.push_back(blockerOfPlan(*plan.blocker));
     }
     if (game != nullptr && plan.request) {
         translation.request = *plan.request;
