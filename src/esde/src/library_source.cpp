@@ -652,10 +652,14 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
         const Head& head = heads[h];
         const CatalogEntry& entry = entries[head.entry];
         const std::string headFile = fileText(folder, entry.key.relativePath());
-        std::vector<catalog::LookupKey> references; // as the sheet names them, in its order
+        // What the sheet says: every reference that resolves inside the system folder, in its order, each key once,
+        // whether or not it names something there or a game now. The cache keeps these, never the members they gave
+        // when the sheet was read, so that the members are picked again from the listing on every load: a track that
+        // comes back, or turns into a game, joins the group although the sheet is not read again.
+        std::vector<catalog::LookupKey> references;
         const auto takeStored = [&] {
             if (head.stored != nullptr) {
-                references = head.stored->group.members;
+                references = head.stored->group.references;
             }
         };
         if (!head.read) {
@@ -679,18 +683,25 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
                     issues.add(catalog::Issue{
                         catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceInvalid), system.str(),
                         headFile, fmt::format("its reference \"{}\" is ignored: {}", reference, key.error().message)});
-                } else if (listing != nullptr && listing->sameKey(key->key()).empty() &&
-                           !unavailableAbove(unavailableFolders, key->key())) {
-                    issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceMissing),
-                                              system.str(), headFile,
-                                              fmt::format("names \"{}\", which is not there", *relative)});
-                } else {
+                } else if (std::none_of(references.begin(), references.end(), [&](const catalog::LookupKey& earlier) {
+                               return earlier.key() == key->key();
+                           })) {
                     references.push_back(std::move(*key));
                 }
             }
         }
+        // A reference to nothing listed (and not below a folder that could not be listed), however the references
+        // were had: the issue stands as long as the file is not there.
+        for (const catalog::LookupKey& reference : references) {
+            if (listing != nullptr && listing->sameKey(reference.key()).empty() &&
+                !unavailableAbove(unavailableFolders, reference.key())) {
+                issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceMissing),
+                                          system.str(), headFile,
+                                          fmt::format("names \"{}\", which is not there", reference.relativePath())});
+            }
+        }
         // The members: the games of those keys (the one spelled like the reference first), the head excluded, once.
-        DiscHeadLinks link{entry.key, head.kind, {}};
+        DiscHeadLinks link{entry.key, head.kind, {}, references};
         for (const catalog::LookupKey& reference : references) {
             const auto found = byKey.find(reference.key());
             if (found == byKey.end()) {

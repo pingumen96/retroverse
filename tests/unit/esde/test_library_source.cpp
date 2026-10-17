@@ -37,6 +37,7 @@ using rv::catalog::LibrarySnapshot;
 using rv::catalog::NotAGameReason;
 using rv::test::esde::countsOf;
 using rv::test::esde::entryAt;
+using rv::test::esde::issuesOf;
 using rv::test::esde::loadSnapshot;
 using rv::test::esde::materialize;
 using rv::test::esde::profileOf;
@@ -289,12 +290,15 @@ TEST_CASE("esde/library_source: disc groups come from the cache while their head
     rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(0), {}});
     const LibrarySnapshot first = loadSnapshot(source, profileOf(fixture));
     REQUIRE(first.discGroups.size() == 1);
+    const rv::catalog::DiscGroup twin = first.discGroups.front();
+    CHECK(twin.references == twin.members); // the sheet names its two tracks, both there
     const CatalogEntry& head = entryAt(first, "psx", "Twin Tracks (Europe).cue");
     REQUIRE(head.file.has_value());
 
     // A cache that says something else of the head: used while the size and time match, never read.
-    rv::catalog::CachedDiscGroup cached{first.discGroups.front(), head.file->size, head.file->lastWriteTime};
-    cached.group.members.pop_back(); // only Track 1, as an earlier import read it
+    rv::catalog::CachedDiscGroup cached{twin, head.file->size, head.file->lastWriteTime};
+    cached.group.references.pop_back(); // as if the sheet named Track 1 alone
+    cached.group.members.pop_back();
     std::vector<rv::catalog::CachedDiscGroup> cache{cached};
     rv::catalog::LibraryLoadOptions options;
     options.discGroups = cache;
@@ -305,11 +309,59 @@ TEST_CASE("esde/library_source: disc groups come from the cache while their head
     CHECK(source.lastStatistics().sheetsRead == 0);
     CHECK(source.lastStatistics().sheetsFromCache == 1);
 
+    // The cached references, not the cached members, give the members: a group an earlier import stored with Track 1
+    // alone (Track 2 was not there then) takes Track 2 back, still without reading the sheet.
+    cache.front() = rv::catalog::CachedDiscGroup{twin, head.file->size, head.file->lastWriteTime};
+    cache.front().group.members.pop_back();
+    const LibrarySnapshot rejoined = loadSnapshot(source, profileOf(fixture), options);
+    REQUIRE(rejoined.discGroups.size() == 1);
+    CHECK(rejoined.discGroups.front() == twin);
+    CHECK(entryAt(rejoined, "psx", "Twin Tracks (Europe) (Track 2).bin").state == EntryState::DiscMember);
+    CHECK(source.lastStatistics().sheetsRead == 0);
+
     // Another size: read again.
     cache.front().headSize += 1;
     const LibrarySnapshot reread = loadSnapshot(source, profileOf(fixture), options);
     CHECK(reread.discGroups.front().members.size() == 2);
     CHECK(source.lastStatistics().sheetsRead == 1);
+}
+
+TEST_CASE("esde/library_source: a track that comes back joins its cached group", "[esde][library_source]") {
+    const rv::test::Fixture fixture = materialize("esde/standard");
+    const fs::path track = fixture.path("roms/psx/Twin Tracks (Europe) (Track 1).bin");
+    const auto bytes = rv::core::readFileShared(track, 1 << 20);
+    REQUIRE(bytes.has_value());
+    REQUIRE(fs::remove(track));
+    rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(0), {}});
+
+    // Track 1 is gone: the group holds Track 2 alone, the sheet's references both, and the missing one is reported.
+    const LibrarySnapshot first = loadSnapshot(source, profileOf(fixture));
+    REQUIRE(first.discGroups.size() == 1);
+    const rv::catalog::DiscGroup& group = first.discGroups.front();
+    CHECK(group.members.size() == 1);
+    REQUIRE(group.references.size() == 2);
+    CHECK(group.references[0].relativePath() == "Twin Tracks (Europe) (Track 1).bin");
+    CHECK(issuesOf(first.issues, "disc-reference-missing").size() == 1);
+    const CatalogEntry& head = entryAt(first, "psx", "Twin Tracks (Europe).cue");
+    std::vector<rv::catalog::CachedDiscGroup> cache{{group, head.file->size, head.file->lastWriteTime}};
+    rv::catalog::LibraryLoadOptions options;
+    options.discGroups = cache;
+
+    // Still gone, from the cache: the same group, the same issue (it stands while the file is not there).
+    const LibrarySnapshot stillGone = loadSnapshot(source, profileOf(fixture), options);
+    CHECK(stillGone.discGroups == first.discGroups);
+    CHECK(issuesOf(stillGone.issues, "disc-reference-missing").size() == 1);
+    CHECK(source.lastStatistics().sheetsRead == 0);
+
+    // Back, the sheet untouched: a member again without the sheet being read.
+    REQUIRE(rv::test::writeFileAnyLength(track, *bytes));
+    const LibrarySnapshot back = loadSnapshot(source, profileOf(fixture), options);
+    CHECK(source.lastStatistics().sheetsRead == 0);
+    CHECK(source.lastStatistics().sheetsFromCache == 1);
+    REQUIRE(back.discGroups.size() == 1);
+    CHECK(back.discGroups.front().members.size() == 2);
+    CHECK(entryAt(back, "psx", "Twin Tracks (Europe) (Track 1).bin").state == EntryState::DiscMember);
+    CHECK(issuesOf(back.issues, "disc-reference-missing").empty());
 }
 
 TEST_CASE("esde/library_source: a gamelist that fails is read again, then given up on", "[esde][library_source]") {

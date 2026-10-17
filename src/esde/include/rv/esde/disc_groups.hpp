@@ -104,12 +104,14 @@ struct DiscHeadLinks {
     catalog::LookupKey head;
     catalog::DiscGroupKind kind = catalog::DiscGroupKind::Cue;
     std::vector<catalog::LookupKey> members;
+    /// What the head references, members or not (catalog::DiscGroup::references): carried into its group as is.
+    std::vector<catalog::LookupKey> references;
 };
 
 /// The groups of one system.
 struct DiscGrouping {
     /// One per head that keeps at least one member, by head (LookupKey order), each with its members in the head's
-    /// order.
+    /// order and its references as DiscHeadLinks gave them.
     std::vector<catalog::DiscGroup> groups;
     /// Every member with the head it is shown under (CatalogEntry::discHead), by member (LookupKey order): of several
     /// heads that reference it (a track two cue sheets name), the first in LookupKey order.

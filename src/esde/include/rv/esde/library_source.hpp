@@ -20,7 +20,9 @@
 //    spelled exactly like it, else differing in case only (gamelist.hpp, entryForListed());
 //  - a <folder> entry of a folder ES-DE enters: a Folder (also one that holds no game, which ES-DE would not show), or
 //    NotAGame when the rules above exclude it; of a game directory or a file, skipped with an issue, as ES-DE skips a
-//    "Game/folder mismatch";
+//    "Game/folder mismatch". With ShowHiddenGames off, ES-DE deletes a folder whose entry (spelled as the folder is on
+//    disk) is <hidden> with everything below it: its games and folders are NotAGame (ExcludedBySetting,
+//    "ShowHiddenGames") too, its missing files stay missing;
 //  - a <game> entry whose file is not listed: MissingFile (kept with its metadata, FR-033), but below a folder that
 //    could not be listed or in a system folder that is not available (SourceUnavailable, with the state the gamelist
 //    alone tells: the name's extension, a BIOS name, a leading dot, <hidden>) and inside a game directory (skipped
@@ -30,9 +32,10 @@
 //  - a system name defined more than once (a custom system and the bundled one, SystemsConfiguration::fallbacks): the
 //    first definition whose folder gives at least one game, as ES-DE loads it; the first one when none does;
 //  - disc members: the games a .cue or .m3u game of the same system references (DiscMember, CatalogEntry::discHead);
-//    each sheet read once per import (LibraryLoadOptions::discGroups: a group read before is used while its head keeps
-//    its size and time, and kept, with an issue, while the sheet cannot be read); a head without a gamelist entry of
-//    its own shows the metadata of the first of its members that has some (members first along a chain).
+//    each sheet read once per import (LibraryLoadOptions::discGroups: the references of a group read before are used
+//    while its head keeps its size and time, and kept, with an issue, while the sheet cannot be read; the members are
+//    picked from them again on every load); a head without a gamelist entry of its own shows the metadata of the first
+//    of its members that has some (members first along a chain).
 // Deliberate differences, besides the missing files and the disc members: a gamelist path that differs from its file
 // in case only matches it (ES-DE would show a second entry); flatten.txt is ignored; gamelists inside ROM folders
 // (LegacyGamelistFileLocation) are never read.

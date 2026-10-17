@@ -277,6 +277,7 @@ DiscGrouping groupDiscs(const catalog::SystemName& system, std::vector<DiscHeadL
         group.system = system;
         group.head = links[i].head;
         group.kind = links[i].kind;
+        group.references = links[i].references;
         for (std::size_t m = 0; m < links[i].members.size(); ++m) {
             if (kept[i][m]) {
                 group.members.push_back(links[i].members[m]);
