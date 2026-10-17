@@ -29,10 +29,6 @@ and `./Lost Lagoon (Europe).nes` (its file is gone: a missing file); `Unscraped 
 
 | Settings | Media root | Every entry's media | `media --coverage` | `media --system nes --path "Rocket Ranger (USA).nes"` |
 |---|---|---|---|---|
-| as committed | `media`, empty | none of the 12 kinds (no system folder: no media) | exit 0; nes: 2 gamelist entries, 1 with its file, 1 scraped game, every share 0.0% | exit 0, 0 of 12 kinds |
+| as committed | `media`, empty | none of the 12 kinds (no system folder: no media) | exit 0; nes: 2 gamelist entries, 1 with its file, 1 scraped game, 2 games (Rocket Ranger, Unscraped Hop); gb: 1 game (Pocket Pal); every share 0.0% | exit 0, 0 of 12 kinds |
 | MediaDirectory `{{FIXTURE_ROOT}}\unplugged\media` | missing | `Unavailable` | exit 1: `media-root-unavailable` (error), every entry unknown, no share | exit 1 |
 | MediaDirectory on a drive letter that is not mapped (chosen by the test) | unreachable | `Unavailable` | exit 1, as above | exit 1 |
-
-Over every game ES-DE shows (the ROM scan, I2 step 7), nes has 2 games (Rocket Ranger, Unscraped Hop) and gb 1, all
-without media in the empty root. Until that scan is merged, `media --coverage` reads its entries from the gamelists, so
-its games are the scraped one.

@@ -140,16 +140,17 @@ read, count in no share):
 |---|---|---|
 | `gamelist-entries` | every `<game>` entry of the gamelists (any state but Folder: its file there or not, outside its folder or not) | 40,870 |
 | `gamelist-entries-with-file` | those whose file the scan found | 39,832 |
-| `scraped-games` | the games (`EntryState::Game`) with a gamelist entry | 38,995 |
-| `games` | every game ES-DE shows, scraped or not (disc tracks grouped) | after step 7 |
+| `scraped-games` | the games (`EntryState::Game`) with a gamelist entry | 38,986 (38,995 before the snapshot grouped nine scraped disc tracks: see "Integration with step 7") |
+| `games` | every game ES-DE shows, scraped or not (disc tracks grouped) | 90,246 (see "Integration with step 7") |
 
 A folder (`<folder>` entry, or a listed folder) is in no population: a folder is no game, even though its own media are
 listed (snes' `Hacks` cover). An entry outside its system folder is a member of `gamelist-entries` without media (ES-DE
 skips it) and is never asked of the resolver.
 
 **ADR-0003's denominator, checked.** ADR-0003 counts "40,870 `gamelist.xml` entries": every `<game>` entry, the 1,038
-whose file is gone included, not the entries whose file exists (39,832) nor the scraped games (38,995, the survey's
-"listed games" of esde-data.md section 5). `measureCoverage()` gives all three, and the CLI prints them.
+whose file is gone included, not the entries whose file exists (39,832) nor the scraped games (38,995 as the survey's
+"listed games" of esde-data.md section 5 count them, every disc track a game, and as `GamelistSource` gave them; 38,986
+over the library snapshot, see "Integration with step 7"). `measureCoverage()` gives all three, and the CLI prints them.
 
 **`retroverse-cli media`.**
 
@@ -171,22 +172,20 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
   `unknown`), `mediaName`, `mediaRoot`, `media` (12 items: `kind`, `present`, `extension`, `path`).
 - `--coverage` prints the media root, the populations' totals (one row each: members, then the share of each kind in
   percent), then per system the gamelist entries whose file exists and the games, then the issues. JSON: `mediaRoot`,
-  `source` (where the entries come from: `gamelists`, see below), `kinds`, `populations` (their descriptions),
+  `source` (where the entries come from: `rom-scan`, see below), `entries` (the snapshot's entries, every state and
+  folders included: the text's `Entries` line), `kinds`, `populations` (their descriptions),
   `listed` (`systems` whose media folder was looked up, `files` in those folders, `caseChecks` and `fileChecks` as
   `MediaListingStats` counts them), `total` and `systems[]` (`system`,
   `mediaFolder`: `listed`, `missing`, `unavailable` or null when the root cannot be read, `populations`), each
   population as `entries`, `unknown`, `withAny`, `withKind` (counts, never shares), and `issues`.
-- **Where the coverage's entries come from until step 7 is merged.** The ROM scan and the library snapshot
-  (`esde::EsdeLibrarySource`) are step 7's, in the same wave. `cmd_media.cpp` reads the entries through
-  `catalog::ILibrarySource`, implemented there by `GamelistSource`: every `<game>` entry of the gamelists looked up in
-  its system's ROM folder (listed with `core::walkTree` down the folders the gamelist names only), with the states the
-  gamelist and the listing tell: Game, NotAGame for an extension the system does not configure (compared with its
-  case) and for what ShowHiddenFiles and ShowHiddenGames exclude, MissingFile, OutsideSystemFolder, SourceUnavailable.
-  It has no files without a gamelist entry, no disc groups, no noload.txt and no MAME BIOS sets, so its `games` are the
-  scraped games and the text says so. The three gamelist populations are exact with it (the real-library test checks
-  them against the oracle).
+- **Where the coverage's entries come from.** The library snapshot the import reads: `esde::EsdeLibrarySource`
+  (step 7) through `catalog::ILibrarySource::load()`, with the library.json profile (see "Integration with step 7").
+  Until both steps were merged, `cmd_media.cpp` read its entries through a temporary `GamelistSource` (every `<game>`
+  entry of the gamelists looked up in its system's ROM folder: no files without a gamelist entry, no disc groups, no
+  noload.txt, no MAME BIOS sets, so its `games` were the scraped games); the figures under "Real library" below were
+  measured with it.
 - Exit codes: 0; 1 when something could not be read (the media root, a media folder, the settings, the systems, a
-  gamelist, the ROM folder of `--path`); 2 for invalid options, an unknown system, a path that leads out of its ROM
+  gamelist, a ROM folder, the ROM folder of `--path`); 2 for invalid options, an unknown system, a path that leads out of its ROM
   folder or is malformed, `--game`, and no library.json; 3 when library.json is invalid or the results cannot be
   written.
 
@@ -320,6 +319,132 @@ with it, it is met.
 - Debug and Release build without a warning; the unit tests (1,028) pass in both.
 - The real library: see above.
 
+## Integration with step 7
+
+Made once both steps were on main (I2 step 7-8i).
+
+**What changed.**
+- `tools/cli/src/cmd_media.cpp`: `media --coverage` measures the library snapshot the import reads,
+  `esde::EsdeLibrarySource` through `catalog::ILibrarySource::load()` with the profile library.json records (its root
+  overrides; the source reads ES-DE's settings and systems itself), only the system of `--system`
+  (`EsdeLibrarySourceOptions::systems`). The temporary `GamelistSource`, `ListedFile`, `extensionOf()` and
+  `parentsOf()` are gone. Reading library.json and loading the snapshot are shared with `import --dry-run` through
+  `tools/cli/src/library_snapshot.hpp` (`readRecordedLibrary()`, `readLibrarySnapshot()`), a private header that no
+  source list names, like `launch_text.hpp`; both commands keep their messages and exit codes.
+- The output: the JSON's `source` is `rom-scan`; the text's `Entries` line gives the snapshot's entries (`23 in the
+  library snapshot (the ROM folders listed with ES-DE's rules, the gamelists merged in, disc tracks grouped under their
+  sheet)`), and so does the JSON's `entries`; the games table is "The games, per system"; the `games` description ends "disc tracks grouped under their
+  sheet". The snapshot's warnings and errors (ROM folders, gamelists, disc groups) are among the issues, and an error
+  makes the exit code 1, as before.
+- The populations are `coverage.hpp`'s four, unchanged. `games` is now every game of the snapshot, scraped or not
+  (`EntryState::Game`; disc members are in no population). `scraped-games` loses the scraped disc tracks the snapshot
+  groups under their sheet (below). The two populations of `<game>` entries are what they were, entry for entry, on
+  the reference library and on the fixtures the coverage tests read (standard, media-roots); not in general, since
+  the snapshot does not hold every `<game>` entry, nor only those (see "Left open").
+- `media --system --path` is unchanged: it takes the ROM path as the disk spells it (`spelledOnDisk()`). The snapshot
+  would not give that more simply: it holds entries only (a path ES-DE does not list, such as a gone file without a
+  gamelist entry, still gets its media names), and loading it for one path walks the whole system folder. The
+  snapshot's keys keep the disk's spelling too (`EsdeLibrarySource` keys an entry by the listed file, also when its
+  gamelist entry spells it in another case), so in a folder with case-sensitive names the coverage asks for the
+  spelling ES-DE asks for.
+- Cost: the coverage now walks every ROM folder whole and reads the cue sheets and playlists: 3.0 and 3.6 s on the
+  reference machine (Release, warm; 5.2 s once, within a run of every real-library test), against 2.1 s through the
+  gamelists.
+
+**Tests.** `test_cli_media.cpp`: the standard fixture's coverage has the snapshot's 15 games (gb 8, snes 5, psx 2) with
+covers 4, videos 5 and any kind 6, as `test_media_coverage.cpp` counts them on a snapshot built by hand, with their text
+rows, and the gamelist populations as before (11, 9, 8); the media-roots fixture has 3 games (gb 1, nes 2) in two
+systems (gb, whose game has no gamelist entry, is now in the report, its media folder missing), all unknown when the
+root is unplugged. The media-roots README gives the games in its table instead of the paragraph about the temporary
+source. `test_cli_media_real.cpp` checks the games population in total and for each of the 48 systems, and the scraped
+games as step 8's figures less the scraped tracks. Debug and Release build without a warning; the 1,094 unit tests pass
+in both.
+
+**The real library** (`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE
+-RomRoot I:\Giochi\Emulatori -MediaRoot E:\Programmi\ES-DE_media\downloaded_media`, Release, ES-DE closed): with
+`-Filter '[real-library][media]'` 2 test cases, 2,110 assertions; with the default filter, twice, 8 test cases (6
+passed, the two launch tests skipped without `-RetroArchExe`), 226,413 assertions; 0 differences among 542,082 entries
+every time. `media --coverage` exits 0 and lists 48 systems: the 45 with a gamelist, and pc (21 games), pcfx (12) and
+switch (229), which have neither a gamelist nor a media folder (`missing`, as trs-80's); 364,810 files in their media
+folders, 520 folders asked for their case rule, no media file looked up on disk.
+
+| Kind | Every game (90,246) | Scraped games (38,986) |
+|---|---|---|
+| covers | 36,010 (39.90%) | 35,711 (91.60%) |
+| backcovers | 30,869 (34.21%) | 30,723 (78.81%) |
+| 3dboxes | 35,960 (39.85%) | 35,664 (91.48%) |
+| physicalmedia | 32,397 (35.90%) | 32,215 (82.63%) |
+| screenshots | 39,237 (43.48%) | 38,573 (98.94%) |
+| titlescreens | 37,888 (41.98%) | 37,306 (95.69%) |
+| marquees | 35,397 (39.22%) | 35,167 (90.20%) |
+| miximages | 39,221 (43.46%) | 38,571 (98.94%) |
+| fanart | 19,482 (21.59%) | 19,430 (49.84%) |
+| manuals | 22,618 (25.06%) | 22,450 (57.58%) |
+| videos | 32,581 (36.10%) | 32,416 (83.15%) |
+| custom | 0 | 0 |
+| any kind | 39,404 (43.66%) | 38,721 (99.32%) |
+
+- **Every game**: step 7's 90,246 (its 12,821 disc members, 1,038 missing files, 870 entries that are no game and 155
+  folders are in no games population). Each share is under half the scraped games' since 51,260 games have no
+  gamelist entry (c64 12,014, mame 6,786, snes 6,237, gb 4,159, megadrive 3,615, nes 2,947, ...). Of those, 683 have
+  media all the same, named after their file (atari800 537, ps2 92, c64 30, 14 other systems 24 together).
+- **Scraped games**: 38,986, nine fewer than the 38,995 measured with `GamelistSource`, which took every track for a
+  game as ES-DE does. The snapshot makes nine scraped tracks disc members of their sheet: eight psx `.bin` tracks
+  (FIFA Football 2003, Final Fantasy IX disc 1, International Track & Field, Metal Slug X, This Is Football 2 in two
+  versions, Wild Arms, The X-Files disc 1; each with a cover, a screenshot, a video and a marquee, 80 media in all) and
+  saturn's Sega Rally Championship track 01 (no media). Per system, the survey's table less those: psx 2,225 scraped
+  games (covers, screenshots 2,220, videos 2,215, marquees 2,219), saturn 7.
+- **The `<game>` entries**: unchanged, 40,870 and 39,832 with their file, every count as the oracle gives it, so
+  ADR-0003's amended table is met as before (every row within 0.01 point).
+
+**The oracle of the games population.** Independent of the C++ and run once, on 2026-10-17, on the reference library
+(read-only, ES-DE closed), its figures frozen in `test_cli_media_real.cpp` (`kGames`, `kGameRows`, `kScrapedTracks`):
+the entries and their states from `scripts/esde_census.py` (step 7's oracle of `EsdeLibrarySource`, whose table
+matches the C++'s byte for byte), its `System` class driven as its `census()` drives it, so that each system's chosen
+definition keeps its entries; the media from an `os.scandir` listing of the media root made for the purpose, ES-DE's
+rule applied in Python (the ROM path below the system folder, a file's last extension removed and a folder's name
+whole, the extensions ES-DE reads per kind, only files, names compared with the census's case folding: no media folder
+has case-sensitive names); the populations as `coverage.hpp` defines them. It reproduced step 8's figures of both
+`<game>` entry populations count for count, step 7's states (90,246 games, 12,821 members, 1,038 missing, 870 not a
+game, 155 folders) and the 364,810 media files.
+
+**Left open.** Over the snapshot, `gamelist-entries` (and with it `gamelist-entries-with-file`) is "every `<game>`
+entry" only as far as the snapshot tells the gamelist entries apart, and it can be wrong both ways (review finding F1):
+- **`<game>` entries left out.** `EsdeLibrarySource` skips, with an issue and no entry, a `<game>` entry naming a
+  folder ES-DE enters (`gamelist-kind-mismatch`) and one inside a game directory (`gamelist-entry-inside-game`), as
+  ES-DE skips them. `GamelistSource` counted both (as `NotAGame` and as a game).
+- **`<folder>` entries counted.** A `<folder>` entry that ES-DE excludes (`ShowHiddenGames` off and `<hidden>`,
+  `ShowHiddenFiles` off and a hidden folder, a noload.txt) is `NotAGame` with a gamelist path, so `inPopulation()`
+  counts it among the `<game>` entries; `GamelistSource` read no `<folder>` entries. `CatalogEntry` does not say which
+  kind of gamelist entry named it, and an excluded game directory (a `<game>` entry) looks alike.
+
+Neither happens on the reference library (40,870 reproduced; all 155 `<folder>` entries are folders, no entry skipped)
+nor in the fixtures the coverage tests read. Elsewhere they do: nested-roms' nes gamelist has 6 `<game>` entries, and
+`media --coverage --system nes` counts 4 (`./Shelf B` and `./Collection.zip/Inside One (USA).nes` are only issues;
+`GamelistSource` gave 6), 5 with `ShowHiddenGames` off (the 4 and the excluded `<folder>` `./L1/L2`); the noload
+fixture counts its `<folder>` `gba/Skip Me` (it holds a noload.txt) as committed. One fix serves both directions: the
+snapshot records which kind of gamelist entry named an entry and keeps the `<game>` entries it skips (as `NotAGame`
+entries, or as a count per system), and `inPopulation()` takes the kind instead of the state. It is step 1's domain and
+step 7's source, outside this step: a candidate for BACKLOG.
+
+**Review findings addressed (step 7-8i).**
+- **F1 (the `<game>` entry populations over the snapshot).** Confirmed on a scratch copy of nested-roms (the figures
+  under "Left open"). Documented, not fixed, since the fix needs the gamelist entry kind in the snapshot (step 1's
+  domain, step 7's source). "What changed" now limits "entry for entry" to the reference library and the coverage
+  tests' fixtures. "Left open" covers both directions, and so do `coverage.hpp`'s `GamelistEntries` and the BACKLOG
+  candidate in "For the merge".
+- **F2 and S78i-R1 (the scraped games' figure).** `coverage.hpp`'s header gives 38,986 and why the survey's 38,995
+  differs (it also gives the 90,246 games). "ADR-0003's denominator, checked" gives 38,995 as the survey and
+  `GamelistSource` count them, and 38,986 over the snapshot. The exit-code bullet names a ROM folder, as
+  `cmd_media.cpp`'s header does: the snapshot reports one that cannot be listed as an error.
+- **F3 (the entry count only in the text).** The JSON has `entries` beside `source`. `test_cli_media.cpp` checks 23 for
+  the standard fixture, and `test_cli_media_real.cpp` checks 105,130 (step 7's entries: 90,246 games, 12,821 disc
+  members, 1,038 missing files, 870 entries that are no game, 155 folders).
+- Verification: Debug and Release build without a warning, and the 1,094 unit tests pass in both. `real-library.ps1`
+  with the four folders, Release, ES-DE closed: with `-Filter '[real-library][media]'` 2 test cases, 2,111 assertions;
+  with the default filter 8 test cases (6 passed, the two launch tests skipped), 226,414 assertions. Both runs showed 0
+  differences among 542,082 entries.
+
 ## For the merge
 
 - **ADR-0003.** Amend its context table with the reproducible figures, the population named: "On the reference
@@ -333,15 +458,12 @@ with it, it is met.
   amended figures; a different amendment changes them there.
 - **Roadmap, step 8's row.** Done; the criterion "real coverage over 40,870 entries within 0.1 point of ADR-0003" is
   met against the amended table (every row within 0.01 point), with the figures above.
-- **Step 7.** In `tools/cli/src/cmd_media.cpp`, `showCoverage()` makes a `GamelistSource`: replace it with
-  `esde::EsdeLibrarySource` (the same `catalog::ILibrarySource::load()` call) and delete `GamelistSource`, `ListedFile`,
-  `extensionOf()` and `parentsOf()`. Then: the JSON's `source` becomes the snapshot's (say `rom-scan`), the text's
-  "Entries" line and the games table's title lose their "until the ROM scan" notes, and `tests/unit/cli/
-  test_cli_media.cpp` expects the games of the snapshot: 15 for the standard fixture (gb 8, snes 5, psx 2, covers 4,
-  videos 5: `tests/unit/esde/test_media_coverage.cpp` already checks them on a snapshot built by hand), 3 for the
-  media-roots fixture; the media-roots README's last paragraph goes. `test_cli_media_real.cpp` can then check the
-  games population over the real library (about 90,000 games). The entries' keys must keep the disk's spelling of
-  their files (`GamelistSource` does), since the media of a folder with case-sensitive names depend on it.
+- **Step 7.** Done (I2 step 7-8i, "Integration with step 7" above): `showCoverage()` reads the snapshot of
+  `esde::EsdeLibrarySource`; `GamelistSource`, `ListedFile`, `extensionOf()` and `parentsOf()` are deleted; the JSON's
+  `source` is `rom-scan`, the text has lost its "until the ROM scan" notes; `test_cli_media.cpp` expects the snapshot's
+  games (standard 15, media-roots 3), the media-roots README's last paragraph is gone, and `test_cli_media_real.cpp`
+  checks the games population over the real library (90,246 games) besides the gamelist populations. The snapshot's
+  keys keep the disk's spelling of the files.
 - **Step 11.** The import asks `presence()` for every entry with a key and stores the presence and extension per kind
   (ADR-0008 §5), keeping what it stored when `presence()` is `Unavailable`; `media --game <id>` reads them back and
   derives the paths with `path()`. One `EsdeMediaResolver` per import, `refresh()` (or a new one) at the next.
@@ -351,7 +473,11 @@ with it, it is met.
   as above; architecture, `rv_esde`: the media resolver on `core::walkTree`, and `rv_catalog`: the coverage service.
   The standard fixture's README lists the video extensions ES-DE reads as `.avi .mkv .mov .mp4 .wmv`: ES-DE 3.4.1
   reads `.mp4 .mkv .avi .wmv .mov .webm` (and images `.png .jpg .webp`), a parenthesis to correct when the README is
-  next edited. Nothing goes to BACKLOG: S8-R1 is fixed.
+  next edited. S8-R1 is fixed and needs no BACKLOG entry. After the integration with step 7: CLAUDE.md's retroverse-cli
+  section can say that `media --coverage` measures the library snapshot of the ROM scan (as `import --dry-run` reads
+  it, `library_snapshot.hpp`); BACKLOG can take the gamelist entry kind in the snapshot, so that `gamelist-entries`
+  counts the `<game>` entries the snapshot skips with an issue and leaves out the `<folder>` entries ES-DE excludes
+  ("Left open" above).
 
 ## Suggested amendments
 
