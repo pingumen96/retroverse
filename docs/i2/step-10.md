@@ -60,9 +60,10 @@ if (const auto request = resolution.request()) {
 ```
 
 `resolveLaunch(systemInfo, nullptr, ...)` gives a system's readiness: what does not depend on a game (the program, the
-core, the tokens); an %INJECT% file and a `%STARTDIR%=%GAMEDIR%` folder are each game's (a note says so), and no
-request is built. A game shares its system's readiness unless its own file, its `<altemulator>` or Retroverse's choice
-for it differ, which is what step 13 needs for the card.
+core, the tokens, a `%STARTDIR%` folder that does not depend on the game); an %INJECT% file and a
+`%STARTDIR%=%GAMEDIR%` folder are each game's (a note says so), and no request is built. A game shares its system's
+readiness unless its own file, its `<altemulator>`, Retroverse's choice for it, an %INJECT% file or its
+`%STARTDIR%=%GAMEDIR%` folder differ, which is what step 13 needs for the card.
 
 `LaunchTranslation::request` is the request as far as it could be built, also when blockers remain (a dry run shows its
 arguments, a token that blocks the launch kept in them as written); `LaunchResolution::request()` gives it only when
@@ -77,27 +78,29 @@ holding `%BASENAME%`, where ES-DE's sequential string replacements would replace
 
 **The program**, decided on the unexpanded command: exactly one `%EMULATOR_X%` element (the find rules of X), or a
 literal absolute path whose only tokens are `~` and `%ESPATH%` (the three hand-edited commands of the reference machine
-are of this kind). Anything else is "requires launcher configuration" (`program-not-allowed`), and so is a program
-whose file name `launcher::isRefusedProgram()` names (cmd, powershell, explorer, ...; `program-refused`), even when a
-find rule found it. The request must pass `validateLaunchRequest()` (`invalid-request`: a batch file, a file that is no
-PE program, a working folder that is not there, a command line too long).
+are of this kind). Anything else is "requires launcher configuration" (`program-not-allowed`), and so is a program whose
+file name `launcher::isRefusedProgram()` names (cmd, powershell, explorer, ...; `program-refused`), even when a find
+rule found it: the name as found and the name of the file it opens (`GetFinalPathNameByHandleW`: an 8.3 alias such as
+`POWERS~1.EXE` in a registry value, or a symbolic link named like an emulator, resolved); the request keeps the path as
+found. The request must pass `validateLaunchRequest()` (`invalid-request`: a batch file, a file that is no PE program, a
+working folder that is not there, a command line too long).
 
 **Tokens.** The values, for a game `<ROM folder>\<relative path>`:
 
 | Token | Value | ES-DE 3.4.1 |
 |---|---|---|
-| `%ROM%`, `%ROMRAW%` | the game's path: ES-DE's text of the system's ROM folder (ROMDirectory as configured, the system's `<path>` with `%ROMPATH%` replaced, `\` turned into `/`, repeated separators collapsed, `~` replaced) and the relative path as listed on disk, `\` between the elements | `getEscapedPath(mPath)` quotes `%ROM%` when it holds a space; one argument either way |
+| `%ROM%`, `%ROMRAW%` | the game's path: ES-DE's text of the system's ROM folder (ROMDirectory as configured, the system's `<path>` with `%ROMPATH%` replaced, `\` turned into `/`, repeated separators collapsed, `~` replaced) and the relative path as listed on disk, `\` between the elements; for a folder game holding a file of its own name, `%ROM%` is that file and `%ROMRAW%` the folder | `getEscapedPath(mPath)` quotes `%ROM%` when it holds a space; one argument either way |
 | `%ROMPATH%` | the ROM root, ES-DE's text of it without its trailing separator | `getEscapedPath(getROMDirectory())` |
-| `%BASENAME%` | the game's name up to its last `.`; a folder game's whole name | `getStem()`, which keeps a directory's name whole |
-| `%FILENAME%` | `%BASENAME%` and the last extension, `.` when there is none (`runme` gives `runme.`, a folder `Game.ps3` gives `Game.ps3.ps3`) | `baseName + getExtension(romPath)`, mirrored; ES-DE's own `%FILENAME%` also ends with a quote when the path holds a space, which CommandLineToArgvW then reads back to the same argument in every command in use |
-| `%GAMEDIR%`, `%GAMEDIRRAW%` | the folder holding the game | `%GAMEDIR%` quoted when it holds a space |
+| `%BASENAME%` | the game's name up to its last `.`; a folder game's whole name, up to its first `.` when it holds a file of its own name | `getStem()`, which keeps a directory's name whole; `baseName.substr(0, baseName.find("."))` for the inner file |
+| `%FILENAME%` | `%BASENAME%` and the last extension, `.` when there is none (`runme` gives `runme.`, a folder `Game.ps3` gives `Game.ps3.ps3`, a folder `Game.m3u` holding `Game.m3u` gives `Game.m3u`) | `baseName + getExtension(romPath)`, mirrored; ES-DE's own `%FILENAME%` also ends with a quote when the path holds a space, which CommandLineToArgvW then reads back to the same argument in every command in use |
+| `%GAMEDIR%`, `%GAMEDIRRAW%` | the folder holding `%ROM%` (a folder game's own folder when it holds a file of its own name) | `getParent(romPath)`; `%GAMEDIR%` quoted when it holds a space |
 | `%EMUDIR%` | the program's folder | |
 | `%ESPATH%` | the install folder (`install-unknown` when it is not known) | never quoted |
 | `~` | ES-DE's home folder, the ES-DE home's parent, in ES-DE's text (`/` separators) | `expandHomePath()` on the whole command first |
-| `%CORE_X%\<file>` | `<corepath entry>\<file>`: the entry with `~`, `%EMUPATH%` (the program's folder) and `%ESPATH%` replaced, then `\` and the text after the token's separator, the first entry whose file exists (`core-not-found` otherwise) | the core file is what follows the token and one more character, to the next space or quote |
-| `%STARTDIR%=<folder>` | the working folder, with `~`, `%EMUDIR%` and `%GAMEDIR%` replaced; without it, the program's folder | ES-DE creates a missing folder; Retroverse writes nothing (`start-folder-missing`) |
+| `%CORE_X%\<file>` | `<corepath entry>\<file>`: the entry with `~`, the first `%EMUPATH%` (the program's folder) and the first `%ESPATH%` replaced, each followed by every `/` turned into `\`; a path holding a space in its generic form with `\` (repeated separators collapsed); the first entry whose file exists (`core-not-found` otherwise). A core file with no space after it (no closing quote when quoted) is `core-malformed`, a `<core>` without corepath entries `find-rules-missing` | the core file is what follows the token and one more character, to the next space or quote; without one, "invalid entry in systems configuration file" |
+| `%STARTDIR%=<folder>` | the working folder, with `~`, `%EMUDIR%` and `%GAMEDIR%` replaced; without it, the program's folder | ES-DE creates a missing folder; Retroverse writes nothing (`start-folder-missing`, for a system too when the folder does not depend on the game) |
 | `%HIDEWINDOW%` | `LaunchRequest::hideConsoleWindow` | removed wherever it is |
-| `%INJECT%=<file>` | dropped (the element, or its value glued to a prefix) when the file is missing, not a file, empty or over 4,096 bytes once its line ends are removed (as ES-DE reads it: lines joined without their `\r` and `\n`, up to a Ctrl+Z), since ES-DE then injects nothing; a file ES-DE would inject is "requires launcher configuration" (`inject-file`). The value has `~` and `%BASENAME%` replaced, `%ROM%` alone is the game's file, and a value without a drive (`X:\`) lies in the game's folder | |
+| `%INJECT%=<file>` | dropped (the element, or its value glued to a prefix) when the file is missing, not a file, empty or over 4,096 bytes once its line ends are removed (as ES-DE reads it: lines joined without their `\r` and `\n`, up to a Ctrl+Z), since ES-DE then injects nothing; a file ES-DE would inject is "requires launcher configuration" (`inject-file`). Only its first MiB is read: too long as soon as its content passes 4,096 bytes, and a first MiB of line ends only is taken as a file ES-DE may inject. The value has `~` and `%BASENAME%` replaced, `%ROM%` alone is the game's path (`%ROMRAW%`'s), and a value without a drive (`X:\`) lies in the folder holding `%ROM%` | |
 
 Anything else is "requires launcher configuration", the token named once (`token-unsupported`): `%RUNINBACKGROUND%`,
 `%ESCAPESPECIALS%`, `%PRECOMMAND_X%`, `%GAMEENTRYDIR%` and `%EMUPATH%` in a command, unknown `%X%` text
@@ -105,7 +108,10 @@ Anything else is "requires launcher configuration", the token named once (`token
 `%INJECT%` without `=`, a `%STARTDIR%=` naming no folder), `program-repeated` and `core-repeated` (a second
 `%EMULATOR_X%` or `%CORE_X%`, which ES-DE leaves unexpanded), `start-folder-repeated`, `start-folder-glued` (a
 `%STARTDIR%=` inside an argument), `start-folder-relative`, `command-placeholder`, `program-missing` (a quoted start
-folder never closed), `find-rules-missing` (no rule defines X), `rom-root-unknown`.
+folder never closed), `find-rules-missing` (no rule defines X, or none of the types searched: an `<emulator>` without
+`winregistrypath`, `winregistryvalue`, `systempath` or `staticpath` entries, a `<core>` without `corepath` entries, as
+ES-DE's "missing ... configuration"), `core-malformed` (a core file with nothing after it, or holding a token),
+`rom-root-unknown`.
 
 **Find rules** (`findEmulator()`, `findCore()`), on the probe, in ES-DE's order whatever the document's:
 
@@ -117,7 +123,7 @@ folder never closed), `find-rules-missing` (no rule defines X), `rom-root-unknow
    relies on the value's trailing backslash, `Path|\dosbox-x.exe` brings its own);
 3. every `systempath` entry: the ES-DE install folder, System32, the Windows folder, then PATH's absolute entries in
    order, `.exe` added to a name without an extension (SearchPathW's default extension); never Retroverse's folder or
-   the current folder;
+   the current folder, and an entry relative to a drive (`D:emu.exe`, `\emu.exe`) is no file name;
 4. every `staticpath` entry: `~`, `%ESPATH%` and `%ROMPATH%` (ES-DE's `getROMDirectory()` text) replaced, `..`
    resolved; a `*` in the last element matched as ES-DE matches it, with `std::regex` (`*` becomes `.*`, `()[]`
    escaped, `.` and the rest keep their meaning) against the names of the folder's files as listed, case-sensitively,
@@ -274,6 +280,11 @@ paths normalized as ES-DE normalizes them.
   CreateProcessW would try the longer names too: "emulator not found" rather than a guess.
 - Retroverse's stored choices never fall back to another command (a missing core where the chosen one was present would
   change the emulator behind the user's back).
+- Retroverse's choice for the system stands in for ES-DE's default command: an invalid game's `<altemulator>` falls to
+  it when there is one (ES-DE, which has no such level, falls to its first command).
+- A program is refused by the name of the file it opens too (8.3 aliases, symbolic links); ES-DE refuses nothing.
+- An `%INJECT%` file is decided on its first MiB (ES-DE reads it to its end unless its content passes 4,096 bytes): a
+  first MiB of line ends only is taken as a file ES-DE may inject.
 
 **Within the CLI:** `profiles` lists every configured system (not only those with games: the ROM scan, step 7, knows
 which have some); the dry run resolves whatever path it is given below the ROM folder, a file ES-DE would not list
@@ -282,27 +293,35 @@ ES-DE applies to the file as listed (`esde::entryForListed`).
 
 ## Tests
 
-`build/msvc-x64-debug/bin/rv_tests.exe "[launch]"`: 29 test cases, about 2,000 assertions (Debug).
+`build/msvc-x64-debug/bin/rv_tests.exe "[launch]"`: 32 test cases, about 2,100 assertions (Debug), and the two hidden
+real-library ones.
 
 - **Find rules** on FakeSystemProbe: App Paths in HKCU before HKLM, a HKCU key without a value, a registered file gone,
   a quoted value; registry values with both suffix forms and a missing key; the executable search's folders in order,
-  the default extension, nothing found in a ROM folder or the current folder, an unknown install folder; static paths
-  with `~` (the ES-DE home's parent, not the ES-DE home), `%ESPATH%`, `..` and `%ROMPATH%`, wildcards (case, order,
-  `.` as a regular expression's wildcard, literal parentheses, a wildcard in a folder), the `|` replacement; the rule
-  types in ES-DE's order whatever the document's; corepath; the custom find rules first (custom-systems fixture).
+  the default extension, nothing found in a ROM folder or the current folder, an entry relative to a drive, an unknown
+  install folder; static paths with `~` (the ES-DE home's parent, not the ES-DE home), `%ESPATH%`, `..` and `%ROMPATH%`,
+  wildcards (case, order, `.` as a regular expression's wildcard, literal parentheses, a wildcard in a folder), the `|`
+  replacement; the rule types in ES-DE's order whatever the document's; an emulator or a core without entries of the
+  types searched (no rules); corepath, and a core's text as ES-DE writes it (`/` turned into `\` after `%EMUPATH%`, a
+  path with a space in its generic form, other text as written); the custom find rules first (custom-systems fixture).
 - **Translation**: the token table; `%BASENAME%` and `%FILENAME%` for extensions, no extension, folder games and leading
-  dots; the commands in use (the apple2 nested escaped quotes, `;` lists, `-image=%ROM%`, backslashes before quotes)
-  against an independent oracle, ES-DE's own string expansion with its quirks parsed by the real CommandLineToArgvW;
-  hostile names (`%`, `^`, `&`, `;`, `~`, `%BASENAME%` in a name, non-ASCII) staying one argument; the program rule,
-  the refused shells (cmd.exe through its find rule, PowerShell.EXE), literal programs; every token that requires
-  configuration, named once; `%STARTDIR%` and `%HIDEWINDOW%`; the `%INJECT%` cases (missing, empty, line ends only,
-  4,097 bytes, 4,096 over many lines, usable, glued, absolute, `%ROM%`, a system without a game); cores and the
-  readiness precedence; `listedPath()`.
+  dots; a folder game holding a file of its own name (`%ROM%`, `%ROMRAW%`, `%BASENAME%` cut at the first `.`,
+  `%FILENAME%`, `%GAMEDIR%`, `%STARTDIR%=%GAMEDIR%`, a relative `%INJECT%` file, `%INJECT%=%ROM%`; not a file of another
+  case, not a folder); the commands in use (the apple2 nested escaped quotes, `;` lists, `-image=%ROM%`, backslashes
+  before quotes) against an independent oracle, ES-DE's own string expansion with its quirks parsed by the real
+  CommandLineToArgvW; hostile names (`%`, `^`, `&`, `;`, `~`, `%BASENAME%` in a name, non-ASCII) staying one argument;
+  the program rule, the refused shells (cmd.exe through its find rule, PowerShell.EXE, a shell's 8.3 alias in App Paths,
+  a symbolic link named like an emulator, skipped where this user cannot make one), literal programs; every token that
+  requires configuration, named once; `%STARTDIR%` and `%HIDEWINDOW%`, a missing folder for a game and for a system; the
+  `%INJECT%` cases (missing, empty, line ends only, 4,097 bytes, 4,096 over many lines, a file over a MiB, a Ctrl+Z,
+  usable, glued, absolute, `%ROM%`, a system without a game); cores and the readiness precedence; a core file that ends
+  the command, quoted or followed by a flag; `listedPath()`.
 - **Fixtures**: the standard fixture's commands and games as its README expects them, `AlternativeEmulatorPerGame` off,
   emulators.json's system choices (a profile, a label, stale ones); the custom-systems fixture's custom rules, wildcard,
   `|` replacement, custom core folder, placeholder, extensionless game and labels.
-- **Resolution**: the readiness names and precedence, the choice order, stale labels both ways, availability, profiles
-  through `planLaunch()`.
+- **Resolution**: the readiness names and precedence, the choice order, stale labels both ways (an invalid game's
+  `<altemulator>` to the first command, past the gamelist's `<alternativeEmulator>`, or to Retroverse's choice for the
+  system), availability, profiles through `planLaunch()`.
 - **systemChoices**: valid choices, every invalid form with its pointer, the merge.
 - **CLI**: `profiles --json` and `--system` on the standard fixture, `launch --dry-run` (argv, working folder, the path
   as listed, not ready, the guard with `RV_LAUNCH_ALLOWLIST` empty, listing the emulator, unset), usage errors, no
@@ -336,7 +355,8 @@ a temporary user data directory):
   `PlaySession` records `chosen.choice` (a profile id, or the ES-DE label). `launch --dry-run` keeps working beside
   `--game`.
 - **Step 13 (the app):** compute each system's readiness once per refresh (`resolveLaunch(system, nullptr, ...)`) and a
-  game's only where it can differ (its availability, `<altemulator>`, a per-game choice, an `%INJECT%` file).
+  game's only where it can differ (its availability, `<altemulator>`, a per-game choice, an `%INJECT%` file, a
+  `%STARTDIR%=%GAMEDIR%` folder, a folder game).
 - **Step 11 (import):** `SystemInfo::alternativeEmulator` and `CatalogEntry::altEmulator` are what the resolution reads;
   the CLI reads the gamelists itself until the database holds them.
 
@@ -348,9 +368,13 @@ a temporary user data directory):
 - **`docs/architecture.md`:** the `catalog` row gains launch resolution (`ICommandTranslator`), the `esde` row the
   launch translation (find rules on the probe, `EsdeCommandTranslator`), the `launcher` row the per-system choices.
 - **`docs/roadmap.md`:** step 10 done.
-- **ADR-0008 §8, suggested amendments:** an `%INJECT%` file is dropped when its content is over 4,096 bytes once
-  its line ends are removed (ES-DE measures the content, not the file); App Paths values are read with their quotes, as ES-DE
-  reads them; an unknown install folder makes a `systempath` search undecided too (ES-DE's SearchPathW looks there
-  first); a static path's `|` replacement requires configuration once its path exists.
+- **ADR-0008 §8, suggested amendments:** an `%INJECT%` file is dropped when its content is over 4,096 bytes once its
+  line ends are removed (ES-DE measures the content, not the file); App Paths values are read with their quotes, as
+  ES-DE reads them; an unknown install folder makes a `systempath` search undecided too (ES-DE's SearchPathW looks there
+  first); a static path's `|` replacement requires configuration once its path exists; shells are refused by the name
+  of the file the program opens as well; ES-DE's invalid game `<altemulator>` falls to Retroverse's choice for the
+  system, else to the first command, never to the gamelist's `<alternativeEmulator>`.
 - **`BACKLOG.md`:** candidates: `%GAMEENTRYDIR%` in `%STARTDIR%` (unused by ES-DE 3.4.1's commands); a suggestion for a
-  system that cannot launch (the first ready command, SC-10) in `profiles` and the app.
+  system that cannot launch (the first ready command, SC-10) in `profiles` and the app; step 5's `planLaunch()` refuses
+  a profile's executable by the name found only (`isRefusedProgram()`), where the ES-DE translation also checks the file
+  it opens (an 8.3 alias, a symbolic link): the same check for profiles.

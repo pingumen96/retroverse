@@ -170,6 +170,66 @@ TEST_CASE("esde/launch translation: %BASENAME% and %FILENAME% as ES-DE builds th
           std::vector<std::string>{".Dot Hero (World)", ".Dot Hero (World).gb"});
 }
 
+TEST_CASE("esde/launch translation: a folder game holding a file of its own name, as ES-DE launches it",
+          "[esde][launch]") {
+    RaMachine ra;
+    const fs::path folder = ra.machine.roms() / "psx" / "Final Fantasy VII.m3u";
+    const fs::path inner = ra.machine.file(folder / "Final Fantasy VII.m3u", "disc1.chd\r\n");
+    const rv::catalog::LaunchGame game = rv::test::testGame("Final Fantasy VII.m3u", true);
+    const auto translate = [&](const std::string& command, const rv::catalog::LaunchGame& which) {
+        return ra.translate(command, &which, "psx");
+    };
+
+    SECTION("%ROM% is the inner file, %ROMRAW% the folder, %BASENAME% cut at the first '.'") {
+        const auto translation =
+            translate("%EMULATOR_RA% %ROM% %ROMRAW% %BASENAME% %FILENAME% %GAMEDIR% %GAMEDIRRAW%", game);
+        INFO(rv::test::blockerText(translation));
+        CHECK(translation.readiness() == LaunchReadiness::Ready);
+        REQUIRE(translation.request);
+        CHECK(translation.request->arguments == std::vector<std::string>{text(inner), text(folder),
+                                                                         "Final Fantasy VII", "Final Fantasy VII.m3u",
+                                                                         text(folder), text(folder)});
+        REQUIRE_FALSE(translation.notes.empty());
+        CHECK(translation.notes.front().find("its own name") != std::string::npos);
+        // The first '.', not the last: "Super Mario Bros. 3.m3u" gives "Super Mario Bros".
+        const fs::path dotted = ra.machine.roms() / "psx" / "Super Mario Bros. 3.m3u";
+        ra.machine.file(dotted / "Super Mario Bros. 3.m3u");
+        const auto cut = translate("%EMULATOR_RA% %BASENAME% %FILENAME%",
+                                   rv::test::testGame("Super Mario Bros. 3.m3u", true));
+        REQUIRE(cut.request);
+        CHECK(cut.request->arguments == std::vector<std::string>{"Super Mario Bros", "Super Mario Bros.m3u"});
+    }
+    SECTION("%STARTDIR%=%GAMEDIR% and a relative %INJECT% file are in the folder; %INJECT%=%ROM% is the folder") {
+        auto translation = translate("%STARTDIR%=%GAMEDIR% %EMULATOR_RA% %ROM%", game);
+        REQUIRE(translation.request);
+        CHECK(translation.readiness() == LaunchReadiness::Ready);
+        CHECK(translation.request->workingDirectory == folder);
+        ra.machine.file(folder / "Final Fantasy VII.cfg", "-fullscreen");
+        translation = translate("%EMULATOR_RA% %INJECT%=%BASENAME%.cfg %ROM%", game);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"inject-file"});
+        CHECK(rv::test::blockerText(translation).find(text(folder / "Final Fantasy VII.cfg")) != std::string::npos);
+        // romRaw, the folder, is no file: nothing injected.
+        translation = translate("%EMULATOR_RA% %INJECT%=%ROM% %ROM%", game);
+        CHECK(translation.readiness() == LaunchReadiness::Ready);
+        REQUIRE(translation.request);
+        CHECK(translation.request->arguments == std::vector<std::string>{text(inner)});
+    }
+    SECTION("only a file of exactly the folder's name: not another case, not a folder") {
+        const fs::path otherCase = ra.machine.roms() / "psx" / "Case Game.m3u";
+        ra.machine.file(otherCase / "case game.m3u");
+        auto translation =
+            translate("%EMULATOR_RA% %ROM% %BASENAME%", rv::test::testGame("Case Game.m3u", true));
+        REQUIRE(translation.request);
+        CHECK(translation.request->arguments == std::vector<std::string>{text(otherCase), "Case Game.m3u"});
+        const fs::path nested = ra.machine.roms() / "psx" / "Nested.m3u";
+        fs::create_directories(nested / "Nested.m3u");
+        translation = translate("%EMULATOR_RA% %ROM% %GAMEDIR%", rv::test::testGame("Nested.m3u", true));
+        REQUIRE(translation.request);
+        CHECK(translation.request->arguments == std::vector<std::string>{text(nested), text(nested.parent_path())});
+        CHECK(translation.notes.empty());
+    }
+}
+
 TEST_CASE("esde/launch translation: the commands in use, argv for argv with ES-DE's own expansion", "[esde][launch]") {
     RaMachine ra;
     const std::string romDirectory = text(ra.machine.roms());
@@ -247,6 +307,43 @@ TEST_CASE("esde/launch translation: the program rule and the refused shells", "[
     SECTION("a launcher found under another case and extension's case") {
         const auto translation = ra.translate("%EMULATOR_PWSH% -File %ROM%", &game);
         CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"program-refused"});
+    }
+    SECTION("a shell's 8.3 alias, refused by the file it opens") {
+        const fs::path shell = ra.machine.program(ra.machine.root() / "Shell Tools" / "powershell.exe");
+        std::wstring shortPath(MAX_PATH, L'\0');
+        const DWORD length = GetShortPathNameW(shell.c_str(), shortPath.data(), static_cast<DWORD>(shortPath.size()));
+        REQUIRE(length > 0);
+        shortPath.resize(length);
+        const fs::path alias(shortPath);
+        if (alias.filename() == shell.filename()) {
+            SKIP("the volume of the temporary folder makes no 8.3 names");
+        }
+        // Registered in App Paths under its short name (a command could not hold it: ES-DE replaces every '~').
+        ra.machine.listed(alias);
+        ra.machine.probe.setRegistryString(rv::core::RegistryRoot::LocalMachine,
+                                           "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\shell.exe", "",
+                                           text(alias));
+        ra.machine.emulator("SHORT", {FindRule{FindRuleType::WinRegistryPath, {"shell.exe"}}});
+        const auto translation = ra.translate("%EMULATOR_SHORT% -File %ROM%", &game);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"program-refused"});
+        CHECK(rv::test::blockerText(translation).find("it opens powershell.exe") != std::string::npos);
+        REQUIRE(translation.request);
+        CHECK(translation.request->executable == alias); // the path as found
+    }
+    SECTION("a symbolic link named like an emulator, refused by the shell it opens") {
+        const fs::path shell = ra.machine.program(ra.machine.root() / "Shells" / "cmd.exe");
+        const fs::path link = ra.machine.root() / "Emus" / "emu.exe";
+        fs::create_directories(link.parent_path());
+        std::error_code error;
+        fs::create_symlink(shell, link, error);
+        if (error) {
+            SKIP("this user cannot make symbolic links: " + error.message());
+        }
+        ra.machine.listed(link);
+        ra.machine.emulator("LINKED", {FindRule{FindRuleType::StaticPath, {text(link)}}});
+        const auto translation = ra.translate("%EMULATOR_LINKED% %ROM%", &game);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"program-refused"});
+        CHECK(rv::test::blockerText(translation).find("emu.exe (it opens cmd.exe)") != std::string::npos);
     }
     SECTION("a literal absolute program, quoted or not: found, or emulator not found") {
         const fs::path dolphin = ra.machine.program(ra.machine.root() / "Emu Dir" / "Dolphin.exe");
@@ -348,6 +445,16 @@ TEST_CASE("esde/launch translation: %STARTDIR% and %HIDEWINDOW%", "[esde][launch
     translation = ra.translate("%STARTDIR%=%EMUDIR%\\missing %EMULATOR_RA% %ROM%", &game);
     CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"start-folder-missing"});
     CHECK_FALSE(fs::exists(ra.exe.parent_path() / "missing"));
+    // A folder that does not depend on the game is the system's too: its games share the blocker.
+    translation = ra.translate("%STARTDIR%=%EMUDIR%\\missing %EMULATOR_RA% %ROM%", nullptr);
+    CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"start-folder-missing"});
+    translation = ra.translate("%STARTDIR%=\"~\\Emu Saves\" %EMULATOR_RA% %ROM%", nullptr);
+    CHECK(translation.readiness() == LaunchReadiness::Ready);
+    // The game's folder is each game's.
+    translation = ra.translate("%STARTDIR%=%GAMEDIR% %EMULATOR_RA% %ROM%", nullptr);
+    CHECK(translation.readiness() == LaunchReadiness::Ready);
+    CHECK(translation.notes ==
+          std::vector<std::string>{"the working folder is the game's folder (%STARTDIR%=%GAMEDIR%)"});
 
     // A flag in the middle of a command is removed, as ES-DE removes it.
     translation = ra.translate("%EMULATOR_RA% %HIDEWINDOW% %ROM%", &game);
@@ -391,6 +498,18 @@ TEST_CASE("esde/launch translation: %INJECT% files", "[esde][launch]") {
             lines += std::string(64, 'b') + "\r\n";
         }
         ra.machine.file(inject, lines);
+        CHECK(rv::test::blockerCodes(translate(command)) == std::vector<std::string>{"inject-file"});
+    }
+    SECTION("a file of more than a MiB: decided on its start, as ES-DE stops reading past 4,096 bytes") {
+        ra.machine.file(inject, std::string(1536 * 1024, 'a'));
+        const auto translation = translate(command);
+        CHECK(translation.readiness() == LaunchReadiness::Ready);
+        CHECK(translation.notes.at(0).find("4096") != std::string::npos);
+        // Its content up to a Ctrl+Z, where ES-DE's text-mode reading ends.
+        ra.machine.file(inject, "-x\x1A" + std::string(1536 * 1024, 'a'));
+        CHECK(rv::test::blockerCodes(translate(command)) == std::vector<std::string>{"inject-file"});
+        // Line ends only for its first MiB: undecided, taken as a file ES-DE may inject.
+        ra.machine.file(inject, std::string(1536 * 1024, '\n'));
         CHECK(rv::test::blockerCodes(translate(command)) == std::vector<std::string>{"inject-file"});
     }
     SECTION("a file ES-DE would inject requires launcher configuration") {
@@ -449,6 +568,43 @@ TEST_CASE("esde/launch translation: cores and a system's readiness", "[esde][lau
     translation = ra.translate("%EMULATOR_BATCH% -L %CORE_BATCH%\\x.dll %ROM%", nullptr);
     CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"core-not-found", "invalid-request"});
     CHECK(translation.readiness() == LaunchReadiness::RequiresConfiguration);
+}
+
+TEST_CASE("esde/launch translation: what ES-DE refuses before it looks for a core", "[esde][launch]") {
+    RaMachine ra;
+    ra.machine.listed(ra.cores / "gambatte_libretro.dll");
+    const rv::catalog::LaunchGame game = rv::test::testGame("Mole (USA).gb");
+    ra.machine.file(ra.machine.roms() / "gb" / "Mole (USA).gb");
+
+    SECTION("a core file that ends the command: ES-DE finds no end to it") {
+        auto translation = ra.translate("%EMULATOR_RA% %ROM% -L %CORE_RA%\\gambatte_libretro.dll", &game);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"core-malformed"});
+        CHECK(translation.readiness() == LaunchReadiness::RequiresConfiguration);
+        // Quoted, it ends at its closing quote; a flag after it leaves its space.
+        translation = ra.translate("%EMULATOR_RA% %ROM% -L \"%CORE_RA%\\gambatte_libretro.dll\"", &game);
+        CHECK(translation.readiness() == LaunchReadiness::Ready);
+        translation = ra.translate("%EMULATOR_RA% %ROM% -L %CORE_RA%\\gambatte_libretro.dll %HIDEWINDOW%", &game);
+        CHECK(translation.readiness() == LaunchReadiness::Ready);
+        REQUIRE(translation.request);
+        CHECK(translation.request->arguments.back() == text(ra.cores / "gambatte_libretro.dll"));
+    }
+    SECTION("a core without corepath entries, an emulator without entries of the four types: no rules") {
+        ra.machine.core("EMPTY", {});
+        auto translation = ra.translate("%EMULATOR_RA% -L %CORE_EMPTY%\\x.dll %ROM%", &game);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"find-rules-missing"});
+        CHECK(rv::test::blockerText(translation).find("EMPTY") != std::string::npos);
+        ra.machine.emulator("HOLLOW", {FindRule{FindRuleType::SystemPath, {}},
+                                       FindRule{FindRuleType::CorePath, {"%EMUPATH%\\cores"}}});
+        translation = ra.translate("%EMULATOR_HOLLOW% %ROM%", &game);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"find-rules-missing"});
+        CHECK(translation.readiness() == LaunchReadiness::RequiresConfiguration);
+        // Known even when the program is not found: configuration comes before location.
+        ra.machine.emulator("MISSING", {FindRule{FindRuleType::SystemPath, {"missing.exe"}}});
+        translation = ra.translate("%EMULATOR_MISSING% -L %CORE_EMPTY%\\x.dll %ROM%", nullptr);
+        CHECK(rv::test::blockerCodes(translation) ==
+              std::vector<std::string>{"emulator-not-found", "find-rules-missing"});
+        CHECK(translation.readiness() == LaunchReadiness::RequiresConfiguration);
+    }
 }
 
 TEST_CASE("esde/launch translation: listedPath spells a path as the folder lists it", "[esde][launch]") {

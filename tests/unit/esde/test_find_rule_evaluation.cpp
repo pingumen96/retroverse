@@ -160,6 +160,17 @@ TEST_CASE("esde/find rules: the executable search looks in the install folder, S
         CHECK(found.attempts.at(0) == "systempath \"emu.exe\": not in the ES-DE install folder, System32, the Windows "
                                       "folder or the 2 folder(s) of PATH");
     }
+    SECTION("an entry relative to a drive is no file name: never resolved against a current folder") {
+        machine.emulator("DRIVE", {FindRule{FindRuleType::SystemPath, {"D:emu.exe", "\\emu.exe"}}});
+        machine.listed(fs::path("D:emu.exe"));
+        machine.program(machine.install() / "emu.exe");
+        const auto found = rv::esde::findEmulator(machine.context(), "DRIVE");
+        CHECK_FALSE(found.found);
+        REQUIRE(found.attempts.size() == 2);
+        CHECK(found.attempts[0] == "systempath \"D:emu.exe\": not a file name (a path relative to a drive's current "
+                                   "folder)");
+        CHECK(found.attempts[1].starts_with("systempath \"\\emu.exe\": not a file name"));
+    }
     SECTION("an unknown install folder leaves the search undecided") {
         machine.profile.installFolder.reset();
         machine.program(pathA / "emu.exe");
@@ -275,6 +286,9 @@ TEST_CASE("esde/find rules: the rule types in ES-DE's order, whatever the docume
     CHECK(found.found->rule == "winregistrypath");
     (void)staticExe;
     CHECK(rv::esde::findEmulator(machine.context(), "NOT-DEFINED").noRules);
+    // Defined, but without entries of the four types ES-DE searches for a program: ES-DE's NO_RULES too.
+    machine.emulator("HOLLOW", {FindRule{FindRuleType::StaticPath, {}}, FindRule{FindRuleType::CorePath, {"x"}}});
+    CHECK(rv::esde::findEmulator(machine.context(), "HOLLOW").noRules);
 }
 
 TEST_CASE("esde/find rules: corepath with %EMUPATH%, the first core file that exists", "[esde][launch]") {
@@ -299,6 +313,35 @@ TEST_CASE("esde/find rules: corepath with %EMUPATH%, the first core file that ex
     CHECK(found.found->entry == "%EMUPATH%\\cores");
     CHECK(found.text == text(emulatorFolder) + "\\cores\\gambatte_libretro.dll");
     CHECK(rv::esde::findCore(machine.context(), "NONE", emulatorFolder, "x.dll").noRules);
+    // A core without corepath entries has no rules either (ES-DE: "missing core configuration").
+    machine.core("EMPTY", {});
+    CHECK(rv::esde::findCore(machine.context(), "EMPTY", emulatorFolder, "x.dll").noRules);
+}
+
+TEST_CASE("esde/find rules: a core's text as ES-DE writes it into the command", "[esde][launch]") {
+    rv::test::LaunchMachine machine;
+    const fs::path emulatorFolder = machine.root() / "RetroArch";
+    const std::string root = text(machine.root());
+    const bool spaced = root.find(' ') != std::string::npos;
+    machine.listed(emulatorFolder / "cores" / "bsnes_libretro.dll");
+    machine.listed(machine.root() / "Plain Cores" / "bsnes_libretro.dll");
+    machine.listed(machine.root() / "Cores" / "bsnes_libretro.dll");
+
+    // %EMUPATH% or %ESPATH%: every '/' of the text turned into '\' once the token is replaced.
+    machine.core("SLASHED", {"%EMUPATH%/cores"});
+    auto found = rv::esde::findCore(machine.context(), "SLASHED", emulatorFolder, "bsnes_libretro.dll");
+    REQUIRE(found.found);
+    CHECK(found.text == text(emulatorFolder) + "\\cores\\bsnes_libretro.dll");
+    // Without them the text stays as written, unless a space sends it through getEscapedPath (its generic form,
+    // repeated separators collapsed, with '\').
+    machine.core("ABSOLUTE", {root + "/Cores"});
+    found = rv::esde::findCore(machine.context(), "ABSOLUTE", emulatorFolder, "bsnes_libretro.dll");
+    REQUIRE(found.found);
+    CHECK(found.text == (spaced ? root + "\\Cores\\bsnes_libretro.dll" : root + "/Cores\\bsnes_libretro.dll"));
+    machine.core("SPACED", {root + "//Plain Cores/"});
+    found = rv::esde::findCore(machine.context(), "SPACED", emulatorFolder, "bsnes_libretro.dll");
+    REQUIRE(found.found);
+    CHECK(found.text == root + "\\Plain Cores\\bsnes_libretro.dll");
 }
 
 TEST_CASE("esde/find rules: the custom find rules come first (custom-systems fixture)", "[esde][launch]") {

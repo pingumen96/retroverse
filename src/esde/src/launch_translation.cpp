@@ -1051,8 +1051,8 @@ private:
                               inQuotes(out)));
             return {};
         }
-        // Checked for a system too: a folder reached here holds no %GAMEDIR% (a system returned above), so every game of
-        // the system shares it.
+        // Checked for a system too: a folder reached here holds no %GAMEDIR% (a system returned above), so every game
+        // of the system shares it.
         std::error_code error;
         const std::filesystem::path extended(core::extendedLengthPath(*folder));
         if (!std::filesystem::is_directory(extended, error)) {
