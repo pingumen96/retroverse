@@ -110,13 +110,15 @@ TEST_CASE("ui/documents: the quick catalog document has the ids, regions and bin
 TEST_CASE("ui/documents: the quick catalog has a text for every notice, readiness and blocker code",
           "[ui][documents]") {
     // I2 step 13: the ES-DE catalog's notices (what the list says instead of games), the launch readiness of the card
-    // (ADR-0008 §8) and the sentence of each blocker code, in Italian; the blocker's own words on a "Dettagli" line.
+    // (ADR-0008 §8) and the sentence of each blocker code, in Italian. The blocker's own words (card.detail, English)
+    // stay off the card, which keeps its description and rows whole: Avvia shows them in the game-session panel.
     const std::string rml = readAsset(qc::kDocumentPath);
-    for (const std::string_view binding :
-         {"notice", "card.readiness", "card.blocker", "card.detail", "card.verified", "Dettagli: {{ card.detail }}"}) {
+    for (const std::string_view binding : {"notice", "card.readiness", "card.blocker", "card.verified"}) {
         INFO(binding);
         CHECK(contains(rml, binding));
     }
+    CHECK_FALSE(contains(rml, "card.detail"));
+    CHECK(contains(rml, "id=\"" + std::string(qc::kCardId) + "\""));
     for (const std::string_view notice : qc::kNotices) {
         INFO(notice);
         CHECK(contains(rml, "notice == '" + std::string(notice) + "'"));

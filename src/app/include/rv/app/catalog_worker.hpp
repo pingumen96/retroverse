@@ -10,9 +10,12 @@
 // from their system's, the resolution of a launch right before it starts, and the play sessions of the launches
 // (catalog_db::SessionStore through SessionRecorder: a write that meets a busy database stays pending on the worker and
 // is tried again, never on the main thread). The main thread reads pages through its own SqliteCatalogQuery on another
-// read-only connection, which the worker opens for it (CatalogOpened::pages). No GL or SDL call happens on the worker;
-// it wakes the host (Options::wake) after it posted results. Stopping it interrupts a running query
-// (sqlite3_interrupt through Connection::interrupt) and ends within a bound.
+// read-only connection, which the worker opens for it (CatalogOpened::pages). No GL call happens on the worker, and
+// one SDL call only: it wakes the host after it posted results through Options::wake, which in retroverse.exe is
+// AppContext::wakeCallback(), SDL_PushEvent (documented as thread-safe; A1's process runner wakes the host the same
+// way). Nothing else may call SDL from here. Every request is answered, also when the worker's thread fails (the
+// results then say it ended: CatalogResults::ended). Stopping it interrupts a running query (sqlite3_interrupt through
+// Connection::interrupt) and ends within a bound.
 
 #include <chrono>
 #include <cstddef>
@@ -89,6 +92,19 @@ struct CatalogSystem {
     bool operator==(const CatalogSystem&) const = default;
 };
 
+/// A materialized list (CatalogWorker::query).
+struct CatalogList {
+    std::uint64_t serial = 0;
+    /// The query failed (the list is then empty): the catalog cannot be read, interrupted (Cancelled), malformed text.
+    std::optional<Error> error;
+    std::vector<catalog::GameId> ids;
+    /// The list's (GameId value, position) pairs sorted by the value: positions found without a scan.
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> byId;
+    /// How long the materialization took on the worker, and when it was done.
+    double milliseconds = 0.0;
+    std::chrono::system_clock::time_point at;
+};
+
 /// The catalog opened, or why it is not (CatalogResults::opened).
 struct CatalogOpened {
     CatalogState state = CatalogState::Opening;
@@ -100,24 +116,15 @@ struct CatalogOpened {
     std::vector<CatalogSystem> systems;
     /// The main thread's queries, on a read-only connection of their own: fetch() of pages only (ADR-0008 §5).
     std::unique_ptr<catalog_db::SqliteCatalogQuery> pages;
+    /// The default list (every game, Title order: an empty catalog::CatalogQuery), materialized right after the
+    /// opening, so that the quick catalog's first list needs no round trip (NFR-01); none when it could not be read.
+    /// Its serial is 0.
+    std::optional<CatalogList> firstList;
     /// The play sessions closed as interrupted (their owner was gone, ADR-0008 §9).
     std::vector<catalog::PlaySession> interrupted;
     /// ES-DE's configuration could not be read: the catalog can be browsed, nothing launches (kLibraryUnreadableCode).
     std::optional<Error> libraryError;
     /// How long the worker took to open it, and when it was done.
-    double milliseconds = 0.0;
-    std::chrono::system_clock::time_point at;
-};
-
-/// A materialized list (CatalogWorker::query).
-struct CatalogList {
-    std::uint64_t serial = 0;
-    /// The query failed (the list is then empty): the catalog cannot be read, interrupted (Cancelled), malformed text.
-    std::optional<Error> error;
-    std::vector<catalog::GameId> ids;
-    /// The list's (GameId value, position) pairs sorted by the value: positions found without a scan.
-    std::vector<std::pair<std::uint64_t, std::uint32_t>> byId;
-    /// How long the materialization took on the worker, and when it was done.
     double milliseconds = 0.0;
     std::chrono::system_clock::time_point at;
 };
@@ -154,6 +161,10 @@ struct GameReadiness {
     GameLaunchState state;
     /// It is not its system's (CatalogSystem::launch), which its rows showed until now.
     bool ownState = false;
+    /// False: the catalog no longer has the game (an import removed it since its row was read) or its details could not
+    /// be read; `state` says nothing then, and the game is asked again when its row is read again. Every game asked
+    /// for is answered, so that nothing waits for it.
+    bool known = true;
 };
 
 /// What the worker answered since the last CatalogWorker::take().
@@ -166,9 +177,13 @@ struct CatalogResults {
     std::vector<StoredSession> sessions;
     /// Choices that a session verified for their system: (system, choice).
     std::vector<std::pair<catalog::SystemName, launcher::LaunchChoice>> verified;
+    /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
+    /// asked of it will be answered any more. Posted last.
+    bool ended = false;
 
     [[nodiscard]] bool empty() const noexcept {
-        return !opened && !list && readiness.empty() && launches.empty() && sessions.empty() && verified.empty();
+        return !opened && !list && readiness.empty() && launches.empty() && sessions.empty() && verified.empty() &&
+               !ended;
     }
 };
 
@@ -181,12 +196,14 @@ public:
 
     struct Options {
         core::Paths paths;
-        /// Called on the worker after it posted results (AppContext::wakeCallback()); never after stop() returned.
+        /// Called on the worker after it posted results (AppContext::wakeCallback(): SDL_PushEvent, thread-safe); never
+        /// after stop() returned. It must be safe to call from another thread.
         std::function<void()> wake;
         /// The owner of the play sessions it records: this process (platform_win::currentProcessIdentity()).
         catalog::SessionOwner owner;
         /// Whether an open session's owner may still run (platform_win::processLiveness() unless set).
         catalog_db::OwnerAlive ownerAlive;
+            /// The lists query() asks for (not the opening's first list).
         RunQuery runQuery;
         /// The writer's busy timeout: a session write waits at most this long for another process's write
         /// transaction, then stays pending.

@@ -227,12 +227,33 @@ h2 {
 	text-overflow: ellipsis;
 }
 
+/* The platform and the year: as wide as they are, at most 45% of the row, so that the title keeps the most of it. A
+   long platform name (the ES-DE catalog's full names: "Multiple Arcade Machine Emulator") ends in an ellipsis; the
+   year always shows. */
 .game-meta {
-	flex: 0 0 auto;
+	display: flex;
+	flex-direction: row;
+	flex: 0 1 auto;
+	max-width: 45%;
 	font-size: 21dp;
 	color: #F4EFE6A6;
 	white-space: nowrap;
 	margin-left: 16dp;
+}
+
+.game-platform {
+	flex: 0 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.game-year {
+	flex: 0 0 auto;
+}
+
+/* The separator between the platform and the year (spaces at the start of a flex item would collapse). */
+.dot {
+	margin: 0dp 0.3em;
 }
 
 /* Over the blank rows of an empty list. */
@@ -292,8 +313,9 @@ h2 {
 	color: #171B22;
 }
 
-/* Game card: as tall as its content, at most down to the catalog's bottom edge; on a small view the description and
-   the rows give way first, the actions always stay. */
+/* Game card: as tall as its content, at most down to the catalog's bottom edge. The title, the readiness and its
+   blocker's sentence, the description (whole lines) and the actions keep their height; when the card is too tall the
+   rows give way first, then (a large text scale) the description. */
 #card {
 	right: 4%;
 	top: 6%;
@@ -322,24 +344,13 @@ h2 {
 	margin-bottom: 16dp;
 }
 
-/* Why it cannot start (the first blocker's sentence), the blocker's own words, and a game whose command was verified. */
+/* Why it cannot start (the first blocker's sentence), and a game whose command was verified. */
 .blocker {
 	flex: 0 0 auto;
 	font-size: 20dp;
 	color: #F4EFE6E6;
 	margin-top: -8dp;
 	margin-bottom: 10dp;
-}
-
-.details {
-	flex: 0 1 auto;
-	font-size: 17dp;
-	color: #F4EFE6B3;
-	max-height: 2.8em;
-	overflow: hidden;
-	word-break: break-word;
-	line-height: 1.3em;
-	margin-bottom: 14dp;
 }
 
 .ready {
@@ -349,9 +360,9 @@ h2 {
 	margin-bottom: 14dp;
 }
 
-/* Three lines, the rest with Informazioni (X). */
+/* Three lines, the rest with Informazioni (X). It gives way only once the rows have (a large text scale). */
 .description {
-	flex: 0 1 auto;
+	flex: 0 0.001 auto;
 	font-size: 22dp;
 	line-height: 1.4em;
 	max-height: 4.2em;
@@ -363,8 +374,14 @@ h2 {
 	max-height: none;
 }
 
+/* The rows give way by whole rows: a column that wraps moves the rows that do not fit into a next column, beyond the
+   card's edge (hidden), so that no row is cut through its text. */
 .rows {
 	flex: 0 1 auto;
+	display: flex;
+	flex-direction: column;
+	flex-wrap: wrap;
+	align-content: flex-start;
 	overflow: hidden;
 	border-top: 2dp #F4EFE61F;
 	padding-top: 14dp;
@@ -372,6 +389,7 @@ h2 {
 }
 
 .row {
+	width: 100%;
 	display: flex;
 	flex-direction: row;
 	font-size: 22dp;
@@ -510,11 +528,10 @@ body.high-contrast .fade-after {
 	.chip { font-size: 19dp; padding: 4dp 14dp; }
 	.game { padding: 6dp 12dp; }
 	.game-title { font-size: 22dp; }
-	.game-meta { font-size: 18dp; }
+	.game-meta { font-size: 18dp; max-width: 40%; }
 	.subtitle { font-size: 20dp; margin-bottom: 10dp; }
 	.state { font-size: 19dp; margin-bottom: 8dp; }
 	.blocker, .ready { font-size: 18dp; margin-bottom: 6dp; }
-	.details { font-size: 16dp; margin-bottom: 8dp; }
 	.description { font-size: 19dp; max-height: 2.8em; margin-bottom: 10dp; }
 	.rows { padding-top: 8dp; margin-bottom: 12dp; }
 	.row { font-size: 19dp; padding: 1dp 0dp; }

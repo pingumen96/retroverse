@@ -15,6 +15,9 @@
 #include <chrono>
 #include <filesystem>
 #include <optional>
+#include <regex>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -411,6 +414,9 @@ TEST_CASE("app/catalog_worker: Avvia resolves the game on the worker right befor
     CHECK(catalog.deciding());
     CHECK_FALSE(catalog.requestLaunch(1, entry)); // one decision at a time
     settle(catalog, model);
+    // Made, not taken yet (ProductUi takes it after the frame's commands): still one decision at a time.
+    CHECK(catalog.deciding());
+    CHECK_FALSE(catalog.requestLaunch(1, entry));
     auto decision = catalog.takeDecision();
     REQUIRE(decision.has_value());
     CHECK(decision->token == 0);
@@ -642,4 +648,156 @@ TEST_CASE("app/catalog_worker: stopping while a query runs interrupts it and end
     REQUIRE(results.list->error.has_value());
     CHECK(results.list->error->code == rv::ErrorCode::Cancelled);
     CHECK(worker.stop()); // idempotent
+}
+
+TEST_CASE("app/catalog_worker: the first list comes with the opening; the list says the catalog opens until it is shown",
+          "[app][catalog_worker]") {
+    namespace qc = rv::ui::quick_catalog;
+    const ImportedFixture f("rv-catalog-firstlist");
+    std::atomic<int> queries{0};
+    EsdeAppCatalog catalog(f.options([&queries](rv::app::CatalogWorker::Options& worker) {
+        worker.runQuery = [&queries](rv::catalog_db::SqliteCatalogQuery& query,
+                                     const rv::catalog::CatalogQuery& request) {
+            ++queries;
+            return query.run(request);
+        };
+    }));
+    rv::ui::QuickCatalogModel model(catalog.source(), 6);
+    // The opening collected, the model not polled yet: no list shown, so the list says the catalog is opening (never
+    // "no games in the catalog").
+    const auto deadline = std::chrono::steady_clock::now() + kSettleTimeout;
+    while (true) {
+        REQUIRE(std::chrono::steady_clock::now() < deadline);
+        if (catalog.poll().opened) {
+            model.refresh();
+            break;
+        }
+        std::this_thread::sleep_for(2ms);
+    }
+    REQUIRE(catalog.databaseSource().state() == CatalogState::Ready);
+    CHECK(catalog.notice() == qc::kNoticeOpening);
+    CHECK_FALSE(catalog.databaseSource().listed());
+    settle(catalog, model);
+    CHECK(catalog.notice().empty());
+    CHECK(model.count() == 15);
+    // The default list came with the opening: no query on the worker, and NFR-01's first list is the opening's.
+    CHECK(queries == 0);
+    rv::app::CatalogRecord record;
+    catalog.record(record);
+    CHECK(record.firstListMs.has_value());
+    // Later lists come from the worker, the default one too (the first list may be stale by then).
+    REQUIRE(model.setFilter("gb"));
+    settle(catalog, model);
+    CHECK(queries == 1);
+    REQUIRE(model.setFilter(""));
+    settle(catalog, model);
+    CHECK(queries == 2);
+    CHECK(model.count() == 15);
+}
+
+TEST_CASE("app/catalog_worker: every request is answered: a game the catalog no longer has, a worker that failed",
+          "[app][catalog_worker]") {
+    const ImportedFixture f("rv-catalog-answered");
+    SECTION("the readiness of a game the catalog does not have") {
+        rv::app::CatalogWorker::Options options;
+        options.paths = f.paths;
+        options.owner = rv::catalog::SessionOwner{ImportedFixture::testOwnerProcessId(), 1};
+        rv::app::CatalogWorker worker(options);
+        const GameId gone = GameId::fromValue(0x0123456789abcdefull).value();
+        const GameId tennis = f.gameAt("gb", "Tiny Tennis (Europe).gb");
+        worker.readiness({gone, tennis});
+        const auto deadline = std::chrono::steady_clock::now() + kSettleTimeout;
+        std::vector<rv::app::GameReadiness> answered;
+        while (answered.size() < 2) {
+            REQUIRE(std::chrono::steady_clock::now() < deadline);
+            std::this_thread::sleep_for(5ms);
+            rv::app::CatalogResults results = worker.take();
+            answered.insert(answered.end(), results.readiness.begin(), results.readiness.end());
+        }
+        REQUIRE(answered.size() == 2);
+        CHECK(answered[0].game == gone);
+        CHECK_FALSE(answered[0].known); // answered all the same: nothing waits for it
+        CHECK(answered[1].game == tennis);
+        CHECK(answered[1].known);
+        CHECK(worker.stop());
+    }
+    SECTION("a worker whose thread fails on a query: nothing waits, nothing launches") {
+        EsdeAppCatalog catalog(f.options([](rv::app::CatalogWorker::Options& worker) {
+            worker.runQuery = [](rv::catalog_db::SqliteCatalogQuery&,
+                                 const rv::catalog::CatalogQuery&) -> rv::Expected<std::vector<GameId>> {
+                throw std::runtime_error("a failure the worker does not expect");
+            };
+        }));
+        rv::ui::QuickCatalogModel model(catalog.source(), 6);
+        settle(catalog, model);
+        REQUIRE(model.count() == 15); // the first list came with the opening
+        model.setSearch("tennis");    // asked of the worker, whose thread fails on it
+        settle(catalog, model);       // returns: the source no longer waits for the worker
+        CHECK(catalog.databaseSource().ended());
+        CHECK_FALSE(catalog.busy());
+        CHECK(model.count() == 0);
+        REQUIRE(model.error().has_value());
+        CHECK(model.error()->code == rv::ErrorCode::Unavailable);
+        rv::ui::CatalogEntry entry;
+        entry.id = f.gameAt("gb", "Tiny Tennis (Europe).gb").toString();
+        entry.title = "Tiny Tennis";
+        REQUIRE(catalog.requestLaunch(0, entry));
+        auto decision = catalog.takeDecision();
+        REQUIRE(decision.has_value());
+        CHECK_FALSE(decision->request.has_value());
+        CHECK(decision->refusal.reason == "unresolved");
+        CHECK_FALSE(catalog.deciding());
+    }
+    SECTION("a worker whose thread fails while it opens: the opening is answered, unavailable") {
+        {
+            // A session left open, so that the opening asks whether its owner still runs: the question throws.
+            auto database = f.openDatabase();
+            auto store = rv::catalog_db::SessionStore::open(database.writer()).value();
+            rv::catalog::PlaySession open;
+            open.game = f.gameAt("gb", "Tiny Tennis (Europe).gb");
+            open.started = std::chrono::system_clock::now() - 1h;
+            open.owner = rv::catalog::SessionOwner{11, 1};
+            REQUIRE(store->insertSession(open).has_value());
+        }
+        EsdeAppCatalog catalog(f.options([](rv::app::CatalogWorker::Options& worker) {
+            worker.ownerAlive = [](const rv::catalog::SessionOwner&) -> bool {
+                throw std::runtime_error("a failure the worker does not expect");
+            };
+        }));
+        rv::ui::QuickCatalogModel model(catalog.source(), 6);
+        settle(catalog, model);
+        CHECK_FALSE(catalog.busy());
+        CHECK(catalog.databaseSource().ended());
+        CHECK(catalog.databaseSource().state() == CatalogState::Unavailable);
+        CHECK(catalog.notice() == rv::ui::quick_catalog::kNoticeUnavailable);
+        CHECK(model.count() == 0);
+    }
+}
+
+TEST_CASE("app/catalog_worker: every blocker code the launch resolution reports has the card's sentence",
+          "[app][catalog_worker]") {
+    // The codes rv_catalog's resolution, rv_esde's translation and the app report: each string literal that follows a
+    // LaunchReadiness value (block(LaunchReadiness::X, "code", ...), ReadinessBlocker{LaunchReadiness::X, "code", ...})
+    // or is assigned to a code (the emulator profiles' blockers: code = "profile-template").
+    const fs::path root = rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "src";
+    const std::regex blocker(R"re((?:LaunchReadiness::[A-Za-z]+,\s*|\bcode = )"([a-z][a-z0-9-]*)")re");
+    std::set<std::string> codes;
+    for (const char* folder : {"catalog/src", "esde/src", "app/src"}) {
+        for (const fs::directory_entry& file : fs::directory_iterator(root / folder)) {
+            if (file.path().extension() != ".cpp") {
+                continue;
+            }
+            const std::string text = rv::core::readTextFile(file.path()).value();
+            for (auto match = std::sregex_iterator(text.begin(), text.end(), blocker); match != std::sregex_iterator();
+                 ++match) {
+                codes.insert((*match)[1].str());
+            }
+        }
+    }
+    CHECK(codes.size() >= 32); // the scan finds them all but the app's constant (the card names 33)
+    const auto& known = rv::ui::quick_catalog::kBlockerCodes;
+    for (const std::string& code : codes) {
+        INFO(code);
+        CHECK(std::find(known.begin(), known.end(), code) != known.end());
+    }
 }

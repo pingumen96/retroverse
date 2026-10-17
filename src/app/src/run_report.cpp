@@ -376,6 +376,7 @@ Json catalogToJson(const CatalogRecord& catalog) {
         json["frames"] = timesToJson(*catalog.frames);
     }
     json["interruptedSessions"] = catalog.interruptedSessions;
+    json["cardSqueezed"] = catalog.cardSqueezed;
     return json;
 }
 
@@ -465,6 +466,9 @@ CatalogRecord readCatalog(FieldReader& fields) {
     }
     catalog.interruptedSessions =
         static_cast<std::size_t>(fields.optionalCount("interruptedSessions", kMaxSize).value_or(0));
+    if (fields.has("cardSqueezed")) {
+        catalog.cardSqueezed = fields.stringArray("cardSqueezed");
+    }
     return catalog;
 }
 

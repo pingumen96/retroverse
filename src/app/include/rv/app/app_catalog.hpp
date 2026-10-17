@@ -63,10 +63,10 @@ public:
     [[nodiscard]] virtual std::string_view notice() const noexcept = 0;
 
     /// Avvia on `entry`, the run's launch `token`: its decision comes from takeDecision(), at once or once the catalog
-    /// worker resolved it right before the launch. False, and nothing asked, while a decision is pending.
+    /// worker resolved it right before the launch. False, and nothing asked, while a decision is pending (deciding()).
     virtual bool requestLaunch(std::uint64_t token, const ui::CatalogEntry& entry) = 0;
     [[nodiscard]] virtual std::optional<LaunchDecision> takeDecision() = 0;
-    /// A decision is pending.
+    /// A decision is pending: being made, or made and not taken yet (takeDecision()).
     [[nodiscard]] virtual bool deciding() const noexcept = 0;
 
     /// Once per frame and per wake of the host's idle wait: collects what the worker answered.
@@ -100,7 +100,7 @@ public:
     [[nodiscard]] std::string_view notice() const noexcept override { return {}; }
     bool requestLaunch(std::uint64_t token, const ui::CatalogEntry& entry) override;
     [[nodiscard]] std::optional<LaunchDecision> takeDecision() override { return std::exchange(m_decision, {}); }
-    [[nodiscard]] bool deciding() const noexcept override { return false; }
+    [[nodiscard]] bool deciding() const noexcept override { return m_decision.has_value(); }
     CatalogChanges poll() override { return {}; }
     [[nodiscard]] bool busy() const noexcept override { return false; }
     void record(CatalogRecord& record) const override;
@@ -137,10 +137,11 @@ public:
     ~EsdeAppCatalog() override;
 
     [[nodiscard]] ui::CatalogSource& source() noexcept override { return m_source; }
-    [[nodiscard]] std::string_view notice() const noexcept override { return noticeOf(m_source.state()); }
+    /// "opening" also once the catalog opened, until its first list is shown (never "no games" before it).
+    [[nodiscard]] std::string_view notice() const noexcept override;
     bool requestLaunch(std::uint64_t token, const ui::CatalogEntry& entry) override;
     [[nodiscard]] std::optional<LaunchDecision> takeDecision() override { return std::exchange(m_decision, {}); }
-    [[nodiscard]] bool deciding() const noexcept override { return m_resolving.has_value(); }
+    [[nodiscard]] bool deciding() const noexcept override { return m_resolving.has_value() || m_decision.has_value(); }
     CatalogChanges poll() override;
     [[nodiscard]] bool busy() const noexcept override { return m_source.waiting() || m_resolving.has_value(); }
     void sessionStarted(std::uint64_t token, const launcher::LaunchSession& session) override;

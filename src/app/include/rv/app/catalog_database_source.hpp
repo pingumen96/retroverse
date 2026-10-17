@@ -34,8 +34,9 @@ namespace rv::app {
 ///  - each row carries its launch readiness: an unavailable game's from its availability, else the game's own once the
 ///    worker resolved it (CatalogWorker::readiness, asked for the rows read), its system's until then; collect() says
 ///    when rows already read would show other data now (QuickCatalogModel::reread()).
-/// Before the catalog opened queries stay Pending; a catalog that did not open answers them with Unavailable (the list
-/// empty; CatalogState says why).
+/// Before the catalog opened queries stay Pending (asked of the worker once it opened; the default list comes with the
+/// opening, CatalogOpened::firstList); a catalog that did not open answers them with Unavailable (the list empty;
+/// CatalogState says why), and so does a worker that ended.
 class CatalogDatabaseSource final : public ui::CatalogSource {
 public:
     /// `worker` must outlive the source.
@@ -61,8 +62,12 @@ public:
     [[nodiscard]] const catalog::LibraryId& library() const noexcept { return m_library; }
     [[nodiscard]] const std::vector<CatalogSystem>& systems() const noexcept { return m_systems; }
     [[nodiscard]] std::size_t interruptedSessions() const noexcept { return m_interrupted; }
-    /// Something the screen waits for is with the worker: the opening, a list, readiness.
+    /// Something the screen waits for is with the worker: the opening, a list, readiness. Never once the worker ended.
     [[nodiscard]] bool waiting() const noexcept;
+    /// A list was switched to (or failed) since the catalog opened: until then the list says the catalog is opening.
+    [[nodiscard]] bool listed() const noexcept { return m_listed; }
+    /// The worker's thread ended (CatalogResults::ended): nothing more will be answered.
+    [[nodiscard]] bool ended() const noexcept { return m_ended; }
     /// The page fetches so far; nothing before the first.
     [[nodiscard]] std::optional<TimeSummary> pageTimes() const;
     /// The list a query was materialized from last: its search text and system.
@@ -80,6 +85,8 @@ public:
     [[nodiscard]] const CatalogSystem* findSystem(std::string_view name) const;
 
 private:
+    /// Hands the pending query to the worker, or takes the opening's first list when it is the default one.
+    void dispatch();
     /// Fills `entry` from `row` (text, year, players, readiness).
     void fill(const catalog::CatalogRow& row, ui::CatalogEntry& entry);
 
@@ -99,7 +106,12 @@ private:
     std::uint64_t m_serial = 0;
     std::optional<std::uint64_t> m_pendingSerial;
     ui::CatalogSourceQuery m_pendingQuery;
+    catalog::CatalogQuery m_pendingRequest;
     std::optional<CatalogList> m_arrived;
+    /// The opening's default list (CatalogOpened::firstList), until a list is shown.
+    std::optional<CatalogList> m_firstList;
+    bool m_listed = false;
+    bool m_ended = false;
 
     /// The games' own readiness (by GameId value), and the games asked of the worker.
     std::map<std::uint64_t, GameLaunchState> m_readiness;

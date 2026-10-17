@@ -78,8 +78,12 @@ struct ProductUi::Impl {
     /// The screen asked to close (Back at its root), applied after the frame's commands.
     bool closeRequested = false;
     PanelChoice choice = PanelChoice::None;
-    /// Runs with --fixed-dt wait between frames for what they asked of the catalog worker (lockstep).
+    /// Runs with --fixed-dt wait between frames for what they asked of the catalog worker (lockstep), at most
+    /// kLockstepWaitLimit at a time: past it a frame is rendered all the same (a warning logged), so that a
+    /// frame-limited run never hangs on an answer that does not come.
     bool lockstep = false;
+    static constexpr std::chrono::seconds kLockstepWaitLimit{10};
+    std::optional<std::chrono::steady_clock::time_point> catalogWaitSince;
     /// What the quick catalog and the walker showed when Avvia asked for the launch being decided, until its record
     /// exists; a launch whose record waits for what they show after its end (the next frame).
     std::optional<CatalogView> before;
@@ -156,8 +160,13 @@ struct ProductUi::Impl {
         model->poll();
     }
 
-    /// The lockstep run waits for the catalog worker.
-    [[nodiscard]] bool waitsForCatalog() const noexcept { return lockstep && catalog->busy(); }
+    /// The lockstep run waits for the catalog worker (within kLockstepWaitLimit).
+    [[nodiscard]] bool waitsForCatalog() const noexcept {
+        if (!lockstep || !catalog->busy()) {
+            return false;
+        }
+        return !catalogWaitSince || std::chrono::steady_clock::now() - *catalogWaitSince < kLockstepWaitLimit;
+    }
 
     /// The window's hand-over for the launch about to start (visible windows only).
     void beginHandover() {
@@ -401,6 +410,11 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         s.frameMs.push_back(std::chrono::duration<double, std::milli>(frameStart - *s.lastFrame).count());
     }
     s.lastFrame = frameStart;
+    if (const auto since = std::exchange(s.catalogWaitSince, std::nullopt);
+        since && frameStart - *since >= Impl::kLockstepWaitLimit && s.catalog->busy()) {
+        spdlog::warn("Frame {}: the catalog worker did not answer within {} s; the frame goes on without its answer",
+                     s.context.frameIndex(), Impl::kLockstepWaitLimit.count());
+    }
     // The first frame after a launch ended (or was refused): what the catalog and the walker show now.
     if (std::exchange(s.afterPending, false)) {
         s.flow.noteAfter(s.currentView());
@@ -473,6 +487,9 @@ bool ProductUi::wantsIdle() const noexcept {
 void ProductUi::onIdle() {
     Impl& s = *m_impl;
     s.lastFrame.reset(); // the wait is no frame time
+    if (s.lockstep && !s.catalogWaitSince && !s.flow.hostIdle() && s.catalog->busy()) {
+        s.catalogWaitSince = std::chrono::steady_clock::now();
+    }
     // A decision the worker brings is applied by the next frame's update, which renders its "Gioco in corso" first.
     s.syncCatalog();
     const LaunchClock::time_point now = LaunchClock::now();
@@ -529,6 +546,9 @@ void ProductUi::finish() {
     }
     record.search = s.model->search();
     record.filter = s.model->activeFilter();
+    if (s.screen && s.catalogOpen) {
+        record.cardSqueezed = s.screen->squeezedCardBlocks();
+    }
     if (!s.lockstep) {
         record.frames = summarizeTimes(s.frameMs);
     }

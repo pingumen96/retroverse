@@ -80,9 +80,10 @@ inline constexpr std::array<std::string_view, 6> kReadinessKeys{"source-unavaila
                                                                  "core-not-found", "ready"};
 /// The blocker codes (CatalogEntry::blocker) the card explains in a sentence of its own: every code rv_catalog's launch
 /// resolution and rv_esde's launch translation report (docs/i2/step-10.md), and the app's own (system-not-configured,
-/// library-unreadable: ES-DE's configuration cannot be read). A code the document does not name shows its readiness's
-/// sentence and the "Dettagli" line alone.
-inline constexpr std::array<std::string_view, 32> kBlockerCodes{
+/// library-unreadable: ES-DE's configuration cannot be read). tests/unit/app/test_catalog_worker.cpp collects the codes
+/// those sources report and checks that this list names each. A code the document does not name shows its readiness's
+/// label alone (the blocker's own words in Informazioni and in the game-session panel).
+inline constexpr std::array<std::string_view, 33> kBlockerCodes{
     "library-unreadable",
     "source-unavailable",    "rom-missing",          "rom-folder-unresolved", "rom-root-unknown",
     "system-unknown",        "system-not-configured", "no-command",           "choice-stale",
@@ -91,7 +92,7 @@ inline constexpr std::array<std::string_view, 32> kBlockerCodes{
     "install-unknown",       "invalid-request",      "token-unsupported",    "token-malformed",
     "command-placeholder",   "inject-file",          "start-folder-missing", "start-folder-repeated",
     "start-folder-glued",    "start-folder-relative", "find-rules-missing",  "find-rule-undecided",
-    "emulator-not-found",    "core-not-found",       "core-malformed"};
+    "emulator-not-found",    "core-not-found",       "core-malformed",           "core-repeated"};
 /// What the list says while it shows no game of the catalog database because there is none to show yet (the
 /// data model's "notice"): the catalog is being opened, there is no library.json (retroverse-cli library create), no
 /// catalog database (retroverse-cli import), the user data directory lies inside the library's folders (the
@@ -114,7 +115,8 @@ inline constexpr std::string_view kMoreBeforeClass = "more-before";
 inline constexpr std::string_view kMoreAfterClass = "more-after";
 /// The class of the active filter's chip.
 inline constexpr std::string_view kActiveChipClass = "active";
-/// The card's title.
+/// The card and its title.
+inline constexpr std::string_view kCardId = "card";
 inline constexpr std::string_view kCardTitleId = "card-title";
 /// The body class of the high-contrast theme (specification §12.4).
 inline constexpr std::string_view kHighContrastClass = "high-contrast";

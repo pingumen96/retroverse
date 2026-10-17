@@ -231,6 +231,7 @@ TEST_CASE("app/run_report: the quick catalog and its launches read back record f
     catalog.open = true;
     catalog.selectedPosition = 4;
     catalog.selectedId = "g000000000000a005";
+    catalog.cardSqueezed = {"rows"};
     report.catalog = catalog;
     rv::app::LaunchRecord returned;
     returned.gameId = "g000000000000a001";

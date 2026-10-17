@@ -8,6 +8,7 @@
 
 #include <rv/catalog_db/database.hpp>
 #include <rv/launcher/launch_plan.hpp>
+#include <rv/ui/ui_assets.hpp>
 
 namespace rv::app {
 namespace {
@@ -130,6 +131,9 @@ MockAppCatalog::MockAppCatalog(MockCatalog catalog, launcher::EmulatorProfiles b
 }
 
 bool MockAppCatalog::requestLaunch(std::uint64_t token, const ui::CatalogEntry& entry) {
+    if (m_decision) {
+        return false;
+    }
     LaunchDecision decision;
     decision.token = token;
     decision.info = LaunchInfo{entry.id, entry.title, {}};
@@ -199,8 +203,16 @@ double EsdeAppCatalog::sinceProcessStart(std::chrono::system_clock::time_point a
     return static_cast<double>(now - m_options.processCreated) / 10'000.0;
 }
 
+std::string_view EsdeAppCatalog::notice() const noexcept {
+    if (m_source.state() == CatalogState::Ready && !m_source.listed()) {
+        return ui::quick_catalog::kNoticeOpening;
+    }
+    return noticeOf(m_source.state());
+}
+
 bool EsdeAppCatalog::requestLaunch(std::uint64_t token, const ui::CatalogEntry& entry) {
-    if (m_resolving) {
+    // One decision at a time, until it is taken: a second Avvia would ask again with the same token.
+    if (m_resolving || m_decision) {
         return false;
     }
     const auto game = catalog::GameId::parse(entry.id);
@@ -209,6 +221,14 @@ bool EsdeAppCatalog::requestLaunch(std::uint64_t token, const ui::CatalogEntry& 
         decision.token = token;
         decision.info = LaunchInfo{entry.id, entry.title, {}};
         decision.refusal = LaunchMessage{std::string(lo::kNotReady), "unresolved", game.error().message};
+        m_decision = std::move(decision);
+        return true;
+    }
+    if (m_source.ended()) {
+        LaunchDecision decision;
+        decision.token = token;
+        decision.info = LaunchInfo{entry.id, entry.title, {}};
+        decision.refusal = LaunchMessage{std::string(lo::kNotReady), "unresolved", "the catalog worker ended"};
         m_decision = std::move(decision);
         return true;
     }
@@ -230,6 +250,9 @@ CatalogChanges EsdeAppCatalog::poll() {
     if (results.opened && results.opened->state == CatalogState::Ready && !m_openedMs) {
         m_openedMs = sinceProcessStart(results.opened->at);
     }
+    if (results.opened && results.opened->firstList && !m_firstListMs) {
+        m_firstListMs = sinceProcessStart(results.opened->firstList->at);
+    }
     if (results.list && !results.list->error && !m_firstListMs) {
         m_firstListMs = sinceProcessStart(results.list->at);
     }
@@ -240,6 +263,9 @@ CatalogChanges EsdeAppCatalog::poll() {
         }
         m_resolving.reset();
         Launch& launch = m_launches[resolved.token];
+        if (launch.begun) {
+            continue; // never over a session that began (its started time and process)
+        }
         LaunchDecision decision;
         decision.token = resolved.token;
         // The identity the GameId asked for stands for (an alias resolved), once resolved.
@@ -260,6 +286,17 @@ CatalogChanges EsdeAppCatalog::poll() {
             decision.refusal = refusalOf(resolved);
         }
         m_decision = std::move(decision);
+    }
+    if (m_resolving && m_source.ended()) {
+        // The worker ended before it resolved the launch: the game cannot start, and nothing waits for it.
+        const auto found = m_launches.find(*m_resolving);
+        LaunchDecision decision;
+        decision.token = *m_resolving;
+        decision.info.gameId = found != m_launches.end() ? found->second.session.game.toString() : std::string();
+        decision.info.title = found != m_launches.end() ? found->second.title : std::string();
+        decision.refusal = LaunchMessage{std::string(lo::kNotReady), "unresolved", "the catalog worker ended"};
+        m_decision = std::move(decision);
+        m_resolving.reset();
     }
     collectSessions(results);
     return CatalogChanges{collected.opened, collected.rowsChanged};

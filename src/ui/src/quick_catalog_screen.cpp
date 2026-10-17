@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include <RmlUi/Core/Box.h>
 #include <RmlUi/Core/ComputedValues.h>
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -1295,6 +1296,38 @@ std::uint64_t QuickCatalogScreen::windowBinds() const noexcept {
 
 std::uint64_t QuickCatalogScreen::rowBinds() const noexcept {
     return m_impl->rowBinds;
+}
+
+std::vector<std::string> QuickCatalogScreen::squeezedCardBlocks() const {
+    std::vector<std::string> squeezed;
+    Rml::ElementDocument* document = m_impl->document;
+    Rml::Element* card = document != nullptr && document->IsVisible()
+                             ? document->GetElementById(Rml::String(qc::kCardId))
+                             : nullptr;
+    if (card == nullptr || !card->IsVisible()) {
+        return squeezed;
+    }
+    for (int index = 0; index < card->GetNumChildren(); ++index) {
+        Rml::Element* block = card->GetChild(index);
+        if (block == nullptr || !block->IsVisible()) {
+            continue;
+        }
+        // What it wants: its content, at most its max-height (a length: em and dp are resolved when computed) and its
+        // padding; scroll heights include the padding as client heights do.
+        float wanted = block->GetScrollHeight();
+        const Rml::Style::MaxHeight maxHeight = block->GetComputedValues().max_height();
+        if (maxHeight.type == Rml::Style::LengthPercentage::Length && maxHeight.value < 1.0e6f) {
+            const Rml::Box& box = block->GetBox();
+            wanted = std::min(wanted, maxHeight.value + box.GetEdge(Rml::BoxArea::Padding, Rml::BoxEdge::Top) +
+                                          box.GetEdge(Rml::BoxArea::Padding, Rml::BoxEdge::Bottom));
+        }
+        if (block->GetClientHeight() + 0.5f < wanted) {
+            const Rml::String& id = block->GetId();
+            const Rml::String classes = block->GetClassNames();
+            squeezed.emplace_back(!id.empty() ? id : classes.substr(0, classes.find(' ')));
+        }
+    }
+    return squeezed;
 }
 
 bool QuickCatalogScreen::reloadIfChanged() {

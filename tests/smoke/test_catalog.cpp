@@ -5,9 +5,11 @@
 // configuration). Input scripts open the quick catalog, search, filter, select and launch with UI actions and typed text;
 // the run reports and the catalog database tell what happened: the launch returned with its play session recorded, and
 // the selection, the search, the filter and the walker's camera were the same before and after it; a blocked game shows
-// its readiness and does not launch; a data directory without library.json shows how to import. Every run has
-// --fixed-dt, so its frames wait for the catalog worker (lockstep) and the frames of the scripts are deterministic. The
-// automation guard lists the fake alone (RV_LAUNCH_ALLOWLIST): the fixture's own copies of it are never started.
+// its readiness and does not launch; the card of a blocked game with a description shows its text whole (no line cut by
+// the layout, the run report's catalog.cardSqueezed); a data directory without library.json shows how to import. Every
+// run has --fixed-dt, so its frames wait for the catalog worker (lockstep) and the frames of the scripts are
+// deterministic. The automation guard lists the fake alone (RV_LAUNCH_ALLOWLIST): the fixture's own copies of it are
+// never started.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -149,6 +151,7 @@ TEST_CASE("catalog: a game found by search and filter launches from the ES-DE ca
     REQUIRE(record.firstPageMs.has_value());
     REQUIRE(record.pages.has_value());
     CHECK(record.pages->count >= 3);
+    CHECK(record.cardSqueezed.empty()); // the card shows its text whole
 
     REQUIRE(report.launches.size() == 1);
     const rv::app::LaunchRecord& launch = report.launches.front();
@@ -221,6 +224,8 @@ TEST_CASE("catalog: a game that is not ready shows its readiness, and Avvia show
     CHECK(launch.processId == 0);
     CHECK_FALSE(launch.startFrame.has_value());
     CHECK(launch.panels == std::vector<std::string>{"outcome"});
+    REQUIRE(report.catalog.has_value());
+    CHECK(report.catalog->cardSqueezed.empty()); // the readiness and the blocker's sentence cut nothing of the card
     // Its card said so before Avvia: the game's own readiness, resolved on the worker (its system's command is ready
     // for Twin Tracks, which has no %INJECT% file).
     REQUIRE(launch.before.has_value());
@@ -240,6 +245,31 @@ TEST_CASE("catalog: a game that is not ready shows its readiness, and Avvia show
     CHECK(session.choice.value == "Fake Emulator (Inject)");
     CHECK(session.message.find("inject-file") != std::string::npos);
     CHECK(session.processId == 0);
+}
+
+TEST_CASE("catalog: the card of a blocked game with a description shows its text whole, also with Informazioni",
+          "[gpu][catalog]") {
+    const ImportedCatalog catalog("card");
+    // ES-DE's configuration gone since the import: every game requires configuration (library-unreadable), with the
+    // longest of the blocker sentences; Tiny Tennis has a two-line description.
+    std::filesystem::remove(catalog.fixture.path("Programs/ES-DE/resources/systems/windows/es_systems.xml"));
+    const rv::catalog::GameId tennis = catalog.gameAt("gb", "Tiny Tennis (Europe).gb");
+    for (const auto& [name, frames] : {std::pair<std::string, std::string>{"card", "22"}, {"card_info", "26"}}) {
+        INFO(name);
+        const std::filesystem::path screenshot = catalog.dir / (name + ".png");
+        std::vector<std::string> arguments = catalogArguments("catalog_card_info.json", frames);
+        arguments.insert(arguments.end(), {"--screenshot", arg(screenshot)});
+        AppRun run = runApp(retroverseExe(), catalog.dir, name, std::move(arguments));
+        skipWithoutOpenGl(run);
+        requireCleanRun(run);
+        INFO(run.describe());
+        requireScreenshot(run, screenshot, {1920, 1080});
+        REQUIRE(run.report->catalog.has_value());
+        const rv::app::CatalogRecord& record = *run.report->catalog;
+        CHECK(record.selectedId == tennis.toString());
+        CHECK(record.cardSqueezed.empty());
+        CHECK(run.report->launches.empty());
+    }
 }
 
 TEST_CASE("catalog: without library.json the quick catalog says how to import", "[gpu][catalog]") {

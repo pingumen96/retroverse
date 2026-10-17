@@ -130,6 +130,8 @@ struct CatalogWorker::Shared {
     bool busy = true;
     /// The thread function returned.
     bool finished = false;
+    /// The opening's result was posted (a thread that fails before posts an Unavailable one).
+    bool openedPosted = false;
     CatalogResults results;
     std::function<void()> wake;
 
@@ -159,6 +161,13 @@ class Runner {
 public:
     Runner(std::shared_ptr<CatalogWorker::Shared> shared, CatalogWorker::Options options)
         : m_shared(std::move(shared)), m_options(std::move(options)) {}
+    /// Also when an exception ends run(): stop() never interrupts a connection that is gone.
+    ~Runner() {
+        const std::lock_guard lock(m_shared->connectionMutex);
+        m_shared->interruptible = nullptr;
+    }
+    Runner(const Runner&) = delete;
+    Runner& operator=(const Runner&) = delete;
 
     void run() {
         open();
@@ -189,6 +198,9 @@ private:
         opened.milliseconds = millisecondsSince(start);
         opened.at = std::chrono::system_clock::now();
         if (m_state == CatalogState::Ready) {
+            opened.firstList = firstList();
+        }
+        if (m_state == CatalogState::Ready) {
             spdlog::info("Catalog opened on the worker in {:.0f} ms: library '{}', {} system(s) with games{}",
                          opened.milliseconds, opened.library.str(), opened.systems.size(),
                          opened.interrupted.empty()
@@ -201,7 +213,40 @@ private:
                 spdlog::debug("Catalog not opened: {}", opened.error->toString());
             }
         }
-        m_shared->post([&](CatalogResults& results) { results.opened = std::move(opened); });
+        m_shared->post([&](CatalogResults& results) {
+            results.opened = std::move(opened);
+            m_shared->openedPosted = true;
+        });
+    }
+
+    /// The default list (every game, Title order), which the quick catalog asks for first: materialized with the opening
+    /// so that the first page needs no round trip to the worker (NFR-01). Nothing when it cannot be read (the query then
+    /// goes to the worker as any other).
+    std::optional<CatalogList> firstList() {
+        const Clock::time_point start = Clock::now();
+        auto ids = m_query->run(catalog::CatalogQuery{});
+        if (!ids) {
+            spdlog::warn("Catalog: the first list cannot be read now: {}", ids.error().toString());
+            return std::nullopt;
+        }
+        CatalogList list = listOf(0, std::move(*ids));
+        list.milliseconds = millisecondsSince(start);
+        list.at = std::chrono::system_clock::now();
+        spdlog::debug("Catalog first list: {} game(s) in {:.1f} ms", list.ids.size(), list.milliseconds);
+        return list;
+    }
+
+    /// A list of `ids`, with its index by GameId.
+    [[nodiscard]] static CatalogList listOf(std::uint64_t serial, std::vector<catalog::GameId> ids) {
+        CatalogList list;
+        list.serial = serial;
+        list.ids = std::move(ids);
+        list.byId.reserve(list.ids.size());
+        for (std::size_t position = 0; position < list.ids.size(); ++position) {
+            list.byId.emplace_back(list.ids[position].value(), static_cast<std::uint32_t>(position));
+        }
+        std::sort(list.byId.begin(), list.byId.end());
+        return list;
     }
 
     /// Opens the catalog into `opened`, its state set as it goes (an error leaves Opening: Unavailable).
@@ -404,17 +449,9 @@ private:
 
     void handle(QueryJob& job) {
         const Clock::time_point start = Clock::now();
-        CatalogList list;
-        list.serial = job.serial;
         auto ids = m_options.runQuery ? m_options.runQuery(*m_query, job.query) : m_query->run(job.query);
-        if (ids) {
-            list.ids = std::move(*ids);
-            list.byId.reserve(list.ids.size());
-            for (std::size_t position = 0; position < list.ids.size(); ++position) {
-                list.byId.emplace_back(list.ids[position].value(), static_cast<std::uint32_t>(position));
-            }
-            std::sort(list.byId.begin(), list.byId.end());
-        } else {
+        CatalogList list = listOf(job.serial, ids ? std::move(*ids) : std::vector<catalog::GameId>{});
+        if (!ids) {
             list.error = ids.error();
             spdlog::warn("Catalog query failed: {}", ids.error().toString());
         }
@@ -438,6 +475,12 @@ private:
             }
             if (auto state = gameState(game)) {
                 states.push_back(std::move(*state));
+            } else {
+                // Answered all the same, so that the main thread does not wait for it.
+                GameReadiness unknown;
+                unknown.game = game;
+                unknown.known = false;
+                states.push_back(std::move(unknown));
             }
         }
         m_shared->post([&](CatalogResults& results) {
@@ -733,16 +776,31 @@ private:
 CatalogWorker::CatalogWorker(Options options) : m_shared(std::make_shared<Shared>()) {
     m_shared->wake = options.wake;
     m_thread = std::thread([shared = m_shared, options = std::move(options)]() mutable {
+        std::optional<Error> failure;
         try {
             Runner(shared, std::move(options)).run();
         } catch (const std::exception& error) {
             spdlog::error("The catalog worker failed: {}", error.what());
+            failure = Error{ErrorCode::Unknown, fmt::format("the catalog worker failed: {}", error.what()), {}};
+        } catch (...) {
+            spdlog::error("The catalog worker failed with an unknown exception");
+            failure = Error{ErrorCode::Unknown, "the catalog worker failed", {}};
         }
-        {
-            const std::lock_guard lock(shared->mutex);
+        // Nothing it was asked is left waiting: an opening never posted is Unavailable, and the main thread learns that
+        // no other answer will come (CatalogResults::ended).
+        shared->post([&](CatalogResults& results) {
+            if (!shared->openedPosted) {
+                CatalogOpened opened;
+                opened.state = CatalogState::Unavailable;
+                opened.error = failure.value_or(Error{ErrorCode::Cancelled, "the catalog worker stopped", {}});
+                opened.at = std::chrono::system_clock::now();
+                results.opened = std::move(opened);
+                shared->openedPosted = true;
+            }
+            results.ended = true;
             shared->finished = true;
             shared->busy = false;
-        }
+        });
         shared->ended.notify_all();
     });
 }

@@ -59,9 +59,14 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
         m_library = opened.library;
         m_systems = std::move(opened.systems);
         m_pages = std::move(opened.pages);
+        m_firstList = std::move(opened.firstList);
         m_interrupted = opened.interrupted.size();
         collected.opened = true;
         results.opened.reset();
+        // A query asked while the catalog was opening goes to the worker now (or takes the first list).
+        if (m_state == CatalogState::Ready && m_pendingSerial && !m_arrived) {
+            dispatch();
+        }
     }
     if (results.list) {
         // Only the list of the query still asked for: an older one was replaced by it.
@@ -72,6 +77,9 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
     }
     for (GameReadiness& readiness : results.readiness) {
         m_asked.erase(readiness.game.value());
+        if (!readiness.known) {
+            continue; // gone, or unreadable now: its row keeps its system's, and asks again when read again
+        }
         // Its rows showed its system's meanwhile (an available game: unavailable ones are never asked for).
         collected.rowsChanged = collected.rowsChanged || readiness.ownState;
         if (m_readiness.size() >= kMaxReadiness) {
@@ -95,11 +103,29 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
         }
     }
     results.verified.clear();
+    if (results.ended) {
+        // Nothing asked of the worker will be answered any more: nothing is waited for (poll() fails a pending list).
+        m_ended = true;
+        m_asked.clear();
+        results.ended = false;
+    }
     return collected;
 }
 
 bool CatalogDatabaseSource::waiting() const noexcept {
-    return m_state == CatalogState::Opening || m_pendingSerial.has_value() || !m_asked.empty();
+    return !m_ended && (m_state == CatalogState::Opening || m_pendingSerial.has_value() || !m_asked.empty());
+}
+
+void CatalogDatabaseSource::dispatch() {
+    if (m_firstList && m_pendingRequest == catalog::CatalogQuery{}) {
+        // The default list the worker materialized with the opening: no round trip (NFR-01). It serves until a list is
+        // shown, as the screen asks for it again once the catalog opened (QuickCatalogModel::refresh()).
+        CatalogList list = *m_firstList;
+        list.serial = *m_pendingSerial;
+        m_arrived = std::move(list);
+        return;
+    }
+    m_worker.query(*m_pendingSerial, m_pendingRequest);
 }
 
 std::optional<TimeSummary> CatalogDatabaseSource::pageTimes() const {
@@ -143,8 +169,11 @@ Expected<ui::QueryState> CatalogDatabaseSource::query(const ui::CatalogSourceQue
     }
     m_pendingSerial = ++m_serial;
     m_pendingQuery = query;
+    m_pendingRequest = std::move(request);
     m_arrived.reset();
-    m_worker.query(*m_pendingSerial, std::move(request));
+    if (m_state == CatalogState::Ready) {
+        dispatch();
+    } // else asked of the worker once the catalog opened (collect())
     return ui::QueryState::Pending;
 }
 
@@ -160,12 +189,22 @@ Expected<ui::QueryState> CatalogDatabaseSource::poll() {
         return makeError(ErrorCode::Unavailable, "the catalog is not open", std::string(toString(m_state)));
     }
     if (!m_arrived) {
+        if (m_ended) {
+            m_pendingSerial.reset();
+            m_ids.clear();
+            m_byId.clear();
+            m_listed = true;
+            return makeError(ErrorCode::Unavailable, "the catalog worker ended");
+        }
         return ui::QueryState::Pending;
     }
     CatalogList list = std::move(*m_arrived);
     m_arrived.reset();
     m_pendingSerial.reset();
     m_listedQuery = m_pendingQuery;
+    m_listed = true;
+    // Later lists come from the worker: the first list may be stale by then (an import, a refresh).
+    m_firstList.reset();
     if (list.error) {
         m_ids.clear();
         m_byId.clear();

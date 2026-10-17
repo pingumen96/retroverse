@@ -135,6 +135,9 @@ struct CatalogRecord {
     std::optional<TimeSummary> frames;
     /// "esde": play sessions closed as interrupted when the catalog opened (their owner was gone: ADR-0008 §9).
     std::size_t interruptedSessions = 0;
+    /// The card's blocks cut by the layout when the run ended (ui::QuickCatalogScreen::squeezedCardBlocks: a line or a
+    /// row shows only in part); empty when the card showed its text whole, or was not shown.
+    std::vector<std::string> cardSqueezed;
 
     bool operator==(const CatalogRecord&) const = default;
 };
