@@ -8,7 +8,9 @@
 // The database goes under the build tree (build/<preset>/real-library/import, made anew each run). The expected figures
 // are step 7's (the census of 2026-10-17): 105,130 entries (90,246 games, 12,821 disc members, 1,038 missing files, 870
 // not games, 155 folders) and 2,513 disc groups. The first import, the second (0 identity changes, 0 entry rows
-// written) and `db rebuild-index` (the same index) are timed: informative, the gate times the import on a quiet machine.
+// written), `db rebuild-index` (every sheet read again, the same index) and the ROM root unplugged and back (rows kept
+// as source unavailable, the disc groups untouched, then the same index) are timed: informative, the gate times the
+// import on a quiet machine.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -156,5 +158,31 @@ TEST_CASE("catalog_db/import: the real library imported, imported again and its 
     for (const auto& [table, digest] : index) {
         std::cout << fmt::format("  {}: {}\n", table, digest);
     }
+    CHECK(rebuilt.statistics.discGroupsWritten == 2'513); // every sheet read again, the same groups
+
+    // The ROM root unplugged (an empty folder named in its place): every row kept as source unavailable, nothing
+    // removed, the disc groups as they were (their heads cannot be listed); back, the index as it was.
+    LibraryProfile unplugged = profile;
+    unplugged.romRoot = folder / "empty-rom-root";
+    fs::create_directories(*unplugged.romRoot);
+    const ImportResult away = importLibrary(catalog, unplugged);
+    CHECK(away.changes.total().removed == 0);
+    CHECK(away.changes.total().newIdentities == 0);
+    CHECK(away.changes.total().unavailable + away.changes.total().unchanged == 105'130); // (folders outside the root)
+    CHECK(away.statistics.identitiesWritten == 0);
+    CHECK(away.statistics.discGroupsWritten == 0);
+    CHECK(away.statistics.discGroupsRemoved == 0);
+    const auto awayIndex = rv::test::digestOf(rv::test::dumpIndex(writer));
+    for (const char* table : {"idx_disc_groups", "idx_disc_members", "idx_disc_references"}) {
+        INFO(table);
+        CHECK(awayIndex.at(table) == index.at(table));
+    }
+    const ImportResult back = importLibrary(catalog, profile);
+    CHECK(back.changes.total().newIdentities == 0);
+    CHECK(back.changes.total().removed == 0);
+    CHECK(back.statistics.discGroupsWritten == 0);
+    CHECK(rv::test::digestOf(rv::test::dumpIndex(writer)) == index);
+    CHECK(rv::test::digestOf(rv::test::dumpState(writer)) == state);
+    CHECK(count(writer, "SELECT count(*) FROM rv_imports") == 5);
     CHECK(rv::catalog_db::checkDatabase(*catalog.database).value().passed());
 }

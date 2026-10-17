@@ -3,10 +3,11 @@
 //   db check          integrity, foreign keys, FTS5, schema version and definition; exit 1 when a check finds problems
 //   db info           path, versions, sizes, row counts, rv_meta, backups
 //   db rebuild-index  every index table of the library rebuilt from a fresh snapshot of it and the identities (I2 step
-//                     11a): the import of `retroverse-cli import` (runCatalogImport(), import_text.hpp) with the library's
-//                     index rows cleared and every row written again, every state row kept; the result equals what an
-//                     import gives, the rows that only the index knows (folders that cannot be listed, gamelists that
-//                     failed, media out of reach) taken from it before it is cleared
+//                     11a): the import of `retroverse-cli import` (runCatalogImport(), import_text.hpp) with every cue
+//                     sheet and playlist read again, the library's index rows cleared and every row written again,
+//                     every state row kept; the result equals what an import gives, the rows that only the index knows
+//                     (folders that cannot be listed, gamelists that failed, sheets that cannot be read, media out of
+//                     reach) taken from it before it is cleared
 // Each takes --json (the results as one JSON object) and --output <file>. Opening the database takes its process-level
 // lock: a migration waits for no other Retroverse process, and refuses while one has the database open. check and info
 // write nothing into the file: they open it as they find it (no switch to WAL), and make none when it is missing.
@@ -45,7 +46,8 @@ constexpr std::string_view kUsage =
     "                 finds problems.\n"
     "  info           Show its path, schema version, sizes, row counts, metadata and backups.\n"
     "  rebuild-index  Rebuild the library's index tables from the library and the identities (the import of\n"
-    "                 'retroverse-cli import', every index row written again; every state row kept).\n"
+    "                 'retroverse-cli import', every cue sheet and playlist read again, every index row written\n"
+    "                 again; every state row kept).\n"
     "\n"
     "Options:\n"
     "  --json           Write the results as JSON.\n"
