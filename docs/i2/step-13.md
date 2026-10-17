@@ -236,7 +236,27 @@ FIGURES_TESTS
 
 ## NFR-01 (Release)
 
-FIGURES_NFR
+`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root> -MediaRoot <media
+root> -Filter '[real-library][app]'` (`tests/unit/app/test_catalog_real.cpp`, Release, 2026-10-17, ES-DE closed, the
+reference machine with this worktree's builds and tests the only other work): the real library imported into
+`build/msvc-x64-release/real-library/app` (14.1 to 16.2 s: 105,130 entries, step 11a's figures), then `retroverse.exe`
+started twice, hidden, without vsync and without `--fixed-dt`, the quick catalog opened on frame 1, a held direction for
+2,700 frames, held pages for 2,700 more, End (the 90,246th game) and Home. From the process's creation:
+
+| | Run 1 | Run 2 |
+|---|---|---|
+| Catalog opened on the worker (database, `closeInterrupted`, `systems()`, ES-DE's configuration, 48 systems' readiness) | 785 ms | 727 ms |
+| First list (every game, Title order, 90,246 ids) | 1,452 ms | 1,391 ms |
+| **First page shown (NFR-01: within 5,000 ms)** | **1,467 ms** | **1,404 ms** |
+| Page fetches on the main thread (rows entering the window) | 178: p50 0.12, p95 0.23, p99 0.42, max 0.56 ms | 171: p50 0.12, p95 0.20, p99 0.34, max 0.46 ms |
+| Frames while the catalog showed games (the test room behind it, no vsync) | 6,097: p50 1.80, p95 2.63, p99 5.86, max 14.1 ms | 6,097: p50 1.78, p95 2.33, p99 5.21, max 32.5 ms |
+
+Snapshots of the ES-DE home and install (hashed), the ROM and media roots (listed): **0 differences among 542,082
+entries**. An earlier run with a shorter scroll gave 1,571 and 1,384 ms for the first page. The first list arrives about
+0.65 s after the catalog opened because its query is asked when ProductUi is made, after the scene's procedural surfaces
+(the worker itself starts before them); the list's read is 30 to 50 ms (step 9). The frame maxima are single frames (a
+card laid out again, the window's rows bound at End); ADR-0005's per-change figures are step 6's. Informative: the gate
+measures on a quiet machine.
 
 ## Draft: the manual pad-only session of Gate M1
 
@@ -258,9 +278,9 @@ user's own; not an automated run, so no allow-list), the library created and imp
    the same filter and search, the walker where it was; `retroverse-cli sessions` lists the session as returned.
 8. Launch again; while the game runs, Alt+Tab or the Windows key back to Retroverse: after 1.5 s "Gioco in corso" asks;
    "Torna al gioco" goes back to it.
-9. Quit Retroverse while the game runs (its window closed, or Back to the end): the game keeps running; the next start
-   of Retroverse (or `retroverse-cli sessions`) shows the session left running (quit), never interrupted while the app
-   runs.
+9. Quit Retroverse while the game runs (Alt+F4 on its window from the taskbar, the one step that needs more than the
+   pad): the game keeps running; `retroverse-cli sessions` shows the session left running (quit); a session of a
+   Retroverse that is still running is never closed as interrupted by another start.
 10. B walks back out of the catalog to the room; the walker moves with the stick.
 
 ## Decisions taken within the step

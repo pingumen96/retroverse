@@ -52,15 +52,18 @@ std::optional<fs::path> pathVariable(const wchar_t* name) {
     return fs::path(value);
 }
 
-/// The catalog's frames: QuickCatalog on frame 1, a held direction from frame 300 to 899 (the list scrolls a game per
-/// repeat), held pages from frame 950 to 1249.
+/// The catalog's frames (about 2 ms each without vsync): QuickCatalog on frame 1, a held direction from frame 300 to
+/// 2999 (the list scrolls a game per repeat, at the held cadence), held pages from frame 3100 to 5799, End on frame
+/// 5900 (the last of the 90,246 games), Home on frame 6000.
 constexpr std::string_view kScrollScript = R"([
   {"fromFrame": 1, "toFrame": 1, "actions": {"quick_catalog": 1}},
-  {"fromFrame": 300, "toFrame": 899, "actions": {"ui_down": 1}},
-  {"fromFrame": 950, "toFrame": 1249, "actions": {"ui_page_down": 1}}
+  {"fromFrame": 300, "toFrame": 2999, "actions": {"ui_down": 1}},
+  {"fromFrame": 3100, "toFrame": 5799, "actions": {"ui_page_down": 1}},
+  {"fromFrame": 5900, "toFrame": 5900, "actions": {"ui_end": 1}},
+  {"fromFrame": 6000, "toFrame": 6000, "actions": {"ui_home": 1}}
 ]
 )";
-constexpr std::string_view kFrames = "1300";
+constexpr std::string_view kFrames = "6100";
 
 std::string timesText(const std::optional<rv::app::TimeSummary>& times) {
     if (!times) {
