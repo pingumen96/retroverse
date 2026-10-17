@@ -88,12 +88,13 @@ fs::path buildFake() {
     return rv::test::testProgramsDir() / "rv_fake_emulator.exe";
 }
 
-/// An emulator profile serving gb, without a window timeout (the fake runs windowless).
+/// An emulator profile serving gb, without a window timeout (the fake runs windowless) and without a console window.
 json profile(std::string_view id, const fs::path& executable, std::vector<std::string> arguments) {
     return json{{"id", id},
                 {"executable", utf8(executable)},
                 {"arguments", std::move(arguments)},
                 {"windowTimeoutSeconds", 0},
+                {"hideConsoleWindow", true},
                 {"systems", {{"gb", json::object()}}}};
 }
 

@@ -6,6 +6,10 @@
 //
 //   rv_fake_emulator [options] [-- payload arguments...]
 //
+// With RV_LAUNCH_BACKGROUND set (automated test runs; docs/i2/step-focus.md) it never takes the foreground and never
+// injects input: its window is an inactive tool window off every monitor, and the foreground options are skipped. It
+// never shows a failure dialog (rv::platform_win::disableFailureDialogs, first thing in main).
+//
 // Options are read up to the first "--"; everything after it is payload, echoed by --print-args and never interpreted.
 // The program never terminates another process; with --exit-timeout-ms it ends itself.
 
@@ -35,6 +39,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// After windows.h: _ASSERTE (--abort).
+#include <crtdbg.h>
 
 #include <nlohmann/json.hpp>
 
@@ -43,6 +49,7 @@
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/launcher/command_line.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 
 namespace {
 
@@ -56,6 +63,7 @@ struct Options {
     bool inputAtEnd = false;
     int sleepMs = 0;
     bool crash = false;
+    bool abort = false;
     bool hang = false;
     int hangLimitMs = 0;
     int exitTimeoutMs = 0;
@@ -99,6 +107,9 @@ constexpr std::string_view kUsage =
     "  --sleep-ms N             wait N ms (without a window) before exiting\n"
     "  --crash                  end with an access violation (0xC0000005) after the frames and the sleep; Windows'\n"
     "                           error dialogs and error reporting are turned off for it\n"
+    "  --abort                  end through a failed debug assertion (_ASSERTE, Debug builds) and abort() after\n"
+    "                           the frames and the sleep: both are reported on standard error, never in a message\n"
+    "                           box, and the program exits with code 3\n"
     "  --hang                   never exit (the test harness ends the process)\n"
     "  --hang-limit-ms N        with --hang: exit after N ms anyway (with --exit-code), so that a test harness that\n"
     "                           is killed before its clean-up leaves nothing running for long\n"
@@ -117,7 +128,11 @@ constexpr std::string_view kUsage =
     "  --out TEXT               print TEXT on standard output only\n"
     "  --err TEXT               print TEXT on standard error only\n"
     "  --log FILE               write what the run saw (foreground, display modes, times) to FILE (JSON)\n"
-    "  --color RRGGBB           window color\n";
+    "  --color RRGGBB           window color\n"
+    "With RV_LAUNCH_BACKGROUND set (and neither empty nor 0: every automated test run but the desktop tests), the\n"
+    "program never takes the foreground and never injects input: the --frames window is a small inactive tool window\n"
+    "off every monitor (no fullscreen, no exclusive mode, no raise), and --steal-focus, --input-at-end,\n"
+    "--leave-foreground-window and --foreground-window are skipped (the log says so).\n";
 
 std::optional<std::uint64_t> parseNumber(std::string_view text) {
     int base = 10;
@@ -249,6 +264,8 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
             options.inputAtEnd = true;
         } else if (arg == "--crash") {
             options.crash = true;
+        } else if (arg == "--abort") {
+            options.abort = true;
         } else if (arg == "--hang") {
             options.hang = true;
         } else if (arg == "--spawn-child-and-exit") {
@@ -292,6 +309,14 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
         }
     }
     return true;
+}
+
+/// Whether this run is in the background (RV_LAUNCH_BACKGROUND set, and neither empty nor "0", as
+/// rv::platform_win::backgroundLaunchesRequested reads it): an automated test run that must leave the foreground, the
+/// keyboard and the screen to the user at the machine.
+bool inBackground() {
+    static const bool background = rv::platform_win::backgroundLaunchesRequested();
+    return background;
 }
 
 /// The exit code of a run ended by --exit-timeout-ms (as GNU timeout's).
@@ -459,6 +484,10 @@ void leaveForegroundWindow(const Options& options, nlohmann::json& log) {
 /// (and has locked it, with --lock-foreground). With --hung-foreground it then stops reading its messages until its
 /// time is up. Fills `log`.
 void runForegroundWindow(const Options& options, nlohmann::json& log) {
+    if (inBackground()) {
+        log["foregroundWindow"] = {{"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+        return;
+    }
     const Clock::time_point start = Clock::now();
     const auto sinceStart = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -536,6 +565,17 @@ void runForegroundWindow(const Options& options, nlohmann::json& log) {
     std::abort();
 }
 
+[[noreturn]] void abortNow() {
+    // With the report modes and the abort behaviour of disableFailureDialogs (main), the failed assertion is written to
+    // standard error and the run goes on, and abort() ends the process with exit code 3, without a message box (which
+    // would take the foreground and wait for a click) and without error reporting.
+#if defined(_DEBUG)
+    volatile bool holds = false;
+    _ASSERTE(holds);
+#endif
+    std::abort();
+}
+
 /// Never returns, unless `limitMs` is positive: then it returns after that long.
 void hang(int limitMs) {
     if (limitMs > 0) {
@@ -575,20 +615,44 @@ void runWindow(const Options& options, nlohmann::json& log) {
         log["error"] = std::string("SDL_Init failed: ") + SDL_GetError();
         return;
     }
-    if (options.stealFocus) {
+    const bool background = inBackground();
+    if (options.stealFocus && !background) {
         SDL_SetHint(SDL_HINT_FORCE_RAISEWINDOW, "1");
     }
     const SDL_DisplayID display = SDL_GetPrimaryDisplay();
     const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
     log["display"]["desktop"] = describeMode(desktop);
+    log["background"] = background;
 
-    SDL_Window* window = SDL_CreateWindow("Retroverse fake emulator", 1280, 720, SDL_WINDOW_HIDDEN);
+    // In the background: a small tool window (no taskbar button) that never takes the focus, still a visible window
+    // of the process for the launcher's window detection.
+    const SDL_WindowFlags flags =
+        SDL_WINDOW_HIDDEN | (background ? SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY : SDL_WindowFlags{0});
+    SDL_Window* window =
+        SDL_CreateWindow("Retroverse fake emulator", background ? 320 : 1280, background ? 180 : 720, flags);
     if (window == nullptr) {
         log["error"] = std::string("SDL_CreateWindow failed: ") + SDL_GetError();
         SDL_Quit();
         return;
     }
-    if (options.exclusive) {
+    const auto hwnd = static_cast<HWND>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    if (background) {
+        // Off every monitor, left of the virtual screen, shown without activation at the bottom of the z-order. Shown by
+        // SetWindowPos, never by a first ShowWindow: Windows applies the STARTUPINFO's show command to a process's
+        // first ShowWindow, and ShowWindow(SW_SHOWNOACTIVATE) was seen to activate the window in its own thread
+        // (GetActiveWindow, an EVENT_SYSTEM_FOREGROUND that focus_watch.py reports) though it never took the
+        // foreground.
+        if (hwnd != nullptr) {
+            const int x = GetSystemMetrics(SM_XVIRTUALSCREEN) - 2000;
+            const int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            SetWindowPos(hwnd, HWND_BOTTOM, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+        log["display"]["requestedExclusive"] = nullptr;
+        if (options.exclusive) {
+            log["warning"] = "background (RV_LAUNCH_BACKGROUND): an inactive window off-screen, no exclusive mode";
+        }
+    } else if (options.exclusive) {
         int count = 0;
         SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(display, &count);
         const SDL_DisplayMode* mode = modes != nullptr ? pickExclusiveMode(desktop, modes, count) : nullptr;
@@ -600,8 +664,10 @@ void runWindow(const Options& options, nlohmann::json& log) {
         }
         SDL_free(modes);
     }
-    SDL_SetWindowFullscreen(window, true);
-    SDL_ShowWindow(window);
+    if (!background) {
+        SDL_SetWindowFullscreen(window, true);
+        SDL_ShowWindow(window);
+    }
     SDL_SyncWindow(window);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
     if (renderer == nullptr) {
@@ -611,8 +677,6 @@ void runWindow(const Options& options, nlohmann::json& log) {
         return;
     }
     SDL_SetRenderVSync(renderer, 1);
-    const auto hwnd = static_cast<HWND>(
-        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     log["display"]["current"] = describeMode(SDL_GetCurrentDisplayMode(display));
     log["windowShownMs"] = sinceStart();
 
@@ -630,7 +694,7 @@ void runWindow(const Options& options, nlohmann::json& log) {
                 quit = true;
             }
         }
-        if (frame == 0 && options.stealFocus) {
+        if (frame == 0 && options.stealFocus && !background) {
             SDL_RaiseWindow(window);
         }
         const bool foreground = hwnd != nullptr && GetForegroundWindow() == hwnd;
@@ -653,7 +717,13 @@ void runWindow(const Options& options, nlohmann::json& log) {
         SDL_RenderPresent(renderer);
         ++frame;
     }
-    if (options.inputAtEnd) {
+    if (options.stealFocus && background) {
+        log["stealFocus"] = {{"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+    }
+    if (options.inputAtEnd && background) {
+        // Never input into whatever the user is doing.
+        log["inputAtEnd"] = {{"sent", false}, {"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+    } else if (options.inputAtEnd) {
         // While the window is in the foreground, the tap is its input: the last input event belongs to this
         // process, as when a player presses a key in the emulator.
         std::array<INPUT, 2> tap{};
@@ -668,7 +738,9 @@ void runWindow(const Options& options, nlohmann::json& log) {
         }
         log["inputAtEnd"] = {{"sent", sent == tap.size()}, {"foreground", foreground}};
     }
-    if (options.leaveForegroundWindowMs > 0) {
+    if (options.leaveForegroundWindowMs > 0 && background) {
+        log["foregroundHelper"] = {{"started", false}, {"skipped", "background (RV_LAUNCH_BACKGROUND)"}};
+    } else if (options.leaveForegroundWindowMs > 0) {
         leaveForegroundWindow(options, log);
     }
     log["frames"] = frame;
@@ -685,6 +757,8 @@ void runWindow(const Options& options, nlohmann::json& log) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    // A test program never wants a modal failure dialog, in the background or not.
+    rv::platform_win::disableFailureDialogs();
     std::vector<std::string> args;
     for (int i = 1; i < argc; ++i) {
         args.emplace_back(argv[i] != nullptr ? argv[i] : "");
@@ -739,8 +813,11 @@ int main(int argc, char* argv[]) {
     if (!options.printConsole.empty()) {
         std::array<DWORD, 64> processes{};
         const DWORD count = GetConsoleProcessList(processes.data(), static_cast<DWORD>(processes.size()));
+        // A console started with CREATE_NO_WINDOW has no window at all (GetConsoleWindow is null).
+        const HWND consoleWindow = GetConsoleWindow();
         writeJson(options.printConsole,
                   nlohmann::json{{"hasConsole", count > 0},
+                                 {"hasWindow", consoleWindow != nullptr},
                                  {"processes", std::vector<DWORD>(processes.begin(),
                                                                   processes.begin() + std::min<DWORD>(count, 64))}});
     }
@@ -800,11 +877,14 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(options.sleepMs));
     }
     log["durationMs"] = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
-    log["exit"] = options.crash ? "crash" : (options.hang ? "hang" : "code");
+    log["exit"] = options.crash ? "crash" : (options.abort ? "abort" : (options.hang ? "hang" : "code"));
     log["exitCode"] = options.exitCode;
     writeJson(options.log, log);
     if (options.crash) {
         crashNow();
+    }
+    if (options.abort) {
+        abortNow();
     }
     if (options.hang) {
         hang(options.hangLimitMs);

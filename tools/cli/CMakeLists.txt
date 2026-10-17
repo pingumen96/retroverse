@@ -35,6 +35,7 @@ rv_forbid_link(rv_cli_core)
 add_executable(retroverse-cli src/main.cpp)
 rv_set_target_defaults(retroverse-cli)
 rv_enable_long_paths(retroverse-cli)
-target_link_libraries(retroverse-cli PRIVATE rv_cli_core)
+# rv_platform_win: no failure dialogs when a test runs it (RV_LAUNCH_BACKGROUND).
+target_link_libraries(retroverse-cli PRIVATE rv_cli_core rv_platform_win)
 # The shipped defaults (assets/launcher) are read from the asset root, deployed next to the executable in Release.
 rv_deploy_assets(retroverse-cli)

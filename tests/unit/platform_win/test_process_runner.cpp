@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -25,6 +26,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// After windows.h: the C runtime's report modes (the failure dialogs of rv_tests).
+#include <crtdbg.h>
+#include <stdlib.h>
 
 #include <nlohmann/json.hpp>
 
@@ -34,6 +38,8 @@
 #include <rv/launcher/launch_request.hpp>
 #include <rv/launcher/launch_session.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
+
+#include "support/scoped_environment.hpp"
 
 // The Win32 process runner against real processes: rv_fake_emulator.exe (tests/fake_emulator), started from the
 // directory of this executable in its windowless modes and without a console window (hideConsoleWindow), so nothing
@@ -747,7 +753,144 @@ TEST_CASE("platform_win/process_runner: a console program never shares Retrovers
         const nlohmann::json console = readJson(output);
         const auto processes = console.at("processes").get<std::vector<std::uint32_t>>();
         CHECK(console.at("hasConsole").get<bool>());
+        CHECK_FALSE(console.at("hasWindow").get<bool>()); // CREATE_NO_WINDOW: a console without a window
         CHECK(std::find(processes.begin(), processes.end(), started) != processes.end());
         CHECK(std::find(processes.begin(), processes.end(), GetCurrentProcessId()) == processes.end());
     }
+}
+
+// Background launches (I2 step focus): automated runs never open a console window, never grant the foreground, and the
+// fake emulator's window stays inactive and off-screen, still seen by the runner.
+
+TEST_CASE("platform_win/process_runner: background launches never open a console window",
+          "[platform_win][process_runner][background]") {
+    SECTION("the flags: CREATE_NO_WINDOW whatever the request says") {
+        LaunchRequest shown;
+        const std::uint32_t flags = rv::platform_win::processCreationFlags(shown, true);
+        CHECK((flags & CREATE_NO_WINDOW) != 0);
+        CHECK((flags & CREATE_NEW_CONSOLE) == 0);
+        CHECK((flags & CREATE_SUSPENDED) != 0);
+        CHECK((flags & CREATE_DEFAULT_ERROR_MODE) == 0); // this process's error mode, without dialogs
+        CHECK((rv::platform_win::processCreationFlags(shown, false) & CREATE_NEW_CONSOLE) != 0);
+    }
+    SECTION("RV_LAUNCH_BACKGROUND: set and neither empty nor 0") {
+        using rv::test::ScopedEnvironmentVariable;
+        {
+            const ScopedEnvironmentVariable variable(L"RV_LAUNCH_BACKGROUND", std::nullopt);
+            CHECK_FALSE(rv::platform_win::backgroundLaunchesRequested());
+        }
+        for (const wchar_t* off : {L"", L"0"}) {
+            const ScopedEnvironmentVariable variable(L"RV_LAUNCH_BACKGROUND", std::wstring(off));
+            CHECK_FALSE(rv::platform_win::backgroundLaunchesRequested());
+        }
+        for (const wchar_t* on : {L"1", L"yes", L"a value longer than eight characters"}) {
+            const ScopedEnvironmentVariable variable(L"RV_LAUNCH_BACKGROUND", std::wstring(on));
+            CHECK(rv::platform_win::backgroundLaunchesRequested());
+        }
+    }
+    SECTION("rv_tests itself runs its programs in the background") {
+        // tests/unit/support/background_launches.cpp sets it before main(): no test of this executable can open a
+        // console window or hand the foreground to a program it starts, whoever runs it.
+        CHECK(rv::platform_win::backgroundLaunchesRequested());
+    }
+    SECTION("rv_tests itself shows no failure dialog") {
+        // The same file turns them off (disableFailureDialogs): a failed assertion or abort() of a test reaches
+        // standard error, never a message box that takes the foreground and waits for a click.
+        constexpr UINT kNoDialogs = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX;
+        CHECK((GetErrorMode() & kNoDialogs) == kNoDialogs);
+        CHECK((_set_abort_behavior(0, 0) & (_WRITE_ABORT_MSG | _CALL_REPORTFAULT)) == 0);
+        CHECK(_set_error_mode(_REPORT_ERRMODE) == _OUT_TO_STDERR);
+#if defined(_DEBUG)
+        CHECK(_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_REPORT_MODE) == (_CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG));
+        CHECK(_CrtSetReportMode(_CRT_ERROR, _CRTDBG_REPORT_MODE) == (_CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG));
+#endif
+    }
+    SECTION("a console program whose request shows its console gets one without a window") {
+        REQUIRE_FAKE_EMULATOR();
+        ScratchDir scratch;
+        const std::filesystem::path output = scratch.path() / "console.json";
+        rv::platform_win::Win32ProcessRunner runner(rv::platform_win::Win32ProcessRunnerOptions{.background = true});
+        WakeSignal wake;
+        LaunchRequest request = fakeRequest({"--print-console", rv::core::pathToUtf8(output)});
+        request.hideConsoleWindow = false;
+        LaunchSession session(request, runner);
+        session.start(LaunchClock::now(), {wake.callback()});
+        REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+        CHECK(session.state() == SessionState::Returned);
+        CHECK(runner.lastStart().background);
+        CHECK_FALSE(runner.lastStart().foregroundAllowed);
+        const nlohmann::json console = readJson(output);
+        CHECK(console.at("hasConsole").get<bool>());
+        CHECK_FALSE(console.at("hasWindow").get<bool>());
+    }
+}
+
+TEST_CASE("platform_win/process_runner: in the background a program missing a DLL ends without the loader's dialog",
+          "[platform_win][process_runner][background]") {
+    REQUIRE_FAKE_EMULATOR();
+    ScratchDir scratch;
+    // The fake alone, without the DLLs beside it in the build's folder, and a PATH that cannot find them either:
+    // Windows' loader fails it with STATUS_DLL_NOT_FOUND, and with the default error mode it would first show a modal
+    // "system error" box naming the DLL.
+    const std::filesystem::path copy = scratch.path() / "rv_fake_emulator.exe";
+    std::filesystem::copy_file(fakeEmulator(), copy);
+    std::array<wchar_t, MAX_PATH> system{};
+    REQUIRE(GetSystemDirectoryW(system.data(), static_cast<UINT>(system.size())) != 0);
+    const rv::test::ScopedEnvironmentVariable path(L"PATH", std::wstring(system.data()));
+    rv::platform_win::Win32ProcessRunner runner(rv::platform_win::Win32ProcessRunnerOptions{.background = true});
+    WakeSignal wake;
+    LaunchRequest request = fakeRequest({"--exit-code", "0"});
+    request.executable = copy;
+    LaunchSession session(request, runner);
+    session.start(LaunchClock::now(), {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }, 30s));
+    CHECK(session.outcome().exitCode == 0xC0000135u); // STATUS_DLL_NOT_FOUND, no dialog waited for
+    CHECK((GetErrorMode() & SEM_FAILCRITICALERRORS) != 0);
+}
+
+TEST_CASE("platform_win/process_runner: a failed assertion and abort() of a program end it without a dialog",
+          "[platform_win][process_runner][background]") {
+    REQUIRE_FAKE_EMULATOR();
+    // The fake turns failure dialogs off as the product's programs do when a test runs them (disableFailureDialogs): in
+    // a Debug build the failed _ASSERTE would otherwise show the C runtime's "Debug Assertion Failed" box, and abort()
+    // its own box and error reporting, each over the user's work until clicked. --exit-timeout-ms ends it if one did.
+    rv::platform_win::Win32ProcessRunner runner(rv::platform_win::Win32ProcessRunnerOptions{.background = true});
+    WakeSignal wake;
+    LaunchRequest request = fakeRequest({"--abort", "--exit-timeout-ms", "30000"});
+    LaunchSession session(request, runner);
+    session.start(LaunchClock::now(), {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }, 40s));
+    CHECK(session.outcome().exitCode == 3u); // abort()'s exit code, not --exit-timeout-ms's 124
+}
+
+TEST_CASE("platform_win/process_runner: in the background the fake's window is seen but never takes the foreground",
+          "[platform_win][process_runner][background]") {
+    REQUIRE_FAKE_EMULATOR();
+    ScratchDir scratch;
+    const std::filesystem::path logFile = scratch.path() / "window.json";
+    // The fake reads the variable this executable has set (tests/unit/support/background_launches.cpp).
+    REQUIRE(rv::platform_win::backgroundLaunchesRequested());
+    rv::platform_win::Win32ProcessRunner runner;
+    WakeSignal wake;
+    // Every foreground option asked for: in the background each is skipped, and its window is off every monitor.
+    LaunchRequest request =
+        fakeRequest({"--frames", "30", "--steal-focus", "--input-at-end", "--leave-foreground-window", "1000",
+                     "--exit-timeout-ms", "30000", "--log", rv::core::pathToUtf8(logFile)});
+    request.timeouts.windowTimeout = 20s;
+    LaunchSession session(request, runner);
+    session.start(LaunchClock::now(), {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+    CHECK(session.state() == SessionState::Returned);
+    CHECK(runner.lastStart().background);
+    CHECK(session.times().firstWindow.has_value()); // the runner's window detection still sees it
+    const nlohmann::json log = readJson(logFile);
+    INFO(log.dump(2));
+    CHECK(log.at("background").get<bool>());
+    CHECK(log.at("frames").get<int>() == 30);
+    CHECK(log.at("foreground").at("firstMs").is_null());
+    CHECK_FALSE(log.at("foreground").at("atEnd").get<bool>());
+    CHECK_FALSE(log.at("inputAtEnd").at("sent").get<bool>());
+    CHECK(log.at("inputAtEnd").contains("skipped"));
+    CHECK(log.at("stealFocus").contains("skipped"));
+    CHECK_FALSE(log.at("foregroundHelper").at("started").get<bool>());
 }

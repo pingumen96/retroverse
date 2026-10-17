@@ -108,13 +108,14 @@ fs::path buildFake() {
 }
 
 /// An emulator profile of the fake (or another executable) serving gb, snes and psx, without a window timeout (the
-/// fake runs windowless).
+/// fake runs windowless) and without a console window (as RV_LAUNCH_BACKGROUND would start it anyway).
 json profile(std::string_view id, const fs::path& executable, std::vector<std::string> arguments,
              json variables = json::object()) {
     return json{{"id", id},
                 {"executable", utf8(executable)},
                 {"arguments", std::move(arguments)},
                 {"windowTimeoutSeconds", 0},
+                {"hideConsoleWindow", true},
                 {"variables", std::move(variables)},
                 {"systems", {{"gb", json::object()}, {"snes", json::object()}, {"psx", json::object()}}}};
 }

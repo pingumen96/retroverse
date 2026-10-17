@@ -12,6 +12,7 @@
 #include <rv/core/main_thread.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 
 namespace {
 
@@ -36,6 +37,10 @@ int runCli(const std::vector<std::string>& arguments) {
 int wmain(int argc, wchar_t* argv[]) {
     const rv::cli::ConsoleSession console;
     rv::core::markMainThread();
+    // Started by a test (RV_LAUNCH_BACKGROUND): no failure dialog (the loader's, the crash or the C runtime's).
+    if (rv::platform_win::backgroundLaunchesRequested()) {
+        rv::platform_win::disableFailureDialogs();
+    }
     std::vector<std::string> arguments;
     try {
         for (int i = 1; i < argc; ++i) {

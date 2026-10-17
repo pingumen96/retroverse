@@ -1012,6 +1012,10 @@ std::optional<SpikeOptions> parseOptions(int argc, char** argv, int& exitCode) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    // Started by a test (RV_LAUNCH_BACKGROUND): no failure dialog (the loader's, the crash or the C runtime's).
+    if (rv::platform_win::backgroundLaunchesRequested()) {
+        rv::platform_win::disableFailureDialogs();
+    }
     int exitCode = kExitOk;
     std::optional<SpikeOptions> options = parseOptions(argc, argv, exitCode);
     if (!options) {

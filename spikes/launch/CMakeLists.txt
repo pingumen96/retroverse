@@ -7,7 +7,8 @@
 #                       return, a JSON report
 #   spike_launch_tests  unit tests of spike_launch_core (label "unit")
 # ctest cases labeled "desktop" run spike_launch against the fake emulator: they show fullscreen windows and move the
-# foreground, so only the msvc-x64-debug-desktop test preset runs them.
+# foreground, so only the msvc-x64-debug-desktop test preset runs them, with RV_LAUNCH_BACKGROUND=0 (the fake emulator
+# then shows its windows and takes the foreground as asked).
 
 add_library(spike_launch_core STATIC
     core/src/measurements.cpp
@@ -72,7 +73,8 @@ function(_rv_launch_spike_register_tests)
         add_test(NAME "desktop.launch.${name}"
             COMMAND spike_launch --target fake ${parts} --data-dir "${data_dir}" --warmup-ms 1000 --settle-ms 1200
             WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-        set_tests_properties("desktop.launch.${name}" PROPERTIES LABELS desktop TIMEOUT 300 RUN_SERIAL TRUE)
+        set_tests_properties("desktop.launch.${name}" PROPERTIES LABELS desktop TIMEOUT 300 RUN_SERIAL TRUE
+            ENVIRONMENT "RV_LAUNCH_BACKGROUND=0")
     endforeach()
 endfunction()
 _rv_launch_spike_register_tests()

@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <exception>
@@ -25,6 +26,8 @@
 
 #include <rv/platform_win/win32_util.hpp>
 
+// After windows.h: the C runtime's debug reports (disableFailureDialogs).
+#include <crtdbg.h>
 // After windows.h (win32_util.hpp): NtQuerySystemInformation and SYSTEM_PROCESS_INFORMATION (ntdll).
 #include <winternl.h>
 
@@ -723,12 +726,50 @@ std::vector<launcher::EnvironmentVariable> currentEnvironment() {
     return variables;
 }
 
-std::uint32_t processCreationFlags(const launcher::LaunchRequest& request) noexcept {
+namespace {
+
+/// How far left of the virtual screen a GUI program started in the background opens its first window: wider than any
+/// window it could open there, short of the -32000 where Windows parks minimized windows.
+constexpr int kBackgroundWindowOffset = 8000;
+
+} // namespace
+
+void disableFailureDialogs() noexcept {
+    static const bool disabled = [] {
+        // The loader's and the crash dialogs; programs started without CREATE_DEFAULT_ERROR_MODE inherit the mode, so
+        // that one that misses a DLL (STATUS_DLL_NOT_FOUND) or crashes ends with its status.
+        SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+        // The C runtime's own message boxes, which the error mode does not cover (task-modal, MB_SETFOREGROUND: the
+        // run would also block until a timeout). The report modes exist in Debug builds only (no-ops in Release).
+        _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+        _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+        _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+        _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+        _set_error_mode(_OUT_TO_STDERR);
+        _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+        return true;
+    }();
+    static_cast<void>(disabled);
+}
+
+bool backgroundLaunchesRequested() noexcept {
+    try {
+        const std::optional<std::string> value = launcher::processEnvironmentVariable(kLaunchBackgroundVariable);
+        return value.has_value() && !value->empty() && *value != "0";
+    } catch (...) {
+        return false; // out of memory reading it: the product's behaviour
+    }
+}
+
+std::uint32_t processCreationFlags(const launcher::LaunchRequest& request, bool background) noexcept {
     // A console program gets a console of its own, as when a GUI program such as ES-DE starts it, windowless on
-    // request: never Retroverse's console, whose closing (CTRL_CLOSE_EVENT) or Ctrl+Break would reach every process
-    // attached to it. Both flags are ignored for GUI programs.
-    DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_DEFAULT_ERROR_MODE | CREATE_NEW_PROCESS_GROUP |
-                  (request.hideConsoleWindow ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE);
+    // request and in the background (a console window would be activated over whatever the user is doing): never
+    // Retroverse's console, whose closing (CTRL_CLOSE_EVENT) or Ctrl+Break would reach every process attached to it.
+    // Both flags are ignored for GUI programs. In the background the program inherits this process's error mode
+    // (disableFailureDialogs) instead of the default one, which shows the loader's and the crash dialogs.
+    DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP |
+                  (background ? 0 : CREATE_DEFAULT_ERROR_MODE) |
+                  (request.hideConsoleWindow || background ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE);
     if (!request.outputLog.empty()) {
         flags |= EXTENDED_STARTUPINFO_PRESENT;
     }
@@ -894,8 +935,22 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     std::array<HANDLE, 2> inheritedHandles{};
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(STARTUPINFOW);
-    const DWORD flags = processCreationFlags(request);
+    // In the background (automated runs): no console window; a GUI program's first window, when the program lets
+    // Windows place it (CW_USEDEFAULT) and show it (its first ShowWindow), opens inactive and left of every monitor,
+    // as rv_fake_emulator's background window: still a visible window for the window detection, never one the user
+    // sees, and no minimized window in the taskbar. A program that places or activates its window itself is a desktop
+    // test's (focus_watch.py reports it).
+    const bool background = m_options.background.value_or(backgroundLaunchesRequested());
+    const DWORD flags = processCreationFlags(request, background);
     BOOL inheritHandles = FALSE;
+    if (background) {
+        startup.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW | STARTF_USEPOSITION;
+        startup.StartupInfo.wShowWindow = SW_SHOWNOACTIVATE;
+        // dwX and dwY are read back as signed coordinates.
+        startup.StartupInfo.dwX = static_cast<DWORD>(GetSystemMetrics(SM_XVIRTUALSCREEN) - kBackgroundWindowOffset);
+        startup.StartupInfo.dwY = static_cast<DWORD>(GetSystemMetrics(SM_YVIRTUALSCREEN));
+        disableFailureDialogs();
+    }
     if (!request.outputLog.empty()) {
         if (auto opened = openOutputLog(request.outputLog, *commandLineUtf8, output, input); !opened) {
             return propagate(opened.error());
@@ -911,7 +966,7 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
                              "UpdateProcThreadAttribute failed: " + lastErrorMessage());
         }
         startup.StartupInfo.cb = sizeof(STARTUPINFOEXW);
-        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
         startup.StartupInfo.hStdInput = input.get();
         startup.StartupInfo.hStdOutput = output.get();
         startup.StartupInfo.hStdError = output.get();
@@ -970,7 +1025,9 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
             job.reset();
             port.reset();
         }
-        if (m_options.allowSetForeground) {
+        if (background) {
+            foregroundError = "not asked for: started in the background";
+        } else if (m_options.allowSetForeground) {
             foregroundAllowed = AllowSetForegroundWindow(info.dwProcessId) != FALSE;
             if (!foregroundAllowed) {
                 foregroundError = lastErrorMessage();
@@ -1005,14 +1062,17 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
         m_lastStart.jobError = jobError;
         m_lastStart.foregroundAllowed = foregroundAllowed;
         m_lastStart.foregroundError = foregroundError;
+        m_lastStart.background = background;
         m_lastStart.commandLine = *commandLineUtf8;
         m_lastStart.startDuration =
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begin);
-        spdlog::info("Started process {} in {:.1f} ms ({}; AllowSetForegroundWindow {})", info.dwProcessId,
+        spdlog::info("Started process {} in {:.1f} ms ({}; {})", info.dwProcessId,
                      static_cast<double>(m_lastStart.startDuration.count()) / 1000.0,
                      m_lastStart.jobAssigned ? std::string("process tree followed")
                                              : "process tree not followed: " + jobError,
-                     foregroundAllowed ? std::string("granted") : "refused: " + foregroundError);
+                     background          ? std::string("in the background: RV_LAUNCH_BACKGROUND")
+                     : foregroundAllowed ? std::string("AllowSetForegroundWindow granted")
+                                         : "AllowSetForegroundWindow refused: " + foregroundError);
     } catch (...) {
         m_lastStart.processId = info.dwProcessId;
     }
