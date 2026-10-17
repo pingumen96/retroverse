@@ -464,6 +464,32 @@ TEST_CASE("catalog_db/import: the standard fixture's search index, bulk or by th
     CHECK(rv::catalog_db::checkDatabase(*rowByRow.database).value().passed());
 }
 
+TEST_CASE("catalog_db/import: the user's custom systems are imported like any other (SC-11)",
+          "[catalog_db][import][fixture]") {
+    const rv::test::Fixture fixture = materializeSettled("esde/custom-systems");
+    const rv::test::TempDir dir("rv-import-custom");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::esde::profileOf(fixture);
+    const ImportResult first = importFixture(catalog, profile);
+    CHECK(first.changes.total().added > 0);
+    // homebrew, a system of the user's own, and gb as the custom file replaces it.
+    const std::vector<SystemInfo> systems = catalog.store->systems(LibraryId()).value();
+    const auto homebrew = std::find_if(systems.begin(), systems.end(),
+                                       [](const SystemInfo& system) { return system.name.str() == "homebrew"; });
+    REQUIRE(homebrew != systems.end());
+    CHECK(changesOf(first.changes, "homebrew").added == rowsOf(catalog, "homebrew").size());
+    CHECK_FALSE(rowsOf(catalog, "homebrew").empty());
+    const auto gb = std::find_if(systems.begin(), systems.end(),
+                                 [](const SystemInfo& system) { return system.name.str() == "gb"; });
+    REQUIRE(gb != systems.end());
+    CHECK(gb->fullName == "Game Boy (custom)");
+    // Its media root is ES-DE's default, which is not there: unknown, never "no media".
+    CHECK(first.statistics.mediaUnknown == first.changes.total().added);
+    const ImportResult second = importFixture(catalog, profile);
+    CHECK(second.statistics.entriesWritten == 0);
+    CHECK(second.statistics.identitiesWritten == 0);
+}
+
 TEST_CASE("catalog_db/import: the long-path fixture", "[catalog_db][import][fixture]") {
     const rv::test::Fixture fixture = materializeSettled("esde/long-path");
     const std::string folders = "A Very Long Folder Name Made To Exceed The Classic Windows Path Limit Of Two Hundred "

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -142,6 +143,8 @@ private:
     LookupKeyVersion m_keyVersion;
     std::vector<IndexedDiscGroup> m_storedGroups;
     LibrarySnapshot m_snapshot;
+    /// The snapshot's entries with a key, by system (indices into m_snapshot.entries); readSystem() takes them.
+    std::map<SystemName, std::vector<std::size_t>> m_entriesBySystem;
     /// Per snapshot entry: its media, nothing when presence() could not know them.
     std::vector<std::optional<EntryMedia>> m_entryMedia;
     std::vector<GameId> m_taken; ///< ascending
@@ -227,13 +230,10 @@ Expected<SystemPlan> ImportRun::readSystem(const SystemName& name, const std::ve
             plan.groups.push_back(group);
         }
     }
-    for (std::size_t i = 0; i < m_snapshot.entries.size(); ++i) {
-        const CatalogEntry& entry = m_snapshot.entries[i];
-        if (entry.system == name && !entry.key.empty()) {
-            plan.entries.push_back(i);
-        }
+    if (const auto found = m_entriesBySystem.find(name); found != m_entriesBySystem.end()) {
+        plan.entries = std::move(found->second);
     }
-    // The snapshot holds each system's entries in entryOrder(), the import relies on it.
+    // The snapshot holds each system's entries in entryOrder(); the matching and the GameIds rely on it.
     std::sort(plan.entries.begin(), plan.entries.end(), [&](std::size_t a, std::size_t b) {
         return entryOrder(m_snapshot.entries[a], m_snapshot.entries[b]);
     });
@@ -816,6 +816,12 @@ Expected<ImportResult> ImportRun::run() {
     m_snapshot = std::move(*snapshot);
     statistics.entries = m_snapshot.entries.size();
     statistics.loadTime = Clock::now() - start;
+    for (std::size_t i = 0; i < m_snapshot.entries.size(); ++i) {
+        const CatalogEntry& entry = m_snapshot.entries[i];
+        if (!entry.key.empty()) {
+            m_entriesBySystem[entry.system].push_back(i);
+        }
+    }
     for (const SystemName& name : m_options.systems) {
         if (m_snapshot.findSystem(name) == nullptr) {
             return makeError(ErrorCode::InvalidArgument, "the library gives no system of that name", name.str());
