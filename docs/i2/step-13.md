@@ -276,11 +276,12 @@ list's first game (the chips), then `ui_up` again.
 - **Input scripts and the model**: `"text"` steps (typed once on `fromFrame`, joined per frame, the refusals);
   `QuickCatalogModel::reread()` (the same list and selection, other data, the revisions).
 
-Results (the reference machine, 2026-10-17; this worktree's builds the only other work): `msvc-x64-debug` and
-`msvc-x64-release` build without a warning; `./scripts/test.ps1 -Preset msvc-x64-debug-gpu` passes 1,290 of 1,290
-(1,262 unit, 28 gpu; the catalog cases 7.4, 5.9 and 5.4 s; golden G01 within tolerance) and `msvc-x64-release-gpu`
-1,288 of 1,288 (1,262 unit, 26 gpu; the catalog cases 4.6, 2.3 and 1.7 s; golden G01). The step's unit tests are 17
-test cases (`[catalog_worker]` 10, `[catalog_sessions]` 7), about 5 s in Debug, most of it the fixture's imports.
+Results after the review's fixes (the reference machine, 2026-10-17; this worktree's builds the only other work):
+`msvc-x64-debug` and `msvc-x64-release` build without a warning; `./scripts/test.ps1 -Preset msvc-x64-debug-gpu`
+passes 1,294 of 1,294 (1,265 unit, 29 gpu; the catalog cases 6.6, 5.0, 9.7 and 4.6 s; golden G01 within tolerance) and
+`msvc-x64-release-gpu` 1,292 of 1,292 (1,265 unit, 27 gpu; the catalog cases 4.9, 2.0, 3.7 and 1.6 s; golden G01).
+The step's unit tests are 20 test cases (`[catalog_worker]` 13, `[catalog_sessions]` 7), about 6 s in Debug, most of it
+the fixture's imports.
 
 ## NFR-01 (Release)
 
@@ -293,16 +294,17 @@ started twice, hidden, without vsync and without `--fixed-dt`, the quick catalog
 
 | | Run 1 | Run 2 |
 |---|---|---|
-| Catalog opened on the worker (database, `closeInterrupted`, `systems()`, ES-DE's configuration, 48 systems' readiness) | 785 ms | 727 ms |
-| First list (every game, Title order, 90,246 ids) | 1,452 ms | 1,391 ms |
-| **First page shown (NFR-01: within 5,000 ms)** | **1,467 ms** | **1,404 ms** |
-| Page fetches on the main thread (rows entering the window) | 178: p50 0.12, p95 0.23, p99 0.42, max 0.56 ms | 171: p50 0.12, p95 0.20, p99 0.34, max 0.46 ms |
-| Frames while the catalog showed games (the test room behind it, no vsync) | 6,097: p50 1.80, p95 2.63, p99 5.86, max 14.1 ms | 6,097: p50 1.78, p95 2.33, p99 5.21, max 32.5 ms |
+| Catalog opened on the worker (database, `closeInterrupted`, `systems()`, ES-DE's configuration, 48 systems' readiness) | 580 ms | 573 ms |
+| First list (every game, Title order, 90,246 ids: materialized with the opening) | 602 ms | 596 ms |
+| **First page shown (NFR-01: within 5,000 ms)** | **1,089 ms** | **1,064 ms** |
+| Page fetches on the main thread (rows entering the window) | 131: p50 0.10, p95 0.18, p99 0.22, max 0.35 ms | 131: p50 0.10, p95 0.16, p99 0.20, max 0.34 ms |
+| Frames while the catalog showed games (the test room behind it, no vsync) | 6,099: p50 1.44, p95 1.66, p99 4.56, max 22.9 ms | 6,099: p50 1.46, p95 1.59, p99 4.36, max 21.9 ms |
 
-Snapshots of the ES-DE home and install (hashed), the ROM and media roots (listed): **0 differences among 542,082
-entries**. An earlier run with a shorter scroll gave 1,571 and 1,384 ms for the first page. The first list arrives about
-0.65 s after the catalog opened because its query is asked when ProductUi is made, after the scene's procedural surfaces
-(the worker itself starts before them); the list's read is 30 to 50 ms (step 9). The frame maxima are single frames (a
+The import took 13.9 s. Snapshots of the ES-DE home and install (hashed), the ROM and media roots (listed): **0
+differences among 542,082 entries**. Before the review's fixes the first list was asked only once ProductUi existed,
+after the scene's procedural surfaces: first list 1,452 and 1,391 ms, first page 1,467 and 1,404 ms (catalog opened
+785 and 727 ms; another run gave 1,571 and 1,384 ms for the first page). Now the list comes with the opening (the
+list's read is 20 to 50 ms, step 9) and the first page follows the scene's loading, which no frame precedes. The frame maxima are single frames (a
 card laid out again, the window's rows bound at End); ADR-0005's per-change figures are step 6's. Informative: the gate
 measures on a quiet machine.
 
@@ -399,7 +401,7 @@ Two reviews of the committed step; every finding was verified in the code before
 | S13-UX-2: long system names squeeze the titles of the rows | real | the platform and year take at most 45% of a row (40% compact), the platform ending in an ellipsis, the year always shown |
 | S13-UX-3: "Nessun gioco nel catalogo" before the first list | real | the notice stays `opening` until the first list is shown |
 | S13-PERF-1: unbounded lockstep waits | real | F1 and F4, and the wait bounded to 10 s between two frames (a warning, the frame rendered) |
-| S13-PERF-2: the first list asked only once ProductUi exists | partly adopted | the default list is materialized with the opening and served to the first query (no round trip; queries asked while opening are held). Making the screen itself before the scene's surfaces was not done: no frame is rendered before the scene is ready, so the first page still follows the scene's loading, which is most of NFR-01's time and well inside its 5 s |
+| S13-PERF-2: the first list asked only once ProductUi exists | partly adopted | the default list is materialized with the opening and served to the first query (no round trip; queries asked while opening are held): the first page in 1,089 and 1,064 ms instead of 1,467 and 1,404 ms. Making the screen itself before the scene's surfaces was not done: no frame is rendered before the scene is ready, so the first page still follows the scene's loading, which is most of NFR-01's time and well inside its 5 s |
 
 ## For the merge
 
