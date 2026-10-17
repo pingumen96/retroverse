@@ -36,7 +36,10 @@ struct Win32ProcessRunnerOptions {
     /// Starts every program in the background: a console program without a console window (CREATE_NO_WINDOW, as for
     /// LaunchRequest::hideConsoleWindow), a GUI program told to show its first window minimized and inactive
     /// (STARTF_USESHOWWINDOW with SW_SHOWMINNOACTIVE, which a program that shows its window as Windows tells it
-    /// follows), and no AllowSetForegroundWindow. nullopt: as RV_LAUNCH_BACKGROUND says when start() is called.
+    /// follows), no AllowSetForegroundWindow, and an error mode without dialogs: this process's error mode gets
+    /// SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX and SEM_NOOPENFILEERRORBOX (once), which the program inherits
+    /// instead of the default one (a missing DLL or a crash ends it with its status, no modal dialog appears).
+    /// nullopt: as RV_LAUNCH_BACKGROUND says when start() is called.
     std::optional<bool> background;
 };
 
@@ -67,12 +70,12 @@ struct Win32StartInfo {
 ///    environment overrides, a Unicode environment block (launcher::mergeEnvironment of Retroverse's own);
 ///  - flags (processCreationFlags()) CREATE_SUSPENDED (nothing runs before the process is in its job),
 ///    CREATE_UNICODE_ENVIRONMENT, CREATE_DEFAULT_ERROR_MODE (the program gets the default error mode, not
-///    Retroverse's), CREATE_NEW_PROCESS_GROUP, and a console of its own for a console program: CREATE_NEW_CONSOLE, or
-///    CREATE_NO_WINDOW for LaunchRequest::hideConsoleWindow and for background launches (never Retroverse's console,
-///    whose closing or Ctrl+Break would end it; ignored for GUI programs);
+///    Retroverse's; not for background launches), CREATE_NEW_PROCESS_GROUP, and a console of its own for a console
+///    program: CREATE_NEW_CONSOLE, or CREATE_NO_WINDOW for LaunchRequest::hideConsoleWindow and for background launches
+///    (never Retroverse's console, whose closing or Ctrl+Break would end it; ignored for GUI programs);
 ///  - for background launches only (Win32ProcessRunnerOptions::background, RV_LAUNCH_BACKGROUND: automated runs),
-///    STARTF_USESHOWWINDOW with SW_SHOWMINNOACTIVE: a GUI program that shows its first window as Windows tells it shows
-///    it minimized and inactive;
+///    STARTF_USESHOWWINDOW with SW_SHOWMINNOACTIVE (a GUI program that shows its first window as Windows tells it shows
+///    it minimized and inactive) and this process's error mode without dialogs, inherited;
 ///  - standard output and error appended to LaunchRequest::outputLog when set, standard input from NUL; only those two
 ///    handles are inherited (PROC_THREAD_ATTRIBUTE_HANDLE_LIST), nothing else of Retroverse's;
 ///  - the suspended process is assigned to a job object WITHOUT JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (closing Retroverse,

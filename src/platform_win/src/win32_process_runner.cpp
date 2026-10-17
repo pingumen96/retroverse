@@ -723,6 +723,21 @@ std::vector<launcher::EnvironmentVariable> currentEnvironment() {
     return variables;
 }
 
+namespace {
+
+/// For background launches, once per process: this process's error mode fails critical errors and shows no fault
+/// dialog, and the programs it starts inherit it (no CREATE_DEFAULT_ERROR_MODE), so that a program that misses a DLL
+/// (STATUS_DLL_NOT_FOUND) or crashes ends with its status instead of a modal dialog over the user's work.
+void setBackgroundErrorMode() noexcept {
+    static const bool set = [] {
+        SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+        return true;
+    }();
+    static_cast<void>(set);
+}
+
+} // namespace
+
 bool backgroundLaunchesRequested() noexcept {
     try {
         const std::optional<std::string> value = launcher::processEnvironmentVariable(kLaunchBackgroundVariable);
@@ -736,8 +751,10 @@ std::uint32_t processCreationFlags(const launcher::LaunchRequest& request, bool 
     // A console program gets a console of its own, as when a GUI program such as ES-DE starts it, windowless on
     // request and in the background (a console window would be activated over whatever the user is doing): never
     // Retroverse's console, whose closing (CTRL_CLOSE_EVENT) or Ctrl+Break would reach every process attached to it.
-    // Both flags are ignored for GUI programs.
-    DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_DEFAULT_ERROR_MODE | CREATE_NEW_PROCESS_GROUP |
+    // Both flags are ignored for GUI programs. In the background the program inherits this process's error mode
+    // (setBackgroundErrorMode) instead of the default one, which shows the loader's and the crash dialogs.
+    DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP |
+                  (background ? 0 : CREATE_DEFAULT_ERROR_MODE) |
                   (request.hideConsoleWindow || background ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE);
     if (!request.outputLog.empty()) {
         flags |= EXTENDED_STARTUPINFO_PRESENT;
@@ -911,6 +928,7 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
     if (background) {
         startup.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW;
         startup.StartupInfo.wShowWindow = SW_SHOWMINNOACTIVE;
+        setBackgroundErrorMode();
     }
     if (!request.outputLog.empty()) {
         if (auto opened = openOutputLog(request.outputLog, *commandLineUtf8, output, input); !opened) {

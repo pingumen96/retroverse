@@ -14,7 +14,8 @@
       3. it snapshots the ES-DE home and install folder (configuration-like files hashed) and the ROM and media roots
          (their folder listings only: sizes and times, no file opened) with scripts/snapshot_tree.py;
       4. it runs build/<preset>/bin/rv_tests.exe with the tag filter (default "[real-library]"), the RV_REAL_*
-         variables set for it only (Release by default: build it first, ./scripts/build.ps1 -Preset msvc-x64-release);
+         variables and RV_LAUNCH_BACKGROUND=1 set for it only (Release by default: build it first, ./scripts/build.ps1
+         -Preset msvc-x64-release);
       5. it snapshots again and compares: any added, removed or changed file or folder is a failure.
     Everything it writes goes to build/real-library/ (the snapshots, the test log). The library is only read.
     Exit codes: 0 the tests passed and nothing changed; 1 a test failed or a snapshot differs; 2 it could not run (ES-DE
@@ -102,6 +103,8 @@ $variables = [ordered]@{
     RV_REAL_ROM_ROOT      = $RomRoot
     RV_REAL_MEDIA_ROOT    = $MediaRoot
     RV_REAL_RETROARCH_EXE = $RetroArchExe
+    # Automated: whatever a test starts runs in the background, never taking the foreground (rv_tests sets it too).
+    RV_LAUNCH_BACKGROUND  = '1'
 }
 $saved = @{}
 foreach ($name in $variables.Keys) {

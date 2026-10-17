@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -766,6 +767,7 @@ TEST_CASE("platform_win/process_runner: background launches never open a console
         CHECK((flags & CREATE_NO_WINDOW) != 0);
         CHECK((flags & CREATE_NEW_CONSOLE) == 0);
         CHECK((flags & CREATE_SUSPENDED) != 0);
+        CHECK((flags & CREATE_DEFAULT_ERROR_MODE) == 0); // this process's error mode, without dialogs
         CHECK((rv::platform_win::processCreationFlags(shown, false) & CREATE_NEW_CONSOLE) != 0);
     }
     SECTION("RV_LAUNCH_BACKGROUND: set and neither empty nor 0") {
@@ -806,6 +808,29 @@ TEST_CASE("platform_win/process_runner: background launches never open a console
         CHECK(console.at("hasConsole").get<bool>());
         CHECK_FALSE(console.at("hasWindow").get<bool>());
     }
+}
+
+TEST_CASE("platform_win/process_runner: in the background a program missing a DLL ends without the loader's dialog",
+          "[platform_win][process_runner][background]") {
+    REQUIRE_FAKE_EMULATOR();
+    ScratchDir scratch;
+    // The fake alone, without the DLLs beside it in the build's folder, and a PATH that cannot find them either:
+    // Windows' loader fails it with STATUS_DLL_NOT_FOUND, and with the default error mode it would first show a modal
+    // "system error" box naming the DLL.
+    const std::filesystem::path copy = scratch.path() / "rv_fake_emulator.exe";
+    std::filesystem::copy_file(fakeEmulator(), copy);
+    std::array<wchar_t, MAX_PATH> system{};
+    REQUIRE(GetSystemDirectoryW(system.data(), static_cast<UINT>(system.size())) != 0);
+    const rv::test::ScopedEnvironmentVariable path(L"PATH", std::wstring(system.data()));
+    rv::platform_win::Win32ProcessRunner runner(rv::platform_win::Win32ProcessRunnerOptions{.background = true});
+    WakeSignal wake;
+    LaunchRequest request = fakeRequest({"--exit-code", "0"});
+    request.executable = copy;
+    LaunchSession session(request, runner);
+    session.start(LaunchClock::now(), {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }, 30s));
+    CHECK(session.outcome().exitCode == 0xC0000135u); // STATUS_DLL_NOT_FOUND, no dialog waited for
+    CHECK((GetErrorMode() & SEM_FAILCRITICALERRORS) != 0);
 }
 
 TEST_CASE("platform_win/process_runner: in the background the fake's window is seen but never takes the foreground",
