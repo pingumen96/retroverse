@@ -89,6 +89,15 @@ TEST_CASE("app/game_session_document: a text for every phase, outcome code and r
         INFO(reason);
         CHECK(contains(rml, "code == 'left-running' && reason == '" + std::string(reason) + "'"));
     }
+    // A game of the ES-DE catalog that is not ready (I2 step 13): a title, a text per readiness (a fallback for the
+    // others, "unresolved" among them), its blocker's words on the "Dettagli" line.
+    CHECK(contains(rml, "<h1 data-if=\"code == '" + std::string(lo::kNotReady) + "'\">"));
+    for (const std::string_view readiness :
+         {"source-unavailable", "rom-missing", "requires-configuration", "emulator-not-found", "core-not-found"}) {
+        INFO(readiness);
+        CHECK(contains(rml, "code == 'not-ready' && reason == '" + std::string(readiness) + "'"));
+    }
+    CHECK(contains(rml, "(code == 'not-ready' && detail != '')"));
     // ADR-0006's hint for a quick exit and for processes left in the tree: the profile must wait for the process tree.
     CHECK(contains(rml, "\"wait\": \"tree\""));
     // The runner's and the plan's own words never sit inside an Italian sentence: they show apart.

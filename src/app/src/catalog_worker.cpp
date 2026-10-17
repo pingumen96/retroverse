@@ -195,8 +195,11 @@ private:
                              ? std::string()
                              : fmt::format(", {} play session(s) closed as interrupted", opened.interrupted.size()));
         } else {
-            spdlog::info("Catalog not opened ({}){}", toString(m_state),
-                         opened.error ? ": " + opened.error->toString() : std::string());
+            // The error names the user's folders (the library's, the data directory): at debug level only.
+            spdlog::info("Catalog not opened: {}", toString(m_state));
+            if (opened.error) {
+                spdlog::debug("Catalog not opened: {}", opened.error->toString());
+            }
         }
         m_shared->post([&](CatalogResults& results) { results.opened = std::move(opened); });
     }

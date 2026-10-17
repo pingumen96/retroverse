@@ -79,9 +79,11 @@ inline constexpr std::array<std::string_view, 6> kReadinessKeys{"source-unavaila
                                                                  "requires-configuration", "emulator-not-found",
                                                                  "core-not-found", "ready"};
 /// The blocker codes (CatalogEntry::blocker) the card explains in a sentence of its own: every code rv_catalog's launch
-/// resolution and rv_esde's launch translation report (docs/i2/step-10.md). A code the document does not name shows its
-/// readiness's sentence and the "Dettagli" line alone.
-inline constexpr std::array<std::string_view, 31> kBlockerCodes{
+/// resolution and rv_esde's launch translation report (docs/i2/step-10.md), and the app's own (system-not-configured,
+/// library-unreadable: ES-DE's configuration cannot be read). A code the document does not name shows its readiness's
+/// sentence and the "Dettagli" line alone.
+inline constexpr std::array<std::string_view, 32> kBlockerCodes{
+    "library-unreadable",
     "source-unavailable",    "rom-missing",          "rom-folder-unresolved", "rom-root-unknown",
     "system-unknown",        "system-not-configured", "no-command",           "choice-stale",
     "profile-unknown",       "profile-template",     "profile-variable-missing", "profile-invalid-request",

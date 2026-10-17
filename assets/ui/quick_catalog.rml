@@ -92,6 +92,7 @@
 		<p class="blocker" data-if="card.blocker == 'rom-folder-unresolved'">La cartella dei giochi di questo sistema non è definita: controlla ROMDirectory nelle impostazioni di ES-DE.</p>
 		<p class="blocker" data-if="card.blocker == 'rom-root-unknown'">La cartella principale dei giochi (ROMDirectory) non è nota.</p>
 		<p class="blocker" data-if="card.blocker == 'system-unknown' || card.blocker == 'system-not-configured'">ES-DE non configura più questo sistema.</p>
+		<p class="blocker" data-if="card.blocker == 'library-unreadable'">La configurazione di ES-DE non si può leggere: controlla che ES-DE sia ancora installato dove library.json lo indica.</p>
 		<p class="blocker" data-if="card.blocker == 'no-command'">Il sistema non ha nessun comando di avvio.</p>
 		<p class="blocker" data-if="card.blocker == 'choice-stale'">Il comando scelto per questo gioco o sistema non esiste più: scegline un altro con "retroverse-cli assign".</p>
 		<p class="blocker" data-if="card.blocker == 'profile-unknown'">Il profilo d'emulatore scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
