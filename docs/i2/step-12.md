@@ -20,7 +20,7 @@ open leaves it to the next start, which closes it as interrupted, and only then.
 | `rv/catalog_db/session_store.hpp`, `src/session_store.cpp` | `SessionStore` (sessions, choices, verifications, alias resolution, the busy retry), `BusyRetry`, `kPatientRetry`, `SessionRecorder` (a session write that meets a busy database is kept and tried again), `StoredChoice`, `SystemChoiceRow`, `LaunchVerification`, `SessionFilter`, `ListedSession`, `OwnerAlive` |
 | `rv/catalog_db/database.hpp`, `src/database.cpp` | `isBusyError()`: SQLITE_BUSY or SQLITE_LOCKED, told from a UNIQUE conflict (both are `Conflict`) |
 | `rv/catalog/play_session.hpp` (step 1's, filled) | `PlaySessionOutcome::Blocked`, `LeftRunning`; `LeftRunningReason`; `PlaySession::choice` (a `launcher::LaunchChoice`, replacing `profile` and `commandLabel`), `choiceSource`, `test`, `closed`, `runTime`, `readiness`, `leftRunning`, `refusedByGuard`, `processId`; `recordOutcome()` takes the owner's reason; `returnedNormally()` |
-| `rv/platform_win/win32_process_runner.hpp`, `src/win32_process_runner.cpp` | `ProcessIdentity`, `currentProcessIdentity()`, `ProcessLiveness`, `processLiveness()`: a session owner's id and creation time, and whether it still runs |
+| `rv/platform_win/win32_process_runner.hpp`, `src/win32_process_runner.cpp` | `ProcessIdentity`, `currentProcessIdentity()`, `ProcessLiveness`, `processLiveness()`, `listedProcess()`: a session owner's id and creation time, and whether it still runs (`rv_platform_win` links `ntdll` for the system's process list) |
 | `src/launcher/src/launch_session.cpp` | The command line and working directory are logged at debug level only (ADR-0008 §9); info says what is launched and how it is waited for |
 | `tools/cli/src/cmd_launch.cpp` | `launch --game` (`--wait`, `--wait-limit`, `--test`), `launch --dry-run --game`; the path dry run of step 10 kept, with assign's choice for the system |
 | `tools/cli/src/cmd_assign.cpp`, `cmd_sessions.cpp` | `assign`, `sessions` |
@@ -68,7 +68,11 @@ unless the moved identity has its own (tested with that procedure). Enumerations
   `sessions`; the app at step 13) `SessionStore::closeInterrupted()` closes as `interrupted` (with `closed_at`, no end
   time) the open sessions whose owner is gone (`platform_win::processLiveness()`: no process has the id, the one that
   has it was created at another time, or it exited), and only those: a session another live retroverse-cli or app
-  follows stays open, and so does one whose owner exists but cannot be asked (access denied: taken as running).
+  follows stays open. A process with the owner's id that this user may not open (access denied: a service, another
+  user's process, typically one that took the id after a reboot) is compared through the system's process list
+  (`listedProcess()`: `NtQuerySystemInformation(SystemProcessInformation)` gives every process's id and creation time
+  without any access right): another creation time is gone, the owner's own running (an elevated owner). Only when that
+  list cannot be read either is the owner taken as running (`Unknown`).
 - **A busy database.** Session writes are short write transactions on the process's writer and never touch identities
   or index rows (no import lock). Another process's import can hold SQLite's write lock longer than the writer's busy
   timeout (5 to 9 s for a bulk import on the reference library, step 11a): `SessionStore` tries a write that meets a busy
@@ -192,7 +196,10 @@ changed (the launch spike reports its command line from `Win32StartInfo`).
   the state rows kept by `clearIndex()` (db rebuild-index) and re-pointed as step 11b re-points an alias's rows, with no
   foreign key violation.
 - `tests/unit/platform_win/test_process_identity.cpp`: this process runs; the same id with another creation time is gone;
-  the fake emulator running, then exited (its handle open, then closed): gone.
+  the fake emulator running, then exited (its handle open, then closed): gone. The system's process list agrees with
+  `GetProcessTimes` (this process, the fake; an exited process kept by its handle is listed without threads or not at
+  all); a running process this user may not open (found at test time; skipped in an elevated run, where there is none)
+  with another creation time, a 2022 one among them, is gone, with its own creation time running.
 - `tests/unit/cli/test_cli_sessions.cpp` (the standard fixture imported; fake emulator profiles in the user's
   emulators.json; `RV_LAUNCH_ALLOWLIST` set to the fakes each test starts with `rv::test::ScopedLaunchAllowList`, and put
   back after):
@@ -224,9 +231,12 @@ changed (the launch spike reports its command line from `Win32StartInfo`).
     shows the origin), surviving `db rebuild-index` and a restart (a second retroverse-cli process), cleared back to
     emulators.json's; a label that disappears blocks the launch (choice-stale) and the attempt is recorded; the user's
     emulators.json and library.json unchanged;
-  - a session recorded while another holder has the database's write lock for 4 s (its BEGIN IMMEDIATE, as a bulk
-    import's write transaction holds it: two Database objects stand for two processes, step 4's convention): the launch
-    starts after one 1 s attempt, its end waits for the commit and is recorded;
+  - a session recorded while another process holds the database's write lock (two processes: the test process holds
+    a BEGIN IMMEDIATE as a bulk import's write transaction holds it, while a retroverse-cli process runs `launch --game
+    --wait`): the launch starts after one 1 s attempt (the log's "stays pending"), the game ends while the lock is still
+    held for 3 s more, the CLI keeps trying its session's end rather than exiting, and records it once the holder
+    commits ("written at attempt N (the database was busy)"; `returned`, `sessionRecorded`, never exit 3). The import
+    itself is not the holder: on the standard fixture it commits in milliseconds;
   - `launch --dry-run --game`: the game's choices, a missing file blocked (exit 1), a folder refused, an unknown game;
     the database file unchanged byte for byte, no session.
 - `tests/unit/catalog/test_domain.cpp`: the new names; `recordOutcome()` with the owner's reasons (left running, the
@@ -245,8 +255,8 @@ debug level; no test of the app, the smoke tests or the spikes reads that line.
 Run once, by hand, on the reference machine (2026-10-17, ES-DE and RetroArch closed, another worktree building), with
 the Release `retroverse-cli` of this step, everything Retroverse wrote under `build/step12-real` of the worktree:
 
-1. **Snapshots before** (`scripts/snapshot_tree.py snapshot before.json --hash E:\Programmi\Retroarch --hash
-   C:\Users\sinhu\ES-DE --listing I:\Giochi\Emulatori\GB`): RetroArch's folder with its configuration, playlists,
+1. **Snapshots before** (`scripts/snapshot_tree.py snapshot before.json --hash <RetroArch folder> --hash <ES-DE home>
+   --listing <ROM root>\GB`): RetroArch's folder with its configuration, playlists,
    saves, states and logs hashed (48,524 files, 1,419 folders), the ES-DE home hashed (14,676 files), Mole Mania's ROM
    folder listed (8,629 files, 54 folders): 74,261 entries, taken before the library was even read.
 2. **The library** (`library create`: the ES-DE home, the install, ROMDirectory and MediaDirectory found as ES-DE finds
@@ -259,9 +269,9 @@ the Release `retroverse-cli` of this step, everything Retroverse wrote under `bu
    `retroarch-isolated` profile with the spike's arguments: `-L {var:core} --appendconfig=<scratch>\retroverse-isolated.cfg
    --max-frames=240 --sram-mode=noload-nosave --log-file=<scratch>\logs\retroarch.log --verbose {rom}`, gambatte for gb.
 4. **`assign gb retroarch-isolated`**: stored, ready for the system. Mole Mania is
-   `g1aeae0b244ed5501` (`1 GB US - H-Q/Mole Mania (USA, Europe) (SGB Enhanced).gb`, of the two USA entries of the
-   gamelist the first; no `<altemulator>`, so the system's choice applies). `launch --dry-run --game g1aeae0b244ed5501`
-   with `RV_LAUNCH_ALLOWLIST=E:\Programmi\Retroarch\retroarch.exe`: ready, "Retroverse's choice for the system
+   `g1aeae0b244ed5501` (Mole Mania (USA, Europe) (SGB Enhanced), of the two USA entries of the gamelist the first; no
+   `<altemulator>`, so the system's choice applies). `launch --dry-run --game g1aeae0b244ed5501` with
+   `RV_LAUNCH_ALLOWLIST=<RetroArch folder>\retroarch.exe`: ready, "Retroverse's choice for the system
    (assign)", RetroArch found through App Paths, the core in `%EMUPATH%\cores`, the guard "allowed".
 5. **`launch --game g1aeae0b244ed5501 --wait --wait-limit 120 --json`** with the same allow-list: RetroArch started
    (process 32204), ran the game fullscreen for 240 frames ("Content ran for a total of: 00 hours, 00 minutes, 04

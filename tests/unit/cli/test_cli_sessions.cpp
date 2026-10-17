@@ -7,8 +7,9 @@
 // byte-identical, through a profile and through an ES-DE command; nothing is killed (the wait limit, a launch not waited
 // for, a CLI ended mid-game); a CLI process killed while its session is open leaves it to the next start, which closes it
 // as interrupted, while the session of a CLI that still runs stays open; assign is checked against what exists, ranks
-// before emulators.json and survives a restart and `db rebuild-index`; a session is recorded while another process holds
-// the database's write lock (as a bulk import's write transaction holds it); the dry run of --game writes nothing.
+// before emulators.json and survives a restart and `db rebuild-index`; a retroverse-cli process records its session while
+// the test process holds the database's write lock (as another process's bulk import holds it); the dry run of --game
+// writes nothing.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -735,6 +736,10 @@ TEST_CASE("cli/assign: choices are checked against what exists, rank before emul
           "[cli][launch][sessions]") {
     const LoggingReset loggingReset;
     const SessionSetup setup("rv-cli-assign", json{{"gb", {{"command", "Home Emulator"}}}});
+    // The stale choice below must block the launch; should it ever start something instead, the guard refuses the
+    // fixture's copy of the fake that the ES-DE commands name.
+    const std::vector<fs::path> listed{buildFake()};
+    const rv::test::ScopedLaunchAllowList allowList(listed);
     const std::string tiny = setup.gameAt("gb", "Tiny Tennis (Europe).gb").toString();
     const std::string track = setup.gameAt("psx", "Twin Tracks (Europe) (Track 1).bin").toString();
     const std::string userFile = text(setup.emulatorsFile());
@@ -843,34 +848,50 @@ TEST_CASE("cli/launch: a session is recorded while another process holds the dat
     const LoggingReset loggingReset;
     const SessionSetup setup("rv-cli-busy");
     const std::vector<fs::path> listed{buildFake()};
-    const rv::test::ScopedLaunchAllowList allowList(listed);
+    const rv::test::ScopedLaunchAllowList allowList(listed); // inherited by the CLI process
     const std::string tiny = setup.gameAt("gb", "Tiny Tennis (Europe).gb").toString();
     REQUIRE(setup.run({"assign", "gb", "fake-quick"}).code == ExitCode::Ok);
 
-    // Another process's import: its write transaction (BEGIN IMMEDIATE) held for 4 s, longer than the launch's busy
-    // timeout (1 s) and than the game.
+    // The test process plays the other process's import: its write transaction (BEGIN IMMEDIATE, as a bulk import's)
+    // is held while a retroverse-cli process launches the game and waits for it, until that process has met the busy
+    // database (its busy timeout is 1 s) and for a while after the game ended.
     auto importer = rv::catalog_db::openCatalogDatabase(setup.databaseFile());
     REQUIRE(importer.has_value());
     std::optional<rv::catalog_db::Transaction> held =
         rv::catalog_db::Transaction::begin(importer->writer(), rv::catalog_db::Transaction::Mode::Immediate).value();
-    bool committed = false;
-    std::thread release([&] {
-        std::this_thread::sleep_for(4s);
-        committed = held->commit().has_value();
-    });
-    const auto before = std::chrono::steady_clock::now();
-    const RunResult result = setup.run({"launch", "--game", tiny, "--wait", "--json"});
-    const auto took = std::chrono::steady_clock::now() - before;
-    release.join();
-    CHECK(committed);
-    INFO(result.err);
-    const json launched = json::parse(result.out);
+    const fs::path resultFile = setup.dir.file("launch.json");
+    const fs::path logFile = setup.dir.file("launch.txt");
+    const auto child = ChildCli::start({"--data-dir", utf8(setup.data), "launch", "--game", tiny, "--wait", "--json",
+                                        "--output", utf8(resultFile)},
+                                       logFile);
+    if (!child) {
+        WARN("retroverse-cli.exe is not built beside rv_tests.exe: the CLI process is not run");
+        return;
+    }
+    const auto deadline = std::chrono::steady_clock::now() + 60s;
+    while (!contains(text(logFile), "stays pending") && !child->waitForExit(0ms) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(100ms);
+    }
+    INFO(text(logFile));
+    CHECK(contains(text(logFile), "stays pending")); // the session's first write met the lock and was kept
+    // The game (a quick exit) ends meanwhile; the end of its session meets the lock too: the CLI tries it again, for as
+    // long as its patient retry allows, rather than giving the session up.
+    std::this_thread::sleep_for(3s);
+    CHECK_FALSE(child->waitForExit(0ms).has_value());
+    REQUIRE(held->commit().has_value());
+    held.reset();
+    const auto exitCode = child->waitForExit(120s);
+    REQUIRE(exitCode.has_value());
+    INFO(text(logFile));
+    const json launched = json::parse(text(resultFile));
     // A quick exit (exit 1), or a return on a machine busy enough (exit 0): never a session lost (exit 3).
-    CHECK(result.code ==
-          (launched.at("session").at("quickExit") == true ? ExitCode::ProblemsFound : ExitCode::Ok));
+    CHECK(*exitCode == static_cast<DWORD>(launched.at("session").at("quickExit") == true
+                                              ? toInt(ExitCode::ProblemsFound)
+                                              : toInt(ExitCode::Ok)));
     CHECK(launched.at("started") == true);
     CHECK(launched.at("sessionRecorded") == true);
-    CHECK(took >= 3500ms); // the session's end waited for the import's commit, rather than being lost
+    CHECK(contains(text(logFile), "(the database was busy)")); // written once the import committed
     const std::int64_t id = launched.at("session").at("id").get<std::int64_t>();
     CHECK(setup.query(fmt::format("SELECT outcome FROM rv_play_sessions WHERE id = {}", id)) ==
           std::vector<std::string>{"returned"});

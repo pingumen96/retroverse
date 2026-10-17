@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstring>
 #include <cwchar>
 #include <exception>
 #include <filesystem>
@@ -24,6 +25,9 @@
 
 #include <rv/platform_win/win32_util.hpp>
 
+// After windows.h (win32_util.hpp): NtQuerySystemInformation and SYSTEM_PROCESS_INFORMATION (ntdll).
+#include <winternl.h>
+
 namespace rv::platform_win {
 namespace {
 
@@ -43,6 +47,32 @@ constexpr std::size_t kMaxWindowProcesses = 64;
 constexpr DWORD kExitSettleMilliseconds = 2000;
 /// How long start() waits for a process it ends before it ran (a suspended process ends at once).
 constexpr DWORD kNeverRunExitMilliseconds = 5000;
+
+/// NtQuerySystemInformation's answer when the buffer is too small (ntstatus.h, which clashes with windows.h).
+constexpr NTSTATUS kStatusInfoLengthMismatch = static_cast<NTSTATUS>(0xC0000004UL);
+/// The first buffer for the system's process list, and how many times it grows before the list counts as unreadable.
+constexpr ULONG kProcessListInitialBytes = 512u * 1024u;
+constexpr int kProcessListAttempts = 8;
+
+/// The head of an entry of the system's process list (SystemProcessInformation) as Windows lays it out: winternl.h hides
+/// the fields before ImageName in Reserved1, among them the creation time, the one GetProcessTimes reads.
+struct SystemProcessHead {
+    ULONG nextEntryOffset;
+    ULONG numberOfThreads;
+    LARGE_INTEGER workingSetPrivateSize;
+    ULONG hardFaultCount;
+    ULONG numberOfThreadsHighWatermark;
+    ULONGLONG cycleTime;
+    LARGE_INTEGER createTime;
+    LARGE_INTEGER userTime;
+    LARGE_INTEGER kernelTime;
+    UNICODE_STRING imageName;
+    KPRIORITY basePriority;
+    HANDLE uniqueProcessId;
+};
+static_assert(offsetof(SystemProcessHead, numberOfThreads) == offsetof(SYSTEM_PROCESS_INFORMATION, NumberOfThreads));
+static_assert(offsetof(SystemProcessHead, imageName) == offsetof(SYSTEM_PROCESS_INFORMATION, ImageName));
+static_assert(offsetof(SystemProcessHead, uniqueProcessId) == offsetof(SYSTEM_PROCESS_INFORMATION, UniqueProcessId));
 
 /// LaunchClock time of a past system time (UTC FILETIME): now, minus how long ago it was.
 LaunchClock::time_point toLaunchClock(const FILETIME& systemTime) noexcept {
@@ -730,12 +760,64 @@ std::string_view toString(ProcessLiveness liveness) noexcept {
     return "unknown";
 }
 
+Expected<std::optional<ListedProcess>> listedProcess(std::uint32_t processId) {
+    ULONG size = kProcessListInitialBytes;
+    for (int attempt = 0; attempt < kProcessListAttempts; ++attempt) {
+        // 8-byte units: the entries hold 64-bit fields.
+        std::vector<std::uint64_t> buffer(size / sizeof(std::uint64_t) + 1);
+        const auto bytes = static_cast<ULONG>(buffer.size() * sizeof(std::uint64_t));
+        ULONG needed = 0;
+        const NTSTATUS status = NtQuerySystemInformation(SystemProcessInformation, buffer.data(), bytes, &needed);
+        if (status == kStatusInfoLengthMismatch) {
+            size = std::max(needed, bytes) + 64u * 1024u; // processes may start before the next call
+            continue;
+        }
+        if (status < 0) {
+            return makeError(ErrorCode::PlatformError,
+                             fmt::format("the system's process list could not be read (NTSTATUS 0x{:08X})",
+                                         static_cast<std::uint32_t>(status)));
+        }
+        const auto* base = reinterpret_cast<const std::byte*>(buffer.data());
+        std::size_t offset = 0;
+        while (offset + sizeof(SystemProcessHead) <= bytes) {
+            SystemProcessHead head{};
+            std::memcpy(&head, base + offset, sizeof(head));
+            if (static_cast<std::uint32_t>(reinterpret_cast<ULONG_PTR>(head.uniqueProcessId)) == processId) {
+                return std::optional<ListedProcess>(
+                    ListedProcess{static_cast<std::uint64_t>(head.createTime.QuadPart), head.numberOfThreads});
+            }
+            if (head.nextEntryOffset == 0) {
+                break;
+            }
+            offset += head.nextEntryOffset;
+        }
+        return std::optional<ListedProcess>();
+    }
+    return makeError(ErrorCode::PlatformError, "the system's process list kept growing while it was read");
+}
+
 ProcessLiveness processLiveness(const ProcessIdentity& process) noexcept {
     const UniqueHandle handle(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process.processId));
     if (!handle) {
-        // No process has the id (ERROR_INVALID_PARAMETER); any other refusal means that one exists which this user may
-        // not ask (a protected process, another session's), possibly the owner itself.
-        return GetLastError() == ERROR_INVALID_PARAMETER ? ProcessLiveness::Gone : ProcessLiveness::Unknown;
+        if (GetLastError() == ERROR_INVALID_PARAMETER) {
+            return ProcessLiveness::Gone; // no process has the id
+        }
+        // A process has the id that this user may not open (a service, another user's or session's, a protected
+        // one): the system's process list tells its creation time without any access right. It is the owner only
+        // when that time is the owner's; a process that took the id later, typically after a reboot, is not.
+        try {
+            const auto listed = listedProcess(process.processId);
+            if (!listed) {
+                return ProcessLiveness::Unknown;
+            }
+            if (!listed->has_value() || (*listed)->creationTime != process.creationTime) {
+                return ProcessLiveness::Gone; // it ended meanwhile, or a later process reuses the id
+            }
+            // A process that exited stays listed, without threads, while handles to it are open.
+            return (*listed)->threadCount == 0 ? ProcessLiveness::Gone : ProcessLiveness::Running;
+        } catch (...) {
+            return ProcessLiveness::Unknown; // no memory for the list
+        }
     }
     FILETIME creation{};
     FILETIME exit{};
