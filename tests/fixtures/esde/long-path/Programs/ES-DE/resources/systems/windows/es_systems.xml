@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!-- The game systems of the long-path fixture: ES-DE's format with an invented emulator (see README.md) -->
+<systemList>
+    <system>
+        <name>snes</name>
+        <fullname>Nintendo SNES (Super Nintendo)</fullname>
+        <path>%ROMPATH%\snes</path>
+        <extension>.sfc .SFC .smc .SMC</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>snes</platform>
+        <theme>snes</theme>
+    </system>
+    <system>
+        <name>psx</name>
+        <fullname>Sony PlayStation</fullname>
+        <path>%ROMPATH%\psx</path>
+        <extension>.bin .BIN .cue .CUE</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>psx</platform>
+        <theme>psx</theme>
+    </system>
+</systemList>

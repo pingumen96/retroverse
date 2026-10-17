@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!-- The game systems of the arcade fixture: ES-DE's format with an invented emulator (see README.md) -->
+<systemList>
+    <system>
+        <name>mame</name>
+        <fullname>Multiple Arcade Machine Emulator</fullname>
+        <path>%ROMPATH%\mame</path>
+        <extension>.7z .7Z .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>arcade</platform>
+        <theme>mame</theme>
+    </system>
+    <system>
+        <name>neogeo</name>
+        <fullname>SNK Neo Geo</fullname>
+        <path>%ROMPATH%\neogeo</path>
+        <extension>.7z .7Z .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>neogeo</platform>
+        <theme>neogeo</theme>
+    </system>
+    <system>
+        <name>bonus</name>
+        <fullname>Bonus Arcade (platform ignored)</fullname>
+        <path>%ROMPATH%\bonus</path>
+        <extension>.zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>arcade, ignore</platform>
+        <theme>bonus</theme>
+    </system>
+</systemList>

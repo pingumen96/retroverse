@@ -1,0 +1,27 @@
+// What git does not hold (see README.md): the tracks and the CHD, generated; a cue sheet larger than the scan reads.
+{
+    "files": [
+        {"path": "roms/psx/Twin Peak (Europe) (Track 1).bin", "size": 70560, "seed": 5001, "mtime": "1996-01-01T00:00:00Z"},
+        {"path": "roms/psx/Twin Peak (Europe) (Track 2).bin", "size": 35280, "seed": 5002, "mtime": "1996-01-01T00:00:00Z"},
+        {"path": "roms/psx/Saga (USA) (Disc 1).bin", "size": 70560, "seed": 5003},
+        {"path": "roms/psx/Saga (USA) (Disc 2).bin", "size": 70560, "seed": 5004},
+        {"path": "roms/psx/Loop B (World).bin", "size": 2352, "seed": 5005},
+        {"path": "roms/psx/Huge Sheet (USA).cue", "size": 1100000, "seed": 5006},
+        {"path": "roms/psx/Huge Sheet (USA).bin", "size": 2352, "seed": 5007},
+        {"path": "roms/psx/Café Noir (France).bin", "size": 2352, "seed": 5008},
+        {"path": "roms/psx/Hollow Vale (Italy) (Disc 1).bin", "size": 70560, "seed": 5009},
+        {"path": "roms/psx/Quiet Storm (USA).bin", "size": 2352, "seed": 5010},
+        {"path": "roms/psx/Tracks/Echo (Japan).bin", "size": 2352, "seed": 5011},
+        {"path": "roms/psx/Shared (USA) (Track 1).bin", "size": 2352, "seed": 5012},
+        {"path": "roms/psx/Shared A (USA) (Track 2).bin", "size": 2352, "seed": 5013},
+        {"path": "roms/psx/Plain Words (USA).bin", "size": 2352, "seed": 5014},
+        {"path": "roms/psx/Rift (USA).bin", "size": 2352, "seed": 5015},
+        {"path": "roms/psx/Solo (USA).chd", "size": 4096, "seed": 5016},
+        {"path": "roms/psx/Labels (USA) (Disc 1).chd", "size": 4096, "seed": 5017},
+        {"path": "roms/psx/Labels (USA) (Disc 2).chd", "size": 4096, "seed": 5018},
+
+        {"path": "roms/ps2/Moon Race (Europe).bin", "size": 70560, "seed": 5101},
+        {"path": "roms/ps2/Star Hop (USA).iso", "size": 65536, "seed": 5102}
+    ],
+    "directories": ["ES-DE/custom_systems"]
+}

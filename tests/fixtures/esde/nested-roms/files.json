@@ -1,0 +1,30 @@
+// What git does not hold (see README.md): ROM payloads, generated; a name git would not like (".nes"); the empty
+// folders.
+{
+    "files": [
+        {"path": "roms/nes/Hero Quest (USA).nes", "size": 24592, "seed": 4001, "mtime": "1987-06-01T10:00:00Z"},
+        {"path": "roms/nes/Shelf A/Hero Quest (USA).nes", "size": 24592, "seed": 4001, "mtime": "1987-06-01T10:00:00Z"},
+        {"path": "roms/nes/Shelf B/Hero Quest (USA).nes", "size": 24592, "seed": 4001, "mtime": "1987-06-01T10:00:00Z"},
+        {"path": "roms/nes/L1/L2/L3/L4/L5/L6/Deep Diver (World).nes", "size": 40976, "seed": 4002,
+         "mtime": "1988-02-02T12:00:00Z"},
+        {"path": "roms/nes/Vol. 1.5/Point Five (Europe).NES", "size": 16400, "seed": 4003,
+         "mtime": "1989-03-03T12:00:00Z"},
+        {"path": "roms/nes/Collection.zip/Inside One (USA).nes", "size": 16400, "seed": 4004},
+        {"path": "roms/nes/Collection.zip/Inside Two (USA).nes", "size": 16400, "seed": 4005},
+        {"path": "roms/nes/.nes", "size": 16400, "seed": 4006},
+        {"path": "roms/nes/Readme.txt", "size": 128, "seed": 4007},
+
+        {"path": "roms/ps3/Space Odyssey (Europe).ps3/PS3_GAME/USRDIR/EBOOT.BIN", "size": 4096, "seed": 4101},
+        {"path": "roms/ps3/Space Odyssey (Europe).ps3/PS3_GAME/PARAM.SFO", "size": 1024, "seed": 4102},
+        {"path": "roms/ps3/Puzzle Box (USA).iso", "size": 65536, "seed": 4103, "mtime": "2009-09-09T09:09:09Z"},
+        {"path": "roms/ps3/Tools/Helper.ps3/data.bin", "size": 2048, "seed": 4104},
+
+        {"path": "roms/xbox360/default", "size": 8192, "seed": 4201},
+        {"path": "roms/xbox360/Ring World/Ring World.iso", "size": 65536, "seed": 4203},
+        {"path": "roms/xbox360/Ring World/content", "size": 4096, "seed": 4204},
+        {"path": "roms/xbox360/notes.txt", "size": 128, "seed": 4205},
+
+        {"path": "extra/Linked Game (USA).nes", "size": 16400, "seed": 4301}
+    ],
+    "directories": ["roms/nes/Empty Shelf", "ES-DE/custom_systems"]
+}

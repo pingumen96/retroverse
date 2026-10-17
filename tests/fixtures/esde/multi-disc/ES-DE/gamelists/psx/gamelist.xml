@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Twin Peak (Europe).cue</path>
+		<name>Twin Peak</name>
+		<players>1-2</players>
+		<playcount>2</playcount>
+		<playtime>600</playtime>
+		<lastplayed>20260101T100000</lastplayed>
+	</game>
+	<game>
+		<path>./Twin Peak (Europe) (Track 1).bin</path>
+		<name>Twin Peak (Track 1)</name>
+		<desc>Launched from ES-DE, which lists every track as a game: the play data goes to the cue sheet.</desc>
+		<favorite>true</favorite>
+		<playcount>3</playcount>
+		<playtime>900</playtime>
+		<lastplayed>20260301T100000</lastplayed>
+	</game>
+	<game>
+		<path>./Shared (USA) (Track 1).bin</path>
+		<playcount>4</playcount>
+	</game>
+	<game>
+		<path>./Saga (USA).m3u</path>
+		<name>Saga</name>
+		<desc>Two discs, each a cue sheet with its track.</desc>
+	</game>
+	<game>
+		<path>./Hollow Vale (Italy) (Disc 1).bin</path>
+		<name>Hollow Vale</name>
+		<desc>The track carries the metadata; its cue sheet has none of its own.</desc>
+		<developer>Quiet Fox</developer>
+	</game>
+	<game>
+		<path>./Rift (USA).bin</path>
+		<name>Rift</name>
+		<desc>A playlist, a cue sheet and a track: only the track has an entry.</desc>
+		<playcount>1</playcount>
+		<lastplayed>20250505T050505</lastplayed>
+	</game>
+	<game>
+		<path>./Lost Saga (USA).m3u</path>
+		<name>Lost Saga</name>
+	</game>
+</gameList>

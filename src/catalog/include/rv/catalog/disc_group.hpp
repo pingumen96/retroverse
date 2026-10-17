@@ -42,14 +42,20 @@ struct DiscGroup {
     /// The files the head references that exist as entries of the system, in the order the head names them, each once
     /// (names matched with the key's case folding).
     std::vector<LookupKey> members;
+    /// What the head says: every file it references that lies inside the system folder, as the head names it (the path
+    /// resolved against the head's folder), in its order, each key once, whether or not it exists or is a game now. The
+    /// members are picked from these on every load, so that a cached group (CachedDiscGroup) gives the members the
+    /// files on disk give now, not those they gave when the head was read: store them with the group.
+    std::vector<LookupKey> references;
 
     bool operator==(const DiscGroup&) const = default;
 };
 
 /// A disc group as an import stored it, with the size and last write time its head had when the group was read: the
 /// cache ADR-0008 §3 asks for (membership cached by key, size and modification time, and kept when a cue sheet cannot
-/// be read). The import keeps the groups of each import and hands them to the next load
-/// (ILibrarySource, LibraryLoadOptions::discGroups).
+/// be read). The import keeps the groups of each import, references included, and hands them to the next load
+/// (ILibrarySource, LibraryLoadOptions::discGroups), which takes the references of the group and picks its members
+/// again.
 struct CachedDiscGroup {
     DiscGroup group;
     /// The head's FileFacts::size and FileFacts::lastWriteTime (FILETIME ticks) when the group was read.

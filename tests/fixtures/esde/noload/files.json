@@ -1,0 +1,19 @@
+// What git does not hold (see README.md): the ROM payloads, generated.
+{
+    "files": [
+        {"path": "roms/gba/Keep (USA).gba", "size": 8192, "seed": 7001},
+        {"path": "roms/gba/Skip Me/Hidden Away (USA).gba", "size": 8192, "seed": 7002},
+        {"path": "roms/gba/Skip Me/Deeper/Lost (USA).gba", "size": 8192, "seed": 7003},
+        {"path": "roms/gba/Upper/Shouting (USA).gba", "size": 8192, "seed": 7004},
+        {"path": "roms/gba/.secret/Sneaky (USA).gba", "size": 8192, "seed": 7005},
+        {"path": "roms/gba/.secret/Sneaky Two (USA).gba", "size": 8192, "seed": 7006},
+        {"path": "roms/gba/.secret/Inner/Found (USA).gba", "size": 8192, "seed": 7007},
+        {"path": "roms/gba/.secret/Inner/Unlisted (USA).gba", "size": 8192, "seed": 7008},
+
+        {"path": "roms/n64/Sky Pilot (USA).z64", "size": 8192, "seed": 7101},
+        {"path": "roms/n64/Tiny Wings (Japan).n64", "size": 8192, "seed": 7102},
+
+        {"path": "roms/pcengine/Bounce Kid (Japan).pce", "size": 8192, "seed": 7201}
+    ],
+    "directories": ["ES-DE/custom_systems"]
+}

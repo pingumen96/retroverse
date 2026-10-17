@@ -1,0 +1,25 @@
+// What git does not hold (see README.md): the arcade sets, generated.
+{
+    "files": [
+        {"path": "roms/mame/zapzone.zip", "size": 4096, "seed": 6001},
+        {"path": "roms/mame/zapzonej.zip", "size": 4096, "seed": 6002},
+        {"path": "roms/mame/zapzone (alt).zip", "size": 4096, "seed": 6003},
+        {"path": "roms/mame/rocketpig.zip", "size": 4096, "seed": 6004},
+        {"path": "roms/mame/empty1.zip", "size": 4096, "seed": 6005},
+        {"path": "roms/mame/dup1.zip", "size": 4096, "seed": 6006},
+        {"path": "roms/mame/unknownset.7z", "size": 4096, "seed": 6007},
+        {"path": "roms/mame/fakebios.zip", "size": 4096, "seed": 6008},
+        {"path": "roms/mame/fakedev.zip", "size": 4096, "seed": 6009},
+        {"path": "roms/mame/Upper/FAKEBIOS.zip", "size": 4096, "seed": 6010},
+        {"path": "roms/mame/(clone).zip", "size": 4096, "seed": 6011},
+        {"path": "roms/mame/readme.txt", "size": 128, "seed": 6012},
+
+        {"path": "roms/neogeo/neobios.zip", "size": 4096, "seed": 6101},
+        {"path": "roms/neogeo/glimmer.zip", "size": 4096, "seed": 6102},
+        {"path": "roms/neogeo/zapzone.zip", "size": 4096, "seed": 6103},
+
+        {"path": "roms/bonus/fakebios.zip", "size": 4096, "seed": 6201},
+        {"path": "roms/bonus/zapzone.zip", "size": 4096, "seed": 6202}
+    ],
+    "directories": ["ES-DE/custom_systems"]
+}

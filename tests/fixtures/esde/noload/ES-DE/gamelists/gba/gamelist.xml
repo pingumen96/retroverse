@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Skip Me/Hidden Away (USA).gba</path>
+		<name>Hidden Away</name>
+	</game>
+	<game>
+		<path>./.secret/Sneaky Two (USA).gba</path>
+		<name>Sneaky Two</name>
+	</game>
+	<game>
+		<path>./.secret/Inner/Found (USA).gba</path>
+		<name>Found</name>
+	</game>
+	<folder>
+		<path>./Skip Me</path>
+		<name>Skip Me</name>
+	</folder>
+</gameList>

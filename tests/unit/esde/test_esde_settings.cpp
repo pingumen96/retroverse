@@ -137,8 +137,8 @@ TEST_CASE("esde/settings: only the keys of the whitelist are read, as ES-DE read
         names.push_back(key.name);
     }
     CHECK(names == std::vector<std::string_view>{"AlternativeEmulatorPerGame", "LegacyGamelistFileLocation",
-                                                 "MediaDirectory", "ParseGamelistOnly", "ROMDirectory",
-                                                 "ShowHiddenFiles", "ShowHiddenGames", "UIMode"});
+                                                 "MAMENameStripExtraInfo", "MediaDirectory", "ParseGamelistOnly",
+                                                 "ROMDirectory", "ShowHiddenFiles", "ShowHiddenGames", "UIMode"});
 
     SECTION("values ES-DE reads otherwise than written, repeated keys, keys of another type") {
         const rv::test::LogCapture log;
