@@ -157,7 +157,7 @@ becomes "not a game, excluded by a setting" with the setting's name (`CatalogEnt
 | gb | Café Racer | videos `.avi` |
 | gb | LOUD CART | videos `.mkv` |
 | snes | Alpha Quest | all 12 kinds: covers `.png`, backcovers `.png`, 3dboxes `.png`, physicalmedia `.png`, screenshots `.jpg`, titlescreens `.jpg`, marquees `.png`, miximages `.png`, fanart `.jpg`, manuals `.pdf`, videos `.mov`, custom `.png` |
-| snes | Beta Run | none: its `.flv` is no video ES-DE reads (`.avi .mkv .mov .mp4 .wmv`) |
+| snes | Beta Run | none: its `.flv` is no video ES-DE reads (ES-DE 3.4.1 tries videos `.mp4 .mkv .avi .wmv .mov .webm`, images `.png .jpg .webp`, in that order) |
 | snes | Hacks (folder) | covers `.png` |
 | snes | Sports Vol. 2 (folder) | covers `.png`, named with the whole folder name (`Sports Vol. 2.png`, never `Sports Vol.png`) |
 | psx | Twin Tracks | covers `.png`, videos `.wmv`; the tracks have none (their stems differ) |

@@ -45,13 +45,15 @@ $env:RV_LAUNCH_ALLOWLIST = (Resolve-Path build/msvc-x64-debug/bin/rv_fake_emulat
 build/msvc-x64-debug/bin/retroverse.exe --mock-catalog build/a1/catalog.json `
   --input-script tests/input_scripts/quick_catalog_launch.json --exit-after-frames --frames 50 --hidden `
   --fixed-dt 0.016667 --data-dir build/rvdata --run-report build/a1/run.json
-./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter launch      # the gpu cases
-./scripts/test.ps1 -Preset msvc-x64-debug-desktop -Filter launch  # the visible case, on demand
+./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter gpu.launch          # the gpu cases
+./scripts/test.ps1 -Preset msvc-x64-debug-desktop -Filter launch_visible  # the visible case, on demand
 ```
 
 The visible case is the Catch2 test "desktop: a visible launch hands the window over and takes it back", tagged
 `[.desktop]` only (neither `launch*` nor `[launch]` matches it), and it skips unless `RV_SMOKE_DESKTOP=1`, which only
-its ctest registration `desktop.smoke.launch_visible` sets: no filter typed by hand can take over the screen.
+its ctest registration `desktop.smoke.launch_visible` sets: no Catch2 filter typed by hand can take over the screen.
+On the desktop preset a ctest filter `launch` would also run every `desktop.launch.*` case of `spike_launch`, hence
+`launch_visible` (corrected at the wave 2 merge).
 
 Interactively: Tab (gamepad Y) opens the catalog, the arrows or the D-pad move, Enter (A) on a game launches it, Esc
 (B) walks back out. A user's `bindings.json` rebinds all of it.

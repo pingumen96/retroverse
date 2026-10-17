@@ -14,6 +14,15 @@
   §3 says that of several gamelist entries for one path the last counts, as ES-DE applies them; §4 makes an identity
   unique by (library, system, relative path); §5 backs a database up once per migration run, before its first
   migration, and not when it holds nothing yet (a new database)
+- Amended: 2026-10-17, at I2 wave 2 (steps 7-10): §3 states the ROM scan's rules as ES-DE 3.4.1 applies them (the
+  system-level `noload.txt`, the gamelist's hidden check, `ParseGamelistOnly`, empty names, hidden `<folder>` entries,
+  looping links) and how disc groups are formed, cached and given their members' play data, and adds two deliberate
+  differences (folders without games kept, excluded `<folder>` entries as not a game); §5 names ES-DE's media
+  extensions in its order with the media availability and case rules, and details the search index (no positions, the
+  words from its own tokenizer, NFC input, the list kept on readers, bulk writes that suspend it); §8 sharpens the
+  `%INJECT%` content rule, App Paths values, the unknown install folder, the static path `|` rule and the refused
+  shells, and makes an invalid game `<altemulator>` fall to Retroverse's choice for the system when there is one (a
+  deliberate difference)
 
 ## Context
 
@@ -91,13 +100,23 @@ frontends agree:
 - files whose extension is in the system's list, used verbatim and compared case-sensitively (the list split on blanks
   and commas, `.` meaning "no extension", upstream quirks such as pcfx's `CUE` left as they are);
 - in every sub-folder; a directory whose name carries a configured extension is a game, other directories are entered;
-  symbolic links and junctions are followed unless they loop (volume serial and file id);
+  symbolic links and junctions are followed unless they loop (volume serial and file id): a link that loops is skipped
+  with a warning (`rom-link-loop`), as ES-DE skips a recursive link and still loads the system, never reported as an
+  unavailable folder, and a gamelist entry through it names a missing file;
 - hidden files and folders (the attribute or a leading dot) as `ShowHiddenFiles` says, and entries their gamelist marks
   `<hidden>` as `ShowHiddenGames` says (ES-DE drops them when it loads the gamelist, so they are not games, excluded by
-  that setting); `ParseGamelistOnly` and `noload.txt` honoured; `flatten.txt` only changes ES-DE's presentation and is
-  ignored;
+  that setting); with `ShowHiddenFiles` off a gamelist entry is excluded only when its file or its parent folder is
+  hidden, the two ES-DE checks (a hidden folder further up does not count: ES-DE creates the folders a gamelist names);
+  with `ShowHiddenGames` off a `<folder>` entry with `<hidden>` that ES-DE applies (spelled as the folder is on disk)
+  hides the folder's whole tree, as ES-DE deletes the folder with everything below it;
+- `noload.txt` as ES-DE looks for it: in the system folder's listing, spelled exactly so, it keeps the system from
+  loading; in a sub-folder, in any case, it keeps ES-DE out of that folder, whose files are then not games;
+  `ParseGamelistOnly` lists only what the gamelists name and ignores `noload.txt`; `flatten.txt` only changes ES-DE's
+  presentation and is ignored;
 - MAME BIOS and device sets skipped for the arcade and neogeo platforms, from ES-DE's `resources/MAME` lists, and
   unscraped arcade zips titled from `mamenames.xml`; other unscraped files titled from their cleaned file name;
+- a file whose ES-DE name is empty (ES-DE skips it "as it has no filename") is no entry unless a gamelist entry names
+  it, which makes it a game, as ES-DE then creates it;
 - gamelist metadata matched to files by path: of several entries of one kind for the same path the last counts, as
   ES-DE applies them in turn (and moves an entry it updates to the end of the file); entries that differ in kind or
   only in case are all kept, and the files on disk decide which one applies; gamelists inside ROM folders ignored
@@ -106,12 +125,20 @@ frontends agree:
   game, and nothing is kept for it as unavailable.
 
 Deliberate differences from ES-DE: a missing file stays as an unavailable game with its metadata (FR-033), hidden by
-default; files that a `.cue` or `.m3u` references are disc members of it, kept and identifiable but hidden, when that
-`.cue` or `.m3u` is itself a game of the same system (psx: 12,820 members here; ps2 none, `.cue` not being a ps2
-extension); chains (`.m3u` to `.cue` to tracks) and cycles are resolved, names are matched with the key's case folding,
-cue sheets are read as UTF-8 with a Windows-1252 fallback, membership is cached by key, size and modification time and
-kept when a cue sheet cannot be read, and a head without its own gamelist entry shows the metadata of a member that has
-one; a gamelist path that differs from the file only in case matches it (ES-DE would show two entries).
+default; a `<folder>` entry for an existing folder without games is a folder with its metadata, although ES-DE does not
+show it, and a `<folder>` entry ES-DE excludes is "not a game" with its reason, like a file; files that a `.cue` or
+`.m3u` references are disc members of it, kept and identifiable but hidden, when that `.cue` or `.m3u` is itself a game
+of the same system (psx: 12,820 members here; ps2 none, `.cue` not being a ps2 extension); members come only from
+entries that are games (a hidden track, a missing file or a file whose extension is not configured is no member while it
+is so), and a member two heads reference is shown under the first head in key order; chains (`.m3u` to `.cue` to
+tracks) and cycles are resolved, names are matched with the key's case folding, cue sheets are read as UTF-8 with a
+Windows-1252 fallback, a playlist line `<path>|<label>` (RetroArch's disc label) names its path; what a sheet references
+is cached by its key, size and modification time (`DiscGroup::references`, never the members it gave: they are picked
+again from the listing on every load) and kept when the sheet cannot be read; a head without its own gamelist entry
+shows the metadata of a member that has one, and every head carries its members' ES-DE play data (play counts and times
+summed, the latest last played time, a favourite if any member is: ES-DE records a game launched from a track on the
+track), so that a group's play data is its head's alone; a gamelist path that differs from the file only in case matches
+it (ES-DE would show two entries).
 
 ### 4. Identity
 
@@ -163,16 +190,29 @@ one; a gamelist path that differs from the file only in case matches it (ES-DE w
   database newer than the program is refused.
 - **Search**: an FTS5 table with external content (`unicode61 remove_diacritics 2`, prefix indexes 2 and 3) over the
   title, sort title, developer, publisher, genre, year and the system's full name; descriptions are not searched in M1.
-  The input is split into words with the same tokenizer and becomes one quoted token per word, joined with AND, the last
-  one as a prefix; one-character inputs filter without FTS. The index follows the rows through triggers and upserts,
-  never `REPLACE`; a full rebuild is a repair, and `db check` runs FTS5's integrity check.
+  The index keeps no positions (`detail=none`) and no column sizes (`columnsize=0`): a word matches anywhere in the row,
+  and lists are ordered by sort key, never ranked. The input is composed (Unicode NFC) first, then split into words with
+  the same tokenizer (an FTS5 table of the same options on a private in-memory database, its tokens read back through an
+  `fts5vocab` table) and becomes one quoted token per word, joined with AND, the last one as a prefix; one-character
+  inputs filter without FTS. The index follows the rows through triggers and upserts, never `REPLACE`; bulk writes may
+  drop the search triggers inside their transaction and rebuild the index before its commit (`suspendSearchIndex`,
+  `resumeSearchIndex`), since FTS5 flushes a segment at every statement that writes a row; a full rebuild is a repair,
+  and `db check` runs FTS5's integrity check.
 - **Paging**: a query (filter, search, sort) materializes its ordered GameId list in one read; the list's size is the
   count, a page is fetched by ids, and an id's position can be asked. The total order is (sort key, GameId), the sort key
   computed at import by a documented, versioned folding. The list is rebuilt when an import completes and the selection
   restored by GameId. A page fetch on the UI thread stays under 5 ms in Release with 100,000 games; queries run on the
-  worker otherwise.
+  worker otherwise. A query on a reader keeps the last list it read without a search and reuses it while `PRAGMA
+  data_version` is unchanged (no other connection committed), so that a search with the same filters and order narrows
+  it in memory; a connection that writes keeps none (`data_version` does not see its own writes).
 - **Size**: media are stored per game and kind as presence and extension (paths are derived); the raw ES-DE values kept
   are the unknown elements and the original forms of normalized fields.
+- **Media**, as ES-DE 3.4.1 finds them: per kind, the first of its extensions in the order it tries them for which a
+  file exists: images `.png .jpg .webp` (every kind but videos and manuals), videos `.mp4 .mkv .avi .wmv .mov .webm`,
+  manuals `.pdf`; nothing else is read (an `.flv` is never shown). A media root that is missing, cannot be reached or is
+  not resolved, or a media folder that exists but cannot be listed, makes the media unknown (`Unavailable`), never "no
+  media", and the import keeps what it stored. Media names are matched with the lookup keys' folding, except below a
+  folder with case-sensitive names, where ES-DE's own spelling decides (its existence test finds nothing else there).
 
 ### 6. Configuration
 
@@ -208,16 +248,20 @@ pending" rather than imported unscraped.
 - **The program** is decided on the unexpanded template: it must be exactly one `%EMULATOR_X%` element or a literal
   absolute path with no token other than `~` and `%ESPATH%`. Shells and launchers are refused by file name even when a
   find rule resolves them (cmd, powershell, pwsh, wscript, cscript, mshta, rundll32, explorer, conhost, wt, wsl, bash,
-  msiexec, regsvr32), and the program must pass `validateLaunchRequest`'s checks (a PE `.exe` or `.com`).
+  msiexec, regsvr32), by the name as found and by the name of the file it opens (an 8.3 alias in a registry value, a
+  symbolic link named like an emulator), and the program must pass `validateLaunchRequest`'s checks (a PE `.exe` or
+  `.com`).
 - **Tokens**: `%ROM%` (built as ES-DE builds it: `ROMDirectory` as configured, the system's `<path>` with `%ROMPATH%`
   expanded, the relative path as listed on disk), `%ROMRAW%`, `%ROMPATH%`, `%BASENAME%`, `%FILENAME%`, `%GAMEDIR%`,
   `%GAMEDIRRAW%`, `%EMUDIR%`, `%ESPATH%`, `%STARTDIR%=` (the working directory), `%HIDEWINDOW%` (a console of its own
   hidden, `CREATE_NO_WINDOW`, where ES-DE hides the window: the same for the console programs that use it), and
   `%INJECT%=`: the element, or its glued prefix's value, is dropped when the file (relative to the game's folder, with
-  `%BASENAME%` expanded) is missing, empty or over 4,096 bytes, as ES-DE then injects nothing; a usable file makes the
-  game "requires launcher configuration" (conservative). Anything else (`%RUNINBACKGROUND%`, `%PRECOMMAND_X%`,
-  `%RPCS3_GAMEID%` and other unknown `%X%` text, placeholder commands, a static path with `|`) makes the game "requires
-  launcher configuration" with the token named; nothing runs.
+  `%BASENAME%` expanded) is missing, not a file, empty or over 4,096 bytes once its line ends are removed (ES-DE
+  measures the content, its lines joined without their `\r` and `\n`, not the file; Retroverse decides on its first
+  MiB), as ES-DE then injects nothing; a usable file makes the game "requires launcher configuration" (conservative).
+  Anything else (`%RUNINBACKGROUND%`, `%PRECOMMAND_X%`, `%RPCS3_GAMEID%` and other unknown `%X%` text, placeholder
+  commands, a static path's `|` replacement once its path exists: ES-DE skips the entry while it does not) makes the
+  game "requires launcher configuration" with the token named; nothing runs.
 - **`~`** is ES-DE's home folder (`Utils::FileSystem::getHomePath`), the parent of the ES-DE home: the `--home` folder
   (a bare drive such as `E:` is that drive's root, so the ES-DE home is `E:\ES-DE`), else the portable home (the folder
   of `ES-DE.exe` for an empty `portable.txt`, otherwise that folder joined with the file's first line), else
@@ -225,23 +269,29 @@ pending" rather than imported unscraped.
   `%USERPROFILE%`. ES-DE replaces every `~` of a text, not only a leading one (in ROMDirectory, MediaDirectory,
   `es_systems.xml` paths, static paths, `%STARTDIR%` values and whole commands); so does Retroverse, which reports a `~`
   past the start of ROMDirectory or MediaDirectory (`root-tilde-inside`).
-- **Find rules**: in ES-DE's order: App Paths (HKCU, then HKLM when the HKCU key is absent), registry values (the value
-  plus the suffix appended verbatim), the executable search, static paths (`~`, `%ESPATH%` the install folder and
+- **Find rules**: in ES-DE's order: App Paths (HKCU, then HKLM when the HKCU key is absent; the value as written,
+  quotes included, as ES-DE reads it, so that a quoted value names no file), registry values (the value plus the suffix
+  appended verbatim), the executable search, static paths (`~`, `%ESPATH%` the install folder and
   `%ROMPATH%` the ROM root as ES-DE's `getROMDirectory()` gives it, expanded; a `*` only in the last element, matched as
   ES-DE's regular expression over the generic path: `*` becomes `.*`, `.` stays a wildcard character, `()[]` escaped,
   case-sensitively, the first match in ordinal order winning), and the core path (`%EMUPATH%\cores`);
   `custom_systems/es_find_rules.xml` is read first and its emulators replace the bundled ones. The executable search
   looks in the ES-DE install folder, System32, the Windows folder and the absolute entries of PATH,
   never in Retroverse's folder or the current directory (the ROM tree here holds emulators named like find-rule entries).
-  `%ESPATH%` with an unknown install folder makes the game "requires launcher configuration".
+  An unknown install folder makes a search that needs it undecided, never "not found": an entry with `%ESPATH%`, and the
+  executable search, which ES-DE's SearchPathW begins in the install folder; the game "requires launcher
+  configuration".
 - **Working directory** without `%STARTDIR%`: the emulator's folder (ADR-0006). ES-DE leaves emulators in its own
   current directory (its install folder); the difference keeps emulators launched by Retroverse from writing there.
 - **Choice of command**, most specific first: Retroverse's choice for the game, the game's `<altemulator>` (only with
   `AlternativeEmulatorPerGame`), Retroverse's choice for the system, the gamelist's `<alternativeEmulator>`, the first
   `<command>`. Choices are stored as a system and an ES-DE command label, or as a Retroverse profile id, and translated
   again from the current `es_systems.xml` at every refresh and launch; a stored label that no longer exists makes the
-  game "requires launcher configuration" with the label named, while ES-DE's own stale labels fall back to the first
-  command with ES-DE's warning, as ES-DE does.
+  game "requires launcher configuration" with the label named, while ES-DE's own stale labels fall back with ES-DE's
+  warning, as ES-DE does: an invalid `<alternativeEmulator>` to the first command, and an invalid game `<altemulator>`
+  to the first command too, never to the gamelist's `<alternativeEmulator>`, which ES-DE does not look at then. A
+  deliberate difference: when Retroverse has a choice for the system, an invalid game `<altemulator>` falls to it, since
+  it stands in for ES-DE's default command.
 - **Readiness**, the first that applies: source unavailable, ROM missing, requires launcher configuration, emulator not
   found, core not found, ready. It is computed at refresh and checked again before each launch. "Ready" does not wait for
   a launch test (a departure from specification §11.3): the ES-DE commands are what the user already plays with;

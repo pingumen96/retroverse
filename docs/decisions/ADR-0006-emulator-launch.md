@@ -2,6 +2,11 @@
 
 - Status: accepted
 - Date: 2026-10-16
+- Amended: 2026-10-17, at I2 step A1: the Consequences record that the application now drives the launch with the keep
+  policy and tells `quickExit` and `processesRemained`, and that going back to the game from Retroverse's focused window
+  minimizes it for that leg; a return that nobody confirmed while processes of the tree still run
+  (`processes-remained`), or that the wait limit ended, leaves the window where it is instead of raising it ("The
+  return" restores and raises once the game has ended, which neither case establishes); the open risk of the emulator's shutdown is answered by the kept "Gioco in corso" frame
 
 ## Context
 
@@ -101,7 +106,16 @@ and offers to return without closing it (the session ends with the emulator left
 - I2's launcher builds on `rv_launcher` and `rv_platform` as they are: emulator profiles and ES-DE commands become
   `LaunchRequest`s (tokens resolved to argv elements, never a command string), the application drives a
   `LaunchSession` in its ExternalEmulatorRunning state (§15.5) and a `WindowHandover` with the keep policy, and shows
-  `quickExit` and `processesRemained` to the user.
+  `quickExit` and `processesRemained` to the user. Done at I2 step A1 (`docs/i2/step-A1.md`): `retroverse.exe` launches
+  from the quick catalog through `app::LaunchFlow` on `Win32ProcessRunner` with the keep policy; while the emulator runs
+  its host renders, updates and presents nothing and waits for events, woken by the runner; the game-session panel
+  tells a quick exit (`quick-exit`) and processes left in the tree (`processes-remained`) with the hint that the profile
+  must wait for the tree; after such a return that nobody confirmed, and after a session that the wait limit of a
+  frame-limited run ended, the window is left where it is, not raised over a game that may still run
+  (`LaunchFlow::returnTakesForeground`). Going back to the game from Retroverse's focused window ("Torna al gioco",
+  after the user came back while it ran) minimizes the window for that leg, so that Windows activates the next window,
+  the game; `WindowHandover::restore()` takes it back at the return (`IRunningProcess` exposes no window of the tree to
+  raise).
 - The roadmap's fallbacks are in place: `AllowSetForegroundWindow` before the launch (best effort), a minimized window
   with a notification (`Minimize` and the flash), a direct process with a "return" confirmation (`UserConfirmReturn`,
   automatic when the job cannot be set up).
@@ -121,7 +135,11 @@ and offers to return without closing it (the session ends with the emulator left
   - A hung window of another application in the foreground at the return defeats every remedy (3 of 3 measured): the
     taskbar button flashes and the user, or that window going away, brings Retroverse back.
   - While the emulator shuts down after closing its window (about 170-350 ms for RetroArch), the kept window shows its
-    last frame: render a "returning" state, or resume when the tree's windows are gone (`WindowsGone`).
+    last frame: render a "returning" state, or resume when the tree's windows are gone (`WindowsGone`). Answered at I2
+    step A1: the frame that asks for the launch is presented with the "Gioco in corso" notice before the emulator
+    starts, and no frame is rendered after it, so the window keeps that notice behind the emulator and during its
+    shutdown; the panel asks a user back in Retroverse while the game runs only after 1.5 s of focus
+    (`LaunchFlow::kComeBackDelay`), since the focus comes back 0.2 to 0.35 s before the emulator's process ends.
   - Children that break away from the job and programs activated by the system (packaged applications) are outside
     the tree: their profiles need UserConfirmReturn. A launcher that leaves a helper process running keeps a ProcessTree
     session alive until the window timeout offers the return.

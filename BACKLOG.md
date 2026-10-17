@@ -206,13 +206,15 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   letters, digits, the space bar, Backspace, Delete and Tab stay with RmlUi's text fields; bind keys if any can be
   spared from text entry.
 - **Localization:** tables in `assets/ui/locale` bound through RmlUi's data model, and number formatting with them (the
-  quick catalog's count reads "100000 giochi").
+  quick catalog's count reads "100000 giochi"); the game-session panel's sentences, which hold the game's title, are
+  written in `assets/ui/game_session.rml` itself until then (I2 step A1; I7).
 - **Pictures in the UI:** an image source scheme (`rv-texture:<key>`) mapping covers and video frames to
   `gl::TextureCache` textures in the render interface (I3, I5).
 - **Upstream:** propose the vendored renderer's three local changes to RmlUi (output target, state-backup opt-out,
   sampler reset).
-- **Registry:** register `ui/quick_catalog.rml` and `ui/quick_catalog.rcss` (kinds ui-document and ui-style-sheet,
-  provenance retroverse-original) once the asset validator covers `assets/ui`.
+- **Registry:** register `ui/quick_catalog.rml`, `ui/quick_catalog.rcss`, `ui/game_session.rml` and
+  `ui/game_session.rcss` (kinds ui-document and ui-style-sheet, provenance retroverse-original) once the asset validator
+  covers `assets/ui`.
 - **Shared overlay helper:** move `devui::fitOverlayCapture` below both overlays; `rv_ui` links `rv_devui_model` only
   for it.
 - **GPU timings by result:** a result counter in `gl::GpuTimer`, so samples are recorded per query result (2 to 8% of
@@ -226,10 +228,6 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   (60 FPS back in 307 to 442 ms, up to 710 ms after an exclusive display mode); later returns 31 to 118 ms. Likely a
   presentation-mode change (independent flip against composed): check with PresentMon (`docs/spikes/i1-launch.md`,
   finding 7).
-- **While the emulator closes:** with the keep policy the last frame shows for the 170 to 350 ms RetroArch takes to shut
-  down; resume when its windows are gone and the foreground is back, or draw a "returning" state.
-- **"Game running" screen** (I2/I7) with return and go-back options, a StillRunning notice, and the quick-exit hint of
-  `LaunchOutcome::quickExit`.
 - **Batch launchers:** `.bat` files need a verified profile kind with cmd-specific escaping (the BatBadBut class of
   injection); until then only PE programs start.
 - **More emulators:** DuckStation and real exclusive-fullscreen emulators from an isolated copy; an emulator on another
@@ -245,9 +243,21 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 
 ### Catalog
 
-- **Sort keys that fold diacritics** (`kSortKeyVersion` 2, `rv/catalog/metadata.hpp`): version 1 only lower-cases with
-  the invariant locale, so accented titles sort after "z" ("Écran" after "Zone"); fold accents to their base letters
-  (Windows' normalization functions can decompose them) and consider a natural order of numbers ("2" before "10").
+- **Sort keys that fold diacritics and are composed (NFC)** (`kSortKeyVersion` 2, `rv/catalog/metadata.hpp`): version 1
+  only lower-cases with the invariant locale, so accented titles sort after "z" ("Écran" after "Zone"); fold accents to
+  their base letters (Windows' normalization functions can decompose them) and consider a natural order of numbers ("2"
+  before "10"). Version 1 does not normalize either: the one-character filter reads both forms of a character meanwhile
+  (I2 step 9), and the NFC helper private to `catalog_query.cpp` (`NormalizeString`) moves to `rv/core/utf8.hpp` when
+  the sort keys need it.
+- **The gamelist entry kind in the snapshot** (I2 steps 7 and 8): over the library snapshot, `media --coverage`'s
+  `gamelist-entries` population is "every `<game>` entry" only as far as the snapshot tells entries apart. It leaves out
+  the `<game>` entries `EsdeLibrarySource` skips with an issue (`gamelist-kind-mismatch`, `gamelist-entry-inside-game`)
+  and counts the `<folder>` entries ES-DE excludes (`NotAGame` with a gamelist path); neither happens on the reference
+  library, the nested-roms and noload fixtures show both. Record which kind of gamelist entry named an entry, keep the
+  skipped `<game>` entries (as entries or a count per system), and let `inPopulation()` take the kind instead of the
+  state.
+- **`discover` and `MAMENameStripExtraInfo`:** the settings whitelist gained the key at I2 step 7 (arcade names follow
+  it), but `discover` still prints eight of the nine settings it reads.
 - **XML warnings with the user's paths:** `detail::loadXmlFile` (`src/esde/src/xml.cpp`, used by the settings, systems
   and find rules readers) logs what it read leniently at warning level with the file's path, under the user's ES-DE
   home; log it at debug level, as `readGamelist` does (I2 step 3), and report it as issues.
@@ -257,9 +267,15 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; these come from the I2 steps.
 
 - **The gate and test scripts under the automation guard** (ADR-0008 §8): `scripts/gate.ps1` and `scripts/test.ps1`
-  set no `RV_LAUNCH_ALLOWLIST`, so the guard does nothing in their runs. Set it to
+  set no `RV_LAUNCH_ALLOWLIST`, so the guard does nothing in their unit tests and in the `desktop.launch.*` cases of
+  `spike_launch`, which start the fake emulator unguarded; the GPU smoke tests of `rv_smoke_tests` already set it per
+  case through ctest `ENVIRONMENT` since I2 step A1 (the build's fake emulator alone). Set it to
   `build/<preset>/bin/rv_fake_emulator.exe`, and check that the runner tests that start unlisted files on purpose (a
-  text file or a broken program named `.exe`) still test what they mean to, since the guard refuses them first.
+  text file or a broken program named `.exe`) still test what they mean to, since the guard refuses them first: the
+  unit test "platform_win/process_runner: an image Windows cannot load fails to start, without a dialog" (I1 spike f,
+  in `rv_tests` since I2 step 0b) expects `CreateProcessW` to fail, and the guard would refuse the broken image before
+  it. The image is written into a scratch folder per run, which no list can name in advance: that test must clear the
+  variable for itself, or point it at its own image, before the scripts set it.
 - **Derived profiles:** an `extends` field, so that a user profile changes a few fields of a shipped one instead of
   replacing it whole by id (I2 step 5), if users ask for it.
 - **Startup grace per profile:** a `startupGraceSeconds` beside `windowTimeoutSeconds` in `emulators.json`; today every
@@ -273,3 +289,26 @@ The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; 
   read UTF-16 (their manifest, `wmain`).
 - **The guard's RetroArch option table** (`launch_guard.cpp`) holds RetroArch 1.21.0's options: newer options are
   refused until the table learns them, so follow RetroArch releases.
+- **`%GAMEENTRYDIR%` in `%STARTDIR%`:** it requires launcher configuration today (I2 step 10); no command of ES-DE
+  3.4.1 uses it.
+- **A suggestion for a system that cannot launch** (SC-10): `profiles` lists the readiness of each command and profile
+  of a system; it, and the app once it shows readiness (I2 step 13), could name the first ready one when the chosen one
+  is blocked (ps2's first command, for example).
+- **Profiles refused by the file opened:** step 5's `planLaunch()` refuses a profile's executable by the name found only
+  (`isRefusedProgram()`), where the ES-DE translation also checks the file it opens (an 8.3 alias, a symbolic link
+  named like an emulator, I2 step 10); give profiles the same check.
+- **Launch command lines at debug level:** `LaunchSession` logs the command line at info level, where ADR-0008 §9 says
+  debug (command lines carry the user's paths); I2 step 12, with the session rows.
+
+### App shell
+
+The I1 spike's product UI items stay under "Product UI" above; these come from I2 step A1.
+
+- **The quick catalog's focus after `show()`:** `ui::QuickCatalogScreen::show()` after `hide()` relies on RmlUi's focus
+  event to restore its focus record, which RmlUi does not send when its focus never left the element; `ProductUi` moves
+  RmlUi's focus to the context's root before `show()`. Fix it in `rv_ui`: record the focus explicitly in `show()`.
+- **The game-session panel in `rv_ui`:** `GameSessionPanel` is private to `rv_app` (its GPU-free contract in
+  `game_session_ui.hpp`); it can move beside `QuickCatalogScreen`. Its document, `assets/ui/game_session.rml`, does not
+  reload when saved in developer builds yet (the catalog's documents do).
+- **"Vedi media" and "Informazioni"** (`ui_media`, `ui_info`) do nothing in the app yet: the media viewer and the game's
+  details come with the media and screens (I3, I5).
