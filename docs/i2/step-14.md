@@ -97,7 +97,11 @@ generated on every core).
     the tests and the second snapshot. The gate removes the previous run's `figures.json` and `tests.log` before the
     run, reads `real-library.ps1`'s "Measurements:" verdict like its "Tests:" one, fails on a non-zero exit code that no
     other row explains and on a missing quick-hash sample figure, and keeps the earlier rows when the real library's
-    part throws.
+    part throws. Checked on the real library under `focus_watch.py` (0 findings): `real-library.ps1 -Measure
+    scripts/gate-m1-real.ps1 -Filter '[real-library][query]'` passed (NFR-01 1,181 to 1,278 ms, 0 differences among
+    542,082 entries), and with a measurement script that throws, the tests and the second snapshot still ran (exit 1,
+    "Measurements: FAILED", 0 differences); the gate's rows replayed on this run's logs with the figures, the verdict
+    or the quick-hash line removed each fail on their own row.
 
 ## Step 13 folded into the shared documentation
 
