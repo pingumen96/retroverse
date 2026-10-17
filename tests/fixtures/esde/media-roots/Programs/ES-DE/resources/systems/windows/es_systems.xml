@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!-- The game systems of the media-roots fixture: ES-DE's format with an invented emulator (see README.md) -->
+<systemList>
+    <system>
+        <name>gb</name>
+        <fullname>Nintendo Game Boy</fullname>
+        <path>%ROMPATH%\gb</path>
+        <extension>.gb .GB .zip .ZIP</extension>
+        <command label="Roots Emulator">%EMULATOR_ROOTS-EMULATOR% -- %ROM%</command>
+        <platform>gb</platform>
+        <theme>gb</theme>
+    </system>
+    <system>
+        <name>nes</name>
+        <fullname>Nintendo Entertainment System</fullname>
+        <path>%ROMPATH%\nes</path>
+        <extension>.nes .NES .zip .ZIP</extension>
+        <command label="Roots Emulator">%EMULATOR_ROOTS-EMULATOR% -- %ROM%</command>
+        <platform>nes</platform>
+        <theme>nes</theme>
+    </system>
+</systemList>

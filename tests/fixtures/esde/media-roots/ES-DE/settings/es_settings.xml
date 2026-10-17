@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<bool name="AlternativeEmulatorPerGame" value="true" />
+<bool name="LegacyGamelistFileLocation" value="false" />
+<bool name="ParseGamelistOnly" value="false" />
+<bool name="ShowHiddenFiles" value="true" />
+<bool name="ShowHiddenGames" value="true" />
+<string name="MediaDirectory" value="{{FIXTURE_ROOT}}\media" />
+<string name="ROMDirectory" value="{{FIXTURE_ROOT}}\roms" />
+<string name="UIMode" value="full" />
