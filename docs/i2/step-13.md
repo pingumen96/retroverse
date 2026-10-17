@@ -232,7 +232,14 @@ list's first game (the chips), then `ui_up` again.
   - A1's closed-catalog case now compares the mock catalog's frames with the ES-DE catalog's (`no-library`): 0 pixels
     apart. Golden G01's runs have the ES-DE catalog of an empty data directory, closed: unchanged.
 
-FIGURES_TESTS
+- **Input scripts and the model**: `"text"` steps (typed once on `fromFrame`, joined per frame, the refusals);
+  `QuickCatalogModel::reread()` (the same list and selection, other data, the revisions).
+
+Results (the reference machine, 2026-10-17; this worktree's builds the only other work): `msvc-x64-debug` and
+`msvc-x64-release` build without a warning; `./scripts/test.ps1 -Preset msvc-x64-debug-gpu` passes 1,290 of 1,290
+(1,262 unit, 28 gpu; the catalog cases 7.4, 5.9 and 5.4 s; golden G01 within tolerance) and `msvc-x64-release-gpu`
+1,288 of 1,288 (1,262 unit, 26 gpu; the catalog cases 4.6, 2.3 and 1.7 s; golden G01). The step's unit tests are 17
+test cases (`[catalog_worker]` 10, `[catalog_sessions]` 7), about 5 s in Debug, most of it the fixture's imports.
 
 ## NFR-01 (Release)
 
