@@ -120,7 +120,7 @@ TEST_CASE("cli/import: --dry-run prints the standard fixture's entries by system
         CHECK(contains(result.out, "snes                    8        5        0        1        0        2        0"
                                    "        0        0        0  available, read"));
         CHECK(contains(result.out, "Total                  23       15        1        1        2        3        1"));
-        CHECK(contains(result.out, "games as ES-DE lists them (games and disc members): 17"));
+        CHECK(contains(result.out, "games as ES-DE lists them (the games and disc members on disk): 17"));
         CHECK(contains(result.out, "  snes: extension-not-configured 1"));
         CHECK(contains(result.out, "[warning] gamelist-path-outside-folder gb:"));
         CHECK(contains(result.out, "Read in "));

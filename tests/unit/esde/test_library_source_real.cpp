@@ -81,13 +81,16 @@ std::map<std::string, Row> censusOf(const rv::catalog::LibrarySnapshot& snapshot
     for (const rv::catalog::CatalogEntry& entry : snapshot.entries) {
         Row& row = rows[entry.system.str()];
         ++row.values[1];
-        const bool game = entry.state == EntryState::Game || entry.state == EntryState::DiscMember;
+        // ES-DE's count: the games and members on disk, and its second entry for a gamelist path that differs from its
+        // file in case only.
+        const bool listed = entry.availability == rv::catalog::Availability::Available;
+        const bool game = listed && (entry.state == EntryState::Game || entry.state == EntryState::DiscMember);
+        row.values[0] += game ? 1 : 0;
         if (game && entry.fromGamelist() && resolvedPath(entry.gamelistPath) != entry.key.relativePath()) {
-            ++row.values[0]; // ES-DE's second entry for a path that differs in case only
+            ++row.values[0];
         }
         switch (entry.state) {
         case EntryState::Game:
-            ++row.values[0];
             ++row.values[2];
             break;
         case EntryState::MissingFile:
@@ -98,7 +101,6 @@ std::map<std::string, Row> censusOf(const rv::catalog::LibrarySnapshot& snapshot
             ++notAGame[entry.system.str()][std::string(rv::catalog::toString(entry.notAGameReason))];
             break;
         case EntryState::DiscMember:
-            ++row.values[0];
             ++row.values[5];
             break;
         case EntryState::Folder:

@@ -812,8 +812,11 @@ Expected<SystemResult> Loader::loadSystem(const SystemDefinition& definition) {
             return propagate(std::move(grouped.error()));
         }
     }
+    // What ES-DE would list: games and members on disk (not those its gamelist alone tells of below a folder that
+    // cannot be listed: ES-DE skips a system whose folder is not there and goes on to the name's next definition).
     for (const CatalogEntry& entry : result.entries) {
-        result.esdeGames += entry.state == EntryState::Game || entry.state == EntryState::DiscMember ? 1 : 0;
+        const bool game = entry.state == EntryState::Game || entry.state == EntryState::DiscMember;
+        result.esdeGames += game && entry.availability == catalog::Availability::Available ? 1 : 0;
     }
     std::sort(result.entries.begin(), result.entries.end(), catalog::entryOrder);
     result.issues = issues.take();

@@ -26,6 +26,7 @@
 #include <rv/esde/library_source.hpp>
 
 #include "snapshot_test_support.hpp"
+#include "support/file_system.hpp"
 #include "support/fixture.hpp"
 
 namespace fs = std::filesystem;
@@ -399,4 +400,17 @@ TEST_CASE("esde/library_source: a system defined twice is the first definition t
           std::vector<std::string>{"Bundled Bounce (World).gb"});
     CHECK(rv::test::esde::issuesOf(snapshot.issues, "system-fallback-used").size() == 1);
     CHECK(source.lastStatistics().systemsScanned == 2);
+
+    // A custom folder that is not there at all, whose gamelist still names games: ES-DE skips the definition all the
+    // same (the games the gamelist alone tells of are none it would list).
+    rv::test::removeTreeAnyLength(fixture.path("roms/gb-custom"));
+    REQUIRE(rv::test::writeFileAnyLength(fixture.path("ES-DE/gamelists/gb/gamelist.xml"),
+                                         "<gameList><game><path>./Bundled Bounce (World).gb</path><name>Bounce</name>"
+                                         "</game></gameList>"));
+    const LibrarySnapshot missing = loadSnapshot(source, profileOf(fixture));
+    REQUIRE(missing.systems.size() == 1);
+    CHECK(missing.systems[0].romFolder.lexically_normal() == fixture.path("roms/gb").lexically_normal());
+    CHECK(missing.systems[0].availability == rv::catalog::Availability::Available);
+    CHECK(entryAt(missing, "gb", "Bundled Bounce (World).gb").title == "Bounce");
+    CHECK(rv::test::esde::issuesOf(missing.issues, "system-fallback-used").size() == 1);
 }

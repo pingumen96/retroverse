@@ -640,8 +640,10 @@ class System:
             if state == 'not-a-game':
                 reasons[entry['reason']] = reasons.get(entry['reason'], 0) + 1
         # ES-DE also shows a second entry for a gamelist path that differs from its file in case only.
-        variants = sum(1 for e in self.entries if e.get('variant') and e['state'] in ('game', 'disc-member'))
-        row['esde'] = row['games'] + row['members'] + variants
+        # ES-DE lists the games and members on disk (not those a gamelist alone tells of below a folder that cannot
+        # be listed), and a second entry for a gamelist path that differs from its file in case only.
+        listed = [e for e in self.entries if e['state'] in ('game', 'disc-member') and not e.get('unavailable')]
+        row['esde'] = len(listed) + sum(1 for e in listed if e.get('variant'))
         row['groups'] = self.groups
         row['unavail'] = len(self.unavailable)
         return row, reasons

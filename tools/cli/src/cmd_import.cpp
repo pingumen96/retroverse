@@ -53,6 +53,7 @@ struct Counts {
     std::size_t folders = 0;
     std::size_t outside = 0;
     std::size_t unavailable = 0; ///< entries whose folder could not be listed (any state)
+    std::size_t esde = 0;        ///< games and members on disk: what ES-DE lists
     std::size_t groups = 0;
     std::size_t unavailableFolders = 0;
     std::size_t issues = 0;
@@ -68,6 +69,7 @@ struct Counts {
         folders += other.folders;
         outside += other.outside;
         unavailable += other.unavailable;
+        esde += other.esde;
         groups += other.groups;
         unavailableFolders += other.unavailableFolders;
         issues += other.issues;
@@ -95,6 +97,8 @@ std::map<std::string, Counts> countsOf(const catalog::LibrarySnapshot& snapshot)
         Counts& count = counts[entry.system.str()];
         ++count.entries;
         count.unavailable += entry.availability == catalog::Availability::SourceUnavailable ? 1 : 0;
+        const bool game = entry.state == catalog::EntryState::Game || entry.state == catalog::EntryState::DiscMember;
+        count.esde += game && entry.availability == catalog::Availability::Available ? 1 : 0;
         switch (entry.state) {
         case catalog::EntryState::Game:
             ++count.games;
@@ -149,6 +153,7 @@ Json countsJson(const Counts& counts) {
                 {"folders", counts.folders},
                 {"outsideSystemFolder", counts.outside},
                 {"sourceUnavailable", counts.unavailable},
+                {"esdeGames", counts.esde},
                 {"discGroups", counts.groups},
                 {"unavailableFolders", counts.unavailableFolders},
                 {"issues", counts.issues}};
@@ -244,8 +249,8 @@ void writeText(const catalog::LibrarySnapshot& snapshot, const std::map<std::str
     out.writeLine(fmt::format("{:<16}{}", "Total", row(total)));
     out.writeLine();
     out.writeLine(fmt::format("{} systems configured, {} with a ROM folder, {} listed above; games as ES-DE lists them "
-                              "(games and disc members): {}",
-                              snapshot.systems.size(), withFolder, listed, total.games + total.members));
+                              "(the games and disc members on disk): {}",
+                              snapshot.systems.size(), withFolder, listed, total.esde));
     if (!total.reasons.empty()) {
         out.writeLine("Not a game, by reason:");
         for (const auto& [name, count] : counts) {

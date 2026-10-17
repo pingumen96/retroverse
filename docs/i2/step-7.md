@@ -104,8 +104,8 @@ Titles: the gamelist's `<name>` (`displayText()`), else `esdeDefaultName()`: the
 directory's name without its extension, a folder's whole name, an arcade game's MAME name.
 
 Systems: every system of the configuration is in the snapshot. For a name with several definitions (a custom system and
-the bundled one), the first whose folder gives a game (games or disc members) is used, as ES-DE loads it
-(`system-fallback-used`); the first when none does.
+the bundled one), the first whose folder gives a game (games or disc members on disk, not what a gamelist alone tells of
+below a folder that cannot be listed) is used, as ES-DE loads it (`system-fallback-used`); the first when none does.
 
 ## Disc groups
 
@@ -167,8 +167,9 @@ retroverse-cli [global options] import --dry-run [--system <name>] [--json] [--o
 Reads the library `<user data>/config/library.json` records (`retroverse-cli library create` writes it) and prints a
 table: per system its entries, games, missing files, not games, disc members, folders, entries outside the system
 folder, entries source unavailable, disc groups and issues, with its folder's availability and its gamelist's state
-(systems with entries, issues or a folder that cannot be read); the totals, "games as ES-DE lists them", the not-a-game
-reasons, the folders that cannot be listed, the issues and the time. `--json` gives every system of the configuration
+(systems with entries, issues or a folder that cannot be read); the totals, "games as ES-DE lists them" (the games and
+disc members on disk; `esdeGames` in JSON), the not-a-game reasons, the folders that cannot be listed, the issues and the
+time. `--json` gives every system of the configuration
 (`systems`, `totals`, `unavailableFolders`, `issues`, `statistics`). Every sheet that is a game is read (no database to
 take cached groups from: step 11 passes them). It writes nothing but its log file (the test compares the fixture's
 tree and the user data directory before and after). Exit codes: 0; 1 when an error issue was met; 2 for invalid
@@ -185,8 +186,9 @@ python -I scripts/esde_census.py --esde-home <ES-DE home> [--esde-install <folde
 Standard library only, read-only, no machine paths inside: a port of the survey's discovery emulation (`scan_tree.py`,
 `rom_analysis.py`, `rom_details.py`, which reproduced ES-DE's own "Total game count") with the rules above and the disc
 grouping, written apart from the C++. It prints the table the hidden test prints: per system ES-DE's count (games and
-disc members, plus ES-DE's second entries for gamelist paths that differ from their file in case only), entries, games,
-missing, not games, members, folders, outside, groups, unavailable folders, then the totals and the not-a-game reasons.
+disc members on disk, plus ES-DE's second entries for gamelist paths that differ from their file in case only),
+entries, games, missing, not games, members, folders, outside, groups, unavailable folders, then the totals and the
+not-a-game reasons.
 
 On the reference machine its table and the test's are byte for byte the same (195 lines). It also agrees with the C++
 on every fixture of this step and their variants (checked once by keeping the materialized copies).
