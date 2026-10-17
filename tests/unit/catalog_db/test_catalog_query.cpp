@@ -717,6 +717,11 @@ TEST_CASE("catalog_db/query: a reader never waits on the writer: during an impor
     CHECK(fixture.query->connection().role() == rv::catalog_db::ConnectionRole::Reader);
     CHECK(fixture.query->connection().busyTimeout() == 0ms);
 
+    // Another query that narrows the list it keeps for every search (lookup limit 0), kept while nothing is committed.
+    auto narrowing =
+        SqliteCatalogQuery::open(fixture.database.openReader().value(), rv::catalog_db::QueryOptions{0}).value();
+    CHECK(narrowing->run(CatalogQuery{"pixel"}).value() == std::vector{quest.id});
+
     auto transaction = fixture.store->beginImport(library);
     REQUIRE(transaction.has_value());
     const IndexedEntry racer = game(library, "gb", "Pixel Racer.gb", "Pixel Racer");
@@ -735,15 +740,21 @@ TEST_CASE("catalog_db/query: a reader never waits on the writer: during an impor
     CHECK(fixture.run(bySystem) == std::vector{quest.id});
     CHECK(fixture.query->systems().value().front().system.fullName == "Portable Console");
     CHECK(fixture.query->details(racer.id).value() == std::nullopt);
+    CHECK(fixture.run(CatalogQuery{}) == std::vector{quest.id});
+    CHECK(narrowing->run(CatalogQuery{"pixel"}).value() == std::vector{quest.id});
+    CHECK(narrowing->run(CatalogQuery{"pixel qu"}).value() == std::vector{quest.id});
     CHECK(std::chrono::steady_clock::now() - started < 2s); // the writer's busy timeout is 5 s
     CHECK_FALSE(fixture.query->connection().inTransaction()); // no read outlives a call
 
     REQUIRE((*transaction)->commit().has_value());
+    const IndexedEntry tower = edited(quest, [](CatalogEntry& e) { e.title = "Tower Quest"; });
     CHECK(fixture.titles("pixel") == std::vector<std::string>{"Pixel Racer"});
     CHECK(fixture.titles("tower") == std::vector<std::string>{"Tower Quest"});
-    CHECK(fixture.search("renamed") == titleOrder({racer, edited(quest, [](CatalogEntry& e) {
-                                                       e.title = "Tower Quest";
-                                                   })}));
+    CHECK(fixture.search("renamed") == titleOrder({racer, tower}));
+    // The lists kept before the commit are read again.
+    CHECK(fixture.run(CatalogQuery{}) == titleOrder({racer, tower}));
+    CHECK(narrowing->run(CatalogQuery{"pixel"}).value() == std::vector{racer.id});
+    CHECK(narrowing->run(CatalogQuery{"quest"}).value() == std::vector{quest.id});
 }
 
 TEST_CASE("catalog_db/query: the queries need the program's schema and an open connection; the writer's own open "

@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <string>
@@ -113,7 +114,7 @@ std::vector<CatalogQuery> nfr02Queries() {
 } // namespace
 
 TEST_CASE("catalog_db/bench: NFR-02, the p95 of indexed queries is at most 100 ms on 10,000 games",
-          "[.bench][catalog_db]") {
+          "[.bench]") {
     BenchCatalog catalog("rv-bench-nfr02", 10'000);
     const std::vector<CatalogQuery> queries = nfr02Queries();
     for (const CatalogQuery& query : queries) { // warm the page cache, as the app's reader is
@@ -140,7 +141,7 @@ TEST_CASE("catalog_db/bench: NFR-02, the p95 of indexed queries is at most 100 m
 }
 
 TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 100,000 games; lists materialized",
-          "[.bench][catalog_db]") {
+          "[.bench]") {
     BenchCatalog catalog("rv-bench-page", 100'000);
     std::string report = fmt::format("Informative timings (I2 step 9) on 100,000 entries, generated and written in "
                                      "{:.0f} ms ({} pages of 4 KiB):\n",
@@ -242,6 +243,23 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
     report += fmt::format("  UI page, 30 rows by ids ({} pages): p50 {:.3f} ms, p95 {:.3f} ms, max {:.3f} ms; "
                           "first page of a new reader {:.3f} ms\n",
                           pages.size(), percentile(pages, 0.5), p95, percentile(pages, 1.0), coldPage);
+
+    // Sizes: what a copy of the database loses without the order index, then without the search index.
+    const std::filesystem::path copy = catalog.dir.file("sizes/copy.sqlite");
+    REQUIRE(catalog.database->backupTo(copy).has_value());
+    {
+        auto copied = rv::catalog_db::Database::open(copy);
+        REQUIRE(copied.has_value());
+        rv::catalog_db::Connection& writer = copied->writer();
+        const std::int64_t whole = writer.queryInt("PRAGMA page_count").value().value_or(0);
+        REQUIRE(writer.execute("DROP INDEX idx_games_sort; VACUUM").has_value());
+        const std::int64_t withoutOrder = writer.queryInt("PRAGMA page_count").value().value_or(0);
+        REQUIRE(writer.execute("DROP TABLE idx_game_search; VACUUM").has_value());
+        const std::int64_t withoutSearch = writer.queryInt("PRAGMA page_count").value().value_or(0);
+        report += fmt::format("  sizes: database {} pages of 4 KiB (vacuumed), order index {} pages, search index {} "
+                              "pages\n",
+                              whole, whole - withoutOrder, withoutOrder - withoutSearch);
+    }
     WARN(report);
     CHECK(p95 <= 5.0);
 }

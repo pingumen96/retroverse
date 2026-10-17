@@ -50,6 +50,9 @@ CREATE VIRTUAL TABLE search_word_list USING fts5vocab(search_words, instance);
 /// Statements kept per connection: the queries' SQL varies with their filters and order, a few dozen forms in all.
 constexpr std::size_t kStatementCacheLimit = 64;
 
+/// The page cache of the query connection, in KiB (PRAGMA cache_size = -kQueryCacheKiB).
+constexpr std::int64_t kQueryCacheKiB = 32 * 1024;
+
 /// A value the database holds that the catalog cannot read back: a damaged or foreign row.
 tl::unexpected<Error> unreadable(std::string_view what, std::string context) {
     return makeError(ErrorCode::ParseError, fmt::format("the catalog database holds {}", what), std::move(context));
@@ -422,6 +425,42 @@ struct ListRow {
     std::optional<std::int64_t> releaseDate; ///< ReleaseDate
 };
 
+/// `column IN ('a', 'b')`, or `column = 'a'`, of names of the catalog's enumerations: constants of [a-z-], never user
+/// text, so written into the SQL, where SQLite compares them faster than a bound list.
+std::string inList(std::string_view column, const std::vector<std::string_view>& names) {
+    if (names.size() == 1) {
+        return fmt::format("{} = '{}'", column, names.front());
+    }
+    std::string sql = fmt::format("{} IN (", column);
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        sql += fmt::format("{}'{}'", i == 0 ? "" : ", ", names[i]);
+    }
+    sql += ')';
+    return sql;
+}
+
+/// A list as State::readList() reads it from the database.
+struct ListRead {
+    /// The WHERE clause of the filters, over idx_games as g; ?3 is `systemsJson` when it is not empty.
+    std::string filters;
+    std::string systemsJson;
+    SortOrder sort = SortOrder::Title;
+    /// FirstCharacter: the sort keys' first character.
+    std::optional<std::string> prefix;
+    /// A search's matching rows, ascending, looked up one by one; null: the order index read whole.
+    const std::vector<std::int64_t>* lookUp = nullptr;
+};
+
+/// The list run() read last without a search, kept while the database is unchanged: a search with the same filters
+/// and order narrows it instead of reading it again.
+struct KeptList {
+    /// The filters and the order it was read with.
+    std::string key;
+    /// PRAGMA data_version when it was read: another connection's commit changes it.
+    std::int64_t dataVersion = 0;
+    std::vector<GameId> ids;
+};
+
 } // namespace
 
 struct SqliteCatalogQuery::State {
@@ -449,7 +488,178 @@ struct SqliteCatalogQuery::State {
         }
         return &statements.emplace(std::string(sql), std::move(*prepared)).first->second;
     }
+
+    /// PRAGMA data_version of the snapshot being read.
+    Expected<std::int64_t> dataVersion() {
+        auto pragma = statement("PRAGMA data_version");
+        if (!pragma) {
+            return propagate(pragma.error());
+        }
+        Statement& version = **pragma;
+        const ScopedReset reset(version);
+        const auto row = version.step();
+        if (!row) {
+            return propagate(row.error());
+        }
+        return *row ? version.columnInt(0) : 0;
+    }
+
+    /// The rows that match an FTS5 query, ascending.
+    Expected<std::vector<std::int64_t>> matches(std::string_view match) {
+        auto prepared = statement("SELECT rowid FROM idx_game_search WHERE idx_game_search MATCH ?1");
+        if (!prepared) {
+            return propagate(prepared.error());
+        }
+        Statement& search = **prepared;
+        const ScopedReset reset(search);
+        search.bindText(1, match);
+        std::vector<std::int64_t> rows;
+        while (true) {
+            const auto row = search.step();
+            if (!row) {
+                return propagate(row.error());
+            }
+            if (!*row) {
+                break;
+            }
+            rows.push_back(search.columnInt(0));
+        }
+        if (!std::is_sorted(rows.begin(), rows.end())) {
+            std::sort(rows.begin(), rows.end());
+        }
+        return rows;
+    }
+
+    /// Reads a list in Title's order from the order index (or by looking a search's rows up), and makes the other
+    /// orders from it by a stable sort; in the caller's read.
+    Expected<std::vector<GameId>> readList(const ListRead& list);
+
+    /// The list without a search last read, if any.
+    std::optional<KeptList> kept;
 };
+
+Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead& list) {
+    std::string sql = "SELECT g.id";
+    if (list.sort == SortOrder::System) {
+        sql += ", g.library, g.system";
+    } else if (list.sort == SortOrder::ReleaseDate) {
+        sql += ", g.release_date";
+    }
+    sql += list.lookUp != nullptr ? " FROM json_each(?4) AS j CROSS JOIN idx_games AS g ON g.id = j.value"
+                                  : " FROM idx_games AS g INDEXED BY idx_games_sort";
+    sql += " WHERE " + list.filters;
+    if (list.prefix) {
+        sql += " AND g.sort_key >= ?5 AND g.sort_key < ?6";
+    }
+    sql += " ORDER BY g.sort_key, g.id";
+    auto prepared = statement(sql);
+    if (!prepared) {
+        return propagate(prepared.error());
+    }
+    Statement& select = **prepared;
+    std::vector<ListRow> rows;
+    std::vector<std::pair<std::string, std::string>> groups; // System: (library, system) by group index
+    {
+        const ScopedReset reset(select);
+        if (!list.systemsJson.empty()) {
+            select.bindText(3, list.systemsJson);
+        }
+        if (list.lookUp != nullptr) {
+            select.bindText(4, jsonIds(*list.lookUp));
+        }
+        if (list.prefix) {
+            // Every sort key that starts with the prefix, and only those: valid UTF-8 never holds the byte 0xFF.
+            select.bindText(5, *list.prefix).bindText(6, *list.prefix + '\xFF');
+        }
+        std::unordered_map<std::string, std::uint32_t> groupIndex; // looked up only: never iterated
+        std::string key;
+        while (true) {
+            const auto row = select.step();
+            if (!row) {
+                return propagate(row.error());
+            }
+            if (!*row) {
+                break;
+            }
+            const auto id = readGameId(select.columnInt(0), "idx_games");
+            if (!id) {
+                return propagate(id.error());
+            }
+            ListRow listed{*id, 0, std::nullopt};
+            if (list.sort == SortOrder::System) {
+                groupKey(key, select.columnText(1), select.columnText(2));
+                auto [found, added] = groupIndex.try_emplace(key, static_cast<std::uint32_t>(groups.size()));
+                if (added) {
+                    groups.emplace_back(select.columnText(1), select.columnText(2));
+                }
+                listed.group = found->second;
+            } else if (list.sort == SortOrder::ReleaseDate) {
+                listed.releaseDate = select.columnOptionalInt(1);
+            }
+            rows.push_back(listed);
+        }
+    }
+
+    if (list.sort == SortOrder::System && !rows.empty()) {
+        // The systems' order: the full name folded as sort keys are, then the name (equal for one system in two
+        // libraries, whose rows then keep Title's order together).
+        auto names = statement("SELECT library, name, full_name FROM idx_systems");
+        if (!names) {
+            return propagate(names.error());
+        }
+        std::map<std::pair<std::string, std::string>, std::string> fullNames;
+        {
+            Statement& systemRows = **names;
+            const ScopedReset reset(systemRows);
+            while (true) {
+                const auto row = systemRows.step();
+                if (!row) {
+                    return propagate(row.error());
+                }
+                if (!*row) {
+                    break;
+                }
+                fullNames.emplace(std::pair<std::string, std::string>(systemRows.columnText(0),
+                                                                      systemRows.columnText(1)),
+                                  systemRows.columnText(2));
+            }
+        }
+        std::vector<std::pair<std::string, std::string>> orderKeys; // (folded full name, name) by group index
+        for (const auto& group : groups) {
+            const auto found = fullNames.find(group);
+            auto folded = catalog::sortKeyOf(found == fullNames.end() ? std::string_view() : found->second);
+            if (!folded) {
+                return propagate(folded.error());
+            }
+            orderKeys.emplace_back(std::move(*folded), group.second);
+        }
+        std::vector<std::uint32_t> byKey(groups.size());
+        std::iota(byKey.begin(), byKey.end(), std::uint32_t{0});
+        std::sort(byKey.begin(), byKey.end(),
+                  [&](std::uint32_t a, std::uint32_t b) { return orderKeys[a] < orderKeys[b]; });
+        std::vector<std::uint32_t> rank(groups.size()); // equal keys, equal ranks
+        for (std::size_t i = 0; i < byKey.size(); ++i) {
+            rank[byKey[i]] = i == 0 ? 0
+                             : orderKeys[byKey[i]] == orderKeys[byKey[i - 1]] ? rank[byKey[i - 1]]
+                                                                             : rank[byKey[i - 1]] + 1;
+        }
+        std::stable_sort(rows.begin(), rows.end(),
+                         [&](const ListRow& a, const ListRow& b) { return rank[a.group] < rank[b.group]; });
+    } else if (list.sort == SortOrder::ReleaseDate) {
+        std::stable_sort(rows.begin(), rows.end(), [](const ListRow& a, const ListRow& b) {
+            if (a.releaseDate.has_value() != b.releaseDate.has_value()) {
+                return a.releaseDate.has_value();
+            }
+            return a.releaseDate.value_or(0) < b.releaseDate.value_or(0);
+        });
+    }
+    std::vector<GameId> ids;
+    ids.reserve(rows.size());
+    for (const ListRow& row : rows) {
+        ids.push_back(row.id);
+    }
+    return ids;
+}
 
 Expected<std::unique_ptr<SqliteCatalogQuery>> SqliteCatalogQuery::open(Connection connection,
                                                                        const QueryOptions& options) {
@@ -470,6 +680,11 @@ Expected<std::unique_ptr<SqliteCatalogQuery>> SqliteCatalogQuery::open(Connectio
                                            "(this program reads version {})",
                                            *version, programSchemaVersion()),
                          core::pathToUtf8Lossy(connection.path()));
+    }
+    // A page cache that holds the order index and the search index of a large catalog (100,000 games: about 6 and 4
+    // MiB), instead of SQLite's 2 MiB, which every list read whole would cycle through.
+    if (auto cache = connection.execute(fmt::format("PRAGMA cache_size = -{}", kQueryCacheKiB)); !cache) {
+        return propagate(cache.error());
     }
     auto words = Connection::openMemory();
     if (!words) {
@@ -568,7 +783,7 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::run(const CatalogQuery& query)
     if (!plan) {
         return propagate(plan.error());
     }
-    // The filters, as JSON arrays bound to the statement.
+    // The filters.
     std::vector<std::string_view> states;
     if (query.states.empty()) {
         states = {catalog::toString(EntryState::Game), catalog::toString(EntryState::MissingFile)};
@@ -591,179 +806,92 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::run(const CatalogQuery& query)
     if (availabilities.empty()) {
         return std::vector<GameId>{};
     }
-    std::vector<std::string_view> systems;
-    for (const SystemName& system : query.systems) {
-        systems.push_back(system.str());
+    ListRead list;
+    list.filters = inList("g.state", states) + " AND " + inList("g.availability", availabilities);
+    if (!query.systems.empty()) {
+        std::vector<std::string_view> systems;
+        for (const SystemName& system : query.systems) {
+            systems.push_back(system.str());
+        }
+        list.filters += " AND g.system IN (SELECT value FROM json_each(?3))";
+        list.systemsJson = jsonStrings(systems);
     }
+    list.sort = query.sort;
+    const std::string key = fmt::format("{} ORDER {} SYSTEMS {}", list.filters, catalog::toString(query.sort),
+                                        list.systemsJson);
 
     State& state = *m_state;
     auto scope = ReadScope::begin(state.connection);
     if (!scope) {
         return propagate(scope.error());
     }
+    const auto version = state.dataVersion();
+    if (!version) {
+        return propagate(version.error());
+    }
+    const bool kept = state.kept && state.kept->key == key && state.kept->dataVersion == *version;
+    const auto readAndKeep = [&]() -> Status {
+        auto read = state.readList(list);
+        if (!read) {
+            return propagate(read.error());
+        }
+        state.kept = KeptList{key, *version, std::move(*read)};
+        return ok();
+    };
 
-    // A search: the rows that match it, ascending (FTS5 lists rowids in order).
-    std::vector<std::int64_t> matches;
-    bool lookUp = false;
-    if (plan->kind == SearchPlan::Kind::Words) {
-        auto match = state.statement("SELECT rowid FROM idx_game_search WHERE idx_game_search MATCH ?1");
-        if (!match) {
-            return propagate(match.error());
-        }
-        Statement& statement = **match;
-        const ScopedReset reset(statement);
-        statement.bindText(1, plan->match);
-        while (true) {
-            const auto row = statement.step();
-            if (!row) {
-                return propagate(row.error());
+    std::vector<GameId> ids;
+    switch (plan->kind) {
+    case SearchPlan::Kind::Everything:
+        if (!kept) {
+            if (auto read = readAndKeep(); !read) {
+                return propagate(read.error());
             }
-            if (!*row) {
-                break;
-            }
-            matches.push_back(statement.columnInt(0));
         }
-        if (matches.empty()) {
-            if (auto finished = scope->finish(); !finished) {
-                return propagate(finished.error());
-            }
-            return std::vector<GameId>{};
+        ids = state.kept->ids;
+        break;
+    case SearchPlan::Kind::FirstCharacter: {
+        list.prefix = plan->prefix;
+        auto read = state.readList(list);
+        if (!read) {
+            return propagate(read.error());
         }
-        std::sort(matches.begin(), matches.end());
-        lookUp = matches.size() <= state.options.lookupLimit;
+        ids = std::move(*read);
+        break;
     }
-
-    // The list in Title's order, with what the other orders need.
-    std::string sql = "SELECT g.id";
-    if (query.sort == SortOrder::System) {
-        sql += ", g.library, g.system";
-    } else if (query.sort == SortOrder::ReleaseDate) {
-        sql += ", g.release_date";
+    case SearchPlan::Kind::Words: {
+        const auto matches = state.matches(plan->match);
+        if (!matches) {
+            return propagate(matches.error());
+        }
+        if (matches->empty()) {
+            break;
+        }
+        if (!kept && matches->size() <= state.options.lookupLimit) {
+            // A few rows: looked up one by one.
+            list.lookUp = &*matches;
+            auto read = state.readList(list);
+            if (!read) {
+                return propagate(read.error());
+            }
+            ids = std::move(*read);
+            break;
+        }
+        // The list without the search, narrowed to the rows that match it, keeps its order.
+        if (!kept) {
+            if (auto read = readAndKeep(); !read) {
+                return propagate(read.error());
+            }
+        }
+        for (const GameId id : state.kept->ids) {
+            if (std::binary_search(matches->begin(), matches->end(), static_cast<std::int64_t>(id.value()))) {
+                ids.push_back(id);
+            }
+        }
+        break;
     }
-    sql += lookUp ? " FROM json_each(?4) AS j CROSS JOIN idx_games AS g ON g.id = j.value"
-                  : " FROM idx_games AS g INDEXED BY idx_games_sort";
-    sql += " WHERE g.state IN (SELECT value FROM json_each(?1)) AND g.availability IN (SELECT value FROM json_each(?2))";
-    if (!systems.empty()) {
-        sql += " AND g.system IN (SELECT value FROM json_each(?3))";
-    }
-    if (plan->kind == SearchPlan::Kind::FirstCharacter) {
-        sql += " AND g.sort_key >= ?5 AND g.sort_key < ?6";
-    }
-    sql += " ORDER BY g.sort_key, g.id";
-    auto list = state.statement(sql);
-    if (!list) {
-        return propagate(list.error());
-    }
-    Statement& statement = **list;
-    std::vector<ListRow> rows;
-    std::vector<std::pair<std::string, std::string>> groups; // System: (library, system) by group index
-    {
-        const ScopedReset reset(statement);
-        statement.bindText(1, jsonStrings(states)).bindText(2, jsonStrings(availabilities));
-        if (!systems.empty()) {
-            statement.bindText(3, jsonStrings(systems));
-        }
-        if (lookUp) {
-            statement.bindText(4, jsonIds(matches));
-        }
-        if (plan->kind == SearchPlan::Kind::FirstCharacter) {
-            // Every sort key that starts with the prefix, and only those: valid UTF-8 never holds the byte 0xFF.
-            statement.bindText(5, plan->prefix).bindText(6, plan->prefix + '\xFF');
-        }
-        std::unordered_map<std::string, std::uint32_t> groupIndex; // looked up only: never iterated
-        std::string key;
-        const bool filterMatches = plan->kind == SearchPlan::Kind::Words && !lookUp;
-        while (true) {
-            const auto row = statement.step();
-            if (!row) {
-                return propagate(row.error());
-            }
-            if (!*row) {
-                break;
-            }
-            const std::int64_t value = statement.columnInt(0);
-            if (filterMatches && !std::binary_search(matches.begin(), matches.end(), value)) {
-                continue;
-            }
-            const auto id = readGameId(value, "idx_games");
-            if (!id) {
-                return propagate(id.error());
-            }
-            ListRow listed{*id, 0, std::nullopt};
-            if (query.sort == SortOrder::System) {
-                groupKey(key, statement.columnText(1), statement.columnText(2));
-                auto [found, added] = groupIndex.try_emplace(key, static_cast<std::uint32_t>(groups.size()));
-                if (added) {
-                    groups.emplace_back(statement.columnText(1), statement.columnText(2));
-                }
-                listed.group = found->second;
-            } else if (query.sort == SortOrder::ReleaseDate) {
-                listed.releaseDate = statement.columnOptionalInt(1);
-            }
-            rows.push_back(listed);
-        }
-    }
-
-    if (query.sort == SortOrder::System && !rows.empty()) {
-        // The systems' order: the full name folded as sort keys are, then the name (equal for one system in two
-        // libraries, whose rows then keep Title's order together).
-        auto names = state.statement("SELECT library, name, full_name FROM idx_systems");
-        if (!names) {
-            return propagate(names.error());
-        }
-        std::map<std::pair<std::string, std::string>, std::string> fullNames;
-        {
-            Statement& systemRows = **names;
-            const ScopedReset reset(systemRows);
-            while (true) {
-                const auto row = systemRows.step();
-                if (!row) {
-                    return propagate(row.error());
-                }
-                if (!*row) {
-                    break;
-                }
-                fullNames.emplace(std::pair<std::string, std::string>(systemRows.columnText(0),
-                                                                      systemRows.columnText(1)),
-                                  systemRows.columnText(2));
-            }
-        }
-        std::vector<std::pair<std::string, std::string>> orderKeys; // (folded full name, name) by group index
-        for (const auto& group : groups) {
-            const auto found = fullNames.find(group);
-            auto folded = catalog::sortKeyOf(found == fullNames.end() ? std::string_view() : found->second);
-            if (!folded) {
-                return propagate(folded.error());
-            }
-            orderKeys.emplace_back(std::move(*folded), group.second);
-        }
-        std::vector<std::uint32_t> byKey(groups.size());
-        std::iota(byKey.begin(), byKey.end(), std::uint32_t{0});
-        std::sort(byKey.begin(), byKey.end(),
-                  [&](std::uint32_t a, std::uint32_t b) { return orderKeys[a] < orderKeys[b]; });
-        std::vector<std::uint32_t> rank(groups.size()); // equal keys, equal ranks
-        for (std::size_t i = 0; i < byKey.size(); ++i) {
-            rank[byKey[i]] = i == 0 ? 0
-                             : orderKeys[byKey[i]] == orderKeys[byKey[i - 1]] ? rank[byKey[i - 1]]
-                                                                             : rank[byKey[i - 1]] + 1;
-        }
-        std::stable_sort(rows.begin(), rows.end(),
-                         [&](const ListRow& a, const ListRow& b) { return rank[a.group] < rank[b.group]; });
-    } else if (query.sort == SortOrder::ReleaseDate) {
-        std::stable_sort(rows.begin(), rows.end(), [](const ListRow& a, const ListRow& b) {
-            if (a.releaseDate.has_value() != b.releaseDate.has_value()) {
-                return a.releaseDate.has_value();
-            }
-            return a.releaseDate.value_or(0) < b.releaseDate.value_or(0);
-        });
     }
     if (auto finished = scope->finish(); !finished) {
         return propagate(finished.error());
-    }
-    std::vector<GameId> ids;
-    ids.reserve(rows.size());
-    for (const ListRow& row : rows) {
-        ids.push_back(row.id);
     }
     return ids;
 }
