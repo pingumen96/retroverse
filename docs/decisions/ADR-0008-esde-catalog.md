@@ -32,6 +32,9 @@
   emulators.json's; §7 keeps a failed gamelist's identities and disc groups too; §8 says which launches record a
   verification; §9 lists the session outcomes, the exit columns, the owner rule through the process list and the
   busy retry
+- Amended: 2026-10-17, at I2 step 13 (folded at step 14, Gate M1): §5 is met as written by the app's catalog worker;
+  it adds that runs with a fixed frame time wait between frames for the worker (lockstep), so that scripted runs are
+  reproducible, while every other run never waits
 
 ## Context
 
@@ -216,7 +219,10 @@ it (ES-DE would show two entries).
   identities, aliases or index rows holds it: the quick-hash pass and review resolution too); its write transaction
   holds the writes alone; rows and identities equal to what the import computes are not written. Writers that touch
   neither identities nor index rows (play sessions, launch choices) take no import lock and wait only for a write
-  transaction; `sqlite3_interrupt` at shutdown.
+  transaction; `sqlite3_interrupt` at shutdown. In the app (I2 step 13) the catalog worker owns the writer and runs the
+  lists, a game's readiness, Avvia's resolution and the session writes; the main thread fetches pages on its own reader.
+  Only a run with a fixed frame time (`--fixed-dt`: scripted, reproducible runs) waits between frames while the screen
+  waits for the worker (lockstep, bounded to 10 s between two frames); interactive runs never wait.
 - **Migrations**: `PRAGMA user_version`, forward-only, each in one transaction, under a process-level lock that every
   Retroverse process holds while the database is open; before the first of a run, a uniquely named backup of a database
   that holds anything (the last 3 kept, free space checked); table rebuilds follow SQLite's documented procedure. A

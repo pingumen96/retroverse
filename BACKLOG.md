@@ -201,7 +201,9 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   pooled vertex buffer in the vendored GL3 renderer; profile RmlUi with Tracy (`RMLUI_TRACY_PROFILING` is off in
   vcpkg's build).
 - **Card settle delay:** tune it (0.15 s) on a TV.
-- **Text entry with the pad:** an on-screen keyboard (I7); the hint bar built from the active bindings.
+- **Text entry with the pad:** an on-screen keyboard for the product UI (I7); the hint bar built from the active
+  bindings. Until then the quick catalog's search takes typed text: M1's manual session is pad-only except for its one
+  search step, typed with the keyboard (decided at Gate M1, I2 step 14).
 - **Keyboard defaults for Vedi media, Informazioni and the filters:** they have pad buttons only (I2 step 6), since
   letters, digits, the space bar, Backspace, Delete and Tab stay with RmlUi's text fields; bind keys if any can be
   spared from text entry.
@@ -273,7 +275,7 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   external drive (gb: 8,611 files in 268.8 s, I2 step 11b), where the hashing costs little (812 to 1,014 files/s warm);
   `EsdeLibrarySource` already reads cue sheets with 8 threads (I2 step 7).
 - **The quick-hash pass scheduled by the app:** in idle time on the catalog worker, between imports, a limit per slice
-  (I7; the worker comes with I2 step 13, which may run the pass already).
+  (I7; the catalog worker of I2 step 13 does not run it yet: `retroverse-cli identities hash` does).
 - **Review rows in the product UI:** shown and resolved through `ICatalogStore::reviews()` and
   `catalog::resolveReview()`, offering the review's candidates only (I7); `retroverse-cli identities reviews` and
   `resolve` have them now.
@@ -283,11 +285,17 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 
 ### Plan
 
-- **Step 13r, the refresh on a worker:** decided after step 13 merges: it stays in I2 (roadmap row 13r, optional) or
-  moves to I3.
+- **Step 13r, the refresh on a worker, moved to I3** (decided at Gate M1): an import as a job of the app's catalog
+  worker, with cancellation and the log race fix, the frame p99 within 33.3 ms during a refresh and quitting during one
+  within a bound (roadmap row 13r; `docs/i2/step-13.md`, "Notes for step 13r", says how the worker takes it: the
+  import's job with a cancel flag, the systems' readiness resolved again after its commit, the readiness cache cleared,
+  the screen told to refresh; a long import in slices so that lists and session writes do not wait behind it; the
+  quick-hash pass taking turns on the same worker). M1 refreshes with `retroverse-cli import`: an app open meanwhile
+  reads the new rows with its next list (a search, a filter) and resolves its systems' readiness again at its next
+  start.
 - **The quick hash's whole-library cold pass:** about 45 minutes on the reference machine, estimated from I2 step 11b's
-  gb sample (980.9 MiB in 268.8 s, cold); it belongs in Gate M1's measurements (roadmap row 14), run on demand, not by
-  default.
+  gb sample (980.9 MiB in 268.8 s, cold); Gate M1 runs it on demand only (`scripts/gate.ps1 -Gate M1 -RealLibrary
+  -FullHashPass`, `retroverse-cli identities hash`), not by default.
 
 ### Launcher
 
@@ -339,17 +347,33 @@ The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; 
 
 These come from the I2 step focus (`docs/i2/step-focus.md`).
 
-- **`focus_watch.py` in the gate and the test script:** `scripts/gate.ps1` and `scripts/test.ps1` could run
-  `scripts/focus_watch.py --watch build/<preset>` around their runs and fail on a finding (a foreground change to, or a
-  visible window of, a test process; a system error dialog), so that a test that takes the foreground is caught when it
-  is added rather than by the user at the keyboard. A failing program of the user's during the run (WerFault, csrss
-  boxes) would then fail the gate too: the watcher's attribution rules decide how often.
+- **`focus_watch.py` in Gate A and the test script:** `scripts/gate.ps1 -Gate M1` runs under
+  `scripts/focus_watch.py --watch build` since I2 step 14 and fails on a finding; Gate A and `scripts/test.ps1` could
+  do the same, so that a test that takes the foreground is caught when it is added rather than by the user at the
+  keyboard. A failing program of the user's during the run (WerFault, csrss boxes) fails the gate too: the watcher's
+  attribution rules decide how often, and the gate's row names the rule that matched, so that such a finding can be
+  told from a test's (the gate cannot tell it by itself).
 - **Dialogs left in `rv_platform_tests` and `spike_launch_tests`:** they start no program and show no window, so they
   do not call `disableFailureDialogs()` and keep the C runtime's default dialogs (a failed assertion in Debug would
   show its box and wait until the ctest timeout). SDL's own assertion handler (`SDL_assert`, a message box) is not
   configured in any test program either (`SDL_SetAssertionHandler`, or `SDL_ASSERT=abort` in the test environment).
 
 ### App shell
+
+Candidates from I2 step 13 (the real catalog in the app, `docs/i2/step-13.md`):
+
+- **The app's log before the data-directory guard:** `retroverse.exe` sets up its log in `<user data>/logs` before
+  the catalog worker checks the user data directory against the library's folders; `retroverse-cli` logs to stderr
+  until the guard passed. The guard keeps the database out of the library's folders, but a `--data-dir` inside one
+  would get the log file.
+- **One launch library for the CLI and the app:** `rv_app_catalog`'s `CatalogLaunchLibrary` mirrors the CLI's
+  `LaunchLibrary` (`launch_text.hpp`) and `cmd_launch.cpp`'s `resolveCatalogGame`, private to `rv_cli_core`; move
+  them into one shared library (below the app and the CLI) so that the two cannot drift.
+- **A refresh when another process imports:** the open app keeps the list it materialized until something asks again;
+  an import made by `retroverse-cli` meanwhile shows at the next query or start (step 13r in I3, a file watcher in I7).
+- **Readiness for every game in bulk:** a game's own readiness is resolved lazily, when its row is first read (step 13);
+  a filter "ready only" would need it for every game at the opening (with disk reads for `%INJECT%` files and folder
+  games).
 
 The I1 spike's product UI items stay under "Product UI" above; these come from I2 step A1.
 

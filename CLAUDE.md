@@ -26,6 +26,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/test.ps1 -Preset msvc-x64-debug-desktop     # on demand: tests that take over the screen (label "desktop")
 ./scripts/test.ps1 -Preset msvc-x64-release-gpu       # the same for Release (rendering from its deployed assets)
 ./scripts/gate.ps1 -Gate A                            # Gate A end to end: build matrix, tests, golden G01; -Clean
+./scripts/gate.ps1 -Gate M1                           # Gate M1: Gate A + the catalog's checks, under focus_watch.py
+./scripts/gate.ps1 -Gate M1 -RealLibrary              # also the real library (ES-DE closed): NFR-01, NFR-02, imports
 ./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
@@ -50,7 +52,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   without the effect, compared at projected probe points), the developer overlay and the asset preview (developer
   builds), golden G01 (reference machine only), and launches from a mock catalog into the fake emulator
   (`test_launch.cpp`, `tests/smoke/catalogs`: a return with no frame rendered meanwhile, nine failure paths, the
-  game-session panel's questions, the wait limit, the window closed mid-game). Every case of `rv_smoke_tests` (the gpu
+  game-session panel's questions, the wait limit, the window closed mid-game), and since I2 step 13 the ES-DE catalog
+  in the app (`test_catalog.cpp`, `gpu.catalog: ...`: the standard fixture imported with `retroverse-cli` into the
+  case's data directory, a game found by search and filter launched into the fake and back with the same selection,
+  search, filter and camera, a blocked game's readiness and Avvia refused, a blocked game's card whole, the notice of a
+  data directory without `library.json`). Every case of `rv_smoke_tests` (the gpu
   cases and the desktop one) runs with `RV_LAUNCH_ALLOWLIST` naming the build's `rv_fake_emulator.exe` (ctest
   `ENVIRONMENT`; the launch tests set it themselves when run outside ctest). A case is skipped (exit code 77) when no
   OpenGL 4.5 context can be created, and the golden comparison on another GPU or driver. One case:
@@ -69,6 +75,17 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   smoke tests and the I1 spike checks) of Debug and Release and the golden comparison of both, prints a summary table
   (logs in `build/gate-a`) and exits 1
   when a step failed (skipped steps are reported, not failed).
+- `scripts/gate.ps1 -Gate M1` (`docs/testing/gate-m1.md`, logs in `build/gate-m1`) runs Gate A's steps and, per Debug
+  and Release, rows for the M1 unit tests and the `gpu.catalog`/`gpu.launch` cases (counted from those runs) and the
+  unit test `cli/process` (`tests/unit/cli/test_cli_m1_flow.cpp`: `retroverse-cli` as processes on the standard
+  fixture, from `library create` to `launch --game --wait` into the fake and `sessions`, the fixture unchanged), the
+  whole gate under `scripts/focus_watch.py --watch build` (a finding fails it; its row names the rule that matched).
+  `-RealLibrary` (with `-EsdeHome`, `-EsdeInstall`, `-RomRoot`, `-MediaRoot` or the `RV_REAL_*` variables; refused while
+  ES-DE runs) adds the NFR-02 benchmark, then `scripts/real-library.ps1 -Measure scripts/gate-m1-real.ps1`: between
+  its snapshots (0 differences required) the ROM scan, the two imports (the second writes nothing), `db
+  rebuild-index`, `db check`, `media --coverage`, NFR-01 with `retroverse.exe` (three starts, limit 5 s) into
+  `build/gate-m1/real-measurements` (`figures.json`), then the `[real-library]` tests of Release; each figure a row with
+  its limit. `-FullHashPass` adds the whole library's quick-hash pass (`identities hash`, about 45 minutes cold).
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`, built by the
   vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
   restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure
@@ -85,17 +102,23 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `-RomRoot`, `-MediaRoot`, `-RetroArchExe` or those variables; `-Preset`, default `msvc-x64-release`; `-Filter`): it
   refuses to run while ES-DE runs, snapshots the home and install (configuration files hashed) and the ROM and media
   roots (listings only) with `scripts/snapshot_tree.py`, runs `rv_tests.exe "[real-library]"` (with
-  `RV_LAUNCH_BACKGROUND=1`), snapshots again and fails on a failed test or any difference (outputs in
-  `build/real-library`). Narrower runs: `-Filter '[real-library][media]'` (the media tree and the coverage against
-  ADR-0003), `-Filter '[real-library][launch]'` (the readiness of the real systems and the five launches ES-DE logged,
+  `RV_LAUNCH_BACKGROUND=1` and `RV_LAUNCH_ALLOWLIST` naming the build's fake emulator alone), snapshots again and
+  fails on a failed test or any difference (outputs in `build/real-library`). Narrower runs: `-Filter
+  '[real-library][media]'` (the media tree and the coverage against ADR-0003), `-Filter '[real-library][launch]'` (the readiness of the real systems and the five launches ES-DE logged,
   read from the git-ignored, machine-local `tests/real_library/local/esde_logged_launches.json`; these two tests are
   skipped without `-RetroArchExe`), `-Filter '[real-library][import]'` (the whole library imported into a new database
   under `build/<preset>/real-library/import`: a first and a second import, `db rebuild-index`, the ROM root unplugged
-  and back) and `-Filter '[real-library][reconciliation]'` (gb imported alone, then the quick-hash pass over it, twice;
-  cold it reads for minutes: the whole library's cold pass, about 45 minutes, is not part of any filter). `python -I
-  scripts/snapshot_tree.py snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a
-  difference) work alone (Python 3.10 or later, output in UTF-8; links are recorded and never entered, what they lead to
-  is snapshotted as a linked root unless a root covers it).
+  and back), `-Filter '[real-library][reconciliation]'` (gb imported alone, then the quick-hash pass over it, twice;
+  cold it reads for minutes: the whole library's cold pass, about 45 minutes, is not part of any filter, only of
+  `gate.ps1 -Gate M1 -RealLibrary -FullHashPass`), `-Filter '[real-library][app]'` (NFR-01: the library imported under
+  `build/<preset>/real-library/app`, then `retroverse.exe` started twice on it, the first page timed from the process's
+  creation, and scrolled through every game) and `-Filter '[real-library][query]'` (NFR-02 on the real catalog: the
+  benchmark's kinds of search with every order and a filter, p95 within 100 ms, pages within 5 ms). `-OutDir <dir>`
+  moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
+  snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
+  <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python
+  3.10 or later, output in UTF-8; links are recorded and never entered, what they lead to is snapshotted as a linked
+  root unless a root covers it).
 - `python -I scripts/esde_census.py --esde-home <ES-DE home> [--esde-install <dir>] [--rom-root <dir>] [--system
   <name>] [--json] [--output <file>]` is the independent oracle of the ROM scan (I2 step 7; standard library only,
   read-only, written apart from the C++ and naming no machine path): it prints per system ES-DE's count, the entries by
@@ -127,10 +150,15 @@ start, run report not written). Logs: `<user data>/logs/retroverse.log` (`--data
   counts them apart, so in a clean run `high` equals its `highSeverityCaptured`), frames, the last view's statistics
   (draw calls, batches, instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance
   buffer's capacity, the screenshot written, the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
-  self-check, and with `--mock-catalog` the quick catalog (`catalog`: file, games, times `opened`, `open` at the end,
-  the selection) and every launch (`launches`: game, profile, final state, `outcome` with `reason` and `detail`, exit
-  code, the panels shown in order (`panels`), `frames` of the request, start and end, `idleWakes`, `times`). Read it
-  instead of the log in scripts and tests.
+  self-check, the quick catalog (`catalog`: `source` `esde` or `mock`, file, games, times `opened`, `open` at the end,
+  the selection; for the ES-DE catalog since I2 step 13 also `notice`, `library`, `systems`, `search`, `filter`,
+  `times` {`openedMs`, `firstListMs`, `firstPageMs`} from the process's creation (NFR-01), `pages` and `frames` (p50,
+  p95, p99, max of the page fetches and of the frames while it showed games), `interruptedSessions`, `cardSqueezed`
+  (the card's blocks the layout cut: empty in every smoke case)) and every launch (`launches`: game, profile, final
+  state, `outcome` with `reason` and `detail`, exit code, the panels shown in order (`panels`), `frames` of the request,
+  start and end, `idleWakes`, `times`; for the ES-DE catalog `before` and `after`, the selection, search, filter and
+  walker's pose when Avvia asked and on the first frame after the end, and `session` {`id`, `error`, `verified`}). Read
+  it instead of the log in scripts and tests.
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
   `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
@@ -194,7 +222,7 @@ start, run report not written). Logs: `<user data>/logs/retroverse.log` (`--data
   Shadows are world-locked (the maps depend on the light, not on the camera): walking never makes them shimmer.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
-  gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog of `--mock-catalog` (below); Esc (gamepad B)
+  gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); Esc (gamepad B)
   leaves one level: it closes a popup of the developer overlay (a combo's list, a color picker), else the game-session
   panel, else steps back through the quick catalog and closes it, else releases the mouse, else closes the overlay, else
   quits; F1 toggles the overlay; F5 reloads the shaders, F12 saves `<user data>/screenshots/retroverse-<timestamp>.png`.
@@ -242,16 +270,27 @@ start, run report not written). Logs: `<user data>/logs/retroverse.log` (`--data
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,
   both included; UI actions too, `{"ui_down": 1}`, `{"ui_nav_y": -0.9}`, in [-1, 1], a button action held at the press
-  threshold) and logs the pose at the end of each step. Only the listed actions are scripted: in a visible window
+  threshold) and logs the pose at the end of each step; a step may carry `"text"` (UTF-8, 1 to 256 bytes, no control
+  character), typed once on its `fromFrame` into the product UI's focused text field (the quick catalog's search field
+  is two `ui_up` above the list's first game). Only the listed actions are scripted: in a visible window
   with focus, keys and pads still drive the others, so automated runs add `--hidden`. `--fixed-dt <seconds>`
   replaces the measured frame time, for the walker and the shader time alike, so scripted runs are reproducible.
   Frame-limited runs log the final camera (`Final camera after N frame(s) (T s simulated): feet ..., yaw ..., pitch
   ...`) and the nearest collider with its clearance.
-- `--mock-catalog <file.json>` gives `retroverse.exe` its product UI until the ES-DE catalog reaches the app (step 13;
-  `docs/i2/step-A1.md`): `rv_ui`'s quick catalog over the scene, below the developer overlay, holding the file's games
-  (`rv/app/mock_catalog.hpp`: JSON with comments, `schemaVersion` 1, `games` each with an optional `launch` {`profile`,
+- The quick catalog (`rv_ui`'s, over the scene, below the developer overlay) shows the ES-DE catalog of the user data
+  directory (I2 step 13, `docs/i2/step-13.md`; not in the model viewer): `library.json` and the database that
+  `retroverse-cli library create` and `import` made, opened on a catalog worker thread (`rv_app_catalog`'s
+  `CatalogWorker`: the database's writer, the lists, each game's launch readiness, Avvia's resolution right before the
+  launch and the play sessions; the main thread fetches pages on its own read-only connection and never waits). Without
+  them the list says how to make them (notices `no-library`, `no-database`, `data-directory`, `library-mismatch`,
+  `unavailable`; nothing is written into the data directory but the log). The card shows each game's readiness (one
+  Italian line) and its first blocker's sentence; Avvia on a game that is not ready shows why and records a blocked
+  session. Runs with `--fixed-dt` wait between frames for the worker (lockstep, at most 10 s at a time) so that scripted
+  frames see the same lists and launches every run; other runs never wait.
+- `--mock-catalog <file.json>` replaces the ES-DE catalog with a file's games, for the tests (`docs/i2/step-A1.md`;
+  `rv/app/mock_catalog.hpp`: JSON with comments, `schemaVersion` 1, `games` each with an optional `launch` {`profile`,
   `rom` absolute or relative to the file, `system`, `variables`}, optional `profiles` over the shipped and the user's;
-  unknown fields are errors, a file that cannot be loaded exits 2). Without it there is no product UI. Tab opens and
+  unknown fields are errors, a file that cannot be loaded exits 2). Either way, Tab opens and
   closes the catalog (the pad's Y opens it and is "Vedi media" inside, which does nothing yet, like "Informazioni"),
   arrows or the D-pad move, Enter (A) on a game is "Avvia": the launch is planned with the game's profile and started
   through `LaunchSession` on `Win32ProcessRunner` (the guard applies) with ADR-0006's keep policy. While the game runs
@@ -574,7 +613,10 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   search (9) and the session store (12); the system probe's port is in `core` (`rv/core/system_probe.hpp`, ADR-0008
   §2), and `rv_forbid_link(<target> EXTRA <library>...)` forbids more libraries per target (`cmake/LayerRules.cmake`).
   Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`. `rv_app` links `rv_ui`, `rv_launcher` and
-  `rv_platform_win` for the quick catalog's launches (I2 step A1); it does not use `rv_media` yet: the video spike does.
+  `rv_platform_win` for the quick catalog's launches (I2 step A1) and, since step 13, `rv_app_catalog` (GPU-free and
+  tools-free, between `rv_app_cli` and `rv_app`: the catalog worker, its `ui::CatalogSource`, the app's copy of the
+  CLI's launch library, `AppCatalog` over the ES-DE or the mock catalog; on `rv_catalog`, `rv_esde`, `rv_catalog_db`,
+  `rv_platform_win`, `rv_ui_model`; tested by `tests/unit/app`); it does not use `rv_media` yet: the video spike does.
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
