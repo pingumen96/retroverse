@@ -4,7 +4,8 @@
 //    state (current, stale, none), its size and its last path.
 //  - identities show <gameId>: one identity: its state, last path and key, file facts, quick hash, the aliases that
 //    stand for it, its history (moves with their reason, aliases, keys computed again, reviews resolved) and its review
-//    rows; a GameId that is an alias names the identity it stands for, shown below it.
+//    rows; a GameId that is an alias names the identity it stands for, shown below it. Like `retroverse-cli show`, it
+//    needs no library.json: a GameId names its library.
 //  - identities reviews [--system <name>] [--all]: the open review rows (with --all, the resolved ones too), each with
 //    its vanished identity, the candidates (with the GameId each has now) and why no pairing was safe.
 //  - identities resolve <review> (--with <gameId> | --keep-separate): resolves a review row (catalog::resolveReview(),
@@ -478,14 +479,12 @@ ExitCode showIdentity(CommandContext& context, Arguments& arguments) {
     const catalog::StoredIdentity& shown = **identity;
     const auto aliases = store.aliasesOf(shown.id);
     const auto history = store.history(shown.id);
-    const auto reviews = store.reviews(shown.library, false);
+    const auto reviews = store.reviewsOf(shown.id);
     if (!aliases || !history || !reviews) {
         return catalogError(context, arguments.subcommand,
                             !aliases ? aliases.error() : !history ? history.error() : reviews.error());
     }
-    std::vector<catalog::StoredReview> own;
-    std::copy_if(reviews->begin(), reviews->end(), std::back_inserter(own),
-                 [&](const catalog::StoredReview& review) { return review.review.game == shown.id; });
+    const std::vector<catalog::StoredReview>& own = *reviews;
     IdentitiesByPath byPath(store, shown.library);
 
     if (arguments.json) {

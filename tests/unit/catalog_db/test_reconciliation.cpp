@@ -394,6 +394,22 @@ TEST_CASE("catalog_db/reconciliation: without a stored hash a unique new file of
         REQUIRE(result.changes.reviews.size() == 1);
         CHECK(result.changes.reviews[0].reason.find("its file name but not its size or time") != std::string::npos);
     }
+    SECTION("more candidates than a row lists: the first in key order, the reason says how many") {
+        std::vector<File> present{File{"A/Twin (USA).gb", 800, kTime + 8, "twin 1"},
+                                  File{"B/Twin (USA).gb", 800, kTime + 8, "twin 2"}};
+        for (std::size_t i = 0; i < kMaxReviewCandidates + 2; ++i) {
+            present.push_back(File{fmt::format("Copy {:03}/Game (USA).gb", i), 7000 + i, kTime, "another dump"});
+        }
+        library.put(present);
+        const ImportResult result = library.import();
+        REQUIRE(result.changes.reviews.size() == 1);
+        const ReviewRow& review = result.changes.reviews[0];
+        REQUIRE(review.candidates.size() == kMaxReviewCandidates);
+        CHECK(review.candidates.front().relativePath() == "Copy 000/Game (USA).gb");
+        CHECK(review.reason.find(fmt::format("(the first {} of {} candidates listed)", kMaxReviewCandidates,
+                                             kMaxReviewCandidates + 2)) != std::string::npos);
+        CHECK(library.reviews().at(0).review.candidates.size() == kMaxReviewCandidates);
+    }
     SECTION("nothing it could be: vanished, no review") {
         library.put({File{"A/Twin (USA).gb", 800, kTime + 8, "twin 1"},
                      File{"B/Twin (USA).gb", 800, kTime + 8, "twin 2"},
@@ -731,28 +747,39 @@ TEST_CASE("catalog_db/reconciliation: re-keyed identities and files that come ba
           "their reviews",
           "[catalog_db][reconciliation]") {
     Library library("rv-reconcile-rekey");
-    library.put({File{"Versioned (USA).gb", 300, kTime + 3, "v"}, File{"Returner (USA).gb", 310, kTime + 4, "r"}});
+    library.put({File{"Versioned (USA).gb", 300, kTime + 3, "v"}, File{"Returner (USA).gb", 310, kTime + 4, "r"},
+                 File{"Cased (USA).gb", 320, kTime + 5, "c"}});
     library.import();
     const GameId versioned = library.at("Versioned (USA).gb").id;
     const GameId returner = library.at("Returner (USA).gb").id;
+    const GameId cased = library.at("Cased (USA).gb").id;
     {
-        // A key of an older casing table, as a Windows update leaves them.
-        StoredIdentity old = library.at("Versioned (USA).gb");
-        old.keyVersion.casingTable = "older.table";
+        // Keys of an older casing table, as a Windows update leaves them.
         auto transaction = library.catalog.store->beginImport(library.profile.id);
         REQUIRE(transaction.has_value());
-        REQUIRE((*transaction)->putIdentity(old).has_value());
+        for (const std::string_view path : {"Versioned (USA).gb", "Cased (USA).gb"}) {
+            StoredIdentity old = library.at(path);
+            old.keyVersion.casingTable = "older.table";
+            REQUIRE((*transaction)->putIdentity(old).has_value());
+        }
         REQUIRE((*transaction)->commit().has_value());
     }
-    // The returner vanishes with a candidate of its name (another size): a review row.
-    library.put({File{"Versioned (USA).gb", 300, kTime + 3, "v"}, File{"Sub/Returner (USA).gb", 999, kTime + 4, "x"}});
+    // The returner vanishes with a candidate of its name (another size): a review row. Cased is renamed in case only.
+    library.put({File{"Versioned (USA).gb", 300, kTime + 3, "v"}, File{"Sub/Returner (USA).gb", 999, kTime + 4, "x"},
+                 File{"CASED (USA).gb", 320, kTime + 5, "c"}});
     const ImportResult rekeyed = library.import();
-    CHECK(changesOf(rekeyed.changes, "gb").rekeyed == 1);
+    CHECK(changesOf(rekeyed.changes, "gb").rekeyed == 2);
     const std::vector<IdentityEvent> history = library.history(versioned);
     REQUIRE(history.size() == 1);
     CHECK(history[0].kind == IdentityEventKind::Rekeyed);
     CHECK(history[0].toPath == "Versioned (USA).gb");
     CHECK(history[0].detail.find("older.table") != std::string::npos);
+    // Re-keyed and renamed in case in one import: the event names the path it has now.
+    const std::vector<IdentityEvent> casedHistory = library.history(cased);
+    REQUIRE(casedHistory.size() == 1);
+    CHECK(casedHistory[0].fromPath == "Cased (USA).gb");
+    CHECK(casedHistory[0].toPath == "CASED (USA).gb");
+    CHECK(library.at("CASED (USA).gb").id == cased);
     REQUIRE(rekeyed.changes.reviews.size() == 1);
     CHECK(rekeyed.changes.reviews[0].game == returner);
     // Back at its path: its review is resolved (returned).

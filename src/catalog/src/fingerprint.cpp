@@ -29,6 +29,13 @@ std::string toHex(const core::Sha256Digest& digest) {
 }
 
 Expected<QuickHash> readQuickHash(const std::filesystem::path& file) {
+    // The facts the hash is stored with are those a listing gives (what an import records and isCurrent() compares
+    // with), which on NTFS may lag behind the file record the handle reads; the handle's are only checked for a write
+    // during the read.
+    const auto listed = core::listedFileFacts(file);
+    if (!listed) {
+        return propagate(listed.error());
+    }
     auto reader = core::SharedFileReader::open(file);
     if (!reader) {
         return propagate(reader.error());
@@ -71,7 +78,7 @@ Expected<QuickHash> readQuickHash(const std::filesystem::path& file) {
                                      after->size),
                          core::pathToUtf8Lossy(file));
     }
-    return QuickHash{digest, before->size, before->lastWriteTime};
+    return QuickHash{digest, listed->size, listed->lastWriteTime};
 }
 
 Expected<QuickHash> readQuickHashBelow(const std::filesystem::path& folder, std::string_view relativePath) {

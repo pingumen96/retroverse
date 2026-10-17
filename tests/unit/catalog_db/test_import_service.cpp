@@ -803,6 +803,7 @@ public:
         return m_inner.reviews(library, openOnly);
     }
     rv::Expected<std::optional<StoredReview>> review(std::int64_t id) override { return m_inner.review(id); }
+    rv::Expected<std::vector<StoredReview>> reviewsOf(GameId game) override { return m_inner.reviewsOf(game); }
     rv::Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId& library) override {
         calls.emplace_back("lockImport");
         return m_inner.lockImport(library);

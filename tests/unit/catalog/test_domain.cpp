@@ -638,6 +638,7 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
         rv::Expected<std::optional<StoredReview>> review(std::int64_t) override {
             return std::optional<StoredReview>{};
         }
+        rv::Expected<std::vector<StoredReview>> reviewsOf(GameId) override { return std::vector<StoredReview>{}; }
         rv::Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId&) override {
             if (m_open) {
                 return rv::makeError(rv::ErrorCode::Conflict, "another import holds the import lock");

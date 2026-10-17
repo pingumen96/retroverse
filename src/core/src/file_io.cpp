@@ -316,6 +316,46 @@ Status SharedFileReader::read(std::uint64_t offset, std::span<std::byte> out) co
     return ok();
 }
 
+Expected<SharedFileReader::Facts> listedFileFacts(const std::filesystem::path& path) {
+    const std::string context = pathToUtf8Lossy(path);
+    const std::wstring target = extendedLengthPath(path);
+    // The name looked up in its folder, as walkTree() lists it (FindFirstFileExW, no wildcard: the entry itself).
+    WIN32_FIND_DATAW data{};
+    const HANDLE find = FindFirstFileExW(target.c_str(), FindExInfoBasic, &data, FindExSearchNameMatch, nullptr, 0);
+    if (find == INVALID_HANDLE_VALUE) {
+        const DWORD error = GetLastError();
+        return makeError(fileErrorCode(error, path), "cannot find the file: " + systemErrorMessage(error), context);
+    }
+    FindClose(find);
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+        return makeError(ErrorCode::InvalidArgument, "not a regular file (a folder)", context);
+    }
+    const auto ticks = [](const FILETIME& time) {
+        return static_cast<std::int64_t>((static_cast<std::uint64_t>(time.dwHighDateTime) << 32) | time.dwLowDateTime);
+    };
+    SharedFileReader::Facts facts;
+    const bool link = (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 &&
+                      IsReparseTagNameSurrogate(data.dwReserved0);
+    if (!link) {
+        facts.size = (static_cast<std::uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+        facts.lastWriteTime = ticks(data.ftLastWriteTime);
+        return facts;
+    }
+    // A symbolic link to a file: walkTree() lists the facts of the file it leads to.
+    const FileHandle file(CreateFileW(target.c_str(), FILE_READ_ATTRIBUTES,
+                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                      FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (!file.valid() || !GetFileInformationByHandle(file.get(), &info)) {
+        const DWORD error = GetLastError();
+        return makeError(fileErrorCode(error, path), "the link's target cannot be opened: " + systemErrorMessage(error),
+                         context);
+    }
+    facts.size = (static_cast<std::uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+    facts.lastWriteTime = ticks(info.ftLastWriteTime);
+    return facts;
+}
+
 Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data) {
     const std::string context = pathToUtf8Lossy(path);
     std::error_code ec;

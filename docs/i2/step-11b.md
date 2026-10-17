@@ -245,11 +245,72 @@ retroverse-cli [global options] identities hash [--system <name>] [--limit <file
 
 ## Tests
 
-(Filled with the final figures below.)
+`./scripts/test.ps1` passes every unit test in Debug and in Release (TESTCOUNT), both built without a warning; the step's
+(`rv_tests "[fingerprint],[reconciliation],[identities]"`: 22 test cases, and the hidden real-library one):
+
+- `tests/unit/catalog/test_fingerprint.cpp`: the 11 golden vectors equal the oracle's, on generated contents and on files
+  (with the size and time the handle gives); beyond 128 KiB only the two ends count (another middle, the same hash;
+  another byte at either end, another one); names ending with a dot or a space and a path past MAX_PATH read through
+  `\\?\` (the sibling a plain path would reach left alone); nothing written (content and time as they were); a file
+  another program holds open for writing is read; a missing file (`NotFound`), a folder and a relative path leaving the
+  folder (`InvalidArgument`), a file whose data is denied are errors; a hash current or stale for file facts.
+- `tests/unit/catalog_db/test_reconciliation.cpp` (scripted snapshots on the SQLite store, a scripted file reader that
+  says what each file holds, which files are denied and which were read): a renamed file paired by its quick hash, only
+  the new file of the stored hash's size read, the hash it read stored with the moved identity, the move in the history,
+  a second import that writes and reads nothing; **SC-07** (a file renamed, one moved to a sub-folder, one moved with its
+  gamelist entry left at the old path: GameIds, history and the rows of a state table kept, the old path's entry a new
+  GameId, the counter's); **without a stored hash** a unique file of equal size, time and name pairs (no file read),
+  two such files make a review row with both candidates and nothing merges (the identity vanished, the files new
+  identities, the row stored as the change set says, not repeated by the next import), one file two vanished
+  identities could be makes two rows, the same name at another time a row, nothing of its name no row; **ties** (the
+  longest common path suffix, then the equal file name, among copies of one hash); **identical copies** paired in key
+  order, more copies than identities reviewed, an unreadable copy reported and offered for review; **a review resolved
+  by pairing** (the move, the alias, the old path's new identity as the import gives it, the history's three events,
+  resolved once only) and **kept separate** (only the row and the history change), each followed by an import that
+  changes nothing; the refusals (no such row or identity, itself, another system, a file not present, an alias, resolved
+  already, another holder's import lock); **a file moved back**: the holder an alias, its sessions moved, a table unique
+  per game keeping the moved identity's choice, the alias that stood for the holder standing for the moved identity, the
+  holder's history moved, its open review row resolved `aliased` and moved, no foreign key broken, the next import
+  steady; **re-keyed identities** in the history, a file back at its path resolving its review (`returned`); **the
+  pass** committing in batches, cancelled after 5 files (5 committed in 2 batches, 9 left), resumed with a limit, then to
+  the end, in the stored order, every hash the file's; files changed or gone since the import skipped, a denied file an
+  issue, a hash gone stale after a change and the stale identity then paired by size, time and name; **no overlap**: the
+  pass refused while another holder imports, and an import of another holder refused while the pass reads.
+- `tests/unit/cli/test_cli_identities.cpp` (the standard fixture through the dispatcher): usage errors and exit codes (no
+  catalog: exit 3 and nothing made; a system without identities: 2; an unknown GameId: 1); the pass's figures (22
+  identities: 18 hashed, 3 folders, 1 not present; again: nothing left); **SC-07 on disk** (Tiny Tennis renamed, its
+  gamelist entry left behind, LOUD CART moved to a new folder: both paired by quick hash with 2 files read, the old path's
+  entry a new GameId, `list` and `show` with the history as text and JSON, the next import steady); **review rows on
+  disk** (Collection A's Pocket Puzzle copied into two folders and deleted: a review with both candidates; resolved with
+  `--with` (the alias shown by `show`, the next import steady, resolving again exit 1, an unknown row exit 1, another
+  system's identity exit 2) or `--keep-separate`); a denied ROM (exit 1, the issue, 17 hashed; the next pass hashes it);
+  **the import lock across processes** (the pass and a resolution exit 3 while another holder imports, also as a second
+  `retroverse-cli` process; an import of a second process exits 3 while this process's pass reads).
+- `scripts/quick_hash_oracle.py --check tests/unit/catalog/test_fingerprint.cpp`: 11 of 11 found.
+- Followed: `test_catalog_store.cpp` (the quick hash written alone, read with the identity, kept by a write that carries
+  it, cleared by one that does not), `test_migrator.cpp` (an orphan history row with a valid event), the port stand-ins of
+  `test_domain.cpp` and `test_import_service.cpp`.
 
 ## Real library
 
-(Filled after the run.)
+`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
+-MediaRoot E:\Programmi\ES-DE_media\downloaded_media` (Release, ES-DE closed), the default filter: 10 test cases, 8
+passed (the import's and this step's among them), the two launch tests skipped without `-RetroArchExe`; **0 differences
+among 542,082 entries**. Then `-Filter '[real-library][import]'` again on a quiet machine: 0 differences.
+
+The pass on gb (`test_reconciliation_real.cpp`: a partial import of gb into a new database under the build tree, then the
+pass): 8,621 identities (1 not present, 9 folders), **8,611 files hashed, 0 changed, 0 gone, 0 unreadable, 980.9 MiB
+read in 268.76 s** (119 batches): 32 files/s, 3.6 MiB/s, the files read cold from the external exFAT drive (an open and
+two positioned reads each; gb's files average 114 KiB read). **A second pass hashed 0 files in 0.08 s**; the import after
+it paired nothing, wrote nothing and read no ROM byte. **The whole library, estimated** from the sample: 103,937 present
+files, 9,857.9 MiB to read: about **45 minutes** at gb's rate per byte (2,701 s), 54 minutes at its rate per file (3,244
+s), cold; informative (the gate measures on a quiet machine). This is why the pass is progressive and resumable rather
+than part of the import: an import reads no ROM byte, and only the new files of a vanished hash's size when files move.
+
+The import with this step's changes (identities written with their quick hash, the pairing pass, the history), on a
+quiet machine: the first import 13.06 s (writes 9.36 s), the second 7.17 s (writes 0.15 s), `db rebuild-index` 18.94 s,
+the ROM root unplugged 11.86 s and back 11.81 s: step 11a's figures within the variance of the machine (a first run
+taken while a Debug build ran beside it took 40.71 s, the writes 30.12 s: disk contention, not the change).
 
 ## Notes for the steps that build on it
 
@@ -289,4 +350,5 @@ retroverse-cli [global options] identities hash [--system <name>] [--limit <file
 - **BACKLOG** candidates: the critique's "candidates are every missing identity with a stored hash" (a file deleted at one
   import and back elsewhere at a later one keeps no identity under ADR-0008's rule, which pairs only identities that
   vanished at this import); a compact history for re-keying (one row per identity on a casing table change); review rows
-  in the product UI (I7); a quick-hash pass scheduled by the app (idle time, I7).
+  in the product UI (I7); a quick-hash pass scheduled by the app (idle time, I7); the pass reading with several readers
+  (step 7 reads cue sheets with 8; measured cold on the external drive it reads 32 files/s one by one).

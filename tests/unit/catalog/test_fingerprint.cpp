@@ -25,6 +25,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/tree_walk.hpp>
 #include <rv/core/utf8.hpp>
 
 #include "support/file_system.hpp"
@@ -147,6 +148,16 @@ TEST_CASE("catalog/fingerprint: a file's quick hash is read with its size and ti
         CHECK(hash->size == golden.size);
         CHECK(hash->lastWriteTime == timeOf(file));
         CHECK(isCurrent(*hash, FileFacts{false, golden.size, timeOf(file), false}));
+    }
+    // The facts a hash is stored with are those a listing gives, which the import records.
+    const auto listed = rv::core::listTree(dir.file("files"));
+    REQUIRE(listed.has_value());
+    REQUIRE(listed->size() == kGolden.size());
+    for (const rv::core::TreeEntry& entry : *listed) {
+        INFO(entry.relativePath);
+        const auto hash = readQuickHashBelow(dir.file("files"), entry.relativePath);
+        REQUIRE(hash.has_value());
+        CHECK(isCurrent(*hash, FileFacts{false, entry.size, fileTimeTicks(entry.lastWriteTime), false}));
     }
 }
 

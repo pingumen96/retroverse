@@ -21,6 +21,9 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
+/// The most (identity, file) pairs of one quick hash the ties compare (16 MiB of scores): beyond, the user decides.
+constexpr std::size_t kMaxTieScores = std::size_t{1} << 22;
+
 bool isCancelled(const std::atomic<bool>* cancel) noexcept {
     return cancel != nullptr && cancel->load(std::memory_order_relaxed);
 }
@@ -207,53 +210,103 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         for (const std::size_t f : group) {
             fileMatchesHash[f] = true;
         }
-        // Ties: a pair whose identity's best file and whose file's best identity are each other alone, repeatedly.
-        const auto score = [&](std::size_t v, std::size_t f) {
-            return commonSuffix(vanished[v].identity.key.key(), files[f].key.key());
-        };
-        while (!identities.empty() && !group.empty()) {
-            std::vector<std::pair<std::size_t, std::size_t>> mutual;
+        if (identities.size() * group.size() > kMaxTieScores) {
+            // Too many copies of one content to compare pair by pair (thousands of identical small files moved at
+            // once): nothing is guessed, the user decides.
             for (const std::size_t v : identities) {
-                std::size_t best = 0;
-                std::vector<std::size_t> bestFiles;
-                for (const std::size_t f : group) {
-                    const std::size_t s = score(v, f);
-                    if (bestFiles.empty() || s > best) {
-                        best = s;
-                        bestFiles = {f};
-                    } else if (s == best) {
-                        bestFiles.push_back(f);
+                drafts[v].add(group, fmt::format("{} its quick hash, too many for the ties to compare ({} vanished "
+                                                 "identities have it)",
+                                                 newFilesHave(group.size()), identities.size()));
+            }
+            continue;
+        }
+        // Ties: the scores of the group computed once (rows: identities, columns: files); a pair whose identity's best
+        // file and whose file's best identity are each other alone is paired, repeatedly.
+        const std::size_t columns = group.size();
+        std::vector<std::uint32_t> scores(identities.size() * columns);
+        for (std::size_t a = 0; a < identities.size(); ++a) {
+            for (std::size_t b = 0; b < columns; ++b) {
+                scores[a * columns + b] = static_cast<std::uint32_t>(
+                    commonSuffix(vanished[identities[a]].identity.key.key(), files[group[b]].key.key()));
+            }
+        }
+        const auto score = [&](std::size_t a, std::size_t b) { return scores[a * columns + b]; };
+        std::vector<bool> rowOpen(identities.size(), true);
+        std::vector<bool> columnOpen(columns, true);
+        while (true) {
+            // Each open row's best score, how many open columns reach it and which; each open column's alike.
+            std::vector<std::uint32_t> rowBest(identities.size(), 0);
+            std::vector<std::size_t> rowCount(identities.size(), 0);
+            std::vector<std::size_t> rowArg(identities.size(), 0);
+            std::vector<std::uint32_t> columnBest(columns, 0);
+            std::vector<std::size_t> columnCount(columns, 0);
+            for (std::size_t a = 0; a < identities.size(); ++a) {
+                for (std::size_t b = 0; b < columns; ++b) {
+                    if (!rowOpen[a] || !columnOpen[b]) {
+                        continue;
+                    }
+                    const std::uint32_t s = score(a, b);
+                    if (rowCount[a] == 0 || s > rowBest[a]) {
+                        rowBest[a] = s;
+                        rowCount[a] = 1;
+                        rowArg[a] = b;
+                    } else if (s == rowBest[a]) {
+                        ++rowCount[a];
+                    }
+                    if (columnCount[b] == 0 || s > columnBest[b]) {
+                        columnBest[b] = s;
+                        columnCount[b] = 1;
+                    } else if (s == columnBest[b]) {
+                        ++columnCount[b];
                     }
                 }
-                if (bestFiles.size() != 1) {
-                    continue;
-                }
-                const std::size_t f = bestFiles.front();
-                const bool alone = std::none_of(identities.begin(), identities.end(), [&](std::size_t other) {
-                    return other != v && score(other, f) >= best;
-                });
-                if (alone) {
-                    mutual.emplace_back(v, f);
+            }
+            bool paired = false;
+            for (std::size_t a = 0; a < identities.size(); ++a) {
+                const std::size_t b = rowArg[a];
+                if (rowOpen[a] && rowCount[a] == 1 && columnCount[b] == 1 && columnBest[b] == rowBest[a]) {
+                    pairWith(identities[a], group[b], MoveReason::QuickHash);
+                    rowOpen[a] = false;
+                    columnOpen[b] = false;
+                    paired = true;
                 }
             }
-            if (mutual.empty()) {
+            if (!paired) {
                 break;
             }
-            for (const auto& [v, f] : mutual) {
-                pairWith(v, f, MoveReason::QuickHash);
-            }
-            std::erase_if(identities, [&](std::size_t v) { return identityUsed[v]; });
-            std::erase_if(group, [&](std::size_t f) { return fileUsed[f]; });
         }
-        if (identities.empty() || group.empty()) {
+        std::vector<std::size_t> openRows;
+        std::vector<std::size_t> openColumns;
+        for (std::size_t a = 0; a < identities.size(); ++a) {
+            if (rowOpen[a]) {
+                openRows.push_back(a);
+            }
+        }
+        for (std::size_t b = 0; b < columns; ++b) {
+            if (columnOpen[b]) {
+                openColumns.push_back(b);
+            }
+        }
+        if (openRows.empty() || openColumns.empty()) {
             continue;
         }
         // What ties could not tell apart: identical copies moved together when every score is equal and the counts
         // are; otherwise the user decides.
-        const std::size_t level = score(identities.front(), group.front());
-        const bool even = std::all_of(identities.begin(), identities.end(), [&](std::size_t v) {
-            return std::all_of(group.begin(), group.end(), [&](std::size_t f) { return score(v, f) == level; });
+        const std::uint32_t level = score(openRows.front(), openColumns.front());
+        const bool even = std::all_of(openRows.begin(), openRows.end(), [&](std::size_t a) {
+            return std::all_of(openColumns.begin(), openColumns.end(),
+                               [&](std::size_t b) { return score(a, b) == level; });
         });
+        std::vector<std::size_t> leftIdentities;
+        for (const std::size_t a : openRows) {
+            leftIdentities.push_back(identities[a]);
+        }
+        std::vector<std::size_t> leftFiles;
+        for (const std::size_t b : openColumns) {
+            leftFiles.push_back(group[b]);
+        }
+        identities = std::move(leftIdentities);
+        group = std::move(leftFiles);
         if (even && identities.size() == group.size()) {
             for (std::size_t k = 0; k < identities.size(); ++k) {
                 pairWith(identities[k], group[k], MoveReason::IdenticalCopies);
@@ -336,9 +389,16 @@ Expected<IdentityPairs> IdentityPairing::pair(const PairingRequest& request) {
         review.system = request.system.name;
         review.vanished = identity.key;
         for (const std::size_t f : draft.candidates) { // indices in entry order: key order
+            if (review.candidates.size() == kMaxReviewCandidates) {
+                break;
+            }
             review.candidates.push_back(files[f].key);
         }
         review.reason = fmt::format("{}", fmt::join(draft.reasons, "; "));
+        if (draft.candidates.size() > kMaxReviewCandidates) {
+            review.reason += fmt::format(" (the first {} of {} candidates listed)", kMaxReviewCandidates,
+                                         draft.candidates.size());
+        }
         result.reviews.push_back(std::move(review));
     }
     m_statistics.pairs += result.pairs.size();
@@ -486,6 +546,7 @@ Expected<QuickHashPassResult> runQuickHashPass(ICatalogStore& store, const Libra
             }
         } else if (hash->size != candidate.file.size || hash->lastWriteTime != candidate.file.lastWriteTime) {
             ++result.changed; // not the file the last import saw: hashed once an import has its facts
+            result.bytesRead += quickHashBytes(hash->size);
         } else {
             result.bytesRead += quickHashBytes(hash->size);
             batch.emplace_back(candidate.id, *hash);

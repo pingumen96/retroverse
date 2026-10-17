@@ -73,6 +73,14 @@ private:
     std::string m_context;    ///< the path, for messages
 };
 
+/// The size and last write time of the file `path` as walkTree() lists them: from its own directory entry (the name
+/// looked up in its folder), or, for a symbolic link to a file, from the file it leads to. On NTFS a directory entry
+/// holds a copy of the file record's facts that can lag behind it (a hard link written through another name, a file
+/// being written), so they may differ from SharedFileReader::facts() (the file record); what an import recorded from a
+/// listing compares with these. A \\?\ path is used as it is. Errors: NotFound, Unavailable, InvalidArgument (a
+/// folder), IoError.
+[[nodiscard]] Expected<SharedFileReader::Facts> listedFileFacts(const std::filesystem::path& path);
+
 /// The \\?\ form of `path` for the Win32 file functions, which then accept it at any length whatever the system's
 /// long path setting and never normalize it again: made absolute against the current directory and normalized as
 /// Windows does ("." and ".." resolved, '/' turned into '\'), "\\?\" put in front ("\\?\UNC\server\share\..." for a

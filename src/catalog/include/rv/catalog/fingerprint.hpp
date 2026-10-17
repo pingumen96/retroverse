@@ -14,9 +14,11 @@
 //  - a file of n > 131,072 bytes: SHA-256 of its bytes [0, 65,536) followed by its bytes [n - 65,536, n);
 //  - nothing else enters the digest (neither the size nor the name): the pairing compares sizes before it compares
 //    hashes. A folder has no quick hash.
-// At most 128 KiB is read per file, opened for reading only with full sharing (core::SharedFileReader); the size and
-// time are those of the open handle, taken before the reads and checked again after them, so that a file written
-// meanwhile is reported (IoError) rather than hashed half old, half new.
+// At most 128 KiB is read per file, opened for reading only with full sharing (core::SharedFileReader). The hash is
+// stored with the size and time a listing gives (core::listedFileFacts(): the directory entry, as walkTree() and so
+// the import see the file; on NTFS it may lag behind the file record), so that isCurrent() compares like with like; the
+// handle's own facts are taken before the reads and checked again after them, so that a file written meanwhile is
+// reported (IoError) rather than hashed half old, half new.
 
 #include <cstdint>
 #include <filesystem>

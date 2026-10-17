@@ -22,7 +22,9 @@
 //     name; more: the same folders above it too), and a pair whose identity's best file and whose file's best identity
 //     are each other alone is paired (QuickHash), repeatedly; what is left with every score equal and as many files as
 //     identities is a group of identical copies that moved together, paired in key order (IdenticalCopies); anything
-//     else is left to review.
+//     else is left to review. A group of more than 4,194,304 (identity, file) pairs is not compared: all to review.
+//     The quick hash reads a file's two ends only: two files over 128 KiB of one size that share their first and last
+//     64 KiB count as identical (ADR-0008's evidence).
 //  2. Size, time and name, for the vanished identities without a current hash: the new files (not paired, whose quick
 //     hash, if read, matched no stored hash) of equal size, last write time and file name (the last element of the key:
 //     names folded as the file systems compare them), and of the same kind (file or folder). An identity pairs only
@@ -30,7 +32,8 @@
 //  3. Review rows (never a silent merge) for the vanished identities left unpaired that have candidates: the files of
 //     their quick hash that ties could not tell apart, the new files of their hash's size that could not be read, the
 //     files of equal size, time and name that were not unique, and the new files of the same file name (other content,
-//     size or time). The candidates are in key order. A vanished identity without any candidate is left vanished.
+//     size or time). The candidates are in key order, at most kMaxReviewCandidates. A vanished identity without any
+//     candidate is left vanished.
 // A new file with a holder (NewFile::heldBy, a file moved back) pairs like any other; the import records the holder as
 // the moved identity's alias (MoveReason::MovedBack). Statistics say what was read.
 
@@ -60,6 +63,9 @@ inline constexpr std::string_view kQuickHashIssueUnreadable = "quick-hash-unread
 /// The quick-hash pass could not reach a system's files (its drive went while it read): the rest of the system is left
 /// for a later pass. Warning.
 inline constexpr std::string_view kQuickHashIssueUnavailable = "quick-hash-unavailable";
+
+/// The most candidates a review row lists, in key order (its reason says how many there were).
+inline constexpr std::size_t kMaxReviewCandidates = 100;
 
 /// The quick hash of `identity` when it is current for its last file facts; nothing when it has none, when it is stale
 /// or when the identity has no file facts (or a folder's).

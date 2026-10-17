@@ -129,6 +129,7 @@ public:
     [[nodiscard]] Expected<std::vector<catalog::StoredReview>> reviews(const catalog::LibraryId& library,
                                                                        bool openOnly) override;
     [[nodiscard]] Expected<std::optional<catalog::StoredReview>> review(std::int64_t id) override;
+    [[nodiscard]] Expected<std::vector<catalog::StoredReview>> reviewsOf(catalog::GameId game) override;
     /// Errors: Conflict (this store's lock or transaction is held; another holder of the database's lock imports).
     [[nodiscard]] Expected<std::unique_ptr<catalog::IImportLock>> lockImport(const catalog::LibraryId& library) override;
     /// Errors: Conflict (this store's transaction is open; another holder of the database's lock imports; another

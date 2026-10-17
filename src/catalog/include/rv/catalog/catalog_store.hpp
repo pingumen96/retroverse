@@ -391,6 +391,8 @@ public:
     [[nodiscard]] virtual Expected<std::vector<StoredReview>> reviews(const LibraryId& library, bool openOnly) = 0;
     /// The review row `id`, of any library; nothing when there is none.
     [[nodiscard]] virtual Expected<std::optional<StoredReview>> review(std::int64_t id) = 0;
+    /// The review rows of the identity `game` (those of the identities that became its aliases included), by id.
+    [[nodiscard]] virtual Expected<std::vector<StoredReview>> reviewsOf(GameId game) = 0;
 
     /// Takes the import lock without waiting and holds it until the returned object goes, apart from any transaction:
     /// an import holds it while it reads the library (seconds, minutes on a cold drive) and the store, and begins its

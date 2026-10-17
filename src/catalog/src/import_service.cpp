@@ -447,23 +447,38 @@ Status ImportRun::match(SystemPlan& plan) {
         if (cancelled()) {
             return cancelledError();
         }
+        // What the pass names, found by GameId and by key (a mass move pairs thousands: no linear search per pair).
+        std::unordered_map<GameId, std::size_t> vanishedById;
+        vanishedById.reserve(vanished.size());
+        for (std::size_t v = 0; v < vanished.size(); ++v) {
+            vanishedById.emplace(vanished[v].identity.id, v);
+        }
+        std::map<LookupKey, std::size_t> newFileByKey;
+        for (std::size_t f = 0; f < newFiles.size(); ++f) {
+            newFileByKey.emplace(newFiles[f].key, f);
+        }
+        const auto vanishedOf = [&](GameId id) -> std::optional<std::size_t> {
+            const auto found = vanishedById.find(id);
+            return found == vanishedById.end() ? std::nullopt : std::optional<std::size_t>(found->second);
+        };
+        const auto newFileOf = [&](const LookupKey& key) -> std::optional<std::size_t> {
+            const auto found = newFileByKey.find(key);
+            return found == newFileByKey.end() ? std::nullopt : std::optional<std::size_t>(found->second);
+        };
         std::vector<bool> identityUsed(vanished.size(), false);
         std::vector<bool> fileUsed(newFiles.size(), false);
         for (const IdentityPair& pair : pairs->pairs) {
-            const auto v = std::find_if(vanished.begin(), vanished.end(),
-                                        [&](const VanishedIdentity& candidate) { return candidate.identity.id == pair.identity; });
-            const auto f = std::find_if(newFiles.begin(), newFiles.end(),
-                                        [&](const NewFile& candidate) { return candidate.key == pair.newFile; });
-            if (v == vanished.end() || f == newFiles.end() || identityUsed[v - vanished.begin()] ||
-                fileUsed[f - newFiles.begin()]) {
+            const std::optional<std::size_t> v = vanishedOf(pair.identity);
+            const std::optional<std::size_t> f = newFileOf(pair.newFile);
+            if (!v || !f || identityUsed[*v] || fileUsed[*f]) {
                 return makeError(ErrorCode::InvalidArgument,
                                  "the pairing pass paired an identity or a file it was not given, or one twice",
                                  pair.identity.toString() + " " + pair.newFile.relativePath());
             }
-            identityUsed[v - vanished.begin()] = true;
-            fileUsed[f - newFiles.begin()] = true;
-            const std::size_t j = vanishedIndex[static_cast<std::size_t>(v - vanished.begin())];
-            const std::size_t i = newFileIndex[static_cast<std::size_t>(f - newFiles.begin())];
+            identityUsed[*v] = true;
+            fileUsed[*f] = true;
+            const std::size_t j = vanishedIndex[*v];
+            const std::size_t i = newFileIndex[*f];
             // A MissingFile entry left at the old path loses the identity: it gets a new GameId.
             if (const std::ptrdiff_t old = plan.identityEntry[j]; old != kNone) {
                 plan.entryIdentity[static_cast<std::size_t>(old)] = kNone;
@@ -488,28 +503,25 @@ Status ImportRun::match(SystemPlan& plan) {
         // The quick hashes it read of new files, stored with the identities those files end with.
         std::vector<bool> fileHashed(newFiles.size(), false);
         for (const NewFileHash& hashed : pairs->hashes) {
-            const auto f = std::find_if(newFiles.begin(), newFiles.end(),
-                                        [&](const NewFile& candidate) { return candidate.key == hashed.file; });
-            if (f == newFiles.end() || fileHashed[f - newFiles.begin()]) {
+            const std::optional<std::size_t> f = newFileOf(hashed.file);
+            if (!f || fileHashed[*f]) {
                 return makeError(ErrorCode::InvalidArgument,
                                  "the pairing pass gave the quick hash of a file it was not given, or twice",
                                  hashed.file.relativePath());
             }
-            fileHashed[f - newFiles.begin()] = true;
-            plan.entryHash[newFileIndex[static_cast<std::size_t>(f - newFiles.begin())]] = hashed.hash;
+            fileHashed[*f] = true;
+            plan.entryHash[newFileIndex[*f]] = hashed.hash;
         }
         // Review rows name vanished identities it left unpaired, each once.
         std::vector<bool> reviewed(vanished.size(), false);
         for (ReviewRow& review : pairs->reviews) {
-            const auto v = std::find_if(vanished.begin(), vanished.end(), [&](const VanishedIdentity& candidate) {
-                return candidate.identity.id == review.game;
-            });
-            if (v == vanished.end() || identityUsed[v - vanished.begin()] || reviewed[v - vanished.begin()]) {
+            const std::optional<std::size_t> v = vanishedOf(review.game);
+            if (!v || identityUsed[*v] || reviewed[*v]) {
                 return makeError(ErrorCode::InvalidArgument,
                                  "the pairing pass made a review row of an identity it was not given, paired, or twice",
                                  review.game.toString());
             }
-            reviewed[v - vanished.begin()] = true;
+            reviewed[*v] = true;
             review.id = 0;
             review.system = plan.name;
         }
@@ -595,9 +607,11 @@ void ImportRun::buildIdentityWrites(SystemPlan& plan) {
             IdentityEvent rekeyed;
             rekeyed.game = stored.id;
             rekeyed.kind = IdentityEventKind::Rekeyed;
+            // The path it had, and the key computed now of the path it has once this import is written (a file moved or
+            // renamed in case in the same import has its move in the history too).
             rekeyed.fromPath = stored.key.relativePath();
-            rekeyed.toKey = stored.key.key();
-            rekeyed.toPath = stored.key.relativePath();
+            rekeyed.toKey = identity.key.key();
+            rekeyed.toPath = identity.key.relativePath();
             rekeyed.detail = fmt::format("key rule {}, casing table '{}' -> key rule {}, casing table '{}'",
                                          stored.keyVersion.rule, stored.keyVersion.casingTable, m_keyVersion.rule,
                                          m_keyVersion.casingTable);
@@ -932,6 +946,9 @@ Status ImportRun::write() {
         }
         review.id = *id;
         ++statistics.reviewsWritten;
+        if (auto checked = step(); !checked) {
+            return checked;
+        }
     }
     for (const GameId id : m_writes.returned) {
         if (auto resolved = transaction.resolveReviewsOf(id, ReviewResolution::Returned); !resolved) {

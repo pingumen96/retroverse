@@ -581,6 +581,7 @@ enum class Sql : std::size_t {
     SelectReviewState,
     SelectReviews,
     SelectReview,
+    SelectReviewsOf,
     SelectAliasesOf,
     SelectAlias,
     SelectStateReferences,
@@ -768,6 +769,11 @@ std::string sqlOf(Sql which) {
     case Sql::SelectReview:
         return fmt::format("SELECT {} FROM rv_identity_reviews AS r JOIN rv_game_identities AS i ON i.id = r.game "
                            "WHERE r.id = ?1",
+                           kReviewColumns);
+    case Sql::SelectReviewsOf:
+        // Through the index on the game (rv_identity_reviews_game).
+        return fmt::format("SELECT {} FROM rv_identity_reviews AS r JOIN rv_game_identities AS i ON i.id = r.game "
+                           "WHERE r.game = ?1 ORDER BY r.id",
                            kReviewColumns);
     case Sql::SelectAliasesOf:
         return "SELECT alias, game, relative_path, at, reason FROM rv_identity_aliases WHERE game = ?1 ORDER BY alias";
@@ -3002,6 +3008,15 @@ Expected<std::optional<catalog::StoredReview>> SqliteCatalogStore::review(std::i
                              }
                              return std::optional<catalog::StoredReview>(std::move(*read));
                          });
+}
+
+Expected<std::vector<catalog::StoredReview>> SqliteCatalogStore::reviewsOf(GameId game) {
+    auto select = m_state->statement(Sql::SelectReviewsOf);
+    if (!select) {
+        return propagate(select.error());
+    }
+    (*select)->bindInt(1, static_cast<std::int64_t>(game.value()));
+    return readRows<catalog::StoredReview>(**select, readReview);
 }
 
 Expected<std::unique_ptr<catalog::IImportLock>> SqliteCatalogStore::lockImport(const LibraryId& library) {
