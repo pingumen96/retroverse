@@ -61,12 +61,19 @@ if ((Split-Path -Leaf $esdeHome) -ne 'ES-DE') {
 }
 $homeFolder = Split-Path -Parent $esdeHome
 
-if (Test-Path -LiteralPath $OutDir) { Remove-Item -LiteralPath $OutDir -Recurse -Force }
-New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-$OutDir = (Resolve-Path -LiteralPath $OutDir).Path
+# The previous run's outputs go (a locked file of it is a run that cannot start, never an exception).
+try {
+    if (Test-Path -LiteralPath $OutDir) { Remove-Item -LiteralPath $OutDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+    $OutDir = (Resolve-Path -LiteralPath $OutDir).Path
+    $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+}
+catch {
+    Write-Host "gate-m1-real: cannot prepare ${OutDir}: $($_.Exception.Message)"
+    exit 2
+}
 $data = Join-Path $OutDir 'data'
 $failures = [System.Collections.Generic.List[string]]::new()
-$boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
 $figures = [ordered]@{
     preset    = $Preset
     startedAt = (Get-Date).ToString('o')

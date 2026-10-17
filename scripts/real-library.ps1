@@ -18,8 +18,9 @@
          must read the library before the tests do, so that its ROM scan is the first read after the snapshot; its
          exit code counts like the tests';
       5. it runs build/<preset>/bin/rv_tests.exe with the tag filter (default "[real-library]"), the RV_REAL_*
-         variables and RV_LAUNCH_BACKGROUND=1 set for it only (Release by default: build it first, ./scripts/build.ps1
-         -Preset msvc-x64-release);
+         variables, RV_LAUNCH_BACKGROUND=1 and RV_LAUNCH_ALLOWLIST naming the build's fake emulator alone set for it
+         only, as for the measurement script (Release by default: build it first, ./scripts/build.ps1 -Preset
+         msvc-x64-release);
       6. it snapshots again and compares: any added, removed or changed file or folder is a failure.
     Everything it writes goes to -OutDir, build/real-library/ by default (the snapshots, the test log). The library is
     only read.
@@ -116,6 +117,9 @@ $variables = [ordered]@{
     RV_REAL_RETROARCH_EXE = $RetroArchExe
     # Automated: whatever a test starts runs in the background, never taking the foreground (rv_tests sets it too).
     RV_LAUNCH_BACKGROUND  = '1'
+    # The build's fake emulator alone (CLAUDE.md's safety rule): no real emulator may start, whatever a test or the
+    # measurement script would launch. (Not empty: PowerShell removes a variable set to an empty value.)
+    RV_LAUNCH_ALLOWLIST   = (Join-Path $root "build/$Preset/bin/rv_fake_emulator.exe")
 }
 $saved = @{}
 foreach ($name in $variables.Keys) {
@@ -128,8 +132,15 @@ try {
     if ($Measure) {
         Write-Host "Running $Measure"
         $timer = [Diagnostics.Stopwatch]::StartNew()
-        & $Measure @MeasureArguments
-        $measureCode = $LASTEXITCODE
+        # An exception of the script fails the measurements, never the run: the tests and the second snapshot follow.
+        try {
+            & $Measure @MeasureArguments
+            $measureCode = $LASTEXITCODE
+        }
+        catch {
+            Write-Host "real-library: the measurement script stopped: $($_.Exception.Message)" -ForegroundColor Red
+            $measureCode = 1
+        }
         Write-Host ('Measurements ran in {0:N1} s, exit code {1}' -f $timer.Elapsed.TotalSeconds, $measureCode)
     }
     Write-Host "Running $rvTests `"$Filter`""

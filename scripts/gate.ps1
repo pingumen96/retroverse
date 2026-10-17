@@ -316,9 +316,12 @@ function Invoke-RealLibrary {
         Add-Result 'NFR-02 benchmark, 10,000 games' 'FAILED' "no figure (exit code $benchCode), see $benchLog" $timer.Elapsed.TotalSeconds '<= 100 ms'
     }
 
-    # The library between two snapshots: the measurements, then the [real-library] tests.
+    # The library between two snapshots: the measurements, then the [real-library] tests. The outputs of an earlier
+    # run go first: a run that stops before writing its own must not show the old figures as this run's.
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $realLog = Join-Path $logDir 'real-library.log'
+    $testLog = Join-Path $realDir 'tests.log'
+    Remove-Item -LiteralPath (Join-Path $measureDir 'figures.json'), $testLog -ErrorAction SilentlyContinue
     $measureArguments = @{ Preset = $preset; OutDir = $measureDir }
     if ($FullHashPass) { $measureArguments.FullHashPass = $true }
     & (Join-Path $PSScriptRoot 'real-library.ps1') -EsdeHome $EsdeHome -EsdeInstall $EsdeInstall -RomRoot $RomRoot `
@@ -326,8 +329,18 @@ function Invoke-RealLibrary {
         -MeasureArguments $measureArguments *> $realLog
     $realCode = $LASTEXITCODE
     $realSeconds = $timer.Elapsed.TotalSeconds
+    $firstRow = $results.Count
+    Add-RealLibraryRows $preset $realLog $testLog $measureDir $realCode $realSeconds
+    # real-library.ps1's exit code counts on its own: a failure no row explains still fails the gate.
+    if ($realCode -ne 0 -and -not (@($results | Select-Object -Skip $firstRow) | Where-Object { $_.Result -eq 'FAILED' })) {
+        Add-Result 'Real library' 'FAILED' "scripts/real-library.ps1 exited $realCode, see $realLog" 0
+    }
+}
+
+# The rows of the real library's run: the snapshots, the [real-library] tests, the figures of the measurement script.
+function Add-RealLibraryRows([string]$preset, [string]$realLog, [string]$testLog, [string]$measureDir, [int]$realCode,
+        [double]$realSeconds) {
     $compare = Select-String -Path $realLog -Pattern '(\d+) difference\(s\) among (\d+) entries' | Select-Object -Last 1
-    $testLog = Join-Path $realDir 'tests.log'
     if ($realCode -eq 2 -or -not $compare) {
         Add-Result 'Real library' 'FAILED' "could not run (exit code $realCode), see $realLog" $realSeconds
         return
@@ -353,8 +366,14 @@ function Invoke-RealLibrary {
     }
     $figures = Get-Content -Raw $figuresFile | ConvertFrom-Json
     $failures = @($figures.failures)
+    # real-library.ps1's verdict on the measurement script, read like the tests' ("Measurements: passed").
+    $measured = Select-String -Path $realLog -Pattern '^Measurements:\s+(.*)$' | Select-Object -Last 1
     if ($failures.Count -gt 0) {
         Add-Result 'Real library: measurements' 'FAILED' ($failures -join '; ') 0
+    }
+    elseif (-not $measured -or $measured.Matches[0].Groups[1].Value.Trim() -ne 'passed') {
+        Add-Result 'Real library: measurements' 'FAILED' ("{0}, see $realLog" -f
+            $(if ($measured) { $measured.Line.Trim() } else { 'no verdict on the measurements' })) 0
     }
     $nfr01 = @($figures.nfr01 | Where-Object { $null -ne $_.firstPageMs })
     if ($nfr01.Count -gt 0) {
@@ -417,8 +436,13 @@ function Invoke-RealLibrary {
     }
     $hash = if (Test-Path $testLog) { Select-String -Path $testLog -Pattern '^quick-hash pass, gb: .*' | Select-Object -First 1 } else { $null }
     $estimate = if (Test-Path $testLog) { Select-String -Path $testLog -Pattern '^whole library: .*' | Select-Object -First 1 } else { $null }
-    Add-Result 'Quick-hash pass, sample (gb)' 'info' `
-        ($(if ($hash) { $hash.Line.Trim() + $(if ($estimate) { '; ' + $estimate.Line.Trim() } else { '' }) } else { "no figure in $testLog" })) 0
+    if ($hash) {
+        Add-Result 'Quick-hash pass, sample (gb)' 'info' `
+            ($hash.Line.Trim() + $(if ($estimate) { '; ' + $estimate.Line.Trim() } else { '' })) 0
+    }
+    else {
+        Add-Result 'Quick-hash pass, sample (gb)' 'FAILED' "no figure in $testLog" 0
+    }
     if ($FullHashPass) {
         $full = $figures.fullHashPass
         $fullResult = $full.result
@@ -457,7 +481,11 @@ try {
         }
     }
     if ($Gate -eq 'M1' -and $RealLibrary) {
-        if ($built['msvc-x64-release']) { Invoke-RealLibrary }
+        if ($built['msvc-x64-release']) {
+            # An exception must not lose the rows of the steps before it (the inner run writes them at its end).
+            try { Invoke-RealLibrary }
+            catch { Add-Result 'Real library' 'FAILED' "stopped: $($_.Exception.Message)" 0 }
+        }
         else { Add-Result 'Real library' 'not run' 'the Release build failed' 0 }
     }
 }
