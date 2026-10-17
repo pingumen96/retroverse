@@ -290,6 +290,7 @@ TEST_CASE("cli/media: the coverage of the standard fixture's library snapshot", 
     const nlohmann::json report = parsed(json.out);
     CHECK(report["mediaRoot"]["path"] == utf8(fixture.path("media")));
     CHECK(report["source"] == "rom-scan");
+    CHECK(report["entries"] == 23); // the snapshot's, every state: the text's "Entries" line
     CHECK(report["kinds"].size() == 12);
     CHECK(report["kinds"][2] == "3dboxes");
     CHECK(report["listed"]["systems"] == 3);

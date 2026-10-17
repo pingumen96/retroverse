@@ -119,6 +119,10 @@ constexpr Figures kScrapedGames = minus(kListedGames, kScrapedTracks);
 /// Every game of the snapshot, scraped or not (step 7-8i's oracle).
 constexpr Figures kGames{
     90246, {36010, 30869, 35960, 32397, 39237, 37888, 35397, 39221, 19482, 22618, 32581, 0}, 39404};
+/// Every entry of the snapshot, the report's "entries" (step 7's figure, its states as the oracle gives them): the
+/// games, 12,821 disc members, 1,038 missing files, 870 entries that are no game, 155 folders.
+constexpr std::uint64_t kSnapshotEntries = 90246 + 12821 + 1038 + 870 + 155;
+static_assert(kSnapshotEntries == 105130);
 
 /// One system's games of a population, and those of them with a cover, a screenshot, a video and a marquee.
 struct SystemRow {
@@ -331,8 +335,9 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
     REQUIRE(parsed.has_value());
     const nlohmann::json& report = *parsed;
     const nlohmann::json& total = report["total"];
-    std::cout << "cli/media real library: coverage in " << seconds << " s (the library snapshot read: every ROM folder "
-              << "listed, the gamelists, the cue sheets and playlists; " << report["listed"]["systems"]
+    std::cout << "cli/media real library: coverage in " << seconds << " s (the library snapshot read, "
+              << report["entries"] << " entries: every ROM folder listed, the gamelists, the cue sheets and playlists; "
+              << report["listed"]["systems"]
               << " systems looked up in the media root, " << report["listed"]["files"] << " files; "
               << report["listed"]["caseChecks"] << " folders asked for their case rule, "
               << report["listed"]["fileChecks"] << " media files looked up on disk)\n";
@@ -341,6 +346,7 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
     }
 
     CHECK(report["source"] == "rom-scan");
+    CHECK(report["entries"] == kSnapshotEntries);
     checkFigures(total["gamelist-entries"], kGamelistEntries, "gamelist-entries");
     checkFigures(total["gamelist-entries-with-file"], kWithFile, "gamelist-entries-with-file");
     checkFigures(total["scraped-games"], kScrapedGames, "scraped-games");

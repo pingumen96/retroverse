@@ -4,8 +4,9 @@
 // the kind, the report that tells the user what to scrape in ES-DE. Measured over four populations of a snapshot's
 // entries, since "the collection" means different things: every <game> entry of the gamelists, the file there or not
 // (ADR-0003's table counts these: 40,870 entries on the reference machine), those whose file exists (39,832), the games
-// that have a gamelist entry (the survey's "listed games": 38,995), and every game ES-DE shows, scraped or not. The
-// media are asked of an IMediaResolver: presence and extension per kind, never paths.
+// that have a gamelist entry (38,986 in the ROM scan's snapshot: the survey's 38,995 "listed games" take every disc
+// track for a game, and the scan groups nine scraped tracks under their sheet), and every game ES-DE shows, scraped or
+// not (90,246). The media are asked of an IMediaResolver: presence and extension per kind, never paths.
 
 #include <array>
 #include <cstddef>
@@ -29,6 +30,9 @@ enum class CoveragePopulation : std::uint8_t {
     /// Every <game> entry of the gamelists (CatalogEntry::fromGamelist(), any state but Folder): its file there,
     /// missing (MissingFile), not a game for ES-DE (an unconfigured extension), a disc member, under a folder that
     /// could not be listed, or outside its system folder (which has no media: ES-DE skips it). ADR-0003's denominator.
+    /// As far as the snapshot tells them apart: a <game> entry its source skips with an issue (esde::EsdeLibrarySource:
+    /// one naming a folder ES-DE enters, one inside a game directory) is missing, and a <folder> entry ES-DE excludes
+    /// (NotAGame, with a gamelist path) is counted; neither happens on the reference machine (docs/i2/step-8.md).
     GamelistEntries,
     /// Those whose file the scan found (Availability::Available): the entries a user can play or that ES-DE lists.
     GamelistEntriesWithFile,

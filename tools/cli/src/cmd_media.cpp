@@ -430,6 +430,7 @@ ExitCode showCoverage(CommandContext& context, Output& out, const Library& libra
         }
         const Json report{{"mediaRoot", rootJson(library.mediaRoot)},
                           {"source", std::string(kCoverageSource)},
+                          {"entries", snapshot.entries.size()},
                           {"kinds", std::move(kinds)},
                           {"populations", std::move(populations)},
                           {"listed", Json{{"systems", stats.systemsListed},

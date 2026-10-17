@@ -148,8 +148,9 @@ listed (snes' `Hacks` cover). An entry outside its system folder is a member of 
 skips it) and is never asked of the resolver.
 
 **ADR-0003's denominator, checked.** ADR-0003 counts "40,870 `gamelist.xml` entries": every `<game>` entry, the 1,038
-whose file is gone included, not the entries whose file exists (39,832) nor the scraped games (38,995, the survey's
-"listed games" of esde-data.md section 5). `measureCoverage()` gives all three, and the CLI prints them.
+whose file is gone included, not the entries whose file exists (39,832) nor the scraped games (38,995 as the survey's
+"listed games" of esde-data.md section 5 count them, every disc track a game, and as `GamelistSource` gave them; 38,986
+over the library snapshot, see "Integration with step 7"). `measureCoverage()` gives all three, and the CLI prints them.
 
 **`retroverse-cli media`.**
 
@@ -171,7 +172,8 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
   `unknown`), `mediaName`, `mediaRoot`, `media` (12 items: `kind`, `present`, `extension`, `path`).
 - `--coverage` prints the media root, the populations' totals (one row each: members, then the share of each kind in
   percent), then per system the gamelist entries whose file exists and the games, then the issues. JSON: `mediaRoot`,
-  `source` (where the entries come from: `rom-scan`, see below), `kinds`, `populations` (their descriptions),
+  `source` (where the entries come from: `rom-scan`, see below), `entries` (the snapshot's entries, every state and
+  folders included: the text's `Entries` line), `kinds`, `populations` (their descriptions),
   `listed` (`systems` whose media folder was looked up, `files` in those folders, `caseChecks` and `fileChecks` as
   `MediaListingStats` counts them), `total` and `systems[]` (`system`,
   `mediaFolder`: `listed`, `missing`, `unavailable` or null when the root cannot be read, `populations`), each
@@ -183,7 +185,7 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
   noload.txt, no MAME BIOS sets, so its `games` were the scraped games); the figures under "Real library" below were
   measured with it.
 - Exit codes: 0; 1 when something could not be read (the media root, a media folder, the settings, the systems, a
-  gamelist, the ROM folder of `--path`); 2 for invalid options, an unknown system, a path that leads out of its ROM
+  gamelist, a ROM folder, the ROM folder of `--path`); 2 for invalid options, an unknown system, a path that leads out of its ROM
   folder or is malformed, `--game`, and no library.json; 3 when library.json is invalid or the results cannot be
   written.
 
@@ -331,12 +333,14 @@ Made once both steps were on main (I2 step 7-8i).
   source list names, like `launch_text.hpp`; both commands keep their messages and exit codes.
 - The output: the JSON's `source` is `rom-scan`; the text's `Entries` line gives the snapshot's entries (`23 in the
   library snapshot (the ROM folders listed with ES-DE's rules, the gamelists merged in, disc tracks grouped under their
-  sheet)`); the games table is "The games, per system"; the `games` description ends "disc tracks grouped under their
+  sheet)`), and so does the JSON's `entries`; the games table is "The games, per system"; the `games` description ends "disc tracks grouped under their
   sheet". The snapshot's warnings and errors (ROM folders, gamelists, disc groups) are among the issues, and an error
   makes the exit code 1, as before.
 - The populations are `coverage.hpp`'s four, unchanged. `games` is now every game of the snapshot, scraped or not
   (`EntryState::Game`; disc members are in no population). `scraped-games` loses the scraped disc tracks the snapshot
-  groups under their sheet (below). The two populations of `<game>` entries are what they were, entry for entry.
+  groups under their sheet (below). The two populations of `<game>` entries are what they were, entry for entry, on
+  the reference library and on the fixtures the coverage tests read (standard, media-roots); not in general, since
+  the snapshot does not hold every `<game>` entry, nor only those (see "Left open").
 - `media --system --path` is unchanged: it takes the ROM path as the disk spells it (`spelledOnDisk()`). The snapshot
   would not give that more simply: it holds entries only (a path ES-DE does not list, such as a gone file without a
   gamelist entry, still gets its media names), and loading it for one path walks the whole system folder. The
@@ -404,14 +408,24 @@ has case-sensitive names); the populations as `coverage.hpp` defines them. It re
 `<game>` entry populations count for count, step 7's states (90,246 games, 12,821 members, 1,038 missing, 870 not a
 game, 155 folders) and the 364,810 media files.
 
-**Left open.** With the snapshot, a `<folder>` entry that ES-DE excludes (`ShowHiddenGames` off and `<hidden>`,
-`ShowHiddenFiles` off and a hidden folder, a noload.txt) is `NotAGame` with a gamelist path, so `inPopulation()` counts
-it among the `<game>` entries (`gamelist-entries`, and `gamelist-entries-with-file` when listed); `GamelistSource` read
-no `<folder>` entries. `CatalogEntry` does not say which kind of gamelist entry named it, and an excluded game
-directory (a `<game>` entry) looks alike. There is none on the reference library (all 155 `<folder>` entries are
-folders) nor in the fixtures the coverage tests read; the noload fixture has one as committed (`gba/Skip Me`, which
-holds a noload.txt), nested-roms one with `ShowHiddenGames` off (`nes/L1/L2`). A fix needs that kind in the snapshot
-(step 1's domain): a candidate for BACKLOG.
+**Left open.** Over the snapshot, `gamelist-entries` (and with it `gamelist-entries-with-file`) is "every `<game>`
+entry" only as far as the snapshot tells the gamelist entries apart, and it can be wrong both ways (review finding F1):
+- **`<game>` entries left out.** `EsdeLibrarySource` skips, with an issue and no entry, a `<game>` entry naming a
+  folder ES-DE enters (`gamelist-kind-mismatch`) and one inside a game directory (`gamelist-entry-inside-game`), as
+  ES-DE skips them. `GamelistSource` counted both (as `NotAGame` and as a game).
+- **`<folder>` entries counted.** A `<folder>` entry that ES-DE excludes (`ShowHiddenGames` off and `<hidden>`,
+  `ShowHiddenFiles` off and a hidden folder, a noload.txt) is `NotAGame` with a gamelist path, so `inPopulation()`
+  counts it among the `<game>` entries; `GamelistSource` read no `<folder>` entries. `CatalogEntry` does not say which
+  kind of gamelist entry named it, and an excluded game directory (a `<game>` entry) looks alike.
+
+Neither happens on the reference library (40,870 reproduced; all 155 `<folder>` entries are folders, no entry skipped)
+nor in the fixtures the coverage tests read. Elsewhere they do: nested-roms' nes gamelist has 6 `<game>` entries, and
+`media --coverage --system nes` counts 4 (`./Shelf B` and `./Collection.zip/Inside One (USA).nes` are only issues;
+`GamelistSource` gave 6), 5 with `ShowHiddenGames` off (the 4 and the excluded `<folder>` `./L1/L2`); the noload
+fixture counts its `<folder>` `gba/Skip Me` (it holds a noload.txt) as committed. One fix serves both directions: the
+snapshot records which kind of gamelist entry named an entry and keeps the `<game>` entries it skips (as `NotAGame`
+entries, or as a count per system), and `inPopulation()` takes the kind instead of the state. It is step 1's domain and
+step 7's source, outside this step: a candidate for BACKLOG.
 
 ## For the merge
 
@@ -443,8 +457,9 @@ holds a noload.txt), nested-roms one with `ShowHiddenGames` off (`nes/L1/L2`). A
   reads `.mp4 .mkv .avi .wmv .mov .webm` (and images `.png .jpg .webp`), a parenthesis to correct when the README is
   next edited. S8-R1 is fixed and needs no BACKLOG entry. After the integration with step 7: CLAUDE.md's retroverse-cli
   section can say that `media --coverage` measures the library snapshot of the ROM scan (as `import --dry-run` reads
-  it, `library_snapshot.hpp`); BACKLOG can take the `<folder>` entries that `gamelist-entries` counts ("Left open"
-  above).
+  it, `library_snapshot.hpp`); BACKLOG can take the gamelist entry kind in the snapshot, so that `gamelist-entries`
+  counts the `<game>` entries the snapshot skips with an issue and leaves out the `<folder>` entries ES-DE excludes
+  ("Left open" above).
 
 ## Suggested amendments
 
