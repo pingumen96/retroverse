@@ -55,7 +55,8 @@ TEST_CASE("esde/disc_groups: the kind of sheet a name is", "[esde][disc_groups]"
 
 TEST_CASE("esde/disc_groups: sheets decode as UTF-8, else Windows-1252", "[esde][disc_groups]") {
     CHECK(rv::esde::decodeSheet("FILE \"a.bin\"").text == "FILE \"a.bin\"");
-    const rv::esde::SheetText bom = rv::esde::decodeSheet("\xEF\xBB\xBF" "FILE \"Caf\xC3\xA9.bin\"");
+    const rv::esde::SheetText bom = rv::esde::decodeSheet("\xEF\xBB\xBF"
+                                                          "FILE \"Caf\xC3\xA9.bin\"");
     CHECK(bom.text == "FILE \"Caf\xC3\xA9.bin\"");
     CHECK_FALSE(bom.windows1252);
     const rv::esde::SheetText ansi = rv::esde::decodeSheet("FILE \"Caf\xE9 \x80.bin\"");
@@ -77,14 +78,15 @@ TEST_CASE("esde/disc_groups: the FILE lines of a cue sheet", "[esde][disc_groups
                               "FILE\n"
                               "FILE \"\" BINARY\n"
                               "TITLE \"FILE inside.bin\"\n";
-    CHECK(rv::esde::cueSheetFiles(sheet) ==
-          std::vector<std::string>{"Track 1.bin", "Sub/Track 2.bin", "Plain.bin", "Two Words.wav", "alone.bin",
-                                   "unclosed name.bin BINARY"});
+    CHECK(rv::esde::cueSheetFiles(sheet) == std::vector<std::string>{"Track 1.bin", "Sub/Track 2.bin", "Plain.bin",
+                                                                     "Two Words.wav", "alone.bin",
+                                                                     "unclosed name.bin BINARY"});
     CHECK(rv::esde::cueSheetFiles("").empty());
 }
 
 TEST_CASE("esde/disc_groups: the entries of a playlist", "[esde][disc_groups]") {
-    CHECK(rv::esde::m3uFiles("#EXTM3U\r\n# Disc list\r\nDisc 1.cue\r\n\r\n  Disc 2.cue  \n\t#indented comment\nsub\\Disc 3.chd") ==
+    CHECK(rv::esde::m3uFiles(
+              "#EXTM3U\r\n# Disc list\r\nDisc 1.cue\r\n\r\n  Disc 2.cue  \n\t#indented comment\nsub\\Disc 3.chd") ==
           std::vector<std::string>{"Disc 1.cue", "Disc 2.cue", "sub\\Disc 3.chd"});
 }
 
@@ -144,12 +146,12 @@ TEST_CASE("esde/disc_groups: groups, chains, shared members and cycles", "[esde]
         CHECK(grouping.issues.empty());
     }
     SECTION("a chain: the playlist's members first in the members-first order") {
-        const auto grouping = rv::esde::groupDiscs(
-            psx(),
-            {{key("Saga.m3u"), DiscGroupKind::M3u, {key("Saga 1.cue"), key("Saga 2.cue")}},
-             {key("Saga 2.cue"), DiscGroupKind::Cue, {key("Saga 2.bin")}},
-             {key("Saga 1.cue"), DiscGroupKind::Cue, {key("Saga 1.bin")}}},
-            folder);
+        const auto grouping =
+            rv::esde::groupDiscs(psx(),
+                                 {{key("Saga.m3u"), DiscGroupKind::M3u, {key("Saga 1.cue"), key("Saga 2.cue")}},
+                                  {key("Saga 2.cue"), DiscGroupKind::Cue, {key("Saga 2.bin")}},
+                                  {key("Saga 1.cue"), DiscGroupKind::Cue, {key("Saga 1.bin")}}},
+                                 folder);
         REQUIRE(grouping.groups.size() == 3);
         CHECK(grouping.groups[0].head.relativePath() == "Saga 1.cue"); // by key
         CHECK(grouping.groups[2].head.relativePath() == "Saga.m3u");

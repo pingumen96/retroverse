@@ -38,7 +38,8 @@ inline constexpr std::uintmax_t kMaxDiscSheetBytes = 1024ull * 1024ull;
 /// (catalog::LibraryLoadOptions::discGroups), whatever its size and time; without one its files stay what the listing
 /// makes them. Warning.
 inline constexpr std::string_view kDiscIssueSheetUnreadable = "disc-sheet-unreadable";
-/// A reference of a sheet that names no file or folder of the system folder: a track or disc that is not there. Warning.
+/// A reference of a sheet that names no file or folder of the system folder: a track or disc that is not there.
+/// Warning.
 inline constexpr std::string_view kDiscIssueReferenceMissing = "disc-reference-missing";
 /// A reference that leads out of the system folder, or that is no path (empty after decoding, a control character, a
 /// drive-relative form): ignored. Warning.

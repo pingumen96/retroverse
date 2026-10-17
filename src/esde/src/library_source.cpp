@@ -63,10 +63,10 @@ public:
         for (const Count& count : m_counts) {
             if (count.seen > kSourceIssuesListedPerCode) {
                 catalog::Issue summary = count.last;
-                summary.reason = fmt::format("{} more issue(s) of this kind, not listed one by one after the first {}; "
-                                             "the last: {}",
-                                             count.seen - kSourceIssuesListedPerCode, kSourceIssuesListedPerCode,
-                                             count.last.reason);
+                summary.reason =
+                    fmt::format("{} more issue(s) of this kind, not listed one by one after the first {}; "
+                                "the last: {}",
+                                count.seen - kSourceIssuesListedPerCode, kSourceIssuesListedPerCode, count.last.reason);
                 m_issues.push_back(std::move(summary));
             }
         }
@@ -179,7 +179,8 @@ private:
         return m_options.cancel != nullptr && m_options.cancel->load(std::memory_order_relaxed);
     }
     [[nodiscard]] tl::unexpected<Error> cancelledError() const {
-        return makeError(ErrorCode::Cancelled, "the library load was cancelled", core::pathToUtf8Lossy(m_profile.esdeHome));
+        return makeError(ErrorCode::Cancelled, "the library load was cancelled",
+                         core::pathToUtf8Lossy(m_profile.esdeHome));
     }
     const MameSets& mameSets();
     ScanRules rulesOf(const SystemDefinition& definition);
@@ -316,15 +317,14 @@ void Loader::addUnavailableEntries(SystemResult& result, const std::vector<const
 }
 
 void Loader::mergeListing(SystemResult& result, const RomFolderListing& listing, const Gamelist* gamelist,
-                          const ScanRules& rules, SystemBlock block, const fs::path& gamelistFile,
-                          IssueList& issues) {
+                          const ScanRules& rules, SystemBlock block, const fs::path& gamelistFile, IssueList& issues) {
     const catalog::SystemName& system = result.info.name;
     const bool parseGamelistOnly = m_settings.parseGamelistOnly;
     const std::string gamelistText = core::pathToUtf8Lossy(gamelistFile);
     const auto entryIssue = [&](std::string_view code, const GamelistEntry& entry, std::string what) {
-        issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(code), system.str(), gamelistText,
-                                  fmt::format("line {}: the <{}> entry \"{}\" {}", entry.line, toString(entry.kind),
-                                              entry.path, what)});
+        issues.add(catalog::Issue{
+            catalog::IssueSeverity::Warning, std::string(code), system.str(), gamelistText,
+            fmt::format("line {}: the <{}> entry \"{}\" {}", entry.line, toString(entry.kind), entry.path, what)});
     };
 
     // The gamelist's entries by key, each key's in document order (lookups only).
@@ -493,8 +493,8 @@ void Loader::mergeListing(SystemResult& result, const RomFolderListing& listing,
             CatalogEntry entry = entryFrom(system, *lastGame);
             entry.state = EntryState::MissingFile;
             entry.availability = catalog::Availability::Missing;
-            entry.title = titleOf(entry.metadata, esdeDefaultName(lastGame->key.relativePath(), EsdeNameKind::File,
-                                                                  rules));
+            entry.title =
+                titleOf(entry.metadata, esdeDefaultName(lastGame->key.relativePath(), EsdeNameKind::File, rules));
             result.entries.push_back(std::move(entry));
         }
     }
@@ -610,7 +610,8 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
                 catalog::IssueSeverity::Warning, std::string(kDiscIssueSheetUnreadable), system.str(), headFile,
                 head.stored != nullptr
                     ? fmt::format("cannot be read ({}): the group read before is kept", sheet.error().message)
-                    : fmt::format("cannot be read ({}): the files it names stay what they are", sheet.error().message)});
+                    : fmt::format("cannot be read ({}): the files it names stay what they are",
+                                  sheet.error().message)});
             takeStored();
         } else {
             ++m_statistics.sheetsRead;
@@ -619,10 +620,9 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
                 auto key = relative ? catalog::makeLookupKey(*relative)
                                     : Expected<catalog::LookupKey>(propagate(relative.error()));
                 if (!key) {
-                    issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceInvalid),
-                                              system.str(), headFile,
-                                              fmt::format("its reference \"{}\" is ignored: {}", reference,
-                                                          key.error().message)});
+                    issues.add(catalog::Issue{
+                        catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceInvalid), system.str(),
+                        headFile, fmt::format("its reference \"{}\" is ignored: {}", reference, key.error().message)});
                 } else if (listing != nullptr && listing->sameKey(key->key()).empty()) {
                     issues.add(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kDiscIssueReferenceMissing),
                                               system.str(), headFile,
@@ -648,8 +648,8 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
                     member = m;
                 }
             }
-            if (member && std::find(link.members.begin(), link.members.end(), entries[*member].key) ==
-                              link.members.end()) {
+            if (member &&
+                std::find(link.members.begin(), link.members.end(), entries[*member].key) == link.members.end()) {
                 link.members.push_back(entries[*member].key);
             }
         }
@@ -738,13 +738,13 @@ Expected<SystemResult> Loader::loadSystem(const SystemDefinition& definition) {
         const bool missing = result.info.unavailableReason == catalog::SourceUnavailableReason::FolderMissing;
         const bool named = gamelist != nullptr && !gamelist->entries.empty();
         if (!missing || named) {
-            issues.add(catalog::Issue{
-                missing ? catalog::IssueSeverity::Warning : catalog::IssueSeverity::Error,
-                std::string(missing ? kSourceIssueSystemMissing : kSourceIssueSystemUnavailable),
-                definition.name.str(), folderText,
-                fmt::format("the ROM folder is {} ({}){}", missing ? "not there" : "not available",
-                            catalog::toString(result.info.unavailableReason),
-                            named ? ": its gamelist's entries are kept as source unavailable" : "")});
+            issues.add(
+                catalog::Issue{missing ? catalog::IssueSeverity::Warning : catalog::IssueSeverity::Error,
+                               std::string(missing ? kSourceIssueSystemMissing : kSourceIssueSystemUnavailable),
+                               definition.name.str(), folderText,
+                               fmt::format("the ROM folder is {} ({}){}", missing ? "not there" : "not available",
+                                           catalog::toString(result.info.unavailableReason),
+                                           named ? ": its gamelist's entries are kept as source unavailable" : "")});
         }
         if (gamelist != nullptr) {
             std::vector<std::string> keysSeen;
@@ -806,7 +806,7 @@ Expected<catalog::LibrarySnapshot> Loader::run() {
     const FolderCheck homeCheck = checkFolder(m_profile.esdeHome);
     if (homeCheck.availability != catalog::Availability::Available) {
         return makeError(homeCheck.reason == catalog::SourceUnavailableReason::FolderMissing ? ErrorCode::NotFound
-                                                                                            : ErrorCode::Unavailable,
+                                                                                             : ErrorCode::Unavailable,
                          "the ES-DE home is no folder that can be read: " + homeCheck.detail, home);
     }
     auto settings = readSettings(m_profile.esdeHome);
@@ -816,8 +816,10 @@ Expected<catalog::LibrarySnapshot> Loader::run() {
     m_settings = std::move(*settings);
     m_issues.insert(m_issues.end(), m_settings.issues.begin(), m_settings.issues.end());
     if (m_settings.legacyGamelistFileLocation) {
-        m_issues.push_back(catalog::Issue{catalog::IssueSeverity::Warning, std::string(kSourceIssueLegacyGamelists),
-                                          {}, core::pathToUtf8Lossy(m_settings.file),
+        m_issues.push_back(catalog::Issue{catalog::IssueSeverity::Warning,
+                                          std::string(kSourceIssueLegacyGamelists),
+                                          {},
+                                          core::pathToUtf8Lossy(m_settings.file),
                                           "LegacyGamelistFileLocation is on: ES-DE reads a gamelist.xml inside a ROM "
                                           "folder first, Retroverse only <ES-DE home>\\gamelists"});
     }

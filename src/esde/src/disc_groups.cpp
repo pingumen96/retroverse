@@ -34,7 +34,8 @@ std::vector<std::string_view> linesOf(std::string_view text) {
     std::size_t start = 0;
     while (start <= text.size()) {
         const std::size_t end = text.find('\n', start);
-        std::string_view line = text.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
+        std::string_view line =
+            text.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
         if (line.ends_with('\r')) {
             line.remove_suffix(1);
         }
@@ -201,14 +202,16 @@ Expected<DiscSheet> readDiscSheet(const std::filesystem::path& systemFolder, con
 }
 
 const catalog::LookupKey* DiscGrouping::headOf(const catalog::LookupKey& member) const noexcept {
-    const auto found = std::lower_bound(memberHeads.begin(), memberHeads.end(), member,
-                                        [](const auto& pair, const catalog::LookupKey& key) { return pair.first < key; });
+    const auto found =
+        std::lower_bound(memberHeads.begin(), memberHeads.end(), member,
+                         [](const auto& pair, const catalog::LookupKey& key) { return pair.first < key; });
     return found != memberHeads.end() && found->first == member ? &found->second : nullptr;
 }
 
 DiscGrouping groupDiscs(const catalog::SystemName& system, std::vector<DiscHeadLinks> links,
                         const std::filesystem::path& systemFolder) {
-    std::sort(links.begin(), links.end(), [](const DiscHeadLinks& a, const DiscHeadLinks& b) { return a.head < b.head; });
+    std::sort(links.begin(), links.end(),
+              [](const DiscHeadLinks& a, const DiscHeadLinks& b) { return a.head < b.head; });
     std::map<catalog::LookupKey, std::size_t> headIndex;
     for (std::size_t i = 0; i < links.size(); ++i) {
         headIndex.emplace(links[i].head, i);

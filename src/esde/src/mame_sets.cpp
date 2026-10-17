@@ -16,8 +16,8 @@ namespace rv::esde {
 namespace {
 
 catalog::Issue issueOf(std::string_view code, const std::filesystem::path& file, std::string reason) {
-    return catalog::Issue{catalog::IssueSeverity::Warning, std::string(code), {}, core::pathToUtf8Lossy(file),
-                          std::move(reason)};
+    return catalog::Issue{
+        catalog::IssueSeverity::Warning, std::string(code), {}, core::pathToUtf8Lossy(file), std::move(reason)};
 }
 
 bool sortedContains(const std::vector<std::string>& sorted, std::string_view value) noexcept {
@@ -61,8 +61,7 @@ MameSets::MameSets(std::vector<std::pair<std::string, std::string>> names, std::
     : m_names(std::move(names)), m_bioses(std::move(bioses)), m_devices(std::move(devices)) {
     // The last pair of a mamename counts, as ES-DE's map assignment keeps it: a stable sort keeps the file order among
     // equal names, then each run of them keeps its last.
-    std::stable_sort(m_names.begin(), m_names.end(),
-                     [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::stable_sort(m_names.begin(), m_names.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
     std::vector<std::pair<std::string, std::string>> unique;
     unique.reserve(m_names.size());
     for (auto& pair : m_names) {
@@ -105,23 +104,25 @@ MameLists readMameListFiles(const std::optional<std::filesystem::path>& namesFil
                           const auto& take) {
         if (!file) {
             lists.issues.push_back(catalog::Issue{
-                catalog::IssueSeverity::Warning, std::string(kMameIssueListMissing), {}, {},
+                catalog::IssueSeverity::Warning,
+                std::string(kMameIssueListMissing),
+                {},
+                {},
                 fmt::format("ES-DE's resources/{} is not there: ES-DE reads no MAME list after it", resource)});
             return false;
         }
         try {
             auto document = readList(*file);
             if (!document) {
-                lists.issues.push_back(
-                    issueOf(kMameIssueListUnreadable, *file,
-                            fmt::format("cannot be read ({}): ES-DE reads no MAME list after it",
-                                        document.error().message)));
+                lists.issues.push_back(issueOf(
+                    kMameIssueListUnreadable, *file,
+                    fmt::format("cannot be read ({}): ES-DE reads no MAME list after it", document.error().message)));
                 return false;
             }
             take(*document);
         } catch (const std::bad_alloc&) {
-            lists.issues.push_back(issueOf(kMameIssueListUnreadable, *file,
-                                           "out of memory while reading it: no MAME list read after it"));
+            lists.issues.push_back(
+                issueOf(kMameIssueListUnreadable, *file, "out of memory while reading it: no MAME list read after it"));
             return false;
         }
         lists.files.push_back(*file);
@@ -134,8 +135,8 @@ MameLists readMameListFiles(const std::optional<std::filesystem::path>& namesFil
         }
     });
     const bool biosesRead = namesRead && read(biosesFile, kMameBiosesResource, [&](const detail::XmlDocument& doc) {
-        bioses = topLevelTexts(doc, "bios");
-    });
+                                bioses = topLevelTexts(doc, "bios");
+                            });
     if (biosesRead) {
         read(devicesFile, kMameDevicesResource,
              [&](const detail::XmlDocument& document) { devices = topLevelTexts(document, "device"); });
@@ -145,9 +146,9 @@ MameLists readMameListFiles(const std::optional<std::filesystem::path>& namesFil
 }
 
 MameLists loadMameLists(const catalog::LibraryProfile& profile) {
-    MameLists lists = readMameListFiles(bundledResource(profile, kMameNamesResource),
-                                        bundledResource(profile, kMameBiosesResource),
-                                        bundledResource(profile, kMameDevicesResource));
+    MameLists lists =
+        readMameListFiles(bundledResource(profile, kMameNamesResource), bundledResource(profile, kMameBiosesResource),
+                          bundledResource(profile, kMameDevicesResource));
     spdlog::debug("MAME lists: {} name(s), {} BIOS set(s), {} device(s), {} issue(s)", lists.sets.nameCount(),
                   lists.sets.biosCount(), lists.sets.deviceCount(), lists.issues.size());
     return lists;

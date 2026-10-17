@@ -240,8 +240,8 @@ Expected<RomFolderListing> scanRomFolder(const std::filesystem::path& romFolder,
         item.facts = source.facts;
         item.extensionConfigured = isConfigured(esdeExtension(name), directory);
         item.arcadeAsset = isArcadeAsset(name, directory);
-        item.parentHidden = source.parent == std::string::npos ? listing.systemFolderHidden
-                                                                : raw[source.parent].facts.hidden;
+        item.parentHidden =
+            source.parent == std::string::npos ? listing.systemFolderHidden : raw[source.parent].facts.hidden;
         item.above = source.parent == std::string::npos ? ScanExclusion::None : blocksContent[source.parent];
         const bool hiddenSkipped = !rules.showHiddenFiles && item.facts.hidden;
 
@@ -301,8 +301,7 @@ Expected<RomFolderListing> scanRomFolder(const std::filesystem::path& romFolder,
                   return a.relativePath < b.relativePath;
               });
     spdlog::debug("ROM folder of {}: {} file(s), {} folder(s), {} unavailable folder(s), {} issue(s)", systemName,
-                  listing.filesListed, listing.foldersListed, listing.unavailableFolders.size(),
-                  listing.issues.size());
+                  listing.filesListed, listing.foldersListed, listing.unavailableFolders.size(), listing.issues.size());
     return listing;
 }
 

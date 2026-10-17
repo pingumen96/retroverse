@@ -1,9 +1,9 @@
 #pragma once
 
 // A system's ROM folder listed with ES-DE 3.4.1's discovery rules (SystemData::populateFolder, ADR-0008 §3): what ES-DE
-// would show of each file and folder before the gamelist is applied, and the facts the gamelist's rules need. Read-only:
-// the folder is walked with core::walkTree (\\?\ paths, any length; links followed unless they loop), and no file is
-// opened. The rules:
+// would show of each file and folder before the gamelist is applied, and the facts the gamelist's rules need.
+// Read-only: the folder is walked with core::walkTree (\\?\ paths, any length; links followed unless they loop), and no
+// file is opened. The rules:
 //  - a name's extension is what follows its last '.', the dot included, and "." when it has none or ends with one
 //    (esdeExtension()); it is compared with the system's extensions verbatim and with case (".Sfc" is neither ".sfc"
 //    nor ".SFC");
@@ -46,7 +46,8 @@ namespace rv::esde {
 /// The codes of the issues scanRomFolder() reports (catalog::Issue::code), each naming the system and the file or
 /// folder.
 /// A folder below the system folder that cannot be listed (access denied, an I/O error, a link that loops or whose
-/// target cannot be opened): its content is unknown, "source unavailable" (RomFolderListing::unavailableFolders). Error.
+/// target cannot be opened): its content is unknown, "source unavailable" (RomFolderListing::unavailableFolders).
+/// Error.
 inline constexpr std::string_view kRomIssueFolderUnavailable = "rom-folder-unavailable";
 /// An entry that cannot be listed: a name without a UTF-8 form (an unpaired UTF-16 surrogate), a link to a file whose
 /// target cannot be opened. It is left out. Warning.
@@ -91,11 +92,11 @@ struct ScanRules {
 };
 
 /// The name ES-DE gives `relativePath` (a path below the system folder, '/' between the elements) before its gamelist
-/// does, as the catalog shows it (ScannedItem::defaultName, CatalogEntry::title): a file's stem, a game directory's name
-/// without its extension, a folder's whole name (catalog::titleFromFileStem()); for a game of an arcade system its MAME
-/// name (mameName(), a game directory's cut by its extension's length as ES-DE cuts it), cleaned for one line
-/// (catalog::displayText()), the file's stem when nothing is left. Never empty. `esdeName`, when given, receives ES-DE's
-/// own text of the name before the cut: empty when ES-DE skips a file "as it has no filename".
+/// does, as the catalog shows it (ScannedItem::defaultName, CatalogEntry::title): a file's stem, a game directory's
+/// name without its extension, a folder's whole name (catalog::titleFromFileStem()); for a game of an arcade system its
+/// MAME name (mameName(), a game directory's cut by its extension's length as ES-DE cuts it), cleaned for one line
+/// (catalog::displayText()), the file's stem when nothing is left. Never empty. `esdeName`, when given, receives
+/// ES-DE's own text of the name before the cut: empty when ES-DE skips a file "as it has no filename".
 [[nodiscard]] std::string esdeDefaultName(std::string_view relativePath, EsdeNameKind kind, const ScanRules& rules,
                                           std::string* esdeName = nullptr);
 
@@ -135,8 +136,8 @@ struct ScannedItem {
     /// A MAME BIOS or device set of an arcade system.
     bool arcadeAsset = false;
     /// The folder holding it is hidden (the attribute or a leading dot); for an item of the system folder, the system
-    /// folder itself. ES-DE's gamelist parser skips an entry whose file or parent folder is hidden while ShowHiddenFiles
-    /// is off.
+    /// folder itself. ES-DE's gamelist parser skips an entry whose file or parent folder is hidden while
+    /// ShowHiddenFiles is off.
     bool parentHidden = false;
     /// The name ES-DE gives it without metadata: the stem of a file (a directory game's name without its extension, a
     /// folder's whole name), its MAME name in an arcade system; as ES-DE shows it, never empty for a Game.

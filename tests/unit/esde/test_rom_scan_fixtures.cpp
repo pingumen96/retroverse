@@ -1,7 +1,7 @@
 // The ROM scan and the library snapshot (I2 step 7) on the fixtures made for them, each as its README counts it:
-// nested-roms (namesakes, deep nesting, game directories, links, a folder that cannot be listed), multi-disc (cue sheets
-// and playlists, chains, a cycle, encodings, the cache), arcade (MAME BIOS and device sets, names), noload (noload.txt,
-// hidden folders, ParseGamelistOnly) and long-path (paths past MAX_PATH).
+// nested-roms (namesakes, deep nesting, game directories, links, a folder that cannot be listed), multi-disc (cue
+// sheets and playlists, chains, a cycle, encodings, the cache), arcade (MAME BIOS and device sets, names), noload
+// (noload.txt, hidden folders, ParseGamelistOnly) and long-path (paths past MAX_PATH).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -99,8 +99,8 @@ TEST_CASE("esde/rom_scan: nested-roms", "[esde][rom_scan]") {
     {
         auto odd = rv::core::extendedLengthPathBelow(fixture.path("roms/xbox360"), "Odd Name.");
         REQUIRE(odd.has_value());
-        const HANDLE file = CreateFileW(odd->c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
-                                        nullptr);
+        const HANDLE file =
+            CreateFileW(odd->c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
         REQUIRE(file != INVALID_HANDLE_VALUE);
         CloseHandle(file);
     }
@@ -233,7 +233,9 @@ TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     CHECK(countsOf(snapshot, "ps2") == StateCounts{3, 2, 0, 1, 0, 0, 0});
     CHECK(snapshot.discGroups.size() == 15);
 
-    const auto headOf = [&](std::string_view member) { return entryAt(snapshot, "psx", member).discHead.relativePath(); };
+    const auto headOf = [&](std::string_view member) {
+        return entryAt(snapshot, "psx", member).discHead.relativePath();
+    };
     const auto membersOf = [&](std::string_view head) {
         std::vector<std::string> members;
         for (const rv::catalog::DiscGroup& group : snapshot.discGroups) {
@@ -471,9 +473,10 @@ TEST_CASE("esde/rom_scan: noload and hidden folders", "[esde][rom_scan]") {
 
 TEST_CASE("esde/rom_scan: paths longer than MAX_PATH", "[esde][rom_scan]") {
     const rv::test::Fixture fixture = materialize("esde/long-path");
-    const std::string folder = "A Very Long Folder Name Made To Exceed The Classic Windows Path Limit Of Two Hundred And "
-                               "Sixty (Part One)/Another Long Folder Name For The Same Purpose So That The Whole Path Is "
-                               "Well Past It (Part Two)";
+    const std::string folder =
+        "A Very Long Folder Name Made To Exceed The Classic Windows Path Limit Of Two Hundred And "
+        "Sixty (Part One)/Another Long Folder Name For The Same Purpose So That The Whole Path Is "
+        "Well Past It (Part Two)";
     const std::string disc = "Long Disc Of An Invented Game With Many Words In Its Title (Europe)";
     REQUIRE(rv::test::writeFileAnyLength(fixture.path("roms/psx/" + folder + "/" + disc + ".cue"),
                                          "FILE \"" + disc + " (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n"));

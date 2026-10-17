@@ -154,12 +154,12 @@ TEST_CASE("esde/library_source: the standard fixture as its README counts it", "
     CHECK(group.members[1].relativePath() == "Twin Tracks (Europe) (Track 2).bin");
 
     // The files that are no entry.
-    for (const auto& [system, path] : std::vector<std::pair<std::string, std::string>>{
-             {"gb", "Notes.txt"},
-             {"gb", "gamelist.xml"},
-             {"snes", "manual.pdf"},
-             {"psx", "Solo Disc (USA).commands"},
-             {"psx", "Loud Disc (Japan).CUE"}}) {
+    for (const auto& [system, path] :
+         std::vector<std::pair<std::string, std::string>>{{"gb", "Notes.txt"},
+                                                          {"gb", "gamelist.xml"},
+                                                          {"snes", "manual.pdf"},
+                                                          {"psx", "Solo Disc (USA).commands"},
+                                                          {"psx", "Loud Disc (Japan).CUE"}}) {
         INFO(system << " " << path);
         CHECK(rv::test::esde::findEntry(snapshot, system, path) == nullptr);
     }

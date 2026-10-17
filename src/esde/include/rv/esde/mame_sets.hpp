@@ -1,8 +1,8 @@
 #pragma once
 
-// ES-DE's MAME lists (ADR-0008 §3): resources/MAME/mamebioses.xml and mamedevices.xml name the BIOS and device sets that
-// ES-DE skips in the systems of the arcade and neogeo platforms (FileData::isArcadeAsset), and mamenames.xml gives the
-// names their unscraped games show (MameNames::getCleanName). Read as ES-DE 3.4.1's MameNames reads them: each a
+// ES-DE's MAME lists (ADR-0008 §3): resources/MAME/mamebioses.xml and mamedevices.xml name the BIOS and device sets
+// that ES-DE skips in the systems of the arcade and neogeo platforms (FileData::isArcadeAsset), and mamenames.xml gives
+// the names their unscraped games show (MameNames::getCleanName). Read as ES-DE 3.4.1's MameNames reads them: each a
 // bundled resource (bundledResource(): the ES-DE home's resources/ before the install folder's), the names first, then
 // the BIOS sets, then the devices, and a list that is missing or cannot be parsed ends the reading there (so a missing
 // mamenames.xml leaves no BIOS or device set either); the top-level <game> elements with their <mamename> and

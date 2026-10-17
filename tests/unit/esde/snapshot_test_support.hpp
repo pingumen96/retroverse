@@ -23,7 +23,8 @@ namespace rv::test::esde {
 /// tests/fixtures/<name> materialized (REQUIREd).
 [[nodiscard]] Fixture materialize(std::string_view name);
 
-/// The profile of a fixture laid out as the standard one: the ES-DE home in ES-DE/, the install folder in Programs/ES-DE.
+/// The profile of a fixture laid out as the standard one: the ES-DE home in ES-DE/, the install folder in
+/// Programs/ES-DE.
 [[nodiscard]] catalog::LibraryProfile profileOf(const Fixture& fixture);
 
 /// source.load() REQUIREd to succeed.

@@ -33,8 +33,8 @@ catalog::LibrarySnapshot loadSnapshot(catalog::ILibrarySource& source, const cat
 
 std::ostream& operator<<(std::ostream& out, const StateCounts& counts) {
     return out << "{entries " << counts.entries << ", games " << counts.games << ", missing " << counts.missing
-               << ", not a game " << counts.notAGame << ", members " << counts.members << ", folders "
-               << counts.folders << ", outside " << counts.outside << "}";
+               << ", not a game " << counts.notAGame << ", members " << counts.members << ", folders " << counts.folders
+               << ", outside " << counts.outside << "}";
 }
 
 StateCounts countsOf(const catalog::LibrarySnapshot& snapshot, std::string_view system) {

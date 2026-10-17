@@ -2,9 +2,9 @@
 
 // EsdeLibrarySource (ADR-0008 §2, §3, §4): catalog::ILibrarySource over an ES-DE installation. A load reads the
 // configuration (settings, roots, systems, the MAME lists for the arcade systems), then every system: its ROM folder
-// with ES-DE's discovery rules (scanRomFolder()), its gamelist (readGamelist(), read again after a delay when it fails),
-// both merged into entries with their states, then its disc groups (disc_groups.hpp). Read-only towards ES-DE: files are
-// opened for reading with full sharing, nothing is written under any of its folders.
+// with ES-DE's discovery rules (scanRomFolder()), its gamelist (readGamelist(), read again after a delay when it
+// fails), both merged into entries with their states, then its disc groups (disc_groups.hpp). Read-only towards ES-DE:
+// files are opened for reading with full sharing, nothing is written under any of its folders.
 //
 // What a game is follows what ES-DE 3.4.1 would show (SystemData::populateFolder, GamelistFileParser::parseGamelist),
 // so that both frontends agree:
@@ -21,11 +21,13 @@
 //  - a <folder> entry of a folder ES-DE enters: a Folder (also one that holds no game, which ES-DE would not show), or
 //    NotAGame when the rules above exclude it; of a game directory or a file, skipped with an issue, as ES-DE skips a
 //    "Game/folder mismatch";
-//  - a <game> entry whose file is not listed: MissingFile (kept with its metadata, FR-033), but below a folder that could
+//  - a <game> entry whose file is not listed: MissingFile (kept with its metadata, FR-033), but below a folder that
+//  could
 //    not be listed or in a system folder that is not available (SourceUnavailable, with the state the gamelist alone
 //    tells: the name's extension, a BIOS name, a leading dot, <hidden>) and inside a game directory (skipped with an
 //    issue: ES-DE never looks there). A <folder> entry whose folder is not listed is skipped with an issue;
-//  - the system folder hidden (with ShowHiddenFiles off) or holding a noload.txt (ParseGamelistOnly off): ES-DE does not
+//  - the system folder hidden (with ShowHiddenFiles off) or holding a noload.txt (ParseGamelistOnly off): ES-DE does
+//  not
 //    load the system, so every would-be game is NotAGame for that reason;
 //  - a system name defined more than once (a custom system and the bundled one, SystemsConfiguration::fallbacks): the
 //    first definition whose folder gives at least one game, as ES-DE loads it; the first one when none does;

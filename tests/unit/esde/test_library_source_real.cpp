@@ -228,7 +228,9 @@ TEST_CASE("esde/library_source: the real library", "[esde][library_source][.real
     for (const rv::catalog::Issue& issue : snapshot.issues) {
         ++issueCodes[issue.code];
     }
-    const auto seconds = [](std::chrono::nanoseconds time) { return std::chrono::duration<double>(time).count(); };
+    const auto seconds = [](std::chrono::nanoseconds time) {
+        return std::chrono::duration<double>(time).count();
+    };
     std::cout << "esde/library_source real library, census table:\n" << tableText(rows, notAGame);
     std::cout << fmt::format("loaded in {:.2f} s (configuration {:.2f} s, scan {:.2f} s, gamelists {:.2f} s, sheets "
                              "{:.2f} s); {} systems, {} scanned, {} files and {} folders listed, {} gamelists, {} "
@@ -242,8 +244,8 @@ TEST_CASE("esde/library_source: the real library", "[esde][library_source][.real
         std::cout << "issue " << code << ": " << count << "\n";
     }
     for (const rv::catalog::Issue& issue : snapshot.issues) {
-        UNSCOPED_INFO(rv::catalog::toString(issue.severity) << " " << issue.code << " " << issue.system << ": "
-                                                            << issue.reason);
+        UNSCOPED_INFO(rv::catalog::toString(issue.severity)
+                      << " " << issue.code << " " << issue.system << ": " << issue.reason);
     }
 
     // The figures of ADR-0008 and the survey.

@@ -1,6 +1,6 @@
 // The MAME lists (I2 step 7): read as ES-DE 3.4.1's MameNames reads them, looked up with case, and the names ES-DE
-// gives arcade games (removeParenthesis, MAMENameStripExtraInfo); the platforms that make a system an arcade one; ES-DE's
-// extension and stem of a name.
+// gives arcade games (removeParenthesis, MAMENameStripExtraInfo); the platforms that make a system an arcade one;
+// ES-DE's extension and stem of a name.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -58,7 +58,8 @@ TEST_CASE("esde/mame_sets: the lists read in ES-DE's order, a missing one ending
     REQUIRE(rv::test::writeFileAnyLength(dir.file("devices.xml"), "<device>d1</device>\n"));
     REQUIRE(rv::test::writeFileAnyLength(dir.file("broken.xml"), "<bios>b1</bi"));
 
-    const auto all = rv::esde::readMameListFiles(dir.file("names.xml"), dir.file("bioses.xml"), dir.file("devices.xml"));
+    const auto all =
+        rv::esde::readMameListFiles(dir.file("names.xml"), dir.file("bioses.xml"), dir.file("devices.xml"));
     CHECK(all.issues.empty());
     CHECK(all.files.size() == 3);
     CHECK(all.sets.realName("a&b") == " R "); // never trimmed
