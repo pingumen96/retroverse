@@ -42,6 +42,9 @@ public:
     void captureMouseWhenFocused(std::string_view reason);
     /// Releases the mouse; `reason` completes the log line.
     void releaseMouse(std::string_view reason);
+    /// Releases every key and button and centers the gamepad axes (platform::SdlInputCollector::releaseAll): the input
+    /// of a wait whose events were dropped (an emulator had the screen) leaves nothing held.
+    void releaseAll() noexcept { m_collector.releaseAll(); }
     [[nodiscard]] bool mouseCaptured() const noexcept { return m_capture.captured(); }
 
     /// The --input-script being played, or nullptr.

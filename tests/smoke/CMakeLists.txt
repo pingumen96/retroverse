@@ -4,7 +4,8 @@
 # screenshots they write: the reference scenes, the instance buffer growing mid-run, the rendering self-checks, the key
 # light's shadow and the ambient occlusion on test scenes (tests/smoke/scenes), the developer overlay and the asset
 # preview (developer builds), golden G01 within the tolerance of retroverse-screenshot-diff (on the reference machine
-# only). A test case skipped because no OpenGL 4.5 context can be created exits with 77 (SKIP_RETURN_CODE).
+# only), launches from the quick catalog of a mock catalog (tests/smoke/catalogs) into the fake emulator. A test case
+# skipped because no OpenGL 4.5 context can be created exits with 77 (SKIP_RETURN_CODE).
 #
 # The default test presets leave the label out (msvc-x64-debug, msvc-x64-release); msvc-x64-debug-gpu and
 # msvc-x64-release-gpu run them, and scripts/gate.ps1 runs them for Gate A. Sources are globbed like rv_tests.
@@ -45,6 +46,11 @@ if(TARGET retroverse-asset-preview)
         RV_SMOKE_ASSET_PREVIEW="$<TARGET_FILE:retroverse-asset-preview>")
 endif()
 
+# The launch tests (test_launch.cpp) start the fake emulator, which they also need built. Every run of these tests has
+# the automation guard on (ADR-0008 §8): RV_LAUNCH_ALLOWLIST lists the fake alone, so nothing else could start.
+add_dependencies(rv_smoke_tests rv_fake_emulator)
+file(TO_NATIVE_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rv_fake_emulator.exe" RV_SMOKE_FAKE_EMULATOR)
+
 # main.cpp turns Catch2's "every test case skipped" (4) into ctest's skip code; SKIP_IS_FAILURE keeps
 # catch_discover_tests from registering 4 as the skip code instead.
 catch_discover_tests(rv_smoke_tests
@@ -56,4 +62,18 @@ catch_discover_tests(rv_smoke_tests
         LABELS gpu
         SKIP_RETURN_CODE 77
         TIMEOUT 600
-        RUN_SERIAL TRUE)
+        RUN_SERIAL TRUE
+        ENVIRONMENT "RV_LAUNCH_ALLOWLIST=${RV_SMOKE_FAKE_EMULATOR}")
+
+# The visible launch (label "desktop", hidden from the gpu cases: tagged [.desktop]): it shows fullscreen windows and
+# moves the foreground, so only the msvc-x64-*-desktop test presets run it, on demand, never the gate. It runs only with
+# RV_SMOKE_DESKTOP=1, which this registration alone sets: a Catch2 filter typed by hand skips it.
+add_test(NAME desktop.smoke.launch_visible
+    COMMAND rv_smoke_tests "[desktop]"
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+set_tests_properties(desktop.smoke.launch_visible PROPERTIES
+    LABELS desktop
+    SKIP_RETURN_CODE 77
+    TIMEOUT 600
+    RUN_SERIAL TRUE
+    ENVIRONMENT "RV_LAUNCH_ALLOWLIST=${RV_SMOKE_FAKE_EMULATOR};RV_SMOKE_DESKTOP=1")

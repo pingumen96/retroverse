@@ -23,14 +23,17 @@ constexpr std::string_view kDescription =
     "\n"
     "Controls: WASD or arrows walk, Left Shift sprints, the mouse looks around while captured (at startup in\n"
     "          interactive runs, or after a click into the window); gamepad: left stick walks, right stick\n"
-    "          looks, left stick click sprints. Esc (gamepad B) leaves one level: it closes a popup of the\n"
-    "          developer overlay, else releases the mouse, else closes the overlay, else quits. F1 toggles the\n"
-    "          developer overlay (developer builds), F5 reloads the shaders, F12 saves a screenshot to\n"
-    "          <user data>/screenshots. These follow the bindings of assets/config/default_bindings.json,\n"
+    "          looks, left stick click sprints. Tab (gamepad Y) opens the quick catalog of --mock-catalog, where\n"
+    "          arrows or the D-pad move and Enter (A) launches the selected game. Esc (gamepad B) leaves one\n"
+    "          level: it closes a popup of the developer overlay, else the game panel, else steps back through\n"
+    "          the quick catalog and closes it, else releases the mouse, else closes the overlay, else quits. F1\n"
+    "          toggles the developer overlay (developer builds), F5 reloads the shaders, F12 saves a screenshot\n"
+    "          to <user data>/screenshots. These follow the bindings of assets/config/default_bindings.json,\n"
     "          overridden per action by <user data>/config/bindings.json; Alt+Enter (borderless fullscreen)\n"
-    "          is fixed.\n"
+    "          is fixed. Retroverse never ends an emulator: quitting while a game runs leaves it running.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
-    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script);\n"
+    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script,\n"
+    "              mock catalog);\n"
     "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built,\n"
     "              --self-check failed, developer overlay asked for by a frame-limited run unable to start,\n"
     "              --run-report not written).";
@@ -69,7 +72,17 @@ core::ArgParser makeParser() {
         .flag("screenshot-include-ui",
               "Draw the developer overlay, when open, into --screenshot and F12 screenshots too (they show the scene "
               "only by default), scaled uniformly to fit the screenshot and centered. A frame-limited run fails (exit "
-              "code 3) when the overlay cannot start.");
+              "code 3) when the overlay cannot start.")
+        .option("mock-catalog", "json",
+                "Games of the quick catalog (Tab or gamepad Y opens it), invented, each with a launch target: an "
+                "emulator profile and a ROM (a JSON file, schemaVersion 1, with \"profiles\" and \"games\"). Avvia "
+                "launches the selected game; Retroverse renders nothing until the emulator returns.")
+        .option("launch-wait-limit", "seconds",
+                fmt::format("Only with --smoke or --exit-after-frames: a launched game still running after this many "
+                            "seconds is left running (never ended) and the run goes on to its --frames (default {:g}, "
+                            "at most {:g}).",
+                            CommandLineOptions::kDefaultLaunchWaitLimitSeconds,
+                            CommandLineOptions::kMaxLaunchWaitLimitSeconds));
     return parser;
 }
 
@@ -205,6 +218,34 @@ Expected<std::optional<double>> fixedDeltaSeconds(const core::ParsedArgs& args) 
                          "--fixed-dt=" + args.value("fixed-dt").value_or(""));
     }
     return std::optional<double>(*seconds);
+}
+
+/// --launch-wait-limit <seconds>: a finite number in (0, kMaxLaunchWaitLimitSeconds], frame-limited runs only, where it
+/// defaults to kDefaultLaunchWaitLimitSeconds.
+Status applyLaunchWaitLimit(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("launch-wait-limit")) {
+        if (options.frameLimit) {
+            options.launchWaitLimitSeconds = CommandLineOptions::kDefaultLaunchWaitLimitSeconds;
+        }
+        return ok();
+    }
+    // An interactive run waits for the user's game as long as it runs.
+    if (!options.frameLimit) {
+        return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames",
+                         "--launch-wait-limit");
+    }
+    auto seconds = args.doubleValue("launch-wait-limit", 0.0);
+    if (!seconds) {
+        return propagate(seconds.error());
+    }
+    if (!std::isfinite(*seconds) || *seconds <= 0.0 || *seconds > CommandLineOptions::kMaxLaunchWaitLimitSeconds) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("must be a number of seconds greater than 0 and at most {:g}",
+                                     CommandLineOptions::kMaxLaunchWaitLimitSeconds),
+                         "--launch-wait-limit=" + args.value("launch-wait-limit").value_or(""));
+    }
+    options.launchWaitLimitSeconds = *seconds;
+    return ok();
 }
 
 /// --spawn x,y,z[,yaw[,pitch]], when given.
@@ -439,6 +480,17 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (!spawn) {
         return propagate(spawn.error());
     }
+    auto mockCatalog = pathValue(*args, "mock-catalog");
+    if (!mockCatalog) {
+        return propagate(mockCatalog.error());
+    }
+    if (*mockCatalog && !core::equalsIgnoreCaseAscii(core::pathToUtf8((*mockCatalog)->extension()), ".json")) {
+        return makeError(ErrorCode::InvalidArgument, "the mock catalog is a JSON file: use the .json extension",
+                         "--mock-catalog=" + core::pathToUtf8(**mockCatalog));
+    }
+    if (auto waitLimit = applyLaunchWaitLimit(*args, options); !waitLimit) {
+        return propagate(waitLimit.error());
+    }
     options.spawn = *spawn;
     options.scene = std::move(*scene);
     options.inputScript = std::move(*inputScript);
@@ -446,6 +498,7 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     options.debugDraw = args->has("debug-draw");
     options.devUiOpen = args->has("devui-open");
     options.screenshotIncludeUi = args->has("screenshot-include-ui");
+    options.mockCatalog = std::move(*mockCatalog);
     return options;
 }
 

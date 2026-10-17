@@ -1,0 +1,18 @@
+// I2 step A1: a launch from the quick catalog whose game-session panel asks the user (StillRunning: no window of the
+// game for its window timeout; UserConfirmReturn: the started program ended), answered with its first choice.
+// QuickCatalog opens the catalog on frame 2, ui_activate launches the first game on frame 8 (the frame is presented,
+// then Retroverse renders nothing until the panel asks: frame 9 is the first one with the panel), ui_activate on frame
+// 14 presses the panel's focused choice ("Torna a Retroverse", "Sono tornato"), ui_back on frame 20 leaves the
+// catalog, ui_back on frame 26 does nothing (the world does not read ui_back), move_forward walks frames 30 to 45.
+// Expected with --frames 50: the launch ended on frame 14 (frames.end), confirmed by the user, the catalog closed.
+//   retroverse --mock-catalog <catalog.json> --input-script tests/input_scripts/quick_catalog_launch_confirm.json
+//     --exit-after-frames --frames 50 --hidden --fixed-dt 0.016667 --data-dir build/rvdata
+// tests/smoke/test_launch.cpp runs it against the fake emulator.
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_activate": 1}},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_activate": 1}},
+  {"fromFrame": 20, "toFrame": 20, "actions": {"ui_back": 1}},
+  {"fromFrame": 26, "toFrame": 26, "actions": {"ui_back": 1}},
+  {"fromFrame": 30, "toFrame": 45, "actions": {"move_forward": 1}}
+]

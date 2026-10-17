@@ -16,9 +16,13 @@
 #include <glm/vec2.hpp>
 #include <spdlog/spdlog.h>
 
+#include <SDL3/SDL_events.h>
+
 #include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/debug_line_selection.hpp>
+#include <rv/app/input_context.hpp>
+#include <rv/app/mock_catalog.hpp>
 #include <rv/app/model_viewer.hpp>
 #include <rv/app/overlay_policy.hpp>
 #include <rv/app/scene_graphics.hpp>
@@ -29,6 +33,7 @@
 #include <rv/core/math.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/devui/overlay_input.hpp>
 #include <rv/input/action.hpp>
 #include <rv/input/input_script.hpp>
 #include <rv/platform/graphics_window.hpp>
@@ -44,7 +49,6 @@
 #if defined(RV_DEV_UI)
 #include <rv/devui/dev_ui.hpp>
 #include <rv/devui/frame_time_history.hpp>
-#include <rv/devui/overlay_input.hpp>
 #include <rv/devui/panels.hpp>
 #include <rv/scene/first_person_controller.hpp>
 #include <rv/scene/viewpoint.hpp>
@@ -54,6 +58,7 @@
 #include "bloom_self_check.hpp"
 #include "free_roam.hpp"
 #include "fxaa_self_check.hpp"
+#include "product_ui.hpp"
 #include "srgb_self_check.hpp"
 
 namespace rv::app {
@@ -265,6 +270,64 @@ Expected<std::optional<input::InputScript>> loadInputScript(const CommandLineOpt
     return std::optional<input::InputScript>(std::move(*script));
 }
 
+/// Loads the --mock-catalog file, if any, and reports what it holds.
+Expected<std::optional<MockCatalog>> loadCatalog(const CommandLineOptions& options) {
+    if (!options.mockCatalog) {
+        return std::optional<MockCatalog>{};
+    }
+    auto catalog = loadMockCatalog(*options.mockCatalog);
+    if (!catalog) {
+        Error error = catalog.error();
+        error.message = "cannot load the mock catalog: " + error.message;
+        return propagate(std::move(error));
+    }
+    std::size_t launchable = 0;
+    for (const MockGame& game : catalog->games) {
+        launchable += game.launch ? 1 : 0;
+    }
+    spdlog::info("Mock catalog {}: {} game(s), {} with a launch target, {} profile(s) of its own",
+                 core::pathToUtf8(*options.mockCatalog), catalog->games.size(), launchable,
+                 catalog->profiles.profiles.size());
+    return std::optional<MockCatalog>(std::move(*catalog));
+}
+
+/// Input events dropped while the host idles (an emulator has the screen): presses, motion and text, which would act
+/// once frames resume. Releases and every other event (focus, window, devices) are delivered, so that nothing stays
+/// held; whatever the wait dropped is released when it ends (AppInput::releaseAll).
+bool droppedWhileIdle(const SDL_Event& event) noexcept {
+    switch (event.type) {
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_TEXT_INPUT:
+    case SDL_EVENT_TEXT_EDITING:
+    case SDL_EVENT_MOUSE_MOTION:
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_WHEEL:
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN:
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION:
+    case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/// A press the user made in window `windowId`: a key (not a repeat), a mouse button in it, a gamepad button (SDL
+/// delivers those only while a window of the application has the focus).
+bool isUserPress(const SDL_Event& event, std::uint32_t windowId) noexcept {
+    switch (event.type) {
+    case SDL_EVENT_KEY_DOWN:
+        return !event.key.repeat && event.key.windowID == windowId;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        return event.button.windowID == windowId;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace
 
 struct RetroverseApp::State {
@@ -295,9 +358,19 @@ struct RetroverseApp::State {
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
+    /// The mouse between first-person look and the layers over the scene (the developer overlay, the product UI):
+    /// the first layer to open frees a captured mouse, the last to close captures it again when it freed it.
+    devui::CaptureHandover captureHandover;
+    bool layersOpen = false;
+    /// The product UI had the input at the last syncCaptureLayers(): opening it frees a mouse captured under the
+    /// developer overlay too.
+    bool productLayerOpen = false;
+    /// QuickCatalog pressed in a run without a catalog: logged once.
+    bool catalogNoticeLogged = false;
+    /// The product UI (the quick catalog, the game-session panel) and its launches; only with --mock-catalog.
+    std::unique_ptr<ProductUi> product;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
-    devui::CaptureHandover captureHandover;
     /// The developer overlay. Declared last: destroyed first, before the state its panels refer to.
     std::unique_ptr<devui::DevUi> devUi;
 #endif
@@ -367,7 +440,59 @@ struct RetroverseApp::State {
             levels.overlayPopupOpen = devUi->popupOpen();
         }
 #endif
+        if (product) {
+            levels.panelOpen = product->panelOpen();
+            levels.catalogOpen = product->catalogOpen();
+        }
         return levels;
+    }
+
+    /// Who reads this frame's actions: the product UI while its catalog or panel is open, the world otherwise.
+    [[nodiscard]] InputContext inputContext() const noexcept {
+        return product ? inputContextFor(product->catalogOpen(), product->panelOpen()) : InputContext::World;
+    }
+
+    /// Hands the mouse over when the layers over the scene change: the first to open (the developer overlay, the
+    /// product UI) frees a captured mouse for its cursor, the last to close captures it again when it was freed. The
+    /// product UI always needs the cursor: opening it while the overlay shows frees a mouse that a click into the scene
+    /// captured again meanwhile (given back, too, when the last layer closes).
+    void syncCaptureLayers() {
+        const bool productOpen = product && product->hasInput();
+        const bool open = overlayVisible() || productOpen;
+        const bool productOpened = productOpen && !productLayerOpen;
+        productLayerOpen = productOpen;
+        if (open != layersOpen) {
+            layersOpen = open;
+            if (open) {
+                if (captureHandover.open(input->mouseCaptured())) {
+                    input->releaseMouse(productOpen ? "quick catalog opened; Esc or B leaves it"
+                                                    : "developer overlay opened; F1 or Esc closes it");
+                }
+            } else if (captureHandover.close(input->mouseCaptured())) {
+                input->captureMouseWhenFocused("back to the scene");
+            }
+        } else if (productOpened && input->mouseCaptured() && captureHandover.open(true)) {
+            input->releaseMouse("quick catalog opened over the developer overlay; Esc or B leaves it");
+        }
+#if defined(RV_DEV_UI)
+        if (devUi) {
+            devUi->setMouseCaptured(input->mouseCaptured());
+        }
+#endif
+    }
+
+    /// QuickCatalog in the world: opens the catalog of the run (nothing without one, logged once).
+    void openCatalog() {
+        if (!product) {
+            if (!catalogNoticeLogged) {
+                catalogNoticeLogged = true;
+                spdlog::info("QuickCatalog: no catalog in this run (--mock-catalog <file.json> until the ES-DE catalog "
+                             "reaches the application)");
+            }
+            return;
+        }
+        product->openCatalog();
+        syncCaptureLayers();
     }
 
     /// ToggleDevUI (F1).
@@ -385,26 +510,20 @@ struct RetroverseApp::State {
         }
     }
 
-    /// Shows or hides the developer overlay, handing the mouse over: opening it frees a captured mouse for the panels,
-    /// closing it gives first-person look the capture back.
+    /// Shows or hides the developer overlay, handing the mouse over (syncCaptureLayers): opening it frees a captured
+    /// mouse for the panels, closing it gives first-person look the capture back.
     void setOverlayVisible([[maybe_unused]] bool visible) {
 #if defined(RV_DEV_UI)
         if (!devUi || devUi->visible() == visible) {
             return;
         }
-        if (visible) {
-            if (captureHandover.open(input->mouseCaptured())) {
-                input->releaseMouse("developer overlay opened; F1 or Esc closes it");
-            }
-        } else if (captureHandover.close(input->mouseCaptured())) {
-            input->captureMouseWhenFocused("developer overlay closed");
-        }
         devUi->setVisible(visible);
+        syncCaptureLayers();
         devUi->setMouseCaptured(input->mouseCaptured());
 #endif
     }
 
-    /// Back (Esc, gamepad B): leaves one level (backAction).
+    /// Back (Esc, gamepad B; ui_back while the product UI has the input): leaves one level (backAction).
     void back(AppContext& context) {
         switch (backAction(backState())) {
         case BackAction::Ignore:
@@ -413,6 +532,12 @@ struct RetroverseApp::State {
 #if defined(RV_DEV_UI)
             devUi->closePopup();
 #endif
+            break;
+        case BackAction::PanelBack:
+            product->panelBack();
+            break;
+        case BackAction::CatalogBack:
+            product->catalogBack();
             break;
         case BackAction::ReleaseMouse:
             input->releaseMouse(overlayVisible() ? "Back pressed; press it again to close the developer overlay"
@@ -468,15 +593,6 @@ struct RetroverseApp::State {
                                                    graphics->shaders(), window}),
                         devui::DockSlot::RightBottom);
         devUi->addPanel(devui::makeLogPanel(), devui::DockSlot::Bottom);
-        // Over the scene in the window; in screenshots only when asked for.
-        std::function<void(gl::GLDevice&, const gl::Framebuffer&)> intoScreenshot;
-        if (context.options().screenshotIncludeUi) {
-            intoScreenshot = [this](gl::GLDevice& device, const gl::Framebuffer& target) {
-                devUi->renderTo(device, target);
-            };
-        }
-        graphics->setOverlay([this](gl::GLDevice& device) { devUi->renderToWindow(device); },
-                             std::move(intoScreenshot));
         return ok();
     }
 
@@ -491,6 +607,50 @@ struct RetroverseApp::State {
         devUi->buildFrame(overlayCaptureSize(context.options(), context.frameIndex(), screenshotRequested));
     }
 
+#endif
+
+    /// The single overlay slot of SceneGraphics, composed: the product UI over the scene, the developer overlay over
+    /// both. In screenshots the product UI always (it is what the window shows), the developer overlay only with
+    /// --screenshot-include-ui. Nothing is set when neither exists, so that such runs draw the scene alone.
+    void installOverlays(const AppContext& context) {
+        bool developerOverlay = false;
+#if defined(RV_DEV_UI)
+        developerOverlay = devUi != nullptr;
+#endif
+        if (!product && !developerOverlay) {
+            return;
+        }
+        const bool overlayInScreenshots = developerOverlay && context.options().screenshotIncludeUi;
+        std::function<void(gl::GLDevice&, const gl::Framebuffer&)> intoScreenshot;
+        if (product || overlayInScreenshots) {
+            intoScreenshot = [this, overlayInScreenshots](gl::GLDevice& device, const gl::Framebuffer& target) {
+                if (product) {
+                    product->renderTo(device, target);
+                }
+#if defined(RV_DEV_UI)
+                if (overlayInScreenshots && devUi) {
+                    devUi->renderTo(device, target);
+                }
+#else
+                static_cast<void>(overlayInScreenshots);
+#endif
+            };
+        }
+        graphics->setOverlay(
+            [this](gl::GLDevice& device) {
+                if (product) {
+                    product->renderToWindow(device);
+                }
+#if defined(RV_DEV_UI)
+                if (devUi) {
+                    devUi->renderToWindow(device);
+                }
+#endif
+            },
+            std::move(intoScreenshot));
+    }
+
+#if defined(RV_DEV_UI)
     /// The overlay's "reset to scene camera": the walker and the lens as the scene starts them.
     void resetToSceneCamera() {
         freeRoam->teleportToCamera(description.camera);
@@ -535,6 +695,10 @@ Status RetroverseApp::onInit(AppContext& context) {
     if (!script) {
         return propagate(std::move(script.error()));
     }
+    auto catalog = loadCatalog(options);
+    if (!catalog) {
+        return propagate(std::move(catalog.error()));
+    }
     auto state = std::make_unique<State>();
     state->description = std::move(source->description);
     state->debugGrid = source->grid;
@@ -562,7 +726,19 @@ Status RetroverseApp::onInit(AppContext& context) {
                           core::degreesToRadians(camera.pitchDeg));
     state->freeRoam.emplace(state->description, state->scene->collisionWorld(), options.spawn);
 
-    state->input = std::make_unique<AppInput>(context.window(), loadBindings(paths), std::move(*script));
+    input::ActionMap bindings = loadBindings(paths);
+    state->input = std::make_unique<AppInput>(context.window(), bindings, std::move(*script));
+    if (*catalog) {
+        State* raw = state.get();
+        auto product = ProductUi::create(context, std::move(**catalog), bindings,
+                                         [raw, &context] { raw->back(context); });
+        if (!product) {
+            Error error = product.error();
+            error.message = "the quick catalog could not start: " + error.message;
+            return propagate(std::move(error));
+        }
+        state->product = std::move(*product);
+    }
 #if defined(RV_DEV_UI)
     if (auto created = state->createDevUi(context); !created) {
         spdlog::error("Developer overlay unavailable: {}", created.error().toString());
@@ -576,12 +752,14 @@ Status RetroverseApp::onInit(AppContext& context) {
         }
     } else if (options.devUiOpen) {
         state->devUi->setVisible(true);
+        state->layersOpen = true;
     }
 #else
     if (options.devUiOpen || options.screenshotIncludeUi) {
         spdlog::warn("--devui-open and --screenshot-include-ui do nothing: this build has no developer overlay");
     }
 #endif
+    state->installOverlays(context);
     // Frame-limited runs may be unattended: they never take the user's mouse (and stray motion never reaches them).
     // With the overlay open from the start, the mouse stays free for its panels.
     if (!options.frameLimit && !state->overlayVisible()) {
@@ -606,17 +784,37 @@ Status RetroverseApp::onInit(AppContext& context) {
     return ok();
 }
 
-void RetroverseApp::onEvent(AppContext& /*context*/, const SDL_Event& event) {
+void RetroverseApp::onEvent(AppContext& context, const SDL_Event& event) {
     if (!m_state) {
+        return;
+    }
+    State& state = *m_state;
+    if (state.product && (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED || event.type == SDL_EVENT_WINDOW_FOCUS_LOST) &&
+        event.window.windowID == context.window().id()) {
+        state.product->focusChanged(event.type == SDL_EVENT_WINDOW_FOCUS_GAINED);
+    }
+    // An emulator has the screen: nothing it did not mean for Retroverse may act once frames resume. A press in the
+    // focused window may still bring the session's question back (the press itself acts on nothing).
+    if (context.idle() && droppedWhileIdle(event)) {
+        if (state.product && isUserPress(event, context.window().id())) {
+            state.product->userPressed();
+        }
         return;
     }
 #if defined(RV_DEV_UI)
     // The overlay sees events first and keeps what it uses (a click on a panel, keys while a field is edited).
-    if (m_state->devUi && m_state->devUi->handleEvent(event, m_state->input->mouseCaptured())) {
+    if (state.devUi && state.devUi->handleEvent(event, state.input->mouseCaptured())) {
         return;
     }
 #endif
-    m_state->input->handleEvent(event);
+    // Then the product UI while it has the input (the mouse, text, keys that are not UI commands), then the game. A
+    // click the UI did not use never captures the mouse while the catalog is open.
+    if (state.product && state.product->hasInput()) {
+        if (state.product->handleEvent(event) || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            return;
+        }
+    }
+    state.input->handleEvent(event);
 }
 
 void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
@@ -627,18 +825,27 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     const std::uint64_t frame = context.frameIndex();
     state.simulatedSeconds += deltaSeconds;
     const input::ActionState actions = state.input->update(frame);
+    // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
+    const InputContext inputContext = state.inputContext();
 
     if (actions.pressed(input::Action::ToggleDevUI)) {
         state.toggleOverlay();
-    }
-    if (actions.pressed(input::Action::Back)) {
-        state.back(context);
     }
     if (actions.pressed(input::Action::ReloadShaders)) {
         state.graphics->reloadShaders();
     }
     if (actions.pressed(input::Action::Screenshot)) {
         state.screenshotRequested = true;
+    }
+    if (inputContext == InputContext::World) {
+        if (actions.pressed(input::Action::Back)) {
+            state.back(context);
+        }
+        if (catalogToggleRequested(inputContext, actions)) {
+            state.openCatalog();
+        }
+    } else if (catalogToggleRequested(inputContext, actions) && !state.product->panelOpen()) {
+        state.product->closeCatalog();
     }
 
 #if defined(RV_DEV_UI)
@@ -648,7 +855,18 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         spdlog::error("Debug lines unavailable: {}", shown.error().toString());
     }
     state.freeRoam->setCollisionEnabled(state.collision);
-    state.freeRoam->update(actions, static_cast<float>(deltaSeconds), state.camera);
+    state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);
+    if (state.product) {
+        // The UI commands only when the frame began in the UI's context (UI Back goes through back()).
+        const input::ActionState uiActions = actionsFor(InputContext::Ui, actions);
+        state.product->update(inputContext == InputContext::Ui ? &uiActions : nullptr, deltaSeconds,
+                              state.simulatedSeconds);
+        // After this frame is presented the host waits: a launch starts, or an emulator has the screen.
+        if (state.product->wantsIdle()) {
+            context.setIdle(true);
+        }
+    }
+    state.syncCaptureLayers();
     state.logScriptProgress(frame);
     state.graphics->pollShaderReload();
 }
@@ -660,10 +878,35 @@ void RetroverseApp::onRender(AppContext& context) {
     State& state = *m_state;
     state.graphics->renderFrame(context, state.view(), state.screenshotRequested);
     state.screenshotRequested = false;
+    if (state.product) {
+        state.product->frameRendered();
+        // A question nobody can see is presented once: the host waits after this frame (LaunchFlow::hostIdle).
+        if (state.product->wantsIdle()) {
+            context.setIdle(true);
+        }
+    }
+}
+
+void RetroverseApp::onIdle(AppContext& context) {
+    if (!m_state || !m_state->product) {
+        context.setIdle(false);
+        return;
+    }
+    State& state = *m_state;
+    state.product->onIdle();
+    context.setIdle(state.product->wantsIdle());
+    if (!context.idle()) {
+        // Frames resume: whatever the wait dropped (the release of the button that launched among them) is released.
+        state.input->releaseAll();
+    }
 }
 
 void RetroverseApp::onShutdown(AppContext& context) {
     if (m_state) {
+        // The quit hook: a game still running is left running and recorded, before anything else ends.
+        if (m_state->product) {
+            m_state->product->finish();
+        }
         if (context.options().frameLimit) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }

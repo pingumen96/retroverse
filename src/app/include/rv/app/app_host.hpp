@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <string_view>
 
@@ -41,8 +42,18 @@ struct AppIdentity {
 /// With --run-report the host writes the RunReport of the run when it ends, whatever the outcome (an initialization
 /// failure included): its own fields, and what the logic added through AppContext::report(). A report that cannot be
 /// written is logged and turns a successful run into ExitCode::RuntimeFailure.
+///
+/// While the logic keeps it idle (AppContext::setIdle: an emulator has the screen), the host renders nothing and waits
+/// for events instead, at most kIdleWait at a time, calling IAppLogic::onIdle after each wait; AppContext::wakeCallback
+/// ends a wait from any thread. Frames do not advance meanwhile, so a frame-limited run renders its whole --frames
+/// whatever the wait, and the wait is no frame time. Quit requests and window close still end the run (the logic's
+/// onShutdown follows, as always).
 class AppHost {
 public:
+    /// The longest idle wait between two IAppLogic::onIdle calls when nothing wakes the host: how often the logic
+    /// follows a launch's timeouts.
+    static constexpr std::chrono::milliseconds kIdleWait{100};
+
     explicit AppHost(CommandLineOptions options, AppIdentity identity = {});
 
     /// Runs `logic` to completion on the calling (main) thread and returns the process exit code. Never throws:
@@ -66,7 +77,7 @@ private:
     /// presentation failed.
     [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context) const;
     /// Handles quit, window close, resize and the fullscreen shortcut. Returns true when the event is consumed and must
-    /// not reach the logic: the Alt+Enter press (platform::isFullscreenToggle).
+    /// not reach the logic: the Alt+Enter press (platform::isFullscreenToggle), the host's wake event.
     [[nodiscard]] bool handleHostEvent(AppContext& context, const SDL_Event& event) const;
     /// "<name> <version>".
     [[nodiscard]] std::string baseWindowTitle() const;

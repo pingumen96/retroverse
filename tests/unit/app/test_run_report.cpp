@@ -221,6 +221,101 @@ TEST_CASE("app/run_report: malformed reports are errors that point at the key", 
     CHECK(malformed.error().code == ErrorCode::ParseError);
 }
 
+TEST_CASE("app/run_report: the quick catalog and its launches read back record for record", "[app][run_report]") {
+    RunReport report = fullReport();
+    rv::app::CatalogRecord catalog;
+    catalog.source = "mock";
+    catalog.file = rv::core::pathFromUtf8("build/smoke/launch/catalog.json");
+    catalog.games = 13;
+    catalog.opened = 2;
+    catalog.open = true;
+    catalog.selectedPosition = 4;
+    catalog.selectedId = "g000000000000a005";
+    report.catalog = catalog;
+    rv::app::LaunchRecord returned;
+    returned.gameId = "g000000000000a001";
+    returned.profile = "fake-return";
+    returned.state = "Returned";
+    returned.outcome = "returned";
+    returned.detail = "0 (success)";
+    returned.exitCode = 0;
+    returned.strategy = "DirectProcess";
+    returned.processId = 37792;
+    returned.requestFrame = 8;
+    returned.startFrame = 9;
+    returned.endFrame = 9;
+    returned.idleWakes = 26;
+    returned.startMs = 35.5929;
+    returned.runMs = 2548.2331;
+    returned.returnMs = 1.3926;
+    returned.foregroundMs = 74.25;
+    rv::app::LaunchRecord stillRunning;
+    stillRunning.gameId = "g000000000000a007";
+    stillRunning.profile = "fake-still-running";
+    stillRunning.state = "Returned";
+    stillRunning.outcome = "left-running";
+    stillRunning.reason = "confirmed";
+    stillRunning.exitCode = 0xC0000005u;
+    stillRunning.strategy = "DirectProcess";
+    stillRunning.processesRemained = true;
+    stillRunning.confirmedByUser = true;
+    stillRunning.wasStillRunning = true;
+    stillRunning.quickExit = true;
+    stillRunning.quitDuringGame = true;
+    stillRunning.waitLimitReached = true;
+    stillRunning.requestFrame = 30;
+    stillRunning.startFrame = 31;
+    stillRunning.endFrame = 36;
+    stillRunning.framesWithPanel = 5;
+    stillRunning.panels = {"still-running", "outcome"};
+    rv::app::LaunchRecord blocked;
+    blocked.gameId = "g000000000000a009";
+    blocked.profile = "fake-unset-variable";
+    blocked.state = "Blocked";
+    blocked.outcome = "not-configured";
+    blocked.reason = "template";
+    blocked.detail = "{var:core}";
+    blocked.requestFrame = 50;
+    report.launches = {returned, stillRunning, blocked};
+
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "report.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->catalog == report.catalog);
+    REQUIRE(parsed->launches.size() == 3);
+    CHECK(parsed->launches[0] == returned);
+    CHECK(parsed->launches[1] == stillRunning);
+    CHECK(parsed->launches[2] == blocked);
+    // Optional parts of a record are left out: a blocked launch started nothing.
+    const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK_FALSE(json.at("launches").at(2).contains("exitCode"));
+    CHECK_FALSE(json.at("launches").at(2).at("frames").contains("start"));
+    CHECK(json.at("launches").at(2).at("times").empty());
+
+    // A malformed record points at its field.
+    const auto wrong = rv::app::parseRunReport(editedReport(report,
+                                                            [](nlohmann::json& edited) {
+                                                                edited["launches"][1]["frames"]["withPanel"] = "5";
+                                                            }),
+                                               "r.json");
+    REQUIRE_FALSE(wrong.has_value());
+    CHECK(wrong.error().context == "r.json:/launches/1/frames/withPanel");
+    const auto panels = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["launches"][0]["panels"] = {1}; }), "r.json");
+    REQUIRE_FALSE(panels.has_value());
+    CHECK(panels.error().context == "r.json:/launches/0/panels");
+}
+
+TEST_CASE("app/run_report: runs without a catalog or launches write neither key", "[app][run_report]") {
+    const RunReport report = fullReport();
+    const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK_FALSE(json.contains("catalog"));
+    CHECK_FALSE(json.contains("launches"));
+    const auto parsed = rv::app::parseRunReport(json.dump(), "report.json");
+    REQUIRE(parsed.has_value());
+    CHECK_FALSE(parsed->catalog.has_value());
+    CHECK(parsed->launches.empty());
+}
+
 TEST_CASE("app/run_report: written atomically and read back from a file", "[app][run_report]") {
     const rv::test::TempDir dir("rv-run-report");
     const auto path = dir.file("nested/run report.json");
