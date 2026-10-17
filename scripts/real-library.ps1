@@ -13,13 +13,18 @@
          the product knows these paths: they are this machine's;
       3. it snapshots the ES-DE home and install folder (configuration-like files hashed) and the ROM and media roots
          (their folder listings only: sizes and times, no file opened) with scripts/snapshot_tree.py;
-      4. it runs build/<preset>/bin/rv_tests.exe with the tag filter (default "[real-library]"), the RV_REAL_*
+      4. with -Measure, it runs that PowerShell script first (with -MeasureArguments splatted), with the same
+         variables set: the measurements of scripts/gate.ps1 -Gate M1 -RealLibrary (scripts/gate-m1-real.ps1), which
+         must read the library before the tests do, so that its ROM scan is the first read after the snapshot; its
+         exit code counts like the tests';
+      5. it runs build/<preset>/bin/rv_tests.exe with the tag filter (default "[real-library]"), the RV_REAL_*
          variables and RV_LAUNCH_BACKGROUND=1 set for it only (Release by default: build it first, ./scripts/build.ps1
          -Preset msvc-x64-release);
-      5. it snapshots again and compares: any added, removed or changed file or folder is a failure.
-    Everything it writes goes to build/real-library/ (the snapshots, the test log). The library is only read.
-    Exit codes: 0 the tests passed and nothing changed; 1 a test failed or a snapshot differs; 2 it could not run (ES-DE
-    running, a folder missing, rv_tests.exe not built, Python missing).
+      6. it snapshots again and compares: any added, removed or changed file or folder is a failure.
+    Everything it writes goes to -OutDir, build/real-library/ by default (the snapshots, the test log). The library is
+    only read.
+    Exit codes: 0 the tests passed and nothing changed; 1 a test or the measurements failed, or a snapshot differs; 2 it
+    could not run (ES-DE running, a folder missing, rv_tests.exe not built, Python missing).
 
 .EXAMPLE
     ./scripts/real-library.ps1 -EsdeHome C:\Users\me\ES-DE -EsdeInstall 'C:\Program Files\ES-DE' -RomRoot D:\ROMs `
@@ -36,13 +41,16 @@ param(
     [string]$MediaRoot = $env:RV_REAL_MEDIA_ROOT,
     [string]$RetroArchExe = $env:RV_REAL_RETROARCH_EXE,
     [string]$Preset = 'msvc-x64-release',
-    [string]$Filter = '[real-library]'
+    [string]$Filter = '[real-library]',
+    [string]$OutDir,
+    [string]$Measure,
+    [hashtable]$MeasureArguments = @{}
 )
 $ErrorActionPreference = 'Stop'
 # Numbers in messages use a decimal point whatever the Windows locale.
 [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
 $root = Split-Path -Parent $PSScriptRoot
-$outDir = Join-Path $root 'build/real-library'
+$outDir = if ($OutDir) { $OutDir } else { Join-Path $root 'build/real-library' }
 $snapshotScript = Join-Path $PSScriptRoot 'snapshot_tree.py'
 $rvTests = Join-Path $root "build/$Preset/bin/rv_tests.exe"
 
@@ -75,6 +83,9 @@ if ($RetroArchExe -and -not (Test-Path -LiteralPath $RetroArchExe -PathType Leaf
 }
 if (-not (Test-Path -LiteralPath $rvTests -PathType Leaf)) {
     Stop-Run "$rvTests is not built: ./scripts/build.ps1 -Preset $Preset"
+}
+if ($Measure -and -not (Test-Path -LiteralPath $Measure -PathType Leaf)) {
+    Stop-Run "the measurement script (-Measure) does not exist: $Measure"
 }
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { Stop-Run 'Python 3.10 or later (python) is not on PATH: scripts/snapshot_tree.py needs it.' }
@@ -112,9 +123,17 @@ foreach ($name in $variables.Keys) {
     [Environment]::SetEnvironmentVariable($name, $(if ($variables[$name]) { $variables[$name] } else { $null }),
         'Process')
 }
-Write-Host "Running $rvTests `"$Filter`""
-$timer = [Diagnostics.Stopwatch]::StartNew()
+$measureCode = 0
 try {
+    if ($Measure) {
+        Write-Host "Running $Measure"
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        & $Measure @MeasureArguments
+        $measureCode = $LASTEXITCODE
+        Write-Host ('Measurements ran in {0:N1} s, exit code {1}' -f $timer.Elapsed.TotalSeconds, $measureCode)
+    }
+    Write-Host "Running $rvTests `"$Filter`""
+    $timer = [Diagnostics.Stopwatch]::StartNew()
     & $rvTests $Filter --reporter compact *>&1 | Tee-Object -FilePath $testLog
     $testCode = $LASTEXITCODE
 }
@@ -135,9 +154,13 @@ if (Test-EsdeRunning) {
 
 # --- Verdict ----------------------------------------------------------------------------------------------------------
 $testsPassed = $testCode -eq 0
+$measured = $measureCode -eq 0
 $unchanged = $compareCode -eq 0
 Write-Host ''
+if ($Measure) {
+    Write-Host ('Measurements: {0}' -f $(if ($measured) { 'passed' } else { "FAILED (exit code $measureCode)" }))
+}
 Write-Host ('Tests:     {0}' -f $(if ($testsPassed) { 'passed' } else { "FAILED (exit code $testCode, see $testLog)" }))
 $snapshotVerdict = if ($unchanged) { '0 differences' } else { "DIFFERENT (see above; $before, $after)" }
 Write-Host "Snapshots: $snapshotVerdict"
-exit $(if ($testsPassed -and $unchanged) { 0 } else { 1 })
+exit $(if ($testsPassed -and $measured -and $unchanged) { 0 } else { 1 })
