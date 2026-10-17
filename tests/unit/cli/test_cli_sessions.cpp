@@ -891,7 +891,8 @@ TEST_CASE("cli/launch: a session is recorded while another process holds the dat
                                               : toInt(ExitCode::Ok)));
     CHECK(launched.at("started") == true);
     CHECK(launched.at("sessionRecorded") == true);
-    CHECK(contains(text(logFile), "(the database was busy)")); // written once the import committed
+    // Written once the holder committed (logged at info level: the log file, not the console).
+    CHECK(contains(text(setup.data / "logs" / "retroverse-cli.log"), "written at attempt"));
     const std::int64_t id = launched.at("session").at("id").get<std::int64_t>();
     CHECK(setup.query(fmt::format("SELECT outcome FROM rv_play_sessions WHERE id = {}", id)) ==
           std::vector<std::string>{"returned"});
