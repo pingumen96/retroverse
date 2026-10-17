@@ -66,8 +66,9 @@ TEST_CASE("app/game_session_document: a text for every phase, outcome code and r
         CHECK(contains(rml, "phase == '" + phase + "'"));
     }
     // Every code the outcome panel shows (showsMessage) has a title and a text.
-    for (const std::string_view code : {lo::kQuickExit, lo::kCrashed, lo::kFailedToStart, lo::kNotConfigured,
-                                        lo::kEmulatorMissing, lo::kCoreMissing, lo::kRomMissing, lo::kLeftRunning}) {
+    for (const std::string_view code :
+         {lo::kQuickExit, lo::kProcessesRemained, lo::kCrashed, lo::kFailedToStart, lo::kNotConfigured,
+          lo::kEmulatorMissing, lo::kCoreMissing, lo::kRomMissing, lo::kLeftRunning}) {
         INFO(code);
         CHECK(contains(rml, "<h1 data-if=\"code == '" + std::string(code) + "'\">"));
         CHECK(contains(rml, "code == '" + std::string(code) + "'"));
@@ -83,8 +84,19 @@ TEST_CASE("app/game_session_document: a text for every phase, outcome code and r
         INFO(reason);
         CHECK(contains(rml, "code == 'not-configured' && reason == '" + std::string(reason) + "'"));
     }
-    // ADR-0006's hint for a quick exit: the profile must wait for the process tree.
+    // The reasons of a game left running that the panel shows (a return the user chose shows nothing).
+    for (const std::string_view reason : {lo::kReasonQuit, lo::kReasonWaitLimit}) {
+        INFO(reason);
+        CHECK(contains(rml, "code == 'left-running' && reason == '" + std::string(reason) + "'"));
+    }
+    // ADR-0006's hint for a quick exit and for processes left in the tree: the profile must wait for the process tree.
     CHECK(contains(rml, "\"wait\": \"tree\""));
+    // The runner's and the plan's own words never sit inside an Italian sentence: they show apart.
+    CHECK(contains(rml, "Dettagli: {{ detail }}"));
+    for (const std::string_view reason : {lo::kReasonStartFailed, lo::kReasonInvalidRequest, lo::kReasonProgramRefused}) {
+        INFO(reason);
+        CHECK(contains(rml, "reason == '" + std::string(reason) + "' ||"));
+    }
     // The panel's Italian strings live here, among them the panel's title while a game runs.
     CHECK(contains(rml, "Gioco in corso"));
     CHECK(contains(rml, "Torna a Retroverse"));

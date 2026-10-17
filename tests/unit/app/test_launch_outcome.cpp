@@ -40,7 +40,7 @@ TEST_CASE("app/launch_outcome: a session's end becomes a code, a reason and a de
     const LaunchMessage returned = rv::app::messageForOutcome(outcome(SessionState::Returned, 0));
     CHECK(returned.code == lo::kReturned);
     CHECK(returned.reason.empty());
-    CHECK(returned.detail == "0 (success)");
+    CHECK(returned.detail == "0");
     CHECK_FALSE(rv::app::showsMessage(returned));
 
     // A quick exit carries ADR-0006's hint (in the document).
@@ -63,7 +63,11 @@ TEST_CASE("app/launch_outcome: a session's end becomes a code, a reason and a de
     LaunchOutcome early = outcome(SessionState::FailedToStart, 3);
     early.failure = FailureReason::EarlyExit;
     CHECK(rv::app::messageForOutcome(early) ==
-          LaunchMessage{std::string(lo::kFailedToStart), std::string(lo::kReasonEarlyExit), "3 (error code)"});
+          LaunchMessage{std::string(lo::kFailedToStart), std::string(lo::kReasonEarlyExit), "3"});
+    // The detail follows "codice" in the document: the number alone, an NTSTATUS by its name.
+    LaunchOutcome earlyStatus = outcome(SessionState::FailedToStart, 0xC0000142u);
+    earlyStatus.failure = FailureReason::EarlyExit;
+    CHECK(rv::app::messageForOutcome(earlyStatus).detail == "0xC0000142 STATUS_DLL_INIT_FAILED");
     LaunchOutcome refused = outcome(SessionState::FailedToStart);
     refused.failure = FailureReason::StartFailed;
     refused.message = "RV_LAUNCH_ALLOWLIST does not list C:\\x\\emulator.exe";
@@ -94,6 +98,22 @@ TEST_CASE("app/launch_outcome: a session's end becomes a code, a reason and a de
     LaunchOutcome confirmedGone = outcome(SessionState::Returned, 0);
     confirmedGone.confirmedByUser = true;
     CHECK(rv::app::messageForOutcome(confirmedGone).code == lo::kReturned);
+    // The started program of a UserConfirmReturn session exited at once, as such launchers do, and the user later
+    // confirmed the game was over: no quick-exit hint, which would tell them to wait for a tree.
+    confirmedGone.quickExit = true;
+    CHECK(rv::app::messageForOutcome(confirmedGone).code == lo::kReturned);
+    CHECK_FALSE(rv::app::showsMessage(rv::app::messageForOutcome(confirmedGone)));
+
+    // A return on its own with processes of the tree still running (a wrapper exited after the grace while its
+    // emulator, a child, runs): the user is told, with the profile's hint.
+    LaunchOutcome remained = outcome(SessionState::Returned, 0);
+    remained.processesRemained = true;
+    const LaunchMessage remainedMessage = rv::app::messageForOutcome(remained);
+    CHECK(remainedMessage == LaunchMessage{std::string(lo::kProcessesRemained), "", "0"});
+    CHECK(rv::app::showsMessage(remainedMessage));
+    // Also when the wrapper exited within the grace: what still runs is the more telling fact.
+    remained.quickExit = true;
+    CHECK(rv::app::messageForOutcome(remained).code == lo::kProcessesRemained);
     // Left running because Retroverse quit: shown (the panel never is while quitting; the report keeps it).
     CHECK(rv::app::showsMessage(LaunchMessage{std::string(lo::kLeftRunning), std::string(lo::kReasonQuit), ""}));
 }
@@ -132,4 +152,8 @@ TEST_CASE("app/launch_outcome: tokens and exit codes as the panel shows them", "
     CHECK(rv::app::firstToken("an open { brace").empty());
     CHECK(rv::app::exitCodeName(0xC0000409u) == "0xC0000409 STATUS_STACK_BUFFER_OVERRUN");
     CHECK(rv::app::exitCodeName(0xDEADBEEFu) == "0xDEADBEEF");
+    CHECK(rv::app::exitCodeDetail(0) == "0");
+    CHECK(rv::app::exitCodeDetail(3) == "3");
+    CHECK(rv::app::exitCodeDetail(0xFFFFu) == "65535");
+    CHECK(rv::app::exitCodeDetail(0xC0000005u) == "0xC0000005 STATUS_ACCESS_VIOLATION");
 }

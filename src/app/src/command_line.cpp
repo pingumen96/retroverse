@@ -76,7 +76,13 @@ core::ArgParser makeParser() {
         .option("mock-catalog", "json",
                 "Games of the quick catalog (Tab or gamepad Y opens it), invented, each with a launch target: an "
                 "emulator profile and a ROM (a JSON file, schemaVersion 1, with \"profiles\" and \"games\"). Avvia "
-                "launches the selected game; Retroverse renders nothing until the emulator returns.");
+                "launches the selected game; Retroverse renders nothing until the emulator returns.")
+        .option("launch-wait-limit", "seconds",
+                fmt::format("Only with --smoke or --exit-after-frames: a launched game still running after this many "
+                            "seconds is left running (never ended) and the run goes on to its --frames (default {:g}, "
+                            "at most {:g}).",
+                            CommandLineOptions::kDefaultLaunchWaitLimitSeconds,
+                            CommandLineOptions::kMaxLaunchWaitLimitSeconds));
     return parser;
 }
 
@@ -212,6 +218,34 @@ Expected<std::optional<double>> fixedDeltaSeconds(const core::ParsedArgs& args) 
                          "--fixed-dt=" + args.value("fixed-dt").value_or(""));
     }
     return std::optional<double>(*seconds);
+}
+
+/// --launch-wait-limit <seconds>: a finite number in (0, kMaxLaunchWaitLimitSeconds], frame-limited runs only, where it
+/// defaults to kDefaultLaunchWaitLimitSeconds.
+Status applyLaunchWaitLimit(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("launch-wait-limit")) {
+        if (options.frameLimit) {
+            options.launchWaitLimitSeconds = CommandLineOptions::kDefaultLaunchWaitLimitSeconds;
+        }
+        return ok();
+    }
+    // An interactive run waits for the user's game as long as it runs.
+    if (!options.frameLimit) {
+        return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames",
+                         "--launch-wait-limit");
+    }
+    auto seconds = args.doubleValue("launch-wait-limit", 0.0);
+    if (!seconds) {
+        return propagate(seconds.error());
+    }
+    if (!std::isfinite(*seconds) || *seconds <= 0.0 || *seconds > CommandLineOptions::kMaxLaunchWaitLimitSeconds) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("must be a number of seconds greater than 0 and at most {:g}",
+                                     CommandLineOptions::kMaxLaunchWaitLimitSeconds),
+                         "--launch-wait-limit=" + args.value("launch-wait-limit").value_or(""));
+    }
+    options.launchWaitLimitSeconds = *seconds;
+    return ok();
 }
 
 /// --spawn x,y,z[,yaw[,pitch]], when given.
@@ -453,6 +487,9 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (*mockCatalog && !core::equalsIgnoreCaseAscii(core::pathToUtf8((*mockCatalog)->extension()), ".json")) {
         return makeError(ErrorCode::InvalidArgument, "the mock catalog is a JSON file: use the .json extension",
                          "--mock-catalog=" + core::pathToUtf8(**mockCatalog));
+    }
+    if (auto waitLimit = applyLaunchWaitLimit(*args, options); !waitLimit) {
+        return propagate(waitLimit.error());
     }
     options.spawn = *spawn;
     options.scene = std::move(*scene);

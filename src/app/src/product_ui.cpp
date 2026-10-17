@@ -8,7 +8,9 @@
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
+#include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_video.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/app/app_logic.hpp>
@@ -127,15 +129,37 @@ struct ProductUi::Impl {
     }
 
     /// After a session ended: the window comes back (restored, raised; update() follows it frame by frame), the UI's
-    /// held directions are forgotten (the input of the wait was dropped).
+    /// held directions are forgotten (the input of the wait was dropped). Not while processes of the game's tree may
+    /// still run (LaunchFlow::returnTakesForeground): the window stays where it is, behind the game or minimized, and
+    /// its message waits for the user.
     void afterReturn() {
         if (!flow.takeReturned()) {
             return;
         }
         nav.reset();
-        if (handover) {
+        if (!handover) {
+            return;
+        }
+        if (flow.returnTakesForeground()) {
             handover->restore();
             restoring = true;
+        } else {
+            spdlog::info("Window left where it is after the launch: processes of the game may still run");
+            handover.reset();
+            restoring = false;
+        }
+    }
+
+    /// "Torna al gioco" in the focused window (LaunchFlow::backToGame): the window is minimized, so that Windows
+    /// activates the next window, the game the user came from; WindowHandover::restore() takes it back at the return,
+    /// the user from the taskbar before that (the question comes back then). Visible windows only (the hand-over).
+    void handForegroundToGame() {
+        if (!handover) {
+            return;
+        }
+        spdlog::info("Back to the game: Retroverse's window is minimized so that the game takes the foreground");
+        if (!SDL_MinimizeWindow(context.window().handle())) {
+            spdlog::warn("Back to the game: the window could not be minimized: {}", SDL_GetError());
         }
     }
 
@@ -180,7 +204,9 @@ struct ProductUi::Impl {
             flow.returnToRetroverse(LaunchClock::now(), context.frameIndex());
             break;
         case PanelChoice::Resume:
-            flow.backToGame();
+            if (flow.backToGame(LaunchClock::now())) {
+                handForegroundToGame();
+            }
             break;
         case PanelChoice::Dismiss:
             flow.dismissOutcome();
@@ -201,6 +227,14 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, Mock
     s.profiles = mockCatalogProfiles(launcher::loadEmulatorProfiles(paths), s.catalog);
     for (const launcher::ProfileIssue& issue : s.catalog.profiles.issues) {
         spdlog::warn("Mock catalog profiles: {}", issue.toString());
+    }
+    // The focus the window starts with (its later changes come as events); a hidden window counts as focused: the
+    // input script stands for the user in front of it.
+    const bool focused = context.options().hidden ||
+                         (SDL_GetWindowFlags(context.window().handle()) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    s.flow.focusChanged(focused, LaunchClock::now());
+    if (const std::optional<double> limit = context.options().launchWaitLimitSeconds) {
+        s.flow.setWaitLimit(std::chrono::milliseconds(static_cast<std::int64_t>(*limit * 1000.0)));
     }
 
     auto system = ui::UiSystem::create(context.window(), ui::UiSystemConfig{paths.assetRoot()});
@@ -295,7 +329,14 @@ bool ProductUi::handleEvent(const SDL_Event& event) {
 }
 
 void ProductUi::focusChanged(bool focused) {
-    m_impl->flow.focusChanged(focused, LaunchClock::now());
+    // A hidden window keeps counting as focused (create()).
+    if (!m_impl->context.options().hidden) {
+        m_impl->flow.focusChanged(focused, LaunchClock::now());
+    }
+}
+
+void ProductUi::userPressed() {
+    static_cast<void>(m_impl->flow.userPressed());
 }
 
 void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds, double timeSeconds) {
@@ -344,7 +385,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
 }
 
 void ProductUi::panelBack() {
-    m_impl->flow.panelBack();
+    if (m_impl->flow.panelBack(LaunchClock::now())) {
+        m_impl->handForegroundToGame();
+    }
 }
 
 void ProductUi::catalogBack() {

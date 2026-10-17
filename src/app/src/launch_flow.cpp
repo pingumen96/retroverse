@@ -76,8 +76,11 @@ bool LaunchFlow::request(launcher::LaunchRequest request, LaunchInfo info, std::
     m_message = {};
     m_pending = std::move(request);
     m_returned = false;
+    m_takeForeground = true;
     m_quitting = false;
+    m_waitLimitReached = false;
     m_focusSince.reset();
+    m_askOnPress = false;
     show(SessionPanel::Launching);
     return true;
 }
@@ -136,6 +139,19 @@ void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
         finish(now, frame);
         return;
     }
+    const std::optional<LaunchClock::time_point>& begun = m_session->times().begun;
+    if (m_waitLimit && begun && now - *begun >= *m_waitLimit) {
+        // A frame-limited run must reach its frame limit and write its report: it stops waiting, never ends the game.
+        spdlog::warn("Launch of '{}' still {} after the wait limit of this frame-limited run ({} s): left running",
+                     m_info.title, launcher::toString(m_session->state()),
+                     std::chrono::duration<double>(*m_waitLimit).count());
+        m_waitLimitReached = true;
+        m_session->confirmReturn(now);
+        if (m_session->finished()) {
+            finish(now, frame);
+        }
+        return;
+    }
     const SessionState state = m_session->state();
     if (state != m_seenState) {
         if (state == SessionState::StillRunning || state == SessionState::AwaitingConfirmation) {
@@ -154,8 +170,10 @@ void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
 }
 
 void LaunchFlow::focusChanged(bool focused, LaunchClock::time_point now) noexcept {
+    m_focused = focused;
     if (!focused) {
         m_focusSince.reset();
+        m_askOnPress = false;
         // The user went back to the game without answering "Gioco in corso": the game has the screen again.
         if (sessionActive() && m_panel == SessionPanel::Playing) {
             m_panel = SessionPanel::Launching;
@@ -163,6 +181,15 @@ void LaunchFlow::focusChanged(bool focused, LaunchClock::time_point now) noexcep
     } else if (sessionActive() && !m_focusSince) {
         m_focusSince = now;
     }
+}
+
+bool LaunchFlow::userPressed() noexcept {
+    if (!sessionActive() || !gameHasScreen(m_panel) || !m_focused || !m_askOnPress) {
+        return false;
+    }
+    spdlog::info("A press in Retroverse while '{}' runs: asking again", m_info.title);
+    show(askingPanel(m_session->state()));
+    return true;
 }
 
 void LaunchFlow::returnToRetroverse(LaunchClock::time_point now, std::uint64_t frame) {
@@ -177,13 +204,32 @@ void LaunchFlow::returnToRetroverse(LaunchClock::time_point now, std::uint64_t f
     }
 }
 
-void LaunchFlow::backToGame() noexcept {
-    if (sessionActive() && asksUser(m_panel)) {
-        // One frame with the "Gioco in corso" notice, which the window then keeps behind the game.
-        m_panel = SessionPanel::Launching;
-        // Asked again only once the user comes back again (a new focus gain), or the session's state changes.
-        m_focusSince.reset();
+bool LaunchFlow::backToGame(LaunchClock::time_point now) noexcept {
+    if (!sessionActive() || !asksUser(m_panel)) {
+        return false;
     }
+    const SessionPanel asked = m_panel;
+    // One frame with the "Gioco in corso" notice, which the window then keeps behind the game.
+    m_panel = SessionPanel::Launching;
+    m_questionPresented = false;
+    if (!m_focused) {
+        // Asked again once the user comes back (a new focus gain), or when the session's state changes.
+        m_focusSince.reset();
+        m_askOnPress = false;
+        return false;
+    }
+    // The user is still in front of Retroverse: a press asks again at once. Nothing must ever leave a focused window
+    // waiting without a way back (the host drops the presses while it waits).
+    m_askOnPress = true;
+    if (asked == SessionPanel::StillRunning) {
+        // "Continua ad aspettare": the game shows no window to go back to; the notice stays until a press or a change.
+        m_focusSince.reset();
+        return false;
+    }
+    // The application hands the foreground to the game; should the game never take it, the question comes back after
+    // the come-back delay.
+    m_focusSince = now;
+    return true;
 }
 
 void LaunchFlow::dismissOutcome() noexcept {
@@ -192,12 +238,12 @@ void LaunchFlow::dismissOutcome() noexcept {
     }
 }
 
-void LaunchFlow::panelBack() noexcept {
+bool LaunchFlow::panelBack(LaunchClock::time_point now) noexcept {
     if (m_panel == SessionPanel::Outcome) {
         dismissOutcome();
-    } else {
-        backToGame();
+        return false;
     }
+    return backToGame(now);
 }
 
 void LaunchFlow::quit(LaunchClock::time_point now, std::uint64_t frame) {
@@ -227,6 +273,7 @@ void LaunchFlow::frameRendered() noexcept {
     LaunchRecord& record = m_records.back();
     if (asksUser(m_panel)) {
         ++record.framesWithPanel;
+        m_questionPresented = true;
     } else {
         ++record.framesWhileRunning;
     }
@@ -251,7 +298,14 @@ bool LaunchFlow::sessionActive() const noexcept {
 }
 
 bool LaunchFlow::hostIdle() const noexcept {
-    return m_pending.has_value() || (sessionActive() && gameHasScreen(m_panel));
+    if (m_pending) {
+        return true;
+    }
+    if (!sessionActive()) {
+        return false;
+    }
+    // A question nobody can see is presented once, then waits for the focus (no GPU work while the game runs).
+    return gameHasScreen(m_panel) || (asksUser(m_panel) && !m_focused && m_questionPresented);
 }
 
 bool LaunchFlow::takeReturned() noexcept {
@@ -263,6 +317,10 @@ void LaunchFlow::show(SessionPanel panel) {
         return;
     }
     m_panel = panel;
+    m_questionPresented = false;
+    if (asksUser(panel)) {
+        m_askOnPress = false;
+    }
     if (panel != SessionPanel::None && panel != SessionPanel::Launching && !m_records.empty()) {
         m_records.back().panels.emplace_back(toString(panel));
     }
@@ -272,9 +330,12 @@ void LaunchFlow::finish(LaunchClock::time_point now, std::uint64_t frame) {
     const launcher::LaunchOutcome& outcome = m_session->outcome();
     const launcher::SessionTimes& times = m_session->times();
     m_message = messageForOutcome(outcome);
-    if (m_quitting && outcome.processesRemained) {
+    // Quitting and the wait limit end the session as LaunchSession::confirmReturn does, but nobody confirmed anything.
+    const bool endedByUser = outcome.confirmedByUser && !m_quitting && !m_waitLimitReached;
+    if ((m_quitting || m_waitLimitReached) && outcome.processesRemained) {
         m_message.code = std::string(lo::kLeftRunning);
-        m_message.reason = std::string(lo::kReasonQuit);
+        m_message.reason = std::string(m_quitting ? lo::kReasonQuit : lo::kReasonWaitLimit);
+        m_message.detail.clear();
     }
     LaunchRecord& record = current();
     record.state = std::string(launcher::toString(outcome.state));
@@ -286,14 +347,18 @@ void LaunchFlow::finish(LaunchClock::time_point now, std::uint64_t frame) {
     record.processId = m_session->processId();
     record.quickExit = outcome.quickExit;
     record.processesRemained = outcome.processesRemained;
-    record.confirmedByUser = outcome.confirmedByUser && !m_quitting;
+    record.confirmedByUser = endedByUser;
     record.wasStillRunning = outcome.wasStillRunning;
+    record.waitLimitReached = m_waitLimitReached;
     record.endFrame = frame;
     record.startMs = millisecondsBetween(times.begun, times.started);
     record.runMs = millisecondsBetween(times.started, times.exited ? times.exited : times.ended);
     record.returnMs = millisecondsBetween(times.exited, times.ended ? times.ended : std::optional(now));
     m_focusSince.reset();
+    m_askOnPress = false;
     m_returned = true;
+    // Processes of the game's tree still run and nobody said the game was over: the window stays where it is.
+    m_takeForeground = !outcome.processesRemained || endedByUser;
     spdlog::info("Launch of '{}' ended: {}, outcome {}{}{} (frames {} to {}: {} rendered while it ran, {} for the panel)",
                  m_info.title, record.state, record.outcome, record.reason.empty() ? "" : " (" + record.reason + ")",
                  record.detail.empty() ? std::string() : ": " + record.detail, record.startFrame.value_or(frame),

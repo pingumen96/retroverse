@@ -14,6 +14,10 @@ std::string exitCodeName(std::uint32_t code) {
     return status.name.empty() ? fmt::format("0x{:08X}", code) : fmt::format("0x{:08X} {}", code, status.name);
 }
 
+std::string exitCodeDetail(std::uint32_t code) {
+    return code < 0x10000u ? fmt::format("{}", code) : exitCodeName(code);
+}
+
 std::string_view firstToken(std::string_view text) noexcept {
     const std::size_t open = text.find('{');
     if (open == std::string_view::npos) {
@@ -58,7 +62,7 @@ LaunchMessage messageForOutcome(const launcher::LaunchOutcome& outcome) {
             break;
         case launcher::FailureReason::EarlyExit:
             message.reason = std::string(lo::kReasonEarlyExit);
-            message.detail = outcome.exitCode ? launcher::describeExitCode(*outcome.exitCode) : outcome.message;
+            message.detail = outcome.exitCode ? exitCodeDetail(*outcome.exitCode) : outcome.message;
             break;
         case launcher::FailureReason::InvalidRequest:
             message.reason = std::string(lo::kReasonInvalidRequest);
@@ -72,15 +76,22 @@ LaunchMessage messageForOutcome(const launcher::LaunchOutcome& outcome) {
         }
         break;
     default:
-        if (outcome.confirmedByUser && outcome.processesRemained) {
-            message.code = std::string(lo::kLeftRunning);
-            message.reason = std::string(lo::kReasonConfirmed);
+        if (outcome.confirmedByUser) {
+            // The user said the game was over (or chose to leave it running): no hint about the profile.
+            if (outcome.processesRemained) {
+                message.code = std::string(lo::kLeftRunning);
+                message.reason = std::string(lo::kReasonConfirmed);
+            } else {
+                message.code = std::string(lo::kReturned);
+            }
+        } else if (outcome.processesRemained) {
+            message.code = std::string(lo::kProcessesRemained);
         } else if (outcome.quickExit) {
             message.code = std::string(lo::kQuickExit);
         } else {
             message.code = std::string(lo::kReturned);
         }
-        message.detail = outcome.exitCode ? launcher::describeExitCode(*outcome.exitCode) : std::string();
+        message.detail = outcome.exitCode ? exitCodeDetail(*outcome.exitCode) : std::string();
         break;
     }
     return message;

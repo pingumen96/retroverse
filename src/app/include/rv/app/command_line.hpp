@@ -133,6 +133,13 @@ struct CommandLineOptions {
     /// (MockCatalog), until the ES-DE catalog reaches the application (I2 step 13). Without it the run has no catalog
     /// and no product UI.
     std::optional<std::filesystem::path> mockCatalog;
+    /// --launch-wait-limit <seconds>, frame-limited runs only, where it defaults to kDefaultLaunchWaitLimitSeconds: a
+    /// launch still running after this long is ended as left running (never terminated: LaunchFlow::setWaitLimit), so
+    /// that the run reaches its --frames and writes its report. Absent in interactive runs, where a game runs as long as
+    /// the user plays.
+    std::optional<double> launchWaitLimitSeconds;
+    static constexpr double kDefaultLaunchWaitLimitSeconds = 120.0;
+    static constexpr double kMaxLaunchWaitLimitSeconds = 3600.0;
 };
 
 /// Declares on `parser` the options of the host that every application built on AppHost understands (retroverse.exe,
@@ -162,6 +169,7 @@ void addHostOptions(core::ArgParser& parser);
 ///  - --model not ending in ".gltf" or ".glb", or given together with --scene;
 ///  - --spawn that parseSpawnPoint refuses;
 ///  - --mock-catalog not ending in ".json";
+///  - --launch-wait-limit outside (0, kMaxLaunchWaitLimitSeconds], or without --smoke or --exit-after-frames;
 ///  - empty paths or names.
 /// The --input-script and --mock-catalog files themselves are read by the application (a bad one fails its
 /// initialization).

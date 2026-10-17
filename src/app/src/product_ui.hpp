@@ -63,14 +63,20 @@ public:
     /// An SDL event, while hasInput(): the mouse, text and the keys that are not UI commands go to RmlUi (UiView). True
     /// when the UI used it: the game must not see it.
     bool handleEvent(const SDL_Event& event);
-    /// Retroverse's window gained or lost the input focus (the panel asks the user who comes back while a game runs).
+    /// Retroverse's window gained or lost the input focus (the panel asks the user who comes back while a game runs;
+    /// a question renders only while the window has the focus). Ignored for hidden windows, which count as focused.
     void focusChanged(bool focused);
+    /// A press (a key, a button, a click) reached the window while the host idled; the application drops it. After a
+    /// choice to go back to the game made without leaving Retroverse, it brings the question back
+    /// (LaunchFlow::userPressed).
+    void userPressed();
 
     /// One frame: follows a session whose panel shows and the window's return, applies the UI commands of
     /// `uiActions` (the frame's actions in the UI context; null: the product UI had no input when the frame began),
     /// shows the panel the launch wants and updates the view at `timeSeconds` (the simulated time).
     void update(const input::ActionState* uiActions, double deltaSeconds, double timeSeconds);
-    /// The Back levels the application chose for a UI Back (BackAction::PanelBack, BackAction::CatalogBack).
+    /// The Back levels the application chose for a UI Back (BackAction::PanelBack, BackAction::CatalogBack). The
+    /// panel's Back while a game runs is "Torna al gioco": in the focused window, the foreground goes to the game.
     void panelBack();
     void catalogBack();
 

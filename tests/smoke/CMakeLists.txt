@@ -66,7 +66,8 @@ catch_discover_tests(rv_smoke_tests
         ENVIRONMENT "RV_LAUNCH_ALLOWLIST=${RV_SMOKE_FAKE_EMULATOR}")
 
 # The visible launch (label "desktop", hidden from the gpu cases: tagged [.desktop]): it shows fullscreen windows and
-# moves the foreground, so only the msvc-x64-*-desktop test presets run it, on demand, never the gate.
+# moves the foreground, so only the msvc-x64-*-desktop test presets run it, on demand, never the gate. It runs only with
+# RV_SMOKE_DESKTOP=1, which this registration alone sets: a Catch2 filter typed by hand skips it.
 add_test(NAME desktop.smoke.launch_visible
     COMMAND rv_smoke_tests "[desktop]"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -75,4 +76,4 @@ set_tests_properties(desktop.smoke.launch_visible PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 600
     RUN_SERIAL TRUE
-    ENVIRONMENT "RV_LAUNCH_ALLOWLIST=${RV_SMOKE_FAKE_EMULATOR}")
+    ENVIRONMENT "RV_LAUNCH_ALLOWLIST=${RV_SMOKE_FAKE_EMULATOR};RV_SMOKE_DESKTOP=1")

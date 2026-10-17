@@ -32,8 +32,12 @@ inline constexpr std::string_view kReturned = "returned";
 /// The started program exited cleanly within the startup grace (ADR-0006: a launcher stub, or an emulator that gave up
 /// at once): "if it is still running, its profile needs to wait for the process tree".
 inline constexpr std::string_view kQuickExit = "quick-exit";
-/// The session ended while the emulator still ran: the user returned (kReasonConfirmed) or Retroverse quit
-/// (kReasonQuit). Nothing was terminated.
+/// The started program ended on its own while processes of its tree still ran (DirectProcess: a wrapper or launcher
+/// whose emulator is its child): the game may still run, left alone, and its profile should wait for the process tree
+/// (ADR-0006: the product shows processesRemained).
+inline constexpr std::string_view kProcessesRemained = "processes-remained";
+/// The session ended while the emulator still ran: the user returned (kReasonConfirmed), Retroverse quit (kReasonQuit)
+/// or a frame-limited run stopped waiting (kReasonWaitLimit). Nothing was terminated.
 inline constexpr std::string_view kLeftRunning = "left-running";
 /// The emulator ended with an unhandled exception; the detail is its exit code and NTSTATUS name.
 inline constexpr std::string_view kCrashed = "crashed";
@@ -70,15 +74,21 @@ inline constexpr std::string_view kReasonNoLaunch = "no-launch";
 inline constexpr std::string_view kReasonConfirmed = "confirmed";
 /// kLeftRunning: Retroverse quit (its window closed) while the emulator ran.
 inline constexpr std::string_view kReasonQuit = "quit";
+/// kLeftRunning: a frame-limited run waited for the emulator longer than its --launch-wait-limit.
+inline constexpr std::string_view kReasonWaitLimit = "wait-limit";
 } // namespace launch_outcome
 
 /// The message of a session that ended (launcher::LaunchOutcome of a final session):
 ///  - Crashed: kCrashed, the exit code and its NTSTATUS name ("0xC0000005 STATUS_ACCESS_VIOLATION");
 ///  - FailedToStart: kFailedToStart with the reason of its FailureReason, the detail the NTSTATUS name of a loader
-///    error, the exit code of an early exit, otherwise the error of the session's message without the launch it names
-///    (the request's validation, the runner's error: the guard's refusal among them);
-///  - Returned: kLeftRunning (kReasonConfirmed) when the user confirmed the return while processes remained,
-///    kQuickExit for a quick exit, kReturned otherwise (the detail is the exit code).
+///    error, the exit code of an early exit (exitCodeDetail), otherwise the error of the session's message without the
+///    launch it names (the request's validation, the runner's error: the guard's refusal among them);
+///  - Returned, ended by the user's confirmation: kLeftRunning (kReasonConfirmed) when processes remained, kReturned
+///    otherwise (the user said the game was over: a quick exit of the started program, which UserConfirmReturn
+///    expects, is no hint then);
+///  - Returned on its own: kProcessesRemained when processes of the tree still ran, kQuickExit for a quick exit,
+///    kReturned otherwise.
+/// The detail of a return is the exit code (exitCodeDetail).
 [[nodiscard]] LaunchMessage messageForOutcome(const launcher::LaunchOutcome& outcome);
 
 /// The message of a launch the plan refused (nothing started): kRomMissing (the ROM's file name), kNotConfigured
@@ -92,6 +102,9 @@ inline constexpr std::string_view kReasonQuit = "quit";
 
 /// "0xC0000005 STATUS_ACCESS_VIOLATION": an exit code in hexadecimal with its NTSTATUS name when it has a known one.
 [[nodiscard]] std::string exitCodeName(std::uint32_t code);
+/// An exit code as the panel shows it after "codice": the number alone in decimal ("3") below 0x10000, which programs
+/// return themselves, exitCodeName() above (the NTSTATUS range).
+[[nodiscard]] std::string exitCodeDetail(std::uint32_t code);
 
 /// True when the game-session panel shows `message` to the user: every code but kReturned and a kLeftRunning the user
 /// chose (kReasonConfirmed): those ended as the user expects.

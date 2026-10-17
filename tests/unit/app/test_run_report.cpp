@@ -262,6 +262,7 @@ TEST_CASE("app/run_report: the quick catalog and its launches read back record f
     stillRunning.wasStillRunning = true;
     stillRunning.quickExit = true;
     stillRunning.quitDuringGame = true;
+    stillRunning.waitLimitReached = true;
     stillRunning.requestFrame = 30;
     stillRunning.startFrame = 31;
     stillRunning.endFrame = 36;

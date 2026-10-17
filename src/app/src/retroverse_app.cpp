@@ -313,6 +313,21 @@ bool droppedWhileIdle(const SDL_Event& event) noexcept {
     }
 }
 
+/// A press the user made in window `windowId`: a key (not a repeat), a mouse button in it, a gamepad button (SDL
+/// delivers those only while a window of the application has the focus).
+bool isUserPress(const SDL_Event& event, std::uint32_t windowId) noexcept {
+    switch (event.type) {
+    case SDL_EVENT_KEY_DOWN:
+        return !event.key.repeat && event.key.windowID == windowId;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        return event.button.windowID == windowId;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace
 
 struct RetroverseApp::State {
@@ -347,6 +362,9 @@ struct RetroverseApp::State {
     /// the first layer to open frees a captured mouse, the last to close captures it again when it freed it.
     devui::CaptureHandover captureHandover;
     bool layersOpen = false;
+    /// The product UI had the input at the last syncCaptureLayers(): opening it frees a mouse captured under the
+    /// developer overlay too.
+    bool productLayerOpen = false;
     /// QuickCatalog pressed in a run without a catalog: logged once.
     bool catalogNoticeLogged = false;
     /// The product UI (the quick catalog, the game-session panel) and its launches; only with --mock-catalog.
@@ -435,20 +453,26 @@ struct RetroverseApp::State {
     }
 
     /// Hands the mouse over when the layers over the scene change: the first to open (the developer overlay, the
-    /// product UI) frees a captured mouse for its cursor, the last to close captures it again when it was freed.
+    /// product UI) frees a captured mouse for its cursor, the last to close captures it again when it was freed. The
+    /// product UI always needs the cursor: opening it while the overlay shows frees a mouse that a click into the scene
+    /// captured again meanwhile (given back, too, when the last layer closes).
     void syncCaptureLayers() {
-        const bool open = overlayVisible() || (product && product->hasInput());
-        if (open == layersOpen) {
-            return;
-        }
-        layersOpen = open;
-        if (open) {
-            if (captureHandover.open(input->mouseCaptured())) {
-                input->releaseMouse(product && product->hasInput() ? "quick catalog opened; Esc or B leaves it"
-                                                                   : "developer overlay opened; F1 or Esc closes it");
+        const bool productOpen = product && product->hasInput();
+        const bool open = overlayVisible() || productOpen;
+        const bool productOpened = productOpen && !productLayerOpen;
+        productLayerOpen = productOpen;
+        if (open != layersOpen) {
+            layersOpen = open;
+            if (open) {
+                if (captureHandover.open(input->mouseCaptured())) {
+                    input->releaseMouse(productOpen ? "quick catalog opened; Esc or B leaves it"
+                                                    : "developer overlay opened; F1 or Esc closes it");
+                }
+            } else if (captureHandover.close(input->mouseCaptured())) {
+                input->captureMouseWhenFocused("back to the scene");
             }
-        } else if (captureHandover.close(input->mouseCaptured())) {
-            input->captureMouseWhenFocused("back to the scene");
+        } else if (productOpened && input->mouseCaptured() && captureHandover.open(true)) {
+            input->releaseMouse("quick catalog opened over the developer overlay; Esc or B leaves it");
         }
 #if defined(RV_DEV_UI)
         if (devUi) {
@@ -769,8 +793,12 @@ void RetroverseApp::onEvent(AppContext& context, const SDL_Event& event) {
         event.window.windowID == context.window().id()) {
         state.product->focusChanged(event.type == SDL_EVENT_WINDOW_FOCUS_GAINED);
     }
-    // An emulator has the screen: nothing it did not mean for Retroverse may act once frames resume.
+    // An emulator has the screen: nothing it did not mean for Retroverse may act once frames resume. A press in the
+    // focused window may still bring the session's question back (the press itself acts on nothing).
     if (context.idle() && droppedWhileIdle(event)) {
+        if (state.product && isUserPress(event, context.window().id())) {
+            state.product->userPressed();
+        }
         return;
     }
 #if defined(RV_DEV_UI)
@@ -852,6 +880,10 @@ void RetroverseApp::onRender(AppContext& context) {
     state.screenshotRequested = false;
     if (state.product) {
         state.product->frameRendered();
+        // A question nobody can see is presented once: the host waits after this frame (LaunchFlow::hostIdle).
+        if (state.product->wantsIdle()) {
+            context.setIdle(true);
+        }
     }
 }
 

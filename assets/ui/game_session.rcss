@@ -64,6 +64,15 @@ p {
 	margin-bottom: 12dp;
 }
 
+/* The system's own words (an error, a path), apart from the sentence: smaller, dimmer, and broken anywhere, since a
+   path has no spaces. */
+.details {
+	font-size: 18dp;
+	line-height: 1.3em;
+	color: #F4EFE6B3;
+	word-break: break-word;
+}
+
 /* Each row of choices is a scroll container (overflow other than visible): RmlUi's spatial navigation stays in it. */
 .choices {
 	overflow: hidden;
@@ -108,7 +117,8 @@ body.high-contrast #session-panel {
 	border-color: #FFFFFF;
 }
 
-body.high-contrast .game {
+body.high-contrast .game,
+body.high-contrast .details {
 	color: #FFFFFF;
 }
 
@@ -124,5 +134,6 @@ body.high-contrast .choice:focus {
 	h1 { font-size: 28dp; }
 	p { font-size: 20dp; margin-bottom: 10dp; }
 	.game { font-size: 22dp; }
+	.details { font-size: 16dp; }
 	.choice { font-size: 20dp; padding: 7dp 16dp; }
 }

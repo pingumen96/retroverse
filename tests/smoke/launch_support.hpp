@@ -35,6 +35,8 @@ inline constexpr std::string_view kNotListed = "g000000000000a010";     ///< a c
 inline constexpr std::string_view kMissingEmulator = "g000000000000a011"; ///< its profile's program does not exist
 inline constexpr std::string_view kRomMissing = "g000000000000a012";    ///< its ROM does not exist
 inline constexpr std::string_view kNoLaunch = "g000000000000a013";      ///< no launch target
+inline constexpr std::string_view kWrapper = "g000000000000a014";       ///< starts a copy (runs 3 s), exits 0 at once
+inline constexpr std::string_view kConfirmQuick = "g000000000000a015";  ///< UserConfirmReturn, exits 0 at once
 } // namespace fake_games
 
 /// Writes <caseDir>/catalog.json: tests/smoke/catalogs/fake_emulator_games.json with the executables of this build (the

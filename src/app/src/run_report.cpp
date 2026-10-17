@@ -307,6 +307,7 @@ Json launchToJson(const LaunchRecord& launch) {
     json["confirmedByUser"] = launch.confirmedByUser;
     json["wasStillRunning"] = launch.wasStillRunning;
     json["quitDuringGame"] = launch.quitDuringGame;
+    json["waitLimitReached"] = launch.waitLimitReached;
     Json frames;
     frames["request"] = launch.requestFrame;
     if (launch.startFrame) {
@@ -362,6 +363,7 @@ LaunchRecord readLaunch(FieldReader& fields) {
     launch.confirmedByUser = fields.boolean("confirmedByUser");
     launch.wasStillRunning = fields.boolean("wasStillRunning");
     launch.quitDuringGame = fields.boolean("quitDuringGame");
+    launch.waitLimitReached = fields.boolean("waitLimitReached");
     if (auto frames = fields.optionalObject("frames")) {
         launch.requestFrame = frames->count("request");
         launch.startFrame = frames->optionalCount("start");

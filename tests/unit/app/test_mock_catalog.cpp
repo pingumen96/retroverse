@@ -261,3 +261,34 @@ TEST_CASE("app/mock_catalog: --mock-catalog takes a .json file", "[app][mock_cat
     CHECK_FALSE(rv::app::parseCommandLine(std::vector<std::string>{"--mock-catalog="}).has_value());
     CHECK(rv::app::commandLineHelp().find("  --mock-catalog <json>") != std::string::npos);
 }
+
+TEST_CASE("app/mock_catalog: frame-limited runs bound the wait for a launched game (--launch-wait-limit)",
+          "[app][mock_catalog][command_line]") {
+    using rv::app::CommandLineOptions;
+    const auto parse = [](std::vector<std::string> arguments) { return rv::app::parseCommandLine(arguments); };
+    // Interactive runs wait as long as the game runs.
+    const auto interactive = parse({});
+    REQUIRE(interactive.has_value());
+    CHECK_FALSE(interactive->launchWaitLimitSeconds.has_value());
+    // Frame-limited runs always have a limit, so that no run waits forever for a game that never ends.
+    const auto limited = parse({"--exit-after-frames", "--frames", "50"});
+    REQUIRE(limited.has_value());
+    CHECK(limited->launchWaitLimitSeconds == CommandLineOptions::kDefaultLaunchWaitLimitSeconds);
+    const auto given = parse({"--smoke", "--launch-wait-limit", "2.5"});
+    REQUIRE(given.has_value());
+    CHECK(given->launchWaitLimitSeconds == 2.5);
+    CHECK(parse({"--smoke", "--launch-wait-limit=3600"}).has_value());
+
+    const auto withoutLimit = parse({"--launch-wait-limit", "10"});
+    REQUIRE_FALSE(withoutLimit.has_value());
+    CHECK(withoutLimit.error().code == ErrorCode::InvalidArgument);
+    CHECK(withoutLimit.error().context == "--launch-wait-limit");
+    for (const char* text : {"0", "-1", "3601", "inf", "nan"}) {
+        INFO(text);
+        const auto rejected = parse({"--smoke", "--launch-wait-limit", text});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().context.starts_with("--launch-wait-limit="));
+    }
+    CHECK_FALSE(parse({"--smoke", "--launch-wait-limit", "soon"}).has_value());
+    CHECK(rv::app::commandLineHelp().find("  --launch-wait-limit <seconds>") != std::string::npos);
+}

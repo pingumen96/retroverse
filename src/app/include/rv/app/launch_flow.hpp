@@ -60,15 +60,22 @@ struct LaunchInfo {
 ///     them) and the application calls poll() on every wake.
 ///  3. poll(): the session's end, or a reason to ask the user, which stops the wait so that the panel can render:
 ///     StillRunning (no window for the window timeout), AwaitingConfirmation (UserConfirmReturn), the user back in
-///     Retroverse (focusChanged(): the window kept the focus for kComeBackDelay). The panel's choices: return
+///     Retroverse (focusChanged(): the window kept the focus for kComeBackDelay). A question renders while the window
+///     has the focus; without it, its frame is presented once (the window keeps it behind the game) and the host waits
+///     again until the focus comes back (ADR-0006: no GPU work while the emulator runs). The panel's choices: return
 ///     (returnToRetroverse(): LaunchSession::confirmReturn, the emulator left running when it runs) or back to the game
-///     (backToGame(): a frame with the notice again, then the host waits). A window the game shows again ends
-///     StillRunning's question the same way.
+///     (backToGame(): a frame with the notice again, then the host waits; with the focus, the application hands the
+///     foreground to the game, and the question comes back when the user presses something or the game never takes the
+///     focus). A window the game shows again ends StillRunning's question the same way.
 ///  4. The end: the outcome (messageForOutcome()), the Outcome panel when it has something to say (showsMessage()),
-///     takeReturned() once.
+///     takeReturned() once, and whether the window may take the foreground back (returnTakesForeground()).
 /// refuse() records a launch that cannot start (a plan's blocker, an unknown profile, no launch target) and shows its
-/// message at once; quit() ends a running session as left running when Retroverse quits: nothing is ever terminated.
-/// Every launch is recorded (records(): the run report's launches). One launch at a time. Main thread only.
+/// message at once; quit() ends a running session as left running when Retroverse quits, and so does poll() when the
+/// session outlives the wait limit (setWaitLimit(): frame-limited runs): nothing is ever terminated. Every launch is
+/// recorded (records(): the run report's launches). One launch at a time. Main thread only.
+///
+/// The focus (focusChanged()) is Retroverse's window's input focus; a hidden window counts as focused (the application
+/// says so: automation, the input script, stands for the user in front of it).
 class LaunchFlow {
 public:
     /// How long Retroverse's window must keep the focus while a game runs before the panel asks the user: the
@@ -91,32 +98,49 @@ public:
     /// with `callbacks` (the host's wake, the window's hand-over before the process runs). A request that cannot start
     /// ends at once with its outcome. Nothing without a pending request.
     void start(launcher::LaunchClock::time_point now, launcher::StartCallbacks callbacks, std::uint64_t frame);
-    /// Follows the session (LaunchSession::poll) and decides the panel (see the class comment). Call on every wake of
-    /// the host's wait and once per rendered frame while sessionActive(); harmless otherwise.
+    /// Follows the session (LaunchSession::poll) and decides the panel (see the class comment); ends a session that
+    /// outlived the wait limit as left running. Call on every wake of the host's wait and once per rendered frame while
+    /// sessionActive(); harmless otherwise.
     void poll(launcher::LaunchClock::time_point now, std::uint64_t frame);
-    /// Retroverse's window gained or lost the input focus: a gain while the session runs starts the come-back delay; a
-    /// loss cancels it, and takes back the Playing question (the user went back to the game without answering). The
-    /// questions of the session itself (StillRunning, Confirm) stay until answered.
+    /// Retroverse's window gained or lost the input focus (kept whatever the session's state; false until the first
+    /// call). A gain while the session runs starts the come-back delay; a loss cancels it, and takes back the Playing
+    /// question (the user went back to the game without answering). The questions of the session itself
+    /// (StillRunning, Confirm) stay until answered: they render again once the focus is back.
     void focusChanged(bool focused, launcher::LaunchClock::time_point now) noexcept;
+    /// A press (a key, a button, a click) reached the focused window while the game had the screen, after the user
+    /// chose to go back to the game or keep waiting without leaving Retroverse (backToGame()): the user is still in
+    /// front of it, so the question comes back at once. The host drops the press itself. True when a question shows.
+    bool userPressed() noexcept;
 
     /// The panel's "return to Retroverse" (Playing, StillRunning) and "I am back" (Confirm): the session ends
     /// (LaunchSession::confirmReturn), the emulator left running when it still runs.
     void returnToRetroverse(launcher::LaunchClock::time_point now, std::uint64_t frame);
-    /// The panel's "back to the game": one frame with the "Gioco in corso" notice, then the host waits again; the panel
-    /// asks again when the session's state changes or the user comes back once more (a new focus gain).
-    void backToGame() noexcept;
+    /// The panel's "back to the game" (Playing, Confirm) and "keep waiting" (StillRunning): one frame with the "Gioco in
+    /// corso" notice, then the host waits again. The panel asks again when the session's state changes, when the user
+    /// comes back once more (a new focus gain, then kComeBackDelay) or, while the window keeps the focus, at the next
+    /// press (userPressed()), and for Playing and Confirm after kComeBackDelay too (the game never took the focus).
+    /// True when the application must hand the foreground to the game: the window has the focus and the question was
+    /// Playing or Confirm (StillRunning's game shows no window to go back to).
+    bool backToGame(launcher::LaunchClock::time_point now) noexcept;
     /// The Outcome panel dismissed.
     void dismissOutcome() noexcept;
-    /// The panel's Back: back to the game while a session runs, the outcome dismissed after it; nothing on Launching.
-    void panelBack() noexcept;
+    /// The panel's Back: backToGame() while a session runs (its result), the outcome dismissed after it (false);
+    /// nothing on Launching.
+    bool panelBack(launcher::LaunchClock::time_point now) noexcept;
+
+    /// Frame-limited runs: a session still running `limit` after its start ends as left running (LaunchSession::
+    /// confirmReturn, never a kill; launch_outcome::kReasonWaitLimit when processes remained, LaunchRecord::
+    /// waitLimitReached), so that the run reaches its frame limit and writes its report. None by default.
+    void setWaitLimit(std::optional<std::chrono::milliseconds> limit) noexcept { m_waitLimit = limit; }
 
     /// Retroverse quits (its window closed, a quit request) during a launch: a running session ends as left running
     /// (LaunchSession::confirmReturn, never a kill), recorded with quitDuringGame and launch_outcome::kReasonQuit; a
     /// pending launch never starts (recorded as "Pending").
     void quit(launcher::LaunchClock::time_point now, std::uint64_t frame);
 
-    /// A frame was rendered: counted for the running session, as a frame of a question (LaunchRecord::framesWithPanel)
-    /// or of a game that has the screen (framesWhileRunning: only the one after a choice to go back to the game).
+    /// A frame was rendered: counted for the running session, as a frame of a question (LaunchRecord::framesWithPanel;
+    /// the question was presented) or of a game that has the screen (framesWhileRunning: only the one after a choice to
+    /// go back to the game).
     void frameRendered() noexcept;
     /// The host woke from its wait while the session ran (LaunchRecord::idleWakes).
     void idleWake() noexcept;
@@ -128,15 +152,21 @@ public:
     /// A session exists and has not ended.
     [[nodiscard]] bool sessionActive() const noexcept;
     /// The host waits instead of rendering: a launch is pending (start() at its next wake), or a session runs with
-    /// nothing to ask (the panel shows the "Gioco in corso" notice, or nothing).
+    /// nothing to ask (the panel shows the "Gioco in corso" notice, or nothing), or its question was presented while the
+    /// window does not have the focus (it renders again once the focus is back).
     [[nodiscard]] bool hostIdle() const noexcept;
     [[nodiscard]] SessionPanel panel() const noexcept { return m_panel; }
     /// The game of the current or last launch.
     [[nodiscard]] const LaunchInfo& info() const noexcept { return m_info; }
     /// The last launch's message, once it ended (or was refused).
     [[nodiscard]] const LaunchMessage& message() const noexcept { return m_message; }
-    /// True once after a session ended (the application takes its window back: WindowHandover::restore()).
+    /// True once after a session ended (the application takes its window back: WindowHandover::restore(), when
+    /// returnTakesForeground()).
     [[nodiscard]] bool takeReturned() noexcept;
+    /// After the last session: Retroverse may take the foreground back. False when processes of the game's tree still
+    /// ran and the user did not say they were back (kProcessesRemained, a wait limit, quitting): restoring and raising
+    /// the window would cover a game that may still run.
+    [[nodiscard]] bool returnTakesForeground() const noexcept { return m_takeForeground; }
     /// The current or last session; null before the first start().
     [[nodiscard]] const launcher::LaunchSession* session() const noexcept { return m_session ? &*m_session : nullptr; }
     /// Every launch of the run, the current one last.
@@ -155,10 +185,21 @@ private:
     SessionPanel m_panel = SessionPanel::None;
     /// The session's state at the last poll(): its transitions decide the panel.
     launcher::SessionState m_seenState = launcher::SessionState::Idle;
-    /// Since when the window has had the focus while the session runs (cleared by backToGame() until the next gain).
+    /// Retroverse's window has the input focus (focusChanged()).
+    bool m_focused = false;
+    /// Since when the come-back delay runs: the window gained the focus while the session runs, or kept it through a
+    /// choice to go back to the game (backToGame()). Cleared when the focus leaves.
     std::optional<launcher::LaunchClock::time_point> m_focusSince;
+    /// The user went back to the game (or kept waiting) without leaving Retroverse: a press asks again (userPressed()).
+    bool m_askOnPress = false;
+    /// The question shown was rendered at least once (the frame the window keeps when it does not have the focus).
+    bool m_questionPresented = false;
+    std::optional<std::chrono::milliseconds> m_waitLimit;
+    /// The current session ended because it outlived m_waitLimit.
+    bool m_waitLimitReached = false;
     bool m_quitting = false;
     bool m_returned = false;
+    bool m_takeForeground = true;
     LaunchInfo m_info;
     LaunchMessage m_message;
     std::vector<LaunchRecord> m_records;

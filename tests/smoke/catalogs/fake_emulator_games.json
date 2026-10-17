@@ -51,7 +51,15 @@
      "workingDirectory": "{rom_dir}", "hideConsoleWindow": true},
     {"id": "fake-missing", "displayName": "Emulatore assente",
      "executable": "@MISSING_EMULATOR@",
-     "arguments": ["{rom}"]}
+     "arguments": ["{rom}"]},
+    {"id": "fake-wrapper", "displayName": "Emulatore di prova",
+     "executable": "@FAKE_EMULATOR@",
+     "arguments": ["--spawn-child-and-exit", "--sleep-ms", "3000", "--exit-timeout-ms", "30000", "--", "{rom}"],
+     "workingDirectory": "{rom_dir}", "hideConsoleWindow": true},
+    {"id": "fake-confirm-quick", "displayName": "Emulatore di prova",
+     "executable": "@FAKE_EMULATOR@",
+     "arguments": ["--exit-timeout-ms", "30000", "--", "{rom}"],
+     "workingDirectory": "{rom_dir}", "hideConsoleWindow": true, "wait": "confirm"}
   ],
   "games": [
     {"id": "g000000000000a001", "title": "Lanterna di Vetro", "platform": "Portatile 8 bit", "year": 1991,
@@ -92,6 +100,12 @@
      "developer": "Sala Giochi Aurora", "genre": "Azione", "players": "1",
      "launch": {"profile": "fake-return", "rom": "roms/assente.gb", "system": "gb"}},
     {"id": "g000000000000a013", "title": "Biblioteca Silenziosa", "platform": "Console 16 bit", "year": 1997,
-     "developer": "Laboratorio Gru", "genre": "Avventura", "players": "1"}
+     "developer": "Laboratorio Gru", "genre": "Avventura", "players": "1"},
+    {"id": "g000000000000a014", "title": "Scatola Cinese", "platform": "Console 16 bit", "year": 1995,
+     "developer": "Officine Bussola", "genre": "Rompicapo", "players": "1",
+     "launch": {"profile": "fake-wrapper", "rom": "roms/scatola.gb", "system": "gb"}},
+    {"id": "g000000000000a015", "title": "Porta sul Retro", "platform": "Portatile 8 bit", "year": 1992,
+     "developer": "Studio Ventaglio", "genre": "Avventura", "players": "1",
+     "launch": {"profile": "fake-confirm-quick", "rom": "roms/porta.gb", "system": "gb"}}
   ]
 }

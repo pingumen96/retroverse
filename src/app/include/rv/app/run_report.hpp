@@ -106,6 +106,9 @@ struct LaunchRecord {
     bool wasStillRunning = false;
     /// The run ended (its window closed, a quit request) while the emulator ran: it was left running.
     bool quitDuringGame = false;
+    /// A frame-limited run stopped waiting for the game after its --launch-wait-limit (LaunchFlow::setWaitLimit): the
+    /// session ended as left running.
+    bool waitLimitReached = false;
     /// The frame whose input asked for the launch; the frame index when the emulator started and when its session
     /// ended (the next frame to render: every frame before it had been presented). Equal start and end frames: no
     /// frame was rendered while the game ran.
