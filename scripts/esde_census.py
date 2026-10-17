@@ -40,6 +40,8 @@ import sys
 import time
 
 FILE_ATTRIBUTE_HIDDEN = 0x2
+FILE_ATTRIBUTE_DIRECTORY = 0x10
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 WANTED_SETTINGS = {
     'ROMDirectory': 'string',
     'ShowHiddenFiles': 'bool',
@@ -251,7 +253,7 @@ class System:
         self.items = []          # dicts in walk order
         self.by_key = {}         # key -> [item]
         self.unavailable = {}    # folder key -> reason
-        self.entries = []        # (key or None, relative path or gamelist path, state, reason)
+        self.entries = []        # dicts: key (None outside the folder), rel, state, reason, dir, gamelist
         self.groups = 0
         self.available = True
         self.hidden_folder = False
@@ -305,14 +307,20 @@ class System:
             first = False
             for entry in children:
                 rel = entry.name if not relative else relative + '/' + entry.name
+                path = extended(os.path.join(full, entry.name))
                 try:
                     own = entry.stat(follow_symlinks=False)
-                    directory = entry.is_dir()  # links followed
+                    attributes = getattr(own, 'st_file_attributes', 0)
+                    # A folder or a link to one by its own attributes (as rv_core's walker tells them); a link to a
+                    # file whose target cannot be opened is not listed.
+                    directory = bool(attributes & FILE_ATTRIBUTE_DIRECTORY)
+                    if not directory and attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                        os.stat(path)
                 except OSError:
                     continue
                 item = {'rel': rel, 'key': fold(rel), 'name': entry.name, 'dir': directory, 'parent': parent,
-                        'hidden': bool(getattr(own, 'st_file_attributes', 0) & FILE_ATTRIBUTE_HIDDEN)
-                        or entry.name.startswith('.'), 'noload': False}
+                        'hidden': bool(attributes & FILE_ATTRIBUTE_HIDDEN) or entry.name.startswith('.'),
+                        'noload': False}
                 self.items.append(item)
                 index = len(self.items) - 1
                 if parent is not None and fold(entry.name) == 'NOLOAD.TXT':
@@ -322,15 +330,14 @@ class System:
                 if not directory or self.game_directory(entry.name):
                     continue
                 try:
-                    target = entry.stat()
+                    target = os.stat(path)  # a DirEntry's stat has no file id on Windows
                 except OSError as error:
                     self.unavailable[fold(rel)] = str(error)
                     continue
                 identity = (target.st_dev, target.st_ino)
-                if entry.is_symlink() or getattr(entry, 'is_junction', lambda: False)():
-                    if identity in identities:
-                        self.unavailable[fold(rel)] = 'a link that loops'
-                        continue
+                if attributes & FILE_ATTRIBUTE_REPARSE_POINT and identity in identities:
+                    self.unavailable[fold(rel)] = 'a link that loops'
+                    continue
                 stack.append((rel, index, identities + [identity]))
         # A folder is listed before its content (the rules below need that order).
         for item in self.items:
@@ -659,7 +666,8 @@ def cue_files(text):
 
 
 def m3u_files(text):
-    return [line.strip(' \t') for line in text.splitlines() if line.strip(' \t') and not line.strip(' \t').startswith('#')]
+    lines = [line.strip(' \t') for line in text.splitlines()]
+    return [line for line in lines if line and not line.startswith('#')]
 
 
 def sheet_reference(reference, folder):
