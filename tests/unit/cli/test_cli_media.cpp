@@ -308,8 +308,8 @@ TEST_CASE("cli/media: the coverage of the standard fixture's library snapshot", 
     CHECK(total["scraped-games"]["entries"] == 8);
     CHECK(total["scraped-games"]["withKind"]["screenshots"] == 2);
     // Every game of the snapshot, scraped or not: the README's 15 (Twin Tracks' two tracks are disc members, in no
-    // population). With media: Tiny Tennis (cover, screenshot, video), Pocket Puzzle A (cover), Café Racer and LOUD CART
-    // (videos), Alpha Quest (all 12 kinds), Twin Tracks (cover, video).
+    // population). With media: Tiny Tennis (cover, screenshot, video), Pocket Puzzle A (cover), Café Racer and LOUD
+    // CART (videos), Alpha Quest (all 12 kinds), Twin Tracks (cover, video).
     CHECK(total["games"]["entries"] == 15);
     CHECK(total["games"]["unknown"] == 0);
     CHECK(total["games"]["withAny"] == 6);

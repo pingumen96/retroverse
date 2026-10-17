@@ -19,9 +19,9 @@
 //    its System class driven as its census() drives it: 90,246 games) joined with an os.scandir listing of the media
 //    root made apart from the C++, ES-DE's media rule applied in Python as above, on 2026-10-17 (docs/i2/step-8.md,
 //    "Integration with step 7"). It gives the gamelist populations above again, entry for entry.
-// ADR-0003's table (2026-10-15) states shares over the 40,870 <game> entries, but four of its seven media rows cannot be
-// reproduced to 0.1 point over them, nor over any single population (docs/i2/step-8.md). The test checks the table as
-// docs/i2/step-8.md proposes to amend it at the merge (the shares over every <game> entry, within 0.1 point), prints
+// ADR-0003's table (2026-10-15) states shares over the 40,870 <game> entries, but four of its seven media rows cannot
+// be reproduced to 0.1 point over them, nor over any single population (docs/i2/step-8.md). The test checks the table
+// as docs/i2/step-8.md proposes to amend it at the merge (the shares over every <game> entry, within 0.1 point), prints
 // the figures as written beside them, and checks the per-system figures ADR-0003 quotes (Atari 800, Commodore 64),
 // which the <game> entries reproduce as written.
 
@@ -358,8 +358,8 @@ TEST_CASE("cli/media: the real library's media coverage against the oracle and A
         const nlohmann::json& system = report["systems"][i];
         INFO(row.system);
         CHECK(system["system"] == std::string(row.system));
-        const bool noFolder = row.system == "trs-80" || row.system == "pc" || row.system == "pcfx" ||
-                              row.system == "switch";
+        const bool noFolder =
+            row.system == "trs-80" || row.system == "pc" || row.system == "pcfx" || row.system == "switch";
         CHECK(system["mediaFolder"] == (noFolder ? "missing" : "listed"));
         checkRow(system["populations"]["games"], row);
     }

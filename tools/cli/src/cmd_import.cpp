@@ -328,9 +328,8 @@ ExitCode runImport(CommandContext& context) {
     const catalog::LibrarySnapshot& snapshot = read->snapshot;
     const std::map<std::string, Counts> counts = countsOf(snapshot);
     const esde::EsdeLoadStatistics& statistics = read->statistics;
-    spdlog::info("import --dry-run: {} system(s), {} entr(ies), {} issue(s), read in {:.2f} s",
-                 snapshot.systems.size(), snapshot.entries.size(), snapshot.issues.size(),
-                 secondsOf(statistics.totalTime));
+    spdlog::info("import --dry-run: {} system(s), {} entr(ies), {} issue(s), read in {:.2f} s", snapshot.systems.size(),
+                 snapshot.entries.size(), snapshot.issues.size(), secondsOf(statistics.totalTime));
 
     Output& out = *output ? **output : context.out;
     if (args->has("json")) {
