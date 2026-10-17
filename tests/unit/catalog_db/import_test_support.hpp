@@ -82,12 +82,15 @@ public:
     /// Called at each presence() (to cancel, say).
     std::function<void()> onPresence;
     std::size_t asked = 0;
+    /// refresh() calls (the import refreshes the resolver at the start of every run).
+    std::size_t refreshes = 0;
 
     Expected<catalog::EntryMedia> presence(const catalog::SystemName& system, const catalog::LookupKey& key,
                                            bool directory) override;
     Expected<std::filesystem::path> path(const catalog::SystemName& system, const catalog::LookupKey& key,
                                          bool directory, catalog::MediaKind kind,
                                          const catalog::MediaPresence& media) const override;
+    void refresh() noexcept override { ++refreshes; }
 };
 
 /// A library whose folders are invented (nothing is read: the scripted source gives the snapshot).

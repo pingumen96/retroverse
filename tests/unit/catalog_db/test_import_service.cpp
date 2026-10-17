@@ -11,9 +11,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rv/catalog/catalog_store.hpp>
@@ -508,6 +510,16 @@ TEST_CASE("catalog_db/import: a system the configuration no longer defines", "[c
     const StoredIdentity identity = identityAt(catalog, profile, "snes", "Zed (Europe).sfc");
     CHECK(identity.id == zed);
     CHECK_FALSE(identity.present);
+    // Its identities alone are left: the next imports neither list it nor report it (nor record it).
+    const ImportResult after = importOk(catalog, source, media, profile);
+    CHECK(after.changes.findSystem(systemName("snes")) == nullptr);
+    CHECK_FALSE(hasIssue(after.changes, kImportIssueSystemNotConfigured));
+    CHECK(after.statistics.identitiesWritten == 0);
+    const auto record = catalog.store->lastImport(profile.id).value();
+    REQUIRE(record.has_value());
+    CHECK(std::none_of(record->systems.begin(), record->systems.end(),
+                       [](const SystemChanges& system) { return system.system.str() == "snes"; }));
+    CHECK(identityAt(catalog, profile, "snes", "Zed (Europe).sfc").id == zed);
     // Configured again: the same GameId.
     source = twoSystems();
     importOk(catalog, source, media, profile);
@@ -605,6 +617,60 @@ TEST_CASE("catalog_db/import: the seam for reconciliation moves a paired identit
         CHECK(old.id == firstId(profile, "gb", "Dir1/Game (USA).gb", 1));
         CHECK_FALSE(old.present);
         CHECK(rowAt(catalog, profile, "gb", "Dir1/Game (USA).gb")->entry.state == EntryState::MissingFile);
+
+        // The file moved back where its gamelist entry stayed (ADR-0008 §4): the pairing pass is offered the file
+        // although an identity holds its path (NewFile::heldBy), the identity that moves back keeps its GameId, and
+        // the one that held the path meanwhile, without a file, becomes its alias.
+        source.snapshot.entries = {diskGame("gb", "Dir1/Game (USA).gb", 77), diskGame("gb", "Other (USA).gb", 88)};
+        source.snapshot.entries[0].gamelistPath = "./Dir1/Game (USA).gb";
+        rv::test::sortEntries(source.snapshot);
+        const ImportResult back = importOk(catalog, source, media, profile, {}, &pairing);
+        REQUIRE(pairing.vanishedSeen.size() == 1);
+        CHECK(pairing.vanishedSeen[0].identity.id == game);
+        REQUIRE(pairing.newFilesSeen.size() == 1);
+        CHECK(pairing.newFilesSeen[0].key.relativePath() == "Dir1/Game (USA).gb");
+        CHECK(pairing.newFilesSeen[0].heldBy == old.id);
+        REQUIRE(back.changes.moved.size() == 1);
+        CHECK(back.changes.moved[0].id == game);
+        CHECK(back.changes.moved[0].from.relativePath() == "Dir2/Game (USA).gb");
+        CHECK(back.changes.moved[0].alias == old.id);
+        CHECK(back.statistics.aliasesWritten == 1);
+        CHECK(changesOf(back.changes, "gb").newIdentities == 0);
+        CHECK(changesOf(back.changes, "gb").removed == 1); // the holder's row
+        const StoredIdentity returned = identityAt(catalog, profile, "gb", "Dir1/Game (USA).gb");
+        CHECK(returned.id == game);
+        CHECK(returned.present);
+        CHECK(rowAt(catalog, profile, "gb", "Dir1/Game (USA).gb")->id == game);
+        CHECK(rowCount(catalog, profile, "gb") == 2);
+        CHECK_FALSE(catalog.store->identity(old.id).value().has_value());
+        const std::vector<GameId> taken = catalog.store->takenGameIds().value();
+        CHECK(std::binary_search(taken.begin(), taken.end(), old.id)); // an alias is never given out again
+        const auto aliases = rv::test::dumpState(catalog.database->writer())["rv_identity_aliases"];
+        REQUIRE(aliases.size() == 1);
+        CHECK(aliases[0].find(std::to_string(old.id.value())) != std::string::npos);
+        // Nothing more to do at the next import.
+        const ImportResult steady = importOk(catalog, source, media, profile, {}, &pairing);
+        CHECK(steady.statistics.identitiesWritten == 0);
+        CHECK(steady.statistics.entriesWritten == 0);
+        CHECK(steady.statistics.aliasesWritten == 0);
+    }
+    SECTION("left unpaired, a file that comes back keeps the identity that holds its path") {
+        importOk(catalog, source, media, profile, {}, &pairing); // the move: Dir1's entry gets a new identity
+        const StoredIdentity holder = identityAt(catalog, profile, "gb", "Dir1/Game (USA).gb");
+        // Back at Dir1, but another file (another size): the pass pairs nothing, the holder takes its file back.
+        source.snapshot.entries = {diskGame("gb", "Dir1/Game (USA).gb", 78), diskGame("gb", "Other (USA).gb", 88)};
+        source.snapshot.entries[0].gamelistPath = "./Dir1/Game (USA).gb";
+        rv::test::sortEntries(source.snapshot);
+        const ImportResult back = importOk(catalog, source, media, profile, {}, &pairing);
+        REQUIRE(pairing.newFilesSeen.size() == 1);
+        CHECK(pairing.newFilesSeen[0].heldBy == holder.id);
+        CHECK(back.changes.moved.empty());
+        CHECK(back.statistics.aliasesWritten == 0);
+        CHECK(changesOf(back.changes, "gb").returned == 1);
+        CHECK(changesOf(back.changes, "gb").vanished == 1); // the moved identity, its file gone from Dir2
+        CHECK(identityAt(catalog, profile, "gb", "Dir1/Game (USA).gb").id == holder.id);
+        CHECK(identityAt(catalog, profile, "gb", "Dir1/Game (USA).gb").present);
+        CHECK_FALSE(identityAt(catalog, profile, "gb", "Dir2/Game (USA).gb").present);
     }
 }
 
@@ -641,7 +707,7 @@ TEST_CASE("catalog_db/import: the guard counts what stays gone once the pairing 
 namespace {
 
 /// A store that hands out a transaction which sets `cancel` after `writesBeforeCancel` entries written: a cancellation
-/// in the middle of the writes.
+/// in the middle of the writes. It also records the calls the import makes of the store, in order (`calls`).
 class CancellingStore final : public ICatalogStore {
 public:
     CancellingStore(ICatalogStore& inner, std::atomic<bool>& cancel, std::size_t writesBeforeCancel)
@@ -676,37 +742,57 @@ public:
             return m_inner->putImportIssues(library, issues, systems);
         }
         rv::Status recordImport(const ImportRecord& record) override { return m_inner->recordImport(record); }
-        rv::Status commit() override { return m_inner->commit(); }
+        rv::Status commit() override {
+            m_store.calls.emplace_back("commit");
+            return m_inner->commit();
+        }
 
     private:
         std::unique_ptr<IImportTransaction> m_inner;
         CancellingStore& m_store;
     };
 
-    rv::Expected<std::vector<LibraryProfile>> libraries() override { return m_inner.libraries(); }
+    std::vector<std::string> calls;
+
+    rv::Expected<std::vector<LibraryProfile>> libraries() override {
+        calls.emplace_back("libraries");
+        return m_inner.libraries();
+    }
     rv::Expected<std::vector<StoredIdentity>> identities(const LibraryId& library, const SystemName& system) override {
+        calls.emplace_back("identities");
         return m_inner.identities(library, system);
     }
     rv::Expected<std::optional<StoredIdentity>> identity(GameId id) override { return m_inner.identity(id); }
-    rv::Expected<std::vector<GameId>> takenGameIds() override { return m_inner.takenGameIds(); }
+    rv::Expected<std::vector<GameId>> takenGameIds() override {
+        calls.emplace_back("takenGameIds");
+        return m_inner.takenGameIds();
+    }
     rv::Expected<std::vector<IndexedEntry>> indexedEntries(const LibraryId& library,
                                                            const SystemName& system) override {
+        calls.emplace_back("indexedEntries");
         return m_inner.indexedEntries(library, system);
     }
-    rv::Expected<std::vector<SystemInfo>> systems(const LibraryId& library) override { return m_inner.systems(library); }
+    rv::Expected<std::vector<SystemInfo>> systems(const LibraryId& library) override {
+        calls.emplace_back("systems");
+        return m_inner.systems(library);
+    }
     rv::Expected<std::vector<SystemName>> identitySystems(const LibraryId& library) override {
+        calls.emplace_back("identitySystems");
         return m_inner.identitySystems(library);
     }
     rv::Expected<std::vector<IndexedDiscGroup>> discGroups(const LibraryId& library) override {
+        calls.emplace_back("discGroups");
         return m_inner.discGroups(library);
     }
     rv::Expected<std::optional<ImportRecord>> lastImport(const LibraryId& library) override {
         return m_inner.lastImport(library);
     }
     rv::Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId& library) override {
+        calls.emplace_back("lockImport");
         return m_inner.lockImport(library);
     }
     rv::Expected<std::unique_ptr<IImportTransaction>> beginImport(const LibraryId& library) override {
+        calls.emplace_back("beginImport");
         auto inner = m_inner.beginImport(library);
         if (!inner) {
             return rv::propagate(inner.error());
@@ -818,6 +904,92 @@ TEST_CASE("catalog_db/import: one import at a time, also from another holder of 
         transaction.reset();
     }
     CHECK(importOk(catalog, source, media, profile).statistics.entriesWritten == 0);
+}
+
+TEST_CASE("catalog_db/import: the library is checked under the import lock, the store read before the write "
+          "transaction", "[catalog_db][import]") {
+    const rv::test::TempDir dir("rv-import-order");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::scriptedLibrary();
+    ScriptedSource source = twoSystems();
+    ScriptedMedia media;
+    std::atomic<bool> cancel{false};
+    CancellingStore store(*catalog.store, cancel, std::numeric_limits<std::size_t>::max());
+    std::size_t loadedAt = 0;
+    source.onLoad = [&] { loadedAt = store.calls.size(); };
+    ImportService service(source, media, store);
+    REQUIRE(service.run(profile).has_value());
+    CHECK(media.refreshes == 1); // the resolver refreshed at the start of the run
+    const auto at = [&](std::string_view call) {
+        const auto found = std::find(store.calls.begin(), store.calls.end(), call);
+        REQUIRE(found != store.calls.end());
+        return static_cast<std::size_t>(found - store.calls.begin());
+    };
+    const auto last = [&](std::string_view call) {
+        const auto found = std::find(store.calls.rbegin(), store.calls.rend(), call);
+        REQUIRE(found != store.calls.rend());
+        return static_cast<std::size_t>(store.calls.rend() - found - 1);
+    };
+    // One import at a time, then the library (two imports never both see an empty store), then the cache.
+    CHECK(at("lockImport") == 0);
+    CHECK(at("libraries") == 1);
+    CHECK(at("discGroups") < loadedAt);
+    // What the import compares is read after the load, under the import lock, before the write transaction, which
+    // holds the writes alone.
+    CHECK(at("takenGameIds") >= loadedAt);
+    CHECK(last("identities") < at("beginImport"));
+    CHECK(last("indexedEntries") < at("beginImport"));
+    CHECK(at("beginImport") + 1 == at("commit"));
+    // A second run of the same service refreshes the resolver again.
+    REQUIRE(service.run(profile).has_value());
+    CHECK(media.refreshes == 2);
+}
+
+TEST_CASE("catalog_db/import: the import records keep the systems with something to say, and a bounded history",
+          "[catalog_db][import]") {
+    const rv::test::TempDir dir("rv-import-records");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::scriptedLibrary();
+    ScriptedSource source = twoSystems();
+    SystemInfo nes = scriptedSystem("nes"); // no folder, no rows
+    nes.availability = Availability::SourceUnavailable;
+    nes.unavailableReason = SourceUnavailableReason::FolderMissing;
+    source.snapshot.systems = {scriptedSystem("gb"), nes, scriptedSystem("snes")};
+    ScriptedMedia media;
+    const ImportResult first = importOk(catalog, source, media, profile);
+    const auto systemsOf = [](const ImportRecord& record) {
+        std::vector<std::string> names;
+        for (const SystemChanges& system : record.systems) {
+            names.push_back(system.system.str());
+        }
+        return names;
+    };
+    CHECK(first.changes.systems.size() == 3);
+    CHECK(systemsOf(catalog.store->lastImport(profile.id).value().value()) == std::vector<std::string>{"gb", "snes"});
+
+    // Nothing changed: the record lists no system, then one whose file is new.
+    importOk(catalog, source, media, profile);
+    CHECK(catalog.store->lastImport(profile.id).value().value().systems.empty());
+    source.snapshot.entries.push_back(diskGame("snes", "New (Japan).sfc", 500));
+    rv::test::sortEntries(source.snapshot);
+    importOk(catalog, source, media, profile);
+    CHECK(systemsOf(catalog.store->lastImport(profile.id).value().value()) == std::vector<std::string>{"snes"});
+
+    // The history is bounded: the newest kKeptImportRecords of the library stay.
+    rv::catalog_db::Connection& writer = catalog.database->writer();
+    REQUIRE(writer
+                .execute("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 150) "
+                         "INSERT INTO rv_imports (library, kind, started_at, finished_at, accept_removals, "
+                         "systems_asked, summary) SELECT 'esde', 'import', '2026-01-01T00:00:00.000Z', "
+                         "'2026-01-01T00:00:01.000Z', 0, '[]', '[]' FROM n")
+                .has_value());
+    const ImportResult last = importOk(catalog, source, media, profile);
+    CHECK(last.changes.total().unchanged == 5);
+    auto rows = writer.prepare("SELECT count(*), max(started_at) FROM rv_imports WHERE library = 'esde'");
+    REQUIRE(rows.has_value());
+    REQUIRE(rows->step().value());
+    CHECK(rows->columnInt(0) == static_cast<std::int64_t>(rv::catalog_db::kKeptImportRecords));
+    CHECK(rows->columnText(1) != "2026-01-01T00:00:00.000Z"); // the import's own record among them
 }
 
 TEST_CASE("catalog_db/import: a partial import leaves the other systems as they are", "[catalog_db][import]") {

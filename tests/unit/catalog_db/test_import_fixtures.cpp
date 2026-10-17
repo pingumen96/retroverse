@@ -3,7 +3,8 @@
 // the media), imported again without a write, nothing of it copied and its scraper credentials nowhere in the database;
 // ROMs added and removed on disk (SC-05); a system folder unplugged, the ROM root missing, a folder that cannot be
 // listed (SC-06); a gamelist cut short while ES-DE writes it; a first import that reads no ROM byte; the search index
-// of a bulk write against the triggers'; the long-path fixture.
+// of a bulk write against the triggers'; disc groups whose sheet cannot be read or listed, and db rebuild-index reading
+// every sheet; a service kept between runs; the long-path fixture.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -462,6 +463,153 @@ TEST_CASE("catalog_db/import: the standard fixture's search index, bulk or by th
     rv::test::checkSameDump(index, rv::test::dumpIndex(rowByRow.database->writer()));
     CHECK(rv::catalog_db::checkDatabase(*bulk.database).value().passed());
     CHECK(rv::catalog_db::checkDatabase(*rowByRow.database).value().passed());
+}
+
+namespace {
+
+/// The library's one disc group, REQUIREd.
+IndexedDiscGroup onlyGroup(ImportCatalog& catalog) {
+    const auto groups = catalog.store->discGroups(LibraryId());
+    REQUIRE(groups.has_value());
+    REQUIRE(groups->size() == 1);
+    return groups->front();
+}
+
+/// The disc group tables of the index, as text.
+std::vector<std::vector<std::string>> discTables(ImportCatalog& catalog) {
+    rv::test::TableDump index = rv::test::dumpIndex(catalog.database->writer());
+    return {index["idx_disc_groups"], index["idx_disc_members"], index["idx_disc_references"]};
+}
+
+} // namespace
+
+TEST_CASE("catalog_db/import: a changed sheet that cannot be read is read again once it can be",
+          "[catalog_db][import][fixture]") {
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
+    const rv::test::TempDir dir("rv-import-sheet-unreadable");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::esde::profileOf(fixture);
+    importFixture(catalog, profile);
+    const IndexedDiscGroup before = onlyGroup(catalog);
+    REQUIRE(before.members.size() == 2);
+
+    // The sheet names Track 1 alone now (another size), and cannot be read for a while.
+    const fs::path sheet = fixture.path("roms/psx/Twin Tracks (Europe).cue");
+    const auto text = rv::core::readFileShared(sheet, 1024 * 1024);
+    REQUIRE(text.has_value());
+    const std::string original(text->begin(), text->end());
+    const std::size_t second = original.find("FILE", original.find("FILE") + 4);
+    REQUIRE(second != std::string::npos);
+    REQUIRE(rv::test::writeFileAnyLength(sheet, original.substr(0, second)).has_value());
+    {
+        auto denied = rv::test::DataReadDenied::apply(sheet);
+        REQUIRE(denied.has_value());
+        const ImportResult unreadable = importFixture(catalog, profile);
+        CHECK(std::any_of(unreadable.changes.issues.begin(), unreadable.changes.issues.end(),
+                          [](const Issue& issue) { return issue.code == "disc-sheet-unreadable"; }));
+        // The group read before is kept, with the facts of the sheet it was read from: never those of the sheet
+        // listed now, which would make its old references pass for the new sheet.
+        CHECK(onlyGroup(catalog) == before);
+        CHECK(rowOf(catalog, "psx", "Twin Tracks (Europe) (Track 2).bin")->entry.state == EntryState::DiscMember);
+    }
+
+    // Readable again: the sheet is read (the stored facts are not its own), and the group follows it.
+    importFixture(catalog, profile);
+    const IndexedDiscGroup after = onlyGroup(catalog);
+    CHECK(after.members.size() == 1);
+    CHECK(after.group.references.size() == 1);
+    CHECK(after.group.headSize == fs::file_size(sheet));
+    CHECK(rowOf(catalog, "psx", "Twin Tracks (Europe) (Track 2).bin")->entry.state == EntryState::Game);
+}
+
+TEST_CASE("catalog_db/import: a disc group below a folder that cannot be listed stays as the index held it",
+          "[catalog_db][import][fixture]") {
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
+    const rv::test::TempDir dir("rv-import-group-unlisted");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::esde::profileOf(fixture);
+    // The gamelist names the tracks too, so that the group forms from the gamelist alone while the folder cannot be
+    // listed (as on the reference library, where such groups were written again with a head of no size).
+    const fs::path gamelist = fixture.path("ES-DE/gamelists/psx/gamelist.xml");
+    const auto whole = rv::core::readFileShared(gamelist, 1024 * 1024);
+    REQUIRE(whole.has_value());
+    std::string text(whole->begin(), whole->end());
+    const std::size_t end = text.find("</gameList>");
+    REQUIRE(end != std::string::npos);
+    text.insert(end, "\t<game>\n\t\t<path>./Twin Tracks (Europe) (Track 1).bin</path>\n\t\t<name>Track 1</name>\n"
+                     "\t</game>\n\t<game>\n\t\t<path>./Twin Tracks (Europe) (Track 2).bin</path>\n"
+                     "\t\t<name>Track 2</name>\n\t</game>\n");
+    REQUIRE(rv::test::writeFileAnyLength(gamelist, text).has_value());
+    importFixture(catalog, profile);
+    const auto groups = discTables(catalog);
+    REQUIRE(onlyGroup(catalog).members.size() == 2);
+
+    {
+        auto denied = rv::test::ListingDenied::apply(fixture.path("roms/psx"));
+        REQUIRE(denied.has_value());
+        const ImportResult unlisted = importFixture(catalog, profile);
+        CHECK(changesOf(unlisted.changes, "psx").outcome == SystemOutcome::SourceUnavailable);
+        CHECK(unlisted.statistics.discGroupsWritten == 0);
+        CHECK(unlisted.statistics.discGroupsRemoved == 0);
+        CHECK(discTables(catalog) == groups);
+        CHECK(rowOf(catalog, "psx", "Twin Tracks (Europe) (Track 2).bin")->entry.state == EntryState::DiscMember);
+    }
+    // Listed again: the sheet's facts are still the stored ones, so it is taken from the catalog, nothing written.
+    const ImportResult back = importFixture(catalog, profile);
+    CHECK(back.statistics.discGroupsWritten == 0);
+    CHECK(discTables(catalog) == groups);
+}
+
+TEST_CASE("catalog_db/import: db rebuild-index reads every sheet again", "[catalog_db][import][fixture]") {
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
+    const rv::test::TempDir dir("rv-import-rebuild-sheets");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::esde::profileOf(fixture);
+    importFixture(catalog, profile);
+    const auto groups = discTables(catalog);
+
+    // A group stored wrong (its second reference lost) while its head kept its size and time: a refresh trusts it.
+    REQUIRE(catalog.database->writer().execute("DELETE FROM idx_disc_references WHERE position = 1").has_value());
+    importFixture(catalog, profile);
+    CHECK(onlyGroup(catalog).members.size() == 1);
+    CHECK(rowOf(catalog, "psx", "Twin Tracks (Europe) (Track 2).bin")->entry.state == EntryState::Game);
+
+    // The rebuild reads the sheet again: the group as the sheet says, the index as the first import made it.
+    ImportOptions rebuild;
+    rebuild.rebuildIndex = true;
+    importFixture(catalog, profile, rebuild);
+    CHECK(onlyGroup(catalog).members.size() == 2);
+    CHECK(rowOf(catalog, "psx", "Twin Tracks (Europe) (Track 2).bin")->entry.state == EntryState::DiscMember);
+    CHECK(discTables(catalog) == groups);
+}
+
+TEST_CASE("catalog_db/import: a service and media resolver kept between runs see the media as they are now",
+          "[catalog_db][import][fixture]") {
+    const rv::test::Fixture fixture = materializeSettled("esde/standard");
+    const rv::test::TempDir dir("rv-import-media-kept");
+    ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
+    const LibraryProfile profile = rv::test::esde::profileOf(fixture);
+    rv::esde::EsdeLibrarySourceOptions sourceOptions;
+    sourceOptions.gamelistRetryDelay = std::chrono::milliseconds(0);
+    rv::esde::EsdeLibrarySource source(sourceOptions);
+    const auto settings = rv::esde::readSettings(profile.esdeHome);
+    REQUIRE(settings.has_value());
+    rv::esde::EsdeMediaResolver media(rv::esde::resolveMediaRoot(*settings, profile));
+    ImportService service(source, media, *catalog.store);
+    REQUIRE(service.run(profile).has_value());
+    CHECK(mediaOf(*rowOf(catalog, "gb", "Tiny Tennis (Europe).gb")) == "covers.png screenshots.jpg videos.mp4");
+    CHECK(mediaOf(*rowOf(catalog, "gb", "Collection B/Pocket Puzzle (World).gb")).empty());
+
+    // A screenshot deleted, a cover added: the next run of the same service and resolver sees both.
+    REQUIRE(fs::remove(fixture.path("media/gb/screenshots/Tiny Tennis (Europe).jpg")));
+    fs::create_directories(fixture.path("media/gb/covers/Collection B"));
+    REQUIRE(rv::test::writeFileAnyLength(fixture.path("media/gb/covers/Collection B/Pocket Puzzle (World).png"), "png")
+                .has_value());
+    const auto second = service.run(profile);
+    REQUIRE(second.has_value());
+    CHECK(second->statistics.entriesWritten == 2);
+    CHECK(mediaOf(*rowOf(catalog, "gb", "Tiny Tennis (Europe).gb")) == "covers.png videos.mp4");
+    CHECK(mediaOf(*rowOf(catalog, "gb", "Collection B/Pocket Puzzle (World).gb")) == "covers.png");
 }
 
 TEST_CASE("catalog_db/import: the user's custom systems are imported like any other (SC-11)",
