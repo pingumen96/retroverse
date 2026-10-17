@@ -353,6 +353,27 @@ TEST_CASE("esde/library_source: a gamelist that fails is read again, then given 
         CHECK(source.lastStatistics().gamelistRetries == 1);
         CHECK(countsOf(*snapshot, "gb") == StateCounts{11, 8, 1, 0, 0, 1, 1});
     }
+    SECTION("the wait before the second try ends when the load is cancelled") {
+        rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(60000), {}});
+        HANDLE locked = CreateFileW(rv::core::extendedLengthPath(gamelist).c_str(), GENERIC_READ, 0, nullptr,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        REQUIRE(locked != INVALID_HANDLE_VALUE);
+        std::atomic<bool> cancel{false};
+        std::thread canceller([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            cancel = true;
+        });
+        rv::catalog::LibraryLoadOptions options;
+        options.cancel = &cancel;
+        const auto start = std::chrono::steady_clock::now();
+        const auto snapshot = source.load(profileOf(fixture), options);
+        const auto took = std::chrono::steady_clock::now() - start;
+        canceller.join();
+        CloseHandle(locked);
+        REQUIRE_FALSE(snapshot.has_value());
+        CHECK(snapshot.error().code == rv::ErrorCode::Cancelled);
+        CHECK(took < std::chrono::seconds(30));
+    }
 }
 
 TEST_CASE("esde/library_source: a system defined twice is the first definition that finds a game",
