@@ -1,7 +1,8 @@
 // retroverse-cli media (I2 step 8) through the dispatcher: the media of a ROM path of the standard fixture's systems
 // (a file, a folder, a missing file, a gamelist's "./" form, another case) as text and JSON, the coverage of its
-// gamelist entries, the usage errors and --game until step 11; the media-roots fixture's empty, missing and unreachable
-// media roots. The command only reads: the fixture's files are unchanged after it.
+// library snapshot (the ROM scan of I2 step 7) over the four populations, the usage errors and --game until step 11;
+// the media-roots fixture's empty, missing and unreachable media roots. The command only reads: the fixture's files
+// are unchanged after it.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -277,7 +278,7 @@ TEST_CASE("cli/media: the media of a ROM path of the standard fixture, as JSON a
     CHECK(treeOf(fixture.root()) == before);
 }
 
-TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", "[cli][media]") {
+TEST_CASE("cli/media: the coverage of the standard fixture's library snapshot", "[cli][media]") {
     const rv::test::Fixture fixture = materialize("esde/standard");
     const LoggingReset loggingReset;
     const auto before = treeOf(fixture.root());
@@ -288,7 +289,7 @@ TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", 
     REQUIRE(json.code == ExitCode::Ok);
     const nlohmann::json report = parsed(json.out);
     CHECK(report["mediaRoot"]["path"] == utf8(fixture.path("media")));
-    CHECK(report["source"] == "gamelists");
+    CHECK(report["source"] == "rom-scan");
     CHECK(report["kinds"].size() == 12);
     CHECK(report["kinds"][2] == "3dboxes");
     CHECK(report["listed"]["systems"] == 3);
@@ -306,16 +307,32 @@ TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", 
     CHECK(total["gamelist-entries-with-file"]["withKind"]["covers"] == 4);
     CHECK(total["scraped-games"]["entries"] == 8);
     CHECK(total["scraped-games"]["withKind"]["screenshots"] == 2);
-    // Until the ROM scan is merged, the games are the scraped ones.
-    CHECK(total["games"] == total["scraped-games"]);
+    // Every game of the snapshot, scraped or not: the README's 15 (Twin Tracks' two tracks are disc members, in no
+    // population). With media: Tiny Tennis (cover, screenshot, video), Pocket Puzzle A (cover), Café Racer and LOUD CART
+    // (videos), Alpha Quest (all 12 kinds), Twin Tracks (cover, video).
+    CHECK(total["games"]["entries"] == 15);
+    CHECK(total["games"]["unknown"] == 0);
+    CHECK(total["games"]["withAny"] == 6);
+    CHECK(total["games"]["withKind"]["covers"] == 4);
+    CHECK(total["games"]["withKind"]["backcovers"] == 1);
+    CHECK(total["games"]["withKind"]["screenshots"] == 2);
+    CHECK(total["games"]["withKind"]["videos"] == 5);
+    CHECK(total["games"]["withKind"]["custom"] == 1);
     REQUIRE(report["systems"].size() == 3);
     CHECK(report["systems"][0]["system"] == "gb");
     CHECK(report["systems"][0]["mediaFolder"] == "listed");
     CHECK(report["systems"][0]["populations"]["gamelist-entries"]["entries"] == 5);
     CHECK(report["systems"][0]["populations"]["gamelist-entries"]["withKind"]["covers"] == 3);
+    CHECK(report["systems"][0]["populations"]["games"]["entries"] == 8);
+    CHECK(report["systems"][0]["populations"]["games"]["withKind"]["covers"] == 2);
+    CHECK(report["systems"][0]["populations"]["games"]["withKind"]["videos"] == 3);
+    CHECK(report["systems"][1]["system"] == "psx");
+    CHECK(report["systems"][1]["populations"]["games"]["entries"] == 2);
     CHECK(report["systems"][2]["system"] == "snes");
     CHECK(report["systems"][2]["populations"]["gamelist-entries-with-file"]["entries"] == 4);
     CHECK(report["systems"][2]["populations"]["scraped-games"]["entries"] == 3);
+    CHECK(report["systems"][2]["populations"]["games"]["entries"] == 5);
+    CHECK(report["systems"][2]["populations"]["games"]["withAny"] == 1);
     std::vector<std::string> codes;
     for (const auto& issue : report["issues"]) {
         codes.push_back(issue["code"].get<std::string>());
@@ -328,16 +345,27 @@ TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", 
     const RunResult text = cli.media({"--coverage"});
     CHECK(text.code == ExitCode::Ok);
     CHECK(contains(text.out, "Media root    " + utf8(fixture.path("media")) + " (MediaDirectory \""));
+    CHECK(contains(text.out, "Entries       23 in the library snapshot (the ROM folders listed with ES-DE's rules"));
     CHECK(contains(text.out, "Listed        3 system(s), 25 files in their media folders\n"));
     // 5 covers of 11 entries: 45.5%; 4 videos: 36.4%.
     CHECK(contains(text.out,
                    "gamelist-entries                  11   45.5    9.1    9.1    9.1   18.2    9.1    9.1    9.1"
                    "    9.1    9.1   36.4    9.1\n"));
+    // 4 covers of 15 games: 26.7%; 5 videos: 33.3%.
+    CHECK(contains(text.out,
+                   "games                             15   26.7    6.7    6.7    6.7   13.3    6.7    6.7    6.7"
+                   "    6.7    6.7   33.3    6.7\n"));
     CHECK(contains(text.out, "The gamelist entries whose file exists, per system\n"));
     CHECK(contains(text.out, "gb                   3   66.7    0.0    0.0    0.0   33.3    0.0    0.0    0.0    0.0"
                              "    0.0   66.7    0.0\n"));
     CHECK(contains(text.out, "snes                 4   25.0   25.0"));
     CHECK(contains(text.out, "All                  9   44.4"));
+    CHECK(contains(text.out, "The games, per system\n"));
+    CHECK(contains(text.out, "gb                   8   25.0    0.0    0.0    0.0   12.5    0.0    0.0    0.0    0.0"
+                             "    0.0   37.5    0.0\n"));
+    CHECK(contains(text.out, "snes                 5   20.0   20.0"));
+    CHECK(contains(text.out, "All                 15   26.7"));
+    CHECK_FALSE(contains(text.out, "until the ROM scan"));
     CHECK(contains(text.out, "Issues ("));
 
     // One system.
@@ -349,6 +377,7 @@ TEST_CASE("cli/media: the coverage of the standard fixture's gamelist entries", 
     CHECK(one["listed"]["systems"] == 1);
     CHECK(one["total"]["games"]["entries"] == 2);
     CHECK(one["total"]["games"]["withKind"]["videos"] == 1);
+    CHECK(one["total"]["gamelist-entries"]["entries"] == 2);
 
     CHECK(treeOf(fixture.root()) == before);
 }
@@ -363,17 +392,27 @@ TEST_CASE("cli/media: an empty media root, a missing one, an unreachable one; no
     INFO(empty.err);
     REQUIRE(empty.code == ExitCode::Ok);
     const nlohmann::json report = parsed(empty.out);
-    REQUIRE(report["systems"].size() == 1); // gb has no gamelist: no entry
-    CHECK(report["systems"][0]["system"] == "nes");
+    REQUIRE(report["systems"].size() == 2);
+    // gb has no gamelist: its one game is unscraped.
+    CHECK(report["systems"][0]["system"] == "gb");
     CHECK(report["systems"][0]["mediaFolder"] == "missing");
+    CHECK(report["systems"][0]["populations"]["gamelist-entries"]["entries"] == 0);
+    CHECK(report["systems"][0]["populations"]["games"]["entries"] == 1);
+    CHECK(report["systems"][1]["system"] == "nes");
+    CHECK(report["systems"][1]["mediaFolder"] == "missing");
+    CHECK(report["systems"][1]["populations"]["games"]["entries"] == 2);
     CHECK(report["total"]["gamelist-entries"]["entries"] == 2);
     CHECK(report["total"]["gamelist-entries-with-file"]["entries"] == 1);
     CHECK(report["total"]["scraped-games"]["entries"] == 1);
+    CHECK(report["total"]["games"]["entries"] == 3);
+    CHECK(report["total"]["games"]["withAny"] == 0);
     CHECK(report["total"]["gamelist-entries"]["withAny"] == 0);
     CHECK(report["total"]["gamelist-entries"]["unknown"] == 0);
     CHECK(report["issues"].empty());
     const RunResult emptyText = cli.media({"--coverage"});
     CHECK(contains(emptyText.out, "nes                  1    0.0    0.0"));
+    CHECK(contains(emptyText.out, "gb                   1    0.0    0.0")); // only among the games
+    CHECK(contains(emptyText.out, "nes                  2    0.0    0.0"));
     const RunResult rocket = cli.media({"--system", "nes", "--path", "Rocket Ranger (USA).nes"});
     CHECK(rocket.code == ExitCode::Ok);
     CHECK(contains(rocket.out, "Media         0 of 12 kinds\n"));
@@ -393,7 +432,11 @@ TEST_CASE("cli/media: an empty media root, a missing one, an unreachable one; no
         const nlohmann::json unknown = parsed(coverage.out);
         CHECK(unknown["total"]["gamelist-entries"]["entries"] == 2);
         CHECK(unknown["total"]["gamelist-entries"]["unknown"] == 2);
+        CHECK(unknown["total"]["games"]["entries"] == 3);
+        CHECK(unknown["total"]["games"]["unknown"] == 3);
+        REQUIRE(unknown["systems"].size() == 2);
         CHECK(unknown["systems"][0]["mediaFolder"].is_null());
+        CHECK(unknown["systems"][1]["mediaFolder"].is_null());
         REQUIRE_FALSE(unknown["issues"].empty());
         CHECK(unknown["issues"][0]["code"] == "media-root-unavailable");
         CHECK(unknown["issues"][0]["severity"] == "error");

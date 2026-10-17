@@ -16,7 +16,6 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
-#include <filesystem>
 #include <map>
 #include <optional>
 #include <string>
@@ -31,12 +30,11 @@
 #include <rv/catalog/snapshot.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/arg_parser.hpp>
-#include <rv/core/paths.hpp>
-#include <rv/esde/discovery.hpp>
 #include <rv/esde/library_source.hpp>
 
 #include "commands.hpp"
 #include "esde_text.hpp"
+#include "library_snapshot.hpp"
 
 namespace rv::cli {
 namespace {
@@ -311,47 +309,36 @@ ExitCode runImport(CommandContext& context) {
         context.err.writeLine(fmt::format("{}: {}", kName, output.error().toString()));
         return ExitCode::UsageError;
     }
-    esde::EsdeLibrarySourceOptions sourceOptions;
-    if (const auto system = args->value("system")) {
-        if (system->empty()) {
-            context.err.writeLine(fmt::format("{}: --system: value must not be empty", kName));
-            return ExitCode::UsageError;
-        }
-        sourceOptions.systems.push_back(*system);
+    const std::optional<std::string> system = args->value("system");
+    if (system && system->empty()) {
+        context.err.writeLine(fmt::format("{}: --system: value must not be empty", kName));
+        return ExitCode::UsageError;
     }
 
-    // The library library.json records; the dispatcher has kept the user data directory out of its folders.
-    const std::filesystem::path file = context.paths.configDir() / esde::kLibraryFileName;
-    const auto profile = esde::readLibraryFile(file);
+    ExitCode failure = ExitCode::RuntimeFailure;
+    const auto profile = readRecordedLibrary(context, kName, failure);
     if (!profile) {
-        if (profile.error().code == ErrorCode::NotFound) {
-            context.err.writeLine(fmt::format("{}: no library yet ({} does not exist): run 'retroverse-cli library "
-                                              "create'",
-                                              kName, pathText(file)));
-            return ExitCode::UsageError;
-        }
-        context.err.writeLine(fmt::format("{}: {}", kName, profile.error().toString()));
-        return ExitCode::RuntimeFailure;
+        return failure;
     }
-    esde::EsdeLibrarySource source(std::move(sourceOptions));
-    const auto snapshot = source.load(*profile, catalog::LibraryLoadOptions{});
-    if (!snapshot) {
-        context.err.writeLine(fmt::format("{}: {}", kName, snapshot.error().toString()));
-        return snapshot.error().code == ErrorCode::InvalidArgument ? ExitCode::UsageError : ExitCode::RuntimeFailure;
+    const auto read = readLibrarySnapshot(*profile, system);
+    if (!read) {
+        context.err.writeLine(fmt::format("{}: {}", kName, read.error().toString()));
+        return read.error().code == ErrorCode::InvalidArgument ? ExitCode::UsageError : ExitCode::RuntimeFailure;
     }
-    const std::map<std::string, Counts> counts = countsOf(*snapshot);
-    const esde::EsdeLoadStatistics& statistics = source.lastStatistics();
+    const catalog::LibrarySnapshot& snapshot = read->snapshot;
+    const std::map<std::string, Counts> counts = countsOf(snapshot);
+    const esde::EsdeLoadStatistics& statistics = read->statistics;
     spdlog::info("import --dry-run: {} system(s), {} entr(ies), {} issue(s), read in {:.2f} s",
-                 snapshot->systems.size(), snapshot->entries.size(), snapshot->issues.size(),
+                 snapshot.systems.size(), snapshot.entries.size(), snapshot.issues.size(),
                  secondsOf(statistics.totalTime));
 
     Output& out = *output ? **output : context.out;
     if (args->has("json")) {
         out.write(
-            reportJson(*snapshot, counts, statistics).dump(2, ' ', false, nlohmann::json::error_handler_t::replace) +
+            reportJson(snapshot, counts, statistics).dump(2, ' ', false, nlohmann::json::error_handler_t::replace) +
             "\n");
     } else {
-        writeText(*snapshot, counts, statistics, out);
+        writeText(snapshot, counts, statistics, out);
     }
     if (*output) {
         if (const Status written = (*output)->finish(); !written) {
@@ -359,7 +346,7 @@ ExitCode runImport(CommandContext& context) {
             return ExitCode::RuntimeFailure;
         }
     }
-    const bool failed = std::any_of(snapshot->issues.begin(), snapshot->issues.end(), [](const catalog::Issue& issue) {
+    const bool failed = std::any_of(snapshot.issues.begin(), snapshot.issues.end(), [](const catalog::Issue& issue) {
         return issue.severity == catalog::IssueSeverity::Error;
     });
     return failed ? ExitCode::ProblemsFound : ExitCode::Ok;
