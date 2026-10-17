@@ -284,6 +284,7 @@ TEST_CASE("cli/launch: --dry-run on the standard fixture", "[cli][launch]") {
         CHECK(run.code == ExitCode::UsageError);
         CHECK(run.err.find("--path") != std::string::npos);
         CHECK(setup.run({"launch", "--dry-run", "--system", "gb", "--path", "a/../b.gb"}).code == ExitCode::UsageError);
+        CHECK(setup.run({"launch", "--dry-run", "--system", "gb", "--path", "Tiny*.gb"}).code == ExitCode::UsageError);
     }
     CHECK(treeOf(setup.fixture.root()) == before);
 }

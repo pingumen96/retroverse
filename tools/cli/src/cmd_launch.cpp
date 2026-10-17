@@ -56,20 +56,23 @@ struct DryRun {
 };
 
 /// The game's availability on disk: its system's folder, then each element of its path as the folder spells it.
-void findGame(const catalog::SystemInfo& system, DryRun& run) {
+/// Error (InvalidArgument): a path no file can have (a wildcard, a character Windows names cannot hold).
+Status findGame(const catalog::SystemInfo& system, DryRun& run) {
     run.game.relativePath = run.requestedPath;
     if (system.availability != catalog::Availability::Available) {
         run.game.availability = catalog::Availability::SourceUnavailable;
         run.game.unavailableReason = system.unavailableReason;
-        return;
+        return ok();
     }
     const auto listed = esde::listedPath(system.romFolder, run.requestedPath);
     if (listed) {
         run.game.relativePath = listed->relativePath;
         run.game.directory = listed->directory;
-        return;
+        return ok();
     }
     switch (listed.error().code) {
+    case ErrorCode::InvalidArgument:
+        return propagate(listed.error());
     case ErrorCode::NotFound:
         run.game.availability = catalog::Availability::Missing;
         break;
@@ -82,6 +85,7 @@ void findGame(const catalog::SystemInfo& system, DryRun& run) {
         run.game.unavailableReason = catalog::SourceUnavailableReason::NotListable;
         break;
     }
+    return ok();
 }
 
 /// The game's own choice and title from the system's gamelist (the entry ES-DE applies to the file as listed).
@@ -273,7 +277,10 @@ ExitCode runLaunch(CommandContext& context) {
         return ExitCode::UsageError;
     }
     run.requestedPath = *relative;
-    findGame(system, run);
+    if (const Status found = findGame(system, run); !found) {
+        context.err.writeLine(fmt::format("{}: --path: {}", kName, found.error().toString()));
+        return ExitCode::UsageError;
+    }
     catalog::LaunchChoices choices = systemChoices(*library, system, {});
     readGameEntry(*library, system, run, choices);
     run.romPath = (system.romFolder / core::pathFromUtf8(run.game.relativePath)).make_preferred();
