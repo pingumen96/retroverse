@@ -42,7 +42,7 @@ constexpr std::array<Command, 14> kCommands{{
     {"media", "Show the media files of a game, or of a ROM path of a system", 8, runMedia},
     {"profiles", "List the emulator profiles and the commands of each system with their readiness", 10, runProfiles},
     {"launch", "Launch a game in its emulator (--dry-run: the command line it would run)", 10, runLaunch},
-    {"identities", "List identity changes: moved files, aliases and rows to review", 11, runIdentities},
+    {"identities", "Identities: history, review rows and their resolution, quick hashes", 11, runIdentities},
     {"assign", "Choose the emulator command or profile of a system or a game", 12, runAssign},
     {"sessions", "List the play sessions", 12, runSessions},
 }};

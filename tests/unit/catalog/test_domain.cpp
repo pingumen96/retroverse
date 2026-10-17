@@ -537,7 +537,10 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
             rv::Status putQuickHash(GameId, const QuickHash&) override { return m_active ? rv::ok() : ended(); }
             rv::Status putHistory(const IdentityEvent&) override { return m_active ? rv::ok() : ended(); }
             rv::Expected<std::int64_t> putReview(const ReviewRow&) override {
-                return m_active ? rv::Expected<std::int64_t>(1) : rv::Expected<std::int64_t>(ended());
+                if (!m_active) {
+                    return rv::propagate(ended().error());
+                }
+                return std::int64_t{1};
             }
             rv::Status resolveReview(std::int64_t, ReviewResolution, std::optional<GameId>) override {
                 return m_active ? rv::ok() : ended();
