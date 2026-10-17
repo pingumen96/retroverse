@@ -323,7 +323,8 @@ Json changesJson(const catalog::SystemChanges& changes) {
     return json;
 }
 
-/// A system worth a line of the text: rows, changes, issues, or an outcome other than applied.
+/// A system worth a line of the text: rows, changes, issues, or an outcome other than applied or source-unavailable (a
+/// system whose folder is missing and that holds no rows is left to the JSON).
 bool worthListing(const catalog::SystemChanges& changes) {
     const bool usual = changes.outcome == catalog::SystemOutcome::Applied ||
                        changes.outcome == catalog::SystemOutcome::SourceUnavailable;
@@ -356,7 +357,8 @@ std::string importJson(const CatalogImportRequest& request, const catalog::Libra
                              {"system", game.system.str()},
                              {"from", game.from.relativePath()},
                              {"to", game.to.relativePath()},
-                             {"reason", std::string(catalog::toString(game.reason))}});
+                             {"reason", std::string(catalog::toString(game.reason))},
+                             {"alias", game.alias ? Json(game.alias->toString()) : Json(nullptr)}});
     }
     Json reviews = Json::array();
     for (const catalog::ReviewRow& review : changes.reviews) {
@@ -514,14 +516,19 @@ ExitCode runCatalogImport(CommandContext& context, const CatalogImportRequest& r
         return failure(ExitCode::RuntimeFailure,
                        fmt::format("cannot open the catalog database: {}", store.error().toString()));
     }
-    const auto libraries = (*store)->libraries();
-    if (!libraries) {
-        return failure(ExitCode::RuntimeFailure,
-                       fmt::format("cannot read the catalog database: {}", libraries.error().toString()));
-    }
-    if (!libraries->empty() &&
-        std::none_of(libraries->begin(), libraries->end(),
-                     [&](const catalog::LibraryProfile& library) { return library.id == profile->id; })) {
+    // The import checks the library under its lock; this look first only words the refusal for the user (with the
+    // re-association to run), and words it again when the import refuses after another import made the catalog.
+    const auto otherLibrary = [&]() -> std::optional<ExitCode> {
+        const auto libraries = (*store)->libraries();
+        if (!libraries) {
+            return failure(ExitCode::RuntimeFailure,
+                           fmt::format("cannot read the catalog database: {}", libraries.error().toString()));
+        }
+        if (libraries->empty() ||
+            std::any_of(libraries->begin(), libraries->end(),
+                        [&](const catalog::LibraryProfile& library) { return library.id == profile->id; })) {
+            return std::nullopt;
+        }
         const catalog::LibraryId& held = libraries->front().id;
         return failure(
             ExitCode::UsageError,
@@ -531,6 +538,9 @@ ExitCode runCatalogImport(CommandContext& context, const CatalogImportRequest& r
                         "retroverse-cli library create --id {} --force (with the folder options library.json was "
                         "created with); to start a new catalog instead, delete {}",
                         profile->id.str(), held.str(), held.str(), held.str(), pathText(database->path())));
+    };
+    if (const auto refused = otherLibrary()) {
+        return *refused;
     }
 
     esde::EsdeLibrarySourceOptions sourceOptions;
@@ -553,7 +563,8 @@ ExitCode runCatalogImport(CommandContext& context, const CatalogImportRequest& r
             return failure(ExitCode::UsageError, error.toString()); // a system the configuration does not define
         }
         if (error.code == ErrorCode::Conflict && error.context == "library.json") {
-            return failure(ExitCode::UsageError, error.toString());
+            const auto refused = otherLibrary();
+            return refused ? *refused : failure(ExitCode::UsageError, error.toString());
         }
         if (error.code == ErrorCode::Conflict) {
             return failure(ExitCode::RuntimeFailure,

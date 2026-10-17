@@ -2,20 +2,24 @@
 
 // The import (ADR-0008 §4, §5, §7; I2 step 11a): a library's snapshot into the catalog store, through the ports alone
 // (ILibrarySource, IMediaResolver, ICatalogStore). One run:
-//  1. checks the library against the store, the authority on its id (a library.json naming another library is refused
-//     until it names the store's again: Conflict);
-//  2. takes the import lock (ICatalogStore::lockImport(): one import at a time, also across processes; Conflict when
+//  1. takes the import lock (ICatalogStore::lockImport(): one import at a time, also across processes; Conflict when
 //     another holds it) and keeps it to the end;
+//  2. checks the library against the store, the authority on its id (a library.json naming another library is refused
+//     until it names the store's again: Conflict), under the lock, so that two imports never both see an empty store;
 //  3. loads the snapshot (ILibrarySource::load()), handing it the disc groups the index holds (their references, with
-//     their heads' sizes and times: a sheet read before is not read again), then asks IMediaResolver::presence() for
-//     every entry with a key; neither reads a ROM byte (cue sheets and playlists aside), and neither runs inside the
-//     write transaction;
-//  4. begins the write transaction and reads, per system, the stored identities and index rows; computes what changes
-//     (ChangeSet) against them, system by system (below); then writes it: identities in ascending GameId order (those
-//     that exist before the new ones), index rows in ascending GameId order with the unchanged ones skipped (an
-//     unchanged upsert would still run the search index's trigger and rewrite the order index), removals, systems,
-//     disc groups (with their references by relative path), the import's issues and its record; commits (the store
-//     checkpoints the WAL after it). The store suspends its search index for a bulk write (prepareWrites()).
+//     the facts of the heads they were read from: a sheet read before is not read again; `db rebuild-index` reads every
+//     sheet that can be read, LibraryLoadOptions::readEverySheet), then refreshes the media resolver
+//     (IMediaResolver::refresh(): a resolver kept between runs sees the media as they are now) and asks presence() for
+//     every entry with a key; neither reads a ROM byte (cue sheets and playlists aside);
+//  4. reads, per system, the stored identities and index rows, and computes what changes (ChangeSet) against them,
+//     system by system (below), the pairing pass included: under the import lock alone, since whatever writes
+//     identities, aliases or index rows holds it (ICatalogStore);
+//  5. begins the write transaction and writes it: identities that become aliases first (IImportTransaction::putAlias(),
+//     which frees their paths), identities in ascending GameId order (those that exist before the new ones), index rows
+//     in ascending GameId order with the unchanged ones skipped (an unchanged upsert would still run the search index's
+//     trigger and rewrite the order index), removals, systems, disc groups (with their references by relative path),
+//     the import's issues and its record; commits (the store checkpoints the WAL after it). The store suspends its
+//     search index for a bulk write (prepareWrites()). The write transaction thus lasts as long as the writes alone.
 // A cancellation (ImportOptions::cancel) is honoured between pieces of work: the transaction is dropped and the store
 // stays as it was.
 //
@@ -28,8 +32,9 @@
 // present; an identity no entry names, in a folder that was listed, clears present (vanished, gamelist or not); under a
 // folder that could not be listed it stays as it was (never taken as vanished, out of any reconciliation). Identities
 // whose key was computed with another key rule or casing table are written again with the key computed now, in place
-// (StoredIdentity::keyVersion). Identities are never removed: a file that comes back at its path, or its key, gets its
-// id back. A new ROM root or drive letter changes no relative path, so no id.
+// (StoredIdentity::keyVersion). The import never removes an identity (only a pairing turns one into an alias, below): a
+// file that comes back at its path, or its key, gets its id back. A new ROM root or drive letter changes no relative
+// path, so no id.
 //
 // What the index holds, per system (SystemOutcome):
 //  - Applied: every entry of the snapshot with a key, as the snapshot gives it, with its media and sort key. Rows the
@@ -50,7 +55,11 @@
 //    for the system (its system row included) and the import reports it (kImportIssueMassDisappearance), unless
 //    ImportOptions::acceptRemovals. A system folder that is missing is no disappearance: it is SourceUnavailable.
 //  - NotConfigured: a system the store holds that the configuration no longer defines: its rows and system row
-//    removed, its identities kept (not present); under the guard while it had present files.
+//    removed, its identities kept (not present); under the guard while it had present files. Once that is done, a
+//    system of identities alone (no row, no system row, no file present) is left out of the ChangeSet and reported no
+//    more.
+// Disc groups follow their system: a group whose head lies below a folder that cannot be listed (or in a system folder
+// that cannot be) is kept as the index held it, as the head's row is.
 // Media are stored as presence and extension per kind (paths are derived again with IMediaResolver::path()); when
 // presence() is Unavailable (a media root out of reach, a media folder that cannot be listed), the entry keeps the
 // media its row held.
@@ -58,17 +67,23 @@
 // The seam for reconciliation (I2 step 11b, IIdentityPairing): per applied system, once the stored identities are
 // matched and before any GameId is given out, the import hands the pairing pass the vanished identities (present at
 // the last import, their file gone from a folder that was listed, with or without a MissingFile entry still naming
-// them) and the new files (entries seen on disk whose path and key match no identity). What it pairs, the import
-// applies as a move: the new file's entry takes the vanished identity's GameId and the identity takes the new file's
-// path, facts and present flag (MoveReason in ChangeSet::moved); a MissingFile entry that named the moved identity at
-// its old path then has no identity and gets a new GameId (a counter: the tuple's own value is the moved identity's).
-// The guard counts what stays gone after the pairing. Identities that exist are written before new ones, so that the
-// old path of a moved identity is free when the new identity of that path is written. Without a pairing pass (11a), a
-// moved file is a vanished identity and a new one.
+// them) and the new files: the entries seen on disk whose path and key match no identity, and those matched to an
+// identity that was not present at the last import (NewFile::heldBy: a file that comes back, or one that lands on the
+// path or key a MissingFile entry kept since a move). What it pairs, the import applies as a move: the new file's entry
+// takes the vanished identity's GameId and the identity takes the new file's path, facts and present flag (MoveReason
+// in ChangeSet::moved); a MissingFile entry that named the moved identity at its old path then has no identity and gets
+// a new GameId (a counter: the tuple's own value is the moved identity's); an identity that held the new file
+// (NewFile::heldBy) becomes an alias of the moved one (ADR-0008 §4's moved-back rule: MovedGame::alias,
+// IImportTransaction::putAlias(), written before any identity so that its path is free; its index rows leave). The
+// guard counts what stays gone after the pairing. Identities that exist are written before new ones, so that the old
+// path of a moved identity is free when the new identity of that path is written. Without a pairing pass (11a), a moved
+// file is a vanished identity and a new one. The pass runs under the import lock, outside the write transaction: what it
+// reads of the store (quick hashes) cannot change meanwhile, and hashing new files keeps no other writer waiting.
 
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -114,9 +129,11 @@ struct ImportOptions {
     /// not listed are left as they are. The source must give each listed system (an ILibrarySource made for those
     /// systems, or for every one); empty: every system.
     std::vector<SystemName> systems;
-    /// `db rebuild-index`: the library's index tables are cleared and every row is written again, from the snapshot,
-    /// the identities and, where the snapshot cannot tell (folders that cannot be listed, failed gamelists, media out of
-    /// reach, systems kept by the guard), the rows the index held before; the result equals what an import gives.
+    /// `db rebuild-index`: the library's index tables are cleared and every row is written again, from a fresh snapshot
+    /// (every cue sheet and playlist that can be read is read again: LibraryLoadOptions::readEverySheet), the identities
+    /// and, where the snapshot cannot tell (folders that cannot be listed, failed gamelists, sheets that cannot be read,
+    /// media out of reach, systems kept by the guard), the rows the index held before; the result equals what an import
+    /// gives, and a disc group stored wrong is read again.
     bool rebuildIndex = false;
 };
 
@@ -124,12 +141,13 @@ struct ImportOptions {
 struct ImportStatistics {
     std::chrono::nanoseconds loadTime{};    ///< ILibrarySource::load()
     std::chrono::nanoseconds mediaTime{};   ///< IMediaResolver::presence() of every entry
-    std::chrono::nanoseconds compareTime{}; ///< the store's reads and the comparison
-    std::chrono::nanoseconds writeTime{};   ///< the writes and the commit
+    std::chrono::nanoseconds compareTime{}; ///< the store's reads and the comparison (the pairing pass included)
+    std::chrono::nanoseconds writeTime{};   ///< the write transaction: the writes and the commit
     std::chrono::nanoseconds totalTime{};
     std::size_t entries = 0;           ///< the snapshot's entries (outside the system folders included)
     std::size_t mediaUnknown = 0;      ///< entries whose media presence() could not know (their stored media kept)
     std::size_t identitiesWritten = 0; ///< identities written (new, changed, re-keyed, moved)
+    std::size_t aliasesWritten = 0;    ///< identities turned into aliases (IImportTransaction::putAlias())
     std::size_t entriesWritten = 0;    ///< index rows written
     std::size_t entriesRemoved = 0;    ///< index rows removed
     std::size_t discGroupsWritten = 0;
@@ -158,11 +176,17 @@ struct VanishedIdentity {
     bool operator==(const VanishedIdentity&) const = default;
 };
 
-/// A new file, as the pairing pass sees it: an entry seen on disk whose path and key match no identity.
+/// A new file, as the pairing pass sees it: an entry seen on disk whose path and key match no identity, or match one
+/// that was not present at the last import.
 struct NewFile {
     LookupKey key;
     FileFacts file;
     EntryState state = EntryState::Game;
+    /// The identity its path or key matched, which was not present at the last import (its file comes back, or lands
+    /// where a MissingFile entry kept that identity since a move); nothing for a path and key no identity has. Paired
+    /// with a vanished identity (MoveReason::MovedBack), the file takes the vanished identity and this one becomes its
+    /// alias; left unpaired, the file keeps this identity.
+    std::optional<GameId> heldBy;
 
     bool operator==(const NewFile&) const = default;
 };
@@ -199,8 +223,9 @@ struct IdentityPairs {
 };
 
 /// The seam where I2 step 11b pairs vanished identities with new files (ADR-0008 §4: quick hashes, size, time and
-/// name, review rows). Called once per applied system that has both, from the import's thread, inside its write
-/// transaction (reads of the same store see its writes). Errors end the import (Cancelled when `cancel` was set).
+/// name, the moved-back rule, review rows). Called once per system that has both and whose gamelist was read, from the
+/// import's thread, under the import lock and before the write transaction (nothing is written yet; whatever writes
+/// identities holds the same lock). Errors end the import (Cancelled when `cancel` was set).
 class IIdentityPairing {
 public:
     virtual ~IIdentityPairing() = default;
@@ -208,7 +233,8 @@ public:
 };
 
 /// The import service. Used from one thread at a time (the catalog worker in the app, the main thread of
-/// retroverse-cli); the ports must outlive it.
+/// retroverse-cli); the ports must outlive it, and may be kept for many runs (each run refreshes the media resolver
+/// and loads the library anew).
 class ImportService {
 public:
     /// `pairing` may be null: no reconciliation (I2 step 11a).

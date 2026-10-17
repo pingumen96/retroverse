@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <string>
@@ -35,6 +36,19 @@ tl::unexpected<Error> cancelledError() {
 Error withPrefix(Error error, std::string_view prefix) {
     error.message = fmt::format("{}: {}", prefix, error.message);
     return error;
+}
+
+/// Whether a system's figures go into the import's record (ImportRecord::systems): something changed or was reported,
+/// or its outcome is not the usual one. The systems whose rows stayed as they were (applied, or without a folder and
+/// without rows) are left out, so that the record of an import that changed nothing stays small (the app imports at
+/// every start).
+bool worthRecording(const SystemChanges& changes) {
+    const bool changed = changes.added > 0 || changes.changed > 0 || changes.removed > 0 || changes.newIdentities > 0 ||
+                         changes.vanished > 0 || changes.returned > 0 || changes.rekeyed > 0 || changes.moved > 0 ||
+                         changes.issues > 0;
+    const bool usual = changes.outcome == SystemOutcome::Applied ||
+                       (changes.outcome == SystemOutcome::SourceUnavailable && changes.rows() == 0);
+    return changed || !usual;
 }
 
 /// The folders of a system that could not be listed, by key: nothing is known below them (ADR-0008 §4).
@@ -84,13 +98,18 @@ struct SystemPlan {
     std::vector<std::ptrdiff_t> entryIdentity; ///< per entries[i]: an index into identities, or kNone (a new key)
     std::vector<std::ptrdiff_t> identityEntry; ///< per identity: an index into entries, or kNone
     std::vector<std::optional<MoveReason>> moved; ///< per identity: paired with a new file
+    std::vector<bool> aliased;                 ///< per identity: becomes an alias of a moved identity
     std::vector<GameId> entryIds;              ///< per entries[i], once given out
-    /// What the pairing pass decided, reported once the guard lets the system be applied.
+    /// What the pairing pass decided, applied and reported once the guard lets the system be applied.
     std::vector<MovedGame> moves;
+    std::vector<IdentityAlias> aliases;
     std::vector<ReviewRow> reviews;
 
     /// The system's changes are written (false: kept as it was).
     bool apply = true;
+    /// A system the configuration no longer defines of which only identities are left (no row, no system row, no file
+    /// present): nothing to report unless an identity is re-keyed.
+    bool quiet = false;
     SystemChanges changes;
 };
 
@@ -98,6 +117,7 @@ struct SystemPlan {
 struct Writes {
     std::vector<SystemInfo> systems;
     std::vector<SystemName> removedSystems;
+    std::vector<IdentityAlias> aliases;           ///< identities that become aliases: before any identity is written
     std::vector<StoredIdentity> identitiesBefore; ///< identities that exist: written first
     std::vector<StoredIdentity> identitiesNew;
     std::vector<IndexedEntry> rows;
@@ -229,7 +249,7 @@ Expected<SystemPlan> ImportRun::readSystem(const SystemName& name, const std::ve
     }
     plan.rows = std::move(*rows);
     for (const IndexedDiscGroup& group : m_storedGroups) {
-        if (group.cached.group.system == name) {
+        if (group.group.system == name) {
             plan.groups.push_back(group);
         }
     }
@@ -267,6 +287,7 @@ void ImportRun::keepAsItWas(SystemPlan& plan, SystemOutcome outcome) {
     plan.changes.kept = plan.rows.size();
     plan.changes.moved = 0; // what the pairing pass decided is not applied, nor reported
     plan.moves.clear();
+    plan.aliases.clear();
     plan.reviews.clear();
 }
 
@@ -276,6 +297,7 @@ Status ImportRun::match(SystemPlan& plan) {
     plan.entryIdentity.assign(entryCount, kNone);
     plan.identityEntry.assign(identities.size(), kNone);
     plan.moved.assign(identities.size(), std::nullopt);
+    plan.aliased.assign(identities.size(), false);
     const auto entryAt = [&](std::size_t i) -> const CatalogEntry& { return m_snapshot.entries[plan.entries[i]]; };
 
     // The exact stored relative path first (a file has one identity: paths are unique per system) ...
@@ -342,14 +364,24 @@ Status ImportRun::match(SystemPlan& plan) {
             vanishedIndex.push_back(j);
         }
     }
+    // The new files: seen on disk, their path and key matched to no identity, or to one that was not present at the
+    // last import (heldBy: a file that comes back, or one that lands where a MissingFile entry kept an identity since a
+    // move, which the pairing pass may give to a vanished identity instead: ADR-0008 §4's moved-back rule).
     std::vector<NewFile> newFiles;
     std::vector<std::size_t> newFileIndex;
     for (std::size_t i = 0; i < entryCount; ++i) {
         const CatalogEntry& entry = entryAt(i);
-        if (plan.entryIdentity[i] == kNone && entry.file && entry.availability == Availability::Available) {
-            newFiles.push_back(NewFile{entry.key, *entry.file, entry.state});
-            newFileIndex.push_back(i);
+        const std::ptrdiff_t holder = plan.entryIdentity[i];
+        if (!entry.file || entry.availability != Availability::Available ||
+            (holder != kNone && identities[static_cast<std::size_t>(holder)].present)) {
+            continue;
         }
+        NewFile file{entry.key, *entry.file, entry.state, std::nullopt};
+        if (holder != kNone) {
+            file.heldBy = identities[static_cast<std::size_t>(holder)].id;
+        }
+        newFiles.push_back(std::move(file));
+        newFileIndex.push_back(i);
     }
 
     std::size_t paired = 0;
@@ -382,10 +414,20 @@ Status ImportRun::match(SystemPlan& plan) {
             if (const std::ptrdiff_t old = plan.identityEntry[j]; old != kNone) {
                 plan.entryIdentity[static_cast<std::size_t>(old)] = kNone;
             }
+            // The identity that held the file without it (NewFile::heldBy) becomes an alias of the moved one.
+            std::optional<GameId> alias;
+            if (const std::ptrdiff_t holder = plan.entryIdentity[i]; holder != kNone) {
+                const auto h = static_cast<std::size_t>(holder);
+                plan.identityEntry[h] = kNone;
+                plan.aliased[h] = true;
+                plan.aliases.push_back(IdentityAlias{identities[h], identities[j].id, pair.reason});
+                alias = identities[h].id;
+            }
             plan.identityEntry[j] = static_cast<std::ptrdiff_t>(i);
             plan.entryIdentity[i] = static_cast<std::ptrdiff_t>(j);
             plan.moved[j] = pair.reason;
-            plan.moves.push_back(MovedGame{identities[j].id, plan.name, identities[j].key, entryAt(i).key, pair.reason});
+            plan.moves.push_back(
+                MovedGame{identities[j].id, plan.name, identities[j].key, entryAt(i).key, pair.reason, alias});
             ++paired;
         }
         plan.reviews = std::move(pairs->reviews);
@@ -432,7 +474,12 @@ Status ImportRun::assignIds() {
 }
 
 void ImportRun::buildIdentityWrites(SystemPlan& plan) {
+    // Identities that become aliases go first (IImportTransaction::putAlias()), which frees their paths.
+    m_writes.aliases.insert(m_writes.aliases.end(), plan.aliases.begin(), plan.aliases.end());
     for (std::size_t j = 0; j < plan.identities.size(); ++j) {
+        if (plan.aliased[j]) {
+            continue;
+        }
         const StoredIdentity& stored = plan.identities[j];
         StoredIdentity identity = stored;
         const std::ptrdiff_t matched = plan.identityEntry[j];
@@ -564,12 +611,33 @@ Status ImportRun::buildRowWrites(SystemPlan& plan) {
 }
 
 void ImportRun::buildGroupWrites(SystemPlan& plan) {
+    // The groups whose head lies below a folder that cannot be listed (or in a system folder that cannot be) are kept
+    // as the index held them, as the head's row is: the snapshot knows them only from the cache. A member that became
+    // an alias is named by the identity it stands for.
+    std::vector<IndexedDiscGroup> groups;
+    for (const IndexedDiscGroup& stored : plan.groups) {
+        if (!plan.unavailable.reasonFor(stored.group.head.key())) {
+            continue;
+        }
+        IndexedDiscGroup kept = stored;
+        for (GameId& member : kept.members) {
+            for (const IdentityAlias& alias : plan.aliases) {
+                member = member == alias.alias.id ? alias.game : member;
+            }
+        }
+        groups.push_back(std::move(kept));
+    }
+    std::vector<GameId> keptHeads;
+    for (const IndexedDiscGroup& group : groups) {
+        keptHeads.push_back(group.head);
+    }
+    std::sort(keptHeads.begin(), keptHeads.end());
+
     std::unordered_map<std::string_view, std::size_t> byPath;
     byPath.reserve(plan.entries.size());
     for (std::size_t i = 0; i < plan.entries.size(); ++i) {
         byPath.emplace(m_snapshot.entries[plan.entries[i]].key.relativePath(), i);
     }
-    std::vector<IndexedDiscGroup> groups;
     for (const DiscGroup& group : m_snapshot.discGroups) {
         if (group.system != plan.name) {
             continue;
@@ -578,13 +646,16 @@ void ImportRun::buildGroupWrites(SystemPlan& plan) {
         if (head == byPath.end()) {
             continue; // a head is an entry of its system: never the case
         }
-        IndexedDiscGroup indexed;
-        indexed.head = plan.entryIds[head->second];
-        indexed.cached.group = group;
-        if (const auto& file = m_snapshot.entries[plan.entries[head->second]].file) {
-            indexed.cached.headSize = file->size;
-            indexed.cached.headLastWriteTime = file->lastWriteTime;
+        const GameId headId = plan.entryIds[head->second];
+        if (m_snapshot.entries[plan.entries[head->second]].availability == Availability::SourceUnavailable ||
+            std::binary_search(keptHeads.begin(), keptHeads.end(), headId)) {
+            continue; // below a folder that cannot be listed: the group the index held, if any, stands
         }
+        IndexedDiscGroup indexed;
+        indexed.head = headId;
+        // With the facts of the head its references were read from (the source's: the listing's when it was read, the
+        // cached group's when its references were kept), so that kept references never pass for a newer sheet.
+        indexed.group = group;
         bool complete = true;
         for (const LookupKey& member : group.members) {
             const auto found = byPath.find(member.relativePath());
@@ -598,25 +669,23 @@ void ImportRun::buildGroupWrites(SystemPlan& plan) {
             groups.push_back(std::move(indexed));
         }
     }
-    // The groups the index held whose head is under a folder that cannot be listed stay, as their rows do.
-    for (const IndexedDiscGroup& stored : plan.groups) {
-        const bool replaced = std::any_of(groups.begin(), groups.end(),
-                                          [&](const IndexedDiscGroup& group) { return group.head == stored.head; });
-        if (!replaced && plan.unavailable.reasonFor(stored.cached.group.head.key())) {
-            groups.push_back(stored);
-        }
+    std::unordered_map<GameId, std::size_t> storedByHead;
+    storedByHead.reserve(plan.groups.size());
+    for (std::size_t g = 0; g < plan.groups.size(); ++g) {
+        storedByHead.emplace(plan.groups[g].head, g);
     }
+    std::vector<GameId> heads;
     for (const IndexedDiscGroup& group : groups) {
-        const auto stored = std::find_if(plan.groups.begin(), plan.groups.end(),
-                                         [&](const IndexedDiscGroup& candidate) { return candidate.head == group.head; });
-        if (m_options.rebuildIndex || stored == plan.groups.end() || !(*stored == group)) {
+        heads.push_back(group.head);
+        const auto stored = storedByHead.find(group.head);
+        if (m_options.rebuildIndex || stored == storedByHead.end() || !(plan.groups[stored->second] == group)) {
             m_writes.groups.push_back(group);
         }
     }
+    std::sort(heads.begin(), heads.end());
     if (!m_options.rebuildIndex) {
         for (const IndexedDiscGroup& stored : plan.groups) {
-            if (std::none_of(groups.begin(), groups.end(),
-                             [&](const IndexedDiscGroup& group) { return group.head == stored.head; })) {
+            if (!std::binary_search(heads.begin(), heads.end(), stored.head)) {
                 m_writes.groupRemovals.push_back(stored.head);
             }
         }
@@ -672,6 +741,11 @@ Status ImportRun::buildWrites(SystemPlan& plan) {
 }
 
 Status ImportRun::write() {
+    auto begun = m_store.beginImport(m_profile.id);
+    if (!begun) {
+        return propagate(begun.error());
+    }
+    m_transaction = std::move(*begun);
     IImportTransaction& transaction = *m_transaction;
     ImportStatistics& statistics = m_result.statistics;
     std::size_t sinceCheck = 0;
@@ -685,6 +759,8 @@ Status ImportRun::write() {
         return ok();
     };
     const auto byId = [](const auto& a, const auto& b) { return a.id < b.id; };
+    std::sort(m_writes.aliases.begin(), m_writes.aliases.end(),
+              [](const IdentityAlias& a, const IdentityAlias& b) { return a.alias.id < b.alias.id; });
     std::sort(m_writes.identitiesBefore.begin(), m_writes.identitiesBefore.end(), byId);
     std::sort(m_writes.identitiesNew.begin(), m_writes.identitiesNew.end(), byId);
     std::sort(m_writes.rows.begin(), m_writes.rows.end(), byId);
@@ -705,6 +781,12 @@ Status ImportRun::write() {
         if (auto cleared = transaction.clearIndex(m_profile.id); !cleared) {
             return cleared;
         }
+    }
+    for (const IdentityAlias& alias : m_writes.aliases) {
+        if (auto put = transaction.putAlias(alias); !put) {
+            return put;
+        }
+        ++statistics.aliasesWritten;
     }
     for (const SystemInfo& system : m_writes.systems) {
         if (auto put = transaction.putSystem(m_profile.id, system); !put) {
@@ -771,7 +853,8 @@ Status ImportRun::write() {
     record.finishedAt = core::utcNow();
     record.acceptRemovals = m_options.acceptRemovals;
     record.systemsAsked = m_options.systems;
-    record.systems = m_result.changes.systems;
+    std::copy_if(m_result.changes.systems.begin(), m_result.changes.systems.end(), std::back_inserter(record.systems),
+                 worthRecording);
     if (auto recorded = transaction.recordImport(record); !recorded) {
         return recorded;
     }
@@ -785,33 +868,36 @@ Expected<ImportResult> ImportRun::run() {
     ImportStatistics& statistics = m_result.statistics;
     ChangeSet& changes = m_result.changes;
 
-    // 1. The library: the store is the authority on its id. 2. One import at a time, from the start.
+    // 1. One import at a time, from the start. 2. The library, under the lock (so that two imports never both see an
+    // empty store): the store is the authority on its id.
     if (m_options.rebuildIndex && !m_options.systems.empty()) {
         return makeError(ErrorCode::InvalidArgument, "the index is rebuilt for the whole library, never for some systems");
-    }
-    if (auto checked = checkLibrary(); !checked) {
-        return propagate(checked.error());
     }
     auto lock = m_store.lockImport(m_profile.id);
     if (!lock) {
         return propagate(lock.error());
     }
     m_lock = std::move(*lock);
+    if (auto checked = checkLibrary(); !checked) {
+        return propagate(checked.error());
+    }
 
-    // 3. The snapshot, with the disc groups the index holds as its cache, then the media of its entries.
+    // 3. The snapshot, with the disc groups the index holds as its cache (a rebuild reads every sheet it can), then the
+    // media of its entries, the resolver refreshed first (it may answer from the listings of an earlier run).
     auto groups = m_store.discGroups(m_profile.id);
     if (!groups) {
         return propagate(groups.error());
     }
     m_storedGroups = std::move(*groups);
-    std::vector<CachedDiscGroup> cache;
+    std::vector<DiscGroup> cache;
     cache.reserve(m_storedGroups.size());
     for (const IndexedDiscGroup& group : m_storedGroups) {
-        cache.push_back(group.cached);
+        cache.push_back(group.group);
     }
     LibraryLoadOptions load;
     load.cancel = m_options.cancel;
     load.discGroups = cache;
+    load.readEverySheet = m_options.rebuildIndex;
     auto snapshot = m_source.load(m_profile, load);
     if (!snapshot) {
         return propagate(snapshot.error());
@@ -834,18 +920,15 @@ Expected<ImportResult> ImportRun::run() {
         return cancelledError();
     }
     const Clock::time_point mediaStart = Clock::now();
+    m_media.refresh();
     if (auto asked = askMedia(); !asked) {
         return propagate(asked.error());
     }
     statistics.mediaTime = Clock::now() - mediaStart;
 
-    // 4. The write transaction, then what the store holds.
+    // 4. What the store holds, read under the import lock alone (whatever writes identities, aliases or index rows
+    // holds it, so nothing changes them before the writes), and what changes.
     const Clock::time_point compareStart = Clock::now();
-    auto transaction = m_store.beginImport(m_profile.id);
-    if (!transaction) {
-        return propagate(transaction.error());
-    }
-    m_transaction = std::move(*transaction);
     auto taken = m_store.takenGameIds();
     auto storedSystems = m_store.systems(m_profile.id);
     auto identitySystems = m_store.identitySystems(m_profile.id);
@@ -903,6 +986,9 @@ Expected<ImportResult> ImportRun::run() {
         }
         if (info == nullptr) {
             system.changes.outcome = SystemOutcome::NotConfigured;
+            // Its rows and system row removed by an import that accepted it, no file of it present: identities alone
+            // are left, which stay (re-keyed when their key version is old). Nothing to remove or report.
+            system.quiet = system.rows.empty() && !system.storedInfo && !hadFiles;
         }
         if (auto matched = match(system); !matched) {
             return propagate(matched.error());
@@ -923,7 +1009,7 @@ Expected<ImportResult> ImportRun::run() {
                          : fmt::format("{} of its {} present file(s) are gone: nothing changed (accept the removals "
                                        "to apply them)",
                                        gone, present));
-        } else if (info == nullptr) {
+        } else if (info == nullptr && !system.quiet) {
             addIssue(IssueSeverity::Warning, kImportIssueSystemNotConfigured, name,
                      fmt::format("the configuration no longer defines it: its {} row(s) are removed",
                                  system.rows.size()));
@@ -946,13 +1032,17 @@ Expected<ImportResult> ImportRun::run() {
         }
     }
 
-    // The ChangeSet: the snapshot's issues, then the import's; per system, the issues naming it.
+    // The ChangeSet: the snapshot's issues, then the import's; per system, the issues naming it (a system of
+    // identities alone that nothing changed is left out).
     changes.issues = m_snapshot.issues;
     changes.issues.insert(changes.issues.end(), m_issues.begin(), m_issues.end());
     for (SystemPlan& plan : m_plans) {
         plan.changes.issues = static_cast<std::size_t>(
             std::count_if(changes.issues.begin(), changes.issues.end(),
                           [&](const Issue& issue) { return issue.system == plan.name.str(); }));
+        if (plan.quiet && plan.changes.rekeyed == 0 && plan.changes.issues == 0) {
+            continue;
+        }
         changes.systems.push_back(plan.changes);
         changes.moved.insert(changes.moved.end(), plan.moves.begin(), plan.moves.end());
         changes.reviews.insert(changes.reviews.end(), plan.reviews.begin(), plan.reviews.end());
@@ -962,6 +1052,7 @@ Expected<ImportResult> ImportRun::run() {
         return cancelledError();
     }
 
+    // 5. The write transaction, for the writes alone.
     const Clock::time_point writeStart = Clock::now();
     if (auto written = write(); !written) {
         return propagate(written.error());

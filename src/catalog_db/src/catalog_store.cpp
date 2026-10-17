@@ -558,6 +558,10 @@ enum class Sql : std::size_t {
     ClearDiscGroups,
     ClearGames,
     ClearSystems,
+    PruneImportRecords,
+    DeleteDiscMembership,
+    InsertAlias,
+    DeleteIdentity,
     Count,
 };
 
@@ -594,7 +598,8 @@ std::string sqlOf(Sql which) {
     case Sql::SelectTakenIds:
         return "SELECT id FROM rv_game_identities UNION SELECT alias FROM rv_identity_aliases ORDER BY 1";
     case Sql::UpsertIdentity:
-        // first_seen once, when the identity is made; last_seen whenever an import sees its file.
+        // first_seen once, when the identity is made; last_seen whenever it is written with its file present (an
+        // import writes an identity only when it changes: first seen, its path or file facts changed, re-keyed).
         return "INSERT INTO rv_game_identities (id, library, system, lookup_key, relative_path, key_rule, key_casing, "
                "present, is_directory, file_size, file_time, file_hidden, first_seen, last_seen) "
                "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, CASE WHEN ?8 THEN ?13 END) "
@@ -700,6 +705,17 @@ std::string sqlOf(Sql which) {
         return "DELETE FROM idx_games WHERE library = ?1";
     case Sql::ClearSystems:
         return "DELETE FROM idx_systems WHERE library = ?1";
+    case Sql::PruneImportRecords:
+        // The newest ?2 records of the library stay.
+        return "DELETE FROM rv_imports WHERE library = ?1 AND id <= (SELECT id FROM rv_imports WHERE library = ?1 "
+               "ORDER BY id DESC LIMIT 1 OFFSET ?2)";
+    case Sql::DeleteDiscMembership:
+        return "DELETE FROM idx_disc_members WHERE member = ?1";
+    case Sql::InsertAlias:
+        return "INSERT INTO rv_identity_aliases (alias, game, lookup_key, relative_path, at, reason) "
+               "VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+    case Sql::DeleteIdentity:
+        return "DELETE FROM rv_game_identities WHERE id = ?1";
     case Sql::Count:
         break;
     }
@@ -1144,6 +1160,7 @@ public:
     Status removeSystem(const LibraryId& library, const SystemName& system) override;
     Status putDiscGroup(const catalog::IndexedDiscGroup& group) override;
     Status removeDiscGroup(GameId head) override;
+    Status putAlias(const catalog::IdentityAlias& alias) override;
     Status putImportIssues(const LibraryId& library, std::span<const catalog::Issue> issues,
                            std::span<const SystemName> systems) override;
     Status recordImport(const catalog::ImportRecord& record) override;
@@ -1524,8 +1541,7 @@ Status SqliteCatalogStore::ImportTransaction::removeEntry(GameId id) {
         return makeError(ErrorCode::InvalidArgument, "no GameId to remove");
     }
     // The rows that refer to the game first, then its own, as one write; its identity stays. The disc group it heads
-    // goes with it (members and references); a group it is a member of is its head's, which keeps it as it was read
-    // (CachedDiscGroup).
+    // goes with it (members and references); a group it is a member of is its head's, which keeps it as it was read.
     constexpr std::array<Sql, 5> kRemovals{Sql::DeleteMedia, Sql::DeleteDiscMembers, Sql::DeleteDiscReferences,
                                            Sql::DeleteDiscGroup, Sql::DeleteGame};
     std::array<Statement*, kRemovals.size()> removals{};
@@ -1637,7 +1653,7 @@ Status SqliteCatalogStore::ImportTransaction::putDiscGroup(const catalog::Indexe
     if (auto open = active(); !open) {
         return open;
     }
-    const catalog::DiscGroup& group = indexed.cached.group;
+    const catalog::DiscGroup& group = indexed.group;
     const std::string context = indexed.head.toString() + " " + group.system.str() + "/" + group.head.relativePath();
     if (!indexed.head.isValid() || indexed.members.size() != group.members.size() ||
         std::any_of(indexed.members.begin(), indexed.members.end(), [](GameId id) { return !id.isValid(); })) {
@@ -1647,7 +1663,7 @@ Status SqliteCatalogStore::ImportTransaction::putDiscGroup(const catalog::Indexe
                     [](const LookupKey& reference) { return reference.empty(); })) {
         return makeError(ErrorCode::InvalidArgument, "a disc group's reference has no path", context);
     }
-    const auto size = storedInteger(indexed.cached.headSize, "the head's size");
+    const auto size = storedInteger(group.headSize, "the head's size");
     if (!size) {
         return propagate(withPrefix(size.error(), "cannot store the disc group " + context));
     }
@@ -1682,7 +1698,7 @@ Status SqliteCatalogStore::ImportTransaction::putDiscGroup(const catalog::Indexe
         upsert->bindInt(1, head)
             .bindText(2, catalog::toString(group.kind))
             .bindInt(3, *size)
-            .bindInt(4, indexed.cached.headLastWriteTime);
+            .bindInt(4, group.headLastWriteTime);
         if (auto stored = written(upsert->run()); !stored) {
             return stored;
         }
@@ -1733,6 +1749,80 @@ Status SqliteCatalogStore::ImportTransaction::removeDiscGroup(GameId head) {
             if (auto removed = remove->run(); !removed) {
                 return propagate(
                     failed(withPrefix(removed.error(), "cannot remove the disc group of " + head.toString())));
+            }
+        }
+        return ok();
+    });
+}
+
+Status SqliteCatalogStore::ImportTransaction::putAlias(const catalog::IdentityAlias& alias) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    const StoredIdentity& identity = alias.alias;
+    const std::string context = identity.id.toString() + " -> " + alias.game.toString();
+    if (!identity.id.isValid() || !alias.game.isValid() || identity.id == alias.game) {
+        return makeError(ErrorCode::InvalidArgument, "an alias needs two different GameIds", context);
+    }
+    // Both identities in the store, of one library and system.
+    auto owner = statement(Sql::SelectIdentitySystem);
+    if (!owner) {
+        return propagate(owner.error());
+    }
+    using Owner = std::optional<std::pair<std::string, std::string>>;
+    const auto ownerOf = [&](GameId id) -> Expected<Owner> {
+        (*owner)->bindInt(1, static_cast<std::int64_t>(id.value()));
+        return readSingleRow(**owner, [](const Statement& row, bool hasRow) -> Expected<Owner> {
+            if (!hasRow) {
+                return Owner();
+            }
+            return Owner(std::pair(std::string(row.columnText(0)), std::string(row.columnText(1))));
+        });
+    };
+    const auto aliasOwner = ownerOf(identity.id);
+    if (!aliasOwner) {
+        return propagate(aliasOwner.error());
+    }
+    const auto gameOwner = ownerOf(alias.game);
+    if (!gameOwner) {
+        return propagate(gameOwner.error());
+    }
+    if (!*aliasOwner || !*gameOwner || **aliasOwner != **gameOwner) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "an alias and the identity it stands for must both be in the store, of one library and system",
+                         context);
+    }
+    constexpr std::array<Sql, 8> kStatements{Sql::DeleteMedia,          Sql::DeleteDiscMembers, Sql::DeleteDiscReferences,
+                                             Sql::DeleteDiscGroup,      Sql::DeleteGame,        Sql::DeleteDiscMembership,
+                                             Sql::InsertAlias,          Sql::DeleteIdentity};
+    std::array<Statement*, kStatements.size()> statements{};
+    for (std::size_t i = 0; i < kStatements.size(); ++i) {
+        auto prepared = statement(kStatements[i]);
+        if (!prepared) {
+            return propagate(prepared.error());
+        }
+        statements[i] = *prepared;
+    }
+    const auto id = static_cast<std::int64_t>(identity.id.value());
+    return asOne([&]() -> Status {
+        // The index rows that name it (its own, the group it heads, its places among other groups' members), the alias
+        // recorded with its last key and path, then the identity row, which frees its relative path.
+        for (std::size_t i = 0; i < kStatements.size(); ++i) {
+            Statement& write = *statements[i];
+            write.bindInt(1, id);
+            if (kStatements[i] == Sql::InsertAlias) {
+                write.bindInt(2, static_cast<std::int64_t>(alias.game.value()))
+                    .bindText(3, identity.key.key())
+                    .bindText(4, identity.key.relativePath())
+                    .bindText(5, m_now)
+                    .bindText(6, catalog::toString(alias.reason));
+            }
+            if (auto written = write.run(); !written) {
+                Error error = written.error();
+                if (isConstraintFailure(error, "FOREIGN KEY")) {
+                    error.message = fmt::format("a state row still names the identity ({})", error.message);
+                }
+                return propagate(failed(withPrefix(std::move(error), "cannot turn " + context + " into an alias")));
             }
         }
         return ok();
@@ -1824,6 +1914,15 @@ Status SqliteCatalogStore::ImportTransaction::recordImport(const catalog::Import
                 fmt::format("its library '{}' is not in the store ({})", record.library.str(), error.message);
         }
         return propagate(failed(withPrefix(std::move(error), "cannot record the import")));
+    }
+    // A bounded history: the newest kKeptImportRecords of the library stay.
+    auto prune = statement(Sql::PruneImportRecords);
+    if (!prune) {
+        return propagate(prune.error());
+    }
+    (*prune)->bindText(1, record.library.str()).bindInt(2, static_cast<std::int64_t>(kKeptImportRecords));
+    if (auto pruned = (*prune)->run(); !pruned) {
+        return propagate(failed(withPrefix(pruned.error(), "cannot delete the oldest import records")));
     }
     return ok();
 }
@@ -2227,11 +2326,11 @@ Expected<std::vector<catalog::IndexedDiscGroup>> SqliteCatalogStore::discGroups(
             }
             catalog::IndexedDiscGroup group;
             group.head = *head;
-            group.cached.group.system = std::move(*system);
-            group.cached.group.head = std::move(*key);
-            group.cached.group.kind = *kind;
-            group.cached.headSize = *size;
-            group.cached.headLastWriteTime = row.columnInt(3);
+            group.group.system = std::move(*system);
+            group.group.head = std::move(*key);
+            group.group.kind = *kind;
+            group.group.headSize = *size;
+            group.group.headLastWriteTime = row.columnInt(3);
             groups.push_back(std::move(group));
         }
     }
@@ -2269,7 +2368,7 @@ Expected<std::vector<catalog::IndexedDiscGroup>> SqliteCatalogStore::discGroups(
                                        : propagate(key.error());
             }
             group->members.push_back(*member);
-            group->cached.group.members.push_back(std::move(*key));
+            group->group.members.push_back(std::move(*key));
         }
     }
     {
@@ -2297,12 +2396,12 @@ Expected<std::vector<catalog::IndexedDiscGroup>> SqliteCatalogStore::discGroups(
             if (!key) {
                 return propagate(key.error());
             }
-            group->cached.group.references.push_back(std::move(*key));
+            group->group.references.push_back(std::move(*key));
         }
     }
     // The port's order: by system, then head (the keys computed again, whatever the casing table they were stored with).
     sortByPermutation(groups, [](const catalog::IndexedDiscGroup& a, const catalog::IndexedDiscGroup& b) {
-        return std::tie(a.cached.group.system, a.cached.group.head) < std::tie(b.cached.group.system, b.cached.group.head);
+        return std::tie(a.group.system, a.group.head) < std::tie(b.group.system, b.group.head);
     });
     return groups;
 }

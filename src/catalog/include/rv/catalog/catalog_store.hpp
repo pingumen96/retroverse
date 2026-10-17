@@ -8,17 +8,20 @@
 // comparison, and one write transaction per import for libraries, identities, systems and entries. Step 11a (the
 // import, ImportService) adds: the systems and disc groups the index holds (IndexedDiscGroup: the cache of the next
 // load, LibraryLoadOptions::discGroups, with the GameIds of the head and the members), the systems of the identities,
-// the import lock held apart from the transaction (lockImport(): an import holds it while it reads the library, before
-// its write transaction), and in the transaction: the bulk write hint (prepareWrites()), the index cleared (`db
-// rebuild-index`), systems and disc groups written and removed, the import's issues, and the import records kept for
-// the user (ImportRecord). Step 11b adds what reconciliation needs (history, aliases, review rows, quick hashes); play
-// sessions have their own store (rv_catalog_db's session store, step 12).
+// the import lock held apart from the transaction (lockImport(): an import holds it from before it reads the library
+// to its end), and in the transaction: the bulk write hint (prepareWrites()), the index cleared (`db rebuild-index`),
+// systems and disc groups written and removed, identities turned into aliases (putAlias(), the step where step 11b's
+// moved-back pairings free a path), the import's issues, and the import records kept for the user (ImportRecord).
+// Step 11b adds what else reconciliation needs (history, review rows, quick hashes); play sessions have their own store
+// (rv_catalog_db's session store, step 12).
 //
 // Reads and the import transaction: an instance has one connection. Its reads made while one of its import
 // transactions is open see that transaction's writes; other connections and processes see them only once committed.
-// The import therefore begins its transaction, which takes the import lock (or uses the one lockImport() holds),
-// before it reads the identities, the taken GameIds and the index rows it compares with the snapshot: nothing can
-// change them between its reads and its writes.
+// Whatever writes identities, aliases or index rows holds the import lock (the import; step 11b's quick-hash pass and
+// review resolution take it too), so the import reads the identities, the taken GameIds and the index rows it compares
+// with the snapshot under the import lock alone, before its write transaction: nothing can change them between its
+// reads and its writes, and the other writers of the database (play sessions, launch choices) wait only for its
+// writes.
 
 #include <cstddef>
 #include <cstdint>
@@ -73,15 +76,15 @@ struct IndexedEntry {
     bool operator==(const IndexedEntry&) const = default;
 };
 
-/// A disc group as the index holds it (ADR-0008 §3): the group (its head, kind, members and references by key) with
-/// the size and last write time its head had when it was read, which the next load takes back as its cache
+/// A disc group as the index holds it (ADR-0008 §3): the group (its head, kind, members and references by key, with the
+/// size and last write time of the head its references were read from), which the next load takes back as its cache
 /// (LibraryLoadOptions::discGroups), and the GameIds of the head and of the members. The references are kept by
 /// relative path, since they include files that are not there (and have no identity).
 struct IndexedDiscGroup {
     /// The head's GameId.
     GameId head;
-    CachedDiscGroup cached;
-    /// The members' GameIds, in the order of cached.group.members.
+    DiscGroup group;
+    /// The members' GameIds, in the order of group.members.
     std::vector<GameId> members;
 
     bool operator==(const IndexedDiscGroup&) const = default;
@@ -125,6 +128,20 @@ struct ImportRecord {
     std::vector<SystemChanges> systems;
 
     bool operator==(const ImportRecord&) const = default;
+};
+
+/// An identity that becomes an alias of another (ADR-0008 §4): a file moved back onto the path or key of an identity
+/// that held it meanwhile keeps the identity it had, with its history, and the other is recorded as its alias (the
+/// pairing pass of step 11b, MoveReason::MovedBack); resolving a review does the same.
+struct IdentityAlias {
+    /// The identity that stops being one, as stored: its GameId stands for `game` from now on and is never given out
+    /// again (ICatalogStore::takenGameIds()); its key and relative path are recorded with the alias.
+    StoredIdentity alias;
+    /// The identity it stands for (of the same library and system).
+    GameId game;
+    MoveReason reason = MoveReason::MovedBack;
+
+    bool operator==(const IdentityAlias&) const = default;
 };
 
 /// The import lock, held apart from an import transaction (ICatalogStore::lockImport()): released when the object goes.
@@ -172,6 +189,14 @@ public:
     [[nodiscard]] virtual Status putDiscGroup(const IndexedDiscGroup& group) = 0;
     /// Removes the disc group headed by `head` (nothing when there is none).
     [[nodiscard]] virtual Status removeDiscGroup(GameId head) = 0;
+    /// Turns the identity `alias.alias` into an alias of `alias.game`: the index rows that name it (its entry and
+    /// media, the disc group it heads, its place among the members of other groups, which the import writes again) are
+    /// removed, its GameId recorded among the aliases with its key and relative path, and its identity row removed,
+    /// which frees its relative path for the identity that moves back there. The import calls it before it writes any
+    /// identity. Errors: InvalidArgument (an alias of itself, either identity not in the store, the two of different
+    /// libraries or systems), and the store's (a state row that still names the identity, such as its history or its
+    /// play sessions: step 11b moves those to `game` first).
+    [[nodiscard]] virtual Status putAlias(const IdentityAlias& alias) = 0;
     /// Replaces the library's import issues (the issues of its last import, in order) with `issues`; when `systems` is
     /// not empty (a partial import), only the issues of those systems are replaced, those of other systems and of the
     /// library as a whole stay.
@@ -218,9 +243,9 @@ public:
     [[nodiscard]] virtual Expected<std::optional<ImportRecord>> lastImport(const LibraryId& library) = 0;
 
     /// Takes the import lock without waiting and holds it until the returned object goes, apart from any transaction:
-    /// an import holds it while it reads the library (seconds, minutes on a cold drive), and begins its write
-    /// transaction only once it has the snapshot, so that other writers (play sessions) wait only for its writes.
-    /// beginImport() of this instance then uses it. Errors: Conflict when another import holds it (this instance's own
+    /// an import holds it while it reads the library (seconds, minutes on a cold drive) and the store, and begins its
+    /// write transaction only once it knows what to write, so that other writers (play sessions) wait only for its
+    /// writes. beginImport() of this instance then uses it. Errors: Conflict when another import holds it (this instance's own
     /// lock or transaction included).
     [[nodiscard]] virtual Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId& library) = 0;
     /// Begins the import of `library`, taking the import lock unless this instance's lockImport() holds it. Errors:

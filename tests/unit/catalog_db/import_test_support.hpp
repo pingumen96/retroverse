@@ -63,7 +63,7 @@ class ScriptedSource final : public catalog::ILibrarySource {
 public:
     catalog::LibrarySnapshot snapshot;
     /// The cache the last load was given (LibraryLoadOptions::discGroups).
-    std::vector<catalog::CachedDiscGroup> lastCache;
+    std::vector<catalog::DiscGroup> lastCache;
     /// Called at each load, before the snapshot is given (to cancel, say).
     std::function<void()> onLoad;
     std::size_t loads = 0;

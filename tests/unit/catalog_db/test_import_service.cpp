@@ -670,6 +670,7 @@ public:
         }
         rv::Status putDiscGroup(const IndexedDiscGroup& group) override { return m_inner->putDiscGroup(group); }
         rv::Status removeDiscGroup(GameId head) override { return m_inner->removeDiscGroup(head); }
+        rv::Status putAlias(const IdentityAlias& alias) override { return m_inner->putAlias(alias); }
         rv::Status putImportIssues(const LibraryId& library, std::span<const Issue> issues,
                                    std::span<const SystemName> systems) override {
             return m_inner->putImportIssues(library, issues, systems);
@@ -865,8 +866,9 @@ TEST_CASE("catalog_db/import: disc groups are stored with their references and g
     track2.discHead = head.key;
     source.snapshot.entries = {head, track1, track2};
     rv::test::sortEntries(source.snapshot);
+    // The source says which facts of the head its references were read from (DiscGroup::headSize, ...).
     DiscGroup group{systemName("psx"), head.key, DiscGroupKind::Cue, {track1.key, track2.key},
-                    {track1.key, track2.key, lookupKey("Twin (Europe) (Track 3).bin")}};
+                    {track1.key, track2.key, lookupKey("Twin (Europe) (Track 3).bin")}, 172, head.file->lastWriteTime};
     source.snapshot.discGroups = {group};
     ScriptedMedia media;
     const ImportResult first = importOk(catalog, source, media, profile);
@@ -874,16 +876,16 @@ TEST_CASE("catalog_db/import: disc groups are stored with their references and g
     const auto stored = catalog.store->discGroups(profile.id).value();
     REQUIRE(stored.size() == 1);
     CHECK(stored[0].head == identityAt(catalog, profile, "psx", "Twin (Europe).cue").id);
-    CHECK(stored[0].cached.group == group);
-    CHECK(stored[0].cached.headSize == 172);
-    CHECK(stored[0].cached.headLastWriteTime == head.file->lastWriteTime);
+    CHECK(stored[0].group == group);
+    CHECK(stored[0].group.headSize == 172);
+    CHECK(stored[0].group.headLastWriteTime == head.file->lastWriteTime);
     CHECK(stored[0].members == std::vector<GameId>{identityAt(catalog, profile, "psx", track1.key.relativePath()).id,
                                                    identityAt(catalog, profile, "psx", track2.key.relativePath()).id});
 
     // The next load is given the group (its references: the third track, not there, among them).
     const ImportResult second = importOk(catalog, source, media, profile);
     REQUIRE(source.lastCache.size() == 1);
-    CHECK(source.lastCache[0] == stored[0].cached);
+    CHECK(source.lastCache[0] == stored[0].group);
     CHECK(second.statistics.discGroupsWritten == 0);
 
     // The second track gone: the group is written again, the track's row removed.
@@ -920,8 +922,8 @@ TEST_CASE("catalog_db/import: db rebuild-index gives the index a refresh gives a
                                missingGame("gb", "Gone (USA).gb", "Gone"), diskGame("nes", "Nes Game (USA).nes", 40),
                                head, track, diskGame("snes", "Zed (Europe).sfc", 400)};
     rv::test::sortEntries(source.snapshot);
-    source.snapshot.discGroups = {
-        DiscGroup{systemName("psx"), head.key, DiscGroupKind::Cue, {track.key}, {track.key}}};
+    source.snapshot.discGroups = {DiscGroup{systemName("psx"), head.key, DiscGroupKind::Cue, {track.key}, {track.key},
+                                            172, head.file->lastWriteTime}};
     ScriptedMedia media;
     media.media["gb/Top (USA).gb"] = coverPng();
     media.media["snes/Zed (Europe).sfc"] = coverPng();

@@ -95,8 +95,8 @@ CREATE TABLE idx_media (
 ) WITHOUT ROWID, STRICT;
 
 -- Disc groups (ADR-0008 §3; the import writes them, I2 step 11a): a head (a .cue or .m3u that is a game of its system)
--- with the size and last write time it had when it was read, which the next import reuses instead of reading it again
--- (CachedDiscGroup) ...
+-- with the size and last write time it had when its references were read (DiscGroup::headSize, headLastWriteTime),
+-- which the next import reuses instead of reading it again ...
 CREATE TABLE idx_disc_groups (
     head      INTEGER PRIMARY KEY REFERENCES rv_game_identities (id),
     kind      TEXT    NOT NULL,

@@ -39,8 +39,10 @@ CREATE TABLE rv_libraries (
 -- first time its key was seen; the key and the exact relative path its file had when last seen, with the version of
 -- the key's rule and casing table (rv_meta keeps the version the store last wrote keys with); the file's facts at the
 -- last import that saw it (all NULL when none did); the quick hash with the size and time it belongs to (I2 step 11);
--- when the identity was made and when an import last saw its file. Two names that fold to one key keep two
--- identities (ADR-0008 §4), so the key is not unique: the exact path is.
+-- when the identity was made (first_seen) and when an import last wrote it with its file present (last_seen: first
+-- seen, its path or file facts changed, re-keyed; an import writes no identity that did not change, and when the
+-- library was last imported is in rv_imports). Two names that fold to one key keep two identities (ADR-0008 §4), so
+-- the key is not unique: the exact path is.
 CREATE TABLE rv_game_identities (
     id              INTEGER PRIMARY KEY CHECK (id > 0),
     library         TEXT    NOT NULL REFERENCES rv_libraries (id),
@@ -120,7 +122,8 @@ CREATE INDEX rv_identity_reviews_open ON rv_identity_reviews (id) WHERE resolved
 -- The imports of each library (ImportRecord, I2 step 11a), kept for the user and by `db rebuild-index`: when each began
 -- and committed, how it ran (ImportKind), whether it accepted the removals the mass-disappearance guard holds back, the
 -- systems it was asked for (a JSON array of names, empty for every system) and what it did per system (a JSON array of
--- objects, ChangeSet::systems' figures with the outcome's name).
+-- objects, ChangeSet::systems' figures with the outcome's name, for the systems it changed or reported). The newest
+-- 100 of each library are kept (kKeptImportRecords).
 CREATE TABLE rv_imports (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     library         TEXT    NOT NULL REFERENCES rv_libraries (id),

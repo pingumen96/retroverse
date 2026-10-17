@@ -567,10 +567,10 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
         }
     }
     // The groups the last import stored for this system, by head key.
-    std::unordered_map<std::string, const catalog::CachedDiscGroup*> cached;
-    for (const catalog::CachedDiscGroup& group : m_options.discGroups) {
-        if (group.group.system == system) {
-            cached[group.group.head.key()] = &group;
+    std::unordered_map<std::string, const catalog::DiscGroup*> cached;
+    for (const catalog::DiscGroup& group : m_options.discGroups) {
+        if (group.system == system) {
+            cached[group.head.key()] = &group;
         }
     }
 
@@ -578,8 +578,12 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
     struct Head {
         std::size_t entry = 0;
         catalog::DiscGroupKind kind = catalog::DiscGroupKind::Cue;
-        const catalog::CachedDiscGroup* stored = nullptr;
+        const catalog::DiscGroup* stored = nullptr;
         bool read = false; ///< the sheet is read; otherwise the stored group, if any, stands
+        /// The head's facts its group's references come from: the listing's when it is read and can be, the stored
+        /// group's when its references are taken from it (DiscGroup::headSize, headLastWriteTime).
+        std::uint64_t size = 0;
+        std::int64_t lastWriteTime = 0;
     };
     std::vector<Head> heads;
     std::map<catalog::LookupKey, std::size_t> indexOf;
@@ -596,10 +600,12 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
             continue;
         }
         const auto cache = cached.find(entry.key.key());
-        const catalog::CachedDiscGroup* stored = cache == cached.end() ? nullptr : cache->second;
-        // A head whose folder cannot be listed keeps its stored group; one that kept its size and time too.
+        const catalog::DiscGroup* stored = cache == cached.end() ? nullptr : cache->second;
+        // A head whose folder cannot be listed keeps its stored group; one that kept its size and time too (unless
+        // every sheet is read).
         const bool listed = entry.availability == catalog::Availability::Available && entry.file.has_value();
-        const bool current = stored != nullptr && listed && stored->headSize == entry.file->size &&
+        const bool current = !m_options.readEverySheet && stored != nullptr && listed &&
+                             stored->headSize == entry.file->size &&
                              stored->headLastWriteTime == entry.file->lastWriteTime;
         m_statistics.sheetsFromCache += current ? 1 : 0;
         heads.push_back(Head{i, *kind, stored, listed && !current});
@@ -649,7 +655,7 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
     const UnavailableKeys unavailableFolders = listing != nullptr ? unavailableKeysOf(*listing) : UnavailableKeys{};
     std::vector<DiscHeadLinks> links;
     for (std::size_t h = 0; h < heads.size(); ++h) {
-        const Head& head = heads[h];
+        Head& head = heads[h];
         const CatalogEntry& entry = entries[head.entry];
         const std::string headFile = fileText(folder, entry.key.relativePath());
         // What the sheet says: every reference that resolves inside the system folder, in its order, each key once,
@@ -659,7 +665,9 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
         std::vector<catalog::LookupKey> references;
         const auto takeStored = [&] {
             if (head.stored != nullptr) {
-                references = head.stored->group.references;
+                references = head.stored->references;
+                head.size = head.stored->headSize;
+                head.lastWriteTime = head.stored->headLastWriteTime;
             }
         };
         if (!head.read) {
@@ -675,6 +683,8 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
             takeStored();
         } else {
             ++m_statistics.sheetsRead;
+            head.size = entry.file->size;
+            head.lastWriteTime = entry.file->lastWriteTime;
             for (const std::string& reference : sheet->references) {
                 auto relative = resolveSheetReference(reference, entry.key.relativePath(), folder);
                 auto key = relative ? catalog::makeLookupKey(*relative)
@@ -726,6 +736,17 @@ Status Loader::addDiscGroups(SystemResult& result, const RomFolderListing* listi
 
     DiscGrouping grouping = esde::groupDiscs(system, std::move(links), folder);
     issues.addAll(std::move(grouping.issues));
+    // Each group carries the facts of the head its references came from, which the import stores as the cache's (the
+    // heads are in entry order).
+    for (catalog::DiscGroup& group : grouping.groups) {
+        const std::size_t entry = indexOf.at(group.head);
+        const auto head = std::lower_bound(heads.begin(), heads.end(), entry,
+                                           [](const Head& candidate, std::size_t i) { return candidate.entry < i; });
+        if (head != heads.end() && head->entry == entry) {
+            group.headSize = head->size;
+            group.headLastWriteTime = head->lastWriteTime;
+        }
+    }
     for (const auto& [member, head] : grouping.memberHeads) {
         CatalogEntry& entry = entries[indexOf.at(member)];
         entry.state = EntryState::DiscMember;

@@ -44,25 +44,20 @@ struct DiscGroup {
     std::vector<LookupKey> members;
     /// What the head says: every file it references that lies inside the system folder, as the head names it (the path
     /// resolved against the head's folder), in its order, each key once, whether or not it exists or is a game now. The
-    /// members are picked from these on every load, so that a cached group (CachedDiscGroup) gives the members the
+    /// members are picked from these on every load, so that a group taken back from the cache gives the members the
     /// files on disk give now, not those they gave when the head was read: store them with the group.
     std::vector<LookupKey> references;
-
-    bool operator==(const DiscGroup&) const = default;
-};
-
-/// A disc group as an import stored it, with the size and last write time its head had when the group was read: the
-/// cache ADR-0008 §3 asks for (membership cached by key, size and modification time, and kept when a cue sheet cannot
-/// be read). The import keeps the groups of each import, references included, and hands them to the next load
-/// (ILibrarySource, LibraryLoadOptions::discGroups), which takes the references of the group and picks its members
-/// again.
-struct CachedDiscGroup {
-    DiscGroup group;
-    /// The head's FileFacts::size and FileFacts::lastWriteTime (FILETIME ticks) when the group was read.
+    /// The head's FileFacts::size and FileFacts::lastWriteTime (FILETIME ticks) when `references` were read from it:
+    /// the listing's at this load when the head was read, the cached group's when its references were taken from the
+    /// cache (LibraryLoadOptions::discGroups: a head unchanged, one that cannot be read, one below a folder that cannot
+    /// be listed). The import stores them with the group, and the next load reads a head again unless its key, size
+    /// and time are those of its cached group (ADR-0008 §3: membership cached by key, size and modification time, and
+    /// kept when a cue sheet cannot be read), so that references kept from an older content of a head never pass for
+    /// its current content.
     std::uint64_t headSize = 0;
     std::int64_t headLastWriteTime = 0;
 
-    bool operator==(const CachedDiscGroup&) const = default;
+    bool operator==(const DiscGroup&) const = default;
 };
 
 } // namespace rv::catalog

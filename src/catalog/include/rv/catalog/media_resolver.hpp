@@ -16,7 +16,8 @@
 namespace rv::catalog {
 
 /// Read-only towards the media folders. An instance is used from one thread at a time; it may list each system's
-/// media folder once and answer from that listing, so a new instance sees files added since. An entry is named by its
+/// media folder once and answer from that listing until refresh(), so a refreshed or new instance sees files added or
+/// removed since (the import refreshes it at the start of every run). An entry is named by its
 /// system, its key (LookupKey::relativePath() as listed) and whether it is a folder (`directory`: FileFacts::directory,
 /// true for a Folder entry and for a game that is a folder; false for an entry not seen, a MissingFile), whose media
 /// keep its whole name (mediaStem(): "Sports Vol. 2.png", never "Sports Vol.png").
@@ -37,6 +38,10 @@ public:
     [[nodiscard]] virtual Expected<std::filesystem::path> path(const SystemName& system, const LookupKey& key,
                                                                bool directory, MediaKind kind,
                                                                const MediaPresence& media) const = 0;
+
+    /// Forgets what the resolver keeps between questions (the root's check, folder listings), so that the next
+    /// presence() looks at the media folders as they are now. A resolver that keeps nothing does nothing.
+    virtual void refresh() noexcept {}
 };
 
 } // namespace rv::catalog

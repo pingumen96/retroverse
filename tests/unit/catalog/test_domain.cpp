@@ -410,8 +410,8 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
             LibrarySnapshot snapshot;
             snapshot.profile = profile;
             // Every head here is unchanged: its cached group stands without the head being read.
-            for (const CachedDiscGroup& cached : options.discGroups) {
-                snapshot.discGroups.push_back(cached.group);
+            for (const DiscGroup& cached : options.discGroups) {
+                snapshot.discGroups.push_back(cached);
             }
             return snapshot;
         }
@@ -428,11 +428,13 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
     const auto stopped = source.load(profile, cancelled);
     REQUIRE_FALSE(stopped.has_value());
     CHECK(stopped.error().code == rv::ErrorCode::Cancelled);
-    const DiscGroup twin{systemNamed("psx"),
-                         key("Twin Tracks (Europe).cue"),
-                         DiscGroupKind::Cue,
-                         {key("Twin Tracks (Europe) (Track 1).bin"), key("Twin Tracks (Europe) (Track 2).bin")}};
-    const std::vector<CachedDiscGroup> cache{CachedDiscGroup{twin, 172, 126'256'467'060'000'000}};
+    DiscGroup twin{systemNamed("psx"),
+                   key("Twin Tracks (Europe).cue"),
+                   DiscGroupKind::Cue,
+                   {key("Twin Tracks (Europe) (Track 1).bin"), key("Twin Tracks (Europe) (Track 2).bin")}};
+    twin.headSize = 172;
+    twin.headLastWriteTime = 126'256'467'060'000'000;
+    const std::vector<DiscGroup> cache{twin};
     LibraryLoadOptions again;
     again.discGroups = cache;
     CHECK(source.load(profile, again).value().discGroups == std::vector<DiscGroup>{twin});
@@ -530,6 +532,7 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
             }
             rv::Status putDiscGroup(const IndexedDiscGroup&) override { return m_active ? rv::ok() : ended(); }
             rv::Status removeDiscGroup(GameId) override { return m_active ? rv::ok() : ended(); }
+            rv::Status putAlias(const IdentityAlias&) override { return m_active ? rv::ok() : ended(); }
             rv::Status putImportIssues(const LibraryId&, std::span<const Issue>, std::span<const SystemName>) override {
                 return m_active ? rv::ok() : ended();
             }

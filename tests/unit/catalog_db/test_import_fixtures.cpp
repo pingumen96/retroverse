@@ -204,11 +204,11 @@ TEST_CASE("catalog_db/import: the standard fixture imported", "[catalog_db][impo
     // The disc group, with what its sheet says.
     const auto groups = catalog.store->discGroups(LibraryId()).value();
     REQUIRE(groups.size() == 1);
-    CHECK(groups[0].cached.group.head.relativePath() == "Twin Tracks (Europe).cue");
-    CHECK(groups[0].cached.group.references.size() == 2);
+    CHECK(groups[0].group.head.relativePath() == "Twin Tracks (Europe).cue");
+    CHECK(groups[0].group.references.size() == 2);
     CHECK(groups[0].members == std::vector<GameId>{idOf("psx", "Twin Tracks (Europe) (Track 1).bin"),
                                                    idOf("psx", "Twin Tracks (Europe) (Track 2).bin")});
-    CHECK(groups[0].cached.headSize == fs::file_size(fixture.path("roms/psx/Twin Tracks (Europe).cue")));
+    CHECK(groups[0].group.headSize == fs::file_size(fixture.path("roms/psx/Twin Tracks (Europe).cue")));
     // The media of the README's table, presence and extension per kind.
     CHECK(mediaOf(*rowOf(catalog, "gb", "Tiny Tennis (Europe).gb")) == "covers.png screenshots.jpg videos.mp4");
     CHECK(mediaOf(*rowOf(catalog, "gb", "Collection A/Pocket Puzzle (World).gb")) == "covers.png");

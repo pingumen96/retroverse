@@ -28,7 +28,9 @@
 // unknown library (InvalidArgument); in putDiscGroup(), a head or member without an identity, a member count that
 // differs from the group's keys (InvalidArgument). removeEntry() removes the entry's idx_games and idx_media rows and
 // the disc group it heads, with its members and references (a group it is a member of is its head's and stays as it
-// was read); for an id without index rows it does nothing.
+// was read); for an id without index rows it does nothing. putAlias() also removes the alias's place among the members
+// of other groups (the import writes those groups again), inserts the rv_identity_aliases row and deletes the identity
+// (a FOREIGN KEY error when a state row still names it).
 //
 // rv_meta's rows: schema_created_at and schema_created_by (the migration that made the schema); lookup_key_rule and
 // casing_table_version, the lookup key version of every identity's key, recorded by each commit ("mixed" while the
@@ -39,9 +41,10 @@
 // The import's writes (I2 step 11a): disc groups in idx_disc_groups, idx_disc_members (by GameId) and
 // idx_disc_references (by relative path: what the head says, files that are not there included), read back joined to
 // the identities of their heads and members; the import issues (idx_import_issues); the import records (rv_imports,
-// the per-system figures as JSON). lockImport() takes the import lock apart from a transaction (byte 2 of the
-// database's lock file, as beginImport() does), so that an import holds it while it reads the library and begins its
-// write transaction (BEGIN IMMEDIATE) only for the comparison and the writes. prepareWrites() suspends the search
+// the per-system figures as JSON, of the systems the import recorded; the newest kKeptImportRecords per library are
+// kept, recordImport() deleting older ones). lockImport() takes the import lock apart from a transaction (byte 2 of
+// the database's lock file, as beginImport() does), so that an import holds it while it reads the library and the
+// store and begins its write transaction (BEGIN IMMEDIATE) only for the writes. prepareWrites() suspends the search
 // index (search_index.hpp) for a bulk write, as StoreOptions::searchIndex says, and commit() rebuilds it.
 
 #include <cstddef>
@@ -71,6 +74,10 @@ enum class SearchIndexPolicy : std::uint8_t {
 
 /// SearchIndexPolicy::Automatic suspends the search index when rows written * kBulkWriteShare >= the index's entries.
 inline constexpr std::size_t kBulkWriteShare = 5;
+
+/// The import records (rv_imports) kept per library: recordImport() deletes the older ones, so that a catalog imported
+/// at every start of the app keeps a bounded history.
+inline constexpr std::size_t kKeptImportRecords = 100;
 
 /// How a store writes.
 struct StoreOptions {

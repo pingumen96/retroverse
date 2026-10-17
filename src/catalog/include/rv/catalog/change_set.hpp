@@ -66,6 +66,9 @@ struct MovedGame {
     LookupKey from;
     LookupKey to;
     MoveReason reason = MoveReason::QuickHash;
+    /// The identity that held `to` (its path or key) without its file and became an alias of `id` (a file moved back,
+    /// MoveReason::MovedBack); nothing otherwise.
+    std::optional<GameId> alias;
 
     bool operator==(const MovedGame&) const = default;
 };

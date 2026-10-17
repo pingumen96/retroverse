@@ -244,9 +244,9 @@ public:
                                                        catalog::MediaKind kind,
                                                        const catalog::MediaPresence& media) const override;
 
-    /// Forgets the root's check and every listing: the next question reads the folders again and sees the files added
-    /// or removed meanwhile. The statistics start again too.
-    void refresh() noexcept;
+    /// Forgets the root's check and every listing (catalog::IMediaResolver::refresh()): the next question reads the
+    /// folders again and sees the files added or removed meanwhile. The statistics start again too.
+    void refresh() noexcept override;
 
     /// What was listed since the resolver was made or refreshed.
     [[nodiscard]] const MediaListingStats& stats() const noexcept { return m_stats; }
