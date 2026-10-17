@@ -6,6 +6,9 @@
   (`ui_activate` among them; the stick read whole, so the hysteresis thresholds stay fractions of its travel;
   `NavBindings` gone); the Consequences record the virtualized quick catalog and the cost of a held direction that
   scrolls it (about a tap), within the accepted deviation
+- Amended: 2026-10-17, at I2 step 13 (folded at step 14, Gate M1): the Consequences record what the quick catalog's card
+  shows of a game of the ES-DE catalog (its launch readiness and its first blocker, never cut through a line) and that
+  M1's manual session searches with the keyboard (the on-screen keyboard stays in I7)
 
 ## Context
 
@@ -108,7 +111,16 @@ RmlUi is the product UI toolkit; the fallback is not taken. Four criteria were m
   once the focus rests). Done in I2 step 6: `QuickCatalogModel` is a window over a paged `ui::CatalogSource`, whose
   queries may answer later from the catalog worker, and the screen binds a pool of as many rows as fit, in which a game
   keeps its row while the window holds it, so a scroll step binds one row.
-- Text entry with the pad needs an on-screen keyboard (I7); localization moves the documents' strings into a table
+- The card of a game of the ES-DE catalog (I2 step 13, `docs/i2/step-13.md`) shows its launch readiness as one Italian
+  line and its first blocker as an Italian sentence of one or two lines (one per blocker code,
+  `ui::quick_catalog::kBlockerCodes`); the blocker's own words are left to the game-session panel that Avvia opens, so
+  that the card keeps its description and metadata rows. The card's text is never cut through a line: its title,
+  readiness, blocker sentence, description (whole lines) and actions keep their height, and the metadata rows give way
+  first, by whole rows; the run report's `catalog.cardSqueezed` names any block the layout still cuts, and the smoke
+  cases require it empty.
+- Text entry with the pad needs an on-screen keyboard (I7): until then the quick catalog's search takes typed text, and
+  M1's manual pad-only session (`docs/testing/gate-m1.md`) uses the keyboard for its one search step (a decision of the
+  Gate M1 step; BACKLOG "Text entry with the pad"); localization moves the documents' strings into a table
   bound like the rest (`assets/ui/locale`); covers and videos can be shown by mapping an image source scheme to our GL
   textures in the render interface (I3, I5).
 - `rv_ui` is a GPU-side module next to `rv_devui`: it calls OpenGL through the vendored renderer and `UiView`, on the
