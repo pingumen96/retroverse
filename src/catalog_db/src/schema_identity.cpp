@@ -1,6 +1,6 @@
 // Schema area "identity" (I2 step 4): the state tables, what only Retroverse knows and no import removes (ADR-0008 §4,
-// §5). Reconciliation (step 11) fills history, aliases, reviews and quick hashes; the store (catalog_store.cpp) writes
-// libraries and identities.
+// §5). Reconciliation (step 11b) fills history, aliases, reviews and quick hashes; the store (catalog_store.cpp) writes
+// libraries, identities and, from step 11a on, the import records.
 
 #include "schema.hpp"
 
@@ -116,6 +116,22 @@ CREATE TABLE rv_identity_reviews (
 ) STRICT;
 CREATE INDEX rv_identity_reviews_game ON rv_identity_reviews (game);
 CREATE INDEX rv_identity_reviews_open ON rv_identity_reviews (id) WHERE resolved_at IS NULL;
+
+-- The imports of each library (ImportRecord, I2 step 11a), kept for the user and by `db rebuild-index`: when each began
+-- and committed, how it ran (ImportKind), whether it accepted the removals the mass-disappearance guard holds back, the
+-- systems it was asked for (a JSON array of names, empty for every system) and what it did per system (a JSON array of
+-- objects, ChangeSet::systems' figures with the outcome's name).
+CREATE TABLE rv_imports (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    library         TEXT    NOT NULL REFERENCES rv_libraries (id),
+    kind            TEXT    NOT NULL,
+    started_at      TEXT    NOT NULL,
+    finished_at     TEXT    NOT NULL,
+    accept_removals INTEGER NOT NULL CHECK (accept_removals IN (0, 1)),
+    systems_asked   TEXT    NOT NULL CHECK (json_valid(systems_asked)),
+    summary         TEXT    NOT NULL CHECK (json_valid(summary))
+) STRICT;
+CREATE INDEX rv_imports_library ON rv_imports (library, id);
 )sql";
 
 /// rv_meta's first rows: when the database was made and by which program, and the lookup key version of the system that

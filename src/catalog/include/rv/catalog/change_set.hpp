@@ -1,8 +1,11 @@
 #pragma once
 
 // What an import changed (ADR-0008 §4): games added and removed, metadata changed, files moved with the reason their
-// identity followed them, availability changes, the pairings left for the user to review and the issues met. Reported
-// by the import (step 11), shown by `retroverse-cli import` and kept for the user.
+// identity followed them, availability changes, the pairings left for the user to review and the issues met, and per
+// system what the import did with it (SystemChanges: its index rows added, changed, removed, unchanged, kept as source
+// unavailable or kept as they were, its identities' changes, the mass-disappearance guard's figures). Reported by the
+// import (ImportService, I2 step 11a), shown by `retroverse-cli import` and kept for the user (the store's import
+// records: ICatalogStore, ImportRecord).
 
 #include <cstddef>
 #include <cstdint>
@@ -107,17 +110,110 @@ struct ChangeSetCounts {
     bool operator==(const ChangeSetCounts&) const = default;
 };
 
+/// What an import did with one system (ADR-0008 §4, §7).
+enum class SystemOutcome : std::uint8_t {
+    /// The snapshot's view of the system is in the index: entries added, changed and removed; the rows under a folder
+    /// below the system folder that could not be listed kept, marked source unavailable.
+    Applied,
+    /// Its ROM folder is missing or could not be listed: its rows kept, marked source unavailable with the reason, and
+    /// the entries its gamelist alone names added; nothing removed, no identity taken as vanished (SC-06).
+    SourceUnavailable,
+    /// Its gamelist exists but could not be read, even after a retry: its previous rows kept as they were (ADR-0008 §7).
+    GamelistFailed,
+    /// Its gamelist could not be read and the index held no row of it: nothing imported (rather than unscraped) until
+    /// an import reads the gamelist; its system row says "failed".
+    MetadataPending,
+    /// A mass disappearance: more than half of the files present at the last import are gone. Nothing changed for the
+    /// system until an import is told to accept the removals (ImportOptions::acceptRemovals).
+    KeptByGuard,
+    /// The configuration no longer defines it: its rows and its system row removed (its identities stay). Under the
+    /// guard while files of it were present.
+    NotConfigured,
+};
+
+/// "applied", "source-unavailable", "gamelist-failed", "metadata-pending", "kept-by-guard", "not-configured".
+[[nodiscard]] constexpr std::string_view toString(SystemOutcome outcome) noexcept {
+    switch (outcome) {
+    case SystemOutcome::Applied:
+        return "applied";
+    case SystemOutcome::SourceUnavailable:
+        return "source-unavailable";
+    case SystemOutcome::GamelistFailed:
+        return "gamelist-failed";
+    case SystemOutcome::MetadataPending:
+        return "metadata-pending";
+    case SystemOutcome::KeptByGuard:
+        return "kept-by-guard";
+    case SystemOutcome::NotConfigured:
+        return "not-configured";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<SystemOutcome> parseSystemOutcome(std::string_view text) noexcept {
+    return detail::enumFromString(text, SystemOutcome::NotConfigured);
+}
+
+/// What one import did with one system. The rows the index holds for the system after the import are partitioned into
+/// added, changed, unchanged, unavailable and kept; `removed` counts those that left it.
+struct SystemChanges {
+    SystemName system;
+    SystemOutcome outcome = SystemOutcome::Applied;
+    /// Index rows written for entries the index did not hold.
+    std::size_t added = 0;
+    /// Index rows written again: the entry, its media or its sort key differ from the row (a changed availability
+    /// included).
+    std::size_t changed = 0;
+    /// Index rows removed: their entry is no longer in the snapshot (their identities stay).
+    std::size_t removed = 0;
+    /// Index rows equal to the snapshot's entry: not written.
+    std::size_t unchanged = 0;
+    /// Index rows under a folder that could not be listed (the system folder, or one below it): the rows the index
+    /// held kept as they were, marked source unavailable with the reason, and the entries the gamelist alone names.
+    std::size_t unavailable = 0;
+    /// Index rows kept as they were because the system was not applied (GamelistFailed, KeptByGuard).
+    std::size_t kept = 0;
+    /// GameIds given out to keys seen for the first time.
+    std::size_t newIdentities = 0;
+    /// Identities whose file was present at the last import and is gone now, from a folder that was listed (gamelist
+    /// entry or not): reconciliation candidates (ADR-0008 §4), which keep their rows.
+    std::size_t vanished = 0;
+    /// Identities whose file is there again (not present at the last import).
+    std::size_t returned = 0;
+    /// Identities whose stored key was of another key rule or casing table: computed again from the relative path.
+    std::size_t rekeyed = 0;
+    /// Identities that followed their file to a new path (the pairing pass, IIdentityPairing).
+    std::size_t moved = 0;
+    /// The guard's figures: the identities present at the last import outside the folders that cannot be listed now,
+    /// and those of them whose file is gone (and was not paired with a new file).
+    std::size_t presentBefore = 0;
+    std::size_t gone = 0;
+    /// The issues that name the system, the snapshot's and the import's.
+    std::size_t issues = 0;
+
+    /// The rows the index holds for the system after the import.
+    [[nodiscard]] std::size_t rows() const noexcept { return added + changed + unchanged + unavailable + kept; }
+
+    bool operator==(const SystemChanges&) const = default;
+};
+
 /// What one import changed.
 struct ChangeSet {
-    /// New identities with their entries in the index.
+    /// Entries newly in the index (a key seen for the first time, or an identity's entry back in the index).
     std::vector<ChangedGame> added;
     /// Entries that left the index (their identities stay, with their last path and history).
     std::vector<ChangedGame> removed;
+    /// Entries whose index row changed: metadata, state, file facts, media or sort key.
     std::vector<ChangedGame> metadataChanged;
     std::vector<MovedGame> moved;
+    /// Entries whose availability changed (among those of metadataChanged, or added and removed).
     std::vector<AvailabilityChange> availabilityChanged;
     std::vector<ReviewRow> reviews;
+    /// The import's issues: the snapshot's (ILibrarySource), then those of the import itself.
     std::vector<Issue> issues;
+    /// Per system, by name: every system the import looked at (the snapshot's and the store's).
+    std::vector<SystemChanges> systems;
+    /// The library's index held no row before the import.
+    bool firstImport = false;
 
     [[nodiscard]] ChangeSetCounts counts() const noexcept {
         return ChangeSetCounts{
@@ -128,6 +224,36 @@ struct ChangeSet {
     [[nodiscard]] bool empty() const noexcept {
         return added.empty() && removed.empty() && metadataChanged.empty() && moved.empty() &&
                availabilityChanged.empty() && reviews.empty();
+    }
+    /// The systems' figures summed (`system` empty; `outcome` Applied).
+    [[nodiscard]] SystemChanges total() const noexcept {
+        SystemChanges sum;
+        for (const SystemChanges& system : systems) {
+            sum.added += system.added;
+            sum.changed += system.changed;
+            sum.removed += system.removed;
+            sum.unchanged += system.unchanged;
+            sum.unavailable += system.unavailable;
+            sum.kept += system.kept;
+            sum.newIdentities += system.newIdentities;
+            sum.vanished += system.vanished;
+            sum.returned += system.returned;
+            sum.rekeyed += system.rekeyed;
+            sum.moved += system.moved;
+            sum.presentBefore += system.presentBefore;
+            sum.gone += system.gone;
+            sum.issues += system.issues;
+        }
+        return sum;
+    }
+    /// The figures of `system`, or nullptr.
+    [[nodiscard]] const SystemChanges* findSystem(const SystemName& system) const noexcept {
+        for (const SystemChanges& changes : systems) {
+            if (changes.system == system) {
+                return &changes;
+            }
+        }
+        return nullptr;
     }
 
     bool operator==(const ChangeSet&) const = default;

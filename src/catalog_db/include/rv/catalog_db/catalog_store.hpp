@@ -25,15 +25,27 @@
 // putEntry(), an entry of another system than its identity's, an absent media kind with an extension, a count or file
 // size beyond 2^63 - 1, a release date or last played time that is none, raw values that are not UTF-8
 // (InvalidArgument), a rating beyond 10 or players below 1 (ValidationFailed, the schema's checks); in putSystem(), an
-// unknown library (InvalidArgument). removeEntry() removes the entry's idx_games and idx_media rows and the disc group
-// it heads (a group it is a member of is its head's and stays as it was read); for an id without index rows it does
-// nothing.
+// unknown library (InvalidArgument); in putDiscGroup(), a head or member without an identity, a member count that
+// differs from the group's keys (InvalidArgument). removeEntry() removes the entry's idx_games and idx_media rows and
+// the disc group it heads, with its members and references (a group it is a member of is its head's and stays as it
+// was read); for an id without index rows it does nothing.
 //
 // rv_meta's rows: schema_created_at and schema_created_by (the migration that made the schema); lookup_key_rule and
 // casing_table_version, the lookup key version of every identity's key, recorded by each commit ("mixed" while the
 // identities hold keys of several versions, a re-keying not finished; the versions of the system that made the schema
-// until an identity exists); sort_key_version, the version of idx_games' sort keys (catalog::kSortKeyVersion).
+// until an identity exists); sort_key_version, the version of idx_games' sort keys (catalog::kSortKeyVersion), recorded
+// by each commit too.
+//
+// The import's writes (I2 step 11a): disc groups in idx_disc_groups, idx_disc_members (by GameId) and
+// idx_disc_references (by relative path: what the head says, files that are not there included), read back joined to
+// the identities of their heads and members; the import issues (idx_import_issues); the import records (rv_imports,
+// the per-system figures as JSON). lockImport() takes the import lock apart from a transaction (byte 2 of the
+// database's lock file, as beginImport() does), so that an import holds it while it reads the library and begins its
+// write transaction (BEGIN IMMEDIATE) only for the comparison and the writes. prepareWrites() suspends the search
+// index (search_index.hpp) for a bulk write, as StoreOptions::searchIndex says, and commit() rebuilds it.
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -45,13 +57,34 @@ namespace rv::catalog_db {
 
 class Database;
 
+/// When an import transaction suspends the search index for its writes (search_index.hpp).
+enum class SearchIndexPolicy : std::uint8_t {
+    /// For a first import (the index holds no entry, of any library), or when the rows the import writes are at least
+    /// a fifth of the index (kBulkWriteShare): FTS5 flushes a segment per row written through the triggers (about 75
+    /// µs a row), its rebuild tokenizes the whole catalog once (1.1 to 1.7 s per 100,000 entries, docs/i2/step-9.md).
+    Automatic,
+    /// Whenever the import writes rows (tests).
+    Suspend,
+    /// Never: the triggers index the rows one by one (tests, the comparison of both ways).
+    FollowWrites,
+};
+
+/// SearchIndexPolicy::Automatic suspends the search index when rows written * kBulkWriteShare >= the index's entries.
+inline constexpr std::size_t kBulkWriteShare = 5;
+
+/// How a store writes.
+struct StoreOptions {
+    SearchIndexPolicy searchIndex = SearchIndexPolicy::Automatic;
+};
+
 class SqliteCatalogStore final : public catalog::ICatalogStore {
 public:
-    /// The store on `database`'s writer connection. `database` must outlive the store; an import transaction must not
-    /// outlive its store (one still open when the store goes is rolled back, and fails every later call). Errors:
-    /// Conflict when the database's schema version is not programSchemaVersion() (older: migrate() it first; newer:
-    /// written by a newer Retroverse), and SQLite's.
-    [[nodiscard]] static Expected<std::unique_ptr<SqliteCatalogStore>> open(Database& database);
+    /// The store on `database`'s writer connection. `database` must outlive the store; an import transaction, and an
+    /// import lock, must not outlive its store (a transaction still open when the store goes is rolled back, and fails
+    /// every later call). Errors: Conflict when the database's schema version is not programSchemaVersion() (older:
+    /// migrate() it first; newer: written by a newer Retroverse), and SQLite's.
+    [[nodiscard]] static Expected<std::unique_ptr<SqliteCatalogStore>> open(Database& database,
+                                                                          const StoreOptions& options = {});
 
     SqliteCatalogStore(const SqliteCatalogStore&) = delete;
     SqliteCatalogStore& operator=(const SqliteCatalogStore&) = delete;
@@ -65,6 +98,14 @@ public:
     [[nodiscard]] Expected<std::vector<catalog::GameId>> takenGameIds() override;
     [[nodiscard]] Expected<std::vector<catalog::IndexedEntry>>
     indexedEntries(const catalog::LibraryId& library, const catalog::SystemName& system) override;
+    [[nodiscard]] Expected<std::vector<catalog::SystemInfo>> systems(const catalog::LibraryId& library) override;
+    [[nodiscard]] Expected<std::vector<catalog::SystemName>>
+    identitySystems(const catalog::LibraryId& library) override;
+    [[nodiscard]] Expected<std::vector<catalog::IndexedDiscGroup>>
+    discGroups(const catalog::LibraryId& library) override;
+    [[nodiscard]] Expected<std::optional<catalog::ImportRecord>> lastImport(const catalog::LibraryId& library) override;
+    /// Errors: Conflict (this store's lock or transaction is held; another holder of the database's lock imports).
+    [[nodiscard]] Expected<std::unique_ptr<catalog::IImportLock>> lockImport(const catalog::LibraryId& library) override;
     /// Errors: Conflict (this store's transaction is open; another holder of the database's lock imports; another
     /// connection writes past the writer's busy timeout), SQLite's others.
     [[nodiscard]] Expected<std::unique_ptr<catalog::IImportTransaction>>
@@ -73,6 +114,7 @@ public:
 private:
     struct State;
     class ImportTransaction;
+    class ImportLock;
 
     explicit SqliteCatalogStore(std::unique_ptr<State> state) noexcept;
 

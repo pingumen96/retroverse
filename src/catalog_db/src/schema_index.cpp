@@ -1,5 +1,5 @@
 // Schema area "index" (I2 step 4): the index tables, a function of the ES-DE snapshot and the identities that an import
-// (or `db rebuild-index`, I2 step 11) can rebuild at any time (ADR-0008 §5). They refer to the state tables, never the
+// (or `db rebuild-index`, I2 step 11a) can rebuild at any time (ADR-0008 §5). They refer to the state tables, never the
 // other way round, and nothing cascades: rebuilding them never touches what only Retroverse knows.
 
 #include "schema.hpp"
@@ -94,8 +94,8 @@ CREATE TABLE idx_media (
     PRIMARY KEY (game, kind)
 ) WITHOUT ROWID, STRICT;
 
--- Disc groups (ADR-0008 §3; I2 step 11 writes them): a head (a .cue or .m3u that is a game of its system) with the
--- size and last write time it had when it was read, which the next import reuses instead of reading it again
+-- Disc groups (ADR-0008 §3; the import writes them, I2 step 11a): a head (a .cue or .m3u that is a game of its system)
+-- with the size and last write time it had when it was read, which the next import reuses instead of reading it again
 -- (CachedDiscGroup) ...
 CREATE TABLE idx_disc_groups (
     head      INTEGER PRIMARY KEY REFERENCES rv_game_identities (id),
@@ -103,7 +103,7 @@ CREATE TABLE idx_disc_groups (
     head_size INTEGER NOT NULL CHECK (head_size >= 0),
     head_time INTEGER NOT NULL
 ) STRICT;
--- ... and its members, in the order the head names them, each once.
+-- ... its members, in the order the head names them, each once ...
 CREATE TABLE idx_disc_members (
     head     INTEGER NOT NULL REFERENCES rv_game_identities (id),
     position INTEGER NOT NULL CHECK (position >= 0),
@@ -112,8 +112,17 @@ CREATE TABLE idx_disc_members (
     UNIQUE (head, member)
 ) WITHOUT ROWID, STRICT;
 CREATE INDEX idx_disc_members_member ON idx_disc_members (member);
+-- ... and what the head says (DiscGroup::references): every file it references inside the system folder, by relative
+-- path in its order, whether or not it is there (a reference to a file that is not there has no identity), from which
+-- the next import picks the members again without reading the head.
+CREATE TABLE idx_disc_references (
+    head          INTEGER NOT NULL REFERENCES rv_game_identities (id),
+    position      INTEGER NOT NULL CHECK (position >= 0),
+    relative_path TEXT    NOT NULL CHECK (relative_path <> ''),
+    PRIMARY KEY (head, position)
+) WITHOUT ROWID, STRICT;
 
--- The issues of each library's last import (Issue; I2 step 11), in the order they were met.
+-- The issues of each library's last import (Issue; I2 step 11a), in the order they were met.
 CREATE TABLE idx_import_issues (
     id       INTEGER PRIMARY KEY,
     library  TEXT    NOT NULL REFERENCES rv_libraries (id),
@@ -126,7 +135,8 @@ CREATE TABLE idx_import_issues (
 CREATE INDEX idx_import_issues_library ON idx_import_issues (library, id);
 )sql";
 
-/// The version of the sort keys idx_games holds: an index made with another folding is rebuilt (I2 step 11).
+/// The version of the sort keys idx_games holds: rows with keys of another folding differ from what an import computes,
+/// so the next import writes them again (I2 step 11a), and its commit records the version.
 Status seedMeta(Connection& connection) {
     auto insert = connection.prepare("INSERT INTO rv_meta (key, value) VALUES ('sort_key_version', ?1)");
     if (!insert) {

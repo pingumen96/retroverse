@@ -10,12 +10,15 @@
 //    file exists, the scraped games, every game), the library's totals first. The entries are the library snapshot the
 //    import reads (esde::EsdeLibrarySource, library_snapshot.hpp: every system's ROM folder listed with ES-DE's rules,
 //    its gamelist merged in, disc tracks grouped under their sheet), only the system's with --system.
-//  - media --game <id>: the media of a game of the catalog, from I2 step 11 on (the import); until then it answers
-//    "not implemented yet (I2 step 11)" and exits 2.
+//  - media --game <id> [--json] [--output <file>] (I2 step 11a): the media of a game of the catalog as the last import
+//    stored them, presence and extension per kind, each file's path derived again under the library's media root
+//    (esde::EsdeMediaResolver::path(): paths are never stored, ADR-0008 §5); nothing on disk is looked at. The catalog
+//    is read as `show` reads it (nothing written into it).
 // The library is the one <user data>/config/library.json records (library create). Exit codes: 0; 1 when something
 // could not be read (the media root, a media folder, the settings, the systems, a gamelist, a ROM folder, the ROM
-// folder of the path); 2 for invalid options, an unknown system, a path that leads out of its ROM folder, no
-// library.json; 3 when library.json is invalid or the results cannot be written.
+// folder of the path), and for a --game the catalog does not have; 2 for invalid options, an unknown system, a path
+// that leads out of its ROM folder, no library.json, a --game of another library than library.json's; 3 when
+// library.json is invalid, the catalog cannot be read or the results cannot be written.
 
 #include <algorithm>
 #include <array>
@@ -50,6 +53,7 @@
 #include <rv/esde/settings.hpp>
 #include <rv/esde/systems.hpp>
 
+#include "catalog_text.hpp"
 #include "commands.hpp"
 #include "esde_text.hpp"
 #include "library_snapshot.hpp"
@@ -64,8 +68,6 @@ using catalog::MediaKind;
 constexpr std::string_view kName = "retroverse-cli media";
 /// Where the coverage's entries come from (its JSON's "source"): the library snapshot of the ROM scan.
 constexpr std::string_view kCoverageSource = "rom-scan";
-/// The step that answers --game (the import gives games their ids).
-constexpr int kGameStep = 11;
 
 /// The short column titles of the coverage tables, in the order of catalog::kMediaKinds (the legend names ES-DE's
 /// folders).
@@ -323,6 +325,80 @@ ExitCode showPath(CommandContext& context, Output& out, const Library& library, 
     return ExitCode::Ok;
 }
 
+// --- media --game ----------------------------------------------------------------------------------------------------
+
+ExitCode showGame(CommandContext& context, Output& out, const catalog::LibraryProfile& profile, catalog::GameId id,
+                  bool json) {
+    auto reader = openCatalogReader(context.paths);
+    if (!reader) {
+        return catalogFailure(context, reader.error());
+    }
+    const auto details = reader->query->details(id);
+    if (!details) {
+        return catalogFailure(context, details.error());
+    }
+    if (!*details) {
+        context.err.writeLine(fmt::format("{}: the catalog has no game {}", kName, id.toString()));
+        return ExitCode::ProblemsFound;
+    }
+    const catalog_db::GameDetails& game = **details;
+    if (game.library != profile.id) {
+        context.err.writeLine(fmt::format("{}: the game {} is of the library '{}', library.json names '{}'", kName,
+                                          id.toString(), game.library.str(), profile.id.str()));
+        return ExitCode::UsageError;
+    }
+    const catalog::IndexedEntry& indexed = game.indexed;
+    const catalog::CatalogEntry& entry = indexed.entry;
+    const esde::ResolvedRoot mediaRoot = mediaRootOf(profile);
+    const auto paths = derivedMediaPaths(indexed, mediaRoot);
+    const bool directory = entry.file ? entry.file->directory : entry.state == catalog::EntryState::Folder;
+    const std::string mediaName = catalog::mediaStem(entry.key.relativePath(), directory);
+    std::size_t present = 0;
+    for (const catalog::MediaPresence& media : indexed.media.kinds) {
+        present += media.present ? 1 : 0;
+    }
+
+    if (json) {
+        Json items = Json::array();
+        for (std::size_t i = 0; i < catalog::kMediaKindCount; ++i) {
+            const catalog::MediaPresence& media = indexed.media.kinds[i];
+            items.push_back(Json{{"kind", std::string(catalog::toString(catalog::kMediaKinds[i]))},
+                                 {"present", media.present},
+                                 {"extension", media.present ? Json(media.extension) : Json(nullptr)},
+                                 {"path", paths[i] ? Json(pathText(*paths[i])) : Json(nullptr)}});
+        }
+        const Json report{{"game", id.toString()},
+                          {"title", entry.title},
+                          {"system", entry.system.str()},
+                          {"path", entry.key.relativePath()},
+                          {"directory", directory},
+                          {"mediaName", mediaName},
+                          {"mediaRoot", rootJson(mediaRoot)},
+                          {"media", std::move(items)}};
+        out.write(report.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n");
+        return ExitCode::Ok;
+    }
+    const auto line = [&](std::string_view label, const std::string& value) {
+        out.writeLine(fmt::format("{:<14}{}", label, value));
+    };
+    line("Game", fmt::format("{} {}", id.toString(), entry.title));
+    line("System", game.system ? fmt::format("{} ({})", entry.system.str(), game.system->fullName) : entry.system.str());
+    line("ROM path", fmt::format("{}{}", entry.key.relativePath(), directory ? " (a folder: its media keep its whole name)"
+                                                                             : ""));
+    line("Media name", mediaName);
+    line("Media root", rootText(mediaRoot, "MediaDirectory", "unknown (the ES-DE settings cannot be read)"));
+    line("Media", fmt::format("{} of {} kinds, as the last import found them", present, catalog::kMediaKindCount));
+    for (std::size_t i = 0; i < catalog::kMediaKindCount; ++i) {
+        const catalog::MediaPresence& media = indexed.media.kinds[i];
+        const std::string value = !media.present ? std::string("none")
+                                  : paths[i]     ? pathText(*paths[i])
+                                                 : fmt::format("{} (the path cannot be derived: no media root)",
+                                                               media.extension);
+        out.writeLine(fmt::format("  {:<14}{}", catalog::toString(catalog::kMediaKinds[i]), value));
+    }
+    return ExitCode::Ok;
+}
+
 // --- media --coverage ------------------------------------------------------------------------------------------------
 
 void writeCoverageTable(Output& out, std::string_view title, const catalog::MediaCoverage& coverage,
@@ -496,7 +572,7 @@ ExitCode runMedia(CommandContext& context) {
                 "A ROM path of the system, relative to its ROM folder (or as a gamelist "
                 "writes it: \"./...\").")
         .flag("coverage", "Show the share of the entries that have each kind of media, per system.")
-        .option("game", "id", "A game of the catalog (from I2 step 11).")
+        .option("game", "id", "A game of the catalog (its GameId): its media as the last import stored them.")
         .flag("json", "Print the results as JSON.");
     addOutputOption(parser);
     const auto args = parser.parse(context.arguments);
@@ -513,7 +589,29 @@ ExitCode runMedia(CommandContext& context) {
         return ExitCode::UsageError;
     };
     if (args->has("game")) {
-        return usage(fmt::format("--game: not implemented yet (I2 step {})", kGameStep));
+        if (args->has("coverage") || args->has("path") || args->has("system")) {
+            return usage("--game takes neither --system, --path nor --coverage");
+        }
+        const auto id = catalog::GameId::parse(args->value("game").value_or(""));
+        if (!id) {
+            return usage(fmt::format("--game: {}", id.error().toString()));
+        }
+        auto output = outputFileOption(*args);
+        if (!output) {
+            return usage(output.error().toString());
+        }
+        Destination destination{std::move(*output), nullptr};
+        destination.out = destination.file ? &*destination.file : &context.out;
+        ExitCode failure = ExitCode::RuntimeFailure;
+        const auto profile = readRecordedLibrary(context, kName, failure);
+        if (!profile) {
+            return failure;
+        }
+        const ExitCode code = showGame(context, *destination.out, *profile, *id, args->has("json"));
+        if (destination.file && destination.file->text().empty()) {
+            return code; // nothing to write: the command failed before its results
+        }
+        return finish(destination, context, code);
     }
     const bool coverage = args->has("coverage");
     if (coverage && args->has("path")) {

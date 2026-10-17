@@ -1,10 +1,12 @@
 // retroverse-cli show: shows a game: metadata, files, media and launch readiness. `show <gameId>` prints everything the
 // catalog holds about the game (I2 step 9, SqliteCatalogQuery::details(), one read on a read-only connection): its
 // system and library, state and availability with their reasons, its file as listed and its path, the gamelist entry
-// and its metadata, ES-DE's flags, the media kinds present, the raw ES-DE values kept. Launch readiness comes with the
-// launch translation (I2 step 10) and media paths with the media resolver (step 8): neither is shown yet.
+// and its metadata, ES-DE's flags, the media kinds present with their files (derived under the media root of the library
+// <user data>/config/library.json records, when it names the game's library: paths are never stored, ADR-0008 §5; I2
+// step 11a), the raw ES-DE values kept. Launch readiness comes with the launch translation (I2 step 10): not shown yet.
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +33,8 @@
 
 #include "catalog_text.hpp"
 #include "commands.hpp"
+#include "esde_text.hpp"
+#include "library_snapshot.hpp"
 
 namespace rv::cli {
 namespace {
@@ -78,7 +82,10 @@ CatalogJson rawJson(const std::vector<catalog::RawElement>& elements) {
     return list;
 }
 
-std::string detailsJson(const catalog_db::GameDetails& details) {
+/// Per media kind, the file of the game's media, derived (nothing when the media root is not known).
+using MediaPaths = std::array<std::optional<std::filesystem::path>, catalog::kMediaKindCount>;
+
+std::string detailsJson(const catalog_db::GameDetails& details, const MediaPaths& paths) {
     const catalog::IndexedEntry& indexed = details.indexed;
     const catalog::CatalogEntry& entry = indexed.entry;
     const catalog::GameMetadata& metadata = entry.metadata;
@@ -137,10 +144,13 @@ std::string detailsJson(const catalog_db::GameDetails& details) {
          flags.lastPlayed ? CatalogJson(catalog::formatEsdeDateTime(*flags.lastPlayed)) : CatalogJson(nullptr)},
     };
     CatalogJson media = CatalogJson::array();
-    for (const catalog::MediaKind kind : catalog::kMediaKinds) {
+    for (std::size_t i = 0; i < catalog::kMediaKindCount; ++i) {
+        const catalog::MediaKind kind = catalog::kMediaKinds[i];
         if (indexed.media[kind].present) {
-            media.push_back(
-                CatalogJson{{"kind", catalog::toString(kind)}, {"extension", indexed.media[kind].extension}});
+            media.push_back(CatalogJson{
+                {"kind", catalog::toString(kind)},
+                {"extension", indexed.media[kind].extension},
+                {"path", paths[i] ? CatalogJson(core::pathToUtf8Lossy(*paths[i])) : CatalogJson(nullptr)}});
         }
     }
     json["media"] = std::move(media);
@@ -149,7 +159,7 @@ std::string detailsJson(const catalog_db::GameDetails& details) {
     return jsonText(json);
 }
 
-std::string detailsText(const catalog_db::GameDetails& details) {
+std::string detailsText(const catalog_db::GameDetails& details, const MediaPaths& paths) {
     const catalog::IndexedEntry& indexed = details.indexed;
     const catalog::CatalogEntry& entry = indexed.entry;
     const catalog::GameMetadata& metadata = entry.metadata;
@@ -235,6 +245,12 @@ std::string detailsText(const catalog_db::GameDetails& details) {
         }
     }
     line("Media", media.empty() ? std::string("none") : fmt::format("{}", fmt::join(media, ", ")));
+    for (std::size_t i = 0; i < catalog::kMediaKindCount; ++i) {
+        if (paths[i]) {
+            text += fmt::format("  {:<20}{}\n", catalog::toString(catalog::kMediaKinds[i]),
+                                core::pathToUtf8Lossy(*paths[i]));
+        }
+    }
     for (const catalog::RawElement& element : entry.raw.unknownElements) {
         line("Gamelist element", fmt::format("<{}> {}", element.name, catalog::displayText(element.text)));
     }
@@ -285,7 +301,13 @@ ExitCode runShow(CommandContext& context) {
         context.err.writeLine(fmt::format("retroverse-cli show: the catalog has no game {}", id->toString()));
         return ExitCode::ProblemsFound;
     }
-    const std::string text = args->has("json") ? detailsJson(**details) : detailsText(**details);
+    // The media files, derived under the media root of the library library.json records when it is the game's.
+    MediaPaths paths{};
+    if (const auto profile = esde::readLibraryFile(context.paths.configDir() / esde::kLibraryFileName);
+        profile && profile->id == (*details)->library) {
+        paths = derivedMediaPaths((*details)->indexed, mediaRootOf(*profile));
+    }
+    const std::string text = args->has("json") ? detailsJson(**details, paths) : detailsText(**details, paths);
     return writeResults(context, *file, text, ExitCode::Ok);
 }
 
