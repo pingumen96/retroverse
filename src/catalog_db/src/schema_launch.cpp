@@ -26,7 +26,9 @@ constexpr std::string_view kVersion1 = R"sql(
 -- (LeftRunningReason), and the launcher's details (launcher::FailureReason by toString(), the exit code and its
 -- launcher::ExitKind by toString(), quick exit, the user's confirmation, processes left in the tree, a refusal by the
 -- automation guard, its sentence). The exit code and its kind are both NULL when nothing exited (I2 step 11b-12i): so
--- always for an attempt that never started (blocked before the launch, refused by the guard), never for a crash.
+-- always for an attempt that never started (blocked before the launch; a request refused or a process that could not
+-- be created, failure 'invalid request' or 'start failed', a refusal by the guard among them), never for a crash. A
+-- running or interrupted row may hold one (an exit seen while the return awaits the user's confirmation).
 -- The started process's id, and the owner: the process that recorded the session (its id and creation time in
 -- FILETIME ticks), so that a later start closes as interrupted only the open sessions whose owner is gone.
 CREATE TABLE rv_play_sessions (
@@ -63,7 +65,8 @@ CREATE TABLE rv_play_sessions (
     CHECK ((outcome = 'blocked') = (readiness IS NOT NULL)),
     CHECK ((outcome = 'left-running') = (left_running <> 'none')),
     CHECK ((exit_code IS NULL) = (exit_kind IS NULL)),
-    CHECK (exit_code IS NULL OR (outcome <> 'blocked' AND refused_by_guard = 0)),
+    CHECK (exit_code IS NULL OR (outcome <> 'blocked' AND refused_by_guard = 0 AND
+                                 failure NOT IN ('invalid request', 'start failed'))),
     CHECK (outcome <> 'crashed' OR exit_code IS NOT NULL)
 ) STRICT;
 -- A game's sessions, newest first (retroverse-cli sessions --game), and the re-pointing of an alias's rows (I2 step 11b).

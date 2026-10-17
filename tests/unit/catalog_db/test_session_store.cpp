@@ -281,6 +281,15 @@ TEST_CASE("catalog_db/sessions: what the store refuses", "[catalog_db][sessions]
     refusedWithExit.exitCode = 0;
     refusedWithExit.exitKind = rv::launcher::ExitKind::Success;
     refusedAs(refusedWithExit, ErrorCode::InvalidArgument);
+    // A request the launcher refused and a process that could not be created (not by the guard) never started either.
+    for (const auto failure : {rv::launcher::FailureReason::InvalidRequest, rv::launcher::FailureReason::StartFailed}) {
+        INFO(rv::launcher::toString(failure));
+        PlaySession notCreated = ended(sessionOf(id(1)), PlaySessionOutcome::FailedToStart, "2026-10-17T10:00:00Z");
+        notCreated.failure = failure;
+        notCreated.exitCode = 1;
+        notCreated.exitKind = rv::launcher::ExitKind::ErrorCode;
+        refusedAs(notCreated, ErrorCode::InvalidArgument);
+    }
     refusedAs(ended(sessionOf(id(1)), PlaySessionOutcome::Crashed, "2026-10-17T10:00:01Z"), ErrorCode::InvalidArgument);
     PlaySession unknown = ended(sessionOf(id(1)), PlaySessionOutcome::Returned, "2026-10-17T10:00:01Z");
     unknown.id = 12345;
@@ -289,31 +298,38 @@ TEST_CASE("catalog_db/sessions: what the store refuses", "[catalog_db][sessions]
     CHECK(codeOf(store.updateSession(unknown)) == ErrorCode::InvalidArgument);
     CHECK(count(f.database.writer(), "SELECT count(*) FROM rv_play_sessions") == 0);
 
-    // The schema's checks say the same of rows written past the store: a blocked attempt or a refusal by the guard with
-    // an exit, a kind without its code, a code without its kind, a crash without one.
+    // The schema's checks say the same of rows written past the store: a blocked attempt, a refusal by the guard, a
+    // request refused or a process not created with an exit, a kind without its code, a code without its kind, a crash
+    // without one.
     const std::string columns = "game, choice_kind, choice, choice_source, test, started_at, ended_at, outcome, "
                                 "readiness, left_running, failure, exit_code, exit_kind, quick_exit, "
                                 "confirmed_by_user, processes_remained, refused_by_guard, message, process_id, "
                                 "owner_pid, owner_created";
-    const auto insertRow = [&](std::string_view outcome, std::string_view readiness, std::string_view exitCode,
-                               std::string_view exitKind, int refusedByGuard) {
+    const auto insertRow = [&](std::string_view outcome, std::string_view readiness, std::string_view failure,
+                               std::string_view exitCode, std::string_view exitKind, int refusedByGuard) {
+        const std::string_view endedAt = outcome == "running" ? "NULL" : "'2026-10-17T10:00:00.000Z'";
         return f.database.writer().execute(
             fmt::format("INSERT INTO rv_play_sessions ({}) VALUES (1, 'command', 'Fake Emulator', 'first-command', 0, "
-                        "'2026-10-17T10:00:00.000Z', '2026-10-17T10:00:00.000Z', '{}', {}, 'none', 'none', {}, {}, 0, "
-                        "0, 0, {}, '', 0, 1, 1)",
-                        columns, outcome, readiness, exitCode, exitKind, refusedByGuard));
+                        "'2026-10-17T10:00:00.000Z', {}, '{}', {}, 'none', '{}', {}, {}, 0, 0, 0, {}, '', 0, 1, 1)",
+                        columns, endedAt, outcome, readiness, failure, exitCode, exitKind, refusedByGuard));
     };
-    CHECK_FALSE(insertRow("blocked", "'rom-missing'", "0", "'success'", 0).has_value());
-    CHECK_FALSE(insertRow("failed-to-start", "NULL", "0", "'success'", 1).has_value());
-    CHECK_FALSE(insertRow("returned", "NULL", "NULL", "'success'", 0).has_value());
-    CHECK_FALSE(insertRow("returned", "NULL", "0", "NULL", 0).has_value());
-    CHECK_FALSE(insertRow("crashed", "NULL", "NULL", "NULL", 0).has_value());
+    CHECK_FALSE(insertRow("blocked", "'rom-missing'", "none", "0", "'success'", 0).has_value());
+    CHECK_FALSE(insertRow("failed-to-start", "NULL", "start failed", "0", "'success'", 1).has_value());
+    CHECK_FALSE(insertRow("failed-to-start", "NULL", "start failed", "1", "'error code'", 0).has_value());
+    CHECK_FALSE(insertRow("failed-to-start", "NULL", "invalid request", "1", "'error code'", 0).has_value());
+    CHECK_FALSE(insertRow("returned", "NULL", "none", "NULL", "'success'", 0).has_value());
+    CHECK_FALSE(insertRow("returned", "NULL", "none", "0", "NULL", 0).has_value());
+    CHECK_FALSE(insertRow("crashed", "NULL", "none", "NULL", "NULL", 0).has_value());
     CHECK(count(f.database.writer(), "SELECT count(*) FROM rv_play_sessions") == 0);
-    // As the store writes them: no exit for the blocked attempt and the refusal, a code and its kind for a return.
-    CHECK(insertRow("blocked", "'rom-missing'", "NULL", "NULL", 0).has_value());
-    CHECK(insertRow("failed-to-start", "NULL", "NULL", "NULL", 1).has_value());
-    CHECK(insertRow("returned", "NULL", "0", "'success'", 0).has_value());
-    CHECK(count(f.database.writer(), "SELECT count(*) FROM rv_play_sessions") == 3);
+    // As the store writes them: no exit for the blocked attempt, the refusal and the start that failed, a code and its
+    // kind for a return and for an early exit; a running row may hold the exit seen while its return awaits the user.
+    CHECK(insertRow("blocked", "'rom-missing'", "none", "NULL", "NULL", 0).has_value());
+    CHECK(insertRow("failed-to-start", "NULL", "start failed", "NULL", "NULL", 1).has_value());
+    CHECK(insertRow("failed-to-start", "NULL", "start failed", "NULL", "NULL", 0).has_value());
+    CHECK(insertRow("failed-to-start", "NULL", "early exit", "3", "'error code'", 0).has_value());
+    CHECK(insertRow("returned", "NULL", "none", "0", "'success'", 0).has_value());
+    CHECK(insertRow("running", "NULL", "none", "0", "'success'", 0).has_value());
+    CHECK(count(f.database.writer(), "SELECT count(*) FROM rv_play_sessions") == 6);
 }
 
 TEST_CASE("catalog_db/sessions: only the open sessions whose owner is gone are closed as interrupted",

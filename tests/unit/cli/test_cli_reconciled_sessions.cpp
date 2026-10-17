@@ -367,6 +367,8 @@ TEST_CASE("cli/reconciled sessions: a file moved back makes the holder an alias;
     CHECK(assigned.at("game").at("id") == tiny);
     CHECK(assigned.at("game").at("requested") == holder);
     CHECK(assigned.at("choice").at("value") == "fake-return");
+    CHECK(contains(setup.run({"assign", "--game", holder}).out,
+                   fmt::format("game {} (gb \"Tiny Tennis (Europe).gb\") (for {}, an alias)", tiny, holder)));
 
     // `launch --dry-run --game <holder>` and `launch --game <holder>` resolve to the moved identity, with its choice.
     const json dryRun = setup.runJson({"launch", "--dry-run", "--game", holder});
@@ -390,14 +392,26 @@ TEST_CASE("cli/reconciled sessions: a file moved back makes the holder an alias;
 
     // `sessions --game <holder>` lists the holder's session and the moved identity's under the moved identity, as
     // `sessions --game <moved identity>` does.
+    // The listing names the game the alias stands for, and the alias as the requested game, as launch does.
     const json byHolder = setup.runJson({"sessions", "--game", holder});
+    CHECK(byHolder.at("game") == tiny);
+    CHECK(byHolder.at("requestedGame") == holder);
     CHECK(listedIds(byHolder) == std::vector<std::int64_t>{aliasSession, tinySession, holderSession});
     CHECK(listedGames(byHolder) == std::vector<std::string>{tiny, tiny, tiny});
     CHECK(byHolder.at("sessions")[2].at("outcome") == "blocked");
     CHECK(byHolder.at("sessions")[2].at("exitKind").is_null());
     CHECK(byHolder.at("sessions")[2].at("path") == "Tiny Tennis (Europe).gb");
     CHECK(byHolder.at("sessions")[2].at("title") == "Tiny Tennis");
-    CHECK(listedIds(setup.runJson({"sessions", "--game", tiny})) == listedIds(byHolder));
+    CHECK(contains(setup.run({"sessions", "--game", holder}).out,
+                   fmt::format("Sessions of {} (for {}, an alias).", tiny, holder)));
+    const json byTiny = setup.runJson({"sessions", "--game", tiny});
+    CHECK(listedIds(byTiny) == listedIds(byHolder));
+    CHECK(byTiny.at("game") == tiny);
+    CHECK(byTiny.at("requestedGame") == tiny);
+    CHECK_FALSE(contains(setup.run({"sessions", "--game", tiny}).out, "an alias"));
+    const json everything = setup.runJson({"sessions"});
+    CHECK(everything.at("game").is_null());
+    CHECK(everything.at("requestedGame").is_null());
     setup.ok({"db", "check"});
 
     // `db rebuild-index` after it: every state row kept as it was (identities, aliases, history, reviews, sessions,
@@ -570,6 +584,8 @@ TEST_CASE("cli/reconciled sessions: a review resolved with --with moves the chos
     const json sessions = setup.runJson({"sessions", "--game", chosen});
     CHECK(listedIds(sessions) == std::vector<std::int64_t>{chosenSession, first.at("session").at("id")});
     CHECK(listedGames(sessions) == std::vector<std::string>{vanished, vanished});
+    CHECK(sessions.at("game") == vanished);
+    CHECK(sessions.at("requestedGame") == chosen);
     CHECK(sessions.at("sessions")[0].at("path") == "Collection C/Pocket Puzzle (World).gb");
     CHECK(listedIds(setup.runJson({"sessions", "--game", other})) == std::vector<std::int64_t>{otherSession});
     const json dryRun = setup.runJson({"launch", "--dry-run", "--game", chosen});

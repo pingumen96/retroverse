@@ -133,8 +133,9 @@ public:
     /// InvalidArgument for a session that already has an id, an outcome its fields contradict (Running or Interrupted
     /// with an end time, an end time missing, Blocked without a readiness or with Ready, LeftRunning without a reason,
     /// an exit code without its kind or a kind without a code, an exit for an attempt that never started (Blocked, a
-    /// refusal by the guard), Crashed without one), text that is not UTF-8; NotFound when its game is neither an
-    /// identity nor an alias; Conflict (busy) once `retry` is spent; SQLite's others.
+    /// refusal by the guard, the failures InvalidRequest and StartFailed), Crashed without one), text that is not
+    /// UTF-8; NotFound when its game is neither an identity nor an alias; Conflict (busy) once `retry` is spent;
+    /// SQLite's others.
     [[nodiscard]] Expected<std::int64_t> insertSession(const catalog::PlaySession& session, const BusyRetry& retry = {});
     /// Writes the end of the stored session `session.id` (every field but the game and the owner). Errors: NotFound for
     /// an id the store does not have; those of insertSession().

@@ -7,9 +7,10 @@
 //
 //   sessions [--game <id>] [--limit <n>] [--json] [--output <file>]
 //
-// --game lists one game's sessions (an alias stands for the game it names); --limit caps the list (50 by default, 0 for
-// every session). Exit codes: 0; 1 a --game the catalog does not know (neither an identity nor an alias); 2 invalid
-// options; 3 when the catalog cannot be read (no catalog yet: an import makes it) or the results written.
+// --game lists one game's sessions (an alias stands for the game it names: the output names that game, and the alias as
+// the requested game, as `launch` does); --limit caps the list (50 by default, 0 for every session). Exit codes: 0; 1 a
+// --game the catalog does not know (neither an identity nor an alias); 2 invalid options; 3 when the catalog cannot be
+// read (no catalog yet: an import makes it) or the results written.
 
 #include <chrono>
 #include <optional>
@@ -49,12 +50,16 @@ Json listedJson(const catalog_db::ListedSession& listed) {
     return json;
 }
 
+/// `game`: the identity --game stands for; `requested`: the GameId --game gave (an alias, when it differs).
 void writeText(const std::vector<catalog_db::ListedSession>& sessions,
                const std::vector<catalog::PlaySession>& interrupted, const std::optional<catalog::GameId>& game,
-               Output& out) {
+               const std::optional<catalog::GameId>& requested, Output& out) {
     for (const catalog::PlaySession& session : interrupted) {
         out.writeLine(fmt::format("Session {} of {} closed as interrupted now: its owner, process {}, is gone.",
                                   session.id, session.game.toString(), session.owner.processId));
+    }
+    if (game && requested && *requested != *game) {
+        out.writeLine(fmt::format("Sessions of {} (for {}, an alias).", game->toString(), requested->toString()));
     }
     if (sessions.empty()) {
         out.writeLine(game ? fmt::format("No play session of {}.", game->toString()) : std::string("No play session."));
@@ -100,13 +105,14 @@ ExitCode runSessions(CommandContext& context) {
     if (!output) {
         return usageError(context, output.error().toString());
     }
-    std::optional<catalog::GameId> game;
+    // --game as given (`requested`), and the identity it stands for (`game`: an alias resolved).
+    std::optional<catalog::GameId> requested;
     if (args->has("game")) {
         const auto id = catalog::GameId::parse(args->value("game").value_or(""));
         if (!id) {
             return usageError(context, fmt::format("--game: {}", id.error().toString()));
         }
-        game = *id;
+        requested = *id;
     }
     const auto limit = args->intValue("limit", kDefaultLimit);
     if (!limit || *limit < 0 || *limit > kMaxLimit) {
@@ -119,15 +125,17 @@ ExitCode runSessions(CommandContext& context) {
     }
     catalog_db::SessionStore& store = *catalog->store;
     const std::vector<catalog::PlaySession> interrupted = recoverInterruptedSessions(store);
-    if (game) {
-        auto resolved = store.resolveGame(*game);
+    std::optional<catalog::GameId> game;
+    if (requested) {
+        auto resolved = store.resolveGame(*requested);
         if (!resolved) {
             return catalogFailure(context, resolved.error());
         }
         if (!*resolved) {
-            context.err.writeLine(fmt::format("{}: the catalog has no game {}", kName, game->toString()));
+            context.err.writeLine(fmt::format("{}: the catalog has no game {}", kName, requested->toString()));
             return ExitCode::ProblemsFound;
         }
+        game = **resolved;
     }
     catalog_db::SessionFilter filter;
     filter.game = game;
@@ -143,6 +151,7 @@ ExitCode runSessions(CommandContext& context) {
     if (args->has("json")) {
         Json json;
         json["game"] = game ? Json(game->toString()) : Json(nullptr);
+        json["requestedGame"] = requested ? Json(requested->toString()) : Json(nullptr);
         json["limit"] = *limit;
         Json list = Json::array();
         for (const catalog_db::ListedSession& listed : *sessions) {
@@ -157,7 +166,7 @@ ExitCode runSessions(CommandContext& context) {
         text = jsonText(json);
     } else {
         Output buffer = Output::memory();
-        writeText(*sessions, interrupted, game, buffer);
+        writeText(*sessions, interrupted, game, requested, buffer);
         text = buffer.text();
     }
     return writeResults(context, *output, text, ExitCode::Ok);

@@ -266,7 +266,10 @@ Status checkSession(const PlaySession& session) {
     if (session.exitCode.has_value() != session.exitKind.has_value()) {
         return refuse(session.exitCode ? "has an exit code without its kind" : "has an exit kind without an exit code");
     }
-    if (session.exitCode && (session.outcome == PlaySessionOutcome::Blocked || session.refusedByGuard)) {
+    const bool neverStarted = session.outcome == PlaySessionOutcome::Blocked || session.refusedByGuard ||
+                              session.failure == launcher::FailureReason::InvalidRequest ||
+                              session.failure == launcher::FailureReason::StartFailed;
+    if (session.exitCode && neverStarted) {
         return refuse("has an exit code, which an attempt that never started has not");
     }
     if (session.outcome == PlaySessionOutcome::Crashed && !session.exitCode) {
