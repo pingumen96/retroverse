@@ -286,6 +286,15 @@ TEST_CASE("cli/reconciled sessions: a file moved back makes the holder an alias;
     const rv::test::ScopedLaunchAllowList allowList(listed);
     setup.ok({"identities", "hash"}); // quick hashes stored: the moves pair by them
     setup.ok({"assign", "gb", "fake-quick"}); // a system choice too, a state row of its own
+    // What putAlias() re-points, read from the schema as the store reads it: every state table's single-column foreign
+    // key into the identities, step 12's launch tables among them.
+    CHECK(setup.rows("SELECT m.name || '.' || f.\"from\" FROM sqlite_schema AS m JOIN pragma_foreign_key_list(m.name) "
+                     "AS f WHERE m.type = 'table' AND substr(m.name, 1, 3) = 'rv_' AND f.\"table\" = "
+                     "'rv_game_identities' AND f.seq = 0 AND NOT EXISTS (SELECT 1 FROM pragma_foreign_key_list(m.name) "
+                     "AS g WHERE g.id = f.id AND g.seq > 0) ORDER BY 1") ==
+          std::vector<std::string>{"rv_identity_aliases.game", "rv_identity_history.game", "rv_identity_reviews.game",
+                                   "rv_launch_game_choices.game", "rv_launch_verifications.game",
+                                   "rv_play_sessions.game"});
 
     // Tiny Tennis moved to a sub-folder, its gamelist entry left at the old path: the entry gets a new identity, the
     // holder of that path (never seen with a file).
