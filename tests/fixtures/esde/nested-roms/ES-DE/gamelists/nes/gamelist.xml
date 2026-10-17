@@ -39,6 +39,7 @@
 	<folder>
 		<path>./L1/L2</path>
 		<name>Second Level</name>
+		<hidden>true</hidden>
 	</folder>
 	<folder>
 		<path>./Gone Shelf</path>

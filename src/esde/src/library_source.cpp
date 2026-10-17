@@ -5,6 +5,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <set>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -187,9 +188,34 @@ struct SystemResult {
     std::vector<catalog::DiscGroup> groups;
     std::vector<catalog::UnavailableFolder> unavailableFolders;
     std::vector<catalog::Issue> issues;
+    /// The keys of the folders whose <folder> entry ES-DE applies with <hidden> while ShowHiddenGames is off: it deletes
+    /// them with everything below (excludeBelowHiddenFolders()).
+    std::vector<std::string> hiddenFolders;
     /// The games ES-DE would list (disc members included): whether ES-DE loads the definition.
     std::size_t esdeGames = 0;
 };
+
+/// With ShowHiddenGames off, ES-DE deletes a folder whose <folder> entry is <hidden>, and with it every game and folder
+/// below it (GamelistFileParser::parseGamelist; ~FileData deletes the children): what is below such a folder is not a
+/// game either. Missing files stay missing (ES-DE skips their entries before, as files that do not exist).
+void excludeBelowHiddenFolders(SystemResult& result) {
+    if (result.hiddenFolders.empty()) {
+        return;
+    }
+    const std::set<std::string, std::less<>> folders(result.hiddenFolders.begin(), result.hiddenFolders.end());
+    for (CatalogEntry& entry : result.entries) {
+        if (entry.state != EntryState::Game && entry.state != EntryState::Folder) {
+            continue;
+        }
+        const std::string_view key = entry.key.key();
+        for (std::size_t slash = key.find('/'); slash != std::string_view::npos; slash = key.find('/', slash + 1)) {
+            if (folders.contains(key.substr(0, slash))) {
+                exclude(entry, NotAGameReason::ExcludedBySetting, kShowHiddenGames);
+                break;
+            }
+        }
+    }
+}
 
 class Loader {
 public:
@@ -323,6 +349,7 @@ void Loader::addUnavailableEntries(SystemResult& result, const std::vector<const
             exclude(entry, NotAGameReason::ExcludedBySetting, kShowHiddenFiles);
         } else if (!m_settings.showHiddenGames && entry.flags.hidden) {
             exclude(entry, NotAGameReason::ExcludedBySetting, kShowHiddenGames);
+            result.hiddenFolders.push_back(chosen->key.key());
         }
     } else {
         entry.state = EntryState::Game;
@@ -411,6 +438,16 @@ void Loader::mergeListing(SystemResult& result, const RomFolderListing& listing,
                 exclude(entry, NotAGameReason::NoLoadTxt);
             } else if (!m_settings.showHiddenGames && entry.flags.hidden) {
                 exclude(entry, NotAGameReason::ExcludedBySetting, kShowHiddenGames);
+            }
+            // Whether ES-DE applies the entry (spelled as the folder is: its tree holds the names on disk), and so
+            // deletes the folder with what is below it: not skipped for a hidden file or parent, not at a noload
+            // folder; a hidden folder further up does not keep it from applying, as game entries below create the
+            // folders between.
+            if (!m_settings.showHiddenGames && chosen->flags.hidden && block == SystemBlock::None && !hiddenSkipped &&
+                (parseGamelistOnly ||
+                 (item.above != ScanExclusion::NoLoadTxt && item.exclusion != ScanExclusion::NoLoadTxt)) &&
+                chosen->key.relativePath() == item.key.relativePath()) {
+                result.hiddenFolders.push_back(item.key.key());
             }
         } else if (chosen != nullptr) {
             // GamelistFileParser::parseGamelist's checks, in its order.
@@ -787,6 +824,7 @@ Expected<SystemResult> Loader::loadSystem(const SystemDefinition& definition) {
                 addUnavailableEntries(result, byKey[key], rules, result.info.unavailableReason);
             }
         }
+        excludeBelowHiddenFolders(result);
         if (Status grouped = addDiscGroups(result, nullptr, issues); !grouped) {
             return propagate(std::move(grouped.error()));
         }
@@ -808,6 +846,7 @@ Expected<SystemResult> Loader::loadSystem(const SystemDefinition& definition) {
         issues.addAll(std::move(listing->issues));
         result.unavailableFolders = listing->unavailableFolders;
         mergeListing(result, *listing, gamelist, rules, block, gamelistFile, issues);
+        excludeBelowHiddenFolders(result);
         if (Status grouped = addDiscGroups(result, &*listing, issues); !grouped) {
             return propagate(std::move(grouped.error()));
         }

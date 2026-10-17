@@ -24,7 +24,7 @@ root); payloads generated from `files.json`. Defaults for every setting.
 | `nes/Shelf A` | folder | `<folder>` | a folder entry |
 | `nes/Shelf B` | no entry | a `<game>` entry | a `<game>` entry naming a folder ES-DE enters: skipped (`gamelist-kind-mismatch`) |
 | `nes/L1/L2/L3/L4/L5/L6/Deep Diver (World).nes` | game | yes | six levels of sub-folders |
-| `nes/L1/L2` | folder | `<folder>` | a folder entry deep in the tree, with no game directly inside |
+| `nes/L1/L2` | folder | `<folder>`, `<hidden>` | a folder entry deep in the tree, with no game directly inside; hidden, which counts only with `ShowHiddenGames` off |
 | `./L1/L2/Lost Level (USA).nes` | missing file | yes | a missing file deep in the tree |
 | `nes/Vol. 1.5/Point Five (Europe).NES` | game | no | a folder whose name holds dots (its extension `.5` is none of nes', so it is entered) |
 | `nes/Collection.zip` | game (a directory) | yes ("Collection Box") | a directory named with a configured extension: one game, size 0, never entered |
@@ -70,3 +70,9 @@ uses the one that matches the disk), `rom-name-empty` (`nes/.nes`), `gamelist-ki
 - A junction `roms/nes/Linked` leading to `extra`: followed, `Linked/Linked Game (USA).nes` is one more game.
 - `roms/nes/L1/L2` made unlistable: an unavailable folder; Deep Diver and Lost Level are then games "source
   unavailable" (from the gamelist alone), never missing; the `L1/L2` folder entry stays a folder (its parent lists it).
+- `ShowHiddenGames` off: ES-DE deletes the folder `L1/L2`, whose `<folder>` entry is `<hidden>`, with everything below
+  it. `L1/L2` and Deep Diver are not games (`ShowHiddenGames`), Lost Level stays a missing file; nes then has 10
+  entries, 5 games, 1 missing file, 2 not games, 2 folders, and ES-DE lists 5 games. So it is too with `L1/L2`
+  unlistable (Deep Diver and Lost Level, from the gamelist alone, are not games) and with `nes` removed. The entry
+  spelled `./l1/l2` matches the folder by key (the folder is not a game), but ES-DE applies only the spelling on disk:
+  Deep Diver stays a game.

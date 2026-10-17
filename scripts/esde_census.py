@@ -15,7 +15,8 @@ system folder with ES-DE's rules, which reproduced ES-DE's own "Total game count
     system folder itself keeps the system from loading), MAME BIOS and device sets skipped in the arcade and neogeo
     systems, files whose ES-DE name is empty skipped; then the gamelist: an entry for an existing file applies to it (a
     path that differs in case only too), with ES-DE's checks (hidden file or parent, noload, extension, BIOS set,
-    <hidden> with ShowHiddenGames off); ParseGamelistOnly lists only gamelist entries;
+    <hidden> with ShowHiddenGames off, which for a <folder> entry takes everything below the folder too);
+    ParseGamelistOnly lists only gamelist entries;
   - Retroverse's states: game, missing file (a <game> entry whose file is gone), not a game with its reason, disc member
     (a game that a .cue or .m3u game of the same system references; m3u -> cue -> tracks, cycles cut), folder (a
     <folder> entry of an existing folder), outside the system folder; entries below a folder that cannot be listed are
@@ -253,6 +254,7 @@ class System:
         self.items = []          # dicts in walk order
         self.by_key = {}         # key -> [item]
         self.unavailable = {}    # folder key -> reason
+        self.hidden_folders = set()  # keys of folders ES-DE deletes with their content (a <hidden> <folder> entry)
         self.entries = []        # dicts: key (None outside the folder), rel, state, reason, dir, gamelist
         self.groups = 0
         self.available = True
@@ -485,6 +487,12 @@ class System:
                     state, reason = 'not-a-game', 'noload-txt'
                 elif not show_hidden_games and chosen['hidden']:
                     state, reason = 'not-a-game', 'excluded-by-setting'
+                # ES-DE applies the entry spelled as the folder is (not for a hidden file or parent, not at a noload
+                # folder) and, ShowHiddenGames off, deletes the folder with everything below it.
+                if (not show_hidden_games and chosen['hidden'] and not block and chosen['rel'] == item['rel']
+                        and not (not show_hidden_files and (item['hidden'] or item['parent_hidden']))
+                        and (only_gamelist or 'noload' not in (item['above'], item['reason']))):
+                    self.hidden_folders.add(item['key'])
             elif chosen is not None:
                 variant = chosen['rel'] != item['rel']
                 if block:
@@ -565,8 +573,19 @@ class System:
             state, reason = 'not-a-game', 'bios-or-device-set'
         elif not settings['ShowHiddenGames'] and entry['hidden']:
             state, reason = 'not-a-game', 'excluded-by-setting'
+            if entry['kind'] == 'folder':
+                self.hidden_folders.add(fold(entry['rel']))
         self.entries.append({'key': fold(entry['rel']), 'rel': entry['rel'], 'state': state, 'reason': reason,
                              'dir': entry['kind'] == 'folder', 'gamelist': True, 'unavailable': True})
+
+    def hide_below_hidden_folders(self):
+        """ShowHiddenGames off: what is below a folder ES-DE deletes is not a game (missing files stay missing)."""
+        for entry in self.entries:
+            if entry['state'] not in ('game', 'folder') or entry['key'] is None:
+                continue
+            elements = entry['key'].split('/')
+            if any('/'.join(elements[:depth]) in self.hidden_folders for depth in range(1, len(elements))):
+                entry['state'], entry['reason'] = 'not-a-game', 'excluded-by-setting'
 
     # The disc groups.
     def group_discs(self):
@@ -742,6 +761,7 @@ def census(home, install, override, only):
                     same = [e for e in gamelist if e['rel'] is not None and fold(e['rel']) == key]
                     games = [e for e in same if e['kind'] == 'game']
                     system.add_unavailable(games[-1] if games else same[-1])
+            system.hide_below_hidden_folders()
             system.group_discs()
             row, why = system.counts()
             if chosen is None or (chosen[0]['esde'] == 0 and row['esde'] > 0):

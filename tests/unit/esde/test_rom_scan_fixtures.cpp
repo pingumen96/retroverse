@@ -229,6 +229,62 @@ TEST_CASE("esde/rom_scan: a missing ROM folder keeps its gamelist's entries as s
     CHECK(issuesOf(snapshot.issues, "system-folder-missing").size() == 1);
 }
 
+TEST_CASE("esde/rom_scan: ShowHiddenGames off, a hidden folder entry hides what is below the folder",
+          "[esde][rom_scan]") {
+    const rv::test::Fixture fixture = materialize("esde/nested-roms");
+    setSetting(fixture, "ShowHiddenGames", true, false);
+    const auto hiddenGames = [](const CatalogEntry& entry) {
+        return entry.state == EntryState::NotAGame && entry.notAGameReason == NotAGameReason::ExcludedBySetting &&
+               entry.excludingSetting == "ShowHiddenGames";
+    };
+    const auto esdeGames = [](const LibrarySnapshot& snapshot) {
+        std::size_t games = 0;
+        for (const CatalogEntry& entry : snapshot.entries) {
+            games += entry.system.str() == "nes" && entry.availability == Availability::Available &&
+                             (entry.state == EntryState::Game || entry.state == EntryState::DiscMember)
+                         ? 1
+                         : 0;
+        }
+        return games;
+    };
+    SECTION("as committed") {
+        // ES-DE deletes L1/L2 (its <folder> entry is <hidden>) with everything below it.
+        const LibrarySnapshot snapshot = load(fixture);
+        CHECK(countsOf(snapshot, "nes") == StateCounts{10, 5, 1, 2, 0, 2, 0});
+        CHECK(esdeGames(snapshot) == 5);
+        CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2")));
+        CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2/L3/L4/L5/L6/Deep Diver (World).nes")));
+        CHECK(entryAt(snapshot, "nes", "L1/L2/Lost Level (USA).nes").state == EntryState::MissingFile);
+        CHECK(entryAt(snapshot, "nes", "Shelf A/Hero Quest (USA).nes").state == EntryState::Game);
+    }
+    SECTION("the folder cannot be listed: the same, from the gamelist alone") {
+        auto denied = rv::test::ListingDenied::apply(fixture.path("roms/nes/L1/L2"));
+        REQUIRE(denied.has_value());
+        const LibrarySnapshot snapshot = load(fixture);
+        const CatalogEntry& deep = entryAt(snapshot, "nes", "L1/L2/L3/L4/L5/L6/Deep Diver (World).nes");
+        CHECK(deep.availability == Availability::SourceUnavailable);
+        CHECK(hiddenGames(deep));
+        CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2/Lost Level (USA).nes")));
+        CHECK(esdeGames(snapshot) == 5);
+    }
+    SECTION("the system folder is missing: the same, from the gamelist alone") {
+        rv::test::removeTreeAnyLength(fixture.path("roms/nes"));
+        const LibrarySnapshot snapshot = load(fixture);
+        CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2")));
+        CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2/L3/L4/L5/L6/Deep Diver (World).nes")));
+        CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2/Lost Level (USA).nes")));
+        CHECK(entryAt(snapshot, "nes", "Shelf B/Hero Quest (USA).nes").state == EntryState::Game);
+    }
+    SECTION("an entry spelled in another case: ES-DE does not apply it to the folder") {
+        REQUIRE(fixture.replaceText("ES-DE/gamelists/nes/gamelist.xml", "<path>./L1/L2</path>",
+                                    "<path>./l1/l2</path>"));
+        const LibrarySnapshot snapshot = load(fixture);
+        CHECK(hiddenGames(entryAt(snapshot, "nes", "L1/L2"))); // its metadata, matched by key
+        CHECK(entryAt(snapshot, "nes", "L1/L2/L3/L4/L5/L6/Deep Diver (World).nes").state == EntryState::Game);
+        CHECK(esdeGames(snapshot) == 6);
+    }
+}
+
 TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     const rv::test::Fixture fixture = materialize("esde/multi-disc");
     // The Windows-1252 cue sheet, written here (hostile encodings are generated at test time).
