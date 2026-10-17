@@ -1,5 +1,5 @@
-// retroverse-cli games: lists games, filtered and sorted, a page at a time (I2 step 9). retroverse-cli search shares the
-// list (runGameList()) and adds a search text. Both read the catalog database of the user data directory through
+// retroverse-cli games: lists games, filtered and sorted, a page at a time (I2 step 9). retroverse-cli search shares
+// the list (runGameList()) and adds a search text. Both read the catalog database of the user data directory through
 // SqliteCatalogQuery on a read-only connection: the list is materialized in one read (ADR-0008 §5), the page shown
 // fetched by ids. Also the helpers of catalog_text.hpp, shared with systems and show.
 

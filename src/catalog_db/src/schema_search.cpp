@@ -3,12 +3,12 @@
 // The search index, idx_game_search, is an FTS5 table with external content: it stores only its index, the text it
 // indexes being read from idx_game_search_content, a view over idx_games joined to idx_systems that adds what idx_games
 // does not hold (the year of the release date, the system's full name). Triggers keep the index in step with both
-// tables: FTS5 removes a row's tokens only when it is given the values it indexed ('delete' with the old values), so the
-// index must never miss a change of an indexed value, in idx_games or in idx_systems (a system's full name is indexed
-// with each of its games). The store writes with upserts, never REPLACE (which deletes without firing delete triggers),
-// so an existing row fires the UPDATE triggers, which skip the rows whose indexed values did not change. A full
-// rebuild ('rebuild', from the view) is a repair; `db check` runs FTS5's integrity-check with rank 1, which compares
-// the index with the view.
+// tables: FTS5 removes a row's tokens only when it is given the values it indexed ('delete' with the old values), so
+// the index must never miss a change of an indexed value, in idx_games or in idx_systems (a system's full name is
+// indexed with each of its games). The store writes with upserts, never REPLACE (which deletes without firing delete
+// triggers), so an existing row fires the UPDATE triggers, which skip the rows whose indexed values did not change. A
+// full rebuild ('rebuild', from the view) is a repair; `db check` runs FTS5's integrity-check with rank 1, which
+// compares the index with the view.
 //
 // Tokenizer: unicode61 with remove_diacritics 2 (case and diacritics folded, also on letters that carry several; NFD
 // text indexed as NFC text), prefix indexes of 2 and 3 characters for the last word of a search, which is a prefix.

@@ -96,7 +96,8 @@ public:
     explicit CatalogCli(std::string_view prefix, bool withDatabase = true) : m_dir(prefix) {
         quest = game("gb", "Pixel Quest (World).gb", "Pixel Quest");
         quest.entry.metadata.developer = "Mirage Soft";
-        quest.entry.metadata.publisher = "\xC3\x89" "ditions Pixel";
+        quest.entry.metadata.publisher = "\xC3\x89"
+                                         "ditions Pixel";
         quest.entry.metadata.genre = "Role Playing Game";
         quest.entry.metadata.releaseDate = ReleaseDate{1997, 7, 2};
         quest.entry.metadata.players = Players{1, 4};
@@ -105,7 +106,9 @@ public:
         quest.entry.flags.favorite = true;
         quest.entry.raw.unknownElements = {{"region", "eu"}};
         quest.media[MediaKind::Cover] = MediaPresence{true, ".png"};
-        eclair = game("gb", "Eclair Nocturne.gb", "\xC3\x89" "clair Nocturne"); // Éclair: sorts after the ASCII titles
+        eclair = game("gb", "Eclair Nocturne.gb",
+                      "\xC3\x89"
+                      "clair Nocturne"); // Éclair: sorts after the ASCII titles
         eclair.entry.metadata.releaseDate = ReleaseDate{1992, 1, 1};
         eclair.sortKey = sortKeyOf(eclair.entry).value();
         racerUsa = game("gb", "Harbor Racer (USA).gb", "Harbor Racer");
@@ -229,7 +232,8 @@ TEST_CASE("cli/catalog: games lists games in a total order, a system's, filtered
     CHECK(gb.out == fmt::format("{}  gb  Harbor Racer\n"
                                 "{}  gb  Harbor Racer\n"
                                 "{}  gb  Pixel Quest (1997)\n"
-                                "{}  gb  \xC3\x89" "clair Nocturne (1992)\n"
+                                "{}  gb  \xC3\x89"
+                                "clair Nocturne (1992)\n"
                                 "4 games\n",
                                 idOf(*racer[0]), idOf(*racer[1]), idOf(cli.quest), idOf(cli.eclair)));
 
@@ -243,7 +247,8 @@ TEST_CASE("cli/catalog: games lists games in a total order, a system's, filtered
     const RunResult other = cli.run({"games", "--state", "not-a-game, folder"});
     CHECK(other.out == fmt::format("{}  snes  Readme [not-a-game]\n1 entry\n", idOf(cli.readme)));
     const RunResult byDate = cli.run({"games", "--sort", "release-date", "--limit", "2"});
-    CHECK(byDate.out == fmt::format("{}  gb    \xC3\x89" "clair Nocturne (1992)\n"
+    CHECK(byDate.out == fmt::format("{}  gb    \xC3\x89"
+                                    "clair Nocturne (1992)\n"
                                     "{}  snes  Pixel Racer (1993)\n"
                                     "1 to 2 of 5 games\n",
                                     idOf(cli.eclair), idOf(cli.snesRacer)));
@@ -273,7 +278,8 @@ TEST_CASE("cli/catalog: games lists games in a total order, a system's, filtered
     CHECK(row.at("releaseDate") == "1997-07-02");
     CHECK(row.at("year") == 1997);
     CHECK(row.at("developer") == "Mirage Soft");
-    CHECK(row.at("publisher") == "\xC3\x89" "ditions Pixel");
+    CHECK(row.at("publisher") == "\xC3\x89"
+                                 "ditions Pixel");
     CHECK(row.at("genre") == "Role Playing Game");
     CHECK(row.at("players") == "1-4");
     CHECK(row.at("rating") == 0.7);
@@ -313,8 +319,9 @@ TEST_CASE("cli/catalog: search finds by words in any order, the last one a prefi
                                    idOf(cli.quest), idOf(cli.snesRacer)));
     CHECK(cli.run({"search", "racer pix"}).out ==
           fmt::format("{}  snes  Pixel Racer (1993)\n1 game\n", idOf(cli.snesRacer)));
-    CHECK(cli.run({"search", "ECLAIR"}).out ==
-          fmt::format("{}  gb  \xC3\x89" "clair Nocturne (1992)\n1 game\n", idOf(cli.eclair)));
+    CHECK(cli.run({"search", "ECLAIR"}).out == fmt::format("{}  gb  \xC3\x89"
+                                                           "clair Nocturne (1992)\n1 game\n",
+                                                           idOf(cli.eclair)));
     CHECK(cli.run({"search", "editions"}).out == fmt::format("{}  gb  Pixel Quest (1997)\n1 game\n", idOf(cli.quest)));
     CHECK(cli.run({"search", "home console"}).out ==
           fmt::format("{}  snes  Pixel Racer (1993)\n1 game\n", idOf(cli.snesRacer)));
@@ -343,8 +350,7 @@ TEST_CASE("cli/catalog: search finds by words in any order, the last one a prefi
     CHECK(json.at("count") == 1);
     CHECK(json.at("limit").is_null());
     CHECK(json.at("games").at(0).at("id") == idOf(cli.quest));
-    CHECK(nlohmann::json::parse(cli.run({"search", "p", "--json"}).out).at("query").at("search") ==
-          "first-character");
+    CHECK(nlohmann::json::parse(cli.run({"search", "p", "--json"}).out).at("query").at("search") == "first-character");
 
     // A search needs its text.
     const RunResult none = cli.run({"search"});
@@ -375,7 +381,8 @@ TEST_CASE("cli/catalog: show prints everything the catalog holds about a game; a
     has("Sort key:             pixel quest");
     has("Release date:         1997-07-02");
     has("Developer:            Mirage Soft");
-    has("Publisher:            \xC3\x89" "ditions Pixel");
+    has("Publisher:            \xC3\x89"
+        "ditions Pixel");
     has("Players:              1-4");
     has("Rating:               0.7");
     has("Flags:                favorite");

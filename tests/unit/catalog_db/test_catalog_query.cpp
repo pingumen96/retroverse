@@ -194,9 +194,9 @@ TEST_CASE("catalog_db/search: the search area: an FTS5 index with ADR-0008's tok
     CHECK(contains(search, "prefix = '2 3'"));
     CHECK_FALSE(contains(search, "description"));
     CHECK(writer.queryText("SELECT type FROM sqlite_schema WHERE name = 'idx_game_search_content'").value() == "view");
-    for (const std::string_view trigger : {"idx_games_search_insert", "idx_games_search_delete",
-                                           "idx_games_search_update", "idx_systems_search_insert",
-                                           "idx_systems_search_delete", "idx_systems_search_update"}) {
+    for (const std::string_view trigger :
+         {"idx_games_search_insert", "idx_games_search_delete", "idx_games_search_update", "idx_systems_search_insert",
+          "idx_systems_search_delete", "idx_systems_search_update"}) {
         INFO(trigger);
         CHECK(writer.queryText(fmt::format("SELECT type FROM sqlite_schema WHERE name = '{}'", trigger)).value() ==
               "trigger");
@@ -285,8 +285,12 @@ TEST_CASE("catalog_db/search: case and diacritics are ignored, decomposed text f
           "[catalog_db][search]") {
     QueryFixture fixture("rv-search-diacritics");
     const LibraryId& library = fixture.library.id;
-    const IndexedEntry composed = game(library, "gb", "Eclair 1.gb", "\xC3\x89" "clair"); // Éclair
-    const IndexedEntry decomposed = game(library, "gb", "Eclair 2.gb", "E\xCC\x81" "clair Nocturne"); // NFD
+    const IndexedEntry composed = game(library, "gb", "Eclair 1.gb",
+                                       "\xC3\x89"
+                                       "clair"); // Éclair
+    const IndexedEntry decomposed = game(library, "gb", "Eclair 2.gb",
+                                         "E\xCC\x81"
+                                         "clair Nocturne"); // NFD
     const IndexedEntry plain = game(library, "gb", "Eclair 3.gb", "ECLAIR DE LUNE");
     const IndexedEntry castle = game(library, "gb", "Chateau.gb", "Ch\xC3\xA2teau Fort"); // Château
     const IndexedEntry other = game(library, "gb", "Pixel.gb", "Pixel Quest");
@@ -295,9 +299,12 @@ TEST_CASE("catalog_db/search: case and diacritics are ignored, decomposed text f
     const std::vector<GameId> eclairs = titleOrder({composed, decomposed, plain});
     CHECK(fixture.search("eclair") == eclairs);
     CHECK(fixture.search("ECLAIR") == eclairs);
-    CHECK(fixture.search("\xC3\xA9" "clair") == eclairs);     // éclair
-    CHECK(fixture.search("e\xCC\x81" "clair") == eclairs);    // éclair, decomposed
-    CHECK(fixture.search("\xC3\x89" "CL") == eclairs);         // ÉCL, a prefix
+    CHECK(fixture.search("\xC3\xA9"
+                         "clair") == eclairs); // éclair
+    CHECK(fixture.search("e\xCC\x81"
+                         "clair") == eclairs); // éclair, decomposed
+    CHECK(fixture.search("\xC3\x89"
+                         "CL") == eclairs); // ÉCL, a prefix
     CHECK(fixture.search("chateau") == std::vector{castle.id});
     CHECK(fixture.search("CH\xC3\x82") == std::vector{castle.id}); // CHÂ
     CHECK(fixture.search("fort ch\xC3\xA2teau") == std::vector{castle.id});
@@ -308,14 +315,14 @@ TEST_CASE("catalog_db/search: every word must match, in any order and any search
           "[catalog_db][search]") {
     QueryFixture fixture("rv-search-words");
     const LibraryId& library = fixture.library.id;
-    const IndexedEntry superQuest = edited(game(library, "gb", "Super Pixel Quest.gb", "Super Pixel Quest"),
-                                           [](CatalogEntry& e) {
-                                               e.metadata.developer = "Mirage Soft";
-                                               e.metadata.publisher = "Harbor Lights";
-                                               e.metadata.genre = "Role Playing Game";
-                                               e.metadata.releaseDate = ReleaseDate{1997, 7, 2};
-                                               e.metadata.description = "A quixotry of pixels.";
-                                           });
+    const IndexedEntry superQuest =
+        edited(game(library, "gb", "Super Pixel Quest.gb", "Super Pixel Quest"), [](CatalogEntry& e) {
+            e.metadata.developer = "Mirage Soft";
+            e.metadata.publisher = "Harbor Lights";
+            e.metadata.genre = "Role Playing Game";
+            e.metadata.releaseDate = ReleaseDate{1997, 7, 2};
+            e.metadata.description = "A quixotry of pixels.";
+        });
     const IndexedEntry racer = edited(game(library, "snes", "Pixel Racer.sfc", "Pixel Racer"), [](CatalogEntry& e) {
         e.metadata.releaseDate = ReleaseDate{1993, 1, 1};
         e.metadata.sortName = "Velocity Pixel Racer";
@@ -330,15 +337,15 @@ TEST_CASE("catalog_db/search: every word must match, in any order and any search
     CHECK(fixture.search("pi") == titleOrder({superQuest, racer, pixels})); // the prefix index of 2
     CHECK(fixture.search("pixel qu") == titleOrder({superQuest}));          // "pixel": a whole word
     CHECK(fixture.search("pix quest").empty());                             // only the last word is a prefix
-    CHECK(fixture.search("mirage") == std::vector{superQuest.id});         // developer
-    CHECK(fixture.search("harbor lights") == std::vector{superQuest.id});  // publisher
-    CHECK(fixture.search("role playing") == std::vector{superQuest.id});   // genre
-    CHECK(fixture.search("1997") == std::vector{superQuest.id});           // year
-    CHECK(fixture.search("199") == titleOrder({superQuest, racer}));       // the prefix index of 3
-    CHECK(fixture.search("home console pixel") == std::vector{racer.id});  // the system's full name
+    CHECK(fixture.search("mirage") == std::vector{superQuest.id});          // developer
+    CHECK(fixture.search("harbor lights") == std::vector{superQuest.id});   // publisher
+    CHECK(fixture.search("role playing") == std::vector{superQuest.id});    // genre
+    CHECK(fixture.search("1997") == std::vector{superQuest.id});            // year
+    CHECK(fixture.search("199") == titleOrder({superQuest, racer}));        // the prefix index of 3
+    CHECK(fixture.search("home console pixel") == std::vector{racer.id});   // the system's full name
     CHECK(fixture.search("quest of pixels the") == std::vector{pixels.id});
     CHECK(fixture.search("velocity") == std::vector{racer.id}); // the sort title
-    CHECK(fixture.search("quixotry").empty());                              // descriptions are not searched
+    CHECK(fixture.search("quixotry").empty());                  // descriptions are not searched
     CHECK(fixture.search("pixel zzz").empty());
 }
 
@@ -349,7 +356,9 @@ TEST_CASE("catalog_db/search: one character filters by the sort key's first char
     const IndexedEntry pixel = game(library, "gb", "Pixel.gb", "Pixel Quest");
     const IndexedEntry puzzle = game(library, "gb", "Puzzle.gb", "puzzle tower");
     const IndexedEntry superPixel = game(library, "gb", "Super.gb", "Super Pixel");
-    const IndexedEntry eclair = game(library, "gb", "Eclair.gb", "\xC3\x89" "clair"); // Éclair
+    const IndexedEntry eclair = game(library, "gb", "Eclair.gb",
+                                     "\xC3\x89"
+                                     "clair"); // Éclair
     const IndexedEntry plain = game(library, "gb", "Echo.gb", "Echo");
     const IndexedEntry quoted = game(library, "gb", "Quoted.gb", "\"Quoted\" Title");
     fixture.import({system("gb", "Portable Console")}, {pixel, puzzle, superPixel, eclair, plain, quoted});
@@ -384,13 +393,47 @@ TEST_CASE("catalog_db/search: FTS5 syntax in user text is inert: quotes, '*', '-
     fixture.import({system("gb", "Portable Console")}, {quest, racer, nearby});
 
     const std::vector<std::string> inputs{
-        "\"",         "\"\"",          "\"pixel",        "pixel\"",       "pixel\" OR \"racer", "pixel*",
-        "*pixel",     "* *",           "pixel -racer",   "-pixel",        "pixel NOT racer",    "pixel OR racer",
-        "pixel AND",  "AND",           "OR",             "NOT",           "NEAR",               "NEAR(pixel racer)",
-        "NEAR(pixel racer, 2)",        "title:pixel",    "developer:mirage", "{title}:pixel",   "- title : pixel",
-        "(pixel)",    "(pixel OR",     "pixel)",         "^pixel",        "pixel^",             "+pixel",
-        "pixel + quest", "col1 : x",   "pixel quest*",   "*",             "'pixel'",            "pixel\\",
-        "\\\"",       "\x01pixel",     "pixel  \t quest", "near or not and", "NeAr(",           "\"\"\"\"",
+        "\"",
+        "\"\"",
+        "\"pixel",
+        "pixel\"",
+        "pixel\" OR \"racer",
+        "pixel*",
+        "*pixel",
+        "* *",
+        "pixel -racer",
+        "-pixel",
+        "pixel NOT racer",
+        "pixel OR racer",
+        "pixel AND",
+        "AND",
+        "OR",
+        "NOT",
+        "NEAR",
+        "NEAR(pixel racer)",
+        "NEAR(pixel racer, 2)",
+        "title:pixel",
+        "developer:mirage",
+        "{title}:pixel",
+        "- title : pixel",
+        "(pixel)",
+        "(pixel OR",
+        "pixel)",
+        "^pixel",
+        "pixel^",
+        "+pixel",
+        "pixel + quest",
+        "col1 : x",
+        "pixel quest*",
+        "*",
+        "'pixel'",
+        "pixel\\",
+        "\\\"",
+        "\x01pixel",
+        "pixel  \t quest",
+        "near or not and",
+        "NeAr(",
+        "\"\"\"\"",
     };
     for (const std::string& input : inputs) {
         INFO(input);
@@ -411,7 +454,7 @@ TEST_CASE("catalog_db/search: FTS5 syntax in user text is inert: quotes, '*', '-
         }
     }
     // What a few of them find: their words, never their syntax.
-    CHECK(fixture.search("pixel OR racer").empty());              // "pixel", "or", "racer": no title holds "or"
+    CHECK(fixture.search("pixel OR racer").empty());                // "pixel", "or", "racer": no title holds "or"
     CHECK(fixture.search("pixel -racer") == std::vector{racer.id}); // '-' separates
     CHECK(fixture.search("pixel NOT racer").empty());
     CHECK(fixture.search("NEAR(pixel racer)").empty());
@@ -426,8 +469,7 @@ TEST_CASE("catalog_db/search: FTS5 syntax in user text is inert: quotes, '*', '-
     CHECK(fixture.query->searchPlan("\"\"").value().kind == SearchPlan::Kind::Everything);
     CHECK(fixture.search("* *") == titleOrder({quest, racer, nearby}));
     CHECK(fixture.search("") == titleOrder({quest, racer, nearby}));
-    CHECK(fixture.query->searchPlan("pixel\" OR \"racer").value().match ==
-          R"("pixel" AND "or" AND "racer"*)");
+    CHECK(fixture.query->searchPlan("pixel\" OR \"racer").value().match == R"("pixel" AND "or" AND "racer"*)");
     // Text that is not UTF-8 is refused.
     CHECK(codeOf(fixture.query->run(CatalogQuery{"pixel \xFF"})) == ErrorCode::InvalidArgument);
     CHECK(codeOf(fixture.query->searchWords("\xC3")) == ErrorCode::InvalidArgument);
@@ -440,8 +482,12 @@ TEST_CASE("catalog_db/search: the words are FTS5's own tokens of the text, as th
     // Titles of every kind: generated ones (precomposed and decomposed accents), punctuation, symbols, digits, scripts
     // without spaces, and the FTS5 syntax of the test above.
     std::vector<std::string> texts{
-        "\xC3\x89" "clair d'\xC3\x89t\xC3\xA9: Super-Pixel's 2nd \"Quest\" (NEAR) OR -x title:y",
-        "E\xCC\x81" "clair na\xC3\xAF" "ve \xC5\x92UVRE Stra\xC3\x9F" "e \xC4\xB0stanbul \xC3\xB8 \xC3\xA6",
+        "\xC3\x89"
+        "clair d'\xC3\x89t\xC3\xA9: Super-Pixel's 2nd \"Quest\" (NEAR) OR -x title:y",
+        "E\xCC\x81"
+        "clair na\xC3\xAF"
+        "ve \xC5\x92UVRE Stra\xC3\x9F"
+        "e \xC4\xB0stanbul \xC3\xB8 \xC3\xA6",
         "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E abc \xEF\xBC\x91\xEF\xBC\x92\xEF\xBC\x93", // 日本語 abc １２３
         "C++ & C# | $100 @home #1 100% 3.14 1,000 a_b a.b.c",
         "pixel\" OR \"racer NEAR(a b, 2) {title}: ^x +y *z",
@@ -640,7 +686,8 @@ TEST_CASE("catalog_db/query: positions and pages of a list; rows fetched by ids,
     }
     entries[7] = edited(entries[7], [](CatalogEntry& e) {
         e.metadata.developer = "Mirage Soft \n";
-        e.metadata.publisher = " \xC3\x89" "ditions\tPixel";
+        e.metadata.publisher = " \xC3\x89"
+                               "ditions\tPixel";
         e.metadata.genre = "Corsa, Guida / Moto";
         e.metadata.releaseDate = ReleaseDate{1997, 7, 2};
         e.metadata.players = Players{2, std::nullopt};
@@ -681,7 +728,8 @@ TEST_CASE("catalog_db/query: positions and pages of a list; rows fetched by ids,
     CHECK(row.availability == Availability::Available);
     CHECK(row.releaseDate == ReleaseDate{1997, 7, 2});
     CHECK(row.developer == "Mirage Soft");
-    CHECK(row.publisher == "\xC3\x89" "ditions Pixel");
+    CHECK(row.publisher == "\xC3\x89"
+                           "ditions Pixel");
     CHECK(row.genre == "Corsa, Guida / Moto");
     CHECK(row.players == Players{2, std::nullopt});
     CHECK(row.rating == Rating{7});
@@ -743,7 +791,7 @@ TEST_CASE("catalog_db/query: a reader never waits on the writer: during an impor
     CHECK(fixture.run(CatalogQuery{}) == std::vector{quest.id});
     CHECK(narrowing->run(CatalogQuery{"pixel"}).value() == std::vector{quest.id});
     CHECK(narrowing->run(CatalogQuery{"pixel qu"}).value() == std::vector{quest.id});
-    CHECK(std::chrono::steady_clock::now() - started < 2s); // the writer's busy timeout is 5 s
+    CHECK(std::chrono::steady_clock::now() - started < 2s);   // the writer's busy timeout is 5 s
     CHECK_FALSE(fixture.query->connection().inTransaction()); // no read outlives a call
 
     REQUIRE((*transaction)->commit().has_value());
@@ -880,7 +928,8 @@ TEST_CASE("catalog_db/query: a generated catalog: every query as an oracle over 
         const GameMetadata& m = e.entry.metadata;
         const std::string year = m.releaseDate ? std::to_string(m.releaseDate->year) : "";
         const std::string& fullName = fullNames[{generated->library.id.str(), e.entry.system.str()}];
-        for (const std::string& field : {e.entry.title, m.sortName, m.developer, m.publisher, m.genre, year, fullName}) {
+        for (const std::string& field :
+             {e.entry.title, m.sortName, m.developer, m.publisher, m.genre, year, fullName}) {
             const auto words = rv::test::generatedWords(field);
             f.words.insert(f.words.end(), words.begin(), words.end());
         }
@@ -953,12 +1002,50 @@ TEST_CASE("catalog_db/query: a generated catalog: every query as an oracle over 
 
     // Searches from the generator's own words: whole words, prefixes of 1 to 5 characters, two and three words in
     // either order, typed without their accents or in capitals, years, companies, system names.
-    std::vector<std::string> texts{"", "pixel", "eclair", "ECLAIR", "\xC3\x89" "cl", "chateau ch", "quest of",
-                                   "the", "super pixel", "pixel super", "zurich", "ZÜR", "kobo", "angstrom",
-                                   "1985", "19", "199", "mirage", "editions pixel", "pixel editions", "systeme",
-                                   "nintendo game", "sony", "corsa guida", "shoot em", "role playing game",
-                                   "europe", "espana", "track", "collection", "archivio", "quixotry", "p", "S", "é",
-                                   "Ö", "2", "a b", "super m", "pi", "py", "zz", "galaxy robot wizard"};
+    std::vector<std::string> texts{"",
+                                   "pixel",
+                                   "eclair",
+                                   "ECLAIR",
+                                   "\xC3\x89"
+                                   "cl",
+                                   "chateau ch",
+                                   "quest of",
+                                   "the",
+                                   "super pixel",
+                                   "pixel super",
+                                   "zurich",
+                                   "ZÜR",
+                                   "kobo",
+                                   "angstrom",
+                                   "1985",
+                                   "19",
+                                   "199",
+                                   "mirage",
+                                   "editions pixel",
+                                   "pixel editions",
+                                   "systeme",
+                                   "nintendo game",
+                                   "sony",
+                                   "corsa guida",
+                                   "shoot em",
+                                   "role playing game",
+                                   "europe",
+                                   "espana",
+                                   "track",
+                                   "collection",
+                                   "archivio",
+                                   "quixotry",
+                                   "p",
+                                   "S",
+                                   "é",
+                                   "Ö",
+                                   "2",
+                                   "a b",
+                                   "super m",
+                                   "pi",
+                                   "py",
+                                   "zz",
+                                   "galaxy robot wizard"};
     std::size_t nonEmpty = 0;
     for (const std::string& text : texts) {
         for (const SortOrder sort : {SortOrder::Title, SortOrder::System, SortOrder::ReleaseDate}) {
@@ -990,8 +1077,8 @@ TEST_CASE("catalog_db/query: a generated catalog: every query as an oracle over 
                 request.states = wanted;
                 request.systems = systems;
                 request.includeUnavailable = true;
-                request.availabilities = text == "s" ? std::vector{Availability::SourceUnavailable}
-                                                     : std::vector<Availability>{};
+                request.availabilities =
+                    text == "s" ? std::vector{Availability::SourceUnavailable} : std::vector<Availability>{};
                 INFO(text << " / " << wanted.size() << " states / " << systems.size() << " systems");
                 const auto ids = query->get()->run(request);
                 REQUIRE(ids.has_value());

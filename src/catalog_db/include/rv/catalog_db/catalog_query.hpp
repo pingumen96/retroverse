@@ -29,10 +29,11 @@
 //    entries whose sort key starts with that character lower-cased as sort keys are (case ignored, diacritics not: "é"
 //    finds "Éclair", "e" does not). Text that is not UTF-8 is InvalidArgument.
 //
-// Orders (catalog::SortOrder), each total: Title, (sort key, GameId); System, the system's full name folded as sort keys
-// are (catalog::sortKeyOf), then its name, then Title's order (games of a system without an idx_systems row sort as a
-// system with an empty full name); ReleaseDate, oldest first, undated entries last, then Title's order. Lists are read
-// in Title's order from the index idx_games_sort (schema_search.cpp), the other orders made from it by a stable sort.
+// Orders (catalog::SortOrder), each total: Title, (sort key, GameId); System, the system's full name folded as sort
+// keys are (catalog::sortKeyOf), then its name, then Title's order (games of a system without an idx_systems row sort
+// as a system with an empty full name); ReleaseDate, oldest first, undated entries last, then Title's order. Lists are
+// read in Title's order from the index idx_games_sort (schema_search.cpp), the other orders made from it by a stable
+// sort.
 //
 // Errors of every read: Conflict (SQLite reports the database busy or locked, which a reader meets only in rare cases),
 // Cancelled (interrupted), ParseError (a damaged file, or a row the catalog cannot read back), IoError and SQLite's
@@ -61,7 +62,7 @@ class Connection;
 /// How a search text is matched (SqliteCatalogQuery::searchPlan()).
 struct SearchPlan {
     enum class Kind : std::uint8_t {
-        Everything, ///< blank text, or text without a word: no filter
+        Everything,     ///< blank text, or text without a word: no filter
         FirstCharacter, ///< one character: entries whose sort key starts with `prefix` (no FTS5)
         Words,          ///< FTS5: every word a token, the last one a prefix (`match` is the FTS5 query)
     };
@@ -116,7 +117,8 @@ public:
     /// The catalog's queries on `connection`, which it keeps (a reader from Database::openReader(), usually); a private
     /// in-memory database splits search text into words. Used from one thread at a time, as the connection. Errors:
     /// Conflict when the database's schema version is not programSchemaVersion() (older: migrate() it first, which a
-    /// reader cannot; newer: written by a newer Retroverse); InvalidArgument for a connection that is not open; SQLite's.
+    /// reader cannot; newer: written by a newer Retroverse); InvalidArgument for a connection that is not open;
+    /// SQLite's.
     [[nodiscard]] static Expected<std::unique_ptr<SqliteCatalogQuery>> open(Connection connection,
                                                                             const QueryOptions& options = {});
 

@@ -83,15 +83,75 @@ struct BenchCatalog {
 /// companies, system names, one character; with every order and some filters.
 std::vector<CatalogQuery> nfr02Queries() {
     const std::vector<std::string> texts{
-        "pixel",      "quest",      "eclair",     "chateau",    "zurich",     "dragon",     "galaxy",     "robot",
-        "super",      "mega",       "phantom",    "neon",       "lunar",      "the",        "of",         "and",
-        "pi",         "su",         "ch",         "ga",         "ro",         "dr",         "ne",         "19",
-        "pix",        "sup",        "cha",        "gal",        "rob",        "dra",        "198",        "200",
-        "pixe",       "supe",       "chat",       "gala",       "drago",      "quest p",    "super pi",   "pixel q",
-        "dragon ca",  "the of",     "neon samurai", "golden tower", "royal circus garden", "1985", "1999",
-        "mirage",     "editions",   "kumo works", "studio brule", "nintendo",   "sony play",  "systeme fictif",
-        "sega mega",  "arcade",     "europe",     "espana",     "japan",      "role playing", "corsa guida",
-        "shoot",      "s",          "p",          "c",          "e",          "zz",         "pixel zz",   "super m",
+        "pixel",
+        "quest",
+        "eclair",
+        "chateau",
+        "zurich",
+        "dragon",
+        "galaxy",
+        "robot",
+        "super",
+        "mega",
+        "phantom",
+        "neon",
+        "lunar",
+        "the",
+        "of",
+        "and",
+        "pi",
+        "su",
+        "ch",
+        "ga",
+        "ro",
+        "dr",
+        "ne",
+        "19",
+        "pix",
+        "sup",
+        "cha",
+        "gal",
+        "rob",
+        "dra",
+        "198",
+        "200",
+        "pixe",
+        "supe",
+        "chat",
+        "gala",
+        "drago",
+        "quest p",
+        "super pi",
+        "pixel q",
+        "dragon ca",
+        "the of",
+        "neon samurai",
+        "golden tower",
+        "royal circus garden",
+        "1985",
+        "1999",
+        "mirage",
+        "editions",
+        "kumo works",
+        "studio brule",
+        "nintendo",
+        "sony play",
+        "systeme fictif",
+        "sega mega",
+        "arcade",
+        "europe",
+        "espana",
+        "japan",
+        "role playing",
+        "corsa guida",
+        "shoot",
+        "s",
+        "p",
+        "c",
+        "e",
+        "zz",
+        "pixel zz",
+        "super m",
     };
     std::vector<CatalogQuery> queries;
     for (const std::string& text : texts) {
@@ -113,8 +173,7 @@ std::vector<CatalogQuery> nfr02Queries() {
 
 } // namespace
 
-TEST_CASE("catalog_db/bench: NFR-02, the p95 of indexed queries is at most 100 ms on 10,000 games",
-          "[.bench]") {
+TEST_CASE("catalog_db/bench: NFR-02, the p95 of indexed queries is at most 100 ms on 10,000 games", "[.bench]") {
     BenchCatalog catalog("rv-bench-nfr02", 10'000);
     const std::vector<CatalogQuery> queries = nfr02Queries();
     for (const CatalogQuery& query : queries) { // warm the page cache, as the app's reader is
@@ -147,21 +206,36 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
                                      "{:.0f} ms ({} pages of 4 KiB):\n",
                                      catalog.generation, catalog.pages);
 
-    // Materializations: each run 5 times, the median and the slowest reported.
-    const auto timeRun = [&](std::string_view label, SqliteCatalogQuery& query, const CatalogQuery& request) {
+    // Materializations, each run 5 times after a first that warms the page cache, the median and the slowest
+    // reported. "read": a commit of the writer before each run makes the queries read the list again (as after an
+    // import); "kept": the list without the search is kept from the run before, and narrowed.
+    rv::catalog_db::Connection& writer = catalog.database->writer();
+    int commits = 0;
+    const auto commit = [&] {
+        REQUIRE(writer
+                    .execute(fmt::format("INSERT INTO rv_meta (key, value) VALUES ('bench', '{0}') "
+                                         "ON CONFLICT (key) DO UPDATE SET value = '{0}'",
+                                         ++commits))
+                    .has_value());
+    };
+    const auto timeRun = [&](std::string_view label, SqliteCatalogQuery& query, const CatalogQuery& request,
+                             bool read) {
         std::vector<double> times;
         std::size_t count = 0;
         for (int run = 0; run < 6; ++run) {
+            if (read) {
+                commit();
+            }
             const auto started = Clock::now();
             const auto ids = query.run(request);
             const double elapsed = millisecondsSince(started);
             REQUIRE(ids.has_value());
             count = ids->size();
-            if (run > 0) { // the first run warms the page cache
+            if (run > 0) {
                 times.push_back(elapsed);
             }
         }
-        report += fmt::format("  {:<52} {:>6} ids  median {:7.2f} ms  max {:7.2f} ms\n", label, count,
+        report += fmt::format("  {:<60} {:>6} ids  median {:7.2f} ms  max {:7.2f} ms\n", label, count,
                               percentile(times, 0.5), percentile(times, 1.0));
     };
     const auto request = [](std::string text, SortOrder sort = SortOrder::Title, bool includeUnavailable = false) {
@@ -172,26 +246,29 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
         return query;
     };
     SqliteCatalogQuery& query = *catalog.query;
-    timeRun("every game, Title", query, request(""));
-    timeRun("every game, System", query, request("", SortOrder::System));
-    timeRun("every game, ReleaseDate", query, request("", SortOrder::ReleaseDate));
-    timeRun("every entry (unavailable included), Title", query, request("", SortOrder::Title, true));
     CatalogQuery onePlatform = request("");
     onePlatform.systems = {SystemName::parse("psx").value()};
-    timeRun("one system (psx), Title", query, onePlatform);
-    timeRun("one letter 's' (no FTS5)", query, request("s"));
-    timeRun("one letter 'p' (no FTS5), System", query, request("p", SortOrder::System));
-    const auto lookUpAll = catalog.open(QueryOptions{std::numeric_limits<std::size_t>::max()});
-    const auto scanAll = catalog.open(QueryOptions{0});
-    for (const std::string_view prefix : {"su", "pi", "ch", "19", "an"}) {
-        timeRun(fmt::format("two letters '{}' (default)", prefix), query, request(std::string(prefix)));
-        timeRun(fmt::format("two letters '{}', rows looked up", prefix), *lookUpAll, request(std::string(prefix)));
-        timeRun(fmt::format("two letters '{}', order index read whole", prefix), *scanAll, request(std::string(prefix)));
+    for (const bool read : {true, false}) {
+        const std::string_view how = read ? "read" : "kept";
+        timeRun(fmt::format("every game, Title, {}", how), query, request(""), read);
+        timeRun(fmt::format("every game, System, {}", how), query, request("", SortOrder::System), read);
+        timeRun(fmt::format("every game, ReleaseDate, {}", how), query, request("", SortOrder::ReleaseDate), read);
+        timeRun(fmt::format("every entry (unavailable included), Title, {}", how), query,
+                request("", SortOrder::Title, true), read);
+        timeRun(fmt::format("one system (psx), Title, {}", how), query, onePlatform, read);
     }
-    for (const std::string_view text : {"sup", "pixel", "drago", "super pi", "neon samurai", "super m", "pixel zz"}) {
-        timeRun(fmt::format("'{}' (default)", text), query, request(std::string(text)));
-        timeRun(fmt::format("'{}', rows looked up", text), *lookUpAll, request(std::string(text)));
-        timeRun(fmt::format("'{}', order index read whole", text), *scanAll, request(std::string(text)));
+    timeRun("one letter 's' (no FTS5)", query, request("s"), true);
+    timeRun("one letter 'p' (no FTS5), System", query, request("p", SortOrder::System), true);
+    const auto lookUpAll = catalog.open(QueryOptions{std::numeric_limits<std::size_t>::max()});
+    const auto readAll = catalog.open(QueryOptions{0});
+    for (const std::string_view text :
+         {"su", "pi", "ch", "19", "an", "sup", "pixel", "drago", "super pi", "neon samurai", "super m", "pixel zz"}) {
+        const CatalogQuery search = request(std::string(text));
+        timeRun(fmt::format("'{}' after a commit (default)", text), query, search, true);
+        timeRun(fmt::format("'{}' after a commit, rows looked up", text), *lookUpAll, search, true);
+        timeRun(fmt::format("'{}' after a commit, list read and narrowed", text), *readAll, search, true);
+        REQUIRE(readAll->run(CatalogQuery{}).has_value()); // the list without the search, kept
+        timeRun(fmt::format("'{}', kept list narrowed", text), *readAll, search, false);
     }
     {
         std::vector<double> times;
@@ -214,8 +291,8 @@ TEST_CASE("catalog_db/bench: a UI page of 30 rows fetched by ids within 5 ms on 
             times.push_back(millisecondsSince(started));
             REQUIRE(position == list.size() - 1);
         }
-        report += fmt::format("  {:<52} median {:7.3f} ms\n", fmt::format("position of the last of {} ids", list.size()),
-                              percentile(times, 0.5));
+        report += fmt::format("  {:<52} median {:7.3f} ms\n",
+                              fmt::format("position of the last of {} ids", list.size()), percentile(times, 0.5));
     }
 
     // UI pages: 30 rows fetched by ids, at the start, at the end, and at 500 positions spread over the list.

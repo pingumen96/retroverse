@@ -162,8 +162,8 @@ Expected<SystemInfo> readSystem(const Statement& row, int first, const std::stri
         return unreadable("a ROM folder that is not valid UTF-8", context);
     }
     system.romFolder = std::move(*romFolder);
-    const auto availability = readEnum<Availability>(row.columnText(first + 6), catalog::parseAvailability,
-                                                     "availability", context);
+    const auto availability =
+        readEnum<Availability>(row.columnText(first + 6), catalog::parseAvailability, "availability", context);
     const auto reason = readEnum<catalog::SourceUnavailableReason>(
         row.columnText(first + 7), catalog::parseSourceUnavailableReason, "unavailability", context);
     const auto gamelist = readEnum<catalog::GamelistState>(row.columnText(first + 8), catalog::parseGamelistState,
@@ -194,8 +194,8 @@ std::optional<catalog::Players> readPlayers(const Statement& row, int min, int m
     }
     catalog::Players players;
     players.min = static_cast<std::uint32_t>(row.columnInt(min));
-    players.max = row.isNull(max) ? std::nullopt
-                                  : std::optional<std::uint32_t>(static_cast<std::uint32_t>(row.columnInt(max)));
+    players.max =
+        row.isNull(max) ? std::nullopt : std::optional<std::uint32_t>(static_cast<std::uint32_t>(row.columnInt(max)));
     return players;
 }
 
@@ -619,9 +619,9 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead
                 if (!*row) {
                     break;
                 }
-                fullNames.emplace(std::pair<std::string, std::string>(systemRows.columnText(0),
-                                                                      systemRows.columnText(1)),
-                                  systemRows.columnText(2));
+                fullNames.emplace(
+                    std::pair<std::string, std::string>(systemRows.columnText(0), systemRows.columnText(1)),
+                    systemRows.columnText(2));
             }
         }
         std::vector<std::pair<std::string, std::string>> orderKeys; // (folded full name, name) by group index
@@ -639,9 +639,9 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::State::readList(const ListRead
                   [&](std::uint32_t a, std::uint32_t b) { return orderKeys[a] < orderKeys[b]; });
         std::vector<std::uint32_t> rank(groups.size()); // equal keys, equal ranks
         for (std::size_t i = 0; i < byKey.size(); ++i) {
-            rank[byKey[i]] = i == 0 ? 0
+            rank[byKey[i]] = i == 0                                           ? 0
                              : orderKeys[byKey[i]] == orderKeys[byKey[i - 1]] ? rank[byKey[i - 1]]
-                                                                             : rank[byKey[i - 1]] + 1;
+                                                                              : rank[byKey[i - 1]] + 1;
         }
         std::stable_sort(rows.begin(), rows.end(),
                          [&](const ListRow& a, const ListRow& b) { return rank[a.group] < rank[b.group]; });
@@ -817,8 +817,8 @@ Expected<std::vector<GameId>> SqliteCatalogQuery::run(const CatalogQuery& query)
         list.systemsJson = jsonStrings(systems);
     }
     list.sort = query.sort;
-    const std::string key = fmt::format("{} ORDER {} SYSTEMS {}", list.filters, catalog::toString(query.sort),
-                                        list.systemsJson);
+    const std::string key =
+        fmt::format("{} ORDER {} SYSTEMS {}", list.filters, catalog::toString(query.sort), list.systemsJson);
 
     State& state = *m_state;
     auto scope = ReadScope::begin(state.connection);
@@ -902,10 +902,10 @@ Expected<std::vector<CatalogRow>> SqliteCatalogQuery::fetch(std::span<const Game
         return rows;
     }
     // One statement, one snapshot: the ids drive the join in their order (json_each's key is the array index).
-    auto fetched = m_state->statement(fmt::format(
-        "SELECT {} FROM json_each(?1) AS j CROSS JOIN idx_games AS g ON g.id = j.value "
-        "LEFT JOIN idx_systems AS s ON s.library = g.library AND s.name = g.system ORDER BY j.key",
-        kRowColumns));
+    auto fetched = m_state->statement(
+        fmt::format("SELECT {} FROM json_each(?1) AS j CROSS JOIN idx_games AS g ON g.id = j.value "
+                    "LEFT JOIN idx_systems AS s ON s.library = g.library AND s.name = g.system ORDER BY j.key",
+                    kRowColumns));
     if (!fetched) {
         return propagate(fetched.error());
     }
@@ -952,8 +952,8 @@ Expected<std::vector<SystemSummary>> SqliteCatalogQuery::systems() {
             if (!*row) {
                 break;
             }
-            const std::string context = fmt::format("idx_systems row {}/{}", statement.columnText(0),
-                                                    statement.columnText(1));
+            const std::string context =
+                fmt::format("idx_systems row {}/{}", statement.columnText(0), statement.columnText(1));
             auto library = LibraryId::parse(statement.columnText(0));
             if (!library) {
                 return unreadable(fmt::format("an invalid library id ({})", library.error().message), context);
@@ -1120,9 +1120,9 @@ Expected<std::optional<GameDetails>> SqliteCatalogQuery::details(GameId id) {
             return propagate(row.error());
         }
         if (*row) {
-            auto info = readSystem(statement, 1,
-                                   fmt::format("idx_systems row {}/{}", details.library.str(),
-                                               details.indexed.entry.system.str()));
+            auto info = readSystem(
+                statement, 1,
+                fmt::format("idx_systems row {}/{}", details.library.str(), details.indexed.entry.system.str()));
             if (!info) {
                 return propagate(info.error());
             }

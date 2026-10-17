@@ -64,7 +64,8 @@ std::string romPathText(const catalog_db::GameDetails& details) {
     if (!details.system) {
         return {};
     }
-    std::filesystem::path path = details.system->romFolder / core::pathFromUtf8(details.indexed.entry.key.relativePath());
+    std::filesystem::path path =
+        details.system->romFolder / core::pathFromUtf8(details.indexed.entry.key.relativePath());
     path.make_preferred();
     return core::pathToUtf8Lossy(path);
 }
@@ -132,18 +133,19 @@ std::string detailsJson(const catalog_db::GameDetails& details) {
         {"broken", flags.broken},
         {"playCount", flags.playCount},
         {"playTime", flags.playTimeSeconds},
-        {"lastPlayed", flags.lastPlayed ? CatalogJson(catalog::formatEsdeDateTime(*flags.lastPlayed))
-                                        : CatalogJson(nullptr)},
+        {"lastPlayed",
+         flags.lastPlayed ? CatalogJson(catalog::formatEsdeDateTime(*flags.lastPlayed)) : CatalogJson(nullptr)},
     };
     CatalogJson media = CatalogJson::array();
     for (const catalog::MediaKind kind : catalog::kMediaKinds) {
         if (indexed.media[kind].present) {
-            media.push_back(CatalogJson{{"kind", catalog::toString(kind)}, {"extension", indexed.media[kind].extension}});
+            media.push_back(
+                CatalogJson{{"kind", catalog::toString(kind)}, {"extension", indexed.media[kind].extension}});
         }
     }
     json["media"] = std::move(media);
-    json["raw"] = CatalogJson{{"unknown", rawJson(entry.raw.unknownElements)},
-                              {"original", rawJson(entry.raw.originalForms)}};
+    json["raw"] =
+        CatalogJson{{"unknown", rawJson(entry.raw.unknownElements)}, {"original", rawJson(entry.raw.originalForms)}};
     return jsonText(json);
 }
 
@@ -157,10 +159,10 @@ std::string detailsText(const catalog_db::GameDetails& details) {
     };
     line("Game", indexed.id.toString());
     line("Title", entry.title);
-    line("System", details.system ? fmt::format("{} ({}), library {}", entry.system.str(), details.system->fullName,
-                                                details.library.str())
-                                  : fmt::format("{} (not in the catalog's systems), library {}", entry.system.str(),
-                                                details.library.str()));
+    line("System",
+         details.system
+             ? fmt::format("{} ({}), library {}", entry.system.str(), details.system->fullName, details.library.str())
+             : fmt::format("{} (not in the catalog's systems), library {}", entry.system.str(), details.library.str()));
     std::string state(catalog::toString(entry.state));
     if (entry.state == catalog::EntryState::NotAGame) {
         state += fmt::format(" ({}{})", catalog::toString(entry.notAGameReason),
@@ -185,8 +187,8 @@ std::string detailsText(const catalog_db::GameDetails& details) {
     if (!entry.discHead.empty()) {
         line("Disc of", entry.discHead.relativePath());
     }
-    line("Gamelist entry", entry.gamelistPath.empty() ? "none (unscraped: titled from its file name)"
-                                                      : entry.gamelistPath);
+    line("Gamelist entry",
+         entry.gamelistPath.empty() ? "none (unscraped: titled from its file name)" : entry.gamelistPath);
     line("Sort key", indexed.sortKey);
     if (const std::string sortName = catalog::displayText(metadata.sortName); !sortName.empty()) {
         line("Sort title", sortName);
@@ -219,10 +221,10 @@ std::string detailsText(const catalog_db::GameDetails& details) {
         }
     }
     line("Flags", set.empty() ? std::string("none") : fmt::format("{}", fmt::join(set, ", ")));
-    line("Played", fmt::format("{} time{}, {} s{}", flags.playCount, flags.playCount == 1 ? "" : "s",
-                               flags.playTimeSeconds,
-                               flags.lastPlayed ? ", last " + catalog::formatEsdeDateTime(*flags.lastPlayed) + " (local)"
-                                                : std::string()));
+    line("Played",
+         fmt::format("{} time{}, {} s{}", flags.playCount, flags.playCount == 1 ? "" : "s", flags.playTimeSeconds,
+                     flags.lastPlayed ? ", last " + catalog::formatEsdeDateTime(*flags.lastPlayed) + " (local)"
+                                      : std::string()));
     if (!entry.altEmulator.empty()) {
         line("Alternative emulator", entry.altEmulator);
     }

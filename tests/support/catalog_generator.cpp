@@ -57,29 +57,30 @@ Random randomFor(const CatalogGeneratorOptions& options, std::uint64_t stream, s
 }
 
 constexpr std::array<std::string_view, 28> kAdjectives{
-    "Super",   "Mega",  "Hyper",  "Little", "Crimson", "Silent",  "Golden", "Électrique", "Fantôme", "Brûlant",
-    "Glacé",   "Über",  "Naïve",  "Phantom", "Neon",   "Lunar",   "Solar",  "Grande",     "Tiny",    "Wild",
-    "Royal",   "Mystic", "Dernier", "Pequeño", "Rápido", "Noir",   "Blitz",  "Señorial",
+    "Super", "Mega",   "Hyper",   "Little",  "Crimson", "Silent", "Golden", "Électrique", "Fantôme", "Brûlant",
+    "Glacé", "Über",   "Naïve",   "Phantom", "Neon",    "Lunar",  "Solar",  "Grande",     "Tiny",    "Wild",
+    "Royal", "Mystic", "Dernier", "Pequeño", "Rápido",  "Noir",   "Blitz",  "Señorial",
 };
 
 constexpr std::array<std::string_view, 50> kNouns{
-    "Pixel",   "Quest",   "Racer",    "Harbor",   "Castle",    "Dragon",   "Éclair", "Château", "Façade",  "Garçon",
-    "Ninja",   "Rocket",  "Puzzle",   "Island",   "Comet",     "Knight",   "Tower",  "Jungle",  "Piñata",  "Señor",
-    "Café",    "Ångström", "Kōbō",    "Crème",    "Forêt",     "Rêve",     "Mañana", "Zürich",  "Göteborg", "Fjäll",
-    "Tennis",  "Golf",    "Soccer",   "Hockey",   "Galaxy",    "Robot",    "Wizard", "Samurai", "Pirate",  "Circus",
-    "Garden",  "Labyrinth", "Voyage", "Odyssey",  "Saga",      "Legend",   "Chronicle", "Blaster", "Striker", "Runner",
+    "Pixel",  "Quest",     "Racer",  "Harbor",  "Castle", "Dragon", "Éclair",    "Château", "Façade",   "Garçon",
+    "Ninja",  "Rocket",    "Puzzle", "Island",  "Comet",  "Knight", "Tower",     "Jungle",  "Piñata",   "Señor",
+    "Café",   "Ångström",  "Kōbō",   "Crème",   "Forêt",  "Rêve",   "Mañana",    "Zürich",  "Göteborg", "Fjäll",
+    "Tennis", "Golf",      "Soccer", "Hockey",  "Galaxy", "Robot",  "Wizard",    "Samurai", "Pirate",   "Circus",
+    "Garden", "Labyrinth", "Voyage", "Odyssey", "Saga",   "Legend", "Chronicle", "Blaster", "Striker",  "Runner",
 };
 
 constexpr std::array<std::string_view, 7> kNumbers{"2", "3", "II", "III", "64", "2000", "Zero"};
 
 constexpr std::array<std::string_view, 12> kCompanies{
-    "Mirage Soft",  "Éditions Pixel", "Kumo Works",    "Studio Brûlé",   "Nordlys Interaktiv", "Señal Games",
-    "Bitwerk",      "Ostrava Labs",   "Harbor Lights", "Café Logiciel",  "Tanuki Arts",        "Zürcher Spielwerk",
+    "Mirage Soft", "Éditions Pixel", "Kumo Works",    "Studio Brûlé",  "Nordlys Interaktiv", "Señal Games",
+    "Bitwerk",     "Ostrava Labs",   "Harbor Lights", "Café Logiciel", "Tanuki Arts",        "Zürcher Spielwerk",
 };
 
 constexpr std::array<std::string_view, 9> kGenres{
-    "Action", "Platform", "Puzzle", "Racing", "Shoot'em up", "Role Playing Game", "Sport", "Stratégie",
-    "Corsa, Guida / Moto",
+    "Action", "Platform",    "Puzzle",
+    "Racing", "Shoot'em up", "Role Playing Game",
+    "Sport",  "Stratégie",   "Corsa, Guida / Moto",
 };
 
 constexpr std::array<std::string_view, 6> kRegions{"Europe", "USA", "Japan", "World", "France", "España"};
@@ -374,9 +375,10 @@ catalog::IndexedEntry generatedEntry(const CatalogGeneratorOptions& options, std
         entry.availability = Availability::Missing;
     } else {
         const bool directory = state == EntryState::Folder;
-        entry.file = catalog::FileFacts{directory, directory ? 0 : 65'536 + random.below(8'000'000),
-                                        130'000'000'000'000'000 + static_cast<std::int64_t>(random.below(1'000'000'000)),
-                                        entry.notAGameReason == catalog::NotAGameReason::ExcludedBySetting};
+        entry.file =
+            catalog::FileFacts{directory, directory ? 0 : 65'536 + random.below(8'000'000),
+                               130'000'000'000'000'000 + static_cast<std::int64_t>(random.below(1'000'000'000)),
+                               entry.notAGameReason == catalog::NotAGameReason::ExcludedBySetting};
     }
 
     if (scraped) {
@@ -391,9 +393,9 @@ catalog::IndexedEntry generatedEntry(const CatalogGeneratorOptions& options, std
         metadata.publisher = random.chance(70) ? std::string(random.pick(kCompanies)) : metadata.developer;
         metadata.genre = std::string(random.pick(kGenres));
         if (random.chance(90)) {
-            metadata.releaseDate = catalog::ReleaseDate{1978 + static_cast<int>(random.below(31)),
-                                                        1 + static_cast<int>(random.below(12)),
-                                                        1 + static_cast<int>(random.below(28))};
+            metadata.releaseDate =
+                catalog::ReleaseDate{1978 + static_cast<int>(random.below(31)), 1 + static_cast<int>(random.below(12)),
+                                     1 + static_cast<int>(random.below(28))};
             const catalog::ReleaseDate& date = *metadata.releaseDate;
             entry.raw.originalForms.push_back(
                 {"releasedate", fmt::format("{:04}{:02}{:02}T000000", date.year, date.month, date.day)});
@@ -476,10 +478,10 @@ Expected<GeneratedCatalog> generateCatalogDatabase(const std::filesystem::path& 
     if (!store) {
         return propagate(store.error());
     }
-    const Status written =
-        keepEntries ? writeCatalog(**store, catalog)
-                    : writeEntries(**store, catalog.library, catalog.systems, order.size(),
-                                   [&](std::size_t i) { return generatedEntry(options, order[i].second); });
+    const Status written = keepEntries
+                               ? writeCatalog(**store, catalog)
+                               : writeEntries(**store, catalog.library, catalog.systems, order.size(),
+                                              [&](std::size_t i) { return generatedEntry(options, order[i].second); });
     if (!written) {
         return propagate(written.error());
     }

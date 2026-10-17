@@ -56,7 +56,8 @@ struct GeneratedCatalog {
 /// FolderMissing), last.
 [[nodiscard]] std::vector<catalog::SystemInfo> generatedSystems();
 
-/// Entry `index` of a generated catalog (0 <= index < options.entries), with its GameId (counter 0), media and sort key.
+/// Entry `index` of a generated catalog (0 <= index < options.entries), with its GameId (counter 0), media and sort
+/// key.
 [[nodiscard]] catalog::IndexedEntry generatedEntry(const CatalogGeneratorOptions& options, std::size_t index);
 
 /// Every entry of the catalog, in ascending GameId order. Errors: InvalidArgument when two entries' GameIds collide
