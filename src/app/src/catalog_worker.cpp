@@ -46,7 +46,7 @@ struct ResolveJob {
     std::uint64_t token = 0;
     catalog::GameId game;
 };
-enum class SessionStep : std::uint8_t { Begin, Update, Finish };
+enum class SessionStep : std::uint8_t { Begin, Finish };
 struct SessionJob {
     std::uint64_t token = 0;
     SessionStep step = SessionStep::Begin;
@@ -784,14 +784,6 @@ void CatalogWorker::beginSession(std::uint64_t token, catalog::PlaySession sessi
     {
         const std::lock_guard lock(m_shared->mutex);
         m_shared->jobs.emplace_back(SessionJob{token, SessionStep::Begin, std::move(session), {}, {}});
-    }
-    m_shared->work.notify_one();
-}
-
-void CatalogWorker::updateSession(std::uint64_t token, catalog::PlaySession session) {
-    {
-        const std::lock_guard lock(m_shared->mutex);
-        m_shared->jobs.emplace_back(SessionJob{token, SessionStep::Update, std::move(session), {}, {}});
     }
     m_shared->work.notify_one();
 }

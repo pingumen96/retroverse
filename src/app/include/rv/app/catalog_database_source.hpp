@@ -64,7 +64,7 @@ public:
     /// Something the screen waits for is with the worker: the opening, a list, readiness.
     [[nodiscard]] bool waiting() const noexcept;
     /// The page fetches so far; nothing before the first.
-    [[nodiscard]] std::optional<PageFetchTimes> pageTimes() const;
+    [[nodiscard]] std::optional<TimeSummary> pageTimes() const;
     /// The list a query was materialized from last: its search text and system.
     [[nodiscard]] const ui::CatalogSourceQuery& listedQuery() const noexcept { return m_listedQuery; }
 

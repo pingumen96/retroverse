@@ -217,11 +217,10 @@ public:
     void readiness(std::vector<catalog::GameId> games);
     /// Resolves the launch of `game` right before it starts (its file on disk now, the database's choices).
     void resolve(std::uint64_t token, catalog::GameId game);
-    /// The play session of the launch `token`: it began (Running), its state changed (the started process), it ended
-    /// (its final state; a blocked attempt without beginSession()). `system` and `program` (the request's executable)
-    /// record a launch verification when it returned normally.
+    /// The play session of the launch `token`: it began (Running, the started process), it ended (its final state; a
+    /// blocked attempt without beginSession()). `system` and `program` (the request's executable) record a launch
+    /// verification when it returned normally.
     void beginSession(std::uint64_t token, catalog::PlaySession session);
-    void updateSession(std::uint64_t token, catalog::PlaySession session);
     void finishSession(std::uint64_t token, catalog::PlaySession session, catalog::SystemName system,
                        std::filesystem::path program);
 

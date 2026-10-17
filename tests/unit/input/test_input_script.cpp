@@ -299,3 +299,37 @@ TEST_CASE("input/input_script: loadFromFile reports the file path", "[input][inp
     REQUIRE_FALSE(overflow.has_value());
     CHECK(overflow.error().code == ErrorCode::ParseError);
 }
+
+TEST_CASE("input/input_script: steps type text into the product UI once, on their first frame", "[input][input_script]") {
+    // I2 step 13: {"text": ...} with or without actions, typed once on fromFrame (the quick catalog's search).
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 3, "toFrame": 5, "text": "nintendo"},
+        {"fromFrame": 3, "toFrame": 3, "text": " gb", "actions": {"ui_activate": 1}},
+        {"fromFrame": 9, "toFrame": 9, "text": "Café"}
+    ])");
+    REQUIRE(script.steps().size() == 3);
+    CHECK(script.steps()[0].values.empty());
+    CHECK(script.steps()[1].values.size() == 1);
+    CHECK(script.textAt(2).empty());
+    CHECK(script.textAt(3) == "nintendo gb"); // the steps of a frame in file order
+    CHECK(script.textAt(4).empty());          // once, on fromFrame only
+    CHECK(script.textAt(9) == "Café");
+    CHECK(script.valueAt(3, Action::UiActivate) == 1.0f);
+    CHECK(script.lastFrame() == 9);
+
+    // What is refused: no text, too long, control characters, not a string, neither text nor actions.
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "text": ""}])").code == ErrorCode::ValidationFailed);
+    const std::string tooLong(InputScript::kMaxTextBytes + 1, 'a');
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "text": ")" + tooLong + "\"}]").code ==
+          ErrorCode::ValidationFailed);
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "text": "a\u0009b"}])").code == ErrorCode::ValidationFailed);
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "text": 3}])").code == ErrorCode::ParseError);
+    const rv::Error missing = parseError(R"([{"fromFrame": 0, "toFrame": 0}])");
+    CHECK(missing.code == ErrorCode::ParseError);
+    CHECK(missing.context == "script.json:/0/actions");
+    // Text that is not UTF-8 (a document built in memory: the JSON parser never gives one).
+    const json document = json::array({json{{"fromFrame", 0}, {"toFrame", 0}, {"text", std::string("\xC3\x28")}}});
+    const auto invalid = InputScript::fromJson(document, "script.json");
+    REQUIRE_FALSE(invalid.has_value());
+    CHECK(invalid.error().code == ErrorCode::ValidationFailed);
+}

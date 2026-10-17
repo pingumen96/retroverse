@@ -86,6 +86,11 @@ struct ProductUi::Impl {
     bool afterPending = false;
     /// The launch whose session the flow follows: its token, its index among the run's launches.
     std::uint64_t sessionToken = 0;
+    /// The wall-clock times of the frames that showed games of the catalog (CatalogRecord::frames; at most
+    /// kMaxFrameSamples), and when the last frame's update began (none after an idle wait, which is no frame time).
+    std::vector<double> frameMs;
+    std::optional<std::chrono::steady_clock::time_point> lastFrame;
+    static constexpr std::size_t kMaxFrameSamples = 100000;
 
     [[nodiscard]] bool visible() const noexcept { return catalogOpen || panel->visible(); }
 
@@ -391,6 +396,11 @@ void ProductUi::typeText(std::string_view text) {
 
 void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds, double timeSeconds) {
     Impl& s = *m_impl;
+    const auto frameStart = std::chrono::steady_clock::now();
+    if (s.lastFrame && s.catalogOpen && !s.model->window().empty() && s.frameMs.size() < Impl::kMaxFrameSamples) {
+        s.frameMs.push_back(std::chrono::duration<double, std::milli>(frameStart - *s.lastFrame).count());
+    }
+    s.lastFrame = frameStart;
     // The first frame after a launch ended (or was refused): what the catalog and the walker show now.
     if (std::exchange(s.afterPending, false)) {
         s.flow.noteAfter(s.currentView());
@@ -462,6 +472,7 @@ bool ProductUi::wantsIdle() const noexcept {
 
 void ProductUi::onIdle() {
     Impl& s = *m_impl;
+    s.lastFrame.reset(); // the wait is no frame time
     // A decision the worker brings is applied by the next frame's update, which renders its "Gioco in corso" first.
     s.syncCatalog();
     const LaunchClock::time_point now = LaunchClock::now();
@@ -518,6 +529,9 @@ void ProductUi::finish() {
     }
     record.search = s.model->search();
     record.filter = s.model->activeFilter();
+    if (!s.lockstep) {
+        record.frames = summarizeTimes(s.frameMs);
+    }
     RunReport& report = s.context.report();
     report.catalog = std::move(record);
     report.launches = s.flow.records();

@@ -81,16 +81,20 @@ struct CatalogView {
     bool operator==(const CatalogView&) const = default;
 };
 
-/// How long the page fetches of the quick catalog took on the main thread (ui::CatalogSource::rows over the catalog
-/// database: ADR-0008 §5's 5 ms budget), in milliseconds.
-struct PageFetchTimes {
+/// Durations in milliseconds: how many, their percentiles (nearest rank) and the longest (CatalogRecord::pages,
+/// ::frames).
+struct TimeSummary {
     std::uint64_t count = 0;
     double p50Ms = 0.0;
     double p95Ms = 0.0;
+    double p99Ms = 0.0;
     double maxMs = 0.0;
 
-    bool operator==(const PageFetchTimes&) const = default;
+    bool operator==(const TimeSummary&) const = default;
 };
+
+/// The summary of `milliseconds` (sorted in place); nothing for none.
+[[nodiscard]] std::optional<TimeSummary> summarizeTimes(std::vector<double>& milliseconds);
 
 /// The quick catalog of a run of retroverse.exe: absent only in runs without the product UI (the model viewer).
 struct CatalogRecord {
@@ -123,8 +127,12 @@ struct CatalogRecord {
     std::optional<double> openedMs;
     std::optional<double> firstListMs;
     std::optional<double> firstPageMs;
-    /// "esde": the page fetches on the main thread; absent when there was none.
-    std::optional<PageFetchTimes> pages;
+    /// "esde": the page fetches on the main thread (ui::CatalogSource::rows: ADR-0008 §5's 5 ms budget); absent when
+    /// there was none.
+    std::optional<TimeSummary> pages;
+    /// The frames rendered while the catalog showed games (open, its list not empty): their wall-clock times (the
+    /// measured frame time, so not with --fixed-dt, which replaces it); absent when there was none.
+    std::optional<TimeSummary> frames;
     /// "esde": play sessions closed as interrupted when the catalog opened (their owner was gone: ADR-0008 §9).
     std::size_t interruptedSessions = 0;
 

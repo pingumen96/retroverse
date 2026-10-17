@@ -20,15 +20,6 @@ constexpr std::size_t kMaxPageSamples = 100000;
 /// Games whose own readiness is kept; past it the cache starts again (the rows read ask again).
 constexpr std::size_t kMaxReadiness = 4096;
 
-/// The value at `fraction` of sorted `values` (nearest rank).
-[[nodiscard]] double percentile(const std::vector<double>& sorted, double fraction) {
-    if (sorted.empty()) {
-        return 0.0;
-    }
-    const auto rank = static_cast<std::size_t>(std::ceil(fraction * static_cast<double>(sorted.size())));
-    return sorted[std::min(sorted.size() - 1, rank > 0 ? rank - 1 : 0)];
-}
-
 /// The launch state of a game that is not available: its availability alone (ADR-0008 §8: the first that applies).
 [[nodiscard]] GameLaunchState unavailableState(catalog::Availability availability) {
     if (availability == catalog::Availability::Missing) {
@@ -111,14 +102,9 @@ bool CatalogDatabaseSource::waiting() const noexcept {
     return m_state == CatalogState::Opening || m_pendingSerial.has_value() || !m_asked.empty();
 }
 
-std::optional<PageFetchTimes> CatalogDatabaseSource::pageTimes() const {
-    if (m_pageMs.empty()) {
-        return std::nullopt;
-    }
-    std::vector<double> sorted = m_pageMs;
-    std::sort(sorted.begin(), sorted.end());
-    return PageFetchTimes{static_cast<std::uint64_t>(m_pageMs.size()), percentile(sorted, 0.5),
-                          percentile(sorted, 0.95), sorted.back()};
+std::optional<TimeSummary> CatalogDatabaseSource::pageTimes() const {
+    std::vector<double> samples = m_pageMs;
+    return summarizeTimes(samples);
 }
 
 const CatalogSystem* CatalogDatabaseSource::findSystem(std::string_view name) const {

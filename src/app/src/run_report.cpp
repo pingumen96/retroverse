@@ -1,5 +1,6 @@
 #include <rv/app/run_report.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -275,6 +276,19 @@ void putOptional(Json& json, const char* key, const std::optional<double>& value
     }
 }
 
+Json timesToJson(const TimeSummary& times) {
+    return Json{{"count", times.count},
+                {"p50Ms", times.p50Ms},
+                {"p95Ms", times.p95Ms},
+                {"p99Ms", times.p99Ms},
+                {"maxMs", times.maxMs}};
+}
+
+TimeSummary readTimes(FieldReader& fields) {
+    return TimeSummary{fields.count("count"), fields.number("p50Ms"), fields.number("p95Ms"), fields.number("p99Ms"),
+                       fields.number("maxMs")};
+}
+
 Json spawnToJson(const SpawnPoint& pose) {
     Json camera;
     // Floats widened to double print with enough digits to read back exactly.
@@ -356,10 +370,10 @@ Json catalogToJson(const CatalogRecord& catalog) {
     putOptional(times, "firstPageMs", catalog.firstPageMs);
     json["times"] = std::move(times);
     if (catalog.pages) {
-        json["pages"] = Json{{"count", catalog.pages->count},
-                             {"p50Ms", catalog.pages->p50Ms},
-                             {"p95Ms", catalog.pages->p95Ms},
-                             {"maxMs", catalog.pages->maxMs}};
+        json["pages"] = timesToJson(*catalog.pages);
+    }
+    if (catalog.frames) {
+        json["frames"] = timesToJson(*catalog.frames);
     }
     json["interruptedSessions"] = catalog.interruptedSessions;
     return json;
@@ -444,8 +458,10 @@ CatalogRecord readCatalog(FieldReader& fields) {
         catalog.firstPageMs = times->optionalNumber("firstPageMs");
     }
     if (auto pages = fields.optionalObject("pages")) {
-        catalog.pages = PageFetchTimes{pages->count("count"), pages->number("p50Ms"), pages->number("p95Ms"),
-                                       pages->number("maxMs")};
+        catalog.pages = readTimes(*pages);
+    }
+    if (auto frames = fields.optionalObject("frames")) {
+        catalog.frames = readTimes(*frames);
     }
     catalog.interruptedSessions =
         static_cast<std::size_t>(fields.optionalCount("interruptedSessions", kMaxSize).value_or(0));
@@ -509,6 +525,19 @@ LaunchRecord readLaunch(FieldReader& fields) {
 }
 
 } // namespace
+
+std::optional<TimeSummary> summarizeTimes(std::vector<double>& milliseconds) {
+    if (milliseconds.empty()) {
+        return std::nullopt;
+    }
+    std::sort(milliseconds.begin(), milliseconds.end());
+    const auto rank = [&](double fraction) {
+        const auto index = static_cast<std::size_t>(std::ceil(fraction * static_cast<double>(milliseconds.size())));
+        return milliseconds[std::min(milliseconds.size() - 1, index > 0 ? index - 1 : 0)];
+    };
+    return TimeSummary{static_cast<std::uint64_t>(milliseconds.size()), rank(0.50), rank(0.95), rank(0.99),
+                       milliseconds.back()};
+}
 
 std::string formatRunReport(const RunReport& report) {
     Json json;
