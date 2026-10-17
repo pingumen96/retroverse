@@ -31,8 +31,9 @@
 		<div data-if="phase == 'still-running'">
 			<h1>Gioco in corso</h1>
 			<p class="game">{{ title }}</p>
-			<p>Da {{ timeout }} secondi il gioco non mostra nessuna finestra: potrebbe essere ancora in caricamento, oppure è
-				rimasto aperto in secondo piano. Tornando a Retroverse resta aperto.</p>
+			<p><span data-if="timeout == 1">Da 1 secondo</span><span data-if="timeout != 1">Da {{ timeout }} secondi</span>
+				il gioco non mostra nessuna finestra: potrebbe essere ancora in caricamento, oppure è rimasto aperto in secondo
+				piano. Tornando a Retroverse resta aperto.</p>
 		</div>
 		<div data-if="phase == 'confirm'">
 			<h1>Il gioco è terminato?</h1>

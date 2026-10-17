@@ -156,6 +156,10 @@ void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
 void LaunchFlow::focusChanged(bool focused, LaunchClock::time_point now) noexcept {
     if (!focused) {
         m_focusSince.reset();
+        // The user went back to the game without answering "Gioco in corso": the game has the screen again.
+        if (sessionActive() && m_panel == SessionPanel::Playing) {
+            m_panel = SessionPanel::Launching;
+        }
     } else if (sessionActive() && !m_focusSince) {
         m_focusSince = now;
     }

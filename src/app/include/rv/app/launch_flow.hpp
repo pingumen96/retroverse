@@ -94,7 +94,9 @@ public:
     /// Follows the session (LaunchSession::poll) and decides the panel (see the class comment). Call on every wake of
     /// the host's wait and once per rendered frame while sessionActive(); harmless otherwise.
     void poll(launcher::LaunchClock::time_point now, std::uint64_t frame);
-    /// Retroverse's window gained or lost the input focus.
+    /// Retroverse's window gained or lost the input focus: a gain while the session runs starts the come-back delay; a
+    /// loss cancels it, and takes back the Playing question (the user went back to the game without answering). The
+    /// questions of the session itself (StillRunning, Confirm) stay until answered.
     void focusChanged(bool focused, launcher::LaunchClock::time_point now) noexcept;
 
     /// The panel's "return to Retroverse" (Playing, StillRunning) and "I am back" (Confirm): the session ends

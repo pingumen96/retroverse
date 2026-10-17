@@ -385,6 +385,13 @@ TEST_CASE("app/launch_flow: the user back in Retroverse while the game runs is a
     CHECK_FALSE(g.flow.hostIdle());
     g.flow.backToGame();
     CHECK(g.flow.hostIdle());
+    // Asked again, the user switches back to the game without answering: the game has the screen again.
+    g.flow.focusChanged(true, at(5000));
+    g.flow.poll(at(6600), 9);
+    REQUIRE(g.flow.panel() == SessionPanel::Playing);
+    g.flow.focusChanged(false, at(6700));
+    CHECK(g.flow.panel() == SessionPanel::Launching);
+    CHECK(g.flow.hostIdle());
     // Not asked again until the user comes back once more.
     g.flow.poll(at(9000), 9);
     CHECK(g.flow.panel() == SessionPanel::Launching);
