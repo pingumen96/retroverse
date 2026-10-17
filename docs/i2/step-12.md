@@ -233,7 +233,12 @@ changed (the launch spike reports its command line from `Win32StartInfo`).
   user's confirmation, a wrapper's processes not the owner's doing); `returnedNormally()`.
 - `tests/unit/cli/test_cli_launch.cpp`: launch without `--dry-run` needs `--game`; option combinations refused.
 
-RESULTS_PLACEHOLDER
+Results (the reference machine, another worktree building throughout, so timings are informative): `msvc-x64-debug` and
+`msvc-x64-release` build without a warning; `./scripts/test.ps1` passes every unit test in Debug (1,207, 283 s) and in
+Release (1,207, 161 s). The step's CLI tests take 57 s in Debug and 44 s in Release, most of it the fake emulator's
+runs (2.6 s and 6 s games, the startup grace waited for); the session store's tests about 2.5 s. A1's GPU launch cases
+(`./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter gpu.launch`, 7 cases) pass with the command line logged at
+debug level; no test of the app, the smoke tests or the spikes reads that line.
 
 ## RetroArch by hand, isolated
 
