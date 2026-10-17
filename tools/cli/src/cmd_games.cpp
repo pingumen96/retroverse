@@ -268,10 +268,10 @@ ExitCode runGameList(CommandContext& context, bool search) {
     if (!reader) {
         return catalogFailure(context, reader.error());
     }
-    catalog_db::SqliteCatalogQuery& catalog = *reader->query;
+    catalog_db::SqliteCatalogQuery& queries = *reader->query;
     if (!query.systems.empty()) {
         // A system the catalog does not have is a mistake worth naming, not an empty list.
-        const auto systems = catalog.systems();
+        const auto systems = queries.systems();
         if (!systems) {
             return catalogFailure(context, systems.error());
         }
@@ -285,19 +285,19 @@ ExitCode runGameList(CommandContext& context, bool search) {
             return ExitCode::UsageError;
         }
     }
-    const auto plan = catalog.searchPlan(query.text);
+    const auto plan = queries.searchPlan(query.text);
     if (!plan) {
         // Text the search refuses (more words than it takes) is the user's to change.
         return plan.error().code == ErrorCode::InvalidArgument ? usageError(context, plan.error().message)
                                                                : catalogFailure(context, plan.error());
     }
-    const auto ids = catalog.run(query);
+    const auto ids = queries.run(query);
     if (!ids) {
         return catalogFailure(context, ids.error());
     }
     const std::size_t first = offset->value_or(0);
     const std::span<const catalog::GameId> page = catalog::pageOf(*ids, first, limit->value_or(ids->size()));
-    const auto rows = catalog.fetch(page);
+    const auto rows = queries.fetch(page);
     if (!rows) {
         return catalogFailure(context, rows.error());
     }
