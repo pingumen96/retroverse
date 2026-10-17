@@ -92,13 +92,13 @@ received the last input. In the fake sets the fake taps Shift into its own foreg
 RetroArch no input was injected, and in all 30 launches the idle time at the exit exceeded the spike's own uptime: the
 last input predates the spike's process, which never received it.
 
-**RetroArch, isolated.** RetroArch 1.21.0 (`E:\Programmi\Retroarch`, d3d11, borderless fullscreen, `pause_nonactive`),
+**RetroArch, isolated.** RetroArch 1.21.0 (`<RetroArch folder>`, d3d11, borderless fullscreen, `pause_nonactive`),
 gambatte core, *Mole Mania (USA, Europe) (SGB Enhanced).gb* read from the user's library:
 
 ```text
-retroarch.exe -L E:\Programmi\Retroarch\cores\gambatte_libretro.dll --appendconfig=<scratch>\retroverse-isolated.cfg
+retroarch.exe -L <RetroArch folder>\cores\gambatte_libretro.dll --appendconfig=<scratch>\retroverse-isolated.cfg
   --max-frames=240 --sram-mode=noload-nosave --log-file=<scratch>\logs\retroarch-<n>.log --verbose
-  "I:\Giochi\Emulatori\gb\1 GB US - H-Q\Mole Mania (USA, Europe) (SGB Enhanced).gb"
+  "<ROM root>\<gb's ROM folder>\<sub-folder>\Mole Mania (USA, Europe) (SGB Enhanced).gb"
 ```
 
 The appended configuration (`spike_launch_core`'s `retroArchAppendConfig`) turns off everything RetroArch saves on its
@@ -106,7 +106,7 @@ own (configuration and remaps on exit, history, runtime logs, the core info cach
 and points every directory or file it could write at the scratch directory under `build/` (saves, states,
 screenshots, logs, the configuration directory with core options and overrides, playlists, history, cache). One of
 them was not honored: RetroArch loaded its favorites playlist from its installation folder
-(`E:\Programmi\Retroarch\content_favorites.lpl`, per its log), so adding a favorite during such a run would write
+(`<RetroArch folder>\content_favorites.lpl`, per its log), so adding a favorite during such a run would write
 there; the automated runs only read it. Snapshots of RetroArch's folder (48,702 files: size, modification time,
 SHA-256 of configurations, saves, playlists and logs), of the ROM's folder and of ES-DE's settings and `gb` gamelist,
 taken before the first and after the 30th launch, show **0 differences** (and none against the snapshot that closed the

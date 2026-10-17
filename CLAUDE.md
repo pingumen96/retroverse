@@ -81,7 +81,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   fails on a failed test or any difference (outputs in `build/real-library`). Narrower runs: `-Filter
   '[real-library][media]'` (the media tree and the coverage against ADR-0003), `-Filter '[real-library][launch]'` (the
   readiness of the real systems and the five launches ES-DE logged, read from the git-ignored, machine-local
-  `tests/real_library/local/esde_logged_launches.json`; these two tests are skipped without `-RetroArchExe`).
+  `tests/real_library/local/esde_logged_launches.json`; these two tests are skipped without `-RetroArchExe`),
+  `-Filter '[real-library][import]'` (the whole library imported into a new database under
+  `build/<preset>/real-library/import`: a first and a second import, `db rebuild-index`, the ROM root unplugged and
+  back) and `-Filter '[real-library][reconciliation]'` (gb imported alone, then the quick-hash pass over it, twice; cold
+  it reads for minutes: the whole library's cold pass, about 45 minutes, is not part of any filter).
   `python -I scripts/snapshot_tree.py snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>`
   (exit 1 on a difference) work alone (Python 3.10 or later, output in UTF-8; links are recorded and never entered, what
   they lead to is snapshotted as a linked root unless a root covers it).
@@ -410,8 +414,7 @@ Manifest one; a copy under `build/` whose `runtime.sockets.screen` names a missi
 `retroverse-cli [--data-dir <dir> | --portable] [--asset-root <dir>] [--log-level <level>] <command> [options]` is the
 ES-DE catalog from the command line (`tools/cli`, one `src/cmd_<name>.cpp` per command; `--help`, `<command> --help`).
 Results go to stdout, or atomically to `--output <file>`, as text or with `--json` as one object; logs go to stderr and
-`<user data>/logs/retroverse-cli.log`. Pass `--data-dir build/rvdata`. What is not implemented yet exits 2 until its I2
-step (listed below).
+`<user data>/logs/retroverse-cli.log`. Pass `--data-dir build/rvdata`. Every command of the table is implemented.
 
 - `discover [--home <dir>] [--install <dir>] [--json]` finds ES-DE as ES-DE finds itself (`--home` is ES-DE's own
   option: the ES-DE home is `<dir>\ES-DE`; `--install` defaults to the uninstall entry) and prints the ES-DE home, `~`,
@@ -420,37 +423,94 @@ step (listed below).
 - `library [show]` prints `<user data>/config/library.json` and the roots it gives; `library create [--id <slug>]
   [--home <dir>] [--install <dir>] [--rom-root <dir>] [--media-root <dir>] [--force]` discovers ES-DE and writes it
   atomically, never over an existing file without `--force`; the roots must resolve, from the settings or the options.
-  The folder options take a bare drive (`E:`) as its root, as ES-DE does.
+  The folder options take a bare drive (`E:`) as its root, as ES-DE does. The catalog's `rv_libraries` is the authority
+  on the library's id: `import`, `db rebuild-index` and `identities` (not `identities show`) refuse a library.json that
+  names another library (exit 2), as `launch`, `media` and `assign` refuse a `--game` of another library; `assign
+  <system>` cannot store a choice for a library the catalog does not hold (exit 3). `library create --id <the catalog's
+  library> --force` (with the folder options it was made with) names the catalog's library again, which changes no
+  state and no GameId.
 - `db migrate | check | info [--json]` on `<user data>/database/retroverse.sqlite`: `migrate` creates it or brings it to
   the program's schema (backed up first when it holds anything, the newest 3 backups kept in `database/backups`);
   `check` (integrity, foreign keys, FTS5, the schema against the program's; exit 1 on a problem) and `info` (versions,
   sizes, `rv_meta`, row counts, backups) write nothing into it. Schema v1 stays open until the M1 gate: delete a
-  database an earlier build made (`db check` shows the difference), never migrate it.
+  database an earlier build made (`db check` shows the difference), never migrate it. `db rebuild-index [--json]` is an
+  import that clears the index tables and writes every row again, every cue sheet and playlist read again; the state
+  rows stay (identities, aliases, sessions, choices); it equals a refresh and repairs a damaged index; exit codes as
+  `import`'s.
 - `import --dry-run [--system <name>] [--json]` prints the library snapshot an import would read
   (`esde::EsdeLibrarySource`, `docs/i2/step-7.md`: the ROM folders listed with ES-DE's rules, the gamelists merged in,
   disc tracks grouped under their sheet, every sheet read): per system its entries by state, disc groups, issues, its
   folder's availability and its gamelist's state, then the totals and "games as ES-DE lists them"; exit 1 on an error
   issue.
+- `import [--system <name>] [--accept-removals] [--json]` imports the library library.json records into the catalog
+  database (made and migrated when needed; `docs/i2/step-11a.md`, `step-11b.md`): identities, index rows, disc groups,
+  media presence, files moved or renamed paired with their identities and what no rule pairs safely as review rows. It
+  prints one line per system with rows, changes, issues or an outcome other than applied or source-unavailable (added,
+  changed, removed, unchanged, unavailable, kept; a missing system folder that holds no rows is only in the JSON), the
+  totals, the identities' changes, each move and review row, the issues and the times; an import that finds nothing
+  changed writes no row and no identity, only its record in `rv_imports`. A system with more than half of its present
+  files gone is kept as it was (`kept-by-guard`) until `--accept-removals`; a folder that cannot be listed keeps its
+  rows as source unavailable; `--system` imports one system. Exit 0; 1 an error issue (a folder that cannot be listed, a
+  failed gamelist) or a system kept by the guard; 2 invalid options, no library.json, an unknown system, a library.json
+  naming another library; 3 the library or the database cannot be read or written, another import runs (in this or
+  another process).
 - `media --system <name> --path <relative path>` names per kind the media file ES-DE shows for a ROM path (taken as
   the disk spells it), or `none`; `media --coverage [--system <name>]` gives the share of each kind over four
   populations (every `<game>` entry, those whose file exists, the scraped games, every game) of the library snapshot
   that `import --dry-run` reads (`tools/cli/src/library_snapshot.hpp`); exit 1 when the media root, a media or ROM
-  folder or a gamelist could not be read.
+  folder or a gamelist could not be read. `media --game <id>` gives a game's media as the last import stored them, each
+  file's path derived under the media root of library.json's library; nothing on disk is looked at (exit 1 an unknown
+  game, 2 a game of another library, 3 no catalog).
 - `systems`, `games [--system <name>] [--state <list>] [--availability <list>] [--include-unavailable] [--sort
   title|system|release-date] [--offset <n>] [--limit <n>]`, `search <text>` (the options of `games`; text that starts
   with `-` after `--`) and `show <gameId>` read the catalog database through a reader (`SqliteCatalogQuery`) and never
   create, migrate or write it: exit 3 without a database or with another schema version, 2 for an unknown `--system`,
-  1 for `show` of an unknown game. Until the import (step 11) only tests fill one
-  (`tests/support/catalog_generator.hpp`); `show` prints no readiness or media paths yet.
-- `profiles [--system <name>]` lists the emulator profiles, emulators.json's system choices and, for every configured
-  system, the command or profile its games launch with and why, its readiness, the program and core with the find rule
-  that found them, the attempts behind "not found", and each command and profile with its own readiness (exit 1 with
-  `--system` when that system is not ready). `launch --dry-run --system <name> --path <relative path>` shows the
-  request a game would start (argv, working folder, environment, command line, the automation guard's verdict) and
-  starts nothing (exit 0 ready, 1 not). Both look at this machine (`Win32SystemProbe`).
-- `import`, `media`, `profiles` and `launch` read the library `library.json` records (exit 2 without one: `library
-  create` first). Still stubs that exit 2: `import` without `--dry-run`, `media --game`, `db rebuild-index` and
-  `identities` (step 11), `launch` without `--dry-run`, `assign` and `sessions` (step 12).
+  1 for `show` of an unknown game. `show` prints the media paths (as `media --game`), no readiness yet.
+- `identities` (`docs/i2/step-11b.md`): `list --system <name>` (GameId, state `present`, `missing` or `unseen`, quick
+  hash `current`, `stale`, `none` or `folder`, last path), `show <gameId>` (file facts, quick hash, aliases, history,
+  review rows; an alias prints what it stands for; needs no library.json), `reviews [--system <name>] [--all]` (open
+  rows with the GameId each candidate has now), `resolve <review> --with <gameId> [--force]` (the candidate becomes an
+  alias of the vanished identity, which takes its path, its state rows following; `--force` for an identity that is none
+  of the candidates: the merge cannot be undone) or `resolve <review> --keep-separate`, and `hash [--system <name>]
+  [--limit <files>]` (the quick-hash pass: resumable, committed in batches of 1,000 files or 10 s, Ctrl+C ends it and
+  the batches already committed stay; `--limit` bounds a run; a progress line every 2 s on stderr). `list`, `show` and
+  `reviews` write nothing; `resolve` and `hash` take the import lock. Exit 1 an unknown identity or review row, a row
+  resolved already or whose file is back, files `hash` could not read; 2 usage errors, another library, a system without
+  identities, an identity that cannot be paired with; 3 no catalog, another import runs.
+- `profiles [--system <name>]` lists the emulator profiles, `assign`'s and emulators.json's system choices and, for
+  every configured system, the command or profile its games launch with, where that choice comes from and why, its
+  readiness, the program and core with the find rule that found them, the attempts behind "not found", and each command
+  and profile with its own readiness (exit 1 with `--system` when that system is not ready). `launch --dry-run --system
+  <name> --path <relative path>` and `launch --dry-run --game <id>` show the request a game would start (argv, working
+  folder, environment, command line, the automation guard's verdict, the database's choices read only) and start nothing
+  (exit 0 ready, 1 not). Both look at this machine (`Win32SystemProbe`).
+- `launch --game <id> [--wait [--wait-limit <seconds>]] [--test] [--json]` (`docs/i2/step-12.md`) resolves a game of the
+  catalog right before the launch (its file looked for on disk now, the database's choices) and starts it through
+  `LaunchSession` on `Win32ProcessRunner`, so the automation guard applies: automated runs set `RV_LAUNCH_ALLOWLIST`.
+  Every attempt is a play session (`rv_play_sessions`): a game not ready is recorded `blocked` and not started; without
+  `--wait` the launch is followed through its startup grace (2 s) and half a second more, then a game still running is
+  recorded `left-running` (`not-waited`) and the command returns 0 with the game running on; `--wait` follows it to its
+  end as its wait strategy says (Ctrl+C stops waiting, `--wait-limit` 1 to 86400 s; nothing is ever terminated);
+  `--test` waits and records a launch verification when the game returned normally, else exits 1 (every normal return
+  records one too). Exit 0 returned or left running; 1 blocked, failed to start, crashed, a quick exit, a failed
+  `--test`, an unknown game; 2 invalid options, a game of another library or that is not a game; 3 ES-DE's
+  configuration or the catalog cannot be read (an import makes it), a session that could not be recorded (printed).
+- `assign <system> [<label|profile>] [--command <label> | --profile <id> | --clear] [--json]` and `assign --game <id>
+  ...` store Retroverse's choice of an ES-DE command label or a profile serving the system in the catalog database,
+  never in the user's files; without a value they show the stored choice. The choice of command, most specific first:
+  the game's `assign`, its `<altemulator>`, the system's `assign` before emulators.json's `"systemChoices"` (`--clear`
+  gives that back), the gamelist's `<alternativeEmulator>`, the first command; a stored choice that disappears blocks
+  the launch, never skipped. Choices survive restarts and `db rebuild-index`. Exit 1 an unknown game; 2 invalid options,
+  an unknown system, a value the system does not have; 3 the catalog cannot be read or written.
+- `sessions [--game <id>] [--limit <n>] [--json]` lists the attempts, newest first (50; 0 for all), after closing as
+  interrupted the open sessions whose owner process is gone (`launch --game` does it at its start too; a session another
+  live process follows stays open). `exitKind` is null when the session has no exit code (an attempt that never
+  started, a start that failed, an open or interrupted session). Exit 1 a `--game` the catalog does not know; 2 invalid
+  options; 3 the catalog cannot be read. A GameId that became an alias stands for its game in `launch`, `assign` and
+  `sessions`: the JSON of `launch` and `sessions` gives the identity as `game` and the alias as `requestedGame`,
+  `assign`'s as `game.id` and `game.requested`; the text says "(for <alias>, an alias)".
+- `import`, `db rebuild-index`, `media`, `profiles`, `launch`, `assign` and `identities` (but `identities show`) read
+  the library `library.json` records (exit 2 without one: `library create` first).
 - Nothing is written, the log file included, until the user data directory has passed the guard against the library's
   folders (the ES-DE home, the install, the ROM and media roots, the ROM folder of a system outside the ROM root):
   `discover` and `library` check the folders they find, every other command those of `library.json`.
@@ -502,12 +562,12 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `rv_ui_model` is always built) -> `app` (composition root) -> `retroverse.exe`. `catalog` holds the domain, the
   identities, one header per port (I2 step 1), the media coverage (8) and the launch resolution (10); `esde` reads
   ES-DE's configuration and gamelists (steps 2 and 3), scans the ROM folders (7), resolves media (8) and translates
-  ES-DE commands (10); `catalog_db` holds the database, the catalog store (step 4) and the queries and search (9); the
-  import, reconciliation and fingerprints (11) and the play session store (12) are skeletons that name their step; the
-  system probe's port is in `core` (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA
-  <library>...)` forbids more libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits
-  under `#if defined(RV_DEV_UI)`. `rv_app` links `rv_ui`, `rv_launcher` and `rv_platform_win` for the quick catalog's
-  launches (I2 step A1); it does not use `rv_media` yet: the video spike does.
+  ES-DE commands (10); `catalog` also holds the import service (11a), fingerprints and reconciliation (11b);
+  `catalog_db` holds the database, the catalog store (step 4, with the import's writes of 11a and 11b), the queries and
+  search (9) and the session store (12); the system probe's port is in `core` (`rv/core/system_probe.hpp`, ADR-0008
+  §2), and `rv_forbid_link(<target> EXTRA <library>...)` forbids more libraries per target (`cmake/LayerRules.cmake`).
+  Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`. `rv_app` links `rv_ui`, `rv_launcher` and
+  `rv_platform_win` for the quick catalog's launches (I2 step A1); it does not use `rv_media` yet: the video spike does.
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
@@ -520,7 +580,11 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `tests/unit/screenshot_diff` and linked by the GPU smoke tests.
 - Tests: `tests/unit/<module>/test_*.cpp` (globbed into `rv_tests`, label `unit`, no SDL or OpenGL; GLB files for
   tests come from `rv/assets/glb_writer.hpp`; `tests/unit/platform_win`, `tests/unit/launcher` and
-  `tests/unit/support` start `rv_fake_emulator.exe` from the directory of `rv_tests.exe`),
+  `tests/unit/support` start `rv_fake_emulator.exe` from the directory of `rv_tests.exe`, and `tests/unit/cli` also
+  `retroverse-cli.exe` as a second process: `rv_tests` depends on both; `tests/unit/catalog_db/import_test_support.hpp`
+  opens catalogs, dumps the index and state tables, scripts sources and resolvers and settles folder times,
+  `settleFolderTimes()`; `tests/unit/cli/test_cli_reconciled_sessions.cpp` tests reconciliation with sessions and
+  choices on the real code paths),
   `tests/platform/test_*.cpp` (globbed into `rv_platform_tests`, label `unit`: SDL platform layer, no OpenGL),
   `tests/support/*` helpers (globbed into `rv_test_support`, namespace `rv::test`: `TempDir`, `LogCapture`, `Fixture`
   (`fixture.hpp`: `tests/fixtures/<name>/` materialized into a fresh folder under `build/<preset>/test-fixtures`,
@@ -530,8 +594,10 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   and makes empty folders, so that no payload is committed), `writeProgramStub` (`program_stub.hpp`), `runChild`
   (`child_process.hpp`: a program run to completion, its command line built by `launcher::buildCommandLine`, stdout and
   stderr in files of the test's choosing, apart or together, a timeout), `FakeSystemProbe` (`fake_system_probe.hpp`: a
-  machine as maps of registry values, files and folders), `Junction`, `ListingDenied`, `writeFileAnyLength`
-  (`file_system.hpp`: junctions without admin rights, a folder this user cannot list, paths past MAX_PATH),
+  machine as maps of registry values, files and folders), `Junction`, `ListingDenied`, `DataReadDenied`,
+  `writeFileAnyLength` (`file_system.hpp`: junctions without admin rights, a folder this user cannot list, a file whose
+  data cannot be read, paths past MAX_PATH), `ScopedLaunchAllowList`, `ScopedEnvironmentVariable`, `ScopedPathPrefix`
+  (`scoped_environment.hpp`: tests that launch set `RV_LAUNCH_ALLOWLIST` for their own duration, then put it back),
   `generateCatalogDatabase` (`catalog_generator.hpp`: a deterministic catalog database of any size, written in one
   import transaction with the search index suspended; `rv_test_support` links `rv_catalog` and `rv_catalog_db`)),
   `tests/fixtures/<name>/` (original, minimal fixtures; text committed as LF, so CRLF, BOM and oversized files are
@@ -591,7 +657,9 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   lies outside the folder, `InvalidArgument` when malformed); `tree_walk.hpp` (`walkTree`/`listTree`: big trees through
   `\\?\` paths, sorted, links followed without loops, errors as entries, a folder that cannot be listed `Unavailable`);
   `file_io.hpp` (`readFileShared` for files another program rewrites, `extendedLengthPath` for folders the user names,
-  `extendedLengthPathBelow` to reopen a walked name exactly: a plain path loses trailing dots and spaces);
+  `extendedLengthPathBelow` to reopen a walked name exactly: a plain path loses trailing dots and spaces;
+  `SharedFileReader`, positioned reads of a file opened with full sharing, its facts from the handle; `listedFileFacts`,
+  a file's size and time as a listing gives them, which is what the import records);
   `system_error.hpp` (Windows errors as text and as `ErrorCode`: a missing drive is `Unavailable`, a locked file
   `Conflict`; `ErrorCode::Cancelled` is an operation stopped on request); `paths.hpp` (`Paths::databaseDir`,
   `pathIsWithin` (lexical), `checkUserDataDirectory`: the data-directory guard, links and junctions resolved);
@@ -601,7 +669,12 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   key) and then persisted; never derive it again for a stored identity. The golden GameIds of
   `tests/unit/catalog/test_identity.cpp` come from `scripts/game_id_oracle.py` (Python's hashlib): a change of the
   derivation changes both, and `python -I scripts/game_id_oracle.py --check tests/unit/catalog/test_identity.cpp`
-  must pass.
+  must pass. Likewise the golden quick hashes (rule 1, `rv/catalog/fingerprint.hpp`: SHA-256 of a file up to 128 KiB,
+  else of its first and last 64 KiB) of `tests/unit/catalog/test_fingerprint.cpp` come from
+  `scripts/quick_hash_oracle.py`, and this must pass:
+  `python -I scripts/quick_hash_oracle.py --check tests/unit/catalog/test_fingerprint.cpp`. Reconciliation
+  (`rv/catalog/reconciliation.hpp`, ADR-0008 §4) pairs an equal quick hash only with an equal file name or time
+  (ADR-0009); anything it cannot pair safely becomes a review row, never a merge.
 - ES-DE files (`rv_esde`, ADR-0008; ES-DE 3.4.1's behaviour as verified in its source is in `docs/i2/step-2.md` and
   `step-3.md` (configuration, gamelists), `step-7.md` (the ROM scan, disc groups, MAME lists), `step-8.md` (media) and
   `step-10.md` (launch commands and find rules)): follow ES-DE, and report every deliberate difference as a
@@ -624,12 +697,28 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   other code uses `Connection`, `Statement` (kept statements reset after each use, `ScopedReset`) and `Transaction`.
   One writer per process on one thread (`Database::writer()`), read-only readers on other threads
   (`Database::openReader()`). Schema v1 stays open until the M1 gate: a step adds its tables to v1 (`AreaStep{1, ...}`)
-  in its area's source (`schema_search.cpp`, `schema_launch.cpp`), STRICT, foreign keys only into `rv_*` (never into
-  `idx_*`) and never cascading; writes are upserts, never `REPLACE`; tests keep databases under their temporary folder.
-  Bulk writes (a first import, `db rebuild-index`) call `suspendSearchIndex(writer)` once their transaction has begun
-  and `resumeSearchIndex(writer)` before its commit (`rv/catalog_db/search_index.hpp`; a commit in between leaves the
-  index behind, which `db check` reports). Queries go through `SqliteCatalogQuery` (`catalog_query.hpp`, step 9), one
-  instance per thread on its own reader; user text never reaches FTS5 as syntax.
+  in its area's source (`schema_identity.cpp`, `schema_index.cpp`, `schema_search.cpp`, `schema_launch.cpp`), STRICT,
+  foreign keys only into `rv_*` (never into `idx_*`) and never cascading; writes are upserts, never `REPLACE`; tests
+  keep databases under their temporary folder. A state table that names a game refers to `rv_game_identities (id)`
+  through a single-column foreign key: `putAlias()` finds those columns in the schema and re-points their rows when an
+  identity becomes an alias (a table with one row per game keeps the moved identity's), which a composite key would
+  escape. Since I2 step 11 the identity area also holds the import records (`rv_imports`), the quick hash read and
+  written with the identity (`StoredIdentity::quickHash`; the pass writes it alone with `putQuickHash()`) and the
+  history, alias and review rows; the index area the disc references (`idx_disc_references`); the launch area (step 12)
+  `rv_play_sessions`, `rv_launch_game_choices`, `rv_launch_system_choices` and `rv_launch_verifications`. Whatever
+  writes identities, aliases or index rows holds the import lock (`ICatalogStore::lockImport()`, never
+  waiting: `Conflict`): the import from before it reads the library (it reads the store before its write transaction,
+  which holds the writes alone), the quick-hash pass for its run, a review's resolution. Session and choice writes take
+  none and touch neither; another process's bulk import can hold the write lock for longer than the 5 s busy timeout,
+  so they go through `SessionStore` (`BusyRetry`, `SessionRecorder`, `isBusyError()`). Unchanged rows and identities
+  are not written: `rv_game_identities.last_seen` is when an import last wrote the identity with its file present, not
+  the last import that saw it, which `rv_imports` records (the newest `kKeptImportRecords`, 100, per library, each
+  holding only the systems with something to say). Bulk writes call `suspendSearchIndex(writer)` once their transaction
+  has begun and `resumeSearchIndex(writer)` before its commit (`rv/catalog_db/search_index.hpp`; a commit in between
+  leaves the index behind, which `db check` reports); the import's store does it through `prepareWrites()`
+  (`SearchIndexPolicy::Automatic`: a first import, or rows written at least a fifth of the index). Queries go through
+  `SqliteCatalogQuery` (`catalog_query.hpp`, step 9), one instance per thread on its own reader; user text never reaches
+  FTS5 as syntax.
 - OpenGL calls only in `rv_render`/`rv_devui`/`rv_ui`/`rv_app` (and the I1 spike executables), only on the main
   thread, DSA style (GL 4.5; the vendored RmlUi GL3 renderer in `third_party/rmlui_backends` excepted).
 - Determinism: no `rand()`, no iteration over unordered containers into outputs, explicit seeds.
@@ -657,7 +746,9 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   first. Unset, the guard does nothing: `scripts/gate.ps1` and `scripts/test.ps1` do not set it yet (BACKLOG), but every
   GPU smoke test case (`rv_smoke_tests`) has it, naming the build's fake emulator alone (ctest `ENVIRONMENT`). A run
   that sets it lists `build/<preset>/bin/rv_fake_emulator.exe`, which the runner, launcher, launch smoke and I1 spike
-  tests start; a `retroverse.exe --mock-catalog` run made by hand that launches sets it the same way. DuckStation
+  tests start (the `retroverse-cli launch` tests set it for their own duration, `ScopedLaunchAllowList`); a
+  `retroverse.exe --mock-catalog` or `retroverse-cli launch --game` run made by hand or by an agent sets it the same way
+  (a real emulator only isolated, as below). DuckStation
   (`duckstation*.exe`) never starts, listed or not; RetroArch (`retroarch*.exe`) only isolated, every `--appendconfig`
   naming an existing ASCII file (the isolated configuration under `build/`, as `spike_launch` writes it). The guard is a
   safety net, not a security boundary: a hard link or copy under another name is kept out by the list alone.

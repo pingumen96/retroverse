@@ -68,7 +68,8 @@ YUV planes converted in the shader, 480p or a single decoder, prebuilt LGPL FFmp
   `--decoder-threads`, `--upload-fences`, `--check-frames` (the frame counter of every uploaded frame and of every
   picture in the screenshot), `--texture-self-test`, `--priority`, `--no-vsync`, `--hidden`, `--width`, `--height`,
   `--report`, `--screenshot`, `--data-dir`, `--log-level`, `--list-encoders`. `run_measurements.ps1` runs the series
-  below and writes their summary.
+  below and writes their summary; the real series read the media root `-MediaRoot` names, by default the
+  `RV_REAL_MEDIA_ROOT` variable (they refuse to run without one).
 - **Tests**: 59 Catch2 cases in `tests/unit/media` (queue and pool, generations, the clock on synthetic frames including
   seeks, the paused picture and a source whose frames vanish mid-update, output sizes, statistics, the decoder on clips
   written at test time: order, timestamps and frame counters, loops, scaling, non-ASCII paths, MP4, MKV and AVI, seeks on
@@ -117,12 +118,13 @@ YUV planes converted in the shader, 480p or a single decoder, prebuilt LGPL FFmp
   30 frames, in MP4 (moov first); each loops six times in a run. The LGPL build has no software H.264 encoder
   (`--list-encoders`: native encoders such as mpeg4, mjpeg, ffv1, prores; Media Foundation and Direct3D 12 hardware
   encoders; no libx264).
-- **Real videos**, read in place and read-only (FFmpeg's file protocol opens them with `O_RDONLY`) from
-  `E:/Programmi/ES-DE_media/downloaded_media`: `snes/videos/1 US - S/Super Metroid (Japan, USA) (En,Ja).mp4`,
-  `snes/videos/1 US - A-E/Donkey Kong Country (USA) (Rev 2).mp4`, `ps2/videos/Gran Turismo 4 (Europe, Australia)
-  (En,Fr,De,Es,It).mp4`: all three H.264 640x480 yuv420p at 59.94 fps, about 36 s, 1.6, 2.7 and 1.8 Mb/s. For the
-  startup from a cold disk cache, three other SNES videos not opened for at least a month (see Startup). The media
-  directory is on a SATA SSD (Samsung 870 QVO).
+- **Real videos**, read in place and read-only (FFmpeg's file protocol opens them with `O_RDONLY`) from the ES-DE
+  media root (`run_measurements.ps1 -MediaRoot`, by default the `RV_REAL_MEDIA_ROOT` variable, as
+  `scripts/real-library.ps1` takes it): the snes videos of Super Metroid (Japan, USA) (En,Ja) and Donkey Kong Country
+  (USA) (Rev 2) and the ps2 video of Gran Turismo 4 (Europe, Australia) (En,Fr,De,Es,It), the paths below the media
+  root given by the script's `-RealVideos`: all three H.264 640x480 yuv420p at 59.94 fps, about 36 s, 1.6, 2.7 and 1.8
+  Mb/s. For the startup from a cold disk cache, three other SNES videos not opened for at least a month (see Startup).
+  The media directory is on a SATA SSD (Samsung 870 QVO).
 - **Definitions**: *frame interval*, the time between the starts of two render frames (vsync included: 6.07 ms at
   164.84 Hz); *intervals over 16.7 ms*, those longer than a 60 Hz frame; *frame work*, the CPU time of a frame before
   the swap; *upload*, the CPU time of one `VideoTexture::upload` (copy and GL calls), *upload per render frame* the sum
@@ -300,8 +302,8 @@ render frame:
 | Cold disk cache: three SNES videos not opened for a month, one per run | 15.2 to 16.8 ms | 16.8 to 18.4 ms | 18.1 to 20.2 ms |
 | The same three again | 5.5 to 5.6 ms | 7.3 ms | 8.2 to 13.5 ms |
 
-The three files (`snes/videos/1 US - A-E/7th Saga, The (USA).mp4`, `Aaahh!!! Real Monsters (USA).mp4`, `ABC Monday
-Night Football (USA).mp4`, all H.264 640x480 at 59.94 fps) were read in place, read-only, as the real videos above.
+The three files (the snes videos of 7th Saga, The (USA), Aaahh!!! Real Monsters (USA) and ABC Monday Night Football
+(USA), all H.264 640x480 at 59.94 fps) were read in place, read-only, as the real videos above.
 NFR-06 asks for the first preview frame within 2 s of the focus, with the video local and decodable: two orders of
 magnitude to spare on the SATA SSD that holds the media here. A USB hard disk that has to spin up, or a network share,
 adds its own latency (seconds), which this machine could not show; the decoder's thread absorbs it (the render thread

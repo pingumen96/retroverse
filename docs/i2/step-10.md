@@ -329,8 +329,8 @@ real-library ones.
 
 ### Real library (`scripts/real-library.ps1`, with ES-DE closed)
 
-`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
--MediaRoot E:\Programmi\ES-DE_media\downloaded_media -RetroArchExe E:\Programmi\Retroarch\retroarch.exe
+`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root>
+-MediaRoot <media root> -RetroArchExe <RetroArch folder>\retroarch.exe
 -Filter '[real-library][launch]'` (the two tests of `test_launch_real.cpp`, through retroverse-cli with a library.json in
 a temporary user data directory):
 

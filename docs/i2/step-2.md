@@ -335,8 +335,8 @@ only until the user data directory has passed the guard, then `startFileLog()` o
 
 ## Real library (`scripts/real-library.ps1`, with ES-DE closed)
 
-`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
--MediaRoot E:\Programmi\ES-DE_media\downloaded_media` (Release, the script's default; also run with
+`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root>
+-MediaRoot <media root>` (Release, the script's default; also run with
 `-Preset msvc-x64-debug`)
 
 Both `[real-library]` tests passed (2,709 assertions) in both builds, and the snapshots showed 0 differences among
@@ -379,8 +379,8 @@ Seven commands have a program other than one `%EMULATOR_X%` element:
 - the four placeholders: androidapps, androidgames, lutris, xboxone;
 - three hand edits: gc "Dolphin" and "Dolphin (Standalone)", ps2 "PCSX2 (Standalone)".
 
-The user also added a staticpath entry to the bundled find rules: PCSX2's first one is `K:\Giochi\Emulatori\PS2\
-pcsx2-qt.exe`, ahead of the two upstream `pcsx2-qt*.exe` wildcards.
+The user also added a staticpath entry to the bundled find rules: PCSX2's first one is an absolute `pcsx2-qt.exe`
+under the user's own emulator folder on another drive, ahead of the two upstream `pcsx2-qt*.exe` wildcards.
 
 The hidden test checks every figure above, not only prints them: the counts, the census table, the seven commands and
 the PCSX2 entry. A change to the token classification or the program detection fails the gate run.

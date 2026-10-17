@@ -234,8 +234,8 @@ and with a hidden track and `ShowHiddenFiles` off; arcade, and with `MAMENameStr
 
 ## Real library (`scripts/real-library.ps1`, ES-DE closed)
 
-`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
--MediaRoot E:\Programmi\ES-DE_media\downloaded_media` (Release): the `[real-library]` tests passed and the snapshots
+`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root>
+-MediaRoot <media root>` (Release): the `[real-library]` tests passed and the snapshots
 showed 0 differences among 542,082 entries. The figures:
 
 - 103,067 games as ES-DE lists them; Retroverse: 105,130 entries, 90,246 games, 12,821 disc members (psx 12,820, saturn

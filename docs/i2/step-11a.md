@@ -266,6 +266,13 @@ rebuild is refused.
 
 ## The seam for step 11b (reconciliation)
 
+Filled by step 11b ([step-11b.md](step-11b.md)): the pass also returns the quick hashes it read
+(`IdentityPairs::hashes`, stored with the identities the files end with), the import gives it a held file's holder
+file facts (`NewFile::holderFile`: only a holder never seen with a file becomes an alias), the alias of a file moved
+back says `moved-back` (`MoveReason::MovedBack`; the move keeps the reason it rests on), `ChangeSet::reviews` carry the
+review rows' ids, and the CLI's JSON `reviews[]` carry `review` (the row's id) and `game` (this step's `id`). What
+follows is the seam as this step left it.
+
 `IIdentityPairing::pair(PairingRequest)` is called once per system whose gamelist was read that has both vanished
 identities and new files, after the stored identities are matched and before any GameId is given out, under the import
 lock and before the write transaction (nothing is written yet; whatever writes identities holds the same lock, so what
@@ -423,8 +430,8 @@ at once), so that they compare imports exactly; the reference library's folders,
 
 ## Real library
 
-`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
--MediaRoot E:\Programmi\ES-DE_media\downloaded_media` (Release, ES-DE closed), with the default filter (9 test cases: 7
+`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root>
+-MediaRoot <media root>` (Release, ES-DE closed), with the default filter (9 test cases: 7
 passed, the import's among them, the two launch tests skipped without `-RetroArchExe`): 0 differences among 542,082
 entries. The step was first run so twice (also with `-Filter '[real-library][import]'`), then again after the review's
 fixes, whose figures and timings are below. The database is made anew under `build/msvc-x64-release/real-library/import`.

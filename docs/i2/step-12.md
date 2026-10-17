@@ -35,7 +35,7 @@ open leaves it to the next start, which closes it as interrupted, and only then.
 
 | Table | Holds |
 |---|---|
-| `rv_play_sessions` | every launch attempt (`PlaySession`), its id AUTOINCREMENT (shown to users): the game (its identity, an alias resolved when written), the choice (`choice_kind` `command` or `profile`, `choice`: an ES-DE label, `''` for a single unlabelled command, or a profile id) and its source (`ChoiceSource`), `test`; UTC times `started_at`, `ended_at` (NULL while running and for interrupted sessions), `closed_at` (when a later start closed an interrupted one); `run_ms` (monotonic: from the moment the process ran to its authoritative exit, or to the moment its owner stopped following it); the outcome, `readiness` (blocked), `left_running` (`LeftRunningReason`), the launcher's `failure`, `exit_code`, `exit_kind`, `quick_exit`, `confirmed_by_user`, `processes_remained`, `refused_by_guard`, `message`; `process_id` (the started process); the owner `owner_pid` and `owner_created` (FILETIME ticks). CHECKs tie the outcome to its fields (an end time unless running or interrupted, a readiness only when blocked, a reason only when left running). Indexed by (game, id) and on the open sessions |
+| `rv_play_sessions` | every launch attempt (`PlaySession`), its id AUTOINCREMENT (shown to users): the game (its identity, an alias resolved when written), the choice (`choice_kind` `command` or `profile`, `choice`: an ES-DE label, `''` for a single unlabelled command, or a profile id) and its source (`ChoiceSource`), `test`; UTC times `started_at`, `ended_at` (NULL while running and for interrupted sessions), `closed_at` (when a later start closed an interrupted one); `run_ms` (monotonic: from the moment the process ran to its authoritative exit, or to the moment its owner stopped following it); the outcome, `readiness` (blocked), `left_running` (`LeftRunningReason`), the launcher's `failure`, `exit_code`, `exit_kind` (nullable since the integration of steps 11b and 12, [step-11b-12i.md](step-11b-12i.md): present with `exit_code` only, never for a blocked or guard-refused attempt nor for the failures `invalid request` and `start failed`, always for a crash), `quick_exit`, `confirmed_by_user`, `processes_remained`, `refused_by_guard`, `message`; `process_id` (the started process); the owner `owner_pid` and `owner_created` (FILETIME ticks). CHECKs tie the outcome to its fields (an end time unless running or interrupted, a readiness only when blocked, a reason only when left running). Indexed by (game, id) and on the open sessions |
 | `rv_launch_game_choices` | Retroverse's choice for a game (`assign --game`): its GameId as INTEGER PRIMARY KEY, kind, value, `chosen_at` |
 | `rv_launch_system_choices` | Retroverse's choice for a system (`assign <system>`), by (library, system) |
 | `rv_launch_verifications` | per (library, system, kind, value) the latest session that returned normally with that choice: the game, the session, whether it was a launch test, the program that ran, `verified_at` |
@@ -165,8 +165,11 @@ words and, for outcomes other than returned, the message. `--game` lists one gam
 {`kind`, `value`, `source`}, `test`, `startedAt`, `endedAt`, `closedAt`, `durationMs`, `outcome`, `outcomeText`,
 `readiness`, `leftRunning`, `failure`, `exitCode`, `exitKind`, `exitDescription`, `quickExit`, `confirmedByUser`,
 `processesRemained`, `refusedByGuard`, `message`, `processId`, `owner` {`processId`, `creationTime`}; and `library`,
-`system`, `path`, `title`), `interrupted` (the sessions closed now). Exit codes: 0; 1 a `--game` the catalog does not
-know; 2 invalid options; 3 the catalog cannot be read.
+`system`, `path`, `title`), `interrupted` (the sessions closed now). Since step 11b-12i `exitKind` is null when the
+session has no exit code, and `requestedGame` follows `game`: with `--game <alias>`, `game` is the identity the alias
+stands for and `requestedGame` the alias (both null without `--game`), and the text says "Sessions of <identity>
+(for <alias>, an alias)."; `assign --game <alias>`'s text line "For" ends "(for <alias>, an alias)" too. Exit codes:
+0; 1 a `--game` the catalog does not know; 2 invalid options; 3 the catalog cannot be read.
 
 **`profiles`** shows `Assigned` (the database's system choices) before emulators.json's, marks an emulators.json choice
 that assign's outranks, and says for each system where its choice comes from (JSON: `assignedChoices`, `chosen.origin`).
@@ -234,7 +237,8 @@ changed (the launch spike reports its command line from `Win32StartInfo`).
   - a session recorded while another process holds the database's write lock (two processes: the test process holds
     a BEGIN IMMEDIATE as a bulk import's write transaction holds it, while a retroverse-cli process runs `launch --game
     --wait`): the launch starts after one 1 s attempt (the log's "stays pending"), the game ends while the lock is still
-    held for 3 s more, the CLI keeps trying its session's end rather than exiting, and records it once the holder
+    held (since step 11b-12i until the game's process has ended and 3 s more, since a fixed wait was too short on a
+    loaded machine), the CLI keeps trying its session's end rather than exiting, and records it once the holder
     commits ("written at attempt N (the database was busy)"; `returned`, `sessionRecorded`, never exit 3). The import
     itself is not the holder: on the standard fixture it commits in milliseconds;
   - `launch --dry-run --game`: the game's choices, a missing file blocked (exit 1), a folder refused, an unknown game;
@@ -256,7 +260,7 @@ Run once, by hand, on the reference machine (2026-10-17, ES-DE and RetroArch clo
 the Release `retroverse-cli` of this step, everything Retroverse wrote under `build/step12-real` of the worktree:
 
 1. **Snapshots before** (`scripts/snapshot_tree.py snapshot before.json --hash <RetroArch folder> --hash <ES-DE home>
-   --listing <ROM root>\GB`): RetroArch's folder with its configuration, playlists,
+   --listing <gb's ROM folder>`): RetroArch's folder with its configuration, playlists,
    saves, states and logs hashed (48,524 files, 1,419 folders), the ES-DE home hashed (14,676 files), Mole Mania's ROM
    folder listed (8,629 files, 54 folders): 74,261 entries, taken before the library was even read.
 2. **The library** (`library create`: the ES-DE home, the install, ROMDirectory and MediaDirectory found as ES-DE finds
@@ -326,6 +330,9 @@ the Release `retroverse-cli` of this step, everything Retroverse wrote under `bu
 - The command line is logged at debug only now: the app's run reports keep what they record.
 
 ## Notes for step 11b
+
+Answered by the integration of steps 11b and 12 ([step-11b-12i.md](step-11b-12i.md)): the re-pointing is tested on the
+real tables.
 
 - The launch tables refer to `rv_game_identities (id)` through `game` columns (`rv_play_sessions`,
   `rv_launch_game_choices` with the GameId as its primary key, `rv_launch_verifications`); `rv_launch_verifications.session`

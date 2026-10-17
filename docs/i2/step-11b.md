@@ -426,8 +426,8 @@ and the hidden real-library one):
 
 ## Real library
 
-`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
--MediaRoot E:\Programmi\ES-DE_media\downloaded_media` (Release, ES-DE closed), the default filter: 10 test cases, 8
+`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root>
+-MediaRoot <media root>` (Release, ES-DE closed), the default filter: 10 test cases, 8
 passed (the import's and this step's among them), the two launch tests skipped without `-RetroArchExe`; **0 differences
 among 542,082 entries**. Then `-Filter '[real-library][import]'` again on a quiet machine: 0 differences.
 
@@ -471,7 +471,10 @@ taken while a Debug build ran beside it took 40.71 s, the writes 30.12 s: disk c
   for).
 - **Step 12 (sessions, choices):** nothing to do for aliases: `putAlias()` finds step 12's tables by their foreign keys
   into `rv_game_identities` and moves their rows (a table unique per game keeps the moved identity's row). Keep the
-  foreign keys single-column, into `rv_game_identities (id)`.
+  foreign keys single-column, into `rv_game_identities (id)`. Confirmed on the real tables by the integration of steps
+  11b and 12 ([step-11b-12i.md](step-11b-12i.md)): `putAlias()` re-points `rv_identity_aliases.game`,
+  `rv_identity_history.game`, `rv_identity_reviews.game`, `rv_launch_game_choices.game`,
+  `rv_launch_verifications.game` and `rv_play_sessions.game`, a list the moved-back test asserts.
 
 ## For the merge
 

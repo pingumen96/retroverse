@@ -28,8 +28,8 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de`: `es-app/sr
 - **The path.** `<media directory>/<system name>/<kind folder>/<sub-folders>/<display name><extension>`:
   - the media directory is `MediaDirectory` with `~` and `%ESPATH%` replaced and a `/` appended, or
     `<ES-DE home>/downloaded_media/` when empty (step 2's `resolveMediaRoot()`);
-  - the system's **name** (es_systems.xml's `<name>`), whatever the ROM folder is called on disk (`GB` holds gb's ROMs,
-    `gb` its media);
+  - the system's **name** (es_systems.xml's `<name>`), whatever the ROM folder is called on disk (a ROM folder spelled
+    `GB` holds gb's ROMs, `gb` its media);
   - the sub-folders are the ROM's parent path with the system's ROM folder removed (`Utils::String::replace(getParent
     (mPath), mStartPath, "")`), so the ROM tree's sub-folders are mirrored as they are spelled on disk;
   - the display name is `Utils::FileSystem::getStem(mPath)`: the file name without what follows its last dot (the dot
@@ -191,8 +191,8 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
 
 ## Real library (`scripts/real-library.ps1`, with ES-DE closed)
 
-`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
--MediaRoot E:\Programmi\ES-DE_media\downloaded_media`, Release. Each run was made twice: with `-Filter
+`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install> -RomRoot <ROM root>
+-MediaRoot <media root>`, Release. Each run was made twice: with `-Filter
 '[real-library][media]'` (this step's two tests) and with the default filter (every `[real-library]` test, 5 test
 cases). That was done for the step (4,145 assertions in all), then again after the review (1,692 assertions in the
 step's two tests, 4,724 in all). Every run passed, and the snapshots showed 0 differences among 542,082 entries each
@@ -360,8 +360,8 @@ source. `test_cli_media_real.cpp` checks the games population in total and for e
 games as step 8's figures less the scraped tracks. Debug and Release build without a warning; the 1,094 unit tests pass
 in both.
 
-**The real library** (`./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE
--RomRoot I:\Giochi\Emulatori -MediaRoot E:\Programmi\ES-DE_media\downloaded_media`, Release, ES-DE closed): with
+**The real library** (`./scripts/real-library.ps1 -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install>
+-RomRoot <ROM root> -MediaRoot <media root>`, Release, ES-DE closed): with
 `-Filter '[real-library][media]'` 2 test cases, 2,110 assertions; with the default filter, twice, 8 test cases (6
 passed, the two launch tests skipped without `-RetroArchExe`), 226,413 assertions; 0 differences among 542,082 entries
 every time. `media --coverage` exits 0 and lists 48 systems: the 45 with a gamelist, and pc (21 games), pcfx (12) and

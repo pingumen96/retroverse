@@ -23,6 +23,15 @@
   `%INJECT%` content rule, App Paths values, the unknown install folder, the static path `|` rule and the refused
   shells, and makes an invalid game `<altemulator>` fall to Retroverse's choice for the system when there is one (a
   deliberate difference)
+- Amended: 2026-10-17, at I2 wave 3 (steps 11a, 11b, 12): §4 states the quick hash's rule, narrows the quick-hash
+  pairing (amended by [ADR-0009](ADR-0009-quick-hash-evidence.md): an equal name or time too), scores ties, adds the
+  file names to the review candidates, keeps a file with the holder that had one of its own, resolves reviews with a
+  candidate, says what `last_seen` records and what the guard counts; §5 says what the index holds where the snapshot
+  cannot tell, how an alias takes over the state rows, and how the import uses the import lock, writes only what
+  changed, bounds its records and suspends the search index; §6 ranks `assign`'s choice for a system before
+  emulators.json's; §7 keeps a failed gamelist's identities and disc groups too; §8 says which launches record a
+  verification; §9 lists the session outcomes, the exit columns, the owner rule through the process list and the
+  busy retry
 
 ## Context
 
@@ -156,34 +165,58 @@ it (ES-DE would show two entries).
   On a collision the tuple gains a fourth element, a counter n = 1, 2, ... written in decimal ASCII after a fourth NUL,
   until the value is free, keys being processed in (system, key) ordinal order. Text form: `g` and 16 hexadecimal digits, a valid UI entry id. A new drive letter or ROM root keeps every
   ID. Golden ID tables are built on an empty database and checked by an independent implementation.
-- **Fingerprints**: every import stores each file's size and modification time from the listing (free). A quick hash
-  (SHA-256 of the first and last 64 KiB) is computed progressively by a resumable, cancellable pass that commits in
-  batches, and is stored with the size and time it belongs to; a first import reads no ROM bytes.
-- **Reconciliation**: an identity whose file was present at the last import and is gone now, whatever the gamelist
-  says, is a candidate, within its library and system. It pairs with a new file whose quick hash equals its stored one;
-  without a stored hash, only with a unique new file of equal size, time and file name. Ties go to the equal file name,
-  then the longest common path suffix; groups of identical copies pair in key order. Anything else becomes a review row,
-  never a silent merge. The moved identity keeps its ID, history and sessions; a gamelist entry left at the old path gets
-  a new ID. A file moved back onto a key that has an identity keeps the identity with history and records the other as
-  an alias; resolving a review does the same.
+- **Fingerprints**: every import stores each file's size and modification time from the listing (free). Rows and
+  identities equal to what the import computes are not written, so an identity's `last_seen` says when an import last
+  wrote it with its file present (first seen, its path, file facts or quick hash changed, or re-keyed), not the last
+  import that saw the file;
+  when the library was last imported is in the import records. A quick hash (rule 1: SHA-256 of a file's whole content
+  up to 128 KiB, else of its first and last 64 KiB) is computed progressively by a resumable, cancellable pass that
+  commits in batches, and is stored with the size and time a listing gives for the file it was read from; it is current
+  while they are the identity's last file facts. A first import reads no ROM bytes.
+- **Reconciliation**: an identity whose file was present at the last import and is gone now, whatever the gamelist says,
+  is a candidate, within its library and system. An identity whose stored quick hash is current (taken at its last file
+  facts) pairs with a new file of the same quick hash and size, and only when the file name or the last write time is
+  equal too (Amended by [ADR-0009](ADR-0009-quick-hash-evidence.md)); without a current hash, only with a unique new
+  file of equal size, time and file name. Ties among the files of one quick hash are scored by the number of trailing
+  path elements their keys share, so the equal file name wins, then the longest common path suffix; groups of identical
+  copies pair in key order when the counts are equal; the size-time-name rule breaks no ties. Anything else becomes a
+  review row, never a silent merge; its candidates also include the new files of the same file name, whatever their
+  content, size or time. The moved identity keeps its ID, history and sessions; a gamelist entry left at the old path
+  gets a new ID. A file moved back onto a key whose identity was never seen with a file of its own (the identity a
+  gamelist entry left at an old path got) keeps the moved identity with history and records the other as an alias; a
+  file at the path of an identity that had a file of its own is that identity's, whatever its hash says, and a vanished
+  identity it could be gets a review row. A review is resolved with one of its candidates, or, forced, with another
+  present identity of its system (a candidate beyond those listed, or one that moved since), or kept separate; a pairing
+  records the alias the same way.
 - **Availability**: tracked per system folder and per directory. A folder that is missing or cannot be listed keeps its
-  rows, marked "source unavailable" with the reason, and stays out of reconciliation (SC-06). A mass disappearance (an
-  empty ROM root, or more than half of a system's present files gone) changes nothing and is reported, unless the user
-  accepts the removals.
+  rows, marked "source unavailable" with the reason, and stays out of reconciliation (SC-06). A mass disappearance (more
+  than half of a system's present files gone, after the pairing pass) changes nothing for that system and is reported,
+  unless the user accepts the removals; a ROM root that is missing or empty makes every system folder unavailable: rows
+  kept as source unavailable, nothing removed.
 
 ### 5. Storage
 
 - One SQLite database, `<user data>/database/retroverse.sqlite`, WAL, foreign keys, `synchronous=FULL`,
   `journal_size_limit`, a checkpoint after each import.
-- **Index tables** (`idx_*`) are a function of the ES-DE snapshot and the identity table and can be rebuilt at any time
-  (`db rebuild-index`, tested to give the same index as a refresh); **state tables** (`rv_*`) hold what only Retroverse
-  knows: libraries, identities with their last path, history, aliases and fingerprints, review rows, per-game launch
-  choices, launch verifications, play sessions. Foreign keys point only from `idx_*` to `rv_*`, with no cascade out of
-  the index. Game rows use the GameId as `INTEGER PRIMARY KEY`; user-visible ids of other tables use `AUTOINCREMENT`.
+- **Index tables** (`idx_*`) are a function of the snapshot, the identity table and, for what the snapshot cannot tell
+  (folders that cannot be listed, failed gamelists, sheets that cannot be read, systems kept by the guard, media
+  unknown), the rows the index held; they can be rebuilt at any time (`db rebuild-index`, which reads every sheet again,
+  tested to give the same index as a refresh); **state tables** (`rv_*`) hold what only Retroverse knows: libraries,
+  identities with their last path, history, aliases and fingerprints, review rows, per-game and per-system launch
+  choices, launch verifications, play sessions, the import records (the newest 100 per library, each holding only the
+  systems with something to say). Foreign keys point only from `idx_*` to `rv_*`, with no cascade out of the index; a
+  state table that names a game does so through a single-column foreign key into the identities, so that an identity
+  that becomes an alias moves every state row naming it to the identity it stands for (a table holding one row per game
+  keeps the latter's). Game rows use the GameId as `INTEGER PRIMARY KEY`; user-visible ids of other tables use
+  `AUTOINCREMENT`.
 - **Concurrency**: one writer connection per process, used from one thread (the catalog worker in the app, the main
   thread of the CLI); the app's main thread reads through its own read-only connection and never waits on a lock;
-  statements are reset after each page; an import lock keeps two imports (also from two processes) from overlapping;
-  `sqlite3_interrupt` at shutdown.
+  statements are reset after each page; an import lock keeps two imports (also from two processes) from overlapping:
+  the import holds it from before it reads the library, and reads and compares the store under it (whatever writes
+  identities, aliases or index rows holds it: the quick-hash pass and review resolution too); its write transaction
+  holds the writes alone; rows and identities equal to what the import computes are not written. Writers that touch
+  neither identities nor index rows (play sessions, launch choices) take no import lock and wait only for a write
+  transaction; `sqlite3_interrupt` at shutdown.
 - **Migrations**: `PRAGMA user_version`, forward-only, each in one transaction, under a process-level lock that every
   Retroverse process holds while the database is open; before the first of a run, a uniquely named backup of a database
   that holds anything (the last 3 kept, free space checked); table rebuilds follow SQLite's documented procedure. A
@@ -196,8 +229,9 @@ it (ES-DE would show two entries).
   `fts5vocab` table) and becomes one quoted token per word, joined with AND, the last one as a prefix; one-character
   inputs filter without FTS. The index follows the rows through triggers and upserts, never `REPLACE`; bulk writes may
   drop the search triggers inside their transaction and rebuild the index before its commit (`suspendSearchIndex`,
-  `resumeSearchIndex`), since FTS5 flushes a segment at every statement that writes a row; a full rebuild is a repair,
-  and `db check` runs FTS5's integrity check.
+  `resumeSearchIndex`), since FTS5 flushes a segment at every statement that writes a row: the import does so for a
+  first import and whenever the rows it writes are at least a fifth of the index; a full rebuild is a repair, and `db
+  check` runs FTS5's integrity check.
 - **Paging**: a query (filter, search, sort) materializes its ordered GameId list in one read; the list's size is the
   count, a page is fetched by ids, and an id's position can be asked. The total order is (sort key, GameId), the sort key
   computed at import by a documented, versioned folding. The list is rebuilt when an import completes and the selection
@@ -219,12 +253,13 @@ it (ES-DE would show two entries).
 JSON with comments under `<user data>/config`: `library.json` (the library's id and adapter, the ES-DE home and install
 folders, optional ROM and media root overrides) and `emulators.json` (the user's emulator profiles and per-system
 choices); shipped defaults under `assets/launcher/`. Choices made through the CLI (`assign`) and per-game choices are
-stored in the database, never written into the user's commented files. The user data directory may not lie inside the
-ES-DE home, its install folder, the ROM root or the media root, nor inside the ROM folder of a system outside the ROM
-root (an absolute `<path>`, or one using `~`: the ROM scan reads those too, `esde::readOnlyFolders()`), compared as the
-file system compares names and again with links, junctions, subst and mapped drives resolved
-(`rv::core::checkUserDataDirectory`). The guard runs before anything is written, the log file included:
-`retroverse-cli` logs to stderr only until the user data directory has passed it.
+stored in the database, never written into the user's commented files; a choice for a system made with
+`retroverse-cli assign` ranks before emulators.json's for the same system (the user's latest explicit choice). The user
+data directory may not lie inside the ES-DE home, its install folder, the ROM root or the media root, nor inside the ROM
+folder of a system outside the ROM root (an absolute `<path>`, or one using `~`: the ROM scan reads those too,
+`esde::readOnlyFolders()`), compared as the file system compares names and again with links, junctions, subst and
+mapped drives resolved (`rv::core::checkUserDataDirectory`). The guard runs before anything is written, the log file
+included: `retroverse-cli` logs to stderr only until the user data directory has passed it.
 
 ### 7. Read-only towards ES-DE
 
@@ -236,8 +271,8 @@ first character, a declared ISO-8859-1), and what it reads leniently is read too
 not UTF-8 as Windows-1252 characters, character references to no character as U+FFFD. The settings reader extracts only
 the keys it uses and never reads, logs or copies the scraper credentials. A gamelist that fails to parse (it is cut
 short or padded with NUL characters while ES-DE writes it, among others), is empty, or has no `<gameList>` element is
-retried after a delay and then keeps that system's previous rows; on a first import that system is marked "metadata
-pending" rather than imported unscraped.
+retried after a delay and then keeps that system's previous rows, identities and disc groups, its system row saying the
+gamelist failed; on a first import that system is marked "metadata pending" rather than imported unscraped.
 
 ### 8. Launch translation
 
@@ -295,16 +330,26 @@ pending" rather than imported unscraped.
 - **Readiness**, the first that applies: source unavailable, ROM missing, requires launcher configuration, emulator not
   found, core not found, ready. It is computed at refresh and checked again before each launch. "Ready" does not wait for
   a launch test (a departure from specification §11.3): the ES-DE commands are what the user already plays with;
-  "verified" (a clean return without a quick exit, or `retroverse-cli launch --test`) is shown.
+  "verified" (a clean return without a quick exit, or `retroverse-cli launch --test`) is shown: a launch verification
+  is recorded by every launch that returns normally (a clean exit that is no quick exit, nothing left running) and by
+  `retroverse-cli launch --test`.
 - **Automation guard**: when `RV_LAUNCH_ALLOWLIST` is set (gate scripts, test harnesses, agents), only the listed
   executables may start, RetroArch only with `--appendconfig`, and DuckStation never; unit-tested.
 
 ### 9. Play sessions
 
 Every launch attempt is recorded with UTC wall-clock times, its outcome (including failures to start and quick exits)
-and its owner (process id and creation time); at start, only sessions whose owner is gone are closed as interrupted.
-Command lines, which carry user paths, are logged at debug level only. Emulators keep Windows' default error mode, so a
-crash dialog holds the session until the user returns (ADR-0006's window timeout and confirmation, never a kill).
+and its owner (process id and creation time); an attempt blocked before the launch, a refusal by the automation guard
+and a game left running (its owner stopped following it: not waited for, a wait limit, quit, the user's return) are
+recorded with their own outcomes. A session records the exit code of its authoritative process and the code's kind
+when a process exited; an attempt that never started (blocked before the launch, refused by the automation guard, a
+process that could not be created) records neither. At start, only sessions whose owner is gone are closed as
+interrupted: no process has the owner's id, the one that has it was created at another time, or it exited; a process
+this user may not open is compared through the system's process list, and only when that list cannot be read either
+is the owner taken as running. A session write that meets a busy database (another process's import can hold the
+write lock longer than the busy timeout) is tried again, never lost silently. Command lines, which carry user paths,
+are logged at debug level only. Emulators keep Windows' default error mode, so a crash dialog holds the session until
+the user returns (ADR-0006's window timeout and confirmation, never a kill).
 
 ### 10. Verification
 
@@ -325,8 +370,8 @@ a quiet machine. ES-DE 3.4.1 is the certified version.
 - Two new DLLs (`sqlite3.dll`, `pugixml.dll`) ship next to the executables; pugixml's MIT notice is recorded with the
   third-party records now and packaged in I9. SQLite and pugixml parse untrusted input and move only with the baseline
   (ADR-0001).
-- Moves and renames keep their IDs only once the progressive hashing pass has seen the files, or when size, time and
-  name single them out; the rest become review rows.
+- Moves and renames keep their IDs only once the progressive hashing pass has seen the files and the move kept their
+  name or time (ADR-0009), or when size, time and name single them out; the rest become review rows.
 - Commands that need a shell, a precommand, a background launcher or an inject file cannot run until the user
   configures a profile (SC-10); the I7 emulator screens build on the same readiness states.
 - The specification's TOML files become JSON files; its illustrative schema becomes the index and state tables above.

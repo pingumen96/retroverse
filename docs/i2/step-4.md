@@ -123,19 +123,23 @@ State tables (area identity, what only Retroverse knows; no import removes a row
 |---|---|
 | `rv_meta` | key/value: `schema_created_at`, `schema_created_by`; `lookup_key_rule` and `casing_table_version`, the lookup key version of every identity's key, recorded by each import's commit (`mixed` while identities hold keys of several versions, a re-keying not finished; the running system's when the schema was made, until an identity exists): when they differ from `catalog::currentLookupKeyVersion()`, the keys must be computed again (ADR-0008 §4); `sort_key_version` (of `idx_games.sort_key`) |
 | `rv_libraries` | the libraries by their fixed id (the authority on it, ADR-0008 §4; a CHECK keeps the slug's form): adapter, ES-DE home and install folder, ROM and media root overrides |
-| `rv_game_identities` | one row per identity (`StoredIdentity`): GameId, library, system, lookup key and exact relative path of its file when last seen, the key's rule and casing table versions, present flag and file facts (directory, size, last-write time, hidden; all NULL when no import saw the file), the quick hash with the size and time it belongs to (step 11), first and last seen. Unique on (library, system, relative path): a file has one identity, whatever casing table its stored key was computed with; two names that fold to one key are two paths and keep two identities (ADR-0008 §4); that unique index also serves the reads of a system's identities, which the import matches by path and by key in memory (no index by key). Indexed for the quick hash pairing too (a partial index) |
-| `rv_identity_history` | what happened to an identity (moves with their reason, keys recomputed, aliases, reviews resolved), the key and path before and after (step 11) |
+| `rv_game_identities` | one row per identity (`StoredIdentity`): GameId, library, system, lookup key and exact relative path of its file when last seen, the key's rule and casing table versions, present flag and file facts (directory, size, last-write time, hidden; all NULL when no import saw the file), the quick hash with the size and time it belongs to (step 11b: read and written with the identity, `StoredIdentity::quickHash`; the quick-hash pass writes those three columns alone), first and last seen (`last_seen`: when an import last wrote the identity with its file present, since step 11a writes no unchanged identity; when the library was last imported is in `rv_imports`). Unique on (library, system, relative path): a file has one identity, whatever casing table its stored key was computed with; two names that fold to one key are two paths and keep two identities (ADR-0008 §4); that unique index also serves the reads of a system's identities, which the import matches by path and by key in memory (no index by key). Indexed for the quick hash pairing too (a partial index) |
+| `rv_identity_history` | what happened to an identity (moves with their reason, keys recomputed, aliases, reviews resolved), the key and path before and after; since step 11b the alias an event recorded (`alias`) and the review it resolved (`review`, a foreign key into `rv_identity_reviews`), a CHECK on `event` |
 | `rv_identity_aliases` | GameIds that stand for another identity, never given out again (`takenGameIds()`), with what they were (step 11) |
-| `rv_identity_reviews` | vanished identities no pairing was safe for, their candidates as a JSON array, resolution (step 11) |
+| `rv_identity_reviews` | vanished identities no pairing was safe for, their candidates as a JSON array, resolution; since step 11b the identity a row was resolved with (`resolved_with`) and a CHECK pairing `resolved_at` with `resolution` |
+| `rv_imports` | the import records (step 11a, `ImportRecord`): library, kind (`ImportKind`; `rebuild-index` for `db rebuild-index`), start and end times, whether removals were accepted, the systems asked for, and the per-system figures as JSON of the systems with something to say; the newest 100 per library kept (`kKeptImportRecords`) |
+| `rv_play_sessions`, `rv_launch_game_choices`, `rv_launch_system_choices`, `rv_launch_verifications` | the launch area (step 12, [step-12.md](step-12.md)): every launch attempt with its outcome, owner and exit (`exit_kind` nullable since step 11b-12i, CHECKs keeping it present with `exit_code` only, never for a blocked or guard-refused attempt nor for the failures `invalid request` and `start failed`, always for a crash), Retroverse's choices per game and per system, the latest verification per choice; every `game` column a single-column foreign key into `rv_game_identities`, so that an alias's re-pointing (step 11b's `putAlias()`) covers them |
 
-Index tables (area index, a function of the ES-DE snapshot and the identities):
+Index tables (area index, a function of the ES-DE snapshot and the identities and, where the snapshot cannot tell, of
+the rows they held: step 11a, ADR-0008 §5):
 
 | Table | Holds |
 |---|---|
 | `idx_systems` | `SystemInfo` per library and system: full name, platforms (JSON array), theme, ROM folder as configured and resolved, availability with its reason, gamelist state, the gamelist's alternative emulator |
 | `idx_games` | one row per indexed entry (`IndexedEntry`) under its identity's GameId: library, system, exact relative path (its key is computed again from it), state with its reason and excluding setting, availability with its reason, file facts, gamelist path, title, sort key, the metadata (text fields as written, release date as YYYYMMDD, rating in tenths, players min and max, NULL max for "N+"), the disc head's relative path, the alternative emulator, ES-DE's flags (favorite, hidden, kid game, completed, broken, play count and time, last played as ES-DE's local text), the raw ES-DE values as JSON (`{"unknown":[["name","text"],...],"original":[...]}`, NULL when none). Indexed by (library, system) |
 | `idx_media` | a row per entry and media kind present, with the extension (paths are derived): the only record of an entry's media (no mask in `idx_games`; a filter on a kind present is an `EXISTS` on its primary key) |
-| `idx_disc_groups`, `idx_disc_members` | a disc group's head (kind, size and time when read: `CachedDiscGroup`) and its members in order (step 11 writes them) |
+| `idx_disc_groups`, `idx_disc_members` | a disc group's head (kind, and the size and time of the sheet its references were read from: `DiscGroup::headSize`, `headLastWriteTime`, since step 11a; step 4 named them `CachedDiscGroup`) and its members in order (step 11a writes them) |
+| `idx_disc_references` | what a head says, by relative path, in order, files that are not there included (step 11a) |
 | `idx_import_issues` | the issues of each library's last import, in order (step 11) |
 
 ## The store (`SqliteCatalogStore`)
@@ -145,7 +149,8 @@ schema is not the program's (`Conflict`). Values come back unchanged; a `LookupK
 relative path (`makeLookupKey()` is its only maker), and reads are put in the port's order in C++ (identities by key
 then path, index rows by `entryOrder()`), whatever the casing table of the stored keys. Writes are upserts (`INSERT ...
 ON CONFLICT DO UPDATE`), never `REPLACE`, so that triggers on the index tables (step 9's search index) see updates as
-updates; an identity upsert keeps `first_seen` and the quick hash, and moves `last_seen` only when the file is present.
+updates; an identity upsert keeps `first_seen`, writes the quick hash the identity carries (since step 11b; it kept the
+stored one before), and moves `last_seen` only when the file is present.
 Besides the port's rules the transaction refuses: an identity without a GameId, system or key, of an unknown library
 (`InvalidArgument`) or with the relative path of another identity of its system (`Conflict`); an entry of another system
 than its identity's, an absent media kind with an extension, a count or file size beyond 2^63 - 1, a release date or
@@ -154,7 +159,8 @@ last played time that is none, raw values that are not UTF-8 (`InvalidArgument`)
 and working, as it was before the write (an entry's statements run in a savepoint); when SQLite rolls the whole
 transaction back on its own (a full disk, an I/O error, an interrupt), the import transaction ends there and every later
 call fails (`InvalidArgument`). `removeEntry()` removes the entry's `idx_games` and `idx_media` rows and the disc group
-it heads; a group it is a member of is its head's and stays as it was read (`CachedDiscGroup`); its identity stays.
+it heads (since step 11a with its references); a group it is a member of is its head's and stays as it was read; its
+identity stays.
 
 The raw ES-DE values cross JSON at every import, both ways: the store writes and reads their one shape with a small
 dedicated writer and reader (RFC 8259 text, which SQLite's `json_valid` CHECK accepts) instead of nlohmann::json, which

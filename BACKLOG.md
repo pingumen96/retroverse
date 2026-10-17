@@ -258,23 +258,50 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   state.
 - **`discover` and `MAMENameStripExtraInfo`:** the settings whitelist gained the key at I2 step 7 (arcade names follow
   it), but `discover` still prints eight of the nine settings it reads.
+- **`--system` for `db rebuild-index`:** a partial rebuild is refused (I2 step 11a); rebuilding one system would repair
+  it without reading the whole library.
+- **Folder times as listed lag behind the folder:** a folder's last write time comes from its parent folder's index,
+  which NTFS brings up to date later, on its own, so two imports a moment apart can see two times for a Folder entry or
+  a game directory and write its row again once (I2 step 11a, "Folder times as Windows lists them"); harmless today.
+- **A compact history for re-keying:** a casing table change re-keys every identity with one `rekeyed` history row each
+  (about 105,000 rows on the reference library, I2 step 11b); one event for the library would say the same.
+- **Reconciliation across imports:** only identities that vanished at this import are candidates (ADR-0008 §4), so a
+  file deleted at one import and back elsewhere at a later one gets a new identity; the review of I2 step 11b proposed
+  every missing identity with a stored quick hash as a candidate.
+- **The quick-hash pass with several readers:** it reads files one by one: 32 files/s cold from the reference library's
+  external drive (gb: 8,611 files in 268.8 s, I2 step 11b), where the hashing costs little (812 to 1,014 files/s warm);
+  `EsdeLibrarySource` already reads cue sheets with 8 threads (I2 step 7).
+- **The quick-hash pass scheduled by the app:** in idle time on the catalog worker, between imports, a limit per slice
+  (I7; the worker comes with I2 step 13, which may run the pass already).
+- **Review rows in the product UI:** shown and resolved through `ICatalogStore::reviews()` and
+  `catalog::resolveReview()`, offering the review's candidates only (I7); `retroverse-cli identities reviews` and
+  `resolve` have them now.
 - **XML warnings with the user's paths:** `detail::loadXmlFile` (`src/esde/src/xml.cpp`, used by the settings, systems
   and find rules readers) logs what it read leniently at warning level with the file's path, under the user's ES-DE
   home; log it at debug level, as `readGamelist` does (I2 step 3), and report it as issues.
+
+### Plan
+
+- **Step 13r, the refresh on a worker:** decided after step 13 merges: it stays in I2 (roadmap row 13r, optional) or
+  moves to I3.
+- **The quick hash's whole-library cold pass:** about 45 minutes on the reference machine, estimated from I2 step 11b's
+  gb sample (980.9 MiB in 268.8 s, cold); it belongs in Gate M1's measurements (roadmap row 14), run on demand, not by
+  default.
 
 ### Launcher
 
 The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; these come from the I2 steps.
 
-- **The gate and test scripts under the automation guard** (ADR-0008 §8): `scripts/gate.ps1` and `scripts/test.ps1`
-  set no `RV_LAUNCH_ALLOWLIST`, so the guard does nothing in their unit tests and in the `desktop.launch.*` cases of
-  `spike_launch`, which start the fake emulator unguarded; the GPU smoke tests of `rv_smoke_tests` already set it per
-  case through ctest `ENVIRONMENT` since I2 step A1 (the build's fake emulator alone). Set it to
+- **The gate and test scripts under the automation guard** (ADR-0008 §8): `scripts/gate.ps1` and `scripts/test.ps1` set
+  no `RV_LAUNCH_ALLOWLIST`, so the guard does nothing in the runner, launcher and spike unit tests and in the
+  `desktop.launch.*` cases of `spike_launch`, which start the fake emulator unguarded (the `retroverse-cli launch` tests
+  set it for their own duration since I2 step 12, `ScopedLaunchAllowList`); the GPU smoke tests of `rv_smoke_tests`
+  already set it per case through ctest `ENVIRONMENT` since I2 step A1 (the build's fake emulator alone). Set it to
   `build/<preset>/bin/rv_fake_emulator.exe`, and check that the runner tests that start unlisted files on purpose (a
-  text file or a broken program named `.exe`) still test what they mean to, since the guard refuses them first: the
-  unit test "platform_win/process_runner: an image Windows cannot load fails to start, without a dialog" (I1 spike f,
-  in `rv_tests` since I2 step 0b) expects `CreateProcessW` to fail, and the guard would refuse the broken image before
-  it. The image is written into a scratch folder per run, which no list can name in advance: that test must clear the
+  text file or a broken program named `.exe`) still test what they mean to, since the guard refuses them first: the unit
+  test "platform_win/process_runner: an image Windows cannot load fails to start, without a dialog" (I1 spike f, in
+  `rv_tests` since I2 step 0b) expects `CreateProcessW` to fail, and the guard would refuse the broken image before it.
+  The image is written into a scratch folder per run, which no list can name in advance: that test must clear the
   variable for itself, or point it at its own image, before the scripts set it.
 - **Derived profiles:** an `extends` field, so that a user profile changes a few fields of a shipped one instead of
   replacing it whole by id (I2 step 5), if users ask for it.
@@ -297,8 +324,15 @@ The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; 
 - **Profiles refused by the file opened:** step 5's `planLaunch()` refuses a profile's executable by the name found only
   (`isRefusedProgram()`), where the ES-DE translation also checks the file it opens (an 8.3 alias, a symbolic link
   named like an emulator, I2 step 10); give profiles the same check.
-- **Launch command lines at debug level:** `LaunchSession` logs the command line at info level, where ADR-0008 §9 says
-  debug (command lines carry the user's paths); I2 step 12, with the session rows.
+- **Ctrl+C during `retroverse-cli launch --wait` is not tested:** the console control handler stops waiting (the session
+  left running, `quit`), but a test would need a console shared with the test process (I2 step 12).
+- **"Verified" per command and profile in `profiles`:** `rv_launch_verifications` holds the latest normal return per
+  library, system and choice (I2 step 12); `profiles` could show it beside each command's and profile's readiness.
+- **A per-game choice in `launch --dry-run --path`:** the path dry run shows the system's choice only, since it does not
+  look the identity up by its path; `launch --dry-run --game` shows both (I2 step 12).
+- **A pending session write lost at exit:** a session write that meets a busy database is kept and tried again, the end
+  for 2 minutes (`kPatientRetry`), and a CLI that still cannot write it prints it and exits 3; a process that ends
+  before the database is free loses it (I2 step 12). The app's catalog worker can keep it longer.
 
 ### App shell
 
