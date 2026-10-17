@@ -135,8 +135,12 @@ if ($Gate -eq 'M1' -and $env:RV_GATE_INNER -ne '1') {
     $arguments = @('-NoProfile', '-File', $PSCommandPath, '-Gate', $Gate)
     if ($Clean) { $arguments += '-Clean' }
     if ($RealLibrary) {
-        $arguments += @('-RealLibrary', '-EsdeHome', $EsdeHome, '-EsdeInstall', $EsdeInstall, '-RomRoot', $RomRoot,
-            '-MediaRoot', $MediaRoot)
+        $arguments += '-RealLibrary'
+        # The folders given (the inner run reads the RV_REAL_* variables itself for the others).
+        foreach ($folder in @(@('-EsdeHome', $EsdeHome), @('-EsdeInstall', $EsdeInstall), @('-RomRoot', $RomRoot),
+                @('-MediaRoot', $MediaRoot))) {
+            if ($folder[1]) { $arguments += $folder }
+        }
     }
     if ($FullHashPass) { $arguments += '-FullHashPass' }
     $shell = (Get-Process -Id $PID).Path
@@ -159,7 +163,7 @@ if ($Gate -eq 'M1' -and $env:RV_GATE_INNER -ne '1') {
     if (Test-Path $focusReport) {
         $focus = Get-Content -Raw $focusReport | ConvertFrom-Json
         $counts = $focus.counts
-        $findings = @($focus.findings.foreground) + @($focus.findings.windows) | Where-Object { $_ }
+        $findings = @(@($focus.findings.foreground) + @($focus.findings.windows) | Where-Object { $_ })
         $details = '{0} foreground change(s), {1} to test processes; {2} window(s) shown, {3} visible of test processes, {4} hidden or off-screen' -f
             $counts.foregroundChanges, $counts.foregroundChangesToTestProcesses, $counts.windowsShown,
             $counts.visibleWindowsOfTestProcesses, $counts.allowedWindowsOfTestProcesses

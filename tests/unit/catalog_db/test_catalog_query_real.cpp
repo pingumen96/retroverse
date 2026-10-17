@@ -141,17 +141,35 @@ TEST_CASE("catalog_db/query: NFR-02 on the real library's catalog: indexed queri
         REQUIRE(query.run(warm).has_value());
     }
     std::vector<double> times;
+    std::vector<double> slowest(queries.size(), 0.0); // per query, its slowest pass
+    std::vector<std::size_t> found(queries.size(), 0);
     std::size_t rows = 0;
     for (int pass = 0; pass < 3; ++pass) {
-        for (const CatalogQuery& search : queries) {
+        for (std::size_t i = 0; i < queries.size(); ++i) {
             const auto started = Clock::now();
-            const auto ids = query.run(search);
-            times.push_back(millisecondsSince(started));
+            const auto ids = query.run(queries[i]);
+            const double ms = millisecondsSince(started);
+            times.push_back(ms);
+            slowest[i] = std::max(slowest[i], ms);
             REQUIRE(ids.has_value());
             rows += ids->size();
+            found[i] = ids->size();
         }
     }
     const double p95 = percentile(times, 0.95);
+    // The five slowest queries, for the record: what costs most on a real catalog.
+    std::vector<std::size_t> order(queries.size());
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        order[i] = i;
+    }
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return slowest[a] > slowest[b]; });
+    for (std::size_t k = 0; k < std::min<std::size_t>(5, order.size()); ++k) {
+        const CatalogQuery& slow = queries[order[k]];
+        std::cout << fmt::format("  slow: \"{}\" ({}{}{}): {} games, {:.1f} ms at most\n", slow.text,
+                                 toString(slow.sort), slow.systems.empty() ? "" : ", psx and snes",
+                                 slow.includeUnavailable ? ", with the unavailable" : "", found[order[k]],
+                                 slowest[order[k]]);
+    }
 
     // The default list (every game, title order), then pages of 30 rows at 200 spread positions of it.
     const auto listed = Clock::now();
