@@ -246,6 +246,13 @@ TEST_CASE("cli/catalog: games lists games in a total order, a system's, filtered
     CHECK(missing.out == fmt::format("{}  gb  Gone Pixel [missing-file] [missing]\n1 game\n", idOf(cli.gone)));
     const RunResult other = cli.run({"games", "--state", "not-a-game, folder"});
     CHECK(other.out == fmt::format("{}  snes  Readme [not-a-game]\n1 entry\n", idOf(cli.readme)));
+    const RunResult missingFiles = cli.run({"games", "--state", "missing-file"}); // implies --include-unavailable
+    CHECK(missingFiles.out == fmt::format("{}  gb  Gone Pixel [missing-file] [missing]\n1 entry\n", idOf(cli.gone)));
+    CHECK(nlohmann::json::parse(cli.run({"games", "--state", "missing-file", "--json"}).out)
+              .at("query")
+              .at("includeUnavailable") == true);
+    CHECK(cli.run({"search", "gone", "--state", "missing-file"}).out ==
+          fmt::format("{}  gb  Gone Pixel [missing-file] [missing]\n1 entry\n", idOf(cli.gone)));
     const RunResult byDate = cli.run({"games", "--sort", "release-date", "--limit", "2"});
     CHECK(byDate.out == fmt::format("{}  gb    \xC3\x89"
                                     "clair Nocturne (1992)\n"

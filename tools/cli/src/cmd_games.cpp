@@ -35,7 +35,8 @@ namespace {
 constexpr std::string_view kListOptions =
     "  --system <name>        Only the games of this system (its ES-DE name: gb, snes, psx...).\n"
     "  --state <states>       Entry states, comma-separated: game, missing-file, not-a-game, disc-member,\n"
-    "                         folder (default: game and missing-file).\n"
+    "                         folder (default: game and missing-file); missing-file implies\n"
+    "                         --include-unavailable (a missing file is never available).\n"
     "  --availability <list>  Availabilities, comma-separated: available, source-unavailable, missing; an\n"
     "                         unavailable one implies --include-unavailable.\n"
     "  --include-unavailable  Also missing files and the games of folders that could not be listed (hidden by\n"
@@ -235,6 +236,9 @@ ExitCode runGameList(CommandContext& context, bool search) {
                                                    item));
         }
         query.states.push_back(*state);
+        // Missing files are never available (the query lets them through only with includeUnavailable): naming the
+        // state asks for them, as naming an unavailable availability does.
+        query.includeUnavailable = query.includeUnavailable || *state == catalog::EntryState::MissingFile;
     }
     for (const std::string& item : listItems(args->value("availability").value_or(""))) {
         const auto availability = catalog::parseAvailability(item);
