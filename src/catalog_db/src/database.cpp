@@ -297,6 +297,27 @@ std::string_view sqliteVersion() noexcept {
     return sqlite3_libversion();
 }
 
+bool isBusyError(const Error& error) noexcept {
+    if (error.code != ErrorCode::Conflict) {
+        return false;
+    }
+    // sqliteError() ends every message with "(SQLite result code <n>)": the extended code's low byte is the primary one.
+    constexpr std::string_view marker = "(SQLite result code ";
+    const std::size_t at = error.message.rfind(marker);
+    if (at == std::string::npos) {
+        return false;
+    }
+    int result = 0;
+    bool digits = false;
+    for (std::size_t i = at + marker.size(); i < error.message.size() && error.message[i] >= '0' &&
+                                             error.message[i] <= '9' && result < 1'000'000;
+         ++i) {
+        result = result * 10 + (error.message[i] - '0');
+        digits = true;
+    }
+    return digits && ((result & 0xFF) == SQLITE_BUSY || (result & 0xFF) == SQLITE_LOCKED);
+}
+
 // --- Statement -------------------------------------------------------------------------------------------------------
 
 Statement::Statement(Statement&& other) noexcept

@@ -705,6 +705,56 @@ std::uint32_t processCreationFlags(const launcher::LaunchRequest& request) noexc
     return flags;
 }
 
+ProcessIdentity currentProcessIdentity() noexcept {
+    ProcessIdentity identity;
+    identity.processId = GetCurrentProcessId();
+    FILETIME creation{};
+    FILETIME exit{};
+    FILETIME kernel{};
+    FILETIME user{};
+    if (GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user) != FALSE) {
+        identity.creationTime = ticks(creation);
+    }
+    return identity;
+}
+
+std::string_view toString(ProcessLiveness liveness) noexcept {
+    switch (liveness) {
+    case ProcessLiveness::Running:
+        return "running";
+    case ProcessLiveness::Gone:
+        return "gone";
+    case ProcessLiveness::Unknown:
+        return "unknown";
+    }
+    return "unknown";
+}
+
+ProcessLiveness processLiveness(const ProcessIdentity& process) noexcept {
+    const UniqueHandle handle(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process.processId));
+    if (!handle) {
+        // No process has the id (ERROR_INVALID_PARAMETER); any other refusal means that one exists which this user may
+        // not ask (a protected process, another session's), possibly the owner itself.
+        return GetLastError() == ERROR_INVALID_PARAMETER ? ProcessLiveness::Gone : ProcessLiveness::Unknown;
+    }
+    FILETIME creation{};
+    FILETIME exit{};
+    FILETIME kernel{};
+    FILETIME user{};
+    if (GetProcessTimes(handle.get(), &creation, &exit, &kernel, &user) == FALSE) {
+        return ProcessLiveness::Unknown;
+    }
+    if (ticks(creation) != process.creationTime) {
+        return ProcessLiveness::Gone; // a later process reuses the id
+    }
+    DWORD code = 0;
+    if (GetExitCodeProcess(handle.get(), &code) == FALSE) {
+        return ProcessLiveness::Unknown;
+    }
+    // A process that exited stays as an object while handles to it are open: its exit code tells.
+    return code == STILL_ACTIVE ? ProcessLiveness::Running : ProcessLiveness::Gone;
+}
+
 Expected<std::unique_ptr<launcher::IRunningProcess>> Win32ProcessRunner::start(const launcher::LaunchRequest& request,
                                                                                launcher::StartCallbacks callbacks) {
     // Nothing escapes: startProcess() ends a process that never ran before an exception leaves it.

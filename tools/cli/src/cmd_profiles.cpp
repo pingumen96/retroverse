@@ -1,7 +1,8 @@
 // retroverse-cli profiles (I2 step 10): the emulator profiles Retroverse knows and, for each system of the library
 // library.json records, how its games launch (ADR-0008 §8): the command or profile chosen and why (Retroverse's choice
-// for the system in emulators.json, the gamelist's <alternativeEmulator>, the first command), its readiness without a
-// game, the find rule and entry that found the program and the core, the blockers; then every command of the system
+// for the system: the catalog database's from `assign`, else emulators.json's, I2 step 12; the gamelist's
+// <alternativeEmulator>, the first command), its readiness without a game, the find rule and entry that found the
+// program and the core, the blockers; then every command of the system
 // and every profile serving it with their own readiness, so that a system that cannot launch shows what could. What
 // depends on each game (its file, its <altemulator>, an %INJECT% file) is the launch's: `launch --dry-run`. Nothing is
 // started or written. Exit codes: 0; 1 with --system when that system is not ready; 2 for invalid options, an unknown
@@ -107,10 +108,19 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
                                                                  entry.executable->entry)
                                                    : fmt::format("not found: {}", entry.executable.error().message)));
     }
+    if (!library.assignedChoices.empty()) {
+        line("Assigned", fmt::format("{} (the catalog database, retroverse-cli assign; before emulators.json's):",
+                                     library.assignedChoices.size()));
+        for (const auto& [system, choice] : library.assignedChoices) {
+            out.writeLine(fmt::format("  {:<16}{}", system, choiceText(choice)));
+        }
+    }
     if (!library.profiles.systemChoices.empty()) {
         line("System choices", fmt::format("{} (emulators.json):", library.profiles.systemChoices.size()));
         for (const auto& [system, choice] : library.profiles.systemChoices) {
-            out.writeLine(fmt::format("  {:<16}{}", system, choiceText(choice)));
+            out.writeLine(fmt::format("  {:<16}{}{}", system, choiceText(choice),
+                                      library.assignedChoices.contains(system) ? " (assign's choice ranks first)"
+                                                                               : ""));
         }
     }
     std::map<catalog::LaunchReadiness, std::size_t> counts;
@@ -127,7 +137,8 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
         const catalog::LaunchResolution& resolution = system.resolution;
         out.writeLine(fmt::format("  {} ({})", system.system->name.str(), system.system->fullName));
         out.writeLine(fmt::format("    {:<18}{}: {} ({})", "launches with", catalog::describe(resolution.readiness()),
-                                  choiceText(resolution.chosen.choice), catalog::describe(resolution.chosen.source)));
+                                  choiceText(resolution.chosen.choice),
+                                  whyText(resolution.chosen, systemChoiceOrigin(library, system.system->name.str()))));
         for (const std::string& warning : resolution.chosen.warnings) {
             out.writeLine(fmt::format("    {:<18}{}", "warning", warning));
         }
@@ -200,6 +211,11 @@ Json reportJson(const LaunchLibrary& library, const Report& report) {
         choices[system] = choiceJson(choice);
     }
     json["systemChoices"] = std::move(choices);
+    Json assigned = Json::object();
+    for (const auto& [system, choice] : library.assignedChoices) {
+        assigned[system] = choiceJson(choice);
+    }
+    json["assignedChoices"] = std::move(assigned);
     Json systems = Json::array();
     for (const SystemReport& system : report.systems) {
         Json entry = translationJson(system.resolution.translation);
@@ -210,7 +226,7 @@ Json reportJson(const LaunchLibrary& library, const Report& report) {
         entry["alternativeEmulator"] =
             system.alternativeEmulator.empty() ? Json(nullptr) : Json(system.alternativeEmulator);
         entry["systemChoice"] = system.systemChoice ? choiceJson(*system.systemChoice) : Json(nullptr);
-        entry["chosen"] = chosenJson(system.resolution.chosen);
+        entry["chosen"] = chosenJson(system.resolution.chosen, systemChoiceOrigin(library, system.system->name.str()));
         Json commands = Json::array();
         for (const SystemReport::Command& command : system.commands) {
             Json item = translationJson(command.translation);
@@ -271,6 +287,7 @@ ExitCode runProfiles(CommandContext& context) {
         context.err.writeLine(fmt::format("{}: the library configures no system named \"{}\"", kName, *only));
         return ExitCode::UsageError;
     }
+    loadAssignedChoices(*library, context.paths);
 
     Report report;
     const launcher::EnvironmentLookup environment = launcher::processEnvironmentLookup();

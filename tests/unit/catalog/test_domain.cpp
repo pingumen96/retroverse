@@ -162,7 +162,8 @@ TEST_CASE("catalog/domain: every value has a name that parses back", "[catalog][
     checkNames(GamelistState::Failed, parseGamelistState);
     checkNames(DiscGroupKind::M3u, parseDiscGroupKind);
     checkNames(LibraryAdapter::Esde, parseLibraryAdapter);
-    checkNames(PlaySessionOutcome::Interrupted, parsePlaySessionOutcome);
+    checkNames(PlaySessionOutcome::LeftRunning, parsePlaySessionOutcome);
+    checkNames(LeftRunningReason::Quit, parseLeftRunningReason);
     checkNames(MoveReason::ReviewResolved, parseMoveReason);
     checkNames(IssueSeverity::Error, parseIssueSeverity);
     checkNames(SortOrder::ReleaseDate, parseSortOrder);
@@ -289,7 +290,7 @@ TEST_CASE("catalog/domain: play sessions mirror the launcher's outcomes", "[cata
 
     PlaySession session;
     session.game = id(7);
-    session.commandLabel = "Fake Emulator";
+    session.choice = rv::launcher::LaunchChoice{rv::launcher::LaunchChoiceKind::EsdeCommand, "Fake Emulator"};
     session.started = rv::core::parseUtcIso8601("2026-10-16T10:00:00Z").value();
     session.owner = SessionOwner{1234, 133'000'000'000'000'000};
     CHECK(session.outcome == PlaySessionOutcome::Running);

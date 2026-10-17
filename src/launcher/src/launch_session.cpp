@@ -139,8 +139,10 @@ void LaunchSession::start(LaunchClock::time_point now, StartCallbacks callbacks)
     } catch (...) {
         workingDirectory = "?";
     }
-    spdlog::info("Launching {} ({}, working directory {}): {}", describeLaunch(), toString(m_request.waitStrategy),
-                 workingDirectory, m_commandLine);
+    // Command lines and working directories carry the user's paths: debug level only (ADR-0008 §9).
+    spdlog::info("Launching {} ({})", describeLaunch(), toString(m_request.waitStrategy));
+    spdlog::debug("Launching {}: working directory {}, command line {}", describeLaunch(), workingDirectory,
+                  m_commandLine);
     // Runners report failures as errors; an exception (a broken implementation) must not leave the session Starting.
     Expected<std::unique_ptr<IRunningProcess>> process = [&]() -> Expected<std::unique_ptr<IRunningProcess>> {
         try {
