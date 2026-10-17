@@ -11,13 +11,17 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
+
+#include <windows.h>
 
 #include <rv/catalog/entry.hpp>
 #include <rv/catalog/library_source.hpp>
 #include <rv/catalog/snapshot.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/text.hpp>
 #include <rv/core/tree_walk.hpp>
 #include <rv/esde/library_source.hpp>
 
@@ -305,4 +309,73 @@ TEST_CASE("esde/library_source: disc groups come from the cache while their head
     const LibrarySnapshot reread = loadSnapshot(source, profileOf(fixture), options);
     CHECK(reread.discGroups.front().members.size() == 2);
     CHECK(source.lastStatistics().sheetsRead == 1);
+}
+
+TEST_CASE("esde/library_source: a gamelist that fails is read again, then given up on", "[esde][library_source]") {
+    const rv::test::Fixture fixture = materialize("esde/standard");
+    const fs::path gamelist = fixture.path("ES-DE/gamelists/gb/gamelist.xml");
+    SECTION("cut short: failed after the retry, its files listed without metadata") {
+        const auto text = rv::core::readFileShared(gamelist, 1 << 20);
+        REQUIRE(text.has_value());
+        REQUIRE(rv::core::writeTextFileAtomic(gamelist, text->substr(0, text->size() / 2)));
+        rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(0), {}});
+        const LibrarySnapshot snapshot = loadSnapshot(source, profileOf(fixture));
+        const rv::catalog::SystemInfo* gb = snapshot.findSystem(rv::catalog::SystemName::parse("gb").value());
+        REQUIRE(gb != nullptr);
+        CHECK(gb->gamelist == rv::catalog::GamelistState::Failed);
+        CHECK(source.lastStatistics().gamelistRetries == 1);
+        // The files are there, without metadata; nothing is taken as missing, nothing is outside.
+        CHECK(countsOf(snapshot, "gb") == StateCounts{8, 8, 0, 0, 0, 0, 0});
+        CHECK(entryAt(snapshot, "gb", "Tiny Tennis (Europe).gb").title == "Tiny Tennis (Europe)");
+        const auto failed = rv::test::esde::issuesOf(snapshot.issues, "gamelist-failed");
+        REQUIRE(failed.size() == 1);
+        CHECK(failed[0].severity == rv::catalog::IssueSeverity::Error);
+        CHECK(failed[0].system == "gb");
+        CHECK(rv::core::pathFromUtf8(failed[0].file).lexically_normal() == gamelist.lexically_normal());
+        // The other systems are read as ever.
+        CHECK(countsOf(snapshot, "snes") == StateCounts{8, 5, 0, 1, 0, 2, 0});
+    }
+    SECTION("locked while ES-DE writes it: read on the second try") {
+        rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(2000), {}});
+        HANDLE locked = CreateFileW(rv::core::extendedLengthPath(gamelist).c_str(), GENERIC_READ, 0, nullptr,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        REQUIRE(locked != INVALID_HANDLE_VALUE);
+        // Released well within the delay, long after the first read (the whole load of the fixture takes a few ms).
+        std::thread release([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+            CloseHandle(locked);
+        });
+        const auto snapshot = source.load(profileOf(fixture), {});
+        release.join();
+        REQUIRE(snapshot.has_value());
+        CHECK(snapshot->findSystem(rv::catalog::SystemName::parse("gb").value())->gamelist ==
+              rv::catalog::GamelistState::Read);
+        CHECK(source.lastStatistics().gamelistRetries == 1);
+        CHECK(countsOf(*snapshot, "gb") == StateCounts{11, 8, 1, 0, 0, 1, 1});
+    }
+}
+
+TEST_CASE("esde/library_source: a system defined twice is the first definition that finds a game",
+          "[esde][library_source]") {
+    const rv::test::Fixture fixture = materialize("esde/custom-systems");
+    {
+        rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(0), {"gb"}});
+        const LibrarySnapshot snapshot = loadSnapshot(source, profileOf(fixture));
+        REQUIRE(snapshot.systems.size() == 1);
+        CHECK(snapshot.systems[0].fullName == "Game Boy (custom)");
+        CHECK(snapshot.systems[0].romFolder.lexically_normal() == fixture.path("roms/gb-custom").lexically_normal());
+        CHECK(rv::test::esde::pathsIn(snapshot, "gb", EntryState::Game) ==
+              std::vector<std::string>{"Custom Climb (World).gbx"});
+        CHECK(rv::test::esde::issuesOf(snapshot.issues, "system-fallback-used").empty());
+    }
+    // The custom definition finds no game: ES-DE loads the bundled one.
+    REQUIRE(fs::remove(fixture.path("roms/gb-custom/Custom Climb (World).gbx")));
+    rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(0), {"gb"}});
+    const LibrarySnapshot snapshot = loadSnapshot(source, profileOf(fixture));
+    REQUIRE(snapshot.systems.size() == 1);
+    CHECK(snapshot.systems[0].romFolder.lexically_normal() == fixture.path("roms/gb").lexically_normal());
+    CHECK(rv::test::esde::pathsIn(snapshot, "gb", EntryState::Game) ==
+          std::vector<std::string>{"Bundled Bounce (World).gb"});
+    CHECK(rv::test::esde::issuesOf(snapshot.issues, "system-fallback-used").size() == 1);
+    CHECK(source.lastStatistics().systemsScanned == 2);
 }
