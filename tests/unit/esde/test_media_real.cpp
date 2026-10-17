@@ -20,6 +20,8 @@
 
 #include <windows.h>
 
+#include <psapi.h>
+
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/media.hpp>
 #include <rv/core/text.hpp>
@@ -40,6 +42,17 @@ std::optional<fs::path> pathVariable(const wchar_t* name) {
     std::wstring value(size, L'\0');
     value.resize(GetEnvironmentVariableW(name, value.data(), size));
     return fs::path(value);
+}
+
+/// The process's private bytes (its commit charge): what the listings cost, informative.
+std::uint64_t privateBytes() {
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    counters.cb = sizeof(counters);
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+                              sizeof(counters))) {
+        return 0;
+    }
+    return counters.PrivateUsage;
 }
 
 /// The names of the folders right under `root`, in the walker's order.
@@ -65,6 +78,7 @@ TEST_CASE("esde/media: the real library's media tree", "[esde][media][.real-libr
     }
     const std::vector<std::string> folders = foldersUnder(*root);
 
+    const std::uint64_t memoryBefore = privateBytes();
     const auto start = std::chrono::steady_clock::now();
     rv::esde::EsdeMediaResolver resolver(*root);
     REQUIRE(resolver.checkRoot().has_value());
@@ -101,7 +115,8 @@ TEST_CASE("esde/media: the real library's media tree", "[esde][media][.real-libr
 
     std::cout << "esde/media real library: " << folders.size() << " system folders, " << stats.files << " files in "
               << stats.folders << " folders, listed in " << seconds << " s (warm: the snapshot just listed the tree; "
-              << stats.seconds << " s in the walks)\n";
+              << stats.seconds << " s in the walks), private bytes +" << (privateBytes() - memoryBefore) / 1024 / 1024
+              << " MiB\n";
     for (const MediaKind kind : rv::catalog::kMediaKinds) {
         std::cout << "  " << rv::catalog::toString(kind) << ": " << media[kind] << " media, " << shadowed[kind]
                   << " shadowed\n";

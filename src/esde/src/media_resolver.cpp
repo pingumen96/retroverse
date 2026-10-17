@@ -57,13 +57,19 @@ const std::array<std::vector<std::string>, catalog::kMediaKindCount>& foldedExte
     return table;
 }
 
+/// The text of the folder `relative` ('/' between the elements, as listed) below the media root, for an issue's file.
+std::string folderText(const fs::path& root, std::string_view relative) {
+    fs::path folder = root / core::pathFromUtf8(relative);
+    return core::pathToUtf8Lossy(folder.make_preferred());
+}
+
 /// "<system>/<kind folder>": how messages name a kind folder (relative to the media root, as ES-DE names it).
 std::string kindFolderText(const catalog::SystemName& system, MediaKind kind) {
     return fmt::format("{}/{}", system.str(), catalog::toString(kind));
 }
 
-/// The names of `names` (as listed) that fold to the folded `name`: the one spelled exactly like `name`, else the
-/// first (ordinal: the walk's order), else nothing.
+/// Of `names`, the names as listed that fold to one folded name: the one spelled exactly like `name`, else the first
+/// (the walk's ordinal order); nothing when there is none.
 const std::string* pick(const std::vector<std::string>& names, std::string_view name) {
     if (names.empty()) {
         return nullptr;
@@ -224,7 +230,7 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
     }
     listing.folderName = *folderName;
     const auto systemFolder = core::extendedLengthPathBelow(*m_root, listing.folderName);
-    const std::string systemText = core::pathToUtf8Lossy(*m_root / core::pathFromUtf8(listing.folderName));
+    const std::string systemText = folderText(*m_root, listing.folderName);
 
     // The kind folders, found as ES-DE's file system finds them: case-insensitively.
     std::map<std::string, std::vector<std::string>> kindFolders;
@@ -268,7 +274,7 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
         }
         kindListing.folderName = *kindName;
         const std::string relativeFolder = listing.folderName + "/" + kindListing.folderName;
-        const std::string folderText = core::pathToUtf8Lossy(*m_root / core::pathFromUtf8(relativeFolder));
+        const std::string kindText = folderText(*m_root, relativeFolder);
         const auto kindFolder = core::extendedLengthPathBelow(*m_root, relativeFolder);
 
         std::vector<detail::MediaFile>& files = index.files[k];
@@ -290,7 +296,7 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
                     }
                     if (kindListing.unlistedFolders.size() <= kUnlistedFoldersListed) {
                         listing.issues.push_back(issueOf(
-                            IssueSeverity::Error, kMediaIssueFolderUnlisted, system, folderText,
+                            IssueSeverity::Error, kMediaIssueFolderUnlisted, system, kindText,
                             fmt::format("the folder \"{}\" of {} cannot be listed ({}): whether the games below it "
                                         "have media is not known",
                                         entry.relativePath, kindFolderText(system, kind), entry.error.message)));
@@ -340,7 +346,7 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
             }
             kindListing.detail = walkedKind.error().message;
             listing.issues.push_back(issueOf(
-                IssueSeverity::Error, kMediaIssueFolderUnlisted, system, folderText,
+                IssueSeverity::Error, kMediaIssueFolderUnlisted, system, kindText,
                 fmt::format("the media folder {} cannot be listed ({}): whether the games of {} have media is not "
                             "known",
                             kindFolderText(system, kind), kindListing.detail, system.str())));
@@ -372,14 +378,14 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
         // What ES-DE never shows of this folder.
         if (kindListing.unlistedFolders.size() > kUnlistedFoldersListed) {
             listing.issues.push_back(issueOf(
-                IssueSeverity::Error, kMediaIssueFolderUnlisted, system, folderText,
+                IssueSeverity::Error, kMediaIssueFolderUnlisted, system, kindText,
                 fmt::format("{} more folder(s) of {} cannot be listed, not listed one by one after the first {}",
                             kindListing.unlistedFolders.size() - kUnlistedFoldersListed, kindFolderText(system, kind),
                             kUnlistedFoldersListed)));
         }
         for (const IgnoredExtension& extension : kindListing.ignored) {
             listing.issues.push_back(issueOf(
-                IssueSeverity::Info, kMediaIssueIgnoredExtension, system, folderText,
+                IssueSeverity::Info, kMediaIssueIgnoredExtension, system, kindText,
                 fmt::format("{} file(s) {} in {}: ES-DE reads only {} there", extension.files,
                             extension.extension.empty() ? std::string("without an extension")
                                                         : fmt::format("with the extension \"{}\"", extension.extension),
@@ -387,7 +393,7 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
         }
         if (kindListing.shadowedFiles > 0) {
             listing.issues.push_back(issueOf(
-                IssueSeverity::Info, kMediaIssueShadowedFile, system, folderText,
+                IssueSeverity::Info, kMediaIssueShadowedFile, system, kindText,
                 fmt::format("{} file(s) in {} never used: a file of the same name has an extension ES-DE tries first "
                             "({}, in this order)",
                             kindListing.shadowedFiles, kindFolderText(system, kind),
@@ -395,7 +401,7 @@ EsdeMediaResolver::SystemIndex EsdeMediaResolver::listSystem(const catalog::Syst
         }
         if (kindListing.unreadableEntries > 0) {
             listing.issues.push_back(issueOf(
-                IssueSeverity::Warning, kMediaIssueUnreadableEntry, system, folderText,
+                IssueSeverity::Warning, kMediaIssueUnreadableEntry, system, kindText,
                 fmt::format("{} entr{} of {} could not be read (a link whose target cannot be opened, a name without "
                             "a UTF-8 form): no media",
                             kindListing.unreadableEntries, kindListing.unreadableEntries == 1 ? "y" : "ies",
