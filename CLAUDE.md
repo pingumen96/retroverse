@@ -35,9 +35,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   see "retroverse-cli"), `rv_tests.exe`,
   `rv_platform_tests.exe`, `rv_smoke_tests.exe`, `rv_fake_emulator.exe` (the stand-in emulator the launch tests start,
   `tests/fake_emulator`: exit codes, crashes, hangs, wrappers, windows, `--out`/`--err` text, `--exit-timeout-ms` so
-  that an abandoned copy ends by itself; `--help` lists its options), the I1 spike executables (`spike_video.exe`,
-  `spike_ui.exe`, `spike_launch.exe`, `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi included: every
-  preset enables the vcpkg features `video` and `ui`; `pugixml.dll` and `sqlite3.dll`).
+  that an abandoned copy ends by itself, `--abort`; never a failure dialog; with `RV_LAUNCH_BACKGROUND` set, an inactive
+  off-screen window and no foreground or input options; `--help` lists its options), the I1 spike executables
+  (`spike_video.exe`, `spike_ui.exe`, `spike_launch.exe`, `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi
+  included: every preset enables the vcpkg features `video` and `ui`; `pugixml.dll` and `sqlite3.dll`).
   Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the source tree (target
   `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed, `staging` and the golden
   screenshots left out), so an edit of the assets alone reaches the next Release build.
@@ -58,6 +59,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   The visible launch, `desktop.smoke.launch_visible` (Catch2 tag `[.desktop]`), takes over the screen and runs only
   through ctest, `./scripts/test.ps1 -Preset msvc-x64-debug-desktop -Filter launch_visible` (a bare `launch` also runs
   every `desktop.launch.*` spike case), whose registration sets `RV_SMOKE_DESKTOP=1`; run any other way it skips.
+- `python -I scripts/focus_watch.py --watch <dir> --out <json> -- <command...>` (or `--duration <s>`; read-only)
+  records foreground changes and new windows while a command runs and fails (exit 1) when a process under `<dir>` (or
+  its descendants, or the terminal window of their console) takes the foreground or shows a window where the user sees
+  it, at any time while the window is visible, or when a system error dialog (WerFault for a test process, a csrss
+  hard-error box) appears (`docs/i2/step-focus.md`).
 - `scripts/gate.ps1 -Gate A` builds `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release` (a compiler,
   linker or CMake warning fails the step; `-Clean` rebuilds every target), runs the unit tests and the GPU checks (the
   smoke tests and the I1 spike checks) of Debug and Release and the golden comparison of both, prints a summary table
@@ -69,26 +75,27 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   in a fresh checkout or worktree restores packages from the local binary cache (a few minutes). A tree configured with
   another toolchain keeps it until `./scripts/build.ps1 -Preset <preset> -Fresh`.
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
-  `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"`. The catalog query benchmarks (I2 step 9: NFR-02 on 10,000
-  games, a UI page on 100,000, what the search area costs the writes) are hidden (`[.bench]`) and run by hand in
-  Release: `build/msvc-x64-release/bin/rv_tests.exe "[bench]"` (informative unless the machine is quiet).
+  `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"` (`rv_tests` runs its launches in the background, see "Safety
+  rules"). The catalog query benchmarks (I2 step 9: NFR-02 on 10,000 games, a UI page on 100,000, what the search area
+  costs the writes) are hidden (`[.bench]`) and run by hand in Release: `build/msvc-x64-release/bin/rv_tests.exe
+  "[bench]"` (informative unless the machine is quiet).
 - Tests that read the real ES-DE library carry the hidden Catch2 tag `[.real-library]` (ctest never runs them) and take
   its folders from `RV_REAL_ESDE_HOME`, `RV_REAL_ESDE_INSTALL`, `RV_REAL_ROM_ROOT`, `RV_REAL_MEDIA_ROOT` and, optional,
   `RV_REAL_RETROARCH_EXE`. Run them only through `./scripts/real-library.ps1` (parameters `-EsdeHome`, `-EsdeInstall`,
   `-RomRoot`, `-MediaRoot`, `-RetroArchExe` or those variables; `-Preset`, default `msvc-x64-release`; `-Filter`): it
   refuses to run while ES-DE runs, snapshots the home and install (configuration files hashed) and the ROM and media
-  roots (listings only) with `scripts/snapshot_tree.py`, runs `rv_tests.exe "[real-library]"`, snapshots again and
-  fails on a failed test or any difference (outputs in `build/real-library`). Narrower runs: `-Filter
-  '[real-library][media]'` (the media tree and the coverage against ADR-0003), `-Filter '[real-library][launch]'` (the
-  readiness of the real systems and the five launches ES-DE logged, read from the git-ignored, machine-local
-  `tests/real_library/local/esde_logged_launches.json`; these two tests are skipped without `-RetroArchExe`),
-  `-Filter '[real-library][import]'` (the whole library imported into a new database under
-  `build/<preset>/real-library/import`: a first and a second import, `db rebuild-index`, the ROM root unplugged and
-  back) and `-Filter '[real-library][reconciliation]'` (gb imported alone, then the quick-hash pass over it, twice; cold
-  it reads for minutes: the whole library's cold pass, about 45 minutes, is not part of any filter).
-  `python -I scripts/snapshot_tree.py snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>`
-  (exit 1 on a difference) work alone (Python 3.10 or later, output in UTF-8; links are recorded and never entered, what
-  they lead to is snapshotted as a linked root unless a root covers it).
+  roots (listings only) with `scripts/snapshot_tree.py`, runs `rv_tests.exe "[real-library]"` (with
+  `RV_LAUNCH_BACKGROUND=1`), snapshots again and fails on a failed test or any difference (outputs in
+  `build/real-library`). Narrower runs: `-Filter '[real-library][media]'` (the media tree and the coverage against
+  ADR-0003), `-Filter '[real-library][launch]'` (the readiness of the real systems and the five launches ES-DE logged,
+  read from the git-ignored, machine-local `tests/real_library/local/esde_logged_launches.json`; these two tests are
+  skipped without `-RetroArchExe`), `-Filter '[real-library][import]'` (the whole library imported into a new database
+  under `build/<preset>/real-library/import`: a first and a second import, `db rebuild-index`, the ROM root unplugged
+  and back) and `-Filter '[real-library][reconciliation]'` (gb imported alone, then the quick-hash pass over it, twice;
+  cold it reads for minutes: the whole library's cold pass, about 45 minutes, is not part of any filter). `python -I
+  scripts/snapshot_tree.py snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a
+  difference) work alone (Python 3.10 or later, output in UTF-8; links are recorded and never entered, what they lead to
+  is snapshotted as a linked root unless a root covers it).
 - `python -I scripts/esde_census.py --esde-home <ES-DE home> [--esde-install <dir>] [--rom-root <dir>] [--system
   <name>] [--json] [--output <file>]` is the independent oracle of the ROM scan (I2 step 7; standard library only,
   read-only, written apart from the C++ and naming no machine path): it prints per system ES-DE's count, the entries by
@@ -598,6 +605,8 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `writeFileAnyLength` (`file_system.hpp`: junctions without admin rights, a folder this user cannot list, a file whose
   data cannot be read, paths past MAX_PATH), `ScopedLaunchAllowList`, `ScopedEnvironmentVariable`, `ScopedPathPrefix`
   (`scoped_environment.hpp`: tests that launch set `RV_LAUNCH_ALLOWLIST` for their own duration, then put it back),
+  `ensureBackgroundLaunches`, `prepareAutomatedRun` (`background_launches.hpp`: `RV_LAUNCH_BACKGROUND=1` unless set,
+  and no failure dialogs; `rv_tests` and `rv_smoke_tests` call it before any test),
   `generateCatalogDatabase` (`catalog_generator.hpp`: a deterministic catalog database of any size, written in one
   import transaction with the search index suspended; `rv_test_support` links `rv_catalog` and `rv_catalog_db`)),
   `tests/fixtures/<name>/` (original, minimal fixtures; text committed as LF, so CRLF, BOM and oversized files are
@@ -752,6 +761,22 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   (`duckstation*.exe`) never starts, listed or not; RetroArch (`retroarch*.exe`) only isolated, every `--appendconfig`
   naming an existing ASCII file (the isolated configuration under `build/`, as `spike_launch` writes it). The guard is a
   safety net, not a security boundary: a hard link or copy under another name is kept out by the list alone.
+- Automated tests never take the Windows foreground: no console window, no window shown on a monitor or activated, no
+  foreground granted, no input injected, no modal dialog, while someone works at the machine. Only the tests labelled
+  `desktop` (on demand, never the gate) may take over the screen. `RV_LAUNCH_BACKGROUND=1` (set, and neither empty nor
+  `0`) makes `Win32ProcessRunner` start every program in the background (console programs with `CREATE_NO_WINDOW`, GUI
+  programs inactive and off-screen through `STARTF_USEPOSITION` and `SW_SHOWNOACTIVATE`, no
+  `AllowSetForegroundWindow`, an inherited error mode without dialogs) and `rv_fake_emulator` keep its window inactive
+  and off-screen and skip its foreground and input options; the unit and gpu test presets, `rv_tests`, `rv_smoke_tests`
+  (unless the variable is set) and `scripts/real-library.ps1` set it, the desktop preset and registrations set `0`.
+  `rv::platform_win::disableFailureDialogs()` (no loader, crash, C runtime assertion or `abort()` box; reports go to
+  standard error) runs in `rv_tests`, `rv_smoke_tests` and the fake always, and in `retroverse.exe`, the asset preview,
+  `spike_ui` and `spike_video` when they run unattended (frame-limited, `--no-dialogs`, or the variable set), in the CLI
+  and `spike_launch` when the variable is set. A new test that starts a program starts it through the runner or
+  `runChild` (`CREATE_NO_WINDOW`), runs apps `--hidden`, and creates SDL windows with `SDL_WINDOW_HIDDEN`; one that must
+  show or focus a window is a desktop test. Check a change with `python -I scripts/focus_watch.py --watch build/<preset>
+  --out build/focus/<name>.json -- pwsh -NoProfile -File scripts/test.ps1 [-Preset <preset>]` (exit 1 on a foreground
+  change to, or a visible window of, a process of the build; read-only).
 - No brand logos, commercial artwork or trademarked names in `assets/` (style §1, §17.2). Every third-party asset
   needs provenance and license entries in `assets/registry/` before it is committed; `assets/staging/` is never
   committed or packaged.

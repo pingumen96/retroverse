@@ -235,8 +235,9 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   error 87 while suspended).
 - **Crash and loader-error returns under the default error mode:** not measured (the spike's crash return ran with the
   fake emulator's own error dialogs off), because on this machine a crash opens the Visual Studio JIT debugger prompt
-  and a missing DLL the loader's modal box; decide Retroverse's error-mode policy (hard-error dialogs are disabled only
-  around `CreateProcessW` today).
+  and a missing DLL the loader's modal box; decide Retroverse's error-mode policy (in the product, hard-error dialogs
+  are disabled only around `CreateProcessW` today; background runs, `RV_LAUNCH_BACKGROUND`, disable them for the whole
+  process since the I2 step focus).
 - **Release subsystem:** consider a GUI-subsystem `retroverse.exe` for Release (ADR-0006 open risk).
 
 ## Follow-ups from I2
@@ -333,6 +334,20 @@ The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; 
 - **A pending session write lost at exit:** a session write that meets a busy database is kept and tried again, the end
   for 2 minutes (`kPatientRetry`), and a CLI that still cannot write it prints it and exits 3; a process that ends
   before the database is free loses it (I2 step 12). The app's catalog worker can keep it longer.
+
+### Test automation
+
+These come from the I2 step focus (`docs/i2/step-focus.md`).
+
+- **`focus_watch.py` in the gate and the test script:** `scripts/gate.ps1` and `scripts/test.ps1` could run
+  `scripts/focus_watch.py --watch build/<preset>` around their runs and fail on a finding (a foreground change to, or a
+  visible window of, a test process; a system error dialog), so that a test that takes the foreground is caught when it
+  is added rather than by the user at the keyboard. A failing program of the user's during the run (WerFault, csrss
+  boxes) would then fail the gate too: the watcher's attribution rules decide how often.
+- **Dialogs left in `rv_platform_tests` and `spike_launch_tests`:** they start no program and show no window, so they
+  do not call `disableFailureDialogs()` and keep the C runtime's default dialogs (a failed assertion in Debug would
+  show its box and wait until the ctest timeout). SDL's own assertion handler (`SDL_assert`, a message box) is not
+  configured in any test program either (`SDL_SetAssertionHandler`, or `SDL_ASSERT=abort` in the test environment).
 
 ### App shell
 
