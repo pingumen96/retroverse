@@ -323,6 +323,7 @@ Json launchToJson(const LaunchRecord& launch) {
     putOptional(times, "startMs", launch.startMs);
     putOptional(times, "runMs", launch.runMs);
     putOptional(times, "returnMs", launch.returnMs);
+    putOptional(times, "foregroundMs", launch.foregroundMs);
     json["times"] = std::move(times);
     json["panels"] = launch.panels;
     return json;
@@ -375,6 +376,7 @@ LaunchRecord readLaunch(FieldReader& fields) {
         launch.startMs = times->optionalNumber("startMs");
         launch.runMs = times->optionalNumber("runMs");
         launch.returnMs = times->optionalNumber("returnMs");
+        launch.foregroundMs = times->optionalNumber("foregroundMs");
     } else {
         fields.fail("times", "missing required key");
     }

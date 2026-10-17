@@ -6,6 +6,8 @@
 #include <string>
 #include <utility>
 
+#include <RmlUi/Core/Context.h>
+#include <RmlUi/Core/Element.h>
 #include <SDL3/SDL_events.h>
 #include <spdlog/spdlog.h>
 
@@ -142,6 +144,9 @@ struct ProductUi::Impl {
             return;
         }
         if (handover->update()) {
+            if (const auto foreground = handover->report().foreground) {
+                flow.noteForeground(*foreground);
+            }
             spdlog::info("Window back after the launch: restored, in fullscreen as before and in the foreground");
             handover.reset();
             restoring = false;
@@ -212,16 +217,9 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, Mock
 
     s.source = std::make_unique<ui::InMemoryCatalogSource>(s.catalog.entries());
     s.model = std::make_unique<ui::QuickCatalogModel>(*s.source);
-    ui::QuickCatalogEvents events;
+    // The catalog's screen is created when it first opens (openCatalog), as a screen shown from the start: created
+    // hidden, its pool of rows would never be laid out before it shows.
     Impl* state = impl.get();
-    events.launch = [state](const ui::CatalogEntry& entry) { state->launch(entry); };
-    events.close = [state] { state->closeRequested = true; };
-    auto screen = ui::QuickCatalogScreen::create(*s.view, *s.model, std::move(events), kWatchDocuments);
-    if (!screen) {
-        return propagate(screen.error());
-    }
-    s.screen = std::move(*screen);
-    s.screen->hide(); // the catalog starts closed: QuickCatalog (Tab, gamepad Y) opens it
 
     GameSessionPanelEvents panelEvents;
     panelEvents.returnHome = [state] { state->choice = PanelChoice::ReturnHome; };
@@ -251,7 +249,28 @@ void ProductUi::openCatalog() {
     if (s.catalogOpen) {
         return;
     }
-    s.screen->show();
+    if (!s.screen) {
+        // The first time: the screen is made shown, as a screen shown from the start (the spike's), with the focus on
+        // the selected game.
+        ui::QuickCatalogEvents events;
+        Impl* state = &s;
+        events.launch = [state](const ui::CatalogEntry& entry) { state->launch(entry); };
+        events.close = [state] { state->closeRequested = true; };
+        auto screen = ui::QuickCatalogScreen::create(*s.view, *s.model, std::move(events), kWatchDocuments);
+        if (!screen) {
+            spdlog::error("Quick catalog unavailable: {}", screen.error().toString());
+            return;
+        }
+        s.screen = std::move(*screen);
+    } else {
+        // QuickCatalogScreen::show() learns the focus it restores from RmlUi's focus event, which RmlUi sends only when
+        // the focus moves; hide() left RmlUi's focus on the catalog's element, so the context's root takes it first
+        // (else the screen would show the focus without knowing it, and Avvia on the list would do nothing).
+        if (Rml::Element* root = s.view->context().GetRootElement()) {
+            root->Focus();
+        }
+        s.screen->show();
+    }
     // A stick or direction still held from walking must not start scrolling the catalog that just opened.
     s.nav.reset();
     s.catalogOpen = true;
@@ -264,7 +283,9 @@ void ProductUi::closeCatalog() {
     if (!s.catalogOpen || panelOpen()) {
         return;
     }
-    s.screen->hide();
+    if (s.screen) {
+        s.screen->hide();
+    }
     s.catalogOpen = false;
     spdlog::info("Quick catalog closed");
 }
@@ -288,6 +309,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     if (uiActions != nullptr && hasInput()) {
         s.nav.update(*uiActions, deltaSeconds, s.commands);
         for (const ui::UiCommand command : s.commands.commands()) {
+            spdlog::debug("Frame {}: UI command {}{}", s.context.frameIndex(), ui::toString(command),
+                          s.panel->visible() ? " (game-session panel)" : "");
             if (command == ui::UiCommand::Back) {
                 // The application's levels: the developer overlay first, then panelBack() or catalogBack().
                 if (s.back) {
@@ -295,7 +318,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 }
             } else if (s.panel->visible()) {
                 s.panel->apply(command);
-            } else if (s.catalogOpen) {
+            } else if (s.catalogOpen && s.screen) {
                 s.screen->apply(command);
             }
         }
@@ -311,9 +334,11 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         s.system->setTime(timeSeconds);
         s.view->resize(s.context.framebufferSize(), s.context.window().displayScale());
         s.view->update();
-        s.screen->afterUpdate();
-        if constexpr (kWatchDocuments) {
-            s.screen->reloadIfChanged();
+        if (s.screen) {
+            s.screen->afterUpdate();
+            if constexpr (kWatchDocuments) {
+                s.screen->reloadIfChanged();
+            }
         }
     }
 }
@@ -323,7 +348,7 @@ void ProductUi::panelBack() {
 }
 
 void ProductUi::catalogBack() {
-    if (m_impl->catalogOpen) {
+    if (m_impl->catalogOpen && m_impl->screen) {
         m_impl->screen->apply(ui::UiCommand::Back);
     }
 }

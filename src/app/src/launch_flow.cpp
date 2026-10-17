@@ -229,6 +229,14 @@ void LaunchFlow::idleWake() noexcept {
     }
 }
 
+void LaunchFlow::noteForeground(LaunchClock::time_point at) {
+    if (!m_session || !m_session->finished() || m_records.empty()) {
+        return;
+    }
+    const launcher::SessionTimes& times = m_session->times();
+    m_records.back().foregroundMs = millisecondsBetween(times.exited ? times.exited : times.ended, at);
+}
+
 bool LaunchFlow::sessionActive() const noexcept {
     return m_session && !m_session->finished() && m_session->state() != SessionState::Idle;
 }

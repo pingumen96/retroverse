@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <set>
 #include <span>
+#include <system_error>
 #include <utility>
 
 #include <fmt/format.h>
@@ -243,7 +244,12 @@ Expected<MockCatalog> parseMockCatalog(const nlohmann::json& document, const std
     if (!games->is_array()) {
         return fail(ErrorCode::ParseError, "expected an array of games", root.child("games"));
     }
-    const std::filesystem::path folder = file.parent_path();
+    // Relative ROM paths are relative to the catalog file's folder, made absolute (the launch plan needs absolute ROMs).
+    std::error_code absoluteError;
+    std::filesystem::path folder = std::filesystem::absolute(file.parent_path(), absoluteError);
+    if (absoluteError) {
+        folder = file.parent_path();
+    }
     std::set<std::string, std::less<>> ids;
     for (std::size_t index = 0; index < games->size(); ++index) {
         const Location at = root.child("games").child(index);

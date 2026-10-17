@@ -125,6 +125,9 @@ struct LaunchRecord {
     std::optional<double> startMs;
     std::optional<double> runMs;
     std::optional<double> returnMs;
+    /// Milliseconds from that exit (the end of the session when nothing exited) to Retroverse's window back in the
+    /// foreground (platform::WindowHandover); absent for hidden windows, which have no hand-over, and while it is not.
+    std::optional<double> foregroundMs;
     /// The panels the launch showed, in order (toString(SessionPanel): "still-running", "confirm", "playing",
     /// "outcome").
     std::vector<std::string> panels;

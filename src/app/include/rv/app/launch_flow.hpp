@@ -115,6 +115,8 @@ public:
     void frameRendered() noexcept;
     /// The host woke from its wait while the session ran (LaunchRecord::idleWakes).
     void idleWake() noexcept;
+    /// Retroverse's window was back in the foreground at `at` after the last session (LaunchRecord::foregroundMs).
+    void noteForeground(launcher::LaunchClock::time_point at);
 
     /// A request waits for start().
     [[nodiscard]] bool pending() const noexcept { return m_pending.has_value(); }

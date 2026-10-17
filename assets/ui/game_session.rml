@@ -82,11 +82,14 @@
 
 		<!-- The choices. Each row is a scroll container: RmlUi's spatial navigation stays inside it. -->
 		<div id="session-actions" class="choices" data-if="phase == 'playing' || phase == 'still-running' || phase == 'confirm'">
-			<button id="session-return" class="choice primary" data-event-click="return_home()"><span
-				data-if="phase == 'confirm'">Sono tornato</span><span data-if="phase != 'confirm'">Torna a Retroverse</span></button>
-			<button id="session-resume" class="choice" data-event-click="resume()"><span
-				data-if="phase == 'still-running'">Continua ad aspettare</span><span data-if="phase != 'still-running'">Torna
-				al gioco</span></button>
+			<button id="session-return" class="choice primary" data-event-click="return_home()">
+				<span data-if="phase == 'confirm'">Sono tornato</span>
+				<span data-if="phase != 'confirm'">Torna a Retroverse</span>
+			</button>
+			<button id="session-resume" class="choice" data-event-click="resume()">
+				<span data-if="phase == 'still-running'">Continua ad aspettare</span>
+				<span data-if="phase != 'still-running'">Torna al gioco</span>
+			</button>
 		</div>
 		<div id="session-outcome-actions" class="choices" data-if="phase == 'outcome'">
 			<button id="session-ok" class="choice primary" data-event-click="dismiss()">OK</button>

@@ -75,7 +75,8 @@ inline constexpr std::string_view kReasonQuit = "quit";
 /// The message of a session that ended (launcher::LaunchOutcome of a final session):
 ///  - Crashed: kCrashed, the exit code and its NTSTATUS name ("0xC0000005 STATUS_ACCESS_VIOLATION");
 ///  - FailedToStart: kFailedToStart with the reason of its FailureReason, the detail the NTSTATUS name of a loader
-///    error, the exit code of an early exit, the session's message otherwise (the runner's error: the guard's refusal);
+///    error, the exit code of an early exit, otherwise the error of the session's message without the launch it names
+///    (the request's validation, the runner's error: the guard's refusal among them);
 ///  - Returned: kLeftRunning (kReasonConfirmed) when the user confirmed the return while processes remained,
 ///    kQuickExit for a quick exit, kReturned otherwise (the detail is the exit code).
 [[nodiscard]] LaunchMessage messageForOutcome(const launcher::LaunchOutcome& outcome);

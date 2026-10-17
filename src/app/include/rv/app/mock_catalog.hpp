@@ -24,7 +24,8 @@ inline constexpr int kMockCatalogSchemaVersion = 1;
 struct MockLaunch {
     /// The profile's id: one of the catalog's own profiles, or the shipped and the user's ones.
     std::string profile;
-    /// The ROM (absolute: a relative path in the file is relative to the catalog file's folder), its ES-DE system name,
+    /// The ROM (absolute: a relative path in the file is relative to the catalog file's folder, made absolute against the
+    /// current directory when the file's path is relative), its ES-DE system name,
     /// the launch's variables and the game's title.
     launcher::LaunchTarget target;
 };

@@ -26,6 +26,22 @@ std::string_view firstToken(std::string_view text) noexcept {
     return text.substr(open, close - open + 1);
 }
 
+namespace {
+
+/// The reason of a session's failure without the launch it names: LaunchSession writes "<label> could not be started:
+/// <error>" and "<label> was not started: <error>", and the panel names the game itself.
+std::string failureDetail(const std::string& message) {
+    for (const std::string_view marker : {std::string_view(" could not be started: "),
+                                          std::string_view(" was not started: ")}) {
+        if (const std::size_t at = message.find(marker); at != std::string::npos) {
+            return message.substr(at + marker.size());
+        }
+    }
+    return message;
+}
+
+} // namespace
+
 LaunchMessage messageForOutcome(const launcher::LaunchOutcome& outcome) {
     LaunchMessage message;
     switch (outcome.state) {
@@ -46,12 +62,12 @@ LaunchMessage messageForOutcome(const launcher::LaunchOutcome& outcome) {
             break;
         case launcher::FailureReason::InvalidRequest:
             message.reason = std::string(lo::kReasonInvalidRequest);
-            message.detail = outcome.message;
+            message.detail = failureDetail(outcome.message);
             break;
         case launcher::FailureReason::StartFailed:
         case launcher::FailureReason::None:
             message.reason = std::string(lo::kReasonStartFailed);
-            message.detail = outcome.message;
+            message.detail = failureDetail(outcome.message);
             break;
         }
         break;
