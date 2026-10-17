@@ -291,7 +291,8 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   import's job with a cancel flag, the systems' readiness resolved again after its commit, the readiness cache cleared,
   the screen told to refresh; a long import in slices so that lists and session writes do not wait behind it; the
   quick-hash pass taking turns on the same worker). M1 refreshes with `retroverse-cli import`: an app open meanwhile
-  reads the new rows with its next list (a search, a filter) and resolves its systems' readiness again at its next start.
+  reads the new rows with its next list (a search, a filter) and resolves its systems' readiness again at its next
+  start.
 - **The quick hash's whole-library cold pass:** about 45 minutes on the reference machine, estimated from I2 step 11b's
   gb sample (980.9 MiB in 268.8 s, cold); Gate M1 runs it on demand only (`scripts/gate.ps1 -Gate M1 -RealLibrary
   -FullHashPass`, `retroverse-cli identities hash`), not by default.

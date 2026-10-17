@@ -102,9 +102,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `-RomRoot`, `-MediaRoot`, `-RetroArchExe` or those variables; `-Preset`, default `msvc-x64-release`; `-Filter`): it
   refuses to run while ES-DE runs, snapshots the home and install (configuration files hashed) and the ROM and media
   roots (listings only) with `scripts/snapshot_tree.py`, runs `rv_tests.exe "[real-library]"` (with
-  `RV_LAUNCH_BACKGROUND=1`), snapshots again and fails on a failed test or any difference (outputs in
-  `build/real-library`). Narrower runs: `-Filter '[real-library][media]'` (the media tree and the coverage against
-  ADR-0003), `-Filter '[real-library][launch]'` (the readiness of the real systems and the five launches ES-DE logged,
+  `RV_LAUNCH_BACKGROUND=1` and `RV_LAUNCH_ALLOWLIST` naming the build's fake emulator alone), snapshots again and
+  fails on a failed test or any difference (outputs in `build/real-library`). Narrower runs: `-Filter
+  '[real-library][media]'` (the media tree and the coverage against ADR-0003), `-Filter '[real-library][launch]'` (the readiness of the real systems and the five launches ES-DE logged,
   read from the git-ignored, machine-local `tests/real_library/local/esde_logged_launches.json`; these two tests are
   skipped without `-RetroArchExe`), `-Filter '[real-library][import]'` (the whole library imported into a new database
   under `build/<preset>/real-library/import`: a first and a second import, `db rebuild-index`, the ROM root unplugged

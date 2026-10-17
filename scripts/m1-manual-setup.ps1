@@ -9,11 +9,11 @@
          folder that holds ES-DE\), with the install folder and, when given, the ROM and media roots;
       2. retroverse-cli import (the whole library, about 15 s warm);
       3. the isolated RetroArch profile, as I2 step 12 ran it: a scratch folder <DataDir>\retroarch-scratch with the
-         append configuration that the I1 launch spike writes (nothing saved on RetroArch's own initiative, every file
-         it could write moved into the scratch folder, fullscreen, muted, offline) and a user emulators.json in
-         <DataDir>\config holding the profile "retroarch-isolated" (the RetroArch executable given, the system's core,
-         --appendconfig, --sram-mode=noload-nosave and a log file in the scratch folder; no frame limit, so the game is
-         played until it is quit);
+         append configuration of the I1 launch spike without its frame limit and its mute (nothing saved on RetroArch's
+         own initiative, every file it could write moved into the scratch folder, fullscreen, with sound, offline) and
+         a user emulators.json in <DataDir>\config holding the profile "retroarch-isolated" (the RetroArch executable
+         given, the system's core, --appendconfig, --sram-mode=noload-nosave and a log file in the scratch folder; no
+         frame limit, so the game is played until it is quit);
       4. retroverse-cli assign <System> --profile retroarch-isolated, then `profiles --system <System>` to show it ready.
     It then prints the commands of the session (docs/testing/gate-m1.md, "Manual session"). Nothing is written outside
     <DataDir>; the library and RetroArch's folder are only read. Exit codes: 0 ready; 1 a command failed; 2 it could

@@ -38,8 +38,9 @@ checks; the logs are in `build/gate-m1` (`results.json` holds the rows, `focus_w
 ## The figures
 
 Both runs passed on 2026-10-17 (the reference machine, nothing else of the project running; the user's own programs
-ran: 13 foreground changes, none to a test process). `-Gate M1`: 16 steps in 1,218 s. `-Gate M1 -RealLibrary
--RetroArchExe`: 28 steps in 1,050 s, among them:
+ran: the focus watcher saw 74 foreground changes and 59 windows shown over the `-Gate M1` run, 13 and 10 over the
+`-RealLibrary` run, none to or of a test process but the fake emulator's two allowed off-screen windows). `-Gate M1`:
+16 steps in 1,218 s. `-Gate M1 -RealLibrary -RetroArchExe`: 28 steps in 1,050 s, among them:
 
 | Figure | Value | Limit |
 |---|---|---|
@@ -52,10 +53,13 @@ ran: 13 foreground changes, none to a test process). `-Gate M1`: 16 steps in 1,2
 | Quick-hash sample, gb | 8,611 files in 8.22 s (warm) | |
 
 Everything on the real library was warm (51 hours after the boot, the library read by earlier runs of the day): the
-cold ROM scan and the cold whole-library quick-hash pass were not measured, since caches are never flushed by other
-means; they need a gate run right after a reboot (`-FullHashPass` for the pass). Measured while another preset built
-(a trial before the gate's runs), NFR-01 took 5.9 to 7.3 s and the real NFR-02 p95 101 ms: both figures depend on a
-quiet machine (NFR-01's time is mostly the scene's loading, the procedural surfaces generated on every core).
+cold figures were not measured, since caches are never flushed by other means. Inside the gate the ROM scan's listing
+is always warm (`real-library.ps1`'s snapshot lists the whole ROM root and hashes the gamelists seconds before), so a
+gate run right after a reboot makes only the scan's sheet reads (cue, m3u, gdi) and, with `-FullHashPass`, the whole
+library's quick-hash pass cold; a cold listing figure would have to come from the first snapshot's own time.
+Measured while another preset built (a trial before the gate's runs), NFR-01 took 5.9 to 7.3 s and the real NFR-02 p95
+101 ms: both figures depend on a quiet machine (NFR-01's time is mostly the scene's loading, the procedural surfaces
+generated on every core).
 
 ## Decisions taken within the step
 
@@ -82,11 +86,18 @@ quiet machine (NFR-01's time is mostly the scene's loading, the procedural surfa
 9. **Orchestrator decisions recorded**: step 13r (the refresh on a worker) moves to I3 (roadmap row 13r, BACKLOG
    "Plan"; M1 refreshes with `retroverse-cli import`); M1's manual session searches with the keyboard, every other item
    pad-only (BACKLOG "Text entry with the pad", ADR-0005's amendment; the on-screen keyboard is I7).
-10. **The manual session's RetroArch profile** is step 12's isolation without the frame limit and with sound (a person
-    plays it), written by `scripts/m1-manual-setup.ps1`, which starts nothing. Tried on the real library between the snapshots of
-    `real-library.ps1 -Measure` (0 differences): the profile ready for gb, and `launch --dry-run --game` of a gb game
-    with the allow-list naming RetroArch shows the isolated command line and the guard's "allowed"; RetroArch was not
-    started.
+10. **The manual session's RetroArch profile** is step 12's isolation without the frame limit and with sound (a
+    person plays it), written by `scripts/m1-manual-setup.ps1`, which starts nothing. Tried on the real library between
+    the snapshots of `real-library.ps1 -Measure` (0 differences): the profile ready for gb, and `launch --dry-run
+    --game` of a gb game with the allow-list naming RetroArch shows the isolated command line and the guard's
+    "allowed"; RetroArch was not started.
+11. **The real library's run guards itself** (after the review): `real-library.ps1` sets `RV_LAUNCH_ALLOWLIST` to the
+    build's fake emulator for the measurements and the `[real-library]` tests alike (not empty: PowerShell removes a
+    variable set to an empty value), and an exception of the measurement script fails the measurements but never skips
+    the tests and the second snapshot. The gate removes the previous run's `figures.json` and `tests.log` before the
+    run, reads `real-library.ps1`'s "Measurements:" verdict like its "Tests:" one, fails on a non-zero exit code that no
+    other row explains and on a missing quick-hash sample figure, and keeps the earlier rows when the real library's
+    part throws.
 
 ## Step 13 folded into the shared documentation
 
@@ -108,7 +119,8 @@ quiet machine (NFR-01's time is mostly the scene's loading, the procedural surfa
 1. **The manual session** (`docs/testing/gate-m1.md`, "Manual session"): prepare it with `scripts/m1-manual-setup.ps1`,
    play a gb game through the isolated RetroArch profile with a real pad, and sign and date each of the 12 items. M1 is
    done once they are signed; then mark it done in the roadmap (row 14 and the I2 heading) and in the gate's page.
-2. **Optional, the cold figures**: right after a reboot, `./scripts/gate.ps1 -Gate M1 -RealLibrary -FullHashPass` (about
-   an hour), for the cold ROM scan and the whole library's quick-hash pass.
+2. **Optional, the cold figures**: right after a reboot, `./scripts/gate.ps1 -Gate M1 -RealLibrary -FullHashPass`
+   (about an hour), for the ROM scan's sheet reads and the whole library's quick-hash pass cold (the scan's listing
+   stays warm: the snapshot lists the ROM root just before).
 3. **Schema v1**: it "stays open until the M1 gate" (CLAUDE.md); once M1 is signed it closes, and later schema changes
    are migrations to v2 (the sentence in CLAUDE.md and `docs/architecture.md` changes with the sign-off).

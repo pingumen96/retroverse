@@ -7,8 +7,8 @@ decisions it rests on are in [ADR-0008](../decisions/ADR-0008-esde-catalog.md) (
 what each I2 step built and measured is in [docs/i2/](../i2/). This page says what the gate checks, how to run it, the
 figures of its run on the reference machine, where each M1 requirement is proven, and the manual session the user signs.
 
-**Status: gate passed, manual checklist pending** (October 17, 2026, reference machine: `./scripts/gate.ps1 -Gate M1` and
-`./scripts/gate.ps1 -Gate M1 -RealLibrary`). M1 is done once the user has signed the manual checklist below.
+**Status: gate passed, manual checklist pending** (October 17, 2026, reference machine: `./scripts/gate.ps1 -Gate M1`
+and `./scripts/gate.ps1 -Gate M1 -RealLibrary`). M1 is done once the user has signed the manual checklist below.
 
 ## What the gate checks
 
@@ -27,16 +27,17 @@ the unit tests and the GPU checks of Debug and Release, golden G01) and adds:
     questions, the wait limit, Retroverse closed mid-game), counted from the GPU run;
   - *M1 CLI as a process*: the unit test `cli/process` (`tests/unit/cli/test_cli_m1_flow.cpp`), every command a
     `retroverse-cli.exe` process of its own on the standard fixture: `library create`, `import` (22 new identities), a
-    second `import` that writes nothing (no identity, entry, disc group, history or review row), `db rebuild-index`, `db
-    check`, `search nintendo` (13 games), `show`, `assign gb --profile fake-return`, `launch --game <Tiny Tennis> --wait`
-    into the build's fake emulator (returned, exit 0, recorded and verified), `sessions`, `db check` again; every process
-    with `RV_LAUNCH_BACKGROUND=1` and `RV_LAUNCH_ALLOWLIST` naming the fake alone; the fixture's files (sizes, times,
-    SHA-256) the same afterwards.
-- **The focus watch**: the whole gate runs under `python -I scripts/focus_watch.py --watch build` (the gate starts itself
-  again under the watcher): a foreground change to a test process, a visible window of one, or a system error dialog
-  during the run fails the gate. The watcher also counts a failing program of the user's (a WerFault window or a loader
-  box it cannot attribute) against the run (BACKLOG "focus_watch.py in Gate A and the test script"): the row names each
-  finding with the rule that matched, so that such a finding can be told from a test's; then run the gate again.
+    second `import` that writes nothing (no identity, entry, disc group, history or review row), `db rebuild-index`,
+    `db check`, `search nintendo` (13 games), `show`, `assign gb --profile fake-return`, `launch --game <Tiny Tennis>
+    --wait` into the build's fake emulator (returned, exit 0, recorded and verified), `sessions`, `db check` again;
+    every process with `RV_LAUNCH_BACKGROUND=1` and `RV_LAUNCH_ALLOWLIST` naming the fake alone; the fixture's files
+    (sizes, times, SHA-256) the same afterwards.
+- **The focus watch**: the whole gate runs under `python -I scripts/focus_watch.py --watch build` (the gate starts
+  itself again under the watcher): a foreground change to a test process, a visible window of one, or a system error
+  dialog during the run fails the gate. The watcher also counts a failing program of the user's (a WerFault window or
+  a loader box it cannot attribute) against the run (BACKLOG "focus_watch.py in Gate A and the test script"): the row
+  names each finding with the rule that matched, so that such a finding can be told from a test's; then run the gate
+  again.
 - **With `-RealLibrary`**, on the real ES-DE library (its folders from `-EsdeHome`, `-EsdeInstall`, `-RomRoot`,
   `-MediaRoot` or the `RV_REAL_*` variables; refused while ES-DE runs; nothing in the repository names them):
   1. the NFR-02 benchmark of I2 step 9 in Release (828 indexed queries on 10,000 generated games), before the
@@ -54,11 +55,16 @@ the unit tests and the GPU checks of Debug and Release, golden G01) and adds:
      naming the build's fake emulator alone, so that no real emulator can start;
   4. the `[real-library]` tests (Release), among them NFR-01 again with a scroll through every game
      (`[real-library][app]`), NFR-02 on the real catalog (`[real-library][query]`: the benchmark's kinds of search with
-     every order and a system filter, 564 queries on 90,246 games), the import, a second import, `db rebuild-index` and
-     the ROM root unplugged and back (`[import]`), the quick-hash pass on a sample, gb (`[reconciliation]`), the ROM scan
-     against the census, the media tree and coverage, ES-DE's configuration, gamelists and launch translation.
+     every order and a system filter, 564 queries on 90,246 games), the import, a second import, `db rebuild-index`
+     and the ROM root unplugged and back (`[import]`), the quick-hash pass on a sample, gb (`[reconciliation]`), the
+     ROM scan against the census, the media tree and coverage, ES-DE's configuration, gamelists and launch translation.
 
-  Each figure is a row of the summary, with its limit where one exists; a row without a limit is `info`.
+  Every process the measurements and the `[real-library]` tests start runs with `RV_LAUNCH_BACKGROUND=1` and
+  `RV_LAUNCH_ALLOWLIST` naming the build's fake emulator alone (set by `real-library.ps1`): no real emulator can start.
+
+  Each figure is a row of the summary, with its limit where one exists; a row without a limit is `info`. The outputs
+  of an earlier run are removed first, and a non-zero exit code of `real-library.ps1` that no other row explains (its
+  "Measurements:" and "Tests:" verdicts, the snapshots) fails the gate on a row of its own.
 
 Every step logs into `build/gate-m1` (the build and test logs, `results.json`, `focus_watch.json`,
 `real-library.log`, `real-library/` with the snapshots and `tests.log`, `real-measurements/` with `figures.json` and
@@ -89,8 +95,9 @@ cores, 64 GB, RTX 2080 SUPER with OpenGL 4.5.0 NVIDIA 617.42, Windows 11 Home 10
 on the system SATA SSD, ES-DE's install and the media root on a second SATA SSD (with the repository), the ROM root on a
 20 TB external USB hard drive (exFAT); ES-DE 3.4.1, 45 gamelists, 105,130 entries (90,246 games). Nothing else of the
 project ran meanwhile (this step's builds were done before each run), so the figures count as taken on a quiet machine;
-the user's own programs ran (the focus watcher saw 13 foreground changes, all to the user's windows, none to a test
-process).
+the user's own programs ran (the focus watcher saw 74 foreground changes and 59 windows shown over the fixtures-only
+run, 13 and 10 over the `-RealLibrary` run: all of them the user's, none to or of a test process but the fake
+emulator's two allowed off-screen windows).
 
 Both gate runs passed: `./scripts/gate.ps1 -Gate M1` (16 steps, 1,218 s) and `./scripts/gate.ps1 -Gate M1 -RealLibrary
 ... -RetroArchExe ...` (28 steps, 1,050 s, its builds incremental). The logs are in `build/gate-m1` (the earlier runs in
@@ -118,7 +125,7 @@ launch-translation tests skipped and whose figures agree with these within a few
 | Media coverage | info | | 2.7 s: 39,404 of 90,246 games with a medium (43.7%): covers 39.9%, screenshots 43.5%, miximages 43.5%, videos 36.1%, manuals 25.1%, fanart 21.6%; 13 issues, exit 0 |
 | Quick-hash pass, sample (gb) | info | | 8,611 files, 980.9 MiB in 8.22 s, 1,047 files/s (**warm**; step 11b measured it cold: 268.8 s, 32 files/s); the whole library (103,937 files, 9,857.9 MiB) estimated at 83 to 99 s warm, about 45 minutes cold |
 | Quick-hash pass, whole library | off | | not run (`-FullHashPass`) |
-| Focus watch (whole gate) | passed | no finding | 13 foreground changes, 0 to test processes; 10 windows shown, 0 visible of test processes, 2 hidden or off-screen (the fake emulator's) |
+| Focus watch (whole gate) | passed | no finding | `-RealLibrary` run: 13 foreground changes, 0 to test processes; 10 windows shown, 0 visible of test processes, 2 hidden or off-screen (the fake emulator's). Fixtures-only run: 74 foreground changes and 59 windows shown, likewise 0 to or visible of test processes, 2 off-screen |
 
 The cold figures (the ROM scan's sheets after a reboot, estimated at 4 to 5 s by I2 step 7, and the whole library's
 quick-hash pass, about 45 minutes) need a gate run that is the first large read after a boot: run `./scripts/gate.ps1
@@ -155,7 +162,7 @@ The roadmap's requirement map (specification §18.1, §20, §23), each with wher
 | FR-014 | Everything navigable with the pad | `ui/nav_input: ...`, `ui/quick_catalog_model: ...`, `spike_ui.scenario` (153 checks with a virtual pad), `gpu.catalog: ...` (UI actions only); the manual session with a real pad. Deviation for M1: the search field takes typed text until the on-screen keyboard (I7, BACKLOG "Text entry with the pad"), so the manual session types its one search with the keyboard; the wizard and settings screens come in I7 |
 | FR-018 | XML handled safely: nothing shared modified | `esde/xml...` (fragments, BOM, CRLF, truncation, the size cap), `cli/data-dir: nothing is written in the folders a library reads, not even the log file`; NFR-10 |
 | FR-019 | Missing files: no crash, a reliable message or fallback | `catalog_db/import: ROMs added and removed between imports (SC-05)` (missing files kept as such), `esde/rom_scan: a missing ROM folder keeps its gamelist's entries as source unavailable`, `gpu.catalog: a game that is not ready shows its readiness, and Avvia shows why instead of launching`, `gpu.launch: failures leave the application interactive with their outcome`, `cli/launch: every outcome ...` (an executable that is not there, a game whose file is gone: blocked) |
-| FR-020 | Configurable emulators: a test and recovery for ES-DE commands that do not resolve | `cli/assign: choices are checked against what exists, rank before emulators.json, and survive a restart ...`, `cli/launch: --wait follows each wait strategy to its end` (`--test`), `cli/profiles: the systems of the standard fixture, their commands and readiness`, `esde/real: the readiness of the real systems that have games` (`[real-library]`) |
+| FR-020 | Configurable emulators: a test and recovery for ES-DE commands that do not resolve | `cli/assign: choices are checked against what exists, rank before emulators.json, and survive a restart ...`, `cli/launch: every outcome is recorded with its session row` (`--test`: a launch test verifies the choice when the game returns normally, and only then), `cli/profiles: the systems of the standard fixture, their commands and readiness`, `esde/real: the readiness of the real systems that have games` (`[real-library]`) |
 | FR-026 | Game history: sessions and last launches | `catalog_db/sessions: ...`, `cli/launch: every outcome is recorded with its session row`, `cli/process` (`sessions`), `gpu.catalog: ...` (the session recorded and verified); the manual session (items 7 and 9) |
 | FR-033 | Disconnected disks: nothing deleted for good by a scan | `catalog_db/import: folders unplugged or that cannot be listed keep their rows (SC-06)`, `catalog_db/import: folders that cannot be listed keep their rows as source unavailable`, `cli/import: the mass-disappearance guard exits 1 until the removals are accepted`; the real ROM root unplugged and back (`[real-library][import]`) |
 | NFR-01 | Start with an indexed catalog within 5 s on the reference PC | the gate's NFR-01 row (three starts of `retroverse.exe`) and `app/catalog: the real library's catalog in retroverse.exe: NFR-01, page fetches and frame times` (`[real-library][app]`) |
@@ -182,16 +189,21 @@ everything it would write inside the data directory's scratch folder (I2 step 12
 **Preparation** (once, in PowerShell from the repository root):
 
 1. Choose a user data directory outside the library's folders, e.g. `D:\RetroverseM1` (the CLI refuses one inside the
-   ES-DE home, the install, the ROM or the media root).
-2. Run `./scripts/m1-manual-setup.ps1 -DataDir <data dir> -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install>
+   ES-DE home, the install, the ROM or the media root), and a folder for two snapshots outside the library, the data
+   directory and RetroArch's folder, e.g. `build/m1-manual`.
+2. Optional, for item 12, before anything else runs: snapshot the ES-DE home and RetroArch's folder (configuration-like
+   files hashed): `python -I scripts/snapshot_tree.py snapshot <snapshot folder>\before.json --hash <ES-DE home>
+   --hash <RetroArch folder>`.
+3. Run `./scripts/m1-manual-setup.ps1 -DataDir <data dir> -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install>
    -RetroArchExe <RetroArch folder>\retroarch.exe` (add `-RomRoot`/`-MediaRoot` only if ES-DE's settings do not give
    them; `-System gb -Core gambatte_libretro.dll` are the defaults). It runs, with the Release `retroverse-cli`:
-   `library create`, `import`, writes the isolated RetroArch profile (`<data dir>\retroarch-scratch\retroverse-isolated.cfg`
-   and `<data dir>\config\emulators.json` with the profile `retroarch-isolated`: `-L <core> --appendconfig=<cfg>
-   --sram-mode=noload-nosave --log-file=<scratch>\logs\retroarch.log <rom>`), `assign gb --profile retroarch-isolated`
-   and `profiles --system gb` (the profile ready), and prints the two commands below. By hand instead: the same
+   `library create`, `import`, writes the isolated RetroArch profile
+   (`<data dir>\retroarch-scratch\retroverse-isolated.cfg` and `<data dir>\config\emulators.json` with the profile
+   `retroarch-isolated`: `-L <core> --appendconfig=<cfg> --sram-mode=noload-nosave
+   --log-file=<scratch>\logs\retroarch.log <rom>`), `assign gb --profile retroarch-isolated` and `profiles --system gb`
+   (the profile ready), and prints the two commands below. By hand instead: the same
    `retroverse-cli --data-dir <data dir>` commands, the configuration as the script writes it.
-3. In the same PowerShell: `$env:RV_LAUNCH_ALLOWLIST = '<RetroArch folder>\retroarch.exe'` (the automation guard: only
+4. In the same PowerShell: `$env:RV_LAUNCH_ALLOWLIST = '<RetroArch folder>\retroarch.exe'` (the automation guard: only
    RetroArch may start, and only with its `--appendconfig` file), then
    `build/msvc-x64-release/bin/retroverse.exe --data-dir <data dir> --fullscreen`.
 
@@ -210,7 +222,7 @@ everything it would write inside the data directory's scratch folder (I2 step 12
 | 9 | Quit Retroverse while the game runs (close its window from the taskbar, the one step that needs the mouse): the game keeps running; quit RetroArch afterwards | | |
 | 10 | `build/msvc-x64-release/bin/retroverse-cli.exe --data-dir <data dir> sessions` lists the session of item 7 as returned (verified) and the one of item 9 as left running (quit) | | |
 | 11 | Start Retroverse again with the same data directory and open the catalog: B walks back out of it to the room, and the walker moves with the stick | | |
-| 12 | RetroArch wrote only into `<data dir>\retroarch-scratch` (its log, core options); ES-DE's files untouched (optional: `python -I scripts/snapshot_tree.py snapshot` of the ES-DE home and of RetroArch's folder before preparation and after, `compare`: 0 differences) | | |
+| 12 | RetroArch wrote only into `<data dir>\retroarch-scratch` (its log, core options); ES-DE's files untouched (optional, with the snapshot of preparation step 2: `python -I scripts/snapshot_tree.py snapshot <snapshot folder>\after.json --hash <ES-DE home> --hash <RetroArch folder>`, then `python -I scripts/snapshot_tree.py compare <snapshot folder>\before.json <snapshot folder>\after.json`: exit 0, 0 differences) | | |
 
 Signed off by: ______________________  Date: __________
 </content>
