@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <utility>
 
@@ -67,6 +68,21 @@ public:
     /// (RunReport documents who fills which field). Kept, and harmless to fill, without --run-report too.
     [[nodiscard]] RunReport& report() noexcept { return m_report; }
 
+    /// The idle mode, the host's side of ExternalEmulatorRunning (specification §15.5; ADR-0006: the window kept behind
+    /// the emulator renders nothing). While it is set the host updates, renders and presents nothing: it waits for
+    /// events (at most AppHost::kIdleWait at a time, so that the logic can follow timeouts) and calls
+    /// IAppLogic::onIdle after each wait, events still reaching onEvent first. Frames do not advance: frameIndex() stays
+    /// where it was and a frame-limited run's budget (--frames) is not consumed by the wait. The first onIdle comes
+    /// right after the frame during which the logic set it was presented. Set and cleared by the logic, from any
+    /// callback; the first frame after it gets a short delta (the wait does not count as frame time).
+    void setIdle(bool idle) noexcept { m_idle = idle; }
+    [[nodiscard]] bool idle() const noexcept { return m_idle; }
+    /// Wakes the host's idle wait from any thread: it pushes the host's wake event (an SDL user event, which the host
+    /// keeps to itself), so that the logic's next onIdle comes at once. For the process runner's wake callback
+    /// (launcher::StartCallbacks::wake). Valid for the run; harmless while the host is not waiting, and a no-op when SDL
+    /// had no event type left to register.
+    [[nodiscard]] const std::function<void()>& wakeCallback() const noexcept { return m_wake; }
+
 private:
     friend class AppHost;
 
@@ -83,13 +99,19 @@ private:
     std::uint64_t m_frameIndex = 0;
     glm::ivec2 m_framebufferSize{0};
     bool m_quitRequested = false;
+    bool m_idle = false;
+    /// The host's wake event (SDL_RegisterEvents; 0: none) and the callback that pushes it.
+    std::uint32_t m_wakeEvent = 0;
+    std::function<void()> m_wake = [] {};
     std::optional<Error> m_failure;
 };
 
 /// Application behavior driven by AppHost. Call order: onInit once; then per frame onEvent for each pending event,
-/// onUpdate, onRender (followed by the buffer swap); finally onShutdown exactly once, also when onInit failed or an
-/// exception ended the run. The OpenGL context is current in every callback and destroyed only after onShutdown, which
-/// must release every GPU resource the logic owns.
+/// onUpdate, onRender (followed by the buffer swap); while the logic keeps the host idle (AppContext::setIdle), onEvent
+/// for each pending event and onIdle after each wait, instead of the frames; finally onShutdown exactly once, also when
+/// onInit failed or an exception ended the run (the quit hook of a logic that idles: the host may stop while it does).
+/// The OpenGL context is current in every callback and destroyed only after onShutdown, which must release every GPU
+/// resource the logic owns.
 class IAppLogic {
 public:
     virtual ~IAppLogic();
@@ -105,6 +127,10 @@ public:
     /// Renders the frame and leaves it in the default framebuffer, which the host presents afterwards (typically:
     /// GLDevice::beginPass on an offscreen Framebuffer, draws, Framebuffer::blitToDefault).
     virtual void onRender(AppContext& context) = 0;
+    /// While the host idles (AppContext::setIdle): once right after the frame that set it was presented, then after
+    /// every wait (an event, the wake callback, AppHost::kIdleWait passing). Clearing the idle mode here makes the host
+    /// render the next frame at once.
+    virtual void onIdle(AppContext& /*context*/) {}
     virtual void onShutdown(AppContext& /*context*/) {}
 };
 

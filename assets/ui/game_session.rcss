@@ -1,0 +1,128 @@
+/*
+	Game-session panel (game_session.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI
+	neutral #171B22, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green #6EAF93). Sizes in dp. A modal
+	panel in the middle of the view over a dimmed backdrop. No color transitions (RmlUi rebuilds the geometry of every
+	animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 24dp;
+	color: #F4EFE6;
+}
+
+div, p, h1 {
+	display: block;
+}
+
+p, h1, span {
+	focus: none;
+}
+
+#session-backdrop {
+	position: absolute;
+	left: 0dp;
+	top: 0dp;
+	right: 0dp;
+	bottom: 0dp;
+	background-color: #0B0D1199;
+}
+
+#session-panel {
+	position: absolute;
+	left: 25%;
+	width: 50%;
+	top: 26%;
+	box-sizing: border-box;
+	background-color: #171B22F2;
+	border: 2dp #F4EFE61F;
+	border-radius: 18dp;
+	padding: 30dp 36dp 22dp 36dp;
+}
+
+h1 {
+	font-size: 34dp;
+	font-weight: bold;
+	margin-bottom: 10dp;
+}
+
+p {
+	font-size: 23dp;
+	line-height: 1.4em;
+	margin-bottom: 14dp;
+}
+
+.game {
+	font-size: 26dp;
+	color: #FFC88A;
+	margin-bottom: 12dp;
+}
+
+/* Each row of choices is a scroll container (overflow other than visible): RmlUi's spatial navigation stays in it. */
+.choices {
+	overflow: hidden;
+	margin-top: 10dp;
+}
+
+.choice {
+	display: inline-block;
+	padding: 10dp 24dp;
+	margin-right: 12dp;
+	margin-bottom: 8dp;
+	font-size: 24dp;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+	nav: auto;
+}
+
+.choice.primary {
+	background-color: #6EAF9340;
+}
+
+/* The focus, always visible: a tungsten edge and a warm wash. */
+.choice:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.choice.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+/* High contrast (specification 12.4), as the quick catalog's. */
+body.high-contrast {
+	color: #FFFFFF;
+}
+
+body.high-contrast #session-panel {
+	background-color: #000000;
+	border-color: #FFFFFF;
+}
+
+body.high-contrast .game {
+	color: #FFFFFF;
+}
+
+body.high-contrast .choice:focus {
+	border-color: #FFE600;
+	background-color: #FFE600;
+	color: #000000;
+}
+
+/* Compact views (1280x720 at 125%): a wider panel, smaller text. */
+@media (theme: compact) {
+	#session-panel { left: 12%; width: 76%; top: 18%; padding: 20dp 26dp 14dp 26dp; }
+	h1 { font-size: 28dp; }
+	p { font-size: 20dp; margin-bottom: 10dp; }
+	.game { font-size: 22dp; }
+	.choice { font-size: 20dp; padding: 7dp 16dp; }
+}

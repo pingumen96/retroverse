@@ -23,14 +23,17 @@ constexpr std::string_view kDescription =
     "\n"
     "Controls: WASD or arrows walk, Left Shift sprints, the mouse looks around while captured (at startup in\n"
     "          interactive runs, or after a click into the window); gamepad: left stick walks, right stick\n"
-    "          looks, left stick click sprints. Esc (gamepad B) leaves one level: it closes a popup of the\n"
-    "          developer overlay, else releases the mouse, else closes the overlay, else quits. F1 toggles the\n"
-    "          developer overlay (developer builds), F5 reloads the shaders, F12 saves a screenshot to\n"
-    "          <user data>/screenshots. These follow the bindings of assets/config/default_bindings.json,\n"
+    "          looks, left stick click sprints. Tab (gamepad Y) opens the quick catalog of --mock-catalog, where\n"
+    "          arrows or the D-pad move and Enter (A) launches the selected game. Esc (gamepad B) leaves one\n"
+    "          level: it closes a popup of the developer overlay, else the game panel, else steps back through\n"
+    "          the quick catalog and closes it, else releases the mouse, else closes the overlay, else quits. F1\n"
+    "          toggles the developer overlay (developer builds), F5 reloads the shaders, F12 saves a screenshot\n"
+    "          to <user data>/screenshots. These follow the bindings of assets/config/default_bindings.json,\n"
     "          overridden per action by <user data>/config/bindings.json; Alt+Enter (borderless fullscreen)\n"
-    "          is fixed.\n"
+    "          is fixed. Retroverse never ends an emulator: quitting while a game runs leaves it running.\n"
     "Exit codes: 0 success; 1 --smoke run that stopped early, hit unexpected OpenGL errors or failed --gl-selftest;\n"
-    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script);\n"
+    "            2 initialization failure (command line, paths, SDL, window, OpenGL 4.5, scene file, input script,\n"
+    "              mock catalog);\n"
     "            3 runtime failure (unexpected error, --screenshot not written, scene shader never built,\n"
     "              --self-check failed, developer overlay asked for by a frame-limited run unable to start,\n"
     "              --run-report not written).";
@@ -69,7 +72,11 @@ core::ArgParser makeParser() {
         .flag("screenshot-include-ui",
               "Draw the developer overlay, when open, into --screenshot and F12 screenshots too (they show the scene "
               "only by default), scaled uniformly to fit the screenshot and centered. A frame-limited run fails (exit "
-              "code 3) when the overlay cannot start.");
+              "code 3) when the overlay cannot start.")
+        .option("mock-catalog", "json",
+                "Games of the quick catalog (Tab or gamepad Y opens it), invented, each with a launch target: an "
+                "emulator profile and a ROM (a JSON file, schemaVersion 1, with \"profiles\" and \"games\"). Avvia "
+                "launches the selected game; Retroverse renders nothing until the emulator returns.");
     return parser;
 }
 
@@ -439,6 +446,14 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (!spawn) {
         return propagate(spawn.error());
     }
+    auto mockCatalog = pathValue(*args, "mock-catalog");
+    if (!mockCatalog) {
+        return propagate(mockCatalog.error());
+    }
+    if (*mockCatalog && !core::equalsIgnoreCaseAscii(core::pathToUtf8((*mockCatalog)->extension()), ".json")) {
+        return makeError(ErrorCode::InvalidArgument, "the mock catalog is a JSON file: use the .json extension",
+                         "--mock-catalog=" + core::pathToUtf8(**mockCatalog));
+    }
     options.spawn = *spawn;
     options.scene = std::move(*scene);
     options.inputScript = std::move(*inputScript);
@@ -446,6 +461,7 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     options.debugDraw = args->has("debug-draw");
     options.devUiOpen = args->has("devui-open");
     options.screenshotIncludeUi = args->has("screenshot-include-ui");
+    options.mockCatalog = std::move(*mockCatalog);
     return options;
 }
 

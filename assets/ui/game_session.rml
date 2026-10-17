@@ -1,0 +1,96 @@
+<rml>
+<head>
+	<!--
+		Game-session panel (specification 11.4, 11.5, 15.5 ExternalEmulatorRunning; ADR-0006), over the quick catalog:
+		the game running, the questions of a session that waits for the user (the started program ended under
+		UserConfirmReturn; no window of the game for its window timeout; the user back in Retroverse while it runs) and
+		the outcome of a launch. Bound to the data model "session" of rv::app::GameSessionPanel
+		(src/app/src/game_session_panel.cpp), which also names the ids below: keep them in step
+		(src/app/include/rv/app/game_session_ui.hpp, tests/unit/app/test_game_session_document.cpp).
+		phase: launching, playing, still-running, confirm, outcome (rv::app::SessionPanel). code and reason: the
+		outcome (rv::app::launch_outcome); detail: data shown as it comes (an NTSTATUS name, a token, an exit code, a
+		file name, the system's error). Every string is written here (CLAUDE.md): the panel binds data only.
+	-->
+	<title>Gioco in corso</title>
+	<link type="text/rcss" href="game_session.rcss"/>
+</head>
+<body data-model="session">
+	<div id="session-backdrop"></div>
+	<div id="session-panel">
+		<!-- The game running: the last frame shown before the emulator starts, which stays behind it. -->
+		<div data-if="phase == 'launching'">
+			<h1>Gioco in corso</h1>
+			<p class="game">{{ title }}</p>
+			<p>Retroverse resta in attesa e torna da solo quando chiudi il gioco.</p>
+		</div>
+		<div data-if="phase == 'playing'">
+			<h1>Gioco in corso</h1>
+			<p class="game">{{ title }}</p>
+			<p>Il gioco è ancora aperto. Tornando a Retroverse resta aperto: Retroverse non chiude mai l'emulatore.</p>
+		</div>
+		<div data-if="phase == 'still-running'">
+			<h1>Gioco in corso</h1>
+			<p class="game">{{ title }}</p>
+			<p>Da {{ timeout }} secondi il gioco non mostra nessuna finestra: potrebbe essere ancora in caricamento, oppure è
+				rimasto aperto in secondo piano. Tornando a Retroverse resta aperto.</p>
+		</div>
+		<div data-if="phase == 'confirm'">
+			<h1>Il gioco è terminato?</h1>
+			<p class="game">{{ title }}</p>
+			<p>Il programma avviato si è chiuso, ma il gioco potrebbe essere ancora aperto. Quando hai finito di giocare,
+				conferma il ritorno.</p>
+		</div>
+
+		<!-- The outcome of a launch, by code and reason. -->
+		<div data-if="phase == 'outcome'">
+			<h1 data-if="code == 'quick-exit'">Il gioco si è chiuso subito</h1>
+			<h1 data-if="code == 'crashed'">L'emulatore si è chiuso per un errore</h1>
+			<h1 data-if="code == 'failed-to-start'">Impossibile avviare il gioco</h1>
+			<h1 data-if="code == 'not-configured'">Avvio non configurato</h1>
+			<h1 data-if="code == 'emulator-missing'">Emulatore non trovato</h1>
+			<h1 data-if="code == 'core-missing'">File dell'emulatore mancante</h1>
+			<h1 data-if="code == 'rom-missing'">Gioco non trovato</h1>
+			<h1 data-if="code == 'left-running'">Il gioco è rimasto aperto</h1>
+			<p class="game">{{ title }}</p>
+			<p id="session-message" data-if="code == 'quick-exit'">Il gioco è terminato appena avviato. Se in realtà è ancora
+				aperto, il profilo del suo emulatore deve attendere tutti i processi che avvia ("wait": "tree").</p>
+			<p data-if="code == 'crashed'">L'emulatore è terminato in modo anomalo ({{ detail }}).</p>
+			<p data-if="code == 'failed-to-start' && reason == 'start-failed'">L'emulatore non è partito: {{ detail }}</p>
+			<p data-if="code == 'failed-to-start' && reason == 'loader-error'">Windows non è riuscito a caricare
+				l'emulatore: manca una libreria o il programma è danneggiato ({{ detail }}).</p>
+			<p data-if="code == 'failed-to-start' && reason == 'early-exit'">L'emulatore si è chiuso con un errore appena
+				avviato (codice {{ detail }}).</p>
+			<p data-if="code == 'failed-to-start' && reason == 'invalid-request'">La richiesta di avvio non è valida:
+				{{ detail }}</p>
+			<p data-if="code == 'not-configured' && reason == 'template'">Il profilo dell'emulatore usa {{ detail }}, che
+				per questo gioco non ha un valore.</p>
+			<p data-if="code == 'not-configured' && reason == 'program-refused'">Il profilo avvia un interprete di comandi
+				o un programma di avvio, che Retroverse non esegue mai: {{ detail }}</p>
+			<p data-if="code == 'not-configured' && reason == 'invalid-request'">Windows non può avviare l'emulatore come
+				è configurato: {{ detail }}</p>
+			<p data-if="code == 'not-configured' && reason == 'unknown-profile'">Il gioco usa il profilo d'emulatore
+				"{{ detail }}", che non esiste.</p>
+			<p data-if="code == 'not-configured' && reason == 'no-launch'">Per questo gioco non è indicato come
+				avviarlo.</p>
+			<p data-if="code == 'emulator-missing'">{{ detail }} non è installato, o non si trova dove il suo profilo lo
+				cerca.</p>
+			<p data-if="code == 'core-missing'">Manca un file richiesto dall'emulatore, per esempio il core: {{ detail }}</p>
+			<p data-if="code == 'rom-missing'">Il file del gioco non esiste: {{ detail }}</p>
+			<p data-if="code == 'left-running'">Retroverse si è chiuso mentre il gioco era aperto: il gioco è rimasto
+				aperto.</p>
+		</div>
+
+		<!-- The choices. Each row is a scroll container: RmlUi's spatial navigation stays inside it. -->
+		<div id="session-actions" class="choices" data-if="phase == 'playing' || phase == 'still-running' || phase == 'confirm'">
+			<button id="session-return" class="choice primary" data-event-click="return_home()"><span
+				data-if="phase == 'confirm'">Sono tornato</span><span data-if="phase != 'confirm'">Torna a Retroverse</span></button>
+			<button id="session-resume" class="choice" data-event-click="resume()"><span
+				data-if="phase == 'still-running'">Continua ad aspettare</span><span data-if="phase != 'still-running'">Torna
+				al gioco</span></button>
+		</div>
+		<div id="session-outcome-actions" class="choices" data-if="phase == 'outcome'">
+			<button id="session-ok" class="choice primary" data-event-click="dismiss()">OK</button>
+		</div>
+	</div>
+</body>
+</rml>

@@ -329,6 +329,18 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     core::FrameClock clock;
     AppContext context(m_options, *paths, *window, **device, clock, m_report);
     context.m_framebufferSize = window->drawableSize();
+    // The wake event of the idle mode: pushed from any thread (SDL_PushEvent is thread-safe), kept by the host.
+    context.m_wakeEvent = SDL_RegisterEvents(1);
+    if (context.m_wakeEvent != 0) {
+        context.m_wake = [type = context.m_wakeEvent] {
+            SDL_Event event{};
+            event.type = type;
+            SDL_PushEvent(&event);
+        };
+    } else {
+        spdlog::warn("No SDL event type left for the wake event: an idle wait ends only after {} ms",
+                     kIdleWait.count());
+    }
 
     LogicShutdownGuard logicScope(logic, context);
     if (auto initialized = logic.onInit(context); !initialized) {
@@ -429,6 +441,21 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
         if (context.m_quitRequested) {
             break;
         }
+        // Idle (an emulator has the screen): no update, no render, no swap, no frame. The logic follows its launch after
+        // every wait; a wait ends with any event, the wake event among them, or after kIdleWait.
+        if (context.m_idle) {
+            logic.onIdle(context);
+            if (context.m_quitRequested) {
+                break;
+            }
+            if (context.m_idle) {
+                events.waitForEvents(kIdleWait);
+                continue;
+            }
+            // Back to rendering: the wait is no frame time (the next delta starts now, for the walker and the frame
+            // statistics).
+            clock.tick();
+        }
         // Nothing is visible while minimized: an interactive run sleeps until something happens instead of spinning on
         // an unthrottled swap. A frame-limited run keeps rendering (presenting to a minimized window is harmless), so
         // that it always reaches its limit and exits.
@@ -465,6 +492,9 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
 
 bool AppHost::handleHostEvent(AppContext& context, const SDL_Event& event) const {
     platform::GraphicsWindow& window = context.m_window;
+    if (context.m_wakeEvent != 0 && event.type == context.m_wakeEvent) {
+        return true; // it only ends an idle wait
+    }
     if (platform::isFullscreenToggle(event)) {
         if (auto toggled = window.toggleBorderlessFullscreen(); !toggled) {
             spdlog::warn("Fullscreen toggle failed: {}", toggled.error().toString());

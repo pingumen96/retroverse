@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -164,6 +165,44 @@ public:
         return FieldReader(*value, m_pointer + "/" + std::string(key), m_context, m_error);
     }
 
+    /// The readers of the objects in the array at `key`, in order; none when the key is absent.
+    [[nodiscard]] std::vector<FieldReader> optionalObjectArray(std::string_view key) {
+        std::vector<FieldReader> readers;
+        const nlohmann::json* value = find(key);
+        if (value == nullptr) {
+            return readers;
+        }
+        if (!value->is_array()) {
+            fail(key, "expected an array of objects");
+            return readers;
+        }
+        for (std::size_t index = 0; index < value->size(); ++index) {
+            readers.emplace_back((*value)[index], fmt::format("{}/{}/{}", m_pointer, key, index), m_context, m_error);
+        }
+        return readers;
+    }
+
+    /// An array of strings.
+    [[nodiscard]] std::vector<std::string> stringArray(std::string_view key) {
+        std::vector<std::string> strings;
+        const nlohmann::json* value = required(key);
+        if (value == nullptr) {
+            return strings;
+        }
+        if (!value->is_array()) {
+            fail(key, "expected an array of strings");
+            return strings;
+        }
+        for (const nlohmann::json& item : *value) {
+            if (!item.is_string()) {
+                fail(key, "expected an array of strings");
+                return {};
+            }
+            strings.push_back(item.get<std::string>());
+        }
+        return strings;
+    }
+
     [[nodiscard]] bool has(std::string_view key) const { return find(key) != nullptr; }
 
     /// Records a validation error at `key` unless an earlier one is kept.
@@ -227,6 +266,120 @@ gl::FrameStats readFrameStats(FieldReader& fields) {
         stats.postGpuMilliseconds = gpu->optionalNumber("post");
     }
     return stats;
+}
+
+/// A finite double, or null for an absent one (left out of the JSON by the caller).
+void putOptional(Json& json, const char* key, const std::optional<double>& value) {
+    if (value && std::isfinite(*value)) {
+        json[key] = *value;
+    }
+}
+
+Json catalogToJson(const CatalogRecord& catalog) {
+    Json json;
+    json["source"] = catalog.source;
+    json["file"] = core::pathToGenericUtf8(catalog.file);
+    json["games"] = catalog.games;
+    json["opened"] = catalog.opened;
+    json["open"] = catalog.open;
+    if (catalog.selectedPosition) {
+        json["selectedPosition"] = *catalog.selectedPosition;
+    }
+    json["selectedId"] = catalog.selectedId;
+    return json;
+}
+
+Json launchToJson(const LaunchRecord& launch) {
+    Json json;
+    json["gameId"] = launch.gameId;
+    json["profile"] = launch.profile;
+    json["state"] = launch.state;
+    json["outcome"] = launch.outcome;
+    json["reason"] = launch.reason;
+    json["detail"] = launch.detail;
+    if (launch.exitCode) {
+        json["exitCode"] = *launch.exitCode;
+    }
+    json["strategy"] = launch.strategy;
+    json["processId"] = launch.processId;
+    json["quickExit"] = launch.quickExit;
+    json["processesRemained"] = launch.processesRemained;
+    json["confirmedByUser"] = launch.confirmedByUser;
+    json["wasStillRunning"] = launch.wasStillRunning;
+    json["quitDuringGame"] = launch.quitDuringGame;
+    Json frames;
+    frames["request"] = launch.requestFrame;
+    if (launch.startFrame) {
+        frames["start"] = *launch.startFrame;
+    }
+    if (launch.endFrame) {
+        frames["end"] = *launch.endFrame;
+    }
+    frames["withPanel"] = launch.framesWithPanel;
+    frames["whileRunning"] = launch.framesWhileRunning;
+    json["frames"] = std::move(frames);
+    json["idleWakes"] = launch.idleWakes;
+    Json times = Json::object();
+    putOptional(times, "startMs", launch.startMs);
+    putOptional(times, "runMs", launch.runMs);
+    putOptional(times, "returnMs", launch.returnMs);
+    json["times"] = std::move(times);
+    json["panels"] = launch.panels;
+    return json;
+}
+
+CatalogRecord readCatalog(FieldReader& fields) {
+    CatalogRecord catalog;
+    catalog.source = fields.string("source");
+    catalog.file = core::pathFromUtf8(fields.string("file"));
+    catalog.games = static_cast<std::size_t>(fields.count("games", kMaxSize));
+    catalog.opened = fields.count("opened");
+    catalog.open = fields.boolean("open");
+    if (const auto position = fields.optionalCount("selectedPosition", kMaxSize)) {
+        catalog.selectedPosition = static_cast<std::size_t>(*position);
+    }
+    catalog.selectedId = fields.string("selectedId");
+    return catalog;
+}
+
+LaunchRecord readLaunch(FieldReader& fields) {
+    constexpr std::uint64_t kMaxUint32 = std::numeric_limits<std::uint32_t>::max();
+    LaunchRecord launch;
+    launch.gameId = fields.string("gameId");
+    launch.profile = fields.string("profile");
+    launch.state = fields.string("state");
+    launch.outcome = fields.string("outcome");
+    launch.reason = fields.string("reason");
+    launch.detail = fields.string("detail");
+    if (const auto code = fields.optionalCount("exitCode", kMaxUint32)) {
+        launch.exitCode = static_cast<std::uint32_t>(*code);
+    }
+    launch.strategy = fields.string("strategy");
+    launch.processId = static_cast<std::uint32_t>(fields.count("processId", kMaxUint32));
+    launch.quickExit = fields.boolean("quickExit");
+    launch.processesRemained = fields.boolean("processesRemained");
+    launch.confirmedByUser = fields.boolean("confirmedByUser");
+    launch.wasStillRunning = fields.boolean("wasStillRunning");
+    launch.quitDuringGame = fields.boolean("quitDuringGame");
+    if (auto frames = fields.optionalObject("frames")) {
+        launch.requestFrame = frames->count("request");
+        launch.startFrame = frames->optionalCount("start");
+        launch.endFrame = frames->optionalCount("end");
+        launch.framesWithPanel = frames->count("withPanel");
+        launch.framesWhileRunning = frames->count("whileRunning");
+    } else {
+        fields.fail("frames", "missing required key");
+    }
+    launch.idleWakes = fields.count("idleWakes");
+    if (auto times = fields.optionalObject("times")) {
+        launch.startMs = times->optionalNumber("startMs");
+        launch.runMs = times->optionalNumber("runMs");
+        launch.returnMs = times->optionalNumber("returnMs");
+    } else {
+        fields.fail("times", "missing required key");
+    }
+    launch.panels = fields.stringArray("panels");
+    return launch;
 }
 
 } // namespace
@@ -297,6 +450,17 @@ std::string formatRunReport(const RunReport& report) {
         json["selfCheck"] = Json{{"name", std::string(toString(report.selfCheck->check))},
                                  {"passed", report.selfCheck->passed},
                                  {"summary", report.selfCheck->summary}};
+    }
+    if (report.catalog) {
+        json["catalog"] = catalogToJson(*report.catalog);
+    }
+    // Only runs that launched something have the key: the reports of the other runs stay as they were.
+    if (!report.launches.empty()) {
+        Json launches = Json::array();
+        for (const LaunchRecord& launch : report.launches) {
+            launches.push_back(launchToJson(launch));
+        }
+        json["launches"] = std::move(launches);
     }
     return json.dump(2) + "\n";
 }
@@ -377,6 +541,12 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
         }
         report.selfCheck = SelfCheckRecord{known.value_or(SelfCheck::Srgb), check->boolean("passed"),
                                            check->string("summary")};
+    }
+    if (auto catalog = fields.optionalObject("catalog")) {
+        report.catalog = readCatalog(*catalog);
+    }
+    for (FieldReader& launch : fields.optionalObjectArray("launches")) {
+        report.launches.push_back(readLaunch(launch));
     }
     if (error) {
         return propagate(std::move(*error));

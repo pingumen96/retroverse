@@ -25,7 +25,8 @@ namespace rv::app {
 ///
 /// Input goes through the action map (assets/config/default_bindings.json, overridden per action by
 /// <user data>/config/bindings.json): Move/Look/Sprint drive the walker; Back (Esc, gamepad B) leaves one level
-/// (backAction: releases the captured mouse, else closes the developer overlay, else quits); ReloadShaders (F5)
+/// (backAction: the product UI's levels, then releases the captured mouse, else closes the developer overlay, else
+/// quits); ReloadShaders (F5)
 /// reloads the shaders; Screenshot (F12) writes <user data>/screenshots/retroverse-<timestamp>.png at
 /// --screenshot-size. Interactive runs capture the mouse when the window has focus, and again on a click into it;
 /// frame-limited runs only on a click. --input-script replaces the actions of chosen frames (each finished step logs
@@ -47,6 +48,18 @@ namespace rv::app {
 /// a captured mouse for its panels and closing it captures the mouse again. It is drawn last into the window, and into
 /// screenshots only with
 /// --screenshot-include-ui. --debug-draw starts with every kind of debug line on; the overlay toggles each kind.
+///
+/// With --mock-catalog the run has the product UI (ProductUi, I2 step A1): the quick catalog over the mock catalog's
+/// games, opened and closed by QuickCatalog (Tab, gamepad Y; inside it the pad's Y is "Vedi media", B or Esc leave it),
+/// drawn over the scene below the developer overlay and into screenshots. Input contexts (InputContext): while the
+/// catalog or its game-session panel is open the UI actions drive it and the walker stands still; otherwise the world's
+/// actions drive the walker. Events go to the developer overlay first, then the product UI, then the game. Back walks
+/// out one level at a time, the product UI's levels included (backAction: the overlay's field and popup, the panel,
+/// the catalog's focus history and the catalog, the mouse, the overlay, quit). Avvia launches the selected game through
+/// its emulator profile; from the frame after it the host idles (AppContext::setIdle, onIdle) while the emulator has the
+/// screen, the window kept behind it, until the game returns or asks the user (the game-session panel: StillRunning,
+/// UserConfirmReturn, the user back in Retroverse); then the outcome's message when it has one. Quitting while a game
+/// runs leaves it running (onShutdown). The run report gets the catalog and every launch.
 class RetroverseApp final : public IAppLogic {
 public:
     RetroverseApp();
@@ -58,6 +71,7 @@ public:
     void onEvent(AppContext& context, const SDL_Event& event) override;
     void onUpdate(AppContext& context, double deltaSeconds) override;
     void onRender(AppContext& context) override;
+    void onIdle(AppContext& context) override;
     void onShutdown(AppContext& context) override;
 
 private:

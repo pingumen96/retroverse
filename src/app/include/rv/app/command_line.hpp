@@ -128,6 +128,11 @@ struct CommandLineOptions {
     /// drawn over the scene as in the window, scaled uniformly to fit the screenshot size and centered
     /// (devui::fitOverlayCapture). Without it screenshots show the scene only.
     bool screenshotIncludeUi = false;
+
+    /// --mock-catalog <json>: the quick catalog's games, invented, with their launch targets and emulator profiles
+    /// (MockCatalog), until the ES-DE catalog reaches the application (I2 step 13). Without it the run has no catalog
+    /// and no product UI.
+    std::optional<std::filesystem::path> mockCatalog;
 };
 
 /// Declares on `parser` the options of the host that every application built on AppHost understands (retroverse.exe,
@@ -156,8 +161,10 @@ void addHostOptions(core::ArgParser& parser);
 ///  - --scene names with characters other than letters, digits, '_', '-' and '.', or starting with '.';
 ///  - --model not ending in ".gltf" or ".glb", or given together with --scene;
 ///  - --spawn that parseSpawnPoint refuses;
+///  - --mock-catalog not ending in ".json";
 ///  - empty paths or names.
-/// The --input-script file itself is read by the application (a bad script fails its initialization).
+/// The --input-script and --mock-catalog files themselves are read by the application (a bad one fails its
+/// initialization).
 /// With --help or --version the remaining options are not validated.
 [[nodiscard]] Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> arguments);
 /// Convenience overload for main(): skips argv[0].

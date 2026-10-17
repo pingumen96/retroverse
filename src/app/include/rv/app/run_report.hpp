@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
@@ -60,6 +61,77 @@ struct SelfCheckRecord {
     bool operator==(const SelfCheckRecord&) const = default;
 };
 
+/// The quick catalog of a run of retroverse.exe (the product UI exists only when the run has a catalog).
+struct CatalogRecord {
+    /// Where its games come from: "mock" (--mock-catalog, until the ES-DE catalog reaches the application in I2 step
+    /// 13).
+    std::string source;
+    /// The --mock-catalog file, as given.
+    std::filesystem::path file;
+    /// Games the source lists.
+    std::size_t games = 0;
+    /// Times the catalog was opened, and whether it was open when the run ended.
+    std::uint64_t opened = 0;
+    bool open = false;
+    /// The selected game when the run ended: its position in the list and its id; none while the list is empty.
+    std::optional<std::size_t> selectedPosition;
+    std::string selectedId;
+
+    bool operator==(const CatalogRecord&) const = default;
+};
+
+/// One launch from the quick catalog (LaunchFlow fills it): what was asked, what the session did, how the host waited.
+struct LaunchRecord {
+    std::string gameId;
+    /// The emulator profile's id.
+    std::string profile;
+    /// The session's final state (launcher::toString(SessionState): "Returned", "Crashed", "FailedToStart"), "Blocked"
+    /// for a launch the plan refused (nothing started), "Pending" when the run ended before it could start, the
+    /// session's current state when the run ended while it ran.
+    std::string state;
+    /// The outcome as the product UI tells it (LaunchMessage: launch_outcome::k*, its reason and detail).
+    std::string outcome;
+    std::string reason;
+    std::string detail;
+    /// The authoritative exit code, when something exited.
+    std::optional<std::uint32_t> exitCode;
+    /// The wait strategy in effect (launcher::toString(WaitStrategy)); empty when nothing started.
+    std::string strategy;
+    /// The started process's id (0 when nothing started).
+    std::uint32_t processId = 0;
+    /// launcher::LaunchOutcome's flags.
+    bool quickExit = false;
+    bool processesRemained = false;
+    bool confirmedByUser = false;
+    bool wasStillRunning = false;
+    /// The run ended (its window closed, a quit request) while the emulator ran: it was left running.
+    bool quitDuringGame = false;
+    /// The frame whose input asked for the launch; the frame index when the emulator started and when its session
+    /// ended (the next frame to render: every frame before it had been presented). Equal start and end frames: no
+    /// frame was rendered while the game ran.
+    std::uint64_t requestFrame = 0;
+    std::optional<std::uint64_t> startFrame;
+    std::optional<std::uint64_t> endFrame;
+    /// Frames rendered during the session: for the game-session panel (StillRunning, a confirmation, the user back in
+    /// Retroverse), and with nothing to show, while the emulator had the screen (always 0: the host waits instead).
+    std::uint64_t framesWithPanel = 0;
+    std::uint64_t framesWhileRunning = 0;
+    /// Times the host woke from its wait while the session ran (the runner's wake events, other events, the polling
+    /// interval).
+    std::uint64_t idleWakes = 0;
+    /// Milliseconds: from the start to the process running (the window's hand-over included), the process's run (to
+    /// the authoritative exit, or to the end of the session when nothing exited), and from that exit to the end of the
+    /// session.
+    std::optional<double> startMs;
+    std::optional<double> runMs;
+    std::optional<double> returnMs;
+    /// The panels the launch showed, in order (toString(SessionPanel): "still-running", "confirm", "playing",
+    /// "outcome").
+    std::vector<std::string> panels;
+
+    bool operator==(const LaunchRecord&) const = default;
+};
+
 /// What a run of an application built on AppHost did (retroverse.exe, retroverse-asset-preview), written as JSON by
 /// --run-report <file.json> when the run ends, whether it succeeded or failed (formatRunReport). Only the host writes
 /// it: a command line that does not parse, --help, --version and --write-fixture end before the host starts and write
@@ -69,7 +141,7 @@ struct SelfCheckRecord {
 /// The host fills the executable, the directories, the outcome, the OpenGL context, the debug message counts, the
 /// --gl-selftest outcome and the frames (AppHost); the application logic adds what it rendered through
 /// AppContext::report() (SceneGraphics: the last view's statistics, the instance buffer, the screenshot; RetroverseApp:
-/// the walker's final pose and the self-check).
+/// the walker's final pose, the self-check, the quick catalog and its launches).
 struct RunReport {
     /// AppIdentity::name, e.g. "Retroverse".
     std::string application;
@@ -123,6 +195,10 @@ struct RunReport {
     std::optional<SpawnPoint> finalCamera;
     /// The --self-check of the run.
     std::optional<SelfCheckRecord> selfCheck;
+    /// The quick catalog; absent in runs without one (no --mock-catalog).
+    std::optional<CatalogRecord> catalog;
+    /// The launches from the quick catalog, in order.
+    std::vector<LaunchRecord> launches;
 };
 
 /// The report as JSON text (two-space indented, keys in the order of RunReport, absent optionals left out, paths
