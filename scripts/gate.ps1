@@ -25,7 +25,9 @@
          search, show, assign, launch --game --wait into the fake emulator with RV_LAUNCH_BACKGROUND=1 and
          RV_LAUNCH_ALLOWLIST naming the fake alone, sessions; the fixture unchanged: the unit test "cli/process");
       6. with -RealLibrary, on the real ES-DE library (its folders from -EsdeHome, -EsdeInstall, -RomRoot and
-         -MediaRoot, or the RV_REAL_* variables; ES-DE must be closed): the NFR-02 benchmark (10,000 generated games),
+         -MediaRoot, or the RV_REAL_* variables, and -RetroArchExe, optional: the RetroArch executable App Paths registers,
+         for the real launch-translation tests, which start nothing; ES-DE must be closed): the NFR-02 benchmark (10,000
+         generated games),
          then scripts/real-library.ps1, which snapshots the library read-only, runs scripts/gate-m1-real.ps1 (the ROM
          scan, the first and second imports, db rebuild-index, db check, the media coverage, a search, NFR-01 with
          retroverse.exe; the whole quick-hash pass with -FullHashPass only, about 45 minutes cold) and the hidden
@@ -59,6 +61,7 @@ param(
     [string]$EsdeInstall = $env:RV_REAL_ESDE_INSTALL,
     [string]$RomRoot = $env:RV_REAL_ROM_ROOT,
     [string]$MediaRoot = $env:RV_REAL_MEDIA_ROOT,
+    [string]$RetroArchExe = $env:RV_REAL_RETROARCH_EXE,
     [switch]$FullHashPass
 )
 $ErrorActionPreference = 'Stop'
@@ -109,8 +112,9 @@ function Write-Summary {
         $context = (Get-Content -Raw $report | ConvertFrom-Json).context
         if ($context) { Write-Host "OpenGL: $($context.renderer), $($context.version)" }
     }
-    $properties = if (@($results | Where-Object { $_.Limit }).Count -gt 0) { 'Step', 'Result', 'Details', 'Limit', 'Time' }
-                  else { 'Step', 'Result', 'Details', 'Time' }
+    # Details last: Format-Table drops the columns that do not fit, never wraps the last one away.
+    $properties = if (@($results | Where-Object { $_.Limit }).Count -gt 0) { 'Step', 'Result', 'Time', 'Limit', 'Details' }
+                  else { 'Step', 'Result', 'Time', 'Details' }
     $results | Format-Table -AutoSize -Wrap -Property $properties | Out-String -Width 240 | Write-Host
     $verdict = if ($failedSteps.Count -gt 0) { 'FAILED' }
                elseif ($skippedSteps.Count -gt 0) { 'PASSED with skipped steps' }
@@ -138,7 +142,7 @@ if ($Gate -eq 'M1' -and $env:RV_GATE_INNER -ne '1') {
         $arguments += '-RealLibrary'
         # The folders given (the inner run reads the RV_REAL_* variables itself for the others).
         foreach ($folder in @(@('-EsdeHome', $EsdeHome), @('-EsdeInstall', $EsdeInstall), @('-RomRoot', $RomRoot),
-                @('-MediaRoot', $MediaRoot))) {
+                @('-MediaRoot', $MediaRoot), @('-RetroArchExe', $RetroArchExe))) {
             if ($folder[1]) { $arguments += $folder }
         }
     }
@@ -318,7 +322,7 @@ function Invoke-RealLibrary {
     $measureArguments = @{ Preset = $preset; OutDir = $measureDir }
     if ($FullHashPass) { $measureArguments.FullHashPass = $true }
     & (Join-Path $PSScriptRoot 'real-library.ps1') -EsdeHome $EsdeHome -EsdeInstall $EsdeInstall -RomRoot $RomRoot `
-        -MediaRoot $MediaRoot -Preset $preset -OutDir $realDir -Measure (Join-Path $PSScriptRoot 'gate-m1-real.ps1') `
+        -MediaRoot $MediaRoot -RetroArchExe $RetroArchExe -Preset $preset -OutDir $realDir -Measure (Join-Path $PSScriptRoot 'gate-m1-real.ps1') `
         -MeasureArguments $measureArguments *> $realLog
     $realCode = $LASTEXITCODE
     $realSeconds = $timer.Elapsed.TotalSeconds
@@ -335,7 +339,7 @@ function Invoke-RealLibrary {
 
     # The [real-library] tests (Catch2's compact reporter ends with its totals).
     $totals = if (Test-Path $testLog) {
-        Select-String -Path $testLog -Pattern '^(All tests passed|Passed|Failed|No tests ran)' | Select-Object -Last 1
+        Select-String -Path $testLog -Pattern '^(test cases:|All tests passed|No tests ran)' | Select-Object -Last 1
     }
     $testsPassed = [bool](Select-String -Path $realLog -Pattern '^Tests:\s+passed' -Quiet)
     Add-Result "Real library: [real-library] tests $preset" ($(if ($testsPassed) { 'passed' } else { 'FAILED' })) `
