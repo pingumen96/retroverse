@@ -175,6 +175,11 @@ public:
         REQUIRE(rv::test::setLastWriteTimeAnyLength(rom(to), fs::last_write_time(rom(from))).has_value());
         rv::test::settleFolderTimes(m_fixture.path("roms"));
     }
+    /// Deletes a ROM of the fixture.
+    void removeRom(std::string_view relative) const {
+        REQUIRE(fs::remove(rom(relative)));
+        rv::test::settleFolderTimes(m_fixture.path("roms")); // the folder's time is a Folder entry's file fact
+    }
 
     /// Each row of `sql` as one line of text (columns separated by " | ", NULL as "NULL", blobs as their size), read
     /// through a reader of the database.
@@ -233,11 +238,12 @@ public:
         }
         return games;
     }
-    /// Every state table (rv_*), each row as text in a stable order: what `db rebuild-index` must leave alone.
+    /// Every state table (rv_*) but the import records (rv_imports, where `db rebuild-index` records itself), each row
+    /// as text in a stable order: what `db rebuild-index` must leave alone.
     [[nodiscard]] std::vector<std::string> stateRows() const {
         std::vector<std::string> all;
-        for (const std::string& table :
-             rows("SELECT name FROM sqlite_schema WHERE type = 'table' AND name GLOB 'rv_*' ORDER BY name")) {
+        for (const std::string& table : rows("SELECT name FROM sqlite_schema WHERE type = 'table' AND name GLOB 'rv_*' "
+                                             "AND name <> 'rv_imports' ORDER BY name")) {
             for (std::string& row : rows(fmt::format("SELECT * FROM \"{}\" ORDER BY 1, 2", table))) {
                 all.push_back(table + ": " + row);
             }
@@ -384,9 +390,12 @@ TEST_CASE("cli/reconciled sessions: a file moved back makes the holder an alias;
     const std::vector<std::string> before = setup.stateRows();
     REQUIRE(std::any_of(before.begin(), before.end(),
                         [](const std::string& row) { return row.starts_with("rv_identity_aliases: "); }));
+    const std::string imports = setup.value("SELECT count(*) FROM rv_imports");
     const json rebuilt = setup.runJson({"db", "rebuild-index"});
     CHECK(rebuilt.at("kind") == "rebuild-index");
     CHECK(setup.stateRows() == before);
+    CHECK(std::stoi(setup.value("SELECT count(*) FROM rv_imports")) == std::stoi(imports) + 1); // its own record
+    CHECK(setup.value("SELECT kind FROM rv_imports ORDER BY id DESC LIMIT 1") == "rebuild-index");
     setup.ok({"db", "check"});
     const json afterRebuild = setup.runJson({"sessions", "--game", holder});
     CHECK(listedIds(afterRebuild) == listedIds(byHolder));
@@ -396,7 +405,7 @@ TEST_CASE("cli/reconciled sessions: a file moved back makes the holder an alias;
     const json steady = setup.runJson({"import"});
     CHECK(steady.at("moved").empty());
     CHECK(steady.at("statistics").at("identitiesWritten") == 0);
-    CHECK(setup.stateRows().size() >= before.size()); // rv_imports gains the import's record, nothing else changes
+    CHECK(setup.stateRows() == before);
     CHECK(setup.sessionGames() == std::vector<std::string>{tiny, tiny, tiny});
 }
 
@@ -453,7 +462,8 @@ TEST_CASE("cli/reconciled sessions: SC-07, moved identities keep their GameIds: 
     const json tinySessions = setup.runJson({"sessions", "--game", tiny});
     REQUIRE(tinySessions.at("sessions").size() == 1);
     CHECK(tinySessions.at("sessions")[0].at("path") == "Tiny Tennis (Europe) (Rev 1).gb");
-    CHECK(tinySessions.at("sessions")[0].at("title") == "Tiny Tennis");
+    // Renamed away from its gamelist entry, the file is titled from its name now.
+    CHECK(tinySessions.at("sessions")[0].at("title") == "Tiny Tennis (Europe) (Rev 1)");
     CHECK(tinySessions.at("sessions")[0].at("exitKind").is_null());
     // The gamelist entry left at Tiny Tennis's old path is a new identity, with none of it.
     const std::string left = gameIdOf("Tiny Tennis (Europe).gb", 1);
@@ -475,7 +485,8 @@ TEST_CASE("cli/reconciled sessions: SC-07, moved identities keep their GameIds: 
     CHECK(setup.rows("SELECT game, session FROM rv_launch_verifications") ==
           std::vector<std::string>{fmt::format("{} | {}", Setup::stored(loud),
                                                again.at("session").at("id").get<std::int64_t>())});
-    CHECK(setup.runJson({"launch", "--dry-run", "--game", tiny}).at("chosen").at("value") == "fake-missing");
+    CHECK(setup.runJson({"launch", "--dry-run", "--game", tiny}, ExitCode::ProblemsFound).at("chosen").at("value") ==
+          "fake-missing");
     CHECK(setup.runJson({"sessions", "--game", loud}).at("sessions").size() == 2);
     setup.ok({"db", "check"});
 }
@@ -500,7 +511,7 @@ TEST_CASE("cli/reconciled sessions: a review resolved with --with moves the chos
     // both copies as candidates, each a new identity.
     setup.copyRom("gb/Collection A/Pocket Puzzle (World).gb", "gb/Collection C/Pocket Puzzle (World).gb");
     setup.copyRom("gb/Collection A/Pocket Puzzle (World).gb", "gb/Collection D/Pocket Puzzle (World).gb");
-    fs::remove(setup.rom("gb/Collection A/Pocket Puzzle (World).gb"));
+    setup.removeRom("gb/Collection A/Pocket Puzzle (World).gb");
     const json imported = setup.runJson({"import"});
     REQUIRE(imported.at("reviews").size() == 1);
     const std::string review = std::to_string(imported.at("reviews")[0].at("review").get<std::int64_t>());

@@ -899,7 +899,21 @@ TEST_CASE("cli/launch: a session is recorded while another process holds the dat
     INFO(text(logFile));
     CHECK(contains(text(logFile), "stays pending")); // the session's first write met the lock and was kept
     // The game (a quick exit) ends meanwhile; the end of its session meets the lock too: the CLI tries it again, for as
-    // long as its patient retry allows, rather than giving the session up.
+    // long as its patient retry allows, rather than giving the session up. The lock is held until the game has ended
+    // and for 3 s more (the CLI's 1 s busy timeout and its poll included): on a loaded machine the Debug fake can take
+    // longer than a fixed wait to start and end, and an end written after the commit would need no retry.
+    const std::string started = "fake-quick started (process ";
+    while (!contains(text(logFile), started) && !child->waitForExit(0ms) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(100ms);
+    }
+    const std::string log = text(logFile);
+    const std::size_t at = log.find(started);
+    REQUIRE(at != std::string::npos);
+    const Watched game(static_cast<std::uint32_t>(std::stoul(log.substr(at + started.size()))));
+    if (game.handle) { // else it has ended already, its id given up
+        REQUIRE(game.waitForExit(60s).has_value());
+    }
     std::this_thread::sleep_for(3s);
     CHECK_FALSE(child->waitForExit(0ms).has_value());
     REQUIRE(held->commit().has_value());
