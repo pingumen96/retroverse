@@ -9,7 +9,7 @@ documentation at the wave merge.
 
 | File | What it does |
 |---|---|
-| `rv/esde/media_resolver.hpp` (`rv_esde`) | `EsdeMediaResolver`, `catalog::IMediaResolver` over ES-DE's media folders under one media root: `presence()` (the media of every kind an entry has: present, extension as the file spells it), `path()` (the file of a kind, derived without looking at the disk), `listing()` (a system's media folder as listed: its kind folders, the media, shadowed and ignored files, folders that could not be listed, issues), `checkRoot()`, `refresh()`, `stats()`; `mediaExtensions()` (ES-DE 3.4.1's extensions per kind, in its order: `kImageExtensions`, `kVideoExtensions`, `kManualExtensions`), `mediaRelativePath()` (the path below the media root), `MediaFolderState`, the issue codes `kMediaIssue...` |
+| `rv/esde/media_resolver.hpp` (`rv_esde`) | `EsdeMediaResolver`, `catalog::IMediaResolver` over ES-DE's media folders under one media root: `presence()` (the media of every kind an entry has: present, extension as the file spells it), `path()` (the file of a kind, derived without looking at the disk), `listing()` (a system's media folder as listed: its kind folders, whether they have case-sensitive names, the media, shadowed and ignored files, folders that could not be listed, issues), `checkRoot()`, `refresh()`, `stats()`; `mediaExtensions()` (ES-DE 3.4.1's extensions per kind, in its order: `kImageExtensions`, `kVideoExtensions`, `kManualExtensions`), `mediaRelativePath()` (the path below the media root), `MediaFolderState`, the issue codes `kMediaIssue...` |
 | `rv/catalog/coverage.hpp` (`rv_catalog`) | `CoveragePopulation` (four populations), `inPopulation()`, `CoverageCounts` (members, unknown, per kind, any; `share()`), `SystemCoverage`, `MediaCoverage`, `CoverageBuilder` (entry by entry, from any source), `measureCoverage()` (a snapshot's entries, their media asked of an `IMediaResolver`), the issue code `media-unknown` |
 | `tools/cli/src/cmd_media.cpp` | `retroverse-cli media --system <name> --path <relative path>`, `media --coverage [--system <name>]` (both with `--json` and `--output`), and `media --game <id>`, which answers "not implemented yet (I2 step 11)" until the import gives games their ids |
 
@@ -47,8 +47,12 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de`: `es-app/sr
   (esde-data.md section 5) had inferred `.png .jpg` and `.avi .mkv .mov .mp4 .wmv` from the strings of ES-DE.exe; the
   source adds `.webp` and `.webm` and fixes the order.
 - **The test.** `Utils::FileSystem::exists()`: `std::filesystem::exists()` on the path's wide form (no `\\?\` prefix).
-  On Windows it compares names as the file system does (NTFS and exFAT: case-insensitively, with their casing table),
-  it follows links, it ignores the hidden attribute, and it is also true for a folder.
+  On Windows it compares names as the file system does: case-insensitively with the volume's casing table (NTFS,
+  exFAT), except in a folder with case-sensitive names. NTFS keeps that flag per folder
+  (`FILE_CS_FLAG_CASE_SENSITIVE_DIR`); `fsutil file setCaseSensitiveInfo` sets it, and so does WSL on the folders it
+  makes on Windows drives, and folders made inside such a folder get it too. In such a folder only ES-DE's exact
+  spelling is found: the system's name, the kind's folder in lower case, the ROM's path as listed, the extension in
+  lower case. It follows links, it ignores the hidden attribute, and it is also true for a folder.
 - **Never through the gamelist.** ES-DE 3.x writes no media paths into gamelists, and these functions read none: the
   media follow the ROM's path, never its `<name>`.
 
@@ -60,8 +64,28 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de`: `es-app/sr
   folds every media name with the lookup keys' folding (`core::fileSystemUpperCase`, with a shortcut for ASCII names
   that gives the same result), so an entry's media name is `mediaStem()` of its `LookupKey::key()`. `Collection
   A/Pocket Puzzle (World).gb` finds `COVERS/collection a/POCKET PUZZLE (WORLD).PNG`.
+- Folders with case-sensitive names are matched as ES-DE matches them (review finding S8-R1), at no cost in the usual
+  case:
+  - the media root, each system folder and each kind folder are asked for the flag when listed (one handle with
+    `FILE_READ_ATTRIBUTES` per folder, `GetFileInformationByHandleEx(FileCaseSensitiveInfo)`; false on exFAT, FAT32
+    and most shares). In a folder that has it, ES-DE's folder is taken only spelled as ES-DE asks for it: `NES` is not
+    nes's media folder, nor `Covers` its covers folder (`media-case-sensitive-folder` says so);
+  - each media file keeps a 64-bit FNV-1a hash of its name as spelled. An entry that spells its media name alike,
+    with ES-DE's extension, is answered from the listing: no folder's case rule can refuse that spelling;
+  - otherwise the name matched only through the folding. Then the kind folder's flag and those of the folders below it
+    on the way, opened through the entry's spelling and asked once each per listing, decide. Without the flag
+    anywhere, the listing answers as before. With it (or for a folder that cannot be opened to tell), each of ES-DE's
+    paths (`mediaRelativePath()`, extension by extension in ES-DE's order) is looked up on disk with ES-DE's
+    existence test, a link followed, a folder no file, and the first that is there is the media, with the extension
+    as ES-DE spells it;
+  - so `path()` always names a file the file system finds. `stats()` counts the folders asked (`caseChecks`) and the
+    files looked up (`fileChecks`).
+  On the reference machine no folder has the flag: 520 folders asked (the root, 44 system folders, 475 kind
+  folders), none below a kind folder, no file looked up; the listing time and the memory did not move beyond the
+  hash's 8 bytes per file (1.02 s warm, +56 MiB).
 - Per kind, the first of ES-DE's extensions for which a file is there; the extension is kept as the file spells it
-  (`.PNG`), which reaches the same file on NTFS and exFAT.
+  (`.PNG`), which reaches the same file on NTFS and exFAT. In a folder with case-sensitive names ES-DE asks for
+  `.png`: a lone `Game.PNG` there is not found, a `Game.jpg` beside it is.
 - A missing system folder or kind folder is no media; a missing entry (a gamelist entry whose file is gone) still has
   its media (`directory` false: its name loses its last extension, as for a file).
 - Zero-byte files count as media (ES-DE's test only asks whether the file exists; two are on the reference machine).
@@ -71,9 +95,9 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de`: `es-app/sr
   (and it stops looking: a `Game.jpg` beside it is never tried); Retroverse takes the `Game.jpg`.
 - Names are matched at any length (`\\?\` listings). ES-DE's plain Win32 paths stop at MAX_PATH unless Windows lets
   long paths through; the longest media path on the reference machine is 252 characters.
-- Of two files whose names differ in case only (a case-sensitive folder, which NTFS allows per folder), the one spelled
-  with ES-DE's extension (`.png` before `.PNG`) is taken, then the first in ordinal order; ES-DE would ask for its own
-  spelling of the stem too.
+- The first version had a third difference: it folded names in folders with case-sensitive names too, so `presence()`
+  could report a file ES-DE does not find, and `path()` name a spelling that does not exist. It is gone (see above).
+  The listing's counts (`media`, `shadowedFiles`) still compare names folded.
 
 **Availability (ADR-0008 §4, the port's contract):**
 - The media root missing, a file, on a drive or share that cannot be reached, or not resolved (`root-unresolved`):
@@ -87,11 +111,12 @@ Read from the tag `v3.4.1` of `gitlab.com/es-de/emulationstation-de`: `es-app/sr
 - Entries the walk cannot read (a link whose target cannot be opened, a name without a UTF-8 form) are no media, as
   ES-DE cannot open them either (`media-unreadable-entry`).
 
-**Listings in memory.** The root is listed once (its folders found case-insensitively), each system's folder on the
+**Listings in memory.** The root is listed once (its folders found as ES-DE finds them), each system's folder on the
 first question about the system, and the answers come from those listings until `refresh()`, which forgets them all
-(the root's listing too: a system folder made since is seen after it). One import therefore lists each folder once;
-the listings take about 150 bytes per media file (the folded name and the extension, in a sorted vector per kind
-searched by binary search): 53 MiB for the reference machine's 364,810 files.
+(the root's listing and the folders' case flags too: a system folder made since is seen after it). The exception is
+the rare name looked up on disk (above). One import therefore lists each folder once. The listings take about 160
+bytes per media file (the folded name, the extension and the spelling's hash, in a sorted vector per kind searched by
+binary search): 56 MiB for the reference machine's 364,810 files.
 
 **Issues** (`catalog::Issue::code`, each naming the system and the folder):
 
@@ -102,6 +127,7 @@ searched by binary search): 53 MiB for the reference machine's 364,810 files.
 | `media-ignored-extension` | info | files of an extension ES-DE does not read in a kind's folder, one per extension with the count (`4 file(s) with the extension ".flv" in snes/videos`) |
 | `media-shadowed-file` | info | files beside one of the same name whose extension ES-DE tries first (the `.jpg` beside a `.png`), per kind |
 | `media-unreadable-entry` | warning | entries of a kind folder the walk could not read, per kind |
+| `media-case-sensitive-folder` | info | a system or kind folder has case-sensitive names, or a folder ES-DE would take is spelled otherwise in a folder (the media root included) that has them (`ES-DE does not take "Covers" for its covers folder`) |
 | `media-unknown` | warning | (coverage) members whose media could not be known, one per system with the count and the first reason |
 
 ## Coverage
@@ -136,15 +162,18 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
 - The library is the one `<user data>/config/library.json` records (`library create`); its settings and systems are
   read, the dispatcher has checked the user data directory against its folders.
 - `--path` takes a ROM path of the system as listed on disk or as a gamelist writes it (`./Sports Vol. 2`, `Collection
-  A\Pocket Puzzle (World).gb`, an absolute path inside the ROM folder: `core::resolveRelativePath`). Whether it is a
-  folder (its media keep its whole name), a file, or not there (named as a file) is looked up in the ROM folder. It
-  prints the media name and, per kind, the file ES-DE shows or `none`; JSON: `system`, `path`, `romPath` (`file`,
-  `folder`, `missing`, `unknown`), `mediaName`, `mediaRoot`, `media` (12 items: `kind`, `present`, `extension`,
-  `path`).
+  A\Pocket Puzzle (World).gb`, an absolute path inside the ROM folder: `core::resolveRelativePath`). It is taken as
+  the disk spells it, element by element as far as the elements are there (`FindFirstFileExW`): ES-DE names media
+  after the file it lists, which matters in a media folder with case-sensitive names (`collection a/pocket puzzle
+  (world).gb` is `Collection A/Pocket Puzzle (World).gb`). Whether it is a folder (its media keep its whole name), a
+  file, or not there (named as a file) is looked up in the ROM folder. It prints the media name and, per kind, the
+  file ES-DE shows or `none`; JSON: `system`, `path` (as the disk spells it), `romPath` (`file`, `folder`, `missing`,
+  `unknown`), `mediaName`, `mediaRoot`, `media` (12 items: `kind`, `present`, `extension`, `path`).
 - `--coverage` prints the media root, the populations' totals (one row each: members, then the share of each kind in
   percent), then per system the gamelist entries whose file exists and the games, then the issues. JSON: `mediaRoot`,
   `source` (where the entries come from: `gamelists`, see below), `kinds`, `populations` (their descriptions),
-  `listed` (`systems` whose media folder was looked up, `files` in those folders), `total` and `systems[]` (`system`,
+  `listed` (`systems` whose media folder was looked up, `files` in those folders, `caseChecks` and `fileChecks` as
+  `MediaListingStats` counts them), `total` and `systems[]` (`system`,
   `mediaFolder`: `listed`, `missing`, `unavailable` or null when the root cannot be read, `populations`), each
   population as `entries`, `unknown`, `withAny`, `withKind` (counts, never shares), and `issues`.
 - **Where the coverage's entries come from until step 7 is merged.** The ROM scan and the library snapshot
@@ -164,27 +193,33 @@ retroverse-cli [global options] media --game <id>          (I2 step 11; until th
 ## Real library (`scripts/real-library.ps1`, with ES-DE closed)
 
 `./scripts/real-library.ps1 -EsdeHome C:\Users\sinhu\ES-DE -EsdeInstall E:\Programmi\ES-DE -RomRoot I:\Giochi\Emulatori
--MediaRoot E:\Programmi\ES-DE_media\downloaded_media`, Release, run twice: with `-Filter '[real-library][media]'` (this
-step's two tests) and with the default filter (every `[real-library]` test, 5 test cases, 4,145 assertions). Both
-passed; the snapshots showed 0 differences among 542,082 entries each time.
+-MediaRoot E:\Programmi\ES-DE_media\downloaded_media`, Release. Each run was made twice: with `-Filter
+'[real-library][media]'` (this step's two tests) and with the default filter (every `[real-library]` test, 5 test
+cases). That was done for the step (4,145 assertions in all), then again after the review (1,692 assertions in the
+step's two tests, 4,724 in all). Every run passed, and the snapshots showed 0 differences among 542,082 entries each
+time.
 
 **The media tree** (`esde/media: the real library's media tree`, `test_media_real.cpp`):
 - 44 system folders, each spelled as its system; 364,810 files in 6,878 folders, every folder listed (none that could
-  not be, no entry that could not be read).
+  not be, no entry that could not be read). No folder has case-sensitive names (the root, the 44 system folders and
+  their 475 kind folders were asked).
 - Media per kind, equal to the survey's file counts (esde-data.md section 5): covers 36,388, backcovers 31,081, 3dboxes
   36,250, physicalmedia 32,569, screenshots 39,691, titlescreens 38,235, marquees 35,705, miximages 39,674, fanart
   19,636, manuals 22,768, videos 32,809, custom none. No name has both a `.png` and a `.jpg` (0 shadowed files); the four
   `.flv` of snes/videos are ignored (`media-ignored-extension`).
-- The listing took 1.19 s and 1.63 s (the two runs), **warm**: the snapshot the script takes just before had listed the
-  same tree (the survey measured 5.8 s cold and 1.2 to 1.3 s warm with Python). The listings cost 53 MiB of private
-  bytes, about 150 bytes per media file. Informative: the gate times the import on a quiet machine.
+- The listing took 1.19 s and 1.63 s for the step, and 1.02 s after the review, with the case flags of 520 folders
+  asked. All three were **warm**: the snapshot the script takes just before had listed the same tree (the survey
+  measured 5.8 s cold and 1.2 to 1.3 s warm with Python). The listings cost 53 MiB of private bytes, 56 MiB with the
+  spelling's hash: about 160 bytes per media file. Informative: the gate times the import on a quiet machine.
 
 **The coverage** (`cli/media: the real library's media coverage ...`, `test_cli_media_real.cpp`: `library create` with
-the four folders into a temporary user data directory, then `media --coverage --json`; 2.5 and 3.0 s, warm, the
-gamelists read, the ROM folders listed down the gamelists' folders and the media of 45 systems listed). Every count
-equals an independent oracle's (a Python count over the survey's read-only listings of 2026-10-16: ElementTree over the
-gamelists, `os.scandir` listings of both trees, its own media-name rule, ES-DE's extensions, `str.upper()` folding;
-run once on those machine-local listings, its figures are frozen in the test):
+the four folders into a temporary user data directory, then `media --coverage --json`). It took 2.5 and 3.0 s for the
+step and 2.07 s after the review, warm: the gamelists read, the ROM folders listed down the gamelists' folders and the
+media of 45 systems listed. Of the entries, none needed a folder below a kind folder asked for its case rule, and no
+media file was looked up on disk (`fileChecks` 0, checked). Every count equals an independent oracle's: a Python count
+over the survey's read-only listings of 2026-10-16 (ElementTree over the gamelists, `os.scandir` listings of both
+trees, its own media-name rule, ES-DE's extensions, `str.upper()` folding), run once on those machine-local listings,
+its figures frozen in the test:
 
 | Kind | Every `<game>` entry (40,870) | Their file exists (39,832) | Scraped games (38,995) |
 |---|---|---|---|
@@ -206,39 +241,66 @@ Per system, the scraped games and their covers, screenshots, videos and marquees
 all 45 systems with a gamelist, but one cell: snes has 1,462 games with a video, not 1,466, since the survey counted
 the four `.flv` files that ES-DE never reads. trs-80 has a gamelist and no media folder (`missing`).
 
-**ADR-0003's table**, over the same 40,870 entries (its denominator: every `<game>` entry, those whose file is gone
-included):
+**ADR-0003's table.** ADR-0003 states its shares over the 40,870 `gamelist.xml` entries: every `<game>` entry, those
+whose file is gone included. Over them, as written:
 
-| ADR-0003's row | ADR-0003 | Measured | Difference (in entries, about: ADR-0003 rounds to 0.1 point) |
-|---|---|---|---|
-| Screenshot | 98.5% | 98.75% | +0.25 point (+102 entries) |
-| Cover | 90.6% | 90.90% | +0.30 point (+123) |
-| Marquee | 89.3% | 89.23% | -0.07 point |
-| Video | 82.4% | 82.19% | -0.21 point (-85) |
-| Physical media image | 81.2% | 81.48% | +0.28 point (+116) |
-| Back cover | 77.8% | 77.73% | -0.07 point |
-| Manual | 56.6% | 56.55% | -0.05 point |
+| ADR-0003's row | As written | Measured | Difference | With the `<folder>` entries' media: over 40,870 | over 41,025 |
+|---|---|---|---|---|---|
+| Screenshot | 98.5% | 98.75% | +0.25 point (+102 entries) | 98.85% | 98.47% |
+| Cover | 90.6% | 90.90% | +0.30 point (+123) | 90.99% | 90.65% |
+| Marquee | 89.3% | 89.23% | -0.07 point | 89.31% | 88.97% |
+| Video | 82.4% | 82.19% | -0.21 point (-85) | 82.25% | 81.94% |
+| Physical media image | 81.2% | 81.48% | +0.28 point (+116) | 81.54% | 81.23% |
+| Back cover | 77.8% | 77.73% | -0.07 point | 77.81% | 77.52% |
+| Manual | 56.6% | 56.55% | -0.05 point | 56.58% | 56.37% |
 
-Three rows are reproduced within 0.1 point; four differ by 0.21 to 0.30 point, and the test allows those four
-differences (with 0.02 to 0.05 point to spare) and 0.1 point for the three others. Why they differ:
-- The measured figures are not in doubt: the oracle, written independently of the C++ code, gives the same counts
-  entry for entry, on all three populations and per system against the survey's own table.
-- ADR-0003 (2026-10-15, a day before the survey) does not record its method beyond "matching every entry to
-  downloaded_media with ES-DE's naming rule". The data have not changed since: the media tree was last written on
-  2026-09-04 and the gamelists on 2026-09-06 (ES-DE has not run since), and the snapshots match the survey's counts.
-- No other population or rule gives its rows either: its differences run both ways (cover +123 entries, video -85), so
-  neither adding nor removing entries explains them, and the only extension that ES-DE does not read (`.flv`) accounts
-  for 4 entries. Over the 41,025 entries `<folder>` ones included (with their media) the shares are 98.47, 90.65,
-  88.97, 81.95, 81.23, 77.52 and 56.37%: screenshot, cover and physical media within 0.1 point of ADR-0003, the four
-  others 0.2 to 0.45 point off. Counting files per kind instead of entries gives 97.1, 89.0, 87.4, 80.3, 79.7, 76.1 and
-  55.7%.
+**The roadmap's criterion, "within 0.1 point of ADR-0003", is not met against the table as written:** three rows are
+reproduced within 0.1 point, four differ by 0.21 to 0.30 point. The step's first version of the hidden test allowed
+those four rows tolerances fitted to the measured values, which hid the gap (review finding F1). Why the rows differ:
+- The measured figures are not in doubt. The oracle, written independently of the C++ code, gives the same counts
+  entry for entry, on all three populations and per system against the survey's own table. A reviewer's spot checks
+  of ES-DE's existence test agree.
+- ADR-0003 mixes populations. Count the 155 `<folder>` entries and their media in the numerator (the last two
+  columns). Then marquee, back cover and manual fit a denominator of 40,870 (within 0.02 point), while screenshot,
+  cover and physical media fit one of 41,025 (within 0.05 point). Video fits neither (82.25 or 81.94%; 82.26% with the
+  four `.flv` counted). No single population gives all seven rows.
+- Its per-system figures are those of every `<game>` entry, as written: Atari 800 has 47.23% covers and 14.82% videos
+  over its 3,172 entries (ADR-0003: 47% and 15%), Commodore 64 52.87% and 11.66% over 1,012 (53% and 12%). Over the
+  scraped games Atari 800 would read 49.5% and 15.5%.
+- ADR-0003 (2026-10-15, a day before the survey) records no method beyond "matching every entry to downloaded_media
+  with ES-DE's naming rule". The data have not changed since: the media tree was last written on 2026-09-04 and the
+  gamelists on 2026-09-06 (ES-DE has not run since), and the snapshots match the survey's counts.
+- Counting files per kind instead of entries gives 97.1, 89.0, 87.4, 80.3, 79.7, 76.0 and 55.7%: no row either.
 - "Description and metadata" (90.5%) is no media kind: 37,128 of the 40,870 entries have a `<desc>` (90.84%).
-So ADR-0003's figures are close approximations whose computation is lost; the figures above are the reproducible ones
-(see "Suggested amendments").
+
+The reproducible table is the measured column, over every `<game>` entry. The merge amends ADR-0003 with it (see "For
+the merge"). The hidden test now checks every row to 0.1 point against those amended figures (`kAdr0003`), prints the
+figures as written beside them, and checks the per-system figures as written (whole percents of each system's
+`<game>` entries). The exact oracle counts above pin the figures anyway. Until the amendment the criterion stays open;
+with it, it is met.
+
+## Review findings addressed
+
+- **S8-R1 (folders with case-sensitive names).** Fixed rather than documented. The header's claim that the resolver
+  "compares names as the file system does" was false for these folders: `presence()` reported media ES-DE never shows,
+  and `path()` combined the entry's spelling with the file's extension into a name that does not exist. It held in the
+  reviewer's scratch library (`covers` made case-sensitive with `fsutil`, holding `case game.png`, for the ROM `Case
+  Game.nes`). Now `media --system nes --path "Case Game.nes"` there shows no cover, as ES-DE does. See "ES-DE's
+  behaviour followed" for the rule and its cost (none on the reference machine). New test: `esde/media: folders with
+  case-sensitive names, where ES-DE finds only its own spelling` (skipped where the flag cannot be set). It covers a
+  kind folder with the flag (an entry spelled otherwise, an upper-case extension beside a `.jpg`, two names that
+  differ in case only, a sub-folder that inherits the flag), a sub-folder with the flag below a kind folder without
+  it, and a media root and a system folder with it (`NES`, `Covers` not taken). Every `path()` it derives exists, and
+  the folders asked and the files looked up are counted exactly. `media --path` now takes the ROM path as the disk
+  spells it (ES-DE names media after the file it lists).
+- **F1 (ADR-0003's table).** Confirmed: no single population reproduces it (the reviewer's analysis, re-derived here
+  from the survey's listings). The test's fitted tolerances are gone (see above), the amendment is in "For the merge",
+  and the back-cover share counted per file reads 76.0% (31,081 / 40,870 = 76.05%), not 76.1%.
 
 ## Verification
 
-- `rv_tests "[esde][media],[catalog][coverage],[esde][coverage],[cli][media]"` (14 test cases, 1,460 assertions):
+- `rv_tests "[esde][media],[catalog][coverage],[esde][coverage],[cli][media]"` (16 test cases run, the 2 hidden ones
+  skipped; 1,613 assertions):
   - the extension lists and their order; the media paths (dotted names, folders, trailing spaces, an empty media name);
   - the standard fixture: every entry of its README's media table, the 12 kinds of Alpha Quest, png before jpg, the
     ignored flv, the folder covers (Hacks, Sports Vol. 2 with its whole name), the namesake without media, the missing
@@ -246,18 +308,31 @@ So ADR-0003's figures are close approximations whose computation is lost; the fi
   - trees written at test time: system, kind and media names in another case (`GB/COVERS/collection a/...PNG`), every
     image and video extension in ES-DE's order (`.webp` and `.webm` included), manuals in `.PDF`, a folder named like
     a media file, files without an extension, non-ASCII names (é and É), punctuation, a hidden file, a media path past
-    MAX_PATH, refresh() after files and a system folder appear;
+    MAX_PATH, refresh() after files and a system folder appear; nothing looked up on disk without case-sensitive
+    folders;
+  - folders with case-sensitive names (above);
   - media roots: empty, without kind folders, missing, a file, an unmapped drive letter, unresolved; folders that
     cannot be listed (`ListingDenied`) below a kind folder, a kind folder, a system folder;
   - the coverage domain on a scripted resolver (populations, counts, unknown members, what is asked), the standard
     fixture's 23 entries over the four populations, the media-roots fixture's empty and missing roots;
   - `retroverse-cli media` as text and JSON on both fixtures, its usage errors, `--game`, `--output`, the exit codes,
-    and the fixture's files unchanged after it.
-- Debug and Release build without a warning; the unit tests (1,027) pass in both.
+    a `--path` in another case taken as the disk spells it, and the fixture's files unchanged after it.
+- Debug and Release build without a warning; the unit tests (1,028) pass in both.
 - The real library: see above.
 
 ## For the merge
 
+- **ADR-0003.** Amend its context table with the reproducible figures, the population named: "On the reference
+  collection (45 systems, 40,870 `<game>` entries of `gamelist.xml`, those whose file is gone included; `<folder>`
+  entries left out), matching every entry to `downloaded_media` with ES-DE 3.4.1's naming rule and extensions
+  (I2 step 8, `retroverse-cli media --coverage`) gives: Screenshot 98.75%, Cover 90.90%, Marquee 89.23%, Video
+  82.19%, Physical media image 81.48%, Back cover 77.73%, Manual 56.55%". Keep "Description and metadata" at 90.8%
+  (37,128 entries with a `<desc>`), or drop it as no media kind. Note that the figures of 2026-10-15 (98.5, 90.6,
+  89.3, 82.4, 81.2, 77.8, 56.6) mixed populations. The per-system sentence stands as written (Atari 800 47% covers,
+  15% videos; Commodore 64 53% and 12%: over every `<game>` entry). `test_cli_media_real.cpp`'s `kAdr0003` holds the
+  amended figures; a different amendment changes them there.
+- **Roadmap, step 8's row.** Done; the criterion "real coverage over 40,870 entries within 0.1 point of ADR-0003" is
+  met against the amended table (every row within 0.01 point), with the figures above.
 - **Step 7.** In `tools/cli/src/cmd_media.cpp`, `showCoverage()` makes a `GamelistSource`: replace it with
   `esde::EsdeLibrarySource` (the same `catalog::ILibrarySource::load()` call) and delete `GamelistSource`, `ListedFile`,
   `extensionOf()` and `parentsOf()`. Then: the JSON's `source` becomes the snapshot's (say `rom-scan`), the text's
@@ -265,23 +340,22 @@ So ADR-0003's figures are close approximations whose computation is lost; the fi
   test_cli_media.cpp` expects the games of the snapshot: 15 for the standard fixture (gb 8, snes 5, psx 2, covers 4,
   videos 5: `tests/unit/esde/test_media_coverage.cpp` already checks them on a snapshot built by hand), 3 for the
   media-roots fixture; the media-roots README's last paragraph goes. `test_cli_media_real.cpp` can then check the
-  games population over the real library (about 90,000 games).
+  games population over the real library (about 90,000 games). The entries' keys must keep the disk's spelling of
+  their files (`GamelistSource` does), since the media of a folder with case-sensitive names depend on it.
 - **Step 11.** The import asks `presence()` for every entry with a key and stores the presence and extension per kind
   (ADR-0008 §5), keeping what it stored when `presence()` is `Unavailable`; `media --game <id>` reads them back and
   derives the paths with `path()`. One `EsdeMediaResolver` per import, `refresh()` (or a new one) at the next.
 - **Step 13.** The app opens media through `core::extendedLengthPathBelow(media root, mediaRelativePath(...))` (names
   that end with a dot or a space).
 - **Shared documentation.** CLAUDE.md (the helpers list): `rv/esde/media_resolver.hpp` and `rv/catalog/coverage.hpp`
-  as above; the roadmap's step 8 row: done, with the figures above; architecture, `rv_esde`: the media resolver on
-  `core::walkTree`, and `rv_catalog`: the coverage service. The standard fixture's README lists the video extensions
-  ES-DE reads as `.avi .mkv .mov .mp4 .wmv`: ES-DE 3.4.1 reads `.mp4 .mkv .avi .wmv .mov .webm` (and images `.png .jpg
-  .webp`), a parenthesis to correct when the README is next edited.
+  as above; architecture, `rv_esde`: the media resolver on `core::walkTree`, and `rv_catalog`: the coverage service.
+  The standard fixture's README lists the video extensions ES-DE reads as `.avi .mkv .mov .mp4 .wmv`: ES-DE 3.4.1
+  reads `.mp4 .mkv .avi .wmv .mov .webm` (and images `.png .jpg .webp`), a parenthesis to correct when the README is
+  next edited. Nothing goes to BACKLOG: S8-R1 is fixed.
 
 ## Suggested amendments
 
 - **ADR-0008 §5** could name the extension lists and their order as verified (images `.png .jpg .webp`, videos `.mp4
-  .mkv .avi .wmv .mov .webm`, manuals `.pdf`) and the availability rule (a missing or unreachable media root, or a media
-  folder that cannot be listed, is unknown, never "no media").
-- **ADR-0003's table** cannot be reproduced to 0.1 point for four of its seven media rows (see above); its method is not
-  recorded. The figures measured here, which an independent count of the survey's listings gives entry for entry, could
-  replace it, with the denominator named (every `<game>` entry, 40,870).
+  .mkv .avi .wmv .mov .webm`, manuals `.pdf`), the availability rule (a missing or unreachable media root, or a media
+  folder that cannot be listed, is unknown, never "no media"), and the case rule: media names are matched with the
+  lookup keys' folding, except below a folder with case-sensitive names, where ES-DE's own spelling decides.

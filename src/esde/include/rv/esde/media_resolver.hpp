@@ -8,13 +8,14 @@
 // casing table (NTFS, exFAT), unless the folder has case-sensitive names (NTFS's per-folder flag, which WSL sets on the
 // folders it makes on Windows drives). So the resolver lists each kind folder of a system once with core::walkTree and
 // matches the names with the lookup keys' folding (core::fileSystemUpperCase): the file "covers/collection a/POCKET
-// PUZZLE (WORLD).PNG" is the cover of "Collection A/Pocket Puzzle (World).gb", for ES-DE as for Retroverse. A name
-// that matches only through that folding, below a folder with case-sensitive names, is decided as ES-DE decides it:
-// the system and kind folders are then taken only spelled as ES-DE spells them, and a media file is looked up on disk
-// by ES-DE's own spelling (the entry's, with each extension as mediaExtensions() spells it). Read-only: folders are
-// listed, no media file is read. The listings stay in memory until refresh(), so one import lists each folder once;
-// the catalog stores what presence() finds (present, extension) and derives the paths again with path() or
-// mediaRelativePath(), which name a file that is there whatever the folders' case rules.
+// PUZZLE (WORLD).PNG" is the cover of "Collection A/Pocket Puzzle (World).gb", for ES-DE as for Retroverse. Folders
+// with case-sensitive names are followed as ES-DE meets them: in a media root or a system folder that has them, only
+// the system or kind folder spelled as ES-DE spells it is taken; and a name that matches only through the folding,
+// below a folder that has them, is looked up on disk by ES-DE's own spelling (the entry's, with each extension as
+// mediaExtensions() spells it). Read-only: folders are listed, no media file is read. The listings stay in memory until
+// refresh(), so one import lists each folder once; the catalog stores what presence() finds (present, extension) and
+// derives the paths again with path() or mediaRelativePath(), which name a file that is there whatever the folders'
+// case rules.
 //
 // Deliberate differences from ES-DE, both about files ES-DE cannot show either: only files count (ES-DE's
 // Utils::FileSystem::exists() is also true for a folder named "Game.png", which it then fails to load), and names are

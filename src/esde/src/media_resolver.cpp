@@ -533,8 +533,8 @@ bool EsdeMediaResolver::caseSensitiveOnTheWay(SystemIndex& index, MediaKind kind
     if (kindListing.caseSensitive) {
         return true;
     }
-    // Each folder of the entry's spelling of the way, reached through folders without the flag: the file system
-    // finds it under that spelling, and its folded path names it.
+    // Each folder on the way, as the entry spells it: reached through folders without the flag, the file system finds
+    // it under that spelling, and its folded path names it.
     for (std::size_t slash = stem.find('/'); slash != std::string_view::npos; slash = stem.find('/', slash + 1)) {
         const std::string_view folder = stem.substr(0, slash);
         const auto folderFolded = folded(folder);
