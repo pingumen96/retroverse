@@ -294,12 +294,15 @@ TEST_CASE("esde/library_source: disc groups come from the cache while their head
     CHECK(twin.references == twin.members); // the sheet names its two tracks, both there
     const CatalogEntry& head = entryAt(first, "psx", "Twin Tracks (Europe).cue");
     REQUIRE(head.file.has_value());
+    // A group read from its sheet carries the head's facts as listed.
+    CHECK(twin.headSize == head.file->size);
+    CHECK(twin.headLastWriteTime == head.file->lastWriteTime);
 
     // A cache that says something else of the head: used while the size and time match, never read.
-    rv::catalog::CachedDiscGroup cached{twin, head.file->size, head.file->lastWriteTime};
-    cached.group.references.pop_back(); // as if the sheet named Track 1 alone
-    cached.group.members.pop_back();
-    std::vector<rv::catalog::CachedDiscGroup> cache{cached};
+    rv::catalog::DiscGroup cached = twin;
+    cached.references.pop_back(); // as if the sheet named Track 1 alone
+    cached.members.pop_back();
+    std::vector<rv::catalog::DiscGroup> cache{cached};
     rv::catalog::LibraryLoadOptions options;
     options.discGroups = cache;
     const LibrarySnapshot fromCache = loadSnapshot(source, profileOf(fixture), options);
@@ -311,19 +314,65 @@ TEST_CASE("esde/library_source: disc groups come from the cache while their head
 
     // The cached references, not the cached members, give the members: a group an earlier import stored with Track 1
     // alone (Track 2 was not there then) takes Track 2 back, still without reading the sheet.
-    cache.front() = rv::catalog::CachedDiscGroup{twin, head.file->size, head.file->lastWriteTime};
-    cache.front().group.members.pop_back();
+    cache.front() = twin;
+    cache.front().members.pop_back();
     const LibrarySnapshot rejoined = loadSnapshot(source, profileOf(fixture), options);
     REQUIRE(rejoined.discGroups.size() == 1);
     CHECK(rejoined.discGroups.front() == twin);
     CHECK(entryAt(rejoined, "psx", "Twin Tracks (Europe) (Track 2).bin").state == EntryState::DiscMember);
     CHECK(source.lastStatistics().sheetsRead == 0);
 
-    // Another size: read again.
+    // Another size: read again, and the group carries the facts as listed now.
     cache.front().headSize += 1;
     const LibrarySnapshot reread = loadSnapshot(source, profileOf(fixture), options);
     CHECK(reread.discGroups.front().members.size() == 2);
+    CHECK(reread.discGroups.front().headSize == head.file->size);
     CHECK(source.lastStatistics().sheetsRead == 1);
+
+    // Told to read every sheet (db rebuild-index), a cache whose facts match is read anyway.
+    cache.front() = cached;
+    options.readEverySheet = true;
+    const LibrarySnapshot fresh = loadSnapshot(source, profileOf(fixture), options);
+    CHECK(fresh.discGroups.front() == twin);
+    CHECK(source.lastStatistics().sheetsRead == 1);
+    CHECK(source.lastStatistics().sheetsFromCache == 0);
+}
+
+TEST_CASE("esde/library_source: a changed sheet that cannot be read keeps its cached group with its cached facts",
+          "[esde][library_source]") {
+    const rv::test::Fixture fixture = materialize("esde/standard");
+    const fs::path sheet = fixture.path("roms/psx/Twin Tracks (Europe).cue");
+    rv::esde::EsdeLibrarySource source({std::chrono::milliseconds(0), {}});
+    const LibrarySnapshot first = loadSnapshot(source, profileOf(fixture));
+    REQUIRE(first.discGroups.size() == 1);
+    const rv::catalog::DiscGroup twin = first.discGroups.front();
+    const std::vector<rv::catalog::DiscGroup> cache{twin};
+    rv::catalog::LibraryLoadOptions options;
+    options.discGroups = cache;
+
+    // The sheet now names Track 1 alone (another size), and cannot be read: the cached references stand, with the
+    // facts of the sheet they were read from, never those of the sheet listed now.
+    const auto text = rv::core::readFileShared(sheet, 1 << 20);
+    REQUIRE(text.has_value());
+    const std::string original(text->begin(), text->end());
+    const std::size_t second = original.find("FILE", original.find("FILE") + 4);
+    REQUIRE(second != std::string::npos);
+    REQUIRE(rv::test::writeFileAnyLength(sheet, original.substr(0, second)));
+    {
+        auto denied = rv::test::DataReadDenied::apply(sheet);
+        REQUIRE(denied.has_value());
+        const LibrarySnapshot unreadable = loadSnapshot(source, profileOf(fixture), options);
+        CHECK(source.lastStatistics().sheetsUnreadable == 1);
+        REQUIRE(unreadable.discGroups.size() == 1);
+        CHECK(unreadable.discGroups.front() == twin); // its references and facts as cached
+        CHECK(entryAt(unreadable, "psx", "Twin Tracks (Europe).cue").file->size != twin.headSize);
+    }
+    // Readable again, with the same cache (what an import stored from the load above): read, the group follows.
+    const LibrarySnapshot readable = loadSnapshot(source, profileOf(fixture), options);
+    CHECK(source.lastStatistics().sheetsRead == 1);
+    REQUIRE(readable.discGroups.size() == 1);
+    CHECK(readable.discGroups.front().members.size() == 1);
+    CHECK(entryAt(readable, "psx", "Twin Tracks (Europe) (Track 2).bin").state == EntryState::Game);
 }
 
 TEST_CASE("esde/library_source: a track that comes back joins its cached group", "[esde][library_source]") {
@@ -343,7 +392,8 @@ TEST_CASE("esde/library_source: a track that comes back joins its cached group",
     CHECK(group.references[0].relativePath() == "Twin Tracks (Europe) (Track 1).bin");
     CHECK(issuesOf(first.issues, "disc-reference-missing").size() == 1);
     const CatalogEntry& head = entryAt(first, "psx", "Twin Tracks (Europe).cue");
-    std::vector<rv::catalog::CachedDiscGroup> cache{{group, head.file->size, head.file->lastWriteTime}};
+    REQUIRE(group.headSize == head.file->size);
+    std::vector<rv::catalog::DiscGroup> cache{group};
     rv::catalog::LibraryLoadOptions options;
     options.discGroups = cache;
 

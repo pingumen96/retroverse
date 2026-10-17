@@ -7,8 +7,10 @@
 #include <cstdint>
 #include <limits>
 #include <numeric>
+#include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include <fmt/format.h>
@@ -19,6 +21,7 @@
 #include <rv/catalog/snapshot.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/migrator.hpp>
+#include <rv/catalog_db/search_index.hpp>
 #include <rv/core/time.hpp>
 #include <rv/core/utf8.hpp>
 
@@ -532,6 +535,33 @@ enum class Sql : std::size_t {
     Savepoint,
     ReleaseSavepoint,
     RollBackToSavepoint,
+    // I2 step 11a: the import's reads and writes.
+    SelectSystems,
+    SelectIdentitySystems,
+    SelectDiscGroups,
+    SelectDiscMembers,
+    SelectDiscReferences,
+    SelectLastImport,
+    CountIndexRows,
+    UpsertDiscGroup,
+    InsertDiscMember,
+    DeleteDiscReferences,
+    InsertDiscReference,
+    DeleteSystem,
+    DeleteImportIssues,
+    DeleteSystemImportIssues,
+    InsertImportIssue,
+    InsertImportRecord,
+    ClearMedia,
+    ClearDiscMembers,
+    ClearDiscReferences,
+    ClearDiscGroups,
+    ClearGames,
+    ClearSystems,
+    PruneImportRecords,
+    DeleteDiscMembership,
+    InsertAlias,
+    DeleteIdentity,
     Count,
 };
 
@@ -568,7 +598,8 @@ std::string sqlOf(Sql which) {
     case Sql::SelectTakenIds:
         return "SELECT id FROM rv_game_identities UNION SELECT alias FROM rv_identity_aliases ORDER BY 1";
     case Sql::UpsertIdentity:
-        // first_seen once, when the identity is made; last_seen whenever an import sees its file.
+        // first_seen once, when the identity is made; last_seen whenever it is written with its file present (an
+        // import writes an identity only when it changes: first seen, its path or file facts changed, re-keyed).
         return "INSERT INTO rv_game_identities (id, library, system, lookup_key, relative_path, key_rule, key_casing, "
                "present, is_directory, file_size, file_time, file_hidden, first_seen, last_seen) "
                "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, CASE WHEN ?8 THEN ?13 END) "
@@ -619,6 +650,72 @@ std::string sqlOf(Sql which) {
         return "RELEASE rv_store_write";
     case Sql::RollBackToSavepoint:
         return "ROLLBACK TO rv_store_write";
+    case Sql::SelectSystems:
+        return "SELECT name, full_name, platforms, theme, rom_folder_configured, rom_folder, availability, "
+               "unavailable_reason, gamelist, alternative_emulator FROM idx_systems WHERE library = ?1 ORDER BY name";
+    case Sql::SelectIdentitySystems:
+        // Read from the unique index on (library, system, relative path), without visiting the rows.
+        return "SELECT DISTINCT system FROM rv_game_identities WHERE library = ?1 ORDER BY system";
+    case Sql::SelectDiscGroups:
+        return "SELECT g.head, g.kind, g.head_size, g.head_time, i.system, i.relative_path FROM idx_disc_groups AS g "
+               "JOIN rv_game_identities AS i ON i.id = g.head WHERE i.library = ?1 ORDER BY g.head";
+    case Sql::SelectDiscMembers:
+        return "SELECT m.head, m.member, i.relative_path FROM idx_disc_members AS m "
+               "JOIN rv_game_identities AS h ON h.id = m.head JOIN rv_game_identities AS i ON i.id = m.member "
+               "WHERE h.library = ?1 ORDER BY m.head, m.position";
+    case Sql::SelectDiscReferences:
+        return "SELECT r.head, r.relative_path FROM idx_disc_references AS r "
+               "JOIN rv_game_identities AS h ON h.id = r.head WHERE h.library = ?1 ORDER BY r.head, r.position";
+    case Sql::SelectLastImport:
+        return "SELECT id, kind, started_at, finished_at, accept_removals, systems_asked, summary FROM rv_imports "
+               "WHERE library = ?1 ORDER BY id DESC LIMIT 1";
+    case Sql::CountIndexRows:
+        return "SELECT count(*) FROM idx_games";
+    case Sql::UpsertDiscGroup:
+        return "INSERT INTO idx_disc_groups (head, kind, head_size, head_time) VALUES (?1, ?2, ?3, ?4) "
+               "ON CONFLICT (head) DO UPDATE SET kind = excluded.kind, head_size = excluded.head_size, "
+               "head_time = excluded.head_time";
+    case Sql::InsertDiscMember:
+        return "INSERT INTO idx_disc_members (head, position, member) VALUES (?1, ?2, ?3)";
+    case Sql::DeleteDiscReferences:
+        return "DELETE FROM idx_disc_references WHERE head = ?1";
+    case Sql::InsertDiscReference:
+        return "INSERT INTO idx_disc_references (head, position, relative_path) VALUES (?1, ?2, ?3)";
+    case Sql::DeleteSystem:
+        return "DELETE FROM idx_systems WHERE library = ?1 AND name = ?2";
+    case Sql::DeleteImportIssues:
+        return "DELETE FROM idx_import_issues WHERE library = ?1";
+    case Sql::DeleteSystemImportIssues:
+        return "DELETE FROM idx_import_issues WHERE library = ?1 AND system = ?2";
+    case Sql::InsertImportIssue:
+        return "INSERT INTO idx_import_issues (library, severity, code, system, file, reason) "
+               "VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+    case Sql::InsertImportRecord:
+        return "INSERT INTO rv_imports (library, kind, started_at, finished_at, accept_removals, systems_asked, "
+               "summary) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
+    case Sql::ClearMedia:
+        return "DELETE FROM idx_media WHERE game IN (SELECT id FROM rv_game_identities WHERE library = ?1)";
+    case Sql::ClearDiscMembers:
+        return "DELETE FROM idx_disc_members WHERE head IN (SELECT id FROM rv_game_identities WHERE library = ?1)";
+    case Sql::ClearDiscReferences:
+        return "DELETE FROM idx_disc_references WHERE head IN (SELECT id FROM rv_game_identities WHERE library = ?1)";
+    case Sql::ClearDiscGroups:
+        return "DELETE FROM idx_disc_groups WHERE head IN (SELECT id FROM rv_game_identities WHERE library = ?1)";
+    case Sql::ClearGames:
+        return "DELETE FROM idx_games WHERE library = ?1";
+    case Sql::ClearSystems:
+        return "DELETE FROM idx_systems WHERE library = ?1";
+    case Sql::PruneImportRecords:
+        // The newest ?2 records of the library stay.
+        return "DELETE FROM rv_imports WHERE library = ?1 AND id <= (SELECT id FROM rv_imports WHERE library = ?1 "
+               "ORDER BY id DESC LIMIT 1 OFFSET ?2)";
+    case Sql::DeleteDiscMembership:
+        return "DELETE FROM idx_disc_members WHERE member = ?1";
+    case Sql::InsertAlias:
+        return "INSERT INTO rv_identity_aliases (alias, game, lookup_key, relative_path, at, reason) "
+               "VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+    case Sql::DeleteIdentity:
+        return "DELETE FROM rv_game_identities WHERE id = ?1";
     case Sql::Count:
         break;
     }
@@ -893,6 +990,101 @@ Status bindGame(Statement& statement, const IndexedEntry& indexed, std::string_v
     return ok();
 }
 
+/// A system from a row of the systems SELECT (Sql::SelectSystems).
+Expected<SystemInfo> readSystem(const Statement& row) {
+    const std::string context = fmt::format("idx_systems row '{}'", row.columnText(0));
+    auto name = SystemName::parse(row.columnText(0));
+    if (!name) {
+        return unreadable(fmt::format("an invalid system name ({})", name.error().message), context);
+    }
+    SystemInfo system;
+    system.name = std::move(*name);
+    system.fullName = std::string(row.columnText(1));
+    try {
+        const nlohmann::json platforms = nlohmann::json::parse(row.columnText(2));
+        system.platforms = platforms.get<std::vector<std::string>>();
+    } catch (const nlohmann::json::exception&) {
+        return unreadable("platforms that are not a JSON array of strings", context);
+    }
+    system.theme = std::string(row.columnText(3));
+    system.romFolderConfigured = std::string(row.columnText(4));
+    auto folder = readPath(row.columnText(5), context);
+    if (!folder) {
+        return propagate(folder.error());
+    }
+    system.romFolder = std::move(*folder);
+    const auto availability =
+        readEnum<Availability>(row.columnText(6), catalog::parseAvailability, "availability", context);
+    const auto reason = readEnum<catalog::SourceUnavailableReason>(
+        row.columnText(7), catalog::parseSourceUnavailableReason, "unavailability", context);
+    const auto gamelist =
+        readEnum<catalog::GamelistState>(row.columnText(8), catalog::parseGamelistState, "gamelist state", context);
+    if (!availability || !reason || !gamelist) {
+        return propagate(!availability ? availability.error() : !reason ? reason.error() : gamelist.error());
+    }
+    system.availability = *availability;
+    system.unavailableReason = *reason;
+    system.gamelist = *gamelist;
+    system.alternativeEmulator = std::string(row.columnText(9));
+    return system;
+}
+
+/// The figures of one system of an import record, as rv_imports' summary holds them.
+nlohmann::json systemChangesJson(const catalog::SystemChanges& changes) {
+    return nlohmann::json{{"system", changes.system.str()},
+                          {"outcome", std::string(catalog::toString(changes.outcome))},
+                          {"added", changes.added},
+                          {"changed", changes.changed},
+                          {"removed", changes.removed},
+                          {"unchanged", changes.unchanged},
+                          {"unavailable", changes.unavailable},
+                          {"kept", changes.kept},
+                          {"newIdentities", changes.newIdentities},
+                          {"vanished", changes.vanished},
+                          {"returned", changes.returned},
+                          {"rekeyed", changes.rekeyed},
+                          {"moved", changes.moved},
+                          {"presentBefore", changes.presentBefore},
+                          {"gone", changes.gone},
+                          {"issues", changes.issues}};
+}
+
+/// What systemChangesJson() writes, read back. Errors: ParseError.
+Expected<catalog::SystemChanges> readSystemChanges(const nlohmann::json& json, const std::string& context) {
+    try {
+        catalog::SystemChanges changes;
+        auto system = SystemName::parse(json.at("system").get<std::string>());
+        const auto outcome = catalog::parseSystemOutcome(json.at("outcome").get<std::string>());
+        if (!system || !outcome) {
+            return unreadable("an import record whose system or outcome is unknown", context);
+        }
+        changes.system = std::move(*system);
+        changes.outcome = *outcome;
+        const std::array<std::pair<const char*, std::size_t*>, 14> counts{{
+            {"added", &changes.added},
+            {"changed", &changes.changed},
+            {"removed", &changes.removed},
+            {"unchanged", &changes.unchanged},
+            {"unavailable", &changes.unavailable},
+            {"kept", &changes.kept},
+            {"newIdentities", &changes.newIdentities},
+            {"vanished", &changes.vanished},
+            {"returned", &changes.returned},
+            {"rekeyed", &changes.rekeyed},
+            {"moved", &changes.moved},
+            {"presentBefore", &changes.presentBefore},
+            {"gone", &changes.gone},
+            {"issues", &changes.issues},
+        }};
+        for (const auto& [name, value] : counts) {
+            *value = json.at(name).get<std::size_t>();
+        }
+        return changes;
+    } catch (const nlohmann::json::exception&) {
+        return unreadable("an import record whose figures cannot be read", context);
+    }
+}
+
 /// Steps a statement that returns at most one row, reads it with `read(statement, hasRow)`, then resets the statement.
 template <class Read>
 auto readSingleRow(Statement& statement, Read read) -> decltype(read(statement, true)) {
@@ -909,7 +1101,7 @@ auto readSingleRow(Statement& statement, Read read) -> decltype(read(statement, 
 // --- State and the import transaction --------------------------------------------------------------------------------
 
 struct SqliteCatalogStore::State {
-    explicit State(Database& database) noexcept : database(database) {}
+    State(Database& database, const StoreOptions& options) noexcept : database(database), options(options) {}
 
     /// The statement `which`, prepared on first use and kept (on the writer connection).
     Expected<Statement*> statement(Sql which) {
@@ -925,16 +1117,35 @@ struct SqliteCatalogStore::State {
     }
 
     Database& database;
+    StoreOptions options;
     std::array<Statement, static_cast<std::size_t>(Sql::Count)> statements;
     /// The import transaction this store has open, if any.
     ImportTransaction* open = nullptr;
+    /// The import lock lockImport() holds, if any.
+    ImportLock* lock = nullptr;
+};
+
+/// The import lock held apart from a transaction (lockImport()).
+class SqliteCatalogStore::ImportLock final : public catalog::IImportLock {
+public:
+    explicit ImportLock(State& state) noexcept : m_state(&state) { m_state->lock = this; }
+    ImportLock(const ImportLock&) = delete;
+    ImportLock& operator=(const ImportLock&) = delete;
+    ~ImportLock() override;
+
+    /// The store is going: it releases the lock itself.
+    void detach() noexcept { m_state = nullptr; }
+
+private:
+    State* m_state;
 };
 
 class SqliteCatalogStore::ImportTransaction final : public catalog::IImportTransaction {
 public:
-    ImportTransaction(State& state, Transaction transaction, LibraryId library, std::string now) noexcept
-        : m_state(&state), m_transaction(std::move(transaction)), m_library(std::move(library)), m_now(std::move(now)) {
-    }
+    /// `ownsLock`: the transaction took the import lock and releases it when it ends (false: lockImport() holds it).
+    ImportTransaction(State& state, Transaction transaction, LibraryId library, std::string now, bool ownsLock) noexcept
+        : m_state(&state), m_transaction(std::move(transaction)), m_library(std::move(library)), m_now(std::move(now)),
+          m_ownsLock(ownsLock) {}
     ImportTransaction(const ImportTransaction&) = delete;
     ImportTransaction& operator=(const ImportTransaction&) = delete;
     ~ImportTransaction() override { finish(); }
@@ -944,10 +1155,21 @@ public:
     Status putSystem(const LibraryId& library, const SystemInfo& system) override;
     Status putEntry(const IndexedEntry& entry) override;
     Status removeEntry(GameId id) override;
+    Expected<bool> prepareWrites(std::size_t rows) override;
+    Status clearIndex(const LibraryId& library) override;
+    Status removeSystem(const LibraryId& library, const SystemName& system) override;
+    Status putDiscGroup(const catalog::IndexedDiscGroup& group) override;
+    Status removeDiscGroup(GameId head) override;
+    Status putAlias(const catalog::IdentityAlias& alias) override;
+    Status putImportIssues(const LibraryId& library, std::span<const catalog::Issue> issues,
+                           std::span<const SystemName> systems) override;
+    Status recordImport(const catalog::ImportRecord& record) override;
     Status commit() override;
 
     /// The store is going: the transaction rolls back, and every later call fails.
     void detach() noexcept { finish(); }
+    /// The import lock lockImport() held is going while the transaction is open: the transaction releases it.
+    void adoptLock() noexcept { m_ownsLock = true; }
 
 private:
     /// Ok while the transaction is open. SQLite rolls a whole transaction back on its own after some errors (a full
@@ -973,18 +1195,24 @@ private:
         return error;
     }
 
-    /// Rolls back unless committed, releases the import lock and leaves the store.
+    /// Rolls back unless committed, releases the import lock (unless lockImport() holds it) and leaves the store. A
+    /// rollback also undoes a suspension of the search index (DDL is transactional).
     void finish() noexcept {
         if (m_state == nullptr) {
             return;
         }
         m_transaction.rollback(); // nothing once committed, or rolled back by SQLite
-        m_state->database.lock().unlockImport();
+        if (m_ownsLock) {
+            m_state->database.lock().unlockImport();
+        }
         if (m_state->open == this) {
             m_state->open = nullptr;
         }
         m_state = nullptr;
     }
+
+    /// Runs the statement `which` with `library` bound to ?1 (the deletions of clearIndex()).
+    Status runForLibrary(Sql which, const LibraryId& library);
 
     Expected<Statement*> statement(Sql which) { return m_state->statement(which); }
 
@@ -1002,7 +1230,22 @@ private:
     LibraryId m_library;
     /// The import's time: identities first seen and seen by it carry it.
     std::string m_now;
+    bool m_ownsLock = true;
+    /// prepareWrites() suspended the search index: commit() rebuilds it.
+    bool m_searchSuspended = false;
 };
+
+SqliteCatalogStore::ImportLock::~ImportLock() {
+    if (m_state == nullptr) {
+        return;
+    }
+    m_state->lock = nullptr;
+    if (m_state->open != nullptr) {
+        m_state->open->adoptLock(); // a transaction still open keeps the lock to its end
+    } else {
+        m_state->database.lock().unlockImport();
+    }
+}
 
 Status SqliteCatalogStore::ImportTransaction::putLibrary(const LibraryProfile& profile) {
     if (auto open = active(); !open) {
@@ -1298,9 +1541,9 @@ Status SqliteCatalogStore::ImportTransaction::removeEntry(GameId id) {
         return makeError(ErrorCode::InvalidArgument, "no GameId to remove");
     }
     // The rows that refer to the game first, then its own, as one write; its identity stays. The disc group it heads
-    // goes with it; a group it is a member of is its head's, which keeps it as it was read (CachedDiscGroup).
-    constexpr std::array<Sql, 4> kRemovals{Sql::DeleteMedia, Sql::DeleteDiscMembers, Sql::DeleteDiscGroup,
-                                           Sql::DeleteGame};
+    // goes with it (members and references); a group it is a member of is its head's, which keeps it as it was read.
+    constexpr std::array<Sql, 5> kRemovals{Sql::DeleteMedia, Sql::DeleteDiscMembers, Sql::DeleteDiscReferences,
+                                           Sql::DeleteDiscGroup, Sql::DeleteGame};
     std::array<Statement*, kRemovals.size()> removals{};
     for (std::size_t i = 0; i < kRemovals.size(); ++i) {
         auto remove = statement(kRemovals[i]);
@@ -1321,14 +1564,395 @@ Status SqliteCatalogStore::ImportTransaction::removeEntry(GameId id) {
     });
 }
 
+Expected<bool> SqliteCatalogStore::ImportTransaction::prepareWrites(std::size_t rows) {
+    if (auto open = active(); !open) {
+        return propagate(open.error());
+    }
+    if (m_searchSuspended) {
+        return true;
+    }
+    const SearchIndexPolicy policy = m_state->options.searchIndex;
+    if (rows == 0 || policy == SearchIndexPolicy::FollowWrites) {
+        return false;
+    }
+    bool suspend = policy == SearchIndexPolicy::Suspend;
+    if (policy == SearchIndexPolicy::Automatic) {
+        // A first import (no entry indexed, of any library), or rows that are a large share of the index: the rebuild
+        // tokenizes every entry once, where the triggers flush a segment per row written (search_index.hpp).
+        auto count = statement(Sql::CountIndexRows);
+        if (!count) {
+            return propagate(count.error());
+        }
+        const auto indexed = readSingleRow(**count, [](const Statement& row, bool hasRow) -> Expected<std::int64_t> {
+            return hasRow ? row.columnInt(0) : 0;
+        });
+        if (!indexed) {
+            return propagate(failed(indexed.error()));
+        }
+        const auto entries = static_cast<std::size_t>(std::max<std::int64_t>(*indexed, 0));
+        suspend = entries == 0 || rows * kBulkWriteShare >= entries;
+    }
+    if (!suspend) {
+        return false;
+    }
+    if (auto suspended = suspendSearchIndex(m_state->database.writer()); !suspended) {
+        return propagate(failed(withPrefix(suspended.error(), "cannot suspend the search index for the import")));
+    }
+    m_searchSuspended = true;
+    spdlog::debug("Catalog database: the search index is suspended for the import's {} row(s)", rows);
+    return true;
+}
+
+Status SqliteCatalogStore::ImportTransaction::runForLibrary(Sql which, const LibraryId& library) {
+    auto run = statement(which);
+    if (!run) {
+        return propagate(run.error());
+    }
+    (*run)->bindText(1, library.str());
+    if (auto ran = (*run)->run(); !ran) {
+        return propagate(failed(ran.error()));
+    }
+    return ok();
+}
+
+Status SqliteCatalogStore::ImportTransaction::clearIndex(const LibraryId& library) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    // The rows that refer to games first, then the games, the systems and the issues; the state rows stay.
+    constexpr std::array<Sql, 7> kClears{Sql::ClearMedia,     Sql::ClearDiscMembers, Sql::ClearDiscReferences,
+                                         Sql::ClearDiscGroups, Sql::ClearGames,      Sql::ClearSystems,
+                                         Sql::DeleteImportIssues};
+    return asOne([&]() -> Status {
+        for (const Sql which : kClears) {
+            if (auto cleared = runForLibrary(which, library); !cleared) {
+                return propagate(withPrefix(cleared.error(), "cannot clear the index of library " + library.str()));
+            }
+        }
+        return ok();
+    });
+}
+
+Status SqliteCatalogStore::ImportTransaction::removeSystem(const LibraryId& library, const SystemName& system) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    auto remove = statement(Sql::DeleteSystem);
+    if (!remove) {
+        return propagate(remove.error());
+    }
+    (*remove)->bindText(1, library.str()).bindText(2, system.str());
+    if (auto removed = (*remove)->run(); !removed) {
+        return propagate(
+            failed(withPrefix(removed.error(), "cannot remove the system " + library.str() + "/" + system.str())));
+    }
+    return ok();
+}
+
+Status SqliteCatalogStore::ImportTransaction::putDiscGroup(const catalog::IndexedDiscGroup& indexed) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    const catalog::DiscGroup& group = indexed.group;
+    const std::string context = indexed.head.toString() + " " + group.system.str() + "/" + group.head.relativePath();
+    if (!indexed.head.isValid() || indexed.members.size() != group.members.size() ||
+        std::any_of(indexed.members.begin(), indexed.members.end(), [](GameId id) { return !id.isValid(); })) {
+        return makeError(ErrorCode::InvalidArgument, "a disc group needs a head and a GameId for each member", context);
+    }
+    if (std::any_of(group.references.begin(), group.references.end(),
+                    [](const LookupKey& reference) { return reference.empty(); })) {
+        return makeError(ErrorCode::InvalidArgument, "a disc group's reference has no path", context);
+    }
+    const auto size = storedInteger(group.headSize, "the head's size");
+    if (!size) {
+        return propagate(withPrefix(size.error(), "cannot store the disc group " + context));
+    }
+    std::array<Statement*, 5> statements{};
+    constexpr std::array<Sql, 5> kStatements{Sql::UpsertDiscGroup, Sql::DeleteDiscMembers, Sql::InsertDiscMember,
+                                             Sql::DeleteDiscReferences, Sql::InsertDiscReference};
+    for (std::size_t i = 0; i < kStatements.size(); ++i) {
+        auto prepared = statement(kStatements[i]);
+        if (!prepared) {
+            return propagate(prepared.error());
+        }
+        statements[i] = *prepared;
+    }
+    Statement* const upsert = statements[0];
+    Statement* const clearMembers = statements[1];
+    Statement* const insertMember = statements[2];
+    Statement* const clearReferences = statements[3];
+    Statement* const insertReference = statements[4];
+    const auto head = static_cast<std::int64_t>(indexed.head.value());
+    const auto written = [&](Status status) -> Status {
+        if (status) {
+            return status;
+        }
+        Error error = status.error();
+        if (isConstraintFailure(error, "FOREIGN KEY")) {
+            error.message = fmt::format("the identity of its head or of a member is not in the store ({})",
+                                        error.message);
+        }
+        return propagate(failed(withPrefix(std::move(error), "cannot store the disc group " + context)));
+    };
+    return asOne([&]() -> Status {
+        upsert->bindInt(1, head)
+            .bindText(2, catalog::toString(group.kind))
+            .bindInt(3, *size)
+            .bindInt(4, group.headLastWriteTime);
+        if (auto stored = written(upsert->run()); !stored) {
+            return stored;
+        }
+        clearMembers->bindInt(1, head);
+        if (auto cleared = written(clearMembers->run()); !cleared) {
+            return cleared;
+        }
+        for (std::size_t i = 0; i < indexed.members.size(); ++i) {
+            insertMember->bindInt(1, head)
+                .bindInt(2, static_cast<std::int64_t>(i))
+                .bindInt(3, static_cast<std::int64_t>(indexed.members[i].value()));
+            if (auto stored = written(insertMember->run()); !stored) {
+                return stored;
+            }
+        }
+        clearReferences->bindInt(1, head);
+        if (auto cleared = written(clearReferences->run()); !cleared) {
+            return cleared;
+        }
+        for (std::size_t i = 0; i < group.references.size(); ++i) {
+            insertReference->bindInt(1, head)
+                .bindInt(2, static_cast<std::int64_t>(i))
+                .bindText(3, group.references[i].relativePath());
+            if (auto stored = written(insertReference->run()); !stored) {
+                return stored;
+            }
+        }
+        return ok();
+    });
+}
+
+Status SqliteCatalogStore::ImportTransaction::removeDiscGroup(GameId head) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    constexpr std::array<Sql, 3> kRemovals{Sql::DeleteDiscMembers, Sql::DeleteDiscReferences, Sql::DeleteDiscGroup};
+    std::array<Statement*, kRemovals.size()> removals{};
+    for (std::size_t i = 0; i < kRemovals.size(); ++i) {
+        auto remove = statement(kRemovals[i]);
+        if (!remove) {
+            return propagate(remove.error());
+        }
+        removals[i] = *remove;
+    }
+    return asOne([&]() -> Status {
+        for (Statement* remove : removals) {
+            remove->bindInt(1, static_cast<std::int64_t>(head.value()));
+            if (auto removed = remove->run(); !removed) {
+                return propagate(
+                    failed(withPrefix(removed.error(), "cannot remove the disc group of " + head.toString())));
+            }
+        }
+        return ok();
+    });
+}
+
+Status SqliteCatalogStore::ImportTransaction::putAlias(const catalog::IdentityAlias& alias) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    const StoredIdentity& identity = alias.alias;
+    const std::string context = identity.id.toString() + " -> " + alias.game.toString();
+    if (!identity.id.isValid() || !alias.game.isValid() || identity.id == alias.game) {
+        return makeError(ErrorCode::InvalidArgument, "an alias needs two different GameIds", context);
+    }
+    // Both identities in the store, of one library and system.
+    auto owner = statement(Sql::SelectIdentitySystem);
+    if (!owner) {
+        return propagate(owner.error());
+    }
+    using Owner = std::optional<std::pair<std::string, std::string>>;
+    const auto ownerOf = [&](GameId id) -> Expected<Owner> {
+        (*owner)->bindInt(1, static_cast<std::int64_t>(id.value()));
+        return readSingleRow(**owner, [](const Statement& row, bool hasRow) -> Expected<Owner> {
+            if (!hasRow) {
+                return Owner();
+            }
+            return Owner(std::pair(std::string(row.columnText(0)), std::string(row.columnText(1))));
+        });
+    };
+    const auto aliasOwner = ownerOf(identity.id);
+    if (!aliasOwner) {
+        return propagate(aliasOwner.error());
+    }
+    const auto gameOwner = ownerOf(alias.game);
+    if (!gameOwner) {
+        return propagate(gameOwner.error());
+    }
+    if (!*aliasOwner || !*gameOwner || **aliasOwner != **gameOwner) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "an alias and the identity it stands for must both be in the store, of one library and system",
+                         context);
+    }
+    constexpr std::array<Sql, 8> kStatements{Sql::DeleteMedia,          Sql::DeleteDiscMembers, Sql::DeleteDiscReferences,
+                                             Sql::DeleteDiscGroup,      Sql::DeleteGame,        Sql::DeleteDiscMembership,
+                                             Sql::InsertAlias,          Sql::DeleteIdentity};
+    std::array<Statement*, kStatements.size()> statements{};
+    for (std::size_t i = 0; i < kStatements.size(); ++i) {
+        auto prepared = statement(kStatements[i]);
+        if (!prepared) {
+            return propagate(prepared.error());
+        }
+        statements[i] = *prepared;
+    }
+    const auto id = static_cast<std::int64_t>(identity.id.value());
+    return asOne([&]() -> Status {
+        // The index rows that name it (its own, the group it heads, its places among other groups' members), the alias
+        // recorded with its last key and path, then the identity row, which frees its relative path.
+        for (std::size_t i = 0; i < kStatements.size(); ++i) {
+            Statement& write = *statements[i];
+            write.bindInt(1, id);
+            if (kStatements[i] == Sql::InsertAlias) {
+                write.bindInt(2, static_cast<std::int64_t>(alias.game.value()))
+                    .bindText(3, identity.key.key())
+                    .bindText(4, identity.key.relativePath())
+                    .bindText(5, m_now)
+                    .bindText(6, catalog::toString(alias.reason));
+            }
+            if (auto written = write.run(); !written) {
+                Error error = written.error();
+                if (isConstraintFailure(error, "FOREIGN KEY")) {
+                    error.message = fmt::format("a state row still names the identity ({})", error.message);
+                }
+                return propagate(failed(withPrefix(std::move(error), "cannot turn " + context + " into an alias")));
+            }
+        }
+        return ok();
+    });
+}
+
+Status SqliteCatalogStore::ImportTransaction::putImportIssues(const LibraryId& library,
+                                                              std::span<const catalog::Issue> issues,
+                                                              std::span<const SystemName> systems) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    auto clearAll = statement(Sql::DeleteImportIssues);
+    auto clearSystem = statement(Sql::DeleteSystemImportIssues);
+    auto insert = statement(Sql::InsertImportIssue);
+    if (!clearAll || !clearSystem || !insert) {
+        return propagate(!clearAll ? clearAll.error() : !clearSystem ? clearSystem.error() : insert.error());
+    }
+    const auto named = [&](const catalog::Issue& issue) {
+        return systems.empty() || std::any_of(systems.begin(), systems.end(), [&](const SystemName& system) {
+                   return system.str() == issue.system;
+               });
+    };
+    return asOne([&]() -> Status {
+        if (systems.empty()) {
+            (*clearAll)->bindText(1, library.str());
+            if (auto cleared = (*clearAll)->run(); !cleared) {
+                return propagate(failed(cleared.error()));
+            }
+        }
+        for (const SystemName& system : systems) {
+            (*clearSystem)->bindText(1, library.str()).bindText(2, system.str());
+            if (auto cleared = (*clearSystem)->run(); !cleared) {
+                return propagate(failed(cleared.error()));
+            }
+        }
+        for (const catalog::Issue& issue : issues) {
+            if (!named(issue)) {
+                continue;
+            }
+            (*insert)
+                ->bindText(1, library.str())
+                .bindText(2, catalog::toString(issue.severity))
+                .bindText(3, issue.code)
+                .bindText(4, issue.system)
+                .bindText(5, issue.file)
+                .bindText(6, issue.reason);
+            if (auto stored = (*insert)->run(); !stored) {
+                return propagate(failed(withPrefix(stored.error(), "cannot store the import's issues")));
+            }
+        }
+        return ok();
+    });
+}
+
+Status SqliteCatalogStore::ImportTransaction::recordImport(const catalog::ImportRecord& record) {
+    if (auto open = active(); !open) {
+        return open;
+    }
+    nlohmann::json asked = nlohmann::json::array();
+    for (const SystemName& system : record.systemsAsked) {
+        asked.push_back(system.str());
+    }
+    nlohmann::json summary = nlohmann::json::array();
+    for (const catalog::SystemChanges& changes : record.systems) {
+        summary.push_back(systemChangesJson(changes));
+    }
+    const auto askedText = jsonText(asked, "the systems asked");
+    const auto summaryText = jsonText(summary, "the import's figures");
+    if (!askedText || !summaryText) {
+        return propagate(!askedText ? askedText.error() : summaryText.error());
+    }
+    auto insert = statement(Sql::InsertImportRecord);
+    if (!insert) {
+        return propagate(insert.error());
+    }
+    (*insert)
+        ->bindText(1, record.library.str())
+        .bindText(2, catalog::toString(record.kind))
+        .bindText(3, record.startedAt)
+        .bindText(4, record.finishedAt)
+        .bindBool(5, record.acceptRemovals)
+        .bindText(6, *askedText)
+        .bindText(7, *summaryText);
+    if (auto stored = (*insert)->run(); !stored) {
+        Error error = stored.error();
+        if (isConstraintFailure(error, "FOREIGN KEY")) {
+            error.message =
+                fmt::format("its library '{}' is not in the store ({})", record.library.str(), error.message);
+        }
+        return propagate(failed(withPrefix(std::move(error), "cannot record the import")));
+    }
+    // A bounded history: the newest kKeptImportRecords of the library stay.
+    auto prune = statement(Sql::PruneImportRecords);
+    if (!prune) {
+        return propagate(prune.error());
+    }
+    (*prune)->bindText(1, record.library.str()).bindInt(2, static_cast<std::int64_t>(kKeptImportRecords));
+    if (auto pruned = (*prune)->run(); !pruned) {
+        return propagate(failed(withPrefix(pruned.error(), "cannot delete the oldest import records")));
+    }
+    return ok();
+}
+
 Status SqliteCatalogStore::ImportTransaction::commit() {
     if (auto open = active(); !open) {
         return open;
     }
-    // rv_meta says which lookup key version the keys are of, as this import leaves them.
+    // A suspended search index is rebuilt from the index tables, its triggers created again, before the commit.
+    if (m_searchSuspended) {
+        if (auto resumed = resumeSearchIndex(m_state->database.writer()); !resumed) {
+            finish();
+            return propagate(withPrefix(resumed.error(), "cannot rebuild the search index (the import was rolled back)"));
+        }
+        m_searchSuspended = false;
+    }
+    // rv_meta says which lookup key version the keys are of, as this import leaves them, and which sort keys.
     if (auto recorded = recordKeyVersion(); !recorded) {
         finish();
         return propagate(withPrefix(recorded.error(), "cannot commit the import (it was rolled back)"));
+    }
+    if (auto upsert = statement(Sql::UpsertMeta); !upsert) {
+        finish();
+        return propagate(withPrefix(upsert.error(), "cannot commit the import (it was rolled back)"));
+    } else {
+        (*upsert)->bindText(1, "sort_key_version").bindText(2, std::to_string(catalog::kSortKeyVersion));
+        if (auto stored = (*upsert)->run(); !stored) {
+            finish();
+            return propagate(withPrefix(stored.error(), "cannot commit the import (it was rolled back)"));
+        }
     }
     Database& database = m_state->database;
     auto committed = m_transaction.commit();
@@ -1351,13 +1975,22 @@ Status SqliteCatalogStore::ImportTransaction::commit() {
 SqliteCatalogStore::SqliteCatalogStore(std::unique_ptr<State> state) noexcept : m_state(std::move(state)) {}
 
 SqliteCatalogStore::~SqliteCatalogStore() {
-    if (m_state != nullptr && m_state->open != nullptr) {
+    if (m_state == nullptr) {
+        return;
+    }
+    if (m_state->open != nullptr) {
         spdlog::warn("Catalog database: the store went away with its import transaction open: rolled back");
         m_state->open->detach();
     }
+    if (m_state->lock != nullptr) {
+        m_state->lock->detach();
+        m_state->lock = nullptr;
+        m_state->database.lock().unlockImport();
+    }
 }
 
-Expected<std::unique_ptr<SqliteCatalogStore>> SqliteCatalogStore::open(Database& database) {
+Expected<std::unique_ptr<SqliteCatalogStore>> SqliteCatalogStore::open(Database& database,
+                                                                      const StoreOptions& options) {
     const auto version = database.schemaVersion();
     if (!version) {
         return propagate(version.error());
@@ -1377,7 +2010,7 @@ Expected<std::unique_ptr<SqliteCatalogStore>> SqliteCatalogStore::open(Database&
                                      *version, program),
                          lossy(database.path()));
     }
-    return std::unique_ptr<SqliteCatalogStore>(new SqliteCatalogStore(std::make_unique<State>(database)));
+    return std::unique_ptr<SqliteCatalogStore>(new SqliteCatalogStore(std::make_unique<State>(database, options)));
 }
 
 Expected<std::vector<LibraryProfile>> SqliteCatalogStore::libraries() {
@@ -1597,21 +2230,261 @@ Expected<std::vector<IndexedEntry>> SqliteCatalogStore::indexedEntries(const Lib
     return entries;
 }
 
+Expected<std::vector<SystemInfo>> SqliteCatalogStore::systems(const LibraryId& library) {
+    auto select = m_state->statement(Sql::SelectSystems);
+    if (!select) {
+        return propagate(select.error());
+    }
+    Statement& row = **select;
+    const ScopedReset reset(row);
+    row.bindText(1, library.str());
+    std::vector<SystemInfo> systems;
+    while (true) {
+        const auto next = row.step();
+        if (!next) {
+            return propagate(next.error());
+        }
+        if (!*next) {
+            return systems;
+        }
+        auto system = readSystem(row);
+        if (!system) {
+            return propagate(system.error());
+        }
+        systems.push_back(std::move(*system));
+    }
+}
+
+Expected<std::vector<SystemName>> SqliteCatalogStore::identitySystems(const LibraryId& library) {
+    auto select = m_state->statement(Sql::SelectIdentitySystems);
+    if (!select) {
+        return propagate(select.error());
+    }
+    Statement& row = **select;
+    const ScopedReset reset(row);
+    row.bindText(1, library.str());
+    std::vector<SystemName> systems;
+    while (true) {
+        const auto next = row.step();
+        if (!next) {
+            return propagate(next.error());
+        }
+        if (!*next) {
+            return systems;
+        }
+        auto system = SystemName::parse(row.columnText(0));
+        if (!system) {
+            return unreadable(fmt::format("an invalid system name ({})", system.error().message),
+                              "rv_game_identities");
+        }
+        systems.push_back(std::move(*system));
+    }
+}
+
+Expected<std::vector<catalog::IndexedDiscGroup>> SqliteCatalogStore::discGroups(const LibraryId& library) {
+    Connection& writer = m_state->database.writer();
+    // Three reads (the groups, their members, their references) of one snapshot.
+    std::optional<Transaction> snapshot;
+    if (!writer.inTransaction()) {
+        auto begun = Transaction::begin(writer, Transaction::Mode::Deferred);
+        if (!begun) {
+            return propagate(begun.error());
+        }
+        snapshot = std::move(*begun);
+    }
+    std::vector<catalog::IndexedDiscGroup> groups; // by head GameId while read
+    {
+        auto select = m_state->statement(Sql::SelectDiscGroups);
+        if (!select) {
+            return propagate(select.error());
+        }
+        Statement& row = **select;
+        const ScopedReset reset(row);
+        row.bindText(1, library.str());
+        while (true) {
+            const auto next = row.step();
+            if (!next) {
+                return propagate(next.error());
+            }
+            if (!*next) {
+                break;
+            }
+            const std::int64_t value = row.columnInt(0);
+            const std::string context = fmt::format("idx_disc_groups row {}", value);
+            const auto head = GameId::fromValue(value < 0 ? 0 : static_cast<std::uint64_t>(value));
+            const auto kind =
+                readEnum<catalog::DiscGroupKind>(row.columnText(1), catalog::parseDiscGroupKind, "group kind", context);
+            const auto size = readUnsigned(row.columnInt(2), "head size", context);
+            auto system = SystemName::parse(row.columnText(4));
+            auto key = readKey(row.columnText(5), context);
+            if (!head || !kind || !size || !system || !key) {
+                return !head ? unreadable("a disc group whose head is no GameId", context)
+                       : !kind ? propagate(kind.error())
+                       : !size ? propagate(size.error())
+                       : !system ? unreadable("a disc group of an invalid system", context)
+                                 : propagate(key.error());
+            }
+            catalog::IndexedDiscGroup group;
+            group.head = *head;
+            group.group.system = std::move(*system);
+            group.group.head = std::move(*key);
+            group.group.kind = *kind;
+            group.group.headSize = *size;
+            group.group.headLastWriteTime = row.columnInt(3);
+            groups.push_back(std::move(group));
+        }
+    }
+    const auto groupOf = [&](std::int64_t head) -> catalog::IndexedDiscGroup* {
+        const auto found =
+            std::lower_bound(groups.begin(), groups.end(), head, [](const catalog::IndexedDiscGroup& group, std::int64_t id) {
+                return static_cast<std::int64_t>(group.head.value()) < id;
+            });
+        return found != groups.end() && static_cast<std::int64_t>(found->head.value()) == head ? &*found : nullptr;
+    };
+    {
+        auto select = m_state->statement(Sql::SelectDiscMembers);
+        if (!select) {
+            return propagate(select.error());
+        }
+        Statement& row = **select;
+        const ScopedReset reset(row);
+        row.bindText(1, library.str());
+        while (true) {
+            const auto next = row.step();
+            if (!next) {
+                return propagate(next.error());
+            }
+            if (!*next) {
+                break;
+            }
+            const std::string context = fmt::format("idx_disc_members row {}", row.columnInt(0));
+            catalog::IndexedDiscGroup* group = groupOf(row.columnInt(0));
+            const std::int64_t value = row.columnInt(1);
+            const auto member = GameId::fromValue(value < 0 ? 0 : static_cast<std::uint64_t>(value));
+            auto key = readKey(row.columnText(2), context);
+            if (group == nullptr || !member || !key) {
+                return group == nullptr ? unreadable("members of a disc group that is not there", context)
+                       : !member       ? unreadable("a disc member that is no GameId", context)
+                                       : propagate(key.error());
+            }
+            group->members.push_back(*member);
+            group->group.members.push_back(std::move(*key));
+        }
+    }
+    {
+        auto select = m_state->statement(Sql::SelectDiscReferences);
+        if (!select) {
+            return propagate(select.error());
+        }
+        Statement& row = **select;
+        const ScopedReset reset(row);
+        row.bindText(1, library.str());
+        while (true) {
+            const auto next = row.step();
+            if (!next) {
+                return propagate(next.error());
+            }
+            if (!*next) {
+                break;
+            }
+            const std::string context = fmt::format("idx_disc_references row {}", row.columnInt(0));
+            catalog::IndexedDiscGroup* group = groupOf(row.columnInt(0));
+            if (group == nullptr) {
+                continue; // what a head said, kept after its group went: nothing to give
+            }
+            auto key = readKey(row.columnText(1), context);
+            if (!key) {
+                return propagate(key.error());
+            }
+            group->group.references.push_back(std::move(*key));
+        }
+    }
+    // The port's order: by system, then head (the keys computed again, whatever the casing table they were stored with).
+    sortByPermutation(groups, [](const catalog::IndexedDiscGroup& a, const catalog::IndexedDiscGroup& b) {
+        return std::tie(a.group.system, a.group.head) < std::tie(b.group.system, b.group.head);
+    });
+    return groups;
+}
+
+Expected<std::optional<catalog::ImportRecord>> SqliteCatalogStore::lastImport(const LibraryId& library) {
+    auto select = m_state->statement(Sql::SelectLastImport);
+    if (!select) {
+        return propagate(select.error());
+    }
+    (*select)->bindText(1, library.str());
+    return readSingleRow(
+        **select, [&](const Statement& row, bool hasRow) -> Expected<std::optional<catalog::ImportRecord>> {
+            if (!hasRow) {
+                return std::optional<catalog::ImportRecord>();
+            }
+            const std::string context = fmt::format("rv_imports row {}", row.columnInt(0));
+            catalog::ImportRecord record;
+            record.id = row.columnInt(0);
+            record.library = library;
+            const auto kind =
+                readEnum<catalog::ImportKind>(row.columnText(1), catalog::parseImportKind, "import kind", context);
+            if (!kind) {
+                return propagate(kind.error());
+            }
+            record.kind = *kind;
+            record.startedAt = std::string(row.columnText(2));
+            record.finishedAt = std::string(row.columnText(3));
+            record.acceptRemovals = row.columnInt(4) != 0;
+            try {
+                for (const nlohmann::json& name : nlohmann::json::parse(row.columnText(5))) {
+                    auto system = SystemName::parse(name.get<std::string>());
+                    if (!system) {
+                        return unreadable("an import record asked for an invalid system", context);
+                    }
+                    record.systemsAsked.push_back(std::move(*system));
+                }
+                for (const nlohmann::json& figures : nlohmann::json::parse(row.columnText(6))) {
+                    auto changes = readSystemChanges(figures, context);
+                    if (!changes) {
+                        return propagate(changes.error());
+                    }
+                    record.systems.push_back(std::move(*changes));
+                }
+            } catch (const nlohmann::json::exception&) {
+                return unreadable("an import record whose JSON cannot be read", context);
+            }
+            return std::optional<catalog::ImportRecord>(std::move(record));
+        });
+}
+
+Expected<std::unique_ptr<catalog::IImportLock>> SqliteCatalogStore::lockImport(const LibraryId& library) {
+    if (m_state->open != nullptr || m_state->lock != nullptr) {
+        return makeError(ErrorCode::Conflict, "this store holds the import lock already", library.str());
+    }
+    // Without waiting: an import of another process gets Conflict at once.
+    if (auto locked = m_state->database.lock().lockImport(); !locked) {
+        return propagate(locked.error());
+    }
+    return std::unique_ptr<catalog::IImportLock>(std::make_unique<ImportLock>(*m_state));
+}
+
 Expected<std::unique_ptr<catalog::IImportTransaction>> SqliteCatalogStore::beginImport(const LibraryId& library) {
     if (m_state->open != nullptr) {
         return makeError(ErrorCode::Conflict, "this store's import transaction is still open", library.str());
     }
-    // The import lock first, without waiting: an import of another process gets Conflict at once.
+    // The import lock first (unless lockImport() holds it), without waiting: an import of another process gets
+    // Conflict at once.
     DatabaseLock& lock = m_state->database.lock();
-    if (auto locked = lock.lockImport(); !locked) {
-        return propagate(locked.error());
+    const bool ownsLock = m_state->lock == nullptr;
+    if (ownsLock) {
+        if (auto locked = lock.lockImport(); !locked) {
+            return propagate(locked.error());
+        }
     }
     auto transaction = Transaction::begin(m_state->database.writer(), Transaction::Mode::Immediate);
     if (!transaction) {
-        lock.unlockImport();
+        if (ownsLock) {
+            lock.unlockImport();
+        }
         return propagate(withPrefix(transaction.error(), "cannot begin the import"));
     }
-    auto open = std::make_unique<ImportTransaction>(*m_state, std::move(*transaction), library, core::utcNow());
+    auto open =
+        std::make_unique<ImportTransaction>(*m_state, std::move(*transaction), library, core::utcNow(), ownsLock);
     m_state->open = open.get();
     spdlog::debug("Catalog database: import of library '{}' begun", library.str());
     return std::unique_ptr<catalog::IImportTransaction>(std::move(open));

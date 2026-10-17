@@ -354,7 +354,8 @@ TEST_CASE("cli/db: --output writes the results to a file; usage errors exit 2 an
         {{"migrate", "--bogus"}, "retroverse-cli db migrate: "},
         {{"info", "extra"}, "retroverse-cli db info: "},
         {{"check", "--output="}, "--output"},
-        {{"rebuild-index"}, "retroverse-cli db rebuild-index: not implemented yet (I2 step 11)"},
+        {{"rebuild-index"}, "retroverse-cli db rebuild-index: no library yet"}, // I2 step 11a: needs library.json
+        {{"rebuild-index", "--bogus"}, "retroverse-cli db rebuild-index: "},
     };
     for (const auto& [arguments, message] : invalid) {
         INFO(arguments.front());

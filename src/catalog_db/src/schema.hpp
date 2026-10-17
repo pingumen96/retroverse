@@ -3,10 +3,11 @@
 // The schema of the catalog database (ADR-0008 §5), private to rv_catalog_db. It is split into areas, one per owning
 // I2 step and one source each, so that a step adds its tables in its own file:
 //   identity (schema_identity.cpp, step 4): the state tables rv_* that hold what only Retroverse knows: rv_meta,
-//            rv_libraries, rv_game_identities, rv_identity_history, rv_identity_aliases, rv_identity_reviews
+//            rv_libraries, rv_game_identities, rv_identity_history, rv_identity_aliases, rv_identity_reviews,
+//            rv_imports (step 11a)
 //   index    (schema_index.cpp, step 4): the index tables idx_*, a function of the ES-DE snapshot and the identities,
 //            rebuildable at any time: idx_systems, idx_games, idx_media, idx_disc_groups, idx_disc_members,
-//            idx_import_issues
+//            idx_disc_references (step 11a), idx_import_issues
 //   search   (schema_search.cpp, step 9): the FTS5 index over idx_games and what the queries need
 //   launch   (schema_launch.cpp, step 12): per-game launch choices, launch verifications, play sessions
 // The program's migration to version v runs every area's steps of version v, in the order above, in one transaction

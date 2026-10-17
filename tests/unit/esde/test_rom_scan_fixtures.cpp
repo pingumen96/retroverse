@@ -376,12 +376,14 @@ TEST_CASE("esde/rom_scan: multi-disc", "[esde][rom_scan][disc_groups]") {
     CHECK(source.lastStatistics().sheetsRead == 17); // 18 heads (13 cue sheets, 5 playlists), the oversized one unread
     CHECK(source.lastStatistics().sheetsUnreadable == 1);
 
-    // The groups handed back as the cache: nothing read again, the same snapshot.
-    std::vector<rv::catalog::CachedDiscGroup> cache;
+    // The groups handed back as the cache (each with the facts of the head it was read from): nothing read again, the
+    // same snapshot.
     for (const rv::catalog::DiscGroup& group : snapshot.discGroups) {
         const CatalogEntry& head = entryAt(snapshot, group.system.str(), group.head.relativePath());
-        cache.push_back({group, head.file->size, head.file->lastWriteTime});
+        CHECK(group.headSize == head.file->size);
+        CHECK(group.headLastWriteTime == head.file->lastWriteTime);
     }
+    const std::vector<rv::catalog::DiscGroup> cache = snapshot.discGroups;
     rv::catalog::LibraryLoadOptions options;
     options.discGroups = cache;
     const LibrarySnapshot again = loadSnapshot(source, profileOf(fixture), options);
@@ -406,7 +408,8 @@ TEST_CASE("esde/rom_scan: a cue sheet that cannot be read keeps its cached group
     }
     REQUIRE(group.members.size() == 2);
     // A cache recorded for another size: the sheet must be read, and cannot be.
-    std::vector<rv::catalog::CachedDiscGroup> cache{{group, twin.file->size + 1, twin.file->lastWriteTime}};
+    group.headSize = twin.file->size + 1;
+    const std::vector<rv::catalog::DiscGroup> cache{group};
     rv::catalog::LibraryLoadOptions options;
     options.discGroups = cache;
     const ExclusiveLock lock(fixture.path("roms/psx/Twin Peak (Europe).cue"));
@@ -420,6 +423,12 @@ TEST_CASE("esde/rom_scan: a cue sheet that cannot be read keeps its cached group
                         issue.reason.find("the group read before is kept") != std::string::npos);
     }
     CHECK(kept);
+    // The group keeps the facts of the sheet its references came from, so that the next load reads the sheet again.
+    for (const rv::catalog::DiscGroup& candidate : locked.discGroups) {
+        if (candidate.head == twin.key) {
+            CHECK(candidate.headSize == twin.file->size + 1);
+        }
+    }
 
     // Without a cache, the tracks stay what the listing makes them.
     const LibrarySnapshot uncached = loadSnapshot(source, profileOf(fixture));

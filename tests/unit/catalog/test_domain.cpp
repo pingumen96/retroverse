@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -409,8 +410,8 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
             LibrarySnapshot snapshot;
             snapshot.profile = profile;
             // Every head here is unchanged: its cached group stands without the head being read.
-            for (const CachedDiscGroup& cached : options.discGroups) {
-                snapshot.discGroups.push_back(cached.group);
+            for (const DiscGroup& cached : options.discGroups) {
+                snapshot.discGroups.push_back(cached);
             }
             return snapshot;
         }
@@ -427,11 +428,13 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
     const auto stopped = source.load(profile, cancelled);
     REQUIRE_FALSE(stopped.has_value());
     CHECK(stopped.error().code == rv::ErrorCode::Cancelled);
-    const DiscGroup twin{systemNamed("psx"),
-                         key("Twin Tracks (Europe).cue"),
-                         DiscGroupKind::Cue,
-                         {key("Twin Tracks (Europe) (Track 1).bin"), key("Twin Tracks (Europe) (Track 2).bin")}};
-    const std::vector<CachedDiscGroup> cache{CachedDiscGroup{twin, 172, 126'256'467'060'000'000}};
+    DiscGroup twin{systemNamed("psx"),
+                   key("Twin Tracks (Europe).cue"),
+                   DiscGroupKind::Cue,
+                   {key("Twin Tracks (Europe) (Track 1).bin"), key("Twin Tracks (Europe) (Track 2).bin")}};
+    twin.headSize = 172;
+    twin.headLastWriteTime = 126'256'467'060'000'000;
+    const std::vector<DiscGroup> cache{twin};
     LibraryLoadOptions again;
     again.discGroups = cache;
     CHECK(source.load(profile, again).value().discGroups == std::vector<DiscGroup>{twin});
@@ -512,6 +515,28 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
                 m_store.m_open->entries.erase(gameId);
                 return rv::ok();
             }
+            // What the import of I2 step 11a adds, kept minimal here: no search index to suspend, no disc groups,
+            // issues or records kept.
+            rv::Expected<bool> prepareWrites(std::size_t) override {
+                return m_active ? rv::Expected<bool>(false) : rv::Expected<bool>(ended());
+            }
+            rv::Status clearIndex(const LibraryId&) override {
+                if (!m_active) {
+                    return ended();
+                }
+                m_store.m_open->entries.clear();
+                return rv::ok();
+            }
+            rv::Status removeSystem(const LibraryId&, const SystemName&) override {
+                return m_active ? rv::ok() : ended();
+            }
+            rv::Status putDiscGroup(const IndexedDiscGroup&) override { return m_active ? rv::ok() : ended(); }
+            rv::Status removeDiscGroup(GameId) override { return m_active ? rv::ok() : ended(); }
+            rv::Status putAlias(const IdentityAlias&) override { return m_active ? rv::ok() : ended(); }
+            rv::Status putImportIssues(const LibraryId&, std::span<const Issue>, std::span<const SystemName>) override {
+                return m_active ? rv::ok() : ended();
+            }
+            rv::Status recordImport(const ImportRecord&) override { return m_active ? rv::ok() : ended(); }
             rv::Status commit() override {
                 if (!m_active) {
                     return ended();
@@ -572,6 +597,30 @@ TEST_CASE("catalog/domain: the other ports can be implemented as documented", "[
             std::sort(result.begin(), result.end(),
                       [](const IndexedEntry& a, const IndexedEntry& b) { return entryOrder(a.entry, b.entry); });
             return result;
+        }
+        rv::Expected<std::vector<SystemInfo>> systems(const LibraryId&) override { return std::vector<SystemInfo>{}; }
+        rv::Expected<std::vector<SystemName>> identitySystems(const LibraryId& library) override {
+            std::vector<SystemName> names;
+            for (const auto& [gameId, identity] : tables().identities) {
+                if (identity.library == library &&
+                    std::find(names.begin(), names.end(), identity.system) == names.end()) {
+                    names.push_back(identity.system);
+                }
+            }
+            std::sort(names.begin(), names.end());
+            return names;
+        }
+        rv::Expected<std::vector<IndexedDiscGroup>> discGroups(const LibraryId&) override {
+            return std::vector<IndexedDiscGroup>{};
+        }
+        rv::Expected<std::optional<ImportRecord>> lastImport(const LibraryId&) override {
+            return std::optional<ImportRecord>{};
+        }
+        rv::Expected<std::unique_ptr<IImportLock>> lockImport(const LibraryId&) override {
+            if (m_open) {
+                return rv::makeError(rv::ErrorCode::Conflict, "another import holds the import lock");
+            }
+            return std::make_unique<IImportLock>();
         }
         rv::Expected<std::unique_ptr<IImportTransaction>> beginImport(const LibraryId&) override {
             if (m_open) {

@@ -2,7 +2,12 @@
 //   db migrate        creates the database or brings its schema to this program's version, backing it up first
 //   db check          integrity, foreign keys, FTS5, schema version and definition; exit 1 when a check finds problems
 //   db info           path, versions, sizes, row counts, rv_meta, backups
-//   db rebuild-index  I2 step 11
+//   db rebuild-index  every index table of the library rebuilt from a fresh snapshot of it and the identities (I2 step
+//                     11a): the import of `retroverse-cli import` (runCatalogImport(), import_text.hpp) with every cue
+//                     sheet and playlist read again, the library's index rows cleared and every row written again,
+//                     every state row kept; the result equals what an import gives, the rows that only the index knows
+//                     (folders that cannot be listed, gamelists that failed, sheets that cannot be read, media out of
+//                     reach) taken from it before it is cleared
 // Each takes --json (the results as one JSON object) and --output <file>. Opening the database takes its process-level
 // lock: a migration waits for no other Retroverse process, and refuses while one has the database open. check and info
 // write nothing into the file: they open it as they find it (no switch to WAL), and make none when it is missing.
@@ -25,6 +30,7 @@
 #include <rv/core/utf8.hpp>
 
 #include "commands.hpp"
+#include "import_text.hpp"
 
 namespace rv::cli {
 namespace {
@@ -39,14 +45,18 @@ constexpr std::string_view kUsage =
     "  check          Check its integrity, foreign keys, FTS5, schema version and schema; exit 1 when a check\n"
     "                 finds problems.\n"
     "  info           Show its path, schema version, sizes, row counts, metadata and backups.\n"
-    "  rebuild-index  Rebuild the index tables from the library (I2 step 11).\n"
+    "  rebuild-index  Rebuild the library's index tables from the library and the identities (the import of\n"
+    "                 'retroverse-cli import', every cue sheet and playlist read again, every index row written\n"
+    "                 again; every state row kept).\n"
     "\n"
     "Options:\n"
     "  --json           Write the results as JSON.\n"
     "  --output <file>  Write the results to this file (UTF-8) instead of stdout.\n"
     "  -h, --help       Show this help and exit.\n"
     "\n"
-    "Exit codes: 0 ok; 1 the check found problems; 2 usage error; 3 the database could not be opened or written.\n";
+    "Exit codes: 0 ok; 1 the check found problems (rebuild-index: an error issue, or a system kept by the\n"
+    "mass-disappearance guard); 2 usage error (rebuild-index: no library.json, or one naming another library);\n"
+    "3 the database could not be opened or written (rebuild-index: or the library could not be read).\n";
 
 /// The arguments every subcommand takes.
 struct SubcommandArgs {
@@ -329,6 +339,17 @@ ExitCode runInfo(CommandContext& context, SubcommandArgs& args) {
     return deliver(context, "info", args, text, ExitCode::Ok);
 }
 
+// --- db rebuild-index -----------------------------------------------------------------------------------------------
+
+ExitCode runRebuildIndex(CommandContext& context, SubcommandArgs& args) {
+    CatalogImportRequest request;
+    request.name = "retroverse-cli db rebuild-index";
+    request.rebuildIndex = true;
+    request.json = args.json;
+    request.file = &args.file;
+    return runCatalogImport(context, request);
+}
+
 } // namespace
 
 ExitCode runDb(CommandContext& context) {
@@ -341,10 +362,6 @@ ExitCode runDb(CommandContext& context) {
         context.out.write(kUsage);
         return ExitCode::Ok;
     }
-    if (subcommand == "rebuild-index") {
-        context.err.writeLine("retroverse-cli db rebuild-index: not implemented yet (I2 step 11)");
-        return ExitCode::UsageError;
-    }
     using Runner = ExitCode (*)(CommandContext&, SubcommandArgs&);
     Runner runner = nullptr;
     if (subcommand == "migrate") {
@@ -353,6 +370,8 @@ ExitCode runDb(CommandContext& context) {
         runner = runCheck;
     } else if (subcommand == "info") {
         runner = runInfo;
+    } else if (subcommand == "rebuild-index") {
+        runner = runRebuildIndex;
     } else {
         context.err.writeLine(fmt::format("retroverse-cli db: unknown {} '{}'",
                                           subcommand.starts_with('-') ? "option" : "subcommand", subcommand));

@@ -1,10 +1,12 @@
 #pragma once
 
-// Private to rv_cli_core (I2 steps 7 and 8): what `import --dry-run` and `media --coverage` share: the library
-// <user data>/config/library.json records, and its snapshot as the import reads it (esde::EsdeLibrarySource: ES-DE's
+// Private to rv_cli_core (I2 steps 7, 8 and 11a): what `import`, `media` and `show` share: the library
+// <user data>/config/library.json records, its snapshot as the import reads it (esde::EsdeLibrarySource: ES-DE's
 // settings and systems, every system's ROM folder under the roots library.json overrides listed with ES-DE's rules, its
-// gamelist merged in, the disc groups).
+// gamelist merged in, the disc groups), its media root, and the media files of an indexed entry derived from the
+// presence and extension the catalog stores (paths are never stored, ADR-0008 §5).
 
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -13,14 +15,18 @@
 
 #include <fmt/format.h>
 
+#include <rv/catalog/catalog_store.hpp>
 #include <rv/catalog/library.hpp>
 #include <rv/catalog/library_source.hpp>
+#include <rv/catalog/media.hpp>
 #include <rv/catalog/snapshot.hpp>
 #include <rv/cli/command.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/esde/library_source.hpp>
+#include <rv/esde/media_resolver.hpp>
+#include <rv/esde/settings.hpp>
 
 #include "esde_text.hpp"
 
@@ -71,6 +77,35 @@ inline Expected<LibraryRead> readLibrarySnapshot(const catalog::LibraryProfile& 
         return propagate(snapshot.error());
     }
     return LibraryRead{std::move(*snapshot), source.lastStatistics()};
+}
+
+/// The media root of the library `profile` describes: its override, else ES-DE's MediaDirectory (or its default) from
+/// the settings. A root that is not known (the settings cannot be read and there is no override) has no path.
+inline esde::ResolvedRoot mediaRootOf(const catalog::LibraryProfile& profile) {
+    const auto settings = esde::readSettings(profile.esdeHome);
+    return esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, profile);
+}
+
+/// Per media kind, the file of an indexed entry's media of that kind, derived under `mediaRoot`
+/// (esde::EsdeMediaResolver::path(), without looking at the disk) from the presence and extension the catalog stores;
+/// nothing for a kind that is not present, or when the root is not known.
+inline std::array<std::optional<std::filesystem::path>, catalog::kMediaKindCount>
+derivedMediaPaths(const catalog::IndexedEntry& indexed, const esde::ResolvedRoot& mediaRoot) {
+    std::array<std::optional<std::filesystem::path>, catalog::kMediaKindCount> paths{};
+    const esde::EsdeMediaResolver resolver(mediaRoot);
+    const catalog::CatalogEntry& entry = indexed.entry;
+    // A folder's media keep its whole name (catalog::mediaStem()): a Folder entry, a game that is a folder.
+    const bool directory = entry.file ? entry.file->directory : entry.state == catalog::EntryState::Folder;
+    for (std::size_t i = 0; i < catalog::kMediaKindCount; ++i) {
+        const catalog::MediaPresence& media = indexed.media.kinds[i];
+        if (!media.present) {
+            continue;
+        }
+        if (auto path = resolver.path(entry.system, entry.key, directory, catalog::kMediaKinds[i], media)) {
+            paths[i] = std::move(*path);
+        }
+    }
+    return paths;
 }
 
 } // namespace rv::cli
