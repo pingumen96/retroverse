@@ -52,7 +52,7 @@ struct SettingKey {
 };
 
 /// The keys Retroverse reads: ROMDirectory, MediaDirectory, ShowHiddenFiles, ShowHiddenGames, ParseGamelistOnly,
-/// LegacyGamelistFileLocation, AlternativeEmulatorPerGame and UIMode. Nothing else is read.
+/// LegacyGamelistFileLocation, AlternativeEmulatorPerGame, MAMENameStripExtraInfo and UIMode. Nothing else is read.
 [[nodiscard]] std::span<const SettingKey> settingKeys() noexcept;
 
 /// The settings Retroverse uses, with ES-DE 3.4.1's defaults where the file does not set them.
@@ -69,6 +69,9 @@ struct EsdeSettings {
     bool parseGamelistOnly = false;          ///< ParseGamelistOnly
     bool legacyGamelistFileLocation = false; ///< LegacyGamelistFileLocation
     bool alternativeEmulatorPerGame = true;  ///< AlternativeEmulatorPerGame
+    /// MAMENameStripExtraInfo: the names ES-DE gives unscraped arcade games from mamenames.xml lose their parenthesized
+    /// and bracketed parts (mameName()).
+    bool mameNameStripExtraInfo = true;
     UiMode uiMode = UiMode::Full;            ///< UIMode ("full" for any value ES-DE does not know)
     /// What was read differently than written ("setting-malformed": a boolean that is neither true nor false, an
     /// unknown UIMode, a value attribute missing), a key under another element type ("setting-wrong-type", which

@@ -16,9 +16,10 @@ namespace rv::esde {
 namespace {
 
 /// The whitelist, by name.
-constexpr std::array<SettingKey, 8> kSettingKeys{{
+constexpr std::array<SettingKey, 9> kSettingKeys{{
     {"AlternativeEmulatorPerGame", "bool"},
     {"LegacyGamelistFileLocation", "bool"},
+    {"MAMENameStripExtraInfo", "bool"},
     {"MediaDirectory", "string"},
     {"ParseGamelistOnly", "bool"},
     {"ROMDirectory", "string"},
@@ -89,6 +90,8 @@ void apply(EsdeSettings& settings, std::string_view key, const pugi::xml_node no
         settings.legacyGamelistFileLocation = parsed;
     } else if (key == "AlternativeEmulatorPerGame") {
         settings.alternativeEmulatorPerGame = parsed;
+    } else if (key == "MAMENameStripExtraInfo") {
+        settings.mameNameStripExtraInfo = parsed;
     }
 }
 
