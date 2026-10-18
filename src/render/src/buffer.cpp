@@ -14,7 +14,8 @@ Buffer::Buffer(GLuint id, std::size_t size, GLbitfield storageFlags, std::string
 
 Buffer::Buffer(Buffer&& other) noexcept
     : m_id(std::exchange(other.m_id, 0u)), m_size(std::exchange(other.m_size, std::size_t{0})),
-      m_storageFlags(std::exchange(other.m_storageFlags, 0u)), m_debugName(std::move(other.m_debugName)) {}
+      m_storageFlags(std::exchange(other.m_storageFlags, 0u)), m_debugName(std::move(other.m_debugName)),
+      m_memory(std::move(other.m_memory)) {}
 
 Buffer& Buffer::operator=(Buffer&& other) noexcept {
     if (this != &other) {
@@ -23,6 +24,7 @@ Buffer& Buffer::operator=(Buffer&& other) noexcept {
         m_size = std::exchange(other.m_size, std::size_t{0});
         m_storageFlags = std::exchange(other.m_storageFlags, 0u);
         m_debugName = std::move(other.m_debugName);
+        m_memory = std::move(other.m_memory);
     }
     return *this;
 }
@@ -38,19 +40,21 @@ void Buffer::release() noexcept {
     }
     m_size = 0;
     m_storageFlags = 0;
+    m_memory.reset();
 }
 
-Expected<Buffer> Buffer::create(std::size_t sizeBytes, GLbitfield storageFlags, std::string_view debugName) {
-    return allocate(sizeBytes, nullptr, storageFlags, debugName);
+Expected<Buffer> Buffer::create(std::size_t sizeBytes, GLbitfield storageFlags, std::string_view debugName,
+                                GpuMemoryKind memoryKind) {
+    return allocate(sizeBytes, nullptr, storageFlags, debugName, memoryKind);
 }
 
 Expected<Buffer> Buffer::create(std::span<const std::byte> initialData, GLbitfield storageFlags,
-                                std::string_view debugName) {
-    return allocate(initialData.size(), initialData.data(), storageFlags, debugName);
+                                std::string_view debugName, GpuMemoryKind memoryKind) {
+    return allocate(initialData.size(), initialData.data(), storageFlags, debugName, memoryKind);
 }
 
 Expected<Buffer> Buffer::allocate(std::size_t sizeBytes, const void* data, GLbitfield storageFlags,
-                                  std::string_view debugName) {
+                                  std::string_view debugName, GpuMemoryKind memoryKind) {
     if (sizeBytes == 0) {
         return makeError(ErrorCode::InvalidArgument, "buffer size must be greater than zero", std::string(debugName));
     }
@@ -74,6 +78,7 @@ Expected<Buffer> Buffer::allocate(std::size_t sizeBytes, const void* data, GLbit
                          std::string(debugName));
     }
     detail::setObjectLabel(GL_BUFFER, id, debugName);
+    buffer.m_memory = GpuMemoryAllocation(memoryKind, sizeBytes);
     return buffer;
 }
 

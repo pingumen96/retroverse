@@ -14,6 +14,7 @@
 namespace rv::gl {
 struct DroppedLight;
 struct FrameStats;
+class GpuMemoryLedger;
 class MaterialRegistry;
 class MeshRegistry;
 class ShaderLibrary;
@@ -46,7 +47,8 @@ namespace rv::devui {
 
 /// "Stats": frame rate and times with a graph of the last FrameTimeHistory::kCapacity frames, the GPU times of the
 /// shadow map, the depth pre-pass, the ambient occlusion, the lit pass and the post-processing, what the renderer's
-/// last view drew (gl::FrameStats) and the GPU resources of the registries and the texture cache.
+/// last view drew (gl::FrameStats), the GPU resources of the registries and the texture cache, and the GPU memory of the
+/// renderer's accounting per kind (gl::GpuMemoryLedger: now and the run's peak).
 struct StatsPanelModel {
     const FrameTimeHistory& frameTimes;
     /// gl::SceneRenderer::stats(): the last view rendered.
@@ -54,6 +56,8 @@ struct StatsPanelModel {
     const gl::MeshRegistry& meshes;
     const gl::MaterialRegistry& materials;
     const gl::TextureCache& textures;
+    /// gl::gpuMemoryLedger().
+    const gl::GpuMemoryLedger& gpuMemory;
 };
 [[nodiscard]] std::unique_ptr<Panel> makeStatsPanel(const StatsPanelModel& model);
 

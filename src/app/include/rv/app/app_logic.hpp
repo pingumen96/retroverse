@@ -8,6 +8,7 @@
 #include <glm/vec2.hpp>
 
 #include <rv/app/command_line.hpp>
+#include <rv/app/frame_timing.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/core/expected.hpp>
 
@@ -67,6 +68,10 @@ public:
     /// The report of the run (--run-report), which the host writes when the run ends: the logic adds what it rendered
     /// (RunReport documents who fills which field). Kept, and harmless to fill, without --run-report too.
     [[nodiscard]] RunReport& report() noexcept { return m_report; }
+    /// The frame times of the run and its phases: the logic opens and closes a phase around what it runs over several
+    /// frames (a refresh, a cover load, an animation: kPhase*), and the run report gives each phase's frame times. The
+    /// host records every frame it presents.
+    [[nodiscard]] FrameTiming& frameTiming() noexcept { return m_frameTiming; }
 
     /// The idle mode, the host's side of ExternalEmulatorRunning (specification §15.5; ADR-0006: the window kept behind
     /// the emulator renders nothing). While it is set the host updates, renders and presents nothing: it waits for
@@ -87,8 +92,9 @@ private:
     friend class AppHost;
 
     AppContext(const CommandLineOptions& options, const core::Paths& paths, platform::GraphicsWindow& window,
-               gl::GLDevice& device, core::FrameClock& clock, RunReport& report) noexcept
-        : m_options(options), m_paths(paths), m_window(window), m_device(device), m_clock(clock), m_report(report) {}
+               gl::GLDevice& device, core::FrameClock& clock, RunReport& report, FrameTiming& frameTiming) noexcept
+        : m_options(options), m_paths(paths), m_window(window), m_device(device), m_clock(clock), m_report(report),
+          m_frameTiming(frameTiming) {}
 
     const CommandLineOptions& m_options;
     const core::Paths& m_paths;
@@ -96,6 +102,7 @@ private:
     gl::GLDevice& m_device;
     core::FrameClock& m_clock;
     RunReport& m_report;
+    FrameTiming& m_frameTiming;
     std::uint64_t m_frameIndex = 0;
     glm::ivec2 m_framebufferSize{0};
     bool m_quitRequested = false;

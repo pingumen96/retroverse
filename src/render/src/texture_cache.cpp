@@ -157,6 +157,9 @@ Expected<Texture2D> TextureCache::upload(const std::string& key, const assets::I
     desc.colorSpace = colorSpace;
     desc.sampling.wrap = wrap;
     desc.sampling.anisotropy = m_anisotropy;
+    // The keys of procedural surface maps start with their source, "procedural:<surface>/<map>".
+    desc.memoryKind = key.starts_with(assets::kProceduralTexturePrefix) ? GpuMemoryKind::ProceduralSurfaces
+                                                                        : GpuMemoryKind::SceneTextures;
     return Texture2D::create(image, desc, "Texture " + key);
 }
 

@@ -7,6 +7,7 @@
 
 #include <rv/core/expected.hpp>
 #include <rv/render/gl_object.hpp>
+#include <rv/render/gpu_memory.hpp>
 
 namespace rv::gl {
 
@@ -16,8 +17,8 @@ class RenderStateCache;
 /// storage in a framebuffer without color buffers, and the comparison sampler the lit shader reads it with
 /// (sampler2DShadow in common/shadow.glsl): GL_COMPARE_REF_TO_TEXTURE with GL_LEQUAL (1 where the reference depth is
 /// not behind the stored one) and bilinear filtering, so every fetch is a 2 x 2 percentage-closer filter; clamped to a
-/// border of depth 1, so nothing is in shadow outside the map. A default-constructed or moved-from ShadowMap is empty.
-/// Main thread only.
+/// border of depth 1, so nothing is in shadow outside the map. Its texture is recorded in gpuMemoryLedger() as
+/// GpuMemoryKind::Targets. A default-constructed or moved-from ShadowMap is empty. Main thread only.
 class ShadowMap {
 public:
     ShadowMap() noexcept = default;
@@ -45,6 +46,7 @@ private:
     FramebufferObject m_framebuffer;
     int m_resolution = 0;
     std::string m_debugName;
+    GpuMemoryAllocation m_memory;
 };
 
 } // namespace rv::gl

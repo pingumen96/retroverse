@@ -202,6 +202,28 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
 
 } // namespace
 
+GpuFormat gpuFormat(ColorFormat format) noexcept {
+    switch (format) {
+    case ColorFormat::Srgb8Alpha8:
+        return GpuFormat::Srgb8Alpha8;
+    case ColorFormat::Rgba16F:
+        return GpuFormat::Rgba16F;
+    case ColorFormat::R8:
+        return GpuFormat::R8;
+    case ColorFormat::Rg16F:
+        return GpuFormat::Rg16F;
+    }
+    return GpuFormat::Srgb8Alpha8;
+}
+
+std::size_t framebufferBytes(const FramebufferDesc& desc) noexcept {
+    std::size_t bytes = desc.colorAttachments * textureBytes(gpuFormat(desc.colorFormat), desc.size, 1);
+    if (desc.depthStencil) {
+        bytes += textureBytes(GpuFormat::Depth24Stencil8, desc.size, 1);
+    }
+    return bytes;
+}
+
 std::string_view toString(ColorFormat format) noexcept {
     switch (format) {
     case ColorFormat::Srgb8Alpha8:
@@ -229,6 +251,7 @@ Expected<Framebuffer> Framebuffer::create(const FramebufferDesc& desc, std::stri
     framebuffer.m_depthStencil = std::move(attachments->depthStencil);
     framebuffer.m_depthStencilTexture = std::move(attachments->depthStencilTexture);
     framebuffer.m_framebuffer = std::move(attachments->framebuffer);
+    framebuffer.m_memory = GpuMemoryAllocation(GpuMemoryKind::Targets, framebufferBytes(desc));
     return framebuffer;
 }
 
@@ -250,6 +273,8 @@ Status Framebuffer::resize(glm::ivec2 size) {
     m_depthStencil = std::move(attachments->depthStencil);
     m_depthStencilTexture = std::move(attachments->depthStencilTexture);
     m_colors = std::move(attachments->colors);
+    // The new attachments are recorded before the previous ones are released: both existed for a moment (the peak).
+    m_memory = GpuMemoryAllocation(GpuMemoryKind::Targets, framebufferBytes(desc));
     return ok();
 }
 

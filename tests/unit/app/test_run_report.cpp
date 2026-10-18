@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -8,7 +10,9 @@
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/run_report.hpp>
+#include <rv/core/cpu_timers.hpp>
 #include <rv/core/text.hpp>
+#include <rv/render/gpu_memory.hpp>
 
 #include "support/temp_dir.hpp"
 
@@ -92,6 +96,27 @@ std::string editedReport(const RunReport& report, Edit edit) {
     nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
     edit(json);
     return json.dump();
+}
+
+/// A report with the measurements of step 0d: a 600-frame run with two phases, two CPU sections and some GPU memory.
+RunReport measuredReport() {
+    RunReport report = fullReport();
+    report.frameLimit = 600;
+    report.framesRendered = 600;
+    report.frameTimes = rv::app::FrameTimesRecord{30, rv::app::TimeSummary{570, 6.5, 7.25, 9.0, 31.5}};
+    report.phases = {rv::app::PhaseRecord{"benchmark", 1, false, 300, rv::app::TimeSummary{300, 6.25, 7.0, 8.5, 12.0}},
+                     // Opened twice within the warm-up and still open: frames, but no time.
+                     rv::app::PhaseRecord{"refresh", 2, true, 12, std::nullopt}};
+    report.cpuSections = {rv::app::CpuSectionRecord{"productUi", rv::app::TimeSummary{600, 0.125, 0.25, 0.5, 2.0}},
+                          rv::app::CpuSectionRecord{"sceneSubmit", rv::app::TimeSummary{600, 0.5, 0.75, 1.0, 4.0}}};
+    rv::app::GpuMemoryRecord memory;
+    memory.totalBytes = 83886080 + 60000000 + 4096;
+    memory.peakTotalBytes = 83886080 + 70000000 + 4096;
+    memory.kinds[static_cast<std::size_t>(rv::gl::GpuMemoryKind::ProceduralSurfaces)] = {83886080, 83886080, 23};
+    memory.kinds[static_cast<std::size_t>(rv::gl::GpuMemoryKind::Targets)] = {60000000, 70000000, 14};
+    memory.kinds[static_cast<std::size_t>(rv::gl::GpuMemoryKind::Buffers)] = {4096, 4096, 3};
+    report.gpuMemory = memory;
+    return report;
 }
 
 } // namespace
@@ -221,36 +246,40 @@ TEST_CASE("app/run_report: malformed reports are errors that point at the key", 
     CHECK(malformed.error().code == ErrorCode::ParseError);
 }
 
-TEST_CASE("app/run_report: the sections of I3 are always written, empty until their steps, and required",
-          "[app][run_report]") {
+TEST_CASE("app/run_report: the sections of I3 are always written and required", "[app][run_report]") {
     // Every report holds them, the minimal one of a failed initialization included.
     RunReport minimal;
     minimal.application = "Retroverse";
     minimal.exitCode = 2;
     minimal.outcome = "initialization failed";
     const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(minimal));
-    for (const char* key : {"world", "residency", "video", "gpuMemory"}) {
+    // Empty until their steps.
+    for (const char* key : {"world", "residency", "video"}) {
         CAPTURE(key);
         REQUIRE(json.contains(key));
         CHECK(json.at(key).is_object());
         CHECK(json.at(key).empty());
     }
-    REQUIRE(json.contains("phases"));
-    CHECK(json.at("phases").is_array());
-    CHECK(json.at("phases").empty());
+    // Step 0d's: no frame measured, no phase, no section, nothing allocated.
+    for (const char* key : {"phases", "cpuSections"}) {
+        CAPTURE(key);
+        REQUIRE(json.contains(key));
+        CHECK(json.at(key).is_array());
+        CHECK(json.at(key).empty());
+    }
+    CHECK(json.at("frameTimes") == nlohmann::json{{"warmUpFrames", 0}, {"count", 0}});
+    CHECK(json.at("gpuMemory").at("totalBytes") == 0);
+    CHECK(json.at("gpuMemory").at("kinds").size() == rv::gl::kGpuMemoryKindCount);
 
-    RunReport report = fullReport();
-    report.phases = {rv::app::PhaseRecord{"refresh"}, rv::app::PhaseRecord{"coverLoad"}};
+    const RunReport report = measuredReport();
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
-    CHECK(parsed->phases == report.phases);
     CHECK(parsed->world == rv::app::WorldRecord{});
     CHECK(parsed->residency == rv::app::ResidencyRecord{});
     CHECK(parsed->video == rv::app::VideoRecord{});
-    CHECK(parsed->gpuMemory == rv::app::GpuMemoryRecord{});
 
     // A reader refuses a report without one, or with one of the wrong type.
-    for (const char* key : {"world", "residency", "video", "phases", "gpuMemory"}) {
+    for (const char* key : {"world", "residency", "video", "frameTimes", "phases", "cpuSections", "gpuMemory"}) {
         CAPTURE(key);
         const auto missing = rv::app::parseRunReport(
             editedReport(report, [key](nlohmann::json& edited) { edited.erase(key); }), "r.json");
@@ -265,6 +294,85 @@ TEST_CASE("app/run_report: the sections of I3 are always written, empty until th
         editedReport(report, [](nlohmann::json& edited) { edited["phases"][0].erase("name"); }), "r.json");
     REQUIRE_FALSE(unnamed.has_value());
     CHECK(unnamed.error().context == "r.json:/phases/0/name");
+}
+
+TEST_CASE("app/run_report: frame times, phases, CPU sections and GPU memory read back record for record",
+          "[app][run_report]") {
+    const RunReport report = measuredReport();
+    const std::string text = rv::app::formatRunReport(report);
+    const auto parsed = rv::app::parseRunReport(text, "r.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->frameTimes == report.frameTimes);
+    CHECK(parsed->phases == report.phases);
+    CHECK(parsed->cpuSections == report.cpuSections);
+    CHECK(parsed->gpuMemory == report.gpuMemory);
+
+    // The layout scripts read: percentiles flat beside the count, left out with a count of 0; kinds by name.
+    const nlohmann::json json = nlohmann::json::parse(text);
+    CHECK(json.at("frameTimes") == nlohmann::json{{"warmUpFrames", 30},
+                                                  {"count", 570},
+                                                  {"p50Ms", 6.5},
+                                                  {"p95Ms", 7.25},
+                                                  {"p99Ms", 9.0},
+                                                  {"maxMs", 31.5}});
+    CHECK(json.at("phases").at(0).at("name") == "benchmark");
+    CHECK(json.at("phases").at(0).at("p99Ms") == 8.5);
+    CHECK(json.at("phases").at(1) ==
+          nlohmann::json{{"name", "refresh"}, {"opened", 2}, {"open", true}, {"frames", 12}, {"count", 0}});
+    CHECK(json.at("cpuSections").at(0).at("name") == "productUi");
+    CHECK(json.at("cpuSections").at(0).at("count") == 600);
+    CHECK(json.at("gpuMemory").at("kinds").at("proceduralSurfaces") ==
+          nlohmann::json{{"bytes", 83886080}, {"peakBytes", 83886080}, {"allocations", 23}});
+    CHECK(json.at("gpuMemory").at("kinds").at("targets").at("peakBytes") == 70000000);
+
+    // A count of 0 needs no percentile; any other count needs every one.
+    const auto noPercentile = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["frameTimes"].erase("p99Ms"); }), "r.json");
+    REQUIRE_FALSE(noPercentile.has_value());
+    CHECK(noPercentile.error().context == "r.json:/frameTimes/p99Ms");
+    const auto sectionWithout = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["cpuSections"][0].erase("maxMs"); }), "r.json");
+    REQUIRE_FALSE(sectionWithout.has_value());
+    CHECK(sectionWithout.error().context == "r.json:/cpuSections/0/maxMs");
+    // Every kind this build knows is required; a kind of a newer writer is ignored.
+    const auto noKind = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["gpuMemory"]["kinds"].erase("video"); }), "r.json");
+    REQUIRE_FALSE(noKind.has_value());
+    CHECK(noKind.error().context == "r.json:/gpuMemory/kinds/video");
+    const auto newerKind = rv::app::parseRunReport(
+        editedReport(report,
+                     [](nlohmann::json& edited) { edited["gpuMemory"]["kinds"]["probes"] = nlohmann::json{{"bytes", 1}}; }),
+        "r.json");
+    REQUIRE(newerKind.has_value());
+    CHECK(newerKind->gpuMemory == report.gpuMemory);
+}
+
+TEST_CASE("app/run_report: the GPU memory and CPU sections are taken from the ledger and the timers",
+          "[app][run_report]") {
+    rv::gl::GpuMemoryLedger ledger;
+    {
+        const rv::gl::GpuMemoryAllocation target(rv::gl::GpuMemoryKind::Targets, 1000, ledger);
+        const rv::gl::GpuMemoryAllocation surface(rv::gl::GpuMemoryKind::ProceduralSurfaces, 200, ledger);
+    }
+    const rv::gl::GpuMemoryAllocation video(rv::gl::GpuMemoryKind::Video, 30, ledger);
+    const rv::app::GpuMemoryRecord memory = rv::app::gpuMemoryRecord(ledger);
+    CHECK(memory.totalBytes == 30);
+    CHECK(memory.peakTotalBytes == 1200);
+    CHECK(memory.usage(rv::gl::GpuMemoryKind::Targets) == rv::gl::GpuMemoryUsage{0, 1000, 0});
+    CHECK(memory.usage(rv::gl::GpuMemoryKind::Video) == rv::gl::GpuMemoryUsage{30, 30, 1});
+
+    rv::core::CpuTimers timers;
+    timers.add("sceneSubmit", 2.0);
+    timers.add("productUi", 0.5);
+    timers.endFrame();
+    timers.add("productUi", 0.25);
+    timers.endFrame();
+    const std::vector<rv::app::CpuSectionRecord> sections = rv::app::cpuSectionRecords(timers);
+    REQUIRE(sections.size() == 2);
+    CHECK(sections[0].name == "productUi");
+    CHECK(sections[0].times == rv::app::TimeSummary{2, 0.25, 0.5, 0.5, 0.5});
+    CHECK(sections[1].name == "sceneSubmit");
+    CHECK(sections[1].times.count == 1);
 }
 
 TEST_CASE("app/run_report: the quick catalog and its launches read back record for record", "[app][run_report]") {

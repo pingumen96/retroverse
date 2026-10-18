@@ -14,6 +14,7 @@
 #include <rv/core/expected.hpp>
 #include <rv/render/buffer.hpp>
 #include <rv/render/gl_object.hpp>
+#include <rv/render/gpu_memory.hpp>
 
 namespace rv::gl {
 
@@ -107,7 +108,8 @@ public:
     /// The synchronization in use (Fence when TimestampQuery was asked for without timestamps).
     [[nodiscard]] VideoUploadSync sync() const noexcept { return m_sync; }
     [[nodiscard]] const VideoTextureStats& stats() const noexcept { return m_stats; }
-    /// GPU memory of the texture and the pixel buffer ring, bytes.
+    /// GPU memory of the texture and the pixel buffer ring, bytes (recorded in gpuMemoryLedger() as
+    /// GpuMemoryKind::Video).
     [[nodiscard]] std::size_t gpuBytes() const noexcept;
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
@@ -123,6 +125,8 @@ private:
     void pushTiming(double milliseconds) noexcept;
 
     TextureObject m_texture;
+    /// m_texture's storage, recorded as GpuMemoryKind::Video (the ring records itself through its Buffer).
+    GpuMemoryAllocation m_textureMemory;
     glm::ivec2 m_size{0};
     VideoUploadSync m_sync = VideoUploadSync::TimestampQuery;
     Buffer m_ring;

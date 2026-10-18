@@ -13,6 +13,7 @@
 
 #include <rv/app/app_logic.hpp>
 #include <rv/app/exit_code.hpp>
+#include <rv/core/cpu_timers.hpp>
 #include <rv/core/frame_clock.hpp>
 #include <rv/core/log.hpp>
 #include <rv/core/main_thread.hpp>
@@ -25,6 +26,7 @@
 #include <rv/platform/sdl_platform.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/render/gpu_memory.hpp>
 
 namespace rv::app {
 namespace {
@@ -42,6 +44,7 @@ constexpr bool kDevUi = false;
 #endif
 
 constexpr double kTitleRefreshSeconds = 1.0;
+constexpr double kMebibyte = 1024.0 * 1024.0;
 constexpr std::chrono::milliseconds kMinimizedWait{100};
 
 /// Shown when OpenGL 4.5 is not available.
@@ -159,6 +162,37 @@ SelfTestOutcome runGlSelfTest(gl::GLDevice& device) {
     return outcome;
 }
 
+/// "<count> frame(s), p50 <a> ms, p95 <b> ms, p99 <c> ms, max <d> ms", or "no frame".
+std::string describeTimes(const std::optional<TimeSummary>& times) {
+    if (!times || times->count == 0) {
+        return "no frame";
+    }
+    return fmt::format("{} frame(s), p50 {:.2f} ms, p95 {:.2f} ms, p99 {:.2f} ms, max {:.2f} ms", times->count,
+                       times->p50Ms, times->p95Ms, times->p99Ms, times->maxMs);
+}
+
+/// The measurements of a run, once at its end: frame times, phases, CPU sections, GPU memory.
+void logMeasurements(const RunReport& report) {
+    spdlog::info("Frame times of the run (the first {} frame(s) left out): {}", report.frameTimes.warmUpFrames,
+                 describeTimes(report.frameTimes.times));
+    for (const PhaseRecord& phase : report.phases) {
+        spdlog::info("Phase '{}': opened {} time(s){}, {} frame(s); frame times {}", phase.name, phase.opened,
+                     phase.open ? ", open at the end" : "", phase.frames, describeTimes(phase.times));
+    }
+    for (const CpuSectionRecord& section : report.cpuSections) {
+        spdlog::info("CPU section '{}': {}", section.name, describeTimes(section.times));
+    }
+    std::string kinds;
+    for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+        const gl::GpuMemoryUsage& usage = report.gpuMemory.usage(kind);
+        kinds += fmt::format("{}{} {:.1f} MiB ({})", kinds.empty() ? "" : ", ", gl::toString(kind),
+                             static_cast<double>(usage.bytes) / kMebibyte, usage.allocations);
+    }
+    spdlog::info("GPU memory (the renderer's accounting): {:.1f} MiB, peak {:.1f} MiB; {}",
+                 static_cast<double>(report.gpuMemory.totalBytes) / kMebibyte,
+                 static_cast<double>(report.gpuMemory.peakTotalBytes) / kMebibyte, kinds);
+}
+
 /// The report fields of the executable itself.
 RunReport initialReport(const AppIdentity& identity, const CommandLineOptions& options) {
     RunReport report;
@@ -241,6 +275,7 @@ int AppHost::run(IAppLogic& logic) noexcept {
     } catch (...) {
         reportUnexpectedFailure("unknown exception");
     }
+    recordMeasurements();
     exitCode = finishReport(exitCode);
     try {
         spdlog::info("Exiting with code {} ({})", toInt(exitCode), toString(exitCode));
@@ -249,6 +284,24 @@ int AppHost::run(IAppLogic& logic) noexcept {
         // The exit code matters more than the last log line.
     }
     return toInt(exitCode);
+}
+
+void AppHost::recordMeasurements() noexcept {
+    try {
+        m_report.frameTimes = m_frameTiming.runTimes();
+        m_report.phases = m_frameTiming.phases();
+        m_report.cpuSections = cpuSectionRecords(core::mainThreadCpuTimers());
+        if (!m_gpuMemoryRecorded) {
+            m_report.gpuMemory = gpuMemoryRecord(gl::gpuMemoryLedger());
+        }
+        if (m_options.frameLimit) {
+            logMeasurements(m_report);
+        }
+    } catch (const std::exception& e) {
+        spdlog::error("The run's measurements are incomplete: {}", e.what());
+    } catch (...) {
+        // The report goes out with what it has.
+    }
 }
 
 ExitCode AppHost::finishReport(ExitCode exitCode) noexcept {
@@ -333,7 +386,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
 
     // --- Application logic -------------------------------------------------------------------------------------------
     core::FrameClock clock;
-    AppContext context(m_options, *paths, *window, **device, clock, m_report);
+    AppContext context(m_options, *paths, *window, **device, clock, m_report, m_frameTiming);
     context.m_framebufferSize = window->drawableSize();
     // The wake event of the idle mode: pushed from any thread (SDL_PushEvent is thread-safe), kept by the host.
     context.m_wakeEvent = SDL_RegisterEvents(1);
@@ -358,7 +411,11 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
         m_report.glSelfTest = selfTest;
     }
 
-    if (auto loop = runMainLoop(logic, context); !loop) {
+    const Status loop = runMainLoop(logic, context);
+    // What the last frame had allocated, before the logic releases it.
+    m_report.gpuMemory = gpuMemoryRecord(gl::gpuMemoryLedger());
+    m_gpuMemoryRecorded = true;
+    if (!loop) {
         reportUnexpectedFailure(loop.error().toString());
         return ExitCode::RuntimeFailure;
     }
@@ -431,12 +488,16 @@ void AppHost::reportFailure(std::string_view logPrefix, std::string_view headlin
     }
 }
 
-Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
+Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) {
+    using Clock = std::chrono::steady_clock;
     platform::EventPump events;
     platform::GraphicsWindow& window = context.m_window;
     core::FrameClock& clock = context.m_clock;
+    core::CpuTimers& cpuTimers = core::mainThreadCpuTimers();
     const std::string baseTitle = baseWindowTitle();
     double nextTitleRefresh = kTitleRefreshSeconds;
+    // The end of the previous frame (its swap), from which the next frame's time is measured; none before the first.
+    std::optional<Clock::time_point> previousFrameEnd;
 
     while (!context.m_quitRequested) {
         events.poll([&](const SDL_Event& event) {
@@ -458,15 +519,21 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
                 events.waitForEvents(kIdleWait);
                 continue;
             }
-            // Back to rendering: the wait is no frame time (the next delta starts now, for the walker and the frame
-            // statistics).
+            // Back to rendering: the wait is no frame time (the next delta starts now, for the walker, the frame
+            // statistics and the frame times).
             clock.tick();
+            if (previousFrameEnd) {
+                previousFrameEnd = Clock::now();
+            }
         }
         // Nothing is visible while minimized: an interactive run sleeps until something happens instead of spinning on
         // an unthrottled swap. A frame-limited run keeps rendering (presenting to a minimized window is harmless), so
         // that it always reaches its limit and exits.
         if (!m_options.frameLimit && window.isMinimized()) {
             events.waitForEvents(kMinimizedWait);
+            if (previousFrameEnd) {
+                previousFrameEnd = Clock::now(); // nor is this wait
+            }
             continue;
         }
 
@@ -476,6 +543,14 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) const {
         if (auto presented = window.swap(); !presented) {
             return propagate(presented.error());
         }
+        const Clock::time_point frameEnd = Clock::now();
+        std::optional<double> frameMilliseconds;
+        if (previousFrameEnd) {
+            frameMilliseconds = std::chrono::duration<double, std::milli>(frameEnd - *previousFrameEnd).count();
+        }
+        previousFrameEnd = frameEnd;
+        m_frameTiming.recordFrame(context.m_frameIndex, frameMilliseconds);
+        cpuTimers.endFrame();
         ++context.m_frameIndex;
         // Kept current every frame, so that a report written after an exception escaped the loop counts the frames
         // presented before it.

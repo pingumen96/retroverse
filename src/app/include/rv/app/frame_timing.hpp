@@ -1,4 +1,75 @@
 #pragma once
 
-// Filled by I3 step 0d (rv_app_cli): frame-time percentiles over the run and per named phase (a refresh, a cover
-// load, an animation, the benchmark path; the first 30 frames left out), the run report's frameTimes and phases.
+// GPU-free (part of rv_app_cli): no SDL or OpenGL header is included.
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <rv/app/run_report.hpp>
+
+namespace rv::app {
+
+// Frame times of a run, over the whole run and per named phase (I3 step 0d; the budgets of docs/roadmap.md, I3): the
+// run report's frameTimes and phases.
+
+/// Frames left out at the start of a run (the first frames compile shaders, generate surfaces and warm the driver up):
+/// they count towards the frames of a phase but towards no percentile.
+inline constexpr std::uint64_t kFrameTimeWarmUpFrames = 30;
+
+/// The phases the budgets name (a phase is any name; these are the ones the code, the input scripts and the budgets
+/// share).
+inline constexpr std::string_view kPhaseRefresh = "refresh";     ///< the catalog's refresh (I3 steps 13r, 15b)
+inline constexpr std::string_view kPhaseCoverLoad = "coverLoad"; ///< loading the room's covers (I3 step 12)
+inline constexpr std::string_view kPhaseAnimation = "animation"; ///< a pickup or inspection animation (I3 step 13a)
+inline constexpr std::string_view kPhaseBenchmark = "benchmark"; ///< the benchmark path (I3 step 17b)
+
+/// Collects the time of every frame of a run and the frames of its phases. A phase is opened and closed by the code
+/// that runs it (AppContext::frameTiming): a frame belongs to a phase when the phase is open when the frame ends, or
+/// was opened and closed during it. Phases nest by name: a phase opened twice stays open until it is closed twice
+/// (two animations at once). Main thread only.
+class FrameTiming {
+public:
+    /// `warmUpFrames`: frames left out at the start of the run (frames with a lower index).
+    explicit FrameTiming(std::uint64_t warmUpFrames = kFrameTimeWarmUpFrames);
+
+    /// Opens the phase `name` (not empty: an empty name is ignored), or opens it once more.
+    void openPhase(std::string_view name);
+    /// Closes one opening of `name`; false when it is not open.
+    bool closePhase(std::string_view name);
+    /// True while `name` is open.
+    [[nodiscard]] bool phaseOpen(std::string_view name) const;
+
+    /// Records the end of frame `frameIndex` (counted from 0, increasing): its wall-clock time in milliseconds, from
+    /// the previous frame's end to this one's (nothing when unknown, such as the first frame's, or not finite or
+    /// negative). Every phase it belongs to counts it.
+    void recordFrame(std::uint64_t frameIndex, std::optional<double> milliseconds);
+
+    /// The frame times of the run so far.
+    [[nodiscard]] FrameTimesRecord runTimes() const;
+    /// Every phase opened so far, in the order of their first opening.
+    [[nodiscard]] std::vector<PhaseRecord> phases() const;
+
+private:
+    struct Phase {
+        std::string name;
+        /// Openings not closed yet.
+        std::uint64_t depth = 0;
+        std::uint64_t opened = 0;
+        std::uint64_t frames = 0;
+        /// Opened during the frame being recorded (counted even when closed again before it ends).
+        bool touched = false;
+        std::vector<double> milliseconds;
+    };
+
+    [[nodiscard]] Phase* find(std::string_view name);
+    [[nodiscard]] const Phase* find(std::string_view name) const;
+
+    std::uint64_t m_warmUpFrames;
+    std::vector<double> m_milliseconds;
+    std::vector<Phase> m_phases;
+};
+
+} // namespace rv::app

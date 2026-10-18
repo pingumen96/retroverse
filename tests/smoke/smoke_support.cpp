@@ -9,10 +9,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
 
+#include <rv/app/frame_timing.hpp>
 #include <rv/assets/image_io.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
+#include <rv/render/gpu_memory.hpp>
 
 #include "image_checks.hpp"
 #include "support/child_process.hpp"
@@ -200,8 +202,35 @@ void requireCleanRun(const AppRun& run) {
     CHECK(report.world == app::WorldRecord{});         // I3 step 10b
     CHECK(report.residency == app::ResidencyRecord{}); // I3 step 12
     CHECK(report.video == app::VideoRecord{});         // I3 step 11
-    CHECK(report.phases.empty());                      // I3 step 0d
-    CHECK(report.gpuMemory == app::GpuMemoryRecord{}); // I3 step 0d
+    // I3 step 0d: the frame times leave the warm-up out; phases and CPU sections cover frames of the run; the GPU
+    // memory adds up, and a run that drew a view had its targets.
+    CHECK(report.frameTimes.warmUpFrames == app::kFrameTimeWarmUpFrames);
+    const std::uint64_t timedFrames =
+        report.framesRendered > app::kFrameTimeWarmUpFrames ? report.framesRendered - app::kFrameTimeWarmUpFrames : 0;
+    CHECK(report.frameTimes.times.value_or(app::TimeSummary{}).count == timedFrames);
+    for (const app::PhaseRecord& phase : report.phases) {
+        CAPTURE(phase.name);
+        CHECK(phase.opened >= 1);
+        CHECK(phase.frames <= report.framesRendered);
+        CHECK(phase.times.value_or(app::TimeSummary{}).count <= phase.frames);
+    }
+    for (const app::CpuSectionRecord& section : report.cpuSections) {
+        CAPTURE(section.name);
+        CHECK(section.times.count >= 1);
+        CHECK(section.times.count <= report.framesRendered);
+        CHECK(section.times.p50Ms <= section.times.p99Ms);
+        CHECK(section.times.p99Ms <= section.times.maxMs);
+    }
+    std::uint64_t kindBytes = 0;
+    for (const gl::GpuMemoryUsage& usage : report.gpuMemory.kinds) {
+        kindBytes += usage.bytes;
+        CHECK(usage.peakBytes >= usage.bytes);
+    }
+    CHECK(report.gpuMemory.totalBytes == kindBytes);
+    CHECK(report.gpuMemory.peakTotalBytes >= report.gpuMemory.totalBytes);
+    if (report.lastView) {
+        CHECK(report.gpuMemory.usage(gl::GpuMemoryKind::Targets).bytes > 0);
+    }
     if (config.devAssetRoot) {
         CHECK(report.assetRootSource == "source tree");
         CHECK(samePath(report.assetRoot, sourceDir() / "assets"));

@@ -16,6 +16,7 @@
 #include <rv/app/app_logic.hpp>
 #include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
+#include <rv/core/cpu_timers.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/platform/graphics_window.hpp>
@@ -404,6 +405,7 @@ void ProductUi::typeText(std::string_view text) {
 }
 
 void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds, double timeSeconds) {
+    const core::CpuSectionScope timing(core::cpu_section::kProductUi);
     Impl& s = *m_impl;
     const auto frameStart = std::chrono::steady_clock::now();
     if (s.lastFrame && s.catalogOpen && !s.model->window().empty() && s.frameMs.size() < Impl::kMaxFrameSamples) {
@@ -517,12 +519,14 @@ void ProductUi::frameRendered() noexcept {
 
 void ProductUi::renderToWindow(gl::GLDevice& device) {
     if (m_impl->visible()) {
+        const core::CpuSectionScope timing(core::cpu_section::kProductUi);
         m_impl->view->render(device);
     }
 }
 
 void ProductUi::renderTo(gl::GLDevice& device, const gl::Framebuffer& target) {
     if (m_impl->visible()) {
+        const core::CpuSectionScope timing(core::cpu_section::kProductUi);
         m_impl->view->renderTo(device, target);
     }
 }

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -19,12 +20,14 @@
 #include <rv/app/screenshot_name.hpp>
 #include <rv/assets/image_io.hpp>
 #include <rv/assets/material_library.hpp>
+#include <rv/core/cpu_timers.hpp>
 #include <rv/core/frame_clock.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/render/debug_draw.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/render/gpu_memory.hpp>
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/post_settings.hpp>
@@ -220,7 +223,10 @@ struct SceneGraphics::State {
             shown.ssao.enabled = false;
             shown.shadowSettings.enabled = false;
         }
-        renderer->render(device, shaderSet, shown, targets);
+        {
+            const core::CpuSectionScope timing(core::cpu_section::kSceneSubmit);
+            renderer->render(device, shaderSet, shown, targets);
+        }
         viewRendered = true;
         anyViewRendered = true;
     }
@@ -259,6 +265,17 @@ struct SceneGraphics::State {
         }
         spdlog::info("Screenshot written: {} ({}x{})", core::pathToUtf8(path), size.x, size.y);
         return ok();
+    }
+
+    /// The bytes of every texture the cache and the defaults hold, each from its format, size and levels
+    /// (gl::Texture2D::estimatedBytes).
+    [[nodiscard]] std::uint64_t heldTextureBytes() const {
+        std::uint64_t bytes = textures->estimatedBytes();
+        for (const gl::Texture2D* texture : {&textureDefaults->white(), &textureDefaults->black(),
+                                             &textureDefaults->flatNormal(), &textureDefaults->checker()}) {
+            bytes += texture->estimatedBytes();
+        }
+        return bytes;
     }
 
     /// Name of a program of the views that never built, or empty when all did.
@@ -501,11 +518,31 @@ void SceneGraphics::finishRun(AppContext& context) {
     if (options.screenshot && state.lastFrameCaptured) {
         report.screenshot = ScreenshotRecord{*options.screenshot, options.screenshotWidth, options.screenshotHeight};
     }
+    // The GPU memory accounting (gl::gpuMemoryLedger) records every texture of the cache and the defaults, and nothing
+    // else under their kinds: the run report's procedural surfaces and scene textures are what they hold.
+    const gl::GpuMemoryLedger& ledger = gl::gpuMemoryLedger();
+    const std::uint64_t held = state.heldTextureBytes();
+    const std::uint64_t recorded = ledger.usage(gl::GpuMemoryKind::ProceduralSurfaces).bytes +
+                                   ledger.usage(gl::GpuMemoryKind::SceneTextures).bytes;
+    if (held != recorded) {
+        spdlog::error("GPU memory accounting: the texture cache and the defaults hold {} bytes, the ledger records {} "
+                      "for procedural surfaces and scene textures",
+                      held, recorded);
+    }
     if (!options.frameLimit) {
         return;
     }
     if (const std::optional<std::string> summary = state.statsLog.runSummary("Frame stats of the run")) {
         spdlog::info("{}", *summary);
+    }
+    // An accounting that misses textures, or counts others, makes the run report's gpuMemory wrong: unattended runs,
+    // which read it against the budgets, must not pass.
+    if (held != recorded) {
+        context.failRun(Error{ErrorCode::ValidationFailed,
+                              fmt::format("the GPU memory accounting records {} bytes of textures, the texture cache "
+                                          "and the defaults hold {}",
+                                          recorded, held),
+                              "gpuMemory"});
     }
     // An unattended run must not pass when it could never draw its scene completely (its frames and screenshot miss
     // surfaces, the bloom or the tonemap).

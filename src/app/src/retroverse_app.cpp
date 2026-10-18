@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <glm/vec2.hpp>
@@ -42,6 +43,7 @@
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/render/gpu_memory.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/shadow_settings.hpp>
 #include <rv/scene/camera.hpp>
@@ -360,6 +362,8 @@ struct RetroverseApp::State {
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
+    /// The phases the --input-script holds open (its steps' "phase"), sorted.
+    std::vector<std::string> scriptPhases;
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
     /// The mouse between first-person look and the layers over the scene (the developer overlay, the product UI):
     /// the first layer to open frees a captured mouse, the last to close captures it again when it freed it.
@@ -378,6 +382,29 @@ struct RetroverseApp::State {
     /// The developer overlay. Declared last: destroyed first, before the state its panels refer to.
     std::unique_ptr<devui::DevUi> devUi;
 #endif
+
+    /// Opens the phases of the --input-script's steps that cover `frame` and closes those that no longer do, so that a
+    /// step's phase holds its frames exactly (FrameTiming).
+    void syncScriptPhases(FrameTiming& timing, std::uint64_t frame) {
+        const input::InputScript* script = input->script();
+        if (script == nullptr) {
+            return;
+        }
+        std::vector<std::string> wanted = script->phasesAt(frame);
+        for (const std::string& name : scriptPhases) {
+            if (!std::binary_search(wanted.begin(), wanted.end(), name)) {
+                timing.closePhase(name);
+                spdlog::info("Frame {}: phase '{}' closed by the input script", frame, name);
+            }
+        }
+        for (const std::string& name : wanted) {
+            if (!std::binary_search(scriptPhases.begin(), scriptPhases.end(), name)) {
+                timing.openPhase(name);
+                spdlog::info("Frame {}: phase '{}' opened by the input script", frame, name);
+            }
+        }
+        scriptPhases = std::move(wanted);
+    }
 
     /// Logs the pose at the end of every input script step that ends on `frame`.
     void logScriptProgress(std::uint64_t frame) const {
@@ -572,7 +599,8 @@ struct RetroverseApp::State {
         devUi = std::move(*created);
         platform::GraphicsWindow& window = context.window();
         devUi->addPanel(devui::makeStatsPanel({frameTimes, graphics->renderStats(), graphics->meshes(),
-                                               graphics->materials(), graphics->textures()}),
+                                               graphics->materials(), graphics->textures(),
+                                               gl::gpuMemoryLedger()}),
                         devui::DockSlot::Left);
         devUi->addPanel(devui::makeCameraPanel({camera, freeRoam->controller(), input->system(), collision,
                                                 [this] { resetToSceneCamera(); }}),
@@ -843,6 +871,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     const std::uint64_t frame = context.frameIndex();
     state.simulatedSeconds += deltaSeconds;
     const input::ActionState actions = state.input->update(frame);
+    state.syncScriptPhases(context.frameTiming(), frame);
     // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
     const InputContext inputContext = state.inputContext();
 

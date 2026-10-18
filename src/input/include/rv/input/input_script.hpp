@@ -29,6 +29,9 @@ struct InputScriptStep {
     /// Text typed on fromFrame, once (UTF-8): what the product UI's focused text field receives, as if typed on a
     /// keyboard (the quick catalog's search). Empty: none.
     std::string text;
+    /// A named phase of the run (app::FrameTiming) open on every frame of the step: its frame times are reported apart
+    /// (the run report's phases). Empty: none.
+    std::string phase;
 
     [[nodiscard]] bool covers(std::uint64_t frame) const noexcept { return frame >= fromFrame && frame <= toFrame; }
 };
@@ -50,7 +53,12 @@ struct InputScriptStep {
 ///    button).
 ///  - "text" (I2 step 13): a string typed once, on fromFrame, into the product UI's focused text field (the quick
 ///    catalog's search: {"fromFrame": 9, "toFrame": 9, "text": "nintendo"}); valid UTF-8, 1 to kMaxTextBytes bytes,
-///    no control characters. A step has "actions", "text" or both, and an "actions" it has is not empty.
+///    no control characters.
+///  - "phase" (I3 step 0d): the name of a phase of the run open from fromFrame to toFrame, whose frame times the run
+///    report gives apart ({"fromFrame": 40, "toFrame": 99, "phase": "benchmark"}): an ASCII letter, then up to
+///    kMaxPhaseNameBytes - 1 ASCII letters, digits, '_' or '-' (isValidPhaseName). Steps with the same phase that
+///    overlap or touch keep it open throughout.
+/// A step has at least one of "actions", "text" and "phase", and an "actions" it has is not empty.
 ///  - Steps may overlap. On a frame where several steps set the same action, the step that comes later in the file
 ///    wins.
 /// Every field is required, unknown fields are errors and a script holds 1 to kMaxSteps steps. Error contexts are
@@ -65,6 +73,8 @@ public:
     static constexpr std::size_t kMaxSteps = 10000;
     /// Longest "text" of a step, in bytes (the quick catalog's search field holds 64 characters).
     static constexpr std::size_t kMaxTextBytes = 256;
+    /// Longest "phase" of a step, in bytes.
+    static constexpr std::size_t kMaxPhaseNameBytes = 64;
 
     /// Parses a script document; `context` prefixes error locations (usually the file name).
     [[nodiscard]] static Expected<InputScript> fromJson(const nlohmann::json& document, std::string_view context);
@@ -80,10 +90,16 @@ public:
     /// The text typed on `frame`: the "text" of every step whose fromFrame it is, in file order, joined; empty when
     /// none.
     [[nodiscard]] std::string textAt(std::uint64_t frame) const;
+    /// The phases open on `frame`: the "phase" of every step that covers it, sorted, without repeats.
+    [[nodiscard]] std::vector<std::string> phasesAt(std::uint64_t frame) const;
 
 private:
     std::vector<InputScriptStep> m_steps;
 };
+
+/// True for a phase name an input script accepts: an ASCII letter, then ASCII letters, digits, '_' or '-', at most
+/// InputScript::kMaxPhaseNameBytes in all.
+[[nodiscard]] bool isValidPhaseName(std::string_view name) noexcept;
 
 /// Applies an InputScript to the action states of consecutive frames.
 class InputScriptPlayer {

@@ -6,6 +6,7 @@
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
+#include <rv/app/frame_timing.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/core/version.hpp>
@@ -70,12 +71,16 @@ private:
     /// Same for a failure the logic reported through AppContext::failRun.
     void reportRunFailure(std::string_view what) noexcept;
     void reportFailure(std::string_view logPrefix, std::string_view headline, std::string_view what) noexcept;
-    /// Completes the report with `exitCode` and writes it to the --run-report file; returns the exit code of the run,
+    /// Completes the report with `exitCode` (and the frame times, the phases, the CPU sections and, unless the main loop
+    /// recorded it, the GPU memory) and writes it to the --run-report file; returns the exit code of the run,
     /// ExitCode::RuntimeFailure instead of ExitCode::Ok when the report could not be written.
     [[nodiscard]] ExitCode finishReport(ExitCode exitCode) noexcept;
+    /// Adds the measurements of the run (FrameTiming, core::mainThreadCpuTimers()) to the report, and logs them once
+    /// for a frame-limited run.
+    void recordMeasurements() noexcept;
     /// Runs until quit or the frame limit, keeping RunReport::framesRendered current after every frame; an error means
-    /// presentation failed.
-    [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context) const;
+    /// presentation failed. Records each frame's time (FrameTiming) and closes the CPU sections' frame.
+    [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context);
     /// Handles quit, window close, resize and the fullscreen shortcut. Returns true when the event is consumed and must
     /// not reach the logic: the Alt+Enter press (platform::isFullscreenToggle), the host's wake event.
     [[nodiscard]] bool handleHostEvent(AppContext& context, const SDL_Event& event) const;
@@ -86,6 +91,10 @@ private:
     AppIdentity m_identity;
     /// The report of the run, filled as it goes.
     RunReport m_report;
+    /// The frame times and phases of the run (AppContext::frameTiming).
+    FrameTiming m_frameTiming;
+    /// RunReport::gpuMemory was recorded when the main loop ended.
+    bool m_gpuMemoryRecorded = false;
 };
 
 } // namespace rv::app
