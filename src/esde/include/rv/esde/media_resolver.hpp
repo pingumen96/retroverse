@@ -36,6 +36,7 @@
 #include <rv/catalog/lookup_key.hpp>
 #include <rv/catalog/media.hpp>
 #include <rv/catalog/media_resolver.hpp>
+#include <rv/catalog/room_entry.hpp>
 #include <rv/catalog/snapshot.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/esde/settings.hpp>
@@ -285,5 +286,38 @@ private:
     std::map<catalog::SystemName, SystemIndex> m_systems;
     MediaListingStats m_stats;
 };
+
+// --- The room's media (I3 step 2; ADR-0010 §3, ADR-0011 §6) ----------------------------------------------------------
+
+/// The media files of one entry of a room's snapshot, below the media root.
+struct RoomMediaPaths {
+    catalog::GameId game;
+    /// Per kind, in the order of catalog::kMediaKinds: mediaRelativePath() of the kind's file as the snapshot's
+    /// presence and extension name it; empty when the entry has none.
+    std::array<std::string, catalog::kMediaKindCount> relativePaths{};
+
+    [[nodiscard]] const std::string& operator[](catalog::MediaKind kind) const noexcept {
+        return relativePaths[static_cast<std::size_t>(kind)];
+    }
+
+    bool operator==(const RoomMediaPaths&) const = default;
+};
+
+/// The media paths of a room's snapshot (ADR-0011 §6), derived in one pass on the catalog worker from the presence and
+/// extension the catalog stored (catalog::RoomEntry::media), never by listing a folder: one RoomMediaPaths per entry
+/// that has media, in the snapshot's order (by GameId). They are derived whether or not the snapshot's media are known:
+/// the derived-texture cache names its entries after these paths and serves them while the media root is out of reach
+/// (ADR-0011 §7); the loader reopens a path with core::extendedLengthPathBelow(media root, it). An entry without a key
+/// has none, and a stored extension that is no file extension (empty, without its dot, holding a separator, ':' or a
+/// character below U+0020) gives no path for its kind, as EsdeMediaResolver::path() refuses it.
+[[nodiscard]] std::vector<RoomMediaPaths> roomMediaPaths(const catalog::RoomSnapshot& snapshot);
+
+/// Says whether the media of a room's snapshot can be relied on now (ADR-0010 §3: unknown media decide nothing), on
+/// the catalog worker after SqliteCatalogQuery::roomEntries(), which cannot tell and leaves them unknown: sets
+/// snapshot.mediaKnown when resolver.checkRoot() passes (the media root resolved, there and listed: one listing of the
+/// root's own folder, kept by the resolver until its refresh()), else clears it with the root's reason in
+/// snapshot.mediaUnknownReason. The system's media folders are not listed: the presence the snapshot holds is the
+/// catalog's, as its last import found it (an import that could not know an entry's media kept what it had stored).
+void checkRoomMedia(catalog::RoomSnapshot& snapshot, EsdeMediaResolver& resolver);
 
 } // namespace rv::esde
