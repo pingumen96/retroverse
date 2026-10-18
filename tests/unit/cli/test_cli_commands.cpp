@@ -48,12 +48,12 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 16> kPlanned
     {"where-is", "I3 step 9"},
 }};
 
-/// The subcommands of worldplan, each with the I3 step that implements it.
-constexpr std::array<std::pair<std::string_view, std::string_view>, 4> kWorldPlanSubcommands{{
+/// The subcommands of worldplan still stubs, each with the I3 step that implements it (check: I3 step 4,
+/// test_cli_worldplan_check.cpp).
+constexpr std::array<std::pair<std::string_view, std::string_view>, 3> kWorldPlanSubcommands{{
     {"generate", "I3 step 3"},
     {"update", "I3 step 9"},
     {"show", "I3 step 3"},
-    {"check", "I3 step 4"},
 }};
 
 /// The I3 steps whose worldplan subcommands are implemented (tests/unit/cli/test_cli_worldplan.cpp covers them).

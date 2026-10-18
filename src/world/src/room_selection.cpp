@@ -1,11 +1,15 @@
 #include <rv/world/room_selection.hpp>
 
 #include <algorithm>
+#include <map>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 
+#include <rv/catalog/media.hpp>
 #include <rv/core/canonical_json.hpp>
+#include <rv/world/title_key.hpp>
 
 #include "data_reader.hpp"
 #include "plan_parts.hpp"
@@ -94,7 +98,111 @@ RoomSelection readDocument(DocumentReader& document, const Json& value) {
     return selection;
 }
 
+/// A version of a title while selectRoom() groups them.
+struct Version {
+    const catalog::RoomEntry* entry = nullptr;
+    VersionTags tags;
+};
+
+/// The representative's order (ADR-0010 §3): the tags, then the lookup key (ordinal) and the GameId.
+bool versionLess(const Version& a, const Version& b) noexcept {
+    if (versionTagsLess(a.tags, b.tags)) {
+        return true;
+    }
+    if (versionTagsLess(b.tags, a.tags)) {
+        return false;
+    }
+    return std::tie(a.entry->key, a.entry->id) < std::tie(b.entry->key, b.entry->id);
+}
+
 } // namespace
+
+Expected<RoomSelection> selectRoom(const RoomInput& input, const WorldConfig& config) {
+    const catalog::RoomSnapshot& snapshot = input.snapshot;
+    auto room = RoomId::forSystem(snapshot.system);
+    if (!room) {
+        return propagate(room.error());
+    }
+    if (!snapshot.mediaKnown) {
+        return makeError(
+            ErrorCode::Unavailable,
+            "the media of the system are not known (" +
+                (snapshot.mediaUnknownReason.empty() ? std::string("no reason given") : snapshot.mediaUnknownReason) +
+                "): its room decides nothing from them",
+            snapshot.system.str());
+    }
+
+    // The games, and whether any of them has a cover.
+    std::vector<const catalog::RoomEntry*> games;
+    std::set<catalog::GameId> ids;
+    bool anyCover = false;
+    for (const catalog::RoomEntry& entry : snapshot.entries) {
+        if (!ids.insert(entry.id).second) {
+            return makeError(ErrorCode::InvalidArgument,
+                             "the snapshot holds the game " + entry.id.toString() + " twice", snapshot.system.str());
+        }
+        const bool game = entry.state == catalog::EntryState::Game || entry.state == catalog::EntryState::MissingFile;
+        if (game && !entry.hidden) {
+            games.push_back(&entry);
+            anyCover = anyCover || entry.media[catalog::MediaKind::Cover].present;
+        }
+    }
+
+    RoomSelection selection;
+    selection.room = *room;
+    selection.eligibility = config.include == PlacementInclude::All ? Eligibility::All
+                            : anyCover                              ? Eligibility::Covered
+                                                                    : Eligibility::NoCoverInSystem;
+    selection.titleKeyRule = std::string(kTitleKeyRule);
+    selection.catalogSortKeyVersion = snapshot.sortKeyVersion;
+    const auto unplace = [&](const catalog::RoomEntry& entry, UnplacedReason reason, catalog::GameId representative) {
+        selection.unplaced.push_back(UnplacedGame{entry.id, *room, reason, representative});
+    };
+
+    // The eligible games by title key (an ordered map: nothing depends on a hash order).
+    std::map<std::string, std::vector<Version>> titles;
+    for (const catalog::RoomEntry* entry : games) {
+        if (entry->state == catalog::EntryState::MissingFile) {
+            unplace(*entry, UnplacedReason::Unavailable, {});
+            continue;
+        }
+        if (selection.eligibility == Eligibility::Covered && !entry->media[catalog::MediaKind::Cover].present) {
+            unplace(*entry, UnplacedReason::NoCover, {});
+            continue;
+        }
+        auto key = titleKey(entry->title);
+        if (!key) {
+            Error error = key.error();
+            error.message = "the title of " + entry->id.toString() + ": " + error.message;
+            return propagate(std::move(error));
+        }
+        titles[std::move(*key)].push_back(Version{entry, readVersionTags(fileNameOf(entry->key.relativePath()))});
+    }
+
+    for (auto& [key, versions] : titles) {
+        std::sort(versions.begin(), versions.end(), versionLess);
+        const catalog::RoomEntry& representative = *versions.front().entry;
+        RoomTitle title;
+        title.game = representative.id;
+        title.titleKey = key;
+        title.sortKey = representative.sortKey;
+        for (const Version& version : versions) {
+            const catalog::RoomEntry& entry = *version.entry;
+            title.favorite = title.favorite || entry.favorite;
+            title.playCount += entry.esdePlayCount + entry.sessionCount;
+            if (entry.rating && (!title.ratingTenths || entry.rating->tenths > *title.ratingTenths)) {
+                title.ratingTenths = entry.rating->tenths;
+            }
+            if (&entry != &representative) {
+                unplace(entry, UnplacedReason::DuplicateTitle, representative.id);
+            }
+        }
+        selection.titles.push_back(std::move(title));
+    }
+    std::sort(selection.titles.begin(), selection.titles.end(), priorityLess);
+    std::sort(selection.unplaced.begin(), selection.unplaced.end());
+    return selection;
+}
 
 bool priorityLess(const RoomTitle& a, const RoomTitle& b) noexcept {
     // Higher first for the favourite, the play count and the rating (an unrated title, -1, after every rated one).

@@ -28,6 +28,15 @@ using catalog::MediaKind;
 /// issue (a broken tree could hold thousands).
 constexpr std::size_t kUnlistedFoldersListed = 100;
 
+/// Whether a stored extension is a file extension a path can end with: its dot and at least one character, UTF-8, no
+/// separator, ':' or character below U+0020.
+bool isFileExtension(std::string_view extension) {
+    return extension.size() >= 2 && extension.front() == '.' && core::isValidUtf8(extension) &&
+           std::none_of(extension.begin(), extension.end(), [](char c) {
+               return static_cast<unsigned char>(c) < 0x20u || c == '/' || c == '\\' || c == ':';
+           });
+}
+
 /// Text folded as the lookup keys are (core::fileSystemUpperCase()). ASCII text, nearly every media name, takes a short
 /// way with the same result: the file systems' table maps 'a' to 'z' onto 'A' to 'Z' and keeps every other ASCII
 /// character.
@@ -655,12 +664,7 @@ Expected<std::filesystem::path> EsdeMediaResolver::path(const catalog::SystemNam
                          key.relativePath());
     }
     const std::string& extension = media.extension;
-    const bool wellFormed =
-        extension.size() >= 2 && extension.front() == '.' && core::isValidUtf8(extension) &&
-        std::none_of(extension.begin(), extension.end(), [](char c) {
-            return static_cast<unsigned char>(c) < 0x20u || c == '/' || c == '\\' || c == ':';
-        });
-    if (!wellFormed) {
+    if (!isFileExtension(extension)) {
         return makeError(ErrorCode::InvalidArgument, "the media's extension is no file extension", extension);
     }
     if (!m_root) {
@@ -677,6 +681,36 @@ void EsdeMediaResolver::refresh() noexcept {
     m_systemFolders.clear();
     m_systems.clear();
     m_stats = MediaListingStats{};
+}
+
+std::vector<RoomMediaPaths> roomMediaPaths(const catalog::RoomSnapshot& snapshot) {
+    std::vector<RoomMediaPaths> paths;
+    for (const catalog::RoomEntry& entry : snapshot.entries) {
+        if (entry.key.empty() || !entry.media.any()) {
+            continue;
+        }
+        RoomMediaPaths entryPaths;
+        entryPaths.game = entry.id;
+        bool any = false;
+        for (const MediaKind kind : catalog::kMediaKinds) {
+            const catalog::MediaPresence& media = entry.media[kind];
+            if (media.present && isFileExtension(media.extension)) {
+                entryPaths.relativePaths[static_cast<std::size_t>(kind)] =
+                    mediaRelativePath(snapshot.system, entry.key, entry.directory, kind, media.extension);
+                any = true;
+            }
+        }
+        if (any) {
+            paths.push_back(std::move(entryPaths));
+        }
+    }
+    return paths;
+}
+
+void checkRoomMedia(catalog::RoomSnapshot& snapshot, EsdeMediaResolver& resolver) {
+    const Status root = resolver.checkRoot();
+    snapshot.mediaKnown = root.has_value();
+    snapshot.mediaUnknownReason = root ? std::string() : root.error().message;
 }
 
 } // namespace rv::esde
