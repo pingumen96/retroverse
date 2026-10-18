@@ -30,6 +30,8 @@ void sortPlan(WorldPlan& plan) {
               [](const Fixture& a, const Fixture& b) { return a.id < b.id; });
     std::sort(plan.placements.begin(), plan.placements.end());
     std::sort(plan.dressing.begin(), plan.dressing.end());
+    std::sort(plan.lights.begin(), plan.lights.end(),
+              [](const PlanLight& a, const PlanLight& b) { return a.id < b.id; });
     std::sort(plan.unplaced.begin(), plan.unplaced.end());
 }
 

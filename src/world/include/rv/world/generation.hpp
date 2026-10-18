@@ -2,16 +2,24 @@
 
 // GenerationResult (ADR-0010 §2): what world::generate (a fresh plan, I3 step 3) and the incremental update (step 9)
 // return, an immutable value posted to the main thread (§12): the plan, the change report and the validation report.
-// The types are I3 step 1a's; the functions that fill them are the later steps'.
+// The types are I3 step 1a's; generate() and the data it reads (WorldData, loadWorldData()) are step 3's.
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <rv/catalog/ids.hpp>
+#include <rv/core/expected.hpp>
+#include <rv/world/capacity.hpp>
 #include <rv/world/ids.hpp>
+#include <rv/world/media_family.hpp>
+#include <rv/world/platform_manifest.hpp>
+#include <rv/world/room_selection.hpp>
+#include <rv/world/room_template.hpp>
+#include <rv/world/world_config.hpp>
 #include <rv/world/world_plan.hpp>
 
 namespace rv::world {
@@ -151,5 +159,55 @@ struct GenerationResult {
 
     bool operator==(const GenerationResult&) const = default;
 };
+
+/// The generator's version (ADR-0010 §8, §10): 1.0 is I3 step 3's rules. A change that places any game differently is
+/// a new major version; one that only adds rules keeping every placement a new minor one.
+inline constexpr GeneratorVersion kGeneratorVersion{1, 0};
+
+/// The one room template of I3 (ADR-0010 §4).
+inline constexpr std::string_view kDefaultRoomTemplate = "console_room_9x10";
+
+/// What a generation reads from the asset root for one system's room: the template, the system's platform manifest,
+/// its media family and every prefab they name, measured (capacity.hpp).
+struct WorldData {
+    RoomTemplate roomTemplate;
+    PlatformManifest platform;
+    MediaFamily mediaFamily;
+    PrefabCatalog prefabs;
+};
+
+/// Reads the world's data for `system`'s room: <assetRoot>/world/templates/<templateId>.json, platforms/<system>.json,
+/// media_families.json (the platform's family, its item checked against its manifest with checkItemManifest()) and,
+/// through the prefab families (assets/manifests/families.json), every prefab they name (a missing or broken manifest
+/// falls back to its family's prefab, logged once). Errors: those of the readers (NotFound for a system without a
+/// platform manifest), NotFound for a media family the registry lacks, ValidationFailed for an item that disagrees with
+/// its manifest.
+[[nodiscard]] Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot,
+                                                const catalog::SystemName& system,
+                                                std::string_view templateId = kDefaultRoomTemplate);
+
+/// What a fresh generation is asked for: the library, its room's selection (world::selectRoom, I3 step 2) and the
+/// configuration (world_config.hpp).
+struct GenerationInput {
+    catalog::LibraryId library;
+    RoomSelection selection;
+    WorldConfig config;
+};
+
+/// A fresh plan for the selection's room (ADR-0010 §3 to §8), a pure function of its inputs: two runs, and Debug and
+/// Release, give one canonical text. The display rule: the first min(T, D + B) titles in priority order stand face-out
+/// (the first D on the display fixtures, the next B in the hero band), the others spine-out in the hero-wall modules
+/// and in as few side-wall modules as they and the reserve need, in the smallest room that holds them (growth); at the
+/// template's limit the titles last in priority order are unplaced with reason capacity. Every side-wall socket no
+/// module needs holds decoration, the decoration sockets within the density, every level no title needs shelf dressing;
+/// the lights stay within the template's limit. The selection's unplaced games are copied into the plan. The result's
+/// changes are a fresh plan's (Generated, Full, every placement added); its validation is validatePlan()'s
+/// (validation.hpp) against the template, the configuration, the selection, the prefabs' slots as measured here and the
+/// plan's lights: a plan with a hard finding is returned all the same, and its caller never saves or shows it
+/// (ADR-0010 §11). Errors: InvalidArgument for a selection of another room than the data's system, a
+/// selection roomSelectionToJson() refuses, a game both a title and unplaced, a configuration checkWorldConfig()
+/// refuses, a media family other than the platform's; those of the layout (a module or display prefab that does not
+/// fit its socket: ValidationFailed).
+[[nodiscard]] Expected<GenerationResult> generate(const GenerationInput& input, const WorldData& data);
 
 } // namespace rv::world

@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <rv/core/sha256.hpp>
 #include <rv/world/plan_json.hpp>
@@ -23,6 +24,8 @@ using rv::world::FixtureId;
 using rv::world::FixtureLevel;
 using rv::world::FixtureRole;
 using rv::world::LevelId;
+using rv::world::LightRole;
+using rv::world::PlanLight;
 using rv::world::Placement;
 using rv::world::RoomId;
 using rv::world::Section;
@@ -131,7 +134,7 @@ const std::string kSampleText =
     "\"widthMm\":900,\"xMm\":-2425,\"yMm\":0,\"yawCdeg\":0,\"zMm\":-4795}\n"
     "],\"generatorVersion\":\"1.0\","
     "\"inputDigest\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"library\":\"esde\","
-    "\"placements\":[\n"
+    "\"lights\":[],\"placements\":[\n"
     "{\"game\":\"g0000000000000002\",\"insetMm\":0,\"slot\":\"room:snes/fx:dc01/s:0.0\",\"yawCdeg\":120},\n"
     "{\"game\":\"g0000000000000001\",\"insetMm\":3,\"slot\":\"room:snes/fx:hw-w/s:0.1\",\"yawCdeg\":0}\n"
     "],\"preset\":\"retro_museum_cozy\",\"randomAlgorithm\":\"splitmix64/1\",\"rooms\":[\n"
@@ -400,4 +403,49 @@ TEST_CASE("world/plan_json: generator versions and enumerations as text", "[worl
     CHECK(rv::world::isFaceOut(Section::Featured));
     CHECK(rv::world::isFaceOut(Section::Band));
     CHECK_FALSE(rv::world::isFaceOut(Section::Spine));
+    for (const LightRole role :
+         {LightRole::Key, LightRole::Pendant, LightRole::Lamp, LightRole::Picture, LightRole::WallWasher}) {
+        CHECK(rv::world::parseLightRole(rv::world::toString(role)) == role);
+    }
+    CHECK(rv::world::lightKind(LightRole::Pendant) == rv::world::LightKind::Point);
+    CHECK(rv::world::lightKind(LightRole::Lamp) == rv::world::LightKind::Point);
+    CHECK(rv::world::lightKind(LightRole::Key) == rv::world::LightKind::Spot);
+    CHECK(rv::world::lightKind(LightRole::WallWasher) == rv::world::LightKind::Spot);
+}
+
+TEST_CASE("world/plan_json: lights are written by id and read back; a point light has no aim", "[world][plan_json]") {
+    WorldPlan plan = samplePlan();
+    const PlanLight washer{fixtureId("w01", "washer"), LightRole::WallWasher, -3270, 2950, -3500, -4230, 1000, -3500,
+                           1900};
+    const PlanLight pendant{fixtureId("room", "pendant"), LightRole::Pendant, 0, 2100, 0, 0, 2100, 0, 0};
+    plan.lights = {washer, pendant};
+    auto text = rv::world::writePlan(plan);
+    REQUIRE(text.has_value());
+    CHECK_THAT(*text, ContainsSubstring("\"lights\":[\n"
+                                        "{\"id\":\"room:snes/fx:room.pendant\",\"role\":\"pendant\",\"spanMm\":0,"
+                                        "\"targetXMm\":0,\"targetYMm\":2100,\"targetZMm\":0,\"xMm\":0,\"yMm\":2100,"
+                                        "\"zMm\":0},\n"
+                                        "{\"id\":\"room:snes/fx:w01.washer\",\"role\":\"wall-washer\",\"spanMm\":1900,"
+                                        "\"targetXMm\":-4230,\"targetYMm\":1000,\"targetZMm\":-3500,\"xMm\":-3270,"
+                                        "\"yMm\":2950,\"zMm\":-3500}\n"
+                                        "],\"placements\":["));
+    auto read = rv::world::readPlan(*text, "lights.json");
+    REQUIRE(read.has_value());
+    CHECK(read->lights == std::vector<PlanLight>{pendant, washer});
+    CHECK(*rv::world::writePlan(*read) == *text);
+
+    // A point light aimed elsewhere or given a span, an unknown role, the list out of order: refused.
+    PlanLight aimed = pendant;
+    aimed.targetZMm = 10;
+    plan.lights = {aimed};
+    CHECK_FALSE(rv::world::writePlan(plan).has_value());
+    PlanLight spread = pendant;
+    spread.spanMm = 5;
+    plan.lights = {spread};
+    CHECK_FALSE(rv::world::writePlan(plan).has_value());
+    const rv::Error role = refusal(replaced(*text, "\"role\":\"pendant\"", "\"role\":\"torch\""));
+    CHECK_THAT(role.toString(), ContainsSubstring("/lights/0/role"));
+    const rv::Error order =
+        refusal(replaced(replaced(*text, "fx:room.pendant", "fx:zz.pendant"), "fx:w01.washer", "fx:room.washer"));
+    CHECK_THAT(order.toString(), ContainsSubstring("lights are sorted by id"));
 }

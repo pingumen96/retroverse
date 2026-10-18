@@ -5,11 +5,12 @@
 // selection whose every game must have a placement or an unplaced entry; then it reports every finding, hard and
 // soft, and the LayoutScore. Exit 1 when a hard rule fails. It writes nothing but its results and the log.
 //
-// Not judged yet, since nothing holds them: the rooms' lights (the plan's schema gains them in I3 step 3, then this
-// command counts them) and pins (overrides.json, I3 step 9).
+// The rooms' lights are the plan's (I3 step 3), counted per room. Not judged yet, since nothing holds them: pins
+// (overrides.json, I3 step 9).
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -317,6 +318,12 @@ ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string>
     validation.config = std::move(*config);
     validation.templates = templatesFor(context, *plan);
     validation.prefabSlots = world::manifestPrefabSlots(context.paths.assetRoot());
+    for (const world::Room& room : plan->rooms) {
+        const auto lights = std::count_if(plan->lights.begin(), plan->lights.end(), [&](const world::PlanLight& light) {
+            return light.id.room() == room.id;
+        });
+        validation.lights.push_back({room.id, static_cast<std::uint32_t>(lights)});
+    }
 
     const world::ValidationReport report = world::validatePlan(*plan, validation);
     CheckSummary summary;

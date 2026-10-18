@@ -48,11 +48,9 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 16> kPlanned
 }};
 
 /// The subcommands of worldplan still stubs, each with the I3 step that implements it (check: I3 step 4,
-/// test_cli_worldplan_check.cpp).
-constexpr std::array<std::pair<std::string_view, std::string_view>, 3> kWorldPlanSubcommands{{
-    {"generate", "I3 step 3"},
+/// test_cli_worldplan_check.cpp; generate and show: I3 step 3, test_cli_worldplan.cpp).
+constexpr std::array<std::pair<std::string_view, std::string_view>, 1> kWorldPlanSubcommands{{
     {"update", "I3 step 9"},
-    {"show", "I3 step 3"},
 }};
 
 /// Directories of a test run: the source tree's assets and no %LOCALAPPDATA%, so a run never reaches the real user
