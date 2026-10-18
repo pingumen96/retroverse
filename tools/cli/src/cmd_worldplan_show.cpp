@@ -15,6 +15,7 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #include <rv/cli/output.hpp>
 #include <rv/core/arg_parser.hpp>
@@ -22,7 +23,9 @@
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/scene/scene_description.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/scene_builder.hpp>
 #include <rv/world/world_plan.hpp>
 
 #include "catalog_text.hpp"
@@ -37,7 +40,7 @@ constexpr std::string_view kName = "retroverse-cli worldplan show";
 
 constexpr std::string_view kUsage =
     "Usage: retroverse-cli [global options] worldplan show [<plan>] [--library <id>] [--placements] [--json]\n"
-    "                      [--output <file>]\n"
+    "                      [--scene <file>] [--output <file>]\n"
     "\n"
     "Shows a plan: its versions and digest, the room, the fixtures by role, the slots and titles of each section\n"
     "(featured and band face-out, spine spine-out) with the reserve left free, the shelf dressing, the lights and the\n"
@@ -49,12 +52,15 @@ constexpr std::string_view kUsage =
     "Options:\n"
     "  --library <id>     The library whose plan to show (default: the one <user data>/config/library.json records).\n"
     "  --placements       Also list every fixture with its levels and every placement with its section.\n"
+    "  --scene <file>     Also write the static part of the plan's room (the shell, the fixtures, the dressing, the\n"
+    "                     lights) as a scene file that 'retroverse --scene <file>' renders (prefabs and lighting\n"
+    "                     from the asset root; the collection's items are not part of it).\n"
     "  --json             Write the results as JSON.\n"
     "  --output <file>    Write the results to this file (UTF-8) instead of stdout.\n"
     "  -h, --help         Show this help and exit.\n"
     "\n"
     "Exit codes: 0 ok; 1 there is no plan; 2 usage error; 3 the plan could not be read or is refused (written by\n"
-    "a newer Retroverse, or edited by hand).\n";
+    "a newer Retroverse, or edited by hand), or its scene could not be built or written.\n";
 
 /// The section of every slot level of the plan's fixtures.
 std::map<std::pair<world::FixtureId, std::uint32_t>, world::Section> sectionsOf(const world::WorldPlan& plan) {
@@ -126,6 +132,41 @@ CatalogJson listingJson(const world::WorldPlan& plan, CatalogJson json) {
     return json;
 }
 
+/// Writes the scene file of the plan's room; the line the summary gains, or nothing after a failure (reported).
+std::optional<std::string> writeScene(CommandContext& context, const world::WorldPlan& plan,
+                                      const std::filesystem::path& scenePath) {
+    if (plan.rooms.empty()) {
+        context.err.writeLine(fmt::format("{}: the plan has no room, so no scene", kName));
+        return std::nullopt;
+    }
+    const world::RoomId& room = plan.rooms.front().id;
+    auto data = world::loadSceneData(context.paths.assetRoot(), plan, room);
+    if (!data) {
+        context.err.writeLine(fmt::format("{}: the scene's data: {}", kName, data.error().toString()));
+        return std::nullopt;
+    }
+    auto build = world::toSceneFile(plan, room, *data);
+    if (!build) {
+        context.err.writeLine(fmt::format("{}: the scene: {}", kName, build.error().toString()));
+        return std::nullopt;
+    }
+    // Read back as the app reads it, so that a file written is a scene that loads.
+    if (auto parsed = scene::parseSceneDescription(build->sceneFile, room.toString()); !parsed) {
+        context.err.writeLine(fmt::format("{}: the scene: {}", kName, parsed.error().toString()));
+        return std::nullopt;
+    }
+    if (Status written = core::writeTextFileAtomic(scenePath, world::sceneFileText(build->sceneFile)); !written) {
+        context.err.writeLine(fmt::format("{}: {}", kName, written.error().toString()));
+        return std::nullopt;
+    }
+    for (const world::UndressedSpan& span : build->undressed) {
+        spdlog::info("worldplan show: {} slots {} to {} left bare: {}", span.level.toString(), span.firstSlot,
+                     span.firstSlot + span.count - 1, span.reason);
+    }
+    return fmt::format("Scene {}: {} objects, {} lights, {} dressed span(s) left bare\n", pathText(scenePath),
+                       build->sceneFile["objects"].size(), build->sceneFile["lights"].size(), build->undressed.size());
+}
+
 } // namespace
 
 ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> arguments) {
@@ -134,6 +175,7 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
     parser.option("library", "id", "The library whose plan to show.");
     parser.flag("placements", "Also list every fixture and placement.");
     parser.flag("json", "Write the results as JSON.");
+    parser.option("scene", "file", "Also write the room's static part as a scene file.");
     addOutputOption(parser);
     auto args = parser.parse(arguments);
     if (!args) {
@@ -177,6 +219,13 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         return ExitCode::RuntimeFailure;
     }
     const std::string digest = core::sha256Hex(*text);
+    std::optional<std::string> sceneLine;
+    if (const auto scenePath = args->value("scene")) {
+        sceneLine = writeScene(context, *plan, core::pathFromUtf8(*scenePath));
+        if (!sceneLine) {
+            return ExitCode::RuntimeFailure;
+        }
+    }
     std::string results;
     if (args->has("json")) {
         CatalogJson json = planSummaryJson(*plan, digest);
@@ -184,11 +233,17 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         if (args->has("placements")) {
             json = listingJson(*plan, std::move(json));
         }
+        if (const auto scenePath = args->value("scene")) {
+            json["scene"] = *scenePath;
+        }
         results = jsonText(json);
     } else {
         results = planSummaryText(*plan, digest, fmt::format("Plan {}", pathText(planPath)));
         if (args->has("placements")) {
             results += listingText(*plan);
+        }
+        if (sceneLine) {
+            results += *sceneLine;
         }
     }
     return writeResults(context, *file, results, ExitCode::Ok);
