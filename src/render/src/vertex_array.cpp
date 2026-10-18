@@ -44,8 +44,8 @@ Expected<VertexArray> VertexArray::create(std::string_view debugName) {
     return VertexArray(id);
 }
 
-Status VertexArray::setFloatAttribute(GLuint location, GLuint bindingIndex, int componentCount,
-                                      std::size_t relativeOffsetBytes) {
+Status VertexArray::checkAttribute(GLuint location, GLuint bindingIndex, int componentCount,
+                                   std::size_t relativeOffsetBytes) const {
     if (m_id == 0) {
         return makeError(ErrorCode::InvalidArgument, "vertex array is empty");
     }
@@ -63,8 +63,28 @@ Status VertexArray::setFloatAttribute(GLuint location, GLuint bindingIndex, int 
                          fmt::format("attribute {} relative offset {} exceeds {}", location, relativeOffsetBytes,
                                      kMaxRelativeOffset));
     }
+    return ok();
+}
+
+Status VertexArray::setFloatAttribute(GLuint location, GLuint bindingIndex, int componentCount,
+                                      std::size_t relativeOffsetBytes) {
+    if (auto valid = checkAttribute(location, bindingIndex, componentCount, relativeOffsetBytes); !valid) {
+        return valid;
+    }
     glVertexArrayAttribFormat(m_id, location, componentCount, GL_FLOAT, GL_FALSE,
                               static_cast<GLuint>(relativeOffsetBytes));
+    glVertexArrayAttribBinding(m_id, location, bindingIndex);
+    glEnableVertexArrayAttrib(m_id, location);
+    return ok();
+}
+
+Status VertexArray::setUintAttribute(GLuint location, GLuint bindingIndex, int componentCount,
+                                     std::size_t relativeOffsetBytes) {
+    if (auto valid = checkAttribute(location, bindingIndex, componentCount, relativeOffsetBytes); !valid) {
+        return valid;
+    }
+    glVertexArrayAttribIFormat(m_id, location, componentCount, GL_UNSIGNED_INT,
+                               static_cast<GLuint>(relativeOffsetBytes));
     glVertexArrayAttribBinding(m_id, location, bindingIndex);
     glEnableVertexArrayAttrib(m_id, location);
     return ok();

@@ -33,6 +33,7 @@
 #include <rv/render/tonemap.hpp>
 #include <rv/render/uniform_blocks.hpp>
 #include <rv/scene/debug_lines.hpp>
+#include <rv/scene/instance_data.hpp>
 
 namespace fs = std::filesystem;
 
@@ -359,14 +360,45 @@ TEST_CASE("integration/shaders: mesh and debug line stages read the vertex layou
         return inputs;
     };
 
-    // Meshes: the standard 48-byte vertex at locations 0..3 (rv::geometry::VertexLayout), then the per-instance model
-    // matrix, a mat4 whose columns take locations 4..7 (rv::gl::GpuMesh::kInstanceMatrixLocation). No draw sets a
-    // model matrix uniform any more: every mesh is drawn instanced.
+    // Meshes: the standard 48-byte vertex at locations 0..3 (rv::geometry::VertexLayout), then the 80-byte instance
+    // record (rv::scene::InstanceData): the model matrix, a mat4 whose columns take locations 4..7
+    // (rv::gl::GpuMesh::kInstanceMatrixLocation), and its attributes, a uvec4 at location 8
+    // (rv::gl::GpuMesh::kInstanceAttributesLocation). No draw sets a model matrix uniform any more: every mesh is drawn
+    // instanced.
     const std::string mesh = glslWithoutComments("pbr/pbr.vert");
     const std::map<int, std::string> meshInputs = inputsOf(mesh);
-    CHECK(meshInputs ==
-          std::map<int, std::string>{
-              {0, "vec3 aPosition"}, {1, "vec3 aNormal"}, {2, "vec4 aTangent"}, {3, "vec2 aUv0"}, {4, "mat4 aModel"}});
+    CHECK(meshInputs == std::map<int, std::string>{{0, "vec3 aPosition"},
+                                                   {1, "vec3 aNormal"},
+                                                   {2, "vec4 aTangent"},
+                                                   {3, "vec2 aUv0"},
+                                                   {4, "mat4 aModel"},
+                                                   {8, "uvec4 aInstance"}});
+    // The matrix's four columns, then the attributes right after them, both in the record's order.
+    CHECK(offsetof(rv::scene::InstanceData, model) == 0);
+    CHECK(offsetof(rv::scene::InstanceData, attributes) == 4 * sizeof(glm::vec4));
+    CHECK(sizeof(rv::scene::InstanceData) == 80);
+    // The attributes reach the fragment stages unchanged, as one flat varying the surface inputs declare.
+    const auto varying = [](const char* direction) {
+        return std::regex(std::string(R"(layout\s*\(\s*location\s*=\s*4\s*\)\s*flat\s+)") + direction +
+                          R"(\s+uvec4\s+vInstance\s*;)");
+    };
+    CHECK(std::regex_search(mesh, varying("out")));
+    CHECK(std::regex_search(mesh, std::regex(R"(\bvInstance\s*=\s*aInstance\s*;)")));
+    CHECK(std::regex_search(glslWithoutComments("common/surface.glsl"), varying("in")));
+    // The bits of the attributes' flags (z) mirror rv::scene::instance_flags.
+    namespace flags = rv::scene::instance_flags;
+    const std::map<std::string, std::uint32_t> expectedFlags{
+        {"RV_INSTANCE_HIGHLIGHTED", flags::kHighlighted},
+        {"RV_INSTANCE_HIDDEN", flags::kHidden},
+        {"RV_INSTANCE_UNAVAILABLE", flags::kUnavailable},
+    };
+    const std::string common = glslWithoutComments("common/common.glsl");
+    std::map<std::string, std::uint32_t> glslFlags;
+    const std::regex flag("const\\s+uint\\s+(RV_INSTANCE_\\w+)\\s*=\\s*(\\d+)u\\s*;");
+    for (auto it = std::sregex_iterator(common.begin(), common.end(), flag); it != std::sregex_iterator(); ++it) {
+        glslFlags[(*it)[1].str()] = static_cast<std::uint32_t>(std::stoul((*it)[2].str()));
+    }
+    CHECK(glslFlags == expectedFlags);
     const rv::geometry::VertexLayout& layout = rv::geometry::VertexLayout::standard();
     REQUIRE(layout.attributes.size() == 4);
     for (const rv::geometry::VertexAttribute& attribute : layout.attributes) {

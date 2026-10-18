@@ -324,7 +324,7 @@ TEST_CASE("scene/reference_scenes: instancing_stress expands to exactly 1000 box
         }
     }
     const rv::scene::BatchPlan plan = rv::scene::BatchPlanner{}.plan(items);
-    CHECK(plan.instanceTransforms.size() == 1001);
+    CHECK(plan.instances.size() == 1001);
     REQUIRE(plan.batches.size() == 4);
     std::multiset<std::uint32_t> batchSizes;
     for (const auto& batch : plan.batches) {
@@ -340,7 +340,7 @@ TEST_CASE("scene/reference_scenes: instancing_stress expands to exactly 1000 box
     rv::scene::PlanOptions casters;
     casters.shadowCastersOnly = true;
     const rv::scene::BatchPlan shadow = rv::scene::BatchPlanner{}.plan(items, casters);
-    CHECK(shadow.instanceTransforms.size() == 1000);
+    CHECK(shadow.instances.size() == 1000);
     CHECK(shadow.batches.size() == 3);
 
     // The camera frames every box.

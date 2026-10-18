@@ -20,6 +20,7 @@
 #include <rv/render/uniform_blocks.hpp>
 #include <rv/render/uniform_buffer.hpp>
 #include <rv/render/view_targets.hpp>
+#include <rv/scene/instance_data.hpp>
 
 namespace rv::app {
 
@@ -53,8 +54,10 @@ Expected<SelfCheckCanvas> SelfCheckCanvas::create(gl::GLDevice& device, const gl
     if (!mesh) {
         return propagate(mesh.error());
     }
-    // One instance, read like every mesh instance (pbr.vert: the model matrix at attribute locations 4..7).
-    auto instance = gl::Buffer::create(std::as_bytes(std::span<const glm::mat4, 1>(&quadTransform, 1)), 0,
+    // One instance record, read like every mesh instance (pbr.vert: the model matrix at attribute locations 4..7, the
+    // attributes, zero, at location 8).
+    const scene::InstanceData record{quadTransform, {}};
+    auto instance = gl::Buffer::create(std::as_bytes(std::span<const scene::InstanceData, 1>(&record, 1)), 0,
                                        label + ".instance");
     if (!instance) {
         return propagate(instance.error());

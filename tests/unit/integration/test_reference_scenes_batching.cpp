@@ -29,7 +29,7 @@
 
 namespace {
 
-/// gl::SceneRenderer::kInitialInstanceCapacity: matrices per region of the instance buffer at creation (each view
+/// gl::SceneRenderer::kInitialInstanceCapacity: instances per region of the instance buffer at creation (each view
 /// writes its plan's instances and its shadow map's into one region).
 constexpr std::size_t kInitialInstanceCapacity = 1024;
 
@@ -139,12 +139,12 @@ TEST_CASE("integration/batching: instancing_stress's sun shadows the block throu
     options.shadowCastersOnly = true;
     const rv::scene::BatchPlan plan = rv::scene::BatchPlanner{}.plan(reference.items, options);
     CHECK(plan.culledItems == 0);
-    CHECK(plan.instanceTransforms.size() == 1000);
+    CHECK(plan.instances.size() == 1000);
     CHECK(plan.batches.size() == 3);
     // With the view's 1001 instances a frame writes about 2000 into one region of the instance buffer: more than the
     // renderer starts with, so it grows on the first frame (unlike instancing_growth, which grows mid-run).
     const PlannedView view = planReferenceView("instancing_stress");
-    CHECK(view.batches.instanceTransforms.size() + plan.instanceTransforms.size() > kInitialInstanceCapacity);
+    CHECK(view.batches.instances.size() + plan.instances.size() > kInitialInstanceCapacity);
 }
 
 TEST_CASE("integration/batching: the test room draws fewer batches than parts", "[integration][batching]") {
@@ -172,11 +172,11 @@ TEST_CASE("integration/batching: instancing_growth outgrows the initial instance
     // The start view writes few instances, so the meshes are attached to the first buffer at frame 0...
     const PlannedView start = planReferenceView("instancing_growth");
     CHECK(start.content.items.size() == 1 + 36 + 3 * 768);
-    CHECK(start.batches.instanceTransforms.size() < 100);
+    CHECK(start.batches.instances.size() < 100);
     // ...and turning around (tests/input_scripts/turn_around.json) brings more than a region holds into view: the
     // buffer grows mid-run and the meshes are attached to the new one.
     const PlannedView turned = planReferenceView("instancing_growth", 180.0f);
-    CHECK(turned.batches.instanceTransforms.size() > kInitialInstanceCapacity);
+    CHECK(turned.batches.instances.size() > kInitialInstanceCapacity);
     // The field's three bands and the floor (the start boxes are behind the camera now).
     CHECK(turned.batches.batches.size() == 4);
 }
@@ -204,8 +204,10 @@ TEST_CASE("integration/batching: the test room's key light shadows the furniture
 
     // Every part of an object instance shares its transform: an object casts when its transform is in the plan.
     const auto casts = [&plan](const rv::scene::SceneObject& object) {
-        return std::find(plan.instanceTransforms.begin(), plan.instanceTransforms.end(), object.transform) !=
-               plan.instanceTransforms.end();
+        return std::any_of(plan.instances.begin(), plan.instances.end(),
+                           [&object](const rv::scene::InstanceData& instance) {
+                               return instance.model == object.transform;
+                           });
     };
     // The hero corner and the main shelf with its cartridges are in the key's map; the furniture farther along the
     // north wall may fall outside it (lit by lights of its own).
@@ -228,7 +230,7 @@ TEST_CASE("integration/batching: the test room's key light shadows the furniture
         static_cast<std::size_t>(std::count_if(reference.items.begin(), reference.items.end(),
                                                [](const rv::scene::RenderItem& item) { return !item.castsShadow; }));
     CHECK(nonCasting >= 11); // the rug and the two parts of each of the five frames
-    CHECK(plan.instanceTransforms.size() + plan.culledItems + nonCasting == reference.items.size());
+    CHECK(plan.instances.size() + plan.culledItems + nonCasting == reference.items.size());
     // Batched like the view: the cartridge shells in the map (79 of the 96) share one draw.
     std::size_t largest = 0;
     for (const rv::scene::Batch& batch : plan.batches) {
