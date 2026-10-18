@@ -382,6 +382,10 @@ Expected<std::string> planDigest(const WorldPlan& plan) {
     return core::sha256Hex(*text);
 }
 
+Expected<std::string> detail::sortedPlanDigest(const WorldPlan& sortedPlan) {
+    return core::canonicalJsonDigest(documentJson(sortedPlan));
+}
+
 Expected<WorldPlan> readPlan(std::string_view text, std::string_view context) {
     auto value = core::parseCanonicalJson(text, context);
     if (!value) {

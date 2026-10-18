@@ -217,6 +217,10 @@ bool priorityLess(const RoomTitle& a, const RoomTitle& b) noexcept {
     return std::tie(a.sortKey, a.game) < std::tie(b.sortKey, b.game);
 }
 
+nlohmann::json detail::roomSelectionDocument(const RoomSelection& selection) {
+    return documentJson(selection, selection.unplaced);
+}
+
 Expected<nlohmann::json> roomSelectionToJson(const RoomSelection& selection) {
     Json document = documentJson(selection, selection.unplaced);
     auto text = core::writeCanonicalJson(document);

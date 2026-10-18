@@ -40,6 +40,7 @@
 #include <rv/core/expected.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/ids.hpp>
+#include <rv/world/overrides.hpp>
 #include <rv/world/room_selection.hpp>
 #include <rv/world/room_template.hpp>
 #include <rv/world/world_config.hpp>
@@ -132,20 +133,7 @@ struct RoomLights {
     bool operator==(const RoomLights&) const = default;
 };
 
-/// Pins (ADR-0010 §9, overrides.json, read by I3 step 9): a game held in a slot, and a fixture held in its socket
-/// (with its prefab, when the pin names one).
-struct GamePin {
-    catalog::GameId game;
-    SlotId slot;
-
-    bool operator==(const GamePin&) const = default;
-};
-struct FixturePin {
-    FixtureId fixture;
-    std::optional<PrefabRef> prefab;
-
-    bool operator==(const FixturePin&) const = default;
-};
+// Pins (ADR-0010 §9): GamePin and FixturePin, overrides.json's (rv/world/overrides.hpp, I3 step 9).
 
 /// What a plan is judged against.
 struct ValidationContext {

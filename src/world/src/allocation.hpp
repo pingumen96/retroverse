@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include <rv/world/capacity.hpp>
@@ -49,5 +50,20 @@ struct Allocation {
 };
 
 [[nodiscard]] Allocation allocate(const AllocationInput& input);
+
+// The rules the incremental update (incremental.cpp, I3 step 9) shares with the allocation, so that what it adds
+// stands as a fresh plan would place it.
+
+/// The spine-out levels of a module (indices into `levels`, whose facings are `facings`) in band order: the level whose
+/// slots' centre is nearest `eyeHeightMm` first (a tie keeps the lower), then one level at a time alternately above and
+/// below, above first, one side's levels in order once the other's are taken.
+[[nodiscard]] std::vector<std::size_t> bandOrder(std::span<const SlotLevelInfo> levels,
+                                                 std::span<const LevelFacing> facings, std::int64_t eyeHeightMm);
+/// The dressing prop of a level: one of `shelfDressing` drawn from the level's prop seed (none when the list is empty).
+[[nodiscard]] PrefabRef dressingProp(std::uint64_t roomSeed, const LevelId& level,
+                                     std::span<const PrefabRef> shelfDressing);
+/// A placement's offset from its seed (placementSeed of its game and the media family): a spine-out item pushed in by
+/// 0 to kMaxInsetMm, a face-out one turned by at most kMaxFaceOutYawCdeg either way.
+void setPlacementOffset(Placement& placement, std::uint64_t roomSeed, std::string_view mediaFamily, bool faceOut);
 
 } // namespace rv::world::detail

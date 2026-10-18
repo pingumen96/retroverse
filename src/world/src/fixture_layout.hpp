@@ -9,6 +9,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <vector>
 
 #include <rv/core/expected.hpp>
@@ -57,5 +59,39 @@ struct RoomLayout {
 /// Errors: ValidationFailed for a module or display prefab that does not fit its socket, a socket the orders name that
 /// the template lacks; NotFound for a prefab the catalog lacks.
 [[nodiscard]] Expected<RoomLayout> layOutRoom(const LayoutInput& input);
+
+// The parts of the layout that the incremental update (incremental.cpp, I3 step 9) repeats on a room that stands, so
+// that a module, a decoration or a wall-washer it adds is exactly what a fresh layout of that room would place. Each
+// reads `input.counts.growthSteps` (the room's growth) and nothing else of the counts.
+
+/// The section of a level by its fixture's role and its items' facing (ADR-0010 §3): featured on a display fixture,
+/// band for a face-out level of a module, spine otherwise.
+[[nodiscard]] Section sectionOf(FixtureRole role, LevelFacing facing) noexcept;
+
+/// The template's side-wall module standing in `socket`, as layOutRoom() places it, with its levels. Errors: NotFound
+/// for a prefab the catalog lacks, ValidationFailed for a module that does not fit the socket.
+[[nodiscard]] Expected<PlacedFixture> sideModuleIn(const LayoutInput& input, const TemplateSocket& socket);
+
+/// What decoration a socket holds, with the light of a lamp.
+struct PlacedDecoration {
+    PlacedFixture fixture;
+    std::optional<PlanLight> light;
+};
+/// The decoration layOutRoom() puts in `socket`: one of the template's choices that fits it, drawn from the socket's
+/// prop seed, a lamp only while `lightsLeft` is not 0; nothing when no choice fits.
+[[nodiscard]] std::optional<PlacedDecoration> decorationIn(const LayoutInput& input, const TemplateSocket& socket,
+                                                           std::size_t lightsLeft);
+
+/// A collection module for the wall-washers: its socket and its fixture's depth.
+struct ModuleOnWall {
+    const TemplateSocket* socket = nullptr;
+    std::int64_t depthMm = 0;
+};
+/// The wall-washers over `modules` (in the collection's fill order), at most `budget` of them: one per two adjacent
+/// modules of a wall while the budget allows, then fewer, each over a longer run (the runs of adjacent modules cut into
+/// pieces of g modules, g the smallest from 2 whose pieces the budget holds; when even one per run is too many, the
+/// runs that fill first get theirs).
+[[nodiscard]] std::vector<PlanLight> wallWasherLights(const LayoutInput& input, std::span<const ModuleOnWall> modules,
+                                                      std::size_t budget);
 
 } // namespace rv::world::detail

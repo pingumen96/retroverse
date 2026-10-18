@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <tuple>
+#include <utility>
 
 #include <rv/core/random.hpp>
 #include <rv/world/seeds.hpp>
@@ -88,35 +89,10 @@ private:
 
     /// A module's spine-out levels in band order around the eye height (allocation.hpp).
     std::vector<LevelRef> bandOrder(std::size_t fixture) const {
-        std::vector<LevelRef> levels = readingOrder(fixture, LevelFacing::SpineOut);
-        std::reverse(levels.begin(), levels.end()); // lowest first
+        const PlacedFixture& placed = m_input.layout.fixtures[fixture];
         std::vector<LevelRef> order;
-        if (levels.empty()) {
-            return order;
-        }
-        const auto distance = [&](const LevelRef& ref) {
-            const std::int64_t centre = infoOf(ref).centreMm();
-            return centre > m_input.eyeHeightMm ? centre - m_input.eyeHeightMm : m_input.eyeHeightMm - centre;
-        };
-        std::size_t nearest = 0;
-        for (std::size_t i = 1; i < levels.size(); ++i) {
-            if (distance(levels[i]) < distance(levels[nearest])) {
-                nearest = i;
-            }
-        }
-        order.push_back(levels[nearest]);
-        std::size_t above = nearest + 1;
-        std::size_t below = nearest; // the next level below is below - 1
-        bool takeAbove = true;
-        while (above < levels.size() || below > 0) {
-            if (takeAbove && above < levels.size()) {
-                order.push_back(levels[above++]);
-            } else if (below > 0) {
-                order.push_back(levels[--below]);
-            } else {
-                order.push_back(levels[above++]);
-            }
-            takeAbove = !takeAbove;
+        for (const std::size_t level : detail::bandOrder(placed.info->levels, placed.facings, m_input.eyeHeightMm)) {
+            order.push_back({fixture, level});
         }
         return order;
     }
@@ -126,12 +102,7 @@ private:
         Placement placement;
         placement.slot = *SlotId::make(fixture, levelOf(ref).level, index);
         placement.game = title.game;
-        core::Random random(placementSeed(m_input.roomSeed, title.game, m_input.family.id));
-        if (faceOut) {
-            placement.yawCdeg = static_cast<std::int32_t>(random.between(-kMaxFaceOutYawCdeg, kMaxFaceOutYawCdeg));
-        } else {
-            placement.insetMm = random.between(0, kMaxInsetMm);
-        }
+        setPlacementOffset(placement, m_input.roomSeed, m_input.family.id, faceOut);
         m_result.placements.push_back(placement);
     }
 
@@ -146,8 +117,7 @@ private:
         dressed.level = *LevelId::make(m_input.layout.fixtures[ref.fixture].fixture.id, level.level);
         dressed.firstSlot = firstSlot;
         dressed.count = level.slots - firstSlot;
-        core::Random random(propSeed(m_input.roomSeed, dressed.level));
-        dressed.prop = m_input.shelfDressing[static_cast<std::size_t>(random.below(m_input.shelfDressing.size()))];
+        dressed.prop = dressingProp(m_input.roomSeed, dressed.level, m_input.shelfDressing);
         m_result.dressing.push_back(std::move(dressed));
     }
 
@@ -229,6 +199,68 @@ private:
 };
 
 } // namespace
+
+std::vector<std::size_t> bandOrder(std::span<const SlotLevelInfo> levels, std::span<const LevelFacing> facings,
+                                   std::int64_t eyeHeightMm) {
+    // The spine-out levels from the lowest (the lowest slots, then the lowest level number).
+    std::vector<std::size_t> rising;
+    for (std::size_t i = 0; i < levels.size() && i < facings.size(); ++i) {
+        if (facings[i] == LevelFacing::SpineOut) {
+            rising.push_back(i);
+        }
+    }
+    std::sort(rising.begin(), rising.end(), [&](std::size_t a, std::size_t b) {
+        return std::pair(levels[a].bottomMm, levels[a].level) < std::pair(levels[b].bottomMm, levels[b].level);
+    });
+    std::vector<std::size_t> order;
+    if (rising.empty()) {
+        return order;
+    }
+    const auto distance = [&](std::size_t index) {
+        const std::int64_t centre = levels[index].centreMm();
+        return centre > eyeHeightMm ? centre - eyeHeightMm : eyeHeightMm - centre;
+    };
+    std::size_t nearest = 0;
+    for (std::size_t i = 1; i < rising.size(); ++i) {
+        if (distance(rising[i]) < distance(rising[nearest])) {
+            nearest = i;
+        }
+    }
+    order.push_back(rising[nearest]);
+    std::size_t above = nearest + 1;
+    std::size_t below = nearest; // the next level below is below - 1
+    bool takeAbove = true;
+    while (above < rising.size() || below > 0) {
+        if (takeAbove && above < rising.size()) {
+            order.push_back(rising[above++]);
+        } else if (below > 0) {
+            order.push_back(rising[--below]);
+        } else {
+            order.push_back(rising[above++]);
+        }
+        takeAbove = !takeAbove;
+    }
+    return order;
+}
+
+PrefabRef dressingProp(std::uint64_t roomSeed, const LevelId& level, std::span<const PrefabRef> shelfDressing) {
+    if (shelfDressing.empty()) {
+        return {};
+    }
+    core::Random random(propSeed(roomSeed, level));
+    return shelfDressing[static_cast<std::size_t>(random.below(shelfDressing.size()))];
+}
+
+void setPlacementOffset(Placement& placement, std::uint64_t roomSeed, std::string_view mediaFamily, bool faceOut) {
+    core::Random random(placementSeed(roomSeed, placement.game, mediaFamily));
+    placement.insetMm = 0;
+    placement.yawCdeg = 0;
+    if (faceOut) {
+        placement.yawCdeg = static_cast<std::int32_t>(random.between(-kMaxFaceOutYawCdeg, kMaxFaceOutYawCdeg));
+    } else {
+        placement.insetMm = random.between(0, kMaxInsetMm);
+    }
+}
 
 Allocation allocate(const AllocationInput& input) {
     return Allocator(input).run();
