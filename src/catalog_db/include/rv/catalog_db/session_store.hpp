@@ -193,7 +193,8 @@ public:
     /// nothing when it is neither.
     [[nodiscard]] Expected<std::optional<catalog::GameId>> resolveGame(catalog::GameId id);
 
-    /// How many attempts of this store's writes met a busy database and were tried again (logs, tests).
+    /// How many attempts of this store's writes met a busy database and were tried again (logs, tests). Readable on any
+    /// thread, also while a write waits.
     [[nodiscard]] std::size_t busyRetries() const noexcept;
 
 private:
