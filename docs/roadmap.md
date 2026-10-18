@@ -8,7 +8,7 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | **I0** | M0 native foundations + style Phase A look-development and tooling | M0 Done (app starts, controllable camera, stable rendering, no engine) + Gate A (empty but credible room) |
 | I1 | Risk spikes: FFmpeg decode to GL texture via PBO, RmlUi with gamepad navigation, emulator launch/return with fullscreen restore | Success criteria met or fallback recorded in an ADR |
 | I2 | M1 ES-DE catalog (discovery, gamelist/media/es_systems parsing, SQLite + FTS5, stable IDs) + Windows launcher + `retroverse-cli` | M1 Done: reads a real ES-DE collection without moving ROMs, launches an emulator and returns |
-| I3 | M2 SNES vertical slice: single-room generator, instanced cartridges with real covers, inspect, play, CRT video, incremental update (with I2's step 13r: the catalog's refresh on the app's worker) | Gate B: already looks like the concept with one room; deterministic WorldPlan snapshot |
+| I3 | M2 SNES vertical slice: single-room generator and persistent WorldPlan (one cartridge per title with media, spine-out shelves and face-out displays), instanced cartridges with real covers in texture arrays, picking, inspect, play from the world, the hero CRT's video (one decoder), incremental update (with I2's step 13r: the catalog's refresh on the app's worker) | Gate B: already looks like the concept with one room; deterministic WorldPlan snapshot; NFR-08; 60 FPS at 1080p |
 | I4 | M3 multi-room world: hub, room graph, PS1 room, theme packs, streaming, overrides/pins, map and teleport | Gate C: different rooms, same world |
 | I5 | M4 screens and media: decoder scheduler, audio, CRT shader, playlists, fallbacks for missing videos | Every room has working TVs within the decoder budget |
 | I6 | Arcade and handheld rooms | Gate D |
@@ -155,3 +155,154 @@ FR-013 in 9; FR-014 in A1 and 13; FR-018 and NFR-10 in 0b and 14; FR-019 in 10 a
 SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the tests and gate figures that prove it,
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
+
+## I3: M2 SNES vertical slice (planned)
+
+M2 Done (specification §22): a real room generated from the data shows the cartridges of the system and stays stable
+after an incremental import. Gate B (style §27, phase B): the room already looks like the concept although it is only
+one room, built from the real data of an ES-DE library, with cartridges filled procedurally, a TV playing a local video,
+the pickup and inspection of a cartridge, media and object fallbacks, the Balanced graphics profile and a benchmark; and
+the WorldPlan snapshot is deterministic. The decisions are in
+[ADR-0010](decisions/ADR-0010-world-generator-and-world-plan.md) (the generator and the WorldPlan),
+[ADR-0011](decisions/ADR-0011-collection-rendering-and-cover-textures.md) (collection rendering and cover textures) and
+[ADR-0012](decisions/ADR-0012-interaction-in-the-world.md) (picking, focus, inspection, the card, launching from the
+world, the hero CRT); the facts behind them come from three read-only surveys of 2026-10-18: the documents
+(requirements, the Gate B checklist, twenty conflicts between the documents), the code's readiness, and the reference
+SNES collection (7,797 games; 1,535 with a cover, the scraped ones; 890 distinct titles among them, 727 of them USA
+releases once deduplicated, 57 Europe only, 106 other; covers opaque 680 x 497 PNGs, 815 MiB; clips H.264 640 x 480 at
+59.94 fps, already 4:3).
+
+Decided before planning (the user and the orchestrator) and recorded in the ADRs:
+
+- **One cartridge per title** among the SNES games that have media (890 of the 1,535 with a cover), the USA release
+  preferred, then Europe, then other regions, by a defined title key and a deterministic choice; the other versions,
+  hacks and unscraped games stay launchable from the quick catalog and are listed in the plan's `unplaced` with their
+  reason (ADR-0010 §3).
+- **Most cartridges spine-out**, dense, the title on the spine; some dozens face-out in display cases and on a featured
+  shelf with the cover visible; pointing at a spine-out cartridge pulls it out and shows its cover (ADR-0010 §3,
+  ADR-0012 §3).
+- The **WorldPlan is a canonical JSON file** under `<user data>/worlds/<library id>/`; no database migration (schema v1
+  closed at Gate M1); where-is is computed from the plan (ADR-0010 §9).
+- Seeds and stable hashes use **SHA-256 of `rv_core`**, no new hash library; **no EnTT**; **no downloaded HDRI or
+  texture**: the ambient light stays hemispheric with the ambient occlusion, and the Balanced profile of style §4.3 is
+  the renderer as it is (one shadowed key light, ambient occlusion, sober bloom); Low and High are I8's.
+- **One video decoder** in I3, SelectedGame on the hero CRT with the fallback chain to the cover and a test pattern; the
+  scheduler, audio and playlists stay in I5 (ADR-0004, ADR-0012 §7).
+- **Step 13r** (the catalog's refresh on the app's worker, with cancellation) is part of I3.
+- Teleport and the map stay in I4; the quick catalog's card offers **"Mostra nella stanza"** (ADR-0012 §8).
+- The user's covers and cartridge images are their own media, read at runtime, never in assets, fixtures or goldens:
+  goldens and smoke tests use fixtures with generated covers and clips; the real room is checked through
+  `scripts/real-library.ps1` and the manual session. Automated tests never take the foreground.
+
+Decided in planning (in the ADRs): growth reserve 0.15 and passages of 1.4 m with a hard minimum of 1.2 m; one
+rectangular template (`console_room_9x10`, growing south in 2 m steps to 16 m) with one layout candidate; rooms of up to
+200 titles all face-out like the concept, larger ones spine-out with 44 featured face-out titles (favourites, then play
+count, then rating); covers and spines in BC1 texture arrays, every placed item resident (glad regenerated with the S3TC
+extensions); spines always generated from the title in the bundled font; the refresh started explicitly ("Aggiorna
+libreria", `--refresh-library`; the file watcher stays in I7) and regeneration only through
+`retroverse-cli worldplan generate --replace` (the impact preview is I4's); the benchmark is a frame-limited run with
+frame-time percentiles in its run report and a scripted camera path, no new `--bench` mode; golden plans rewritten only
+with `RV_UPDATE_GOLDEN=1`.
+
+Steps 0a, 0b, 0c and 1 run on main and settle every shared file (the source lists of `rv_world` and the new files of
+other modules, the CLI command table, the data files under `assets/world`, the fixtures' layout, the instance record);
+each later wave runs its steps in parallel worktrees and is merged as a whole, the shared documentation updated at the
+merge; wave 2's merge is followed by its integration (10i). Every step ends with its tests, a review and the fixes, and
+its notes in `docs/i3/step-<n>.md`. Timings taken inside a wave are informative; the gate measures them on a quiet
+machine. Step 13r keeps its name from I2; the I3 step 13 is another step.
+
+| # | Step | Wave (needs) | Closes with | Status |
+|---|---|---|---|---|
+| 0a | Build: `rv_world` (GPU-free, its forbidden links: SDL3, glad, Dear ImGui, RmlUi, SQLite, pugixml, `rv_media`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_platform`) with every planned source pre-listed, `tests/unit/world`; `retroverse-cli worldplan` (`generate`, `update`, `show`, `check`) and `where-is` as stubs; `rv_app` links `rv_media` and `rv_world`; glad regenerated with `GL_EXT_texture_compression_s3tc` and `GL_EXT_texture_sRGB`; `assets/world/` (templates, platforms, presets, `media_families.json`) as placeholders; the fixture folders `esde/snes-room`, `esde/snes-single`, `esde/snes-stress`; `docs/i3/`; ADR-0010 to ADR-0012 | main | Gate A green, G01 0 pixels apart; every new stub exits 2; `rv_world` reaching SDL3, glad, SQLite or `rv_esde` fails the configure; the regenerated glad builds in every preset | planned |
+| 0b | Primitives in `rv_core`: `deriveSeed` (SHA-256 of a NUL-separated tuple), `Random` (SplitMix64, `splitmix64/1`, its own distributions), the canonical JSON writer and its digest, `WorkerPool` (bounded, priorities, cancellation by generation, a shutdown bound), `writeFileAtomic` flushing before the rename, rotating backups; `scripts/world_seed_oracle.py` | main | Seeds and sequences equal to the Python oracle's (`--check`, as for the GameIds); canonical JSON: key order, escapes, integers only, a read and write round trip byte-identical; the pool's priorities, cancellation and a shutdown within 2 s with jobs queued; an interrupted atomic write leaves the previous file; 10 backups kept, the oldest dropped | planned |
+| 0c | The 80-byte instance record (`scene::InstanceData`: the matrix, then layers, flags and pick id at location 8) through `RenderItem`, `BatchPlan`, `InstanceBuffer`, `GpuMesh` and the shaders; frame-time percentiles in the run report (`frameTimes`: p50, p95, p99, max over the run, the first 30 frames left out) | main | G01 0 pixels apart in Debug and Release; the reference scenes' draw calls and batches unchanged; `instancing_stress` within 5% of its frame time before (Release, `--no-vsync`); a smoke case reads the percentiles | planned |
+| 1 | World domain: `WorldPlan` (rooms, fixtures, slots, placements, `unplaced` with reasons, versions, digests), ids, `WorldConfig`, the result and report types, the canonical reader and writer; the data under `assets/world` (`console_room_9x10.json`, `platforms/snes.json`, `media_families.json` with `cartridge_home_16bit`, `presets/retro_museum_cozy.json`) and their readers; prefabs: the cartridge's `spine` role (an end label on its top face), `display_case` (a low case with a glass front and two tilted face-out levels) and their manifests; the bulk snapshot port (`ICatalogQuery::roomEntries(system)`, types only); payload generators for `files.json` (`cover`: an original procedural picture with the title; `video`: a 4:3 clip from `media::test_video`); the three fixtures | main | A plan round trip byte-identical, a newer `schemaVersion` refused; the manifests pass `validatePrefabManifest`; the new prefabs in the asset preview with their sizes and slot sockets (spine-out slot 2.0 x 12.5 x 8.5 cm); fixtures with READMEs and counts: `snes-room` (50 invented titles plus 10 for G10, a corrupt and a missing clip, two titles with a USA and a Europe release, a portrait cover, a game without a cover), `snes-single` (one ROM, no media), `snes-stress` (2,000 titles, 300 duplicate releases); nothing commercial | planned |
+| 2 | Room selection: the bulk snapshot query in `rv_catalog_db` (one read per system: ids, keys, file names, titles, sort keys, years, ratings, favourites, play counts, last sessions, states, media presence) and `world::selectRoom` (title keys, region ranks, representatives, the featured order, `unplaced` reasons, the small-library rule) | 1 (0b, 1) | A table of 40 invented file names (No-Intro and GoodTools tags, revisions, betas, `" : "` and `" - "` subtitles, portrait covers); the small-library rule; the query of 2,000 games within 50 ms (Release); on the real library through `scripts/real-library.ps1`: the placed titles and their regions against the survey's 890 (727 USA, 57 Europe only, 106 other), each difference explained; 0 differences | planned |
+| 3 | Fresh generation: the template, capacity from the prefabs' slots, the display mode, fixtures in order (hero corner, collection modules, display fixtures, decoration within the density, lights), allocation, local seeds; `worldplan generate` and `show` | 1 (0b, 1) | Two runs byte-identical, Debug equal to Release; golden plans (`tests/fixtures/world/golden`) for 0, 1, 15, 50, 200, 201, 890 and 2,000 titles with 3 seeds each and 8,000 titles (growth to 16 m, then `capacity`); slots per level and levels equal to the shelf prefab's sockets; 2,000 titles generated within 200 ms (Release); `worldplan generate --system snes --seed 102938` on the fixture | planned |
+| 4 | Validation: footprints, door-reserved sockets and the doorway's clearance, the 0.1 m navigation grid searched from the doorway, every shelf, display and the hero TV reachable, the TV's line of sight, one placement or `unplaced` entry per eligible game, lights, the LayoutScore as a diagnostic; `worldplan check` | 1 (0b, 1) | A failing plan for each hard rule (overlapping fixtures, a shelf in a door-reserved socket, a blocked doorway, an unreachable shelf, 17 lights, a game neither placed nor unplaced, two games in a slot); every golden plan and 1,000 seeds at 4 catalog sizes valid; the grid of a 9 x 16 m room searched within 20 ms (Release); `worldplan check` exits 1 on a hard failure | planned |
+| 5 | Cover and label pipeline in `rv_assets` (GPU-free): the fit rules of ADR-0011 §5, mips in linear light, BC1 (`stb_dxt`), the dominant colour, generated front labels and spines (`stb_truetype` with the bundled Atkinson Hyperlegible: one or two lines, ellipsis, replacement glyph), the `.rvtex` cache format | 1 (0b, 1) | Fit rules on generated images (landscape, portrait, square, 16 px, 4,096 px, palette, alpha, JPEG, truncated, not an image): never stretched, the 8% crop bound, a fallback for every failure; a mip of a black and white checker reads sRGB 188 +- 1; BC1 against RGBA8 at least 32 dB PSNR on the fixture's covers, spine text contrast at least 4.5:1 after encoding; line splits and ellipsis as a table, label pixels hashed; a cache round trip byte-identical, a stale or corrupt entry rebuilt; one 680 x 497 PNG cover to BC1 within 25 ms median (Release) | planned |
+| 6 | Texture arrays in `rv_render`: `Texture2DArray` (immutable, compressed uploads per level), the collection arrays (two classes, 2,048-layer chunks, layer 0 pending, the upload budget per frame), `RV_MATERIAL_LAYERED_BASE_COLOR` on a new texture unit | 1 (0c) | A smoke scene of 2,049 labelled items in at most 4 lit batches, each item showing its own layer (probe pixels); 0 GL errors; uploads within 1 ms per frame; the RGBA8 fallback forced by an option draws the same scene; G01 0 pixels apart | planned |
+| 7 | Interaction model, GPU-free: `world::PickIndex` (targets, occluders, 2.5 m, the 3-frame hysteresis), `app::WorldInteraction` (ADR-0012's states and Back levels), an eased pose animator in `rv_scene` (interruptible, skippable, `reduceMotion`, on the fixed frame time), D-pad stepping, the left-click rule | 1 (1) | On synthetic shelves: at 1.5 m the ray picks the spine it crosses at a 2.4 cm pitch; an item behind a board is never picked; a ray jittered by 1 mm never changes the hover; the transition table with Back levels and failure paths; animations identical under `--fixed-dt` and reversed from where they are when interrupted; D-pad steps skip empty slots and cross modules | planned |
+| 13r | Refresh on the catalog worker (carried from I2): the import as a job (`ImportService` with a cancel flag) in slices, so that lists and session writes do not wait; the systems' readiness resolved again and its cache cleared after the commit; `CatalogChanges` to the main thread and the quick catalog refreshed, its selection restored by GameId; "Aggiorna libreria" in the quick catalog and `--refresh-library`; the log race fix (`LogView`'s lines and count read under one lock) | 1 (I2 13) | Frame p99 at most 33.3 ms during a refresh of the real library (Release, `real-library.ps1`); quitting mid-refresh ends within 2 s, the import rolled back or committed whole, `db check` clean; lists answered within 100 ms during an import; each line shown once by `LogView` under concurrent logging; the selection kept after an import that adds and removes games (fixture) | planned |
+| 8 | Static instance groups (ADR-0011 §3: pre-sorted batches uploaded once, cluster bounds culled per view, the shadow map's too) and the hover outline (the stencil after the lit pass, the edge after FXAA) | 2 (0c, 6) | 2,000 cartridges planned within 0.3 ms per frame (Release) with no instance bytes written for a still room; the outline 2 px wide at 1080p, its pixels unchanged over 120 frames of a still camera, unbroken over a moving one; G01 0 pixels apart | planned |
+| 9 | Persistence and the incremental update: the files under `worlds/<library id>/`, the meta sidecar, backups, the world lock, `overrides.json` (pins) read, compatibility, ADR-0010 §10's rules with the change report; `worldplan update --previous <plan> --diff`, `where-is` | 2 (3, 4) | NFR-08's property suite, 20 seeds with 15, 50, 890 and 2,000 titles: a game added gives one placement more (or one `unplaced` entry with its reason) and every earlier placement byte-identical; 10 added (G10's plan); a missing or unreachable game keeps its slot; pins unchanged, orphans reported, a pin-moving change refused; full shelves add a module, then growth, then `capacity`; another seed or generator major version gives `RequiresExplicitRegeneration` and keeps the plan; an interrupted write keeps the previous plan; 2,000 plus one updated within 50 ms (Release); `where-is` answers placed and unplaced games | planned |
+| 10 | The world in the app: the room generated on the worker from the snapshot and committed at a frame boundary; the static part as a `SceneDescription` (the shell sized to the plan, shelves, display cases, hero corner, decoration, lights, colliders) and `app::CollectionInstance` (the per-item path, layer 0); without `--scene`, `--model` or `--mock-catalog` a library with SNES games opens its room, else the test room; run report fields (plan digest, placements, `unplaced` per reason) | 2 (2, 3, 4, 6) | The fixture's room in Debug and Release with 0 high or medium GL messages; a scripted walk reaches every shelf section and never enters a fixture; the room committed within 1 s of the snapshot (Release, 2,000 titles); G01 (`--scene m0_testroom`) 0 pixels apart | planned |
+| 11 | The hero CRT's video: `app::ScreenService` (one decoder, asserted), the material texture override, the dwell, the start choice, the fallback chain, paused out of view, stopped before a launch, `--video-freeze-pts`, NVIDIA's message 131154 filtered | 2 (0a) | On the test room's CRT with the fixture's clips: frames advance at the clip's rate, upload p99 within 0.5 ms (Release); the first frame within 2 s of the selection (NFR-06, the time recorded); missing, empty, corrupt, truncated and AV1 files each fall to the next picture with no frame over 33.3 ms; never two decoders; none running once a launch starts or at exit; two runs with `--video-freeze-pts 1.0` give byte-identical screenshots | planned |
+| 10i | Integration of wave 2: the collection on the static groups (8), the start on the persisted plan reconciled with the snapshot (9), the room's hero CRT on the screen service (11) | after the wave-2 merge | The persisted plan shown before the snapshot answers, then reconciled with 0 moves on an unchanged catalog; the fixture room's fronts and spines one batch each per chunk; planning within 0.3 ms per frame; G01 0 pixels apart | planned |
+| 12 | Covers in the room: the loader (worker pool, cache, arrays) with priorities by visibility and distance, the lockstep of fixed-time runs, spines on the covers' colours, the hero textures (8, least recently used), residency in the run report | 3 (5, 6, 10i) | Fixture room: every front and spine resident before the screenshot; warm cache: 2,000 items resident within 1.5 s, cold within 15 s with frame p99 at most 33.3 ms throughout (Release); arrays within 80 MiB at 2,048 items, all textures within 256 MiB; no frame over its upload budget; real library (`real-library.ps1`): the 890 covers cold and warm timed, the cache under the data directory, 0 differences | planned |
+| 13 | Focus, pull-out and inspection: the outline and the title label, the pull-out after 150 ms, Focus with D-pad steps, Inspect (lift, rotate, zoom, the background dimmed), Back levels, `reduceMotion`, the CRT following the selection | 3 (7, 8, 10i, 11) | Input scripts on the fixture: the outline within 6 frames of the hover, the pull-out after the dwell, steps along a shelf and across levels, inspect, rotate, zoom, Back to the slot with the static instance back; a still stick held 60 frames never changes the focus; the cursor picks with the overlay open; the CRT switches to the selected clip after its dwell; G07's candidate screenshots reviewed | planned |
+| 14 | The card and the media viewer: `game_card.rml` with readiness and blockers, the `rv-texture:` source in the vendored GL3 renderer, Vedi media (the images a game has), Informazioni (description, other versions) | 3 (7, 10i) | The readiness and blocker texts equal to the quick catalog's (one shared table); the cover in the card equal to its hero texture (pixels); the viewer pages through a fixture game's images and skips the missing kinds; `cardSqueezed` false for every fixture game; the UI pass within 1 ms on quiet frames (Release) | planned |
+| 15 | Launching from the world and live updates: `requestLaunch` by GameId, the world's state kept across the launch, the decoder stopped and the loader paused; "Mostra nella stanza" on the quick catalog's card; after a refresh (13r) the incremental update applied live (items added, covers and spines swapped, modules added with the static part rebuilt) | 4 (9, 13, 14, 13r) | Smoke with the fake emulator (`RV_LAUNCH_ALLOWLIST` set): inspect, Avvia, back in Inspect of the same item with the camera equal, no decoder running during the game, the session recorded and verified; a blocked game refused with its reason on the card; "Mostra nella stanza" ends at the item's Focus pose; an import adding 10 games while the app runs adds 10 items and moves none (instance transforms compared), frame p99 at most 33.3 ms through it | planned |
+| 16 | Look development of the generated room (style §4.2, §5.3, §6, §13.4, §14.1, §15): light levels along the collection walls, the key light on the hero wall, the theme's materials, posters and sign, the rhythm of the spine-out shelves and the displays, decoration density; tuned in `assets/world` data and material presets | 4 (12, 13; parallel with 15) | Screenshots from the doorway, the hero corner, a spine-out shelf at 1 m (spines legible: glyphs at least 8 px tall at 1920 x 1080) and the display cases reviewed against `example.png`; the style §26.2 checklist pre-answered in `docs/i3/step-16.md`; no light past the renderer's limits; frame budgets kept | planned |
+| 17 | Goldens, benchmark and the real room: goldens G02 (50 games, face-out), G02s (the `snes-stress` room, spine-out, a shelf and a display case in view: an addition to style §26.1's list), G06 (one ROM, no media), G07 (an inspected cartridge), G08 (a: the clip frozen at 1.0 s; b: the corrupt clip's fallback), G10 (G02 after 10 games added); the benchmark path `tests/input_scripts/bench_snes_room.json` on `snes-stress`; the `[real-library]` room tests | after 15 and 16 | Goldens 0 pixels apart in Debug and Release on the reference machine within G01's tolerance, each with G01's metadata; the benchmark at 1920 x 1080, Release, `--no-vsync`, 2,000 titles: frame p99 at most 16.7 ms and every pass within the budgets below; real library: the plan generated twice with one SHA-256, a second import updating with `NoRebuild` and 0 moves, covers cold and warm timed, the benchmark path's p99 in the real room, screenshots only under `build/`, 0 differences | planned |
+| 18 | Gate B: `scripts/gate.ps1 -Gate B` (and `-RealLibrary`), `docs/testing/gate-b.md`, documentation (CLAUDE.md, architecture, README, BACKLOG) | after 17 | The gate passes on a quiet machine under `scripts/focus_watch.py` (0 findings); every budget below measured; the style §26.2 checklist answered for G02, G02s and the real room; the manual session signed by the user | planned |
+
+### Budgets
+
+Measured in Release at 1920 x 1080 on the reference machine (RTX 2080 SUPER, `docs/testing/reference-hardware.md`), on
+the `snes-stress` room (2,000 titles) unless stated; the steps that first measure them are in parentheses.
+
+| Measure | Budget |
+|---|---|
+| Frame time on the benchmark path, `--no-vsync` | p99 at most 16.7 ms (NFR-03's 60 FPS), p50 at most 8 ms (17) |
+| Frame time while refreshing, loading covers cold or animating | p99 at most 33.3 ms (NFR-04) (13r, 12, 13, 15) |
+| GPU per pass | shadow map 0.4 ms, depth pre-pass 0.4 ms, ambient occlusion 0.5 ms, scene 2.0 ms, post-processing with FXAA 0.6 ms, outline 0.1 ms; the GPU frame at most 5 ms (8, 17) |
+| Main thread | collection planning 0.3 ms, cover uploads 1 ms, video upload p99 0.5 ms, product UI 1 ms on quiet frames (8, 12, 11, 14) |
+| GPU memory | collection arrays 80 MiB at 2,048 items (34 MiB for the reference room's 890), hero textures 32 MiB, the video's texture and ring 16 MiB, all textures 256 MiB (12, 11) |
+| Covers resident after the plan is shown | warm cache 1.0 s (890) and 1.5 s (2,000); cold 10 s and 15 s (12) |
+| Generation | a fresh plan of 2,000 titles with its validation 200 ms; an incremental update 50 ms; the plan written atomically 50 ms (3, 4, 9) |
+| Video | the first frame within 2 s of the selection (NFR-06); one decoder, asserted (11) |
+| Stability | NFR-08: an addition with free capacity moves 0 placements; the WorldPlan snapshot byte-identical across runs and builds (3, 9) |
+| Quitting during a refresh | within 2 s (13r) |
+| NFR-01 with the room | the quick catalog's first page within 5 s of the start (17) |
+
+### Where each M2 requirement closes
+
+FR-005 in 3, 4 and 10; FR-006 in 1 (the media family), 5 and 12 (the generated label as the fallback); FR-007 in 3 and
+4; FR-008 in 0b and 3 (the snapshot goldens); FR-009 and NFR-08 in 9 and 15, G10 in 17; FR-010 in 13; FR-011 and FR-012
+from the world in 15; search/teleport (specification §22 M2) as "Mostra nella stanza" in 15, the map and the teleport
+between rooms in I4; FR-015 and FR-016 for the hero CRT in 11 and 13 (one decoder; FR-017's budget across screens is
+I5's); NFR-03 and NFR-04 in 17 (NFR-04 during a refresh in 13r); NFR-06 in 11; NFR-07 in 11 (at most one decoder, by
+assertion); SC-02 from the world in 15; SC-03 in 11 and 13 (the playlist part in I5); SC-05 in 13r and 15 (the watcher
+in I7); SC-08 in 11; SC-12 in 12 (no thousand uploads at once); specification §21.3's invariants in 4 and 9; style §21's
+fallbacks in 5, 11 and 12, its P0 single-ROM room in 17 (G06); style §27's phase B: the room from real data in 17 and
+the manual session, the procedurally filled cartridges in 3 and 12, the TV video in 11, the inspection in 13, the
+fallbacks in 5, 11 and 12, the Balanced profile and benchmark in 17. [testing/gate-b.md](testing/gate-b.md) (step 18)
+maps each to the tests and gate figures that prove it.
+
+### Gate B
+
+`scripts/gate.ps1 -Gate B` runs Gate A's build matrix (no warning), the unit tests (the world's snapshot goldens and
+property suites among them) and the GPU smoke tests in Debug and Release, the goldens G01, G02, G02s, G06, G07, G08 (a
+and b) and G10 in both, and the benchmark in Release, prints the summary table (logs in `build/gate-b`) and exits 1 when
+a step failed; `-RealLibrary` adds, with ES-DE closed and snapshots before and after through `scripts/real-library.ps1`,
+the real SNES room (the plan twice with one SHA-256, an incremental update after a second import with 0 moves, covers
+cold and warm, the benchmark path), the refresh's p99 and NFR-01 with the room, and fails on any difference.
+`docs/testing/gate-b.md` holds the figures, the map of requirements to proofs, style §24's minimum result ("no
+interpenetrating shelf, console visible, video playable or correct fallback, room readable and navigable by controller")
+and style §29's first expected result, the style §26.2 checklist answered for the goldens and for the real room, and the
+manual session: pad only, in the real SNES room, a title found on a spine-out shelf, pulled out, inspected, launched in
+RetroArch and back in the same pose, the hero CRT playing its clip, "Mostra nella stanza" from the quick catalog,
+"Aggiorna libreria" with nothing changed (0 moves), the media viewer. Gate B passes when the script passes and the user
+signs the manual session and the verdict that the room already looks like the concept.
+
+### Deferred
+
+- **I4**: the hub, the room graph and doors, rooms for other systems, room streaming, linked expansion rooms for titles
+  past a room's capacity (until then `unplaced` with reason `capacity`), L-shaped and lounge templates, several layout
+  candidates chosen by the LayoutScore, theme packs, the editor with overrides and pins, "Regenerate room" and
+  "Regenerate world" with an impact preview, backup and undo, the map and the teleport between rooms; a table for
+  where-is if worlds outgrow an in-memory index.
+- **I5**: the decoder scheduler (two decoders, priorities, visibility, shared textures), RoomShuffle and the other
+  playlists, secondary TVs with video, audio (miniaudio, the 96 kHz clips resampled), the process priority boost and the
+  upload staggering of ADR-0004, CRT presets, videos and manuals in the media viewer.
+- **I6**: other media families (portrait boxes of NES, Mega Drive and Master System, square handheld boxes, wide GBA
+  cartridges), boxes as prefabs, cartridge shapes matched to `physicalmedia` images (PAL and US silhouettes told by the
+  image's aspect, since the scraper often returned PAL media for USA ROMs), `generic_media_box` for unmapped systems.
+- **I7**: the file watcher (games and media added in ES-DE appear without "Aggiorna libreria"), the settings screen
+  (`reduceMotion`, FOV, sensitivity), remapping, the on-screen keyboard, launching another version of a title from its
+  card.
+- **I8**: the Low and High profiles, LOD for far rows, BC7 or smaller arrays for the Low profile, the test room's labels
+  on the texture arrays (and its 160 draw-call bound lowered), more shadowed lights, a procedural specular environment
+  if a profile needs one, Blender hero assets (after Gate B, once the procedural prefabs have validated sizes and
+  sockets), the 10k and 30k fixtures, the fault-injection suite, golden G09.
