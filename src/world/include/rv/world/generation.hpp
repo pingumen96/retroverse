@@ -16,6 +16,7 @@
 #include <rv/world/capacity.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/media_family.hpp>
+#include <rv/world/overrides.hpp>
 #include <rv/world/platform_manifest.hpp>
 #include <rv/world/room_selection.hpp>
 #include <rv/world/room_template.hpp>
@@ -87,11 +88,20 @@ struct ChangeReport {
     std::vector<catalog::GameId> unplaced;
     /// Fixtures this change added (side-wall modules in place of decoration, the fixtures of a growth step).
     std::vector<FixtureId> fixturesAdded;
+    /// Fixtures it removed (the decoration a new side-wall module replaced) and moved (what stands on the south wall,
+    /// moved by a growth step), by id (I3 step 9).
+    std::vector<FixtureId> fixturesRemoved;
+    std::vector<FixtureId> fixturesMoved;
+    /// Levels whose shelf dressing gave way to a title, and slots an alias freed (ADR-0010 §10), by id (I3 step 9).
+    std::vector<LevelId> dressingRemoved;
+    std::vector<SlotId> slotsFreed;
     /// Pins of overrides.json that name a game or slot that no longer exists (never moved), and changes that would
     /// have moved a pinned object, not applied (`needsConfirmation`, the editor's dialog in I4): each as the pin's
-    /// text.
+    /// text (overrides.hpp's pinText()), or for a refused change what it would have done.
     std::vector<std::string> orphanedPins;
     std::vector<std::string> needsConfirmation;
+    /// Why an explicit regeneration is needed (RequiresExplicitRegeneration): which version, seed or preset differs.
+    std::string regenerationReason;
     /// The plan digests before (empty without a previous plan) and after.
     std::string digestBefore;
     std::string digestAfter;
@@ -160,8 +170,9 @@ struct GenerationResult {
     bool operator==(const GenerationResult&) const = default;
 };
 
-/// The generator's version (ADR-0010 §8, §10): 1.0 is I3 step 3's rules. A change that places any game differently is
-/// a new major version; one that only adds rules keeping every placement a new minor one.
+/// The generator's version (ADR-0010 §8, §10): 1.0 is I3 step 3's fresh generation with step 9's incremental rules
+/// (incremental.hpp), both first released in I3 (schema 1 stays open until Gate B). A change that places any game
+/// differently is a new major version; one that only adds rules keeping every placement a new minor one.
 inline constexpr GeneratorVersion kGeneratorVersion{1, 0};
 
 /// The one room template of I3 (ADR-0010 §4).
@@ -186,13 +197,24 @@ struct WorldData {
                                                 const catalog::SystemName& system,
                                                 std::string_view templateId = kDefaultRoomTemplate);
 
-/// What a fresh generation is asked for: the library, its room's selection (world::selectRoom, I3 step 2) and the
-/// configuration (world_config.hpp).
+/// What a fresh generation is asked for: the library, its room's selection (world::selectRoom, I3 step 2), the
+/// configuration (world_config.hpp) and the world's overrides (overrides.hpp, I3 step 9: a fresh plan applies no pin,
+/// and one that does not honour a pin breaks the validation's pin-broken rule, so it is never saved).
 struct GenerationInput {
     catalog::LibraryId library;
     RoomSelection selection;
     WorldConfig config;
+    WorldOverrides overrides;
 };
+
+/// The plan's inputDigest for these inputs (ADR-0010 §8): the SHA-256 of the canonical document of the configuration
+/// as it shapes the room (reduceMotion only shows it), the world seed, the selection, the template by id and version,
+/// what the plan takes from the platform manifest and the media family, every prefab as measured, and the generator's
+/// version. The overrides are not part of it (they are protected, never applied, in I3). The incremental update
+/// (incremental.hpp) records the digest of the inputs it read the same way, so a plan's inputDigest always names the
+/// inputs of its last generation or update. Errors: InvalidArgument for a configuration or selection their writers
+/// refuse.
+[[nodiscard]] Expected<std::string> generationInputDigest(const GenerationInput& input, const WorldData& data);
 
 /// A fresh plan for the selection's room (ADR-0010 §3 to §8), a pure function of its inputs: two runs, and Debug and
 /// Release, give one canonical text. The display rule: the first min(T, D + B) titles in priority order stand face-out

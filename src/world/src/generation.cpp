@@ -16,6 +16,8 @@
 
 #include "allocation.hpp"
 #include "fixture_layout.hpp"
+#include "generation_parts.hpp"
+#include "plan_parts.hpp"
 
 namespace rv::world {
 namespace {
@@ -31,17 +33,20 @@ Json slotSpecJson(const SlotSpec& spec) {
                 {"gapMm", spec.gapMm},     {"marginMm", spec.marginMm}, {"headroomMm", spec.headroomMm}};
 }
 
-/// The canonical document of what the generator read (ADR-0010 §8's inputDigest): the configuration as it shapes the
-/// room (reduceMotion only shows it), the world seed, the selection, the template by id and version (a template whose
-/// sockets change is a new version), what the plan takes from the platform manifest and the media family, and every
-/// prefab as measured.
-Expected<std::string> inputDigest(const GenerationInput& input, const WorldData& data, std::uint64_t seed) {
+/// The canonical document of what the generator read (ADR-0010 §8's inputDigest; generation.hpp): the configuration as
+/// it shapes the room (reduceMotion only shows it), the world seed, the selection, the template by id and version (a
+/// template whose sockets change is a new version), what the plan takes from the platform manifest and the media
+/// family, and every prefab as measured.
+/// `checkedSelection` false takes the selection's document without the reader's check (the update checks it itself).
+Expected<std::string> inputDigest(const GenerationInput& input, const WorldData& data, std::uint64_t seed,
+                                  bool checkedSelection = true) {
     auto config = worldConfigToJson(input.config);
     if (!config) {
         return propagate(config.error());
     }
     config->erase("reduceMotion");
-    auto selection = roomSelectionToJson(input.selection);
+    auto selection = checkedSelection ? roomSelectionToJson(input.selection)
+                                      : Expected<Json>(detail::roomSelectionDocument(input.selection));
     if (!selection) {
         return propagate(selection.error());
     }
@@ -69,7 +74,10 @@ Expected<std::string> inputDigest(const GenerationInput& input, const WorldData&
     return core::canonicalJsonDigest(document);
 }
 
-/// The prefabs' slot levels as the generator measured them, for the validation (ValidationContext::prefabSlots).
+} // namespace
+
+namespace detail {
+
 PrefabSlotSource catalogSlots(const PrefabCatalog& prefabs) {
     return [&prefabs](const PrefabRef& ref) -> Expected<std::vector<PrefabSlotLevel>> {
         const PrefabInfo* info = prefabs.find(ref);
@@ -84,7 +92,7 @@ PrefabSlotSource catalogSlots(const PrefabCatalog& prefabs) {
     };
 }
 
-Status checkInput(const GenerationInput& input, const WorldData& data) {
+Status checkGenerationInput(const GenerationInput& input, const WorldData& data) {
     auto room = RoomId::forSystem(data.platform.system);
     if (!room) {
         return propagate(room.error());
@@ -116,7 +124,34 @@ Status checkInput(const GenerationInput& input, const WorldData& data) {
     return ok();
 }
 
-} // namespace
+ValidationContext validationContext(const WorldPlan& plan, const GenerationInput& input, const WorldData& data,
+                                    const WorldOverrides& pins) {
+    ValidationContext validation;
+    validation.templates = {data.roomTemplate};
+    validation.config = input.config;
+    validation.selections = {input.selection};
+    validation.prefabSlots = catalogSlots(data.prefabs);
+    for (const Room& room : plan.rooms) {
+        std::uint32_t lights = 0;
+        for (const PlanLight& light : plan.lights) {
+            lights += light.id.room() == room.id ? 1 : 0;
+        }
+        validation.lights.push_back({room.id, lights});
+    }
+    validation.gamePins = pins.gamePins;
+    validation.fixturePins = pins.fixturePins;
+    return validation;
+}
+
+Expected<std::string> uncheckedInputDigest(const GenerationInput& input, const WorldData& data) {
+    return inputDigest(input, data, worldSeed(input.config, input.library), false);
+}
+
+} // namespace detail
+
+Expected<std::string> generationInputDigest(const GenerationInput& input, const WorldData& data) {
+    return inputDigest(input, data, worldSeed(input.config, input.library));
+}
 
 Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const catalog::SystemName& system,
                                   std::string_view templateId) {
@@ -162,7 +197,7 @@ Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const 
 }
 
 Expected<GenerationResult> generate(const GenerationInput& input, const WorldData& data) {
-    if (Status status = checkInput(input, data); !status) {
+    if (Status status = detail::checkGenerationInput(input, data); !status) {
         Error error = status.error();
         error.code = ErrorCode::InvalidArgument;
         return propagate(std::move(error));
@@ -237,13 +272,12 @@ Expected<GenerationResult> generate(const GenerationInput& input, const WorldDat
     }
     changes.digestAfter = std::move(*after);
 
-    ValidationContext validation;
-    validation.templates = {data.roomTemplate};
-    validation.config = input.config;
-    validation.selections = {input.selection};
-    validation.prefabSlots = catalogSlots(data.prefabs);
-    validation.lights = {{room, static_cast<std::uint32_t>(plan.lights.size())}};
-    result.validation = validatePlan(plan, validation);
+    // A fresh plan applies no pin (overrides.hpp): every pin is judged, so one the plan does not honour fails
+    // pin-broken and the plan is never saved.
+    const PinCheck pins = checkPins(plan, {data.roomTemplate}, input.overrides);
+    changes.orphanedPins = pins.orphaned;
+    changes.needsConfirmation = pins.unhonoured;
+    result.validation = validatePlan(plan, detail::validationContext(plan, input, data, input.overrides));
     return result;
 }
 

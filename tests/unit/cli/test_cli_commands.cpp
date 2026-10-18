@@ -47,10 +47,14 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 16> kPlanned
     {"where-is", "I3 step 9"},
 }};
 
-/// The subcommands of worldplan still stubs, each with the I3 step that implements it (check: I3 step 4,
-/// test_cli_worldplan_check.cpp; generate and show: I3 step 3, test_cli_worldplan.cpp).
-constexpr std::array<std::pair<std::string_view, std::string_view>, 1> kWorldPlanSubcommands{{
+/// The subcommands of worldplan, each with the I3 step that implemented it (generate and show: I3 step 3,
+/// test_cli_worldplan.cpp; check: I3 step 4, test_cli_worldplan_check.cpp; update, with where-is: I3 step 9,
+/// test_cli_worldplan_update.cpp). None is a stub any more.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 4> kWorldPlanSubcommands{{
+    {"generate", "I3 step 3"},
     {"update", "I3 step 9"},
+    {"show", "I3 step 3"},
+    {"check", "I3 step 4"},
 }};
 
 /// Directories of a test run: the source tree's assets and no %LOCALAPPDATA%, so a run never reaches the real user
@@ -178,31 +182,24 @@ TEST_CASE("cli/command: every command exits 2 on an unknown option with nothing 
     }
 }
 
-TEST_CASE("cli/run: the I3 commands are stubs that name their steps and exit 2 until those steps", "[cli]") {
+TEST_CASE("cli/run: the I3 commands: worldplan's subcommands and where-is answer for themselves", "[cli]") {
     const rv::test::TempDir dir("rv-cli-i3-stubs");
     const LoggingReset loggingReset;
     const std::string data = rv::core::pathToUtf8(dir.file("data"));
     const rv::core::PathEnvironment environment = testEnvironment(dir.path());
 
-    // Each worldplan subcommand answers alone, whatever its arguments, --help included.
+    // Each worldplan subcommand and where-is shows its own usage on --help (no stub is left).
     for (const auto& [subcommand, step] : kWorldPlanSubcommands) {
-        for (const std::vector<std::string>& extra :
-             {std::vector<std::string>{}, std::vector<std::string>{"--system", "snes"},
-              std::vector<std::string>{"--help"}}) {
-            std::vector<std::string> arguments{"--data-dir", data, "worldplan", std::string(subcommand)};
-            arguments.insert(arguments.end(), extra.begin(), extra.end());
-            INFO(fmt::format("{}", fmt::join(arguments, " ")));
-            const RunResult result = runCli(arguments, environment);
-            CHECK(result.code == ExitCode::UsageError);
-            CHECK(result.out.empty());
-            CHECK(result.err ==
-                  fmt::format("retroverse-cli worldplan {}: not implemented yet ({})\n", subcommand, step));
-        }
+        INFO(subcommand << " (" << step << ")");
+        const RunResult result = runCli({"--data-dir", data, "worldplan", std::string(subcommand), "--help"},
+                                        environment);
+        CHECK(result.code == ExitCode::Ok);
+        CHECK(contains(result.out, fmt::format("Usage: retroverse-cli [global options] worldplan {}", subcommand)));
+        CHECK_FALSE(contains(result.err, "not implemented yet"));
     }
-    const RunResult whereIs = runCli({"--data-dir", data, "where-is", "g0123456789abcdef"}, environment);
-    CHECK(whereIs.code == ExitCode::UsageError);
-    CHECK(whereIs.out.empty());
-    CHECK(whereIs.err == "retroverse-cli where-is: not implemented yet (I3 step 9)\n");
+    const RunResult whereIs = runCli({"--data-dir", data, "where-is", "--help"}, environment);
+    CHECK(whereIs.code == ExitCode::Ok);
+    CHECK(contains(whereIs.out, "Usage: retroverse-cli [global options] where-is <gameId>"));
 
     // worldplan itself: its usage on --help (stdout, exit 0) and without a subcommand (stderr, exit 2); an unknown
     // subcommand or option is a usage error that names it.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -86,7 +87,7 @@ Frame frameOf(const RoomTemplate& roomTemplate, const TemplateSocket& socket, st
 }
 
 /// The section of a level by its fixture's role and its items' facing (ADR-0010 §3).
-Section sectionOf(FixtureRole role, LevelFacing facing) noexcept {
+Section levelSection(FixtureRole role, LevelFacing facing) noexcept {
     if (role == FixtureRole::Display) {
         return Section::Featured;
     }
@@ -95,6 +96,75 @@ Section sectionOf(FixtureRole role, LevelFacing facing) noexcept {
 
 bool fitsSocket(const PrefabInfo& info, const TemplateSocket& socket) noexcept {
     return info.widthMm() <= socket.widthMm && info.depthMm() <= socket.depthMm;
+}
+
+std::uint32_t lightLimitOf(const RoomTemplate& roomTemplate) noexcept {
+    return std::min(roomTemplate.lightLimit, kMaxSceneLights);
+}
+
+FixtureId fixtureIdOf(const LayoutInput& input, const std::string& socketId, std::string_view part = {}) {
+    // Socket and part names are the template's, which its reader validated.
+    return *FixtureId::make(input.room, socketId, part);
+}
+
+/// A point light shines from its position: its target is that position and it has no span.
+PlanLight normalized(PlanLight light) noexcept {
+    if (lightKind(light.role) == LightKind::Point) {
+        light.targetXMm = light.xMm;
+        light.targetYMm = light.yMm;
+        light.targetZMm = light.zMm;
+        light.spanMm = 0;
+    }
+    return light;
+}
+
+/// A prefab's fixture with its pivot and yaw; a collection fixture gets its prefab's levels with their sections.
+PlacedFixture makeFixture(const LayoutInput& input, FixtureId id, FixtureRole role, const PrefabInfo& info,
+                          const Point& pivot, std::int64_t yMm, std::int32_t yawCdeg) {
+    PlacedFixture placed;
+    placed.info = &info;
+    Fixture& fixture = placed.fixture;
+    fixture.id = std::move(id);
+    fixture.role = role;
+    fixture.prefab = info.ref;
+    fixture.xMm = pivot.xMm;
+    fixture.yMm = yMm;
+    fixture.zMm = pivot.zMm;
+    fixture.yawCdeg = static_cast<std::int32_t>(((yawCdeg % 36000) + 36000) % 36000);
+    fixture.widthMm = info.widthMm();
+    fixture.heightMm = info.heightMm();
+    fixture.depthMm = info.depthMm();
+    if (role == FixtureRole::HeroModule || role == FixtureRole::SideModule || role == FixtureRole::Display) {
+        for (const SlotLevelInfo& level : info.levels) {
+            const LevelFacing facing = level.facing(input.family);
+            fixture.levels.push_back({level.level, level.slots, levelSection(role, facing)});
+            placed.facings.push_back(facing);
+        }
+    }
+    return placed;
+}
+
+/// A prefab standing in a socket: its back on the socket's back edge, centred across its width, lifted by `liftMm`.
+PlacedFixture fixtureInSocket(const LayoutInput& input, const TemplateSocket& socket, const PrefabInfo& info,
+                              FixtureRole role, std::int64_t liftMm) {
+    const Frame where = frameOf(input.roomTemplate, socket, input.counts.growthSteps);
+    const Point pivot = where.toRoom(-(info.minXMm + info.maxXMm) / 2, -info.minZMm);
+    return makeFixture(input, fixtureIdOf(input, socket.id), role, info, pivot, liftMm, where.yawCdeg);
+}
+
+/// The lamp's light at its prefab's light source, turned with the fixture (a quarter turn at a time: the lamps' bulbs
+/// stand on their axes).
+PlanLight lampLight(const PlacedFixture& lamp, FixtureId id) {
+    const Fixture& fixture = lamp.fixture;
+    const Axes axes = axesOf(quarterTurn(fixture.yawCdeg));
+    const PrefabPointMm& source = *lamp.info->lightSource;
+    PlanLight light;
+    light.id = std::move(id);
+    light.role = LightRole::Lamp;
+    light.xMm = fixture.xMm + axes.rightX * source.xMm + axes.frontX * source.zMm;
+    light.yMm = fixture.yMm + source.yMm;
+    light.zMm = fixture.zMm + axes.rightZ * source.xMm + axes.frontZ * source.zMm;
+    return normalized(light);
 }
 
 class Builder {
@@ -147,41 +217,18 @@ private:
     }
 
     FixtureId fixtureId(const std::string& socketId, std::string_view part = {}) const {
-        // Socket and part names are the template's, which its reader validated.
-        return *FixtureId::make(m_input.room, socketId, part);
+        return fixtureIdOf(m_input, socketId, part);
     }
 
-    /// A prefab standing in a socket: its back on the socket's back edge, centred across its width, lifted by `liftMm`.
     std::size_t addInSocket(const TemplateSocket& socket, const PrefabInfo& info, FixtureRole role,
                             std::int64_t liftMm) {
-        const Frame where = frame(socket);
-        const Point pivot = where.toRoom(-(info.minXMm + info.maxXMm) / 2, -info.minZMm);
-        return add(fixtureId(socket.id), role, info, pivot, liftMm, where.yawCdeg);
+        m_layout.fixtures.push_back(fixtureInSocket(m_input, socket, info, role, liftMm));
+        return m_layout.fixtures.size() - 1;
     }
 
     std::size_t add(FixtureId id, FixtureRole role, const PrefabInfo& info, const Point& pivot, std::int64_t yMm,
                     std::int32_t yawCdeg) {
-        PlacedFixture placed;
-        placed.info = &info;
-        Fixture& fixture = placed.fixture;
-        fixture.id = std::move(id);
-        fixture.role = role;
-        fixture.prefab = info.ref;
-        fixture.xMm = pivot.xMm;
-        fixture.yMm = yMm;
-        fixture.zMm = pivot.zMm;
-        fixture.yawCdeg = static_cast<std::int32_t>(((yawCdeg % 36000) + 36000) % 36000);
-        fixture.widthMm = info.widthMm();
-        fixture.heightMm = info.heightMm();
-        fixture.depthMm = info.depthMm();
-        if (role == FixtureRole::HeroModule || role == FixtureRole::SideModule || role == FixtureRole::Display) {
-            for (const SlotLevelInfo& level : info.levels) {
-                const LevelFacing facing = level.facing(m_input.family);
-                fixture.levels.push_back({level.level, level.slots, sectionOf(role, facing)});
-                placed.facings.push_back(facing);
-            }
-        }
-        m_layout.fixtures.push_back(std::move(placed));
+        m_layout.fixtures.push_back(makeFixture(m_input, std::move(id), role, info, pivot, yMm, yawCdeg));
         return m_layout.fixtures.size() - 1;
     }
 
@@ -274,34 +321,16 @@ private:
         return ok();
     }
 
-    std::uint32_t lightLimit() const noexcept { return std::min(m_template.lightLimit, kMaxSceneLights); }
+    std::uint32_t lightLimit() const noexcept { return lightLimitOf(m_template); }
     bool lightBudgetLeft() const noexcept { return m_layout.lights.size() < lightLimit(); }
-
-    void addLight(PlanLight light) {
-        if (lightKind(light.role) == LightKind::Point) {
-            light.targetXMm = light.xMm;
-            light.targetYMm = light.yMm;
-            light.targetZMm = light.zMm;
-            light.spanMm = 0;
-        }
-        if (lightBudgetLeft()) {
-            m_layout.lights.push_back(light);
-        }
+    std::size_t lightsLeft() const noexcept {
+        return lightLimit() - std::min<std::size_t>(lightLimit(), m_layout.lights.size());
     }
 
-    /// The lamp's light at its prefab's light source, turned with the fixture (a quarter turn at a time: the lamps' bulbs
-    /// stand on their axes).
-    PlanLight lampLight(const PlacedFixture& lamp, FixtureId id) const {
-        const Fixture& fixture = lamp.fixture;
-        const Axes axes = axesOf(quarterTurn(fixture.yawCdeg));
-        const PrefabPointMm& source = *lamp.info->lightSource;
-        PlanLight light;
-        light.id = std::move(id);
-        light.role = LightRole::Lamp;
-        light.xMm = fixture.xMm + axes.rightX * source.xMm + axes.frontX * source.zMm;
-        light.yMm = fixture.yMm + source.yMm;
-        light.zMm = fixture.zMm + axes.rightZ * source.xMm + axes.frontZ * source.zMm;
-        return light;
+    void addLight(const PlanLight& light) {
+        if (lightBudgetLeft()) {
+            m_layout.lights.push_back(normalized(light));
+        }
     }
 
     /// The key, the pendant, the hero corner's lamps and the picture light, in that order while the limit allows.
@@ -352,113 +381,24 @@ private:
         }
     }
 
-    /// One wall-washer per two adjacent modules of a wall while the limit allows, then fewer, each over a longer run:
-    /// the runs of adjacent modules are cut into pieces of g modules, g the smallest from 2 whose pieces the remaining
-    /// lights hold; when even one per run is too many, the runs that fill first get theirs.
     void placeWallWashers() {
-        struct Member {
-            std::size_t order = 0; ///< in the collection's fill order
-            const TemplateSocket* socket = nullptr;
-            std::int64_t from = 0; ///< along the wall, in the room's frame (x for north and south, z otherwise)
-            std::int64_t to = 0;
-        };
-        std::vector<std::vector<Member>> runs;
-        for (const Wall wall : {Wall::North, Wall::West, Wall::East, Wall::South, Wall::None}) {
-            std::vector<Member> members;
-            for (std::size_t i = 0; i < m_moduleSockets.size(); ++i) {
-                const TemplateSocket* module = m_moduleSockets[i];
-                if (module->wall != wall) {
-                    continue;
-                }
-                const Footprint footprint = socketFootprint(m_template, *module, m_input.counts.growthSteps);
-                const bool alongX = wall == Wall::North || wall == Wall::South;
-                members.push_back({i, module, alongX ? footprint.minXMm : footprint.minZMm,
-                                   alongX ? footprint.maxXMm : footprint.maxZMm});
-            }
-            std::sort(members.begin(), members.end(),
-                      [](const Member& a, const Member& b) { return a.from < b.from; });
-            for (std::size_t i = 0; i < members.size(); ++i) {
-                if (i == 0 || wall == Wall::None || members[i].from - members[i - 1].to > kAdjacentModuleGapMm) {
-                    runs.emplace_back();
-                }
-                runs.back().push_back(members[i]);
-            }
+        std::vector<ModuleOnWall> modules;
+        for (std::size_t i = 0; i < m_moduleSockets.size(); ++i) {
+            modules.push_back({m_moduleSockets[i], m_layout.fixtures[m_layout.modules[i]].fixture.depthMm});
         }
-        for (std::vector<Member>& run : runs) {
-            // A run is cut from the end that fills first (the hero wall's end of a side wall).
-            if (run.front().order > run.back().order) {
-                std::reverse(run.begin(), run.end());
-            }
-        }
-        std::sort(runs.begin(), runs.end(), [](const std::vector<Member>& a, const std::vector<Member>& b) {
-            return a.front().order < b.front().order;
-        });
-        const std::size_t budget = lightLimit() - std::min<std::size_t>(lightLimit(), m_layout.lights.size());
-        std::size_t longest = 0;
-        for (const std::vector<Member>& run : runs) {
-            longest = std::max(longest, run.size());
-        }
-        std::size_t piece = 2;
-        const auto pieces = [&](std::size_t size) {
-            std::size_t total = 0;
-            for (const std::vector<Member>& run : runs) {
-                total += (run.size() + size - 1) / size;
-            }
-            return total;
-        };
-        while (piece < longest && pieces(piece) > budget) {
-            ++piece;
-        }
-        const std::int64_t ceiling = m_template.heightMm;
-        for (const std::vector<Member>& run : runs) {
-            for (std::size_t first = 0; first < run.size() && lightBudgetLeft(); first += piece) {
-                const std::size_t last = std::min(run.size(), first + piece) - 1;
-                std::int64_t from = std::numeric_limits<std::int64_t>::max();
-                std::int64_t to = std::numeric_limits<std::int64_t>::lowest();
-                for (std::size_t i = first; i <= last; ++i) {
-                    from = std::min(from, run[i].from);
-                    to = std::max(to, run[i].to);
-                }
-                const TemplateSocket& socket = *run[first].socket;
-                const Frame where = frame(socket);
-                const PlacedFixture& module = m_layout.fixtures[m_layout.modules[run[first].order]];
-                const bool alongX = socket.wall == Wall::North || socket.wall == Wall::South;
-                const std::int64_t middle = from + (to - from) / 2;
-                const Point onWall = alongX ? Point{middle, where.anchor.zMm} : Point{where.anchor.xMm, middle};
-                PlanLight light;
-                light.id = fixtureId(socket.id, "washer");
-                light.role = LightRole::WallWasher;
-                light.xMm = onWall.xMm + where.axes.frontX * (module.fixture.depthMm + kWasherOutMm);
-                light.yMm = ceiling - kWasherBelowCeilingMm;
-                light.zMm = onWall.zMm + where.axes.frontZ * (module.fixture.depthMm + kWasherOutMm);
-                light.targetXMm = onWall.xMm;
-                light.targetYMm = kWasherTargetHeightMm;
-                light.targetZMm = onWall.zMm;
-                light.spanMm = to - from;
-                addLight(light);
-            }
+        for (const PlanLight& light : wallWasherLights(m_input, modules, lightsLeft())) {
+            addLight(light);
         }
     }
 
-    /// The decoration a socket holds: one of the template's choices that fits it, drawn from its prop seed; a lamp only
-    /// while the light limit allows its light.
     void decorate(const TemplateSocket& socket) {
-        std::vector<std::pair<const DecorationChoice*, const PrefabInfo*>> candidates;
-        for (const DecorationChoice& choice : m_template.decoration) {
-            const PrefabInfo* info = m_input.prefabs.find(choice.prefab);
-            if (info == nullptr || !fitsSocket(*info, socket) || (info->lightSource && !lightBudgetLeft())) {
-                continue;
-            }
-            candidates.emplace_back(&choice, info);
-        }
-        if (candidates.empty()) {
+        auto decoration = decorationIn(m_input, socket, lightsLeft());
+        if (!decoration) {
             return;
         }
-        core::Random random(propSeed(m_input.roomSeed, fixtureId(socket.id)));
-        const auto& [choice, info] = candidates[static_cast<std::size_t>(random.below(candidates.size()))];
-        const std::size_t index = addInSocket(socket, *info, FixtureRole::Decoration, choice->mountHeightMm);
-        if (info->lightSource) {
-            addLight(lampLight(m_layout.fixtures[index], fixtureId(socket.id, "light")));
+        m_layout.fixtures.push_back(std::move(decoration->fixture));
+        if (decoration->light) {
+            addLight(*decoration->light);
         }
     }
 
@@ -511,6 +451,136 @@ private:
 };
 
 } // namespace
+
+std::vector<PlanLight> wallWasherLights(const LayoutInput& input, std::span<const ModuleOnWall> modules,
+                                        std::size_t budget) {
+    const RoomTemplate& roomTemplate = input.roomTemplate;
+    struct Member {
+        std::size_t order = 0; ///< in the collection's fill order
+        const TemplateSocket* socket = nullptr;
+        std::int64_t from = 0; ///< along the wall, in the room's frame (x for north and south, z otherwise)
+        std::int64_t to = 0;
+    };
+    std::vector<std::vector<Member>> runs;
+    for (const Wall wall : {Wall::North, Wall::West, Wall::East, Wall::South, Wall::None}) {
+        std::vector<Member> members;
+        for (std::size_t i = 0; i < modules.size(); ++i) {
+            const TemplateSocket* module = modules[i].socket;
+            if (module->wall != wall) {
+                continue;
+            }
+            const Footprint footprint = socketFootprint(roomTemplate, *module, input.counts.growthSteps);
+            const bool alongX = wall == Wall::North || wall == Wall::South;
+            members.push_back({i, module, alongX ? footprint.minXMm : footprint.minZMm,
+                               alongX ? footprint.maxXMm : footprint.maxZMm});
+        }
+        std::sort(members.begin(), members.end(), [](const Member& a, const Member& b) { return a.from < b.from; });
+        for (std::size_t i = 0; i < members.size(); ++i) {
+            if (i == 0 || wall == Wall::None || members[i].from - members[i - 1].to > kAdjacentModuleGapMm) {
+                runs.emplace_back();
+            }
+            runs.back().push_back(members[i]);
+        }
+    }
+    for (std::vector<Member>& run : runs) {
+        // A run is cut from the end that fills first (the hero wall's end of a side wall).
+        if (run.front().order > run.back().order) {
+            std::reverse(run.begin(), run.end());
+        }
+    }
+    std::sort(runs.begin(), runs.end(), [](const std::vector<Member>& a, const std::vector<Member>& b) {
+        return a.front().order < b.front().order;
+    });
+    std::size_t longest = 0;
+    for (const std::vector<Member>& run : runs) {
+        longest = std::max(longest, run.size());
+    }
+    std::size_t piece = 2;
+    const auto pieces = [&](std::size_t size) {
+        std::size_t total = 0;
+        for (const std::vector<Member>& run : runs) {
+            total += (run.size() + size - 1) / size;
+        }
+        return total;
+    };
+    while (piece < longest && pieces(piece) > budget) {
+        ++piece;
+    }
+    const std::int64_t ceiling = roomTemplate.heightMm;
+    std::vector<PlanLight> lights;
+    for (const std::vector<Member>& run : runs) {
+        for (std::size_t first = 0; first < run.size() && lights.size() < budget; first += piece) {
+            const std::size_t last = std::min(run.size(), first + piece) - 1;
+            std::int64_t from = std::numeric_limits<std::int64_t>::max();
+            std::int64_t to = std::numeric_limits<std::int64_t>::lowest();
+            for (std::size_t i = first; i <= last; ++i) {
+                from = std::min(from, run[i].from);
+                to = std::max(to, run[i].to);
+            }
+            const TemplateSocket& socket = *run[first].socket;
+            const Frame where = frameOf(roomTemplate, socket, input.counts.growthSteps);
+            const std::int64_t depthMm = modules[run[first].order].depthMm;
+            const bool alongX = socket.wall == Wall::North || socket.wall == Wall::South;
+            const std::int64_t middle = from + (to - from) / 2;
+            const Point onWall = alongX ? Point{middle, where.anchor.zMm} : Point{where.anchor.xMm, middle};
+            PlanLight light;
+            light.id = fixtureIdOf(input, socket.id, "washer");
+            light.role = LightRole::WallWasher;
+            light.xMm = onWall.xMm + where.axes.frontX * (depthMm + kWasherOutMm);
+            light.yMm = ceiling - kWasherBelowCeilingMm;
+            light.zMm = onWall.zMm + where.axes.frontZ * (depthMm + kWasherOutMm);
+            light.targetXMm = onWall.xMm;
+            light.targetYMm = kWasherTargetHeightMm;
+            light.targetZMm = onWall.zMm;
+            light.spanMm = to - from;
+            lights.push_back(light);
+        }
+    }
+    return lights;
+}
+
+std::optional<PlacedDecoration> decorationIn(const LayoutInput& input, const TemplateSocket& socket,
+                                             std::size_t lightsLeft) {
+    std::vector<std::pair<const DecorationChoice*, const PrefabInfo*>> candidates;
+    for (const DecorationChoice& choice : input.roomTemplate.decoration) {
+        const PrefabInfo* info = input.prefabs.find(choice.prefab);
+        if (info == nullptr || !fitsSocket(*info, socket) || (info->lightSource && lightsLeft == 0)) {
+            continue;
+        }
+        candidates.emplace_back(&choice, info);
+    }
+    if (candidates.empty()) {
+        return std::nullopt;
+    }
+    core::Random random(propSeed(input.roomSeed, fixtureIdOf(input, socket.id)));
+    const auto& [choice, info] = candidates[static_cast<std::size_t>(random.below(candidates.size()))];
+    PlacedDecoration decoration;
+    decoration.fixture = fixtureInSocket(input, socket, *info, FixtureRole::Decoration, choice->mountHeightMm);
+    if (info->lightSource) {
+        decoration.light = lampLight(decoration.fixture, fixtureIdOf(input, socket.id, "light"));
+    }
+    return decoration;
+}
+
+Expected<PlacedFixture> sideModuleIn(const LayoutInput& input, const TemplateSocket& socket) {
+    const PrefabRef& ref = input.roomTemplate.sideModule;
+    const PrefabInfo* info = input.prefabs.find(ref);
+    if (info == nullptr) {
+        return makeError(ErrorCode::NotFound, "the prefab catalog lacks " + ref.manifest + " (" + ref.kind + ")",
+                         input.roomTemplate.id);
+    }
+    if (!fitsSocket(*info, socket)) {
+        return makeError(ErrorCode::ValidationFailed,
+                         "module " + info->ref.manifest + " (" + std::to_string(info->widthMm()) + " x " +
+                             std::to_string(info->depthMm()) + " mm) does not fit socket " + socket.id,
+                         input.roomTemplate.id);
+    }
+    return fixtureInSocket(input, socket, *info, FixtureRole::SideModule, 0);
+}
+
+Section sectionOf(FixtureRole role, LevelFacing facing) noexcept {
+    return levelSection(role, facing);
+}
 
 Expected<RoomLayout> layOutRoom(const LayoutInput& input) {
     return Builder(input).build();

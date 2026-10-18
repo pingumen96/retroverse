@@ -23,16 +23,17 @@
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/world/world_plan.hpp>
+#include <rv/world/world_store.hpp>
 
 #include "catalog_text.hpp"
 #include "library_snapshot.hpp"
 
 namespace rv::cli {
 
-/// The plan file of a library's world: <user data>/worlds/<library id>/world-plan.json (ADR-0010 §9; I3 step 9's world
-/// store adds the backups, the meta sidecar and the lock beside it).
+/// The plan file of a library's world: <user data>/worlds/<library id>/world-plan.json (ADR-0010 §9; the world store
+/// keeps the backups, the meta sidecar, the overrides and the lock beside it: rv/world/world_store.hpp).
 inline std::filesystem::path defaultPlanPath(const core::Paths& paths, const catalog::LibraryId& library) {
-    return paths.userDataRoot() / "worlds" / core::pathFromUtf8(library.str()) / "world-plan.json";
+    return world::worldFiles(paths.userDataRoot(), library).plan;
 }
 
 /// The library named by `--library` (`given`), else the one <user data>/config/library.json records. On failure the

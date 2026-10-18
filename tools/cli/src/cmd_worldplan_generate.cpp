@@ -3,13 +3,15 @@
 // connection, esde::checkRoomMedia against the media root of the library <user data>/config/library.json records, then
 // world::selectRoom; nothing is generated while the media are unknown (exit 1, ADR-0010 §3). --selection takes a
 // canonical selection file instead (tests, a selection kept from elsewhere). Then the world configuration (the preset
-// under <user data>/config/world.json, the seed from --seed when given), the world's data under the asset root, and
-// world::generate, whose plan is validated (world::validatePlan, I3 step 4): a plan that breaks a hard rule is never
-// written (exit 3, its findings on stderr). The plan is written atomically to
-// <user data>/worlds/<library id>/world-plan.json, never over an existing one (--replace, the explicit regeneration
-// after a backup, is I3 step 9's), or to the file --plan names; its summary goes to stdout or --output.
+// under <user data>/config/world.json, the seed from --seed when given), the world's data under the asset root, the
+// world's overrides (overrides.json: a fresh plan that does not honour a pin is refused), and world::generate, whose
+// plan is validated (world::validatePlan, I3 step 4): a plan that breaks a hard rule is never written (exit 3, its
+// findings on stderr). The plan is saved as the world's plan under the world lock (rv/world/world_store.hpp, I3 step
+// 9), never over an existing one unless --replace asks for the explicit regeneration (the face-out set chosen again,
+// the previous plan kept in backups/ first); or written to the file --plan names. Its summary goes to stdout or
+// --output.
 
-#include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -23,25 +25,24 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/catalog/ids.hpp>
-#include <rv/catalog/room_entry.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/arg_parser.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
-#include <rv/esde/media_resolver.hpp>
+#include <rv/core/version.hpp>
 #include <rv/world/generation.hpp>
+#include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
-#include <rv/world/room_input.hpp>
-#include <rv/world/room_selection.hpp>
 #include <rv/world/world_config.hpp>
+#include <rv/world/world_store.hpp>
 
 #include "catalog_text.hpp"
 #include "commands.hpp"
 #include "esde_text.hpp"
-#include "library_snapshot.hpp"
 #include "world_plan_text.hpp"
+#include "world_selection.hpp"
 
 namespace rv::cli {
 namespace {
@@ -50,14 +51,15 @@ constexpr std::string_view kName = "retroverse-cli worldplan generate";
 
 constexpr std::string_view kUsage =
     "Usage: retroverse-cli [global options] worldplan generate --system <system> [--selection <file>]\n"
-    "                      [--seed <n>] [--library <id>] [--plan <file>] [--json] [--output <file>]\n"
+    "                      [--seed <n>] [--library <id>] [--replace | --plan <file>] [--json] [--output <file>]\n"
     "\n"
     "Generates a fresh plan for a system's room: which titles it shows and where (the display fixtures and the hero\n"
     "band face-out, the rest spine-out in as few shelf modules as they and the growth reserve need), its fixtures,\n"
     "decoration, shelf dressing and lights. The titles are the catalog's (<user data>/database/retroverse.sqlite, made\n"
     "by an import) for the library <user data>/config/library.json records, one per title with a cover; nothing is\n"
-    "generated while the library's media root cannot be reached. The plan is validated, then written to\n"
-    "<user data>/worlds/<library id>/world-plan.json, never over an existing plan; its summary goes to stdout.\n"
+    "generated while the library's media root cannot be reached. The plan is validated (the pins of the world's\n"
+    "overrides.json included), then saved as <user data>/worlds/<library id>/world-plan.json under the world's lock,\n"
+    "never over an existing plan unless --replace is given; its summary goes to stdout.\n"
     "\n"
     "Options:\n"
     "  --system <system>   The room's system, as ES-DE names it (snes).\n"
@@ -67,108 +69,22 @@ constexpr std::string_view kUsage =
     "                      library id).\n"
     "  --library <id>      The library the plan belongs to (default: the one library.json records; with the catalog's\n"
     "                      selection it must be that one).\n"
-    "  --plan <file>       Write the plan to this file instead (replaced when it exists).\n"
+    "  --replace           Regenerate over the world's existing plan: the explicit regeneration, which chooses the\n"
+    "                      face-out titles again; the previous plan is first kept in the world's backups/ folder\n"
+    "                      (the last 10).\n"
+    "  --plan <file>       Write the plan to this file instead (replaced when it exists; no backup).\n"
     "  --json              Write the summary as JSON.\n"
     "  --output <file>     Write the summary to this file (UTF-8) instead of stdout.\n"
     "  -h, --help          Show this help and exit.\n"
     "\n"
-    "Exit codes: 0 ok; 1 nothing written: a plan exists already, the media are unknown, or the catalog has no such\n"
-    "system; 2 usage error; 3 the data, the catalog or the selection could not be read, the plan breaks a hard rule of\n"
-    "the validation, or it could not be written.\n";
-
-std::optional<std::uint64_t> parseSeed(std::string_view text) {
-    std::uint64_t value = 0;
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc() || end != text.data() + text.size() || text.empty() ||
-        (text.size() > 1 && text.front() == '0')) {
-        return std::nullopt;
-    }
-    return value;
-}
+    "Exit codes: 0 ok; 1 nothing written: a plan exists already (without --replace), the media are unknown, or the\n"
+    "catalog has no such system; 2 usage error; 3 the data, the catalog, the selection or the overrides could not be\n"
+    "read, the plan breaks a hard rule of the validation, the world is locked by another program, or the plan could\n"
+    "not be written.\n";
 
 ExitCode failure(CommandContext& context, std::string_view what, const Error& error) {
     context.err.writeLine(fmt::format("{}: {}: {}", kName, what, error.toString()));
     return ExitCode::RuntimeFailure;
-}
-
-/// A selection and the library it is for, or how the command ends.
-struct Selected {
-    std::optional<world::RoomSelection> selection;
-    catalog::LibraryId library;
-    ExitCode failure = ExitCode::RuntimeFailure;
-};
-
-/// The selection of a canonical selection file, for the library --library names or library.json records.
-Selected selectionFromFile(CommandContext& context, const std::string& file, const std::optional<std::string>& given) {
-    Selected selected;
-    const auto library = libraryOf(context, kName, given, selected.failure);
-    if (!library) {
-        return selected;
-    }
-    selected.library = *library;
-    const std::filesystem::path path = core::pathFromUtf8(file);
-    auto text = core::readTextFile(path);
-    if (!text) {
-        selected.failure = failure(context, "the selection", text.error());
-        return selected;
-    }
-    auto selection = world::readRoomSelection(*text, pathText(path));
-    if (!selection) {
-        selected.failure = failure(context, "the selection", selection.error());
-        return selected;
-    }
-    selected.selection = std::move(*selection);
-    return selected;
-}
-
-/// The catalog's selection for `system`, as the app's catalog worker makes it (I3 step 2): the bulk snapshot, the media
-/// root checked, world::selectRoom.
-Selected selectionFromCatalog(CommandContext& context, const catalog::SystemName& system,
-                              const std::optional<std::string>& given, const world::WorldConfig& config) {
-    Selected selected;
-    const auto profile = readRecordedLibrary(context, kName, selected.failure);
-    if (!profile) {
-        return selected;
-    }
-    if (given && *given != profile->id.str()) {
-        context.err.writeLine(fmt::format("{}: --library {} is not the catalog's library {} (library.json); a "
-                                          "selection of another library comes with --selection",
-                                          kName, *given, profile->id.str()));
-        selected.failure = ExitCode::UsageError;
-        return selected;
-    }
-    selected.library = profile->id;
-    auto reader = openCatalogReader(context.paths);
-    if (!reader) {
-        selected.failure = catalogFailure(context, reader.error());
-        return selected;
-    }
-    auto snapshot = reader->query->roomEntries(system);
-    if (!snapshot) {
-        if (snapshot.error().code == ErrorCode::NotFound) {
-            context.err.writeLine(fmt::format("{}: the catalog has no system {}", kName, system.str()));
-            selected.failure = ExitCode::ProblemsFound;
-            return selected;
-        }
-        selected.failure = catalogFailure(context, snapshot.error());
-        return selected;
-    }
-    esde::EsdeMediaResolver resolver(mediaRootOf(*profile));
-    esde::checkRoomMedia(*snapshot, resolver);
-    auto selection = world::selectRoom(world::RoomInput{profile->id, std::move(*snapshot)}, config);
-    if (!selection) {
-        if (selection.error().code == ErrorCode::Unavailable) {
-            // Unknown media decide nothing (ADR-0010 §3): no plan until the media root can be reached.
-            context.err.writeLine(fmt::format("{}: no plan while the media are unknown: {}", kName,
-                                              selection.error().message));
-            selected.failure = ExitCode::ProblemsFound;
-            return selected;
-        }
-        selected.failure = failure(context, "the room's selection", selection.error());
-        return selected;
-    }
-    selected.selection = std::move(*selection);
-    return selected;
 }
 
 } // namespace
@@ -179,6 +95,7 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     parser.option("selection", "file", "The room's selection (canonical JSON).");
     parser.option("seed", "n", "The world seed.");
     parser.option("library", "id", "The library the plan belongs to.");
+    parser.flag("replace", "Regenerate over the world's existing plan, after a backup.");
     parser.option("plan", "file", "Write the plan to this file.");
     parser.flag("json", "Write the summary as JSON.");
     addOutputOption(parser);
@@ -204,26 +121,25 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     }
     std::optional<std::uint64_t> seed;
     if (const auto seedText = args->value("seed")) {
-        seed = parseSeed(*seedText);
+        seed = parseWorldSeed(*seedText);
         if (!seed) {
             return usageError(context, fmt::format("--seed: not an integer from 0 to 2^64 - 1: '{}'", *seedText));
         }
     }
+    const auto planOption = args->value("plan");
+    const bool replace = args->has("replace");
+    if (planOption && replace) {
+        return usageError(context, "--replace and --plan exclude each other");
+    }
 
-    auto loaded = world::loadWorldConfig(context.paths.assetRoot(), context.paths.configDir());
-    if (!loaded) {
-        return failure(context, "the world configuration", loaded.error());
-    }
-    for (const Error& issue : loaded->issues) {
-        spdlog::warn("world.json left out: {}", issue.toString());
-    }
-    world::WorldConfig config = std::move(loaded->config);
-    if (seed) {
-        config.seed = seed;
+    auto config = loadWorldConfiguration(context, kName, seed);
+    if (!config) {
+        return ExitCode::RuntimeFailure;
     }
     const auto selectionFile = args->value("selection");
-    Selected selected = selectionFile ? selectionFromFile(context, *selectionFile, args->value("library"))
-                                      : selectionFromCatalog(context, *system, args->value("library"), config);
+    Selected selected =
+        selectionFile ? selectionFromFile(context, kName, *selectionFile, args->value("library"))
+                      : selectionFromCatalog(context, kName, *system, args->value("library"), *config, "no plan");
     if (!selected.selection) {
         return selected.failure;
     }
@@ -231,43 +147,75 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     if (!data) {
         return failure(context, "the world's data", data.error());
     }
-    auto result = world::generate({selected.library, std::move(*selected.selection), std::move(config)}, *data);
+    const world::WorldFiles files = world::worldFiles(context.paths.userDataRoot(), selected.library);
+    auto overrides = world::loadOverrides(files.overrides);
+    if (!overrides) {
+        return failure(context, "the world's overrides", overrides.error());
+    }
+
+    // The world's plan is written under its lock, taken before anything is decided from the folder.
+    std::optional<world::WorldLock> lock;
+    std::error_code error;
+    if (!planOption) {
+        auto acquired = world::WorldLock::acquire(files);
+        if (!acquired) {
+            return failure(context, "the world's lock", acquired.error());
+        }
+        lock.emplace(std::move(*acquired));
+        if (!replace && std::filesystem::exists(files.plan, error)) {
+            context.err.writeLine(fmt::format(
+                "{}: a plan exists already: {} ('worldplan update' updates it; 'worldplan generate --replace' "
+                "regenerates it after a backup)",
+                kName, pathText(files.plan)));
+            return ExitCode::ProblemsFound;
+        }
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    auto result = world::generate(
+        {selected.library, std::move(*selected.selection), std::move(*config), std::move(*overrides)}, *data);
     if (!result) {
         return failure(context, "generation", result.error());
     }
+    const auto duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
     const world::ValidationReport& validation = result->validation;
-    std::size_t hard = 0;
-    for (const world::ValidationFinding& finding : validation.findings) {
-        if (finding.severity == world::Severity::Hard) {
-            ++hard;
-            context.err.writeLine(fmt::format("{}: {} {}: {}", kName, finding.rule, finding.subject, finding.message));
-        } else {
-            spdlog::warn("worldplan generate: soft finding {} {}: {}", finding.rule, finding.subject, finding.message);
-        }
+    const std::size_t hard = reportFindings(context, kName, validation);
+    for (const std::string& pin : result->changes.needsConfirmation) {
+        context.err.writeLine(fmt::format("{}: not honoured: {}", kName, pin));
     }
     if (hard > 0) {
-        context.err.writeLine(
-            fmt::format("{}: the plan breaks {} hard rule{} of the validation: nothing written", kName, hard,
-                        hard == 1 ? "" : "s"));
+        context.err.writeLine(fmt::format("{}: the plan breaks {} hard rule{} of the validation: nothing written",
+                                          kName, hard, hard == 1 ? "" : "s"));
         return ExitCode::RuntimeFailure;
     }
 
-    const auto planOption = args->value("plan");
-    const std::filesystem::path planPath =
-        planOption ? core::pathFromUtf8(*planOption) : defaultPlanPath(context.paths, selected.library);
-    std::error_code error;
-    if (!planOption && std::filesystem::exists(planPath, error)) {
-        context.err.writeLine(fmt::format("{}: a plan exists already: {} ('worldplan generate --replace', I3 step 9, "
-                                          "regenerates it after a backup)",
-                                          kName, pathText(planPath)));
-        return ExitCode::ProblemsFound;
-    }
-    auto text = world::writePlan(result->plan);
-    if (!text) {
-        return failure(context, "the plan", text.error());
-    }
-    if (Status written = core::writeTextFileAtomic(planPath, *text); !written) {
-        return failure(context, "the plan", written.error());
+    std::filesystem::path planPath;
+    std::string saved;
+    if (planOption) {
+        planPath = core::pathFromUtf8(*planOption);
+        auto text = world::writePlan(result->plan);
+        if (!text) {
+            return failure(context, "the plan", text.error());
+        }
+        if (Status written = core::writeTextFileAtomic(planPath, *text); !written) {
+            return failure(context, "the plan", written.error());
+        }
+    } else {
+        planPath = files.plan;
+        world::SaveOptions options;
+        options.writer = fmt::format("retroverse-cli worldplan generate{} ({})", replace ? " --replace" : "",
+                                     core::versionBanner());
+        options.duration = duration;
+        auto report = world::savePlan(*lock, *result, options);
+        if (!report) {
+            return failure(context, "the plan", report.error());
+        }
+        if (report->backup) {
+            saved = fmt::format("the previous plan kept as {}", pathText(report->backup->filename()));
+        } else if (replace) {
+            saved = report->written ? "no previous plan" : "the previous plan was this plan already";
+        }
     }
     spdlog::info("worldplan generate: {} written ({} placements, digest {})", pathText(planPath),
                  result->plan.placements.size(), result->changes.digestAfter);
@@ -277,20 +225,29 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     if (args->has("json")) {
         CatalogJson json = planSummaryJson(result->plan, result->changes.digestAfter);
         json["plan"] = pathText(planPath);
+        json["replaced"] = replace;
+        json["backup"] = saved;
         json["validation"] = CatalogJson{{"passed", true},
                                          {"soft", soft},
                                          {"layoutScorePermille", validation.layoutScorePermille
                                                                      ? CatalogJson(*validation.layoutScorePermille)
                                                                      : CatalogJson(nullptr)}};
+        json["orphanedPins"] = result->changes.orphanedPins;
         summary = jsonText(json);
     } else {
         summary = planSummaryText(result->plan, result->changes.digestAfter,
-                                  fmt::format("Generated the plan of {}: {}", result->plan.rooms.front().id.toString(),
-                                              pathText(planPath)));
+                                  fmt::format("{} the plan of {}: {}", replace ? "Regenerated" : "Generated",
+                                              result->plan.rooms.front().id.toString(), pathText(planPath)));
         summary += fmt::format("  {:<17}passed, {} soft finding{}, LayoutScore {}\n", "Validation:", soft,
                                soft == 1 ? "" : "s",
                                validation.layoutScorePermille ? std::to_string(*validation.layoutScorePermille)
                                                               : std::string("none"));
+        if (!saved.empty()) {
+            summary += fmt::format("  {:<17}{}\n", "Backup:", saved);
+        }
+        for (const std::string& pin : result->changes.orphanedPins) {
+            summary += fmt::format("  {:<17}{}\n", "Orphaned pin:", pin);
+        }
     }
     return writeResults(context, *file, summary, ExitCode::Ok);
 }
