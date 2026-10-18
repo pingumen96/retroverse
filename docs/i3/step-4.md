@@ -135,7 +135,9 @@ and, with `--selection`, a room selection's canonical JSON. Text: the plan, its 
 reads: <reason>`, `"readable": false`); 2 usage error (no plan, an unknown option, a selection that cannot be read or is
 not a selection); 3 the plan file, the configuration or the results cannot be read or written. It writes nothing but
 its results and the log; lights and pins are not judged by the command until the plan holds lights (step 3) and
-`overrides.json` is read (step 9).
+`overrides.json` is read (step 9). (Correction at the merge of waves 1 and 2: since step 3 the command counts the
+plan's lights per room; it still judges no pins, since step 9 reads `overrides.json` in `worldplan generate` and
+`update` only.)
 
 ## Tests
 

@@ -83,20 +83,23 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   own cover, so each has a material instance of its own and is a batch of one (96 of the room's 129 draw calls in the
   lit pass and in the depth pre-pass, and those in the key light's frustum in the shadow map; the shells are one batch
   of 96). Covers in a texture array indexed per instance (an extra instance attribute or an SSBO next to the model
-  matrix) would draw every label in one batch; plan I3 already foresees covers in an LRU texture array. Meanwhile the
-  depth passes could merge consecutive opaque batches of one mesh whatever their materials (they bind none). The GPU
-  smoke test bounds the room at 160 draw calls: lower it when this lands.
-- **Instance upload without the staging copy:** `scene::BatchPlanner` gathers the plan's matrices into
-  `BatchPlan::instanceTransforms` (kept by `gl::SceneRenderer`, so no allocation), which `gl::InstanceBuffer::write`
-  then copies into the mapped region: 64 B per instance twice. When instance counts reach the tens of thousands, let the
-  planner emit item indices and gather the matrices straight into the region the buffer hands out.
+  matrix) would draw every label in one batch. The arrays exist since I3 step 6 (`gl::CollectionArrays`, the layers in
+  the 80-byte instance record of step 0c), and the generated room is to draw its cartridges with them (steps 10b, 12);
+  the test room keeps its per-label textures (ADR-0011 §4) until it moves to them. Meanwhile the depth passes could
+  merge consecutive opaque batches of one mesh whatever their materials (they bind none). The GPU smoke test bounds
+  the room at 160 draw calls: lower it when this lands.
+- **Instance upload without the staging copy:** `scene::BatchPlanner` gathers the plan's instance records into
+  `BatchPlan::instances` (kept by `gl::SceneRenderer`, so no allocation), which `gl::InstanceBuffer::write` then copies
+  into the mapped region: 80 B per instance twice (I3 step 0c). The collection's static instance groups (I3 step 8)
+  write nothing for a still room; when the dynamic path's instance counts reach the tens of thousands, let the planner
+  emit item indices and gather the records straight into the region the buffer hands out.
 - **Per-instance normal matrix:** `pbr.vert` inverts the instance's 3x3 matrix per vertex; precompute it per instance
   (or restrict instances to rotation + uniform scale) once vertex work matters.
 - **Procedural surfaces at startup:** the maps of the eight surfaces of `assets::proceduralSurfaces()` are generated on
   the main thread before the first frame (0.6 s in Release, 3 s in Debug; the rug alone a third of it) and take 80 MiB
-  of the test room's 105 MiB of textures (RGBA8 with mips). Once worker threads exist (I2), generate them off the main
-  thread while the room shows its flat material colors, or cache the encoded maps under `<user data>/cache` keyed by a
-  generator version.
+  of the test room's 105 MiB of textures (RGBA8 with mips). Generate them off the main thread on the worker pool
+  (`core::WorkerPool`, I3 step 0b) while the room shows its flat material colors, or cache the encoded maps under
+  `<user data>/cache` keyed by a generator version, as the derived-texture cache does for covers (I3 step 5).
 - **The Low profile (style §20.1, I8):** halve or compress the procedural surface maps (BC7 for color, BC5 for
   normals); make the HDR targets cheaper (the scene and bloom targets are `GL_RGBA16F`, 8 bytes per pixel, and the scene
   target has two attachments, the radiance and its emitted part; `GL_R11F_G11F_B10F` would halve their bandwidth on
@@ -156,20 +159,15 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Run report of an invalid command line:** `--run-report` takes effect once the command line parses, so a script
   that passes a bad option gets exit code 2 and the usage on stderr but no report. A minimal report (exit code, the
   parse error) would need the report path read before the other options are validated.
-- **Benchmark runs:** the run report (`--run-report`) records the last view's statistics and GPU times; the frame time
-  benchmarks of specification NFR-03 and NFR-04 (60 FPS at 1080p, p99 at most 33.3 ms; a `--bench --frames 600` run)
-  need frame time percentiles over the run in it and a fixed camera path (`--input-script`), first in I2/I3, in full in
-  I8.
+- **Benchmark runs:** the frame time benchmarks of specification NFR-03 and NFR-04 (60 FPS at 1080p, a p99 of at
+  most 33.3 ms) have their measurement since I3 step 0d (the run report's frame-time percentiles, named phases, CPU sections and
+  GPU memory) and get their scripted camera path in I3 step 17b (`bench_snes_room.json`, a `benchmark` phase, no
+  `--bench` mode); the full suite across rooms and profiles is I8's.
 
 ### Platform and infrastructure
 
 - **Wide-character log paths:** decide whether spdlog should be built with wide-character file names for non-ASCII
   log paths.
-- **Atomic writes of critical state:** consider `FlushFileBuffers` before the rename of `core::writeFileAtomic` for the
-  world plans of I2/I3.
-- **Log copy with worker threads:** the overlay's `devui::LogView` reads `core::loggedMessageCount()` and then the
-  newest lines, so a line logged by another thread in between can show twice. Once workers log (I2), let `rv::core`
-  return the lines and the count under one lock.
 
 ## Follow-ups from I1
 
@@ -187,8 +185,12 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   YUV 4:2:0 planes converted in the screen shader (1.5 instead of 4 bytes per pixel) if 1080p previews or more decoders
   are wanted (a full 1080p RGBA upload has p99 2.37 ms); a cheaper downscale for 1080p sources (5.4 ms per frame).
 - **Asynchronous copies:** NVIDIA reports id 131154 ("Pixel transfer is synchronized with 3D rendering") for every
-  upload, about 0.5 ms GPU per 720p frame: try a second GL context for the copies, and let the debug filter drop that id
-  for video uploads.
+  upload, about 0.5 ms GPU per 720p frame: try a second GL context for the copies (the debug filter drops the id on
+  NVIDIA since I3 step 11).
+- **No colour bars between two clips:** when the hero CRT's selection moves from one clip to another and neither game
+  has a still, the screen shows its colour bars for the frame or two the previous decoder's thread takes to end (one
+  decoder thread at a time, I3 step 11); keep the previous clip's last frame up instead (the scheduler's, or I3 step 13b
+  if it shows in the room).
 - **Clip audio** (spec §9.7): swresample and miniaudio, and which clock drives presentation.
 - **Library-wide checks:** the corruption and truncation thresholds against every video of the collection; an hour-long
   soak with the scene renderer.
@@ -285,14 +287,6 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 
 ### Plan
 
-- **Step 13r, the refresh on a worker, moved to I3** (decided at Gate M1): an import as a job of the app's catalog
-  worker, with cancellation and the log race fix, the frame p99 within 33.3 ms during a refresh and quitting during one
-  within a bound (roadmap row 13r; `docs/i2/step-13.md`, "Notes for step 13r", says how the worker takes it: the
-  import's job with a cancel flag, the systems' readiness resolved again after its commit, the readiness cache cleared,
-  the screen told to refresh; a long import in slices so that lists and session writes do not wait behind it; the
-  quick-hash pass taking turns on the same worker). M1 refreshes with `retroverse-cli import`: an app open meanwhile
-  reads the new rows with its next list (a search, a filter) and resolves its systems' readiness again at its next
-  start.
 - **The quick hash's whole-library cold pass:** about 45 minutes on the reference machine, estimated from I2 step 11b's
   gb sample (980.9 MiB in 268.8 s, cold); Gate M1 runs it on demand only (`scripts/gate.ps1 -Gate M1 -RealLibrary
   -FullHashPass`, `retroverse-cli identities hash`), not by default.
@@ -375,7 +369,9 @@ Candidates from I2 step 13 (the real catalog in the app, `docs/i2/step-13.md`):
   `LaunchLibrary` (`launch_text.hpp`) and `cmd_launch.cpp`'s `resolveCatalogGame`, private to `rv_cli_core`; move
   them into one shared library (below the app and the CLI) so that the two cannot drift.
 - **A refresh when another process imports:** the open app keeps the list it materialized until something asks again;
-  an import made by `retroverse-cli` meanwhile shows at the next query or start (step 13r in I3, a file watcher in I7).
+  an import made by `retroverse-cli` meanwhile shows at the next query or start. The app refreshes itself on request
+  since I3 step 13r ("Aggiorna libreria", `--refresh-library`); noticing another process's import, or ES-DE's changes,
+  by itself is the file watcher's (I7).
 - **Readiness for every game in bulk:** a game's own readiness is resolved lazily, when its row is first read (step 13);
   a filter "ready only" would need it for every game at the opening (with disk reads for `%INJECT%` files and folder
   games).
@@ -390,3 +386,20 @@ The I1 spike's product UI items stay under "Product UI" above; these come from I
   reload when saved in developer builds yet (the catalog's documents do).
 - **"Vedi media" and "Informazioni"** (`ui_media`, `ui_info`) do nothing in the app yet: the media viewer and the game's
   details come with the media and screens (I3, I5).
+
+## Follow-ups from I3
+
+Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
+
+### The collection
+
+- **A label palette per theme:** the generated spines' and front labels' palette lives in code
+  (`assets::kDefaultLabelPalette`, style §3's roles; I3 step 5) until a theme's data holds one (style §14's theme
+  packs); `paletteColour` already takes any palette, so the label requests would carry the room's.
+
+### Measurement
+
+- **The refresh on the real library:** I3 step 13r measured the catalog's refresh on the fixtures only; a
+  `[real-library][refresh]` test would run `retroverse.exe` on the imported real library with `--refresh-library`
+  through `scripts/real-library.ps1` and give the gate the frame p99 over the `refresh` phase (at most 33.3 ms, Release)
+  and the lists' waits during the import (within 100 ms).
