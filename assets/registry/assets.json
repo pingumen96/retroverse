@@ -13,14 +13,14 @@
       "kind": "font",
       "provenance": "atkinson-hyperlegible",
       "sha256": "7fb917c89019896d0b52ee84b7cbb3304c18cb90b19a62f5e32712bd23e97669",
-      "notes": "UI sans for the product screens (style.md section 17.3), loaded by rv::ui::UiSystem; upstream fonts/ttf file, unmodified."
+      "notes": "UI sans for the product screens (style.md section 17.3), loaded by rv::ui::UiSystem; since I3 step 5 also rasterized with stb_truetype for the generated collection labels' system name and year (rv::assets::FontFace, ADR-0011 section 5), loaded only when its SHA-256 matches this entry; the rasterized textures are derived data, never distributed as a font. Upstream fonts/ttf file, unmodified."
     },
     {
       "path": "ui/fonts/AtkinsonHyperlegible-Bold.ttf",
       "kind": "font",
       "provenance": "atkinson-hyperlegible",
       "sha256": "5a3b0c8cc8ca545155150b4512a1fa248298df121c50d6557e651e61fbdab92f",
-      "notes": "Bold weight of the UI sans; upstream fonts/ttf file, unmodified."
+      "notes": "Bold weight of the UI sans; since I3 step 5 also rasterized with stb_truetype for the titles on the collection's spines and generated front labels (rv::assets::FontFace, ADR-0011 section 5), loaded only when its SHA-256 matches this entry; the rasterized textures are derived data, never distributed as a font. Upstream fonts/ttf file, unmodified."
     }
   ]
 }
