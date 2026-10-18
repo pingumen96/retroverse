@@ -91,6 +91,47 @@ using TimeSummary = core::DurationPercentiles;
 /// The summary of `milliseconds` (sorted in place); nothing for none.
 [[nodiscard]] std::optional<TimeSummary> summarizeTimes(std::vector<double>& milliseconds);
 
+/// One refresh of the catalog from ES-DE during the run (I3 step 13r: "Aggiorna libreria", --refresh-library): the
+/// import on the catalog worker, in slices.
+struct RefreshRecord {
+    /// What started it: "command-line" (--refresh-library), "user" ("Aggiorna libreria").
+    std::string trigger;
+    /// How it ended (app::toString(RefreshOutcome): "done", "cancelled", "busy", "failed"), "running" when the run
+    /// ended before the worker answered, "unavailable" for a --refresh-library the catalog could not take (not open,
+    /// the mock catalog: nothing ran); its error.
+    std::string outcome;
+    std::string error;
+    /// The frame whose update asked for it, and the frame whose update learned its end.
+    std::uint64_t requestFrame = 0;
+    std::optional<std::uint64_t> endFrame;
+    /// On the worker, from the job's start to its result; absent when it did not answer.
+    std::optional<double> ms;
+    /// The snapshot's entries and what the import changed (app::RefreshSummary).
+    std::size_t entries = 0;
+    std::size_t added = 0;
+    std::size_t removed = 0;
+    std::size_t changed = 0;
+    std::size_t moved = 0;
+    std::size_t reviews = 0;
+    std::size_t guarded = 0;
+    /// The slices (app::RefreshSlicing): boundaries, requests answered at them, the longest stretch without one.
+    std::uint64_t slices = 0;
+    std::uint64_t served = 0;
+    std::optional<double> longestSliceMs;
+    /// The lists the quick catalog asked for while it ran, from the request to the answer on the worker
+    /// (CatalogList::waitedMs: lists answered within 100 ms during an import); absent when none was asked.
+    std::optional<TimeSummary> lists;
+    /// The run ended while it ran: how long the catalog worker took to stop (the import cancelled, its transaction
+    /// rolled back), in milliseconds.
+    std::optional<double> stopMs;
+    /// The quick catalog and the walker when it was asked for, and once its list ran again after the commit (or when
+    /// it ended otherwise); absent when the run ended first.
+    std::optional<CatalogView> before;
+    std::optional<CatalogView> after;
+
+    bool operator==(const RefreshRecord&) const = default;
+};
+
 /// The quick catalog of a run of retroverse.exe: absent only in runs without the product UI (the model viewer).
 struct CatalogRecord {
     /// Where its games come from: "esde" (the catalog database of the user data directory, I2 step 13), "mock"
@@ -138,6 +179,8 @@ struct CatalogRecord {
     /// The card's blocks cut by the layout when the run ended (ui::QuickCatalogScreen::squeezedCardBlocks: a line or a
     /// row shows only in part); empty when the card showed its text whole, or was not shown.
     std::vector<std::string> cardSqueezed;
+    /// The refreshes of the run, in order (I3 step 13r).
+    std::vector<RefreshRecord> refreshes;
 
     bool operator==(const CatalogRecord&) const = default;
 };

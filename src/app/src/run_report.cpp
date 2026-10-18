@@ -450,6 +450,78 @@ CatalogView readView(FieldReader& fields) {
     return view;
 }
 
+Json refreshToJson(const RefreshRecord& refresh) {
+    Json json;
+    json["trigger"] = refresh.trigger;
+    json["outcome"] = refresh.outcome;
+    json["error"] = refresh.error;
+    Json frames;
+    frames["request"] = refresh.requestFrame;
+    if (refresh.endFrame) {
+        frames["end"] = *refresh.endFrame;
+    }
+    json["frames"] = std::move(frames);
+    Json times = Json::object();
+    putOptional(times, "ms", refresh.ms);
+    putOptional(times, "longestSliceMs", refresh.longestSliceMs);
+    putOptional(times, "stopMs", refresh.stopMs);
+    json["times"] = std::move(times);
+    json["entries"] = refresh.entries;
+    json["added"] = refresh.added;
+    json["removed"] = refresh.removed;
+    json["changed"] = refresh.changed;
+    json["moved"] = refresh.moved;
+    json["reviews"] = refresh.reviews;
+    json["guarded"] = refresh.guarded;
+    json["slices"] = refresh.slices;
+    json["served"] = refresh.served;
+    if (refresh.lists) {
+        json["lists"] = timesToJson(*refresh.lists);
+    }
+    if (refresh.before) {
+        json["before"] = viewToJson(*refresh.before);
+    }
+    if (refresh.after) {
+        json["after"] = viewToJson(*refresh.after);
+    }
+    return json;
+}
+
+RefreshRecord readRefresh(FieldReader& fields) {
+    RefreshRecord refresh;
+    refresh.trigger = fields.string("trigger");
+    refresh.outcome = fields.string("outcome");
+    refresh.error = fields.string("error");
+    if (auto frames = fields.object("frames")) {
+        refresh.requestFrame = frames->count("request");
+        refresh.endFrame = frames->optionalCount("end");
+    }
+    if (auto times = fields.object("times")) {
+        refresh.ms = times->optionalNumber("ms");
+        refresh.longestSliceMs = times->optionalNumber("longestSliceMs");
+        refresh.stopMs = times->optionalNumber("stopMs");
+    }
+    refresh.entries = static_cast<std::size_t>(fields.count("entries", kMaxSize));
+    refresh.added = static_cast<std::size_t>(fields.count("added", kMaxSize));
+    refresh.removed = static_cast<std::size_t>(fields.count("removed", kMaxSize));
+    refresh.changed = static_cast<std::size_t>(fields.count("changed", kMaxSize));
+    refresh.moved = static_cast<std::size_t>(fields.count("moved", kMaxSize));
+    refresh.reviews = static_cast<std::size_t>(fields.count("reviews", kMaxSize));
+    refresh.guarded = static_cast<std::size_t>(fields.count("guarded", kMaxSize));
+    refresh.slices = fields.count("slices");
+    refresh.served = fields.count("served");
+    if (auto lists = fields.optionalObject("lists")) {
+        refresh.lists = readTimes(*lists);
+    }
+    if (auto before = fields.optionalObject("before")) {
+        refresh.before = readView(*before);
+    }
+    if (auto after = fields.optionalObject("after")) {
+        refresh.after = readView(*after);
+    }
+    return refresh;
+}
+
 Json catalogToJson(const CatalogRecord& catalog) {
     Json json;
     json["source"] = catalog.source;
@@ -484,6 +556,12 @@ Json catalogToJson(const CatalogRecord& catalog) {
     }
     json["interruptedSessions"] = catalog.interruptedSessions;
     json["cardSqueezed"] = catalog.cardSqueezed;
+    // I3 step 13r (optional when read).
+    Json refreshes = Json::array();
+    for (const RefreshRecord& refresh : catalog.refreshes) {
+        refreshes.push_back(refreshToJson(refresh));
+    }
+    json["refreshes"] = std::move(refreshes);
     return json;
 }
 
@@ -580,6 +658,10 @@ CatalogRecord readCatalog(FieldReader& fields) {
         static_cast<std::size_t>(fields.optionalCount("interruptedSessions", kMaxSize).value_or(0));
     if (fields.has("cardSqueezed")) {
         catalog.cardSqueezed = fields.stringArray("cardSqueezed");
+    }
+    // Written since I3 step 13r: optional as well.
+    for (FieldReader& refresh : fields.optionalObjectArray("refreshes")) {
+        catalog.refreshes.push_back(readRefresh(refresh));
     }
     return catalog;
 }

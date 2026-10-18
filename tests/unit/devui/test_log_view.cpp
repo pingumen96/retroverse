@@ -1,6 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
+#include <charconv>
+#include <cstdint>
+#include <optional>
+#include <utility>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 #include <spdlog/spdlog.h>
@@ -72,5 +79,100 @@ TEST_CASE("devui/log_view: refresh copies only what the logger wrote since the l
     CHECK(view.refresh());
     REQUIRE(view.size() == 1);
     CHECK(view.line(0).level == spdlog::level::critical);
+    rv::core::shutdownLogging();
+}
+
+namespace {
+
+/// The worker and line numbers of "<time>  worker <w> line <n>"; nothing for other text.
+std::optional<std::pair<int, int>> workerLine(std::string_view text) {
+    const std::size_t at = text.find("worker ");
+    if (at == std::string_view::npos) {
+        return std::nullopt;
+    }
+    text.remove_prefix(at + 7);
+    int worker = 0;
+    const auto [afterWorker, workerError] = std::from_chars(text.data(), text.data() + text.size(), worker);
+    constexpr std::string_view kLine = " line ";
+    const std::string_view rest(afterWorker, static_cast<std::size_t>(text.data() + text.size() - afterWorker));
+    if (workerError != std::errc() || !rest.starts_with(kLine)) {
+        return std::nullopt;
+    }
+    int line = 0;
+    if (std::from_chars(rest.data() + kLine.size(), rest.data() + rest.size(), line).ec != std::errc()) {
+        return std::nullopt;
+    }
+    return std::pair{worker, line};
+}
+
+} // namespace
+
+TEST_CASE("devui/log_view: each line shows once while other threads log (I3 step 13r)", "[devui][log_view]") {
+    // Before the fix the view read the count, then the newest lines: a line logged in between took the place of the
+    // batch's oldest line and came again with the next batch. Both are read under the in-memory log's lock now, so the
+    // view holds every line once and each worker's lines in the order it logged them.
+    rv::core::LogConfig config;
+    config.console = false;
+    config.ringBufferLines = 256;
+    rv::core::initLogging(config);
+
+    constexpr int kWorkers = 3;
+    constexpr int kLinesPerWorker = 3000;
+    std::atomic<int> running{kWorkers};
+    std::atomic<bool> go{false};
+    std::vector<std::thread> workers;
+    for (int worker = 0; worker < kWorkers; ++worker) {
+        workers.emplace_back([worker, &running, &go] {
+            while (!go.load()) {
+                std::this_thread::yield();
+            }
+            for (int line = 0; line < kLinesPerWorker; ++line) {
+                spdlog::info("worker {} line {}", worker, line);
+            }
+            running.fetch_sub(1);
+        });
+    }
+    LogView view(256);
+    std::size_t refreshes = 0;
+    std::size_t problems = 0;
+    const auto check = [&] {
+        std::vector<int> last(kWorkers, -1);
+        for (std::size_t index = 0; index < view.size(); ++index) {
+            const auto parsed = workerLine(view.line(index).text);
+            if (!parsed || parsed->first < 0 || parsed->first >= kWorkers) {
+                ++problems;
+                continue;
+            }
+            int& previous = last[static_cast<std::size_t>(parsed->first)];
+            if (parsed->second <= previous) {
+                ++problems; // a line shown twice, or out of order
+            }
+            previous = parsed->second;
+        }
+    };
+    go.store(true); // the workers log while the view refreshes
+    while (running.load() > 0) {
+        if (view.refresh()) {
+            ++refreshes;
+            check();
+        }
+    }
+    for (std::thread& worker : workers) {
+        worker.join();
+    }
+    // The last lines (all of them when the workers ended before the first refresh ran).
+    if (view.refresh()) {
+        ++refreshes;
+    }
+    check();
+    CHECK(problems == 0);
+    CHECK(refreshes > 0);
+    // Once the log is quiet, the view holds the newest lines the logger keeps, in its order.
+    const std::vector<std::string> kept = rv::core::recentLogLines(view.size());
+    REQUIRE(kept.size() == view.size());
+    for (std::size_t index = 0; index < kept.size(); ++index) {
+        const std::string& text = view.line(index).text;
+        CHECK(kept[index].find(text.substr(text.find("worker "))) != std::string::npos);
+    }
     rv::core::shutdownLogging();
 }

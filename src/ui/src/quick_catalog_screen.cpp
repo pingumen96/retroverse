@@ -97,6 +97,23 @@ struct ScrollData {
     Rml::String height;
 };
 
+/// "Aggiorna libreria" and the line under the header (QuickCatalogRefresh, bound as the data model's "refresh").
+struct RefreshData {
+    bool available = false;
+    Rml::String state;
+    Rml::String phase;
+    int done = 0;
+    int total = 0;
+    int added = 0;
+    int removed = 0;
+    int changed = 0;
+    int guarded = 0;
+};
+
+[[nodiscard]] int countOf(std::size_t value) noexcept {
+    return static_cast<int>(std::min<std::size_t>(value, static_cast<std::size_t>(std::numeric_limits<int>::max())));
+}
+
 [[nodiscard]] Rml::String yearText(int year) {
     return year > 0 ? Rml::String(std::to_string(year)) : Rml::String();
 }
@@ -239,10 +256,22 @@ struct QuickCatalogScreen::Impl {
             scrollStruct.RegisterMember("top", &ScrollData::top);
             scrollStruct.RegisterMember("height", &ScrollData::height);
         }
+        if (auto refreshStruct = constructor.RegisterStruct<RefreshData>()) {
+            refreshStruct.RegisterMember("available", &RefreshData::available);
+            refreshStruct.RegisterMember("state", &RefreshData::state);
+            refreshStruct.RegisterMember("phase", &RefreshData::phase);
+            refreshStruct.RegisterMember("done", &RefreshData::done);
+            refreshStruct.RegisterMember("total", &RefreshData::total);
+            refreshStruct.RegisterMember("added", &RefreshData::added);
+            refreshStruct.RegisterMember("removed", &RefreshData::removed);
+            refreshStruct.RegisterMember("changed", &RefreshData::changed);
+            refreshStruct.RegisterMember("guarded", &RefreshData::guarded);
+        }
         constructor.Bind("chips", &chips);
         constructor.Bind("rows", &rows);
         constructor.Bind("card", &card);
         constructor.Bind("scroll", &scroll);
+        constructor.Bind("refresh", &refreshData);
         constructor.Bind("status", &status);
         constructor.Bind("count", &count);
         constructor.Bind("unavailable", &unavailable);
@@ -262,6 +291,11 @@ struct QuickCatalogScreen::Impl {
                                       [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) { media(); });
         constructor.BindEventCallback("info",
                                       [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) { info(); });
+        constructor.BindEventCallback("refresh", [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+            if (refreshShown.available && events.refresh) {
+                events.refresh();
+            }
+        });
         handle = constructor.GetModelHandle();
         return ok();
     }
@@ -856,6 +890,10 @@ struct QuickCatalogScreen::Impl {
         if (region == qc::kRegionList) {
             return focusSelectedRow();
         }
+        if (region == qc::kRegionLibrary) {
+            // "Aggiorna libreria" shows only while the catalog can refresh.
+            return refreshShown.available && focusElement(qc::kRefreshId);
+        }
         if (const std::optional<std::string> landing = regions.landing(region); landing && focusElement(*landing)) {
             return true;
         }
@@ -1099,6 +1137,9 @@ struct QuickCatalogScreen::Impl {
     std::vector<RowData> rows;
     CardData card;
     ScrollData scroll;
+    /// The refresh as set (setRefresh) and as bound.
+    QuickCatalogRefresh refreshShown;
+    RefreshData refreshData;
     Rml::String status;
     int count = 0;
     /// The list is empty because the source could not be read (the document says so instead of "no match").
@@ -1171,6 +1212,9 @@ Expected<std::unique_ptr<QuickCatalogScreen>> QuickCatalogScreen::create(UiView&
     if (auto registered = impl->registerDataModel(); !registered) {
         return propagate(registered.error());
     }
+    impl->regions.link(qc::kRegionLibrary, NavDirection::Down, qc::kRegionSearch);
+    impl->regions.link(qc::kRegionSearch, NavDirection::Up, qc::kRegionLibrary);
+    impl->regions.setEntry(qc::kRegionLibrary, qc::kRefreshId);
     impl->regions.link(qc::kRegionSearch, NavDirection::Down, qc::kRegionChips);
     impl->regions.link(qc::kRegionChips, NavDirection::Up, qc::kRegionSearch);
     impl->regions.link(qc::kRegionChips, NavDirection::Down, qc::kRegionList);
@@ -1290,6 +1334,29 @@ void QuickCatalogScreen::setNotice(std::string_view key) {
         m_impl->notice = Rml::String(key);
         m_impl->handle.DirtyVariable("notice");
     }
+}
+
+void QuickCatalogScreen::setRefresh(const QuickCatalogRefresh& refresh) {
+    Impl& impl = *m_impl;
+    if (impl.refreshShown == refresh) {
+        return;
+    }
+    impl.refreshShown = refresh;
+    RefreshData& data = impl.refreshData;
+    data.available = refresh.available;
+    data.state = Rml::String(refresh.state);
+    data.phase = Rml::String(refresh.phase);
+    data.done = countOf(refresh.done);
+    data.total = countOf(refresh.total);
+    data.added = countOf(refresh.added);
+    data.removed = countOf(refresh.removed);
+    data.changed = countOf(refresh.changed);
+    data.guarded = countOf(refresh.guarded);
+    impl.handle.DirtyVariable("refresh");
+}
+
+const QuickCatalogRefresh& QuickCatalogScreen::refresh() const noexcept {
+    return m_impl->refreshShown;
 }
 
 std::string_view QuickCatalogScreen::notice() const noexcept {

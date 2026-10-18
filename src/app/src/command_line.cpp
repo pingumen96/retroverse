@@ -86,8 +86,9 @@ core::ArgParser makeParser() {
                             "at most {:g}).",
                             CommandLineOptions::kDefaultLaunchWaitLimitSeconds,
                             CommandLineOptions::kMaxLaunchWaitLimitSeconds))
-        .flag("refresh-library", "Refresh the catalog from ES-DE once it is open, as \"Aggiorna libreria\" does. Not "
-                                 "implemented yet (I3 step 13r): refused.")
+        .flag("refresh-library", "Refresh the catalog from ES-DE once it is open, as \"Aggiorna libreria\" does in the "
+                                 "quick catalog: the import of 'retroverse-cli import' on the catalog worker, the "
+                                 "list usable meanwhile (the run report's catalog.refreshes).")
         .option("video-freeze-pts", "seconds",
                 "Only with --smoke or --exit-after-frames: the hero CRT's video seeks to this time and holds the "
                 "frame, for goldens. Not implemented yet (I3 step 11): refused.")
@@ -548,10 +549,6 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
 
 Status pendingOptionError(const CommandLineOptions& options) {
     // One block per option, apart, so that the step implementing one removes its block without touching the others.
-    if (options.refreshLibrary) {
-        return makeError(ErrorCode::Unsupported, "not implemented yet (I3 step 13r)", "--refresh-library");
-    }
-
     if (options.videoFreezePtsSeconds) {
         return makeError(ErrorCode::Unsupported, "not implemented yet (I3 step 11)", "--video-freeze-pts");
     }

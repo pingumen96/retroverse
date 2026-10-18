@@ -115,6 +115,16 @@ inline constexpr std::string_view kMoreBeforeClass = "more-before";
 inline constexpr std::string_view kMoreAfterClass = "more-after";
 /// The class of the active filter's chip.
 inline constexpr std::string_view kActiveChipClass = "active";
+/// "Aggiorna libreria" (I3 step 13r): the button in the catalog's header (its own region, above the search field;
+/// shown while the catalog can refresh) and the line under the header that tells the refresh's progress and result
+/// (the data model's "refresh": its state, a phase while it runs, the summary's counts). The states and phases are
+/// rv_app's RefreshOutcome and RefreshPhase names (app::toString), with "running" (tests/unit/app checks they agree).
+inline constexpr std::string_view kRegionLibrary = "library";
+inline constexpr std::string_view kRefreshId = "act-refresh";
+inline constexpr std::string_view kRefreshStatusId = "refresh-status";
+inline constexpr std::string_view kRefreshRunning = "running";
+inline constexpr std::array<std::string_view, 5> kRefreshStates{kRefreshRunning, "done", "cancelled", "busy", "failed"};
+inline constexpr std::array<std::string_view, 4> kRefreshPhases{"reading", "media", "comparing", "writing"};
 /// The card and its title.
 inline constexpr std::string_view kCardId = "card";
 inline constexpr std::string_view kCardTitleId = "card-title";

@@ -560,7 +560,6 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
           "[app][command_line]") {
     // A valid use of each option is an invalid command line (exit 2) that names the step implementing it.
     const std::vector<std::pair<std::vector<std::string>, std::string>> pending{
-        {{"--refresh-library"}, "I3 step 13r"},
         {{"--exit-after-frames", "--video-freeze-pts", "1.0"}, "I3 step 11"},
         {{"--smoke", "--video-freeze-pts", "0"}, "I3 step 11"},
     };
@@ -571,7 +570,11 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
         CHECK(refused.error().code == ErrorCode::Unsupported);
         CHECK(refused.error().message == "not implemented yet (" + step + ")");
     }
-    CHECK(parse({"--refresh-library"}).error().context == "--refresh-library");
+    // I3 step 13r: --refresh-library is taken.
+    const auto refresh = parse({"--refresh-library"});
+    REQUIRE(refresh.has_value());
+    CHECK(refresh->refreshLibrary);
+    CHECK_FALSE(parse({"--smoke"})->refreshLibrary);
     CHECK(parse({"--smoke", "--video-freeze-pts", "2.5"}).error().context == "--video-freeze-pts");
 
     // Their values are validated before the refusal.
@@ -596,9 +599,11 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
     CHECK(rv::app::pendingOptionError(CommandLineOptions{}).has_value());
     CommandLineOptions options;
     options.refreshLibrary = true;
+    CHECK(rv::app::pendingOptionError(options).has_value()); // taken since I3 step 13r
+    options.videoFreezePtsSeconds = 1.0;
     const auto refused = rv::app::pendingOptionError(options);
     REQUIRE_FALSE(refused.has_value());
-    CHECK(refused.error().context == "--refresh-library");
+    CHECK(refused.error().context == "--video-freeze-pts");
 
     const std::string help = rv::app::commandLineHelp();
     CHECK(helpListsOption(help, "--refresh-library"));

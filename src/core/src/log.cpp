@@ -6,10 +6,11 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include <spdlog/details/null_mutex.h>
 #include <spdlog/sinks/base_sink.h>
-#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -20,10 +21,14 @@ namespace {
 constexpr const char* kPattern = "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [t%t] %v";
 constexpr const char* kLoggerName = "retroverse";
 
-std::mutex g_mutex;
-std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_ringSink;
-std::filesystem::path g_logFile;
+/// A copy of the memory sink's count for loggedMessageCount(), which takes no lock.
 std::atomic<std::uint64_t> g_loggedMessages{0};
+class MemorySink;
+std::mutex g_mutex;
+std::shared_ptr<MemorySink> g_memorySink;
+std::filesystem::path g_logFile;
+/// Incremented by every initLogging(): lines and counts of one configuration are never mixed with another's.
+std::uint64_t g_generation = 0;
 ConsoleStream g_consoleStream = ConsoleStream::Stdout; // of the last configuration, for shutdownLogging()
 
 spdlog::sink_ptr makeConsoleSink(ConsoleStream stream) {
@@ -33,13 +38,67 @@ spdlog::sink_ptr makeConsoleSink(ConsoleStream stream) {
     return std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
 }
 
-/// Counts the messages the logger writes (loggedMessageCount). The count is atomic, so no lock is needed.
-class CountingSink final : public spdlog::sinks::base_sink<spdlog::details::null_mutex> {
+/// The in-memory log: the most recent formatted lines and the count of every message, both under the sink's own lock
+/// (base_sink's mutex, which the logger takes for each message), so that a reader gets lines and a count that belong
+/// together (logLinesSince) even while other threads log.
+class MemorySink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    explicit MemorySink(std::size_t capacity) : m_lines(std::max<std::size_t>(capacity, 1)) {}
+
+    /// The newest `maxLines` lines (0: every line kept), oldest first.
+    [[nodiscard]] std::vector<std::string> last(std::size_t maxLines) {
+        const std::lock_guard lock(mutex_);
+        return newest(maxLines == 0 ? m_size : maxLines);
+    }
+
+    /// The lines logged after the first `seen` messages (every line kept when `seen` is beyond the count), at most
+    /// `maxLines`, with the count they bring the reader to.
+    [[nodiscard]] std::pair<std::vector<std::string>, std::uint64_t> since(std::uint64_t seen, std::size_t maxLines) {
+        const std::lock_guard lock(mutex_);
+        const std::uint64_t added = seen <= m_count ? m_count - seen : m_count;
+        const auto wanted = static_cast<std::size_t>(std::min<std::uint64_t>(added, maxLines));
+        return {newest(wanted), m_count};
+    }
+
+    [[nodiscard]] std::uint64_t count() {
+        const std::lock_guard lock(mutex_);
+        return m_count;
+    }
+
 protected:
-    void sink_it_(const spdlog::details::log_msg& /*message*/) override {
-        g_loggedMessages.fetch_add(1, std::memory_order_relaxed);
+    void sink_it_(const spdlog::details::log_msg& message) override {
+        spdlog::memory_buf_t formatted;
+        formatter_->format(message, formatted);
+        std::string* slot = nullptr;
+        if (m_size < m_lines.size()) {
+            slot = &m_lines[(m_first + m_size) % m_lines.size()];
+            ++m_size;
+        } else {
+            slot = &m_lines[m_first];
+            m_first = (m_first + 1) % m_lines.size();
+        }
+        slot->assign(formatted.data(), formatted.size());
+        ++m_count;
+        g_loggedMessages.store(m_count, std::memory_order_relaxed);
     }
     void flush_() override {}
+
+private:
+    /// The newest `wanted` lines (at most those kept), oldest first; under the lock.
+    [[nodiscard]] std::vector<std::string> newest(std::size_t wanted) const {
+        const std::size_t taken = std::min(wanted, m_size);
+        std::vector<std::string> lines;
+        lines.reserve(taken);
+        for (std::size_t index = m_size - taken; index < m_size; ++index) {
+            lines.push_back(m_lines[(m_first + index) % m_lines.size()]);
+        }
+        return lines;
+    }
+
+    std::vector<std::string> m_lines;
+    std::size_t m_first = 0;
+    std::size_t m_size = 0;
+    std::uint64_t m_count = 0;
 };
 
 } // namespace
@@ -57,10 +116,10 @@ void initLogging(const LogConfig& config) {
         sinks.push_back(std::move(console));
     }
 
-    g_ringSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(std::max<std::size_t>(config.ringBufferLines, 1));
-    sinks.push_back(g_ringSink);
+    g_memorySink = std::make_shared<MemorySink>(config.ringBufferLines);
+    sinks.push_back(g_memorySink);
     g_loggedMessages.store(0, std::memory_order_relaxed);
-    sinks.push_back(std::make_shared<CountingSink>());
+    ++g_generation;
 
     g_logFile.clear();
     std::string fileError;
@@ -98,21 +157,35 @@ void shutdownLogging() {
     auto console = std::make_shared<spdlog::logger>(kLoggerName, makeConsoleSink(g_consoleStream));
     console->set_pattern(kPattern);
     spdlog::set_default_logger(std::move(console));
-    g_ringSink.reset();
+    g_memorySink.reset();
     g_logFile.clear();
     g_loggedMessages.store(0, std::memory_order_relaxed);
 }
 
 std::vector<std::string> recentLogLines(std::size_t maxLines) {
     std::scoped_lock lock(g_mutex);
-    if (!g_ringSink) {
+    if (!g_memorySink) {
         return {};
     }
-    return g_ringSink->last_formatted(maxLines);
+    return g_memorySink->last(maxLines);
 }
 
 std::uint64_t loggedMessageCount() noexcept {
     return g_loggedMessages.load(std::memory_order_relaxed);
+}
+
+LogLinesSince logLinesSince(std::uint64_t generation, std::uint64_t seen, std::size_t maxLines) {
+    std::scoped_lock lock(g_mutex);
+    LogLinesSince result;
+    result.generation = g_generation;
+    if (!g_memorySink) {
+        return result;
+    }
+    // Another configuration's count says nothing of this one's lines: every line kept is new.
+    auto [lines, count] = g_memorySink->since(generation == g_generation ? seen : ~std::uint64_t{0}, maxLines);
+    result.lines = std::move(lines);
+    result.count = count;
+    return result;
 }
 
 std::optional<LogLineFields> parseLogLine(std::string_view line) noexcept {

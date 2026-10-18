@@ -51,9 +51,13 @@ public:
         bool opened = false;
         /// Rows already read may show other data now (a game's or a system's readiness).
         bool rowsChanged = false;
+        /// A refresh ended Done with the systems resolved again (CatalogResults::refreshed): the chips, their games
+        /// and the readiness cache are the new ones; read the platforms and the list again (QuickCatalogModel::refresh).
+        bool refreshed = false;
     };
     /// Takes its part of the worker's answers out of `results` (the opening, the latest list, readiness, verified
-    /// choices); launches and sessions stay for the caller. Main thread, before the model polls.
+    /// choices, the systems a refresh resolved again: the readiness cache cleared, answers of an older generation
+    /// dropped); launches, sessions and the refresh's summary stay for the caller. Main thread, before the model polls.
     Collected collect(CatalogResults& results);
 
     [[nodiscard]] CatalogState state() const noexcept { return m_state; }
@@ -113,9 +117,11 @@ private:
     bool m_listed = false;
     bool m_ended = false;
 
-    /// The games' own readiness (by GameId value), and the games asked of the worker.
+    /// The games' own readiness (by GameId value), and the games asked of the worker; the systems' readiness
+    /// generation they belong to (GameReadiness::generation).
     std::map<std::uint64_t, GameLaunchState> m_readiness;
     std::set<std::uint64_t> m_asked;
+    std::uint64_t m_generation = 0;
     /// Page fetch times, milliseconds (the first kMaxPageSamples).
     std::vector<double> m_pageMs;
     std::vector<catalog::GameId> m_toAsk;

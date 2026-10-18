@@ -121,6 +121,23 @@ LaunchMessage refusalOf(const ResolvedLaunch& resolved) {
     return message;
 }
 
+void recordRefresh(RefreshRecord& record, const RefreshSummary& summary, const std::optional<TimeSummary>& lists) {
+    record.outcome = std::string(toString(summary.outcome));
+    record.error = summary.error ? summary.error->toString() : std::string();
+    record.ms = summary.milliseconds;
+    record.entries = summary.entries;
+    record.added = summary.added;
+    record.removed = summary.removed;
+    record.changed = summary.changed;
+    record.moved = summary.moved;
+    record.reviews = summary.reviews;
+    record.guarded = summary.guarded;
+    record.slices = summary.slicing.boundaries;
+    record.served = summary.slicing.served;
+    record.longestSliceMs = summary.slicing.longestSliceMs;
+    record.lists = lists;
+}
+
 // --- The mock catalog ----------------------------------------------------------------------------------------------
 
 MockAppCatalog::MockAppCatalog(MockCatalog catalog, launcher::EmulatorProfiles baseProfiles)
@@ -257,7 +274,11 @@ CatalogChanges EsdeAppCatalog::poll() {
     if (results.list && !results.list->error && !m_firstListMs) {
         m_firstListMs = sinceProcessStart(results.list->at);
     }
+    if (results.list && !results.list->error && m_refreshRunning) {
+        m_refreshLists.push_back(results.list->waitedMs); // a list answered while the refresh ran
+    }
     const CatalogDatabaseSource::Collected collected = m_source.collect(results);
+    const bool refreshEnded = collectRefresh(results, m_source.ended());
     for (ResolvedLaunch& resolved : results.launches) {
         if (!m_resolving || *m_resolving != resolved.token) {
             continue; // a decision nobody waits for any more
@@ -300,7 +321,58 @@ CatalogChanges EsdeAppCatalog::poll() {
         m_resolving.reset();
     }
     collectSessions(results);
-    return CatalogChanges{collected.opened, collected.rowsChanged};
+    return CatalogChanges{collected.opened, collected.rowsChanged, refreshEnded, collected.refreshed};
+}
+
+bool EsdeAppCatalog::collectRefresh(CatalogResults& results, bool ended) {
+    if (results.refreshProgress) {
+        m_refreshProgress = *results.refreshProgress;
+        results.refreshProgress.reset();
+    }
+    if (!m_refreshRunning) {
+        results.refreshed.reset();
+        return false;
+    }
+    if (results.refreshed) {
+        m_lastRefresh = std::move(results.refreshed->summary);
+        results.refreshed.reset();
+    } else if (ended) {
+        // The worker ended before it answered (it failed, or stopped with the refresh still queued).
+        RefreshSummary summary;
+        summary.outcome = RefreshOutcome::Cancelled;
+        summary.error = Error{ErrorCode::Cancelled, "the catalog worker ended", {}};
+        m_lastRefresh = std::move(summary);
+    } else {
+        return false;
+    }
+    m_refreshRunning = false;
+    m_refreshProgress.reset();
+    m_lastRefreshLists = summarizeTimes(m_refreshLists);
+    m_refreshLists.clear();
+    return true;
+}
+
+bool EsdeAppCatalog::requestRefresh() {
+    if (m_stopped || m_refreshRunning || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    if (!m_worker.refresh()) {
+        return false;
+    }
+    m_refreshRunning = true;
+    m_refreshProgress.reset();
+    m_refreshLists.clear();
+    return true;
+}
+
+RefreshState EsdeAppCatalog::refreshState() const {
+    RefreshState state;
+    state.available = !m_stopped && !m_source.ended() && m_source.state() == CatalogState::Ready;
+    state.running = m_refreshRunning;
+    state.progress = m_refreshProgress;
+    state.last = m_lastRefresh;
+    state.lastLists = m_lastRefreshLists;
+    return state;
 }
 
 void EsdeAppCatalog::collectSessions(CatalogResults& results) {
@@ -351,9 +423,13 @@ void EsdeAppCatalog::shutdown() {
         return;
     }
     m_stopped = true;
-    m_worker.stop();
+    const auto start = std::chrono::steady_clock::now();
+    const bool joined = m_worker.stop();
+    m_stopMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     CatalogResults results = m_worker.take();
     collectSessions(results);
+    // A refresh the stop cancelled answers with its summary; a worker left to end by itself answers nothing.
+    static_cast<void>(collectRefresh(results, joined));
 }
 
 void EsdeAppCatalog::pageShown() {

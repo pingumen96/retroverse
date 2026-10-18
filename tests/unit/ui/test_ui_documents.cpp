@@ -138,6 +138,34 @@ TEST_CASE("ui/documents: the quick catalog has a text for every notice, readines
     }
 }
 
+TEST_CASE("ui/documents: the quick catalog offers \"Aggiorna libreria\" and tells every refresh state and phase",
+          "[ui][documents]") {
+    // I3 step 13r: the button in its own region (search Up), shown while the catalog can refresh, and the line under
+    // the header for every state (running with each phase, how it ended), in Italian.
+    const std::string rml = readAsset(qc::kDocumentPath);
+    CHECK(contains(rml, "id=\"" + std::string(qc::kRefreshId) + "\""));
+    CHECK(contains(rml, "id=\"" + std::string(qc::kRefreshStatusId) + "\""));
+    CHECK(contains(rml, std::string(qc::kRegionAttribute) + "=\"" + std::string(qc::kRegionLibrary) + "\""));
+    for (const std::string_view binding : {"refresh()", "refresh.available", "refresh.done", "refresh.total",
+                                           "refresh.added", "refresh.removed", "refresh.changed", "refresh.guarded"}) {
+        INFO(binding);
+        CHECK(contains(rml, binding));
+    }
+    for (const std::string_view state : qc::kRefreshStates) {
+        INFO(state);
+        CHECK(contains(rml, "refresh.state == '" + std::string(state) + "'"));
+    }
+    for (const std::string_view phase : qc::kRefreshPhases) {
+        INFO(phase);
+        CHECK(contains(rml, "refresh.phase == '" + std::string(phase) + "'"));
+    }
+    for (const std::string_view text : {">Aggiorna libreria<", "Libreria aggiornata", "Aggiornamento non riuscito",
+                                        "retroverse-cli import --accept-removals"}) {
+        INFO(text);
+        CHECK(contains(rml, text));
+    }
+}
+
 TEST_CASE("ui/documents: a game keeps its row of the pool while the window holds it", "[ui][documents]") {
     // The slot of a position is its rest modulo the rows shown: consecutive positions take every row once, and a scroll
     // by one row changes the game of one row only.
