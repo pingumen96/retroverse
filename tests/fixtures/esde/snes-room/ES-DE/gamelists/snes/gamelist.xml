@@ -1,0 +1,644 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Amber Lantern (USA).sfc</path>
+		<name>Amber Lantern</name>
+		<desc>Amber Lantern: an invented game of the snes-room fixture.</desc>
+		<rating>0.95</rating>
+		<releasedate>19900101T000000</releasedate>
+		<developer>Bramble Bits</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Azione</genre>
+		<players>1</players>
+		<favorite>true</favorite>
+		<playcount>42</playcount>
+		<lastplayed>20260101T200000</lastplayed>
+	</game>
+	<game>
+		<path>./Bramble Burrow Rally (USA).sfc</path>
+		<name>Bramble Burrow Rally</name>
+		<desc>Bramble Burrow Rally: an invented game of the snes-room fixture.</desc>
+		<rating>0.9</rating>
+		<releasedate>19970612T000000</releasedate>
+		<developer>Lumen Forge</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Puzzle</genre>
+		<players>1-2</players>
+		<playcount>17</playcount>
+		<lastplayed>20260204T200100</lastplayed>
+	</game>
+	<game>
+		<path>./Cobalt Compass (USA).sfc</path>
+		<name>Cobalt Compass</name>
+		<desc>Cobalt Compass: an invented game of the snes-room fixture.</desc>
+		<rating>0.85</rating>
+		<releasedate>19951123T000000</releasedate>
+		<developer>Kettle Interactive</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Sport</genre>
+		<players>1-4</players>
+		<favorite>true</favorite>
+		<playcount>8</playcount>
+		<lastplayed>20260307T200200</lastplayed>
+	</game>
+	<game>
+		<path>./Dappled Dovecote (World).sfc</path>
+		<name>Dappled Dovecote</name>
+		<desc>Dappled Dovecote: an invented game of the snes-room fixture.</desc>
+		<rating>0.8</rating>
+		<releasedate>19930406T000000</releasedate>
+		<developer>Northwind Pixel</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>RPG</genre>
+		<players>2</players>
+		<playcount>23</playcount>
+		<lastplayed>20260410T200300</lastplayed>
+	</game>
+	<game>
+		<path>./Ember Kettle Expedition (USA).sfc</path>
+		<name>Ember Kettle Expedition</name>
+		<desc>Ember Kettle Expedition: an invented game of the snes-room fixture.</desc>
+		<rating>0.75</rating>
+		<releasedate>19910917T000000</releasedate>
+		<developer>Moss &amp; Tallow</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Sparatutto</genre>
+		<players>1</players>
+		<playcount>5</playcount>
+		<lastplayed>20260513T200400</lastplayed>
+	</game>
+	<game>
+		<path>./Fennel Ferry (USA).sfc</path>
+		<name>Fennel Ferry</name>
+		<desc>Fennel Ferry: an invented game of the snes-room fixture.</desc>
+		<rating>0.7</rating>
+		<releasedate>19980228T000000</releasedate>
+		<developer>Little Comet</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Avventura</genre>
+		<players>1-2</players>
+		<playcount>11</playcount>
+		<lastplayed>20260616T200500</lastplayed>
+	</game>
+	<game>
+		<path>./Gilded Gazebo (USA).sfc</path>
+		<name>Gilded Gazebo</name>
+		<desc>Gilded Gazebo: an invented game of the snes-room fixture.</desc>
+		<rating>0.65</rating>
+		<releasedate>19960711T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Corsa, Guida</genre>
+		<players>1-4</players>
+		<favorite>true</favorite>
+		<playcount>3</playcount>
+		<lastplayed>20260719T200600</lastplayed>
+	</game>
+	<game>
+		<path>./Hazel Hedgerow (USA) (Rev 1).sfc</path>
+		<name>Hazel Hedgerow</name>
+		<desc>Hazel Hedgerow: an invented game of the snes-room fixture.</desc>
+		<rating>0.6</rating>
+		<releasedate>19941222T000000</releasedate>
+		<developer>Saltmarsh Games</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Piattaforme</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./Indigo Inkwell (World).sfc</path>
+		<name>Indigo Inkwell</name>
+		<desc>Indigo Inkwell: an invented game of the snes-room fixture.</desc>
+		<rating>0.5</rating>
+		<releasedate>19920505T000000</releasedate>
+		<developer>Bramble Bits</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Strategia</genre>
+		<players>1</players>
+		<playcount>2</playcount>
+		<lastplayed>20260925T200800</lastplayed>
+	</game>
+	<game>
+		<path>./Juniper Jamboree (USA).sfc</path>
+		<name>Juniper Jamboree</name>
+		<desc>Juniper Jamboree: an invented game of the snes-room fixture.</desc>
+		<rating>0.4</rating>
+		<releasedate>19901016T000000</releasedate>
+		<developer>Lumen Forge</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Azione</genre>
+		<players>1-2</players>
+		<playcount>31</playcount>
+		<lastplayed>20260101T200900</lastplayed>
+	</game>
+	<game>
+		<path>./Lilac Loom (USA).sfc</path>
+		<name>Lilac Loom</name>
+		<desc>Lilac Loom: an invented game of the snes-room fixture.</desc>
+		<rating>0.95</rating>
+		<releasedate>19970327T000000</releasedate>
+		<developer>Kettle Interactive</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Puzzle</genre>
+		<players>1-4</players>
+		<playcount>1</playcount>
+		<lastplayed>20260204T201000</lastplayed>
+	</game>
+	<game>
+		<path>./Mossy Meadow Mystery (USA).sfc</path>
+		<name>Mossy Meadow Mystery</name>
+		<desc>Mossy Meadow Mystery: an invented game of the snes-room fixture.</desc>
+		<rating>0.9</rating>
+		<releasedate>19950810T000000</releasedate>
+		<developer>Northwind Pixel</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Sport</genre>
+		<players>2</players>
+		<favorite>true</favorite>
+	</game>
+	<game>
+		<path>./Nutmeg Nook (USA).sfc</path>
+		<name>Nutmeg Nook</name>
+		<desc>Nutmeg Nook: an invented game of the snes-room fixture.</desc>
+		<rating>0.85</rating>
+		<releasedate>19930121T000000</releasedate>
+		<developer>Moss &amp; Tallow</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>RPG</genre>
+		<players>1</players>
+		<playcount>14</playcount>
+		<lastplayed>20260410T201200</lastplayed>
+	</game>
+	<game>
+		<path>./Opal Oriel (Europe).sfc</path>
+		<name>Opal Oriel</name>
+		<desc>Opal Oriel: an invented game of the snes-room fixture.</desc>
+		<rating>0.8</rating>
+		<releasedate>19910604T000000</releasedate>
+		<developer>Little Comet</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Sparatutto</genre>
+		<players>1-2</players>
+	</game>
+	<game>
+		<path>./Pewter Parasol (USA).sfc</path>
+		<name>Pewter Parasol</name>
+		<desc>Pewter Parasol: an invented game of the snes-room fixture.</desc>
+		<rating>0.75</rating>
+		<releasedate>19981115T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Avventura</genre>
+		<players>1-4</players>
+		<playcount>6</playcount>
+		<lastplayed>20260616T201400</lastplayed>
+	</game>
+	<game>
+		<path>./Quilted Quarry (World).sfc</path>
+		<name>Quilted Quarry</name>
+		<desc>Quilted Quarry: an invented game of the snes-room fixture.</desc>
+		<rating>0.7</rating>
+		<releasedate>19960426T000000</releasedate>
+		<developer>Saltmarsh Games</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Corsa, Guida</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./Russet Rookery (USA).sfc</path>
+		<name>Russet Rookery</name>
+		<desc>Russet Rookery: an invented game of the snes-room fixture.</desc>
+		<rating>0.65</rating>
+		<releasedate>19940909T000000</releasedate>
+		<developer>Bramble Bits</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Piattaforme</genre>
+		<players>1</players>
+		<playcount>9</playcount>
+		<lastplayed>20260822T201600</lastplayed>
+	</game>
+	<game>
+		<path>./Saffron Satchel (USA).sfc</path>
+		<name>Saffron Satchel</name>
+		<desc>Saffron Satchel: an invented game of the snes-room fixture.</desc>
+		<rating>0.6</rating>
+		<releasedate>19920220T000000</releasedate>
+		<developer>Lumen Forge</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Strategia</genre>
+		<players>1-2</players>
+	</game>
+	<game>
+		<path>./Tawny Toboggan (USA).sfc</path>
+		<name>Tawny Toboggan</name>
+		<desc>Tawny Toboggan: an invented game of the snes-room fixture.</desc>
+		<rating>0.5</rating>
+		<releasedate>19900703T000000</releasedate>
+		<developer>Kettle Interactive</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Azione</genre>
+		<players>1-4</players>
+		<favorite>true</favorite>
+		<playcount>2</playcount>
+		<lastplayed>20260101T201800</lastplayed>
+	</game>
+	<game>
+		<path>./Umber Umbrella (USA).sfc</path>
+		<name>Umber Umbrella</name>
+		<desc>Umber Umbrella: an invented game of the snes-room fixture.</desc>
+		<rating>0.4</rating>
+		<releasedate>19971214T000000</releasedate>
+		<developer>Northwind Pixel</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Puzzle</genre>
+		<players>2</players>
+		<playcount>4</playcount>
+		<lastplayed>20260204T201900</lastplayed>
+	</game>
+	<game>
+		<path>./Velvet Vineyard (USA).smc</path>
+		<name>Velvet Vineyard</name>
+		<desc>Velvet Vineyard: an invented game of the snes-room fixture.</desc>
+		<rating>0.95</rating>
+		<releasedate>19950525T000000</releasedate>
+		<developer>Moss &amp; Tallow</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Sport</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Willow Windmill (USA).sfc</path>
+		<name>Willow Windmill</name>
+		<desc>Willow Windmill: an invented game of the snes-room fixture.</desc>
+		<rating>0.9</rating>
+		<releasedate>19931008T000000</releasedate>
+		<developer>Little Comet</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>RPG</genre>
+		<players>1-2</players>
+		<playcount>19</playcount>
+		<lastplayed>20260410T202100</lastplayed>
+	</game>
+	<game>
+		<path>./Woolly Abacus (Japan).sfc</path>
+		<name>Woolly Abacus</name>
+		<desc>Woolly Abacus: an invented game of the snes-room fixture.</desc>
+		<rating>0.85</rating>
+		<releasedate>19910319T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Sparatutto</genre>
+		<players>1-4</players>
+	</game>
+	<game>
+		<path>./Yarrow Bellows (USA).sfc</path>
+		<name>Yarrow Bellows</name>
+		<desc>Yarrow Bellows: an invented game of the snes-room fixture.</desc>
+		<rating>0.8</rating>
+		<releasedate>19980802T000000</releasedate>
+		<developer>Saltmarsh Games</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Avventura</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./Marigold Carousel (World).sfc</path>
+		<name>Marigold Carousel</name>
+		<desc>Marigold Carousel: an invented game of the snes-room fixture.</desc>
+		<rating>0.75</rating>
+		<releasedate>19960113T000000</releasedate>
+		<developer>Bramble Bits</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Corsa, Guida</genre>
+		<players>1</players>
+		<playcount>7</playcount>
+		<lastplayed>20260719T202400</lastplayed>
+	</game>
+	<game>
+		<path>./Clover Dumpling (USA).sfc</path>
+		<name>Clover Dumpling</name>
+		<desc>Clover Dumpling: an invented game of the snes-room fixture.</desc>
+		<rating>0.7</rating>
+		<releasedate>19940624T000000</releasedate>
+		<developer>Lumen Forge</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Piattaforme</genre>
+		<players>1-2</players>
+	</game>
+	<game>
+		<path>./Sorrel Easel (USA).sfc</path>
+		<name>Sorrel Easel</name>
+		<desc>Sorrel Easel: an invented game of the snes-room fixture.</desc>
+		<rating>0.65</rating>
+		<releasedate>19921107T000000</releasedate>
+		<developer>Kettle Interactive</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Strategia</genre>
+		<players>1-4</players>
+		<playcount>1</playcount>
+		<lastplayed>20260925T202600</lastplayed>
+	</game>
+	<game>
+		<path>./Briny Fiddle Regatta (USA).sfc</path>
+		<name>Briny Fiddle Regatta</name>
+		<desc>Briny Fiddle Regatta: an invented game of the snes-room fixture.</desc>
+		<rating>0.6</rating>
+		<releasedate>19900418T000000</releasedate>
+		<developer>Northwind Pixel</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Azione</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./Copper Hammock (USA).sfc</path>
+		<name>Copper Hammock</name>
+		<desc>Copper Hammock: an invented game of the snes-room fixture.</desc>
+		<rating>0.5</rating>
+		<releasedate>19970901T000000</releasedate>
+		<developer>Moss &amp; Tallow</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Puzzle</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Kiln Keeper - The Dappled Almanac (USA).sfc</path>
+		<name>Kiln Keeper: The Dappled Almanac</name>
+		<desc>Kiln Keeper: The Dappled Almanac: an invented game of the snes-room fixture.</desc>
+		<rating>0.4</rating>
+		<releasedate>19950212T000000</releasedate>
+		<developer>Little Comet</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Sport</genre>
+		<players>1-2</players>
+		<favorite>true</favorite>
+		<playcount>12</playcount>
+		<lastplayed>20260307T202900</lastplayed>
+	</game>
+	<game>
+		<path>./Pinwheel Parade (USA).sfc</path>
+		<name>Pinwheel Parade</name>
+		<desc>Pinwheel Parade: an invented game of the snes-room fixture.</desc>
+		<rating>0.95</rating>
+		<releasedate>19930723T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<publisher>Harborlight</publisher>
+		<genre>RPG</genre>
+		<players>1-4</players>
+	</game>
+	<game>
+		<path>./Marmalade Igloo (World).sfc</path>
+		<name>Marmalade Igloo</name>
+		<desc>Marmalade Igloo: an invented game of the snes-room fixture.</desc>
+		<rating>0.9</rating>
+		<releasedate>19911206T000000</releasedate>
+		<developer>Saltmarsh Games</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Sparatutto</genre>
+		<players>2</players>
+		<playcount>3</playcount>
+		<lastplayed>20260513T203100</lastplayed>
+	</game>
+	<game>
+		<path>./The Lantern of Saffron Hollow (USA).sfc</path>
+		<name>The Lantern of Saffron Hollow</name>
+		<desc>The Lantern of Saffron Hollow: an invented game of the snes-room fixture.</desc>
+		<rating>0.85</rating>
+		<releasedate>19980517T000000</releasedate>
+		<developer>Bramble Bits</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Teapot Tumble (USA).sfc</path>
+		<name>Teapot Tumble</name>
+		<desc>Teapot Tumble: an invented game of the snes-room fixture.</desc>
+		<rating>0.8</rating>
+		<releasedate>19961028T000000</releasedate>
+		<developer>Lumen Forge</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Corsa, Guida</genre>
+		<players>1-2</players>
+		<playcount>10</playcount>
+		<lastplayed>20260719T203300</lastplayed>
+	</game>
+	<game>
+		<path>./Acorn Errands (USA).sfc</path>
+		<name>Acorn Errands</name>
+		<desc>Acorn Errands: an invented game of the snes-room fixture.</desc>
+		<rating>0.75</rating>
+		<releasedate>19940311T000000</releasedate>
+		<developer>Kettle Interactive</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Piattaforme</genre>
+		<players>1-4</players>
+	</game>
+	<game>
+		<path>./Garret Ghost Picnic (USA).sfc</path>
+		<name>Garret Ghost Picnic</name>
+		<desc>Garret Ghost Picnic: an invented game of the snes-room fixture.</desc>
+		<rating>0.7</rating>
+		<releasedate>19920822T000000</releasedate>
+		<developer>Northwind Pixel</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Strategia</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./Nutmeg Nook II (USA).sfc</path>
+		<name>Nutmeg Nook II</name>
+		<desc>Nutmeg Nook II: an invented game of the snes-room fixture.</desc>
+		<rating>0.65</rating>
+		<releasedate>19900105T000000</releasedate>
+		<developer>Moss &amp; Tallow</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Azione</genre>
+		<players>1</players>
+		<playcount>2</playcount>
+		<lastplayed>20260101T203600</lastplayed>
+	</game>
+	<game>
+		<path>./Quarry Quartet (USA).sfc</path>
+		<name>Quarry Quartet</name>
+		<desc>Quarry Quartet: an invented game of the snes-room fixture.</desc>
+		<rating>0.6</rating>
+		<releasedate>19970616T000000</releasedate>
+		<developer>Little Comet</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Puzzle</genre>
+		<players>1-2</players>
+	</game>
+	<game>
+		<path>./Trellis Tales (World).sfc</path>
+		<name>Trellis Tales</name>
+		<desc>Trellis Tales: an invented game of the snes-room fixture.</desc>
+		<rating>0.5</rating>
+		<releasedate>19951127T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Sport</genre>
+		<players>1-4</players>
+	</game>
+	<game>
+		<path>./Satchel Scouts (USA).sfc</path>
+		<name>Satchel Scouts</name>
+		<desc>Satchel Scouts: an invented game of the snes-room fixture.</desc>
+		<rating>0.4</rating>
+		<releasedate>19930410T000000</releasedate>
+		<developer>Saltmarsh Games</developer>
+		<publisher>Orchard House</publisher>
+		<genre>RPG</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./Orchard Oddities (USA).sfc</path>
+		<name>Orchard Oddities</name>
+		<desc>Orchard Oddities: an invented game of the snes-room fixture.</desc>
+		<rating>0.95</rating>
+		<releasedate>19910921T000000</releasedate>
+		<developer>Bramble Bits</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Sparatutto</genre>
+		<players>1</players>
+		<playcount>4</playcount>
+		<lastplayed>20260513T204000</lastplayed>
+	</game>
+	<game>
+		<path>./Dovecote Derby (USA).sfc</path>
+		<name>Dovecote Derby</name>
+		<desc>Dovecote Derby: an invented game of the snes-room fixture.</desc>
+		<rating>0.9</rating>
+		<releasedate>19980204T000000</releasedate>
+		<developer>Lumen Forge</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Avventura</genre>
+		<players>1-2</players>
+	</game>
+	<game>
+		<path>./Inkwell Islands (USA).sfc</path>
+		<name>Inkwell Islands</name>
+		<desc>Inkwell Islands: an invented game of the snes-room fixture.</desc>
+		<rating>0.85</rating>
+		<releasedate>19960715T000000</releasedate>
+		<developer>Kettle Interactive</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Corsa, Guida</genre>
+		<players>1-4</players>
+	</game>
+	<game>
+		<path>./Bellows Brigade (USA).sfc</path>
+		<name>Bellows Brigade</name>
+		<desc>Bellows Brigade: an invented game of the snes-room fixture.</desc>
+		<rating>0.8</rating>
+		<releasedate>19941226T000000</releasedate>
+		<developer>Northwind Pixel</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>Piattaforme</genre>
+		<players>2</players>
+		<playcount>1</playcount>
+		<lastplayed>20260822T204300</lastplayed>
+	</game>
+	<game>
+		<path>./Compass Caper (USA).sfc</path>
+		<name>Compass Caper</name>
+		<desc>Compass Caper: an invented game of the snes-room fixture.</desc>
+		<rating>0.75</rating>
+		<releasedate>19920509T000000</releasedate>
+		<developer>Moss &amp; Tallow</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Strategia</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Loom Lullaby (USA).sfc</path>
+		<name>Loom Lullaby</name>
+		<desc>Loom Lullaby: an invented game of the snes-room fixture.</desc>
+		<rating>0.7</rating>
+		<releasedate>19901020T000000</releasedate>
+		<developer>Little Comet</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Azione</genre>
+		<players>1-2</players>
+	</game>
+	<game>
+		<path>./Parasol Patrol (USA).sfc</path>
+		<name>Parasol Patrol</name>
+		<desc>Parasol Patrol: an invented game of the snes-room fixture.</desc>
+		<rating>0.65</rating>
+		<releasedate>19970303T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Puzzle</genre>
+		<players>1-4</players>
+	</game>
+	<game>
+		<path>./Windmill Whirl (USA).sfc</path>
+		<name>Windmill Whirl</name>
+		<desc>Windmill Whirl: an invented game of the snes-room fixture.</desc>
+		<rating>0.6</rating>
+		<releasedate>19950814T000000</releasedate>
+		<developer>Saltmarsh Games</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Sport</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./The Copper Kettle and the Juniper Thimble Expedition of the Long Valley (USA).sfc</path>
+		<name>The Copper Kettle and the Juniper Thimble Expedition of the Long Valley</name>
+		<desc>The Copper Kettle and the Juniper Thimble Expedition of the Long Valley: an invented game of the snes-room fixture.</desc>
+		<rating>0.5</rating>
+		<releasedate>19930125T000000</releasedate>
+		<developer>Bramble Bits</developer>
+		<publisher>Quiet Fox</publisher>
+		<genre>RPG</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Rookery Rumble (USA).sfc</path>
+		<name>Rookery Rumble</name>
+		<desc>Rookery Rumble: an invented game of the snes-room fixture.</desc>
+		<rating>0.4</rating>
+		<releasedate>19910608T000000</releasedate>
+		<developer>Lumen Forge</developer>
+		<publisher>Orchard House</publisher>
+		<genre>Sparatutto</genre>
+		<players>1-2</players>
+		<playcount>1</playcount>
+		<lastplayed>20260513T204900</lastplayed>
+	</game>
+	<game>
+		<path>./Cobalt Compass (Europe).sfc</path>
+		<name>Cobalt Compass</name>
+		<desc>Cobalt Compass: an invented game of the snes-room fixture.</desc>
+		<rating>0.95</rating>
+		<releasedate>19981119T000000</releasedate>
+		<developer>Kettle Interactive</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Avventura</genre>
+		<players>1-4</players>
+	</game>
+	<game>
+		<path>./Gilded Gazebo (Europe).sfc</path>
+		<name>Gilded Gazebo</name>
+		<desc>Gilded Gazebo: an invented game of the snes-room fixture.</desc>
+		<rating>0.9</rating>
+		<releasedate>19960402T000000</releasedate>
+		<developer>Northwind Pixel</developer>
+		<publisher>Bluebell Arcade</publisher>
+		<genre>Corsa, Guida</genre>
+		<players>2</players>
+	</game>
+	<game>
+		<path>./Thistle Trellis (USA).sfc</path>
+		<name>Thistle Trellis</name>
+		<desc>Thistle Trellis: an invented game of the snes-room fixture.</desc>
+		<rating>0.85</rating>
+		<releasedate>19940913T000000</releasedate>
+		<developer>Moss &amp; Tallow</developer>
+		<publisher>Tinplate Media</publisher>
+		<genre>Piattaforme</genre>
+		<players>1</players>
+		<playcount>5</playcount>
+		<lastplayed>20260822T205200</lastplayed>
+	</game>
+</gameList>

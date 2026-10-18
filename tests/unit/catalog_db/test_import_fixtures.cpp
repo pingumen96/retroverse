@@ -16,7 +16,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
+
+#include <fmt/format.h>
 
 #include <rv/catalog/identity.hpp>
 #include <rv/catalog/import_service.hpp>
@@ -475,6 +478,29 @@ IndexedDiscGroup onlyGroup(ImportCatalog& catalog) {
     return groups->front();
 }
 
+/// What a failed check of the sheet tests needs to say why: the import's issues (a gamelist or a sheet that could not be
+/// read), the stored groups with the head facts they keep, and the facts of `sheet` as the file system has them now (a
+/// load reads a sheet again exactly when they differ from the stored ones).
+std::string sheetState(ImportCatalog& catalog, const ImportResult& result, const fs::path& sheet) {
+    std::string text;
+    for (const Issue& issue : result.changes.issues) {
+        text += fmt::format("issue {} ({}): {}; ", issue.code, issue.system, issue.reason);
+    }
+    if (const auto groups = catalog.store->discGroups(LibraryId())) {
+        for (const IndexedDiscGroup& group : *groups) {
+            text += fmt::format("group {}: {} reference(s), {} member(s), head size {}, time {}; ",
+                                group.group.head.relativePath(), group.group.references.size(), group.members.size(),
+                                group.group.headSize, group.group.headLastWriteTime);
+        }
+    }
+    std::error_code sizeError;
+    std::error_code timeError;
+    const std::uintmax_t size = fs::file_size(sheet, sizeError);
+    const fs::file_time_type time = fs::last_write_time(sheet, timeError);
+    text += fmt::format("the sheet now: size {}, time {}", sizeError ? 0 : size, timeError ? 0 : fileTimeTicks(time));
+    return text;
+}
+
 /// The disc group tables of the index, as text.
 std::vector<std::vector<std::string>> discTables(ImportCatalog& catalog) {
     rv::test::TableDump index = rv::test::dumpIndex(catalog.database->writer());
@@ -565,19 +591,23 @@ TEST_CASE("catalog_db/import: db rebuild-index reads every sheet again", "[catal
     const rv::test::TempDir dir("rv-import-rebuild-sheets");
     ImportCatalog catalog = ImportCatalog::open(dir.file("data/retroverse.sqlite"));
     const LibraryProfile profile = rv::test::esde::profileOf(fixture);
-    importFixture(catalog, profile);
+    const fs::path sheet = fixture.path("roms/psx/Twin Tracks (Europe).cue");
+    const ImportResult first = importFixture(catalog, profile);
+    INFO("after the first import: " << sheetState(catalog, first, sheet));
     const auto groups = discTables(catalog);
 
     // A group stored wrong (its second reference lost) while its head kept its size and time: a refresh trusts it.
     REQUIRE(catalog.database->writer().execute("DELETE FROM idx_disc_references WHERE position = 1").has_value());
-    importFixture(catalog, profile);
+    const ImportResult refreshed = importFixture(catalog, profile);
+    INFO("after the refresh: " << sheetState(catalog, refreshed, sheet));
     CHECK(onlyGroup(catalog).members.size() == 1);
     CHECK(rowOf(catalog, "psx", "Twin Tracks (Europe) (Track 2).bin")->entry.state == EntryState::Game);
 
     // The rebuild reads the sheet again: the group as the sheet says, the index as the first import made it.
     ImportOptions rebuild;
     rebuild.rebuildIndex = true;
-    importFixture(catalog, profile, rebuild);
+    const ImportResult rebuilt = importFixture(catalog, profile, rebuild);
+    INFO("after the rebuild: " << sheetState(catalog, rebuilt, sheet));
     CHECK(onlyGroup(catalog).members.size() == 2);
     CHECK(rowOf(catalog, "psx", "Twin Tracks (Europe) (Track 2).bin")->entry.state == EntryState::DiscMember);
     CHECK(discTables(catalog) == groups);

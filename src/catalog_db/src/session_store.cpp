@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -460,7 +461,8 @@ struct SessionStore::State {
 
     Connection& connection;
     std::array<Statement, static_cast<std::size_t>(Sql::Count)> statements;
-    std::size_t busyRetries = 0;
+    /// Atomic: busyRetries() reads it on any thread, also while a write waits.
+    std::atomic<std::size_t> busyRetries{0};
 };
 
 SessionStore::SessionStore(std::unique_ptr<State> state) noexcept : m_state(std::move(state)) {}
@@ -490,7 +492,7 @@ Expected<std::unique_ptr<SessionStore>> SessionStore::open(Connection& connectio
 }
 
 std::size_t SessionStore::busyRetries() const noexcept {
-    return m_state->busyRetries;
+    return m_state->busyRetries.load();
 }
 
 Expected<std::int64_t> SessionStore::insertSession(const PlaySession& session, const BusyRetry& retry) {

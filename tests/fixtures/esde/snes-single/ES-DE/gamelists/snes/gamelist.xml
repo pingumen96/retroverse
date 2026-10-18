@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Pocket Lighthouse (USA).sfc</path>
+		<name>Pocket Lighthouse</name>
+		<desc>Pocket Lighthouse: the one invented game of the snes-single fixture.</desc>
+		<rating>0.7</rating>
+		<releasedate>19940611T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<publisher>Harborlight</publisher>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+</gameList>

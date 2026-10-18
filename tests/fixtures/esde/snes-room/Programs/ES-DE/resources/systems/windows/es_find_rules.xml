@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- The fake emulator, found by its static path under %ESPATH%, where the materializer copies rv_fake_emulator.exe -->
+<ruleList>
+    <emulator name="FAKE-EMULATOR">
+        <rule type="staticpath">
+            <entry>%ESPATH%\Emulators\FakeEmulator\fake-emulator.exe</entry>
+        </rule>
+    </emulator>
+</ruleList>
