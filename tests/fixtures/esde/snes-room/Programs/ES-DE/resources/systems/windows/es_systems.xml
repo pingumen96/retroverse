@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- One cartridge system under ES-DE's name snes, its full name invented (see README.md) -->
+<systemList>
+    <system>
+        <name>snes</name>
+        <fullname>Lumen 16 Home System</fullname>
+        <path>%ROMPATH%\snes</path>
+        <extension>.sfc .SFC .smc .SMC .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>snes</platform>
+        <theme>snes</theme>
+    </system>
+</systemList>

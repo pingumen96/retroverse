@@ -32,15 +32,25 @@ namespace rv::test {
 ///    empty folders:
 ///      {"files": [{"path": "roms/snes/Alpha (USA).sfc", "size": 1024, "seed": 7,
 ///                  "mtime": "2001-02-03T04:05:06Z", "hidden": true}],
-///       "directories": ["roms/empty"]}
+///       "directories": ["roms/empty"], "collections": [...]}
 ///    Paths are relative ("/" or "\", no ".."), unknown keys are errors, a file is at most 64 MiB, and a generated file
 ///    may neither replace a copied one nor be listed twice, names compared as the file system compares them
 ///    ("ROMS/A.BIN" is "roms/a.bin"). The bytes come from payloadBytes(seed, size). Instead of a size and a seed, a
 ///    file may name a program of the build to copy: {"path": "emulators/fake.exe", "copyOf": "rv_fake_emulator.exe"}
 ///    copies that file of testProgramsDir() (a file name only). The copy finds the DLLs it needs (SDL3, fmt) only
 ///    through PATH: a test that starts it puts testProgramsDir() on the PATH it passes to the program.
-/// Everything is written through \\?\ paths, so fixtures may reach past MAX_PATH whatever the system's long path
-/// setting (read them back through core::readFileShared, core::walkTree or core::extendedLengthPath).
+///    Media (I3 step 1c, support/fixture_payloads.hpp) are generated too: {"path": "media/snes/covers/A (USA).png",
+///    "cover": {"title": "A", "seed": 7}} is an original picture with the title (landscape 680 x 497 unless "width"
+///    and "height" say otherwise; PNG or JPEG after the extension or "format"; "shape": "cartridge" for a cartridge on
+///    a transparent background; "damage": "truncated" or "not-an-image"), and {"path": "media/snes/videos/A
+///    (USA).mp4", "video": {"seed": 7}} a 4:3 clip of media::test_video with its frame counter ("seconds", "width",
+///    "height", "frameRate", "codec", "quantizer"; "damage": "empty", "truncated", "corrupt" or "unsupported-codec",
+///    the last an .avi). A file holds exactly one of size and seed, copyOf, cover or video.
+///    "collections" (support/fixture_collection.hpp) generates a whole system from a seed and a few counts: ROM
+///    files, their gamelist, covers and clips, for fixtures too large to list file by file.
+///    Every file is described and checked before the first is written; they are then written on a few threads.
+/// Everything is written through \\?\ paths but clips, which FFmpeg writes (keep them shorter than MAX_PATH), so
+/// fixtures may reach past MAX_PATH whatever the system's long path setting (read them back through core::readFileShared, core::walkTree or core::extendedLengthPath).
 class Fixture {
 public:
     /// Materializes tests/fixtures/<name>/.
@@ -63,6 +73,12 @@ public:
     /// missing, InvalidArgument when the text occurs more than once, those of reading and writing the file.
     [[nodiscard]] Status replaceText(std::string_view relative, std::string_view text,
                                      std::string_view replacement) const;
+    /// Moves every file below the materialized folder `relative` to the same path below root(), replacing a file that
+    /// is there, then removes the folder: a later state of the library laid over the first (snes-room's additions/,
+    /// G10's ten games added after a first plan). Files keep their times. Errors: NotFound when the folder is missing
+    /// (or `relative` is empty), those of core::resolveRelativePath (OutOfRange for a path that leaves the fixture),
+    /// those of the moves.
+    [[nodiscard]] Status applyOverlay(std::string_view relative) const;
     /// Leaves the folder in place when the object goes, to look at it after a failure.
     void keep() noexcept { m_keep = true; }
 
