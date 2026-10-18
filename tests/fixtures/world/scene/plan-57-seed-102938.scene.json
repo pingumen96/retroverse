@@ -1,0 +1,1208 @@
+{
+  "camera": {
+    "far": 100.0,
+    "horizontalFovDeg": 75.0,
+    "near": 0.05,
+    "pitchDeg": -6.0,
+    "position": [
+      0.0,
+      1.65,
+      4.2
+    ],
+    "yawDeg": 0.0
+  },
+  "environment": {
+    "ambientGround": "#4A4642",
+    "ambientIntensity": 0.25,
+    "ambientSky": "#E6E2DC",
+    "bloomRadius": 0.5,
+    "bloomStrength": 0.18,
+    "clearColor": "#221E1A",
+    "exposure": 1.5,
+    "ssao": {
+      "enabled": true,
+      "intensity": 1.0,
+      "radius": 0.4
+    },
+    "vignette": 0.05
+  },
+  "lights": [
+    {
+      "castsShadows": true,
+      "color": "#FFE0C0",
+      "innerConeDeg": 24.37,
+      "intensity": 70.0,
+      "name": "fx:hero.key-light",
+      "outerConeDeg": 44.32,
+      "position": [
+        0.0,
+        2.92,
+        -2.67
+      ],
+      "range": 12.0,
+      "shadowStrength": 1.0,
+      "target": [
+        0.0,
+        0.5,
+        -4.87
+      ],
+      "type": "spot"
+    },
+    {
+      "color": "#FFC88A",
+      "intensity": 4.0,
+      "name": "fx:hero.lamp-light",
+      "position": [
+        -1.675,
+        1.454,
+        -4.72
+      ],
+      "range": 4.0,
+      "type": "point"
+    },
+    {
+      "color": "#FFE0C0",
+      "innerConeDeg": 15.1,
+      "intensity": 8.0,
+      "name": "fx:hero.sign-light",
+      "outerConeDeg": 25.17,
+      "position": [
+        -0.625,
+        3.05,
+        -4.27
+      ],
+      "range": 4.0,
+      "target": [
+        -0.625,
+        2.45,
+        -4.97
+      ],
+      "type": "spot"
+    },
+    {
+      "color": "#FFE0C0",
+      "innerConeDeg": 17.92,
+      "intensity": 10.0,
+      "name": "fx:hw-e.washer",
+      "outerConeDeg": 32.0,
+      "position": [
+        2.425,
+        2.95,
+        -3.93
+      ],
+      "range": 5.0,
+      "target": [
+        2.425,
+        1.0,
+        -4.97
+      ],
+      "type": "spot"
+    },
+    {
+      "color": "#FFE0C0",
+      "innerConeDeg": 17.92,
+      "intensity": 10.0,
+      "name": "fx:hw-w.washer",
+      "outerConeDeg": 32.0,
+      "position": [
+        -2.425,
+        2.95,
+        -3.93
+      ],
+      "range": 5.0,
+      "target": [
+        -2.425,
+        1.0,
+        -4.97
+      ],
+      "type": "spot"
+    },
+    {
+      "color": "#FFE0C0",
+      "intensity": 16.0,
+      "name": "fx:room.pendant",
+      "position": [
+        0.0,
+        2.1,
+        0.0
+      ],
+      "range": 10.0,
+      "type": "point"
+    }
+  ],
+  "name": "room:snes",
+  "objects": [
+    {
+      "id": "room",
+      "materials": {
+        "ceiling": "MAT_Wall_Painted",
+        "floor": "MAT_Floor_OakPlanks",
+        "trim": "MAT_Wood_Walnut",
+        "wainscot": "MAT_Wood_Varnished",
+        "wall": "MAT_Wall_Painted"
+      },
+      "params": {
+        "baseboardHeight": 0.1,
+        "ceiling": true,
+        "doorway": {
+          "height": 2.3,
+          "offset": 0.0,
+          "wall": "south",
+          "width": 1.6
+        },
+        "metersPerTile": 2.0,
+        "size": [
+          9.0,
+          10.0
+        ],
+        "wainscotHeight": 1.0,
+        "wallHeight": 3.2,
+        "wallThickness": 0.15
+      },
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "prefab": "room_shell"
+    },
+    {
+      "id": "fx:dc01",
+      "materials": {
+        "fabric": "MAT_Fabric_Sofa",
+        "glass": "MAT_Glass_Display",
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished"
+      },
+      "params": {},
+      "position": [
+        -1.0,
+        0.0,
+        1.0
+      ],
+      "prefab": "display_case",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fx:dc02",
+      "materials": {
+        "fabric": "MAT_Fabric_Sofa",
+        "glass": "MAT_Glass_Display",
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished"
+      },
+      "params": {},
+      "position": [
+        1.0,
+        0.0,
+        1.0
+      ],
+      "prefab": "display_case",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:dec-ne",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        3.65,
+        1.55,
+        -4.97
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 287048,
+          "title": "LANTERN LAGOON"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:dec-se",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        2.5,
+        1.55,
+        4.97
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        180.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 632407,
+          "title": "SUNSET SPEEDWAY"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:e01",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        4.47,
+        1.55,
+        -4.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 507387,
+          "title": "COMET CARNIVAL"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:e02",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        4.47,
+        1.55,
+        -3.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 580929,
+          "title": "CRYSTAL CANYON"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:e03",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        4.47,
+        1.55,
+        -2.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 322677,
+          "title": "CRYSTAL CANYON"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:e04",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        4.47,
+        1.55,
+        -1.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 662208,
+          "title": "TURBO TIDES"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:e05",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        4.47,
+        1.55,
+        2.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 155798,
+          "title": "COMET CARNIVAL"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:e06",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        4.47,
+        1.55,
+        3.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 856522,
+          "title": "PIXEL PILOTS"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:e07",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        4.47,
+        1.55,
+        4.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 498589,
+          "title": "MOONLIGHT DERBY"
+        }
+      }
+    },
+    {
+      "id": "fx:fs01",
+      "materials": {
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished"
+      },
+      "params": {},
+      "position": [
+        1.275,
+        0.0,
+        -4.93
+      ],
+      "prefab": "wall_shelf",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fx:hero.armchair",
+      "materials": {
+        "fabric": "MAT_Fabric_Sofa",
+        "wood": "MAT_Wood_Walnut"
+      },
+      "params": {},
+      "position": [
+        0.225,
+        0.0,
+        -2.47
+      ],
+      "prefab": "armchair",
+      "rotationDeg": [
+        0.0,
+        210.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fx:hero.console",
+      "materials": {
+        "plastic_accent": "MAT_Plastic_Accent",
+        "plastic_body": "MAT_Plastic_Gray",
+        "plastic_dark": "MAT_Plastic_Black"
+      },
+      "params": {},
+      "position": [
+        -0.205,
+        0.55,
+        -4.67
+      ],
+      "prefab": "console_cartridge",
+      "rotationDeg": [
+        0.0,
+        352.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fx:hero.crt",
+      "materials": {
+        "plastic_bezel": "MAT_Plastic_Black",
+        "plastic_body": "MAT_Plastic_AgedIvory",
+        "plastic_dark": "MAT_Plastic_Black",
+        "screen": "MAT_Screen_CRT"
+      },
+      "params": {},
+      "position": [
+        -0.805,
+        0.55,
+        -4.69
+      ],
+      "prefab": "crt",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "screen": {
+          "pattern": "color_bars"
+        }
+      }
+    },
+    {
+      "id": "fx:hero.lamp",
+      "materials": {
+        "lamp_shade": "MAT_Lamp_Shade",
+        "metal": "MAT_Metal_Graphite"
+      },
+      "params": {},
+      "position": [
+        -1.675,
+        0.0,
+        -4.72
+      ],
+      "prefab": "floor_lamp",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "fx:hero.rug",
+      "materials": {
+        "fabric": "MAT_Carpet_Ornate"
+      },
+      "params": {},
+      "position": [
+        -0.625,
+        0.0,
+        -3.47
+      ],
+      "prefab": "rug",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:hero.sign",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Neon_Diffuser"
+      },
+      "params": {},
+      "position": [
+        -0.625,
+        2.45,
+        -4.97
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "sign",
+          "title": "16-BIT CORNER"
+        }
+      }
+    },
+    {
+      "id": "fx:hero.tv-cabinet",
+      "materials": {
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished"
+      },
+      "params": {},
+      "position": [
+        -0.625,
+        0.0,
+        -4.72
+      ],
+      "prefab": "tv_cabinet",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fx:hw-e",
+      "materials": {
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished"
+      },
+      "params": {
+        "back": true,
+        "boardThickness": 0.025,
+        "depth": 0.24,
+        "displayLevels": [
+          5
+        ],
+        "displaySlotGap": 0.006,
+        "displaySlotMargin": 0.025,
+        "displaySlotSize": [
+          0.125,
+          0.085,
+          0.02
+        ],
+        "height": 1.775,
+        "levels": 7,
+        "plinthHeight": 0.35,
+        "slotFrontInset": 0.01,
+        "slotGap": 0.004,
+        "slotMargin": 0.03,
+        "slotSize": [
+          0.02,
+          0.125,
+          0.085
+        ],
+        "width": 0.9
+      },
+      "position": [
+        2.425,
+        0.0,
+        -4.85
+      ],
+      "prefab": "shelf",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fx:hw-w",
+      "materials": {
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished"
+      },
+      "params": {
+        "back": true,
+        "boardThickness": 0.025,
+        "depth": 0.24,
+        "displayLevels": [
+          5
+        ],
+        "displaySlotGap": 0.006,
+        "displaySlotMargin": 0.025,
+        "displaySlotSize": [
+          0.125,
+          0.085,
+          0.02
+        ],
+        "height": 1.775,
+        "levels": 7,
+        "plinthHeight": 0.35,
+        "slotFrontInset": 0.01,
+        "slotGap": 0.004,
+        "slotMargin": 0.03,
+        "slotSize": [
+          0.02,
+          0.125,
+          0.085
+        ],
+        "width": 0.9
+      },
+      "position": [
+        -2.425,
+        0.0,
+        -4.85
+      ],
+      "prefab": "shelf",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:w01",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        -4.47,
+        1.55,
+        -4.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 90592,
+          "title": "NEON HARBOR"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:w02",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        -4.47,
+        1.55,
+        -3.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 189755,
+          "title": "CASTLE OF LANTERNS"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:w03",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        -4.47,
+        1.55,
+        -2.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 143626,
+          "title": "MOONLIGHT DERBY"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:w04",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        -4.47,
+        1.55,
+        -1.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 246833,
+          "title": "STARLIGHT SAFARI"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:w05",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        -4.47,
+        1.55,
+        2.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 785799,
+          "title": "PIXEL PILOTS"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:w06",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        -4.47,
+        1.55,
+        3.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 830093,
+          "title": "TURBO TIDES"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "id": "fx:w07",
+      "materials": {
+        "frame": "MAT_Wood_Oak",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {},
+      "position": [
+        -4.47,
+        1.55,
+        4.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "cover",
+          "seed": 573524,
+          "title": "STARLIGHT SAFARI"
+        }
+      }
+    },
+    {
+      "id": "dress:fx:hw-e/l:0",
+      "materials": {
+        "book": "MAT_Fabric_Sofa",
+        "book_alt": "MAT_Plastic_Black",
+        "metal": "MAT_Metal_Graphite"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 1909153341,
+        "width": 0.85
+      },
+      "position": [
+        2.425,
+        0.375,
+        -4.846
+      ],
+      "prefab": "bookends",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "dress:fx:hw-e/l:1",
+      "materials": {
+        "book": "MAT_Fabric_Sofa",
+        "book_alt": "MAT_Plastic_Black",
+        "metal": "MAT_Metal_Graphite"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 713882770,
+        "width": 0.85
+      },
+      "position": [
+        2.425,
+        0.575,
+        -4.846
+      ],
+      "prefab": "bookends",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "dress:fx:hw-e/l:2",
+      "materials": {
+        "cover": "MAT_Label_Print",
+        "paper": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 804105142,
+        "width": 0.85
+      },
+      "position": [
+        2.425,
+        0.775,
+        -4.846
+      ],
+      "prefab": "magazine_stack",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "cover": {
+          "pattern": "cover",
+          "seed": 339607,
+          "title": "MOONLIGHT DERBY"
+        }
+      }
+    },
+    {
+      "id": "dress:fx:hw-e/l:3",
+      "materials": {
+        "book": "MAT_Fabric_Sofa",
+        "book_alt": "MAT_Plastic_Black",
+        "metal": "MAT_Metal_Graphite"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 832988393,
+        "width": 0.85
+      },
+      "position": [
+        2.425,
+        0.975,
+        -4.846
+      ],
+      "prefab": "bookends",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "dress:fx:hw-e/l:4",
+      "materials": {
+        "cover": "MAT_Label_Print",
+        "paper": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 1448877356,
+        "width": 0.85
+      },
+      "position": [
+        2.425,
+        1.175,
+        -4.846
+      ],
+      "prefab": "magazine_stack",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "cover": {
+          "pattern": "cover",
+          "seed": 221625,
+          "title": "TURBO TIDES"
+        }
+      }
+    },
+    {
+      "id": "dress:fx:hw-e/l:6",
+      "materials": {
+        "cardboard": "MAT_Cardboard_Box",
+        "label": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 271529037,
+        "width": 0.85
+      },
+      "position": [
+        2.425,
+        1.575,
+        -4.846
+      ],
+      "prefab": "storage_box",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "dress:fx:hw-w/l:0",
+      "materials": {
+        "cardboard": "MAT_Cardboard_Box",
+        "label": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 206775989,
+        "width": 0.85
+      },
+      "position": [
+        -2.425,
+        0.375,
+        -4.846
+      ],
+      "prefab": "storage_box",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "dress:fx:hw-w/l:1",
+      "materials": {
+        "cardboard": "MAT_Cardboard_Box",
+        "label": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 1363652683,
+        "width": 0.85
+      },
+      "position": [
+        -2.425,
+        0.575,
+        -4.846
+      ],
+      "prefab": "storage_box",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "dress:fx:hw-w/l:2",
+      "materials": {
+        "cover": "MAT_Label_Print",
+        "paper": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 1257872684,
+        "width": 0.85
+      },
+      "position": [
+        -2.425,
+        0.775,
+        -4.846
+      ],
+      "prefab": "magazine_stack",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "cover": {
+          "pattern": "cover",
+          "seed": 629240,
+          "title": "CRYSTAL CANYON"
+        }
+      }
+    },
+    {
+      "id": "dress:fx:hw-w/l:3",
+      "materials": {
+        "cover": "MAT_Label_Print",
+        "paper": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 23316181,
+        "width": 0.85
+      },
+      "position": [
+        -2.425,
+        0.975,
+        -4.846
+      ],
+      "prefab": "magazine_stack",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "cover": {
+          "pattern": "cover",
+          "seed": 125269,
+          "title": "MOONLIGHT DERBY"
+        }
+      }
+    },
+    {
+      "id": "dress:fx:hw-w/l:6",
+      "materials": {
+        "cover": "MAT_Label_Print",
+        "paper": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.232,
+        "height": 0.175,
+        "seed": 1314508809,
+        "width": 0.85
+      },
+      "position": [
+        -2.425,
+        1.575,
+        -4.846
+      ],
+      "prefab": "magazine_stack",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "cover": {
+          "pattern": "cover",
+          "seed": 70907,
+          "title": "CASTLE OF LANTERNS"
+        }
+      }
+    }
+  ],
+  "schemaVersion": 1
+}
