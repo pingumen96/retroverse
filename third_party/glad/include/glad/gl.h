@@ -5,7 +5,7 @@
  *
  * Generator: C/C++
  * Specification: gl
- * Extensions: 5
+ * Extensions: 6
  *
  * APIs:
  *  - gl:core=4.5
@@ -19,10 +19,10 @@
  *  - ON_DEMAND = False
  *
  * Commandline:
- *    --api='gl:core=4.5' --extensions='GL_ARB_clip_control,GL_ARB_texture_filter_anisotropic,GL_EXT_texture_compression_s3tc,GL_EXT_texture_filter_anisotropic,GL_KHR_debug' c
+ *    --api='gl:core=4.5' --extensions='GL_ARB_clip_control,GL_ARB_texture_filter_anisotropic,GL_EXT_texture_compression_s3tc,GL_EXT_texture_filter_anisotropic,GL_EXT_texture_sRGB,GL_KHR_debug' c
  *
  * Online:
- *    http://glad.sh/#api=gl%3Acore%3D4.5&extensions=GL_ARB_clip_control%2CGL_ARB_texture_filter_anisotropic%2CGL_EXT_texture_compression_s3tc%2CGL_EXT_texture_filter_anisotropic%2CGL_KHR_debug&generator=c&options=
+ *    http://glad.sh/#api=gl%3Acore%3D4.5&extensions=GL_ARB_clip_control%2CGL_ARB_texture_filter_anisotropic%2CGL_EXT_texture_compression_s3tc%2CGL_EXT_texture_filter_anisotropic%2CGL_EXT_texture_sRGB%2CGL_KHR_debug&generator=c&options=
  *
  */
 
@@ -350,12 +350,20 @@ typedef void (*GLADpostcallback)(void *ret, const char *name, GLADapiproc apipro
 #define GL_COMPRESSED_SIGNED_RED_RGTC1 0x8DBC
 #define GL_COMPRESSED_SIGNED_RG11_EAC 0x9273
 #define GL_COMPRESSED_SIGNED_RG_RGTC2 0x8DBE
+#define GL_COMPRESSED_SLUMINANCE_ALPHA_EXT 0x8C4B
+#define GL_COMPRESSED_SLUMINANCE_EXT 0x8C4A
 #define GL_COMPRESSED_SRGB 0x8C48
 #define GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC 0x9279
 #define GL_COMPRESSED_SRGB8_ETC2 0x9275
 #define GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2 0x9277
 #define GL_COMPRESSED_SRGB_ALPHA 0x8C49
 #define GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM 0x8E8D
+#define GL_COMPRESSED_SRGB_ALPHA_EXT 0x8C49
+#define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT 0x8C4D
+#define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT 0x8C4E
+#define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT 0x8C4F
+#define GL_COMPRESSED_SRGB_EXT 0x8C48
+#define GL_COMPRESSED_SRGB_S3TC_DXT1_EXT 0x8C4C
 #define GL_COMPRESSED_TEXTURE_FORMATS 0x86A3
 #define GL_COMPUTE_SHADER 0x91B9
 #define GL_COMPUTE_SHADER_BIT 0x00000020
@@ -1156,6 +1164,10 @@ typedef void (*GLADpostcallback)(void *ret, const char *name, GLADapiproc apipro
 #define GL_SIMULTANEOUS_TEXTURE_AND_DEPTH_WRITE 0x82AE
 #define GL_SIMULTANEOUS_TEXTURE_AND_STENCIL_TEST 0x82AD
 #define GL_SIMULTANEOUS_TEXTURE_AND_STENCIL_WRITE 0x82AF
+#define GL_SLUMINANCE8_ALPHA8_EXT 0x8C45
+#define GL_SLUMINANCE8_EXT 0x8C47
+#define GL_SLUMINANCE_ALPHA_EXT 0x8C44
+#define GL_SLUMINANCE_EXT 0x8C46
 #define GL_SMOOTH_LINE_WIDTH_GRANULARITY 0x0B23
 #define GL_SMOOTH_LINE_WIDTH_RANGE 0x0B22
 #define GL_SMOOTH_POINT_SIZE_GRANULARITY 0x0B13
@@ -1168,7 +1180,11 @@ typedef void (*GLADpostcallback)(void *ret, const char *name, GLADapiproc apipro
 #define GL_SRGB 0x8C40
 #define GL_SRGB8 0x8C41
 #define GL_SRGB8_ALPHA8 0x8C43
+#define GL_SRGB8_ALPHA8_EXT 0x8C43
+#define GL_SRGB8_EXT 0x8C41
 #define GL_SRGB_ALPHA 0x8C42
+#define GL_SRGB_ALPHA_EXT 0x8C42
+#define GL_SRGB_EXT 0x8C40
 #define GL_SRGB_READ 0x8297
 #define GL_SRGB_WRITE 0x8298
 #define GL_STACK_OVERFLOW 0x0503
@@ -1639,6 +1655,8 @@ GLAD_API_CALL int GLAD_GL_ARB_texture_filter_anisotropic;
 GLAD_API_CALL int GLAD_GL_EXT_texture_compression_s3tc;
 #define GL_EXT_texture_filter_anisotropic 1
 GLAD_API_CALL int GLAD_GL_EXT_texture_filter_anisotropic;
+#define GL_EXT_texture_sRGB 1
+GLAD_API_CALL int GLAD_GL_EXT_texture_sRGB;
 #define GL_KHR_debug 1
 GLAD_API_CALL int GLAD_GL_KHR_debug;
 

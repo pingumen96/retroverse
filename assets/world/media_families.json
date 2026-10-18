@@ -1,0 +1,4 @@
+// The media family registry (ADR-0010 §2): a placeholder of I3 step 0a, which settles the file's place. I3 step 1a
+// writes it and its reader (rv/world/media_family.hpp): cartridge_home_16bit, the item's size from its manifest
+// (media.cartridge.home16.generic, 12.5 x 8.5 x 2.0 cm), its spine-out and face-out slot sizes, gaps and clearances.
+{}

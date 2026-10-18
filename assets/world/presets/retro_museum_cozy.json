@@ -1,0 +1,5 @@
+// The curated preset RetroMuseumCozy (ADR-0010 §2, style §18): a placeholder of I3 step 0a, which settles the file's
+// place. I3 step 1a writes it and its reader (rv/world/world_config.hpp): decoration density 0.4, growth reserve 0.15,
+// the main passage 1.4 m wide with a hard minimum of 1.2 m, placement.include "covered"; <user data>/config/world.json
+// overrides it per key.
+{}

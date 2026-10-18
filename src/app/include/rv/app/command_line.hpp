@@ -140,7 +140,24 @@ struct CommandLineOptions {
     std::optional<double> launchWaitLimitSeconds;
     static constexpr double kDefaultLaunchWaitLimitSeconds = 120.0;
     static constexpr double kMaxLaunchWaitLimitSeconds = 3600.0;
+
+    // Options of I3, parsed and validated from I3 step 0a on and refused (pendingOptionError) until the step that
+    // implements each.
+    /// --refresh-library: refresh the catalog from ES-DE once it is open, as "Aggiorna libreria" does (I3 step 13r).
+    bool refreshLibrary = false;
+    /// --video-freeze-pts <seconds>, frame-limited runs only: the hero CRT's video seeks to this time and holds the
+    /// frame, for goldens (ADR-0012 §7; I3 step 11). In [0, kMaxVideoFreezePtsSeconds].
+    std::optional<double> videoFreezePtsSeconds;
+    static constexpr double kMaxVideoFreezePtsSeconds = 86400.0;
+    /// --no-texture-compression: the collection's texture arrays in RGBA8 at half the resolution instead of BC1, the
+    /// fallback without the S3TC extensions (ADR-0011 §4; I3 step 6).
+    bool noTextureCompression = false;
 };
+
+/// Why `options` cannot run yet: the first option it sets that this build parses but does not implement yet, refused
+/// (Unsupported, "not implemented yet (I3 step <n>)", the option as context) so that a run never silently ignores it;
+/// ok when it sets none. parseCommandLine() returns this error, so such a run exits 2 like any invalid command line.
+[[nodiscard]] Status pendingOptionError(const CommandLineOptions& options);
 
 /// Declares on `parser` the options of the host that every application built on AppHost understands (retroverse.exe,
 /// retroverse-asset-preview): --version, the window (--width, --height, --fullscreen, --hidden, --no-vsync), the run
@@ -170,7 +187,10 @@ void addHostOptions(core::ArgParser& parser);
 ///  - --spawn that parseSpawnPoint refuses;
 ///  - --mock-catalog not ending in ".json";
 ///  - --launch-wait-limit outside (0, kMaxLaunchWaitLimitSeconds], or without --smoke or --exit-after-frames;
-///  - empty paths or names.
+///  - --video-freeze-pts outside [0, kMaxVideoFreezePtsSeconds], or without --smoke or --exit-after-frames;
+///  - empty paths or names;
+///  - a valid option that is not implemented yet (pendingOptionError: --refresh-library, --video-freeze-pts,
+///    --no-texture-compression until their I3 steps).
 /// The --input-script and --mock-catalog files themselves are read by the application (a bad one fails its
 /// initialization).
 /// With --help or --version the remaining options are not validated.

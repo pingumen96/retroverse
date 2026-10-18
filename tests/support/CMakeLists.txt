@@ -11,7 +11,9 @@ rv_set_target_defaults(rv_test_support)
 target_include_directories(rv_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 # rv_platform_win: the environment of this process for the child runner (and, through it, rv_launcher's quoting).
 # rv_catalog and rv_catalog_db: the generated catalog databases of the query tests and benchmarks (I2 step 9).
-target_link_libraries(rv_test_support PUBLIC rv_core rv_launcher rv_platform_win rv_catalog rv_catalog_db)
+# rv_assets and rv_media: the fixtures' generated covers (images) and clips (media::test_video) of I3 step 1c.
+target_link_libraries(rv_test_support PUBLIC
+    rv_core rv_launcher rv_platform_win rv_catalog rv_catalog_db rv_assets rv_media)
 # The fixtures' sources and the build tree they are materialized in.
 target_compile_definitions(rv_test_support PRIVATE
     RV_TEST_SUPPORT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

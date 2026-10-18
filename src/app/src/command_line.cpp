@@ -84,7 +84,15 @@ core::ArgParser makeParser() {
                             "seconds is left running (never ended) and the run goes on to its --frames (default {:g}, "
                             "at most {:g}).",
                             CommandLineOptions::kDefaultLaunchWaitLimitSeconds,
-                            CommandLineOptions::kMaxLaunchWaitLimitSeconds));
+                            CommandLineOptions::kMaxLaunchWaitLimitSeconds))
+        .flag("refresh-library", "Refresh the catalog from ES-DE once it is open, as \"Aggiorna libreria\" does. Not "
+                                 "implemented yet (I3 step 13r): refused.")
+        .option("video-freeze-pts", "seconds",
+                "Only with --smoke or --exit-after-frames: the hero CRT's video seeks to this time and holds the "
+                "frame, for goldens. Not implemented yet (I3 step 11): refused.")
+        .flag("no-texture-compression", "Keep the collection's covers and spines in RGBA8 at half the resolution "
+                                        "instead of BC1, as without the S3TC extensions. Not implemented yet (I3 "
+                                        "step 6): refused.");
     return parser;
 }
 
@@ -247,6 +255,30 @@ Status applyLaunchWaitLimit(const core::ParsedArgs& args, CommandLineOptions& op
                          "--launch-wait-limit=" + args.value("launch-wait-limit").value_or(""));
     }
     options.launchWaitLimitSeconds = *seconds;
+    return ok();
+}
+
+/// --video-freeze-pts <seconds>, a time in the clip of a frame-limited run.
+Status applyVideoFreezePts(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("video-freeze-pts")) {
+        return ok();
+    }
+    // An interactive run's video plays: holding a frame is for screenshots and goldens.
+    if (!options.frameLimit) {
+        return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames",
+                         "--video-freeze-pts");
+    }
+    auto seconds = args.doubleValue("video-freeze-pts", 0.0);
+    if (!seconds) {
+        return propagate(seconds.error());
+    }
+    if (!std::isfinite(*seconds) || *seconds < 0.0 || *seconds > CommandLineOptions::kMaxVideoFreezePtsSeconds) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("must be a number of seconds from 0 to {:g}",
+                                     CommandLineOptions::kMaxVideoFreezePtsSeconds),
+                         "--video-freeze-pts=" + args.value("video-freeze-pts").value_or(""));
+    }
+    options.videoFreezePtsSeconds = *seconds;
     return ok();
 }
 
@@ -493,6 +525,14 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (auto waitLimit = applyLaunchWaitLimit(*args, options); !waitLimit) {
         return propagate(waitLimit.error());
     }
+    if (auto freeze = applyVideoFreezePts(*args, options); !freeze) {
+        return propagate(freeze.error());
+    }
+    options.refreshLibrary = args->has("refresh-library");
+    options.noTextureCompression = args->has("no-texture-compression");
+    if (auto pending = pendingOptionError(options); !pending) {
+        return propagate(pending.error());
+    }
     options.spawn = *spawn;
     options.scene = std::move(*scene);
     options.inputScript = std::move(*inputScript);
@@ -502,6 +542,22 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     options.screenshotIncludeUi = args->has("screenshot-include-ui");
     options.mockCatalog = std::move(*mockCatalog);
     return options;
+}
+
+Status pendingOptionError(const CommandLineOptions& options) {
+    // One block per option, apart, so that the step implementing one removes its block without touching the others.
+    if (options.refreshLibrary) {
+        return makeError(ErrorCode::Unsupported, "not implemented yet (I3 step 13r)", "--refresh-library");
+    }
+
+    if (options.videoFreezePtsSeconds) {
+        return makeError(ErrorCode::Unsupported, "not implemented yet (I3 step 11)", "--video-freeze-pts");
+    }
+
+    if (options.noTextureCompression) {
+        return makeError(ErrorCode::Unsupported, "not implemented yet (I3 step 6)", "--no-texture-compression");
+    }
+    return ok();
 }
 
 Expected<SpawnPoint> parseSpawnPoint(std::string_view text) {

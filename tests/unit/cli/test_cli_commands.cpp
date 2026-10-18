@@ -27,22 +27,32 @@ using rv::cli::Output;
 
 namespace {
 
-/// The commands of I2 in the order of --help, with the step of docs/roadmap.md that implements each.
-constexpr std::array<std::pair<std::string_view, int>, 14> kPlannedCommands{{
-    {"discover", 2},
-    {"library", 2},
-    {"db", 4},
-    {"import", 7},
-    {"systems", 9},
-    {"games", 9},
-    {"search", 9},
-    {"show", 9},
-    {"media", 8},
-    {"profiles", 10},
-    {"launch", 10},
-    {"identities", 11},
-    {"assign", 12},
-    {"sessions", 12},
+/// The commands of I2 and I3 in the order of --help, with the step of docs/roadmap.md that implements each.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 16> kPlannedCommands{{
+    {"discover", "I2 step 2"},
+    {"library", "I2 step 2"},
+    {"db", "I2 step 4"},
+    {"import", "I2 step 7"},
+    {"systems", "I2 step 9"},
+    {"games", "I2 step 9"},
+    {"search", "I2 step 9"},
+    {"show", "I2 step 9"},
+    {"media", "I2 step 8"},
+    {"profiles", "I2 step 10"},
+    {"launch", "I2 step 10"},
+    {"identities", "I2 step 11"},
+    {"assign", "I2 step 12"},
+    {"sessions", "I2 step 12"},
+    {"worldplan", "I3 step 3"},
+    {"where-is", "I3 step 9"},
+}};
+
+/// The subcommands of worldplan, each with the I3 step that implements it.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 4> kWorldPlanSubcommands{{
+    {"generate", "I3 step 3"},
+    {"update", "I3 step 9"},
+    {"show", "I3 step 3"},
+    {"check", "I3 step 4"},
 }};
 
 /// Directories of a test run: the source tree's assets and no %LOCALAPPDATA%, so a run never reaches the real user
@@ -87,7 +97,7 @@ bool contains(std::string_view text, std::string_view part) {
 
 /// What a command prints until its step implements it.
 std::string stubMessage(const Command& command) {
-    return fmt::format("retroverse-cli {}: not implemented yet (I2 step {})\n", command.name, command.step);
+    return fmt::format("retroverse-cli {}: not implemented yet ({})\n", command.name, command.step);
 }
 
 /// An option no command declares: a usage error for every command, stub or implemented, so the tests that pass it to
@@ -96,7 +106,7 @@ constexpr std::string_view kUnknownOption = "--no-such-option";
 
 } // namespace
 
-TEST_CASE("cli/command: the table lists the 14 commands of I2 in order, each with the step that implements it",
+TEST_CASE("cli/command: the table lists the 16 commands of I2 and I3 in order, each with the step that implements it",
           "[cli]") {
     const std::span<const Command> table = rv::cli::commands();
     REQUIRE(table.size() == kPlannedCommands.size());
@@ -136,7 +146,7 @@ TEST_CASE("cli/command: a stub names its command and step on stderr and exits 2"
     const std::vector<std::string> arguments{"--help"}; // a stub ignores its arguments, --help included
 
     // A row of no table: the message stays tested once every command of I2 is implemented.
-    const Command stub{"frobnicate", "Not a command", 99, rv::cli::notImplemented};
+    const Command stub{"frobnicate", "Not a command", "I2 step 99", rv::cli::notImplemented};
     Output out = Output::memory();
     Output err = Output::memory();
     rv::cli::CommandContext context{stub, global, arguments, *paths, out, err};
@@ -168,6 +178,57 @@ TEST_CASE("cli/command: every command exits 2 on an unknown option with nothing 
             CHECK(err.text() == stubMessage(command));
         }
     }
+}
+
+TEST_CASE("cli/run: the I3 commands are stubs that name their steps and exit 2 until those steps", "[cli]") {
+    const rv::test::TempDir dir("rv-cli-i3-stubs");
+    const LoggingReset loggingReset;
+    const std::string data = rv::core::pathToUtf8(dir.file("data"));
+    const rv::core::PathEnvironment environment = testEnvironment(dir.path());
+
+    // Each worldplan subcommand answers alone, whatever its arguments, --help included.
+    for (const auto& [subcommand, step] : kWorldPlanSubcommands) {
+        for (const std::vector<std::string>& extra :
+             {std::vector<std::string>{}, std::vector<std::string>{"--system", "snes"},
+              std::vector<std::string>{"--help"}}) {
+            std::vector<std::string> arguments{"--data-dir", data, "worldplan", std::string(subcommand)};
+            arguments.insert(arguments.end(), extra.begin(), extra.end());
+            INFO(fmt::format("{}", fmt::join(arguments, " ")));
+            const RunResult result = runCli(arguments, environment);
+            CHECK(result.code == ExitCode::UsageError);
+            CHECK(result.out.empty());
+            CHECK(result.err ==
+                  fmt::format("retroverse-cli worldplan {}: not implemented yet ({})\n", subcommand, step));
+        }
+    }
+    const RunResult whereIs = runCli({"--data-dir", data, "where-is", "g0123456789abcdef"}, environment);
+    CHECK(whereIs.code == ExitCode::UsageError);
+    CHECK(whereIs.out.empty());
+    CHECK(whereIs.err == "retroverse-cli where-is: not implemented yet (I3 step 9)\n");
+
+    // worldplan itself: its usage on --help (stdout, exit 0) and without a subcommand (stderr, exit 2); an unknown
+    // subcommand or option is a usage error that names it.
+    const RunResult help = runCli({"--data-dir", data, "worldplan", "--help"}, environment);
+    CHECK(help.code == ExitCode::Ok);
+    CHECK(contains(help.out, "Usage: retroverse-cli [global options] worldplan <subcommand>"));
+    for (const auto& subcommand : kWorldPlanSubcommands) {
+        CHECK(contains(help.out, fmt::format("  {}  ", subcommand.first)));
+    }
+    CHECK(help.err.empty());
+    const RunResult none = runCli({"--data-dir", data, "worldplan"}, environment);
+    CHECK(none.code == ExitCode::UsageError);
+    CHECK(none.out.empty());
+    CHECK(contains(none.err, "Usage: retroverse-cli [global options] worldplan <subcommand>"));
+    const RunResult unknown = runCli({"--data-dir", data, "worldplan", "regenerate"}, environment);
+    CHECK(unknown.code == ExitCode::UsageError);
+    CHECK(unknown.out.empty());
+    CHECK(contains(unknown.err, "retroverse-cli worldplan: unknown subcommand 'regenerate'"));
+    const RunResult option = runCli({"--data-dir", data, "worldplan", std::string(kUnknownOption)}, environment);
+    CHECK(option.code == ExitCode::UsageError);
+    CHECK(contains(option.err, fmt::format("retroverse-cli worldplan: unknown option '{}'", kUnknownOption)));
+
+    // A stub writes nothing but its log: no world folder.
+    CHECK_FALSE(std::filesystem::exists(dir.file("data") / "worlds"));
 }
 
 TEST_CASE("cli/run: --version and --help print to stdout and exit 0; usage errors exit 2 on stderr", "[cli]") {

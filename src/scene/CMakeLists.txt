@@ -1,6 +1,6 @@
 # rv_scene: camera, first-person and orbit controllers and viewpoints, lights, render items and batching plan, scene
-# descriptions, scene content (geometry, models) and collision, debug lines. GPU-free: the renderer consumes its plain
-# data.
+# descriptions, scene content (geometry, models) and collision, debug lines; since I3 (skeletons naming their steps)
+# the eased pose animator and the clusters of static instance groups. GPU-free: the renderer consumes its plain data.
 
 add_library(rv_scene STATIC
     src/batch_planner.cpp
@@ -8,8 +8,10 @@ add_library(rv_scene STATIC
     src/collision.cpp
     src/debug_lines.cpp
     src/first_person_controller.cpp
+    src/instance_clusters.cpp
     src/light.cpp
     src/orbit_controller.cpp
+    src/pose_animator.cpp
     src/scene_description.cpp
     src/scene_geometry.cpp
     src/viewpoint.cpp

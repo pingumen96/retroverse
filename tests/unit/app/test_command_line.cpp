@@ -555,3 +555,55 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
     CHECK(help.find("  --exit\n      Same as --exit-after-frames.") != std::string::npos);
     CHECK(help.find("Exit codes") != std::string::npos);
 }
+
+TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused until their steps",
+          "[app][command_line]") {
+    // A valid use of each option is an invalid command line (exit 2) that names the step implementing it.
+    const std::vector<std::pair<std::vector<std::string>, std::string>> pending{
+        {{"--refresh-library"}, "I3 step 13r"},
+        {{"--exit-after-frames", "--video-freeze-pts", "1.0"}, "I3 step 11"},
+        {{"--smoke", "--video-freeze-pts", "0"}, "I3 step 11"},
+        {{"--no-texture-compression"}, "I3 step 6"},
+    };
+    for (const auto& [arguments, step] : pending) {
+        INFO(arguments.back());
+        const auto refused = parse(arguments);
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().code == ErrorCode::Unsupported);
+        CHECK(refused.error().message == "not implemented yet (" + step + ")");
+    }
+    CHECK(parse({"--refresh-library"}).error().context == "--refresh-library");
+    CHECK(parse({"--no-texture-compression"}).error().context == "--no-texture-compression");
+    CHECK(parse({"--smoke", "--video-freeze-pts", "2.5"}).error().context == "--video-freeze-pts");
+
+    // Their values are validated before the refusal.
+    const auto interactive = parse({"--video-freeze-pts", "1"});
+    REQUIRE_FALSE(interactive.has_value());
+    CHECK(interactive.error().code == ErrorCode::InvalidArgument);
+    CHECK(interactive.error().context == "--video-freeze-pts");
+    for (const char* value : {"-1", "86401", "nan", "inf"}) {
+        INFO(value);
+        const auto outOfRange = parse({"--smoke", "--video-freeze-pts", value});
+        REQUIRE_FALSE(outOfRange.has_value());
+        CHECK(outOfRange.error().code == ErrorCode::OutOfRange);
+    }
+    const auto notANumber = parse({"--smoke", "--video-freeze-pts", "soon"});
+    REQUIRE_FALSE(notANumber.has_value());
+    CHECK(notANumber.error().code == ErrorCode::ParseError);
+    const auto flagValue = parse({"--refresh-library=yes"});
+    REQUIRE_FALSE(flagValue.has_value());
+    CHECK(flagValue.error().code == ErrorCode::InvalidArgument);
+
+    // The refusal itself: nothing set, nothing refused.
+    CHECK(rv::app::pendingOptionError(CommandLineOptions{}).has_value());
+    CommandLineOptions options;
+    options.noTextureCompression = true;
+    const auto refused = rv::app::pendingOptionError(options);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().context == "--no-texture-compression");
+
+    const std::string help = rv::app::commandLineHelp();
+    CHECK(helpListsOption(help, "--refresh-library"));
+    CHECK(helpListsOption(help, "--video-freeze-pts"));
+    CHECK(helpListsOption(help, "--no-texture-compression"));
+}

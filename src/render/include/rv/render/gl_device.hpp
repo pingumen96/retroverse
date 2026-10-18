@@ -46,6 +46,14 @@ struct GLCapabilities {
     int maxCombinedTextureImageUnits = 0;
     bool khrDebug = false;       ///< GL_KHR_debug advertised (debug output is also core since OpenGL 4.3)
     bool arbClipControl = false; ///< GL_ARB_clip_control advertised (also core since OpenGL 4.5)
+    /// GL_EXT_texture_compression_s3tc and GL_EXT_texture_sRGB advertised: together they give the BC1 sRGB format of the
+    /// collection's texture arrays (GL_COMPRESSED_SRGB_S3TC_DXT1_EXT, ADR-0011 §4), which falls back to RGBA8 without
+    /// them (s3tcSrgb()).
+    bool extTextureCompressionS3tc = false;
+    bool extTextureSrgb = false;
+
+    /// Both S3TC extensions: compressed sRGB textures in BC1 can be created.
+    [[nodiscard]] bool s3tcSrgb() const noexcept { return extTextureCompressionS3tc && extTextureSrgb; }
     /// GL_FRAMEBUFFER_SRGB converts linear output written to the default framebuffer. Taken from the back buffer's
     /// GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING; when the driver reports GL_LINEAR (NVIDIA does even for sRGB-capable
     /// pixel formats), a one-pixel clear and readback at creation checks whether the conversion happens anyway.

@@ -221,6 +221,52 @@ TEST_CASE("app/run_report: malformed reports are errors that point at the key", 
     CHECK(malformed.error().code == ErrorCode::ParseError);
 }
 
+TEST_CASE("app/run_report: the sections of I3 are always written, empty until their steps, and required",
+          "[app][run_report]") {
+    // Every report holds them, the minimal one of a failed initialization included.
+    RunReport minimal;
+    minimal.application = "Retroverse";
+    minimal.exitCode = 2;
+    minimal.outcome = "initialization failed";
+    const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(minimal));
+    for (const char* key : {"world", "residency", "video", "gpuMemory"}) {
+        CAPTURE(key);
+        REQUIRE(json.contains(key));
+        CHECK(json.at(key).is_object());
+        CHECK(json.at(key).empty());
+    }
+    REQUIRE(json.contains("phases"));
+    CHECK(json.at("phases").is_array());
+    CHECK(json.at("phases").empty());
+
+    RunReport report = fullReport();
+    report.phases = {rv::app::PhaseRecord{"refresh"}, rv::app::PhaseRecord{"coverLoad"}};
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->phases == report.phases);
+    CHECK(parsed->world == rv::app::WorldRecord{});
+    CHECK(parsed->residency == rv::app::ResidencyRecord{});
+    CHECK(parsed->video == rv::app::VideoRecord{});
+    CHECK(parsed->gpuMemory == rv::app::GpuMemoryRecord{});
+
+    // A reader refuses a report without one, or with one of the wrong type.
+    for (const char* key : {"world", "residency", "video", "phases", "gpuMemory"}) {
+        CAPTURE(key);
+        const auto missing = rv::app::parseRunReport(
+            editedReport(report, [key](nlohmann::json& edited) { edited.erase(key); }), "r.json");
+        REQUIRE_FALSE(missing.has_value());
+        CHECK(missing.error().context == std::string("r.json:/") + key);
+        const auto wrongType = rv::app::parseRunReport(
+            editedReport(report, [key](nlohmann::json& edited) { edited[key] = 1; }), "r.json");
+        REQUIRE_FALSE(wrongType.has_value());
+        CHECK(wrongType.error().code == ErrorCode::ValidationFailed);
+    }
+    const auto unnamed = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["phases"][0].erase("name"); }), "r.json");
+    REQUIRE_FALSE(unnamed.has_value());
+    CHECK(unnamed.error().context == "r.json:/phases/0/name");
+}
+
 TEST_CASE("app/run_report: the quick catalog and its launches read back record for record", "[app][run_report]") {
     RunReport report = fullReport();
     rv::app::CatalogRecord catalog;

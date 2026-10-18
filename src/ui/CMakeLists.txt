@@ -2,10 +2,12 @@
 #   rv_ui_model  GPU-free policy of the product UI, always built and unit-tested by rv_tests (tests/unit/ui): UI
 #                commands from the UI actions of the action map (stick hysteresis, repeat timing), focus regions and the
 #                focus history for Back, the paged catalog source (CatalogSource, InMemoryCatalogSource) and the quick
-#                catalog's view model, a window over it; timing percentiles of the UI pass.
+#                catalog's view model, a window over it; timing percentiles of the UI pass; since I3 (skeletons naming
+#                their steps) the models of the world's card and of the media viewer.
 #   rv_ui        RmlUi 6.3 on SDL3 and OpenGL 3: RmlUi's lifetime and interfaces (UiSystem), one context per output
 #                (UiView: input, update, rendering into the window and screenshots, CPU and GPU times), the quick
-#                catalog screen (QuickCatalogScreen, a fixed pool of rows); the RmlUi backends are vendored in
+#                catalog screen (QuickCatalogScreen, a fixed pool of rows), since I3 (skeletons) the world's card,
+#                the hover label, the media viewer and Informazioni; the RmlUi backends are vendored in
 #                third_party/rmlui_backends on our glad loader (target rv_rmlui_backends, used by rv_ui only).
 #                It never links rv_catalog: rv_app adapts the catalog to CatalogSource.
 
@@ -14,7 +16,9 @@ add_library(rv_ui_model STATIC
     src/filter_count_log.cpp
     src/focus_history.cpp
     src/focus_regions.cpp
+    src/game_card_model.cpp
     src/in_memory_catalog_source.cpp
+    src/media_viewer_model.cpp
     src/nav_input.cpp
     src/quick_catalog_model.cpp
     src/timing_samples.cpp
@@ -29,6 +33,10 @@ rv_forbid_link(rv_ui_model)
 add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/rmlui_backends" "${CMAKE_CURRENT_BINARY_DIR}/rmlui_backends")
 
 add_library(rv_ui STATIC
+    src/game_card_screen.cpp
+    src/game_info_screen.cpp
+    src/hover_label_screen.cpp
+    src/media_viewer_screen.cpp
     src/quick_catalog_screen.cpp
     src/ui_system.cpp
     src/ui_view.cpp

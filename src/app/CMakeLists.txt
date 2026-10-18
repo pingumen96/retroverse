@@ -7,14 +7,17 @@
 # meshes, materials and picture instances, render items), the model viewer scene, the debug line selection, the frame
 # statistics log, the run report (--run-report), and the launch shell of the quick catalog: the mock catalog
 # (--mock-catalog), a launch from Avvia to the return around a LaunchSession (LaunchFlow) and its outcome as the product
-# UI tells it. Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests
+# UI tells it; since I3 (skeletons naming their steps) the frame timing of the run report, the world's interaction
+# states, what the hero CRT plays and the cover loader's order. Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests
 # can read the reports of the runs they start.
 add_library(rv_app_cli STATIC
     src/back_action.cpp
     src/command_line.cpp
+    src/cover_requests.cpp
     src/debug_line_selection.cpp
     src/exit_code.cpp
     src/frame_stats_log.cpp
+    src/frame_timing.cpp
     src/input_context.cpp
     src/launch_flow.cpp
     src/launch_outcome.cpp
@@ -23,25 +26,31 @@ add_library(rv_app_cli STATIC
     src/overlay_policy.cpp
     src/run_report.cpp
     src/scene_content_plan.cpp
+    src/screen_policy.cpp
     src/screenshot_name.cpp
     src/self_check.cpp
+    src/world_interaction.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
 target_include_directories(rv_app_cli PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+# rv_world (I3): the world's plans, picking and the interaction states of the generated room (ADR-0010, ADR-0012).
 target_link_libraries(rv_app_cli PUBLIC
-    rv_core rv_geometry rv_input rv_assets rv_scene rv_launcher rv_ui_model rv_render_uniforms)
+    rv_core rv_geometry rv_input rv_assets rv_scene rv_launcher rv_ui_model rv_render_uniforms rv_world)
 rv_forbid_link(rv_app_cli)
 
 # GPU-free part of the application layer over the ES-DE catalog (I2 step 13): the catalog worker (the database's writer
 # and the queries on its own thread), the quick catalog's source over it, the launches of the catalog resolved with the
 # library's configuration, their play sessions, and the AppCatalog the product UI drives (the ES-DE catalog, or the mock
-# catalog of the tests). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
+# catalog of the tests); since I3 the catalog's refresh on its worker and the room's snapshot. Kept apart from
+# rv_app_cli, which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
     src/catalog_launch_library.cpp
     src/catalog_worker.cpp
+    src/library_refresh.cpp
+    src/room_snapshot.cpp
 )
 add_library(rv::app_catalog ALIAS rv_app_catalog)
 rv_set_target_defaults(rv_app_catalog)
@@ -56,22 +65,34 @@ add_library(rv_app STATIC
     src/app_input.cpp
     src/app_logic.cpp
     src/bloom_self_check.cpp
+    src/collection_instance.cpp
+    src/cover_loader.cpp
     src/free_roam.cpp
     src/fxaa_self_check.cpp
     src/game_session_panel.cpp
+    src/hero_textures.cpp
     src/product_ui.cpp
     src/retroverse_app.cpp
     src/scene_graphics.cpp
     src/scene_instance.cpp
+    src/screen_service.cpp
     src/self_check_canvas.cpp
     src/srgb_self_check.cpp
+    src/world_card.cpp
+    src/world_hover.cpp
+    src/world_inspection.cpp
+    src/world_launch.cpp
+    src/world_live_update.cpp
+    src/world_session.cpp
+    src/world_start.cpp
 )
 add_library(rv::app ALIAS rv_app)
 rv_set_target_defaults(rv_app)
 target_include_directories(rv_app PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # rv_ui: the product UI (RmlUi); rv_launcher and rv_platform_win: launches from the quick catalog (plans, sessions, the
 # Win32 process runner and system probe); rv_devui_model: the mouse's hand-over between the scene and the layers over it
-# (GPU-free, in every build).
+# (GPU-free, in every build); rv_media: the hero CRT's video decoder (I3, ADR-0012 §7); rv_world: the generated room
+# (I3, ADR-0010).
 target_link_libraries(rv_app PUBLIC
     rv_app_cli
     rv_app_catalog
@@ -85,7 +106,9 @@ target_link_libraries(rv_app PUBLIC
     rv_platform
     rv_render
     rv_ui
-    rv_devui_model)
+    rv_devui_model
+    rv_media
+    rv_world)
 
 if(RV_DEV_UI)
     target_link_libraries(rv_app PUBLIC rv_devui)

@@ -14,6 +14,8 @@ add_subdirectory(catalog)
 add_subdirectory(esde)
 add_subdirectory(catalog_db)
 add_subdirectory(platform_win)
+# The world generator of milestone M2 (I3, ADR-0010): plans computed from the catalog's snapshot, GPU-free.
+add_subdirectory(world)
 
 # Platform and rendering layer
 add_subdirectory(platform)

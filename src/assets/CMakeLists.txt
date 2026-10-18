@@ -1,8 +1,13 @@
 # rv_assets: CPU-side asset loading (images, glTF models, prefab manifests, material presets, shader sources,
-# procedural test patterns and surface textures) and the GLB writer. GPU-free: produces plain data consumed by the
-# renderer.
+# procedural test patterns and surface textures) and the GLB writer; since I3 (skeletons naming step 5) the cover and
+# label pipeline: fit rules, mips in linear light, BC1, text, generated labels and spines, the .rvtex files of the
+# derived-texture cache. GPU-free: produces plain data consumed by the renderer.
 
 add_library(rv_assets STATIC
+    src/bc1.cpp
+    src/collection_labels.cpp
+    src/cover_fit.cpp
+    src/derived_texture_cache.cpp
     src/glb_writer.cpp
     src/gltf_geometry.cpp
     src/gltf_loader.cpp
@@ -11,9 +16,11 @@ add_library(rv_assets STATIC
     src/image_io.cpp
     src/json_util.cpp
     src/material_library.cpp
+    src/mip_chain.cpp
     src/path_util.cpp
     src/prefab_manifest.cpp
     src/procedural_noise.cpp
+    src/rvtex.cpp
     src/shader_source.cpp
     src/surface_canvas.cpp
     src/surface_finishes.cpp
@@ -21,6 +28,7 @@ add_library(rv_assets STATIC
     src/surface_textures.cpp
     src/surface_wood.cpp
     src/test_patterns.cpp
+    src/text_raster.cpp
 )
 add_library(rv::assets ALIAS rv_assets)
 rv_set_target_defaults(rv_assets)

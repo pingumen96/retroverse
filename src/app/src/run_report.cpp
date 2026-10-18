@@ -166,6 +166,22 @@ public:
         return FieldReader(*value, m_pointer + "/" + std::string(key), m_context, m_error);
     }
 
+    /// The reader of the object at `key`, which must be there.
+    [[nodiscard]] std::optional<FieldReader> object(std::string_view key) {
+        if (!has(key)) {
+            fail(key, "missing required key");
+        }
+        return optionalObject(key);
+    }
+
+    /// The readers of the objects in the array at `key`, which must be there, in order.
+    [[nodiscard]] std::vector<FieldReader> objectArray(std::string_view key) {
+        if (!has(key)) {
+            fail(key, "missing required key");
+        }
+        return optionalObjectArray(key);
+    }
+
     /// The readers of the objects in the array at `key`, in order; none when the key is absent.
     [[nodiscard]] std::vector<FieldReader> optionalObjectArray(std::string_view key) {
         std::vector<FieldReader> readers;
@@ -619,6 +635,16 @@ std::string formatRunReport(const RunReport& report) {
         }
         json["launches"] = std::move(launches);
     }
+    // The sections of I3: always written, empty until their steps fill them.
+    json["world"] = Json::object();
+    json["residency"] = Json::object();
+    json["video"] = Json::object();
+    Json phases = Json::array();
+    for (const PhaseRecord& phase : report.phases) {
+        phases.push_back(Json{{"name", phase.name}});
+    }
+    json["phases"] = std::move(phases);
+    json["gpuMemory"] = Json::object();
     return json.dump(2) + "\n";
 }
 
@@ -697,6 +723,14 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     for (FieldReader& launch : fields.optionalObjectArray("launches")) {
         report.launches.push_back(readLaunch(launch));
     }
+    // The sections of I3 must be there, empty until their steps fill them.
+    static_cast<void>(fields.object("world"));
+    static_cast<void>(fields.object("residency"));
+    static_cast<void>(fields.object("video"));
+    for (FieldReader& phase : fields.objectArray("phases")) {
+        report.phases.push_back(PhaseRecord{phase.string("name")});
+    }
+    static_cast<void>(fields.object("gpuMemory"));
     if (error) {
         return propagate(std::move(*error));
     }

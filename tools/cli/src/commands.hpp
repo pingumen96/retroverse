@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <span>
+#include <string>
 
 #include <rv/cli/command.hpp>
 #include <rv/core/expected.hpp>
@@ -36,5 +37,14 @@ ExitCode runLaunch(CommandContext& context);
 ExitCode runIdentities(CommandContext& context);
 ExitCode runAssign(CommandContext& context);
 ExitCode runSessions(CommandContext& context);
+ExitCode runWorldPlan(CommandContext& context);
+ExitCode runWhereIs(CommandContext& context);
+
+/// The subcommands of worldplan (cmd_worldplan.cpp dispatches them), one source each (cmd_worldplan_<name>.cpp), so
+/// that the I3 steps implementing them never edit one file: `arguments` are those after the subcommand's name.
+ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::string> arguments);
+ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string> arguments);
+ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> arguments);
+ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string> arguments);
 
 } // namespace rv::cli
