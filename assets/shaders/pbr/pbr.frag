@@ -2,7 +2,8 @@
 // PBR_Base (style §25): metallic-roughness materials lit by the scene's point, spot and directional lights
 // (common/lights.glsl), the key light shadowed by its shadow map (common/shadow.glsl), and a hemispherical sky/ground
 // ambient darkened by the view's ambient occlusion (common/occlusion.glsl), with optional base color,
-// metallic-roughness, normal, occlusion and emissive textures (the surface normals: common/surface.glsl). Output
+// metallic-roughness, normal, occlusion and emissive textures (the surface normals: common/surface.glsl) and, for the
+// collection's layered materials, the layer of a texture array the instance names (common/material.glsl). Output
 // (common/scene_output.glsl): the linear scene radiance and its emissive part into the HDR target; exposure, bloom and
 // tonemapping belong to the post pass (post/post.frag).
 #include "common/common.glsl"
@@ -17,7 +18,7 @@
 void main() {
     // Every texture is sampled before the alpha test: after a discard taken by only some fragments of a 2x2 quad,
     // implicit derivatives, hence the mip level and anisotropy of texture(), are undefined (GLSL 4.50 §6.4).
-    vec4 baseColor = materialBaseColor(vUv);
+    vec4 baseColor = materialInstanceBaseColor(vUv, vInstance);
     float metallic = uMetallic;
     float roughness = uRoughness;
     if (materialHas(RV_MATERIAL_METALLIC_ROUGHNESS_TEXTURE)) {

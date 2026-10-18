@@ -7,6 +7,7 @@
 #                       junctions and folders that cannot be listed
 #   tests/fixtures      the fixtures' source trees (tests/support/fixture.hpp materializes them)
 #   tests/fake_emulator rv_fake_emulator, the stand-in emulator the launch tests start
+#   tests/collection_probe rv_collection_probe, the collection's texture arrays drawn for the GPU smoke tests
 #   tests/input_scripts --input-script files of the verification runs, also played by tests/unit/integration
 #   tests/smoke         GPU smoke tests (label "gpu"), executable rv_smoke_tests: runs retroverse.exe and the asset
 #                       preview frame-limited and checks their run reports and screenshots; excluded from the default
@@ -15,6 +16,7 @@
 #                       (cmake/CopyAssets.cmake) and retroverse-cli as a process (exit codes, stdout and stderr apart)
 
 add_subdirectory(fake_emulator)
+add_subdirectory(collection_probe)
 add_subdirectory(support)
 add_subdirectory(unit)
 add_subdirectory(platform)

@@ -9,6 +9,7 @@
 #include <rv/render/post_processor.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/surface_view.hpp>
+#include <rv/render/texture_array_layout.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/debug_lines.hpp>
 
@@ -74,6 +75,10 @@ public:
     [[nodiscard]] gl::MaterialRegistry& materials() noexcept;
     [[nodiscard]] gl::TextureCache& textures() noexcept;
     [[nodiscard]] const gl::TextureDefaults& textureDefaults() const noexcept;
+    /// The storage of the collection's texture arrays in this run (gl::CollectionArrays): BC1 sRGB, or RGBA8 sRGB at
+    /// half the size with --no-texture-compression or without the S3TC extensions (gl::chooseCollectionArrayFormat;
+    /// logged at creation with the reason).
+    [[nodiscard]] gl::CollectionArrayFormat collectionArrayFormat() const noexcept;
     /// The statistics of the last view rendered (gl::SceneRenderer::stats()).
     [[nodiscard]] const gl::FrameStats& renderStats() const noexcept;
     /// The post-processing programs and the unlit program of the views, for the rendering self-checks.

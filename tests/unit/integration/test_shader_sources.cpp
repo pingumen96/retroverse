@@ -514,6 +514,8 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
         {"RV_MATERIAL_ALPHA_BLEND", flags::kAlphaBlend},
         {"RV_MATERIAL_DOUBLE_SIDED", flags::kDoubleSided},
         {"RV_MATERIAL_CRT_SCREEN", flags::kCrtScreen},
+        {"RV_MATERIAL_LAYERED_BASE_COLOR", flags::kLayeredBaseColor},
+        {"RV_MATERIAL_SPINE_LAYER", flags::kSpineLayer},
     };
     std::map<std::string, std::uint32_t> glslFlags;
     const std::regex flag("const\\s+uint\\s+(RV_MATERIAL_\\w+)\\s*=\\s*(\\d+)u\\s*;");
@@ -1068,4 +1070,35 @@ TEST_CASE("integration/shaders: the anti-aliasing pass finds edges in the luma t
         CHECK(value <= 1.0f);
     }
     CHECK(glslIntConstant(fxaa, "RV_FXAA_SEARCH_STEPS") > 0);
+}
+
+TEST_CASE("integration/shaders: the collection's layered base color samples the layer the instance record names",
+          "[integration][shader]") {
+    // I3 step 6 (ADR-0011 §4): a sampler2DArray on its own unit (CollectionTextureUnit), read only for layered
+    // materials, at the record's spine layer for spines and its front layer otherwise.
+    const std::string source = glslWithoutComments("common/material.glsl");
+    std::map<std::string, std::uint32_t> arrayUnits;
+    const std::regex arraySampler(R"(layout\s*\(\s*binding\s*=\s*(\d+)\s*\)\s*uniform\s+sampler2DArray\s+(\w+)\s*;)");
+    for (auto it = std::sregex_iterator(source.begin(), source.end(), arraySampler); it != std::sregex_iterator();
+         ++it) {
+        arrayUnits[(*it)[2].str()] = static_cast<std::uint32_t>(std::stoul((*it)[1].str()));
+    }
+    CHECK(arrayUnits == std::map<std::string, std::uint32_t>{
+                            {"uLayeredBaseColorTexture",
+                             rv::gl::toIndex(rv::gl::CollectionTextureUnit::LayeredBaseColor)}});
+
+    const auto bodies = functionBodies(source);
+    REQUIRE(bodies.contains("materialInstanceBaseColor"));
+    const std::string& layered = bodies.at("materialInstanceBaseColor");
+    CHECK(layered.find("materialBaseColor(uv)") != std::string::npos);
+    CHECK(layered.find("materialHas(RV_MATERIAL_LAYERED_BASE_COLOR)") != std::string::npos);
+    CHECK(layered.find("materialHas(RV_MATERIAL_SPINE_LAYER) ? instance.y : instance.x") != std::string::npos);
+    CHECK(layered.find("texture(uLayeredBaseColorTexture, vec3(uv, float(layer)))") != std::string::npos);
+
+    // The lit shading and the inspection views read the instance's layer (vInstance, common/surface.glsl); the depth
+    // and unlit stages need none.
+    for (const char* stage : {"pbr/pbr.frag", "debug/inspect.frag"}) {
+        CAPTURE(stage);
+        CHECK(glslWithoutComments(stage).find("materialInstanceBaseColor(vUv, vInstance)") != std::string::npos);
+    }
 }

@@ -46,6 +46,11 @@ if(TARGET retroverse-asset-preview)
         RV_SMOKE_ASSET_PREVIEW="$<TARGET_FILE:retroverse-asset-preview>")
 endif()
 
+# The texture array tests (test_collection_arrays.cpp) run the collection probe and share its layout header.
+add_dependencies(rv_smoke_tests rv_collection_probe)
+target_include_directories(rv_smoke_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests/collection_probe")
+target_compile_definitions(rv_smoke_tests PRIVATE RV_SMOKE_COLLECTION_PROBE="$<TARGET_FILE:rv_collection_probe>")
+
 # The catalog tests (test_catalog.cpp) import the standard fixture with retroverse-cli, started as a process.
 if(TARGET retroverse-cli)
     add_dependencies(rv_smoke_tests retroverse-cli)

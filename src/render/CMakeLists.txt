@@ -1,7 +1,7 @@
 # rv_render: OpenGL 4.5 core renderer (device, shaders, buffers, textures, mesh and material registries, glTF models,
 # the batched and instanced scene renderer with the key light's shadow map, the depth pre-pass and ambient occlusion,
-# HDR view targets, bloom and the post pass, debug lines, framebuffers; since I3, skeletons naming their steps: texture
-# arrays and the collection's arrays, static instance groups, the hover outline).
+# HDR view targets, bloom and the post pass, debug lines, framebuffers; since I3 the texture arrays and the collection's
+# arrays (step 6), and skeletons naming their steps: static instance groups, the hover outline).
 # Receives the GL function loader as a function pointer and never includes SDL.
 
 # GPU-free policy pieces of the renderer, so rv_tests can unit-test them without a context. Their headers include no
@@ -14,8 +14,8 @@
 #                           (ssao_settings.hpp); the CPU mirror of the display transform (tonemap.hpp); the memory of
 #                           texture mip chains (texture_memory.hpp); the inspection views and the defines of their
 #                           programs (surface_view.hpp); the renderer's frame statistics (frame_stats.hpp, header only);
-#                           since I3 (skeletons naming their steps) the GPU memory accounting (gpu_memory.hpp) and the
-#                           collection arrays' sizes (texture_array_layout.hpp)
+#                           since I3 the GPU memory accounting (gpu_memory.hpp) and the collection arrays' classes,
+#                           sizes, layer images, layer allocation and upload budget (texture_array_layout.hpp)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
