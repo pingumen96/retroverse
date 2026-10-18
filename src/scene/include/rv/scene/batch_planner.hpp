@@ -11,12 +11,13 @@
 
 #include <rv/core/aabb.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/instance_data.hpp>
 #include <rv/scene/render_item.hpp>
 
 namespace rv::scene {
 
-/// One instanced draw: `instanceCount` copies of `mesh` with `material` in `pass`, whose model matrices are
-/// BatchPlan::instanceTransforms[firstInstance, firstInstance + instanceCount).
+/// One instanced draw: `instanceCount` copies of `mesh` with `material` in `pass`, whose instance records are
+/// BatchPlan::instances[firstInstance, firstInstance + instanceCount).
 struct Batch {
     DrawPass pass = DrawPass::Opaque;
     ShaderKind shader = ShaderKind::Pbr;
@@ -26,11 +27,11 @@ struct Batch {
     std::uint32_t instanceCount = 0;
 };
 
-/// Draw list for one view: upload `instanceTransforms` once (one mat4 per instance), then issue one instanced draw
-/// per batch in order.
+/// Draw list for one view: upload `instances` once (one InstanceData per instance: the item's model matrix and its
+/// attributes), then issue one instanced draw per batch in order.
 struct BatchPlan {
     std::vector<Batch> batches;
-    std::vector<glm::mat4> instanceTransforms;
+    std::vector<InstanceData> instances;
     /// Items left out because their world bounds lie outside the view frustum.
     std::size_t culledItems = 0;
 };
@@ -60,7 +61,8 @@ struct PlanOptions {
 ///    map (PlanOptions::shadowCastersOnly); items outside PlanOptions::frustum are culled;
 ///  - batches come in pass order: opaque, alpha-masked, alpha-blended;
 ///  - opaque and masked items with the same (shader, material, mesh) form one batch; batches are ordered by that key,
-///    which minimizes program and material switches, and instances keep their submission order;
+///    which minimizes program and material switches, and instances keep their submission order; each instance is the
+///    item's model matrix with its attributes (RenderItem::attributes), which never split a batch;
 ///  - blended items are drawn back to front: sorted by decreasing distance from PlanOptions::eye to the center of
 ///    their world bounds (ties in submission order); consecutive items with the same key share a batch, whose
 ///    instances are drawn in order, so the drawing order is exactly back to front.

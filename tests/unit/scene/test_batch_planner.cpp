@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -12,12 +13,15 @@
 #include <rv/core/aabb.hpp>
 #include <rv/scene/batch_planner.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/instance_data.hpp>
 #include <rv/scene/render_item.hpp>
 
 using rv::core::Aabb;
 using rv::scene::Batch;
 using rv::scene::BatchPlan;
 using rv::scene::BatchPlanner;
+using rv::scene::InstanceAttributes;
+using rv::scene::InstanceData;
 using rv::scene::MaterialHandle;
 using rv::scene::MeshHandle;
 using rv::scene::RenderItem;
@@ -39,6 +43,10 @@ float tagOf(const glm::mat4& model) {
     return model[3][0];
 }
 
+float tagOf(const InstanceData& instance) {
+    return tagOf(instance.model);
+}
+
 /// Options that cull against `frustum` with `localBounds`.
 rv::scene::PlanOptions culling(const rv::scene::Frustum& frustum, const std::function<Aabb(MeshHandle)>& localBounds) {
     rv::scene::PlanOptions options;
@@ -47,7 +55,7 @@ rv::scene::PlanOptions culling(const rv::scene::Frustum& frustum, const std::fun
     return options;
 }
 
-/// Every batch is non-empty and the batches tile instanceTransforms contiguously and in order.
+/// Every batch is non-empty and the batches tile instances contiguously and in order.
 void checkContiguous(const BatchPlan& plan) {
     std::uint32_t next = 0;
     for (const Batch& batch : plan.batches) {
@@ -55,7 +63,7 @@ void checkContiguous(const BatchPlan& plan) {
         CHECK(batch.firstInstance == next);
         next += batch.instanceCount;
     }
-    CHECK(next == plan.instanceTransforms.size());
+    CHECK(next == plan.instances.size());
 }
 
 } // namespace
@@ -86,8 +94,8 @@ TEST_CASE("scene/batch_planner: groups by shader, material and mesh in key order
 
     // Instances follow the batches; same-key items keep their submission order (stable).
     std::vector<float> tags;
-    for (const glm::mat4& model : plan.instanceTransforms) {
-        tags.push_back(tagOf(model));
+    for (const InstanceData& instance : plan.instances) {
+        tags.push_back(tagOf(instance));
     }
     CHECK(tags == std::vector<float>{4.0f, 1.0f, 3.0f, 2.0f, 6.0f, 0.0f, 5.0f});
 }
@@ -99,7 +107,7 @@ TEST_CASE("scene/batch_planner: 1000 items with 3 materials and 1 mesh make 3 ba
     }
     const BatchPlan plan = BatchPlanner{}.plan(items);
     REQUIRE(plan.batches.size() == 3);
-    CHECK(plan.instanceTransforms.size() == 1000);
+    CHECK(plan.instances.size() == 1000);
     checkContiguous(plan);
     CHECK(plan.batches[0].material == MaterialHandle{10});
     CHECK(plan.batches[0].instanceCount == 334);
@@ -111,14 +119,14 @@ TEST_CASE("scene/batch_planner: 1000 items with 3 materials and 1 mesh make 3 ba
         CHECK(batch.mesh == MeshHandle{42});
         // Inside a batch the original order is kept: tags grow by 3.
         for (std::uint32_t k = 1; k < batch.instanceCount; ++k) {
-            CHECK(tagOf(plan.instanceTransforms[batch.firstInstance + k]) ==
-                  tagOf(plan.instanceTransforms[batch.firstInstance + k - 1]) + 3.0f);
+            CHECK(tagOf(plan.instances[batch.firstInstance + k]) ==
+                  tagOf(plan.instances[batch.firstInstance + k - 1]) + 3.0f);
         }
     }
 
     // The plan is a pure function of its input.
     const BatchPlan again = BatchPlanner{}.plan(items);
-    CHECK(again.instanceTransforms == plan.instanceTransforms);
+    CHECK(again.instances == plan.instances);
     REQUIRE(again.batches.size() == plan.batches.size());
     for (std::size_t i = 0; i < plan.batches.size(); ++i) {
         CHECK(again.batches[i].firstInstance == plan.batches[i].firstInstance);
@@ -153,8 +161,8 @@ TEST_CASE("scene/batch_planner: frustum culling uses the world bounds of each in
     CHECK(plan.batches[0].mesh == MeshHandle{1});
     CHECK(plan.batches[0].material == MaterialHandle{1});
     CHECK(plan.batches[0].instanceCount == 2);
-    CHECK(plan.instanceTransforms[0][3][2] == -5.0f);
-    CHECK(plan.instanceTransforms[1][3][2] == -10.0f);
+    CHECK(plan.instances[0].model[3][2] == -5.0f);
+    CHECK(plan.instances[1].model[3][2] == -10.0f);
     CHECK(plan.batches[1].mesh == MeshHandle{2});
     CHECK(plan.batches[1].instanceCount == 1);
     // Sorted runs: (mesh 1, material 1), (mesh 2, material 1), (mesh 1, material 2) -> 3 lookups, not 6.
@@ -167,21 +175,21 @@ TEST_CASE("scene/batch_planner: frustum culling uses the world bounds of each in
 
     // Without a bounds function nothing is culled.
     const BatchPlan unknown = BatchPlanner{}.plan(items, culling(frustum, std::function<Aabb(MeshHandle)>{}));
-    CHECK(unknown.instanceTransforms.size() == items.size());
+    CHECK(unknown.instances.size() == items.size());
     CHECK(unknown.culledItems == 0);
 }
 
 TEST_CASE("scene/batch_planner: empty input and non-finite transforms", "[scene][batch_planner]") {
     const BatchPlan empty = BatchPlanner{}.plan(std::vector<RenderItem>{});
     CHECK(empty.batches.empty());
-    CHECK(empty.instanceTransforms.empty());
+    CHECK(empty.instances.empty());
 
     std::vector<RenderItem> items{item(1, 1, ShaderKind::Pbr, 0.0f), item(1, 1, ShaderKind::Pbr, 1.0f)};
     items[0].model[3][1] = std::numeric_limits<float>::quiet_NaN();
     const BatchPlan plan = BatchPlanner{}.plan(items);
     REQUIRE(plan.batches.size() == 1);
     CHECK(plan.batches[0].instanceCount == 1);
-    CHECK(tagOf(plan.instanceTransforms[0]) == 1.0f);
+    CHECK(tagOf(plan.instances[0]) == 1.0f);
 }
 
 TEST_CASE("scene/batch_planner: handles compare and hash by value", "[scene][batch_planner]") {
@@ -206,8 +214,8 @@ using rv::scene::PlanOptions;
 /// Tags (x translations) of the instances in plan order.
 std::vector<float> tagsOf(const BatchPlan& plan) {
     std::vector<float> tags;
-    for (const glm::mat4& model : plan.instanceTransforms) {
-        tags.push_back(tagOf(model));
+    for (const InstanceData& instance : plan.instances) {
+        tags.push_back(tagOf(instance));
     }
     return tags;
 }
@@ -337,19 +345,19 @@ TEST_CASE("scene/batch_planner: planning into a kept plan reuses its storage", "
     BatchPlan kept;
     planner.plan(items, options, kept);
     const BatchPlan fresh = BatchPlanner{}.plan(items, options);
-    REQUIRE(kept.instanceTransforms.size() == fresh.instanceTransforms.size());
+    REQUIRE(kept.instances.size() == fresh.instances.size());
     CHECK(kept.culledItems == fresh.culledItems);
     CHECK(kept.culledItems > 0);
-    CHECK(kept.instanceTransforms == fresh.instanceTransforms);
+    CHECK(kept.instances == fresh.instances);
     checkContiguous(kept);
 
     // Planning the same view again: same result, same storage (nothing reallocated).
-    const glm::mat4* transforms = kept.instanceTransforms.data();
+    const InstanceData* transforms = kept.instances.data();
     const Batch* batches = kept.batches.data();
     planner.plan(items, options, kept);
-    CHECK(kept.instanceTransforms.data() == transforms);
+    CHECK(kept.instances.data() == transforms);
     CHECK(kept.batches.data() == batches);
-    CHECK(kept.instanceTransforms == fresh.instanceTransforms);
+    CHECK(kept.instances == fresh.instances);
     CHECK(kept.culledItems == fresh.culledItems);
     REQUIRE(kept.batches.size() == fresh.batches.size());
     for (std::size_t i = 0; i < kept.batches.size(); ++i) {
@@ -362,7 +370,7 @@ TEST_CASE("scene/batch_planner: planning into a kept plan reuses its storage", "
     // A smaller view replaces the whole content (counters included) within the same storage.
     const std::vector<RenderItem> few{item(1, 1, ShaderKind::Pbr, 1.0f), item(1, 1, ShaderKind::Pbr, 2.0f)};
     planner.plan(few, options, kept);
-    CHECK(kept.instanceTransforms.data() == transforms);
+    CHECK(kept.instances.data() == transforms);
     CHECK(kept.culledItems == 0);
     REQUIRE(kept.batches.size() == 1);
     CHECK(tagsOf(kept) == std::vector<float>{1.0f, 2.0f});
@@ -397,7 +405,7 @@ TEST_CASE("scene/batch_planner: a shadow map plans the items that cast shadows, 
 
     // The view draws everything.
     const BatchPlan view = BatchPlanner{}.plan(items, options);
-    CHECK(view.instanceTransforms.size() == 5);
+    CHECK(view.instances.size() == 5);
 
     options.shadowCastersOnly = true;
     const BatchPlan shadow = BatchPlanner{}.plan(items, options);
@@ -416,7 +424,7 @@ TEST_CASE("scene/batch_planner: a shadow map plans the items that cast shadows, 
     light.setPose(glm::vec3(100.0f, 0.0f, 0.0f), 0.0f, 0.0f); // looking away from every item
     options.frustum = light.frustum();
     const BatchPlan away = BatchPlanner{}.plan(items, options);
-    CHECK(away.instanceTransforms.empty());
+    CHECK(away.instances.empty());
     CHECK(away.culledItems == 3);
 }
 
@@ -466,4 +474,72 @@ TEST_CASE("scene/batch_planner: the shadow casters' bounds hold what a shadow ma
     items[0].castsShadow = true;
     options.localBounds = nullptr;
     CHECK(rv::scene::shadowCasterBounds(items, options).isEmpty());
+}
+
+TEST_CASE("scene/batch_planner: the instance record is the 80-byte InstanceData, zero beside the matrix by default",
+          "[scene][batch_planner][instance]") {
+    // ADR-0011 §2: the matrix (attribute locations 4..7), then the uvec4 at location 8.
+    STATIC_CHECK(sizeof(InstanceData) == 80);
+    STATIC_CHECK(offsetof(InstanceData, model) == 0);
+    STATIC_CHECK(offsetof(InstanceData, attributes) == 64);
+    STATIC_CHECK(sizeof(InstanceAttributes) == 16);
+    STATIC_CHECK(offsetof(InstanceAttributes, frontLayer) == 0);
+    STATIC_CHECK(offsetof(InstanceAttributes, spineLayer) == 4);
+    STATIC_CHECK(offsetof(InstanceAttributes, flags) == 8);
+    STATIC_CHECK(offsetof(InstanceAttributes, pickId) == 12);
+
+    // Items that are not collection items write zeros: the reference scenes draw the same pixels.
+    const InstanceData record;
+    CHECK(record.model == glm::mat4(1.0f));
+    CHECK(record.attributes == InstanceAttributes{0, 0, 0, 0});
+    CHECK(RenderItem{}.attributes == InstanceAttributes{});
+
+    namespace flags = rv::scene::instance_flags;
+    CHECK(flags::kHighlighted == 1u);
+    CHECK(flags::kHidden == 2u);
+    CHECK(flags::kUnavailable == 4u);
+}
+
+TEST_CASE("scene/batch_planner: every instance carries its item's matrix and attributes, which split no batch",
+          "[scene][batch_planner][instance]") {
+    PlanOptions options;
+    options.localBounds = unitCube;
+    options.passOf = [](MaterialHandle material) {
+        return material.value == 2 ? DrawPass::Blend : DrawPass::Opaque;
+    };
+    // Six items over two materials (the even ones opaque, the odd ones blended), each with attributes of its own.
+    std::vector<RenderItem> items;
+    for (std::uint32_t i = 0; i < 6; ++i) {
+        RenderItem entry = item(1, 1 + i % 2, ShaderKind::Pbr, static_cast<float>(i), -3.0f - static_cast<float>(i));
+        const std::uint32_t flags = i % 2 == 0 ? rv::scene::instance_flags::kHighlighted : 0u;
+        entry.attributes = InstanceAttributes{10 + i, 20 + i, flags, 100 + i};
+        items.push_back(entry);
+    }
+    items[4].castsShadow = false;
+
+    const auto checkRecords = [&items](const BatchPlan& plan) {
+        for (const InstanceData& instance : plan.instances) {
+            const auto index = static_cast<std::size_t>(tagOf(instance));
+            INFO("item " << index);
+            REQUIRE(index < items.size());
+            CHECK(instance.model == items[index].model);
+            CHECK(instance.attributes == items[index].attributes);
+        }
+    };
+
+    // Items of one key with different attributes still make one batch: the opaque ones in submission order, then the
+    // blended ones back to front.
+    const BatchPlan view = BatchPlanner{}.plan(items, options);
+    checkContiguous(view);
+    REQUIRE(view.batches.size() == 2);
+    CHECK(view.batches[0].instanceCount == 3);
+    CHECK(view.batches[1].instanceCount == 3);
+    CHECK(tagsOf(view) == std::vector<float>{0.0f, 2.0f, 4.0f, 5.0f, 3.0f, 1.0f});
+    checkRecords(view);
+
+    // A shadow map's plan carries the same records for the casters it keeps.
+    options.shadowCastersOnly = true;
+    const BatchPlan shadow = BatchPlanner{}.plan(items, options);
+    CHECK(tagsOf(shadow) == std::vector<float>{0.0f, 2.0f});
+    checkRecords(shadow);
 }

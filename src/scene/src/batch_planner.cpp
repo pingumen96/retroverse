@@ -23,7 +23,7 @@ auto batchKey(const Batch& batch) noexcept {
 
 void BatchPlanner::plan(std::span<const RenderItem> items, const PlanOptions& options, BatchPlan& out) {
     out.batches.clear();
-    out.instanceTransforms.clear();
+    out.instances.clear();
     out.culledItems = 0;
 
     // Finite items with their pass, in submission order; passOf is called once per run of a material.
@@ -94,14 +94,14 @@ void BatchPlanner::plan(std::span<const RenderItem> items, const PlanOptions& op
         return a.depth != b.depth ? a.depth > b.depth : a.index < b.index;
     });
 
-    out.instanceTransforms.reserve(m_candidates.size());
+    out.instances.reserve(m_candidates.size());
     for (const Candidate& candidate : m_candidates) {
         const RenderItem& item = items[candidate.index];
         if (out.batches.empty() || batchKey(out.batches.back()) != batchKey(candidate.pass, item)) {
             out.batches.push_back(Batch{candidate.pass, item.shader, item.material, item.mesh,
-                                        static_cast<std::uint32_t>(out.instanceTransforms.size()), 0});
+                                        static_cast<std::uint32_t>(out.instances.size()), 0});
         }
-        out.instanceTransforms.push_back(item.model);
+        out.instances.push_back(InstanceData{item.model, item.attributes});
         ++out.batches.back().instanceCount;
     }
 }

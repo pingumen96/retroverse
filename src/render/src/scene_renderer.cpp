@@ -146,10 +146,10 @@ bool SceneRenderer::updateUniforms(const RenderView& view, const scene::Camera& 
 }
 
 Expected<std::uint32_t> SceneRenderer::uploadInstances(bool withShadow) {
-    const std::array<std::span<const glm::mat4>, 2> parts{
-        std::span<const glm::mat4>(m_plan.instanceTransforms),
-        withShadow ? std::span<const glm::mat4>(m_shadowPlan.instanceTransforms) : std::span<const glm::mat4>()};
-    auto baseInstance = m_instances.write(std::span<const std::span<const glm::mat4>>(parts));
+    using Instances = std::span<const scene::InstanceData>;
+    const std::array<Instances, 2> parts{Instances(m_plan.instances),
+                                         withShadow ? Instances(m_shadowPlan.instances) : Instances()};
+    auto baseInstance = m_instances.write(std::span<const Instances>(parts));
     if (!baseInstance) {
         Error error = baseInstance.error();
         error.message = "the instances cannot be written: " + error.message;
@@ -312,7 +312,7 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
     // 1. The key light's shadow map; the shadow plan's instances follow the view's.
     const bool shadowDrawn = baseInstance && shadow;
     if (shadowDrawn) {
-        drawShadowMap(device, shaders, *baseInstance + static_cast<std::uint32_t>(m_plan.instanceTransforms.size()),
+        drawShadowMap(device, shaders, *baseInstance + static_cast<std::uint32_t>(m_plan.instances.size()),
                       view.shadowSettings, stats);
     }
 

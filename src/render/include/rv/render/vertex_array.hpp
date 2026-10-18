@@ -37,6 +37,11 @@ public:
     /// binding point `bindingIndex`, and enables it.
     [[nodiscard]] Status setFloatAttribute(GLuint location, GLuint bindingIndex, int componentCount,
                                            std::size_t relativeOffsetBytes);
+    /// Declares attribute `location` as `componentCount` (1-4) unsigned 32-bit integers read `relativeOffsetBytes` into
+    /// each vertex of binding point `bindingIndex`, kept integers for a `uint`/`uvec` shader input
+    /// (glVertexArrayAttribIFormat, never converted to floats), and enables it.
+    [[nodiscard]] Status setUintAttribute(GLuint location, GLuint bindingIndex, int componentCount,
+                                          std::size_t relativeOffsetBytes);
     /// Attaches `buffer` to binding point `bindingIndex`: vertices start at `offsetBytes` and are `strideBytes` apart.
     [[nodiscard]] Status setVertexBuffer(GLuint bindingIndex, const Buffer& buffer, std::size_t offsetBytes,
                                          std::size_t strideBytes);
@@ -55,6 +60,9 @@ public:
 private:
     explicit VertexArray(GLuint id) noexcept : m_id(id) {}
     void release() noexcept;
+    /// The checks of setFloatAttribute and setUintAttribute: a vertex array, the limits, 1 to 4 components.
+    [[nodiscard]] Status checkAttribute(GLuint location, GLuint bindingIndex, int componentCount,
+                                        std::size_t relativeOffsetBytes) const;
 
     GLuint m_id = 0;
 };

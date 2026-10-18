@@ -49,6 +49,7 @@ std::string_view firstMissingEntryPoint() {
         {"glVertexArrayVertexBuffer", glVertexArrayVertexBuffer != nullptr},
         {"glVertexArrayElementBuffer", glVertexArrayElementBuffer != nullptr},
         {"glVertexArrayAttribFormat", glVertexArrayAttribFormat != nullptr},
+        {"glVertexArrayAttribIFormat", glVertexArrayAttribIFormat != nullptr},
         {"glVertexArrayAttribBinding", glVertexArrayAttribBinding != nullptr},
         {"glVertexArrayBindingDivisor", glVertexArrayBindingDivisor != nullptr},
         {"glEnableVertexArrayAttrib", glEnableVertexArrayAttrib != nullptr},

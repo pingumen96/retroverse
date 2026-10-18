@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 
 #include <rv/assets/material_desc.hpp>
+#include <rv/scene/instance_data.hpp>
 
 namespace rv::scene {
 
@@ -48,15 +49,18 @@ enum class DrawPass : std::uint8_t {
     return DrawPass::Opaque;
 }
 
-/// One mesh instance to draw this frame. `model` is the local -> world transform (meters, column vectors).
+/// One mesh instance to draw this frame. `model` is the local -> world transform (meters, column vectors); with
+/// `attributes` it makes the item's instance record (InstanceData, which the planner lists for the renderer).
 /// `castsShadow` is not part of the batch key: renderers plan the shadow pass from the subset of items that
-/// cast shadows (with the light's frustum).
+/// cast shadows (with the light's frustum). `attributes` is not part of it either: items of one batch differ in their
+/// layers, flags and pick ids; items that are not collection items leave them zero.
 struct RenderItem {
     MeshHandle mesh;
     MaterialHandle material;
     ShaderKind shader = ShaderKind::Pbr;
     glm::mat4 model{1.0f};
     bool castsShadow = true;
+    InstanceAttributes attributes;
 };
 
 } // namespace rv::scene

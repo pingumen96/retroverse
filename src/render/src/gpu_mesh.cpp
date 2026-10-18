@@ -1,10 +1,12 @@
 #include <rv/render/gpu_mesh.hpp>
 
+#include <cstddef>
 #include <limits>
 #include <span>
 #include <utility>
 
 #include <fmt/format.h>
+#include <glm/glm.hpp>
 
 namespace rv::gl {
 
@@ -67,7 +69,11 @@ Status GpuMesh::attachInstanceBuffer(const Buffer& instances, std::size_t offset
     Status status = m_vertexArray.setVertexBuffer(kInstanceBinding, instances, offsetBytes, kInstanceStride);
     for (GLuint column = 0; column < 4 && status; ++column) {
         status = m_vertexArray.setFloatAttribute(kInstanceMatrixLocation + column, kInstanceBinding, 4,
-                                                 column * kInstanceStride / 4);
+                                                 offsetof(scene::InstanceData, model) + column * sizeof(glm::vec4));
+    }
+    if (status) {
+        status = m_vertexArray.setUintAttribute(kInstanceAttributesLocation, kInstanceBinding, 4,
+                                                offsetof(scene::InstanceData, attributes));
     }
     if (status) {
         status = m_vertexArray.setBindingDivisor(kInstanceBinding, 1);

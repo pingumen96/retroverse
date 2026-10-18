@@ -95,7 +95,7 @@ struct RenderView {
 ///    (PlanOptions::shadowCastersOnly) against the frustum of its shadow map (shadowProjectionFor: a perspective map
 ///    for a spot light, an orthographic one fitted to RenderView::shadowCasterBounds for the directional light). The
 ///    planner and both plans are kept from view to view, so planning allocates nothing once they have grown;
-///  - writes the instance transforms of both plans into its InstanceBuffer in one write (persistently mapped, fenced
+///  - writes the instance records of both plans into its InstanceBuffer in one write (persistently mapped, fenced
 ///    regions). A view whose instances cannot be written (allocation failure, fence timeout) is not drawn: the failure
 ///    is logged once, and again only when its cause changes, then the first view drawn again logs how many were
 ///    skipped;
@@ -138,7 +138,7 @@ public:
 
     /// Statistics of the last render() call.
     [[nodiscard]] const FrameStats& stats() const noexcept { return m_stats; }
-    /// Instance matrices per region of the instance buffer: kInitialInstanceCapacity until a view needs more.
+    /// Instances per region of the instance buffer: kInitialInstanceCapacity until a view needs more.
     [[nodiscard]] std::size_t instanceCapacity() const noexcept { return m_instances.regionCapacity(); }
 
 private:
@@ -158,7 +158,7 @@ private:
     /// binds them; false when they could not be written.
     bool updateUniforms(const RenderView& view, const scene::Camera& camera,
                         const std::optional<ShadowProjection>& shadow);
-    /// Writes the instance transforms of m_plan, then those of m_shadowPlan when `withShadow`, into the instance
+    /// Writes the instance records of m_plan, then those of m_shadowPlan when `withShadow`, into the instance
     /// buffer and attaches the meshes to it: the base instance of m_plan (m_shadowPlan's follow it), or why the view
     /// cannot be drawn.
     [[nodiscard]] Expected<std::uint32_t> uploadInstances(bool withShadow);

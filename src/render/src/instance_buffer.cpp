@@ -12,7 +12,6 @@
 namespace rv::gl {
 namespace {
 
-constexpr std::size_t kMatrixBytes = sizeof(glm::mat4);
 constexpr GLbitfield kMappingFlags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
 
 /// Generations are unique across every instance buffer, so a mesh attached to one is never mistaken for attached to
@@ -61,7 +60,7 @@ Status InstanceBuffer::allocate(std::size_t regionCapacity) {
             fmt::format("{} instances exceed the limit of {} per view", regionCapacity, kMaxRegionCapacity),
             m_debugName);
     }
-    auto buffer = Buffer::create(kRegionCount * regionCapacity * kMatrixBytes, kMappingFlags, m_debugName);
+    auto buffer = Buffer::create(kRegionCount * regionCapacity * kRecordBytes, kMappingFlags, m_debugName);
     if (!buffer) {
         return propagate(buffer.error());
     }
@@ -83,17 +82,17 @@ Status InstanceBuffer::allocate(std::size_t regionCapacity) {
     return ok();
 }
 
-Expected<std::uint32_t> InstanceBuffer::write(std::span<const glm::mat4> transforms) {
-    const std::array<std::span<const glm::mat4>, 1> parts{transforms};
-    return write(std::span<const std::span<const glm::mat4>>(parts));
+Expected<std::uint32_t> InstanceBuffer::write(std::span<const scene::InstanceData> instances) {
+    const std::array<std::span<const scene::InstanceData>, 1> parts{instances};
+    return write(std::span<const std::span<const scene::InstanceData>>(parts));
 }
 
-Expected<std::uint32_t> InstanceBuffer::write(std::span<const std::span<const glm::mat4>> parts) {
+Expected<std::uint32_t> InstanceBuffer::write(std::span<const std::span<const scene::InstanceData>> parts) {
     if (!m_buffer.valid() || m_mapped == nullptr) {
         return makeError(ErrorCode::InvalidArgument, "cannot write to an empty instance buffer", m_debugName);
     }
     std::size_t count = 0;
-    for (const std::span<const glm::mat4> part : parts) {
+    for (const std::span<const scene::InstanceData> part : parts) {
         count += part.size();
     }
     if (count == 0) {
@@ -106,7 +105,7 @@ Expected<std::uint32_t> InstanceBuffer::write(std::span<const std::span<const gl
         if (auto allocated = allocate(grown); !allocated) {
             return propagate(allocated.error());
         }
-        spdlog::info("Instance buffer '{}' grown to {} regions of {} matrices ({} KiB)", m_debugName, kRegionCount,
+        spdlog::info("Instance buffer '{}' grown to {} regions of {} instances ({} KiB)", m_debugName, kRegionCount,
                      m_regionCapacity, m_buffer.size() / 1024);
     }
     const std::size_t region = (m_region + 1) % kRegionCount;
@@ -118,8 +117,8 @@ Expected<std::uint32_t> InstanceBuffer::write(std::span<const std::span<const gl
     }
     m_fences[region].reset();
     const std::size_t first = region * m_regionCapacity;
-    std::byte* destination = m_mapped + first * kMatrixBytes;
-    for (const std::span<const glm::mat4> part : parts) {
+    std::byte* destination = m_mapped + first * kRecordBytes;
+    for (const std::span<const scene::InstanceData> part : parts) {
         if (!part.empty()) {
             std::memcpy(destination, part.data(), part.size_bytes());
             destination += part.size_bytes();

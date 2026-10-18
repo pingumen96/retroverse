@@ -6,6 +6,7 @@ layout(location = 0) in vec3 vWorldPosition;
 layout(location = 1) in vec3 vNormal;  // world space, not normalized
 layout(location = 2) in vec4 vTangent; // world-space xyz, bitangent sign in w
 layout(location = 3) in vec2 vUv;
+layout(location = 4) flat in uvec4 vInstance; // the instance's attributes: front layer, spine layer, flags, pick id
 
 // Geometric normal: the interpolated vertex normal, reversed on the back faces of double-sided materials.
 vec3 geometricNormal() {

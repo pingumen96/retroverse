@@ -50,7 +50,7 @@ public:
     /// Vertex and index storage of every registered mesh, in bytes.
     [[nodiscard]] std::size_t gpuBytes() const noexcept { return m_gpuBytes; }
 
-    /// Makes every mesh read its per-instance matrices (locations 4..7) from `instances`. Meshes already attached to
+    /// Makes every mesh read its instance records (locations 4..8) from `instances`. Meshes already attached to
     /// its current generation are skipped, so calling it before every view costs a loop unless the instance buffer was
     /// reallocated or meshes were added since. Errors: those of GpuMesh::attachInstanceBuffer.
     [[nodiscard]] Status attachInstanceBuffer(const InstanceBuffer& instances);

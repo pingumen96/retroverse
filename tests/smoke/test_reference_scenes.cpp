@@ -16,7 +16,7 @@ namespace {
 
 /// Screenshots of the scene runs: smaller than the default, which the golden comparison covers.
 constexpr glm::ivec2 kShotSize{960, 540};
-/// The renderer's instance buffer starts with this many matrices per region (gl::SceneRenderer).
+/// The renderer's instance buffer starts with this many instances per region (gl::SceneRenderer).
 constexpr std::size_t kInitialInstanceCapacity = 1024;
 
 /// Renders `scene` for 5 frames with a screenshot of the last one; checks the run and the screenshot.
