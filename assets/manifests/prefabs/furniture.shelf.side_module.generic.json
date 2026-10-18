@@ -1,0 +1,42 @@
+// The collection's spine-out module (ADR-0010 §3, §5; I3 step 1b): the side-wall module of console_room_9x10 and the
+// generic of the family furniture.shelf, so that a missing or broken module manifest falls back to one that fits a
+// 0.9 m socket.
+// 7 levels of 33 slots of 2.0 x 12.5 x 8.5 cm (a cartridge on its end, the spine outward, 2.4 cm apart), the lowest
+// board at 0.375 m on a closed 0.35 m base, compartments 17.5 cm tall: S = 231 slots. The same parameters are the
+// family's procedural fallback in ../families.json.
+{
+  "schemaVersion": 1,
+  "id": "furniture.shelf.side_module.generic",
+  "assetType": "furniture",
+  "category": "shelf",
+  "role": "storage",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-18",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "shelf",
+    "params": {
+      "width": 0.9, "height": 1.775, "depth": 0.24, "levels": 7, "boardThickness": 0.025, "back": true,
+      "plinthHeight": 0.35, "slotSize": [0.02, 0.125, 0.085], "slotGap": 0.004, "slotMargin": 0.03,
+      "slotFrontInset": 0.01
+    },
+    "scaleMeters": [0.9, 1.775, 0.24],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "firstSlot": "Slot_0_0"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "shelf", "storage", "game_slots", "spine_out", "collection_module", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

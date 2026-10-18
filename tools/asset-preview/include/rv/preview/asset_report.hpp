@@ -26,6 +26,15 @@ struct TextureReport {
     std::size_t gpuBytes = 0;
 };
 
+/// The slot sockets ("Slot_<level>_<index>", geometry::slotLevels) of one slot volume: what an item fills in them and
+/// how many there are, as the world generator counts a fixture's capacity (ADR-0010 §5).
+struct SlotReport {
+    /// geometry::SlotLevel::slotSize, meters: a spine-out cartridge's 0.02 x 0.125 x 0.085.
+    glm::vec3 size{0.0f};
+    std::size_t slots = 0;
+    std::size_t levels = 0;
+};
+
 /// The statistics of the subject the Statistics panel shows.
 struct AssetReport {
     std::size_t nodes = 0;
@@ -43,6 +52,8 @@ struct AssetReport {
     /// glTF materials, or the material roles of a prefab.
     std::size_t materials = 0;
     std::size_t sockets = 0;
+    /// The slot sockets grouped by slot volume, in the order of the lowest level holding each; empty without slots.
+    std::vector<SlotReport> slots;
     /// The images of a model; none for a prefab, whose textures are procedural.
     std::vector<TextureReport> textures;
     /// Sum of TextureReport::gpuBytes.

@@ -1,3 +1,6 @@
+// The 16-bit home cartridge (media family cartridge_home_16bit, ADR-0010 §2; ADR-0011 §4), 12.5 x 8.5 x 2.0 cm: its
+// front label (the cover) and, since I3 step 1b, the end label on its top face (the spine), shown when it stands
+// spine-out in a 2.0 x 12.5 x 8.5 cm slot.
 {
   "schemaVersion": 1,
   "id": "media.cartridge.home16.generic",
@@ -16,12 +19,13 @@
   },
   "runtime": {
     "generator": "cartridge",
-    "params": {},
+    "params": {"spineLabel": true},
     "scaleMeters": [0.125, 0.085, 0.02],
     "lods": [],
     "defaultMaterialVariant": "",
     "sockets": {
-      "label": "Label"
+      "label": "Label",
+      "spine": "Spine"
     },
     "collision": "box",
     "videoSurface": null

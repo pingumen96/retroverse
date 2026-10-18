@@ -7,7 +7,9 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -97,6 +99,48 @@ public:
             return;
         }
         out = static_cast<int>(number);
+    }
+
+    /// A number, or null for "none".
+    void read(std::string_view key, std::optional<float>& out) {
+        const Json* value = find(key);
+        if (value == nullptr) {
+            return;
+        }
+        if (value->is_null()) {
+            out.reset();
+            return;
+        }
+        float number = 0.0f;
+        read(key, number);
+        if (ok()) {
+            out = number;
+        }
+    }
+
+    /// An array of integers in int range.
+    void read(std::string_view key, std::vector<int>& out) {
+        const Json* value = find(key);
+        if (value == nullptr) {
+            return;
+        }
+        if (!value->is_array()) {
+            fail(ErrorCode::InvalidArgument, "expected an array of integers", context(key));
+            return;
+        }
+        std::vector<int> numbers;
+        for (const Json& element : *value) {
+            if (!element.is_number_integer() ||
+                (element.is_number_unsigned() &&
+                 element.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) ||
+                (!element.is_number_unsigned() && (element.get<std::int64_t>() < std::numeric_limits<int>::min() ||
+                                                   element.get<std::int64_t>() > std::numeric_limits<int>::max()))) {
+                fail(ErrorCode::InvalidArgument, "expected an array of integers", context(key));
+                return;
+            }
+            numbers.push_back(static_cast<int>(element.get<std::int64_t>()));
+        }
+        out = std::move(numbers);
     }
 
     void read(std::string_view key, bool& out) {
@@ -226,7 +270,8 @@ Expected<ProceduralPrefab> shelfFromJson(const Json& params) {
     ShelfParams p;
     ParamReader r("shelf", params,
                   {"width", "height", "depth", "levels", "boardThickness", "back", "plinthHeight", "slotSize",
-                   "slotGap", "slotMargin"});
+                   "slotGap", "slotMargin", "slotFrontInset", "displayLevels", "displaySlotSize", "displaySlotGap",
+                   "displaySlotMargin"});
     r.read("width", p.width);
     r.read("height", p.height);
     r.read("depth", p.depth);
@@ -237,6 +282,11 @@ Expected<ProceduralPrefab> shelfFromJson(const Json& params) {
     r.read("slotSize", p.slotSize);
     r.read("slotGap", p.slotGap);
     r.read("slotMargin", p.slotMargin);
+    r.read("slotFrontInset", p.slotFrontInset);
+    r.read("displayLevels", p.displayLevels);
+    r.read("displaySlotSize", p.displaySlotSize);
+    r.read("displaySlotGap", p.displaySlotGap);
+    r.read("displaySlotMargin", p.displaySlotMargin);
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -245,12 +295,15 @@ Expected<ProceduralPrefab> shelfFromJson(const Json& params) {
 
 Expected<ProceduralPrefab> cartridgeFromJson(const Json& params) {
     CartridgeParams p;
-    ParamReader r("cartridge", params, {"size", "chamfer", "labelMargin", "labelInset", "gripRidges"});
+    ParamReader r("cartridge", params,
+                  {"size", "chamfer", "labelMargin", "labelInset", "gripRidges", "spineLabel", "spineLabelSize"});
     r.read("size", p.size);
     r.read("chamfer", p.chamfer);
     r.read("labelMargin", p.labelMargin);
     r.read("labelInset", p.labelInset);
     r.read("gripRidges", p.gripRidges);
+    r.read("spineLabel", p.spineLabel);
+    r.read("spineLabelSize", p.spineLabelSize);
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -350,6 +403,74 @@ Expected<ProceduralPrefab> armchairFromJson(const Json& params) {
         return propagate(r.error());
     }
     return buildArmchair(p);
+}
+
+Expected<ProceduralPrefab> displayCaseFromJson(const Json& params) {
+    DisplayCaseParams p;
+    ParamReader r("display_case", params,
+                  {"width", "height", "depth", "baseHeight", "levels", "tiltDeg", "levelRise", "slotSize", "slotGap",
+                   "slotMargin"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("baseHeight", p.baseHeight);
+    r.read("levels", p.levels);
+    r.read("tiltDeg", p.tiltDeg);
+    r.read("levelRise", p.levelRise);
+    r.read("slotSize", p.slotSize);
+    r.read("slotGap", p.slotGap);
+    r.read("slotMargin", p.slotMargin);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildDisplayCase(p);
+}
+
+Expected<ProceduralPrefab> wallShelfFromJson(const Json& params) {
+    WallShelfParams p;
+    ParamReader r(
+        "wall_shelf", params,
+        {"width", "height", "depth", "mountHeight", "ledges", "tiltDeg", "slotSize", "slotGap", "slotMargin"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("mountHeight", p.mountHeight);
+    r.read("ledges", p.ledges);
+    r.read("tiltDeg", p.tiltDeg);
+    r.read("slotSize", p.slotSize);
+    r.read("slotGap", p.slotGap);
+    r.read("slotMargin", p.slotMargin);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildWallShelf(p);
+}
+
+/// The three shelf dressing kinds share their parameters.
+template <Expected<ProceduralPrefab> (*Build)(const ShelfDressingParams&)>
+Expected<ProceduralPrefab> dressingFromJson(std::string_view kind, const Json& params) {
+    ShelfDressingParams p;
+    ParamReader r(std::string(kind), params, {"width", "height", "depth", "seed"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("seed", p.seed);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return Build(p);
+}
+
+Expected<ProceduralPrefab> storageBoxFromJson(const Json& params) {
+    return dressingFromJson<&buildStorageBox>("storage_box", params);
+}
+
+Expected<ProceduralPrefab> magazineStackFromJson(const Json& params) {
+    return dressingFromJson<&buildMagazineStack>("magazine_stack", params);
+}
+
+Expected<ProceduralPrefab> bookendsFromJson(const Json& params) {
+    return dressingFromJson<&buildBookends>("bookends", params);
 }
 
 // --- Primitives ----------------------------------------------------------------------------------------------
@@ -480,7 +601,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 10> kPrefabs{{
+constexpr std::array<PrefabEntry, 15> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -491,6 +612,11 @@ constexpr std::array<PrefabEntry, 10> kPrefabs{{
     {"rug", &rugFromJson},
     {"floor_lamp", &floorLampFromJson},
     {"armchair", &armchairFromJson},
+    {"display_case", &displayCaseFromJson},
+    {"wall_shelf", &wallShelfFromJson},
+    {"storage_box", &storageBoxFromJson},
+    {"magazine_stack", &magazineStackFromJson},
+    {"bookends", &bookendsFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

@@ -45,7 +45,8 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
         return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished"}};
     }
     if (kind == "cartridge") {
-        return RoleMaterials{{"plastic_shell", "MAT_Plastic_Gray"}, {"label", "MAT_Label_Print"}};
+        return RoleMaterials{
+            {"plastic_shell", "MAT_Plastic_Gray"}, {"label", "MAT_Label_Print"}, {"spine", "MAT_Label_Print"}};
     }
     if (kind == "crt") {
         return RoleMaterials{{"plastic_body", "MAT_Plastic_AgedIvory"},
@@ -75,6 +76,26 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
     if (kind == "armchair") {
         return RoleMaterials{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}};
     }
+    if (kind == "display_case") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},
+                             {"wood_secondary", "MAT_Wood_Varnished"},
+                             {"metal_trim", "MAT_Metal_Brushed"},
+                             {"fabric", "MAT_Fabric_Sofa"},
+                             {"glass", "MAT_Glass_Display"}};
+    }
+    if (kind == "wall_shelf") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished"}};
+    }
+    if (kind == "storage_box") {
+        return RoleMaterials{{"cardboard", "MAT_Cardboard_Box"}, {"label", "MAT_Paper_Print"}};
+    }
+    if (kind == "magazine_stack") {
+        return RoleMaterials{{"paper", "MAT_Paper_Print"}, {"cover", "MAT_Label_Print"}};
+    }
+    if (kind == "bookends") {
+        return RoleMaterials{
+            {"metal", "MAT_Metal_Graphite"}, {"book", "MAT_Fabric_Sofa"}, {"book_alt", "MAT_Plastic_Black"}};
+    }
     return {};
 }
 
@@ -89,6 +110,8 @@ std::map<std::string, scene::TextureSource> prefabRoleTextures(std::string_view 
         textures.emplace("label", cover("PREVIEW CARTRIDGE", 7));
     } else if (kind == "poster_frame") {
         textures.emplace("picture", cover("PREVIEW POSTER", 11));
+    } else if (kind == "magazine_stack") {
+        textures.emplace("cover", cover("PREVIEW MAGAZINE", 13));
     }
     return textures;
 }

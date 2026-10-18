@@ -12,6 +12,7 @@
 #include <rv/assets/prefab_manifest.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
+#include <rv/geometry/prefabs.hpp>
 
 using rv::ErrorCode;
 using rv::assets::PrefabManifest;
@@ -138,21 +139,25 @@ TEST_CASE("assets/manifest: every shipped prefab manifest parses and validates",
         CHECK_FALSE(manifest->runtime.model.has_value());
         CHECK(kGeneratorKinds.contains(*manifest->runtime.generator));
         CHECK(manifest->runtime.params.is_object());
-        CHECK(manifest->runtime.params.empty());
         generators.insert(*manifest->runtime.generator);
 
         CHECK(manifest->source.kind == "original");
         CHECK(manifest->source.author == "Retroverse contributors");
         CHECK(manifest->source.license == "MIT");
-        CHECK(manifest->source.acquiredAt == "2026-10-14");
+        CHECK((manifest->source.acquiredAt == "2026-10-14" || manifest->source.acquiredAt == "2026-10-18"));
         CHECK(manifest->source.redistributionApproved);
         CHECK_FALSE(manifest->tags.empty());
         if (!manifest->fallbackPrefab.empty()) {
             CHECK(std::filesystem::exists(kManifestDir / (manifest->fallbackPrefab + ".json")));
         }
     }
-    CHECK(count == kGeneratorKinds.size());
-    CHECK(generators == kGeneratorKinds); // one manifest per procedural prefab kind
+    // At least one manifest per procedural prefab kind; the shelf has three, the generic one and the collection's
+    // hero-wall and side-wall modules (I3 step 1b).
+    CHECK(count == kGeneratorKinds.size() + 2);
+    CHECK(generators == kGeneratorKinds);
+    // Every kind the geometry builds is a manifest kind.
+    const auto built = rv::geometry::prefabKinds();
+    CHECK(std::set<std::string>(built.begin(), built.end()) == kGeneratorKinds);
 }
 
 TEST_CASE("assets/manifest: the procedural CRT manifest matches the contract sockets", "[assets][manifest]") {

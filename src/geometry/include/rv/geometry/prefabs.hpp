@@ -116,8 +116,14 @@ struct RoomShellParams {
 /// (slotSize.x + slotGap)) (1e-4 tolerance for exact fits); slots are left-aligned from x = -innerWidth / 2 +
 /// slotMargin. The `levels` boards are evenly spaced between the plinth top and the top board (each compartment
 /// is (height - boardThickness - plinthHeight) / levels tall, board included). Socket transform = translation to
-/// the slot's bottom-center point on the board, centered in the board depth; Socket::bounds = item volume
-/// [-w/2, 0, -d/2] .. [w/2, h, d/2].
+/// the slot's bottom-center point on the board, centered in the board depth (or `slotFrontInset` behind its front
+/// edge); Socket::bounds = item volume [-w/2, 0, -d/2] .. [w/2, h, d/2]. Before each level's slots, "Level_<level>"
+/// (Anchor, socket.hpp's parseLevelId) at the middle of the board's top, bounds = the compartment's free volume
+/// (innerWidth x free height x board depth, centered on it).
+/// The levels listed in `displayLevels` lay out their slots with the display* fields instead (another item size, gap
+/// and margin): the collection's modules (I3, ADR-0010 §3, §5) are shelves whose levels hold cartridges spine-out
+/// (slotSize = slotSizeFor(SlotFacing::SpineOut, item)) with one display level of face-out cartridges at eye height,
+/// the hero band.
 struct ShelfParams {
     float width = 1.2f;            ///< [0.2, 10]
     float height = 2.0f;           ///< [0.2, 5]
@@ -134,21 +140,63 @@ struct ShelfParams {
     glm::vec3 slotSize{0.125f, 0.085f, 0.020f};
     float slotGap = 0.004f;   ///< [0, 0.5]
     float slotMargin = 0.03f; ///< [0, 1]
+    /// Distance from the front edge of the boards to the front of every item, [0, board depth - item depth] for each
+    /// item size in use; nullopt (JSON null, the default) centers the items in the board depth.
+    std::optional<float> slotFrontInset;
+    /// Levels, each in [0, levels - 1] and listed once, whose slots hold displaySlotSize items spaced by
+    /// displaySlotGap and displaySlotMargin (the same rules as slotSize, reported on the display* keys).
+    std::vector<int> displayLevels;
+    glm::vec3 displaySlotSize{0.125f, 0.085f, 0.020f}; ///< each [0.005, 2]
+    float displaySlotGap = 0.006f;                     ///< [0, 0.5]
+    float displaySlotMargin = 0.025f;                  ///< [0, 1]
 };
 
 /// "cartridge", pivot center, label on the front (+Z); bounds = size centered on the origin. A chamfered shell
 /// with a recessed label pocket and optional grip grooves below the label (generic family, no brand shapes).
 /// Roles: "plastic_shell", "label" (quad over the label area, uv (0, 0) top-left, `labelInset` below the front
-/// and 0.5 mm above the pocket floor, so the pocket is labelInset + 0.5 mm deep). Sockets: "Label" (Other) at the
-/// label center facing +Z, bounds = label rectangle [-lw/2, -lh/2, 0] .. [lw/2, lh/2, 0].
+/// and 0.5 mm above the pocket floor, so the pocket is labelInset + 0.5 mm deep), "spine" (with `spineLabel`: the end
+/// label on the top face, see below). Sockets: "Label" (Other) at the label center facing +Z, bounds = label rectangle
+/// [-lw/2, -lh/2, 0] .. [lw/2, lh/2, 0]; "Spine" (Other, with `spineLabel`) at the spine label's center facing +Y.
+///
+/// The spine (ADR-0010 §5, ADR-0011 §4): standing spine-out (SlotFacing::SpineOut) a cartridge shows its top face, so
+/// the end label lies there, a quad 0.5 mm above the shell's top face (the shell is 0.5 mm lower, so the bounds stay
+/// `size`), centered along X and on the flat part of the top face across Z. Seen standing spine-out its +X end is up:
+/// the Spine socket's frame has +X along the item's +Z (right as one faces the spine), +Y along the item's +X (up) and
+/// +Z along the item's +Y (out of the face), its bounds [-across/2, -along/2, 0] .. [across/2, along/2, 0]; the quad's
+/// uv (0, 0) is its top-left corner in that view, so a spine texture (40 x 256, ADR-0011 §4) is drawn upright.
 struct CartridgeParams {
     glm::vec3 size{0.125f, 0.085f, 0.020f}; ///< (w, h, d): w, h in [0.02, 0.5], d in [0.004, 0.2]
     float chamfer = 0.002f;                 ///< [0, min(size) / 4]
-    /// Label borders (x, y); each at least chamfer + 0.5 mm, leaving a label of at least 4 mm.
+    /// Label borders (x, y); each at least chamfer + 0.5 mm (the y border another 0.5 mm with `spineLabel`), leaving a
+    /// label of at least 4 mm.
     glm::vec2 labelMargin{0.012f, 0.012f};
     float labelInset = 0.001f; ///< [0.0005, min(0.005, d / 4)]
     bool gripRidges = true;
+    /// Builds the "spine" role and the Spine socket. Off by default: the test room's face-out cartridges have none.
+    bool spineLabel = false;
+    /// Spine label (across Z, along X), each at least 4 mm; across at most the flat top (d - labelInset - 0.5 mm -
+    /// 2 * chamfer), along at most w - 2 * chamfer. The default keeps the spine texture's 40 x 256 aspect.
+    glm::vec2 spineLabelSize{0.0135f, 0.0864f};
 };
+
+/// How an item stands in a slot (ADR-0010 §5). Slot sockets ("Slot_<level>_<index>", SocketKind::ShelfSlot) have
+/// their origin at the slot's bottom center and +Z towards the viewer; their bounds are the slot volume
+/// [-w/2, 0, -d/2] .. [w/2, h, d/2].
+enum class SlotFacing {
+    /// Upright, its front (+Z) towards the slot's +Z: the slot is the item's (w, h, d).
+    FaceOut,
+    /// On its end, its top face (+Y, a cartridge's spine) towards the slot's +Z, its +X up and its front (+Z) towards
+    /// the slot's +X: the slot is the item's (d, w, h), a 12.5 x 8.5 x 2.0 cm cartridge 2.0 x 12.5 x 8.5 cm.
+    SpineOut,
+};
+
+/// The slot volume (w, h, d) an item of `itemSize` (w, h, d) fills standing with `facing`.
+[[nodiscard]] glm::vec3 slotSizeFor(SlotFacing facing, const glm::vec3& itemSize) noexcept;
+
+/// Rigid transform from an item's prefab space (pivot center, as the cartridge's) into a slot socket's frame: the item
+/// then fills the slot volume of slotSizeFor(facing, itemSize) exactly. An item's transform in the fixture is
+/// socket.transform * slotItemTransform(facing, itemSize).
+[[nodiscard]] glm::mat4 slotItemTransform(SlotFacing facing, const glm::vec3& itemSize) noexcept;
 
 /// "crt", pivot floor, screen facing +Z (consumer 4:3 television); bounds = width x height x depth. A front
 /// cabinet with a bezel whose inner walls slope down to a recessed, slightly bulging screen, a dark control strip
@@ -246,6 +294,73 @@ struct ArmchairParams {
     float legHeight = 0.1f;   ///< [0, 0.3]; up to 0.1 mm no legs are built
 };
 
+/// "display_case", pivot floor, front +Z; bounds = width x height x depth. A low collector's case (style §8
+/// `furniture/display_case`, §6.2: 0.80-1.10 m; ADR-0010 §3's display fixtures): a closed wooden base with two doors,
+/// and on it a vitrine with a glass front and a glass top between wooden sides, a back panel and two top rails. Inside,
+/// `levels` face-out levels step up from the front (level 0, lowest) to the back: on each, the items stand on a ledge
+/// with a low lip and lean back by `tiltDeg` against a panel, the ledge resting on a riser that fills the level's band
+/// of the vitrine's depth (the case's sides hide the space under the tilted panels).
+/// Roles: "wood_primary" (base carcass, plinth and top, vitrine sides and rails), "wood_secondary" (doors, back
+/// panel), "metal_trim" (knobs), "fabric" (risers, ledges, lips and panels), "glass" (the front and top panes, one
+/// sheet each facing out: draw it with a blended, double-sided material such as MAT_Glass_Display, which casts no
+/// shadow).
+/// Sockets: "Slot_<level>_<index>" (ShelfSlot), index 0 leftmost: slotsPerLevel as for the shelf, over the vitrine's
+/// inner width (width - 2 * 18 mm); transform = translation to the slot's bottom center on its ledge, turned back by
+/// tiltDeg about +X (the item's front faces up and forward); bounds = item volume [-w/2, 0, -d/2] .. [w/2, h, d/2].
+/// Before each level's slots, "Level_<level>" (Anchor): the level's leaning frame at x = 0, bounds = its free volume
+/// on the ledge, from the panel to the lip and up to the panel's top (2.5 cm above the items).
+struct DisplayCaseParams {
+    float width = 1.2f;       ///< [0.4, 4]
+    float height = 0.95f;     ///< [0.5, 1.6]
+    float depth = 0.5f;       ///< [0.25, 1.2]
+    float baseHeight = 0.55f; ///< top of the closed base, the vitrine's floor; [0.15, height - 0.2]
+    int levels = 2;           ///< [1, 4]; every level must fit in its band of the depth and under the glass top
+    float tiltDeg = 30.0f;    ///< how far the items lean back from upright, [0, 60]
+    float levelRise = 0.12f;  ///< height of each ledge above the one in front of it, [0, 0.5]
+    glm::vec3 slotSize{0.125f, 0.085f, 0.020f}; ///< the face-out item (w, h, d), each [0.005, 0.5]
+    float slotGap = 0.012f;                     ///< [0, 0.5]
+    float slotMargin = 0.03f;                   ///< [0, 1]
+};
+
+/// "wall_shelf", the featured wall shelf (ADR-0010 §3, §4), front +Z, hung on a wall: pivot on the floor below the
+/// middle of its footprint, bounds = [-width/2, mountHeight, -depth/2] .. [width/2, mountHeight + height, depth/2]
+/// (the back at -depth/2 against the wall). A back board between two side cheeks under a top cap, with `ledges`
+/// picture ledges, each with a lip along its front edge; the face-out items stand on a ledge leaning back by `tiltDeg`
+/// against the back board. Roles: "wood_primary" (cheeks, cap, ledges, lips), "wood_secondary" (back board).
+/// Sockets: "Slot_<ledge>_<index>" (ShelfSlot), ledge 0 lowest, index 0 leftmost, slotsPerLevel as for the shelf over
+/// the inner width (width - 2 * 20 mm); transform = translation to the slot's bottom center, turned back by tiltDeg
+/// about +X, placed so that the item's lowest edge rests on the ledge and its top back edge on the back board;
+/// bounds = item volume [-w/2, 0, -d/2] .. [w/2, h, d/2]. Before each ledge's slots, "Level_<ledge>" (Anchor) on the
+/// ledge's top, centered between the back board and the lip, bounds = the free volume up to the next ledge or the cap.
+struct WallShelfParams {
+    float width = 0.9f;       ///< [0.3, 3]
+    float height = 0.36f;     ///< [0.15, 2]; each ledge's compartment must hold a leaning item and 1 cm
+    float depth = 0.08f;      ///< [0.05, 0.4]; the ledges must hold a leaning item in front of the back board
+    float mountHeight = 1.1f; ///< height of the unit's bottom above the floor, [0, 2.5]
+    int ledges = 2;           ///< [1, 8]
+    float tiltDeg = 12.0f;    ///< [0, 30]
+    glm::vec3 slotSize{0.125f, 0.085f, 0.020f}; ///< the face-out item (w, h, d), each [0.005, 0.5]
+    float slotGap = 0.012f;                     ///< [0, 0.5]
+    float slotMargin = 0.02f;                   ///< [0, 1]
+};
+
+/// Shelf dressing (ADR-0010 §5: the levels no title needs), three kinds sharing these parameters, each pivot floor and
+/// filling the free volume of one level: bounds within [-width/2, 0, -depth/2] .. [width/2, height, depth/2], resting
+/// on y = 0. `seed` (a level's propSeed reduced to [0, 2^31 - 1]) varies counts, sizes and offsets deterministically
+/// (core::Random); the same parameters always give the same geometry. No sockets.
+///  - "storage_box": a row of lidded storage boxes across the level, each with a label card on its front. Roles
+///    "cardboard" (boxes and lids), "label" (the cards, uv (0, 0) top-left).
+///  - "magazine_stack": one to four stacks of magazines lying flat, each magazine turned a little. Roles "paper" (the
+///    magazines), "cover" (a quad on the top magazine of each stack, uv (0, 0) at its top-left seen from the front).
+///  - "bookends": a row of books standing between two block bookends. Roles "metal" (the bookends), "book" and
+///    "book_alt" (two bindings mixed along the row; a role is left out when no book uses it).
+struct ShelfDressingParams {
+    float width = 0.85f;  ///< [0.1, 3]
+    float height = 0.17f; ///< [0.05, 1]
+    float depth = 0.23f;  ///< [0.05, 1]
+    int seed = 0;         ///< [0, 2147483647]
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -260,12 +375,18 @@ struct ArmchairParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildRug(const RugParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildFloorLamp(const FloorLampParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildArmchair(const ArmchairParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildDisplayCase(const DisplayCaseParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildWallShelf(const WallShelfParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildStorageBox(const ShelfDressingParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildMagazineStack(const ShelfDressingParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildBookends(const ShelfDressingParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
-/// "doorway" as an object or null). Missing keys keep their defaults. Errors: unknown kind -> NotFound; params
-/// that are not an object, unknown keys and wrong value types -> InvalidArgument; out-of-range or inconsistent
-/// values -> OutOfRange. Error contexts name the parameter: "<kind>.<key>" (nested: "room_shell.doorway.width").
+/// "doorway" as an object or null, "slotFrontInset" a number or null, "displayLevels" an array of integers). Missing
+/// keys keep their defaults. Errors: unknown kind -> NotFound; params that are not an object, unknown keys and wrong
+/// value types -> InvalidArgument; out-of-range or inconsistent values -> OutOfRange. Error contexts name the
+/// parameter: "<kind>.<key>" (nested: "room_shell.doorway.width").
 [[nodiscard]] Expected<ProceduralPrefab> buildPrefab(std::string_view kind, const nlohmann::json& params);
 
 /// Single-material primitive centered on the origin, named after its kind (same error rules as buildPrefab):
@@ -279,7 +400,8 @@ struct ArmchairParams {
 [[nodiscard]] Expected<MeshData> buildPrimitive(std::string_view kind, const nlohmann::json& params);
 
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
-/// console_cartridge, poster_frame, rug, floor_lamp, armchair.
+/// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
+/// bookends.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

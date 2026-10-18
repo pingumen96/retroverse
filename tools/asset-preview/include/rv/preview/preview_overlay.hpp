@@ -25,7 +25,8 @@ struct OverlaySelection {
     bool bounds = true;          ///< the subject's bounds, with its dimensions in centimeters
     bool nodeBounds = false;     ///< the bounds of every drawn node of a model (of every part of a prefab)
     bool pivot = true;           ///< the axes of the subject's origin, its pivot
-    bool sockets = true;         ///< socket axes and names, screen outlines, collision proxies as outlines
+    /// Socket axes and names, screen outlines, slot and level volumes (no names), collision proxies as outlines.
+    bool sockets = true;
     bool normals = false;        ///< a short line along the normal of every vertex
 
     friend bool operator==(const OverlaySelection&, const OverlaySelection&) = default;
@@ -51,6 +52,10 @@ inline constexpr glm::vec4 kGridMinor{0.12f, 0.12f, 0.12f, 1.0f};
 inline constexpr glm::vec4 kScaleReference{0.55f, 0.55f, 0.52f, 1.0f};
 inline constexpr glm::vec4 kNodeBounds{0.25f, 0.62f, 0.75f, 1.0f};
 inline constexpr glm::vec4 kScreen{0.2f, 0.9f, 0.95f, 1.0f};
+/// The volume of a slot socket (Slot_<level>_<index>): what one item of the collection fills.
+inline constexpr glm::vec4 kSlot{0.55f, 0.85f, 0.3f, 1.0f};
+/// The free volume of a level socket (Level_<level>): where shelf dressing stands when no title needs the level.
+inline constexpr glm::vec4 kLevel{0.3f, 0.55f, 0.6f, 1.0f};
 inline constexpr glm::vec4 kCollider{0.95f, 0.35f, 0.7f, 1.0f};
 inline constexpr glm::vec4 kNormals{0.35f, 0.45f, 1.0f, 1.0f};
 } // namespace overlay_colors

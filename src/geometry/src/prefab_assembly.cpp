@@ -1,5 +1,6 @@
 #include "prefab_assembly.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -84,6 +85,20 @@ glm::mat4 frameFacing(const glm::vec3& forward, const glm::vec3& position) {
     m[2] = glm::vec4(forward, 0.0f);
     m[3] = glm::vec4(position, 1.0f);
     return m;
+}
+
+glm::mat4 leaningBack(float radians, const glm::vec3& position) {
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    glm::mat4 m(1.0f);
+    m[1] = glm::vec4(0.0f, c, -s, 0.0f);
+    m[2] = glm::vec4(0.0f, s, c, 0.0f);
+    m[3] = glm::vec4(position, 1.0f);
+    return m;
+}
+
+glm::vec3 framePoint(const glm::mat4& frame, float y, float z) {
+    return glm::vec3(frame * glm::vec4(0.0f, y, z, 1.0f));
 }
 
 std::string formatNumber(float value) {

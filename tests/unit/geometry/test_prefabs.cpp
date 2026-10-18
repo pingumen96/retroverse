@@ -159,9 +159,10 @@ void checkPrefab(const ProceduralPrefab& prefab) {
     }
 }
 
-const std::vector<std::string_view> kExpectedKinds{"room_shell",        "shelf",        "cartridge", "crt",
-                                                    "tv_cabinet",        "console_cartridge", "poster_frame", "rug",
-                                                    "floor_lamp",        "armchair"};
+const std::vector<std::string_view> kExpectedKinds{
+    "room_shell", "shelf",        "cartridge",  "crt",         "tv_cabinet",     "console_cartridge", "poster_frame",
+    "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
+    "bookends"};
 
 } // namespace
 
@@ -195,6 +196,11 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"rug", {"fabric"}},
         {"floor_lamp", {"metal", "lamp_shade"}},
         {"armchair", {"fabric", "wood"}},
+        {"display_case", {"wood_primary", "wood_secondary", "metal_trim", "fabric", "glass"}},
+        {"wall_shelf", {"wood_primary", "wood_secondary"}},
+        {"storage_box", {"cardboard", "label"}},
+        {"magazine_stack", {"paper", "cover"}},
+        {"bookends", {"metal", "book", "book_alt"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -212,6 +218,10 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
     CHECK(rv::geometry::findPart(buildOk("room_shell", {{"doorway", nullptr}, {"baseboardHeight", 0.0}}), "trim") ==
           nullptr);
     CHECK(rv::geometry::findPart(buildOk("armchair", {{"legHeight", 0.0}}), "wood") == nullptr);
+    // The spine is optional: only with spineLabel, after the label.
+    const ProceduralPrefab spined = buildOk("cartridge", {{"spineLabel", true}});
+    REQUIRE(spined.parts.size() == 3);
+    CHECK(spined.parts.back().materialRole == "spine");
     // The wainscot is optional, after the contract roles.
     const ProceduralPrefab paneled = buildOk("room_shell", {{"wainscotHeight", 1.0}});
     REQUIRE(paneled.parts.size() == 5);
@@ -268,6 +278,17 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"armchair",
          {{"width", 1.6}, {"depth", 0.9}, {"height", 0.95}, {"legHeight", 0.0}},
          box({-0.8f, 0.0f, -0.45f}, {0.8f, 0.95f, 0.45f})},
+        // The spine label takes the shell's top half millimetre: the bounds stay the size.
+        {"cartridge", {{"spineLabel", true}}, box({-0.0625f, -0.0425f, -0.01f}, {0.0625f, 0.0425f, 0.01f})},
+        {"display_case", nullptr, box({-0.6f, 0.0f, -0.25f}, {0.6f, 0.95f, 0.25f})},
+        {"display_case",
+         {{"width", 0.8}, {"height", 1.05}, {"depth", 0.4}, {"baseHeight", 0.6}},
+         box({-0.4f, 0.0f, -0.2f}, {0.4f, 1.05f, 0.2f})},
+        // Hung on the wall: the floor pivot under it, the bottom at mountHeight.
+        {"wall_shelf", nullptr, box({-0.45f, 1.1f, -0.04f}, {0.45f, 1.46f, 0.04f})},
+        {"wall_shelf",
+         {{"width", 0.6}, {"height", 0.5}, {"depth", 0.1}, {"mountHeight", 0.9}, {"ledges", 3}},
+         box({-0.3f, 0.9f, -0.05f}, {0.3f, 1.4f, 0.05f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -293,6 +314,9 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"rug", {}},
         {"floor_lamp", {{"LightSource", SocketKind::Anchor}}},
         {"armchair", {{"Seat", SocketKind::Anchor}}},
+        {"storage_box", {}},
+        {"magazine_stack", {}},
+        {"bookends", {}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -315,10 +339,16 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
             }
         }
     }
+    // A shelf has slots and, per level, the Level anchor of its free volume.
     const ProceduralPrefab shelf = buildOk("shelf");
     for (const Socket& s : shelf.sockets) {
-        CHECK(s.kind == SocketKind::ShelfSlot);
-        CHECK(s.id.starts_with("Slot_"));
+        INFO(s.id);
+        if (rv::geometry::parseLevelId(s.id)) {
+            CHECK(s.kind == SocketKind::Anchor);
+        } else {
+            CHECK(s.kind == SocketKind::ShelfSlot);
+            CHECK(rv::geometry::parseSlotId(s.id).has_value());
+        }
     }
 }
 
@@ -391,7 +421,7 @@ TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry]
             static_cast<int>(std::floor((innerWidth - 2.0 * l.margin + l.gap) / (l.item.x + l.gap) + 1e-9));
         const double pitch = (l.height - l.board - l.plinth) / l.levels;
         REQUIRE(perLevel >= 1);
-        CHECK(shelf.sockets.size() == static_cast<std::size_t>(l.levels * perLevel));
+        CHECK(shelf.sockets.size() == static_cast<std::size_t>(l.levels * (perLevel + 1))); // the slots and Level_<n>
         CHECK(rv::geometry::findSocket(shelf.sockets, "Slot_" + std::to_string(l.levels) + "_0") == nullptr);
         CHECK(rv::geometry::findSocket(shelf.sockets, "Slot_0_" + std::to_string(perLevel)) == nullptr);
         // The boards run from the 8 mm back panel (the back edge without one) to the front edge.
@@ -406,6 +436,22 @@ TEST_CASE("geometry/prefabs: shelf slots follow the layout formula", "[geometry]
             Aabb::fromMinMax({-0.5f * item.x, 0.0f, -0.5f * item.z}, {0.5f * item.x, item.y, 0.5f * item.z});
         std::vector<Aabb> volumes;
         for (int level = 0; level < l.levels; ++level) {
+            // The level's anchor: on the board, the compartment's free volume, holding every slot of the level.
+            const Socket& anchor = socket(shelf, "Level_" + std::to_string(level));
+            CHECK(anchor.kind == SocketKind::Anchor);
+            CHECK(anchor.nodeName == "Anchor_" + anchor.id);
+            CHECK(closeTo(position(anchor), glm::vec3(0.0f, static_cast<float>(l.plinth + level * pitch + l.board),
+                                                      static_cast<float>(0.5 * (boardBack + boardFront))),
+                          1e-5f));
+            CHECK(closeTo(anchor.bounds.size(),
+                          glm::vec3(static_cast<float>(innerWidth), static_cast<float>(pitch - l.board),
+                                    static_cast<float>(boardFront - boardBack)),
+                          1e-5f));
+            const Aabb free = anchor.bounds.transformed(anchor.transform).inflated(1e-5f);
+            for (int index = 0; index < perLevel; ++index) {
+                const Socket& s = socket(shelf, "Slot_" + std::to_string(level) + "_" + std::to_string(index));
+                CHECK(free.contains(s.bounds.transformed(s.transform)));
+            }
             for (int index = 0; index < perLevel; ++index) {
                 const Socket& s = socket(shelf, "Slot_" + std::to_string(level) + "_" + std::to_string(index));
                 CHECK(s.nodeName == s.id);
@@ -957,6 +1003,20 @@ TEST_CASE("geometry/prefabs: no coincident surfaces face the same way", "[geomet
         {"armchair", {{"legHeight", 0.0}, {"width", 1.4}}},
         {"room_shell", {{"wainscotHeight", 1.0}}},
         {"room_shell", {{"wainscotHeight", 0.9}, {"baseboardHeight", 0.0}, {"doorway", {{"wall", "east"}}}}},
+        {"cartridge", {{"spineLabel", true}}},
+        {"cartridge", {{"spineLabel", true}, {"gripRidges", false}, {"labelInset", 0.0005}}},
+        {"shelf", {{"slotFrontInset", 0.01}, {"displayLevels", {1}}}},
+        {"display_case", nullptr},
+        {"display_case", {{"levels", 1}, {"tiltDeg", 0.0}}},
+        {"display_case", {{"levels", 3}, {"levelRise", 0.0}, {"tiltDeg", 45.0}}},
+        {"wall_shelf", nullptr},
+        {"wall_shelf", {{"tiltDeg", 0.0}, {"ledges", 1}}},
+        {"storage_box", nullptr},
+        {"storage_box", {{"seed", 7}, {"width", 0.3}}},
+        {"magazine_stack", nullptr},
+        {"magazine_stack", {{"seed", 7}, {"width", 1.2}}},
+        {"bookends", nullptr},
+        {"bookends", {{"seed", 7}}},
     };
     for (const auto& [kind, params] : variants) {
         INFO(std::string(kind) + " " + params.dump());
@@ -984,6 +1044,11 @@ TEST_CASE("geometry/prefabs: JSON overrides and nested defaults", "[geometry][pr
         {"poster_frame", rv::geometry::buildPosterFrame()},
         {"rug", rv::geometry::buildRug()},
         {"floor_lamp", rv::geometry::buildFloorLamp()},
+        {"display_case", rv::geometry::buildDisplayCase()},
+        {"wall_shelf", rv::geometry::buildWallShelf()},
+        {"storage_box", rv::geometry::buildStorageBox()},
+        {"magazine_stack", rv::geometry::buildMagazineStack()},
+        {"bookends", rv::geometry::buildBookends()},
     };
     for (const auto& [kind, prefab] : typed) {
         INFO(kind);
@@ -992,7 +1057,7 @@ TEST_CASE("geometry/prefabs: JSON overrides and nested defaults", "[geometry][pr
         CHECK(hashes(*prefab) == hashes(buildOk(kind, json::object())));
     }
 
-    CHECK(buildOk("shelf", {{"levels", 3}}).sockets.size() == 3 * 8);
+    CHECK(buildOk("shelf", {{"levels", 3}}).sockets.size() == 3 * (8 + 1));
     const ProceduralPrefab wide = buildOk("crt", {{"screenAspect", 16.0 / 9.0}});
     const glm::vec3 screen = part(wide, "screen").mesh.bounds.size();
     CHECK(screen.x / screen.y == Approx(16.0 / 9.0).epsilon(1e-4));
@@ -1072,6 +1137,65 @@ TEST_CASE("geometry/prefabs: JSON errors name the parameter", "[geometry][prefab
         {"room_shell", {{"wainscotHeight", -0.5}}, ErrorCode::OutOfRange, "room_shell.wainscotHeight"},
         {"room_shell", {{"wainscotHeight", 0.15}}, ErrorCode::OutOfRange, "room_shell.wainscotHeight"},
         {"room_shell", {{"wainscotHeight", 2.9}}, ErrorCode::OutOfRange, "room_shell.wainscotHeight"},
+        // The collection's shelves (I3 step 1b).
+        {"shelf", {{"slotFrontInset", "front"}}, ErrorCode::InvalidArgument, "shelf.slotFrontInset"},
+        {"shelf", {{"slotFrontInset", -0.01}}, ErrorCode::OutOfRange, "shelf.slotFrontInset"},
+        {"shelf", {{"slotFrontInset", 0.33}}, ErrorCode::OutOfRange, "shelf.slotFrontInset"},
+        {"shelf", {{"displayLevels", 4}}, ErrorCode::InvalidArgument, "shelf.displayLevels"},
+        {"shelf", {{"displayLevels", {1, 2.5}}}, ErrorCode::InvalidArgument, "shelf.displayLevels"},
+        {"shelf", {{"displayLevels", {5}}}, ErrorCode::OutOfRange, "shelf.displayLevels"},
+        {"shelf", {{"displayLevels", {-1}}}, ErrorCode::OutOfRange, "shelf.displayLevels"},
+        {"shelf", {{"displayLevels", {2, 1, 2}}}, ErrorCode::OutOfRange, "shelf.displayLevels"},
+        {"shelf",
+         {{"displayLevels", {1}}, {"displaySlotSize", {0.125, 0.5, 0.02}}},
+         ErrorCode::OutOfRange,
+         "shelf.levels"},
+        {"shelf",
+         {{"displayLevels", {1}}, {"displaySlotSize", {1.5, 0.085, 0.02}}},
+         ErrorCode::OutOfRange,
+         "shelf.displaySlotSize"},
+        // An unused display size is never checked against the shelf.
+        {"shelf", {{"displaySlotGap", -1.0}}, ErrorCode::OutOfRange, "shelf.displaySlotGap"},
+        {"cartridge", {{"spineLabel", "yes"}}, ErrorCode::InvalidArgument, "cartridge.spineLabel"},
+        {"cartridge",
+         {{"spineLabel", true}, {"spineLabelSize", {0.016, 0.08}}},
+         ErrorCode::OutOfRange,
+         "cartridge.spineLabelSize"},
+        {"cartridge",
+         {{"spineLabel", true}, {"spineLabelSize", {0.01, 0.2}}},
+         ErrorCode::OutOfRange,
+         "cartridge.spineLabelSize"},
+        // With a spine the top border must keep 0.5 mm above the 0.5 mm the shell gives up.
+        {"cartridge",
+         {{"spineLabel", true}, {"labelMargin", {0.012, 0.0025}}},
+         ErrorCode::OutOfRange,
+         "cartridge.labelMargin"},
+        {"display_case", {{"levels", 5}}, ErrorCode::OutOfRange, "display_case.levels"},
+        {"display_case", {{"levels", 4}, {"depth", 0.3}}, ErrorCode::OutOfRange, "display_case.levels"},
+        {"display_case", {{"baseHeight", 0.8}}, ErrorCode::OutOfRange, "display_case.baseHeight"},
+        // Level 0 above the glass top blames the base, a later level the rise.
+        {"display_case",
+         {{"levels", 1}, {"slotSize", {0.125, 0.4, 0.02}}},
+         ErrorCode::OutOfRange,
+         "display_case.baseHeight"},
+        {"display_case", {{"levelRise", 0.3}}, ErrorCode::OutOfRange, "display_case.levelRise"},
+        {"display_case", {{"slotSize", {0.125, 0.085, 0.6}}}, ErrorCode::OutOfRange, "display_case.slotSize"},
+        {"display_case", {{"width", 0.4}, {"slotSize", {0.4, 0.085, 0.02}}}, ErrorCode::OutOfRange,
+         "display_case.slotSize"},
+        {"display_case", {{"tiltDeg", 75.0}}, ErrorCode::OutOfRange, "display_case.tiltDeg"},
+        {"wall_shelf", {{"ledges", 0}}, ErrorCode::OutOfRange, "wall_shelf.ledges"},
+        {"wall_shelf", {{"ledges", 3}}, ErrorCode::OutOfRange, "wall_shelf.ledges"},
+        {"wall_shelf",
+         {{"height", 0.15}, {"ledges", 1}, {"slotSize", {0.125, 0.12, 0.02}}},
+         ErrorCode::OutOfRange,
+         "wall_shelf.height"},
+        {"wall_shelf", {{"depth", 0.05}}, ErrorCode::OutOfRange, "wall_shelf.depth"},
+        {"wall_shelf", {{"slotSize", {0.9, 0.085, 0.02}}}, ErrorCode::OutOfRange, "wall_shelf.slotSize"},
+        {"wall_shelf", {{"mountHeight", 3.0}}, ErrorCode::OutOfRange, "wall_shelf.mountHeight"},
+        {"storage_box", {{"width", 0.05}}, ErrorCode::OutOfRange, "storage_box.width"},
+        {"magazine_stack", {{"seed", -1}}, ErrorCode::OutOfRange, "magazine_stack.seed"},
+        {"bookends", {{"height", 2.0}}, ErrorCode::OutOfRange, "bookends.height"},
+        {"bookends", {{"shelf", 1}}, ErrorCode::InvalidArgument, "bookends.shelf"},
     };
     for (const Case& c : cases) {
         const rv::Error error = buildError(c.kind, c.params);
