@@ -88,6 +88,14 @@ void checkSameStats(const rv::gl::FrameStats& a, const rv::gl::FrameStats& b) {
     CHECK(a.ssaoGpuMilliseconds == b.ssaoGpuMilliseconds);
     CHECK(a.sceneGpuMilliseconds == b.sceneGpuMilliseconds);
     CHECK(a.postGpuMilliseconds == b.postGpuMilliseconds);
+    CHECK(a.outlineGpuMilliseconds == b.outlineGpuMilliseconds);
+    CHECK(a.staticGroups == b.staticGroups);
+    CHECK(a.staticBatches == b.staticBatches);
+    CHECK(a.clusters == b.clusters);
+    CHECK(a.culledClusters == b.culledClusters);
+    CHECK(a.staticDrawCalls == b.staticDrawCalls);
+    CHECK(a.staticInstances == b.staticInstances);
+    CHECK(a.outlinedInstances == b.outlinedInstances);
 }
 
 /// formatRunReport of `report` with `edit` applied to the JSON.
@@ -507,4 +515,41 @@ TEST_CASE("app/run_report: --run-report takes a .json file", "[app][run_report][
 
     const auto empty = rv::app::parseCommandLine(std::vector<std::string>{"--run-report="});
     REQUIRE_FALSE(empty.has_value());
+}
+
+TEST_CASE("app/run_report: the static groups and the outline of a view read back, absent from views without them",
+          "[app][run_report]") {
+    // I3 step 8: the static instance groups' counts and the outline's GPU time and instances.
+    RunReport report = fullReport();
+    report.lastView->staticGroups = 1;
+    report.lastView->staticBatches = 3;
+    report.lastView->clusters = 88;
+    report.lastView->culledClusters = 70;
+    report.lastView->staticDrawCalls = 12;
+    report.lastView->staticInstances = 1350;
+    report.lastView->outlinedInstances = 3;
+    report.lastView->outlineGpuMilliseconds = 0.0123;
+    const std::string text = rv::app::formatRunReport(report);
+    const nlohmann::json json = nlohmann::json::parse(text);
+    CHECK(json["lastView"]["staticGroups"] == nlohmann::json{{"groups", 1},          {"batches", 3},
+                                                             {"clusters", 88},       {"culledClusters", 70},
+                                                             {"drawCalls", 12},      {"instances", 1350}});
+    CHECK(json["lastView"]["outlinedInstances"] == 3);
+    CHECK(json["lastView"]["gpuMilliseconds"]["outline"] == 0.0123);
+    const auto parsed = rv::app::parseRunReport(text, "report.json");
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->lastView.has_value());
+    checkSameStats(*parsed->lastView, *report.lastView);
+
+    // The reference scenes' views have neither: their reports read as before step 8.
+    const nlohmann::json plain = nlohmann::json::parse(rv::app::formatRunReport(fullReport()));
+    CHECK_FALSE(plain["lastView"].contains("staticGroups"));
+    CHECK_FALSE(plain["lastView"].contains("outlinedInstances"));
+    CHECK_FALSE(plain["lastView"]["gpuMilliseconds"].contains("outline"));
+    // A malformed count points at its key.
+    const auto wrong = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["lastView"]["staticGroups"]["clusters"] = -1; }),
+        "r.json");
+    REQUIRE_FALSE(wrong.has_value());
+    CHECK(wrong.error().context == "r.json:/lastView/staticGroups/clusters");
 }

@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -33,6 +34,7 @@
 #include <rv/render/tonemap.hpp>
 #include <rv/render/uniform_blocks.hpp>
 #include <rv/scene/debug_lines.hpp>
+#include <rv/scene/instance_clusters.hpp>
 #include <rv/scene/instance_data.hpp>
 
 namespace fs = std::filesystem;
@@ -220,9 +222,11 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
     // depth_masked (the shadow map, the depth pre-pass), which all share pbr.vert, debug_lines (--debug-draw), and the
     // fullscreen passes on post/fullscreen.vert: the ambient occlusion (ssao, ssao_blur) and the post-processing,
     // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample, post and fxaa. The asset
-    // preview adds the inspection views on pbr.vert (debug/inspect.frag with RV_INSPECT_*).
+    // preview adds the inspection views on pbr.vert (debug/inspect.frag with RV_INSPECT_*). The hover outline marks on
+    // pbr.vert (outline_mark, also with RV_ALPHA_TEST) and draws its edge on post/fullscreen.vert (outline_edge).
     CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "debug/inspect.frag",
-                                             "depth/depth.frag", "pbr/pbr.frag", "pbr/pbr.vert",
+                                             "depth/depth.frag", "outline/outline_edge.frag",
+                                             "outline/outline_mark.frag", "pbr/pbr.frag", "pbr/pbr.vert",
                                              "post/bloom_downsample.frag", "post/bloom_upsample.frag",
                                              "post/fullscreen.vert", "post/fxaa.frag", "post/post.frag",
                                              "ssao/ssao.frag", "ssao/ssao_blur.frag", "unlit/unlit_emissive.frag"});
@@ -657,8 +661,8 @@ TEST_CASE("integration/shaders: the post-processing passes draw a fullscreen tri
     CHECK(std::regex_search(vertex, std::regex(R"(\bgl_VertexID\b)")));
     // The fragment stages read the uv it writes at location 0.
     CHECK(std::regex_search(vertex, std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*out\s+vec2\s+vUv\s*;)")));
-    for (const char* stage :
-         {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag", "post/fxaa.frag"}) {
+    for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag",
+                              "post/fxaa.frag", "outline/outline_edge.frag"}) {
         INFO(stage);
         CHECK(std::regex_search(glslWithoutComments(stage),
                                 std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*in\s+vec2\s+vUv\s*;)")));
@@ -798,6 +802,7 @@ TEST_CASE("integration/shaders: fragment stages sample every texture before the 
         {"pbr/pbr.frag", {}},
         {"unlit/unlit_emissive.frag", {}},
         {"depth/depth.frag", {"RV_ALPHA_TEST"}},
+        {"outline/outline_mark.frag", {"RV_ALPHA_TEST"}},
         {"debug/inspect.frag", {"RV_INSPECT_BASE_COLOR"}},
         {"debug/inspect.frag", {"RV_INSPECT_NORMALS"}},
         {"debug/inspect.frag", {"RV_INSPECT_UV"}}};
@@ -1101,4 +1106,49 @@ TEST_CASE("integration/shaders: the collection's layered base color samples the 
         CAPTURE(stage);
         CHECK(glslWithoutComments(stage).find("materialInstanceBaseColor(vUv, vInstance)") != std::string::npos);
     }
+}
+
+TEST_CASE("integration/shaders: the hover outline marks highlighted instances and edges them on its own unit",
+          "[integration][shader]") {
+    // I3 step 8 (ADR-0012 §3). The mark: the instance attributes at the flat location 4 of pbr.vert, every fragment of
+    // an instance without RV_INSTANCE_HIGHLIGHTED discarded, no colour written (the pass's stencil does the work).
+    const std::string mark = glslWithoutComments("outline/outline_mark.frag");
+    CHECK(std::regex_search(mark, std::regex(R"(layout\s*\(\s*location\s*=\s*4\s*\)\s*flat\s+in\s+uvec4\s+vInstance\s*;)")));
+    CHECK(std::regex_search(
+        mark, std::regex(R"(if\s*\(\s*\(\s*vInstance\.z\s*&\s*RV_INSTANCE_HIGHLIGHTED\s*\)\s*==\s*0u\s*\)\s*\{\s*discard\s*;)")));
+    CHECK_FALSE(std::regex_search(mark, std::regex(R"(\bout\s+\w+\s+\w+\s*;)")));
+    CHECK_FALSE(std::regex_search(mark, std::regex(R"(\bgl_FragDepth\b)")));
+
+    // The edge: the stencil as unsigned integers on OutlineTextureUnit::Stencil, read with texelFetch alone; the
+    // disc test and its limits are rv::scene::outlineCovers and kOutlineMaxReach.
+    const std::string edge = glslWithoutComments("outline/outline_edge.frag");
+    std::smatch sampler;
+    REQUIRE(std::regex_search(edge, sampler,
+                              std::regex(R"(layout\s*\(\s*binding\s*=\s*(\d+)\s*\)\s*uniform\s+usampler2D\s+(\w+)\s*;)")));
+    CHECK(std::stoul(sampler[1].str()) == rv::gl::toIndex(rv::gl::OutlineTextureUnit::Stencil));
+    CHECK(sampler[2].str() == "uOutlineStencil");
+    CHECK(std::regex_search(edge, std::regex(R"(texelFetch\s*\(\s*uOutlineStencil\b)")));
+    CHECK_FALSE(std::regex_search(edge, std::regex(R"(\btexture(?:Lod|Offset)?\s*\()")));
+    CHECK(glslIntConstant(edge, "RV_OUTLINE_MAX_REACH") == rv::scene::kOutlineMaxReach);
+    std::smatch tolerance;
+    REQUIRE(std::regex_search(edge, tolerance, std::regex(R"(const\s+float\s+RV_OUTLINE_TOLERANCE\s*=\s*([0-9.]+)\s*;)")));
+    // outlineCovers' tolerance: an offset exactly at the width is in, one a hair beyond the tolerance is out.
+    const float limit = std::stof(tolerance[1].str());
+    CHECK(rv::scene::outlineCovers(2, 0, 2.0f));
+    CHECK(rv::scene::outlineCovers(1, 1, std::sqrt(2.0f - limit * 0.5f)));
+    CHECK_FALSE(rv::scene::outlineCovers(1, 1, std::sqrt(2.0f - limit * 2.0f)));
+    const auto bodies = functionBodies(edge);
+    REQUIRE(bodies.contains("main"));
+    CHECK(std::regex_search(bodies.at("main"),
+                            std::regex(R"(float\s*\(\s*dx\s*\*\s*dx\s*\+\s*dy\s*\*\s*dy\s*\)\s*<=\s*limit)")));
+    CHECK(std::regex_search(bodies.at("main"),
+                            std::regex(R"(limit\s*=\s*uOutlineWidth\s*\*\s*uOutlineWidth\s*\+\s*RV_OUTLINE_TOLERANCE)")));
+    CHECK(std::regex_search(bodies.at("main"), std::regex(R"(oColor\s*=\s*vec4\s*\(\s*uOutlineColor\s*,\s*1\.0\s*\))")));
+
+    // The unit follows the collection's, and the hidden flag keeps a record of a static group from drawing at all:
+    // pbr.vert moves every vertex of such an instance outside the clip volume, in every program it serves.
+    CHECK(rv::gl::toIndex(rv::gl::OutlineTextureUnit::Stencil) ==
+          rv::gl::toIndex(rv::gl::CollectionTextureUnit::LayeredBaseColor) + 1);
+    const std::string mesh = glslWithoutComments("pbr/pbr.vert");
+    CHECK(std::regex_search(mesh, std::regex(R"(if\s*\(\s*\(\s*aInstance\.z\s*&\s*RV_INSTANCE_HIDDEN\s*\)\s*!=\s*0u\s*\)\s*\{\s*gl_Position\s*=\s*vec4\s*\(\s*2\.0\s*,\s*2\.0\s*,\s*2\.0\s*,\s*1\.0\s*\)\s*;)")));
 }

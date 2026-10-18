@@ -32,10 +32,22 @@ enum class Scenario : std::uint8_t {
     /// 63 items in arrays of 64 layers, every layer resident, then 128 more at kGrowthFrame: both arrays grow to 192
     /// layers by a GPU copy, the first 63 pictures kept without being uploaded again.
     Growth,
+    /// 2,000 items (I3 step 8) as a static instance group (or, with --probe-path dynamic, as render items planned every
+    /// frame, to compare): each half row of the wall one cluster, lit by a spot key light that casts the shells'
+    /// shadows on the backdrop, with ambient occlusion; the item's layers are named in its records from the start.
+    Groups,
 };
 
 [[nodiscard]] constexpr std::string_view toString(Scenario scenario) noexcept {
-    return scenario == Scenario::Chunks ? "chunks" : "growth";
+    switch (scenario) {
+    case Scenario::Chunks:
+        return "chunks";
+    case Scenario::Growth:
+        return "growth";
+    case Scenario::Groups:
+        return "groups";
+    }
+    return "chunks";
 }
 
 [[nodiscard]] constexpr std::optional<Scenario> scenarioFromString(std::string_view name) noexcept {
@@ -44,6 +56,56 @@ enum class Scenario : std::uint8_t {
     }
     if (name == "growth") {
         return Scenario::Growth;
+    }
+    if (name == "groups") {
+        return Scenario::Groups;
+    }
+    return std::nullopt;
+}
+
+/// How the groups scenario draws its items.
+enum class DrawPath : std::uint8_t {
+    /// One gl::StaticInstanceGroup, planned once (RenderView::staticGroups).
+    Static,
+    /// Render items, planned by the scene::BatchPlanner every frame (RenderView::items).
+    Dynamic,
+};
+
+[[nodiscard]] constexpr std::string_view toString(DrawPath path) noexcept {
+    return path == DrawPath::Static ? "static" : "dynamic";
+}
+
+/// Where the probe's camera stands.
+enum class CameraMode : std::uint8_t {
+    /// cameraFor(): the whole wall.
+    Wall,
+    /// closeCamera(): 2 m in front of the highlighted item, slightly off its axis, about 9 x 9 items in view.
+    Close,
+    /// closeCamera() moving a little every frame (movingCamera()), still aimed at the highlighted item.
+    Moving,
+};
+
+[[nodiscard]] constexpr std::string_view toString(CameraMode mode) noexcept {
+    switch (mode) {
+    case CameraMode::Wall:
+        return "wall";
+    case CameraMode::Close:
+        return "close";
+    case CameraMode::Moving:
+        return "moving";
+    }
+    return "wall";
+}
+
+[[nodiscard]] constexpr std::optional<CameraMode> cameraModeFromString(std::string_view name) noexcept {
+    if (name == "wall") {
+        return CameraMode::Wall;
+    }
+    if (name == "close") {
+        return CameraMode::Close;
+    }
+    if (name == "moving") {
+        return CameraMode::Moving;
     }
     return std::nullopt;
 }
@@ -59,7 +121,15 @@ struct ScenarioCounts {
 };
 
 [[nodiscard]] constexpr ScenarioCounts countsOf(Scenario scenario) noexcept {
-    return scenario == Scenario::Chunks ? ScenarioCounts{2049, 2049} : ScenarioCounts{63, 191};
+    switch (scenario) {
+    case Scenario::Chunks:
+        return ScenarioCounts{2049, 2049};
+    case Scenario::Growth:
+        return ScenarioCounts{63, 191};
+    case Scenario::Groups:
+        return ScenarioCounts{2000, 2000};
+    }
+    return ScenarioCounts{};
 }
 
 /// Cell of one item in the wall of items, meters; the wall stands in the plane z = 0, centered on the origin.
@@ -153,5 +223,91 @@ struct Grid {
 /// The pending pictures (layer 0): magenta fronts and cyan spines, outside pictureColor's range (red or green 0).
 inline constexpr gl::Rgb8 kPendingFront{255, 0, 255};
 inline constexpr gl::Rgb8 kPendingSpine{0, 255, 255};
+
+// --- The groups scenario (I3 step 8) ---------------------------------------------------------------------------------
+
+/// Items per cluster along a row: a cluster is half a row of the wall (like a shelf level of a module).
+inline constexpr int kClusterColumns = 23;
+
+[[nodiscard]] inline int clustersPerRow(const Grid& grid) noexcept {
+    return (grid.columns + kClusterColumns - 1) / kClusterColumns;
+}
+
+[[nodiscard]] inline std::uint32_t clusterCount(const Grid& grid) noexcept {
+    return static_cast<std::uint32_t>(clustersPerRow(grid) * grid.rows);
+}
+
+/// The cluster of item `index`: its row's clusters left to right, the rows top to bottom (neighbors on the wall are
+/// neighbors in the numbering).
+[[nodiscard]] inline std::uint32_t clusterOf(const Grid& grid, std::size_t index) noexcept {
+    const int column = static_cast<int>(index % static_cast<std::size_t>(grid.columns));
+    const int row = static_cast<int>(index / static_cast<std::size_t>(grid.columns));
+    return static_cast<std::uint32_t>(row * clustersPerRow(grid) + column / kClusterColumns);
+}
+
+/// The item --probe-highlight outlines (from kHighlightFrame on) and the close cameras aim at: near the wall's center.
+[[nodiscard]] inline std::size_t highlightItem(const Grid& grid) noexcept {
+    return static_cast<std::size_t>((grid.rows / 2) * grid.columns + grid.columns / 2 - 3);
+}
+
+/// The item --probe-hide hides (from the start): the highlighted item's right neighbor.
+[[nodiscard]] inline std::size_t hiddenItem(const Grid& grid) noexcept {
+    return highlightItem(grid) + 1;
+}
+
+/// The frame from which the highlighted item carries its flag: the frames before it write no instance byte.
+inline constexpr std::uint64_t kHighlightFrame = 10;
+
+/// The shell box of item `index`: its world corners' bounds.
+[[nodiscard]] inline glm::vec3 shellMin(const Grid& grid, std::size_t index) noexcept {
+    return cellCenter(grid, index) - kShellSize * 0.5f;
+}
+
+[[nodiscard]] inline glm::vec3 shellMax(const Grid& grid, std::size_t index) noexcept {
+    return cellCenter(grid, index) + kShellSize * 0.5f;
+}
+
+/// A camera at `eye` aimed at `target`, with the close cameras' lens (60 degrees across).
+[[nodiscard]] inline scene::CameraSetup aimedCamera(const glm::vec3& eye, const glm::vec3& target) noexcept {
+    const glm::vec3 offset = target - eye;
+    const float distance = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+    scene::CameraSetup camera;
+    camera.position = eye;
+    // Camera conventions: yaw 0 looks at -Z, positive yaw turns towards +X, positive pitch looks up.
+    camera.yawDeg = glm::degrees(std::atan2(offset.x, -offset.z));
+    camera.pitchDeg = glm::degrees(std::asin(offset.y / distance));
+    camera.lens.horizontalFovDeg = 60.0f;
+    camera.lens.nearPlane = 0.05f;
+    camera.lens.farPlane = 60.0f;
+    return camera;
+}
+
+/// The close camera: 2 m in front of the highlighted item, 0.35 m to its right and 0.25 m above (so the shells' side
+/// and top faces show), aimed at its center.
+[[nodiscard]] inline scene::CameraSetup closeCamera(const Grid& grid) noexcept {
+    const glm::vec3 target = cellCenter(grid, highlightItem(grid));
+    return aimedCamera(target + glm::vec3(0.35f, 0.25f, 2.0f), target);
+}
+
+/// The moving camera at frame `frame`: the close camera's eye moving 1.3 mm right, 0.7 mm down and 2.9 mm closer per
+/// frame (sub-pixel steps of the item's edges, about 0.2 m/s at 60 fps), still aimed at the item.
+[[nodiscard]] inline scene::CameraSetup movingCamera(const Grid& grid, std::uint64_t frame) noexcept {
+    const glm::vec3 target = cellCenter(grid, highlightItem(grid));
+    const float t = static_cast<float>(frame);
+    return aimedCamera(target + glm::vec3(0.35f + 0.0013f * t, 0.25f - 0.0007f * t, 2.0f - 0.0029f * t), target);
+}
+
+/// The camera of `mode` at frame `frame`.
+[[nodiscard]] inline scene::CameraSetup cameraAt(const Grid& grid, CameraMode mode, std::uint64_t frame) noexcept {
+    switch (mode) {
+    case CameraMode::Wall:
+        return cameraFor(grid);
+    case CameraMode::Close:
+        return closeCamera(grid);
+    case CameraMode::Moving:
+        return movingCamera(grid, frame);
+    }
+    return cameraFor(grid);
+}
 
 } // namespace rv::probe

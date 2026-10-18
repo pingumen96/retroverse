@@ -317,6 +317,21 @@ enum class CollectionTextureUnit : std::uint32_t {
 static_assert(toIndex(CollectionTextureUnit::LayeredBaseColor) == toIndex(SsaoTextureUnit::RawOcclusion) + 1,
               "the collection's units follow the ambient occlusion units");
 
+/// Texture units of the hover outline's edge pass (gl::OutlinePass): `layout(binding = N) uniform usampler2D` in
+/// outline/outline_edge.frag. They follow the collection's units.
+enum class OutlineTextureUnit : std::uint32_t {
+    /// The stencil of the view's HDR scene target, read as unsigned integers through its stencil-index view
+    /// (gl::Framebuffer::bindStencilTexture): non-zero where the mark drew a highlighted instance.
+    Stencil = 13,
+};
+
+[[nodiscard]] constexpr std::uint32_t toIndex(OutlineTextureUnit unit) noexcept {
+    return static_cast<std::uint32_t>(unit);
+}
+
+static_assert(toIndex(OutlineTextureUnit::Stencil) == toIndex(CollectionTextureUnit::LayeredBaseColor) + 1,
+              "the outline's units follow the collection's units");
+
 /// ShadowUniforms::lightIndex when no light casts the view's shadow.
 inline constexpr std::int32_t kNoShadowLight = -1;
 /// ShadowUniforms::lightIndex of the directional light of LightsUniforms; 0 .. kMaxPunctualLights - 1 index its point

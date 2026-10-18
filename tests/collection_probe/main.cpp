@@ -1,9 +1,12 @@
-// rv_collection_probe: the GPU smoke tests' driver of the collection's texture arrays (I3 step 6, ADR-0011 §4 and §6).
-// It runs a wall of test items (probe_layout.hpp) through gl::CollectionArrays with the host and renderer of rv_app, so
-// that tests/smoke/test_collection_arrays.cpp can probe its screenshots and read its run report. Its own options come
-// first and are taken out; the rest is retroverse.exe's command line (--hidden, --exit-after-frames, --frames,
-// --screenshot, --run-report, --data-dir, --no-texture-compression, ...):
-//   rv_collection_probe [--probe-scenario chunks|growth] [--probe-view lit|base-color] <retroverse.exe options>
+// rv_collection_probe: the GPU smoke tests' driver of the collection's texture arrays (I3 step 6, ADR-0011 §4 and §6),
+// static instance groups and hover outline (I3 step 8, ADR-0011 §3, ADR-0012 §3). It runs a wall of test items
+// (probe_layout.hpp) through gl::CollectionArrays (and gl::StaticInstanceGroup) with the host and renderer of rv_app,
+// so that tests/smoke/test_collection_arrays.cpp and test_static_groups.cpp can probe its screenshots and read its run
+// report. Its own options are taken out; the rest is retroverse.exe's command line (--hidden, --exit-after-frames,
+// --frames, --screenshot, --run-report, --data-dir, --no-texture-compression, ...):
+//   rv_collection_probe [--probe-scenario chunks|growth|groups] [--probe-view lit|base-color]
+//                       [--probe-path static|dynamic] [--probe-camera wall|close|moving] [--probe-highlight]
+//                       [--probe-hide] <retroverse.exe options>
 // SDL_main.h provides the real entry point and converts the Windows command line to UTF-8.
 #include <SDL3/SDL_main.h>
 
@@ -32,16 +35,28 @@ constexpr rv::app::AppIdentity kIdentity{"Retroverse Collection Probe",
                                          "io.github.pingumen96.retroverse.collection-probe", "collection-probe.log"};
 
 constexpr const char* kUsage =
-    "rv_collection_probe [--probe-scenario chunks|growth] [--probe-view lit|base-color] <retroverse.exe options>\n"
+    "rv_collection_probe [--probe-scenario chunks|growth|groups] [--probe-view lit|base-color]\n"
+    "                    [--probe-path static|dynamic] [--probe-camera wall|close|moving] [--probe-highlight]\n"
+    "                    [--probe-hide] <retroverse.exe options>\n"
     "  chunks: 2,049 items, two arrays per class; growth: 63 items, then 191 from frame 20 (arrays grown by a GPU\n"
-    "  copy). The view: the lit shading (default) or the base color inspection view.\n\n";
+    "  copy); groups: 2,000 items in a static instance group (or, with --probe-path dynamic, as render items), lit by a\n"
+    "  shadowed spot light with ambient occlusion. The view: the lit shading (default) or the base color inspection\n"
+    "  view. The camera: the whole wall (default), a close-up of the highlighted item, or that close-up moving. Groups\n"
+    "  only: --probe-highlight outlines an item from frame 10 on, --probe-hide hides its right neighbor.\n\n";
 
 /// Takes the probe's options out of `arguments`; false (with a message) for a bad one.
 bool takeProbeOptions(std::vector<std::string>& arguments, rv::probe::ProbeOptions& options) {
     std::vector<std::string> rest;
+    bool groupOptions = false;
     for (std::size_t index = 0; index < arguments.size(); ++index) {
         const std::string& argument = arguments[index];
-        if (argument != "--probe-scenario" && argument != "--probe-view") {
+        if (argument == "--probe-highlight" || argument == "--probe-hide") {
+            (argument == "--probe-highlight" ? options.highlight : options.hide) = true;
+            groupOptions = true;
+            continue;
+        }
+        if (argument != "--probe-scenario" && argument != "--probe-view" && argument != "--probe-path" &&
+            argument != "--probe-camera") {
             rest.push_back(argument);
             continue;
         }
@@ -57,12 +72,31 @@ bool takeProbeOptions(std::vector<std::string>& arguments, rv::probe::ProbeOptio
                 return false;
             }
             options.scenario = *scenario;
+        } else if (argument == "--probe-path") {
+            if (value != "static" && value != "dynamic") {
+                std::fprintf(stderr, "unknown path '%s'\n\n%s", std::string(value).c_str(), kUsage);
+                return false;
+            }
+            options.path = value == "static" ? rv::probe::DrawPath::Static : rv::probe::DrawPath::Dynamic;
+            groupOptions = true;
+        } else if (argument == "--probe-camera") {
+            const std::optional<rv::probe::CameraMode> camera = rv::probe::cameraModeFromString(value);
+            if (!camera) {
+                std::fprintf(stderr, "unknown camera '%s'\n\n%s", std::string(value).c_str(), kUsage);
+                return false;
+            }
+            options.camera = *camera;
         } else if (value == "lit" || value == "base-color") {
             options.view = value == "lit" ? rv::gl::SurfaceView::Lit : rv::gl::SurfaceView::BaseColor;
         } else {
             std::fprintf(stderr, "unknown view '%s'\n\n%s", std::string(value).c_str(), kUsage);
             return false;
         }
+    }
+    if (groupOptions && options.scenario != rv::probe::Scenario::Groups) {
+        std::fprintf(stderr, "--probe-path, --probe-highlight and --probe-hide need --probe-scenario groups\n\n%s",
+                     kUsage);
+        return false;
     }
     arguments = std::move(rest);
     return true;

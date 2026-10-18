@@ -6,7 +6,8 @@
 //   6+ reserved.
 // Texture units: 0..4 the material (common/material.glsl), 5..7 the post-processing (common/post.glsl,
 // post/post.frag), 8 the shadow map (common/shadow.glsl), 9 the ambient occlusion (common/occlusion.glsl), 10..11 the
-// ambient occlusion passes (common/ssao.glsl).
+// ambient occlusion passes (common/ssao.glsl), 12 the collection's layered base color (common/material.glsl), 13 the
+// stencil the hover outline's edge reads (outline/outline_edge.frag).
 // Vertex attribute locations (rv::geometry::VertexLayout::standard(), rv::gl::GpuMesh):
 //   0 position, 1 normal, 2 tangent (w = bitangent sign), 3 uv0; per instance, the 80-byte record
 //   rv::scene::InstanceData: 4..7 the model matrix columns, 8 its attributes (uvec4: front layer, spine layer, flags,

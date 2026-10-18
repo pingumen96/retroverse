@@ -1,7 +1,8 @@
 # rv_collection_probe: the driver of the collection's texture arrays in the GPU smoke tests (I3 step 6; ADR-0011 §4,
 # §6): a wall of test items drawn through gl::CollectionArrays with the host and renderer of rv_app (two arrays per
-# class for 2,049 items, the arrays grown mid-run, the RGBA8 fallback with --no-texture-compression), whose screenshots
-# and run reports tests/smoke/test_collection_arrays.cpp checks. probe_layout.hpp, GPU-free, is shared with that test.
+# class for 2,049 items, the arrays grown mid-run, the RGBA8 fallback with --no-texture-compression) and, since I3 step
+# 8, 2,000 items in a static instance group with the hover outline (--probe-scenario groups), whose screenshots and run
+# reports tests/smoke/test_collection_arrays.cpp and test_static_groups.cpp check. probe_layout.hpp, GPU-free, is shared with that test.
 # Built with the tests; it opens a window (hidden in every test run) like retroverse.exe.
 
 add_executable(rv_collection_probe main.cpp probe_app.cpp)

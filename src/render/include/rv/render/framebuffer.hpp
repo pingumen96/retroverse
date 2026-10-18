@@ -90,6 +90,9 @@ public:
     /// while GL_FRAMEBUFFER_SRGB is enabled), the others to 0, depth to 1 and stencil to 0. Like glClear it honors the
     /// color, depth and stencil write masks, which GLDevice::beginPass() enables, and the scissor test.
     void clear(const glm::vec4& colorLinear) const;
+    /// Clears the stencil to 0 and leaves the colour and depth as they are (honoring the stencil write mask and the
+    /// scissor test). Does nothing without a depth/stencil buffer.
+    void clearStencil() const;
 
     /// Binds color attachment `attachment` to texture unit `unit` (glBindTextureUnit) for a later pass to sample; the
     /// sampler bound to that unit, if any, decides how. An attachment this framebuffer does not have unbinds the unit.
@@ -99,6 +102,11 @@ public:
     /// in [0, 1] (GL_DEPTH_STENCIL_TEXTURE_MODE GL_DEPTH_COMPONENT). A framebuffer without one unbinds the unit. Do not
     /// sample it while this framebuffer is bound for drawing.
     void bindDepthTexture(GLuint unit) const;
+    /// Binds the stencil of the depth/stencil texture (FramebufferDesc::depthTexture) to texture unit `unit`, through a
+    /// texture view of the same storage whose GL_DEPTH_STENCIL_TEXTURE_MODE is GL_STENCIL_INDEX: sampled as unsigned
+    /// integers (usampler2D, texelFetch; nearest filtering) while bindDepthTexture() keeps reading depth. A framebuffer
+    /// without one unbinds the unit. Do not sample it while this framebuffer is bound for drawing.
+    void bindStencilTexture(GLuint unit) const;
 
     /// Copies the depth and stencil values into `destination`'s (glBlitNamedFramebuffer, exact), so that what is drawn
     /// there afterwards is depth-tested against this framebuffer's scene. Does nothing unless both have the same size
@@ -147,6 +155,8 @@ private:
     /// The depth/stencil buffer: a renderbuffer, or a texture with FramebufferDesc::depthTexture.
     RenderbufferObject m_depthStencil;
     TextureObject m_depthStencilTexture;
+    /// A view of m_depthStencilTexture's storage that samples its stencil (bindStencilTexture()).
+    TextureObject m_stencilView;
     FramebufferObject m_framebuffer;
     GpuMemoryAllocation m_memory;
 };

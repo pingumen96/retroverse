@@ -74,8 +74,8 @@ assets::MaterialLibrary loadMaterials(const core::Paths& paths) {
     return builtin;
 }
 
-/// The programs of the scene, its shadow and ambient occlusion and its post-processing (ShaderLibrary handles), loaded
-/// at startup.
+/// The programs of the scene, its shadow and ambient occlusion, its post-processing and the hover outline
+/// (ShaderLibrary handles), loaded at startup.
 struct ScenePrograms {
     gl::ShaderHandle pbr;
     gl::ShaderHandle unlit;
@@ -88,6 +88,9 @@ struct ScenePrograms {
     gl::ShaderHandle bloomUpsample;
     gl::ShaderHandle post;
     gl::ShaderHandle antialiasing;
+    gl::ShaderHandle outlineMark;
+    gl::ShaderHandle outlineMarkMasked;
+    gl::ShaderHandle outlineEdge;
 };
 
 /// Loads the programs of ScenePrograms. A program that does not build is logged and stays empty until a reload
@@ -108,6 +111,10 @@ Expected<ScenePrograms> loadScenePrograms(gl::ShaderLibrary& library) {
         {&ScenePrograms::bloomUpsample, {"bloom_upsample", "post/fullscreen.vert", "post/bloom_upsample.frag", {}}},
         {&ScenePrograms::post, {"post", "post/fullscreen.vert", "post/post.frag", {}}},
         {&ScenePrograms::antialiasing, {"fxaa", "post/fullscreen.vert", "post/fxaa.frag", {}}},
+        {&ScenePrograms::outlineMark, {"outline_mark", "pbr/pbr.vert", "outline/outline_mark.frag", {}}},
+        {&ScenePrograms::outlineMarkMasked,
+         {"outline_mark_masked", "pbr/pbr.vert", "outline/outline_mark.frag", {"RV_ALPHA_TEST"}}},
+        {&ScenePrograms::outlineEdge, {"outline_edge", "post/fullscreen.vert", "outline/outline_edge.frag", {}}},
     };
     for (const auto& [handle, description] : descriptions) {
         auto loaded = library.load(description);
@@ -215,6 +222,9 @@ struct SceneGraphics::State {
         shaderSet.ssao.occlusion = &shaders->get(programs.ssao);
         shaderSet.ssao.blur = &shaders->get(programs.ssaoBlur);
         shaderSet.post = postShaders();
+        shaderSet.outline.mark = &shaders->get(programs.outlineMark);
+        shaderSet.outline.markMasked = &shaders->get(programs.outlineMarkMasked);
+        shaderSet.outline.edge = &shaders->get(programs.outlineEdge);
         gl::RenderView shown = view;
         shown.debugDraw = debugDraw && debugLinesShown ? &*debugDraw : nullptr;
         if (surfaceView != gl::SurfaceView::Lit) {
