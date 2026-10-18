@@ -27,8 +27,10 @@
 #include <rv/render/gl_device.hpp>
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
+#include <rv/render/static_instance_group.hpp>
 #include <rv/render/texture_array.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/instance_clusters.hpp>
 
 namespace rv::probe {
 namespace {
@@ -56,8 +58,10 @@ std::optional<std::size_t> itemOfKey(std::string_view key) {
 
 /// The scene around the items: a dark backdrop behind the wall, a uniform white ambient (sky and ground alike) and no
 /// light, ambient occlusion, bloom or vignette, so that every item is lit alike and its colors depend on its pictures
-/// alone.
-scene::SceneDescription probeScene(const Grid& grid) {
+/// alone. The groups scenario adds a spot key light from the upper left, whose shadows the shells cast on the backdrop
+/// (and on each other), and the ambient occlusion, with a dimmer ambient: everything a static group must draw like
+/// render items.
+scene::SceneDescription probeScene(const Grid& grid, Scenario scenario) {
     scene::SceneDescription description;
     description.name = "collection_probe";
     description.camera = cameraFor(grid);
@@ -70,6 +74,21 @@ scene::SceneDescription probeScene(const Grid& grid) {
     environment.bloomStrength = 0.0f;
     environment.vignette = 0.0f;
     environment.ssao.enabled = false;
+    if (scenario == Scenario::Groups) {
+        environment.ambientIntensity = 0.35f;
+        environment.ssao.enabled = true;
+        scene::Light key;
+        key.name = "probe_key";
+        key.type = scene::LightType::Spot;
+        key.position = glm::vec3(-3.0f, 4.0f, 10.0f);
+        key.direction = glm::normalize(glm::vec3(0.0f) - key.position);
+        key.intensity = 110.0f;
+        key.range = 40.0f;
+        key.innerConeDeg = 30.0f;
+        key.outerConeDeg = 38.0f;
+        key.castsShadows = true;
+        description.lights.push_back(key);
+    }
 
     scene::SceneObject backdrop;
     backdrop.id = "backdrop";
@@ -102,6 +121,10 @@ struct ProbeApp::State {
     std::unique_ptr<app::SceneGraphics> graphics;
     std::optional<app::SceneInstance> scene;
     gl::CollectionArrays arrays;
+    /// The groups scenario's items on the static path (empty otherwise), and the view's list of groups.
+    std::optional<gl::StaticInstanceGroup> group;
+    std::array<const gl::StaticInstanceGroup*, 1> groupList{};
+    ProbeOptions options;
     ScenarioCounts counts;
     Grid grid;
     scene::Camera camera;
@@ -122,6 +145,12 @@ struct ProbeApp::State {
     /// Every placed item's layers held their pictures when the last frame was drawn.
     bool everyLayerResident = false;
     std::size_t uploadedLayers = 0;
+    /// The groups scenario: the highlight is set, and the outline's GPU times of the frames that drew it.
+    bool highlighted = false;
+    std::vector<double> outlineGpuMilliseconds;
+
+    [[nodiscard]] bool groups() const noexcept { return options.scenario == Scenario::Groups; }
+    [[nodiscard]] bool staticPath() const noexcept { return groups() && options.path == DrawPath::Static; }
 
     /// A layered material for every array that has none yet, and the material blocks uploaded again.
     Status ensureMaterials(int uniformBufferOffsetAlignment) {
@@ -140,9 +169,14 @@ struct ProbeApp::State {
         return added ? materials.upload(uniformBufferOffsetAlignment, "ProbeMaterials") : ok();
     }
 
-    /// Places items up to `count`: their layers acquired, their render items showing the pending pictures, their
-    /// pictures queued for submission.
+    /// Places items up to `count`: their layers acquired, their pictures queued for submission, their render items
+    /// added (on the groups scenario's static path, their static instances, made into the group: that scenario places
+    /// its items once). The other scenarios show layer 0 until a picture is uploaded and then write its layer
+    /// (applyUploads()); the groups scenario names each item's layers in its records from the start (a fresh array's
+    /// layers hold the pending picture until theirs arrives), so that the group is never written while the pictures
+    /// load.
     Status place(std::size_t count) {
+        std::vector<scene::StaticInstance> staticInstances;
         for (std::size_t item = placed; item < count; ++item) {
             std::array<gl::LayerSlot, gl::kCollectionClassCount> slots{};
             for (const gl::CollectionClass cls : gl::kCollectionClasses) {
@@ -153,24 +187,73 @@ struct ProbeApp::State {
                 slots[gl::toIndex(cls)] = *slot;
                 toSubmit.emplace_back(cls, item);
             }
-            const glm::mat4 shell = glm::translate(glm::mat4(1.0f), cellCenter(grid, item));
-            const glm::mat4 front = glm::translate(glm::mat4(1.0f), frontCenter(grid, item));
-            const glm::mat4 spine = glm::translate(glm::mat4(1.0f), spineCenter(grid, item));
-            items.push_back(scene::RenderItem{shellMesh, shellMaterial, scene::ShaderKind::Pbr, shell, true, {}});
-            items.push_back(scene::RenderItem{frontMesh,
-                                              layerMaterials[gl::toIndex(gl::CollectionClass::Front)][slots[0].array],
-                                              scene::ShaderKind::Pbr,
-                                              front,
-                                              false,
-                                              {}});
-            items.push_back(scene::RenderItem{spineMesh,
-                                              layerMaterials[gl::toIndex(gl::CollectionClass::Spine)][slots[1].array],
-                                              scene::ShaderKind::Pbr,
-                                              spine,
-                                              false,
-                                              {}});
+            scene::InstanceAttributes attributes;
+            if (groups()) {
+                attributes.frontLayer = slots[0].layer;
+                attributes.spineLayer = slots[1].layer;
+                attributes.pickId = static_cast<std::uint32_t>(item + 1);
+            }
+            const bool hidden = groups() && options.hide && item == hiddenItem(grid);
+            const std::array<scene::RenderItem, 3> parts{
+                scene::RenderItem{shellMesh, shellMaterial, scene::ShaderKind::Pbr,
+                                  glm::translate(glm::mat4(1.0f), cellCenter(grid, item)), true, attributes},
+                scene::RenderItem{frontMesh, layerMaterials[gl::toIndex(gl::CollectionClass::Front)][slots[0].array],
+                                  scene::ShaderKind::Pbr, glm::translate(glm::mat4(1.0f), frontCenter(grid, item)),
+                                  false, attributes},
+                scene::RenderItem{spineMesh, layerMaterials[gl::toIndex(gl::CollectionClass::Spine)][slots[1].array],
+                                  scene::ShaderKind::Pbr, glm::translate(glm::mat4(1.0f), spineCenter(grid, item)),
+                                  false, attributes},
+            };
+            for (const scene::RenderItem& part : parts) {
+                if (staticPath()) {
+                    scene::StaticInstance instance{part.mesh,        part.material, part.shader,
+                                                   part.model,       part.castsShadow, part.attributes,
+                                                   clusterOf(grid, item)};
+                    if (hidden) {
+                        instance.attributes.flags |= scene::instance_flags::kHidden;
+                    }
+                    staticInstances.push_back(instance);
+                } else if (!hidden) {
+                    items.push_back(part);
+                }
+            }
         }
         placed = std::max(placed, count);
+        if (staticPath()) {
+            auto created = gl::StaticInstanceGroup::create(staticInstances, clusterCount(grid), graphics->meshes(),
+                                                           graphics->materials(), "ProbeGroup");
+            if (!created) {
+                return propagate(created.error());
+            }
+            group = std::move(*created);
+            groupList[0] = &*group;
+            spdlog::info("Static instance group: {} instance(s) in {} batch(es) and {} cluster(s), {} bytes uploaded",
+                         group->layout().instances().size(), group->layout().batches().size(),
+                         group->layout().occupiedClusters(), group->uploadedBytes());
+        }
+        return ok();
+    }
+
+    /// The highlight of highlightItem() (its three parts), from kHighlightFrame on.
+    Status highlight() {
+        const std::size_t item = highlightItem(grid);
+        for (std::size_t part = 0; part < 3; ++part) {
+            if (staticPath()) {
+                scene::InstanceAttributes attributes = group->layout().instances()[group->layout().positionOf(
+                                                                                       3 * item + part)]
+                                                           .attributes;
+                attributes.flags |= scene::instance_flags::kHighlighted;
+                if (Status set = group->setAttributes(3 * item + part, attributes); !set) {
+                    return set;
+                }
+            } else {
+                // The render items of the items before the hidden one are three per item; it has none.
+                const std::size_t hiddenBefore = options.hide && hiddenItem(grid) < item ? 3 : 0;
+                items[sceneItems + 3 * item + part - hiddenBefore].attributes.flags |=
+                    scene::instance_flags::kHighlighted;
+            }
+        }
+        highlighted = true;
         return ok();
     }
 
@@ -197,6 +280,10 @@ struct ProbeApp::State {
 
     /// The instance records of the items whose pictures went up now name their layers.
     void applyUploads(const gl::LayerUploadResult& result) {
+        uploadedLayers += result.completed.size();
+        if (groups()) {
+            return; // the records name their layers from the start
+        }
         for (const gl::LayerUpload& upload : result.completed) {
             const std::optional<std::size_t> item = itemOfKey(upload.key);
             if (!item || *item >= placed) {
@@ -208,7 +295,13 @@ struct ProbeApp::State {
                     upload.layer;
             }
         }
-        uploadedLayers += result.completed.size();
+    }
+
+    /// Places the camera where its mode stands at `frame`.
+    void placeCamera(std::uint64_t frame) {
+        const scene::CameraSetup setup = cameraAt(grid, options.camera, frame);
+        camera.setLens(setup.lens);
+        camera.setPose(setup.position, core::degreesToRadians(setup.yawDeg), core::degreesToRadians(setup.pitchDeg));
     }
 };
 
@@ -218,6 +311,7 @@ ProbeApp::~ProbeApp() = default;
 
 Status ProbeApp::onInit(app::AppContext& context) {
     auto state = std::make_unique<State>();
+    state->options = m_options;
     state->counts = countsOf(m_options.scenario);
     state->grid = gridFor(state->counts.final);
     auto graphics = app::SceneGraphics::create(context);
@@ -228,7 +322,7 @@ Status ProbeApp::onInit(app::AppContext& context) {
     app::SceneGraphics& graphicsRef = *state->graphics;
     const int alignment = context.device().caps().uniformBufferOffsetAlignment;
 
-    const scene::SceneDescription description = probeScene(state->grid);
+    const scene::SceneDescription description = probeScene(state->grid, m_options.scenario);
     auto sceneInstance =
         app::SceneInstance::create(description, graphicsRef.materialLibrary(), {}, graphicsRef.resources());
     if (!sceneInstance) {
@@ -239,10 +333,7 @@ Status ProbeApp::onInit(app::AppContext& context) {
     state->items.assign(sceneItems.begin(), sceneItems.end());
     state->sceneItems = state->items.size();
 
-    const scene::CameraSetup& camera = description.camera;
-    state->camera.setLens(camera.lens);
-    state->camera.setPose(camera.position, core::degreesToRadians(camera.yawDeg),
-                          core::degreesToRadians(camera.pitchDeg));
+    state->placeCamera(0);
 
     gl::CollectionArrays::Desc desc;
     desc.format = graphicsRef.collectionArrayFormat();
@@ -287,9 +378,18 @@ Status ProbeApp::onInit(app::AppContext& context) {
             return propagate(shown.error());
         }
     }
-    spdlog::info("Collection probe '{}': {} item(s) on a {}x{} wall, {} at the end; arrays {}, {} view",
+    spdlog::info("Collection probe '{}': {} item(s) on a {}x{} wall, {} at the end; arrays {}, {} view, {} camera",
                  toString(m_options.scenario), state->counts.initial, state->grid.columns, state->grid.rows,
-                 state->counts.final, gl::toString(desc.format), gl::toString(m_options.view));
+                 state->counts.final, gl::toString(desc.format), gl::toString(m_options.view),
+                 toString(m_options.camera));
+    if (state->groups()) {
+        spdlog::info("Groups: {} path, {} cluster(s), highlight {}, hidden {}", toString(m_options.path),
+                     clusterCount(state->grid),
+                     m_options.highlight ? fmt::format("item {} from frame {}", highlightItem(state->grid),
+                                                       kHighlightFrame)
+                                         : std::string("none"),
+                     m_options.hide ? fmt::format("item {}", hiddenItem(state->grid)) : std::string("none"));
+    }
     m_state = std::move(state);
     return ok();
 }
@@ -347,9 +447,24 @@ void ProbeApp::onRender(app::AppContext& context) {
                      state.uploadedLayers);
     }
     state.everyLayerResident = resident;
+    if (state.groups() && state.options.highlight && !state.highlighted && frame >= kHighlightFrame) {
+        if (Status set = state.highlight(); !set) {
+            context.failRun(set.error());
+            return;
+        }
+        spdlog::info("Frame {}: item {} highlighted ({} instance bytes written since the group was created)", frame,
+                     highlightItem(state.grid), state.group ? state.group->writtenBytes() : 0);
+    }
+    state.placeCamera(frame);
     gl::RenderView view = app::makeRenderView(*state.scene, state.camera);
     view.items = state.items;
+    if (state.group) {
+        view.staticGroups = state.groupList;
+    }
     state.graphics->renderFrame(context, view, false);
+    if (const std::optional<double> outline = state.graphics->renderStats().outlineGpuMilliseconds) {
+        state.outlineGpuMilliseconds.push_back(*outline);
+    }
 }
 
 void ProbeApp::onShutdown(app::AppContext& context) {
@@ -358,6 +473,16 @@ void ProbeApp::onShutdown(app::AppContext& context) {
         spdlog::info("Collection probe: {} item(s), fronts {} resident, spines {} resident, {} upload(s) queued",
                      state.placed, state.arrays.residentLayers(gl::CollectionClass::Front),
                      state.arrays.residentLayers(gl::CollectionClass::Spine), state.arrays.pendingUploads());
+        if (state.group) {
+            spdlog::info("Static instance group: {} bytes uploaded at its creation, {} bytes written since",
+                         state.group->uploadedBytes(), state.group->writtenBytes());
+        }
+        if (!state.outlineGpuMilliseconds.empty()) {
+            std::vector<double> times = state.outlineGpuMilliseconds;
+            std::sort(times.begin(), times.end());
+            spdlog::info("Outline GPU time over {} frame(s): median {:.4f} ms, max {:.4f} ms", times.size(),
+                         times[times.size() / 2], times.back());
+        }
         if (context.options().frameLimit && !state.everyLayerResident) {
             context.failRun(Error{ErrorCode::ValidationFailed,
                                   "a layer was still pending at the last frame: the screenshot would not show every "

@@ -54,6 +54,14 @@ public:
     /// caller's.
     void drawInstanced(std::uint32_t instanceCount, std::uint32_t baseInstance = 0) const;
 
+    /// A vertex array of its own that reads this mesh's vertices and indices and the instance records of `instances`
+    /// (binding 1 from offset 0, divisor 1, as attachInstanceBuffer()), for records kept in a buffer other than the one
+    /// attached to the mesh (gl::StaticInstanceGroup). The mesh and `instances` must outlive it. Errors:
+    /// InvalidArgument for an empty mesh, and those of VertexArray.
+    [[nodiscard]] Expected<VertexArray> createVertexArray(const Buffer& instances, std::string_view debugName) const;
+    /// drawInstanced() through `vertexArray`, one that createVertexArray() returned for this mesh.
+    void drawInstanced(const VertexArray& vertexArray, std::uint32_t instanceCount, std::uint32_t baseInstance) const;
+
     [[nodiscard]] bool valid() const noexcept { return m_vertexArray.valid(); }
     /// Bounds of the vertex positions, in mesh space.
     [[nodiscard]] const core::Aabb& bounds() const noexcept { return m_bounds; }

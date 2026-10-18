@@ -9,6 +9,43 @@
 #include <glm/glm.hpp>
 
 namespace rv::gl {
+namespace {
+
+/// Binding 0 reads `vertices` in the standard layout, the index buffer is `indices`.
+Status readVertices(VertexArray& vertexArray, const Buffer& vertices, const Buffer& indices) {
+    const geometry::VertexLayout& layout = geometry::VertexLayout::standard();
+    Status status = vertexArray.setVertexBuffer(GpuMesh::kVertexBinding, vertices, 0, layout.stride);
+    for (const geometry::VertexAttribute& attribute : layout.attributes) {
+        if (status) {
+            status = vertexArray.setFloatAttribute(attribute.location, GpuMesh::kVertexBinding,
+                                                   static_cast<int>(attribute.components), attribute.offset);
+        }
+    }
+    if (status) {
+        status = vertexArray.setElementBuffer(indices);
+    }
+    return status;
+}
+
+/// Binding 1 reads one scene::InstanceData per instance from `instances`, starting at `offsetBytes`.
+Status readInstances(VertexArray& vertexArray, const Buffer& instances, std::size_t offsetBytes) {
+    Status status =
+        vertexArray.setVertexBuffer(GpuMesh::kInstanceBinding, instances, offsetBytes, GpuMesh::kInstanceStride);
+    for (GLuint column = 0; column < 4 && status; ++column) {
+        status = vertexArray.setFloatAttribute(GpuMesh::kInstanceMatrixLocation + column, GpuMesh::kInstanceBinding, 4,
+                                               offsetof(scene::InstanceData, model) + column * sizeof(glm::vec4));
+    }
+    if (status) {
+        status = vertexArray.setUintAttribute(GpuMesh::kInstanceAttributesLocation, GpuMesh::kInstanceBinding, 4,
+                                              offsetof(scene::InstanceData, attributes));
+    }
+    if (status) {
+        status = vertexArray.setBindingDivisor(GpuMesh::kInstanceBinding, 1);
+    }
+    return status;
+}
+
+} // namespace
 
 GpuMesh::GpuMesh(Buffer vertices, Buffer indices, VertexArray vertexArray, std::size_t vertexCount,
                  std::size_t indexCount, const core::Aabb& bounds, std::string debugName) noexcept
@@ -39,18 +76,7 @@ Expected<GpuMesh> GpuMesh::create(const geometry::MeshData& mesh, std::string_vi
     if (!vertexArray) {
         return propagate(vertexArray.error());
     }
-    const geometry::VertexLayout& layout = geometry::VertexLayout::standard();
-    Status status = vertexArray->setVertexBuffer(kVertexBinding, *vertices, 0, layout.stride);
-    for (const geometry::VertexAttribute& attribute : layout.attributes) {
-        if (status) {
-            status = vertexArray->setFloatAttribute(attribute.location, kVertexBinding,
-                                                    static_cast<int>(attribute.components), attribute.offset);
-        }
-    }
-    if (status) {
-        status = vertexArray->setElementBuffer(*indices);
-    }
-    if (!status) {
+    if (Status status = readVertices(*vertexArray, *vertices, *indices); !status) {
         return propagate(status.error());
     }
 
@@ -66,26 +92,37 @@ Status GpuMesh::attachInstanceBuffer(const Buffer& instances, std::size_t offset
     if (!valid()) {
         return makeError(ErrorCode::InvalidArgument, "cannot attach instances to an empty mesh", instances.debugName());
     }
-    Status status = m_vertexArray.setVertexBuffer(kInstanceBinding, instances, offsetBytes, kInstanceStride);
-    for (GLuint column = 0; column < 4 && status; ++column) {
-        status = m_vertexArray.setFloatAttribute(kInstanceMatrixLocation + column, kInstanceBinding, 4,
-                                                 offsetof(scene::InstanceData, model) + column * sizeof(glm::vec4));
+    return readInstances(m_vertexArray, instances, offsetBytes);
+}
+
+Expected<VertexArray> GpuMesh::createVertexArray(const Buffer& instances, std::string_view debugName) const {
+    if (!valid()) {
+        return makeError(ErrorCode::InvalidArgument, "cannot read an empty mesh", std::string(debugName));
     }
+    auto vertexArray = VertexArray::create(debugName);
+    if (!vertexArray) {
+        return propagate(vertexArray.error());
+    }
+    Status status = readVertices(*vertexArray, m_vertices, m_indices);
     if (status) {
-        status = m_vertexArray.setUintAttribute(kInstanceAttributesLocation, kInstanceBinding, 4,
-                                                offsetof(scene::InstanceData, attributes));
+        status = readInstances(*vertexArray, instances, 0);
     }
-    if (status) {
-        status = m_vertexArray.setBindingDivisor(kInstanceBinding, 1);
+    if (!status) {
+        return propagate(status.error());
     }
-    return status;
+    return std::move(*vertexArray);
 }
 
 void GpuMesh::drawInstanced(std::uint32_t instanceCount, std::uint32_t baseInstance) const {
-    if (m_indexCount == 0 || instanceCount == 0) {
+    drawInstanced(m_vertexArray, instanceCount, baseInstance);
+}
+
+void GpuMesh::drawInstanced(const VertexArray& vertexArray, std::uint32_t instanceCount,
+                            std::uint32_t baseInstance) const {
+    if (m_indexCount == 0 || instanceCount == 0 || !vertexArray.valid()) {
         return;
     }
-    m_vertexArray.bind();
+    vertexArray.bind();
     glDrawElementsInstancedBaseInstance(GL_TRIANGLES, static_cast<GLsizei>(m_indexCount), GL_UNSIGNED_INT, nullptr,
                                         static_cast<GLsizei>(instanceCount), baseInstance);
 }

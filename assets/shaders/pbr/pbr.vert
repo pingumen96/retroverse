@@ -3,7 +3,8 @@
 // depth-only ones (depth/depth.frag: the shadow map and the depth pre-pass): world position, normal and tangent for
 // shading, uv0 for textures. Every draw is instanced: each instance reads its record from the instance buffer
 // (rv::scene::InstanceData through rv::gl::GpuMesh, divisor 1): the model matrix at locations 4..7, its attributes at
-// location 8, handed on unchanged to the fragment stages that read them (vInstance). gl_Position is invariant: every
+// location 8, handed on unchanged to the fragment stages that read them (vInstance); an instance flagged
+// RV_INSTANCE_HIDDEN is not drawn (a static instance group keeps its record). gl_Position is invariant: every
 // program computes the same depth for a vertex, so the lit pass passes the depth test (GL_LEQUAL) exactly where the
 // depth pre-pass left its surfaces.
 #include "common/common.glsl"
@@ -34,4 +35,9 @@ void main() {
     vUv = aUv0;
     vInstance = aInstance;
     gl_Position = uViewProjection * world;
+    if ((aInstance.z & RV_INSTANCE_HIDDEN) != 0u) {
+        // Pulled out or inspected, drawn by the dynamic path instead: every vertex beyond the clip volume's right edge,
+        // so the instance draws nothing in any pass (the shadow map and the depth pre-pass included).
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    }
 }

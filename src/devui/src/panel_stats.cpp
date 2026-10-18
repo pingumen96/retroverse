@@ -59,6 +59,9 @@ private:
             widgets::millisecondsRow("GPU SSAO", stats.ssaoGpuMilliseconds);
             widgets::millisecondsRow("GPU scene", stats.sceneGpuMilliseconds);
             widgets::millisecondsRow("GPU post", stats.postGpuMilliseconds);
+            if (stats.outlineGpuMilliseconds) {
+                widgets::millisecondsRow("GPU outline", stats.outlineGpuMilliseconds);
+            }
             widgets::valueRow("Draw calls", stats.drawCalls);
             widgets::valueRow("Shadow draw calls", stats.shadowDrawCalls);
             widgets::valueRow("Shadow instances", stats.shadowInstances);
@@ -68,6 +71,13 @@ private:
             widgets::valueRow("Triangles", stats.triangles);
             widgets::valueRow("Items", stats.items);
             widgets::valueRow("Culled items", stats.culledItems);
+            if (stats.staticGroups > 0) {
+                // The collection's static instance groups (shown only in views that have them).
+                widgets::valueRow("Static draw calls", stats.staticDrawCalls);
+                widgets::valueRow("Static instances", stats.staticInstances);
+                widgets::valueRow("Clusters", stats.clusters);
+                widgets::valueRow("Culled clusters", stats.culledClusters);
+            }
             widgets::valueRow("Shader switches", stats.shaderSwitches);
             widgets::valueRow("Material switches", stats.materialSwitches);
             widgets::valueRow("Debug lines", stats.debugLines);

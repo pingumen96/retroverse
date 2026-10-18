@@ -35,11 +35,24 @@ Json frameStatsToJson(const gl::FrameStats& stats) {
     json["shadowDrawCalls"] = stats.shadowDrawCalls;
     json["shadowInstances"] = stats.shadowInstances;
     json["depthDrawCalls"] = stats.depthDrawCalls;
+    // The static instance groups and the outline (I3 step 8): left out of views without them, so that the reports of
+    // the reference scenes read as before.
+    if (stats.staticGroups > 0) {
+        json["staticGroups"] = Json{{"groups", stats.staticGroups},
+                                    {"batches", stats.staticBatches},
+                                    {"clusters", stats.clusters},
+                                    {"culledClusters", stats.culledClusters},
+                                    {"drawCalls", stats.staticDrawCalls},
+                                    {"instances", stats.staticInstances}};
+    }
+    if (stats.outlinedInstances > 0) {
+        json["outlinedInstances"] = stats.outlinedInstances;
+    }
     Json gpu = Json::object();
     const std::pair<const char*, const std::optional<double>*> times[] = {
         {"shadow", &stats.shadowGpuMilliseconds}, {"depth", &stats.depthGpuMilliseconds},
         {"ssao", &stats.ssaoGpuMilliseconds},     {"scene", &stats.sceneGpuMilliseconds},
-        {"post", &stats.postGpuMilliseconds},
+        {"post", &stats.postGpuMilliseconds},     {"outline", &stats.outlineGpuMilliseconds},
     };
     for (const auto& [name, value] : times) {
         if (*value && std::isfinite(**value)) {
@@ -275,12 +288,22 @@ gl::FrameStats readFrameStats(FieldReader& fields) {
     stats.shadowDrawCalls = fields.count("shadowDrawCalls", kMaxSize);
     stats.shadowInstances = fields.count("shadowInstances", kMaxSize);
     stats.depthDrawCalls = fields.count("depthDrawCalls", kMaxSize);
+    if (auto groups = fields.optionalObject("staticGroups")) {
+        stats.staticGroups = groups->count("groups", kMaxSize);
+        stats.staticBatches = groups->count("batches", kMaxSize);
+        stats.clusters = groups->count("clusters", kMaxSize);
+        stats.culledClusters = groups->count("culledClusters", kMaxSize);
+        stats.staticDrawCalls = groups->count("drawCalls", kMaxSize);
+        stats.staticInstances = groups->count("instances", kMaxSize);
+    }
+    stats.outlinedInstances = fields.optionalCount("outlinedInstances", kMaxSize).value_or(0);
     if (auto gpu = fields.optionalObject("gpuMilliseconds")) {
         stats.shadowGpuMilliseconds = gpu->optionalNumber("shadow");
         stats.depthGpuMilliseconds = gpu->optionalNumber("depth");
         stats.ssaoGpuMilliseconds = gpu->optionalNumber("ssao");
         stats.sceneGpuMilliseconds = gpu->optionalNumber("scene");
         stats.postGpuMilliseconds = gpu->optionalNumber("post");
+        stats.outlineGpuMilliseconds = gpu->optionalNumber("outline");
     }
     return stats;
 }

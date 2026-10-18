@@ -72,6 +72,7 @@ struct Attachments {
     std::array<TextureObject, kMaxColorAttachments> colors;
     RenderbufferObject depthStencil;
     TextureObject depthStencilTexture;
+    TextureObject stencilView;
     FramebufferObject framebuffer;
 };
 
@@ -99,6 +100,25 @@ Expected<TextureObject> createDepthStencilTexture(const FramebufferDesc& desc, c
     glTextureParameteri(depth, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     detail::setObjectLabel(GL_TEXTURE, depth, label);
     return texture;
+}
+
+/// A view of the depth/stencil texture `depth` that samples its stencil as unsigned integers (nearest, clamped to
+/// edge), labeled `label`.
+Expected<TextureObject> createStencilView(GLuint depth, const std::string& label) {
+    GLuint viewId = 0;
+    glGenTextures(1, &viewId); // glTextureView needs a name that has never been bound: not glCreateTextures
+    TextureObject view(viewId);
+    if (viewId == 0) {
+        return makeError(ErrorCode::GraphicsError, "glGenTextures returned no texture", label);
+    }
+    glTextureView(viewId, GL_TEXTURE_2D, depth, GL_DEPTH24_STENCIL8, 0, 1, 0, 1);
+    glTextureParameteri(viewId, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX);
+    glTextureParameteri(viewId, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTextureParameteri(viewId, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTextureParameteri(viewId, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(viewId, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    detail::setObjectLabel(GL_TEXTURE, viewId, label);
+    return view;
 }
 
 /// Creates a color texture of `desc` with immutable storage, labeled `label`.
@@ -168,7 +188,12 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
             return propagate(depth.error());
         }
         glNamedFramebufferTexture(framebuffer, GL_DEPTH_STENCIL_ATTACHMENT, depth->id(), 0);
+        auto stencil = createStencilView(depth->id(), debugName + ".stencil");
+        if (!stencil) {
+            return propagate(stencil.error());
+        }
         attachments.depthStencilTexture = std::move(*depth);
+        attachments.stencilView = std::move(*stencil);
     } else if (desc.depthStencil) {
         GLuint depthStencil = 0;
         glCreateRenderbuffers(1, &depthStencil);
@@ -250,6 +275,7 @@ Expected<Framebuffer> Framebuffer::create(const FramebufferDesc& desc, std::stri
     framebuffer.m_colors = std::move(attachments->colors);
     framebuffer.m_depthStencil = std::move(attachments->depthStencil);
     framebuffer.m_depthStencilTexture = std::move(attachments->depthStencilTexture);
+    framebuffer.m_stencilView = std::move(attachments->stencilView);
     framebuffer.m_framebuffer = std::move(attachments->framebuffer);
     framebuffer.m_memory = GpuMemoryAllocation(GpuMemoryKind::Targets, framebufferBytes(desc));
     return framebuffer;
@@ -272,6 +298,7 @@ Status Framebuffer::resize(glm::ivec2 size) {
     m_framebuffer = std::move(attachments->framebuffer);
     m_depthStencil = std::move(attachments->depthStencil);
     m_depthStencilTexture = std::move(attachments->depthStencilTexture);
+    m_stencilView = std::move(attachments->stencilView);
     m_colors = std::move(attachments->colors);
     // The new attachments are recorded before the previous ones are released: both existed for a moment (the peak).
     m_memory = GpuMemoryAllocation(GpuMemoryKind::Targets, framebufferBytes(desc));
@@ -300,12 +327,24 @@ void Framebuffer::clear(const glm::vec4& colorLinear) const {
     }
 }
 
+void Framebuffer::clearStencil() const {
+    if (!valid() || !hasDepthStencil()) {
+        return;
+    }
+    constexpr GLint kZero = 0;
+    glClearNamedFramebufferiv(m_framebuffer.id(), GL_STENCIL, 0, &kZero);
+}
+
 void Framebuffer::bindColorTexture(GLuint unit, std::size_t attachment) const {
     glBindTextureUnit(unit, attachment < m_desc.colorAttachments ? m_colors[attachment].id() : 0);
 }
 
 void Framebuffer::bindDepthTexture(GLuint unit) const {
     glBindTextureUnit(unit, m_depthStencilTexture.id());
+}
+
+void Framebuffer::bindStencilTexture(GLuint unit) const {
+    glBindTextureUnit(unit, m_stencilView.id());
 }
 
 void Framebuffer::copyDepthStencilTo(const Framebuffer& destination) const {
