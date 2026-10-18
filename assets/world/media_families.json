@@ -1,4 +1,20 @@
-// The media family registry (ADR-0010 §2): a placeholder of I3 step 0a, which settles the file's place. I3 step 1a
-// writes it and its reader (rv/world/media_family.hpp): cartridge_home_16bit, the item's size from its manifest
-// (media.cartridge.home16.generic, 12.5 x 8.5 x 2.0 cm), its spine-out and face-out slot sizes, gaps and clearances.
-{}
+// The media family registry (ADR-0010 §2, style §22; read by rv/world/media_family.hpp, which documents the format):
+// how the games of each family stand on a shelf, in millimetres. The item's size is its manifest's scaleMeters
+// (media.cartridge.home16.generic: 12.5 x 8.5 x 2.0 cm, the label on its front); spine-out the cartridge stands on its
+// end with its top face outward, a 2.0 x 12.5 cm spine 8.5 cm deep, at a 2.4 cm pitch; face-out it shows its front, as
+// in the test room. The gaps and margins are the shelf prefab's defaults; the headroom is the free height kept above an
+// item in its level, so that it can be pulled out (ADR-0012 §3).
+{
+  "schemaVersion": 1,
+  "families": [
+    {
+      "id": "cartridge_home_16bit",
+      "item": {"manifest": "media.cartridge.home16.generic", "kind": "cartridge"},
+      "itemWidthMm": 125,
+      "itemHeightMm": 85,
+      "itemDepthMm": 20,
+      "spineOut": {"widthMm": 20, "heightMm": 125, "depthMm": 85, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 125, "heightMm": 85, "depthMm": 20, "gapMm": 4, "marginMm": 30, "headroomMm": 20}
+    }
+  ]
+}

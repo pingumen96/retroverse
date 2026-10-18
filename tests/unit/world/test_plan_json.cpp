@@ -1,0 +1,403 @@
+// The WorldPlan's canonical JSON (rv/world/plan_json.hpp, ADR-0010 §8): one plan is one text, its lists sorted
+// whatever their order in memory; the text is read back as the same plan and written again byte for byte; a plan of a
+// newer schema, a hand-edited text and every malformed field are refused with the line they stand on.
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+#include <algorithm>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include <rv/core/sha256.hpp>
+#include <rv/world/plan_json.hpp>
+
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::EndsWith;
+using rv::catalog::GameId;
+using rv::world::DressedLevel;
+using rv::world::Fixture;
+using rv::world::FixtureId;
+using rv::world::FixtureLevel;
+using rv::world::FixtureRole;
+using rv::world::LevelId;
+using rv::world::Placement;
+using rv::world::RoomId;
+using rv::world::Section;
+using rv::world::SlotId;
+using rv::world::UnplacedGame;
+using rv::world::UnplacedReason;
+using rv::world::WorldPlan;
+
+namespace {
+
+GameId game(std::uint64_t value) {
+    return *GameId::fromValue(value);
+}
+
+RoomId snesRoom() {
+    return *RoomId::forSystem(*rv::catalog::SystemName::parse("snes"));
+}
+
+FixtureId fixtureId(std::string_view socket, std::string_view part = {}) {
+    return *FixtureId::make(snesRoom(), socket, part);
+}
+
+/// A small plan with a field of every kind, its lists out of their canonical order.
+WorldPlan samplePlan() {
+    WorldPlan plan;
+    plan.generatorVersion = {1, 0};
+    plan.randomAlgorithm = "splitmix64/1";
+    plan.titleKeyRule = "title-key/1";
+    plan.catalogSortKeyVersion = 1;
+    plan.seed = 18446744073709551615ull;
+    plan.preset = "retro_museum_cozy";
+    plan.inputDigest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    rv::world::Room room;
+    room.id = snesRoom();
+    room.templateId = "console_room_9x10";
+    room.templateVersion = 1;
+    room.minXMm = -4500;
+    room.maxXMm = 4500;
+    room.minZMm = -5000;
+    room.maxZMm = 5000;
+    room.heightMm = 3200;
+    room.seed = 42;
+    room.mediaFamily = "cartridge_home_16bit";
+    room.themePack = "classic_16bit_warm";
+    plan.rooms.push_back(room);
+
+    Fixture module;
+    module.id = fixtureId("hw-w");
+    module.role = FixtureRole::HeroModule;
+    module.prefab = {"furniture.shelf.hero_module.generic", "shelf"};
+    module.xMm = -2425;
+    module.zMm = -4795;
+    module.widthMm = 900;
+    module.heightMm = 2000;
+    module.depthMm = 350;
+    module.levels = {{4, 6, Section::Band}, {0, 33, Section::Spine}};
+    Fixture crt;
+    crt.id = fixtureId("hero", "crt");
+    crt.role = FixtureRole::HeroCorner;
+    crt.prefab = {"electronics.crt.consumer.generic", "crt"};
+    crt.xMm = -805;
+    crt.yMm = 550;
+    crt.zMm = -4690;
+    crt.widthMm = 710;
+    crt.heightMm = 610;
+    crt.depthMm = 560;
+    Fixture display;
+    display.id = fixtureId("dc01");
+    display.role = FixtureRole::Display;
+    display.prefab = {"furniture.display_case.generic", "display_case"};
+    display.xMm = -1000;
+    display.zMm = 1000;
+    display.yawCdeg = 9000;
+    display.widthMm = 1200;
+    display.heightMm = 900;
+    display.depthMm = 500;
+    display.levels = {{0, 11, Section::Featured}};
+    plan.fixtures = {module, crt, display};
+
+    plan.placements = {{*SlotId::make(fixtureId("hw-w"), 0, 1), game(1), 3, 0},
+                       {*SlotId::make(fixtureId("dc01"), 0, 0), game(2), 0, 120}};
+    plan.dressing = {{*LevelId::make(fixtureId("hw-w"), 0), 2, 31, {"decor.storage_box.generic", "storage_box"}}};
+    plan.unplaced = {{game(4), snesRoom(), UnplacedReason::NoCover, {}},
+                     {game(3), snesRoom(), UnplacedReason::DuplicateTitle, game(1)}};
+    return plan;
+}
+
+// The canonical text of samplePlan(), written by hand from the format: keys by code point, one element per line in the
+// top-level arrays, nothing else between the tokens, a final line feed.
+const std::string kSampleText =
+    "{\"catalogSortKeyVersion\":1,\"dressing\":[\n"
+    "{\"count\":31,\"firstSlot\":2,\"level\":\"room:snes/fx:hw-w/l:0\","
+    "\"prop\":{\"kind\":\"storage_box\",\"manifest\":\"decor.storage_box.generic\"}}\n"
+    "],\"fixtures\":[\n"
+    "{\"depthMm\":500,\"heightMm\":900,\"id\":\"room:snes/fx:dc01\","
+    "\"levels\":[{\"level\":0,\"section\":\"featured\",\"slots\":11}],"
+    "\"prefab\":{\"kind\":\"display_case\",\"manifest\":\"furniture.display_case.generic\"},\"role\":\"display\","
+    "\"widthMm\":1200,\"xMm\":-1000,\"yMm\":0,\"yawCdeg\":9000,\"zMm\":1000},\n"
+    "{\"depthMm\":560,\"heightMm\":610,\"id\":\"room:snes/fx:hero.crt\",\"levels\":[],"
+    "\"prefab\":{\"kind\":\"crt\",\"manifest\":\"electronics.crt.consumer.generic\"},\"role\":\"hero-corner\","
+    "\"widthMm\":710,\"xMm\":-805,\"yMm\":550,\"yawCdeg\":0,\"zMm\":-4690},\n"
+    "{\"depthMm\":350,\"heightMm\":2000,\"id\":\"room:snes/fx:hw-w\","
+    "\"levels\":[{\"level\":0,\"section\":\"spine\",\"slots\":33},{\"level\":4,\"section\":\"band\",\"slots\":6}],"
+    "\"prefab\":{\"kind\":\"shelf\",\"manifest\":\"furniture.shelf.hero_module.generic\"},\"role\":\"hero-module\","
+    "\"widthMm\":900,\"xMm\":-2425,\"yMm\":0,\"yawCdeg\":0,\"zMm\":-4795}\n"
+    "],\"generatorVersion\":\"1.0\","
+    "\"inputDigest\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"library\":\"esde\","
+    "\"placements\":[\n"
+    "{\"game\":\"g0000000000000002\",\"insetMm\":0,\"slot\":\"room:snes/fx:dc01/s:0.0\",\"yawCdeg\":120},\n"
+    "{\"game\":\"g0000000000000001\",\"insetMm\":3,\"slot\":\"room:snes/fx:hw-w/s:0.1\",\"yawCdeg\":0}\n"
+    "],\"preset\":\"retro_museum_cozy\",\"randomAlgorithm\":\"splitmix64/1\",\"rooms\":[\n"
+    "{\"growthSteps\":0,\"heightMm\":3200,\"id\":\"room:snes\",\"maxXMm\":4500,\"maxZMm\":5000,"
+    "\"mediaFamily\":\"cartridge_home_16bit\",\"minXMm\":-4500,\"minZMm\":-5000,\"seed\":42,"
+    "\"template\":\"console_room_9x10\",\"templateVersion\":1,\"themePack\":\"classic_16bit_warm\"}\n"
+    "],\"schemaVersion\":1,\"seed\":18446744073709551615,\"titleKeyRule\":\"title-key/1\",\"unplaced\":[\n"
+    "{\"game\":\"g0000000000000003\",\"reason\":\"duplicate-title\",\"representative\":\"g0000000000000001\","
+    "\"room\":\"room:snes\"},\n"
+    "{\"game\":\"g0000000000000004\",\"reason\":\"no-cover\",\"room\":\"room:snes\"}\n"
+    "]}\n";
+
+std::string replaced(std::string text, std::string_view from, std::string_view to) {
+    const std::size_t at = text.find(from);
+    REQUIRE(at != std::string::npos);
+    text.replace(at, from.size(), to);
+    return text;
+}
+
+/// The 1-based line of the first occurrence of `needle`.
+std::size_t lineOf(std::string_view text, std::string_view needle) {
+    const std::size_t at = text.find(needle);
+    REQUIRE(at != std::string_view::npos);
+    return 1 + static_cast<std::size_t>(std::count(text.begin(), text.begin() + static_cast<std::ptrdiff_t>(at), '\n'));
+}
+
+rv::Error refusal(const std::string& text) {
+    auto plan = rv::world::readPlan(text, "world-plan.json");
+    REQUIRE_FALSE(plan.has_value());
+    return plan.error();
+}
+
+} // namespace
+
+TEST_CASE("world/plan_json: a plan's canonical text, its lists sorted", "[world][plan_json]") {
+    const WorldPlan plan = samplePlan();
+    auto text = rv::world::writePlan(plan);
+    REQUIRE(text.has_value());
+    CHECK(*text == kSampleText);
+
+    // The order in memory does not matter: reversed lists give the same text.
+    WorldPlan reversed = plan;
+    std::reverse(reversed.fixtures.begin(), reversed.fixtures.end());
+    std::reverse(reversed.placements.begin(), reversed.placements.end());
+    std::reverse(reversed.unplaced.begin(), reversed.unplaced.end());
+    std::reverse(reversed.fixtures.front().levels.begin(), reversed.fixtures.front().levels.end());
+    CHECK(*rv::world::writePlan(reversed) == kSampleText);
+
+    // The digest is the SHA-256 of the text.
+    auto digest = rv::world::planDigest(plan);
+    REQUIRE(digest.has_value());
+    CHECK(*digest == rv::core::sha256Hex(kSampleText));
+    CHECK(rv::world::isSha256Hex(*digest));
+}
+
+TEST_CASE("world/plan_json: the text is read back as the plan and written again byte for byte", "[world][plan_json]") {
+    auto plan = rv::world::readPlan(kSampleText, "world-plan.json");
+    REQUIRE(plan.has_value());
+    WorldPlan expected = samplePlan();
+    rv::world::sortPlan(expected);
+    CHECK(*plan == expected);
+    CHECK(*rv::world::writePlan(*plan) == kSampleText);
+
+    // An empty plan has a text too.
+    WorldPlan empty = samplePlan();
+    empty.rooms.clear();
+    empty.fixtures.clear();
+    empty.placements.clear();
+    empty.dressing.clear();
+    empty.unplaced.clear();
+    auto emptyText = rv::world::writePlan(empty);
+    REQUIRE(emptyText.has_value());
+    CHECK_THAT(*emptyText, ContainsSubstring("\"fixtures\":[],"));
+    CHECK(*rv::world::readPlan(*emptyText, "empty.json") == empty);
+}
+
+TEST_CASE("world/plan_json: a large plan round-trips byte for byte", "[world][plan_json]") {
+    WorldPlan plan = samplePlan();
+    plan.placements.clear();
+    // 2,000 placements over 8 modules of 7 levels of 36 slots, in a scrambled order.
+    for (std::uint64_t i = 0; i < 2000; ++i) {
+        const std::uint64_t n = (i * 7919) % 2000;
+        const std::string socket = "w0" + std::to_string(1 + n / 252);
+        const auto slot = SlotId::make(fixtureId(socket), static_cast<std::uint32_t>((n % 252) / 36),
+                                       static_cast<std::uint32_t>(n % 36));
+        REQUIRE(slot.has_value());
+        plan.placements.push_back({*slot, game(1000 + n), static_cast<std::int64_t>(n % 5), 0});
+    }
+    auto text = rv::world::writePlan(plan);
+    REQUIRE(text.has_value());
+    auto read = rv::world::readPlan(*text, "large.json");
+    REQUIRE(read.has_value());
+    CHECK(read->placements.size() == 2000);
+    CHECK(std::is_sorted(read->placements.begin(), read->placements.end()));
+    CHECK(*rv::world::writePlan(*read) == *text);
+}
+
+TEST_CASE("world/plan_json: a newer schema is refused as such", "[world][plan_json]") {
+    const rv::Error newer = refusal(replaced(kSampleText, "\"schemaVersion\":1", "\"schemaVersion\":2"));
+    CHECK(newer.code == rv::ErrorCode::Unsupported);
+    CHECK_THAT(newer.message, ContainsSubstring("newer"));
+    CHECK(newer.context == "world-plan.json:12");
+
+    // Even when the rest of it would not be read by this build.
+    std::string future = replaced(kSampleText, "\"schemaVersion\":1", "\"schemaVersion\":7");
+    future = replaced(future, "{\"catalogSortKeyVersion\":1,", "{\"aNewList\":[],\"catalogSortKeyVersion\":1,");
+    CHECK(refusal(future).code == rv::ErrorCode::Unsupported);
+
+    const rv::Error older = refusal(replaced(kSampleText, "\"schemaVersion\":1", "\"schemaVersion\":0"));
+    CHECK(older.code == rv::ErrorCode::ValidationFailed);
+    CHECK_THAT(older.message, ContainsSubstring("/schemaVersion"));
+}
+
+TEST_CASE("world/plan_json: a text that is not the canonical one is refused", "[world][plan_json]") {
+    // White space, an escaped slash, a missing final line feed, a fraction: core::parseCanonicalJson refuses them.
+    for (const std::string& text :
+         {replaced(kSampleText, "\"seed\":42", "\"seed\": 42"),
+          replaced(kSampleText, "room:snes/fx:dc01/s:0.0", "room:snes\\/fx:dc01/s:0.0"),
+          kSampleText.substr(0, kSampleText.size() - 1), replaced(kSampleText, "\"insetMm\":3", "\"insetMm\":3.0")}) {
+        const rv::Error error = refusal(text);
+        CHECK(error.code == rv::ErrorCode::ValidationFailed);
+    }
+    CHECK(refusal("{").code == rv::ErrorCode::ParseError);
+    CHECK(refusal("[]\n").code == rv::ErrorCode::ValidationFailed);
+}
+
+TEST_CASE("world/plan_json: malformed fields are refused with their line", "[world][plan_json]") {
+    struct Case {
+        std::string_view from;
+        std::string_view to;
+        std::string_view message; ///< a part of the message
+        std::string_view lineOf;  ///< text on the line the error must name (in the edited text)
+    };
+    const Case cases[] = {
+        {"{\"catalogSortKeyVersion\":1,", "{\"aaa\":1,\"catalogSortKeyVersion\":1,", "/aaa: unknown key", "aaa"},
+        {"\"library\":\"esde\",", "", "/library: missing", "catalogSortKeyVersion"},
+        {"\"library\":\"esde\"", "\"library\":\"ES DE\"", "/library: expected a library id", "library"},
+        {"\"seed\":18446744073709551615", "\"seed\":\"x\"", "/seed: expected an integer", "\"seed\":\"x\""},
+        {"\"seed\":18446744073709551615", "\"seed\":-1", "/seed: expected an integer from 0", "\"seed\":-1"},
+        {"\"generatorVersion\":\"1.0\"", "\"generatorVersion\":\"1.01\"", "/generatorVersion", "generatorVersion"},
+        {"\"generatorVersion\":\"1.0\"", "\"generatorVersion\":\"1\"", "/generatorVersion", "generatorVersion"},
+        {"\"randomAlgorithm\":\"splitmix64/1\"", "\"randomAlgorithm\":\"splitmix64\"", "/randomAlgorithm",
+         "randomAlgorithm"},
+        {"\"inputDigest\":\"e3b0", "\"inputDigest\":\"E3B0", "/inputDigest", "inputDigest"},
+        {"\"preset\":\"retro_museum_cozy\"", "\"preset\":\"Retro\"", "/preset", "\"preset\""},
+        {"\"id\":\"room:snes\",", "\"id\":\"snes\",", "/rooms/0/id", "\"id\":\"snes\""},
+        {"\"maxXMm\":4500", "\"maxXMm\":-4500", "/rooms/0/maxXMm: must be greater", "\"maxXMm\":-4500"},
+        {"\"growthSteps\":0", "\"growthSteps\":1001", "/rooms/0/growthSteps", "growthSteps"},
+        {"\"themePack\":\"classic_16bit_warm\"", "\"themePack\":7", "/rooms/0/themePack: expected a string",
+         "themePack"},
+        {"\"role\":\"display\"", "\"role\":\"shelf\"", "/fixtures/0/role: expected one of", "\"role\":\"shelf\""},
+        {"\"yawCdeg\":9000", "\"yawCdeg\":36000", "/fixtures/0/yawCdeg", "36000"},
+        {"\"widthMm\":1200", "\"widthMm\":0", "/fixtures/0/widthMm", "\"widthMm\":0"},
+        {"\"kind\":\"crt\"", "\"kind\":\"CRT\"", "/fixtures/1/prefab/kind", "CRT"},
+        {"\"manifest\":\"electronics.crt.consumer.generic\"", "\"manifest\":\"crt\"", "/fixtures/1/prefab/manifest",
+         "\"manifest\":\"crt\""},
+        {"{\"level\":0,\"section\":\"spine\",\"slots\":33},{\"level\":4,\"section\":\"band\",\"slots\":6}",
+         "{\"level\":4,\"section\":\"band\",\"slots\":6},{\"level\":0,\"section\":\"spine\",\"slots\":33}",
+         "/fixtures/2/levels/1: out of order", "hero_module"},
+        {"\"section\":\"featured\",\"slots\":11", "\"section\":\"featured\",\"slots\":0", "/fixtures/0/levels/0/slots",
+         "\"slots\":0"},
+        {"\"section\":\"featured\"", "\"section\":\"face\"", "/fixtures/0/levels/0/section", "face"},
+        {"room:snes/fx:hw-w/s:0.1", "room:snes/fx:hw-w/s:00.1", "/placements/1/slot: expected a slot id", "s:00.1"},
+        {"\"game\":\"g0000000000000002\"", "\"game\":\"g0000000000000000\"", "/placements/0/game", "g0000000000000000"},
+        {"\"insetMm\":3", "\"insetMm\":-3", "/placements/1/insetMm", "\"insetMm\":-3"},
+        {"\"count\":31", "\"count\":0", "/dressing/0/count", "\"count\":0"},
+        {"\"firstSlot\":2", "\"firstSlot\":9999", "/dressing/0/count: the slots run past", "firstSlot"},
+        {"room:snes/fx:hw-w/l:0", "room:snes/fx:hw-w/l:x", "/dressing/0/level", "l:x"},
+        {"\"reason\":\"no-cover\",", "\"reason\":\"no-cover\",\"representative\":\"g0000000000000001\",",
+         "/unplaced/1/representative: only a duplicate-title", "no-cover"},
+        {"\"representative\":\"g0000000000000001\",", "", "/unplaced/0/representative: missing", "duplicate-title"},
+        {"\"reason\":\"no-cover\"", "\"reason\":\"hidden\"", "/unplaced/1/reason", "hidden"},
+    };
+    for (const Case& test : cases) {
+        INFO(test.to);
+        const std::string text = replaced(kSampleText, test.from, test.to);
+        const rv::Error error = refusal(text);
+        CHECK(error.code == rv::ErrorCode::ValidationFailed);
+        CHECK_THAT(error.message, ContainsSubstring(std::string(test.message)));
+        CHECK(error.context == "world-plan.json:" + std::to_string(lineOf(text, test.lineOf)));
+    }
+}
+
+TEST_CASE("world/plan_json: lists out of order or holding a key twice are refused", "[world][plan_json]") {
+    const std::string first =
+        "{\"game\":\"g0000000000000002\",\"insetMm\":0,\"slot\":\"room:snes/fx:dc01/s:0.0\",\"yawCdeg\":120}";
+    const std::string second =
+        "{\"game\":\"g0000000000000001\",\"insetMm\":3,\"slot\":\"room:snes/fx:hw-w/s:0.1\",\"yawCdeg\":0}";
+
+    const std::string swapped = replaced(kSampleText, first + ",\n" + second, second + ",\n" + first);
+    const rv::Error outOfOrder = refusal(swapped);
+    CHECK_THAT(outOfOrder.message, ContainsSubstring("/placements/1: out of order: placements are sorted by slot"));
+    CHECK(outOfOrder.context == "world-plan.json:9");
+
+    // The same slot and game twice, even with another offset.
+    const std::string again = replaced(second, "\"insetMm\":3", "\"insetMm\":4");
+    const rv::Error twice = refusal(replaced(kSampleText, second, second + ",\n" + again));
+    CHECK_THAT(twice.message, ContainsSubstring("/placements/2: appears twice"));
+    CHECK(twice.context == "world-plan.json:10");
+
+    // Two games in one slot are a plan the reader reads: the validation (I3 step 4) refuses it.
+    const std::string shared = replaced(second, "g0000000000000001", "g0000000000000005");
+    auto twoGames = rv::world::readPlan(replaced(kSampleText, second, second + ",\n" + shared), "world-plan.json");
+    REQUIRE(twoGames.has_value());
+    CHECK(twoGames->placements.size() == 3);
+
+    // A fixture twice.
+    const std::size_t fixtureStart = kSampleText.find("{\"depthMm\":560");
+    const std::size_t fixtureEnd = kSampleText.find('\n', fixtureStart);
+    const std::string crtLine = kSampleText.substr(fixtureStart, fixtureEnd - fixtureStart);
+    const rv::Error fixtureTwice = refusal(replaced(kSampleText, crtLine, crtLine + "\n" + crtLine));
+    CHECK_THAT(fixtureTwice.message, ContainsSubstring("/fixtures/2: appears twice"));
+}
+
+TEST_CASE("world/plan_json: the writer refuses what the reader would", "[world][plan_json]") {
+    WorldPlan noRoomId = samplePlan();
+    noRoomId.rooms.front().id = RoomId{};
+    auto refused = rv::world::writePlan(noRoomId);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().code == rv::ErrorCode::InvalidArgument);
+    CHECK_THAT(refused.error().message, ContainsSubstring("/rooms/0/id"));
+
+    WorldPlan fixtureTwice = samplePlan();
+    fixtureTwice.fixtures.push_back(fixtureTwice.fixtures.front());
+    refused = rv::world::writePlan(fixtureTwice);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK_THAT(refused.error().message, ContainsSubstring("appears twice"));
+
+    WorldPlan stray = samplePlan();
+    stray.unplaced.front().representative = game(9); // on a no-cover entry
+    refused = rv::world::writePlan(stray);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK_THAT(refused.error().message, ContainsSubstring("only a duplicate-title"));
+
+    WorldPlan noRepresentative = samplePlan();
+    noRepresentative.unplaced.back().representative = GameId{};
+    CHECK_FALSE(rv::world::writePlan(noRepresentative).has_value());
+
+    WorldPlan badDigest = samplePlan();
+    badDigest.inputDigest = "abc";
+    CHECK_FALSE(rv::world::planToJson(badDigest).has_value());
+    CHECK_FALSE(rv::world::planDigest(badDigest).has_value());
+
+    WorldPlan newer = samplePlan();
+    newer.schemaVersion = 2;
+    CHECK_FALSE(rv::world::writePlan(newer).has_value());
+}
+
+TEST_CASE("world/plan_json: generator versions and enumerations as text", "[world][plan_json]") {
+    CHECK(rv::world::GeneratorVersion{12, 3}.toString() == "12.3");
+    CHECK(*rv::world::GeneratorVersion::parse("0.0") == rv::world::GeneratorVersion{0, 0});
+    for (const std::string_view text : {"", "1", "1.", ".1", "01.0", "1.00", "1.0.0", "-1.0", "1000000.0"}) {
+        INFO(text);
+        CHECK_FALSE(rv::world::GeneratorVersion::parse(text).has_value());
+    }
+    CHECK(rv::world::GeneratorVersion{1, 9} < rv::world::GeneratorVersion{2, 0});
+    for (const FixtureRole role : {FixtureRole::HeroModule, FixtureRole::SideModule, FixtureRole::Display,
+                                   FixtureRole::HeroCorner, FixtureRole::Decoration}) {
+        CHECK(rv::world::parseFixtureRole(rv::world::toString(role)) == role);
+    }
+    for (const UnplacedReason reason : {UnplacedReason::DuplicateTitle, UnplacedReason::NoCover,
+                                        UnplacedReason::Unavailable, UnplacedReason::Capacity}) {
+        CHECK(rv::world::parseUnplacedReason(rv::world::toString(reason)) == reason);
+    }
+    CHECK(rv::world::parseSection("band") == Section::Band);
+    CHECK(rv::world::isFaceOut(Section::Featured));
+    CHECK(rv::world::isFaceOut(Section::Band));
+    CHECK_FALSE(rv::world::isFaceOut(Section::Spine));
+}
