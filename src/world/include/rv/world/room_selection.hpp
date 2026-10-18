@@ -1,6 +1,6 @@
 #pragma once
 
-// RoomSelection (ADR-0010 §3): the generator's input for one room, which world::selectRoom (I3 step 2) makes from a
+// RoomSelection (ADR-0010 §3): the generator's input for one room, which selectRoom() (I3 step 2) makes from a
 // RoomInput: the eligible titles, one representative each, in priority order, and every other game of the system with
 // the reason it is not placed. The generator places the titles and copies the unplaced games into the plan.
 //
@@ -25,6 +25,8 @@
 #include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/world/ids.hpp>
+#include <rv/world/room_input.hpp>
+#include <rv/world/world_config.hpp>
 #include <rv/world/world_plan.hpp>
 
 namespace rv::world {
@@ -60,8 +62,8 @@ struct RoomTitle {
     /// The representative's catalog sort key (catalog::sortKeyOf, RoomSelection::catalogSortKeyVersion): the order of
     /// titles within a section (ADR-0010 §6).
     std::string sortKey;
-    /// The priority's data (ADR-0010 §3): ES-DE's favourite, the play count (ES-DE's plus Retroverse's sessions) and
-    /// the rating in tenths (0 to 10), nothing for an unrated game.
+    /// The priority's data (ADR-0010 §3), of the title's eligible versions (selectRoom()): ES-DE's favourite, the play
+    /// count (ES-DE's plus Retroverse's sessions) and the rating in tenths (0 to 10), nothing for an unrated title.
     bool favorite = false;
     std::uint64_t playCount = 0;
     std::optional<int> ratingTenths;
@@ -86,6 +88,27 @@ struct RoomSelection {
 
     bool operator==(const RoomSelection&) const = default;
 };
+
+/// The room's selection from the catalog's snapshot of its system (ADR-0010 §3, I3 step 2):
+///  - the games: the entries in state Game or MissingFile that ES-DE does not hide (EsdeFlags::hidden); NotAGame,
+///    DiscMember and Folder entries are no games, a hidden game is left out as ES-DE leaves it out, and none of them is
+///    listed;
+///  - a MissingFile entry (its file gone) is unplaced, reason Unavailable. A game whose folder could not be listed
+///    (Availability::SourceUnavailable) is not known to be gone and is selected like the others;
+///  - eligibility: with config.include All every other game is eligible (Eligibility::All); else the games with a cover
+///    are (Covered) and the others unplaced, reason NoCover; when no game has a cover (MissingFile ones included),
+///    every game is eligible (NoCoverInSystem: style §21's P0 room, golden G06's single ROM without media);
+///  - one title per title key (title_key.hpp) of the eligible games' titles; its representative is the first of its
+///    versions by their file names' tags (versionTagsLess()), then the lookup key and the GameId; the other versions
+///    are unplaced, reason DuplicateTitle, with the representative;
+///  - each title's priority data is its versions': a favourite when one of them is, the play counts (ES-DE's plus
+///    Retroverse's sessions) summed, the highest rating; its sort key is the representative's. The titles are in
+///    priority order (priorityLess()), the unplaced games sorted as a plan sorts them.
+/// Nothing is decided from unknown media: while the snapshot's mediaKnown is false there is no selection. Errors:
+/// Unavailable when the media are not known, its message holding RoomSnapshot::mediaUnknownReason; InvalidArgument
+/// for a snapshot without a system or with a GameId twice; those of titleKey() (a title that is not UTF-8), naming the
+/// game.
+[[nodiscard]] Expected<RoomSelection> selectRoom(const RoomInput& input, const WorldConfig& config);
 
 /// The canonical document of `selection` (titles kept in their order, unplaced games sorted). Errors: InvalidArgument
 /// when it holds what readRoomSelection() would refuse, naming the field.

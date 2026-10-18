@@ -1,8 +1,8 @@
 #pragma once
 
 // SqliteCatalogQuery: rv_catalog's ICatalogQuery (rv/catalog/catalog_query.hpp, query.hpp) on the catalog database
-// (ADR-0008 §5), and the other reads of the catalog: its systems with their counts, and everything it holds about one
-// game.
+// (ADR-0008 §5), and the other reads of the catalog: its systems with their counts, everything it holds about one game,
+// and a system's room snapshot (I3 step 2).
 //
 // A query is materialized in one read, on the connection the query object was given (a reader from
 // Database::openReader() on the app's catalog worker, or in retroverse-cli): the GameIds of the entries that pass its
@@ -168,6 +168,18 @@ public:
 
     /// Everything the catalog holds about the game `id`, in one read; nothing when it has no idx_games row.
     [[nodiscard]] Expected<std::optional<GameDetails>> details(catalog::GameId id);
+
+    /// The room's bulk snapshot of `system` (catalog::RoomSnapshot, ADR-0010 §2, §12; src/room_query.cpp), in one read
+    /// on the catalog worker's reader: every indexed entry of the system, of every library the catalog holds (an import
+    /// keeps one), whatever its state, by GameId, with its key and relative path, whether it is a folder (its file
+    /// facts', else a Folder entry's), title, sort key, release year, rating, ES-DE's favourite, hidden flag and play
+    /// count, its media as stored (presence and extension per kind), and Retroverse's play sessions that started the
+    /// game (every outcome but failed-to-start and blocked, launch tests left out) with the start of the last one. The
+    /// sort keys' version is rv_meta's sort_key_version. The media are left unknown (mediaKnown false, with a reason):
+    /// the database cannot tell whether the media root can be reached now; esde::checkRoomMedia() says so on the same
+    /// worker. Within 50 ms for 2,000 games in Release (docs/i3/step-2.md). Errors: NotFound when the catalog knows no
+    /// such system (hasSystem()); ParseError for a row the catalog cannot read back; those of every read.
+    [[nodiscard]] Expected<catalog::RoomSnapshot> roomEntries(const catalog::SystemName& system) override;
 
     /// The connection it reads.
     [[nodiscard]] Connection& connection() noexcept;
