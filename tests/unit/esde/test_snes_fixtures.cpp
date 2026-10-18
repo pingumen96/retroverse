@@ -5,16 +5,16 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
 #include <thread>
-#include <vector>
 
 #include <windows.h>
 
@@ -208,9 +208,11 @@ TEST_CASE("esde/snes_fixtures: snes-room", "[esde][fixture][snes]") {
         jpeg += entryMedia[MediaKind::Cover].extension == ".jpg" ? 1 : 0;
         if (const auto failure = decodeFailure(cover)) {
             failures.emplace(path, *failure);
-        } else if (const auto image = rv::assets::loadImage(cover); image->height > image->width) {
-            ++portrait;
+            continue;
         }
+        const auto image = rv::assets::loadImage(cover);
+        REQUIRE(image.has_value());
+        portrait += image->height > image->width ? 1 : 0;
     }
     CHECK(failures == std::map<std::string, rv::ErrorCode>{{"Bellows Brigade (USA).sfc", rv::ErrorCode::ParseError},
                                                            {"Parasol Patrol (USA).sfc", rv::ErrorCode::Unsupported}});

@@ -64,9 +64,9 @@ struct PicturePayload {
 };
 
 /// A PNG of `image` (1 to 4 channels, 8 bits) written for speed: each row filtered "Sub" or "Up", whichever leaves more
-/// zero bytes, then one deflate block with the fixed Huffman codes whose only matches repeat the previous byte. About
-/// 1 ms for a 680 x 497 cover; on the flat procedural pictures a little larger than stb_image_write's. A valid PNG
-/// every decoder reads; the same image always gives the same bytes.
+/// zero bytes, then one deflate block with the fixed Huffman codes whose only matches repeat the previous byte. A few ms
+/// for a 680 x 497 cover in Release; on the flat procedural pictures about the size of stb_image_write's. A valid PNG
+/// every decoder reads; the same image always gives the same bytes. Empty for an invalid image.
 [[nodiscard]] std::string encodeQuickPng(const assets::ImageData& image);
 
 /// The undamaged picture: RGB for a box, RGBA for a cartridge.

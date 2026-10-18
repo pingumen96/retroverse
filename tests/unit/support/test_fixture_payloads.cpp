@@ -7,12 +7,14 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <iterator>
 #include <set>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -20,7 +22,6 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/time.hpp>
-#include <rv/media/test_video.hpp>
 #include <rv/media/video_decoder.hpp>
 
 #include "../media/media_test_support.hpp"
@@ -109,7 +110,7 @@ TEST_CASE("support/fixture_payloads: covers decode as encoded, landscape, portra
     PicturePayload tiny = landscape;
     tiny.width = 16;
     tiny.height = 16;
-    CHECK(decode(bytesOf(tiny))->width == 16);
+    CHECK(decode(bytesOf(tiny)).value().width == 16);
     tiny.width = 4097;
     CHECK_FALSE(rv::test::pictureBytes(tiny).has_value());
 }
@@ -145,7 +146,7 @@ TEST_CASE("support/fixture_payloads: the quick PNG writer gives back every pixel
     payload.quickPng = true;
     const std::string quick = bytesOf(payload);
     CHECK(quick != stb);
-    CHECK(decode(quick)->pixels == decode(stb)->pixels);
+    CHECK(decode(quick).value().pixels == decode(stb).value().pixels);
 }
 
 TEST_CASE("support/fixture_payloads: a cartridge stands on a transparent background", "[support][fixture][payloads]") {
@@ -206,8 +207,8 @@ TEST_CASE("support/fixture_payloads: files.json's cover object", "[support][fixt
     CHECK(plain->shape == PictureShape::Box);
     CHECK(plain->damage == PictureDamage::None);
 
-    CHECK(parsePicture(R"({"title": "A", "seed": 1})", ".JPG")->format == PictureFormat::Jpeg);
-    CHECK(parsePicture(R"({"title": "A", "seed": 1, "format": "jpeg"})", ".png")->format == PictureFormat::Jpeg);
+    CHECK(parsePicture(R"({"title": "A", "seed": 1})", ".JPG").value().format == PictureFormat::Jpeg);
+    CHECK(parsePicture(R"({"title": "A", "seed": 1, "format": "jpeg"})", ".png").value().format == PictureFormat::Jpeg);
     const auto full = parsePicture(
         R"({"title": "A", "seed": 1, "width": 64, "height": 32, "shape": "cartridge", "damage": "truncated"})");
     REQUIRE(full.has_value());
@@ -215,7 +216,8 @@ TEST_CASE("support/fixture_payloads: files.json's cover object", "[support][fixt
     CHECK(full->height == 32);
     CHECK(full->shape == PictureShape::Cartridge);
     CHECK(full->damage == PictureDamage::Truncated);
-    CHECK(parsePicture(R"({"title": "A", "seed": 1, "damage": "not-an-image"})")->damage == PictureDamage::NotAnImage);
+    CHECK(parsePicture(R"({"title": "A", "seed": 1, "damage": "not-an-image"})").value().damage ==
+          PictureDamage::NotAnImage);
 
     for (const std::string_view bad : {
              R"({"seed": 1})",                                                       // no title
@@ -295,7 +297,7 @@ TEST_CASE("support/fixture_payloads: damaged clips fail as asked", "[support][fi
     CHECK(endOf(corrupt) == DecodeFailure::CorruptData);
 
     const fs::path mjpeg = write("motion.mkv", R"({"seed": 5, "seconds": 0.5, "codec": "mjpeg"})");
-    CHECK(rv::media::probeVideo(mjpeg)->codec == "mjpeg");
+    CHECK(rv::media::probeVideo(mjpeg).value().codec == "mjpeg");
     CHECK(endOf(mjpeg) == DecodeFailure::None);
 
     // Only the clips: the clean sources of the damaged ones are gone.
@@ -466,7 +468,7 @@ TEST_CASE("support/fixture: generated media, collections and an overlay", "[supp
     const auto b = rv::assets::loadImage(fixture.path("media/covers/B (USA).jpg"));
     REQUIRE(b.has_value());
     CHECK(b->height == 40);
-    CHECK(rv::media::probeVideo(fixture.path("media/videos/A (USA).mp4"))->codedSize.width == 160);
+    CHECK(rv::media::probeVideo(fixture.path("media/videos/A (USA).mp4")).value().codedSize.width == 160);
     const auto written = rv::core::parseUtcIso8601("2001-02-03T04:05:06Z");
     REQUIRE(written.has_value());
     CHECK(fs::last_write_time(fixture.path("media/covers/A (USA).png")) ==
@@ -480,14 +482,14 @@ TEST_CASE("support/fixture: generated media, collections and an overlay", "[supp
     CHECK(roms == 23);
     CHECK(std::distance(fs::directory_iterator(fixture.path("media/x/covers")), fs::directory_iterator()) == 23);
     CHECK(std::distance(fs::directory_iterator(fixture.path("media/x/videos")), fs::directory_iterator()) == 1);
-    CHECK(rv::core::readTextFile(fixture.path("gamelists/x/gamelist.xml"))->starts_with("<?xml"));
+    CHECK(rv::core::readTextFile(fixture.path("gamelists/x/gamelist.xml")).value().starts_with("<?xml"));
 
     // The overlay: a new ROM, a cover replaced, the folder gone.
     const auto before = rv::core::readBinaryFile(fixture.path("media/covers/A (USA).png"));
     REQUIRE(before.has_value());
     REQUIRE(fixture.applyOverlay("later"));
     CHECK(fs::exists(fixture.path("roms/C (USA).sfc")));
-    CHECK(*rv::core::readBinaryFile(fixture.path("media/covers/A (USA).png")) != *before);
+    CHECK(rv::core::readBinaryFile(fixture.path("media/covers/A (USA).png")).value() != *before);
     CHECK_FALSE(fs::exists(fixture.path("later")));
     CHECK(fixture.applyOverlay("later").error().code == rv::ErrorCode::NotFound);
     CHECK(fixture.applyOverlay("../elsewhere").error().code == rv::ErrorCode::OutOfRange);

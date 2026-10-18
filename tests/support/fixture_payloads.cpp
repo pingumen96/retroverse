@@ -274,6 +274,9 @@ void chunk(std::string& out, std::string_view type, std::string_view data) {
 } // namespace
 
 std::string encodeQuickPng(const assets::ImageData& image) {
+    if (!image.isValid()) {
+        return {};
+    }
     const int bpp = image.channels;
     const std::size_t rowBytes = image.rowBytes();
     // Filtered scanlines: per row "Sub" or "Up", whichever leaves more zero bytes (flat runs and repeated rows).
