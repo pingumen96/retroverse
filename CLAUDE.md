@@ -154,7 +154,8 @@ start, run report not written). Logs: `<user data>/logs/retroverse.log` (`--data
   the selection; for the ES-DE catalog since I2 step 13 also `notice`, `library`, `systems`, `search`, `filter`,
   `times` {`openedMs`, `firstListMs`, `firstPageMs`} from the process's creation (NFR-01), `pages` and `frames` (p50,
   p95, p99, max of the page fetches and of the frames while it showed games), `interruptedSessions`, `cardSqueezed`
-  (the card's blocks the layout cut: empty in every smoke case)) and every launch (`launches`: game, profile, final
+  (the card's blocks the layout cut: empty in every smoke case), `listed` and `shownCount` (the games of the list and
+  the count the screen showed, equal once a list from the catalog's worker is shown)) and every launch (`launches`: game, profile, final
   state, `outcome` with `reason` and `detail`, exit code, the panels shown in order (`panels`), `frames` of the request,
   start and end, `idleWakes`, `times`; for the ES-DE catalog `before` and `after`, the selection, search, filter and
   walker's pose when Avvia asked and on the first frame after the end, and `session` {`id`, `error`, `verified`}). Read

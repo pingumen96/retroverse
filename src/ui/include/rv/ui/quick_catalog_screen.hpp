@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -120,6 +121,9 @@ public:
     /// that a line or a row of them is cut: each by its id, else its first class ("rows"). Empty when the card shows
     /// everything it holds whole, or is not shown. As the last layout left them (after afterUpdate()).
     [[nodiscard]] std::vector<std::string> squeezedCardBlocks() const;
+    /// The count of games the screen shows (its data model's count, bound when the model's window changed): the list
+    /// shown, never one still on the catalog's worker.
+    [[nodiscard]] std::size_t shownCount() const noexcept;
 
     /// With watchFiles, reloads the document when it or its style sheet changed on disk (polled every 500 ms), keeping
     /// the focus; true when it reloaded. A document that no longer loads keeps the screen empty until fixed (logged).

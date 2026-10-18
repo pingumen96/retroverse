@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include <rv/launcher/launch_guard.hpp>
 #include <rv/launcher/launch_session.hpp>
 
 #include "support/program_stub.hpp"
@@ -472,6 +473,25 @@ TEST_CASE("launcher/launch_session: failures before the process runs", "[launche
         CHECK(session.state() == SessionState::FailedToStart);
         CHECK(session.outcome().failure == FailureReason::StartFailed);
         CHECK(session.outcome().message.find("access denied") != std::string::npos);
+        CHECK_FALSE(session.outcome().refusedByGuard);
+    }
+    SECTION("the automation guard's refusal, as the runner reports it, is told apart") {
+        f.runner.failure = rv::Error{rv::ErrorCode::ValidationFailed,
+                                     "refused by the automation guard: the executable is not listed in "
+                                     "RV_LAUNCH_ALLOWLIST",
+                                     std::string(rv::launcher::kLaunchAllowListVariable)};
+        LaunchSession session(f.request(), f.runner);
+        session.start(kT0);
+        CHECK(session.state() == SessionState::FailedToStart);
+        CHECK(session.outcome().failure == FailureReason::StartFailed);
+        CHECK(session.outcome().refusedByGuard);
+        CHECK(f.runner.starts == 1);
+        // The same code with another context is no refusal of the guard.
+        f.runner.failure->context = "executable";
+        LaunchSession other(f.request(), f.runner);
+        other.start(kT0);
+        CHECK(other.outcome().failure == FailureReason::StartFailed);
+        CHECK_FALSE(other.outcome().refusedByGuard);
     }
     SECTION("a runner that throws: no exception leaves the session, which is not left Starting") {
         f.runner.throwOnStart = true;

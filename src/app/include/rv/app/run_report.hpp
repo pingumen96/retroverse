@@ -121,6 +121,11 @@ struct CatalogRecord {
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;
+    /// Games of the list the model held when the run ended (the search and the filter applied), and the count the
+    /// screen showed (ui::QuickCatalogScreen::shownCount; absent while the catalog was not open): equal once the list a
+    /// query brought from the catalog's worker is shown.
+    std::size_t listed = 0;
+    std::optional<std::size_t> shownCount;
     /// "esde", milliseconds from the process's creation (NFR-01): the catalog opened on the worker (the database, the
     /// library's configuration, the systems' readiness), its first list materialized, and the first frame that showed
     /// a page of it (the quick catalog open with rows of the catalog bound); absent when it did not happen.

@@ -192,7 +192,7 @@ jump, the frame statistics do not count it). Quit requests and window close stil
 `assets/ui/game_session.rml`, chosen by `data-if` on the codes: each says what happened and what to do (check the
 emulator's path in its profile, that the drive or folder of the games is connected, retry and then check the emulator or
 its core). The detail is data: a file name, a token, an exit code or an NTSTATUS name sit inside the sentence; the
-runner's and the plan's own words (`start-failed`, `invalid-request`, `program-refused`, `core-missing`), English and
+runner's and the plan's own words (`start-failed`, `guard-refused`, `invalid-request`, `program-refused`, `core-missing`), English and
 often with a path, show apart on a smaller "Dettagli:" line (`.details`, broken anywhere).
 
 | Code | Reason | Detail | When |
@@ -202,7 +202,7 @@ often with a path, show apart on a smaller "Dettagli:" line (`.details`, broken 
 | `processes-remained` | | the exit code | the started program ended on its own while processes of its tree still ran (a wrapper whose emulator is its child): the game may still run, with the same hint; the window is not raised |
 | `left-running` | `confirmed`, `quit`, `wait-limit` | | the user returned while it ran (no message), Retroverse quit while it ran, a frame-limited run stopped waiting |
 | `crashed` | | `0xC0000005 STATUS_ACCESS_VIOLATION` | an NTSTATUS exception |
-| `failed-to-start` | `start-failed`, `loader-error`, `early-exit`, `invalid-request` | the error (without the launch's name), the NTSTATUS name, the exit code (`3`; an NTSTATUS by its name) | `FailureReason` |
+| `failed-to-start` | `start-failed`, `guard-refused`, `loader-error`, `early-exit`, `invalid-request` | the error (without the launch's name), the NTSTATUS name, the exit code (`3`; an NTSTATUS by its name) | `FailureReason`; `guard-refused` when the session reports `refusedByGuard` (the runner's error is the automation guard's, context `RV_LAUNCH_ALLOWLIST`): the text names the variable and says how to play normally (added after the M1 manual session) |
 | `not-configured` | `template`, `program-refused`, `invalid-request`, `unknown-profile`, `no-launch` | the token (`{var:core}`), the plan's message, the profile id | the plan's configuration blockers, the mock's unknown profile or missing target |
 | `emulator-missing` | | the profile's name | `ExecutableNotFound` |
 | `core-missing` | | the plan's message | `RequiredFileMissing` |

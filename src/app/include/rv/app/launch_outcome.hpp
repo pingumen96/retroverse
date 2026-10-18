@@ -60,8 +60,11 @@ inline constexpr std::string_view kNotReady = "not-ready";
 
 /// kFailedToStart: validateLaunchRequest() refused the request at the start.
 inline constexpr std::string_view kReasonInvalidRequest = "invalid-request";
-/// kFailedToStart: the process could not be created (the runner's error, the automation guard's refusal among them).
+/// kFailedToStart: the process could not be created (the runner's error).
 inline constexpr std::string_view kReasonStartFailed = "start-failed";
+/// kFailedToStart: the automation guard refused the request (launcher::LaunchOutcome::refusedByGuard: RV_LAUNCH_ALLOWLIST
+/// is set in this environment and does not allow it); nothing was created. The detail is the guard's own words.
+inline constexpr std::string_view kReasonGuardRefused = "guard-refused";
 /// kFailedToStart: Windows could not load the program (a missing DLL, a bad image); the detail is the NTSTATUS name.
 inline constexpr std::string_view kReasonLoaderError = "loader-error";
 /// kFailedToStart: it ended with an error code within the startup grace; the detail is the exit code.
@@ -85,9 +88,10 @@ inline constexpr std::string_view kReasonWaitLimit = "wait-limit";
 
 /// The message of a session that ended (launcher::LaunchOutcome of a final session):
 ///  - Crashed: kCrashed, the exit code and its NTSTATUS name ("0xC0000005 STATUS_ACCESS_VIOLATION");
-///  - FailedToStart: kFailedToStart with the reason of its FailureReason, the detail the NTSTATUS name of a loader
-///    error, the exit code of an early exit (exitCodeDetail), otherwise the error of the session's message without the
-///    launch it names (the request's validation, the runner's error: the guard's refusal among them);
+///  - FailedToStart: kFailedToStart with the reason of its FailureReason (kReasonGuardRefused for a start the
+///    automation guard refused), the detail the NTSTATUS name of a loader error, the exit code of an early exit
+///    (exitCodeDetail), otherwise the error of the session's message without the launch it names (the request's
+///    validation, the runner's error, the guard's refusal);
 ///  - Returned, ended by the user's confirmation: kLeftRunning (kReasonConfirmed) when processes remained, kReturned
 ///    otherwise (the user said the game was over: a quick exit of the started program, which UserConfirmReturn
 ///    expects, is no hint then);

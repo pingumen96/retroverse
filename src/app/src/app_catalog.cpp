@@ -91,7 +91,8 @@ catalog::PlaySession finishedPlaySession(catalog::PlaySession running, const lau
             std::max(end - *times.started, LaunchClock::duration::zero()));
     }
     session.processId = launch.processId();
-    session.refusedByGuard = outcome.failure == launcher::FailureReason::StartFailed && !guardAllowed;
+    session.refusedByGuard =
+        outcome.failure == launcher::FailureReason::StartFailed && (!guardAllowed || outcome.refusedByGuard);
     return session;
 }
 

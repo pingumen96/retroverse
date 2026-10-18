@@ -183,31 +183,49 @@ NFR-05's file watcher (I7); the refresh on the app's worker (step 13r, I3).
 
 The one part of the gate a script cannot do: a real gamepad, a real emulator through an isolated profile, and the
 user's eyes. With ES-DE closed, on the reference machine, from the Release build (`./scripts/build.ps1 -Preset
-msvc-x64-release`). Retroverse only reads the library; RetroArch runs with an appended configuration that keeps
-everything it would write inside the data directory's scratch folder (I2 step 12's isolation; ADR-0008 §8).
+msvc-x64-release`). Retroverse only reads the library. The session has two kinds of run, which differ only in the
+environment variable `RV_LAUNCH_ALLOWLIST`:
+
+- **The normal run** (items 1-11): a PowerShell where `RV_LAUNCH_ALLOWLIST` is *not* set, as on any machine that plays.
+  Every ready system launches as ES-DE would: the systems the setup assigned to the isolated profile (gb by default)
+  through it, every other one with ES-DE's own command, so RetroArch runs with the user's own configuration and saves
+  (it writes its saves, history and configuration as when ES-DE starts it).
+- **The isolated run** (item 12 only): a PowerShell where `RV_LAUNCH_ALLOWLIST` names RetroArch. The variable turns on
+  the automation guard meant for test runs and agents (ADR-0008 §8): RetroArch may then start only isolated by an
+  `--appendconfig` file, so only the systems assigned to the isolated profile (gb, by `scripts/m1-manual-setup.ps1`)
+  can launch. ES-DE's commands run RetroArch without `--appendconfig`: a game of any other system (gba, snes, ...) is
+  refused before anything starts, and its game-session panel says that the protection for automated runs blocked it
+  and how to play normally (the guard's own words on its "Dettagli" line). RetroArch then writes only into the data
+  directory's scratch folder (I2 step 12's isolation).
 
 **Preparation** (once, in PowerShell from the repository root):
 
 1. Choose a user data directory outside the library's folders, e.g. `D:\RetroverseM1` (the CLI refuses one inside the
    ES-DE home, the install, the ROM or the media root), and a folder for two snapshots outside the library, the data
    directory and RetroArch's folder, e.g. `build/m1-manual`.
-2. Optional, for item 12, before anything else runs: snapshot the ES-DE home and RetroArch's folder (configuration-like
-   files hashed): `python -I scripts/snapshot_tree.py snapshot <snapshot folder>\before.json --hash <ES-DE home>
-   --hash <RetroArch folder>`.
-3. Run `./scripts/m1-manual-setup.ps1 -DataDir <data dir> -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install>
+2. Run `./scripts/m1-manual-setup.ps1 -DataDir <data dir> -EsdeHome <ES-DE home> -EsdeInstall <ES-DE install>
    -RetroArchExe <RetroArch folder>\retroarch.exe` (add `-RomRoot`/`-MediaRoot` only if ES-DE's settings do not give
    them; `-System gb -Core gambatte_libretro.dll` are the defaults). It runs, with the Release `retroverse-cli`:
    `library create`, `import`, writes the isolated RetroArch profile
    (`<data dir>\retroarch-scratch\retroverse-isolated.cfg` and `<data dir>\config\emulators.json` with the profile
    `retroarch-isolated`: `-L <core> --appendconfig=<cfg> --sram-mode=noload-nosave
    --log-file=<scratch>\logs\retroarch.log <rom>`), `assign gb --profile retroarch-isolated` and `profiles --system gb`
-   (the profile ready), and prints the two commands below. By hand instead: the same
+   (the profile ready), and prints the commands of both runs. It sets `RV_LAUNCH_ALLOWLIST` only around its own
+   `assign` and `profiles` and leaves the PowerShell's environment as it found it. By hand instead: the same
    `retroverse-cli --data-dir <data dir>` commands, the configuration as the script writes it.
-4. In the same PowerShell: `$env:RV_LAUNCH_ALLOWLIST = '<RetroArch folder>\retroarch.exe'` (the automation guard: only
-   RetroArch may start, and only with its `--appendconfig` file), then
-   `build/msvc-x64-release/bin/retroverse.exe --data-dir <data dir> --fullscreen`.
+3. The normal run, for items 1-11: in a PowerShell without the variable (`Remove-Item Env:RV_LAUNCH_ALLOWLIST
+   -ErrorAction SilentlyContinue`, after which `Test-Path Env:RV_LAUNCH_ALLOWLIST` reads `False`; a new PowerShell has
+   it only when it is set for the user or the machine), `build/msvc-x64-release/bin/retroverse.exe --data-dir
+   <data dir> --fullscreen`.
+4. The isolated run, for item 12, after the normal run (whose launches of other systems change RetroArch's folder as
+   ES-DE's would): snapshot the ES-DE home and RetroArch's folder (configuration-like files hashed): `python -I
+   scripts/snapshot_tree.py snapshot <snapshot folder>\before.json --hash <ES-DE home> --hash <RetroArch folder>`;
+   then `$env:RV_LAUNCH_ALLOWLIST = '<RetroArch folder>\retroarch.exe'` and the same `retroverse.exe` command; launch
+   a gb game and quit RetroArch, try a game of another system, quit Retroverse; then `Remove-Item
+   Env:RV_LAUNCH_ALLOWLIST` (or close that PowerShell) before playing normally again.
 
-**Checklist** (with the pad only from here, except where an item says otherwise; sign and date each line):
+**Checklist** (with the pad only from here, except where an item says otherwise; items 1-11 in the normal run, item 12
+in the isolated run; sign and date each line):
 
 | # | Item | Signed | Date |
 |---|---|---|---|
@@ -216,13 +234,13 @@ everything it would write inside the data directory's scratch folder (I2 step 12
 | 3 | Search, with the keyboard (the one step that is not pad-only in M1: the on-screen keyboard comes in I7): from the first game, up twice to the search field, type a word of a known title; the list narrows to the matching games and the count follows | | |
 | 4 | The shoulders change the system filter: the chip row shows the active system, the list and the count follow; a filter and the search together | | |
 | 5 | A game whose emulator is missing or needs configuration (e.g. a ps3 or ps2 game) shows it on its card; A on it shows why in the game-session panel and launches nothing; B dismisses the panel | | |
-| 6 | A on a ready gb game: "Gioco in corso", RetroArch in front in fullscreen, playable with the same pad; Retroverse renders nothing meanwhile | | |
+| 6 | A on a ready game, gb (the isolated profile) and another system such as gba (ES-DE's own command, the user's RetroArch configuration): "Gioco in corso", RetroArch in front in fullscreen, playable with the same pad; Retroverse renders nothing meanwhile | | |
 | 7 | Quit RetroArch from its menu with the pad: Retroverse is back in front, in fullscreen, with the same game selected, the same filter and search and the walker where it was, and the pad works within about 1 s | | |
 | 8 | Launch again; while the game runs, Alt+Tab (or the Windows key) back to Retroverse: after about 1.5 s "Gioco in corso" asks; "Torna al gioco" goes back to the game | | |
 | 9 | Quit Retroverse while the game runs (close its window from the taskbar, the one step that needs the mouse): the game keeps running; quit RetroArch afterwards | | |
 | 10 | `build/msvc-x64-release/bin/retroverse-cli.exe --data-dir <data dir> sessions` lists the session of item 7 as returned (verified) and the one of item 9 as left running (quit) | | |
 | 11 | Start Retroverse again with the same data directory and open the catalog: B walks back out of it to the room, and the walker moves with the stick | | |
-| 12 | RetroArch wrote only into `<data dir>\retroarch-scratch` (its log, core options); ES-DE's files untouched (optional, with the snapshot of preparation step 2: `python -I scripts/snapshot_tree.py snapshot <snapshot folder>\after.json --hash <ES-DE home> --hash <RetroArch folder>`, then `python -I scripts/snapshot_tree.py compare <snapshot folder>\before.json <snapshot folder>\after.json`: exit 0, 0 differences) | | |
+| 12 | The isolated run (preparation step 4): the gb game launches and returns; the game of another system launches nothing and its panel says the protection for automated runs blocked it; RetroArch wrote only into `<data dir>\retroarch-scratch` (its log, core options) and ES-DE's files are untouched: `python -I scripts/snapshot_tree.py snapshot <snapshot folder>\after.json --hash <ES-DE home> --hash <RetroArch folder>`, then `python -I scripts/snapshot_tree.py compare <snapshot folder>\before.json <snapshot folder>\after.json`: exit 0, 0 differences | | |
 
 Signed off by: ______________________  Date: __________
 </content>

@@ -110,4 +110,8 @@ private:
 /// context RV_LAUNCH_ALLOWLIST.
 [[nodiscard]] Status checkLaunchGuard(const LaunchRequest& request);
 
+/// True when `error` is the guard's refusal as checkLaunchGuard() reports it (ValidationFailed, context
+/// RV_LAUNCH_ALLOWLIST): what a runner returns unchanged when the guard refused the request.
+[[nodiscard]] bool isGuardRefusal(const Error& error) noexcept;
+
 } // namespace rv::launcher

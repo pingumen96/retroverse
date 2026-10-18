@@ -243,9 +243,20 @@ TEST_CASE("app/launch_flow: endings with something to tell show the outcome pane
         CHECK(f.flow.takeReturned());
         CHECK(f.flow.panel() == SessionPanel::Outcome);
         CHECK(f.flow.message().code == lo::kFailedToStart);
-        CHECK(f.flow.message().reason == lo::kReasonStartFailed);
+        CHECK(f.flow.message().reason == lo::kReasonGuardRefused);
         CHECK(f.flow.message().detail.find("not on the allow-list") != std::string::npos);
+        CHECK(f.flow.records().front().reason == lo::kReasonGuardRefused);
         CHECK(f.flow.records().front().endFrame == 9u);
+    }
+    SECTION("the runner fails otherwise: failed to start, the runner's error") {
+        Fixture f;
+        f.runner.failure = rv::Error{rv::ErrorCode::PlatformError, "CreateProcessW failed: access denied", "x"};
+        REQUIRE(f.flow.request(f.request(), Fixture::info(), 8));
+        f.flow.start(kT0, {}, 9);
+        CHECK(f.flow.panel() == SessionPanel::Outcome);
+        CHECK(f.flow.message().code == lo::kFailedToStart);
+        CHECK(f.flow.message().reason == lo::kReasonStartFailed);
+        CHECK(f.flow.message().detail.find("access denied") != std::string::npos);
     }
 }
 

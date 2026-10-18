@@ -75,7 +75,8 @@ TEST_CASE("app/game_session_document: a text for every phase, outcome code and r
     }
     // And every reason of the codes that have reasons.
     for (const std::string_view reason :
-         {lo::kReasonStartFailed, lo::kReasonLoaderError, lo::kReasonEarlyExit, lo::kReasonInvalidRequest}) {
+         {lo::kReasonStartFailed, lo::kReasonGuardRefused, lo::kReasonLoaderError, lo::kReasonEarlyExit,
+          lo::kReasonInvalidRequest}) {
         INFO(reason);
         CHECK(contains(rml, "code == 'failed-to-start' && reason == '" + std::string(reason) + "'"));
     }
@@ -102,10 +103,16 @@ TEST_CASE("app/game_session_document: a text for every phase, outcome code and r
     CHECK(contains(rml, "\"wait\": \"tree\""));
     // The runner's and the plan's own words never sit inside an Italian sentence: they show apart.
     CHECK(contains(rml, "Dettagli: {{ detail }}"));
-    for (const std::string_view reason : {lo::kReasonStartFailed, lo::kReasonInvalidRequest, lo::kReasonProgramRefused}) {
+    for (const std::string_view reason : {lo::kReasonStartFailed, lo::kReasonGuardRefused, lo::kReasonInvalidRequest,
+                                          lo::kReasonProgramRefused}) {
         INFO(reason);
         CHECK(contains(rml, "reason == '" + std::string(reason) + "' ||"));
     }
+    // A launch the automation guard refused says what blocked it and how to play normally: without the variable, or
+    // with a profile its list allows.
+    CHECK(contains(rml, "bloccato dalla protezione"));
+    CHECK(contains(rml, "senza RV_LAUNCH_ALLOWLIST"));
+    CHECK(contains(rml, "un profilo d'emulatore che l'elenco permette"));
     // The panel's Italian strings live here, among them the panel's title while a game runs.
     CHECK(contains(rml, "Gioco in corso"));
     CHECK(contains(rml, "Torna a Retroverse"));

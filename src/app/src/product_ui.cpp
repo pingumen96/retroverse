@@ -546,8 +546,10 @@ void ProductUi::finish() {
     }
     record.search = s.model->search();
     record.filter = s.model->activeFilter();
+    record.listed = s.model->count();
     if (s.screen && s.catalogOpen) {
         record.cardSqueezed = s.screen->squeezedCardBlocks();
+        record.shownCount = s.screen->shownCount();
     }
     if (!s.lockstep) {
         record.frames = summarizeTimes(s.frameMs);

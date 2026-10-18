@@ -14,8 +14,12 @@
          a user emulators.json in <DataDir>\config holding the profile "retroarch-isolated" (the RetroArch executable
          given, the system's core, --appendconfig, --sram-mode=noload-nosave and a log file in the scratch folder; no
          frame limit, so the game is played until it is quit);
-      4. retroverse-cli assign <System> --profile retroarch-isolated, then `profiles --system <System>` to show it ready.
-    It then prints the commands of the session (docs/testing/gate-m1.md, "Manual session"). Nothing is written outside
+      4. retroverse-cli assign <System> --profile retroarch-isolated, then `profiles --system <System>` to show it ready
+         (RV_LAUNCH_ALLOWLIST naming RetroArch for these two commands only; the caller's environment is restored).
+    It then prints the commands of both runs of the session (docs/testing/gate-m1.md, "Manual session"): the normal run
+    without RV_LAUNCH_ALLOWLIST (checklist items 1-11: every ready system launches as ES-DE would, RetroArch with the
+    user's own configuration and saves outside <System>), and the isolated run with it (item 12: only the systems
+    assigned to the isolated profile can launch, the automation guard refuses the others). Nothing is written outside
     <DataDir>; the library and RetroArch's folder are only read. Exit codes: 0 ready; 1 a command failed; 2 it could
     not start (ES-DE running, a folder or program missing, a data directory that exists already without -Force).
 
@@ -128,14 +132,37 @@ New-Item -ItemType Directory -Force -Path (Join-Path $DataDir 'config') | Out-Nu
 $emulatorsFile = Join-Path $DataDir 'config\emulators.json'
 [IO.File]::WriteAllText($emulatorsFile, ($emulators | ConvertTo-Json -Depth 6) + "`n")
 
-# 4. The profile assigned to the system, and its readiness.
-$env:RV_LAUNCH_ALLOWLIST = (Resolve-Path -LiteralPath $RetroArchExe).Path
-Invoke-Cli @('assign', $System, '--profile', 'retroarch-isolated')
-Invoke-Cli @('profiles', '--system', $System)
+# 4. The profile assigned to the system, and its readiness, with the automation guard naming RetroArch alone (as in the
+# isolated run). The variable is set for these two commands only: a script run with ./ shares the caller's process, so
+# the caller's PowerShell gets its environment back as it was (an exit within Invoke-Cli included).
+$allowList = (Resolve-Path -LiteralPath $RetroArchExe).Path
+$previousAllowList = [Environment]::GetEnvironmentVariable('RV_LAUNCH_ALLOWLIST', 'Process')
+try {
+    $env:RV_LAUNCH_ALLOWLIST = $allowList
+    Invoke-Cli @('assign', $System, '--profile', 'retroarch-isolated')
+    Invoke-Cli @('profiles', '--system', $System)
+} finally {
+    [Environment]::SetEnvironmentVariable('RV_LAUNCH_ALLOWLIST', $previousAllowList, 'Process')
+}
 
 $app = Join-Path $bin 'retroverse.exe'
 Write-Host ''
-Write-Host 'Ready. In this PowerShell, for the session (the automation guard lets RetroArch alone start):'
-Write-Host "  `$env:RV_LAUNCH_ALLOWLIST = '$($env:RV_LAUNCH_ALLOWLIST)'"
-Write-Host "  & '$app' --data-dir '$DataDir' --fullscreen"
+Write-Host 'Ready. The session has two kinds of run (docs/testing/gate-m1.md, "Manual session"):'
+Write-Host ''
+Write-Host "1. The normal run, checklist items 1-11: a PowerShell WITHOUT RV_LAUNCH_ALLOWLIST. Every ready system launches"
+Write-Host "   as ES-DE would: $System through the isolated profile, the others with ES-DE's own command (RetroArch with your"
+Write-Host '   own configuration and saves).'
+Write-Host '     Remove-Item Env:RV_LAUNCH_ALLOWLIST -ErrorAction SilentlyContinue'
+Write-Host "     & '$app' --data-dir '$DataDir' --fullscreen"
+Write-Host ''
+Write-Host "2. The isolated run, checklist item 12 only: RV_LAUNCH_ALLOWLIST naming RetroArch turns on the automation guard."
+Write-Host "   Only the systems assigned to the isolated profile ($System) can launch; the others are refused (their panel"
+Write-Host "   says the protection for automated runs blocked them). Snapshot first (gate-m1.md, preparation step 4), then:"
+Write-Host "     `$env:RV_LAUNCH_ALLOWLIST = '$allowList'"
+Write-Host "     & '$app' --data-dir '$DataDir' --fullscreen"
+Write-Host '     Remove-Item Env:RV_LAUNCH_ALLOWLIST    # afterwards, before playing normally again'
+Write-Host ''
+if ($null -ne $previousAllowList) {
+    Write-Host 'Note: RV_LAUNCH_ALLOWLIST is set in this PowerShell now: remove it before the normal run.' -ForegroundColor Yellow
+}
 Write-Host "Afterwards: & '$cli' --data-dir '$DataDir' sessions"

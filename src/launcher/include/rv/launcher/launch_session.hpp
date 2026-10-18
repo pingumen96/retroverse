@@ -78,6 +78,9 @@ struct LaunchOutcome {
     bool wasStillRunning = false;
     /// Processes seen in the tree, the started one included (1 when the tree is not followed).
     std::size_t processesSeen = 0;
+    /// StartFailed because the runner reported the automation guard's refusal (isGuardRefusal(): RV_LAUNCH_ALLOWLIST
+    /// is set and does not allow the request); nothing was created.
+    bool refusedByGuard = false;
 };
 
 /// Time points of a session (LaunchClock), present once reached.

@@ -70,7 +70,8 @@ LaunchMessage messageForOutcome(const launcher::LaunchOutcome& outcome) {
             break;
         case launcher::FailureReason::StartFailed:
         case launcher::FailureReason::None:
-            message.reason = std::string(lo::kReasonStartFailed);
+            message.reason =
+                std::string(outcome.refusedByGuard ? lo::kReasonGuardRefused : lo::kReasonStartFailed);
             message.detail = failureDetail(outcome.message);
             break;
         }
