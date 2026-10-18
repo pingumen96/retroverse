@@ -31,6 +31,7 @@
 
 #include <rv/core/file_watch_set.hpp>
 #include <rv/core/text.hpp>
+#include <rv/ui/filter_count_log.hpp>
 #include <rv/ui/focus_regions.hpp>
 #include <rv/ui/ui_system.hpp>
 #include <rv/ui/ui_view.hpp>
@@ -580,9 +581,27 @@ struct QuickCatalogScreen::Impl {
             return;
         }
         logError("filter");
-        spdlog::info("Quick catalog: filter '{}', {} game(s)", key.empty() ? "(every game)" : key, model.count());
+        noteFilter(model.activeFilter());
         sync();
         followSelection();
+    }
+
+    /// A filter became the active one: its count is logged once its list is the one shown (at once when the source
+    /// answered at once, else when afterUpdate() collects it from the catalog worker).
+    void noteFilter(const std::string& key) {
+        filterLog.chosen(key);
+        if (model.pending()) {
+            spdlog::debug("Quick catalog: filter '{}' chosen, its list comes from the catalog's worker",
+                          key.empty() ? "(every game)" : key);
+        }
+        logFilterCount();
+    }
+
+    /// Logs how many games the chosen filter lets through once its list is the one shown (FilterCountLog).
+    void logFilterCount() {
+        if (const std::optional<std::string> line = filterLog.take(model)) {
+            spdlog::info("Quick catalog: {}", *line);
+        }
     }
 
     /// The shoulders: the next or previous filter from any region. The active chip comes into view (the focus moves to
@@ -592,8 +611,7 @@ struct QuickCatalogScreen::Impl {
             return;
         }
         logError("filter");
-        spdlog::info("Quick catalog: filter '{}', {} game(s)",
-                     model.activeFilter().empty() ? "(every game)" : model.activeFilter(), model.count());
+        noteFilter(model.activeFilter());
         sync();
         const std::optional<std::string> active = regions.entry(qc::kRegionChips);
         if (focus && focus->region == qc::kRegionChips && active) {
@@ -1101,6 +1119,8 @@ struct QuickCatalogScreen::Impl {
     std::uint64_t rowBinds = 0;
     /// The last error of the model that was logged.
     std::optional<Error> loggedError;
+    /// The filter chosen last, until its count is logged.
+    FilterCountLog filterLog;
     FocusRegions regions;
     FocusHistory history;
     std::optional<FocusTarget> focus;
@@ -1196,6 +1216,7 @@ void QuickCatalogScreen::afterUpdate() {
     // A list a query running on the source's worker brought, and what the application changed in the model directly.
     static_cast<void>(impl.model.poll());
     impl.catchUp();
+    impl.logFilterCount(); // a filter's list the worker brought: its count, as the screen now shows it
     impl.settleCard();
     impl.updateChipsCue();
     if (impl.measureRows() || impl.poolStale) {
@@ -1296,6 +1317,10 @@ std::uint64_t QuickCatalogScreen::windowBinds() const noexcept {
 
 std::uint64_t QuickCatalogScreen::rowBinds() const noexcept {
     return m_impl->rowBinds;
+}
+
+std::size_t QuickCatalogScreen::shownCount() const noexcept {
+    return static_cast<std::size_t>(std::max(m_impl->count, 0));
 }
 
 std::vector<std::string> QuickCatalogScreen::squeezedCardBlocks() const {

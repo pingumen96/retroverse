@@ -364,6 +364,10 @@ Json catalogToJson(const CatalogRecord& catalog) {
     json["systems"] = catalog.systems;
     json["search"] = catalog.search;
     json["filter"] = catalog.filter;
+    json["listed"] = catalog.listed;
+    if (catalog.shownCount) {
+        json["shownCount"] = *catalog.shownCount;
+    }
     Json times = Json::object();
     putOptional(times, "openedMs", catalog.openedMs);
     putOptional(times, "firstListMs", catalog.firstListMs);
@@ -453,6 +457,11 @@ CatalogRecord readCatalog(FieldReader& fields) {
     catalog.systems = static_cast<std::size_t>(fields.optionalCount("systems", kMaxSize).value_or(0));
     catalog.search = fields.optionalString("search").value_or("");
     catalog.filter = fields.optionalString("filter").value_or("");
+    // Written since the M1 manual session's fixes: optional as well.
+    catalog.listed = static_cast<std::size_t>(fields.optionalCount("listed", kMaxSize).value_or(0));
+    if (const auto shown = fields.optionalCount("shownCount", kMaxSize)) {
+        catalog.shownCount = static_cast<std::size_t>(*shown);
+    }
     if (auto times = fields.optionalObject("times")) {
         catalog.openedMs = times->optionalNumber("openedMs");
         catalog.firstListMs = times->optionalNumber("firstListMs");

@@ -607,4 +607,8 @@ Status checkLaunchGuard(const LaunchRequest& request) {
                      std::string(kLaunchAllowListVariable));
 }
 
+bool isGuardRefusal(const Error& error) noexcept {
+    return error.code == ErrorCode::ValidationFailed && error.context == kLaunchAllowListVariable;
+}
+
 } // namespace rv::launcher

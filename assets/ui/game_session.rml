@@ -65,6 +65,12 @@
 				nuovo, controlla l'emulatore o il core di questo sistema.</p>
 			<p data-if="code == 'failed-to-start' && reason == 'start-failed'">L'emulatore non è partito. Controlla il
 				percorso dell'emulatore nel suo profilo.</p>
+			<!-- The automation guard refused the launch (RV_LAUNCH_ALLOWLIST set in this environment, for test runs and
+			     the isolated checks): nothing started; the guard's own words on the "Dettagli" line. -->
+			<p data-if="code == 'failed-to-start' && reason == 'guard-refused'">L'avvio è stato bloccato dalla protezione
+				per le esecuzioni automatiche: in questo ambiente è impostata la variabile RV_LAUNCH_ALLOWLIST, che
+				permette solo i programmi del suo elenco. Per giocare normalmente avvia Retroverse senza RV_LAUNCH_ALLOWLIST,
+				oppure usa per questo gioco un profilo d'emulatore che l'elenco permette.</p>
 			<p data-if="code == 'failed-to-start' && reason == 'loader-error'">Windows non è riuscito a caricare
 				l'emulatore: manca una libreria o il programma è danneggiato ({{ detail }}). Reinstalla l'emulatore o
 				controlla i file che richiede.</p>
@@ -107,7 +113,7 @@
 				richiede. Installalo, o scegli un altro comando.</p>
 			<p data-if="code == 'not-ready' && reason != 'source-unavailable' && reason != 'rom-missing' && reason != 'requires-configuration' && reason != 'emulator-not-found' && reason != 'core-not-found'">Il gioco
 				non è pronto per l'avvio.</p>
-			<p id="session-details" class="details" data-if="reason == 'start-failed' || reason == 'invalid-request' || reason == 'program-refused' || code == 'core-missing' || (code == 'not-ready' && detail != '')">Dettagli: {{ detail }}</p>
+			<p id="session-details" class="details" data-if="reason == 'start-failed' || reason == 'guard-refused' || reason == 'invalid-request' || reason == 'program-refused' || code == 'core-missing' || (code == 'not-ready' && detail != '')">Dettagli: {{ detail }}</p>
 		</div>
 
 		<!-- The choices. Each row is a scroll container: RmlUi's spatial navigation stays inside it. -->

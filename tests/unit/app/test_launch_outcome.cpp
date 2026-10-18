@@ -84,6 +84,14 @@ TEST_CASE("app/launch_outcome: a session's end becomes a code, a reason and a de
     guarded.message = "Lanterna di Vetro with Emulatore di prova could not be started: validation-failed: not listed "
                       "[RV_LAUNCH_ALLOWLIST]";
     CHECK(rv::app::messageForOutcome(guarded).detail == "validation-failed: not listed [RV_LAUNCH_ALLOWLIST]");
+    // The automation guard's refusal (the session told it apart) has its own reason: the document says what blocked
+    // the launch and how to play normally; the guard's words stay on the "Dettagli" line.
+    CHECK(rv::app::messageForOutcome(guarded).reason == lo::kReasonStartFailed);
+    guarded.refusedByGuard = true;
+    CHECK(rv::app::messageForOutcome(guarded) ==
+          LaunchMessage{std::string(lo::kFailedToStart), std::string(lo::kReasonGuardRefused),
+                        "validation-failed: not listed [RV_LAUNCH_ALLOWLIST]"});
+    CHECK(rv::app::showsMessage(rv::app::messageForOutcome(guarded)));
     invalid.message = "Lanterna with Emulatore was not started: not-found: no such file [executable]";
     CHECK(rv::app::messageForOutcome(invalid).detail == "not-found: no such file [executable]");
 

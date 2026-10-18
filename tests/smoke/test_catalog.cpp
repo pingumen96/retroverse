@@ -145,7 +145,18 @@ TEST_CASE("catalog: a game found by search and filter launches from the ES-DE ca
     CHECK(record.games == 15);   // the fixture's games (its missing file is not listed)
     CHECK(record.search == "nintendo");
     CHECK(record.filter == "gb");
+    // The gb games matching "nintendo", the list the screen shows and its count alike.
+    CHECK(record.listed == 8);
+    CHECK(record.shownCount == std::optional<std::size_t>(8));
     CHECK(record.selectedId == tennis.toString());
+    // The filter's count was logged with the filter's own list, which the catalog's worker brought a frame later,
+    // never with the search's list shown when the filter was chosen (13 games: gb's and snes's).
+    {
+        const auto log = rv::core::readTextFile(run.outputFile);
+        REQUIRE(log.has_value());
+        CHECK(log->find("Quick catalog: filter 'gb', 8 game(s)") != std::string::npos);
+        CHECK(log->find("Quick catalog: filter 'gb', 13 game(s)") == std::string::npos);
+    }
     REQUIRE(record.openedMs.has_value());
     REQUIRE(record.firstListMs.has_value());
     REQUIRE(record.firstPageMs.has_value());

@@ -11,6 +11,7 @@
 
 add_library(rv_ui_model STATIC
     src/catalog_source.cpp
+    src/filter_count_log.cpp
     src/focus_history.cpp
     src/focus_regions.cpp
     src/in_memory_catalog_source.cpp

@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/core/text.hpp>
+#include <rv/launcher/launch_guard.hpp>
 
 namespace rv::launcher {
 namespace {
@@ -154,6 +155,7 @@ void LaunchSession::start(LaunchClock::time_point now, StartCallbacks callbacks)
         }
     }();
     if (!process || !*process) {
+        m_outcome.refusedByGuard = !process && isGuardRefusal(process.error());
         fail(FailureReason::StartFailed,
              fmt::format("{} could not be started: {}", describeLaunch(),
                          process ? std::string("the runner returned no process") : process.error().toString()),

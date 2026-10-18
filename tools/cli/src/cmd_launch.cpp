@@ -602,8 +602,9 @@ void startAndFollow(CommandContext& context, catalog_db::SessionStore& store, co
             std::max(end - *times.started, launcher::LaunchClock::duration::zero()));
     }
     session.processId = launch.processId();
-    session.refusedByGuard = outcome.failure == launcher::FailureReason::StartFailed && report.run.guard &&
-                             !report.run.guard->allowed();
+    session.refusedByGuard =
+        outcome.failure == launcher::FailureReason::StartFailed &&
+        (outcome.refusedByGuard || (report.run.guard && !report.run.guard->allowed()));
     recordFinished(recorder, report);
 }
 

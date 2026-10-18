@@ -135,7 +135,7 @@ TEST_CASE("launch: failures leave the application interactive with their outcome
         {"quick_exit", fake_games::kQuickExit, "Returned", "quick-exit", "", "0"},
         {"error_exit", fake_games::kErrorExit, "FailedToStart", "failed-to-start", "early-exit", "3"},
         {"crash", fake_games::kCrashes, "Crashed", "crashed", "", "0xC0000005 STATUS_ACCESS_VIOLATION"},
-        {"not_listed", fake_games::kNotListed, "FailedToStart", "failed-to-start", "start-failed",
+        {"not_listed", fake_games::kNotListed, "FailedToStart", "failed-to-start", "guard-refused",
          "RV_LAUNCH_ALLOWLIST", false},
         {"emulator_missing", fake_games::kMissingEmulator, "Blocked", "emulator-missing", "", "Emulatore assente"},
         {"rom_missing", fake_games::kRomMissing, "Blocked", "rom-missing", "", "assente.gb"},
