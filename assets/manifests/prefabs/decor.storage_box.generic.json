@@ -1,0 +1,32 @@
+// Shelf dressing: storage boxes (ADR-0010 §5; I3 step 1b). The generator sizes it to the level it dresses (width,
+// height, depth: the level's Level_<n> socket) and varies it with the level's propSeed (seed); no nominal size.
+{
+  "schemaVersion": 1,
+  "id": "decor.storage_box.generic",
+  "assetType": "decor",
+  "category": "shelf_dressing",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-18",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "storage_box",
+    "params": {},
+    "scaleMeters": null,
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "shelf_dressing", "storage_box", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

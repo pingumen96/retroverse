@@ -1,5 +1,6 @@
-# rv_assets: CPU-side asset loading (images, glTF models, prefab manifests, material presets, shader sources,
-# procedural test patterns and surface textures) and the GLB writer; since I3 (skeletons naming step 5) the cover and
+# rv_assets: CPU-side asset loading (images, glTF models, prefab manifests and, since I3 step 1b, their families and
+# fallbacks, material presets, shader sources, procedural test patterns and surface textures) and the GLB writer;
+# since I3 (skeletons naming step 5) the cover and
 # label pipeline: fit rules, mips in linear light, BC1, text, generated labels and spines, the .rvtex files of the
 # derived-texture cache. GPU-free: produces plain data consumed by the renderer.
 
@@ -19,6 +20,7 @@ add_library(rv_assets STATIC
     src/mip_chain.cpp
     src/path_util.cpp
     src/prefab_manifest.cpp
+    src/prefab_resolver.cpp
     src/procedural_noise.cpp
     src/rvtex.cpp
     src/shader_source.cpp

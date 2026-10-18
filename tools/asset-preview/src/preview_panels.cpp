@@ -209,7 +209,8 @@ private:
         toggle("Bounds (cm)", overlays.bounds, "The subject's bounds with its width, height and depth");
         toggle("Node bounds", overlays.nodeBounds, "The bounds of every drawn node (prefab part)");
         toggle("Pivot", overlays.pivot, "The axes of the subject's origin: X red, Y green, Z blue");
-        toggle("Sockets", overlays.sockets, "Socket axes and names, screen outlines, collision proxies");
+        toggle("Sockets", overlays.sockets,
+               "Socket axes and names, screen outlines, slot and level volumes, collision proxies");
         toggle("Normals", overlays.normals, "A short line along the normal of every vertex");
         ImGui::EndTable();
     }
@@ -276,7 +277,12 @@ private:
                 m_partMaterials.push_back(found != materials.end() ? found->second : std::string("-"));
             }
             for (const geometry::Socket& socket : subject.prefab->sockets) {
-                m_socketPositions.push_back(formatPosition(glm::vec3(socket.transform[3])));
+                // Where the socket is and, for a slot or a screen, its extent (a slot: the item it holds).
+                std::string text = formatPosition(glm::vec3(socket.transform[3]));
+                if (!socket.bounds.isEmpty()) {
+                    text += ", " + formatDimensions(geometry::socketSize(socket));
+                }
+                m_socketPositions.push_back(std::move(text));
             }
         }
     }
@@ -445,6 +451,14 @@ public:
             devui::widgets::valueRow("Sockets", report.sockets);
             ImGui::EndTable();
         }
+        if (!report.slots.empty()) {
+            ImGui::SeparatorText("Slots");
+            for (const std::string& line : m_slotLines) {
+                ImGui::Bullet(); // keeps the cursor on its line: the text wraps beside the bullet
+                ImGui::TextWrapped("%s", line.c_str());
+                ImGui::SetItemTooltip("Slot sockets (Slot_<level>_<index>) by the volume an item fills in them");
+            }
+        }
         drawTextures(report);
         ImGui::SeparatorText("glTF extensions");
         if (report.extensions.empty()) {
@@ -460,6 +474,11 @@ private:
     /// materials only; the texture cache also keeps the procedural surfaces of earlier subjects).
     void refresh() {
         m_dimensions = formatDimensions(m_model.report.size);
+        m_slotLines.clear();
+        for (const SlotReport& slots : m_model.report.slots) {
+            m_slotLines.push_back(fmt::format("{}: {} in {} level{}", formatDimensions(slots.size), slots.slots,
+                                              slots.levels, slots.levels == 1 ? "" : "s"));
+        }
         m_prefabTextures = 0;
         m_prefabTextureBytes = 0;
         if (!m_model.subject.prefab) {
@@ -524,6 +543,8 @@ private:
     PreviewPanelModel m_model;
     SubjectRevision m_revision;
     std::string m_dimensions;
+    /// One line per AssetReport::slots entry: "2.0 x 12.5 x 8.5 cm: 231 in 7 levels".
+    std::vector<std::string> m_slotLines;
     std::size_t m_prefabTextures = 0;
     std::size_t m_prefabTextureBytes = 0;
 };

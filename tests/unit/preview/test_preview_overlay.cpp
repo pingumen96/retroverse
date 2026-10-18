@@ -149,16 +149,43 @@ TEST_CASE("preview/overlay: the placeholder shows its box without dimensions", "
     CHECK(hasLabel(rv::preview::buildPreviewOverlay(missing, OverlaySelection{}), "pivot"));
 }
 
-TEST_CASE("preview/overlay: shelf slots show their axes without names", "[preview][overlay]") {
+TEST_CASE("preview/overlay: slots and levels show their axes and volumes without names", "[preview][overlay]") {
     OverlaySelection socketsOnly = none();
     socketsOnly.sockets = true;
-    const PreviewSubject shelf = load("prefab:shelf");
-    REQUIRE(shelf.prefab.has_value());
-    const PreviewOverlay overlay = rv::preview::buildPreviewOverlay(shelf, socketsOnly);
-    CHECK(overlay.labels.empty());
-    CHECK(overlay.lines.markerVertices().size() == 2 * 3 * shelf.sockets.size());
-    // The prefab's collider box is drawn as its proxy.
-    CHECK(overlay.lines.vertices().size() == 2 * 12);
+    for (const std::string_view target : {"prefab:shelf", "prefab:display_case", "prefab:wall_shelf"}) {
+        INFO(target);
+        const PreviewSubject subject = load(target);
+        REQUIRE(subject.prefab.has_value());
+        REQUIRE_FALSE(subject.sockets.empty());
+        const PreviewOverlay overlay = rv::preview::buildPreviewOverlay(subject, socketsOnly);
+        CHECK(overlay.labels.empty());
+        CHECK(overlay.lines.markerVertices().size() == 2 * 3 * subject.sockets.size());
+        // Each slot's and each level's volume as a box in its color, then the prefab's collider box as its proxy.
+        REQUIRE(overlay.lines.vertices().size() == 2 * 12 * (subject.sockets.size() + 1));
+        std::size_t slots = 0;
+        std::size_t levels = 0;
+        for (const rv::geometry::Socket& socket : subject.sockets) {
+            slots += socket.kind == rv::geometry::SocketKind::ShelfSlot ? 1 : 0;
+            levels += rv::geometry::parseLevelId(socket.id).has_value() ? 1 : 0;
+        }
+        CHECK(slots + levels == subject.sockets.size());
+        const auto colored = [&](const glm::vec4& color) {
+            return static_cast<std::size_t>(std::count_if(overlay.lines.vertices().begin(),
+                                                          overlay.lines.vertices().end(),
+                                                          [&](const auto& vertex) { return vertex.color == color; }));
+        };
+        CHECK(colored(rv::preview::overlay_colors::kSlot) == 2 * 12 * slots);
+        CHECK(colored(rv::preview::overlay_colors::kLevel) == 2 * 12 * levels);
+        CHECK(overlay.lines.vertices().back().color == rv::preview::overlay_colors::kCollider);
+        // A socket's box is its volume placed by the socket: its corners lie at the socket's bounds.
+        for (std::size_t s = 0; s < subject.sockets.size(); ++s) {
+            const rv::geometry::Socket& socket = subject.sockets[s];
+            const rv::core::Aabb placed = socket.bounds.transformed(socket.transform).inflated(1e-5f);
+            for (std::size_t i = 2 * 12 * s; i < 2 * 12 * (s + 1); ++i) {
+                CHECK(placed.contains(overlay.lines.vertices()[i].position));
+            }
+        }
+    }
 }
 
 TEST_CASE("preview/overlay: the floor grid has 10 cm and 1 m lines around the subject and its references",

@@ -293,25 +293,14 @@ TEST_CASE("world/data: the platform manifest and the media family", "[world][dat
     CHECK_FALSE(rv::world::checkItemManifest(*family, other).has_value());
 }
 
-TEST_CASE("world/data: every prefab the data names has a manifest, or is one a later step writes", "[world][data]") {
-    // The manifests of I3 step 1b (the modules, the display fixtures, the shelf dressing) and the hero corner's
-    // armchair, which no manifest names yet (docs/i3/step-1a.md, "Notes for later steps").
-    const std::set<std::string> pending = {"furniture.shelf.hero_module.generic",
-                                           "furniture.shelf.side_module.generic",
-                                           "furniture.wall_shelf.featured.generic",
-                                           "furniture.display_case.generic",
-                                           "decor.storage_box.generic",
-                                           "decor.magazine_stack.generic",
-                                           "decor.bookends.generic",
-                                           "furniture.armchair.generic"};
+TEST_CASE("world/data: every prefab the data names has a manifest of its kind", "[world][data]") {
+    // Since I3 step 1b every manifest the data names exists (the modules, the display fixtures, the shelf dressing,
+    // the hero corner's armchair).
     for (const rv::world::PrefabRef& prefab : namedPrefabs()) {
         INFO(prefab.manifest);
         CHECK(rv::assets::isValidPrefabId(prefab.manifest));
         const std::filesystem::path path = kAssets / "manifests" / "prefabs" / (prefab.manifest + ".json");
-        if (!std::filesystem::exists(path)) {
-            CHECK(pending.contains(prefab.manifest));
-            continue;
-        }
+        REQUIRE(std::filesystem::exists(path));
         auto manifest = rv::assets::loadPrefabManifest(path);
         REQUIRE(manifest.has_value());
         CHECK(manifest->runtime.generator.value_or("") == prefab.kind);

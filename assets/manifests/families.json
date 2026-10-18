@@ -1,0 +1,40 @@
+// Prefab families (style §7.3, §21, §26.3; I3 step 1b): every prefab id belongs to the family whose id is its longest
+// dotted prefix. A missing or invalid manifest resolves to its family's generic manifest (tier B), and when that one
+// is missing or invalid too, to the family's procedural prefab: `generator` built with `params` (tier C), the same
+// generator and parameters as the generic manifest (unit-tested). assets::resolvePrefab logs one warning for each
+// fallback. Every manifest under prefabs/ belongs to a family, and every family's generic manifest exists.
+{
+  "schemaVersion": 1,
+  "families": [
+    {"id": "architecture.room_shell", "generic": "architecture.room_shell.generic", "generator": "room_shell",
+     "params": {}},
+    {"id": "decor.bookends", "generic": "decor.bookends.generic", "generator": "bookends", "params": {}},
+    {"id": "decor.lamp", "generic": "decor.lamp.floor.generic", "generator": "floor_lamp", "params": {}},
+    {"id": "decor.magazine_stack", "generic": "decor.magazine_stack.generic", "generator": "magazine_stack",
+     "params": {}},
+    {"id": "decor.poster_frame", "generic": "decor.poster_frame.generic", "generator": "poster_frame", "params": {}},
+    {"id": "decor.rug", "generic": "decor.rug.generic", "generator": "rug", "params": {}},
+    {"id": "decor.storage_box", "generic": "decor.storage_box.generic", "generator": "storage_box", "params": {}},
+    {"id": "electronics.crt", "generic": "electronics.crt.consumer.generic", "generator": "crt", "params": {}},
+    {"id": "furniture.armchair", "generic": "furniture.armchair.generic", "generator": "armchair", "params": {}},
+    {"id": "furniture.display_case", "generic": "furniture.display_case.generic", "generator": "display_case",
+     "params": {}},
+    // The collection's modules: the hero-wall module falls back to the side-wall module, which fits its socket.
+    {"id": "furniture.shelf", "generic": "furniture.shelf.side_module.generic", "generator": "shelf",
+     "params": {
+       "width": 0.9, "height": 1.775, "depth": 0.24, "levels": 7, "boardThickness": 0.025, "back": true,
+       "plinthHeight": 0.35, "slotSize": [0.02, 0.125, 0.085], "slotGap": 0.004, "slotMargin": 0.03,
+       "slotFrontInset": 0.01
+     }},
+    {"id": "furniture.shelf_modular", "generic": "furniture.shelf_modular.generic", "generator": "shelf",
+     "params": {}},
+    {"id": "furniture.tv_cabinet", "generic": "furniture.tv_cabinet.generic", "generator": "tv_cabinet",
+     "params": {}},
+    {"id": "furniture.wall_shelf", "generic": "furniture.wall_shelf.featured.generic", "generator": "wall_shelf",
+     "params": {}},
+    {"id": "hardware.console", "generic": "hardware.console.cartridge.generic", "generator": "console_cartridge",
+     "params": {}},
+    {"id": "media.cartridge", "generic": "media.cartridge.home16.generic", "generator": "cartridge",
+     "params": {"spineLabel": true}}
+  ]
+}

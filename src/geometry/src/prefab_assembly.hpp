@@ -67,6 +67,13 @@ private:
 /// Rigid frame at `position` whose +Z points along the horizontal unit vector `forward` and +Y up.
 [[nodiscard]] glm::mat4 frameFacing(const glm::vec3& forward, const glm::vec3& position);
 
+/// Rigid frame at `position` leaning back by `radians` about +X: +Y = (0, cos, -sin), +Z = (0, sin, cos), the frame of
+/// a face-out item leaning against a panel or a wall behind it.
+[[nodiscard]] glm::mat4 leaningBack(float radians, const glm::vec3& position);
+
+/// `frame` applied to the point (0, y, z): where a point of a leaning frame lies.
+[[nodiscard]] glm::vec3 framePoint(const glm::mat4& frame, float y, float z);
+
 /// Shortest round-trip text of a float, for error messages ("0.125", "1e-05").
 [[nodiscard]] std::string formatNumber(float value);
 

@@ -221,8 +221,8 @@ glm::vec4 labelColor(geometry::SocketKind kind) noexcept {
     return kOtherLabel;
 }
 
-/// Socket axes and names, screen outlines, collision proxies (a model's ColliderProxy meshes, a prefab's collider
-/// boxes) as wireframes.
+/// Socket axes and names, screen outlines, slot and level volumes, collision proxies (a model's ColliderProxy meshes, a
+/// prefab's collider boxes) as wireframes.
 void addSockets(const PreviewSubject& subject, const core::Aabb& bounds, PreviewOverlay& overlay) {
     std::size_t edgeBudget = kMaxColliderEdges;
     for (const geometry::Socket& socket : subject.sockets) {
@@ -230,12 +230,19 @@ void addSockets(const PreviewSubject& subject, const core::Aabb& bounds, Preview
         if (socket.kind == geometry::SocketKind::ScreenSurface) {
             overlay.lines.addBox(socket.bounds, socket.transform, overlay_colors::kScreen);
         }
+        // Slots and levels: their volumes without names (a module has hundreds).
+        const bool level = geometry::parseLevelId(socket.id).has_value();
+        if (socket.kind == geometry::SocketKind::ShelfSlot && !socket.bounds.isEmpty()) {
+            overlay.lines.addBox(socket.bounds, socket.transform, overlay_colors::kSlot);
+        } else if (level && !socket.bounds.isEmpty()) {
+            overlay.lines.addBox(socket.bounds, socket.transform, overlay_colors::kLevel);
+        }
         if (socket.kind == geometry::SocketKind::ColliderProxy && subject.model) {
             for (const geometry::MeshData& mesh : socketMeshes(*subject.model, socket)) {
                 addMeshOutline(mesh, socket.transform, overlay_colors::kCollider, edgeBudget, overlay.lines);
             }
         }
-        if (socket.kind != geometry::SocketKind::ShelfSlot) {
+        if (socket.kind != geometry::SocketKind::ShelfSlot && !level) {
             overlay.labels.push_back({glm::vec3(socket.transform[3]), socket.nodeName, labelColor(socket.kind)});
         }
     }

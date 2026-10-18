@@ -1,0 +1,34 @@
+// The low display case (ADR-0010 §3; I3 step 1b): a wooden base with doors under a vitrine with a glass front and top,
+// two face-out levels leaning back 30 degrees, 8 slots of 12.5 x 8.5 x 2.0 cm each: 16 slots, two cases 32 of D = 44.
+{
+  "schemaVersion": 1,
+  "id": "furniture.display_case.generic",
+  "assetType": "furniture",
+  "category": "display_case",
+  "role": "display",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-18",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "display_case",
+    "params": {},
+    "scaleMeters": [1.2, 0.95, 0.5],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "firstSlot": "Slot_0_0"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "display_case", "glass", "game_slots", "face_out", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

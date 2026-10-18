@@ -176,6 +176,25 @@ TEST_CASE("preview/report: statistics of a model and of a prefab", "[preview][re
     CHECK(crt.triangles > 100);
     CHECK(crt.textures.empty());
     CHECK(crt.sockets == 4);
+    CHECK(crt.slots.empty());
+
+    // A collection module (I3 step 1b): its slots grouped by the volume an item fills, spine-out then face-out.
+    const rv::preview::AssetReport hero = rv::preview::buildAssetReport(
+        load(rv::core::pathToUtf8(kAssetRoot / "manifests/prefabs/furniture.shelf.hero_module.generic.json")));
+    REQUIRE(hero.slots.size() == 2);
+    CHECK(hero.slots[0].size.x == Approx(0.02f));
+    CHECK(hero.slots[0].size.y == Approx(0.125f));
+    CHECK(hero.slots[0].size.z == Approx(0.085f));
+    CHECK(hero.slots[0].slots == 198);
+    CHECK(hero.slots[0].levels == 6);
+    CHECK(hero.slots[1].size.x == Approx(0.125f));
+    CHECK(hero.slots[1].slots == 6);
+    CHECK(hero.slots[1].levels == 1);
+    CHECK(hero.sockets == 204 + 7); // the slots and the 7 Level anchors
+    const rv::preview::AssetReport display = rv::preview::buildAssetReport(load("prefab:display_case"));
+    REQUIRE(display.slots.size() == 1);
+    CHECK(display.slots[0].slots == 16);
+    CHECK(display.slots[0].levels == 2);
 
     const rv::preview::AssetReport empty = rv::preview::buildAssetReport(PreviewSubject{});
     CHECK(empty.triangles == 0);

@@ -1,10 +1,12 @@
 #include <rv/preview/asset_report.hpp>
 
+#include <algorithm>
 #include <array>
 #include <set>
 #include <string_view>
 #include <utility>
 
+#include <rv/geometry/socket.hpp>
 #include <rv/render/texture_memory.hpp>
 
 namespace rv::preview {
@@ -85,6 +87,14 @@ AssetReport buildAssetReport(const PreviewSubject& subject) {
         reportPrefab(*subject.prefab, report);
     }
     report.sockets = subject.sockets.size();
+    for (const geometry::SlotLevel& level : geometry::slotLevels(subject.sockets)) {
+        const auto same = std::find_if(report.slots.begin(), report.slots.end(), [&](const SlotReport& slots) {
+            return glm::all(glm::lessThan(glm::abs(slots.size - level.slotSize), glm::vec3(1e-5f)));
+        });
+        SlotReport& slots = same != report.slots.end() ? *same : report.slots.emplace_back(SlotReport{level.slotSize});
+        slots.slots += static_cast<std::size_t>(level.count);
+        ++slots.levels;
+    }
     if (subject.target && !subject.placeholder) {
         report.size = subject.bounds.size();
     }

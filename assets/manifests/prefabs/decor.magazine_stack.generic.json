@@ -1,0 +1,32 @@
+// Shelf dressing: magazine stacks (ADR-0010 §5; I3 step 1b), sized to a level by the generator like the storage
+// boxes and the bookends.
+{
+  "schemaVersion": 1,
+  "id": "decor.magazine_stack.generic",
+  "assetType": "decor",
+  "category": "shelf_dressing",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-18",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "magazine_stack",
+    "params": {},
+    "scaleMeters": null,
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "shelf_dressing", "magazines", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}
