@@ -20,11 +20,13 @@
 //    "placements": [{"slot": "room:snes/fx:w01/s:3.0", "game": "g0123456789abcdef", "insetMm": 2, "yawCdeg": 0}],
 //    "dressing": [{"level": "room:snes/fx:w07/l:6", "firstSlot": 0, "count": 33,
 //                  "prop": {"kind": "storage_box", "manifest": "decor.storage_box.generic"}}],
+//    "lights": [{"id": "room:snes/fx:w01.washer", "role": "wall-washer", "xMm": -3270, "yMm": 2950, "zMm": -3500,
+//                "targetXMm": -4230, "targetYMm": 1000, "targetZMm": -3500, "spanMm": 1900}],
 //    "unplaced": [{"game": "g...", "room": "room:snes", "reason": "duplicate-title", "representative": "g..."}]}
-// "representative" is there exactly for "duplicate-title". The lists are sorted as sortPlan() sorts them (rooms and
-// fixtures by id, levels by level, placements by slot then game, dressing by level then first slot, unplaced by game),
-// and no list holds one key twice (an id, a level, a slot with its game, a level with its first slot, an unplaced
-// entry).
+// "representative" is there exactly for "duplicate-title"; a point light's target is its own position and its span 0
+// (I3 step 3 added the lights). The lists are sorted as sortPlan() sorts them (rooms and fixtures by id, levels by
+// level, placements by slot then game, dressing by level then first slot, lights by id, unplaced by game), and no list
+// holds one key twice (an id, a level, a slot with its game, a level with its first slot, an unplaced entry).
 //
 // The reader checks the form of every field (types, ranges, ids, enumerations, digests, versions) and the order; it
 // does not check how the lists refer to each other (a placement's fixture in the plan, a slot within its level, a game
