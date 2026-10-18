@@ -1,10 +1,12 @@
 // A fresh room's generation (rv/world/generation.hpp, ADR-0010 §3 to §8; I3 step 3): golden plans for the reference
 // sizes (tests/fixtures/world/golden, rewritten only with RV_UPDATE_GOLDEN=1), two runs byte-identical, the room at the
 // reference sizes (G02's 50 titles all face-out, the reference library's 890 in three side-wall modules, growth and
-// capacity at 8,000), and the display rule's properties over 1,000 random sizes: the face-out titles exactly the first
-// min(T, D + B) by priority (the featured the first D), the fewest side-wall modules, every module but the last filled to
-// its quotas, every unneeded side-wall socket decorated, no level bare, the levels the prefabs', no overlapping
-// fixtures, at most 16 lights, every title placed once or unplaced for capacity. Timings are hidden [.bench] cases.
+// capacity at 8,000), every plan of the golden sizes passing I3 step 4's validation on the manifests' slots, and the
+// display rule's properties over 1,000 random sizes (60 in Debug): the face-out titles exactly the first min(T, D + B)
+// by priority (the featured the first D), the fewest side-wall modules, every module but the last filled to its
+// quotas, every unneeded side-wall socket decorated, no level bare, the levels the prefabs', no overlapping fixtures, at
+// most 16 lights, every title placed once or unplaced for capacity, no hard finding of the validation. Timings are
+// hidden [.bench] cases.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -24,6 +26,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <rv/core/file_io.hpp>
 #include <rv/core/random.hpp>
@@ -32,6 +35,7 @@
 #include <rv/world/capacity.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/validation.hpp>
 
 #include "world_generation_support.hpp"
 
@@ -156,7 +160,7 @@ rv::world::Footprint footprintOf(const Fixture& fixture) {
         }                                                                                                 \
     } while (false)
 
-/// The properties every fresh plan keeps (the file's header), for a selection of `titles` titles.
+/// The properties every fresh plan keeps (the file's header), the plan generated from `selection`.
 void checkProperties(const GenerationResult& result, const rv::world::RoomSelection& selection) {
     // Failures are gathered and reported together: a run checks some thousands of facts, and Catch2's
     // assertions would cost more than the generation they check.
@@ -352,6 +356,12 @@ void checkProperties(const GenerationResult& result, const rv::world::RoomSelect
         }
     }
 
+    // The validation (I3 step 4) finds no hard rule broken.
+    for (const rv::world::ValidationFinding& finding : result.validation.findings) {
+        where = finding.rule + " " + finding.subject + ": " + finding.message;
+        EXPECT(finding.severity == rv::world::Severity::Soft);
+    }
+
     // Lights within the template's limit and the renderer's 16, one key.
     EXPECT(plan.lights.size() <= roomTemplate.lightLimit);
     EXPECT(plan.lights.size() <= rv::world::kMaxSceneLights);
@@ -401,6 +411,45 @@ TEST_CASE("world/generation: golden plans of the reference sizes and two runs by
         REQUIRE(read.has_value());
         CHECK(planText(*read) == *expected);
     }
+}
+
+TEST_CASE("world/generation: every plan of the golden sizes passes the validation", "[world][generation]") {
+    // Judged as worldplan check judges a plan: the prefabs' slots read from the manifests (manifestPrefabSlots), not the
+    // generator's own measures; the soft findings are the room's as the template and the prefabs give it.
+    const rv::world::WorldData& data = snesData();
+    std::map<std::string, std::set<std::size_t>> softBySize;
+    for (const std::size_t titles : {0, 1, 15, 50, 56, 57, 890, 2000, 8000}) {
+        for (const std::uint64_t seed : {std::uint64_t{102938}, std::uint64_t{7}, std::uint64_t{0xFFFFFFFFFFFFFFFF}}) {
+            if (titles == 8000 && seed != 102938) {
+                continue;
+            }
+            INFO(titles << " titles, seed " << seed);
+            const GenerationResult result = generateRoom(titles, kSelectionSeed, seed);
+            rv::world::ValidationContext context;
+            context.templates = {data.roomTemplate};
+            context.config.seed = seed;
+            context.selections = {makeSelection(titles, kSelectionSeed)};
+            context.prefabSlots = rv::world::manifestPrefabSlots(rv::test::world::assetRoot());
+            context.lights = {{result.plan.rooms.front().id, static_cast<std::uint32_t>(result.plan.lights.size())}};
+            const rv::world::ValidationReport report = rv::world::validatePlan(result.plan, context);
+            for (const rv::world::ValidationFinding& finding : report.findings) {
+                if (finding.severity == rv::world::Severity::Hard) {
+                    UNSCOPED_INFO(finding.rule << " " << finding.subject << ": " << finding.message);
+                } else {
+                    softBySize[finding.rule + " (" + finding.subject + "): " + finding.message].insert(titles);
+                }
+            }
+            CHECK(report.passed());
+            // The generator's own validation, on the slots it measured, finds the same.
+            CHECK(result.validation.findings == report.findings);
+            CHECK(report.layoutScorePermille.has_value());
+        }
+    }
+    std::string soft;
+    for (const auto& [finding, sizes] : softBySize) {
+        soft += fmt::format("\n  {} [{} titles]", finding, fmt::join(sizes, ", "));
+    }
+    WARN("soft findings:" << (soft.empty() ? std::string(" none") : soft));
 }
 
 TEST_CASE("world/generation: the room at the reference sizes", "[world][generation]") {
@@ -529,7 +578,7 @@ TEST_CASE("world/generation: the result's reports and the plan's versions", "[wo
     CHECK(result.changes.fixturesAdded.size() == plan.fixtures.size());
     CHECK(result.changes.digestBefore.empty());
     CHECK(result.changes.digestAfter == *rv::world::planDigest(plan));
-    CHECK(result.validation.findings.empty());
+    CHECK(result.validation.passed());
 
     // The input digest follows the inputs: another seed, another selection, another reserve.
     const std::string digest = plan.inputDigest;

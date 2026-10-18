@@ -12,6 +12,7 @@
 #include <rv/core/random.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/seeds.hpp>
+#include <rv/world/validation.hpp>
 
 #include "allocation.hpp"
 #include "fixture_layout.hpp"
@@ -66,6 +67,21 @@ Expected<std::string> inputDigest(const GenerationInput& input, const WorldData&
         {"template", Json{{"id", data.roomTemplate.id}, {"version", data.roomTemplate.version}}},
         {"worldSeed", seed}};
     return core::canonicalJsonDigest(document);
+}
+
+/// The prefabs' slot levels as the generator measured them, for the validation (ValidationContext::prefabSlots).
+PrefabSlotSource catalogSlots(const PrefabCatalog& prefabs) {
+    return [&prefabs](const PrefabRef& ref) -> Expected<std::vector<PrefabSlotLevel>> {
+        const PrefabInfo* info = prefabs.find(ref);
+        if (info == nullptr) {
+            return makeError(ErrorCode::NotFound, "not among the prefabs the generator read", ref.manifest);
+        }
+        std::vector<PrefabSlotLevel> levels;
+        for (const SlotLevelInfo& level : info->levels) {
+            levels.push_back({level.level, level.slots});
+        }
+        return levels;
+    };
 }
 
 Status checkInput(const GenerationInput& input, const WorldData& data) {
@@ -220,6 +236,14 @@ Expected<GenerationResult> generate(const GenerationInput& input, const WorldDat
         return propagate(after.error());
     }
     changes.digestAfter = std::move(*after);
+
+    ValidationContext validation;
+    validation.templates = {data.roomTemplate};
+    validation.config = input.config;
+    validation.selections = {input.selection};
+    validation.prefabSlots = catalogSlots(data.prefabs);
+    validation.lights = {{room, static_cast<std::uint32_t>(plan.lights.size())}};
+    result.validation = validatePlan(plan, validation);
     return result;
 }
 

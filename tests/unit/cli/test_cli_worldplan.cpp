@@ -1,6 +1,7 @@
 // retroverse-cli worldplan generate and show (I3 step 3): a plan generated from a selection file into the world folder
 // of the user data directory, never over an existing plan, equal to world::generate's; the seed from --seed or
-// world.json; --plan and --json; show's summary, --placements and --json, and the plans it refuses.
+// world.json; --plan and --json; the catalog's selection of an imported fixture (esde/standard), and none while its
+// media root is out of reach; show's summary, --placements and --json, and the plans it refuses.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,6 +24,7 @@
 #include <rv/world/room_selection.hpp>
 
 #include "../world/world_generation_support.hpp"
+#include "support/fixture.hpp"
 #include "support/temp_dir.hpp"
 
 using rv::cli::ExitCode;
@@ -152,10 +154,10 @@ TEST_CASE("cli/worldplan generate: usage and failures", "[cli][worldplan]") {
     const RunResult help = generate({"--help"});
     CHECK(help.code == ExitCode::Ok);
     CHECK(contains(help.out, "Usage: retroverse-cli [global options] worldplan generate --system <system>"));
-    // The catalog's selection is step 2's.
+    // The catalog's selection needs the library library.json records.
     const RunResult noSelection = generate({"--system", "snes", "--library", "esde"});
     CHECK(noSelection.code == ExitCode::UsageError);
-    CHECK(contains(noSelection.err, "I3 step 2"));
+    CHECK(contains(noSelection.err, "library create"));
     CHECK(generate({"--selection", selectionText, "--library", "esde"}).code == ExitCode::UsageError);
     for (const std::string_view seed : {"-1", "18446744073709551616", "01", "x", ""}) {
         INFO(seed);
@@ -230,4 +232,54 @@ TEST_CASE("cli/worldplan show: a plan's summary, its listing, and the plans it r
     CHECK(contains(refused.err, "newer"));
     CHECK(runCli({"--data-dir", data, "worldplan", "show", file, "--library", "esde"}, environment).code ==
           ExitCode::UsageError);
+}
+
+TEST_CASE("cli/worldplan generate: the catalog's selection of an imported library", "[cli][worldplan]") {
+    auto fixture = rv::test::Fixture::materialize("esde/standard");
+    INFO((fixture ? "materialized" : fixture.error().toString()));
+    REQUIRE(fixture.has_value());
+    const rv::test::TempDir dir("rv-cli-worldplan-catalog");
+    const LoggingReset loggingReset;
+    const std::string data = rv::core::pathToUtf8(dir.file("data"));
+    const rv::core::PathEnvironment environment = testEnvironment(dir.path());
+    const auto run = [&](std::vector<std::string> arguments) {
+        arguments.insert(arguments.begin(), {"--data-dir", data});
+        return runCli(arguments, environment);
+    };
+    const RunResult created =
+        run({"library", "create", "--home", rv::core::pathToUtf8(fixture->root().lexically_normal()), "--install",
+             rv::core::pathToUtf8(fixture->path("Programs/ES-DE").lexically_normal())});
+    INFO(created.err);
+    REQUIRE(created.code == ExitCode::Ok);
+
+    // No catalog yet: exit 3.
+    CHECK(run({"worldplan", "generate", "--system", "snes"}).code == ExitCode::RuntimeFailure);
+    REQUIRE(run({"import"}).code == ExitCode::Ok);
+
+    // A system the catalog does not hold: exit 1; another library than library.json's: exit 2.
+    CHECK(run({"worldplan", "generate", "--system", "nosuch"}).code == ExitCode::ProblemsFound);
+    CHECK(run({"worldplan", "generate", "--system", "snes", "--library", "other"}).code == ExitCode::UsageError);
+
+    // The media root out of reach: unknown media decide nothing, no plan.
+    std::filesystem::rename(fixture->path("media"), fixture->path("media-away"));
+    const RunResult unknown = run({"worldplan", "generate", "--system", "snes"});
+    CHECK(unknown.code == ExitCode::ProblemsFound);
+    CHECK(contains(unknown.err, "no plan while the media are unknown"));
+    CHECK_FALSE(std::filesystem::exists(dir.file("data") / "worlds"));
+    std::filesystem::rename(fixture->path("media-away"), fixture->path("media"));
+
+    const RunResult generated = run({"worldplan", "generate", "--system", "snes", "--seed", "102938", "--json"});
+    INFO(generated.err);
+    REQUIRE(generated.code == ExitCode::Ok);
+    const nlohmann::json summary = nlohmann::json::parse(generated.out);
+    CHECK(summary["seed"] == 102938);
+    CHECK(summary["validation"]["passed"] == true);
+    CHECK(summary["fixtures"]["byRole"].value("side-module", 0) == 0);
+    CHECK(summary["placements"].get<std::size_t>() > 0);
+    // Every placed title stands face-out: the fixture's library is far below D + B.
+    CHECK(summary["sections"]["spine"]["titles"] == 0);
+    auto plan = rv::world::readPlan(readText(dir.file("data") / "worlds" / "esde" / "world-plan.json"), "plan");
+    REQUIRE(plan.has_value());
+    CHECK(plan->seed == 102938);
+    CHECK(plan->placements.size() == summary["placements"].get<std::size_t>());
 }

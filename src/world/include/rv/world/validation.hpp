@@ -123,8 +123,8 @@ using PrefabSlotSource = std::function<Expected<std::vector<PrefabSlotLevel>>(co
 /// is not built: its slots are not known (an error).
 [[nodiscard]] PrefabSlotSource manifestPrefabSlots(std::filesystem::path assetRoot);
 
-/// The point and spot lights a room holds. Lights are not in the plan's schema yet (I3 step 3 adds them): until then
-/// the caller counts them, and a room without a count is not checked.
+/// The point and spot lights a room holds: the caller counts the plan's (WorldPlan::lights, I3 step 3) by room, and a
+/// room without a count is not checked.
 struct RoomLights {
     RoomId room;
     std::uint32_t lights = 0;

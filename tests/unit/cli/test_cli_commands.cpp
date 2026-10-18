@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <filesystem>
@@ -49,15 +48,10 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 16> kPlanned
 }};
 
 /// The subcommands of worldplan still stubs, each with the I3 step that implements it (check: I3 step 4,
-/// test_cli_worldplan_check.cpp).
-constexpr std::array<std::pair<std::string_view, std::string_view>, 3> kWorldPlanSubcommands{{
-    {"generate", "I3 step 3"},
+/// test_cli_worldplan_check.cpp; generate and show: I3 step 3, test_cli_worldplan.cpp).
+constexpr std::array<std::pair<std::string_view, std::string_view>, 1> kWorldPlanSubcommands{{
     {"update", "I3 step 9"},
-    {"show", "I3 step 3"},
 }};
-
-/// The I3 steps whose worldplan subcommands are implemented (tests/unit/cli/test_cli_worldplan.cpp covers them).
-constexpr std::array<std::string_view, 1> kImplementedSteps{{"I3 step 3"}};
 
 /// Directories of a test run: the source tree's assets and no %LOCALAPPDATA%, so a run never reaches the real user
 /// data (tests pass --data-dir).
@@ -190,11 +184,8 @@ TEST_CASE("cli/run: the I3 commands are stubs that name their steps and exit 2 u
     const std::string data = rv::core::pathToUtf8(dir.file("data"));
     const rv::core::PathEnvironment environment = testEnvironment(dir.path());
 
-    // Each worldplan subcommand answers alone, whatever its arguments, --help included, until its step.
+    // Each worldplan subcommand answers alone, whatever its arguments, --help included.
     for (const auto& [subcommand, step] : kWorldPlanSubcommands) {
-        if (std::find(kImplementedSteps.begin(), kImplementedSteps.end(), step) != kImplementedSteps.end()) {
-            continue;
-        }
         for (const std::vector<std::string>& extra :
              {std::vector<std::string>{}, std::vector<std::string>{"--system", "snes"},
               std::vector<std::string>{"--help"}}) {

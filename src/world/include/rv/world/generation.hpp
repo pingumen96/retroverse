@@ -201,8 +201,10 @@ struct GenerationInput {
 /// template's limit the titles last in priority order are unplaced with reason capacity. Every side-wall socket no
 /// module needs holds decoration, the decoration sockets within the density, every level no title needs shelf dressing;
 /// the lights stay within the template's limit. The selection's unplaced games are copied into the plan. The result's
-/// changes are a fresh plan's (Generated, Full, every placement added); its validation holds no finding (I3 step 4's
-/// validatePlan judges the plan). Errors: InvalidArgument for a selection of another room than the data's system, a
+/// changes are a fresh plan's (Generated, Full, every placement added); its validation is validatePlan()'s
+/// (validation.hpp) against the template, the configuration, the selection, the prefabs' slots as measured here and the
+/// plan's lights: a plan with a hard finding is returned all the same, and its caller never saves or shows it
+/// (ADR-0010 §11). Errors: InvalidArgument for a selection of another room than the data's system, a
 /// selection roomSelectionToJson() refuses, a game both a title and unplaced, a configuration checkWorldConfig()
 /// refuses, a media family other than the platform's; those of the layout (a module or display prefab that does not
 /// fit its socket: ValidationFailed).
