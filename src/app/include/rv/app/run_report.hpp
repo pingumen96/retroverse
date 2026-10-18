@@ -270,8 +270,85 @@ struct ResidencyRecord {
     bool operator==(const ResidencyRecord&) const = default;
 };
 
-/// The hero CRT's video (I3 step 11: the decoder's state, the clip, the first frame's time, the fallbacks shown).
+/// A picture the hero CRT could not show (I3 step 11, ADR-0012 §7: the chain then shows the next one).
+struct VideoFallbackRecord {
+    /// The game's catalog id.
+    std::string gameId;
+    /// What could not be shown (app::toString(ScreenPicture): "video", "screenshot", "title-screen", "cover").
+    std::string picture;
+    /// Why: for the video its media::DecodeFailure, hyphenated ("file-not-found", "invalid-file", "corrupt-data",
+    /// "truncated", "unsupported-codec", ...), or "not-playable" (a file ES-DE would not read, never opened); for a
+    /// still, or a decoder or texture that could not start, the error's code (toString(ErrorCode): "not-found",
+    /// "parse-error", "unsupported").
+    std::string reason;
+
+    bool operator==(const VideoFallbackRecord&) const = default;
+};
+
+/// What a launch did to the hero CRT's decoder (ADR-0012 §6): stopped and its thread waited for, at most
+/// kScreenStopBoundSeconds, before the hand-over; opened again at its position after the return.
+struct VideoLaunchRecord {
+    /// A decoder ran (or was still ending) when the launch started.
+    bool decoderRan = false;
+    /// Milliseconds from the stop to the end of its thread (to the bound when it had not ended).
+    double stopMs = 0.0;
+    /// Decoder threads still running when the hand-over began: 0 unless the bound passed.
+    std::uint64_t threadsRunning = 0;
+    /// Seconds into the clip shown when it stopped (absent when no frame of a video showed).
+    std::optional<double> positionSeconds;
+    /// The decoder opened again after the launch ended, seeking to this position (absent: not reopened, or from the
+    /// start of the clip).
+    bool reopened = false;
+    std::optional<double> reopenedAtSeconds;
+
+    bool operator==(const VideoLaunchRecord&) const = default;
+};
+
+/// The hero CRT's video (I3 step 11, ADR-0012 §7: app::ScreenService): what it showed at the end of the run, the one
+/// decoder, the current clip's first frame and uploads, the fallbacks and the launches.
 struct VideoRecord {
+    /// A hero CRT was bound (the scene's first `crt` object with a picture on its screen) and its object id; without
+    /// one nothing else is recorded.
+    bool bound = false;
+    std::string screen;
+    /// At the end of the run: the game shown (its catalog id, empty for none), the picture (toString(ScreenPicture)),
+    /// the decoder's life (toString(ScreenPhase): "launched" when Retroverse quit during a game) and its state
+    /// (media::toString(DecoderState): "playing", "paused", ...; "none" without one).
+    std::string gameId;
+    std::string picture;
+    std::string phase;
+    std::string decoderState;
+    /// --video-freeze-pts, and whether the frame at that time was shown.
+    std::optional<double> freezePtsSeconds;
+    bool frozenFrameShown = false;
+    /// Selections that became the target after their dwell; targets the screen had (the start choice included).
+    std::uint64_t selections = 0;
+    std::uint64_t targets = 0;
+    /// Decoders started in the run, and the most decoder threads alive at once (never above 1: NFR-07's single
+    /// decoder of I3, asserted).
+    std::uint64_t decodersStarted = 0;
+    std::uint64_t maxDecoderThreads = 0;
+    /// Frames uploaded over the run; uploads skipped with the pixel buffer ring busy; pauses out of the view.
+    std::uint64_t framesUploaded = 0;
+    std::uint64_t ringBusy = 0;
+    std::uint64_t pauses = 0;
+    /// The last clip opened: wall-clock milliseconds from its decoder's start (its selection after the dwell, the
+    /// start choice, the reopening after a launch) to its first frame uploaded (NFR-06: within 2 s of the selection);
+    /// the frames of it uploaded, their first and last timestamps and the simulated seconds between their uploads.
+    std::optional<double> firstFrameMs;
+    std::uint64_t clipFramesUploaded = 0;
+    std::optional<double> firstPtsSeconds;
+    std::optional<double> lastPtsSeconds;
+    double clipUploadSeconds = 0.0;
+    /// GPU bytes of the video's texture and pixel buffer ring (gpuMemory's video) and of the still picture shown
+    /// (gpuMemory's heroTextures) at the end of the run.
+    std::uint64_t videoBytes = 0;
+    std::uint64_t stillBytes = 0;
+    /// The decoder threads had all ended once the service shut down (media::waitForStoppedDecoders()).
+    bool joinedAtExit = false;
+    std::vector<VideoFallbackRecord> fallbacks;
+    std::vector<VideoLaunchRecord> launches;
+
     bool operator==(const VideoRecord&) const = default;
 };
 
@@ -403,7 +480,8 @@ struct RunReport {
     std::optional<CatalogRecord> catalog;
     /// The launches from the quick catalog, in order.
     std::vector<LaunchRecord> launches;
-    /// The sections of I3 (above), always written: world, residency and video empty until their steps.
+    /// The sections of I3 (above), always written: world and residency empty until their steps; video filled by
+    /// RetroverseApp (I3 step 11), empty in runs without the hero CRT's service (the model viewer, the asset preview).
     WorldRecord world;
     ResidencyRecord residency;
     VideoRecord video;

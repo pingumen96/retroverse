@@ -392,6 +392,102 @@ GpuMemoryRecord readGpuMemory(FieldReader& fields) {
     return memory;
 }
 
+/// An unbound record (no hero CRT) is the empty object it was before I3 step 11.
+Json videoToJson(const VideoRecord& video) {
+    Json json = Json::object();
+    if (!video.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["screen"] = video.screen;
+    json["gameId"] = video.gameId;
+    json["picture"] = video.picture;
+    json["phase"] = video.phase;
+    json["decoderState"] = video.decoderState;
+    putOptional(json, "freezePtsSeconds", video.freezePtsSeconds);
+    json["frozenFrameShown"] = video.frozenFrameShown;
+    json["selections"] = video.selections;
+    json["targets"] = video.targets;
+    json["decodersStarted"] = video.decodersStarted;
+    json["maxDecoderThreads"] = video.maxDecoderThreads;
+    json["framesUploaded"] = video.framesUploaded;
+    json["ringBusy"] = video.ringBusy;
+    json["pauses"] = video.pauses;
+    putOptional(json, "firstFrameMs", video.firstFrameMs);
+    json["clipFramesUploaded"] = video.clipFramesUploaded;
+    putOptional(json, "firstPtsSeconds", video.firstPtsSeconds);
+    putOptional(json, "lastPtsSeconds", video.lastPtsSeconds);
+    json["clipUploadSeconds"] = video.clipUploadSeconds;
+    json["videoBytes"] = video.videoBytes;
+    json["stillBytes"] = video.stillBytes;
+    json["joinedAtExit"] = video.joinedAtExit;
+    Json fallbacks = Json::array();
+    for (const VideoFallbackRecord& fallback : video.fallbacks) {
+        fallbacks.push_back(
+            Json{{"gameId", fallback.gameId}, {"picture", fallback.picture}, {"reason", fallback.reason}});
+    }
+    json["fallbacks"] = std::move(fallbacks);
+    Json launches = Json::array();
+    for (const VideoLaunchRecord& launch : video.launches) {
+        Json entry;
+        entry["decoderRan"] = launch.decoderRan;
+        entry["stopMs"] = launch.stopMs;
+        entry["threadsRunning"] = launch.threadsRunning;
+        putOptional(entry, "positionSeconds", launch.positionSeconds);
+        entry["reopened"] = launch.reopened;
+        putOptional(entry, "reopenedAtSeconds", launch.reopenedAtSeconds);
+        launches.push_back(std::move(entry));
+    }
+    json["launches"] = std::move(launches);
+    return json;
+}
+
+/// What videoToJson() wrote: the empty object, or every field of a bound record.
+VideoRecord readVideo(FieldReader& fields) {
+    VideoRecord video;
+    if (!fields.has("bound")) {
+        return video;
+    }
+    video.bound = fields.boolean("bound");
+    video.screen = fields.string("screen");
+    video.gameId = fields.string("gameId");
+    video.picture = fields.string("picture");
+    video.phase = fields.string("phase");
+    video.decoderState = fields.string("decoderState");
+    video.freezePtsSeconds = fields.optionalNumber("freezePtsSeconds");
+    video.frozenFrameShown = fields.boolean("frozenFrameShown");
+    video.selections = fields.count("selections");
+    video.targets = fields.count("targets");
+    video.decodersStarted = fields.count("decodersStarted");
+    video.maxDecoderThreads = fields.count("maxDecoderThreads");
+    video.framesUploaded = fields.count("framesUploaded");
+    video.ringBusy = fields.count("ringBusy");
+    video.pauses = fields.count("pauses");
+    video.firstFrameMs = fields.optionalNumber("firstFrameMs");
+    video.clipFramesUploaded = fields.count("clipFramesUploaded");
+    video.firstPtsSeconds = fields.optionalNumber("firstPtsSeconds");
+    video.lastPtsSeconds = fields.optionalNumber("lastPtsSeconds");
+    video.clipUploadSeconds = fields.number("clipUploadSeconds");
+    video.videoBytes = fields.count("videoBytes");
+    video.stillBytes = fields.count("stillBytes");
+    video.joinedAtExit = fields.boolean("joinedAtExit");
+    for (FieldReader& fallback : fields.objectArray("fallbacks")) {
+        video.fallbacks.push_back(
+            VideoFallbackRecord{fallback.string("gameId"), fallback.string("picture"), fallback.string("reason")});
+    }
+    for (FieldReader& launch : fields.objectArray("launches")) {
+        VideoLaunchRecord entry;
+        entry.decoderRan = launch.boolean("decoderRan");
+        entry.stopMs = launch.number("stopMs");
+        entry.threadsRunning = launch.count("threadsRunning");
+        entry.positionSeconds = launch.optionalNumber("positionSeconds");
+        entry.reopened = launch.boolean("reopened");
+        entry.reopenedAtSeconds = launch.optionalNumber("reopenedAtSeconds");
+        video.launches.push_back(entry);
+    }
+    return video;
+}
+
 Json spawnToJson(const SpawnPoint& pose) {
     Json camera;
     // Floats widened to double print with enough digits to read back exactly.
@@ -811,10 +907,10 @@ std::string formatRunReport(const RunReport& report) {
         }
         json["launches"] = std::move(launches);
     }
-    // The sections of I3: always written; world, residency and video empty until their steps fill them.
+    // The sections of I3: always written; world and residency empty until their steps fill them.
     json["world"] = Json::object();
     json["residency"] = Json::object();
-    json["video"] = Json::object();
+    json["video"] = videoToJson(report.video);
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -905,10 +1001,12 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     for (FieldReader& launch : fields.optionalObjectArray("launches")) {
         report.launches.push_back(readLaunch(launch));
     }
-    // The sections of I3 must be there; world, residency and video are empty until their steps fill them.
+    // The sections of I3 must be there; world and residency are empty until their steps fill them.
     static_cast<void>(fields.object("world"));
     static_cast<void>(fields.object("residency"));
-    static_cast<void>(fields.object("video"));
+    if (auto video = fields.object("video")) {
+        report.video = readVideo(*video);
+    }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");
         report.frameTimes.times = readOptionalTimes(*frameTimes);

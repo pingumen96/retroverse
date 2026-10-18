@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include <imgui.h>
 
@@ -30,6 +32,7 @@ public:
         drawLastView();
         drawResources();
         drawGpuMemory();
+        drawVideo();
     }
 
 private:
@@ -129,6 +132,21 @@ private:
         }
         row("Total", "every kind", allocations, m_model.gpuMemory.totalBytes(), m_model.gpuMemory.peakTotalBytes());
         ImGui::EndTable();
+    }
+
+    /// The hero CRT's decoder and pictures (I3 step 11), what the run report's video section records.
+    void drawVideo() const {
+        if (!m_model.videoStatus) {
+            return;
+        }
+        const std::vector<std::string> lines = m_model.videoStatus();
+        if (lines.empty()) {
+            return;
+        }
+        ImGui::SeparatorText("Video");
+        for (const std::string& line : lines) {
+            ImGui::TextWrapped("%s", line.c_str());
+        }
     }
 
     StatsPanelModel m_model;

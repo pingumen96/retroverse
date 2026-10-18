@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 
 #include <rv/app/app_catalog.hpp>
@@ -21,6 +22,14 @@ class GLDevice;
 namespace rv::app {
 
 class AppContext;
+
+/// What the application does around a launch (I3 step 11: the hero CRT's decoder, ADR-0012 §6), on the main thread.
+struct LaunchHooks {
+    /// A launch is about to start: called before the window's hand-over and the process, on the host's wake.
+    std::function<void()> starting;
+    /// The launch that started ended (the return), or failed to start: called once, when the flow says it returned.
+    std::function<void()> ended;
+};
 
 /// The product UI of retroverse.exe and what it launches (I2 steps A1 and 13; specification §12.2 QuickLibrary, §13,
 /// §15.5 ExternalEmulatorRunning; ADR-0005, ADR-0006): RmlUi over the window (ui::UiSystem, one ui::UiView), the quick
@@ -81,6 +90,11 @@ public:
 
     /// Text typed into the product UI's focused text field (an --input-script step's "text"), while hasInput().
     void typeText(std::string_view text);
+
+    /// The application's hooks around launches (replacing any set before).
+    void setLaunchHooks(LaunchHooks hooks);
+    /// The game selected in the quick catalog while it is open (its catalog id); nothing while it is closed or empty.
+    [[nodiscard]] std::optional<std::string> selectedGameId() const;
 
     /// One frame: follows a session whose panel shows and the window's return, applies the UI commands of
     /// `uiActions` (the frame's actions in the UI context; null: the product UI had no input when the frame began),

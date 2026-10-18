@@ -3,6 +3,7 @@
 // GPU-free (part of rv_app_cli): no SDL or OpenGL header is included.
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -11,6 +12,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <rv/app/screen_policy.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/launcher/emulator_profile.hpp>
 #include <rv/launcher/launch_plan.hpp>
@@ -30,10 +32,13 @@ struct MockLaunch {
     launcher::LaunchTarget target;
 };
 
-/// A game of the mock catalog: what the quick catalog shows, and how it launches (nothing: it cannot).
+/// A game of the mock catalog: what the quick catalog shows, and how it launches (nothing: it cannot); since I3 step 11
+/// the media the hero CRT shows of it (absolute paths, empty where it has none) and when it was last played.
 struct MockGame {
     ui::CatalogEntry entry;
     std::optional<MockLaunch> launch;
+    ScreenMedia media;
+    std::optional<std::int64_t> lastPlayed;
 };
 
 /// The quick catalog's games of the tests, instead of the ES-DE catalog (I2 step 13): invented games in a JSON
@@ -52,6 +57,11 @@ struct MockGame {
 ///           "platform": "Portatile 8 bit", "year": 1991, "developer": "...", "publisher": "...", "genre": "...",
 ///           "players": "1", "description": "...", // optional (year: 0 to 9999, 0 unknown)
 ///           "state": "",                // optional: a state key the documents label (ui::quick_catalog::kState*)
+///           "media": {                  // optional (I3 step 11): what the hero CRT shows of it, each optional,
+///             "video": "clips/a.mp4",   // absolute or relative to the catalog file's folder like "rom"
+///             "screenshot": "...", "titlescreen": "...", "cover": "..."
+///           },
+///           "lastPlayed": "2026-10-01T20:00:00Z", // optional: UTC ISO-8601 (the hero CRT's start choice)
 ///           "launch": {                 // optional: without it the game cannot launch
 ///             "profile": "fake-return", // required: a profile id
 ///             "rom": "roms/lanterna.gb",// required: absolute, or relative to the catalog file's folder
@@ -75,6 +85,9 @@ struct MockCatalog {
     [[nodiscard]] const MockGame* find(std::string_view id) const noexcept;
     /// The entries the quick catalog lists, in order.
     [[nodiscard]] std::vector<ui::CatalogEntry> entries() const;
+    /// The games the hero CRT may play (ScreenPolicy), in order: every game, its media and last play (seconds since
+    /// 1970).
+    [[nodiscard]] std::vector<ScreenGame> screenGames() const;
 };
 
 /// Parses a mock catalog document read from `file` (which names it in errors and resolves relative ROM paths).

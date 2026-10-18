@@ -296,6 +296,66 @@ TEST_CASE("app/run_report: the sections of I3 are always written and required", 
     CHECK(unnamed.error().context == "r.json:/phases/0/name");
 }
 
+TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 step 11)", "[app][run_report]") {
+    RunReport report = measuredReport();
+    rv::app::VideoRecord& video = report.video;
+    video.bound = true;
+    video.screen = "crt_tv";
+    video.gameId = "g000000000000b002";
+    video.picture = "video";
+    video.phase = "running";
+    video.decoderState = "playing";
+    video.freezePtsSeconds = 1.0;
+    video.frozenFrameShown = true;
+    video.selections = 2;
+    video.targets = 3;
+    video.decodersStarted = 4;
+    video.maxDecoderThreads = 1;
+    video.framesUploaded = 321;
+    video.ringBusy = 1;
+    video.pauses = 2;
+    video.firstFrameMs = 18.25;
+    video.clipFramesUploaded = 60;
+    video.firstPtsSeconds = 0.5;
+    video.lastPtsSeconds = 2.5;
+    video.clipUploadSeconds = 2.0;
+    video.videoBytes = 4915200;
+    video.stillBytes = 1638400;
+    video.joinedAtExit = true;
+    video.fallbacks = {{"g000000000000b003", "video", "corrupt-data"},
+                       {"g000000000000b003", "screenshot", "not-found"}};
+    rv::app::VideoLaunchRecord launch;
+    launch.decoderRan = true;
+    launch.stopMs = 3.5;
+    launch.positionSeconds = 0.625;
+    launch.reopened = true;
+    launch.reopenedAtSeconds = 0.625;
+    video.launches = {launch, rv::app::VideoLaunchRecord{}};
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->video == video);
+
+    // Optional values left out read back as absent; a bound record needs its fields.
+    video.freezePtsSeconds.reset();
+    video.firstFrameMs.reset();
+    video.firstPtsSeconds.reset();
+    video.lastPtsSeconds.reset();
+    const auto sparse = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(sparse.has_value());
+    CHECK(sparse->video == video);
+    const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK_FALSE(json.at("video").contains("freezePtsSeconds"));
+    const auto missing = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["video"].erase("maxDecoderThreads"); }), "r.json");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().context == "r.json:/video/maxDecoderThreads");
+    const auto badLaunch = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["video"]["launches"][1]["stopMs"] = "soon"; }),
+        "r.json");
+    REQUIRE_FALSE(badLaunch.has_value());
+    CHECK(badLaunch.error().context == "r.json:/video/launches/1/stopMs");
+}
+
 TEST_CASE("app/run_report: frame times, phases, CPU sections and GPU memory read back record for record",
           "[app][run_report]") {
     const RunReport report = measuredReport();

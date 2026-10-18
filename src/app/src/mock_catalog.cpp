@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <set>
 #include <span>
@@ -12,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include <rv/core/json.hpp>
+#include <rv/core/time.hpp>
 #include <rv/core/utf8.hpp>
 
 namespace rv::app {
@@ -143,13 +145,56 @@ Expected<MockLaunch> parseLaunch(const Json& value, const std::filesystem::path&
     return launch;
 }
 
+/// A path field of "media": absolute, or relative to the catalog's folder.
+Expected<std::filesystem::path> mediaField(const Json& object, std::string_view key, const std::filesystem::path& folder,
+                                           const Location& at) {
+    auto text = stringField(object, key, at, false);
+    if (!text) {
+        return propagate(text.error());
+    }
+    if (text->empty()) {
+        return std::filesystem::path();
+    }
+    auto path = core::tryPathFromUtf8(*text);
+    if (!path) {
+        return fail(ErrorCode::ValidationFailed, "not a usable path", at.child(key));
+    }
+    return (path->is_absolute() ? *path : folder / *path).lexically_normal();
+}
+
+/// "media": what the hero CRT shows of the game (I3 step 11).
+Expected<ScreenMedia> parseMedia(const Json& value, const std::filesystem::path& folder, const Location& at) {
+    if (auto object = requireObject(value, at); !object) {
+        return propagate(object.error());
+    }
+    static constexpr std::array<std::string_view, 4> kKnown{"video", "screenshot", "titlescreen", "cover"};
+    if (auto keys = checkKeys(value, kKnown, at); !keys) {
+        return propagate(keys.error());
+    }
+    ScreenMedia media;
+    const std::pair<std::string_view, std::filesystem::path ScreenMedia::*> fields[] = {
+        {"video", &ScreenMedia::video},
+        {"screenshot", &ScreenMedia::screenshot},
+        {"titlescreen", &ScreenMedia::titleScreen},
+        {"cover", &ScreenMedia::cover},
+    };
+    for (const auto& [key, member] : fields) {
+        auto path = mediaField(value, key, folder, at);
+        if (!path) {
+            return propagate(path.error());
+        }
+        media.*member = std::move(*path);
+    }
+    return media;
+}
+
 Expected<MockGame> parseGame(const Json& value, const std::filesystem::path& folder, const Location& at) {
     if (auto object = requireObject(value, at); !object) {
         return propagate(object.error());
     }
-    static constexpr std::array<std::string_view, 11> kKnown{"id",        "title", "platform",    "year",
-                                                             "developer", "publisher", "genre", "players",
-                                                             "description", "state", "launch"};
+    static constexpr std::array<std::string_view, 13> kKnown{
+        "id",      "title",       "platform", "year",   "developer", "publisher", "genre",
+        "players", "description", "state",    "launch", "media",     "lastPlayed"};
     if (auto keys = checkKeys(value, kKnown, at); !keys) {
         return propagate(keys.error());
     }
@@ -196,6 +241,24 @@ Expected<MockGame> parseGame(const Json& value, const std::filesystem::path& fol
         }
         game.launch = std::move(*parsed);
     }
+    if (const auto media = value.find("media"); media != value.end()) {
+        auto parsed = parseMedia(*media, folder, at.child("media"));
+        if (!parsed) {
+            return propagate(parsed.error());
+        }
+        game.media = std::move(*parsed);
+    }
+    if (value.contains("lastPlayed")) {
+        auto text = stringField(value, "lastPlayed", at, true);
+        if (!text) {
+            return propagate(text.error());
+        }
+        auto played = core::parseUtcIso8601(*text);
+        if (!played) {
+            return fail(ErrorCode::ValidationFailed, "expected a UTC ISO-8601 time", at.child("lastPlayed"));
+        }
+        game.lastPlayed = std::chrono::duration_cast<std::chrono::seconds>(played->time_since_epoch()).count();
+    }
     return game;
 }
 
@@ -211,6 +274,15 @@ std::vector<ui::CatalogEntry> MockCatalog::entries() const {
     list.reserve(games.size());
     for (const MockGame& game : games) {
         list.push_back(game.entry);
+    }
+    return list;
+}
+
+std::vector<ScreenGame> MockCatalog::screenGames() const {
+    std::vector<ScreenGame> list;
+    list.reserve(games.size());
+    for (const MockGame& game : games) {
+        list.push_back(ScreenGame{game.entry.id, game.media, game.lastPlayed});
     }
     return list;
 }

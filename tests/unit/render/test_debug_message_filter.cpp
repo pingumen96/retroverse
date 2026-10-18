@@ -66,7 +66,9 @@ TEST_CASE("render/debug_filter: ignore lists do not need to be sorted", "[render
 }
 
 TEST_CASE("render/debug_filter: the NVIDIA ids are the documented informational ones", "[render][debug_filter]") {
-    CHECK(rv::gl::kNvidiaInformationalIds == std::array<std::uint32_t, 4>{131169u, 131185u, 131204u, 131218u});
+    // 131154: the pixel-path warning of every video upload (ADR-0004), dropped since I3 step 11.
+    CHECK(rv::gl::kNvidiaInformationalIds ==
+          std::array<std::uint32_t, 5>{131154u, 131169u, 131185u, 131204u, 131218u});
 }
 
 TEST_CASE("render/debug_filter: without an ignore list every id counts", "[render][debug_filter]") {

@@ -560,8 +560,7 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
           "[app][command_line]") {
     // A valid use of each option is an invalid command line (exit 2) that names the step implementing it.
     const std::vector<std::pair<std::vector<std::string>, std::string>> pending{
-        {{"--exit-after-frames", "--video-freeze-pts", "1.0"}, "I3 step 11"},
-        {{"--smoke", "--video-freeze-pts", "0"}, "I3 step 11"},
+        // None since I3 steps 11 (--video-freeze-pts) and 13r (--refresh-library).
     };
     for (const auto& [arguments, step] : pending) {
         INFO(arguments.back());
@@ -575,7 +574,10 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
     REQUIRE(refresh.has_value());
     CHECK(refresh->refreshLibrary);
     CHECK_FALSE(parse({"--smoke"})->refreshLibrary);
-    CHECK(parse({"--smoke", "--video-freeze-pts", "2.5"}).error().context == "--video-freeze-pts");
+    // I3 step 11: --video-freeze-pts is taken with a frame limit.
+    const auto frozen = parse({"--smoke", "--video-freeze-pts", "2.5"});
+    REQUIRE(frozen.has_value());
+    CHECK(frozen->videoFreezePtsSeconds == 2.5);
 
     // Their values are validated before the refusal.
     const auto interactive = parse({"--video-freeze-pts", "1"});
@@ -608,6 +610,24 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
     const std::string help = rv::app::commandLineHelp();
     CHECK(helpListsOption(help, "--refresh-library"));
     CHECK(helpListsOption(help, "--video-freeze-pts"));
+}
+
+TEST_CASE("app/command_line: --video-freeze-pts holds the hero CRT's frame of a frame-limited run (I3 step 11)",
+          "[app][command_line]") {
+    CHECK_FALSE(parse({"--smoke"})->videoFreezePtsSeconds.has_value());
+    const auto frozen = parse({"--exit-after-frames", "--video-freeze-pts", "1.0"});
+    REQUIRE(frozen.has_value());
+    CHECK(frozen->videoFreezePtsSeconds == 1.0);
+    const auto start = parse({"--smoke", "--video-freeze-pts", "0"});
+    REQUIRE(start.has_value());
+    CHECK(start->videoFreezePtsSeconds == 0.0);
+    const auto longest = parse({"--smoke", "--video-freeze-pts", "86400"});
+    REQUIRE(longest.has_value());
+    CHECK(longest->videoFreezePtsSeconds == CommandLineOptions::kMaxVideoFreezePtsSeconds);
+    CommandLineOptions options;
+    options.videoFreezePtsSeconds = 2.5;
+    CHECK(rv::app::pendingOptionError(options).has_value());
+    CHECK(rv::app::commandLineHelp().find("Not implemented yet (I3 step 11)") == std::string::npos);
 }
 
 TEST_CASE("app/command_line: --no-texture-compression keeps the collection's arrays uncompressed (I3 step 6)",

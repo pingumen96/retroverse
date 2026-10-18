@@ -64,6 +64,7 @@
 #include "free_roam.hpp"
 #include "fxaa_self_check.hpp"
 #include "product_ui.hpp"
+#include "screen_service.hpp"
 #include "srgb_self_check.hpp"
 
 namespace rv::app {
@@ -340,6 +341,10 @@ struct RetroverseApp::State {
     /// content and the overlay, which refer to it.
     std::unique_ptr<SceneGraphics> graphics;
     std::optional<SceneInstance> scene;
+    /// The hero CRT's screen service (I3 step 11): its one video decoder and the pictures of its fallback chain on the
+    /// scene's first CRT; none without a CRT (the model viewer). Destroyed before the graphics, whose material registry
+    /// shows its pictures.
+    std::unique_ptr<ScreenService> screen;
     /// The scene as described: its camera (start, reset) and objects (the developer overlay's list).
     scene::SceneDescription description;
     /// Reference grid of the debug lines.
@@ -599,8 +604,10 @@ struct RetroverseApp::State {
         devUi = std::move(*created);
         platform::GraphicsWindow& window = context.window();
         devUi->addPanel(devui::makeStatsPanel({frameTimes, graphics->renderStats(), graphics->meshes(),
-                                               graphics->materials(), graphics->textures(),
-                                               gl::gpuMemoryLedger()}),
+                                               graphics->materials(), graphics->textures(), gl::gpuMemoryLedger(),
+                                               [this] {
+                                                   return screen ? screen->statusLines() : std::vector<std::string>{};
+                                               }}),
                         devui::DockSlot::Left);
         devUi->addPanel(devui::makeCameraPanel({camera, freeRoam->controller(), input->system(), collision,
                                                 [this] { resetToSceneCamera(); }}),
@@ -730,6 +737,8 @@ Status RetroverseApp::onInit(AppContext& context) {
     if (!mock) {
         return propagate(std::move(mock.error()));
     }
+    // The games the hero CRT may play: the mock catalog's media (the ES-DE catalog's come with the room, I3 step 10c).
+    std::vector<ScreenGame> screenGames = *mock ? (*mock)->screenGames() : std::vector<ScreenGame>{};
     // The catalog first: the ES-DE catalog's worker opens the database while the scene loads (NFR-01: the first page
     // within 5 s of the start). --mock-catalog takes precedence; the model viewer has none.
     std::unique_ptr<AppCatalog> appCatalog;
@@ -758,6 +767,19 @@ Status RetroverseApp::onInit(AppContext& context) {
         return propagate(sceneInstance.error());
     }
     state->scene.emplace(std::move(*sceneInstance));
+    if (!options.model) {
+        if (std::optional<HeroScreen> hero =
+                findHeroScreen(state->description, *state->scene, state->graphics->materials())) {
+            ScreenServiceOptions screenOptions;
+            screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
+            screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
+            state->screen = std::make_unique<ScreenService>(std::move(*hero), state->graphics->materials(),
+                                                            std::move(screenGames), screenOptions);
+        } else {
+            spdlog::info("Scene '{}' has no hero CRT (a crt object with a picture on its screen): no video",
+                         state->description.name);
+        }
+    }
     if (options.debugDraw) {
         state->debugLines = kAllDebugLines;
         if (auto shown = state->syncDebugLines(); !shown) {
@@ -784,6 +806,19 @@ Status RetroverseApp::onInit(AppContext& context) {
             return propagate(std::move(error));
         }
         state->product = std::move(*product);
+        // The hero CRT's decoder stops and is waited for before a launch, and opens again after it (ADR-0012 §6).
+        LaunchHooks hooks;
+        hooks.starting = [raw] {
+            if (raw->screen) {
+                raw->screen->launchStarting();
+            }
+        };
+        hooks.ended = [raw] {
+            if (raw->screen) {
+                raw->screen->launchEnded();
+            }
+        };
+        state->product->setLaunchHooks(std::move(hooks));
     }
 #if defined(RV_DEV_UI)
     if (auto created = state->createDevUi(context); !created) {
@@ -919,6 +954,14 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
             context.setIdle(true);
         }
     }
+    if (state.screen) {
+        // The hero CRT follows the game selected in the quick catalog while it is open (the world's focus and
+        // inspection from I3 step 13b), after its dwell.
+        const std::optional<std::string> selected =
+            state.product ? state.product->selectedGameId() : std::optional<std::string>();
+        state.screen->update(state.simulatedSeconds, state.camera,
+                             selected ? std::optional<std::string_view>(*selected) : std::nullopt);
+    }
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
     state.graphics->pollShaderReload();
@@ -959,6 +1002,11 @@ void RetroverseApp::onShutdown(AppContext& context) {
         // The quit hook: a game still running is left running and recorded, before anything else ends.
         if (m_state->product) {
             m_state->product->finish();
+        }
+        // A decoder stopped for a game still running stays stopped; every decoder thread is waited for.
+        if (m_state->screen) {
+            m_state->screen->shutdown();
+            m_state->screen->record(context.report().video);
         }
         if (context.options().frameLimit) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
