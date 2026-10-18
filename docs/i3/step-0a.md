@@ -168,7 +168,17 @@ on the reference machine.
 - `tests/smoke`: `requireCleanRun` checks the empty sections in every clean run; `golden/G01` checks the extensions line
   of the log on the reference machine.
 
-Results (reference machine, RTX 2080 SUPER): see "For the merge" below for the figures of the final run.
+Results on the reference machine (RTX 2080 SUPER, driver 617.42), `scripts/gate.ps1 -Gate A` with
+`RV_LAUNCH_BACKGROUND` set: every build (Debug, RelWithDebInfo, Release) with 0 warnings; 1,273 unit tests passed in
+Debug and in Release; 28 GPU smoke cases in Debug and 26 in Release passed; golden G01 0 of 2,073,600 pixels apart in
+both. The Debug log reads `GL extensions: KHR_debug yes, ARB_clip_control yes, EXT_texture_compression_s3tc yes,
+EXT_texture_sRGB yes`.
+
+A run of `./scripts/test.ps1 -Preset msvc-x64-debug-gpu` with `RV_LAUNCH_ALLOWLIST` naming only the fake emulator
+fails two process runner tests (`an image Windows cannot load fails to start` and `in the background a program missing
+a DLL ends without the loader's dialog`): they start scratch executables of their own, which the list refuses. They pass
+without the list, as the gate runs them; nothing of this step is involved (BACKLOG: the gate and the test script do not
+set the list yet).
 
 ## Decisions taken within the step
 
