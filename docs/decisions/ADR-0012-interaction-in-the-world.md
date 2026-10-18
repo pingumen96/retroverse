@@ -2,6 +2,9 @@
 
 - Status: accepted
 - Date: 2026-10-18
+- Relates to: ADR-0004 (brings forward from I5 the screen material binding, `waitForStoppedDecoders()` at shutdown and
+  the filter of NVIDIA's message 131154; the scheduler, the priority boost, upload staggering and audio stay I5's),
+  ADR-0005 (Vedi media, Informazioni and pictures in the UI), ADR-0006 (the launch and the return, unchanged)
 
 ## Context
 
@@ -17,12 +20,13 @@ timings (feedback under 100 ms, pickup 200-400 ms, exit 150-250 ms, "stable focu
 with camera and selection preserved) and SC-03 / SC-08 (the TV shows the focused title's video or a fallback, never
 crashing on a bad file).
 
-The user decided (2026-10-18) that most cartridges stand **spine-out**, dense, with the title on the spine, some dozens
-face-out in display cases and featured shelves, and that **pointing at a spine-out cartridge pulls it out and shows its
-cover** (ADR-0010 §3); that one video decoder serves the hero CRT in I3 (SelectedGame with the fallback chain to the
-cover and a test pattern; the scheduler, audio and playlists stay in I5, ADR-0004); that teleport and the map stay in I4
-while the quick catalog's card may offer "show in the room" if cheap; and that automated tests never take the
-foreground.
+The user decided (2026-10-18) that most cartridges stand **spine-out**, dense, with the title on the spine, a few
+dozen **face-out** in display cases, on the featured shelf and in the hero band, chosen by priority (ADR-0010 §3: on
+the reference library 56 of 890), in a compact room whose shelving is sized to the collection, and that **pointing at
+a spine-out cartridge pulls it out and shows its cover**; that one video decoder serves the hero CRT in I3
+(SelectedGame with the fallback chain to the cover and a test pattern; the scheduler, audio and playlists stay in I5,
+ADR-0004); that teleport and the map stay in I4 while the quick catalog's card may offer "show in the room" if cheap;
+and that automated tests never take the foreground.
 
 What exists: `scene::Camera::rayFromNdc`, `core::Aabb::intersectRay`, `scene::frontViewpoint`, `aimAt` and `ViewArea`;
 the `interact` action (E, the left mouse button, the pad's south button) bound and unused, while a click into the window
@@ -50,6 +54,18 @@ Back leaves one level, after the levels `backAction` already has (popups, the ov
 catalog (`quick_catalog`: Tab, the pad's north button) opens from FreeRoam and Focus as today. A failed transition (the
 item vanished from the plan, a launch refused) leaves the state usable and says why on the card.
 
+Each state has its input context (specification §12.2: clear rules for input focus), built on the action map's world
+and UI contexts, so that no button means two things at once:
+
+- **FreeRoam**: the world's actions as today, `interact` added.
+- **Focus**: walking off; `ui_up`, `ui_down`, `ui_left`, `ui_right` (the arrows, the D-pad) step between items; the
+  look actions move the pick within the shelf section; `interact` or `ui_activate` inspects; `back` returns to
+  FreeRoam; `quick_catalog` opens the catalog.
+- **Inspect**: a context of its own: the look actions rotate the item (the right stick; the mouse while captured), the
+  triggers (`ui_page_up`, `ui_page_down`, read as zoom here) and the wheel zoom; the card reads `ui_activate`,
+  `ui_media`, `ui_info` and `ui_back`, and the arrows and the D-pad move between its buttons. The pad's north button is
+  thus Vedi media in Inspect and the quick catalog elsewhere (specification §12.1's Y, ADR-0005's `ui_media`).
+
 ### 2. Picking
 
 - **The ray**: from the reticle (the view's center) while the mouse is captured or the pad was used last; from the
@@ -69,8 +85,9 @@ item vanished from the plan, a launch refused) leaves the state usable and says 
 - **Hover** (FreeRoam): within the frame, the item's silhouette gets the **outline** (`HoverOutline`: the item drawn
   once more into the stencil after the lit pass, a pass after FXAA marking the pixels within 2 px of the stencil's edge
   at 1080p, scaled with the output's height, in the theme's warm white; after FXAA so that it neither softens nor
-  flickers), and a small label in the product UI near the item's projected position shows the title (RmlUi, Italian
-  context, no colour transition).
+  flickers; the stencil is read through a stencil-index texture view of the scene's depth-stencil texture, whose depth
+  view the ambient occlusion keeps reading), and a small label in the product UI near the item's projected position
+  shows the title (RmlUi, Italian context, no colour transition).
 - **Pull-out**: after **150 ms** on the same item, a spine-out cartridge slides forward out of its row by 70% of its
   depth and turns to show its front (the cover, with its hero texture as soon as it is loaded, ADR-0011 §8) in **250
   ms**, and slides back in **200 ms** when the hover leaves it; a face-out item tilts towards the viewer instead. Each
@@ -95,7 +112,10 @@ scene behind is dimmed by one stop and vignetted through `PostSettings` (no dept
   readiness and its first blocker with the quick catalog's sentences (`kBlockerCodes`, one shared test table), the
   number of other versions in the catalog (`duplicate-title` entries of ADR-0010), the cover as a picture, and the
   actions **Avvia** (`ui_activate`; the pad's Start button too), **Vedi media** (`ui_media`), **Informazioni**
-  (`ui_info`), **Indietro** (`ui_back`). In Inspect the UI context reads the UI actions; the world's actions are off.
+  (`ui_info`), **Indietro** (`ui_back`). Every action is also a button of the card: `ui_media` and `ui_info` have no key
+  by default (letters stay with text fields), so with a keyboard the arrows reach the buttons and Enter presses one,
+  and a click presses one too (specification §23.1: keyboard and mouse as well as the pad). The card's sentences, the
+  reasons of section 8 included, live in its RML document like every product string; the code passes codes.
 - **Pictures in the UI**: an image source scheme `rv-texture:<key>` in the vendored RmlUi GL3 renderer maps keys to
   textures the app registers (the hero textures, the video's texture in I5), so RmlUi never loads the user's files
   itself.
@@ -108,9 +128,15 @@ scene behind is dimmed by one stop and vignetted through `PostSettings` (no dept
 Avvia calls `AppCatalog::requestLaunch(token, catalog::GameId, title)` (a GameId overload; the path is resolved on the
 worker right before the launch, as for the quick catalog) and A1's `LaunchFlow` unchanged: the readiness checked again,
 the session recorded. Before the hand-over the app records the world's state (the state, the item's GameId, the walker's
-pose, the camera), stops the hero CRT's decoder and pauses the cover loader; after the return it restores the pose and
-Inspect of the same item and starts the decoder again. A refused or failed launch shows A1's outcome text on the card
-and stays in Inspect. Quitting while a game runs leaves the emulator running (A1).
+pose, the camera, the clip's position), pauses the cover loader (ADR-0011 §6) and stops the hero CRT's decoder, waiting
+at most 1 s for its thread to end (specification §11.4: decoders stopped before the emulator starts; a decoder that
+does not end in time is logged and the launch goes on, the thread ending on its own); the `VideoTexture` is kept. After
+the return it restores the pose and Inspect of the same item, resumes the loader and opens the same clip again at the
+recorded position. A refused or failed launch restarts the decoder at once, shows A1's outcome text on the card and
+stays in Inspect. Quitting while a game runs leaves the emulator running (A1) and finds the decoder already stopped. A
+refresh (step 13r) started before the launch goes on in its slices; the world applies its result after the return.
+Automated launch tests run hidden with `RV_LAUNCH_ALLOWLIST` naming the fake emulator and `RV_LAUNCH_BACKGROUND` set,
+so that neither program takes the foreground.
 
 ### 7. The hero CRT and its one decoder
 
@@ -137,9 +163,11 @@ and stays in Inspect. Quitting while a game runs leaves the emulator running (A1
 
 The quick catalog's card offers **Mostra nella stanza** for a game the plan places (the where-is index of ADR-0010 §9):
 the catalog closes, the walker eases in **600 ms** (skippable, instant under `reduceMotion`) to the item's Focus pose
-and the item is pulled out. For an unplaced game the action is absent and the card says why ("Non esposto: un'altra
-versione è sullo scaffale", "Non esposto: senza copertina"). Within the one room only; the map and the teleport between
-rooms are I4's.
+and the item is pulled out. For an unplaced game the action is absent and the card says why, one sentence per
+`unplaced` reason in the RML document ("Non esposto: un'altra versione è sullo scaffale", "Non esposto: senza
+copertina", "Non esposto: la stanza è piena"). Within the one room only; the map and the teleport between rooms are
+I4's. The quick catalog's own Vedi media and Informazioni open the same viewer and details as the world's card (ADR-0005
+left them doing nothing until this iteration).
 
 ## Consequences
 

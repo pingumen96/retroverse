@@ -2,6 +2,9 @@
 
 - Status: accepted
 - Date: 2026-10-18
+- Relates to: ADR-0008 §1 (no new hash library), §5 (unknown media are never "no media") and §6 (world state is kept
+  in files under `worlds/`, not in database rows: point 9 amends "choices made later go to the database" for world
+  state until I4's editor)
 
 ## Context
 
@@ -52,12 +55,14 @@ plan (or none) and the overrides, and returns a `GenerationResult` (the plan, a 
 - **RoomInput**: the system's entries as the catalog gives them on its worker (one bulk query, never a page per game):
   GameId, lookup key, file name, display title, catalog sort key and its version, year, rating, ES-DE favourite and play
   count, Retroverse's last session time, entry state and availability, media presence per kind (`covers`, `screenshots`,
-  `titlescreens`, `videos`, ...). Text is used to decide, never copied into the plan (point 8).
+  `titlescreens`, `videos`, ...), and whether the system's media are known at all (`mediaKnown`: false when the media
+  root is missing, unreachable or unresolved, ADR-0008 §5). Text is used to decide, never copied into the plan (point
+  8).
 - **WorldConfig**: the seed, the preset (`RetroMuseumCozy`, the one curated preset of style §18, theme pack
   `Classic16BitWarm` for the SNES), decoration density (0.4), growth reserve (**0.15**, style §18.2: the curated
   preset's value; specification §16.2's 0.20 is a default for the generic case), main passage width (**1.4 m**, style
   §18.2) with a hard minimum clear width of **1.2 m** (specification §7.5; style's 1.10 m is not used), the inclusion
-  rule and the face-out threshold (point 3). Shipped defaults in `assets/world/presets/`; the user's
+  rule (point 3). Shipped defaults in `assets/world/presets/`; the user's
   `<user data>/config/world.json` overrides them per key, read and never written, like the other configuration files.
   The default seed is derived from the library id (point 7), so a library always gets the same world unless the user
   names another seed.
@@ -70,12 +75,16 @@ plan (or none) and the overrides, and returns a `GenerationResult` (the plan, a 
 - **Overrides**: `<user data>/worlds/<library>/overrides.json` (point 9); empty unless a test or, from I4, the editor
   wrote it.
 
-### 3. Which games the room holds (the user's decision)
+### 3. Which games the room holds and how they stand (the user's decision)
 
 - **Eligible**: an entry in state game (not hidden, not a disc member) of the room's system that has a cover. When no
   game of the system has a cover, every game is eligible, so that a library without media still gets a furnished room
   (style §21's P0 requirement, golden G06). `WorldConfig.placement.include = "all"` makes every game eligible; the
   default is `"covered"`.
+- **Unknown media decide nothing.** While the snapshot's `mediaKnown` is false (the media root unplugged or
+  unreachable), no first plan is generated (the app shows the empty room shell and the quick catalog with a notice;
+  `worldplan generate` exits 1 naming the reason) and an incremental update changes no game's eligibility; "no game has
+  a cover" is read only from known media, so an unplugged drive never turns 7,797 games eligible.
 - **One cartridge per title.** The title key is the catalog's sort-key folding (`catalog::sortKeyOf`, its version
   recorded) of the display title (the gamelist name, else the catalog's cleaned file-name title) with every `(...)` and
   `[...]` group removed, the separators `" : "`, `": "`, `" - "` and `" – "` made one, white space collapsed. Among the
@@ -88,13 +97,42 @@ plan (or none) and the overrides, and returns a `GenerationResult` (the plan, a 
   in the plan's `unplaced` with a reason: `duplicate-title` (with the representative's GameId), `no-cover`,
   `unavailable` (a missing file at its first consideration), `capacity` (point 5). Specification §21.3's "every active
   game has a valid placement or an element accessible in the global catalog" holds: the quick catalog lists every game.
-- **Display mode**, decided at the room's first generation and kept: up to **200** placed titles (style §5.6's medium
-  room) every collection shelf is face-out, as in the concept; above it the collection shelves are spine-out and dense,
-  and the room's display fixtures (two low display cases and the featured wall shelf of the template) hold some dozens
-  of face-out **featured** titles (44 in `console_room_9x10`): ES-DE favourites first, then by play count (ES-DE's plus
-  Retroverse's sessions), then by rating, then by sort key and GameId. A featured title has no spine-out slot: one
-  placement per title. A face-out room that outgrows its face-out modules goes on with spine-out modules; no module is
-  ever converted.
+- **Priority**: the placed titles are ranked by ES-DE favourite first, then play count (ES-DE's plus Retroverse's
+  sessions), then rating, then catalog sort key and GameId. The priority decides which titles stand face-out; it never
+  decides where a title stands within its section (point 6).
+- **Display rule: spines plus display cases, a compact room** (the user's decision, 2026-10-18): most titles stand
+  **spine-out**, dense, the title on the spine; a few dozen stand **face-out** where the eye goes; the shelving is
+  sized to the collection, every module full, and what the collection does not need is decoration, never an empty or
+  an extra module. With `T` placed titles, the reserve `R = ceil(T * reserve)`, `D` the face-out slots of the display
+  fixtures (the featured wall shelf beside the hero corner and two low display cases: 44 in `console_room_9x10`), `B`
+  the face-out slots of the template's **hero band** (one face-out level at eye height across the two hero-wall
+  modules, when the template declares one: 12 in `console_room_9x10`, else 0), `Sh` and `S` the spine-out slots of a
+  hero-wall module and of a side-wall module (point 5):
+  - **Face-out**: the first `min(T, D + B)` titles in priority order, the display fixtures taking the first `D` (the
+    **featured** titles) and the hero band the next `B`. No other title stands face-out.
+  - **Spine-out**: the other titles, first in the two hero-wall modules (always placed: they frame the hero corner and
+    carry the band), then in as few side-wall spine-out modules as the rest and the reserve need,
+    `e = max(0, ceil((T - min(T, D + B) + R - 2 * Sh) / S))`, in socket order; the modules are filled one after the
+    other (point 5), so that only the last is partly filled, its unused levels dressed.
+  - **Decoration takes the rest**: the side-wall sockets no module needs hold the template's decoration (posters, a low
+    cabinet or bench, a plant, lamps within the light budget), so that the room never looks sparse.
+  - **A small library may be all face-out**: when `T <= D + B` (G02's 50 titles, G06's one ROM) every title stands
+    face-out, no side-wall module is placed, and the hero-wall modules' spine-out levels hold shelf dressing and the
+    reserve.
+  - **Growth**: when `e` exceeds the side-wall sockets, the room grows (point 4) to the smallest depth whose sockets
+    hold `e` modules; at the template's limit the titles last in priority order that do not fit with the reserve kept
+    are `unplaced` with reason `capacity`.
+  - On the reference library, with the draft prefab sizes (`B` 12, `Sh` about 198 and `S` about 231; step 1b records
+    the real figures): 890 titles and a reserve of 134 give **56 face-out** (44 featured, 12 in the hero band) and **834
+    spine-out**: about 336 in the two hero-wall modules and the rest in **3 side-wall modules** (two full, the third
+    about half full, four levels of seven, the other three dressed); the room's other 11 side-wall sockets hold
+    decoration. The 2,000-title stress fixture: 56 face-out and 1,944 spine-out in the hero-wall modules and 8 side-wall
+    modules. G02's 50 titles: all face-out, no side-wall module.
+- **Stability of the display**: the face-out set (the featured titles and the hero band's) is decided at a generation
+  and kept by every incremental update (point 10): a new title always enters the spine-out section, even when display
+  slots are free (they stay dressed); a title whose priority grows later (a new favourite, more plays) stays where it
+  stands. The face-out set changes only with an explicit regeneration (`retroverse-cli worldplan generate --replace` in
+  I3, I4's "Regenerate room" with its preview).
 - A title's representative is chosen once: a better-ranked version that arrives later is `duplicate-title`, and a placed
   game that loses its cover keeps its slot with a generated label. A game that becomes eligible later (scraped in ES-DE
   afterwards) is a new game for point 10.
@@ -107,39 +145,66 @@ plan (or none) and the overrides, and returns a `GenerationResult` (the plan, a 
   wall is its north wall and `--spawn ...,0` looks at it), 9.0 x 10.0 m, ceiling 3.2 m, the entrance a 1.6 m doorway in
   the south wall (+Z) with 1.6 x 1.5 m kept free inside it.
 - Zones (style §5.3, §6.1): the **hero wall** north (TV cabinet, CRT, console, the sign, a rug and an armchair turned to
-  the TV, a lamp), visible from the doorway; **collection sockets** of 0.9 m along the east and west walls; one
-  **door-reserved** socket of 1.8 m in each side wall, never occupied (M3 opens doorways there without moving anything);
-  the **display** sockets (two low display cases and the featured wall shelf); **decoration** sockets (posters, lamps)
-  on the south wall and the unused collection sockets; a central circulation band 1.4 m wide.
-- **Growth**: when the collection sockets are full the room grows south in 2.0 m steps up to 16.0 m deep (style §5.3:
-  modules of 2-3 m); beyond that the remaining titles are `unplaced` with reason `capacity` (linked expansion rooms are
-  I4). Growth moves the south wall and what stands on it, never a collection shelf or a placed game.
-- **Fixture order** (specification §7.3, style §13.4): doorway clearance, hero corner, collection modules (alternating
-  west and east from the north corners, so the collection frames the hero wall), display fixtures, decoration within the
-  density and only on sockets capacity does not need, lights. One layout candidate; style §13.5's LayoutScore is
-  computed and reported (`validationReport.layoutScore`) but chooses nothing in I3.
+  the TV, a lamp), visible from the doorway, with the featured wall shelf beside the hero corner and one **hero-wall
+  module** of 0.9 m on each side of it (always placed, spine-out with the hero band, one face-out level at eye height);
+  **side-wall sockets** of 0.9 m, seven along each of the east and west walls (14), each holding a spine-out module when
+  the collection needs it and decoration otherwise; one **door-reserved** socket of 1.8 m in each side wall, never
+  occupied (M3 opens doorways there without moving anything); the **display** sockets (the featured wall shelf and two
+  low display cases at the edges of the circulation band); **decoration** sockets (posters, lamps) on the south wall;
+  a central circulation band 1.4 m wide.
+- **Socket order** (the collection's fill order, most visible first): the two hero-wall modules, then the side-wall
+  sockets from north to south, alternating west and east, so that the collection frames the hero wall and grows
+  towards the doorway.
+- **Growth**: when the side-wall sockets cannot hold the modules the collection needs, the room grows south in 2.0 m
+  steps up to 16.0 m deep (style §5.3: modules of 2-3 m), each step adding two sockets to each side wall at the end of
+  the socket order; beyond that the remaining titles are `unplaced` with reason `capacity` (linked expansion rooms are
+  I4). Growth moves the south wall and what stands on it, never a collection module or a placed game.
+- **Fixture order** (specification §7.3, style §13.4): doorway clearance, hero corner with its hero-wall modules,
+  side-wall modules in socket order, display fixtures, decoration on the side-wall sockets no module needs and the
+  decoration sockets within the density, shelf dressing on the levels no title needs (point 5), lights. One layout
+  candidate; style §13.5's LayoutScore is computed and reported (`validationReport.layoutScore`) but chooses nothing in
+  I3.
 - **Lights** (style §4.2, the renderer's limits): the ceiling key spot on the hero wall casts the shadows (the only
-  shadowed light, as in the test room), one wall-washer spot per two collection modules, a pendant over the circulation
-  band, the table or floor lamp, a picture light: 16 point and spot lights at most per view, checked by validation.
+  shadowed light, as in the test room), a pendant over the circulation band, the table or floor lamp, a picture light,
+  and wall-washer spots over the collection: one per two modules while the renderer's 16 point and spot lights per
+  scene allow (`gl::packLights` drops the rest), then spread evenly over the modules; validation fails a plan with
+  more than 16.
 
 ### 5. Capacity
 
 From the manifests and the prefabs' own slot math (`geometry::buildPrefab("shelf", ...)`'s `Slot_<level>_<index>`
-sockets), never from constants in the generator: `slotsPerLevel` and `levels` per module from the item's slot size
-(spine-out: the cartridge stands on its end, its top face outward, a 2.0 x 12.5 cm spine, 8.5 cm deep; face-out: front
-outward, as in the test room), the gap and the margins; `requiredSlots = ceil(titles * (1 + reserve))`;
-`modules = ceil(requiredSlots / slotsPerModule)`. The reserve is spread over the levels: each level is filled to
-`floor(slotsPerLevel / (1 + reserve))` items and keeps its last slots free, so that a new title lands near its
-alphabetical neighbours. A spine-out module of 0.9 m has about 230 slots (33 per level at a 2.4 cm pitch, 7 levels
-between 0.35 and 1.9 m): the reference library's 890 titles fill about five modules, the 2,000-title stress fixture ten.
+sockets, the display case's and the featured shelf's slots), never from constants in the generator: `slotsPerLevel`
+and `levels` per module from the item's slot size (spine-out: the cartridge stands on its end, its top face outward, a
+2.0 x 12.5 cm spine, 8.5 cm deep; face-out: front outward, as in the test room), the gap and the margins; the prefab
+lengths are rounded to whole millimetres once, and the generator's own arithmetic is integer (point 8).
+`requiredSlots = ceil(titles * (1 + reserve))` (specification §7.5); the modules follow from point 3's display rule.
+
+- **Filling**: the display fixtures and the hero band hold exactly their titles and keep no reserve. The spine-out
+  section keeps the reserve where new titles will go (point 10): its modules are filled in socket order, and in each
+  module the spine-out levels are taken in band order, the level whose slots' centre is nearest 1.3 m (eye height)
+  first, then one level at a time alternately above and below, each level holding its quota of
+  `floor(slotsPerLevel / (1 + reserve))` titles and keeping its last slots free, so that a new title lands near its
+  alphabetical neighbours; when the quotas cannot hold the section's titles (rounding), every quota of the section
+  rises by one until they fit. A module's used levels are thus one band around eye height, and the titles stand in it
+  as one reads a page (point 6).
+- **No bare boards**: the levels outside the last module's band, the hero-wall modules' levels in a small library and
+  the display slots no title needs hold **shelf dressing** (storage boxes, magazine stacks, bookends: procedural prefabs
+  of the theme pack, one random choice per level from its `propSeed`); the dressing is decoration and gives way when a
+  title needs its level (point 10).
+- A side-wall module of 0.9 m has about 231 spine-out slots (33 per level at a 2.4 cm pitch, 7 levels between 0.35 and
+  1.9 m), a hero-wall module about 198 (six spine-out levels) and 6 face-out slots in its band: the 9 x 10 m room holds
+  about 3,200 titles with the reserve (`(D + B + 2 * Sh + 14 * S) / (1 + reserve)`), at 16 m deep (26 side-wall
+  sockets) about 5,600.
 
 ### 6. Allocation
 
-Placed titles in the order (catalog sort key of the representative, title key, GameId); featured titles first into the
-display fixtures in that order, then the rest as one reads a page: the top level first, left to right as one faces the
-shelf, then the level below, module by module in fill order. A placement names its slot, not a transform: the app
-derives the transform from the fixture's prefab and the slot, plus a small deterministic offset from the placement's
-seed (spine-out: pushed in by 0 to 4 mm; face-out: a yaw of at most 1.5 degrees), so that a row does not look machined.
+Within each section the titles stand in the order (catalog sort key of the representative, title key, GameId), so that
+a title is found where the alphabet puts it: the featured titles in the display fixtures (fixtures in socket order),
+the hero band's titles in the band (the west module first), the spine-out titles in the spine-out modules; in each, as
+one reads a page: the band's top level first, left to right as one faces the shelf, then the level below, module by
+module in socket order. A placement names its slot, not a transform: the app derives the transform from the fixture's
+prefab and the slot, plus a small deterministic offset from the placement's seed (spine-out: pushed in by 0 to 4 mm;
+face-out: a yaw of at most 1.5 degrees), so that a row does not look machined.
 
 ### 7. Seeds and the random generator (ADR-0008 §1: no new hash library)
 
@@ -147,8 +212,8 @@ seed (spine-out: pushed in by 0 to 4 mm; face-out: a yaw of at most 1.5 degrees)
   parts...), its first 8 bytes big-endian. The world seed defaults to `deriveSeed("world", libraryId)`; local seeds
   follow style §13.3: `roomSeed = deriveSeed(worldSeed, "room", roomId)`,
   `fixtureSeed = deriveSeed(roomSeed, "fixture", fixtureId)`, `propSeed = deriveSeed(roomSeed, "prop", socketId)`,
-  `placementSeed = deriveSeed(roomSeed, "place", gameId, family)` (integers in decimal ASCII), so that one decision
-  never shifts another's random sequence.
+  `placementSeed = deriveSeed(roomSeed, "place", gameId, family)` (integers in decimal ASCII; a dressed level is the
+  socket `fx:<module>/l:<level>`), so that one decision never shifts another's random sequence.
 - `core::Random`: SplitMix64, algorithm id `splitmix64/1` recorded in the plan, with its own integer and unit-interval
   distributions (the standard library's distributions are implementation-defined). Golden sequences come from an
   independent Python oracle (`hashlib`), as the GameIds' do.
@@ -193,11 +258,16 @@ With a previous plan of the same `schemaVersion`, generator major version, templ
   an alias of another (ADR-0008 §4) hands its slot to that identity when the latter has none, else frees it; free slots
   are never compacted.
 - Media and metadata changes rebuild no geometry (`NoRebuild`): the room swaps the textures and the spine text.
-- A new eligible title takes the first free slot after its alphabetical predecessor's slot in fill order, then the first
-  free slot anywhere in fill order (`LocalReflow`); with none free, a new collection module in the next collection
-  socket without one (the decoration standing there is removed: decoration is never pinned in I3), then the room's
-  growth (`RoomExpansion`); beyond the template's limit it is `unplaced` with reason `capacity`. A new version of a
-  placed title is `duplicate-title`. New titles are never featured: display slots are filled only by a fresh generation.
+- A new eligible title always enters the spine-out section (point 3), never the display fixtures or the hero band,
+  even while some of their slots are free: it takes the first free slot of the section after its predecessor's (in the
+  section's sort order) in fill order, then the first free slot of the section in fill order, the dressing of a dressed
+  level removed when the slot lies there (`LocalReflow`, the static part rebuilt); with none free, a new side-wall
+  module in the next side-wall socket without one (the decoration standing there is removed: decoration is never
+  pinned in I3); with no socket free, the room's growth (`RoomExpansion`); beyond the template's limit the title is
+  `unplaced` with reason `capacity`. A new version of a placed title is `duplicate-title`.
+- **The face-out set never changes incrementally** (point 3): no title is promoted, demoted or moved when priorities
+  change, and a face-out slot freed by an alias stays free (dressed); the featured titles and the hero band are chosen
+  again only by an explicit regeneration.
 - Overrides are applied last; a pin that names a game or slot that no longer exists is reported as orphaned and never
   moved. A change that would move a pinned object is not applied and is reported (`needsConfirmation`): the confirmation
   dialog of specification §7.6 point 8 comes with the editor (I4).
@@ -215,31 +285,44 @@ the quick catalog when there is none, and logs every violation): no two fixtures
 in millimetres) and none enters a door-reserved socket or the doorway's clearance; a 0.1 m navigation grid with every
 obstacle dilated by half the minimum clear width reaches, by breadth-first search from the doorway, the interaction
 point of every shelf module, display fixture and the hero TV; every eligible game has exactly one placement or one
-`unplaced` entry; no slot holds two games; lights within the renderer's limits; the room within the template's size
-limits. Soft rules (reported, the plan kept): the hero TV in line of sight from the doorway, the main passage at least
-1.4 m wide, the LayoutScore and decoration density.
+`unplaced` entry; no slot holds two games, and every slot a placement names exists in its fixture's prefab and lies in
+no dressed level; lights within the renderer's limits; the room within the template's size limits. Soft rules
+(reported, the plan kept): the hero TV in line of sight from the doorway, the main passage at least 1.4 m wide, the
+LayoutScore and decoration density.
 
 ### 12. Where it runs
 
-Generation and incremental updates run on the app's catalog worker as one more job (the worker that holds the database's
-writer, I2 step 13; step 13r's import job is its neighbour), from the bulk snapshot query; the result is an immutable
-`GenerationResult` posted to the main thread, which commits it at a frame boundary (specification §15.3, §18.2). At
-start the app reads the persisted plan on the worker and shows the room at once, then reconciles it with the catalog's
-snapshot (the incremental rules) and applies the difference; after an import (step 13r) it does the same. Frame-limited
-runs with a fixed frame time wait for the plan between frames, bounded like the catalog's lockstep.
+The catalog worker (I2 step 13: one thread, the database's writer, the quick catalog's lists and readiness, step 13r's
+import slices) runs only the database part: the bulk snapshot query (one read on its reader, within 50 ms for 2,000
+games) and the derivation of the room's media paths (ADR-0011 §6). Generation, validation, incremental updates and the
+plan's write are pure CPU and file work and run as one job of the world at the highest priority of `core::WorkerPool`
+(ADR-0011 §6), never on the catalog worker, so that the quick catalog's lists and a launch's resolution never queue
+behind them (specification §15.3's planner worker). The result is an immutable `GenerationResult` posted to the main
+thread, which commits it at a frame boundary (specification §18.2). At start the app reads the persisted plan on the
+pool and shows the room at once, then reconciles it with the catalog's snapshot (the incremental rules) and applies the
+difference; after an import (step 13r) it does the same. Frame-limited runs with a fixed frame time wait for the plan
+between frames, in the one lockstep the host keeps for every job a frame depends on (the catalog, the plan, the
+covers), at most 10 s between two frames.
 
 ## Consequences
 
-- The room shows one cartridge for each of the 890 titles of the reference SNES collection that have media, spine-out
-  and dense, with some dozens face-out; small libraries get a face-out room like the concept. The 6,907 other SNES games
-  stay one search away in the quick catalog, each with its reason in the plan. M2's "all the cartridges of the system"
-  is read as "every title with media, one cartridge each" (the user's choice, 2026-10-18).
+- The room shows one cartridge for each of the 890 titles of the reference SNES collection that have media: 56
+  face-out (the favourites, the most played and the best rated, on the display fixtures and the hero band) and 834
+  spine-out in the two hero-wall modules and three side-wall modules near the hero wall, the rest of the room given to
+  decoration; a library of up to 56 titles is all face-out. The 6,907 other SNES games stay one search away in the
+  quick catalog, each with its reason in the plan. M2's "all the cartridges of the system" is read as "every title with
+  media, one cartridge each" (the user's choice, 2026-10-18).
+- Most covers are seen only when a cartridge is pulled out or inspected (ADR-0012 §3): the room reads as a collector's
+  dense shelves around a few showcased titles, the user's choice over a wall of covers.
+- Which titles stand face-out depends on play data at the generation, and stays so until an explicit regeneration: a
+  room that has been played in for a year still shows the first year's face-out set. I4's "Regenerate room" with its
+  impact preview is where the user refreshes it.
 - Rooms are reproducible from (catalog, seed, versions), so snapshot goldens and property tests (specification §21.3)
   guard them; a change of the rules that moves games is a generator major version and needs an explicit regeneration.
 - The plan file holds no titles or paths, so it can be attached to a bug report without leaking the library's content
   beyond GameIds.
 - Very large systems overflow into `unplaced` with reason `capacity` until I4's linked rooms; the 9 x 10 m room holds
-  about 16 spine-out modules (some 3,200 titles with the reserve) and the template's limit, 16 m deep, about 28 (some
-  5,600), above every system of the reference library once deduplicated.
+  16 modules (some 3,200 titles with the reserve) and the template's limit, 16 m deep, 28 (some 5,600), above every
+  system of the reference library once deduplicated.
 - No migration: overrides and pins live in a JSON file the editor of I4 will write, which revisits ADR-0008 §6's
   "choices go to the database" for world state only.
