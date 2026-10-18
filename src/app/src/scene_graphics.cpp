@@ -34,6 +34,7 @@
 #include <rv/render/shader_library.hpp>
 #include <rv/render/shader_program.hpp>
 #include <rv/render/texture.hpp>
+#include <rv/render/texture_array_layout.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/render/texture_defaults.hpp>
 #include <rv/render/view_targets.hpp>
@@ -187,6 +188,8 @@ struct SceneGraphics::State {
     gl::MeshRegistry meshes;
     std::optional<gl::SceneRenderer> renderer;
     int uniformBufferOffsetAlignment = 256;
+    /// The storage of the collection's texture arrays in this run (ADR-0011 §4).
+    gl::CollectionArrayFormat collectionArrayFormat = gl::CollectionArrayFormat::Bc1Srgb;
     std::optional<gl::DebugDraw> debugDraw; ///< created when debug lines are first set
     bool debugLinesShown = false;
     std::function<void(gl::GLDevice&)> windowOverlay;
@@ -326,6 +329,13 @@ Expected<std::unique_ptr<SceneGraphics>> SceneGraphics::create(AppContext& conte
     state->uniformBufferOffsetAlignment = caps.uniformBufferOffsetAlignment;
 
     const CommandLineOptions& options = context.options();
+    const gl::CollectionFormatChoice arrays =
+        gl::chooseCollectionArrayFormat(caps.s3tcSrgb(), options.noTextureCompression);
+    state->collectionArrayFormat = arrays.format;
+    const glm::ivec2 front = gl::layerSize(gl::CollectionClass::Front, arrays.format);
+    const glm::ivec2 spine = gl::layerSize(gl::CollectionClass::Spine, arrays.format);
+    spdlog::info("Collection texture arrays: {} ({}x{} fronts, {}x{} spines): {}", gl::toString(arrays.format), front.x,
+                 front.y, spine.x, spine.y, arrays.reason);
     if (options.screenshot && options.frameLimit) {
         spdlog::info("Screenshot of the last frame (frame {}, counted from 0) at {}x{} will be written to {}",
                      *options.frameLimit - 1, options.screenshotWidth, options.screenshotHeight,
@@ -368,6 +378,10 @@ gl::TextureCache& SceneGraphics::textures() noexcept {
 
 const gl::TextureDefaults& SceneGraphics::textureDefaults() const noexcept {
     return *m_state->textureDefaults;
+}
+
+gl::CollectionArrayFormat SceneGraphics::collectionArrayFormat() const noexcept {
+    return m_state->collectionArrayFormat;
 }
 
 const gl::FrameStats& SceneGraphics::renderStats() const noexcept {

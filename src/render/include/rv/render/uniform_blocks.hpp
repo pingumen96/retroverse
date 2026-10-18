@@ -148,6 +148,14 @@ inline constexpr std::uint32_t kAlphaBlend = 1u << 6;
 inline constexpr std::uint32_t kDoubleSided = 1u << 7;
 /// An unlit screen shown as a picture tube (the crt* fields of MaterialUniforms; assets::CrtEffect).
 inline constexpr std::uint32_t kCrtScreen = 1u << 8;
+/// The base color also multiplies a layer of a texture array (the collection's fronts or spines, gl::CollectionArrays;
+/// ADR-0011 §4) bound on CollectionTextureUnit::LayeredBaseColor, the layer named by the instance record
+/// (scene::InstanceAttributes): one material draws every item of an array, each with its own picture. Lit shading and
+/// the inspection views (pbr/pbr.frag, debug/inspect.frag) read it.
+inline constexpr std::uint32_t kLayeredBaseColor = 1u << 9;
+/// With kLayeredBaseColor: the layer is the record's spine layer (InstanceAttributes::spineLayer), else its front
+/// layer (InstanceAttributes::frontLayer).
+inline constexpr std::uint32_t kSpineLayer = 1u << 10;
 
 /// Flag of the texture in `slot`.
 [[nodiscard]] constexpr std::uint32_t textureBit(MaterialTextureSlot slot) noexcept {
@@ -293,6 +301,21 @@ enum class SsaoTextureUnit : std::uint32_t {
 
 static_assert(toIndex(SsaoTextureUnit::SceneDepth) == toIndex(SceneTextureUnit::AmbientOcclusion) + 1,
               "the ambient occlusion units follow the scene units");
+
+/// Texture units of the collection's layered materials (material_flags::kLayeredBaseColor): `layout(binding = N) uniform
+/// sampler2DArray` in common/material.glsl, bound with the material (MaterialRegistry::bind). They follow the ambient
+/// occlusion units.
+enum class CollectionTextureUnit : std::uint32_t {
+    /// The array whose layer multiplies the base color (gl::Texture2DArray of gl::CollectionArrays; sRGB).
+    LayeredBaseColor = 12,
+};
+
+[[nodiscard]] constexpr std::uint32_t toIndex(CollectionTextureUnit unit) noexcept {
+    return static_cast<std::uint32_t>(unit);
+}
+
+static_assert(toIndex(CollectionTextureUnit::LayeredBaseColor) == toIndex(SsaoTextureUnit::RawOcclusion) + 1,
+              "the collection's units follow the ambient occlusion units");
 
 /// ShadowUniforms::lightIndex when no light casts the view's shadow.
 inline constexpr std::int32_t kNoShadowLight = -1;

@@ -150,7 +150,8 @@ struct CommandLineOptions {
     std::optional<double> videoFreezePtsSeconds;
     static constexpr double kMaxVideoFreezePtsSeconds = 86400.0;
     /// --no-texture-compression: the collection's texture arrays in RGBA8 at half the resolution instead of BC1, the
-    /// fallback without the S3TC extensions (ADR-0011 §4; I3 step 6).
+    /// fallback without the S3TC extensions (ADR-0011 §4; implemented by I3 step 6: gl::chooseCollectionArrayFormat,
+    /// SceneGraphics::collectionArrayFormat).
     bool noTextureCompression = false;
 };
 
@@ -189,8 +190,8 @@ void addHostOptions(core::ArgParser& parser);
 ///  - --launch-wait-limit outside (0, kMaxLaunchWaitLimitSeconds], or without --smoke or --exit-after-frames;
 ///  - --video-freeze-pts outside [0, kMaxVideoFreezePtsSeconds], or without --smoke or --exit-after-frames;
 ///  - empty paths or names;
-///  - a valid option that is not implemented yet (pendingOptionError: --refresh-library, --video-freeze-pts,
-///    --no-texture-compression until their I3 steps).
+///  - a valid option that is not implemented yet (pendingOptionError: --refresh-library, --video-freeze-pts until
+///    their I3 steps).
 /// The --input-script and --mock-catalog files themselves are read by the application (a bad one fails its
 /// initialization).
 /// With --help or --version the remaining options are not validated.

@@ -4,8 +4,10 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #include <rv/render/material_uniforms.hpp>
+#include <rv/render/texture_array.hpp>
 #include <rv/render/texture_cache.hpp>
 
 namespace rv::gl {
@@ -98,6 +100,26 @@ scene::MaterialHandle MaterialRegistry::add(std::string_view key, std::string la
     return scene::MaterialHandle{index};
 }
 
+scene::MaterialHandle MaterialRegistry::addLayered(std::string_view key, std::string label,
+                                                   const assets::MaterialDesc& desc, const MaterialTextures& textures,
+                                                   const LayeredBaseColor& layered) {
+    if (const std::optional<scene::MaterialHandle> known = find(key)) {
+        return *known;
+    }
+    if (layered.array == nullptr) {
+        spdlog::error("Layered material '{}' has no texture array: drawn without its layers", label);
+        return add(key, std::move(label), desc, textures);
+    }
+    const scene::MaterialHandle handle = add(key, std::move(label), desc, textures);
+    GpuMaterial& material = m_materials[handle.value];
+    material.layeredBaseColor = layered.array;
+    material.uniforms.flags |= material_flags::kLayeredBaseColor;
+    if (layered.spineLayer) {
+        material.uniforms.flags |= material_flags::kSpineLayer;
+    }
+    return handle;
+}
+
 std::optional<scene::MaterialHandle> MaterialRegistry::find(std::string_view key) const {
     if (const auto found = m_keys.find(key); found != m_keys.end()) {
         return scene::MaterialHandle{found->second};
@@ -171,6 +193,14 @@ void MaterialRegistry::bind(scene::MaterialHandle handle) const {
                       static_cast<GLsizeiptr>(sizeof(MaterialUniforms)));
     glBindTextures(0, static_cast<GLsizei>(kMaterialTextureSlotCount), material.textures.data());
     glBindSamplers(0, static_cast<GLsizei>(kMaterialTextureSlotCount), material.samplers.data());
+    if (material.layeredBaseColor != nullptr) {
+        // Read at every bind: a grown array has new storage under the same object.
+        const GLuint unit = toIndex(CollectionTextureUnit::LayeredBaseColor);
+        const GLuint texture = material.layeredBaseColor->id();
+        const GLuint sampler = m_samplers[static_cast<std::size_t>(TextureWrap::ClampToEdge)].id();
+        glBindTextures(unit, 1, &texture);
+        glBindSamplers(unit, 1, &sampler);
+    }
 }
 
 } // namespace rv::gl
