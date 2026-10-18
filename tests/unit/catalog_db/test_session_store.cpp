@@ -523,20 +523,27 @@ TEST_CASE("catalog_db/sessions: a write that meets a busy database is tried agai
     CHECK(rv::catalog_db::isBusyError(impatient.error()));
     CHECK(recorder.pending());
 
-    // The import commits after 0.6 s: a write tried again for long enough gets in.
+    // The import commits once the write has been refused and tried again twice: a write tried again for long enough
+    // gets in, after the commit. (Not at a fixed time: one attempt already waits the busy timeout, which the system's
+    // sleeps stretch, several times over on a loaded machine, so a commit at a fixed time could fall within the first.)
+    const std::size_t retriesBefore = store.busyRetries();
     bool committed = false;
+    std::chrono::steady_clock::time_point committedAt{};
     std::thread release([&] {
-        std::this_thread::sleep_for(600ms);
+        const auto giveUp = std::chrono::steady_clock::now() + 30s;
+        while (store.busyRetries() < retriesBefore + 2 && std::chrono::steady_clock::now() < giveUp) {
+            std::this_thread::sleep_for(5ms);
+        }
+        committedAt = std::chrono::steady_clock::now();
         committed = held->commit().has_value();
     });
-    const auto before = std::chrono::steady_clock::now();
-    const auto patient = store.insertSession(sessionOf(id(3)), BusyRetry{10s, 50ms});
-    const auto waited = std::chrono::steady_clock::now() - before;
+    const auto patient = store.insertSession(sessionOf(id(3)), BusyRetry{60s, 50ms});
+    const auto writtenAt = std::chrono::steady_clock::now();
     release.join();
     CHECK(committed);
     REQUIRE(patient.has_value());
-    CHECK(waited >= 500ms);
-    CHECK(store.busyRetries() > 0);
+    CHECK(store.busyRetries() >= retriesBefore + 2); // refused while the import held the lock, tried again
+    CHECK(writtenAt >= committedAt);                 // and in once it had committed
     REQUIRE(recorder.flush().has_value());
     CHECK_FALSE(recorder.pending());
     CHECK(recorder.stored());

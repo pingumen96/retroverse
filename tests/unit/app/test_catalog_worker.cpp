@@ -492,10 +492,17 @@ TEST_CASE("app/catalog_worker: a session write that meets a busy database stays 
     session.exitCode = 0;
     session.exitKind = rv::launcher::ExitKind::Success;
     worker.finishSession(7, session, rv::catalog::SystemName::parse("gb").value(), "C:\\emulator.exe");
-    std::this_thread::sleep_for(600ms);
+    // Both calls only queue (the caller never waits). The worker is idle again once it has handled both jobs, each
+    // with one attempt that met the busy database: how long that takes is the busy timeout as the system's sleeps
+    // stretch it (SQLite's busy handler sleeps in steps of the timer's resolution, longer still on a loaded machine),
+    // so the test waits for the worker rather than for a fixed time.
+    while (!worker.idle()) {
+        REQUIRE(std::chrono::steady_clock::now() < deadline);
+        std::this_thread::sleep_for(5ms);
+    }
     rv::app::CatalogResults results = worker.take();
-    CHECK(results.sessions.empty()); // kept pending on the worker: the caller never waited
-    CHECK(worker.idle());
+    CHECK(results.sessions.empty()); // kept pending on the worker
+    CHECK(holder.writer().queryInt("SELECT count(*) FROM rv_play_sessions").value().value_or(-1) == 0); // not written
 
     transaction->rollback();
     while (results.sessions.empty()) {
