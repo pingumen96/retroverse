@@ -98,10 +98,31 @@ private:
 [[nodiscard]] Expected<std::filesystem::path> extendedLengthPathBelow(const std::filesystem::path& root,
                                                                       std::string_view relativeUtf8);
 
-/// Writes `data` to a temporary file in the destination directory and renames it over `path`, so readers
-/// never observe a partially written file. Parent directories are created when missing. Never throws.
+/// Writes `data` to a temporary file beside `path` ("<name>.tmp-<process id>-<n>"), flushes it to the disk
+/// (FlushFileBuffers) and only then renames it over `path` (MoveFileExW, replacing, write-through), so that readers
+/// never observe a partially written file and a write interrupted at any point (a crash, a power loss, a failure)
+/// leaves the previous file as it was; an interruption before the rename may leave the temporary file behind. Parent
+/// directories are created when missing. Errors: as fileErrorCode() of the failing call (Unavailable for a drive out of
+/// reach; IoError for access denied, which is what a destination that is a folder, read-only, or held open by another
+/// program without sharing its deletion gives), IoError for the parent folders; the temporary file is removed on every
+/// error. Never throws.
 [[nodiscard]] Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data);
 [[nodiscard]] Status writeTextFileAtomic(const std::filesystem::path& path, std::string_view text);
+
+namespace detail {
+
+/// Where writeFileAtomicStoppingAt() stops, as a process ended at that point would: the tests of an interrupted write.
+enum class AtomicWriteStop {
+    None,              ///< the whole write (writeFileAtomic())
+    AfterPartialWrite, ///< half the bytes in the temporary file, not flushed, no rename
+    BeforeRename,      ///< the temporary file written and flushed, no rename
+};
+
+/// writeFileAtomic() stopped at `stop`: the temporary file is left as it is and Cancelled returned (tests only).
+[[nodiscard]] Status writeFileAtomicStoppingAt(const std::filesystem::path& path, std::span<const std::byte> data,
+                                               AtomicWriteStop stop);
+
+} // namespace detail
 
 /// Last modification time, or nothing when the file cannot be queried.
 [[nodiscard]] std::optional<std::filesystem::file_time_type> lastWriteTime(const std::filesystem::path& path) noexcept;

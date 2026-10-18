@@ -79,6 +79,8 @@ public:
     }
     [[nodiscard]] HANDLE get() const noexcept { return m_handle; }
     [[nodiscard]] bool valid() const noexcept { return m_handle != INVALID_HANDLE_VALUE && m_handle != nullptr; }
+    /// Gives the handle up: the caller closes it.
+    [[nodiscard]] HANDLE release() noexcept { return std::exchange(m_handle, INVALID_HANDLE_VALUE); }
 
 private:
     HANDLE m_handle;
@@ -356,7 +358,10 @@ Expected<SharedFileReader::Facts> listedFileFacts(const std::filesystem::path& p
     return facts;
 }
 
-Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data) {
+namespace detail {
+
+Status writeFileAtomicStoppingAt(const std::filesystem::path& path, std::span<const std::byte> data,
+                                 AtomicWriteStop stop) {
     const std::string context = pathToUtf8Lossy(path);
     std::error_code ec;
     if (path.has_parent_path()) {
@@ -366,32 +371,62 @@ Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::b
         }
     }
 
+    // Beside the destination (one volume, so the rename is atomic), named apart for every process and write.
     std::filesystem::path temporary = path;
-    temporary += ".tmp-" + std::to_string(g_tempCounter.fetch_add(1));
+    temporary += ".tmp-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(g_tempCounter.fetch_add(1));
+    const std::wstring temporaryName = extendedLengthPath(temporary);
+    const auto abandon = [&](DWORD error, std::string_view what) {
+        DeleteFileW(temporaryName.c_str());
+        return makeError(fileErrorCode(error, path), std::string(what) + ": " + systemErrorMessage(error), context);
+    };
     {
-        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-        if (!stream) {
-            return makeError(ErrorCode::IoError, "cannot open temporary file for writing", pathToUtf8Lossy(temporary));
+        FileHandle file(CreateFileW(temporaryName.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr));
+        if (!file.valid()) {
+            const DWORD error = GetLastError();
+            return makeError(fileErrorCode(error, path),
+                             "cannot create the temporary file: " + systemErrorMessage(error),
+                             pathToUtf8Lossy(temporary));
         }
-        if (!data.empty()) {
-            stream.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+        const std::size_t size = stop == AtomicWriteStop::AfterPartialWrite ? data.size() / 2 : data.size();
+        std::size_t done = 0;
+        while (done < size) {
+            const auto chunk = static_cast<DWORD>(std::min<std::size_t>(size - done, kReadChunkBytes));
+            DWORD written = 0;
+            if (WriteFile(file.get(), data.data() + done, chunk, &written, nullptr) == FALSE || written != chunk) {
+                const DWORD error = GetLastError();
+                CloseHandle(file.release());
+                return abandon(error == ERROR_SUCCESS ? ERROR_WRITE_FAULT : error, "write failed");
+            }
+            done += written;
         }
-        stream.flush();
-        if (!stream) {
-            stream.close();
-            std::filesystem::remove(temporary, ec);
-            return makeError(ErrorCode::IoError, "write failed", pathToUtf8Lossy(temporary));
+        if (stop == AtomicWriteStop::AfterPartialWrite) {
+            return makeError(ErrorCode::Cancelled, "stopped after a partial write (test)", context);
+        }
+        // The bytes on the disk before the name points at them: a crash or a power loss after the rename never finds
+        // the new name holding a file that was not written out.
+        if (FlushFileBuffers(file.get()) == FALSE) {
+            const DWORD error = GetLastError();
+            CloseHandle(file.release());
+            return abandon(error, "cannot flush the temporary file");
         }
     }
-
-    // std::filesystem::rename replaces an existing regular file (MoveFileExW with MOVEFILE_REPLACE_EXISTING).
-    std::filesystem::rename(temporary, path, ec);
-    if (ec) {
-        std::error_code ignored;
-        std::filesystem::remove(temporary, ignored);
-        return makeError(ErrorCode::IoError, "cannot replace destination: " + ec.message(), context);
+    if (stop == AtomicWriteStop::BeforeRename) {
+        return makeError(ErrorCode::Cancelled, "stopped before the rename (test)", context);
+    }
+    // Replaces an existing file in one step (NTFS journals the rename). Write-through only matters for a move done as a
+    // copy, which a temporary beside its destination never needs; it costs nothing here.
+    if (MoveFileExW(temporaryName.c_str(), extendedLengthPath(path).c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE) {
+        return abandon(GetLastError(), "cannot replace the destination");
     }
     return ok();
+}
+
+} // namespace detail
+
+Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data) {
+    return detail::writeFileAtomicStoppingAt(path, data, detail::AtomicWriteStop::None);
 }
 
 Status writeTextFileAtomic(const std::filesystem::path& path, std::string_view text) {
