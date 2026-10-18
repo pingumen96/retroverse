@@ -556,7 +556,7 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
     CHECK(help.find("Exit codes") != std::string::npos);
 }
 
-TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused until their steps",
+TEST_CASE("app/command_line: the options of I3 are parsed, listed and no longer refused",
           "[app][command_line]") {
     // A valid use of each option is an invalid command line (exit 2) that names the step implementing it.
     const std::vector<std::pair<std::vector<std::string>, std::string>> pending{
@@ -603,9 +603,7 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
     options.refreshLibrary = true;
     CHECK(rv::app::pendingOptionError(options).has_value()); // taken since I3 step 13r
     options.videoFreezePtsSeconds = 1.0;
-    const auto refused = rv::app::pendingOptionError(options);
-    REQUIRE_FALSE(refused.has_value());
-    CHECK(refused.error().context == "--video-freeze-pts");
+    CHECK(rv::app::pendingOptionError(options).has_value()); // taken since I3 step 11
 
     const std::string help = rv::app::commandLineHelp();
     CHECK(helpListsOption(help, "--refresh-library"));
