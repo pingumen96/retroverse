@@ -189,7 +189,7 @@ void addHostOptions(core::ArgParser& parser);
 ///  - --launch-wait-limit outside (0, kMaxLaunchWaitLimitSeconds], or without --smoke or --exit-after-frames;
 ///  - --video-freeze-pts outside [0, kMaxVideoFreezePtsSeconds], or without --smoke or --exit-after-frames;
 ///  - empty paths or names;
-///  - a valid option that is not implemented yet (pendingOptionError: --refresh-library, --video-freeze-pts,
+///  - a valid option that is not implemented yet (pendingOptionError: --video-freeze-pts,
 ///    --no-texture-compression until their I3 steps).
 /// The --input-script and --mock-catalog files themselves are read by the application (a bad one fails its
 /// initialization).

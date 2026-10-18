@@ -16,6 +16,15 @@
 // way). Nothing else may call SDL from here. Every request is answered, also when the worker's thread fails (the
 // results then say it ended: CatalogResults::ended). Stopping it interrupts a running query (sqlite3_interrupt through
 // Connection::interrupt) and ends within a bound.
+//
+// Since I3 step 13r it also refreshes the catalog (refresh(): "Aggiorna libreria", --refresh-library): the import of
+// retroverse-cli import (ImportService with IdentityPairing, its import lock) as a job on the same writer, in slices
+// (library_refresh.hpp), so that lists, readiness, launches and session writes queued meanwhile are answered between
+// two of its pieces of work (launches and session writes not while its write transaction is open). After its commit
+// the systems' readiness is resolved again (the library's configuration and emulators read again, the choices and the
+// systems' games), and the main thread learns it (CatalogResults::refreshed) with the readiness generation that drops
+// the answers resolved before. stop() sets the import's cancel flag and interrupts the writer while the import writes:
+// the import is rolled back or committed whole, within the stop's bound.
 
 #include <chrono>
 #include <cstddef>
@@ -30,8 +39,10 @@
 #include <utility>
 #include <vector>
 
+#include <rv/app/library_refresh.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/launch_resolution.hpp>
+#include <rv/catalog/library_source.hpp>
 #include <rv/catalog/play_session.hpp>
 #include <rv/catalog/query.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
@@ -103,6 +114,9 @@ struct CatalogList {
     /// How long the materialization took on the worker, and when it was done.
     double milliseconds = 0.0;
     std::chrono::system_clock::time_point at;
+    /// From the query's request (CatalogWorker::query) to its answer: the time in the queue (behind other jobs, or a
+    /// slice of a refresh) and the materialization.
+    double waitedMs = 0.0;
 };
 
 /// The catalog opened, or why it is not (CatalogResults::opened).
@@ -163,8 +177,24 @@ struct GameReadiness {
     bool ownState = false;
     /// False: the catalog no longer has the game (an import removed it since its row was read) or its details could not
     /// be read; `state` says nothing then, and the game is asked again when its row is read again. Every game asked
-    /// for is answered, so that nothing waits for it.
+    /// for, so that nothing waits for it.
     bool known = true;
+    /// The systems' readiness it was resolved with: 0 from the opening, one more after each refresh resolved them again
+    /// (CatalogRefreshed::generation). An answer of an older generation says nothing any more.
+    std::uint64_t generation = 0;
+};
+
+/// A refresh ended (CatalogWorker::refresh): its summary and, after an import that ended Done, the systems' readiness
+/// resolved again.
+struct CatalogRefreshed {
+    RefreshSummary summary;
+    /// Done and resolved again: the systems with games now, in the chips' order (as CatalogOpened::systems), and the
+    /// readiness generation they start; nothing (the previous ones stay) when the import did not end Done or the
+    /// systems could not be read again.
+    std::optional<std::vector<CatalogSystem>> systems;
+    std::uint64_t generation = 0;
+    /// ES-DE's configuration as read again (CatalogOpened::libraryError), with `systems`.
+    std::optional<Error> libraryError;
 };
 
 /// What the worker answered since the last CatalogWorker::take().
@@ -177,13 +207,16 @@ struct CatalogResults {
     std::vector<StoredSession> sessions;
     /// Choices that a session verified for their system: (system, choice).
     std::vector<std::pair<catalog::SystemName, launcher::LaunchChoice>> verified;
+    /// The refresh running: where it is (the latest), and its end.
+    std::optional<RefreshProgress> refreshProgress;
+    std::optional<CatalogRefreshed> refreshed;
     /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
     /// asked of it will be answered any more. Posted last.
     bool ended = false;
 
     [[nodiscard]] bool empty() const noexcept {
         return !opened && !list && readiness.empty() && launches.empty() && sessions.empty() && verified.empty() &&
-               !ended;
+               !refreshProgress && !refreshed && !ended;
     }
 };
 
@@ -203,8 +236,10 @@ public:
         catalog::SessionOwner owner;
         /// Whether an open session's owner may still run (platform_win::processLiveness() unless set).
         catalog_db::OwnerAlive ownerAlive;
-            /// The lists query() asks for (not the opening's first list).
+        /// The lists query() asks for (not the opening's first list).
         RunQuery runQuery;
+        /// The library source a refresh imports from (esde::EsdeLibrarySource unless set; tests slow it down).
+        std::function<std::unique_ptr<catalog::ILibrarySource>()> makeSource;
         /// The writer's busy timeout: a session write waits at most this long for another process's write
         /// transaction, then stays pending.
         std::chrono::milliseconds busyTimeout{1000};
@@ -240,6 +275,11 @@ public:
     void beginSession(std::uint64_t token, catalog::PlaySession session);
     void finishSession(std::uint64_t token, catalog::PlaySession session, catalog::SystemName system,
                        std::filesystem::path program);
+
+    /// Refreshes the catalog from the library (the import, sliced; CatalogResults::refreshProgress, ::refreshed). False,
+    /// and nothing asked, while a refresh is queued or runs, or once the worker stops or ended. Only once the catalog
+    /// opened Ready: a catalog that did not open answers nothing more.
+    bool refresh();
 
     /// What it answered since the last call (main thread).
     [[nodiscard]] CatalogResults take();

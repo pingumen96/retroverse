@@ -31,6 +31,28 @@ struct QuickCatalogEvents {
     std::function<void()> close;
     /// Every move of the focus to another element (logs, reports, sounds).
     std::function<void(const FocusTarget&)> focusChanged;
+    /// "Aggiorna libreria": the button (I3 step 13r). The application refreshes the catalog from ES-DE.
+    std::function<void()> refresh;
+};
+
+/// What the quick catalog shows of the catalog's refresh (I3 step 13r): whether it offers "Aggiorna libreria", and the
+/// line under the header (the document's words for each state and phase).
+struct QuickCatalogRefresh {
+    /// The button shows: the catalog can be refreshed now.
+    bool available = false;
+    /// Empty: nothing to say; else quick_catalog::kRefreshStates (running, or how the last refresh ended).
+    std::string state;
+    /// While it runs: quick_catalog::kRefreshPhases, with how far (`done` of `total`, 0 of 0 while unknown).
+    std::string phase;
+    std::size_t done = 0;
+    std::size_t total = 0;
+    /// Once done: games added, removed and changed, and the systems the mass-disappearance guard kept.
+    std::size_t added = 0;
+    std::size_t removed = 0;
+    std::size_t changed = 0;
+    std::size_t guarded = 0;
+
+    bool operator==(const QuickCatalogRefresh&) const = default;
 };
 
 /// The quick catalog (specification §12.2 QuickLibrary, §13.2 "Catalogo rapido"; style §16.3), the first product
@@ -47,6 +69,9 @@ struct QuickCatalogEvents {
 ///  - The model may change outside the screen's commands (QuickCatalogModel::refresh() after an import, a list a query
 ///    on the source's worker brings, which afterUpdate() collects with QuickCatalogModel::poll()): the screen shows it
 ///    before the next command and after every update.
+///  - "Aggiorna libreria" (I3 step 13r), in the header, is a region of its own above the search field (search Up, back
+///    Down), shown while setRefresh() says it is available; the line under the header tells the refresh's progress and
+///    result.
 ///  - Regions: search field, filter chips, game list, card actions (the nav-region attribute of the document). In the
 ///    list Up and Down move the selection over the whole list (the model scrolls the window) and the focus follows it
 ///    from row to row; page moves, Home and End jump. A list that empties sends the focus to the active filter's chip
@@ -108,6 +133,9 @@ public:
     /// being opened, no library, no catalog database, ...), in the document's words; empty says nothing.
     void setNotice(std::string_view key);
     [[nodiscard]] std::string_view notice() const noexcept;
+    /// The refresh's button and line (bound only when it changed).
+    void setRefresh(const QuickCatalogRefresh& refresh);
+    [[nodiscard]] const QuickCatalogRefresh& refresh() const noexcept;
     /// The high-contrast theme (specification §12.4).
     void setHighContrast(bool enabled);
     [[nodiscard]] const FocusHistory& history() const noexcept;

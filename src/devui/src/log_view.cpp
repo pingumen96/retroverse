@@ -10,21 +10,20 @@ namespace rv::devui {
 LogView::LogView(std::size_t capacity) : m_lines(std::max<std::size_t>(capacity, 1)) {}
 
 bool LogView::refresh() {
-    const std::uint64_t logged = core::loggedMessageCount();
-    if (logged < m_seen) {
+    // The lines and the count are read together, under the in-memory log's lock (I3 step 13r): a line another thread
+    // logs meanwhile comes with the next batch, never twice.
+    core::LogLinesSince batch = core::logLinesSince(m_generation, m_seen, capacity());
+    if (batch.generation != m_generation) {
         // Logging was configured again: its lines are another log.
         m_first = 0;
         m_size = 0;
-        m_seen = 0;
+        m_generation = batch.generation;
     }
-    if (logged == m_seen) {
+    m_seen = batch.count;
+    if (batch.lines.empty()) {
         return false;
     }
-    // The newest lines. With other threads logging, a line written between the two calls can take the place of this
-    // batch's oldest line and show again in the next batch: a cosmetic glitch of the overlay's copy, never of the log.
-    const auto added = static_cast<std::size_t>(std::min<std::uint64_t>(logged - m_seen, capacity()));
-    m_seen = logged;
-    append(core::recentLogLines(added));
+    append(batch.lines);
     return true;
 }
 

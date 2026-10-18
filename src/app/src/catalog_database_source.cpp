@@ -68,6 +68,21 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
             dispatch();
         }
     }
+    if (results.refreshed && results.refreshed->systems) {
+        // A refresh resolved the systems again after its commit: their chips and readiness, a new generation. The
+        // games' own readiness is asked again as their rows are read (QuickCatalogModel::refresh reads them).
+        CatalogRefreshed& refreshed = *results.refreshed;
+        m_systems = std::move(*refreshed.systems);
+        refreshed.systems.reset();
+        if (m_state == CatalogState::Ready) {
+            m_openError = refreshed.libraryError;
+        }
+        m_generation = refreshed.generation;
+        m_readiness.clear();
+        m_asked.clear();
+        collected.refreshed = true;
+        collected.rowsChanged = true;
+    }
     if (results.list) {
         // Only the list of the query still asked for: an older one was replaced by it.
         if (m_pendingSerial && results.list->serial == *m_pendingSerial) {
@@ -76,6 +91,9 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
         results.list.reset();
     }
     for (GameReadiness& readiness : results.readiness) {
+        if (readiness.generation != m_generation) {
+            continue; // resolved before a refresh resolved the systems again: asked again when its row is read
+        }
         m_asked.erase(readiness.game.value());
         if (!readiness.known) {
             continue; // gone, or unreadable now: its row keeps its system's, and asks again when read again

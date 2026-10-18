@@ -1,6 +1,7 @@
 #include <rv/app/catalog_worker.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <exception>
@@ -8,6 +9,7 @@
 #include <mutex>
 #include <set>
 #include <system_error>
+#include <thread>
 #include <tuple>
 #include <variant>
 
@@ -15,11 +17,16 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/app/catalog_launch_library.hpp>
+#include <rv/catalog/reconciliation.hpp>
+#include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/migrator.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
+#include <rv/esde/library_source.hpp>
+#include <rv/esde/media_resolver.hpp>
+#include <rv/esde/settings.hpp>
 #include <rv/esde/systems.hpp>
 #include <rv/launcher/launch_guard.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
@@ -38,6 +45,8 @@ using Clock = std::chrono::steady_clock;
 struct QueryJob {
     std::uint64_t serial = 0;
     catalog::CatalogQuery query;
+    /// When the main thread asked (CatalogList::waitedMs).
+    Clock::time_point asked{};
 };
 struct ReadinessJob {
     std::vector<catalog::GameId> games;
@@ -54,7 +63,18 @@ struct SessionJob {
     catalog::SystemName system;
     std::filesystem::path program;
 };
-using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob>;
+/// The catalog's refresh (I3 step 13r): one at a time.
+struct RefreshJob {};
+using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob>;
+
+/// What a slice boundary of a refresh may answer: never the refresh itself; while the import's write transaction is
+/// open, only reads (lists on the worker's reader, readiness), as launches and session writes use the writer.
+[[nodiscard]] bool servableDuringRefresh(const Job& job, bool writing) noexcept {
+    if (std::holds_alternative<RefreshJob>(job)) {
+        return false;
+    }
+    return !writing || std::holds_alternative<QueryJob>(job) || std::holds_alternative<ReadinessJob>(job);
+}
 
 /// The launch state of a resolution, as the card shows it.
 [[nodiscard]] GameLaunchState launchStateOf(const catalog::LaunchResolution& resolution, bool verified) {
@@ -132,12 +152,19 @@ struct CatalogWorker::Shared {
     bool finished = false;
     /// The opening's result was posted (a thread that fails before posts an Unavailable one).
     bool openedPosted = false;
+    /// A refresh is queued or runs (refresh() refuses another).
+    bool refreshing = false;
+    /// The import's cancel flag (ImportOptions::cancel): set by stop().
+    std::atomic<bool> cancel{false};
     CatalogResults results;
     std::function<void()> wake;
 
     /// The worker's query connection while it may run a statement: stop() interrupts it.
     std::mutex connectionMutex;
     catalog_db::Connection* interruptible = nullptr;
+    /// The writer while a refresh's import holds its write transaction open: stop() interrupts it too (the import is
+    /// rolled back), and only then, so that a session write is never interrupted.
+    catalog_db::Connection* importWriter = nullptr;
 
     /// Applies `change` to the results, then wakes the host.
     template <typename Change>
@@ -157,14 +184,15 @@ struct CatalogWorker::Shared {
 namespace {
 
 /// The worker's own state: the database and everything that reads or writes it, used on the worker's thread only.
-class Runner {
+class Runner final : public RefreshHost {
 public:
     Runner(std::shared_ptr<CatalogWorker::Shared> shared, CatalogWorker::Options options)
         : m_shared(std::move(shared)), m_options(std::move(options)) {}
     /// Also when an exception ends run(): stop() never interrupts a connection that is gone.
-    ~Runner() {
+    ~Runner() override {
         const std::lock_guard lock(m_shared->connectionMutex);
         m_shared->interruptible = nullptr;
+        m_shared->importWriter = nullptr;
     }
     Runner(const Runner&) = delete;
     Runner& operator=(const Runner&) = delete;
@@ -341,6 +369,18 @@ private:
                                          m_profile.id.str()));
         }
 
+        opened.systems = resolveSystems(*summaries);
+        opened.libraryError = m_libraryError;
+        opened.state = CatalogState::Ready;
+        return ok();
+    }
+
+    /// The library's configuration read (ES-DE's settings and systems, the emulator profiles), the choices and
+    /// verifications read, and each system with games of `summaries` resolved (its readiness): at the opening, and again
+    /// after a refresh's commit. Returns the systems in the chips' order.
+    std::vector<CatalogSystem> resolveSystems(const std::vector<catalog_db::SystemSummary>& summaries) {
+        m_library.reset();
+        m_libraryError.reset();
         auto library = loadCatalogLaunchLibrary(m_profile, m_options.paths);
         if (library) {
             m_library = std::move(*library);
@@ -350,18 +390,18 @@ private:
         } else {
             spdlog::warn("Catalog: {}; its games cannot be launched", library.error().toString());
             m_libraryError = library.error();
-            opened.libraryError = library.error();
         }
         readChoices();
-        for (const catalog_db::SystemSummary& summary : *summaries) {
+        std::vector<CatalogSystem> systems;
+        m_systems.clear();
+        for (const catalog_db::SystemSummary& summary : summaries) {
             if (summary.library != m_profile.id || summary.games == 0) {
                 continue;
             }
-            opened.systems.push_back(systemState(summary));
-            m_systems.emplace(summary.system.name.str(), opened.systems.back());
+            systems.push_back(systemState(summary));
+            m_systems.emplace(summary.system.name.str(), systems.back());
         }
-        opened.state = CatalogState::Ready;
-        return ok();
+        return systems;
     }
 
     /// assign's choices for the systems and the verifications, from the database.
@@ -454,6 +494,7 @@ private:
             spdlog::warn("Catalog query failed: {}", ids.error().toString());
         }
         list.milliseconds = millisecondsSince(start);
+        list.waitedMs = millisecondsSince(job.asked);
         list.at = std::chrono::system_clock::now();
         spdlog::debug("Catalog query {} ('{}', {} system(s)): {} game(s) in {:.1f} ms", job.serial, job.query.text,
                       job.query.systems.size(), list.ids.size(), list.milliseconds);
@@ -478,6 +519,7 @@ private:
                 GameReadiness unknown;
                 unknown.game = game;
                 unknown.known = false;
+                unknown.generation = m_generation;
                 states.push_back(std::move(unknown));
             }
         }
@@ -503,6 +545,7 @@ private:
         const auto system = m_systems.find(entry.system.str());
         GameReadiness readiness;
         readiness.game = game;
+        readiness.generation = m_generation;
         if (!m_library) {
             readiness.state = libraryUnreadable(*m_libraryError);
         } else {
@@ -598,6 +641,149 @@ private:
                      session.choice.value.empty() ? std::string("the command") : session.choice.value,
                      catalog::toString(resolved.resolution.readiness()));
         return ok();
+    }
+
+    // --- The refresh (I3 step 13r) ----------------------------------------------------------------------------------
+
+    void handle(RefreshJob& /*job*/) {
+        const Clock::time_point start = Clock::now();
+        spdlog::info("Catalog refresh: importing library '{}' on the worker", m_profile.id.str());
+        CatalogRefreshed refreshed;
+        RefreshSlicing slicing;
+        const Expected<catalog::ImportResult> result = importLibrary(slicing);
+        refreshed.summary = summarizeImport(result);
+        refreshed.summary.slicing = slicing;
+        if (refreshed.summary.outcome == RefreshOutcome::Done) {
+            // The systems' readiness resolved again (their games, ES-DE's configuration and the emulators as they are
+            // now, the choices): the opening's part after systems(). Answers resolved before are of an older generation.
+            if (auto summaries = m_query->systems()) {
+                refreshed.systems = resolveSystems(*summaries);
+                refreshed.libraryError = m_libraryError;
+                refreshed.generation = ++m_generation;
+            } else {
+                spdlog::warn("Catalog refresh: the systems cannot be read again: {}; their readiness stays",
+                             summaries.error().toString());
+            }
+        }
+        refreshed.summary.milliseconds = millisecondsSince(start);
+        const RefreshSummary& summary = refreshed.summary;
+        if (summary.outcome == RefreshOutcome::Done) {
+            spdlog::info("Catalog refresh done in {:.0f} ms: {} entries, {} added, {} removed, {} changed, {} moved, {} "
+                         "to review{}; {} slice(s), {} request(s) answered between them, the longest slice {:.1f} ms",
+                         summary.milliseconds, summary.entries, summary.added, summary.removed, summary.changed,
+                         summary.moved, summary.reviews,
+                         summary.guarded == 0 ? std::string()
+                                              : fmt::format(", {} system(s) kept by the guard", summary.guarded),
+                         slicing.boundaries, slicing.served, slicing.longestSliceMs);
+        } else {
+            // The error may name the user's folders: at debug level only.
+            spdlog::info("Catalog refresh {} after {:.0f} ms", toString(summary.outcome), summary.milliseconds);
+            if (summary.error) {
+                spdlog::debug("Catalog refresh: {}", summary.error->toString());
+            }
+        }
+        m_shared->post([&](CatalogResults& results) {
+            results.refreshProgress.reset();
+            results.refreshed = std::move(refreshed);
+            m_shared->refreshing = false;
+        });
+    }
+
+    /// The import of the library the catalog opened with (library.json as read then), as retroverse-cli import makes
+    /// it (EsdeLibrarySource, EsdeMediaResolver, IdentityPairing), on the worker's writer, sliced.
+    Expected<catalog::ImportResult> importLibrary(RefreshSlicing& slicing) {
+        const auto settings = esde::readSettings(m_profile.esdeHome);
+        if (!settings) {
+            return propagate(settings.error());
+        }
+        esde::EsdeMediaResolver resolver(esde::resolveMediaRoot(*settings, m_profile));
+        auto store = catalog_db::SqliteCatalogStore::open(*m_database);
+        if (!store) {
+            return propagate(store.error());
+        }
+        std::unique_ptr<catalog::ILibrarySource> source =
+            m_options.makeSource ? m_options.makeSource() : std::make_unique<esde::EsdeLibrarySource>();
+        // Reconciliation (I2 step 11b): moved and renamed files keep their identity.
+        catalog::IdentityPairing pairing;
+        return runSlicedImport(RefreshPorts{*source, resolver, **store, &pairing}, m_profile, m_shared->cancel, *this,
+                               slicing);
+    }
+
+    std::size_t serve(bool writing) override {
+        std::size_t served = 0;
+        while (true) {
+            std::optional<Job> job;
+            {
+                const std::lock_guard lock(m_shared->mutex);
+                if (m_shared->stopping) {
+                    return served;
+                }
+                const auto found = std::find_if(m_shared->jobs.begin(), m_shared->jobs.end(),
+                                                [&](const Job& queued) { return servableDuringRefresh(queued, writing); });
+                if (found == m_shared->jobs.end()) {
+                    break;
+                }
+                job = std::move(*found);
+                m_shared->jobs.erase(found);
+            }
+            std::visit([this](auto& value) { handle(value); }, *job);
+            ++served;
+        }
+        if (!writing) {
+            retryPendingSessions(false);
+        }
+        return served;
+    }
+
+    std::size_t serveWhile(const std::function<void()>& work) override {
+        bool done = false;
+        std::exception_ptr failure;
+        std::thread helper([&] {
+            try {
+                work();
+            } catch (...) {
+                failure = std::current_exception();
+            }
+            {
+                const std::lock_guard lock(m_shared->mutex);
+                done = true;
+            }
+            m_shared->work.notify_all();
+        });
+        std::size_t served = 0;
+        while (true) {
+            {
+                std::unique_lock lock(m_shared->mutex);
+                m_shared->work.wait(lock, [&] {
+                    return done || m_shared->stopping ||
+                           std::any_of(m_shared->jobs.begin(), m_shared->jobs.end(),
+                                       [](const Job& queued) { return servableDuringRefresh(queued, false); });
+                });
+                if (done) {
+                    break;
+                }
+                if (m_shared->stopping) {
+                    // The cancel flag is set: the work ends at its next look at it.
+                    m_shared->work.wait(lock, [&] { return done; });
+                    break;
+                }
+            }
+            served += serve(false);
+        }
+        helper.join();
+        if (failure) {
+            std::rethrow_exception(failure);
+        }
+        return served;
+    }
+
+    void progress(const RefreshProgress& progress) override {
+        m_shared->post([&](CatalogResults& results) { results.refreshProgress = progress; });
+    }
+
+    void writing(bool open) override {
+        const std::lock_guard lock(m_shared->connectionMutex);
+        m_shared->importWriter = open ? &m_database->writer() : nullptr;
     }
 
     // --- Play sessions -------------------------------------------------------------------------------------------
@@ -745,6 +931,7 @@ private:
         {
             const std::lock_guard lock(m_shared->connectionMutex);
             m_shared->interruptible = nullptr;
+            m_shared->importWriter = nullptr;
             m_query.reset();
         }
         m_recordings.clear();
@@ -767,6 +954,8 @@ private:
     std::set<std::tuple<std::string, int, std::string>> m_verified;
     std::map<std::uint64_t, Recording> m_recordings;
     Clock::time_point m_lastRetry{};
+    /// The systems' readiness generation (GameReadiness::generation).
+    std::uint64_t m_generation = 0;
 };
 
 } // namespace
@@ -816,7 +1005,7 @@ void CatalogWorker::query(std::uint64_t serial, catalog::CatalogQuery query) {
         const std::lock_guard lock(m_shared->mutex);
         // Only the latest list matters (typing coalesces): a query still queued is replaced.
         std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<QueryJob>(job); });
-        m_shared->jobs.emplace_back(QueryJob{serial, std::move(query)});
+        m_shared->jobs.emplace_back(QueryJob{serial, std::move(query), Clock::now()});
     }
     m_shared->work.notify_one();
 }
@@ -858,6 +1047,19 @@ void CatalogWorker::finishSession(std::uint64_t token, catalog::PlaySession sess
     m_shared->work.notify_one();
 }
 
+bool CatalogWorker::refresh() {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        if (m_shared->stopping || m_shared->finished || m_shared->refreshing) {
+            return false;
+        }
+        m_shared->refreshing = true;
+        m_shared->jobs.emplace_back(RefreshJob{});
+    }
+    m_shared->work.notify_one();
+    return true;
+}
+
 CatalogResults CatalogWorker::take() {
     const std::lock_guard lock(m_shared->mutex);
     return std::exchange(m_shared->results, CatalogResults{});
@@ -876,15 +1078,21 @@ bool CatalogWorker::stop(std::chrono::milliseconds bound) {
     {
         const std::lock_guard lock(m_shared->mutex);
         m_shared->stopping = true;
-        // Lists and readiness nobody will show: dropped; the session writes stay for the worker's last pass.
+        // Lists, readiness and a refresh nobody will show: dropped; the session writes stay for the worker's last pass.
         std::erase_if(m_shared->jobs, [](const Job& job) { return !std::holds_alternative<SessionJob>(job); });
     }
+    // A refresh running ends at its next look at the flag, its transaction rolled back.
+    m_shared->cancel.store(true);
     m_shared->work.notify_one();
     {
-        // A statement running on the worker's query connection stops with Cancelled (sqlite3_interrupt, ADR-0008 §5).
+        // A statement running on the worker's query connection stops with Cancelled (sqlite3_interrupt, ADR-0008 §5),
+        // and so does the import's on the writer while it writes (its commit included: rolled back whole).
         const std::lock_guard lock(m_shared->connectionMutex);
         if (m_shared->interruptible != nullptr) {
             m_shared->interruptible->interrupt();
+        }
+        if (m_shared->importWriter != nullptr) {
+            m_shared->importWriter->interrupt();
         }
     }
     bool ended = false;

@@ -74,6 +74,31 @@ h2 {
 	color: #F4EFE6A6;
 }
 
+/* The count and "Aggiorna libreria" at the header's right end (I3 step 13r). */
+.header-end {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+#library-box {
+	margin-left: 16dp;
+}
+
+.action.refresh {
+	font-size: 20dp;
+	padding: 4dp 14dp;
+	margin: 0dp;
+}
+
+/* The refresh's progress and result, under the header. */
+.refresh-status {
+	flex: 0 0 auto;
+	margin: -6dp 0dp 12dp 0dp;
+	font-size: 20dp;
+	color: #FFC88A;
+}
+
 /* Each region is a scroll container (overflow other than visible): RmlUi's spatial navigation stays inside it, the
    screen's region links cross between regions. */
 .region {
@@ -544,6 +569,8 @@ body.high-contrast .fade-after {
 	.row { font-size: 19dp; padding: 1dp 0dp; }
 	.action { font-size: 20dp; padding: 7dp 14dp; margin-right: 8dp; margin-bottom: 8dp; }
 	.status { font-size: 18dp; margin-top: 2dp; }
+	.action.refresh { font-size: 17dp; padding: 3dp 10dp; }
+	.refresh-status { font-size: 17dp; margin-bottom: 8dp; }
 	.hint-bar { font-size: 18dp; padding: 6dp 18dp; }
 	.pad { width: 28dp; height: 28dp; line-height: 28dp; border-radius: 14dp; }
 }

@@ -17,9 +17,31 @@
 	<div id="catalog" class="panel">
 		<div class="panel-header">
 			<h1 id="catalog-title">Catalogo rapido</h1>
-			<span class="count" data-if="count == 1">1 gioco</span>
-			<span class="count" data-if="count != 1">{{ count }} giochi</span>
+			<div class="header-end">
+				<span class="count" data-if="count == 1">1 gioco</span>
+				<span class="count" data-if="count != 1">{{ count }} giochi</span>
+				<!-- "Aggiorna libreria" (I3 step 13r): the catalog imported again from ES-DE on its worker, as
+				     "retroverse-cli import" does, while the list stays usable. A region of its own above the search field
+				     (search Up); shown while the catalog can refresh (the ES-DE catalog, open). -->
+				<div id="library-box" class="region" nav-region="library" data-if="refresh.available">
+					<button id="act-refresh" class="action refresh" data-event-click="refresh()">Aggiorna libreria</button>
+				</div>
+			</div>
 		</div>
+		<!-- The refresh's progress, then its result, until the next one (refresh.state: rv::ui::quick_catalog::
+		     kRefreshStates; refresh.phase while it runs: kRefreshPhases). -->
+		<p id="refresh-status" class="refresh-status" data-if="refresh.state != ''">
+			<span data-if="refresh.state == 'running' && refresh.phase == 'reading'">Aggiornamento della libreria: lettura delle cartelle di ES-DE...</span>
+			<span data-if="refresh.state == 'running' && refresh.phase == 'media'">Aggiornamento della libreria: controllo dei media ({{ refresh.done }} di {{ refresh.total }})...</span>
+			<span data-if="refresh.state == 'running' && refresh.phase == 'comparing'">Aggiornamento della libreria: confronto con il catalogo ({{ refresh.done }} di {{ refresh.total }} sistemi)...</span>
+			<span data-if="refresh.state == 'running' && refresh.phase == 'writing'">Aggiornamento della libreria: scrittura del catalogo...</span>
+			<span data-if="refresh.state == 'done' && refresh.added == 0 && refresh.removed == 0 && refresh.changed == 0">Libreria aggiornata: nessuna modifica.</span>
+			<span data-if="refresh.state == 'done' && (refresh.added != 0 || refresh.removed != 0 || refresh.changed != 0)">Libreria aggiornata. Aggiunti: {{ refresh.added }}, rimossi: {{ refresh.removed }}, modificati: {{ refresh.changed }}.</span>
+			<span data-if="refresh.state == 'done' && refresh.guarded != 0"> Alcuni giochi spariti sono rimasti nel catalogo: "retroverse-cli import --accept-removals" li rimuove.</span>
+			<span data-if="refresh.state == 'cancelled'">Aggiornamento della libreria interrotto: il catalogo è rimasto com'era.</span>
+			<span data-if="refresh.state == 'busy'">Aggiornamento non riuscito: è in corso un'altra importazione. Riprova tra poco.</span>
+			<span data-if="refresh.state == 'failed'">Aggiornamento non riuscito: la libreria ES-DE non si legge. "retroverse-cli import" dice perché.</span>
+		</p>
 		<div id="search-box" class="region" nav-region="search">
 			<input id="search" type="text" maxlength="64" data-value="search"/>
 			<span class="placeholder" data-if="search == ''">Cerca per titolo, sviluppatore o anno</span>

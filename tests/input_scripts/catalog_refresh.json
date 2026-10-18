@@ -1,0 +1,15 @@
+// I3 step 13r: the quick catalog opens on frame 2 (run with --refresh-library, whose refresh starts once the catalog
+// opened). Home selects the list's first game, then Up four times reaches "Aggiorna libreria" (the list, the chips, the
+// search field, the button; a fourth Up stays on it), which A presses on frame 90 for a second refresh, past the run's
+// warm-up frames (their frame times count for the refresh phase). Whenever the first refresh's list arrives (before or
+// after Home, or once the focus left the list), the button is reached: the list it brings keeps the selected game,
+// one place down, and Up from there first goes to the list's first game. tests/smoke/test_library_refresh.cpp runs it.
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 4, "toFrame": 4, "actions": {"ui_home": 1}},
+  {"fromFrame": 6, "toFrame": 6, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_up": 1}},
+  {"fromFrame": 10, "toFrame": 10, "actions": {"ui_up": 1}},
+  {"fromFrame": 12, "toFrame": 12, "actions": {"ui_up": 1}},
+  {"fromFrame": 90, "toFrame": 90, "actions": {"ui_activate": 1}}
+]

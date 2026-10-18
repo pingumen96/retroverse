@@ -15,8 +15,9 @@ namespace rv::devui {
 
 /// The overlay's copy of the in-memory log (core::recentLogLines) for the Log panel: the most recent `capacity` lines
 /// in a ring, each with its level and in a short form. refresh() fetches only the lines logged since the previous call
-/// (core::loggedMessageCount), so drawing the panel every frame copies nothing while the log is quiet; the strings of
-/// dropped lines keep their storage for the new ones.
+/// (core::logLinesSince: the lines and the count read under one lock, so that each line shows once while other threads
+/// log), so drawing the panel every frame copies nothing while the log is quiet; the strings of dropped lines keep
+/// their storage for the new ones.
 class LogView {
 public:
     /// One log line.
@@ -54,8 +55,9 @@ private:
     std::vector<Line> m_lines;
     std::size_t m_first = 0;
     std::size_t m_size = 0;
-    /// core::loggedMessageCount() at the previous refresh.
+    /// The log's count and configuration at the previous refresh (core::LogLinesSince).
     std::uint64_t m_seen = 0;
+    std::uint64_t m_generation = 0;
 };
 
 } // namespace rv::devui

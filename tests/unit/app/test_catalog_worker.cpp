@@ -43,6 +43,7 @@
 #include <rv/ui/quick_catalog_model.hpp>
 #include <rv/ui/ui_assets.hpp>
 
+#include "catalog_test_support.hpp"
 #include "support/fixture.hpp"
 #include "support/temp_dir.hpp"
 
@@ -51,118 +52,12 @@ using namespace std::chrono_literals;
 using rv::app::CatalogState;
 using rv::app::EsdeAppCatalog;
 using rv::catalog::GameId;
+using rv::test::fixtureLibrary;
+using rv::test::ImportedFixture;
+using rv::test::kSettleTimeout;
+using rv::test::settle;
 
 namespace {
-
-constexpr auto kSettleTimeout = 30s;
-
-rv::catalog::LibraryProfile fixtureLibrary(const rv::test::Fixture& fixture) {
-    rv::catalog::LibraryProfile library;
-    library.id = rv::catalog::LibraryId::parse("esde").value();
-    library.esdeHome = fixture.path("ES-DE");
-    library.installFolder = fixture.path("Programs/ES-DE");
-    return library;
-}
-
-/// The standard fixture recorded as the library of a user data directory and imported into its catalog database, psx
-/// assigned the fixture's "Fake Emulator (Inject)" command (Solo Disc's %INJECT% file is usable: inject-file).
-struct ImportedFixture {
-    rv::test::TempDir dir;
-    rv::test::Fixture fixture;
-    fs::path data;
-    rv::core::Paths paths;
-
-    explicit ImportedFixture(std::string_view prefix, bool import = true)
-        : dir(prefix), fixture(rv::test::Fixture::materialize("esde/standard").value()), data(dir.file("data")),
-          paths(pathsOf(data)) {
-        REQUIRE(rv::esde::writeLibraryFile(data / "config" / "library.json", fixtureLibrary(fixture),
-                                           rv::esde::ExistingFile::Keep)
-                    .has_value());
-        if (import) {
-            importLibrary();
-            auto database = openDatabase();
-            auto store = rv::catalog_db::SessionStore::open(database.writer()).value();
-            REQUIRE(store->setSystemChoice(rv::catalog::LibraryId::parse("esde").value(),
-                                           rv::catalog::SystemName::parse("psx").value(),
-                                           rv::launcher::LaunchChoice{rv::launcher::LaunchChoiceKind::EsdeCommand,
-                                                                      "Fake Emulator (Inject)"},
-                                           std::chrono::system_clock::now())
-                        .has_value());
-        }
-    }
-
-    static rv::core::Paths pathsOf(const fs::path& data) {
-        rv::core::PathOptions options;
-        options.userDataOverride = data;
-        rv::core::PathEnvironment environment;
-        environment.executableDir = rv::test::testProgramsDir();
-        environment.sourceAssetDir = rv::core::pathFromUtf8(RV_TEST_ASSET_DIR);
-        return rv::core::Paths::resolve(options, environment).value();
-    }
-
-    /// An import of the fixture as it is now (as retroverse-cli import makes one).
-    void importLibrary() const {
-        const rv::catalog::LibraryProfile library = fixtureLibrary(fixture);
-        const auto settings = rv::esde::readSettings(library.esdeHome);
-        REQUIRE(settings.has_value());
-        auto database = openDatabase();
-        auto store = rv::catalog_db::SqliteCatalogStore::open(database).value();
-        rv::esde::EsdeLibrarySource source;
-        rv::esde::EsdeMediaResolver resolver(rv::esde::resolveMediaRoot(*settings, library));
-        rv::catalog::IdentityPairing pairing;
-        rv::catalog::ImportService service(source, resolver, *store, &pairing);
-        const auto result = service.run(library, rv::catalog::ImportOptions{});
-        INFO((result ? std::string() : result.error().toString()));
-        REQUIRE(result.has_value());
-    }
-
-    [[nodiscard]] rv::catalog_db::Database openDatabase() const {
-        auto database = rv::catalog_db::openCatalogDatabase(rv::catalog_db::databaseFile(paths));
-        REQUIRE(database.has_value());
-        return std::move(*database);
-    }
-
-    /// The GameId of the identity at `relativePath` of `system`.
-    [[nodiscard]] GameId gameAt(std::string_view system, std::string_view relativePath) const {
-        auto database = openDatabase();
-        auto statement = database.writer()
-                             .prepare("SELECT id FROM rv_game_identities WHERE system = ?1 AND relative_path = ?2")
-                             .value();
-        statement.bindText(1, system).bindText(2, relativePath);
-        REQUIRE(statement.step().value());
-        return GameId::fromValue(static_cast<std::uint64_t>(statement.columnInt(0))).value();
-    }
-
-    [[nodiscard]] EsdeAppCatalog::Options options(std::function<void(rv::app::CatalogWorker::Options&)> adjust = {}) const {
-        EsdeAppCatalog::Options options;
-        options.paths = paths;
-        options.owner = rv::catalog::SessionOwner{testOwnerProcessId(), 1};
-        options.adjust = std::move(adjust);
-        return options;
-    }
-
-    static std::uint32_t testOwnerProcessId() { return 4'000'000'001u; }
-};
-
-/// What the screen does every frame, until nothing asked of the worker is left unanswered.
-void settle(rv::app::AppCatalog& catalog, rv::ui::QuickCatalogModel& model) {
-    const auto deadline = std::chrono::steady_clock::now() + kSettleTimeout;
-    while (true) {
-        const rv::app::CatalogChanges changes = catalog.poll();
-        if (changes.opened) {
-            model.refresh();
-        }
-        if (changes.rowsChanged) {
-            model.reread();
-        }
-        model.poll();
-        if (!catalog.busy()) {
-            return;
-        }
-        REQUIRE(std::chrono::steady_clock::now() < deadline);
-        std::this_thread::sleep_for(2ms);
-    }
-}
 
 std::vector<std::string> titlesOf(std::span<const rv::ui::CatalogEntry> rows) {
     std::vector<std::string> titles;

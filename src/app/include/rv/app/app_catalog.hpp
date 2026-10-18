@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <rv/app/catalog_database_source.hpp>
 #include <rv/app/catalog_worker.hpp>
@@ -51,7 +52,27 @@ struct CatalogChanges {
     bool opened = false;
     /// Rows already read show other data now (QuickCatalogModel::reread()).
     bool rowsChanged = false;
+    /// A refresh ended (AppCatalog::refreshState().last says how; I3 step 13r).
+    bool refreshEnded = false;
+    /// It ended Done and the systems were resolved again: the model reads the platforms and the list again
+    /// (QuickCatalogModel::refresh(): the selection restored by GameId).
+    bool refreshed = false;
 };
+
+/// Where the catalog's refresh stands, for the quick catalog (I3 step 13r).
+struct RefreshState {
+    /// The catalog can refresh (open, its worker running): the quick catalog offers "Aggiorna libreria".
+    bool available = false;
+    /// One runs, and where it is (nothing before its first progress).
+    bool running = false;
+    std::optional<RefreshProgress> progress;
+    /// The last one that ended, and the lists asked while it ran (from the request to the answer on the worker).
+    std::optional<RefreshSummary> last;
+    std::optional<TimeSummary> lastLists;
+};
+
+/// The run report's record of a refresh that ended: `summary`'s outcome, error, counts, time and slices, `lists`.
+void recordRefresh(RefreshRecord& record, const RefreshSummary& summary, const std::optional<TimeSummary>& lists);
 
 /// The quick catalog's games and launches. Main thread only.
 class AppCatalog {
@@ -73,6 +94,14 @@ public:
     virtual CatalogChanges poll() = 0;
     /// Something the screen waits for is with the worker (lockstep runs, --fixed-dt, wait for it between frames).
     [[nodiscard]] virtual bool busy() const noexcept = 0;
+
+    /// The catalog's refresh from the library (I3 step 13r): whether this catalog has one at all (the ES-DE catalog; the
+    /// mock catalog has nothing to refresh), starting one (false, and nothing started, while one runs or the catalog is
+    /// not open), where it stands; how long the end of the run waited for the worker (shutdown()).
+    [[nodiscard]] virtual bool supportsRefresh() const noexcept { return false; }
+    virtual bool requestRefresh() { return false; }
+    [[nodiscard]] virtual RefreshState refreshState() const { return {}; }
+    [[nodiscard]] virtual std::optional<double> stopMilliseconds() const { return std::nullopt; }
 
     /// The play session of the launch `token`: it began (LaunchFlowEvents::started), it ended (::ended), or it was
     /// refused before anything started (the decision's refusal).
@@ -118,7 +147,8 @@ private:
 /// The ES-DE catalog of the user data directory: the catalog worker (CatalogWorker, started at construction) and the
 /// source over it (CatalogDatabaseSource). Avvia resolves the game again on the worker right before the launch (its
 /// file on disk now, the database's choices: ADR-0008 §8, docs/i2/step-12.md); the play sessions are recorded on the
-/// worker (catalog_db::SessionRecorder, the owner this process).
+/// worker (catalog_db::SessionRecorder, the owner this process). A refresh (requestRefresh) imports the library on the
+/// worker, in slices, the list answered meanwhile; its end brings the systems resolved again (poll(): refreshed).
 class EsdeAppCatalog final : public AppCatalog {
 public:
     struct Options {
@@ -144,6 +174,10 @@ public:
     [[nodiscard]] bool deciding() const noexcept override { return m_resolving.has_value() || m_decision.has_value(); }
     CatalogChanges poll() override;
     [[nodiscard]] bool busy() const noexcept override { return m_source.waiting() || m_resolving.has_value(); }
+    [[nodiscard]] bool supportsRefresh() const noexcept override { return true; }
+    bool requestRefresh() override;
+    [[nodiscard]] RefreshState refreshState() const override;
+    [[nodiscard]] std::optional<double> stopMilliseconds() const override { return m_stopMs; }
     void sessionStarted(std::uint64_t token, const launcher::LaunchSession& session) override;
     void sessionEnded(std::uint64_t token, const launcher::LaunchSession& session, LaunchEndCause cause,
                       bool stoppedAwaiting) override;
@@ -174,6 +208,9 @@ private:
     /// Milliseconds from the process's creation to `at`.
     [[nodiscard]] double sinceProcessStart(std::chrono::system_clock::time_point at) const;
     void collectSessions(CatalogResults& results);
+    /// The refresh's progress and end out of `results` (`ended`: the worker's thread ended, so a refresh it did not
+    /// answer never will be); true when it ended.
+    bool collectRefresh(CatalogResults& results, bool ended);
 
     Options m_options;
     CatalogWorker m_worker;
@@ -185,6 +222,14 @@ private:
     std::optional<double> m_firstListMs;
     std::optional<double> m_firstPageMs;
     bool m_stopped = false;
+    /// The refresh: running, its latest progress, the lists' waits while it runs, the last one's end.
+    bool m_refreshRunning = false;
+    std::optional<RefreshProgress> m_refreshProgress;
+    std::vector<double> m_refreshLists;
+    std::optional<RefreshSummary> m_lastRefresh;
+    std::optional<TimeSummary> m_lastRefreshLists;
+    /// How long shutdown() waited for the worker to stop.
+    std::optional<double> m_stopMs;
 };
 
 /// The Running session of a launch that began (`session` as the resolution gave it: the game, the choice, the owner):

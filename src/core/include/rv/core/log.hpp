@@ -50,8 +50,27 @@ void shutdownLogging();
 [[nodiscard]] std::vector<std::string> recentLogLines(std::size_t maxLines = 512);
 
 /// Messages the logger has written since the last initLogging(), also those the in-memory lines no longer hold; 0
-/// after shutdownLogging(). Readers of recentLogLines() poll it to fetch only what is new.
+/// after shutdownLogging(). A reader that fetches only what is new uses logLinesSince(), which reads the lines and the
+/// count together.
 [[nodiscard]] std::uint64_t loggedMessageCount() noexcept;
+
+/// What logLinesSince() read, under the in-memory log's own lock: the lines and the count belong together, so that a
+/// line another thread logs meanwhile is in neither or in both (I3 step 13r: the overlay's copy showed such a line
+/// twice).
+struct LogLinesSince {
+    /// The newest lines logged after the first `seen` messages, oldest first: at most `maxLines`, and no more than the
+    /// in-memory lines still hold (the older ones are gone).
+    std::vector<std::string> lines;
+    /// The messages logged so far (loggedMessageCount()): the `seen` of the next call.
+    std::uint64_t count = 0;
+    /// Which configuration of the logger they belong to: each initLogging() starts another (its count from 0).
+    std::uint64_t generation = 0;
+};
+
+/// The lines logged after the first `seen` messages of the configuration `generation` (all the lines kept, at most
+/// `maxLines`, when `generation` is another configuration's or `seen` is beyond the count). Nothing after
+/// shutdownLogging() (count 0).
+[[nodiscard]] LogLinesSince logLinesSince(std::uint64_t generation, std::uint64_t seen, std::size_t maxLines);
 
 /// The fields of a line returned by recentLogLines(), as views into that line.
 struct LogLineFields {

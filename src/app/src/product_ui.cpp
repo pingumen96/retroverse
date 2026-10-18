@@ -14,6 +14,8 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/app/app_logic.hpp>
+#include <rv/app/frame_timing.hpp>
+#include <rv/app/library_refresh.hpp>
 #include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
 #include <rv/core/cpu_timers.hpp>
@@ -45,6 +47,26 @@ constexpr bool kWatchDocuments = false;
 
 /// A choice the panel's buttons made, applied once the frame's commands are done (never inside RmlUi's dispatch).
 enum class PanelChoice : std::uint8_t { None, ReturnHome, Resume, Dismiss };
+
+/// What the quick catalog shows of the catalog's refresh.
+[[nodiscard]] ui::QuickCatalogRefresh shownRefresh(const RefreshState& state) {
+    ui::QuickCatalogRefresh shown;
+    shown.available = state.available;
+    if (state.running) {
+        shown.state = std::string(ui::quick_catalog::kRefreshRunning);
+        const RefreshProgress progress = state.progress.value_or(RefreshProgress{});
+        shown.phase = std::string(toString(progress.phase));
+        shown.done = progress.done;
+        shown.total = progress.total;
+    } else if (state.last) {
+        shown.state = std::string(toString(state.last->outcome));
+        shown.added = state.last->added;
+        shown.removed = state.last->removed;
+        shown.changed = state.last->changed;
+        shown.guarded = state.last->guarded;
+    }
+    return shown;
+}
 
 } // namespace
 
@@ -91,6 +113,14 @@ struct ProductUi::Impl {
     bool afterPending = false;
     /// The launch whose session the flow follows: its token, its index among the run's launches.
     std::uint64_t sessionToken = 0;
+    /// The catalog's refreshes (I3 step 13r): --refresh-library asks for one once the catalog opened; "Aggiorna
+    /// libreria" sets refreshRequested, applied after the frame's commands. Their records; the last one waits for the
+    /// list its commit made the model ask for (the selection restored) before it notes what the catalog shows after.
+    bool refreshOnOpen = false;
+    bool refreshAsked = false;
+    bool refreshRequested = false;
+    bool refreshAfterPending = false;
+    std::vector<RefreshRecord> refreshes;
     /// The wall-clock times of the frames that showed games of the catalog (CatalogRecord::frames; at most
     /// kMaxFrameSamples), and when the last frame's update began (none after an idle wait, which is no frame time).
     std::vector<double> frameMs;
@@ -148,17 +178,90 @@ struct ProductUi::Impl {
     }
 
     /// What the catalog worker answered: the catalog opened (the platforms and the list read again), rows that show
-    /// other data now (read again), the list of a query (collected by the model, which the screen shows after its
+    /// other data now (read again), a refresh that ended (after its commit the platforms and the list read again, the
+    /// selection restored by GameId), the list of a query (collected by the model, which the screen shows after its
     /// update). Polled here rather than only by the screen, which does not exist before the catalog first opens.
     void syncCatalog() {
         const CatalogChanges changes = catalog->poll();
         if (changes.opened) {
             model->refresh();
         }
-        if (changes.rowsChanged) {
+        if (changes.refreshEnded) {
+            refreshEnded(changes.refreshed);
+        }
+        if (changes.rowsChanged && !changes.refreshed) {
             model->reread();
         }
         model->poll();
+        // --refresh-library: once the catalog opened, with its first list applied (what the refresh's record notes as
+        // shown before it).
+        if (changes.opened && refreshOnOpen && !std::exchange(refreshAsked, true)) {
+            requestRefresh(RefreshTrigger::CommandLine);
+        }
+        if (refreshAfterPending && !model->pending() && !refreshes.empty()) {
+            refreshAfterPending = false;
+            refreshes.back().after = currentView();
+            spdlog::info("Frame {}: the catalog's list after the refresh: {} game(s), the selection {}",
+                         context.frameIndex(), model->count(),
+                         refreshes.back().before && refreshes.back().after->selectedId ==
+                                                        refreshes.back().before->selectedId
+                             ? "kept"
+                             : "moved");
+        }
+    }
+
+    /// Starts a refresh of the catalog (the import on its worker), its phase opened for the frame times.
+    void requestRefresh(RefreshTrigger trigger) {
+        const std::uint64_t frame = context.frameIndex();
+        if (!catalog->requestRefresh()) {
+            if (trigger == RefreshTrigger::CommandLine) {
+                RefreshRecord record;
+                record.trigger = std::string(toString(trigger));
+                record.outcome = "unavailable";
+                record.error = catalog->supportsRefresh() ? std::string("the catalog is not open")
+                                                          : std::string("this catalog has nothing to refresh");
+                record.requestFrame = frame;
+                spdlog::warn("--refresh-library: no refresh: {}", record.error);
+                refreshes.push_back(std::move(record));
+            } else {
+                spdlog::info("Frame {}: Aggiorna libreria: no refresh now (one runs, or the catalog is not open)",
+                             frame);
+            }
+            return;
+        }
+        RefreshRecord record;
+        record.trigger = std::string(toString(trigger));
+        record.outcome = std::string(ui::quick_catalog::kRefreshRunning);
+        record.requestFrame = frame;
+        record.before = currentView();
+        refreshes.push_back(std::move(record));
+        refreshAfterPending = false;
+        context.frameTiming().openPhase(kPhaseRefresh);
+        spdlog::info("Frame {}: catalog refresh asked ({}): phase '{}' opened", frame, toString(trigger),
+                     kPhaseRefresh);
+    }
+
+    /// The refresh ended: its record, the phase closed; after a commit the list runs again (the selection kept).
+    void refreshEnded(bool refreshed) {
+        const RefreshState state = catalog->refreshState();
+        if (context.frameTiming().closePhase(kPhaseRefresh)) {
+            spdlog::info("Frame {}: catalog refresh ended ({}): phase '{}' closed", context.frameIndex(),
+                         state.last ? toString(state.last->outcome) : std::string_view("unknown"), kPhaseRefresh);
+        }
+        if (!refreshes.empty() && refreshes.back().outcome == ui::quick_catalog::kRefreshRunning) {
+            RefreshRecord& record = refreshes.back();
+            if (state.last) {
+                recordRefresh(record, *state.last, state.lastLists);
+            }
+            record.endFrame = context.frameIndex();
+            if (!refreshed) {
+                record.after = currentView();
+            }
+        }
+        if (refreshed) {
+            model->refresh();
+            refreshAfterPending = true;
+        }
     }
 
     /// The lockstep run waits for the catalog worker (within kLockstepWaitLimit).
@@ -279,6 +382,7 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
     auto impl = std::make_unique<Impl>(context, std::move(catalog), std::move(back), std::move(pose));
     Impl& s = *impl;
     s.lockstep = context.options().fixedDeltaSeconds.has_value();
+    s.refreshOnOpen = context.options().refreshLibrary;
     // The focus the window starts with (its later changes come as events); a hidden window counts as focused: the
     // input script stands for the user in front of it.
     const bool focused = context.options().hidden ||
@@ -322,6 +426,11 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
         return propagate(panel.error());
     }
     s.panel = std::move(*panel);
+    if (s.refreshOnOpen && !s.catalog->supportsRefresh()) {
+        // The mock catalog: nothing to import (recorded as such).
+        s.refreshAsked = true;
+        s.requestRefresh(RefreshTrigger::CommandLine);
+    }
     spdlog::info("Quick catalog ready{}; QuickCatalog (Tab, gamepad Y) opens it",
                  s.lockstep ? " (lockstep: frames wait for the catalog worker's answers)" : "");
     return std::unique_ptr<ProductUi>(new ProductUi(std::move(impl)));
@@ -347,6 +456,7 @@ void ProductUi::openCatalog() {
         Impl* state = &s;
         events.launch = [state](const ui::CatalogEntry& entry) { state->launch(entry); };
         events.close = [state] { state->closeRequested = true; };
+        events.refresh = [state] { state->refreshRequested = true; };
         auto screen = ui::QuickCatalogScreen::create(*s.view, *s.model, std::move(events), kWatchDocuments);
         if (!screen) {
             spdlog::error("Quick catalog unavailable: {}", screen.error().toString());
@@ -445,6 +555,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             }
         }
     }
+    if (std::exchange(s.refreshRequested, false)) {
+        s.requestRefresh(RefreshTrigger::User);
+    }
     s.applyDecision();
     s.applyChoice();
     s.afterReturn(); // a return the panel confirmed
@@ -459,6 +572,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         s.view->update();
         if (s.screen) {
             s.screen->setNotice(s.catalog->notice());
+            s.screen->setRefresh(shownRefresh(s.catalog->refreshState()));
             s.screen->afterUpdate();
             if constexpr (kWatchDocuments) {
                 s.screen->reloadIfChanged();
@@ -538,10 +652,22 @@ void ProductUi::finish() {
     if (std::exchange(s.afterPending, false)) {
         s.flow.noteAfter(s.currentView());
     }
-    // The worker ends (within its bound) once the sessions the quit just ended are queued to it.
+    // The worker ends (within its bound) once the sessions the quit just ended are queued to it; a refresh still running
+    // is cancelled, its transaction rolled back.
     s.catalog->shutdown();
+    if (!s.refreshes.empty() && s.refreshes.back().outcome == ui::quick_catalog::kRefreshRunning) {
+        RefreshRecord& running = s.refreshes.back();
+        const RefreshState state = s.catalog->refreshState();
+        if (!state.running && state.last) {
+            recordRefresh(running, *state.last, state.lastLists);
+        }
+        running.stopMs = s.catalog->stopMilliseconds();
+        spdlog::info("Catalog refresh {} at the end of the run: the worker stopped in {:.0f} ms", running.outcome,
+                     running.stopMs.value_or(0.0));
+    }
     CatalogRecord record;
     s.catalog->record(record);
+    record.refreshes = std::move(s.refreshes);
     record.opened = s.opened;
     record.open = s.catalogOpen;
     record.selectedPosition = s.model->selectedPosition();
