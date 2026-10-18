@@ -1,6 +1,168 @@
-// The room template console_room_9x10 (ADR-0010 §4): a placeholder of I3 step 0a, which settles the file's place.
-// I3 step 1a writes it and its reader (rv/world/room_template.hpp): the 9.0 x 10.0 m frame (north = -Z, the doorway in
-// the south wall), the zones, the two hero-wall modules, the 14 side-wall sockets and the door-reserved ones, the display
-// and decoration sockets, the hero band, the socket order and the growth south in 2.0 m steps up to 16.0 m. Prefabs
-// are named by manifest id and kind, never by a model path.
-{}
+// The room template console_room_9x10 (ADR-0010 §4; read by rv/world/room_template.hpp, which documents the format).
+// A rectangular console room of 9.0 x 10.0 m with a 3.2 m ceiling, in the plan's frame: millimetres, +X east, +Y up,
+// north = -Z, the origin on the floor at the room's centre; yaws in hundredths of a degree, 0 facing south.
+//
+//   north (hero wall): hw-w | hero corner | fs01 | hw-e, a decoration socket in each corner
+//   west and east walls: seven 0.9 m side-wall sockets each (w01..w07, e01..e07, 1 m apart from north to south) and
+//     one 1.8 m door-reserved socket between the fourth and the fifth, which nothing ever occupies (M3's doorways)
+//   middle: the circulation band, 1.4 m wide along the room's axis, with a low display case at each edge (dc01, dc02)
+//   south: the 1.6 m doorway in the middle, 1.6 x 1.5 m kept clear inside it, a decoration socket on each side
+//
+// The collection fills the two hero-wall modules first, then the side-wall sockets from north to south, alternating
+// west and east, so that it frames the hero wall and grows towards the doorway. The room grows south in 2.0 m steps up
+// to 16.0 m; each step moves the south wall (its sockets and the doorway with it) and adds two side-wall sockets on each
+// side wall, at the end of the collection's order (26 side-wall sockets at 16 m). Sockets stand 30 mm off the walls
+// (the wainscot's rail stands 22 mm proud).
+//
+// Prefabs are named by manifest id and kind, never by a model path. The modules, the display fixtures and the shelf
+// dressing are I3 step 1b's prefabs; the hero corner reuses the test room's furniture.
+{
+  "schemaVersion": 1,
+  "id": "console_room_9x10",
+  "version": 1,
+  "room": {"widthMm": 9000, "depthMm": 10000, "heightMm": 3200, "wallThicknessMm": 150},
+  "doorway": {"wall": "south", "offsetMm": 0, "widthMm": 1600, "heightMm": 2300, "clearWidthMm": 1600,
+              "clearDepthMm": 1500},
+  "circulationWidthMm": 1400,
+  "eyeHeightMm": 1300,
+  "growth": {"stepMm": 2000, "maxDepthMm": 16000},
+  "lightLimit": 16,
+  "modules": {
+    "hero": {"manifest": "furniture.shelf.hero_module.generic", "kind": "shelf"},
+    "side": {"manifest": "furniture.shelf.side_module.generic", "kind": "shelf"}
+  },
+  "sockets": [
+    // The hero wall, west to east: 5.75 m centred on the room's axis.
+    {"id": "hw-w", "kind": "hero-module", "wall": "north", "xMm": -2425, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 900, "depthMm": 400},
+    // The hero corner reaches 3 m into the room: the rug and the armchair turned towards the TV.
+    {"id": "hero", "kind": "hero-corner", "wall": "north", "xMm": -625, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 2400, "depthMm": 3000,
+     "parts": [
+       {"role": "tv-cabinet", "prefab": {"manifest": "furniture.tv_cabinet.generic", "kind": "tv_cabinet"},
+        "xMm": 0, "yMm": 0, "zMm": 250, "yawCdeg": 0},
+       {"role": "crt", "prefab": {"manifest": "electronics.crt.consumer.generic", "kind": "crt"},
+        "xMm": -180, "yMm": 550, "zMm": 280, "yawCdeg": 0},
+       {"role": "console", "prefab": null, "xMm": 420, "yMm": 550, "zMm": 300, "yawCdeg": 35200},
+       {"role": "sign", "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
+        "xMm": 0, "yMm": 2450, "zMm": 0, "yawCdeg": 0},
+       {"role": "rug", "prefab": {"manifest": "decor.rug.generic", "kind": "rug"},
+        "xMm": 0, "yMm": 0, "zMm": 1500, "yawCdeg": 0},
+       {"role": "armchair", "prefab": {"manifest": "furniture.armchair.generic", "kind": "armchair"},
+        "xMm": 850, "yMm": 0, "zMm": 2500, "yawCdeg": 21000},
+       {"role": "lamp", "prefab": {"manifest": "decor.lamp.floor.generic", "kind": "floor_lamp"},
+        "xMm": -1050, "yMm": 0, "zMm": 250, "yawCdeg": 0}
+     ]},
+    {"id": "fs01", "kind": "display", "wall": "north", "xMm": 1275, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 1100, "depthMm": 400,
+     "prefab": {"manifest": "furniture.wall_shelf.featured.generic", "kind": "wall_shelf"}},
+    {"id": "hw-e", "kind": "hero-module", "wall": "north", "xMm": 2425, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "dec-nw", "kind": "decoration", "wall": "north", "xMm": -3650, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 700, "depthMm": 400},
+    {"id": "dec-ne", "kind": "decoration", "wall": "north", "xMm": 3650, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 700, "depthMm": 400},
+
+    // The west wall, north to south (facing east).
+    {"id": "w01", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": -4000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "w02", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": -3000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "w03", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": -2000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "w04", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": -1000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "door-w", "kind": "door-reserved", "wall": "west", "xMm": -4470, "zMm": 500, "yawCdeg": 9000,
+     "widthMm": 1800, "depthMm": 400},
+    {"id": "w05", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 2000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "w06", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 3000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "w07", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 4000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+
+    // The east wall, north to south (facing west).
+    {"id": "e01", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": -4000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "e02", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": -3000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "e03", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": -2000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "e04", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": -1000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "door-e", "kind": "door-reserved", "wall": "east", "xMm": 4470, "zMm": 500, "yawCdeg": 27000,
+     "widthMm": 1800, "depthMm": 400},
+    {"id": "e05", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 2000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "e06", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 3000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "e07", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 4000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400},
+
+    // The display cases at the edges of the circulation band, facing it, 50 mm clear of it.
+    {"id": "dc01", "kind": "display", "wall": "none", "xMm": -1250, "zMm": 1000, "yawCdeg": 9000,
+     "widthMm": 1200, "depthMm": 500,
+     "prefab": {"manifest": "furniture.display_case.generic", "kind": "display_case"}},
+    {"id": "dc02", "kind": "display", "wall": "none", "xMm": 1250, "zMm": 1000, "yawCdeg": 27000,
+     "widthMm": 1200, "depthMm": 500,
+     "prefab": {"manifest": "furniture.display_case.generic", "kind": "display_case"}},
+
+    // The south wall (it moves with every growth step), either side of the doorway.
+    {"id": "dec-sw", "kind": "decoration", "wall": "south", "xMm": -2500, "zMm": 4970, "yawCdeg": 18000,
+     "widthMm": 1400, "depthMm": 400},
+    {"id": "dec-se", "kind": "decoration", "wall": "south", "xMm": 2500, "zMm": 4970, "yawCdeg": 18000,
+     "widthMm": 1400, "depthMm": 400},
+
+    // Growth to 12 m, 14 m and 16 m: two side-wall sockets on each side wall per step.
+    {"id": "w08", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 5000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 1},
+    {"id": "e08", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 5000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 1},
+    {"id": "w09", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 6000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 1},
+    {"id": "e09", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 6000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 1},
+    {"id": "w10", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 7000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 2},
+    {"id": "e10", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 7000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 2},
+    {"id": "w11", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 8000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 2},
+    {"id": "e11", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 8000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 2},
+    {"id": "w12", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 9000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 3},
+    {"id": "e12", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 9000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 3},
+    {"id": "w13", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 10000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 3},
+    {"id": "e13", "kind": "side-wall", "wall": "east", "xMm": 4470, "zMm": 10000, "yawCdeg": 27000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 3}
+  ],
+  "collectionOrder": [
+    "hw-w", "hw-e",
+    "w01", "e01", "w02", "e02", "w03", "e03", "w04", "e04", "w05", "e05", "w06", "e06", "w07", "e07",
+    "w08", "e08", "w09", "e09",
+    "w10", "e10", "w11", "e11",
+    "w12", "e12", "w13", "e13"
+  ],
+  // The hero band's face-out level runs across both hero-wall modules, the west one first (ADR-0010 §6).
+  "heroBand": ["hw-w", "hw-e"],
+  // The featured titles fill the featured wall shelf beside the hero corner first, then the two display cases.
+  "displayOrder": ["fs01", "dc01", "dc02"],
+  // What a socket the collection does not need may hold (ADR-0010 §3: the room never looks sparse).
+  "decoration": [
+    {"name": "poster", "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
+     "mountHeightMm": 1550},
+    {"name": "floor-lamp", "prefab": {"manifest": "decor.lamp.floor.generic", "kind": "floor_lamp"},
+     "mountHeightMm": 0},
+    {"name": "sideboard", "prefab": {"manifest": "furniture.tv_cabinet.generic", "kind": "tv_cabinet"},
+     "mountHeightMm": 0}
+  ],
+  // Shelf dressing on the levels no title needs (ADR-0010 §5), one prop per level from its prop seed.
+  "shelfDressing": [
+    {"manifest": "decor.storage_box.generic", "kind": "storage_box"},
+    {"manifest": "decor.magazine_stack.generic", "kind": "magazine_stack"},
+    {"manifest": "decor.bookends.generic", "kind": "bookends"}
+  ]
+}

@@ -2,8 +2,9 @@
 # world's identifiers, configuration and data files (templates, platforms, media families, presets under
 # assets/world), the room's selection from the catalog's snapshot, generation, validation, the incremental update,
 # persistence and where-is, the plan's static part as a scene description and the collection's layout, picking and
-# the D-pad steps (ADR-0012 §1, §2). It computes plans and never creates a mesh, a texture or a GPU object. Skeleton:
-# each file names the I3 step that fills it; plain types are header-only.
+# the D-pad steps (ADR-0012 §1, §2). It computes plans and never creates a mesh, a texture or a GPU object. The files
+# that are still skeletons name the I3 step that fills them; plain types are header-only; data_reader is the strict
+# JSON reading the plan and the data files share (I3 step 1a).
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/forbidden_links.cmake")
 
@@ -11,6 +12,7 @@ add_library(rv_world STATIC
     src/allocation.cpp
     src/capacity.cpp
     src/collection_layout.cpp
+    src/data_reader.cpp
     src/fixture_layout.cpp
     src/generation.cpp
     src/ids.cpp

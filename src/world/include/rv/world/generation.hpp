@@ -1,5 +1,155 @@
 #pragma once
 
-// Filled by I3 step 1a (the types) and I3 step 3 (generate): GenerationResult (the plan, the change report, the
-// validation report) and world::generate, the pure function of ADR-0010 §2: a fresh plan from a RoomSelection, a
-// WorldConfig, a RoomTemplate and the manifests.
+// GenerationResult (ADR-0010 §2): what world::generate (a fresh plan, I3 step 3) and the incremental update (step 9)
+// return, an immutable value posted to the main thread (§12): the plan, the change report and the validation report.
+// The types are I3 step 1a's; the functions that fill them are the later steps'.
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <rv/catalog/ids.hpp>
+#include <rv/world/ids.hpp>
+#include <rv/world/world_plan.hpp>
+
+namespace rv::world {
+
+/// How a plan came to be.
+enum class GenerationOutcome : std::uint8_t {
+    Generated,                    ///< a fresh plan: no previous one, or an explicit regeneration
+    Updated,                      ///< the previous plan updated by the incremental rules (ADR-0010 §10)
+    RequiresExplicitRegeneration, ///< another seed, preset, template version or generator major version: the previous
+                                  ///< plan is kept as it is, and only an explicit regeneration replaces it
+};
+
+/// "generated", "updated", "requires-explicit-regeneration".
+[[nodiscard]] constexpr std::string_view toString(GenerationOutcome outcome) noexcept {
+    switch (outcome) {
+    case GenerationOutcome::Generated:
+        return "generated";
+    case GenerationOutcome::Updated:
+        return "updated";
+    case GenerationOutcome::RequiresExplicitRegeneration:
+        return "requires-explicit-regeneration";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<GenerationOutcome> parseGenerationOutcome(std::string_view text) noexcept {
+    return detail::enumFromString(text, GenerationOutcome::RequiresExplicitRegeneration);
+}
+
+/// What the room has to rebuild for a change (style §13.6, ADR-0010 §10), the least first.
+enum class RebuildLevel : std::uint8_t {
+    NoRebuild,     ///< media or metadata changed: textures and spine text swapped, no geometry
+    LocalReflow,   ///< games took free slots or dressed levels, or a side-wall module replaced decoration: the static
+                   ///< part rebuilt
+    RoomExpansion, ///< the room grew south
+    Full,          ///< a fresh plan: everything built anew
+};
+
+/// "no-rebuild", "local-reflow", "room-expansion", "full".
+[[nodiscard]] constexpr std::string_view toString(RebuildLevel level) noexcept {
+    switch (level) {
+    case RebuildLevel::NoRebuild:
+        return "no-rebuild";
+    case RebuildLevel::LocalReflow:
+        return "local-reflow";
+    case RebuildLevel::RoomExpansion:
+        return "room-expansion";
+    case RebuildLevel::Full:
+        return "full";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<RebuildLevel> parseRebuildLevel(std::string_view text) noexcept {
+    return detail::enumFromString(text, RebuildLevel::Full);
+}
+
+/// What changed from the previous plan (ADR-0010 §10). Lists are sorted (GameIds, ids, text) so that two runs report
+/// alike.
+struct ChangeReport {
+    GenerationOutcome outcome = GenerationOutcome::Generated;
+    RebuildLevel rebuild = RebuildLevel::Full;
+    /// Games placed by this change, and how many placements of the previous plan were kept as they were.
+    std::vector<catalog::GameId> added;
+    std::uint64_t kept = 0;
+    /// Games newly listed as unplaced (with their reasons in the plan).
+    std::vector<catalog::GameId> unplaced;
+    /// Fixtures this change added (side-wall modules in place of decoration, the fixtures of a growth step).
+    std::vector<FixtureId> fixturesAdded;
+    /// Pins of overrides.json that name a game or slot that no longer exists (never moved), and changes that would
+    /// have moved a pinned object, not applied (`needsConfirmation`, the editor's dialog in I4): each as the pin's
+    /// text.
+    std::vector<std::string> orphanedPins;
+    std::vector<std::string> needsConfirmation;
+    /// The plan digests before (empty without a previous plan) and after.
+    std::string digestBefore;
+    std::string digestAfter;
+
+    bool operator==(const ChangeReport&) const = default;
+};
+
+/// A hard rule makes a plan unusable (never saved or shown); a soft one is reported and the plan kept (ADR-0010 §11).
+enum class Severity : std::uint8_t {
+    Hard,
+    Soft,
+};
+
+/// "hard", "soft".
+[[nodiscard]] constexpr std::string_view toString(Severity severity) noexcept {
+    switch (severity) {
+    case Severity::Hard:
+        return "hard";
+    case Severity::Soft:
+        return "soft";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<Severity> parseSeverity(std::string_view text) noexcept {
+    return detail::enumFromString(text, Severity::Soft);
+}
+
+/// One broken rule.
+struct ValidationFinding {
+    /// The rule's name ("footprints-overlap", "doorway-blocked", "unreachable", ...: validation.hpp, I3 step 4).
+    std::string rule;
+    Severity severity = Severity::Hard;
+    /// The id it is about (a fixture, a slot, a GameId), empty for the plan as a whole.
+    std::string subject;
+    std::string message;
+
+    bool operator==(const ValidationFinding&) const = default;
+};
+
+struct ValidationReport {
+    /// In the order the rules ran, each rule's findings sorted by subject.
+    std::vector<ValidationFinding> findings;
+    /// Style §13.5's LayoutScore in permille, a diagnostic that chooses nothing in I3; nothing until computed.
+    std::optional<std::int64_t> layoutScorePermille;
+
+    /// No hard finding.
+    [[nodiscard]] bool passed() const noexcept {
+        for (const ValidationFinding& finding : findings) {
+            if (finding.severity == Severity::Hard) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator==(const ValidationReport&) const = default;
+};
+
+/// The generator's answer: the plan (the previous one, unchanged, for RequiresExplicitRegeneration), what changed and
+/// what the validation found.
+struct GenerationResult {
+    WorldPlan plan;
+    ChangeReport changes;
+    ValidationReport validation;
+
+    bool operator==(const GenerationResult&) const = default;
+};
+
+} // namespace rv::world

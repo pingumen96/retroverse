@@ -1,5 +1,173 @@
 #pragma once
 
-// Filled by I3 step 1a: the world's identifiers, never dependent on the generator's random choices (ADR-0010 §7):
-// RoomId (room:snes), FixtureId (room:snes/fx:<socket>: w03, e01, hero, dc01, door-e), SlotId
-// (room:snes/fx:w03/s:<level>.<index>) and a dressed level's socket (fx:<module>/l:<level>), formatted and parsed.
+// The world's identifiers (ADR-0010 §7). They name what the template and the catalog name, never a random choice of
+// the generator, so that a plan's ids are the same whatever the seed:
+//   - RoomId: "room:" and the system's ES-DE name ("room:snes");
+//   - FixtureId: the room, "/fx:" and the template's socket ("room:snes/fx:w03", "room:snes/fx:dc01"), with "." and a
+//     part when a socket holds several fixtures ("room:snes/fx:hero.crt");
+//   - LevelId: a fixture, "/l:" and a level of its slots, 0 the lowest ("room:snes/fx:w03/l:2"): a dressed level;
+//   - SlotId: a fixture, "/s:", its level, "." and the slot's index in it, 0 the leftmost as one faces the fixture
+//     ("room:snes/fx:w03/s:3.12"), as the prefab's "Slot_<level>_<index>" socket names it.
+// Socket and part names are 1 to 32 characters among lowercase ASCII letters, digits and '-', starting with a letter;
+// levels run from 0 to kMaxLevel and indices from 0 to kMaxSlotIndex, written in decimal without leading zeros. Every
+// id is validated when it is made or parsed, so a value of these types is always well-formed (a default-constructed one
+// is empty and stands for "none"), and its text can enter a seed's tuple (no NUL, well-formed UTF-8). Ids order by
+// their parts (room, socket, part, level, index), numbers as numbers: "s:2.0" before "s:10.0".
+
+#include <compare>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+
+#include <rv/catalog/ids.hpp>
+#include <rv/core/expected.hpp>
+
+namespace rv::world {
+
+inline constexpr std::size_t kMaxSocketNameLength = 32;
+inline constexpr std::uint32_t kMaxLevel = 999;
+inline constexpr std::uint32_t kMaxSlotIndex = 9999;
+
+/// A socket or part name: 1 to kMaxSocketNameLength characters among a-z, 0-9 and '-', the first a letter.
+[[nodiscard]] bool isValidSocketName(std::string_view text) noexcept;
+
+/// A room: one per system in I3 ("room:snes").
+class RoomId {
+public:
+    RoomId() = default;
+
+    /// The room of `system`. Errors: InvalidArgument for "no system".
+    [[nodiscard]] static Expected<RoomId> forSystem(const catalog::SystemName& system);
+    /// "room:" and a valid SystemName. Errors: InvalidArgument naming the text.
+    [[nodiscard]] static Expected<RoomId> parse(std::string_view text);
+
+    [[nodiscard]] const catalog::SystemName& system() const noexcept { return m_system; }
+    [[nodiscard]] bool empty() const noexcept { return m_system.empty(); }
+    /// "room:snes"; empty for "no room".
+    [[nodiscard]] std::string toString() const;
+
+    auto operator<=>(const RoomId&) const = default;
+
+private:
+    catalog::SystemName m_system;
+};
+
+/// A fixture of a room: what stands in one of its template's sockets, or one part of it.
+class FixtureId {
+public:
+    FixtureId() = default;
+
+    /// Errors: InvalidArgument for "no room", a socket name or a part name (when not empty) that is not valid.
+    [[nodiscard]] static Expected<FixtureId> make(const RoomId& room, std::string_view socket,
+                                                  std::string_view part = {});
+    /// "<room>/fx:<socket>" or "<room>/fx:<socket>.<part>". Errors: InvalidArgument naming the text.
+    [[nodiscard]] static Expected<FixtureId> parse(std::string_view text);
+
+    [[nodiscard]] const RoomId& room() const noexcept { return m_room; }
+    [[nodiscard]] const std::string& socket() const noexcept { return m_socket; }
+    /// Empty for a socket's only fixture.
+    [[nodiscard]] const std::string& part() const noexcept { return m_part; }
+    [[nodiscard]] bool empty() const noexcept { return m_socket.empty(); }
+    /// The id within its room: "fx:w03", "fx:hero.crt".
+    [[nodiscard]] std::string localText() const;
+    [[nodiscard]] std::string toString() const;
+
+    auto operator<=>(const FixtureId&) const = default;
+
+private:
+    RoomId m_room;
+    std::string m_socket;
+    std::string m_part;
+};
+
+/// A level of a fixture's slots (a dressed level).
+class LevelId {
+public:
+    LevelId() = default;
+
+    /// Errors: InvalidArgument for "no fixture" or a level above kMaxLevel.
+    [[nodiscard]] static Expected<LevelId> make(const FixtureId& fixture, std::uint32_t level);
+    /// "<fixture>/l:<level>". Errors: InvalidArgument naming the text.
+    [[nodiscard]] static Expected<LevelId> parse(std::string_view text);
+
+    [[nodiscard]] const FixtureId& fixture() const noexcept { return m_fixture; }
+    [[nodiscard]] std::uint32_t level() const noexcept { return m_level; }
+    [[nodiscard]] bool empty() const noexcept { return m_fixture.empty(); }
+    /// The level within its room, as ADR-0010 §7 names a dressed level's socket in its prop seed: "fx:w03/l:2".
+    [[nodiscard]] std::string localText() const;
+    [[nodiscard]] std::string toString() const;
+
+    auto operator<=>(const LevelId&) const = default;
+
+private:
+    FixtureId m_fixture;
+    std::uint32_t m_level = 0;
+};
+
+/// A slot of a fixture: where one game stands.
+class SlotId {
+public:
+    SlotId() = default;
+
+    /// Errors: InvalidArgument for "no fixture", a level above kMaxLevel or an index above kMaxSlotIndex.
+    [[nodiscard]] static Expected<SlotId> make(const FixtureId& fixture, std::uint32_t level, std::uint32_t index);
+    /// "<fixture>/s:<level>.<index>". Errors: InvalidArgument naming the text.
+    [[nodiscard]] static Expected<SlotId> parse(std::string_view text);
+
+    [[nodiscard]] const FixtureId& fixture() const noexcept { return m_fixture; }
+    [[nodiscard]] std::uint32_t level() const noexcept { return m_level; }
+    [[nodiscard]] std::uint32_t index() const noexcept { return m_index; }
+    [[nodiscard]] bool empty() const noexcept { return m_fixture.empty(); }
+    /// The level the slot belongs to.
+    [[nodiscard]] LevelId levelId() const;
+    [[nodiscard]] std::string toString() const;
+
+    auto operator<=>(const SlotId&) const = default;
+
+private:
+    FixtureId m_fixture;
+    std::uint32_t m_level = 0;
+    std::uint32_t m_index = 0;
+};
+
+/// A prefab as the world names it (specification §17.3): its manifest id (assets::isValidPrefabId: "furniture.
+/// display_case.generic") and the procedural kind the manifest is expected to build ("display_case"), never a model
+/// path. The kind lets the scene fall back to the family's generic prefab of that kind when the manifest is missing.
+struct PrefabRef {
+    std::string manifest;
+    std::string kind;
+
+    auto operator<=>(const PrefabRef&) const = default;
+};
+
+/// A prefab kind: 1 to 64 characters among a-z, 0-9 and '_', the first a letter ("shelf", "tv_cabinet").
+[[nodiscard]] bool isValidPrefabKind(std::string_view text) noexcept;
+
+/// A preset, template, theme pack, media family or platform id: 1 to 64 characters among a-z, 0-9 and '_', the first
+/// a letter ("retro_museum_cozy", "console_room_9x10", "cartridge_home_16bit").
+[[nodiscard]] bool isValidDataId(std::string_view text) noexcept;
+
+/// A versioned rule name: a data id, '/', and a version from 1 without leading zeros ("splitmix64/1",
+/// "title-key/1"; '-' is allowed in the name).
+[[nodiscard]] bool isValidRuleName(std::string_view text) noexcept;
+
+namespace detail {
+
+/// The value of an enumeration of the world whose toString() is `text`; its values run from 0 to `last`.
+template <class Enum>
+[[nodiscard]] constexpr std::optional<Enum> enumFromString(std::string_view text, Enum last) noexcept {
+    for (int value = 0; value <= static_cast<int>(last); ++value) {
+        if (toString(static_cast<Enum>(value)) == text) {
+            return static_cast<Enum>(value);
+        }
+    }
+    return std::nullopt;
+}
+
+/// A decimal number from 0 to `maximum` without leading zeros ("0", "12"); nothing otherwise.
+[[nodiscard]] std::optional<std::uint32_t> parseDecimal(std::string_view text, std::uint32_t maximum) noexcept;
+
+} // namespace detail
+
+} // namespace rv::world

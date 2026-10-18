@@ -1,5 +1,15 @@
-// The curated preset RetroMuseumCozy (ADR-0010 §2, style §18): a placeholder of I3 step 0a, which settles the file's
-// place. I3 step 1a writes it and its reader (rv/world/world_config.hpp): decoration density 0.4, growth reserve 0.15,
-// the main passage 1.4 m wide with a hard minimum of 1.2 m, placement.include "covered"; <user data>/config/world.json
-// overrides it per key.
-{}
+// The curated preset RetroMuseumCozy (ADR-0010 §2, style §18; read by rv/world/world_config.hpp, which documents the
+// format), the default of every world. <user data>/config/world.json overrides it per key. Integers in the plan's
+// units: decoration density 0.4 and growth reserve 0.15 (style §18.2) in permille, the main passage 1.4 m wide (style
+// §18.2) and every passage at least 1.2 m clear (specification §7.5) in millimetres; the room holds the games of the
+// system that have a cover (ADR-0010 §3).
+{
+  "schemaVersion": 1,
+  "id": "retro_museum_cozy",
+  "name": "RetroMuseumCozy",
+  "decorationDensityPermille": 400,
+  "growthReservePermille": 150,
+  "mainPassageWidthMm": 1400,
+  "minClearWidthMm": 1200,
+  "placement": {"include": "covered"}
+}
