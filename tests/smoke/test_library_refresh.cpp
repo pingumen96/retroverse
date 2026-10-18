@@ -4,7 +4,7 @@
 // the quick catalog usable meanwhile. The run report (catalog.refreshes, the "refresh" phase) and the catalog database
 // tell what happened: the new game appears, the selection is the same game after the list ran again, the frame times
 // of the refresh phase (informative: the budget is measured on a quiet machine); "Aggiorna libreria" pressed with the
-// pad's actions refreshes again. A run that ends during a refresh (a library of 10,000 more files) stops its worker
+// pad's actions refreshes again. A run that ends during a refresh (a library of 20,000 more files) stops its worker
 // within the bound, the import rolled back or committed whole, and the database passes retroverse-cli db check.
 
 #include <catch2/catch_test_macros.hpp>
@@ -102,10 +102,14 @@ TEST_CASE("refresh: --refresh-library imports a ROM added since; the new game ap
     // 600 frames: both refreshes end well before the last (each takes about 0.1 to 1 s in Debug on a busy machine).
     std::vector<std::string> arguments = refreshArguments("600");
     arguments.insert(arguments.begin(), {"--input-script", arg(inputScript("catalog_refresh.json"))});
+    // The last frame: "Aggiorna libreria" focused, the second refresh's result under the header.
+    const std::filesystem::path screenshot = library.dir / "refresh_library.png";
+    arguments.insert(arguments.end(), {"--screenshot", arg(screenshot)});
     AppRun run = runApp(retroverseExe(), library.dir, "refresh_library", std::move(arguments));
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     INFO(run.describe());
+    requireScreenshot(run, screenshot, {1920, 1080});
     const rv::app::RunReport& report = *run.report;
 
     REQUIRE(report.catalog.has_value());
@@ -178,15 +182,16 @@ TEST_CASE("refresh: --refresh-library imports a ROM added since; the new game ap
 TEST_CASE("refresh: a run that ends during a refresh stops its worker within the bound, the import whole or undone",
           "[gpu][refresh]") {
     const ImportedLibrary library("quit_mid_refresh");
-    // 10,000 more files in gb: an import of seconds, which a run of 40 frames ends in the middle of.
+    // 20,000 more files in gb: an import of about a second in Release (several in Debug), which a run of 10 frames
+    // ends in the middle of.
     const std::filesystem::path bulk = library.fixture.path("roms/gb/Bulk");
     std::filesystem::create_directories(bulk);
-    for (int index = 0; index < 10000; ++index) {
+    for (int index = 0; index < 20000; ++index) {
         std::ofstream file(bulk / fmt::format("Bulk {:05}.gb", index), std::ios::binary);
         file << 'B';
         REQUIRE(file.good());
     }
-    AppRun run = runApp(retroverseExe(), library.dir, "quit_mid_refresh", refreshArguments("40"));
+    AppRun run = runApp(retroverseExe(), library.dir, "quit_mid_refresh", refreshArguments("10"));
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     INFO(run.describe());

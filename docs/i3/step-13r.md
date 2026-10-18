@@ -8,7 +8,7 @@ quick catalog and `--refresh-library` run the import of `retroverse-cli import` 
 `catalog::IdentityPairing`, its import lock) as a job of the catalog worker, in slices, so that the quick catalog's
 lists, the rows' readiness, Avvia's resolution and the play sessions are answered while it runs; quitting cancels it
 within the bound. After its commit the systems' readiness is resolved again, the readiness cache is cleared and the list
-runs again with the selection restored by GameId; the line under the header tells the progress and the result (Italian,
+runs again with the selection restored by GameId; a line beside the button tells the progress and the result (Italian,
 in the RML document). The overlay's log copy no longer shows a line twice while workers log (BACKLOG "Log copy with
 worker threads"). Nothing changes what a frame of the room draws (golden G01 unchanged).
 
@@ -25,7 +25,7 @@ worker threads"). Nothing changes what a frame of the room draws (golden G01 unc
 | `src/app/src/command_line.cpp`, `include/rv/app/command_line.hpp` | `--refresh-library` taken (its refusal block and the "not implemented yet" of its help removed) |
 | `src/ui/include/rv/ui/quick_catalog_screen.hpp`, `src/quick_catalog_screen.cpp` | `QuickCatalogEvents::refresh`, `QuickCatalogRefresh`, `setRefresh()`/`refresh()`, the data model's `refresh` and event `refresh()`, the `library` region (search Up, back Down; focused only while the button shows) |
 | `src/ui/include/rv/ui/ui_assets.hpp` | `kRegionLibrary`, `kRefreshId`, `kRefreshStatusId`, `kRefreshRunning`, `kRefreshStates`, `kRefreshPhases` |
-| `assets/ui/quick_catalog.rml`, `.rcss` | the button in the header (with the count, at its right end), the line under the header: a text per phase while it runs and per outcome |
+| `assets/ui/quick_catalog.rml`, `.rcss` | a row under the header (`library-bar`): the button, then the line that tells the refresh (a text per phase while it runs and per outcome) |
 | `src/core/include/rv/core/log.hpp`, `src/log.cpp` | `logLinesSince()` / `LogLinesSince`: the in-memory lines and the count under one lock (one sink, `MemorySink`, replaces spdlog's ring buffer sink and the counting sink), each configuration a generation |
 | `src/devui/include/rv/devui/log_view.hpp`, `src/log_view.cpp` | `LogView::refresh()` on `logLinesSince()` |
 | `tests/unit/app/test_library_refresh.cpp` (new), `catalog_test_support.hpp` (new: the imported fixture of `test_catalog_worker.cpp`, shared) | the unit tests (below) |
@@ -84,11 +84,12 @@ generation; CatalogRefreshed posted (summary, systems)
 
 ## The quick catalog
 
-- **"Aggiorna libreria"**: a button in the header at its right end, after the count, shown while the catalog can refresh
-  (the ES-DE catalog, open; never the mock catalog or a notice). With the pad: Up from the list's first game reaches the
-  chips, the search field, then the button (its own region, `library`; Down goes back to the search field). A press
-  while one runs does nothing (logged).
-- **The line under the header** (`refresh-status`), from the first refresh on, until the next:
+- **"Aggiorna libreria"**: a button in a row under the header (`library-bar`, shown while the catalog can refresh: the
+  ES-DE catalog, open; never the mock catalog or a notice, so their screens are as before). With the pad: Up from the
+  list's first game reaches the chips, the search field, then the button (its own region, `library`; Down goes back to
+  the search field). A press while one runs does nothing (logged). A first try put the button in the header beside the
+  count: at 1280 x 720 the title, the count and the button each wrapped to two lines, so it has a row of its own.
+- **The line beside the button** (`refresh-status`, wrapping when long), from the first refresh on, until the next:
   - while it runs, by phase: "Aggiornamento della libreria: lettura delle cartelle di ES-DE...", "... controllo dei media
     (N di M)...", "... confronto con il catalogo (N di M sistemi)...", "... scrittura del catalogo...";
   - its end: "Libreria aggiornata: nessuna modifica." or "Libreria aggiornata. Aggiunti: N, rimossi: N, modificati: N.",
@@ -148,14 +149,37 @@ thread's in order.
   - `--refresh-library` and `catalog_refresh.json` (600 frames): the first refresh (`command-line`) Done with 1 added,
     the selection the same game one place down (the new game sorts first), 16 games listed and shown; "Aggiorna
     libreria" reached with Home and Up and pressed on frame 90: a second refresh (`user`), nothing new, the selection
-    kept; the `refresh` phase opened twice and closed, its frame times logged (informative); `retroverse-cli db check`
+    kept; a screenshot of the last frame (the button focused, "Libreria aggiornata: nessuna modifica."); the `refresh`
+    phase opened twice and closed, its frame times logged (informative); `retroverse-cli db check`
     clean;
-  - 10,000 more files in gb and `--refresh-library` for 40 frames: the run ends during the refresh, `cancelled`, the
+  - 20,000 more files in gb and `--refresh-library` for 10 frames: the run ends during the refresh, `cancelled`, the
     worker stopped within 2 s (`stopMs`), the phase left open, the catalog unchanged (15 games), `db check` clean.
 
 ## Measured
 
-FIGURES
+The reference machine, 2026-10-18, with the other wave-1 worktrees building and running their GPU tests at the same
+time (the CPUs and the GPU shared): the figures say what the step does, not the budget, which the gate measures on a
+quiet machine.
+
+| | Debug | Release |
+|---|---|---|
+| Refresh of the standard fixture with a ROM added (`--refresh-library`, on the worker, re-resolution included) | 101 to 496 ms | 30 to 704 ms |
+| The same with nothing new ("Aggiorna libreria") | 143 to 415 ms | 29 to 649 ms |
+| The longest slice (a request waited at most this long for the worker) | 5 to 15 ms | 5 to 9 ms |
+| An import of 10,000 more files (an earlier version of the quit case, which then ran to its end) | | 539 ms, the `refresh` phase's 4 measured frames p99 6.9 ms |
+| Lists asked while a refresh runs (unit test, a load held 1.5 s), from the request to the answer | under 100 ms (the test's bound) | |
+| Quitting during a refresh (20,000 more files, 10 frames): the worker's stop | 29 ms, 623 ms | 59 ms |
+
+- **Frame times over the `refresh` phase** (the second refresh, past the warm-up; the first one falls in it). Release on
+  the quieter runs: p99 9.1 ms (7 frames), 12.1 ms (5 frames), 6.9 ms (the 10,000-file import). Debug: p99 23.6 ms (15
+  frames). Release on runs while other worktrees ran their GPU tests: single frames of 100 to 1,320 ms, each the frame
+  that shows the refresh's result line (or the list after it); instrumented, the time was in RmlUi's
+  `Context::Render` (the GL calls of the UI pass: 230 to 4,500 ms in one run, from frame 2 on, the refresh or not), and
+  never in the update, the catalog's poll or a page fetch (0.25 ms at most): the GPU contention of that hour, not the
+  refresh. The roadmap's figure on the real library is open (below).
+- The worker's stop in the quit case: the cancel landed in the load (11 ms after the start), in the media or the
+  comparison; the transaction never committed (15 games after it, `db check` clean).
+- G01 unchanged: the golden runs have the ES-DE catalog of an empty data directory, closed (no button, no line).
 
 ## Decisions taken within the step
 
@@ -198,7 +222,7 @@ FIGURES
   - "Running the app": `--refresh-library` refreshes the catalog from ES-DE once it opened ("Aggiorna libreria" in the
     quick catalog does the same: the import of `retroverse-cli import` on the catalog worker, in slices, the list usable
     meanwhile; quitting cancels it); the option's "refused until 13r" goes; the run report's `catalog.refreshes`.
-  - "Running the app", the quick catalog: the button (search Up) and the line under the header.
+  - "Running the app", the quick catalog: "Aggiorna libreria" and its line in a row under the header (search Up).
   - "Layout and layering": `rv_app_catalog`'s `library_refresh` (the sliced import, GPU-free).
   - "Conventions", core helpers: `log.hpp`'s `logLinesSince` (lines and count under one lock).
   - GPU smoke tests: `tests/smoke/test_library_refresh.cpp` (`gpu.refresh: ...`).

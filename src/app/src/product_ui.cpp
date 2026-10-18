@@ -119,7 +119,8 @@ struct ProductUi::Impl {
     bool refreshOnOpen = false;
     bool refreshAsked = false;
     bool refreshRequested = false;
-    bool refreshAfterPending = false;
+    /// The record whose `after` waits for the list its commit made the model ask for.
+    std::optional<std::size_t> refreshAfter;
     std::vector<RefreshRecord> refreshes;
     /// The wall-clock times of the frames that showed games of the catalog (CatalogRecord::frames; at most
     /// kMaxFrameSamples), and when the last frame's update began (none after an idle wait, which is no frame time).
@@ -198,15 +199,12 @@ struct ProductUi::Impl {
         if (changes.opened && refreshOnOpen && !std::exchange(refreshAsked, true)) {
             requestRefresh(RefreshTrigger::CommandLine);
         }
-        if (refreshAfterPending && !model->pending() && !refreshes.empty()) {
-            refreshAfterPending = false;
-            refreshes.back().after = currentView();
+        if (refreshAfter && !model->pending()) {
+            RefreshRecord& record = refreshes.at(*std::exchange(refreshAfter, std::nullopt));
+            record.after = currentView();
             spdlog::info("Frame {}: the catalog's list after the refresh: {} game(s), the selection {}",
                          context.frameIndex(), model->count(),
-                         refreshes.back().before && refreshes.back().after->selectedId ==
-                                                        refreshes.back().before->selectedId
-                             ? "kept"
-                             : "moved");
+                         record.before && record.after->selectedId == record.before->selectedId ? "kept" : "moved");
         }
     }
 
@@ -235,7 +233,6 @@ struct ProductUi::Impl {
         record.requestFrame = frame;
         record.before = currentView();
         refreshes.push_back(std::move(record));
-        refreshAfterPending = false;
         context.frameTiming().openPhase(kPhaseRefresh);
         spdlog::info("Frame {}: catalog refresh asked ({}): phase '{}' opened", frame, toString(trigger),
                      kPhaseRefresh);
@@ -260,7 +257,7 @@ struct ProductUi::Impl {
         }
         if (refreshed) {
             model->refresh();
-            refreshAfterPending = true;
+            refreshAfter = refreshes.empty() ? std::nullopt : std::optional<std::size_t>(refreshes.size() - 1);
         }
     }
 
