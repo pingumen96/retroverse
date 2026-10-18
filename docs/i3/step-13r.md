@@ -155,6 +155,15 @@ thread's in order.
   - 20,000 more files in gb and `--refresh-library` for 10 frames: the run ends during the refresh, `cancelled`, the
     worker stopped within 2 s (`stopMs`), the phase left open, the catalog unchanged (15 games), `db check` clean.
 
+## Results
+
+After merging main (steps 1c, 6, 7): `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release` build without a
+warning; `./scripts/test.ps1 -Preset msvc-x64-debug-gpu` (every unit test and the GPU cases) passes 1,587 of 1,587
+(34 gpu, golden G01 within tolerance), wrapped in `python -I scripts/focus_watch.py --watch build --out
+build/focus/13r.json`: 0 findings (no foreground change, no visible window of a test process). An earlier
+`./scripts/test.ps1` (unit) run showed the log race test needing the workers started with the view (fixed); an earlier
+gpu run one timing flake of `gpu.launch` (above).
+
 ## Measured
 
 The reference machine, 2026-10-18, with the other wave-1 worktrees building and running their GPU tests at the same
@@ -210,9 +219,9 @@ quiet machine.
   `./scripts/real-library.ps1`, lists within 100 ms during an import there) is not measured by this step: it needs a
   quiet machine and ES-DE closed; the step's figures are the fixture's (above). A `[real-library][refresh]` test would
   run the app on the imported real library with `--refresh-library`.
-- `app/catalog_worker: a session write that meets a busy database stays pending on the worker, then is written` fails
-  intermittently on this machine under load (its `CHECK(worker.idle())` after 600 ms), on main's build as well: not
-  caused by this step.
+- Timing checks of other steps' tests flake under this machine's load: `gpu.launch: a frame-limited run stops waiting at
+  its wait limit ...` (`runMs` 1855 against 1900 ms once; passed when run again) and, before main's "robust
+  busy-database tests" merged here, `app/catalog_worker: a session write that meets a busy database ...`.
 - The quick-hash pass (`runQuickHashPass`) is not run by the app; step 11b's note has it take turns on the same worker
   (BACKLOG).
 
