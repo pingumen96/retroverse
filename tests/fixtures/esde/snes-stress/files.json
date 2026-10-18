@@ -1,0 +1,14 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe, the fake emulator's copy, and one generated
+// collection (tests/support/fixture_collection.hpp): 2,000 titles, 300 of them with a second release, their ROM
+// payloads, gamelist, covers and 4 clips.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 1000},
+        {"path": "Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe", "copyOf": "rv_fake_emulator.exe"}
+    ],
+    "directories": ["ES-DE/custom_systems"],
+    "collections": [
+        {"seed": 2000, "titles": 2000, "duplicates": 300, "videos": 4, "romFolder": "roms/snes", "romExtension": ".sfc",
+         "romSize": 4096, "gamelist": "ES-DE/gamelists/snes/gamelist.xml", "mediaFolder": "media/snes"}
+    ]
+}

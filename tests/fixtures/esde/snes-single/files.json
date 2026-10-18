@@ -1,0 +1,10 @@
+// What git does not hold (see README.md): the one ROM payload, the placeholder ES-DE.exe and the fake emulator's
+// copy; the media root, there and empty.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 1000},
+        {"path": "Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe", "copyOf": "rv_fake_emulator.exe"},
+        {"path": "roms/snes/Pocket Lighthouse (USA).sfc", "size": 131072, "seed": 1, "mtime": "1994-06-11T12:00:00Z"}
+    ],
+    "directories": ["media", "ES-DE/custom_systems"]
+}
