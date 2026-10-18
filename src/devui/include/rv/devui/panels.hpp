@@ -58,6 +58,9 @@ struct StatsPanelModel {
     const gl::TextureCache& textures;
     /// gl::gpuMemoryLedger().
     const gl::GpuMemoryLedger& gpuMemory;
+    /// The hero CRT's video, one line each (its "Video" section; none without it): the picture shown, the decoder's
+    /// state and threads, the frames uploaded (I3 step 11).
+    std::function<std::vector<std::string>()> videoStatus = {};
 };
 [[nodiscard]] std::unique_ptr<Panel> makeStatsPanel(const StatsPanelModel& model);
 

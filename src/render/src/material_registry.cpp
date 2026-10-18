@@ -183,6 +183,24 @@ Status MaterialRegistry::setFactors(scene::MaterialHandle handle, const Material
                            std::as_bytes(std::span<const MaterialUniforms, 1>(&material.uniforms, 1)));
 }
 
+Status MaterialRegistry::setTextureOverride(scene::MaterialHandle handle, MaterialTextureSlot slot, GLuint texture) {
+    if (handle.value >= m_materials.size()) {
+        return makeError(ErrorCode::InvalidArgument, "unknown material", fmt::format("material #{}", handle.value));
+    }
+    GpuMaterial& material = m_materials[handle.value];
+    const std::size_t index = toIndex(slot);
+    if (material.textureSources[index] == nullptr) {
+        return makeError(ErrorCode::InvalidArgument, "the slot has no texture of its own to override",
+                         fmt::format("material '{}', slot {}", material.name, index));
+    }
+    material.textureOverrides[index] = texture;
+    return ok();
+}
+
+GLuint MaterialRegistry::textureOverride(scene::MaterialHandle handle, MaterialTextureSlot slot) const noexcept {
+    return handle.value < m_materials.size() ? m_materials[handle.value].textureOverrides[toIndex(slot)] : 0;
+}
+
 void MaterialRegistry::bind(scene::MaterialHandle handle) const {
     if (handle.value >= m_uploadedCount) {
         return;
@@ -191,7 +209,13 @@ void MaterialRegistry::bind(scene::MaterialHandle handle) const {
     glBindBufferRange(GL_UNIFORM_BUFFER, toIndex(UniformBinding::Material), m_buffer.id(),
                       static_cast<GLintptr>(handle.value * m_stride),
                       static_cast<GLsizeiptr>(sizeof(MaterialUniforms)));
-    glBindTextures(0, static_cast<GLsizei>(kMaterialTextureSlotCount), material.textures.data());
+    std::array<GLuint, kMaterialTextureSlotCount> textures = material.textures;
+    for (std::size_t slot = 0; slot < kMaterialTextureSlotCount; ++slot) {
+        if (material.textureOverrides[slot] != 0) {
+            textures[slot] = material.textureOverrides[slot];
+        }
+    }
+    glBindTextures(0, static_cast<GLsizei>(kMaterialTextureSlotCount), textures.data());
     glBindSamplers(0, static_cast<GLsizei>(kMaterialTextureSlotCount), material.samplers.data());
     if (material.layeredBaseColor != nullptr) {
         // Read at every bind: a grown array has new storage under the same object.

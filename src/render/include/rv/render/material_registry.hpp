@@ -78,6 +78,8 @@ struct GpuMaterial {
     /// The array a layered material binds on CollectionTextureUnit::LayeredBaseColor (null for every other material),
     /// with the registry's clamped sampler.
     const Texture2DArray* layeredBaseColor = nullptr;
+    /// Textures bound instead of `textures` (MaterialRegistry::setTextureOverride), 0 where the material's own is.
+    std::array<GLuint, kMaterialTextureSlotCount> textureOverrides{};
 };
 
 /// The materials of the scene on the GPU, behind the scene::MaterialHandle of the render items: every
@@ -130,9 +132,20 @@ public:
     /// Buffer::update.
     [[nodiscard]] Status setFactors(scene::MaterialHandle handle, const MaterialFactors& factors);
 
-    /// Binds the uniform block of `handle` to UniformBinding::Material and its textures and samplers to the texture
-    /// units 0..kMaterialTextureSlotCount-1, and a layered material's array to CollectionTextureUnit::LayeredBaseColor.
-    /// Does nothing for a handle outside the uploaded materials.
+    /// Draws `slot` of `handle` with the texture object `texture` instead of the material's own from the next bind() on
+    /// (I3 step 11: the hero CRT's screen shows the video's texture or a still picture in place of its colour bars,
+    /// ADR-0012 §7), with the slot's sampler, the uniforms unchanged; 0 goes back to the material's own texture. The
+    /// caller keeps `texture` alive while it is set, and sets it again when the object changes (gl::VideoTexture
+    /// reallocates on a size change). The slot must have a texture of the material's own (its texture bit is set, so
+    /// the shaders sample it) and the texture its colour space. Errors: InvalidArgument for an unknown handle or a slot
+    /// without a texture of its own.
+    [[nodiscard]] Status setTextureOverride(scene::MaterialHandle handle, MaterialTextureSlot slot, GLuint texture);
+    /// The override of `slot` of `handle` (0 for none, or an unknown handle).
+    [[nodiscard]] GLuint textureOverride(scene::MaterialHandle handle, MaterialTextureSlot slot) const noexcept;
+
+    /// Binds the uniform block of `handle` to UniformBinding::Material and its textures (or their overrides) and
+    /// samplers to the texture units 0..kMaterialTextureSlotCount-1, and a layered material's array to
+    /// CollectionTextureUnit::LayeredBaseColor. Does nothing for a handle outside the uploaded materials.
     void bind(scene::MaterialHandle handle) const;
 
     /// The material of a handle returned by add() (std::out_of_range otherwise).

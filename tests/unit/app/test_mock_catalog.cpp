@@ -292,3 +292,49 @@ TEST_CASE("app/mock_catalog: frame-limited runs bound the wait for a launched ga
     CHECK_FALSE(parse({"--smoke", "--launch-wait-limit", "soon"}).has_value());
     CHECK(rv::app::commandLineHelp().find("  --launch-wait-limit <seconds>") != std::string::npos);
 }
+
+TEST_CASE("app/mock_catalog: a game's media and last play feed the hero CRT (I3 step 11)", "[app][mock_catalog]") {
+    Json full = game("g1", "Lanterna di Vetro");
+    full["media"] = Json{{"video", "clips/g1.mp4"},
+                         {"screenshot", "C:/elsewhere/shot.png"},
+                         {"titlescreen", "titles/g1.png"},
+                         {"cover", "covers/g1.jpg"}};
+    full["lastPlayed"] = "2026-10-01T20:00:00Z";
+    Json partial = game("g2", "Ponte di Carta");
+    partial["media"] = Json{{"cover", "covers/g2.png"}};
+    const auto parsed = parse(document(Json::array({full, partial, game("g3", "Senza Media")})));
+    REQUIRE(parsed.has_value());
+    const rv::app::MockGame& first = parsed->games[0];
+    // Relative to the catalog's folder like the ROMs; absolute paths kept.
+    CHECK(first.media.video == rv::core::pathFromUtf8("C:/mock/clips/g1.mp4").lexically_normal());
+    CHECK(first.media.screenshot == rv::core::pathFromUtf8("C:/elsewhere/shot.png").lexically_normal());
+    CHECK(first.media.titleScreen == rv::core::pathFromUtf8("C:/mock/titles/g1.png").lexically_normal());
+    CHECK(first.media.cover == rv::core::pathFromUtf8("C:/mock/covers/g1.jpg").lexically_normal());
+    CHECK(first.lastPlayed == 1790884800); // 2026-10-01T20:00:00Z in seconds since 1970
+    CHECK(parsed->games[1].media.video.empty());
+    CHECK_FALSE(parsed->games[1].media.cover.empty());
+    CHECK_FALSE(parsed->games[1].lastPlayed.has_value());
+    CHECK(parsed->games[2].media == rv::app::ScreenMedia{});
+
+    const std::vector<rv::app::ScreenGame> screen = parsed->screenGames();
+    REQUIRE(screen.size() == 3);
+    CHECK(screen[0].id == "g1");
+    CHECK(screen[0].media == first.media);
+    CHECK(screen[0].lastPlayed == first.lastPlayed);
+    CHECK(screen[2].id == "g3");
+
+    Json unknownKind = game("g1", "A");
+    unknownKind["media"] = Json{{"manual", "a.pdf"}};
+    CHECK(errorOf(document(Json::array({unknownKind}))).context == "C:/mock/catalog.json:/games/0/media/manual");
+    Json notText = game("g1", "A");
+    notText["media"] = Json{{"video", 3}};
+    CHECK(errorOf(document(Json::array({notText}))).context == "C:/mock/catalog.json:/games/0/media/video");
+    Json notObject = game("g1", "A");
+    notObject["media"] = "clips/a.mp4";
+    CHECK(errorOf(document(Json::array({notObject}))).context == "C:/mock/catalog.json:/games/0/media");
+    Json badTime = game("g1", "A");
+    badTime["lastPlayed"] = "yesterday";
+    const rv::Error time = errorOf(document(Json::array({badTime})));
+    CHECK(time.code == ErrorCode::ValidationFailed);
+    CHECK(time.context == "C:/mock/catalog.json:/games/0/lastPlayed");
+}

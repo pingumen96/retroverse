@@ -91,6 +91,8 @@ struct ProductUi::Impl {
     bool afterPending = false;
     /// The launch whose session the flow follows: its token, its index among the run's launches.
     std::uint64_t sessionToken = 0;
+    /// The application's hooks around launches (the hero CRT's decoder).
+    LaunchHooks hooks;
     /// The wall-clock times of the frames that showed games of the catalog (CatalogRecord::frames; at most
     /// kMaxFrameSamples), and when the last frame's update began (none after an idle wait, which is no frame time).
     std::vector<double> frameMs;
@@ -187,6 +189,9 @@ struct ProductUi::Impl {
     void afterReturn() {
         if (!flow.takeReturned()) {
             return;
+        }
+        if (hooks.ended) {
+            hooks.ended();
         }
         nav.reset();
         afterPending = true;
@@ -404,6 +409,21 @@ void ProductUi::typeText(std::string_view text) {
     }
 }
 
+void ProductUi::setLaunchHooks(LaunchHooks hooks) {
+    m_impl->hooks = std::move(hooks);
+}
+
+std::optional<std::string> ProductUi::selectedGameId() const {
+    const Impl& s = *m_impl;
+    if (!s.catalogOpen) {
+        return std::nullopt;
+    }
+    if (const ui::CatalogEntry* selected = s.model->selected()) {
+        return selected->id;
+    }
+    return std::nullopt;
+}
+
 void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds, double timeSeconds) {
     const core::CpuSectionScope timing(core::cpu_section::kProductUi);
     Impl& s = *m_impl;
@@ -497,6 +517,9 @@ void ProductUi::onIdle() {
     const LaunchClock::time_point now = LaunchClock::now();
     const std::uint64_t frame = s.context.frameIndex();
     if (s.flow.pending()) {
+        if (s.hooks.starting) {
+            s.hooks.starting(); // before the hand-over and the process (the decoder stopped and joined)
+        }
         s.beginHandover();
         launcher::StartCallbacks callbacks;
         callbacks.wake = s.context.wakeCallback();

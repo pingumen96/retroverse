@@ -201,7 +201,14 @@ void requireCleanRun(const AppRun& run) {
     // each step changes its own line here.
     CHECK(report.world == app::WorldRecord{});         // I3 step 10b
     CHECK(report.residency == app::ResidencyRecord{}); // I3 step 12
-    CHECK(report.video == app::VideoRecord{});         // I3 step 11
+    // I3 step 11: the hero CRT never had two decoder threads, none ran at the end, its video memory is the renderer's.
+    if (report.video.bound) {
+        CHECK(report.video.maxDecoderThreads <= 1);
+        CHECK(report.video.joinedAtExit);
+        CHECK(report.video.videoBytes == report.gpuMemory.usage(gl::GpuMemoryKind::Video).bytes);
+    } else {
+        CHECK(report.video == app::VideoRecord{});
+    }
     // I3 step 0d: the frame times leave the warm-up out; phases and CPU sections cover frames of the run; the GPU
     // memory adds up, and a run that drew a view had its targets.
     CHECK(report.frameTimes.warmUpFrames == app::kFrameTimeWarmUpFrames);

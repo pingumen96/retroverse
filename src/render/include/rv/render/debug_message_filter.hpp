@@ -36,8 +36,11 @@ enum class DebugMessageAction : std::uint8_t {
 };
 
 /// Ids of NVIDIA driver messages that are purely informational: buffer and texture memory placement (131169,
-/// 131185, 131204) and shader recompilation hints (131218). Only meaningful when the GL vendor is NVIDIA.
-inline constexpr std::array<std::uint32_t, 4> kNvidiaInformationalIds{131169u, 131185u, 131204u, 131218u};
+/// 131185, 131204) and shader recompilation hints (131218), and the medium-severity "Pixel-path performance warning:
+/// Pixel transfer is synchronized with 3D rendering" every video upload through a pixel buffer raises (131154: expected,
+/// ADR-0004; dropped since I3 step 11, ADR-0012 §7, so that runs showing the hero CRT's video stay clean). Only
+/// meaningful when the GL vendor is NVIDIA.
+inline constexpr std::array<std::uint32_t, 5> kNvidiaInformationalIds{131154u, 131169u, 131185u, 131204u, 131218u};
 
 /// Policy behind the GL debug callback: drops noise, de-duplicates repeated messages and counts the rest by severity.
 /// Not thread-safe; GLDevice enables GL_DEBUG_OUTPUT_SYNCHRONOUS so every message arrives on the GL thread.
