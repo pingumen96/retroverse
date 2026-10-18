@@ -187,9 +187,19 @@ TEST_CASE("launch: the game-session panel asks the user, whose answer ends the s
         CHECK(launch.startFrame == 9u);
         CHECK(launch.endFrame == 14u);
         CHECK(launch.framesWithPanel == 5);
-        // Left running, never ended: the fake ends by itself (its 6 s), not by Retroverse.
+        // Left running, never ended: the fake ends by itself (its 6 s), not by Retroverse. On a loaded machine the run
+        // can outlast those 6 s, so the process may be gone before it is looked for: its log, written only at a normal
+        // end, then tells how it ended.
         const std::optional<std::uint32_t> exitCode = waitForExit(launch.processId, 40s);
-        CHECK(exitCode == 0u);
+        if (exitCode.has_value()) {
+            CHECK(*exitCode == 0u);
+        } else {
+            const std::filesystem::path logFile = run.reportFile.parent_path() / "roms" / "fake-still-running-log.json";
+            const auto log = rv::core::readJsonFile(logFile);
+            REQUIRE(log.has_value());
+            CHECK((*log)["exit"] == "code");
+            CHECK((*log)["exitCode"] == 0);
+        }
     }
     SECTION("UserConfirmReturn: the started program ended, the user confirms the return") {
         const AppRun run = runLaunch("confirm", {fake_games::kConfirm}, "quick_catalog_launch_confirm.json");
