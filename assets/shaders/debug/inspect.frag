@@ -3,8 +3,9 @@
 // shows one property of its surface, unlit, with its own material bound. The view is shown without tonemapping
 // (rv::gl::PostSettings::tonemap off: the HDR target is copied to the sRGB output, which encodes it), so the output is
 // the linear form of the color to display. One program per view, selected by an injected define:
-//   RV_INSPECT_BASE_COLOR  (the default) the base color, its factor times its texture (linear: the output shows the
-//                          authored sRGB);
+//   RV_INSPECT_BASE_COLOR  (the default) the base color, its factor times its texture and, for the collection's
+//                          layered materials, the layer the instance names (linear: the output shows the authored
+//                          sRGB);
 //   RV_INSPECT_NORMALS     the shading normal in world space, normal maps included, shown as n * 0.5 + 0.5;
 //   RV_INSPECT_UV          the first uv set: a checker of 8 x 8 squares per uv unit, red growing along u and green
 //                          along v within each unit, so the layout's scale, orientation (uv (0, 0) is the image's
@@ -27,7 +28,7 @@ vec3 uvChecker(vec2 uv) {
 
 void main() {
     // Every texture is sampled before the alpha test may discard (common/material.glsl).
-    vec4 baseColor = materialBaseColor(vUv);
+    vec4 baseColor = materialInstanceBaseColor(vUv, vInstance);
     vec3 N = shadingNormal();
     materialAlphaTest(baseColor.a);
 #if defined(RV_INSPECT_NORMALS)

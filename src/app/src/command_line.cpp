@@ -93,8 +93,8 @@ core::ArgParser makeParser() {
                 "Only with --smoke or --exit-after-frames: the hero CRT's video seeks to this time and holds the "
                 "frame, for goldens. Not implemented yet (I3 step 11): refused.")
         .flag("no-texture-compression", "Keep the collection's covers and spines in RGBA8 at half the resolution "
-                                        "instead of BC1, as without the S3TC extensions. Not implemented yet (I3 "
-                                        "step 6): refused.");
+                                        "instead of BC1, as without the S3TC extensions (the log names the format "
+                                        "and why).");
     return parser;
 }
 
@@ -551,10 +551,6 @@ Status pendingOptionError(const CommandLineOptions& options) {
     // One block per option, apart, so that the step implementing one removes its block without touching the others.
     if (options.videoFreezePtsSeconds) {
         return makeError(ErrorCode::Unsupported, "not implemented yet (I3 step 11)", "--video-freeze-pts");
-    }
-
-    if (options.noTextureCompression) {
-        return makeError(ErrorCode::Unsupported, "not implemented yet (I3 step 6)", "--no-texture-compression");
     }
     return ok();
 }

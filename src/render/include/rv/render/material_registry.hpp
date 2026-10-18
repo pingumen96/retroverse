@@ -27,6 +27,7 @@
 namespace rv::gl {
 
 class TextureCache;
+class Texture2DArray;
 
 /// Textures of one material, indexed by MaterialTextureSlot; null where the material has no texture (the slot's
 /// neutral default is bound instead and the shaders do not sample it).
@@ -42,6 +43,15 @@ using MaterialTextures = std::array<const Texture2D*, kMaterialTextureSlotCount>
 [[nodiscard]] MaterialTextures resolveMaterialTextures(const assets::MaterialDesc& material, TextureCache& textures,
                                                        std::string_view imageKeyPrefix = {},
                                                        std::span<const assets::ImageData> images = {});
+
+/// The texture array whose layers multiply a layered material's base color (material_flags::kLayeredBaseColor): an
+/// array of the collection's fronts or spines (CollectionArrays::array), sampled at the layer the instance record names.
+struct LayeredBaseColor {
+    /// Must outlive the material; its storage may be replaced (Texture2DArray::grow): bind() reads its current id.
+    const Texture2DArray* array = nullptr;
+    /// The record's spine layer (material_flags::kSpineLayer), else its front layer.
+    bool spineLayer = false;
+};
 
 /// A material ready to draw.
 struct GpuMaterial {
@@ -65,6 +75,9 @@ struct GpuMaterial {
     MaterialTextures textureSources{};
     /// Sampler bound next to it: the registry's sampler for the texture's wrap mode.
     std::array<GLuint, kMaterialTextureSlotCount> samplers{};
+    /// The array a layered material binds on CollectionTextureUnit::LayeredBaseColor (null for every other material),
+    /// with the registry's clamped sampler.
+    const Texture2DArray* layeredBaseColor = nullptr;
 };
 
 /// The materials of the scene on the GPU, behind the scene::MaterialHandle of the render items: every
@@ -91,6 +104,13 @@ public:
     /// the non-null `textures`).
     [[nodiscard]] scene::MaterialHandle add(std::string_view key, std::string label, const assets::MaterialDesc& desc,
                                             const MaterialTextures& textures);
+    /// add() for a layered material (ADR-0011 §4): its base color also multiplies the layer of `layered.array` that
+    /// each instance's record names (material_flags::kLayeredBaseColor, plus kSpineLayer for spines), so that one
+    /// material, and one batch, draws every item of the array with its own picture. A null array registers an ordinary
+    /// material (and logs it). Registered before under `key`: that handle, unchanged.
+    [[nodiscard]] scene::MaterialHandle addLayered(std::string_view key, std::string label,
+                                                   const assets::MaterialDesc& desc, const MaterialTextures& textures,
+                                                   const LayeredBaseColor& layered);
     /// The handle registered under `key`, if any.
     [[nodiscard]] std::optional<scene::MaterialHandle> find(std::string_view key) const;
 
@@ -111,7 +131,8 @@ public:
     [[nodiscard]] Status setFactors(scene::MaterialHandle handle, const MaterialFactors& factors);
 
     /// Binds the uniform block of `handle` to UniformBinding::Material and its textures and samplers to the texture
-    /// units 0..kMaterialTextureSlotCount-1. Does nothing for a handle outside the uploaded materials.
+    /// units 0..kMaterialTextureSlotCount-1, and a layered material's array to CollectionTextureUnit::LayeredBaseColor.
+    /// Does nothing for a handle outside the uploaded materials.
     void bind(scene::MaterialHandle handle) const;
 
     /// The material of a handle returned by add() (std::out_of_range otherwise).

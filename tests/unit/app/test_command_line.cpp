@@ -562,7 +562,6 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
     const std::vector<std::pair<std::vector<std::string>, std::string>> pending{
         {{"--exit-after-frames", "--video-freeze-pts", "1.0"}, "I3 step 11"},
         {{"--smoke", "--video-freeze-pts", "0"}, "I3 step 11"},
-        {{"--no-texture-compression"}, "I3 step 6"},
     };
     for (const auto& [arguments, step] : pending) {
         INFO(arguments.back());
@@ -576,7 +575,6 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
     REQUIRE(refresh.has_value());
     CHECK(refresh->refreshLibrary);
     CHECK_FALSE(parse({"--smoke"})->refreshLibrary);
-    CHECK(parse({"--no-texture-compression"}).error().context == "--no-texture-compression");
     CHECK(parse({"--smoke", "--video-freeze-pts", "2.5"}).error().context == "--video-freeze-pts");
 
     // Their values are validated before the refusal.
@@ -600,13 +598,36 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and refused un
     // The refusal itself: nothing set, nothing refused.
     CHECK(rv::app::pendingOptionError(CommandLineOptions{}).has_value());
     CommandLineOptions options;
-    options.noTextureCompression = true;
+    options.refreshLibrary = true;
+    CHECK(rv::app::pendingOptionError(options).has_value()); // taken since I3 step 13r
+    options.videoFreezePtsSeconds = 1.0;
     const auto refused = rv::app::pendingOptionError(options);
     REQUIRE_FALSE(refused.has_value());
-    CHECK(refused.error().context == "--no-texture-compression");
+    CHECK(refused.error().context == "--video-freeze-pts");
 
     const std::string help = rv::app::commandLineHelp();
     CHECK(helpListsOption(help, "--refresh-library"));
     CHECK(helpListsOption(help, "--video-freeze-pts"));
+}
+
+TEST_CASE("app/command_line: --no-texture-compression keeps the collection's arrays uncompressed (I3 step 6)",
+          "[app][command_line]") {
+    const auto plain = parse({});
+    REQUIRE(plain.has_value());
+    CHECK_FALSE(plain->noTextureCompression);
+    const auto interactive = parse({"--no-texture-compression"});
+    REQUIRE(interactive.has_value());
+    CHECK(interactive->noTextureCompression);
+    const auto limited = parse({"--smoke", "--frames", "5", "--no-texture-compression"});
+    REQUIRE(limited.has_value());
+    CHECK(limited->noTextureCompression);
+    CommandLineOptions options;
+    options.noTextureCompression = true;
+    CHECK(rv::app::pendingOptionError(options).has_value());
+    const auto flagValue = parse({"--no-texture-compression=yes"});
+    REQUIRE_FALSE(flagValue.has_value());
+    CHECK(flagValue.error().code == ErrorCode::InvalidArgument);
+    const std::string help = rv::app::commandLineHelp();
     CHECK(helpListsOption(help, "--no-texture-compression"));
+    CHECK(help.find("Not implemented yet (I3 step 6)") == std::string::npos);
 }

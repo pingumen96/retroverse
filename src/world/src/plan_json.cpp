@@ -69,6 +69,18 @@ Json dressingJson(const DressedLevel& dressed) {
                 {"prop", prefabJson(dressed.prop)}};
 }
 
+Json lightJson(const PlanLight& light) {
+    return Json{{"id", light.id.toString()},
+                {"role", toString(light.role)},
+                {"xMm", light.xMm},
+                {"yMm", light.yMm},
+                {"zMm", light.zMm},
+                {"targetXMm", light.targetXMm},
+                {"targetYMm", light.targetYMm},
+                {"targetZMm", light.targetZMm},
+                {"spanMm", light.spanMm}};
+}
+
 UnplacedGame readUnplaced(const ObjectReader& reader) {
     UnplacedGame unplaced;
     unplaced.game = reader.parsed<catalog::GameId>("game", catalog::GameId::parse, "a GameId");
@@ -135,6 +147,10 @@ Json documentJson(const WorldPlan& plan) {
     for (const DressedLevel& dressed : plan.dressing) {
         dressing.push_back(dressingJson(dressed));
     }
+    Json lights = Json::array();
+    for (const PlanLight& light : plan.lights) {
+        lights.push_back(lightJson(light));
+    }
     Json unplaced = Json::array();
     for (const UnplacedGame& game : plan.unplaced) {
         unplaced.push_back(detail::unplacedJson(game));
@@ -152,6 +168,7 @@ Json documentJson(const WorldPlan& plan) {
                 {"fixtures", std::move(fixtures)},
                 {"placements", std::move(placements)},
                 {"dressing", std::move(dressing)},
+                {"lights", std::move(lights)},
                 {"unplaced", std::move(unplaced)}};
 }
 
@@ -233,6 +250,29 @@ DressedLevel readDressed(const ObjectReader& reader) {
     return dressed;
 }
 
+PlanLight readLight(const ObjectReader& reader) {
+    PlanLight light;
+    light.id = reader.parsed<FixtureId>("id", FixtureId::parse, "a fixture id (<room>/fx:<socket>[.<part>])");
+    light.role =
+        reader.enumeration<LightRole>("role", parseLightRole, "one of key, pendant, lamp, picture, wall-washer");
+    light.xMm = reader.integer("xMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    light.yMm = reader.integer("yMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    light.zMm = reader.integer("zMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    light.targetXMm = reader.integer("targetXMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    light.targetYMm = reader.integer("targetYMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    light.targetZMm = reader.integer("targetZMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    light.spanMm = reader.integer("spanMm", 0, kMaxSizeMm);
+    if (reader.document().failed() || lightKind(light.role) != LightKind::Point) {
+        return light;
+    }
+    if (light.targetXMm != light.xMm || light.targetYMm != light.yMm || light.targetZMm != light.zMm) {
+        reader.document().fail(reader.pointer("targetXMm"), "a point light's target is its own position");
+    } else if (light.spanMm != 0) {
+        reader.document().fail(reader.pointer("spanMm"), "a point light has no span");
+    }
+    return light;
+}
+
 template <class T, class Read>
 std::vector<T> readList(const ObjectReader& document, std::string_view key,
                         std::initializer_list<std::string_view> keys, Read&& read) {
@@ -249,8 +289,8 @@ std::vector<T> readList(const ObjectReader& document, std::string_view key,
 WorldPlan readDocument(DocumentReader& document, const Json& value) {
     const ObjectReader reader(document, value, "",
                               {"catalogSortKeyVersion", "dressing", "fixtures", "generatorVersion", "inputDigest",
-                               "library", "placements", "preset", "randomAlgorithm", "rooms", "schemaVersion", "seed",
-                               "titleKeyRule", "unplaced"});
+                               "library", "lights", "placements", "preset", "randomAlgorithm", "rooms", "schemaVersion",
+                               "seed", "titleKeyRule", "unplaced"});
     WorldPlan plan;
     plan.schemaVersion = reader.integer("schemaVersion", kPlanSchemaVersion, kPlanSchemaVersion);
     plan.generatorVersion =
@@ -286,6 +326,12 @@ WorldPlan readDocument(DocumentReader& document, const Json& value) {
         document, plan.dressing, "/dressing",
         [](const DressedLevel& dressed) { return std::tie(dressed.level, dressed.firstSlot); },
         "dressing is sorted by level, then first slot");
+    plan.lights = readList<PlanLight>(
+        reader, "lights", {"id", "role", "spanMm", "targetXMm", "targetYMm", "targetZMm", "xMm", "yMm", "zMm"},
+        readLight);
+    detail::requireStrictOrder(
+        document, plan.lights, "/lights", [](const PlanLight& light) { return std::tie(light.id); },
+        "lights are sorted by id");
     plan.unplaced = detail::readUnplacedList(reader, "unplaced");
     return plan;
 }

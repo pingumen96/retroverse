@@ -209,6 +209,71 @@ struct DressedLevel {
     auto operator<=>(const DressedLevel&) const = default;
 };
 
+/// What a light of a room is for (ADR-0010 §4; I3 step 3). The plan places the lights; their colour, intensity, range
+/// and cones come from the lighting profile when the room is drawn (I3 steps 10a and 16), so that switching profiles
+/// moves nothing. Each plan light is exactly one point or spot light of the room's scene (lightKind()), so the
+/// renderer's limit counts plan lights: at most the template's lightLimit (kMaxSceneLights, 16).
+enum class LightRole : std::uint8_t {
+    Key,        ///< the ceiling spot on the hero wall: the room's only shadowed light
+    Pendant,    ///< a point light over the circulation band
+    Lamp,       ///< a lamp's bulb: the hero corner's floor lamp, a lamp standing as decoration
+    Picture,    ///< a spot on the sign above the hero corner
+    WallWasher, ///< a spot over a run of collection modules on one wall
+};
+
+/// "key", "pendant", "lamp", "picture", "wall-washer".
+[[nodiscard]] constexpr std::string_view toString(LightRole role) noexcept {
+    switch (role) {
+    case LightRole::Key:
+        return "key";
+    case LightRole::Pendant:
+        return "pendant";
+    case LightRole::Lamp:
+        return "lamp";
+    case LightRole::Picture:
+        return "picture";
+    case LightRole::WallWasher:
+        return "wall-washer";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<LightRole> parseLightRole(std::string_view text) noexcept {
+    return detail::enumFromString(text, LightRole::WallWasher);
+}
+
+/// Whether a light shines from a point in every direction or as a cone towards its target.
+enum class LightKind : std::uint8_t {
+    Point,
+    Spot,
+};
+
+/// The pendant and the lamps are point lights, the key, the picture light and the wall-washers spots.
+[[nodiscard]] constexpr LightKind lightKind(LightRole role) noexcept {
+    return role == LightRole::Pendant || role == LightRole::Lamp ? LightKind::Point : LightKind::Spot;
+}
+
+/// A light of a room. Its id is a FixtureId naming what it serves: "<room>/fx:hero.key-light" (the key),
+/// "fx:hero.sign-light" (the picture light), "fx:hero.lamp-light" (the hero corner's lamp), "fx:<socket>.light" (a lamp
+/// standing as decoration in that socket), "fx:<socket>.washer" (a wall-washer, by the first socket of its run in fill
+/// order), "fx:room.pendant" (the pendant: "room" is no socket, the room itself).
+struct PlanLight {
+    FixtureId id;
+    LightRole role = LightRole::Key;
+    /// Where it shines from, in the room's frame.
+    std::int64_t xMm = 0;
+    std::int64_t yMm = 0;
+    std::int64_t zMm = 0;
+    /// Where a spot is aimed; a point light's own position.
+    std::int64_t targetXMm = 0;
+    std::int64_t targetYMm = 0;
+    std::int64_t targetZMm = 0;
+    /// The width a spot has to light at its target (the run of modules a wall-washer covers, the sign, the hero wall's
+    /// collection for the key); 0 for a point light.
+    std::int64_t spanMm = 0;
+
+    auto operator<=>(const PlanLight&) const = default;
+};
+
 /// A game of a room's system that the room does not show, with the reason.
 struct UnplacedGame {
     catalog::GameId game;
@@ -242,14 +307,15 @@ struct WorldPlan {
     std::vector<Fixture> fixtures;
     std::vector<Placement> placements;
     std::vector<DressedLevel> dressing;
+    std::vector<PlanLight> lights;
     std::vector<UnplacedGame> unplaced;
 
     bool operator==(const WorldPlan&) const = default;
 };
 
 /// The order of each list in the canonical text (ADR-0010 §8): rooms by id, fixtures by id (their levels by level),
-/// placements by slot then game, dressing by level then first slot, unplaced by game then room, reason and
-/// representative. Ids order by their parts (ids.hpp).
+/// placements by slot then game, dressing by level then first slot, lights by id, unplaced by game then room, reason
+/// and representative. Ids order by their parts (ids.hpp).
 void sortPlan(WorldPlan& plan);
 
 /// A lowercase hexadecimal SHA-256 digest: exactly 64 of 0-9 and a-f.
