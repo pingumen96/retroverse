@@ -27,24 +27,30 @@ namespace {
 constexpr std::string_view kProgram = "retroverse-cli";
 constexpr std::string_view kLogFileName = "retroverse-cli.log";
 
-/// The command table: the order of --help, the step of docs/roadmap.md that implements each command. The rows never
-/// change when a command is implemented: its cmd_<name>.cpp does.
-constexpr std::array<Command, 14> kCommands{{
-    {"discover", "Find the ES-DE installation: its home, install, ROM and media folders", 2, runDiscover, true},
-    {"library", "Show the library: its id, the ES-DE folders it reads and their overrides (library.json)", 2,
-     runLibrary, true},
-    {"db", "Maintain the catalog database: migrate, check, rebuild-index", 4, runDb},
-    {"import", "Import the ES-DE collection into the catalog (--dry-run: what would change)", 7, runImport},
-    {"systems", "List the systems of the catalog with their game counts", 9, runSystems},
-    {"games", "List games, filtered and sorted, a page at a time", 9, runGames},
-    {"search", "Search games by title, developer, publisher, genre, year or system", 9, runSearch},
-    {"show", "Show a game: metadata, files, media and launch readiness", 9, runShow},
-    {"media", "Show the media files of a game, or of a ROM path of a system", 8, runMedia},
-    {"profiles", "List the emulator profiles and the commands of each system with their readiness", 10, runProfiles},
-    {"launch", "Launch a game in its emulator (--dry-run: the command line it would run)", 10, runLaunch},
-    {"identities", "Identities: history, review rows and their resolution, quick hashes", 11, runIdentities},
-    {"assign", "Choose the emulator command or profile of a system or a game", 12, runAssign},
-    {"sessions", "List the play sessions", 12, runSessions},
+/// The command table: the order of --help, the step of docs/roadmap.md that implements each command (worldplan: its
+/// first subcommand's; each subcommand names its own). The rows never change when a command is implemented: its
+/// cmd_<name>.cpp does.
+constexpr std::array<Command, 16> kCommands{{
+    {"discover", "Find the ES-DE installation: its home, install, ROM and media folders", "I2 step 2", runDiscover,
+     true},
+    {"library", "Show the library: its id, the ES-DE folders it reads and their overrides (library.json)",
+     "I2 step 2", runLibrary, true},
+    {"db", "Maintain the catalog database: migrate, check, rebuild-index", "I2 step 4", runDb},
+    {"import", "Import the ES-DE collection into the catalog (--dry-run: what would change)", "I2 step 7", runImport},
+    {"systems", "List the systems of the catalog with their game counts", "I2 step 9", runSystems},
+    {"games", "List games, filtered and sorted, a page at a time", "I2 step 9", runGames},
+    {"search", "Search games by title, developer, publisher, genre, year or system", "I2 step 9", runSearch},
+    {"show", "Show a game: metadata, files, media and launch readiness", "I2 step 9", runShow},
+    {"media", "Show the media files of a game, or of a ROM path of a system", "I2 step 8", runMedia},
+    {"profiles", "List the emulator profiles and the commands of each system with their readiness", "I2 step 10",
+     runProfiles},
+    {"launch", "Launch a game in its emulator (--dry-run: the command line it would run)", "I2 step 10", runLaunch},
+    {"identities", "Identities: history, review rows and their resolution, quick hashes", "I2 step 11",
+     runIdentities},
+    {"assign", "Choose the emulator command or profile of a system or a game", "I2 step 12", runAssign},
+    {"sessions", "List the play sessions", "I2 step 12", runSessions},
+    {"worldplan", "The plan of a system's room: generate, update, show, check", "I3 step 3", runWorldPlan},
+    {"where-is", "Where a game stands in its room's plan, or why it is not placed", "I3 step 9", runWhereIs},
 }};
 
 /// Global options that take a value (the next argument, unless given as --name=value).
@@ -234,9 +240,9 @@ std::string helpText() {
         "Usage: {0} [--data-dir <dir> | --portable] [--asset-root <dir>] [--log-level <level>] <command> [options]\n"
         "       {0} --help | --version\n"
         "\n"
-        "Reads an ES-DE collection into the Retroverse catalog, searches it and launches its games, without a window.\n"
-        "Results go to stdout, or to the file a command's --output names, as UTF-8; logs go to stderr and to\n"
-        "<user data>/logs/{1}.\n"
+        "Reads an ES-DE collection into the Retroverse catalog, searches it, launches its games and plans its rooms,\n"
+        "without a window. Results go to stdout, or to the file a command's --output names, as UTF-8; logs go to\n"
+        "stderr and to <user data>/logs/{1}.\n"
         "\n"
         "Commands:\n",
         kProgram, kLogFileName);
@@ -276,8 +282,14 @@ void startFileLog(const CommandContext& context) {
 }
 
 ExitCode notImplemented(CommandContext& context) {
-    context.err.writeLine(fmt::format("{} {}: not implemented yet (I2 step {})", kProgram, context.command.name,
-                                      context.command.step));
+    context.err.writeLine(
+        fmt::format("{} {}: not implemented yet ({})", kProgram, context.command.name, context.command.step));
+    return ExitCode::UsageError;
+}
+
+ExitCode notImplemented(CommandContext& context, std::string_view subcommand, std::string_view step) {
+    context.err.writeLine(
+        fmt::format("{} {} {}: not implemented yet ({})", kProgram, context.command.name, subcommand, step));
     return ExitCode::UsageError;
 }
 

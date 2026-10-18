@@ -12,9 +12,17 @@ Regenerate (from a scratch virtual environment with `pip install glad2==2.0.8`):
 ```powershell
 python -m glad --quiet --reproducible `
   --api gl:core=4.5 `
-  --extensions GL_KHR_debug,GL_EXT_texture_filter_anisotropic,GL_ARB_texture_filter_anisotropic,GL_ARB_clip_control,GL_EXT_texture_compression_s3tc `
+  --extensions GL_KHR_debug,GL_EXT_texture_filter_anisotropic,GL_ARB_texture_filter_anisotropic,GL_ARB_clip_control,GL_EXT_texture_compression_s3tc,GL_EXT_texture_sRGB `
   --out-path third_party/glad c
 ```
+
+The extensions beyond the 4.5 core: `GL_KHR_debug` (debug output), the anisotropic filtering pair, `GL_ARB_clip_control`,
+and, for the collection's BC1 texture arrays (ADR-0011 §4), `GL_EXT_texture_compression_s3tc` (the DXT1, DXT3 and DXT5
+formats) with `GL_EXT_texture_sRGB` (added in I3 step 0a for `GL_COMPRESSED_SRGB_S3TC_DXT1_EXT` and its sRGB siblings:
+glad2 emits its enums under the core profile, so `rv_render` declares none itself). Both S3TC extensions are optional at
+run time: `gl::GLDevice` checks and logs them at start (`GLCapabilities`), and the renderer falls back to RGBA8 without
+them. Regenerating with the command above reproduces the vendored files exactly, once the generator's CRLF line endings
+are normalized to LF (`.gitattributes`).
 
 The generated loader has no built-in function loader: call `gladLoadGL(SDL_GL_GetProcAddress)` after the
 context is current. Generated files are licensed as described in the glad project (MIT/Apache-2.0 for the

@@ -80,7 +80,8 @@ using CommandFunction = ExitCode (*)(CommandContext& context);
 struct Command {
     std::string_view name;
     std::string_view summary; ///< one line, listed by --help
-    int step = 0;             ///< the I2 step that implements it (docs/roadmap.md)
+    /// The step of docs/roadmap.md that implements it, with its iteration: "I2 step 9", "I3 step 3".
+    std::string_view step;
     CommandFunction run = nullptr;
     /// The command checks the user data directory itself against the folders of the library it reads, which its
     /// options can name (discover, library), and starts the log file only once that passed. For the other commands
@@ -96,9 +97,12 @@ struct Command {
 /// The text --help prints: the syntax, the commands with their summaries, the global options and the exit codes.
 [[nodiscard]] std::string helpText();
 
-/// What a command does until its I2 step implements it: writes "retroverse-cli <name>: not implemented yet (I2 step
-/// <step>)" to the context's stderr and returns ExitCode::UsageError.
+/// What a command does until its step implements it: writes "retroverse-cli <name>: not implemented yet (<step>)" to
+/// the context's stderr and returns ExitCode::UsageError.
 [[nodiscard]] ExitCode notImplemented(CommandContext& context);
+/// The same for one subcommand of a command whose subcommands come in different steps (worldplan): "retroverse-cli
+/// <name> <subcommand>: not implemented yet (<step>)", ExitCode::UsageError.
+[[nodiscard]] ExitCode notImplemented(CommandContext& context, std::string_view subcommand, std::string_view step);
 
 /// Runs retroverse-cli on `arguments` (UTF-8, program name excluded) and returns its exit code:
 ///  - --version writes the version banner to `out`, --help the help text; both exit 0;

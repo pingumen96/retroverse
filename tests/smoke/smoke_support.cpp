@@ -195,6 +195,13 @@ void requireCleanRun(const AppRun& run) {
     } else {
         CHECK_FALSE(report.debugMessages.has_value());
     }
+    // The sections of I3 are in every report (readRunReport requires them) and empty until the steps that fill them:
+    // each step changes its own line here.
+    CHECK(report.world == app::WorldRecord{});         // I3 step 10b
+    CHECK(report.residency == app::ResidencyRecord{}); // I3 step 12
+    CHECK(report.video == app::VideoRecord{});         // I3 step 11
+    CHECK(report.phases.empty());                      // I3 step 0d
+    CHECK(report.gpuMemory == app::GpuMemoryRecord{}); // I3 step 0d
     if (config.devAssetRoot) {
         CHECK(report.assetRootSource == "source tree");
         CHECK(samePath(report.assetRoot, sourceDir() / "assets"));

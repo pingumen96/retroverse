@@ -35,6 +35,7 @@ target_link_libraries(rv_tests PRIVATE
     rv_esde                # the ES-DE adapter (I2)
     rv_catalog_db          # the SQLite store of the catalog (I2)
     rv_platform_win        # the Windows services without SDL: system probe, process runner (I2)
+    rv_world               # the world generator (I3)
     rv_test_support
     Catch2::Catch2WithMain)
 if(TARGET rv_preview_core)

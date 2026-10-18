@@ -1,0 +1,5 @@
+// The platform visual manifest of the snes system (ADR-0010 §2): a placeholder of I3 step 0a, which settles the file's
+// place. I3 step 1a writes it and its reader (rv/world/platform_manifest.hpp): the media family
+// (cartridge_home_16bit), the theme pack (Classic16BitWarm), the plastic colours, the console prefab and the sign's
+// text, all original and brand-free.
+{}

@@ -1,6 +1,7 @@
 # rv_render: OpenGL 4.5 core renderer (device, shaders, buffers, textures, mesh and material registries, glTF models,
 # the batched and instanced scene renderer with the key light's shadow map, the depth pre-pass and ambient occlusion,
-# HDR view targets, bloom and the post pass, debug lines, framebuffers).
+# HDR view targets, bloom and the post pass, debug lines, framebuffers; since I3, skeletons naming their steps: texture
+# arrays and the collection's arrays, static instance groups, the hover outline).
 # Receives the GL function loader as a function pointer and never includes SDL.
 
 # GPU-free policy pieces of the renderer, so rv_tests can unit-test them without a context. Their headers include no
@@ -12,7 +13,9 @@
 #                           block (shadow_settings.hpp); the ambient occlusion kernel, block and target size
 #                           (ssao_settings.hpp); the CPU mirror of the display transform (tonemap.hpp); the memory of
 #                           texture mip chains (texture_memory.hpp); the inspection views and the defines of their
-#                           programs (surface_view.hpp); the renderer's frame statistics (frame_stats.hpp, header only)
+#                           programs (surface_view.hpp); the renderer's frame statistics (frame_stats.hpp, header only);
+#                           since I3 (skeletons naming their steps) the GPU memory accounting (gpu_memory.hpp) and the
+#                           collection arrays' sizes (texture_array_layout.hpp)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -23,12 +26,14 @@ target_link_libraries(rv_render_debug_filter PUBLIC rv_core)
 rv_forbid_link(rv_render_debug_filter)
 
 add_library(rv_render_uniforms STATIC
+    src/gpu_memory.cpp
     src/light_packing.cpp
     src/material_uniforms.cpp
     src/post_settings.cpp
     src/shadow_settings.cpp
     src/ssao_settings.cpp
     src/surface_view.cpp
+    src/texture_array_layout.cpp
     src/texture_memory.cpp
     src/tonemap.cpp
 )
@@ -40,6 +45,7 @@ rv_forbid_link(rv_render_uniforms)
 
 add_library(rv_render STATIC
     src/buffer.cpp
+    src/collection_arrays.cpp
     src/debug_draw.cpp
     src/framebuffer.cpp
     src/gl_device.cpp
@@ -50,6 +56,7 @@ add_library(rv_render STATIC
     src/instance_buffer.cpp
     src/material_registry.cpp
     src/mesh_registry.cpp
+    src/outline_pass.cpp
     src/post_processor.cpp
     src/render_state_cache.cpp
     src/sampler.cpp
@@ -58,7 +65,9 @@ add_library(rv_render STATIC
     src/shader_program.cpp
     src/shadow_map.cpp
     src/ssao_pass.cpp
+    src/static_instance_group.cpp
     src/texture.cpp
+    src/texture_array.cpp
     src/texture_cache.cpp
     src/texture_defaults.cpp
     src/vertex_array.cpp

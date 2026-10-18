@@ -243,7 +243,14 @@ void logCapabilities(const GLCapabilities& caps, bool srgbEncodingReported) {
                  "max combined texture units {}",
                  caps.maxTextureSize, caps.maxAnisotropy, caps.uniformBufferOffsetAlignment, caps.maxUniformBlockSize,
                  caps.maxCombinedTextureImageUnits);
-    spdlog::info("GL extensions: KHR_debug {}, ARB_clip_control {}", yesNo(caps.khrDebug), yesNo(caps.arbClipControl));
+    spdlog::info("GL extensions: KHR_debug {}, ARB_clip_control {}, EXT_texture_compression_s3tc {}, "
+                 "EXT_texture_sRGB {}",
+                 yesNo(caps.khrDebug), yesNo(caps.arbClipControl), yesNo(caps.extTextureCompressionS3tc),
+                 yesNo(caps.extTextureSrgb));
+    if (!caps.s3tcSrgb()) {
+        spdlog::warn("GL: no BC1 sRGB textures (GL_EXT_texture_compression_s3tc and GL_EXT_texture_sRGB are both "
+                     "needed): collection textures fall back to RGBA8 at half the resolution");
+    }
     if (caps.srgbDefaultFramebuffer && srgbEncodingReported) {
         spdlog::info("Default framebuffer: sRGB (GL_FRAMEBUFFER_SRGB enabled)");
     } else if (caps.srgbDefaultFramebuffer) {
@@ -297,6 +304,8 @@ Expected<std::unique_ptr<GLDevice>> GLDevice::create(GlLoaderFn loader, const GL
     caps.maxCombinedTextureImageUnits = glInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
     caps.khrDebug = GLAD_GL_KHR_debug != 0;
     caps.arbClipControl = GLAD_GL_ARB_clip_control != 0;
+    caps.extTextureCompressionS3tc = GLAD_GL_EXT_texture_compression_s3tc != 0;
+    caps.extTextureSrgb = GLAD_GL_EXT_texture_sRGB != 0;
     const bool anisotropy = GLAD_GL_ARB_texture_filter_anisotropic != 0 ||
                             GLAD_GL_EXT_texture_filter_anisotropic != 0 ||
                             (caps.versionMajor == 4 && caps.versionMinor >= 6) || caps.versionMajor > 4;

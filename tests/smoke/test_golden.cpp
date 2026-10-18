@@ -49,6 +49,12 @@ TEST_CASE("golden/G01: the test room matches its golden image within the toleran
         SKIP(reason);
     }
 
+    // The reference GPU has both extensions of the collection's BC1 sRGB arrays (ADR-0011 §4), checked and logged at
+    // start.
+    const auto log = rv::core::readTextFile(dir / "data" / "logs" / "retroverse.log");
+    REQUIRE(log.has_value());
+    CHECK(log->find("EXT_texture_compression_s3tc yes, EXT_texture_sRGB yes") != std::string::npos);
+
     const rv::screenshot_diff::Tolerance tolerance;
     const std::filesystem::path heatmap = dir / "m0_testroom_heatmap.png";
     const auto comparison = rv::screenshot_diff::compareFiles(golden, shot, tolerance, heatmap);

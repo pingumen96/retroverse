@@ -217,6 +217,40 @@ struct LaunchRecord {
     bool operator==(const LaunchRecord&) const = default;
 };
 
+// The sections of I3, declared by I3 step 0a and empty until the step that fills each: every report holds them (an
+// empty object, or an empty array of phases), so that a reader can tell a run that had nothing to report from one that
+// did not know the section.
+
+/// The generated room of the run (I3 step 10b: the plan's digest, placements per section, unplaced games per reason).
+struct WorldRecord {
+    bool operator==(const WorldRecord&) const = default;
+};
+
+/// The collection's textures (I3 step 12: layers resident and pending, the cache's hits and misses, when the plan was
+/// shown and when the room's last layer became resident).
+struct ResidencyRecord {
+    bool operator==(const ResidencyRecord&) const = default;
+};
+
+/// The hero CRT's video (I3 step 11: the decoder's state, the clip, the first frame's time, the fallbacks shown).
+struct VideoRecord {
+    bool operator==(const VideoRecord&) const = default;
+};
+
+/// One named phase of the run, opened and closed by the code that runs it: a refresh, a cover load, an animation, the
+/// benchmark path (I3 step 0d adds its frame-time percentiles).
+struct PhaseRecord {
+    std::string name;
+
+    bool operator==(const PhaseRecord&) const = default;
+};
+
+/// The GPU memory the renderer allocated, by its own accounting per kind (I3 step 0d: procedural surfaces, collection
+/// arrays, hero textures, video, targets).
+struct GpuMemoryRecord {
+    bool operator==(const GpuMemoryRecord&) const = default;
+};
+
 /// What a run of an application built on AppHost did (retroverse.exe, retroverse-asset-preview), written as JSON by
 /// --run-report <file.json> when the run ends, whether it succeeded or failed (formatRunReport). Only the host writes
 /// it: a command line that does not parse, --help, --version and --write-fixture end before the host starts and write
@@ -226,7 +260,8 @@ struct LaunchRecord {
 /// The host fills the executable, the directories, the outcome, the OpenGL context, the debug message counts, the
 /// --gl-selftest outcome and the frames (AppHost); the application logic adds what it rendered through
 /// AppContext::report() (SceneGraphics: the last view's statistics, the instance buffer, the screenshot; RetroverseApp:
-/// the walker's final pose, the self-check, the quick catalog and its launches).
+/// the walker's final pose, the self-check, the quick catalog and its launches; from I3 the world, the textures'
+/// residency, the video, the phases and the GPU memory, always written and empty until their steps fill them).
 struct RunReport {
     /// AppIdentity::name, e.g. "Retroverse".
     std::string application;
@@ -284,6 +319,12 @@ struct RunReport {
     std::optional<CatalogRecord> catalog;
     /// The launches from the quick catalog, in order.
     std::vector<LaunchRecord> launches;
+    /// The sections of I3 (above), always written, empty until their steps.
+    WorldRecord world;
+    ResidencyRecord residency;
+    VideoRecord video;
+    std::vector<PhaseRecord> phases;
+    GpuMemoryRecord gpuMemory;
 };
 
 /// The report as JSON text (two-space indented, keys in the order of RunReport, absent optionals left out, paths

@@ -1,4 +1,4 @@
-# Architectural layering rules (specification §15.1, ADR-0008).
+# Architectural layering rules (specification §15.1, ADR-0008, ADR-0010 §1).
 #
 # GPU-free libraries (core, geometry, input, assets, scene, media, launcher, the catalog modules, the GPU-free parts of
 # the GPU-side modules and of the tools) must stay testable without a window, an OpenGL context or a UI toolkit. Mark
@@ -9,8 +9,10 @@
 # At the end of the configure step every marked target is checked, transitively through first-party targets, and
 # configuration fails if it reaches one of the GPU libraries below or one of the libraries its EXTRA list names
 # (third-party targets such as ${RV_SQLITE_LIBRARIES} or first-party ones such as rv_esde): the catalog domain may not
-# reach SQLite, pugixml or the Windows-only targets, each adapter may not reach the other's library (ADR-0008 §2).
-# Aliases match the targets they name on both sides: EXTRA rv::esde forbids a link to rv_esde, and the reverse.
+# reach SQLite, pugixml or the Windows-only targets, each adapter may not reach the other's library (ADR-0008 §2), the
+# world generator may not reach RmlUi, SQLite, pugixml, the video decoder or the ES-DE, database and Windows modules
+# (ADR-0010 §1, src/world/forbidden_links.cmake). tests/cmake/test_layer_rules.cmake proves that a forbidden link
+# fails the configure. Aliases match the targets they name on both sides: EXTRA rv::esde forbids a link to rv_esde, and the reverse.
 
 set(RV_GPU_LIBRARIES
     SDL3::SDL3
@@ -31,6 +33,11 @@ set(RV_PUGIXML_LIBRARIES
     pugixml::static
     pugixml
     CACHE INTERNAL "Target names of pugixml")
+set(RV_RMLUI_LIBRARIES
+    RmlUi::RmlUi
+    RmlUi::Core
+    RmlUi::Debugger
+    CACHE INTERNAL "Target names of RmlUi (vcpkg port rmlui)")
 
 function(rv_forbid_link target)
     cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "EXTRA")

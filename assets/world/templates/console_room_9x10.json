@@ -1,0 +1,6 @@
+// The room template console_room_9x10 (ADR-0010 §4): a placeholder of I3 step 0a, which settles the file's place.
+// I3 step 1a writes it and its reader (rv/world/room_template.hpp): the 9.0 x 10.0 m frame (north = -Z, the doorway in
+// the south wall), the zones, the two hero-wall modules, the 14 side-wall sockets and the door-reserved ones, the display
+// and decoration sockets, the hero band, the socket order and the growth south in 2.0 m steps up to 16.0 m. Prefabs
+// are named by manifest id and kind, never by a model path.
+{}
