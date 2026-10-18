@@ -115,7 +115,9 @@ public:
     /// The end of a run, from IAppLogic::onShutdown: adds to the run report (AppContext::report) the statistics of the
     /// last view rendered, the instance buffer's capacity and the --screenshot written. A frame-limited run also logs
     /// the frame statistics of the run, and fails when a program of the views never built (frames missed surfaces, the
-    /// bloom or the tonemap) or when the --screenshot of its last frame was not written (the run ended before it).
+    /// bloom or the tonemap), when the --screenshot of its last frame was not written (the run ended before it), or
+    /// when the GPU memory accounting (gl::gpuMemoryLedger) does not record exactly the textures of the cache and the
+    /// defaults as procedural surfaces and scene textures (an interactive run logs that as an error).
     void finishRun(AppContext& context);
 
 private:

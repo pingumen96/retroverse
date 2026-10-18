@@ -13,6 +13,7 @@
 #include <rv/assets/image_data.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/gl_object.hpp>
+#include <rv/render/gpu_memory.hpp>
 
 namespace rv::gl {
 
@@ -33,6 +34,8 @@ enum class ColorFormat : std::uint8_t {
 
 /// "srgb8_alpha8", "rgba16f", "r8" or "rg16f".
 [[nodiscard]] std::string_view toString(ColorFormat format) noexcept;
+/// The storage format of `format`, for the memory accounting.
+[[nodiscard]] GpuFormat gpuFormat(ColorFormat format) noexcept;
 
 /// Most color attachments a Framebuffer has (FramebufferDesc::colorAttachments).
 inline constexpr std::size_t kMaxColorAttachments = 2;
@@ -52,13 +55,18 @@ struct FramebufferDesc {
     bool depthTexture = false;
 };
 
+/// Bytes of the attachments of `desc` (every color attachment and the depth/stencil buffer, one level each): what a
+/// Framebuffer records as GpuMemoryKind::Targets. 0 for an empty size.
+[[nodiscard]] std::size_t framebufferBytes(const FramebufferDesc& desc) noexcept;
+
 /// Move-only offscreen render target (DSA): one or more color textures with immutable storage (one mip level, linear
 /// filtering, clamped to edge) at GL_COLOR_ATTACHMENT0, 1, ..., all drawn into at once, and an optional
 /// depth24/stencil8 buffer (a renderbuffer, or a texture with FramebufferDesc::depthTexture). The first color
 /// attachment is the read buffer: the copies, blitToDefault() and readPixels() take it. Rendering into it starts with
 /// GLDevice::beginPass(); later passes sample its color textures (bindColorTexture()); blitToDefault() presents it in
 /// the window and readPixels() returns its pixels for screenshots. Its pixel rows are bottom-first like every OpenGL
-/// framebuffer. A default-constructed or moved-from Framebuffer is empty. Main thread only.
+/// framebuffer. Its attachments are recorded in gpuMemoryLedger() as GpuMemoryKind::Targets (framebufferBytes()). A
+/// default-constructed or moved-from Framebuffer is empty. Main thread only.
 class Framebuffer {
 public:
     Framebuffer() noexcept = default;
@@ -140,6 +148,7 @@ private:
     RenderbufferObject m_depthStencil;
     TextureObject m_depthStencilTexture;
     FramebufferObject m_framebuffer;
+    GpuMemoryAllocation m_memory;
 };
 
 } // namespace rv::gl

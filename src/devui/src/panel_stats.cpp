@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 
@@ -7,6 +8,7 @@
 #include <rv/devui/panels.hpp>
 #include <rv/devui/widgets.hpp>
 #include <rv/render/frame_stats.hpp>
+#include <rv/render/gpu_memory.hpp>
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/texture_cache.hpp>
@@ -27,6 +29,7 @@ public:
         drawFrameTimes();
         drawLastView();
         drawResources();
+        drawGpuMemory();
     }
 
 private:
@@ -90,6 +93,42 @@ private:
         if (const std::size_t failed = m_model.textures.failedCount(); failed > 0) {
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%zu texture source(s) unavailable (checker)", failed);
         }
+    }
+
+    /// The renderer's accounting per kind (gl::GpuMemoryLedger), what the run report's gpuMemory records.
+    void drawGpuMemory() const {
+        ImGui::SeparatorText("GPU memory");
+        ImGui::SetItemTooltip("The renderer's own accounting of what it allocates, from each allocation's format, size, "
+                              "levels and layers (not the driver's figure; the overlay's and the product UI's own "
+                              "textures are not counted)");
+        if (!ImGui::BeginTable("gpu_memory", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+            return;
+        }
+        // The numbers keep their width; the kind's name takes what is left. The allocations are in its tooltip.
+        ImGui::TableSetupColumn("Kind", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Now");
+        ImGui::TableSetupColumn("Peak");
+        ImGui::TableHeadersRow();
+        const auto row = [](const char* label, const char* name, std::uint64_t count, std::uint64_t bytes,
+                            std::uint64_t peak) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(label);
+            ImGui::SetItemTooltip("%s: %llu allocation(s) now", name, static_cast<unsigned long long>(count));
+            ImGui::TableNextColumn();
+            widgets::bytes(static_cast<std::size_t>(bytes));
+            ImGui::TableNextColumn();
+            widgets::bytes(static_cast<std::size_t>(peak));
+        };
+        std::uint64_t allocations = 0;
+        for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+            const gl::GpuMemoryUsage& usage = m_model.gpuMemory.usage(kind);
+            allocations += usage.allocations;
+            row(gl::displayName(kind).data(), gl::toString(kind).data(), usage.allocations, usage.bytes,
+                usage.peakBytes);
+        }
+        row("Total", "every kind", allocations, m_model.gpuMemory.totalBytes(), m_model.gpuMemory.peakTotalBytes());
+        ImGui::EndTable();
     }
 
     StatsPanelModel m_model;

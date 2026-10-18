@@ -305,6 +305,93 @@ TimeSummary readTimes(FieldReader& fields) {
                        fields.number("maxMs")};
 }
 
+/// "count" and, when it is not 0, the percentiles of `times` into `json` (a frame-time record or a phase).
+void putTimes(Json& json, const std::optional<TimeSummary>& times) {
+    if (!times || times->count == 0) {
+        json["count"] = 0;
+        return;
+    }
+    const Json percentiles = timesToJson(*times);
+    for (const auto& [key, value] : percentiles.items()) {
+        json[key] = value;
+    }
+}
+
+/// What putTimes() wrote: nothing for a count of 0, else the percentiles, which must be there.
+std::optional<TimeSummary> readOptionalTimes(FieldReader& fields) {
+    if (fields.count("count") == 0) {
+        return std::nullopt;
+    }
+    return readTimes(fields);
+}
+
+Json frameTimesToJson(const FrameTimesRecord& record) {
+    Json json;
+    json["warmUpFrames"] = record.warmUpFrames;
+    putTimes(json, record.times);
+    return json;
+}
+
+Json phaseToJson(const PhaseRecord& phase) {
+    Json json;
+    json["name"] = phase.name;
+    json["opened"] = phase.opened;
+    json["open"] = phase.open;
+    json["frames"] = phase.frames;
+    putTimes(json, phase.times);
+    return json;
+}
+
+PhaseRecord readPhase(FieldReader& fields) {
+    PhaseRecord phase;
+    phase.name = fields.string("name");
+    phase.opened = fields.count("opened");
+    phase.open = fields.boolean("open");
+    phase.frames = fields.count("frames");
+    phase.times = readOptionalTimes(fields);
+    return phase;
+}
+
+Json cpuSectionToJson(const CpuSectionRecord& section) {
+    Json json;
+    json["name"] = section.name;
+    const Json percentiles = timesToJson(section.times);
+    for (const auto& [key, value] : percentiles.items()) {
+        json[key] = value;
+    }
+    return json;
+}
+
+Json gpuMemoryToJson(const GpuMemoryRecord& memory) {
+    Json json;
+    json["totalBytes"] = memory.totalBytes;
+    json["peakTotalBytes"] = memory.peakTotalBytes;
+    Json kinds = Json::object();
+    for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+        const gl::GpuMemoryUsage& usage = memory.usage(kind);
+        kinds[std::string(gl::toString(kind))] =
+            Json{{"bytes", usage.bytes}, {"peakBytes", usage.peakBytes}, {"allocations", usage.allocations}};
+    }
+    json["kinds"] = std::move(kinds);
+    return json;
+}
+
+/// Every kind this build knows must be there; kinds of a newer writer are ignored.
+GpuMemoryRecord readGpuMemory(FieldReader& fields) {
+    GpuMemoryRecord memory;
+    memory.totalBytes = fields.count("totalBytes");
+    memory.peakTotalBytes = fields.count("peakTotalBytes");
+    if (auto kinds = fields.object("kinds")) {
+        for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+            if (auto usage = kinds->object(gl::toString(kind))) {
+                memory.kinds[static_cast<std::size_t>(kind)] =
+                    gl::GpuMemoryUsage{usage->count("bytes"), usage->count("peakBytes"), usage->count("allocations")};
+            }
+        }
+    }
+    return memory;
+}
+
 Json spawnToJson(const SpawnPoint& pose) {
     Json camera;
     // Floats widened to double print with enough digits to read back exactly.
@@ -556,16 +643,23 @@ LaunchRecord readLaunch(FieldReader& fields) {
 } // namespace
 
 std::optional<TimeSummary> summarizeTimes(std::vector<double>& milliseconds) {
-    if (milliseconds.empty()) {
-        return std::nullopt;
+    return core::summarizeDurations(milliseconds);
+}
+
+GpuMemoryRecord gpuMemoryRecord(const gl::GpuMemoryLedger& ledger) {
+    GpuMemoryRecord memory;
+    memory.totalBytes = ledger.totalBytes();
+    memory.peakTotalBytes = ledger.peakTotalBytes();
+    memory.kinds = ledger.kinds();
+    return memory;
+}
+
+std::vector<CpuSectionRecord> cpuSectionRecords(const core::CpuTimers& timers) {
+    std::vector<CpuSectionRecord> sections;
+    for (core::CpuSectionSummary& summary : timers.summaries()) {
+        sections.push_back(CpuSectionRecord{std::move(summary.name), summary.times});
     }
-    std::sort(milliseconds.begin(), milliseconds.end());
-    const auto rank = [&](double fraction) {
-        const auto index = static_cast<std::size_t>(std::ceil(fraction * static_cast<double>(milliseconds.size())));
-        return milliseconds[std::min(milliseconds.size() - 1, index > 0 ? index - 1 : 0)];
-    };
-    return TimeSummary{static_cast<std::uint64_t>(milliseconds.size()), rank(0.50), rank(0.95), rank(0.99),
-                       milliseconds.back()};
+    return sections;
 }
 
 std::string formatRunReport(const RunReport& report) {
@@ -635,16 +729,22 @@ std::string formatRunReport(const RunReport& report) {
         }
         json["launches"] = std::move(launches);
     }
-    // The sections of I3: always written, empty until their steps fill them.
+    // The sections of I3: always written; world, residency and video empty until their steps fill them.
     json["world"] = Json::object();
     json["residency"] = Json::object();
     json["video"] = Json::object();
+    json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
-        phases.push_back(Json{{"name", phase.name}});
+        phases.push_back(phaseToJson(phase));
     }
     json["phases"] = std::move(phases);
-    json["gpuMemory"] = Json::object();
+    Json sections = Json::array();
+    for (const CpuSectionRecord& section : report.cpuSections) {
+        sections.push_back(cpuSectionToJson(section));
+    }
+    json["cpuSections"] = std::move(sections);
+    json["gpuMemory"] = gpuMemoryToJson(report.gpuMemory);
     return json.dump(2) + "\n";
 }
 
@@ -723,14 +823,23 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     for (FieldReader& launch : fields.optionalObjectArray("launches")) {
         report.launches.push_back(readLaunch(launch));
     }
-    // The sections of I3 must be there, empty until their steps fill them.
+    // The sections of I3 must be there; world, residency and video are empty until their steps fill them.
     static_cast<void>(fields.object("world"));
     static_cast<void>(fields.object("residency"));
     static_cast<void>(fields.object("video"));
-    for (FieldReader& phase : fields.objectArray("phases")) {
-        report.phases.push_back(PhaseRecord{phase.string("name")});
+    if (auto frameTimes = fields.object("frameTimes")) {
+        report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");
+        report.frameTimes.times = readOptionalTimes(*frameTimes);
     }
-    static_cast<void>(fields.object("gpuMemory"));
+    for (FieldReader& phase : fields.objectArray("phases")) {
+        report.phases.push_back(readPhase(phase));
+    }
+    for (FieldReader& section : fields.objectArray("cpuSections")) {
+        report.cpuSections.push_back(CpuSectionRecord{section.string("name"), readTimes(section)});
+    }
+    if (auto memory = fields.object("gpuMemory")) {
+        report.gpuMemory = readGpuMemory(*memory);
+    }
     if (error) {
         return propagate(std::move(*error));
     }

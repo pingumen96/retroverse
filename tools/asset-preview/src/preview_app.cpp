@@ -43,6 +43,7 @@
 #include <rv/preview/preview_subject.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/render/gpu_memory.hpp>
 #include <rv/render/gpu_model.hpp>
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
@@ -374,7 +375,8 @@ struct PreviewApp::State {
         devUi->addPanel(makeManifestPanel(model), devui::DockSlot::Right);
         devUi->addPanel(makeScreenPanel(model), devui::DockSlot::RightBottom);
         devUi->addPanel(devui::makeStatsPanel({frameTimes, graphics->renderStats(), graphics->meshes(),
-                                               graphics->materials(), graphics->textures()}),
+                                               graphics->materials(), graphics->textures(),
+                                               gl::gpuMemoryLedger()}),
                         devui::DockSlot::RightBottom);
         devUi->addPanel(makeWarningsPanel(model), devui::DockSlot::Bottom);
         devUi->addPanel(devui::makeLogPanel(), devui::DockSlot::Bottom);

@@ -2,6 +2,7 @@
 
 // GPU-free (part of rv_app_cli): no SDL or OpenGL header is included.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -13,8 +14,10 @@
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
 #include <rv/app/self_check.hpp>
+#include <rv/core/cpu_timers.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/frame_stats.hpp>
+#include <rv/render/gpu_memory.hpp>
 
 namespace rv::app {
 
@@ -81,17 +84,9 @@ struct CatalogView {
     bool operator==(const CatalogView&) const = default;
 };
 
-/// Durations in milliseconds: how many, their percentiles (nearest rank) and the longest (CatalogRecord::pages,
-/// ::frames).
-struct TimeSummary {
-    std::uint64_t count = 0;
-    double p50Ms = 0.0;
-    double p95Ms = 0.0;
-    double p99Ms = 0.0;
-    double maxMs = 0.0;
-
-    bool operator==(const TimeSummary&) const = default;
-};
+/// Durations in milliseconds: how many, their percentiles (nearest rank: core::summarizeDurations) and the longest
+/// (CatalogRecord::pages, ::frames; FrameTimesRecord, PhaseRecord, CpuSectionRecord).
+using TimeSummary = core::DurationPercentiles;
 
 /// The summary of `milliseconds` (sorted in place); nothing for none.
 [[nodiscard]] std::optional<TimeSummary> summarizeTimes(std::vector<double>& milliseconds);
@@ -237,19 +232,64 @@ struct VideoRecord {
     bool operator==(const VideoRecord&) const = default;
 };
 
-/// One named phase of the run, opened and closed by the code that runs it: a refresh, a cover load, an animation, the
-/// benchmark path (I3 step 0d adds its frame-time percentiles).
+/// Frame times (I3 step 0d, FrameTiming): the wall-clock time of each frame, from the end of the previous frame (its
+/// buffer swap) to the end of this one, the frames of the run's first warmUpFrames left out (the first frame has no
+/// previous one anyway). The measured time, also with --fixed-dt, which replaces only the simulation's step.
+struct FrameTimesRecord {
+    /// Frames left out at the start of the run (kFrameTimeWarmUpFrames).
+    std::uint64_t warmUpFrames = 0;
+    /// The frames measured after them: their count and percentiles; absent when there was none.
+    std::optional<TimeSummary> times;
+
+    bool operator==(const FrameTimesRecord&) const = default;
+};
+
+/// One named phase of the run, opened and closed by the code that runs it (AppContext::frameTiming): a refresh, a
+/// cover load, an animation, the benchmark path, or a step of an --input-script with "phase". The frames of every
+/// opening of the name together.
 struct PhaseRecord {
     std::string name;
+    /// Times it was opened, and whether it was still open when the run ended.
+    std::uint64_t opened = 0;
+    bool open = false;
+    /// Frames that belonged to it (open when the frame ended, or opened and closed during it), those of the run's
+    /// warm-up included.
+    std::uint64_t frames = 0;
+    /// The times of those frames past the run's warm-up (FrameTimesRecord); absent when there was none.
+    std::optional<TimeSummary> times;
 
     bool operator==(const PhaseRecord&) const = default;
 };
 
-/// The GPU memory the renderer allocated, by its own accounting per kind (I3 step 0d: procedural surfaces, collection
-/// arrays, hero textures, video, targets).
+/// One CPU section of the main thread (I3 step 0d, core::mainThreadCpuTimers(): core::cpu_section names them): its time
+/// per frame, over the frames during which it ran (times.count; every frame of the run, the warm-up included).
+struct CpuSectionRecord {
+    std::string name;
+    TimeSummary times;
+
+    bool operator==(const CpuSectionRecord&) const = default;
+};
+
+/// The GPU memory the renderer allocated, by its own accounting per kind (I3 step 0d, gl::GpuMemoryLedger: procedural
+/// surfaces, collection arrays, hero textures, video, targets, other textures, buffers): what was allocated when the
+/// main loop ended (when the report was written, for a run that ended before), and the peaks of the run.
 struct GpuMemoryRecord {
+    std::uint64_t totalBytes = 0;
+    std::uint64_t peakTotalBytes = 0;
+    /// Every kind, in gl::kGpuMemoryKinds order.
+    std::array<gl::GpuMemoryUsage, gl::kGpuMemoryKindCount> kinds{};
+
+    [[nodiscard]] const gl::GpuMemoryUsage& usage(gl::GpuMemoryKind kind) const noexcept {
+        return kinds[static_cast<std::size_t>(kind)];
+    }
     bool operator==(const GpuMemoryRecord&) const = default;
 };
+
+/// What `ledger` holds now.
+[[nodiscard]] GpuMemoryRecord gpuMemoryRecord(const gl::GpuMemoryLedger& ledger);
+
+/// The sections that ran, from `timers` (core::CpuTimers::summaries(): by name).
+[[nodiscard]] std::vector<CpuSectionRecord> cpuSectionRecords(const core::CpuTimers& timers);
 
 /// What a run of an application built on AppHost did (retroverse.exe, retroverse-asset-preview), written as JSON by
 /// --run-report <file.json> when the run ends, whether it succeeded or failed (formatRunReport). Only the host writes
@@ -261,7 +301,8 @@ struct GpuMemoryRecord {
 /// --gl-selftest outcome and the frames (AppHost); the application logic adds what it rendered through
 /// AppContext::report() (SceneGraphics: the last view's statistics, the instance buffer, the screenshot; RetroverseApp:
 /// the walker's final pose, the self-check, the quick catalog and its launches; from I3 the world, the textures'
-/// residency, the video, the phases and the GPU memory, always written and empty until their steps fill them).
+/// residency and the video, always written and empty until their steps fill them). The host also fills the frame
+/// times, the phases, the CPU sections and the GPU memory (I3 step 0d).
 struct RunReport {
     /// AppIdentity::name, e.g. "Retroverse".
     std::string application;
@@ -319,11 +360,15 @@ struct RunReport {
     std::optional<CatalogRecord> catalog;
     /// The launches from the quick catalog, in order.
     std::vector<LaunchRecord> launches;
-    /// The sections of I3 (above), always written, empty until their steps.
+    /// The sections of I3 (above), always written: world, residency and video empty until their steps.
     WorldRecord world;
     ResidencyRecord residency;
     VideoRecord video;
+    /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
+    /// AppHost).
+    FrameTimesRecord frameTimes;
     std::vector<PhaseRecord> phases;
+    std::vector<CpuSectionRecord> cpuSections;
     GpuMemoryRecord gpuMemory;
 };
 

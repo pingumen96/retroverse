@@ -28,7 +28,9 @@ constexpr std::string_view kFromFrameField = "fromFrame";
 constexpr std::string_view kToFrameField = "toFrame";
 constexpr std::string_view kActionsField = "actions";
 constexpr std::string_view kTextField = "text";
-constexpr std::array<std::string_view, 4> kStepFields{kFromFrameField, kToFrameField, kActionsField, kTextField};
+constexpr std::string_view kPhaseField = "phase";
+constexpr std::array<std::string_view, 5> kStepFields{kFromFrameField, kToFrameField, kActionsField, kTextField,
+                                                      kPhaseField};
 
 Expected<std::uint64_t> parseFrame(const Json& step, std::string_view field, const JsonLocation& stepAt) {
     const JsonLocation at = stepAt.child(field);
@@ -129,13 +131,27 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
         }
     }
 
+    const JsonLocation phaseAt = at.child(kPhaseField);
+    if (const auto phase = step.find(kPhaseField); phase != step.end()) {
+        if (!phase->is_string()) {
+            return fail(ErrorCode::ParseError, "expected the name of a phase (a string)", phaseAt);
+        }
+        parsed.phase = phase->get<std::string>();
+        if (!isValidPhaseName(parsed.phase)) {
+            return fail(ErrorCode::ValidationFailed,
+                        "a phase name is an ASCII letter followed by letters, digits, '_' or '-', at most " +
+                            std::to_string(InputScript::kMaxPhaseNameBytes) + " in all",
+                        phaseAt);
+        }
+    }
+
     const JsonLocation actionsAt = at.child(kActionsField);
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
-        if (!parsed.text.empty()) {
+        if (!parsed.text.empty() || !parsed.phase.empty()) {
             return parsed;
         }
-        return fail(ErrorCode::ParseError, "missing field \"actions\" (or \"text\")", actionsAt);
+        return fail(ErrorCode::ParseError, "missing field \"actions\" (or \"text\", \"phase\")", actionsAt);
     }
     if (!actions->is_object()) {
         return fail(ErrorCode::ParseError, "expected an object mapping action names to values", actionsAt);
@@ -235,6 +251,30 @@ std::string InputScript::textAt(std::uint64_t frame) const {
         }
     }
     return text;
+}
+
+std::vector<std::string> InputScript::phasesAt(std::uint64_t frame) const {
+    std::vector<std::string> phases;
+    for (const InputScriptStep& step : m_steps) {
+        if (!step.phase.empty() && step.covers(frame)) {
+            phases.push_back(step.phase);
+        }
+    }
+    std::sort(phases.begin(), phases.end());
+    phases.erase(std::unique(phases.begin(), phases.end()), phases.end());
+    return phases;
+}
+
+bool isValidPhaseName(std::string_view name) noexcept {
+    if (name.empty() || name.size() > InputScript::kMaxPhaseNameBytes) {
+        return false;
+    }
+    const auto letter = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); };
+    if (!letter(name.front())) {
+        return false;
+    }
+    return std::all_of(name.begin(), name.end(),
+                       [&](char c) { return letter(c) || (c >= '0' && c <= '9') || c == '_' || c == '-'; });
 }
 
 InputScriptPlayer::InputScriptPlayer(InputScript script) : m_script(std::move(script)) {}

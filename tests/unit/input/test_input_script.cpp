@@ -333,3 +333,43 @@ TEST_CASE("input/input_script: steps type text into the product UI once, on thei
     REQUIRE_FALSE(invalid.has_value());
     CHECK(invalid.error().code == ErrorCode::ValidationFailed);
 }
+
+TEST_CASE("input/input_script: steps hold a named phase open on their frames", "[input][input_script]") {
+    // I3 step 0d: {"phase": ...} with or without actions; the run report gives the phase's frame times apart.
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 40, "toFrame": 59, "phase": "benchmark", "actions": {"move_forward": 1}},
+        {"fromFrame": 60, "toFrame": 79, "phase": "benchmark"},
+        {"fromFrame": 50, "toFrame": 50, "phase": "cover-Load_2"}
+    ])");
+    REQUIRE(script.steps().size() == 3);
+    CHECK(script.steps()[0].phase == "benchmark");
+    CHECK(script.steps()[1].values.empty());
+    CHECK(script.phasesAt(39).empty());
+    CHECK(script.phasesAt(40) == std::vector<std::string>{"benchmark"});
+    // Sorted and without repeats where steps meet or overlap.
+    CHECK(script.phasesAt(50) == std::vector<std::string>{"benchmark", "cover-Load_2"});
+    CHECK(script.phasesAt(60) == std::vector<std::string>{"benchmark"});
+    CHECK(script.phasesAt(79) == std::vector<std::string>{"benchmark"});
+    CHECK(script.phasesAt(80).empty());
+    CHECK(script.lastFrame() == 79);
+    CHECK(script.valueAt(45, Action::MoveForward) == 1.0f);
+    CHECK_FALSE(script.valueAt(65, Action::MoveForward).has_value());
+
+    // Names: an ASCII letter, then letters, digits, '_' or '-', at most kMaxPhaseNameBytes.
+    CHECK(rv::input::isValidPhaseName("a"));
+    CHECK(rv::input::isValidPhaseName("coverLoad"));
+    CHECK_FALSE(rv::input::isValidPhaseName(""));
+    CHECK_FALSE(rv::input::isValidPhaseName("1st"));
+    CHECK_FALSE(rv::input::isValidPhaseName("_x"));
+    CHECK_FALSE(rv::input::isValidPhaseName("two words"));
+    CHECK_FALSE(rv::input::isValidPhaseName("caf\xC3\xA9"));
+    CHECK(rv::input::isValidPhaseName(std::string(InputScript::kMaxPhaseNameBytes, 'p')));
+    CHECK_FALSE(rv::input::isValidPhaseName(std::string(InputScript::kMaxPhaseNameBytes + 1, 'p')));
+    const rv::Error badName = parseError(R"([{"fromFrame": 0, "toFrame": 0, "phase": "a b"}])");
+    CHECK(badName.code == ErrorCode::ValidationFailed);
+    CHECK(badName.context == "script.json:/0/phase");
+    const rv::Error notString = parseError(R"([{"fromFrame": 0, "toFrame": 0, "phase": 7}])");
+    CHECK(notString.code == ErrorCode::ParseError);
+    CHECK(notString.context == "script.json:/0/phase");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "phase": ""}])").code == ErrorCode::ValidationFailed);
+}

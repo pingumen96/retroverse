@@ -49,7 +49,8 @@ core::ArgParser makeParser() {
         .option("input-script", "json",
                 "Replace the input of chosen frames with scripted action values, a JSON array of steps such as "
                 "[{\"fromFrame\": 0, \"toFrame\": 119, \"actions\": {\"move_forward\": 1}}] (frames count from 0, "
-                "both included).")
+                "both included); a step's \"phase\": \"<name>\" holds a named phase open on its frames, whose frame "
+                "times the run report gives apart.")
         .option("model", "file",
                 "glTF model (.gltf or .glb) to inspect instead of a scene: drawn at the origin with a three-point "
                 "light rig and a camera framing it. Not together with --scene.")
@@ -386,7 +387,8 @@ void addHostOptions(core::ArgParser& parser) {
         .option("run-report", "json",
                 "Write a JSON report of the run to this file when it ends, also when it fails (not when the command "
                 "line is invalid): exit code and failure, OpenGL renderer and driver, GL debug message counts, the "
-                "GL self-test, frames, the last view's statistics, the screenshot, the final camera, the self-check "
+                "GL self-test, frames, the last view's statistics, the screenshot, the final camera, the self-check, "
+                "the frame times of the run and its phases, the main thread's CPU sections, the GPU memory per kind "
                 "(for automated checks such as tests/smoke).");
 }
 

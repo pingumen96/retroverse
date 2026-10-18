@@ -117,8 +117,10 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
     result.m_texture = std::move(texture);
     result.m_size = size;
     result.m_levels = levels;
-    result.m_bytes = mipChainBytes(size, levels);
+    result.m_bytes = textureBytes(desc.colorSpace == ColorSpace::Srgb ? GpuFormat::Srgb8Alpha8 : GpuFormat::Rgba8, size,
+                                  levels);
     result.m_desc = desc;
+    result.m_memory = GpuMemoryAllocation(desc.memoryKind, result.m_bytes);
     result.m_debugName = std::move(name);
     return result;
 }

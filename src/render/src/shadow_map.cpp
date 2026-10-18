@@ -39,6 +39,8 @@ Expected<ShadowMap> ShadowMap::create(int resolution, std::string_view debugName
                          fmt::format("could not allocate a {0}x{0} shadow map", resolution), map.m_debugName);
     }
     detail::setObjectLabel(GL_TEXTURE, depth, map.m_debugName + ".depth");
+    map.m_memory =
+        GpuMemoryAllocation(GpuMemoryKind::Targets, textureBytes(GpuFormat::Depth32F, glm::ivec2(resolution), 1));
 
     GLuint sampler = 0;
     glCreateSamplers(1, &sampler);

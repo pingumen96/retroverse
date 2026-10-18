@@ -11,6 +11,7 @@
 #include <rv/assets/image_data.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/gl_object.hpp>
+#include <rv/render/gpu_memory.hpp>
 #include <rv/render/texture_memory.hpp>
 
 namespace rv::gl {
@@ -65,6 +66,8 @@ struct TextureDesc {
     /// space); false keeps the base level only.
     bool mipmaps = true;
     SamplingDesc sampling;
+    /// What the texture's memory is recorded as (gpuMemoryLedger()).
+    GpuMemoryKind memoryKind = GpuMemoryKind::SceneTextures;
 };
 
 /// Move-only RAII 2D texture with immutable storage (glTextureStorage2D, DSA), uploaded once from an 8-bit image:
@@ -86,7 +89,8 @@ public:
     [[nodiscard]] glm::ivec2 size() const noexcept { return m_size; }
     [[nodiscard]] int mipLevels() const noexcept { return m_levels; }
     [[nodiscard]] const TextureDesc& desc() const noexcept { return m_desc; }
-    /// Bytes of all allocated levels (4 per texel).
+    /// Bytes of all allocated levels (4 per texel), recorded in gpuMemoryLedger() under TextureDesc::memoryKind while
+    /// the texture lives.
     [[nodiscard]] std::size_t estimatedBytes() const noexcept { return m_bytes; }
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
@@ -97,6 +101,7 @@ private:
     std::size_t m_bytes = 0;
     TextureDesc m_desc;
     std::string m_debugName;
+    GpuMemoryAllocation m_memory;
 };
 
 } // namespace rv::gl

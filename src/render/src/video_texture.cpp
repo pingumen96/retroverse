@@ -35,7 +35,7 @@ std::string_view toString(VideoUploadSync sync) noexcept {
 }
 
 VideoTexture::VideoTexture(VideoTexture&& other) noexcept
-    : m_texture(std::move(other.m_texture)), m_size(std::exchange(other.m_size, glm::ivec2(0))), m_sync(other.m_sync),
+    : m_texture(std::move(other.m_texture)), m_textureMemory(std::move(other.m_textureMemory)), m_size(std::exchange(other.m_size, glm::ivec2(0))), m_sync(other.m_sync),
       m_ring(std::move(other.m_ring)), m_mapped(std::exchange(other.m_mapped, nullptr)),
       m_slotBytes(std::exchange(other.m_slotBytes, std::size_t{0})), m_fences(std::move(other.m_fences)),
       m_queries(std::move(other.m_queries)), m_timingPending(std::exchange(other.m_timingPending, {})),
@@ -47,6 +47,7 @@ VideoTexture::VideoTexture(VideoTexture&& other) noexcept
 VideoTexture& VideoTexture::operator=(VideoTexture&& other) noexcept {
     if (this != &other) {
         m_texture = std::move(other.m_texture);
+        m_textureMemory = std::move(other.m_textureMemory);
         m_size = std::exchange(other.m_size, glm::ivec2(0));
         m_sync = other.m_sync;
         m_ring = std::move(other.m_ring);
@@ -128,7 +129,8 @@ Status VideoTexture::allocate(glm::ivec2 size) {
     const std::size_t slotBytes =
         alignUp(static_cast<std::size_t>(size.x) * static_cast<std::size_t>(size.y) * kBytesPerPixel, kSlotAlignment);
     if (!m_ring.valid() || slotBytes > m_slotBytes) {
-        auto ring = Buffer::create(kRingSize * slotBytes, kRingFlags, m_debugName + " pixel buffers");
+        auto ring = Buffer::create(kRingSize * slotBytes, kRingFlags, m_debugName + " pixel buffers",
+                                   GpuMemoryKind::Video);
         if (!ring) {
             return propagate(ring.error());
         }
@@ -151,6 +153,7 @@ Status VideoTexture::allocate(glm::ivec2 size) {
         m_nextSlot = 0;
     }
     m_texture = std::move(texture);
+    m_textureMemory = GpuMemoryAllocation(GpuMemoryKind::Video, textureBytes(GpuFormat::Srgb8Alpha8, size, 1));
     m_size = size;
     return ok();
 }
