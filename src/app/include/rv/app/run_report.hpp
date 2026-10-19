@@ -265,6 +265,62 @@ struct LaunchRecord {
 
 /// The generated room of the run (I3 step 10b): what showed, from which plan, how it came to be and when. Empty ({})
 /// in runs that ask for no room (--scene, --model, --mock-catalog, the asset preview).
+/// One change of the world's interaction (I3 step 13a), on the frame it happened.
+struct InteractionEventRecord {
+    std::uint64_t frame = 0;
+    /// "hover" (the hovered item changed; pickId "" for none), "pull-out" (an item starts to leave its slot: its
+    /// static records hidden, a dynamic copy drawn), "pulled" (fully out), "in" (back in its slot, drawn by its static
+    /// records again), "state" (the interaction's state changed: `state` is the new one), "focus" (the focused item
+    /// changed in Focus: a D-pad step or a look), "step" (a D-pad step moved the focus).
+    std::string event;
+    std::string pickId;
+    std::string state;
+
+    bool operator==(const InteractionEventRecord&) const = default;
+};
+
+/// The world's interaction (I3 step 13a; ADR-0012 §1-§3): the hover with its outline and label, the pull-out on the
+/// dynamic path, Focus and its D-pad steps. Empty ({}) in runs without a room's collection.
+struct InteractionRecord {
+    bool bound = false;
+    /// The world's reduceMotion (world.json) as the run had it.
+    bool reduceMotion = false;
+    /// At the end: app::toString(WorldState), the items hovered, focused and highlighted (pick ids in hexadecimal, ""
+    /// none), the focused item's GameId, the items off their static pose.
+    std::string state;
+    std::string hoveredPickId;
+    std::string focusedPickId;
+    std::string highlightedPickId;
+    std::string focusedGame;
+    std::vector<std::string> pulled;
+    /// Counts over the run: hover changes, focus changes in Focus and the D-pad steps among them, pull-outs started.
+    std::uint64_t hoverChanges = 0;
+    std::uint64_t focusChanges = 0;
+    std::uint64_t steps = 0;
+    std::uint64_t pullOuts = 0;
+    /// Frames with an item off its static pose, the most such items in one frame, and the frames in which an item
+    /// off its pose still had a static record drawn (not flagged hidden) or a hidden record had no dynamic copy: 0.
+    std::uint64_t pulledFrames = 0;
+    std::uint64_t maxPulled = 0;
+    std::uint64_t staticDrawnWhilePulledFrames = 0;
+    /// Frames during which an animation of the interaction ran (the "animation" phase), the walker's eases among them.
+    std::uint64_t animationFrames = 0;
+    std::uint64_t walkerEaseFrames = 0;
+    /// Frames whose pick ray came from the cursor (the mouse free: the developer overlay open), and those that showed
+    /// the hover's title label; the label's title at the end ("" none).
+    std::uint64_t cursorFrames = 0;
+    std::uint64_t labelFrames = 0;
+    std::string label;
+    /// The changes, in order (at most app::kMaxInteractionEvents; `eventsDropped` past them).
+    std::vector<InteractionEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const InteractionRecord&) const = default;
+};
+
+/// The most interaction events a run report keeps.
+inline constexpr std::size_t kMaxInteractionEvents = 512;
+
 struct WorldRecord {
     /// The run asked for the generated room (retroverse.exe without --scene, --model or --mock-catalog).
     bool bound = false;
@@ -330,6 +386,8 @@ struct WorldRecord {
     std::uint64_t hoverChanges = 0;
     std::string hoveredPickId;
     std::string hoveredGame;
+    /// The interaction with the room's items (I3 step 13a).
+    InteractionRecord interaction;
 
     bool operator==(const WorldRecord&) const = default;
 };

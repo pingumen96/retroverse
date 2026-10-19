@@ -12,6 +12,8 @@
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
 
+#include <rv/app/world_label_ui.hpp>
+
 #include "world_notice_panel.hpp"
 
 union SDL_Event;
@@ -101,6 +103,9 @@ public:
     /// What the world's notice says from now on (I3 step 10b; an empty notice: none): shown over the scene, in
     /// screenshots too, while neither the quick catalog nor the game-session panel shows. It takes no input.
     void setWorldNotice(WorldNoticeContent content);
+    /// The hover's title label from now on (I3 step 13a; nothing: none): shown over the scene, in screenshots too,
+    /// while neither the quick catalog nor the game-session panel shows. It takes no input.
+    void setWorldLabel(std::optional<WorldLabelContent> content);
     /// The catalog the UI shows (the generated room asks it for the room's snapshot, I3 step 10b).
     [[nodiscard]] AppCatalog& catalog() noexcept;
 

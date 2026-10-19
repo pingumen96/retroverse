@@ -32,6 +32,7 @@
 #include <rv/ui/ui_view.hpp>
 
 #include "game_session_panel.hpp"
+#include "world_label_panel.hpp"
 #include "world_notice_panel.hpp"
 
 namespace rv::app {
@@ -98,6 +99,9 @@ struct ProductUi::Impl {
     /// the panel is.
     std::unique_ptr<WorldNoticePanel> notice;
     WorldNoticeContent wantedNotice;
+    /// The hover's title label (I3 step 13a) and what the application wants it to show, likewise.
+    std::unique_ptr<WorldLabelPanel> label;
+    std::optional<WorldLabelContent> wantedLabel;
 
     ui::NavInput nav;
     ui::UiCommandList commands;
@@ -136,7 +140,7 @@ struct ProductUi::Impl {
     static constexpr std::size_t kMaxFrameSamples = 100000;
 
     [[nodiscard]] bool visible() const noexcept {
-        return catalogOpen || panel->visible() || (notice && notice->visible());
+        return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible());
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -148,6 +152,18 @@ struct ProductUi::Impl {
             notice->hide();
         } else {
             notice->show(wantedNotice);
+        }
+    }
+
+    /// The hover's label likewise, in the view's pixels.
+    void syncLabel() {
+        if (!label) {
+            return;
+        }
+        if (!wantedLabel || catalogOpen || panel->visible()) {
+            label->hide();
+        } else {
+            label->show(*wantedLabel, context.framebufferSize());
         }
     }
 
@@ -453,6 +469,11 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
         // The world goes on without its notice (style §21: a missing asset never stops the app).
         spdlog::error("World notice unavailable: {}", notice.error().toString());
     }
+    if (auto label = WorldLabelPanel::create(*s.view)) {
+        s.label = std::move(*label);
+    } else {
+        spdlog::error("Hover label unavailable: {}", label.error().toString());
+    }
     if (s.refreshOnOpen && !s.catalog->supportsRefresh()) {
         // The mock catalog: nothing to import (recorded as such).
         s.refreshAsked = true;
@@ -549,6 +570,10 @@ void ProductUi::setWorldNotice(WorldNoticeContent content) {
     m_impl->wantedNotice = std::move(content);
 }
 
+void ProductUi::setWorldLabel(std::optional<WorldLabelContent> content) {
+    m_impl->wantedLabel = std::move(content);
+}
+
 AppCatalog& ProductUi::catalog() noexcept {
     return *m_impl->catalog;
 }
@@ -616,6 +641,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     }
     s.syncPanel();
     s.syncNotice();
+    s.syncLabel();
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);

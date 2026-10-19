@@ -8,7 +8,8 @@
 // do not). The fronts and spines sample the collection's texture arrays (step 6) through one layered material per array
 // and class; every item holds a layer of each class from the start, its record naming layer 0 (the pending picture)
 // until its picture is uploaded (layerResident(): one 16-byte write of the record that shows it). setHovered() flags an
-// item's records highlighted (the hover outline, step 8).
+// item's records highlighted (the hover outline, step 8); setHidden() flags them hidden while the item is drawn off its
+// slot on the dynamic path (appendRenderItems(): its parts as render items at another pose, I3 step 13a).
 
 #include <array>
 #include <cstddef>
@@ -23,6 +24,8 @@
 #include <rv/core/expected.hpp>
 #include <rv/render/collection_arrays.hpp>
 #include <rv/render/static_instance_group.hpp>
+#include <rv/scene/instance_clusters.hpp>
+#include <rv/scene/render_item.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/pick_index.hpp>
 #include <rv/world/scene_builder.hpp>
@@ -65,6 +68,17 @@ public:
     /// previous item's cleared.
     [[nodiscard]] Status setHovered(world::PickId pickId);
     [[nodiscard]] world::PickId hovered() const noexcept { return m_hovered; }
+    /// Hides (or shows again) the static records of the item of `pickId` (instance_flags::kHidden: the vertex stage
+    /// draws nothing for them, in every pass); nothing for an unknown item.
+    [[nodiscard]] Status setHidden(world::PickId pickId, bool hidden);
+    /// The items whose static records are drawn only in part or not at all (some record flagged hidden), ascending.
+    [[nodiscard]] std::vector<world::PickId> hiddenItems() const;
+    /// Whether some static record of the item of `pickId` is drawn (not flagged hidden); false for an unknown item.
+    [[nodiscard]] bool staticDrawn(world::PickId pickId) const;
+    /// The parts of the item of `pickId` as render items at `model` (the item prefab's space to the room, as the
+    /// layout's transform), with their records' attributes as written (its layers, its highlight) but the hidden flag:
+    /// the item drawn off its slot on the dynamic path. Appends nothing for an unknown item.
+    void appendRenderItems(world::PickId pickId, const glm::mat4& model, std::vector<scene::RenderItem>& out) const;
     /// The game of the item of `pickId`, if any.
     [[nodiscard]] std::optional<catalog::GameId> gameOf(world::PickId pickId) const;
 
@@ -83,15 +97,16 @@ private:
         std::optional<std::size_t> spine;
     };
 
-    [[nodiscard]] Status writeFlags(std::size_t item, bool highlighted);
+    [[nodiscard]] Status writeFlag(std::size_t item, std::uint32_t flag, bool on);
     [[nodiscard]] Status writeRecord(std::size_t source, const scene::InstanceAttributes& attributes);
 
     gl::CollectionArrays m_arrays;
     gl::StaticInstanceGroup m_group;
     std::array<const gl::StaticInstanceGroup*, 1> m_groupList{};
     std::vector<Item> m_items;
-    /// Every record's attributes as written (the group's source order).
+    /// Every record's attributes as written, and the record as it was listed (the group's source order).
     std::vector<scene::InstanceAttributes> m_attributes;
+    std::vector<scene::StaticInstance> m_sources;
     std::map<std::string, std::size_t, std::less<>> m_byKey;
     std::map<world::PickId, std::size_t> m_byPick;
     world::PickId m_hovered = world::kNoPick;

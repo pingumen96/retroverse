@@ -1,0 +1,18 @@
+// I3 step 13a: the hover and the pull-out in the generated room. The walker starts 0.9 m in front of a cartridge
+// (--spawn: its Focus pose) looking 25 degrees above it (at the dressed level above, which holds no item), past the end
+// of the warm-up looks down onto it and, later, up again. With the default 0.0022 rad per mouse pixel: frames 40-49
+// pitch down by 10 x 19.833 x 0.0022 rad = 0.43633 rad (25 degrees), so the reticle rests on the middle of the item's
+// face from frame 50; frames 120-129 pitch back up by as much.
+// Expected under --fixed-dt 0.016667 (60 fps; tests/smoke/test_world_focus.cpp checks the run report's
+// world.interaction events): no hover before frame 40; the hover by frame 55 (the hysteresis's three frames on the
+// item; the outline and the title label with it), the pull-out 8 to 10 frames later (the 150 ms dwell: a face-out item
+// tips towards the viewer, a spine-out one slides out and turns its cover to the viewer), fully out 14 to 16 frames
+// after that (250 ms); the hover gone by frame 135, the item back in its slot 11 to 13 frames later (200 ms), drawn by
+// its static records again, no other item hovered. The "animation" phase holds the frames of both moves.
+//   retroverse --spawn <the item's Focus pose, pitch + 25> --input-script tests/input_scripts/world_hover_pull.json
+//     --exit-after-frames --frames 100 --fixed-dt 0.016667 --hidden --screenshot build/screenshots/pulled.png
+//     --data-dir <a data directory with the snes-room fixture imported>
+[
+  {"fromFrame": 40, "toFrame": 49, "actions": {"look_delta_y": -19.833}},
+  {"fromFrame": 120, "toFrame": 129, "actions": {"look_delta_y": 19.833}}
+]

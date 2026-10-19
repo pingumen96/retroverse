@@ -415,6 +415,85 @@ GpuMemoryRecord readGpuMemory(FieldReader& fields) {
     return memory;
 }
 
+/// An unbound record (no collection) is an empty object.
+Json interactionToJson(const InteractionRecord& interaction) {
+    Json json = Json::object();
+    if (!interaction.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["reduceMotion"] = interaction.reduceMotion;
+    json["state"] = interaction.state;
+    json["hoveredPickId"] = interaction.hoveredPickId;
+    json["focusedPickId"] = interaction.focusedPickId;
+    json["highlightedPickId"] = interaction.highlightedPickId;
+    json["focusedGame"] = interaction.focusedGame;
+    json["pulled"] = interaction.pulled;
+    json["hoverChanges"] = interaction.hoverChanges;
+    json["focusChanges"] = interaction.focusChanges;
+    json["steps"] = interaction.steps;
+    json["pullOuts"] = interaction.pullOuts;
+    json["pulledFrames"] = interaction.pulledFrames;
+    json["maxPulled"] = interaction.maxPulled;
+    json["staticDrawnWhilePulledFrames"] = interaction.staticDrawnWhilePulledFrames;
+    json["animationFrames"] = interaction.animationFrames;
+    json["walkerEaseFrames"] = interaction.walkerEaseFrames;
+    json["cursorFrames"] = interaction.cursorFrames;
+    json["labelFrames"] = interaction.labelFrames;
+    json["label"] = interaction.label;
+    Json events = Json::array();
+    for (const InteractionEventRecord& event : interaction.events) {
+        Json entry{{"frame", event.frame}, {"event", event.event}};
+        if (!event.pickId.empty()) {
+            entry["pickId"] = event.pickId;
+        }
+        if (!event.state.empty()) {
+            entry["state"] = event.state;
+        }
+        events.push_back(std::move(entry));
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = interaction.eventsDropped;
+    return json;
+}
+
+InteractionRecord readInteraction(FieldReader& fields) {
+    InteractionRecord interaction;
+    if (!fields.has("bound")) {
+        return interaction;
+    }
+    interaction.bound = fields.boolean("bound");
+    interaction.reduceMotion = fields.boolean("reduceMotion");
+    interaction.state = fields.string("state");
+    interaction.hoveredPickId = fields.string("hoveredPickId");
+    interaction.focusedPickId = fields.string("focusedPickId");
+    interaction.highlightedPickId = fields.string("highlightedPickId");
+    interaction.focusedGame = fields.string("focusedGame");
+    interaction.pulled = fields.stringArray("pulled");
+    interaction.hoverChanges = fields.count("hoverChanges");
+    interaction.focusChanges = fields.count("focusChanges");
+    interaction.steps = fields.count("steps");
+    interaction.pullOuts = fields.count("pullOuts");
+    interaction.pulledFrames = fields.count("pulledFrames");
+    interaction.maxPulled = fields.count("maxPulled");
+    interaction.staticDrawnWhilePulledFrames = fields.count("staticDrawnWhilePulledFrames");
+    interaction.animationFrames = fields.count("animationFrames");
+    interaction.walkerEaseFrames = fields.count("walkerEaseFrames");
+    interaction.cursorFrames = fields.count("cursorFrames");
+    interaction.labelFrames = fields.count("labelFrames");
+    interaction.label = fields.string("label");
+    for (FieldReader& event : fields.objectArray("events")) {
+        InteractionEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.pickId = event.optionalString("pickId").value_or(std::string());
+        entry.state = event.optionalString("state").value_or(std::string());
+        interaction.events.push_back(std::move(entry));
+    }
+    interaction.eventsDropped = fields.count("eventsDropped");
+    return interaction;
+}
+
 /// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
 Json worldToJson(const WorldRecord& world) {
     Json json = Json::object();
@@ -469,6 +548,7 @@ Json worldToJson(const WorldRecord& world) {
     json["hoverChanges"] = world.hoverChanges;
     json["hoveredPickId"] = world.hoveredPickId;
     json["hoveredGame"] = world.hoveredGame;
+    json["interaction"] = interactionToJson(world.interaction);
     return json;
 }
 
@@ -527,6 +607,9 @@ WorldRecord readWorld(FieldReader& fields) {
     world.hoverChanges = fields.count("hoverChanges");
     world.hoveredPickId = fields.string("hoveredPickId");
     world.hoveredGame = fields.string("hoveredGame");
+    if (auto interaction = fields.optionalObject("interaction")) {
+        world.interaction = readInteraction(*interaction);
+    }
     return world;
 }
 

@@ -173,6 +173,7 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     }
     auto group = gl::StaticInstanceGroup::create(records, static_cast<std::uint32_t>(layout.clusters.size()), meshes,
                                                  materials, "Collection");
+    instance->m_sources = records;
     if (!group) {
         return propagate(group.error());
     }
@@ -221,17 +222,17 @@ Status CollectionInstance::layerResident(const gl::LayerUpload& upload) {
     return writeRecord(*source, attributes);
 }
 
-Status CollectionInstance::writeFlags(std::size_t item, bool highlighted) {
+Status CollectionInstance::writeFlag(std::size_t item, std::uint32_t flag, bool on) {
     const Item& entry = m_items[item];
     for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
         if (!source) {
             continue;
         }
         scene::InstanceAttributes attributes = m_attributes[*source];
-        if (highlighted) {
-            attributes.flags |= scene::instance_flags::kHighlighted;
+        if (on) {
+            attributes.flags |= flag;
         } else {
-            attributes.flags &= ~scene::instance_flags::kHighlighted;
+            attributes.flags &= ~flag;
         }
         if (Status written = writeRecord(*source, attributes); !written) {
             return written;
@@ -245,18 +246,72 @@ Status CollectionInstance::setHovered(world::PickId pickId) {
         return ok();
     }
     if (const auto previous = m_byPick.find(m_hovered); previous != m_byPick.end()) {
-        if (Status cleared = writeFlags(previous->second, false); !cleared) {
+        if (Status cleared = writeFlag(previous->second, scene::instance_flags::kHighlighted, false); !cleared) {
             return cleared;
         }
     }
     m_hovered = world::kNoPick;
     if (const auto next = m_byPick.find(pickId); next != m_byPick.end()) {
-        if (Status set = writeFlags(next->second, true); !set) {
+        if (Status set = writeFlag(next->second, scene::instance_flags::kHighlighted, true); !set) {
             return set;
         }
         m_hovered = pickId;
     }
     return ok();
+}
+
+Status CollectionInstance::setHidden(world::PickId pickId, bool hidden) {
+    const auto found = m_byPick.find(pickId);
+    if (found == m_byPick.end()) {
+        return ok();
+    }
+    return writeFlag(found->second, scene::instance_flags::kHidden, hidden);
+}
+
+std::vector<world::PickId> CollectionInstance::hiddenItems() const {
+    std::vector<world::PickId> hidden;
+    for (const auto& [pickId, index] : m_byPick) {
+        const Item& entry = m_items[index];
+        for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
+            if (source && (m_attributes[*source].flags & scene::instance_flags::kHidden) != 0) {
+                hidden.push_back(pickId);
+                break;
+            }
+        }
+    }
+    return hidden;
+}
+
+bool CollectionInstance::staticDrawn(world::PickId pickId) const {
+    const auto found = m_byPick.find(pickId);
+    if (found == m_byPick.end()) {
+        return false;
+    }
+    const Item& entry = m_items[found->second];
+    for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
+        if (source && (m_attributes[*source].flags & scene::instance_flags::kHidden) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CollectionInstance::appendRenderItems(world::PickId pickId, const glm::mat4& model,
+                                           std::vector<scene::RenderItem>& out) const {
+    const auto found = m_byPick.find(pickId);
+    if (found == m_byPick.end()) {
+        return;
+    }
+    const Item& entry = m_items[found->second];
+    for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
+        if (!source) {
+            continue;
+        }
+        const scene::StaticInstance& part = m_sources[*source];
+        scene::InstanceAttributes attributes = m_attributes[*source];
+        attributes.flags &= ~scene::instance_flags::kHidden;
+        out.push_back(scene::RenderItem{part.mesh, part.material, part.shader, model, part.castsShadow, attributes});
+    }
 }
 
 } // namespace rv::app

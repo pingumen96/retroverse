@@ -13,6 +13,7 @@
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/world/room_template.hpp>
+#include <rv/world/world_config.hpp>
 
 #include "collection_instance.hpp"
 #include "cover_loader.hpp"
@@ -79,6 +80,15 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
     if (m_decided && m_decided->testRoom) {
         m_state = "test-room"; // the application shows it already
     }
+    // The world's reduceMotion (world.json, ADR-0012 §3): every transition of the interaction instant.
+    InteractionSettings interaction;
+    if (auto config = world::loadWorldConfig(m_options.paths.assetRoot, m_options.paths.configDir)) {
+        interaction.reduceMotion = config->config.reduceMotion;
+    }
+    if (interaction.reduceMotion) {
+        spdlog::info("World: reduceMotion (world.json): every transition of the room is instant");
+    }
+    m_interaction = std::make_unique<WorldHover>(context, interaction);
     m_record.bound = true;
     m_record.state = m_state;
     m_record.room = world::RoomId::forSystem(m_options.system)
@@ -96,9 +106,11 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
 }
 
 WorldSession::~WorldSession() {
-    // The loader's and the flow's jobs are cancelled before the collection they would feed goes.
+    // The loader's and the flow's jobs are cancelled before the collection they would feed goes; the interaction lets
+    // go of it first.
     m_loader.reset();
     m_flow.reset();
+    m_interaction.reset();
     m_collection.reset();
 }
 
@@ -255,13 +267,11 @@ void WorldSession::commit(WorldResult result) {
             spdlog::error("World: the room's collection cannot be drawn: {}", collection.error().toString());
         }
     }
-    if (auto index = world::PickIndex::build(build.layout->pickTargets(), build.layout->occluders)) {
-        m_pickIndex = std::move(*index);
-        m_record.pickTargets = m_pickIndex.targetCount();
-    } else {
-        spdlog::error("World: the room's pick index cannot be built: {}", index.error().toString());
+    // The hover, the pull-out and Focus over its items (I3 step 13a): the layout's pick targets and navigation, once
+    // they are drawn.
+    if (m_collection) {
+        m_record.pickTargets = m_interaction->setRoom(std::move(*build.layout), m_collection.get());
     }
-    m_hover.reset();
     auto cacheRoot = assets::textureCacheRoot(m_options.paths.cacheDir, build.library.str());
     if (!cacheRoot) {
         // The items keep the pending picture (nothing is written outside the user data directory's cache).
@@ -291,26 +301,16 @@ void WorldSession::commit(WorldResult result) {
                  m_context.frameIndex(), objects, lights, m_record.items, m_record.clusters, *m_record.commitMs);
 }
 
-void WorldSession::hover(const std::optional<core::Ray>& ray) {
-    if (!m_collection) {
-        return;
-    }
-    world::PickId hovered = world::kNoPick;
-    if (ray) {
-        hovered = m_hover.update(m_pickIndex.sample(*ray, m_hover.hovered()));
-    } else {
-        m_hover.reset();
-    }
-    if (hovered == m_collection->hovered()) {
-        return;
-    }
-    if (Status set = m_collection->setHovered(hovered); !set) {
-        spdlog::error("World: the hover outline: {}", set.error().toString());
-        return;
-    }
-    ++m_record.hoverChanges;
-    spdlog::debug("Frame {}: hover {}", m_context.frameIndex(),
-                  hovered == world::kNoPick ? std::string("none") : fmt::format("{:08X}", hovered));
+InteractionResult WorldSession::interact(const WorldHover::Frame& frame) {
+    return m_interaction->update(frame);
+}
+
+std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene::RenderItem> sceneItems) {
+    return m_interaction->viewItems(sceneItems);
+}
+
+std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera, glm::ivec2 viewSize) {
+    return m_interaction->labelFor(camera, viewSize);
 }
 
 void WorldSession::frameRendered() {
@@ -343,9 +343,8 @@ bool WorldSession::waits() const {
 
 void WorldSession::dropCollection() {
     m_loader.reset();
+    m_interaction->clear();
     m_collection.reset();
-    m_pickIndex = world::PickIndex{};
-    m_hover.reset();
     if (std::exchange(m_coverPhaseOpen, false)) {
         m_context.frameTiming().closePhase(kPhaseCoverLoad);
     }
@@ -354,6 +353,8 @@ void WorldSession::dropCollection() {
 void WorldSession::record(RunReport& report) const {
     WorldRecord world = m_record;
     world.state = m_state;
+    world.hoverChanges = m_interaction->hoverChanges();
+    m_interaction->record(world.interaction);
     if (m_collection) {
         if (const world::PickId hovered = m_collection->hovered(); hovered != world::kNoPick) {
             world.hoveredPickId = fmt::format("{:08X}", hovered);

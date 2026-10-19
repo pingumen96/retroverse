@@ -1,0 +1,30 @@
+// I3 step 13a: Focus and its D-pad steps in the generated room of the snes-room fixture (every title face-out). The
+// walker starts at the Focus pose of the hero wall's band item fx:hw-w/s:5.4 (--spawn), the reticle on it.
+//   frame 40        interact: a face-out item is inspected at once (Inspect, drawn by I3 step 13b: it stays tipped)
+//   frame 70        ui_back (Indietro): Focus on the same item, the walker where it stands
+//   frames 100-159  the right stick held still (look_x 0): the focus never changes
+//   frame 170       ui_right: the band's next item, fx:hw-w/s:5.5 (the walker eased in 350 ms to its Focus pose)
+//   frame 200       ui_right: past the band's end, across into the featured wall shelf fx:fs01 (the north wall's next
+//                   fixture with items, its ledge nearest in height, at its near end)
+//   frame 240       ui_up: the wall shelf's ledge above (or nothing: the focus stays)
+//   frame 280       ui_down: back down
+//   frame 320       ui_left: back into the band, fx:hw-w/s:5.5
+//   frames 360-399  ui_left held: a step at once, then after 0.4 s (frame 384), then every 0.1 s (390, 396)
+//   frame 440       back: FreeRoam, the item put back (and left in while the hover rests on it)
+// Every step pushes the previous item back (200 ms) and pulls the new one out (250 ms); tests/smoke/test_world_focus.cpp
+// checks the run report's world.interaction events against world::SlotNavigation's steps over the plan's layout, and
+// screenshots at frame 229 (Focus on the wall shelf) and at the end.
+//   retroverse --spawn <fx:hw-w/s:5.4's Focus pose> --input-script tests/input_scripts/world_focus_steps.json
+//     --exit-after-frames --frames 480 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 70, "toFrame": 70, "actions": {"ui_back": 1}},
+  {"fromFrame": 100, "toFrame": 159, "actions": {"look_x": 0.0}},
+  {"fromFrame": 170, "toFrame": 170, "actions": {"ui_right": 1}},
+  {"fromFrame": 200, "toFrame": 200, "actions": {"ui_right": 1}},
+  {"fromFrame": 240, "toFrame": 240, "actions": {"ui_up": 1}},
+  {"fromFrame": 280, "toFrame": 280, "actions": {"ui_down": 1}},
+  {"fromFrame": 320, "toFrame": 320, "actions": {"ui_left": 1}},
+  {"fromFrame": 360, "toFrame": 399, "actions": {"ui_left": 1}},
+  {"fromFrame": 440, "toFrame": 440, "actions": {"back": 1}}
+]
