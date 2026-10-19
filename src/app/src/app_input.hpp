@@ -46,6 +46,9 @@ public:
     /// of a wait whose events were dropped (an emulator had the screen) leaves nothing held.
     void releaseAll() noexcept { m_collector.releaseAll(); }
     [[nodiscard]] bool mouseCaptured() const noexcept { return m_capture.captured(); }
+    /// The mouse wheel's notches of the last update()'s frame, + away from the user (I3 step 13b: the inspection's
+    /// zoom, WorldInteraction's InteractionFrame::wheelNotches; no action is bound to the wheel).
+    [[nodiscard]] float mouseWheel() const noexcept { return m_mouseWheel; }
 
     /// The --input-script being played, or nullptr.
     [[nodiscard]] const input::InputScript* script() const noexcept { return m_script ? &m_script->script() : nullptr; }
@@ -57,6 +60,7 @@ private:
     platform::MouseCapture m_capture;
     input::InputSystem m_system;
     std::optional<input::InputScriptPlayer> m_script;
+    float m_mouseWheel = 0.0f;
 };
 
 } // namespace rv::app

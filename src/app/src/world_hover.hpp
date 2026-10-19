@@ -15,9 +15,9 @@
 //  - The world's Back levels and the quick catalog in the World context (InteractionResult::shellBack and openCatalog,
 //    which the application performs), the "animation" phase while an animation runs, the run report's
 //    world.interaction record.
-// Inspect is entered as the model says (a face-out item, interact in Focus) but drawn by I3 step 13b: until then the
-// item stays at its pulled-out pose, and Avvia ends at once as if the game had returned (launching from the room is
-// I3 step 15a's). Main thread only.
+// Inspect (I3 step 13b, WorldInspection): the focused item lifted from its pulled-out pose into the hand, turned and
+// zoomed, the scene behind it dimmed; Avvia ends at once as if the game had returned (launching from the room is I3
+// step 15a's). Main thread only.
 
 #include <algorithm>
 #include <cstdint>
@@ -39,6 +39,8 @@
 #include <rv/scene/render_item.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/pick_index.hpp>
+
+#include "world_inspection.hpp"
 
 namespace rv::app {
 
@@ -80,9 +82,17 @@ public:
     /// application for a shell Back level, the quick catalog and the walker's pose of an ease.
     [[nodiscard]] InteractionResult update(const Frame& frame);
 
-    /// The view's render items: `sceneItems` alone, or with the pulled items' parts after them (the storage is this
-    /// object's, valid until the next call).
-    [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems);
+    /// The view's render items: `sceneItems` alone, or with the pulled items' parts after them, the inspected one in
+    /// the hand in front of `camera` (WorldInspection::itemModel; the storage is this object's, valid until the next
+    /// call).
+    [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems,
+                                                               const scene::Camera& camera);
+    /// The inspection's dimming of the frame's view (WorldInspection::apply).
+    void applyInspection(gl::RenderView& view) { m_inspection.apply(m_interaction, view); }
+    /// The inspection (the held pose, the dimming, its record).
+    [[nodiscard]] WorldInspection& inspection() noexcept { return m_inspection; }
+    /// The GameId text of the item in Focus or Inspect (the hero CRT's selection, screenSelection()), "" for none.
+    [[nodiscard]] std::string focusedGame() const;
     /// The label of the highlighted item as `camera` shows it in a view of `viewSize` pixels, if any.
     [[nodiscard]] std::optional<WorldLabelContent> labelFor(const scene::Camera& camera, glm::ivec2 viewSize);
 
@@ -124,6 +134,7 @@ private:
     world::PickId m_lastFocused = world::kNoPick;
     std::vector<PulledItem> m_lastPulled;
     InteractionRecord m_record;
+    WorldInspection m_inspection;
 };
 
 } // namespace rv::app

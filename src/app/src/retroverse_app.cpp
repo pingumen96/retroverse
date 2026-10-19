@@ -497,8 +497,10 @@ struct RetroverseApp::State {
         if (world) {
             view.staticGroups = world->staticGroups();
             // The room's dynamic path after the scene's items: the items pulled out of their slots (I3 step 13a), the
-            // hero texture's front (I3 step 12).
-            view.items = world->viewItems(view.items);
+            // inspected one in the hand and the scene behind it dimmed (I3 step 13b), the hero texture's front (I3
+            // step 12).
+            view.items = world->viewItems(view.items, camera);
+            world->applyInspection(view);
         }
         return view;
     }
@@ -515,6 +517,8 @@ struct RetroverseApp::State {
         frame.deltaSeconds = deltaSeconds;
         frame.walker = scene::WalkerPose{walker.feetPosition(), walker.yaw(), walker.pitch()};
         frame.back = backState();
+        // The wheel zooms an inspected item (I3 step 13b); no action is bound to it.
+        frame.wheelNotches = actions != nullptr ? input->mouseWheel() : 0.0f;
         const glm::ivec2 drawable = context.window().drawableSize();
         frame.viewer.floorY = walker.feetPosition().y;
         frame.viewer.eyeHeight = walker.settings().eyeHeight;
@@ -1222,10 +1226,13 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.world->settle(*state.product);
     }
     if (state.screen) {
-        // The hero CRT follows the game selected in the quick catalog while it is open (the world's focus and
-        // inspection from I3 step 13b), after its dwell.
-        const std::optional<std::string> selected =
+        // The hero CRT follows the game selected in the quick catalog while it is open, else the item in the world's
+        // Focus or Inspect (I3 step 13b), after its dwell.
+        std::optional<std::string> selected =
             state.product ? state.product->selectedGameId() : std::optional<std::string>();
+        if (state.world) {
+            selected = state.world->screenSelection(selected);
+        }
         state.screen->update(state.simulatedSeconds, state.camera,
                              selected ? std::optional<std::string_view>(*selected) : std::nullopt);
     }

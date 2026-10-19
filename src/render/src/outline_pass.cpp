@@ -1,5 +1,7 @@
 #include <rv/render/outline_pass.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include <glad/gl.h>
@@ -63,8 +65,8 @@ void OutlinePass::beginMark(GLDevice& device, const ViewTargets& targets) {
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 }
 
-void OutlinePass::drawEdge(GLDevice& device, const ShaderProgram& edge, const OutlineSettings& settings,
-                           const ViewTargets& targets, const glm::ivec4& rect) {
+void OutlinePass::drawEdge(GLDevice& device, const ShaderProgram& edge, const ShaderProgram* dim,
+                           const OutlineSettings& settings, const ViewTargets& targets, const glm::ivec4& rect) {
     if (!m_marking) {
         return;
     }
@@ -79,21 +81,35 @@ void OutlinePass::drawEdge(GLDevice& device, const ShaderProgram& edge, const Ou
     output.bind();
     const glm::ivec2 size = output.size();
     state.setViewport(glm::ivec4(0, 0, size.x, size.y));
-    // The colour is written as sRGB bytes, exactly: the output must not encode it again.
-    state.setFramebufferSrgb(false);
     state.setDepthTest(false);
     state.setCullFace(false);
-    state.setBlend(false);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(rect.x, rect.y, rect.z, rect.w);
     targets.hdr().bindStencilTexture(kStencilUnit);
     glBindSampler(kStencilUnit, 0); // the view's own nearest filtering: an integer texture takes no linear sampler
-    edge.use();
-    edge.setVec3("uOutlineColor", glm::vec3(settings.colorSrgb[0], settings.colorSrgb[1], settings.colorSrgb[2]) /
-                                      255.0f);
-    edge.setFloat("uOutlineWidth", scene::outlineWidthPixels(size.y, settings.widthAt1080));
     m_triangle.bind();
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    const float dimShare = std::isfinite(settings.dimOutside) ? std::clamp(settings.dimOutside, 0.0f, 1.0f) : 0.0f;
+    if (dim != nullptr && dimShare > 0.0f) {
+        // The inspection's dimming: black blended over everything outside the silhouettes at the share's opacity,
+        // GL_FRAMEBUFFER_SRGB on, so that the blend scales the linear light (one stop is 0.5). The default blend
+        // function (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GLDevice::state()) does it.
+        state.setFramebufferSrgb(true);
+        state.setBlend(true);
+        dim->use();
+        dim->setFloat("uDimShare", dimShare);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+    if (settings.edge) {
+        // The colour is written as sRGB bytes, exactly: the output must not encode it again.
+        state.setFramebufferSrgb(false);
+        state.setBlend(false);
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(rect.x, rect.y, rect.z, rect.w);
+        edge.use();
+        edge.setVec3("uOutlineColor",
+                     glm::vec3(settings.colorSrgb[0], settings.colorSrgb[1], settings.colorSrgb[2]) / 255.0f);
+        edge.setFloat("uOutlineWidth", scene::outlineWidthPixels(size.y, settings.widthAt1080));
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+    state.setBlend(false);
     glBindTextureUnit(kStencilUnit, 0);
     glDisable(GL_SCISSOR_TEST);
     state.setFramebufferSrgb(true);

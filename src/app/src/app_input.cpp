@@ -1,5 +1,6 @@
 #include "app_input.hpp"
 
+#include <cmath>
 #include <filesystem>
 #include <string_view>
 #include <system_error>
@@ -71,7 +72,9 @@ void AppInput::handleEvent(const SDL_Event& event) {
 }
 
 input::ActionState AppInput::update(std::uint64_t frameIndex) {
-    input::ActionState actions = m_system.resolve(m_collector.endFrame());
+    const input::RawInputFrame raw = m_collector.endFrame();
+    m_mouseWheel = std::isfinite(raw.mouseWheel) ? raw.mouseWheel : 0.0f;
+    input::ActionState actions = m_system.resolve(raw);
     if (m_script) {
         m_script->apply(frameIndex, actions, m_system.settings().pressThreshold);
     }

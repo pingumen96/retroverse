@@ -29,6 +29,9 @@ struct OutlineShaders {
     const ShaderProgram* markMasked = nullptr;
     /// post/fullscreen.vert + outline/outline_edge.frag.
     const ShaderProgram* edge = nullptr;
+    /// post/fullscreen.vert + outline/outline_dim.frag: the inspection's dimming (OutlineSettings::dimOutside, I3 step
+    /// 13b); without it nothing is dimmed.
+    const ShaderProgram* dim = nullptr;
 };
 
 /// How a view draws the outline of its highlighted instances (scene::instance_flags::kHighlighted).
@@ -38,6 +41,11 @@ struct OutlineSettings {
     std::array<std::uint8_t, 3> colorSrgb = scene::kOutlineColorSrgb;
     /// Pixels at 1080 output rows; scaled with the output's height (scene::outlineWidthPixels).
     float widthAt1080 = scene::kOutlineWidthAt1080;
+    /// Draws the edge around the marked silhouettes (false: the mark serves the dimming alone, the inspected item).
+    bool edge = true;
+    /// [0, 1]: the share of the output's linear light taken away outside the marked silhouettes (ADR-0012 §4: the
+    /// scene behind an inspected item dimmed by one stop is 0.5); 0 dims nothing. Values outside are clamped.
+    float dimOutside = 0.0f;
 };
 
 /// The outline of a view, in two steps that gl::SceneRenderer runs after the post-processing (so that the anti-aliasing
@@ -46,10 +54,13 @@ struct OutlineSettings {
 ///     against the scene's depth without writes, every fragment that passes setting the stencil to 1. The caller then
 ///     draws the highlighted instances with OutlineShaders::mark (or markMasked), whose fragment stage keeps only the
 ///     fragments of instances flagged kHighlighted: the stencil holds the visible part of their silhouettes.
-///  2. drawEdge(): the output bound, GL_FRAMEBUFFER_SRGB off, a fullscreen triangle scissored to `rect` whose fragment
-///     stage reads the stencil through ViewTargets::hdr()'s stencil view (Framebuffer::bindStencilTexture,
-///     OutlineTextureUnit::Stencil) and writes OutlineSettings::colorSrgb as it is into every pixel outside the
-///     silhouettes within scene::outlineWidthPixels(height) of one inside (scene::outlineCovers), and nothing elsewhere.
+///  2. drawEdge(): the output bound; with OutlineSettings::dimOutside above 0 (and a dim program), first a fullscreen
+///     triangle blended with GL_FRAMEBUFFER_SRGB on (so in linear light) that scales every pixel outside the marked
+///     silhouettes by 1 - dimOutside (the inspection's dimming, I3 step 13b); then, with OutlineSettings::edge,
+///     GL_FRAMEBUFFER_SRGB off, a fullscreen triangle scissored to `rect` whose fragment stage reads the stencil
+///     through ViewTargets::hdr()'s stencil view (Framebuffer::bindStencilTexture, OutlineTextureUnit::Stencil) and
+///     writes OutlineSettings::colorSrgb as it is into every pixel outside the silhouettes within
+///     scene::outlineWidthPixels(height) of one inside (scene::outlineCovers), and nothing elsewhere.
 /// A GpuTimer measures both steps. Leaves the state defaults documented on GLDevice::state() (depth test on with writes,
 /// back faces culled, blending off, the stencil and scissor tests off) and the output bound for drawing with
 /// GL_FRAMEBUFFER_SRGB enabled, as the post-processing leaves them. Main thread only; destroy it while the GL context is
@@ -65,10 +76,11 @@ public:
 
     /// Step 1 for `targets` (see above).
     void beginMark(GLDevice& device, const ViewTargets& targets);
-    /// Step 2: the edge around what was marked, within the pixel rectangle `rect` ({x, y, width, height}, bottom-left
-    /// origin: scene::screenRect of the highlighted bounds grown by the outline's reach).
-    void drawEdge(GLDevice& device, const ShaderProgram& edge, const OutlineSettings& settings,
-                  const ViewTargets& targets, const glm::ivec4& rect);
+    /// Step 2: the dimming outside what was marked (`dim`, when given and asked for), then the edge around it within
+    /// the pixel rectangle `rect` ({x, y, width, height}, bottom-left origin: scene::screenRect of the highlighted
+    /// bounds grown by the outline's reach).
+    void drawEdge(GLDevice& device, const ShaderProgram& edge, const ShaderProgram* dim,
+                  const OutlineSettings& settings, const ViewTargets& targets, const glm::ivec4& rect);
 
     /// GPU time of both steps of the most recent outline whose timer query has completed, in milliseconds (GpuTimer:
     /// results arrive a frame or two late); nothing before the first result.

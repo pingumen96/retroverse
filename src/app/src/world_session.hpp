@@ -113,9 +113,15 @@ public:
     [[nodiscard]] InteractionResult interact(const WorldHover::Frame& frame);
     /// The interaction's input context now (what the walker gets: walkerActionsFor()).
     [[nodiscard]] WorldContext context() const noexcept { return m_interaction->interaction().context(); }
-    /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems), the hero texture's front
-    /// of an item in its slot (dynamicItems()).
-    [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems);
+    /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems: the inspected one in the
+    /// hand in front of `camera`, I3 step 13b), the hero texture's front of an item in its slot (dynamicItems()).
+    [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems,
+                                                               const scene::Camera& camera);
+    /// The inspection's dimming of the frame's view (I3 step 13b: WorldInspection::apply).
+    void applyInspection(gl::RenderView& view) { m_interaction->applyInspection(view); }
+    /// The game the hero CRT follows (I3 step 13b, screenSelection()): `catalogSelection` (the quick catalog's, while
+    /// it is open), else the item in Focus or Inspect.
+    [[nodiscard]] std::optional<std::string> screenSelection(const std::optional<std::string>& catalogSelection) const;
     /// The hover's title label as `camera` shows it in a view of `viewSize` pixels (WorldHover::labelFor).
     [[nodiscard]] std::optional<WorldLabelContent> label(const scene::Camera& camera, glm::ivec2 viewSize);
     /// A frame was rendered (the lockstep wait starts again).
