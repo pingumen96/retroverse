@@ -828,6 +828,17 @@ struct VideoRecord {
     bool operator==(const VideoRecord&) const = default;
 };
 
+/// The GPU time of one pass of the frames' views (I3 step 17b, FrameTiming::recordGpuPasses): the timer query results
+/// each frame's last view reported (gl::FrameStats; they arrive a frame or two late), over the frames past the run's
+/// warm-up that had one. Names, in this order: "shadow", "depth", "ssao", "scene", "post", "outline" and "total" (the
+/// sum of a frame's passes, over the frames that reported any).
+struct GpuPassRecord {
+    std::string name;
+    TimeSummary times;
+
+    bool operator==(const GpuPassRecord&) const = default;
+};
+
 /// Frame times (I3 step 0d, FrameTiming): the wall-clock time of each frame, from the end of the previous frame (its
 /// buffer swap) to the end of this one, the frames of the run's first warmUpFrames left out (the first frame has no
 /// previous one anyway). The measured time, also with --fixed-dt, which replaces only the simulation's step.
@@ -836,6 +847,9 @@ struct FrameTimesRecord {
     std::uint64_t warmUpFrames = 0;
     /// The frames measured after them: their count and percentiles; absent when there was none.
     std::optional<TimeSummary> times;
+    /// The GPU times per pass over the same frames (I3 step 17b): only the passes that reported a time, in
+    /// GpuPassRecord's order; empty in runs that drew no view.
+    std::vector<GpuPassRecord> gpuPasses;
 
     bool operator==(const FrameTimesRecord&) const = default;
 };
@@ -853,6 +867,8 @@ struct PhaseRecord {
     std::uint64_t frames = 0;
     /// The times of those frames past the run's warm-up (FrameTimesRecord); absent when there was none.
     std::optional<TimeSummary> times;
+    /// The GPU times per pass of those frames (FrameTimesRecord::gpuPasses).
+    std::vector<GpuPassRecord> gpuPasses;
 
     bool operator==(const PhaseRecord&) const = default;
 };

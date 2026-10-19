@@ -112,7 +112,12 @@ RunReport measuredReport() {
     report.frameLimit = 600;
     report.framesRendered = 600;
     report.frameTimes = rv::app::FrameTimesRecord{30, rv::app::TimeSummary{570, 6.5, 7.25, 9.0, 31.5}};
-    report.phases = {rv::app::PhaseRecord{"benchmark", 1, false, 300, rv::app::TimeSummary{300, 6.25, 7.0, 8.5, 12.0}},
+    // I3 step 17b: the GPU times per pass of the benchmark's frames.
+    const std::vector<rv::app::GpuPassRecord> passes{
+        rv::app::GpuPassRecord{"scene", rv::app::TimeSummary{298, 1.5, 1.75, 2.0, 2.5}},
+        rv::app::GpuPassRecord{"total", rv::app::TimeSummary{298, 3.0, 3.5, 4.0, 4.5}}};
+    report.phases = {rv::app::PhaseRecord{"benchmark", 1, false, 300, rv::app::TimeSummary{300, 6.25, 7.0, 8.5, 12.0},
+                                          passes},
                      // Opened twice within the warm-up and still open: frames, but no time.
                      rv::app::PhaseRecord{"refresh", 2, true, 12, std::nullopt}};
     report.cpuSections = {rv::app::CpuSectionRecord{"productUi", rv::app::TimeSummary{600, 0.125, 0.25, 0.5, 2.0}},
@@ -605,6 +610,11 @@ TEST_CASE("app/run_report: frame times, phases, CPU sections and GPU memory read
                                                   {"maxMs", 31.5}});
     CHECK(json.at("phases").at(0).at("name") == "benchmark");
     CHECK(json.at("phases").at(0).at("p99Ms") == 8.5);
+    // The GPU passes by name, their percentiles flat beside the count; left out where there is none.
+    CHECK(json.at("phases").at(0).at("gpuPasses").at(0) ==
+          nlohmann::json{
+              {"name", "scene"}, {"count", 298}, {"p50Ms", 1.5}, {"p95Ms", 1.75}, {"p99Ms", 2.0}, {"maxMs", 2.5}});
+    CHECK_FALSE(json.at("frameTimes").contains("gpuPasses"));
     CHECK(json.at("phases").at(1) ==
           nlohmann::json{{"name", "refresh"}, {"opened", 2}, {"open", true}, {"frames", 12}, {"count", 0}});
     CHECK(json.at("cpuSections").at(0).at("name") == "productUi");
