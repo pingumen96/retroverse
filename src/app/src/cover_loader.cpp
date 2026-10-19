@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <system_error>
 #include <unordered_set>
@@ -252,15 +253,24 @@ void CoverLoader::submitUploads(CollectionInstance& collection, std::size_t maxL
 
 void CoverLoader::adoptShown(const CoverLoader& previous) {
     std::size_t adopted = 0;
-    for (std::size_t index = 0; index < m_items.size() && index < previous.m_items.size(); ++index) {
+    // By game: the live update (I3 step 15b) adopts the items of a collection that gained or lost some.
+    std::map<catalog::GameId, std::size_t> before;
+    for (std::size_t index = 0; index < previous.m_items.size(); ++index) {
+        before.emplace(previous.m_items[index].game, index);
+    }
+    for (std::size_t index = 0; index < m_items.size(); ++index) {
         // An item whose layers the previous loader had made (uploaded or not: the arrays upload what it queued).
-        if (previous.m_items[index].game != m_items[index].game || !previous.m_front[index] ||
-            previous.m_schedule.stage(index) != CoverSchedule::Stage::Done) {
+        const auto found = before.find(m_items[index].game);
+        if (found == before.end()) {
             continue;
         }
-        m_front[index] = previous.m_front[index];
-        m_frontEntry[index] = previous.m_frontEntry[index];
-        m_spineEntry[index] = previous.m_spineEntry[index];
+        const std::size_t was = found->second;
+        if (!previous.m_front[was] || previous.m_schedule.stage(was) != CoverSchedule::Stage::Done) {
+            continue;
+        }
+        m_front[index] = previous.m_front[was];
+        m_frontEntry[index] = previous.m_frontEntry[was];
+        m_spineEntry[index] = previous.m_spineEntry[was];
         m_retrying[index] = kAdopted;
         ++adopted;
     }

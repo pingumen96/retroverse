@@ -491,6 +491,37 @@ TEST_CASE("app/run_report: the persisted start, its reconciliation and the objec
                                                  "r.json");
     REQUIRE_FALSE(badKind.has_value());
     CHECK(badKind.error().context == "r.json:/world/reconcile/kept");
+
+    // I3 step 15b: the live updates, in order; a report written before them (no key) reads as none.
+    rv::app::WorldLiveUpdateRecord live;
+    live.trigger = "refresh";
+    live.requestFrame = 40;
+    live.frame = 47;
+    live.kind = "items";
+    live.outcome = "updated";
+    live.rebuild = "local-reflow";
+    live.planWritten = true;
+    live.kept = 51;
+    live.added = 1;
+    live.coversChanged = 2;
+    live.arraysGrown = true;
+    live.items = 52;
+    live.staticRecords = 156;
+    live.requestToApplyMs = 120.5;
+    live.buildMs = 30.25;
+    live.applyMs = 2.5;
+    rv::app::WorldLiveUpdateRecord kept;
+    kept.trigger = "refresh";
+    kept.kind = "kept";
+    kept.reason = "the stored plan cannot be used";
+    world.liveUpdates = {live, kept};
+    const auto updated = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(updated.has_value());
+    CHECK(updated->world == world);
+    const auto older = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["world"].erase("liveUpdates"); }), "r.json");
+    REQUIRE(older.has_value());
+    CHECK(older->world.liveUpdates.empty());
 }
 
 TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 step 11)", "[app][run_report]") {
