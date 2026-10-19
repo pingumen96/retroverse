@@ -706,7 +706,8 @@ struct ResidencyRecord {
     std::optional<double> residentAfterShownMs;
     /// The frame whose uploads made the last layer resident.
     std::optional<std::uint64_t> allResidentFrame;
-    /// Frames (and idle wakes) that uploaded layers, and the most layers one of them uploaded.
+    /// Frames (and idle wakes) that uploaded layers, and the most layers one frame uploaded (idle wakes of a lockstep
+    /// run, which have a budget of their own, are not counted).
     std::uint64_t uploadRounds = 0;
     std::uint64_t maxLayersPerRound = 0;
 

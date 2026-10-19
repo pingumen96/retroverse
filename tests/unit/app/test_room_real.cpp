@@ -13,12 +13,16 @@
 //   benchmark  tests/input_scripts/bench_snes_room.json at 1920 x 1080, --no-vsync, --fixed-dt (the "benchmark"
 //              phase's frame times and GPU passes)
 //   shots      screenshots for the review, lockstep: the doorway, a side wall's spine-out shelf at 1 m, the hero band
-//   at
-//              1.2 m, a band item inspected (tests/input_scripts/world_inspect.json up to the item held, its card
+//              at 1.2 m, a band item inspected (tests/input_scripts/world_inspect.json up to the item held, its card
 //              beside it), all under the build tree only (the user's covers: never committed)
-// The figures are printed for docs/i3/step-17b.md (lines starting "Real snes room 17b:"). The checks hold whatever the
-// collection holds (this machine's figures are not versioned): every run clean, every item's layers resident, the
-// plan reproduced, the restart moving nothing.
+//   refresh    (I3 step 18) --refresh-library with the quick catalog opened on frame 2 (catalog_open.json): the whole
+//              library imported on the catalog worker while the room shows (the "refresh" phase's frame times, NFR-04),
+//              the quick catalog's first page timed from the process's creation (NFR-01 with the room), the room
+//              following the refreshed catalog without moving anything
+// The figures are printed for docs/i3/step-17b.md (lines starting "Real snes room 17b:"); scripts/gate.ps1 -Gate B
+// -RealLibrary reads the run reports (<name>.json) against the budgets. The checks hold whatever the collection holds
+// (this machine's figures are not versioned): every run clean, every item's layers resident, the plan reproduced, the
+// restart and the refresh moving nothing.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -373,6 +377,31 @@ TEST_CASE("app/room: the real snes room, its plan reproduced, its covers cold an
         std::cout << fmt::format("Real snes room 17b: screenshot {}: {}\n", shot.name, rv::core::pathToUtf8(png));
     }
 
+    // The whole library refreshed while the room shows, the quick catalog open (I3 step 18: NFR-01 with the room, the
+    // refresh's frame times). The refresh imports every system of the library into this catalog (the snes rows as
+    // they are): the room's live update keeps every item where it stands.
+    std::vector<std::string> refreshArguments = unpacedFor("20000");
+    refreshArguments.insert(refreshArguments.end(),
+                            {"--refresh-library", "--input-script",
+                             rv::core::pathToUtf8(rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" /
+                                                  "input_scripts" / "catalog_open.json")});
+    const rv::app::RunReport refresh = runRoom(folder, data, "refresh", refreshArguments);
+    requireRoom(refresh, "refresh");
+    REQUIRE(refresh.catalog.has_value());
+    const rv::app::CatalogRecord& catalog = *refresh.catalog;
+    CHECK(catalog.firstPageMs.has_value());
+    REQUIRE(catalog.refreshes.size() == 1);
+    CHECK(catalog.refreshes.front().outcome == "done");
+    const rv::app::PhaseRecord* refreshing = phaseOf(refresh, "refresh");
+    REQUIRE(refreshing != nullptr);
+    CHECK_FALSE(refreshing->open);
+    CHECK_FALSE(refresh.world.liveUpdates.empty());
+    for (const rv::app::WorldLiveUpdateRecord& update : refresh.world.liveUpdates) {
+        CHECK(update.moved == 0);
+        CHECK(update.removed == 0);
+    }
+    CHECK(fileSha256(planFile) == firstFileHash);
+
     // The figures.
     const rv::app::WorldRecord& world = cold.world;
     std::cout << fmt::format(
@@ -411,4 +440,16 @@ TEST_CASE("app/room: the real snes room, its plan reproduced, its covers cold an
         static_cast<double>(bench.gpuMemory.peakTotalBytes) / (1024.0 * 1024.0),
         bench.finalCamera ? bench.finalCamera->feet.x : 0.0f, bench.finalCamera ? bench.finalCamera->feet.y : 0.0f,
         bench.finalCamera ? bench.finalCamera->feet.z : 0.0f);
+    const rv::app::RefreshRecord& refreshed = catalog.refreshes.front();
+    const rv::app::TimeSummary refreshTimes = refreshing->times.value_or(rv::app::TimeSummary{});
+    std::cout << fmt::format(
+        "Real snes room 17b: refresh: the quick catalog's first page {} after the process started ({} games); the "
+        "refresh {} in {} ({} entries, {} added, {} removed, {} changed), the refresh phase {} frames p50 {:.2f} ms p99 "
+        "{:.2f} ms max {:.2f} ms; {} live update(s) of the room, the last {} ({} kept, {} moved)\n",
+        ms(catalog.firstPageMs), catalog.games, refreshed.outcome, ms(refreshed.ms), refreshed.entries,
+        refreshed.added, refreshed.removed, refreshed.changed, refreshing->frames, refreshTimes.p50Ms,
+        refreshTimes.p99Ms, refreshTimes.maxMs, refresh.world.liveUpdates.size(),
+        refresh.world.liveUpdates.empty() ? std::string("-") : refresh.world.liveUpdates.back().kind,
+        refresh.world.liveUpdates.empty() ? 0 : refresh.world.liveUpdates.back().kept,
+        refresh.world.liveUpdates.empty() ? 0 : refresh.world.liveUpdates.back().moved);
 }

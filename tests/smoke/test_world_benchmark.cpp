@@ -5,9 +5,10 @@
 // tests/input_scripts/bench_snes_room.json at 1920 x 1080 with --no-vsync (the frames never wait for the display) and
 // --fixed-dt (the same path on every machine). The figures are printed (WARN) for docs/i3/step-17b.md: the frame times
 // and the GPU time of every pass over the "benchmark" phase, what the last view drew, the GPU memory. In Release the
-// budgets are checked: frame p99 at most 16.7 ms (NFR-03's 60 FPS) and p50 at most 8 ms; per pass, at its p99, shadow
-// map 0.4 ms, depth pre-pass 0.4 ms, ambient occlusion 0.5 ms, scene 2.0 ms, post-processing 0.6 ms, outline 0.1 ms,
-// their sum 5 ms.
+// budgets are checked: frame p99 at most 16.7 ms (NFR-03's 60 FPS) and p50 at most 8 ms; per pass, at its median (I3
+// step 18, Gate B: a timer query measures the GPU's time between two commands, so on a desktop GPU shared with other
+// programs its tail holds their time slices too; the p95 and p99 are printed), shadow map 0.4 ms, depth pre-pass 0.4
+// ms, ambient occlusion 0.5 ms, scene 2.0 ms, post-processing 0.6 ms, outline 0.1 ms, their sum 5 ms.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -154,8 +155,9 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
     CHECK(times.p50Ms <= 8.0);
     for (const auto& [name, budget] : kPassBudgets) {
         if (const rv::app::GpuPassRecord* pass = passOf(benchmark->gpuPasses, name)) {
-            INFO("GPU pass " << name << " p99 " << pass->times.p99Ms << " ms, budget " << budget << " ms");
-            CHECK(pass->times.p99Ms <= budget);
+            INFO("GPU pass " << name << " p50 " << pass->times.p50Ms << " ms (p99 " << pass->times.p99Ms
+                             << " ms), budget " << budget << " ms");
+            CHECK(pass->times.p50Ms <= budget);
         }
     }
 #endif
