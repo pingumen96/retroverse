@@ -6,7 +6,8 @@
 // (step 7) and the app's drawing of the held item (WorldInspection, rv_app), tested without a window:
 //  - heldItemTransform(): the inspected item lifted from its pulled-out pose (pulledItemTransform(), step 13a) into the
 //    hand: upright in front of the eye, its front (the cover) facing it, turned by the inspection's yaw about the
-//    camera's up and its pitch about the camera's right, at the inspection's distance along the view;
+//    camera's up and its pitch about the camera's right, at the inspection's distance along the view, in the hand
+//    left of and below the view's centre (heldCentre(): beside the card);
 //  - heldDistanceLimit() and heldDistance(): how far the held item may stand without reaching into its own fixture
 //    (a shelf level, the display case's glass);
 //  - inspectDimming(): the scene behind the item dimmed by one stop and vignetted, eased with the lift;
@@ -36,6 +37,16 @@ inline constexpr float kHeldClearance = 0.06f;
 /// The nearest the held item is drawn to the eye when its fixture leaves less room than the zoom asks (meters).
 inline constexpr float kHeldMinDistance = 0.2f;
 
+/// Where the hand holds the item in the view (I3 step 17a's review): left of and a little below the view's centre, in
+/// the part of the view the card (on the right) leaves free, as tangents of the view's right and up (x right, y up):
+/// at a 75-degree horizontal field of view its centre sits about a third of the way from the centre to the left edge.
+inline constexpr glm::vec2 kHeldViewOffset{-0.25f, -0.08f};
+
+/// The held item's centre at `distance` along the view from `camera`'s eye: moved sideways by kHeldViewOffset times
+/// the distance up to InspectSettings' default distance (0.45 m), the offset then fading linearly to none at its
+/// maxDistance (1.0 m), so that an item zoomed away returns to the view's axis, clear of its fixture's neighbours.
+[[nodiscard]] glm::vec3 heldCentre(const scene::Camera& camera, float distance) noexcept;
+
 /// The radius of the sphere that holds the item whatever its turn: half the diagonal of its slot box.
 [[nodiscard]] float heldRadius(const world::CollectionItem& item) noexcept;
 
@@ -45,16 +56,16 @@ inline constexpr float kHeldMinDistance = 0.2f;
 [[nodiscard]] float heldDistanceLimit(const core::Aabb& clusterBounds, float radius, const glm::vec3& eye,
                                       const glm::vec3& forward) noexcept;
 
-/// The distance the held item is drawn at: the inspection's `distance` (the zoom, within InspectSettings' 0.4 to
+/// The distance the held item is drawn at: the inspection's `distance` (the zoom, within InspectSettings' 0.3 to
 /// 1.0 m), at most `limit`, never nearer than kHeldMinDistance.
 [[nodiscard]] float heldDistance(float distance, float limit) noexcept;
 
 /// The pose of the inspected item (from the item prefab's space to the room's frame, as CollectionItem::transform): at
-/// `view.lift` 0 exactly `pulled` (its pulled-out pose), at 1 held in front of `camera`: its centre `distance` along
-/// the view, its prefab axes those of the camera (+X right, +Y up, +Z its front towards the eye: upright and facing
-/// it), turned by `view.yaw` about the camera's up (positive turns its front to the viewer's right) and then by
-/// `view.pitch` about the camera's right (positive tilts its front up); in between, its centre along the straight line
-/// and its orientation along the shorter arc (scene::interpolatePose), the lift's easing being the interaction's. The
+/// `view.lift` 0 exactly `pulled` (its pulled-out pose), at 1 held in front of `camera`: its centre heldCentre() at
+/// `distance` (in the hand, beside the card), its prefab axes those of the camera (+X right, +Y up, +Z its front
+/// towards the eye: upright and facing it), turned by `view.yaw` about the camera's up (positive turns its front to
+/// the viewer's right) and then by `view.pitch` about the camera's right (positive tilts its front up); in between, its
+/// centre along the straight line and its orientation along the shorter arc (scene::interpolatePose), the lift's easing being the interaction's. The
 /// prefab's scale in `pulled` is kept. A non-finite lift counts as 0.
 [[nodiscard]] glm::mat4 heldItemTransform(const glm::mat4& pulled, const InspectView& view,
                                           const scene::Camera& camera, float distance) noexcept;

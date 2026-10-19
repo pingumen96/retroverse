@@ -55,9 +55,18 @@ TEST_CASE("world/room_look: the shipped lighting profiles read, two of them, the
             CHECK(rgb.r >= rgb.b);
         }
         CHECK(profile->key.intensity > profile->wallWasher.intensity);
+        // Accents on the hero corner's CRT and sign, and a museum spot on each display case and on the featured wall
+        // shelf (style §4.1: accent lights on the cases).
+        std::set<std::string> displayKinds;
         for (const rv::world::AccentLight& accent : profile->accents) {
-            CHECK((accent.anchor == "crt" || accent.anchor == "sign"));
+            if (accent.on == rv::world::AccentAnchor::HeroCorner) {
+                CHECK((accent.anchor == "crt" || accent.anchor == "sign"));
+            } else {
+                displayKinds.insert(accent.anchor);
+                CHECK(accent.spot);
+            }
         }
+        CHECK(displayKinds == std::set<std::string>{"display_case", "wall_shelf"});
     }
     const auto evening = rv::world::loadLightingProfile(assets(), "evening");
     const auto afternoon = rv::world::loadLightingProfile(assets(), "afternoon");
@@ -82,6 +91,14 @@ TEST_CASE("world/room_look: a broken profile is refused with its line, a missing
     std::string unknown = *text;
     unknown.replace(unknown.find("\"keyShadowStrength\""), 19, "\"keyShadowStrengths\"");
     CHECK_FALSE(rv::world::parseLightingProfile(unknown, "evening.json").has_value());
+    // An accent anchored on anything but a hero corner part or display fixtures.
+    std::string anchoredElsewhere = *text;
+    const auto on = anchoredElsewhere.find("\"on\": \"display\"");
+    REQUIRE(on != std::string::npos);
+    anchoredElsewhere.replace(on, 15, "\"on\": \"ceiling\"");
+    auto badAnchor = rv::world::parseLightingProfile(anchoredElsewhere, "evening.json");
+    REQUIRE_FALSE(badAnchor.has_value());
+    CHECK_THAT(badAnchor.error().message, ContainsSubstring("expected hero-corner or display"));
 
     // world.json names a profile: it is used; one that does not exist falls back to the default.
     const rv::test::TempDir dir("rv-room-look");

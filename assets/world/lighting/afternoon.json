@@ -25,6 +25,13 @@
   },
   "accents": [
     {"name": "crt_glow", "anchor": "crt", "type": "spot", "position": [0.0, 0.3, 0.42], "target": [0.0, -0.1, 1.4],
-     "color": "#D2D8E4", "intensity": 1.5, "range": 3.0, "innerConeDeg": 45, "outerConeDeg": 80}
+     "color": "#D2D8E4", "intensity": 1.5, "range": 3.0, "innerConeDeg": 45, "outerConeDeg": 80},
+    // The display cases and the featured wall shelf keep a softer museum spot in daylight.
+    {"name": "case_light", "on": "display", "anchor": "display_case", "type": "spot", "position": [0.0, 1.95, 0.6],
+     "target": [0.0, 0.62, -0.02], "color": "#FFF4E8", "intensity": 3, "range": 3.5, "innerConeDeg": 22,
+     "outerConeDeg": 38},
+    {"name": "shelf_light", "on": "display", "anchor": "wall_shelf", "type": "spot", "position": [0.0, 2.6, 1.3],
+     "target": [0.0, 1.28, 0.02], "color": "#FFF4E8", "intensity": 4, "range": 3.5, "innerConeDeg": 12,
+     "outerConeDeg": 22}
   ]
 }

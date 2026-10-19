@@ -1,6 +1,7 @@
 {"catalogSortKeyVersion":1,"dressing":[
 {"count":8,"firstSlot":0,"level":"room:snes/fx:dc01/l:0","prop":{"kind":"magazine_stack","manifest":"decor.magazine_stack.generic"}},
-{"count":5,"firstSlot":3,"level":"room:snes/fx:dc01/l:1","prop":{"kind":"magazine_stack","manifest":"decor.magazine_stack.generic"}},
+{"count":2,"firstSlot":0,"level":"room:snes/fx:dc01/l:1","prop":{"kind":"magazine_stack","manifest":"decor.magazine_stack.generic"}},
+{"count":3,"firstSlot":5,"level":"room:snes/fx:dc01/l:1","prop":{"kind":"magazine_stack","manifest":"decor.magazine_stack.generic"}},
 {"count":8,"firstSlot":0,"level":"room:snes/fx:dc02/l:0","prop":{"kind":"storage_box","manifest":"decor.storage_box.generic"}},
 {"count":8,"firstSlot":0,"level":"room:snes/fx:dc02/l:1","prop":{"kind":"bookends","manifest":"decor.bookends.generic"}},
 {"count":33,"firstSlot":0,"level":"room:snes/fx:hw-e/l:0","prop":{"kind":"bookends","manifest":"decor.bookends.generic"}},
@@ -46,7 +47,7 @@
 {"depthMm":340,"heightMm":1500,"id":"room:snes/fx:w05","levels":[],"prefab":{"kind":"floor_lamp","manifest":"decor.lamp.floor_slim.generic"},"role":"decoration","widthMm":340,"xMm":-4300,"yMm":0,"yawCdeg":9000,"zMm":2000},
 {"depthMm":360,"heightMm":720,"id":"room:snes/fx:w06","levels":[],"prefab":{"kind":"tv_cabinet","manifest":"furniture.tv_cabinet.narrow.generic"},"role":"decoration","widthMm":800,"xMm":-4290,"yMm":0,"yawCdeg":9000,"zMm":3000},
 {"depthMm":380,"heightMm":1050,"id":"room:snes/fx:w07","levels":[],"prefab":{"kind":"plant","manifest":"decor.plant.snake.generic"},"role":"decoration","widthMm":380,"xMm":-4280,"yMm":0,"yawCdeg":9000,"zMm":4000}
-],"generatorVersion":"1.1","inputDigest":"a3aca4686ef1ad7770d0d5b963852231f1a6287914d4eafc71d86d17a9fc7493","library":"esde","lights":[
+],"generatorVersion":"1.2","inputDigest":"2a1c848a31d0a690c0eeac84ab86f6c4f11abc7a09c717d31771e4d7aec3b4fa","library":"esde","lights":[
 {"id":"room:snes/fx:e01.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-4000,"xMm":4300,"yMm":1379,"zMm":-4000},
 {"id":"room:snes/fx:e06.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":3000,"xMm":4300,"yMm":1379,"zMm":3000},
 {"id":"room:snes/fx:hero.key-light","role":"key","spanMm":5750,"targetXMm":0,"targetYMm":500,"targetZMm":-4870,"xMm":0,"yMm":2920,"zMm":-2670},
@@ -58,9 +59,9 @@
 {"id":"room:snes/fx:w02.light","role":"lamp","spanMm":0,"targetXMm":-4300,"targetYMm":1379,"targetZMm":-3000,"xMm":-4300,"yMm":1379,"zMm":-3000},
 {"id":"room:snes/fx:w05.light","role":"lamp","spanMm":0,"targetXMm":-4300,"targetYMm":1379,"targetZMm":2000,"xMm":-4300,"yMm":1379,"zMm":2000}
 ],"placements":[
-{"game":"g7ccef50e5ee4f512","insetMm":0,"slot":"room:snes/fx:dc01/s:1.0","yawCdeg":120},
-{"game":"g0fe87988a988f6b2","insetMm":0,"slot":"room:snes/fx:dc01/s:1.1","yawCdeg":-123},
-{"game":"g440cb2177e2bd1f1","insetMm":0,"slot":"room:snes/fx:dc01/s:1.2","yawCdeg":-112},
+{"game":"g7ccef50e5ee4f512","insetMm":0,"slot":"room:snes/fx:dc01/s:1.2","yawCdeg":120},
+{"game":"g0fe87988a988f6b2","insetMm":0,"slot":"room:snes/fx:dc01/s:1.3","yawCdeg":-123},
+{"game":"g440cb2177e2bd1f1","insetMm":0,"slot":"room:snes/fx:dc01/s:1.4","yawCdeg":-112},
 {"game":"g777ace47fa76a48c","insetMm":0,"slot":"room:snes/fx:fs01/s:0.0","yawCdeg":-106},
 {"game":"g073824f77caba247","insetMm":0,"slot":"room:snes/fx:fs01/s:0.1","yawCdeg":-102},
 {"game":"g52e974690fdba1d3","insetMm":0,"slot":"room:snes/fx:fs01/s:0.2","yawCdeg":115},

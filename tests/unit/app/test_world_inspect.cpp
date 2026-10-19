@@ -94,7 +94,16 @@ TEST_CASE("app/world_inspect: held upright in front of the eye, its cover to it,
             INFO("camera yaw " << yawDeg << ", pitch " << pitchDeg);
             const rv::scene::Camera camera = cameraAt({1.0f, 1.65f, 0.5f}, yawDeg, pitchDeg);
             const glm::mat4 held = rv::app::heldItemTransform(pulled, InspectView{1.0f, 0.0f, 0.0f, 0.6f}, camera, 0.6f);
-            CHECK(near(glm::vec3(held[3]), camera.position() + 0.6f * camera.forward(), 1e-5f));
+            // In the hand: left of and below the view's centre, beside the card.
+            const glm::vec3 toHeld = glm::vec3(held[3]) - camera.position();
+            CHECK(near(glm::vec3(held[3]), rv::app::heldCentre(camera, 0.6f), 1e-5f));
+            CHECK(std::fabs(glm::dot(toHeld, camera.forward()) - 0.6f) < 1e-5f);
+            CHECK(glm::dot(toHeld, camera.right()) < 0.0f);
+            CHECK(glm::dot(toHeld, camera.up()) < 0.0f);
+            // At the default distance the full offset, zoomed out to the farthest none.
+            const glm::vec3 atDefault = rv::app::heldCentre(camera, 0.45f) - camera.position();
+            CHECK(std::fabs(glm::dot(atDefault, camera.right()) - 0.45f * rv::app::kHeldViewOffset.x) < 1e-5f);
+            CHECK(std::fabs(glm::dot(atDefault, camera.up()) - 0.45f * rv::app::kHeldViewOffset.y) < 1e-5f);
             CHECK(near(axis(held, 2), -camera.forward(), 1e-5f)); // its front faces the eye
             CHECK(near(axis(held, 1), camera.up(), 1e-5f));       // upright in the view
             CHECK(near(axis(held, 0), camera.right(), 1e-5f));
@@ -189,12 +198,12 @@ TEST_CASE("app/world_inspect: at every item's Focus pose the held item never rea
             const float limit =
                 rv::app::heldDistanceLimit(cluster->bounds, radius, camera.position(), camera.forward());
             const glm::mat4 pulled = rv::app::pulledItemTransform(item, 1.0f, room->get()->reachOf(item.pickId));
-            for (const float zoom : {0.4f, 0.6f, 1.0f}) {
+            for (const float zoom : {0.3f, 0.45f, 1.0f}) {
                 INFO("zoom " << zoom);
                 const float drawn = rv::app::heldDistance(zoom, limit);
-                CHECK(drawn >= 0.4f); // the fixture always leaves the zoom's nearest end
+                CHECK(drawn >= 0.3f); // the fixture always leaves the zoom's nearest end
                 CHECK(drawn <= zoom);
-                unclampedDefault += zoom == 0.6f && drawn == zoom ? 1 : 0;
+                unclampedDefault += zoom == 0.45f && drawn == zoom ? 1 : 0;
                 const glm::mat4 held = rv::app::heldItemTransform(pulled, InspectView{1.0f, 0.7f, 0.4f, zoom},
                                                                   camera, drawn);
                 const glm::vec3 centre(held[3]);
@@ -208,7 +217,7 @@ TEST_CASE("app/world_inspect: at every item's Focus pose the held item never rea
                 CHECK(drawn - radius > camera.lens().nearPlane);
             }
         }
-        // The default hold (0.6 m) is never cut short at a Focus pose (0.9 m from the face).
+        // The default hold (0.45 m) is never cut short at a Focus pose (0.9 m from the face).
         CHECK(unclampedDefault == layout.items.size());
     }
 }
@@ -365,13 +374,14 @@ TEST_CASE("app/world_inspect: lift, turn, zoom and Back over the 50-title room, 
     loop.place(rv::app::focusPoseFor(band4, rv::app::FocusViewer{}));
     loop.until([&] { return world.pullOf(band4.pickId) >= 1.0f; });
 
-    // Interact on the face-out item: Inspect, the lift in 300 ms (18 frames), held upright facing the eye at 0.6 m.
+    // Interact on the face-out item: Inspect, the lift in 300 ms (18 frames), held upright facing the eye at 0.45 m, in
+    // the hand left of the view's centre.
     loop.frame(pressing({Action::Interact}));
     REQUIRE(world.state() == WorldState::Inspect);
     const int lifted = loop.until([&] { return world.inspectView().lift >= 1.0f; });
     CHECK(lifted >= 17);
     CHECK(lifted <= 19);
-    CHECK(near(glm::vec3(loop.held()[3]), loop.camera().position() + 0.6f * loop.camera().forward(), 1e-4f));
+    CHECK(near(glm::vec3(loop.held()[3]), rv::app::heldCentre(loop.camera(), 0.45f), 1e-4f));
     CHECK(near(axis(loop.held(), 2), -loop.camera().forward(), 1e-4f));
 
     // The right stick turns it (a second at full deflection: 180 degrees, wrapped), the walker does not move.
@@ -385,13 +395,13 @@ TEST_CASE("app/world_inspect: lift, turn, zoom and Back over the 50-title room, 
     CHECK(std::fabs(glm::dot(axis(loop.held(), 2), loop.camera().right()) - 1.0f) < 1e-3f);
     CHECK(loop.camera().position() == eye);
 
-    // The right trigger brings it to 0.4 m, the left one takes it to 1.0 m, the wheel 5 cm a notch.
+    // The right trigger brings it to 0.3 m, the left one takes it to 1.0 m, the wheel 5 cm a notch.
     rv::input::ActionState closer;
     closer.setAxis(Action::UiPageDown, 1.0f);
     for (int i = 0; i < 60; ++i) {
         loop.frame(closer);
     }
-    CHECK(world.inspectView().distance == 0.4f);
+    CHECK(world.inspectView().distance == 0.3f);
     rv::input::ActionState farther;
     farther.setAxis(Action::UiPageUp, 1.0f);
     for (int i = 0; i < 90; ++i) {

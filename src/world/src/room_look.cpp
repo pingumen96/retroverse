@@ -81,9 +81,17 @@ glm::dvec3 readPoint(const ObjectReader& reader, std::string_view key) {
 AccentLight readAccent(DocumentReader& document, const Json& value, const std::string& pointer) {
     AccentLight accent;
     const ObjectReader reader(document, value, pointer,
-                              {"anchor", "color", "innerConeDeg", "intensity", "name", "outerConeDeg", "position",
-                               "range", "target", "type"});
+                              {"anchor", "color", "innerConeDeg", "intensity", "name", "on", "outerConeDeg",
+                               "position", "range", "target", "type"});
     accent.name = reader.dataId("name");
+    if (reader.has("on")) {
+        const std::string on = reader.string("on");
+        if (on == "display") {
+            accent.on = AccentAnchor::Display;
+        } else if (!document.failed() && on != "hero-corner") {
+            document.fail(reader.pointer("on"), "expected hero-corner or display, found \"" + on + "\"");
+        }
+    }
     accent.anchor = reader.dataId("anchor");
     const std::string type = reader.string("type");
     if (!document.failed() && type != "point" && type != "spot") {
@@ -203,7 +211,7 @@ ThemeMaterials builtInTheme() {
         {"floor_lamp", Roles{{"metal", "MAT_Metal_Graphite"}, {"lamp_shade", "MAT_Lamp_Shade"}}},
         {"armchair", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}}},
         {"display_case",
-         Roles{{"wood_primary", "MAT_Wood_Walnut"},
+         Roles{{"wood_primary", "MAT_Wood_Oak"},
                {"wood_secondary", "MAT_Wood_Varnished_Dark"},
                {"metal_trim", "MAT_Metal_Brushed"},
                {"fabric", "MAT_Fabric_Display"},

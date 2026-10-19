@@ -3,8 +3,8 @@
 //   frame 40        interact: the face-out item is inspected at once, lifted into the hand in 300 ms (frames 40-58)
 //   frames 60-89    the right stick at half deflection (look_x 0.5): the item turns 45 degrees, its front to the right
 //   frames 90-99    the right stick up at half deflection (look_y 0.5): it tilts its front up by 15 degrees
-//   frames 100-129  the right trigger (ui_page_down): the item comes closer, to the zoom's nearest 0.4 m
-//   frames 140-219  the left trigger (ui_page_up): it goes away, to the zoom's farthest 1.0 m (drawn short of its
+//   frames 100-129  the right trigger (ui_page_down): the item comes closer, to the zoom's nearest 0.3 m
+//   frames 140-225  the left trigger (ui_page_up): it goes away, to the zoom's farthest 1.0 m (drawn short of its
 //                   fixture: the band's box grown by 6 cm)
 //   frame 230       the pad's north button (quick_catalog and ui_media together, as its bindings give them): Vedi media
 //                   in Inspect (since step 14b it opens the media viewer), never the quick catalog
@@ -20,7 +20,7 @@
   {"fromFrame": 60, "toFrame": 89, "actions": {"look_x": 0.5}},
   {"fromFrame": 90, "toFrame": 99, "actions": {"look_y": 0.5}},
   {"fromFrame": 100, "toFrame": 129, "actions": {"ui_page_down": 1}},
-  {"fromFrame": 140, "toFrame": 219, "actions": {"ui_page_up": 1}},
+  {"fromFrame": 140, "toFrame": 225, "actions": {"ui_page_up": 1}},
   {"fromFrame": 230, "toFrame": 230, "actions": {"quick_catalog": 1, "ui_media": 1}},
   {"fromFrame": 245, "toFrame": 245, "actions": {"ui_back": 1}},
   {"fromFrame": 260, "toFrame": 260, "actions": {"ui_back": 1}},

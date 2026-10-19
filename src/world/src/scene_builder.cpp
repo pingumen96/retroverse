@@ -494,16 +494,26 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                                      kMaxSceneLights),
                          roomId.toString());
     }
-    // The profile's accents on the hero corner's parts, while the scene's limit leaves room for them.
+    // The profile's accents on the hero corner's parts and the display fixtures, while the scene's limit leaves room
+    // for them.
     for (const AccentLight& accent : data.lighting.accents) {
-        if (lights.size() >= kMaxSceneLights) {
-            break;
-        }
         for (const Fixture& fixture : plan.fixtures) {
-            if (fixture.id.room() == roomId && fixture.role == FixtureRole::HeroCorner &&
+            if (lights.size() >= kMaxSceneLights) {
+                break;
+            }
+            if (fixture.id.room() != roomId) {
+                continue;
+            }
+            if (accent.on == AccentAnchor::HeroCorner && fixture.role == FixtureRole::HeroCorner &&
                 fixture.id.part() == accent.anchor) {
                 lights.push_back(accentJson(accent, fixture));
                 break;
+            }
+            if (accent.on == AccentAnchor::Display && fixture.role == FixtureRole::Display &&
+                fixture.prefab.kind == accent.anchor) {
+                json light = accentJson(accent, fixture);
+                light["name"] = "accent:" + accent.name + ":" + fixture.id.socket();
+                lights.push_back(std::move(light));
             }
         }
     }

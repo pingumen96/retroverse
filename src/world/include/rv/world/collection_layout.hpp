@@ -27,7 +27,7 @@
 // - Occluders (step 7: what hides an item behind it; not the walking colliders, not glass): the room's walls (the
 //   shell's colliders), the solid pieces of every fixture with slots (a shelf's or the wall shelf's sides, back, base,
 //   top and the boards between its levels: its prefab's bounds outside the levels' free volumes, the front left open;
-//   a display case's base, sides and back: its front and top are glass), the bounds of every other fixture but the rug
+//   a display case's base and back: its front, sides and top are glass), the bounds of every other fixture but the rug
 //   (furniture, posters, lamps) and of every dressing prop; boxes in the room's frame.
 // - Navigation (step 7's SlotNavigation): one run per wall (the fixtures with slots of the template's sockets on that
 //   wall, left to right as one faces it) and one per fixture standing free (a display case); each fixture's levels

@@ -172,9 +172,11 @@ struct GenerationResult {
 
 /// The generator's version (ADR-0010 §8, §10): 1.0 is I3 step 3's fresh generation with step 9's incremental rules
 /// (incremental.hpp), both first released in I3 (schema 1 stays open until Gate B); 1.1 (I3 step 16) keeps a decoration
-/// from repeating the one beside it on its wall. A change that places any game differently is a new major version; one
-/// that only adds rules keeping every placement a new minor one.
-inline constexpr GeneratorVersion kGeneratorVersion{1, 1};
+/// from repeating the one beside it on its wall; 1.2 (I3 step 17a's review) stands the titles of a face-out level they
+/// fill only partly in its middle, dressed on both sides (a fresh generation's face-out set only: no incremental update
+/// ever fills a face-out slot, so a stored plan keeps every placement). A change that places any game of a stored plan
+/// differently is a new major version; one that only adds rules keeping every placement a new minor one.
+inline constexpr GeneratorVersion kGeneratorVersion{1, 2};
 
 /// The one room template of I3 (ADR-0010 §4).
 inline constexpr std::string_view kDefaultRoomTemplate = "console_room_9x10";

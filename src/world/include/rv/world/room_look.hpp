@@ -16,10 +16,13 @@
 //                    "vignette": 0.05, "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}},
 //    "accents": [                    // optional: lights of the look alone, anchored on a hero corner's part
 //      {"name": "crt-glow", "anchor": "crt", "type": "spot", "position": [0, 0.35, 0.4], "target": [0, 0, 1.4],
-//       "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80}]}
-//   An accent's position and target are in its anchor's frame (meters: the part's pivot, turned with it); it is drawn
-//   only while the room's lights leave room for it under the scene's limit (16), in the order listed, and never casts
-//   shadows. Colours are sRGB "#RRGGBB" (uppercase hexadecimal).
+//       "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80},
+//      {"name": "case-light", "on": "display", "anchor": "display_case", ...}]}   // one per display case
+//   "on" (optional) is "hero-corner" (the default: "anchor" names a hero corner part's role) or "display" ("anchor"
+//   names a prefab kind, and the accent is drawn on every display fixture of that kind, in the plan's fixture order).
+//   An accent's position and target are in its anchor's frame (meters: the part's or the fixture's pivot, turned with
+//   it); it is drawn only while the room's lights leave room for it under the scene's limit (16), in the order listed,
+//   and never casts shadows. Colours are sRGB "#RRGGBB" (uppercase hexadecimal).
 //
 // A theme pack, assets/world/themes/<id>.json (the platform manifest's themePack):
 //   {"schemaVersion": 1, "id": "classic_16bit_warm", "name": "Classic16BitWarm",
@@ -62,10 +65,18 @@ struct LightStyle {
 /// The widest outer cone a profile gives a spot (the scene format takes less than 90 degrees).
 inline constexpr double kMaxOuterConeDeg = 80.0;
 
-/// A light of the look alone (no plan light): anchored on a hero corner's part, in its frame.
+/// What an accent light is anchored on.
+enum class AccentAnchor : std::uint8_t {
+    HeroCorner, ///< the hero corner's part whose role the anchor names (one light)
+    Display,    ///< every display fixture whose prefab kind the anchor names (one light each)
+};
+
+/// A light of the look alone (no plan light): anchored on a hero corner's part or on display fixtures, in their frame.
 struct AccentLight {
     std::string name;
-    /// The hero corner part's role ("crt", "sign", ...); an accent whose part the room lacks is left out.
+    AccentAnchor on = AccentAnchor::HeroCorner;
+    /// The hero corner part's role ("crt", "sign", ...) or the display fixtures' prefab kind ("display_case",
+    /// "wall_shelf"); an accent whose anchor the room lacks is left out.
     std::string anchor;
     bool spot = true;
     glm::dvec3 position{0.0};
