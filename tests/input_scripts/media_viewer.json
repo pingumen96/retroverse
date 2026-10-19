@@ -1,0 +1,51 @@
+// I3 step 14b: the media viewer and Informazioni from the world's card and from the quick catalog, in the generated
+// room of the snes-room fixture. The walker starts at the Focus pose of Amber Lantern (USA)'s item (--spawn), the
+// reticle on it; Amber Lantern has every image kind the viewer pages.
+//   frame 40   interact: Inspect, the card shows
+//   frame 70   ui_media (the pad's Y): the viewer from the card, on the cover (1 of 8)
+//   frames 76 to 100, every 4: ui_right through the back cover, the physical media, the 3D box (shown at frame 84 to
+//              87), the screenshot, the title screen, the marquee, the fan art (8 of 8)
+//   frame 104  ui_right: nothing (no wrap)                frame 108  ui_left: the marquee
+//   frame 112  ui_home: the cover                         frame 116  ui_end: the fan art
+//   frame 120  ui_info (the pad's X): Informazioni of the same game in place of the viewer
+//   frame 126  ui_down: its body scrolls when it is longer than its region
+//   frame 132  ui_back: Informazioni closes, Inspect with the card again
+//   frame 138  ui_back: Focus (the quick catalog opens from there)
+//   frame 150  quick_catalog: the quick catalog opens     frames 153, 156  ui_up: the search field
+//   frame 159  "cobalt" typed                             frame 162  ui_activate: the list, its first game selected
+//   frame 166  ui_info: Informazioni from the quick catalog (the other version of the title with its region)
+//   frame 172  ui_media (Y): the viewer of the same game in place of Informazioni
+//   frame 178  ui_info (X): Informazioni again
+//   frame 186  ui_back: Informazioni closes, the quick catalog stays open
+// tests/smoke/test_media_viewer.cpp checks the run report's screens record and takes screenshots at frames 87, 129 and
+// 183 and at the end.
+//   retroverse --spawn <Amber Lantern's Focus pose> --input-script tests/input_scripts/media_viewer.json
+//     --exit-after-frames --frames 200 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 70, "toFrame": 70, "actions": {"ui_media": 1}},
+  {"fromFrame": 76, "toFrame": 76, "actions": {"ui_right": 1}},
+  {"fromFrame": 80, "toFrame": 80, "actions": {"ui_right": 1}},
+  {"fromFrame": 84, "toFrame": 84, "actions": {"ui_right": 1}},
+  {"fromFrame": 88, "toFrame": 88, "actions": {"ui_right": 1}},
+  {"fromFrame": 92, "toFrame": 92, "actions": {"ui_right": 1}},
+  {"fromFrame": 96, "toFrame": 96, "actions": {"ui_right": 1}},
+  {"fromFrame": 100, "toFrame": 100, "actions": {"ui_right": 1}},
+  {"fromFrame": 104, "toFrame": 104, "actions": {"ui_right": 1}},
+  {"fromFrame": 108, "toFrame": 108, "actions": {"ui_left": 1}},
+  {"fromFrame": 112, "toFrame": 112, "actions": {"ui_home": 1}},
+  {"fromFrame": 116, "toFrame": 116, "actions": {"ui_end": 1}},
+  {"fromFrame": 120, "toFrame": 120, "actions": {"ui_info": 1}},
+  {"fromFrame": 126, "toFrame": 126, "actions": {"ui_down": 1}},
+  {"fromFrame": 132, "toFrame": 132, "actions": {"ui_back": 1}},
+  {"fromFrame": 138, "toFrame": 138, "actions": {"ui_back": 1}},
+  {"fromFrame": 150, "toFrame": 150, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 153, "toFrame": 153, "actions": {"ui_up": 1}},
+  {"fromFrame": 156, "toFrame": 156, "actions": {"ui_up": 1}},
+  {"fromFrame": 159, "toFrame": 159, "text": "cobalt"},
+  {"fromFrame": 162, "toFrame": 162, "actions": {"ui_activate": 1}},
+  {"fromFrame": 166, "toFrame": 166, "actions": {"ui_info": 1}},
+  {"fromFrame": 172, "toFrame": 172, "actions": {"ui_media": 1}},
+  {"fromFrame": 178, "toFrame": 178, "actions": {"ui_info": 1}},
+  {"fromFrame": 186, "toFrame": 186, "actions": {"ui_back": 1}}
+]

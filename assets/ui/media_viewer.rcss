@@ -1,0 +1,201 @@
+/*
+	The media viewer (media_viewer.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI neutral
+	#171B22, ivory text #F4EFE6, tungsten #FFC88A, signage green #6EAF93). Sizes in dp. The document covers the view
+	(the room or the quick catalog dimmed behind it); the panel holds the game's names, the page's kind and position,
+	the stage the picture is fitted into, and the buttons. No color animations: RmlUi rebuilds the geometry of every
+	animated frame.
+*/
+
+body {
+	position: absolute;
+	left: 0dp;
+	top: 0dp;
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	background-color: #07090CD9;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 22dp;
+	color: #F4EFE6;
+}
+
+div, p, h2 {
+	display: block;
+}
+
+/* Nothing takes the focus: the application keeps the input (a click still pages or closes). */
+p, h2, span, div, img, button {
+	focus: none;
+	tab-index: none;
+}
+
+.panel {
+	position: absolute;
+	left: 6%;
+	top: 5%;
+	width: 88%;
+	height: 90%;
+	box-sizing: border-box;
+	padding: 20dp 28dp 16dp 28dp;
+	background-color: #171B22;
+	border: 2dp #F4EFE61F;
+	border-radius: 18dp;
+}
+
+.header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	height: 72dp;
+}
+
+.names {
+	width: 64%;
+}
+
+h2 {
+	font-size: 30dp;
+	font-weight: bold;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.subtitle {
+	font-size: 20dp;
+	color: #F4EFE6B3;
+	margin-top: 2dp;
+}
+
+.page-name {
+	width: 34%;
+	text-align: right;
+}
+
+.kind {
+	font-size: 26dp;
+	color: #FFC88A;
+}
+
+.position {
+	font-size: 19dp;
+	color: #F4EFE6A6;
+	margin-top: 2dp;
+}
+
+/* The picture is centred; its size is the screen's (fitted to the stage as laid out). */
+.stage {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 108dp;
+	bottom: 82dp;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	border-radius: 8dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6A6;
+	text-align: center;
+	max-width: 640dp;
+}
+
+.fallback {
+	text-align: center;
+	padding: 24dp 32dp;
+	border: 2dp #F4EFE633;
+	border-radius: 12dp;
+	background-color: #FFFFFF0A;
+}
+
+.fallback-title {
+	font-size: 26dp;
+	color: #FFC88A;
+	margin-bottom: 8dp;
+}
+
+.footer {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	bottom: 16dp;
+	height: 52dp;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.action {
+	display: block;
+	box-sizing: border-box;
+	padding: 8dp 18dp;
+	font-size: 21dp;
+	text-align: center;
+	background-color: #FFFFFF14;
+	border: 2dp #00000000;
+	border-radius: 12dp;
+	width: 200dp;
+}
+
+.action:hover {
+	border-color: #F4EFE659;
+}
+
+.action.disabled {
+	color: #F4EFE659;
+}
+
+.action.close {
+	width: 140dp;
+	margin-left: 16dp;
+}
+
+.hints {
+	flex: 1;
+	text-align: center;
+	font-size: 18dp;
+	color: #F4EFE6B3;
+}
+
+.hint {
+	margin: 0dp 10dp;
+}
+
+.pad {
+	display: inline-block;
+	min-width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	padding: 0dp 4dp;
+	border-radius: 13dp;
+	margin-right: 6dp;
+	text-align: center;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.pad-dpad { background-color: #F4EFE6; }
+.pad-x { background-color: #4C8BC9; }
+.pad-b { background-color: #C8645A; }
+
+/* Small views (1280 x 720 at 125%): denser text and a smaller frame. */
+@media (theme: compact) {
+	.panel { left: 3%; top: 3%; width: 94%; height: 94%; padding: 12dp 18dp 10dp 18dp; }
+	.header { height: 56dp; }
+	h2 { font-size: 24dp; }
+	.subtitle { font-size: 17dp; }
+	.kind { font-size: 21dp; }
+	.position { font-size: 16dp; }
+	.stage { left: 18dp; right: 18dp; top: 80dp; bottom: 64dp; }
+	.footer { left: 18dp; right: 18dp; bottom: 10dp; height: 44dp; }
+	.action { width: 150dp; font-size: 18dp; padding: 6dp 10dp; }
+	.hints { font-size: 15dp; }
+	.pad { min-width: 22dp; height: 22dp; line-height: 22dp; border-radius: 11dp; }
+}

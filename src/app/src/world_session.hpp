@@ -40,6 +40,7 @@
 #include <vector>
 
 #include <rv/app/cover_requests.hpp>
+#include <rv/app/game_screens.hpp>
 #include <rv/app/library_refresh.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/screen_policy.hpp>
@@ -136,6 +137,10 @@ public:
     /// texture as its cover and the interaction's `result` recorded.
     [[nodiscard]] std::optional<CardAction> cardPress(const input::ActionState* actions, ProductUi& product);
     void showCard(const InteractionResult& result, ProductUi& product);
+    /// The other versions of `game`'s title in the room's plan (I3 step 14b: Informazioni); none without a room.
+    [[nodiscard]] std::vector<catalog::GameId> otherVersionsOf(const catalog::GameId& game) const {
+        return m_versionGroups.othersOf(game);
+    }
     /// The hover's title label as `camera` shows it in a view of `viewSize` pixels (WorldHover::labelFor).
     [[nodiscard]] std::optional<WorldLabelContent> label(const scene::Camera& camera, glm::ivec2 viewSize);
     /// A frame was rendered (the lockstep wait starts again).
@@ -225,6 +230,8 @@ private:
     /// The card beside the inspected item, and the plan's other versions of each placed title (I3 step 14a).
     WorldCard m_card;
     std::map<std::uint64_t, std::uint32_t> m_otherVersions;
+    /// The other versions of each title for Informazioni (I3 step 14b), from the same plan.
+    VersionGroups m_versionGroups;
     /// The view's items when the dynamic path draws more than the scene's (viewItems()).
     std::vector<scene::RenderItem> m_viewItems;
     std::unique_ptr<HeroTextures> m_heroes;

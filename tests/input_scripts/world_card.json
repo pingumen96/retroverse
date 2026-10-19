@@ -7,6 +7,8 @@
 //   frame 82   ui_down: Indietro focused                frame 88   ui_left: Informazioni focused
 //   frame 94   ui_activate: Informazioni pressed        frame 100  ui_up: Avvia focused
 //   frame 106  ui_media: Vedi media (the pad's Y)       frame 112  ui_info: Informazioni (the pad's X)
+//              (since I3 step 14b Vedi media and Informazioni open their screens over the card: ui_back on frames
+//              79, 97, 109 and 115 closes each, back to Inspect with the card)
 //   frame 118  confirm: Avvia (the pad's Start)         frame 130  ui_activate: Avvia pressed on the card
 //              (launching from the room is I3 step 15a's: until then Avvia ends at once as if the game had returned,
 //              and Inspect of the same item comes back with the card, Avvia focused)
@@ -22,12 +24,16 @@
   {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
   {"fromFrame": 70, "toFrame": 70, "actions": {"ui_right": 1}},
   {"fromFrame": 76, "toFrame": 76, "actions": {"ui_activate": 1}},
+  {"fromFrame": 79, "toFrame": 79, "actions": {"ui_back": 1}},
   {"fromFrame": 82, "toFrame": 82, "actions": {"ui_down": 1}},
   {"fromFrame": 88, "toFrame": 88, "actions": {"ui_left": 1}},
   {"fromFrame": 94, "toFrame": 94, "actions": {"ui_activate": 1}},
+  {"fromFrame": 97, "toFrame": 97, "actions": {"ui_back": 1}},
   {"fromFrame": 100, "toFrame": 100, "actions": {"ui_up": 1}},
   {"fromFrame": 106, "toFrame": 106, "actions": {"ui_media": 1}},
+  {"fromFrame": 109, "toFrame": 109, "actions": {"ui_back": 1}},
   {"fromFrame": 112, "toFrame": 112, "actions": {"ui_info": 1}},
+  {"fromFrame": 115, "toFrame": 115, "actions": {"ui_back": 1}},
   {"fromFrame": 118, "toFrame": 118, "actions": {"confirm": 1}},
   {"fromFrame": 130, "toFrame": 130, "actions": {"ui_activate": 1}},
   {"fromFrame": 150, "toFrame": 150, "actions": {"ui_right": 1}},

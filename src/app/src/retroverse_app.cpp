@@ -614,6 +614,12 @@ struct RetroverseApp::State {
         };
         world = std::make_unique<WorldSession>(context, std::move(options), *pool, *graphics, std::move(host),
                                                std::move(decided));
+        if (product) {
+            // Informazioni lists the other versions of a title the room's plan knows (I3 step 14b).
+            product->setVersionLookup([this](const catalog::GameId& game) {
+                return world ? world->otherVersionsOf(game) : std::vector<catalog::GameId>{};
+            });
+        }
         spdlog::info("World: the room of {} on a worker pool of {} thread(s){}", kRoomSystem, pool->threadCount(),
                      lockstep ? " (lockstep: frames wait for the room and its layers)" : "");
     }

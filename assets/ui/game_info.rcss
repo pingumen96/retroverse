@@ -1,0 +1,199 @@
+/*
+	Informazioni (game_info.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI neutral
+	#171B22, ivory text #F4EFE6, tungsten #FFC88A). Sizes in dp. The document covers the view (the room or the quick
+	catalog dimmed behind it); a panel in its middle holds the game's names, its metadata, the description and the other
+	versions in a region that scrolls, and the buttons. No color animations: RmlUi rebuilds the geometry of every
+	animated frame.
+*/
+
+body {
+	position: absolute;
+	left: 0dp;
+	top: 0dp;
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	background-color: #07090CD9;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 22dp;
+	color: #F4EFE6;
+}
+
+div, p, h2, h3 {
+	display: block;
+}
+
+/* Nothing takes the focus: the application keeps the input (a click still acts). */
+p, h2, h3, span, div, button {
+	focus: none;
+	tab-index: none;
+}
+
+.panel {
+	position: absolute;
+	left: 18%;
+	top: 6%;
+	width: 64%;
+	height: 88%;
+	box-sizing: border-box;
+	padding: 22dp 30dp 16dp 30dp;
+	background-color: #171B22;
+	border: 2dp #F4EFE61F;
+	border-radius: 18dp;
+}
+
+h2 {
+	font-size: 30dp;
+	font-weight: bold;
+	line-height: 1.15em;
+}
+
+.subtitle {
+	font-size: 21dp;
+	color: #F4EFE6B3;
+	margin-top: 4dp;
+}
+
+/* The region that scrolls (Up and Down): between the names and the buttons. */
+.body {
+	position: absolute;
+	left: 30dp;
+	right: 30dp;
+	top: 108dp;
+	bottom: 84dp;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding-right: 12dp;
+}
+
+h3 {
+	font-size: 20dp;
+	font-weight: bold;
+	color: #FFC88A;
+	margin-top: 14dp;
+	margin-bottom: 6dp;
+}
+
+.note {
+	font-size: 19dp;
+	color: #F4EFE6A6;
+	margin-bottom: 6dp;
+}
+
+.rows {
+	border-bottom: 2dp #F4EFE61F;
+	padding-bottom: 8dp;
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	font-size: 20dp;
+	padding: 2dp 0dp;
+}
+
+.key {
+	width: 30%;
+	color: #F4EFE6A6;
+}
+
+.value {
+	width: 70%;
+}
+
+.description {
+	font-size: 20dp;
+	line-height: 1.4em;
+	white-space: pre-line;
+}
+
+.version {
+	display: flex;
+	flex-direction: row;
+	font-size: 20dp;
+	padding: 3dp 0dp;
+}
+
+.version-title {
+	width: 70%;
+}
+
+.version-region {
+	width: 30%;
+	color: #A8E6B0;
+	text-align: right;
+}
+
+.footer {
+	position: absolute;
+	left: 30dp;
+	right: 30dp;
+	bottom: 16dp;
+	height: 52dp;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.action {
+	display: block;
+	box-sizing: border-box;
+	width: 180dp;
+	padding: 8dp 18dp;
+	font-size: 21dp;
+	text-align: center;
+	background-color: #FFFFFF14;
+	border: 2dp #00000000;
+	border-radius: 12dp;
+}
+
+.action:hover {
+	border-color: #F4EFE659;
+}
+
+.hints {
+	flex: 1;
+	text-align: center;
+	font-size: 18dp;
+	color: #F4EFE6B3;
+}
+
+.hint {
+	margin: 0dp 10dp;
+}
+
+.pad {
+	display: inline-block;
+	min-width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	padding: 0dp 4dp;
+	border-radius: 13dp;
+	margin-right: 6dp;
+	text-align: center;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.pad-dpad { background-color: #F4EFE6; }
+.pad-y { background-color: #FFC88A; }
+.pad-b { background-color: #C8645A; }
+
+/* Small views (1280 x 720 at 125%): a wider panel and denser text. */
+@media (theme: compact) {
+	.panel { left: 6%; top: 3%; width: 88%; height: 94%; padding: 14dp 20dp 10dp 20dp; }
+	h2 { font-size: 24dp; }
+	.subtitle { font-size: 18dp; }
+	.body { left: 20dp; right: 20dp; top: 80dp; bottom: 64dp; }
+	h3 { font-size: 18dp; margin-top: 10dp; }
+	.row, .version, .description { font-size: 17dp; }
+	.note { font-size: 16dp; }
+	.footer { left: 20dp; right: 20dp; bottom: 10dp; height: 44dp; }
+	.action { width: 150dp; font-size: 18dp; padding: 6dp 10dp; }
+	.hints { font-size: 15dp; }
+	.pad { min-width: 22dp; height: 22dp; line-height: 22dp; border-radius: 11dp; }
+}

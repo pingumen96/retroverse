@@ -88,6 +88,10 @@ public:
     /// worker as rows() asks it, the system's until it answers): nothing when the catalog is not open, lacks the game
     /// or cannot be read (logged). I3 step 14a: the world's card.
     [[nodiscard]] std::optional<ui::CatalogEntry> entryOf(const catalog::GameId& game);
+    /// Everything the catalog holds about `game` (SqliteCatalogQuery::details), read now on the main thread's
+    /// connection: nothing when the catalog is not open, lacks the game or cannot be read (logged). I3 step 14b: the
+    /// media viewer and Informazioni.
+    [[nodiscard]] std::optional<catalog_db::GameDetails> detailsOf(const catalog::GameId& game);
 
     /// The readiness a row of `system` shows while its game's own is not known, and the system's chip; null for a
     /// system without games.

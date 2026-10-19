@@ -402,6 +402,43 @@ struct CardRecord {
 
     bool operator==(const CardRecord&) const = default;
 };
+
+/// A change of the media viewer or of Informazioni (I3 step 14b).
+struct GameScreenEventRecord {
+    std::uint64_t frame = 0;
+    /// "media" (the viewer opened on `game` from `from`, "card" or "catalog"; `detail` its pages' kinds joined by ','),
+    /// "page" (the page of `kind` shows; `detail` its position from 1), "picture" (`kind`'s picture: `detail`
+    /// "shown <width>x<height>" or "failed"), "info" (Informazioni opened on `game` from `from`; `detail` its other
+    /// versions, "<title> (<region>)" joined by "; "), "scroll" (`detail` the step), "closed" (`detail` "media" or
+    /// "info").
+    std::string event;
+    std::string game;
+    std::string from;
+    std::string kind;
+    std::string detail;
+
+    bool operator==(const GameScreenEventRecord&) const = default;
+};
+
+/// The media viewer and Informazioni (I3 step 14b; ADR-0012 §5), from the world's card and the quick catalog. Empty
+/// ({}) in runs without the product UI.
+struct GameScreensRecord {
+    bool bound = false;
+    /// Frames each showed; pictures uploaded and pictures that could not be read or decoded.
+    std::uint64_t viewerFrames = 0;
+    std::uint64_t infoFrames = 0;
+    std::uint64_t pictures = 0;
+    std::uint64_t failures = 0;
+    /// The viewer's picture and stage as last laid out with a picture: x, y, width, height in pixels of the window's
+    /// view (empty: none).
+    std::vector<double> pictureBox;
+    std::vector<double> stageBox;
+    /// The changes, in order (at most kMaxInteractionEvents; `eventsDropped` past them).
+    std::vector<GameScreenEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const GameScreensRecord&) const = default;
+};
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -877,6 +914,8 @@ struct RunReport {
     WorldRecord world;
     ResidencyRecord residency;
     VideoRecord video;
+    /// The media viewer and Informazioni (I3 step 14b; the product UI), always written ("screens").
+    GameScreensRecord screens;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

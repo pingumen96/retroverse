@@ -627,6 +627,12 @@ void WorldSession::showCard(const InteractionResult& result, ProductUi& product)
         }
     }
     m_card.update(interaction, result, item, hero, others, product, m_context.frameIndex());
+    // Vedi media and Informazioni of the inspected game (I3 step 14b): the product UI's screens, over the card.
+    if (item != nullptr && result.showMedia) {
+        product.openGameMedia(item->game, item->title, kScreenFromCard);
+    } else if (item != nullptr && result.showInfo) {
+        product.openGameInfo(item->game, item->title, kScreenFromCard);
+    }
 }
 
 std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera, glm::ivec2 viewSize) {
