@@ -1080,6 +1080,16 @@ void RenderInterface_GL3::RenderGeometry(Rml::CompiledGeometryHandle handle, Rml
 	{
 		// Do nothing.
 	}
+	else if (const ExternalTextureSlot* external = FindExternalTexture(texture))
+	{
+		// Retroverse local change: a texture the host registered (SetExternalTexture); nothing drawn while its slot is
+		// empty.
+		if (external->texture == 0)
+			return;
+		UseProgram(ProgramId::Texture);
+		SubmitTransformUniform(translation);
+		glBindTexture(GL_TEXTURE_2D, (GLuint)external->texture);
+	}
 	else if (texture)
 	{
 		UseProgram(ProgramId::Texture);
@@ -1237,8 +1247,57 @@ struct TGAHeader {
 // Restore packing
 #pragma pack()
 
+// Retroverse local change: the handles of the host's textures (SetExternalTexture) start here, far above any OpenGL
+// texture name and below TextureEnableWithoutBinding and TexturePostprocess.
+static constexpr Rml::TextureHandle kExternalTextureBase = Rml::TextureHandle(1) << 40;
+static const Rml::String kExternalTextureScheme = "rv-texture:";
+
+size_t RenderInterface_GL3::ExternalTextureSlotOf(const Rml::String& key)
+{
+	for (size_t index = 0; index < external_textures.size(); ++index)
+	{
+		if (external_textures[index].key == key)
+			return index;
+	}
+	external_textures.push_back(ExternalTextureSlot{key, 0, {1, 1}});
+	return external_textures.size() - 1;
+}
+
+const RenderInterface_GL3::ExternalTextureSlot* RenderInterface_GL3::FindExternalTexture(Rml::TextureHandle handle) const
+{
+	if (handle < kExternalTextureBase || handle >= kExternalTextureBase + external_textures.size())
+		return nullptr;
+	return &external_textures[size_t(handle - kExternalTextureBase)];
+}
+
+void RenderInterface_GL3::SetExternalTexture(const Rml::String& key, unsigned int texture, Rml::Vector2i size)
+{
+	ExternalTextureSlot& slot = external_textures[ExternalTextureSlotOf(key)];
+	slot.texture = texture;
+	if (size.x > 0 && size.y > 0)
+		slot.size = size;
+}
+
+unsigned int RenderInterface_GL3::ExternalTexture(const Rml::String& key) const
+{
+	for (const ExternalTextureSlot& slot : external_textures)
+	{
+		if (slot.key == key)
+			return slot.texture;
+	}
+	return 0;
+}
+
 Rml::TextureHandle RenderInterface_GL3::LoadTexture(Rml::Vector2i& texture_dimensions, const Rml::String& source)
 {
+	// Retroverse local change: "rv-texture:<key>" names a texture the host registers (SetExternalTexture).
+	if (source.compare(0, kExternalTextureScheme.size(), kExternalTextureScheme) == 0)
+	{
+		const size_t index = ExternalTextureSlotOf(source.substr(kExternalTextureScheme.size()));
+		texture_dimensions = external_textures[index].size;
+		return kExternalTextureBase + Rml::TextureHandle(index);
+	}
+
 	Rml::FileInterface* file_interface = Rml::GetFileInterface();
 	Rml::FileHandle file_handle = file_interface->Open(source);
 	if (!file_handle)
@@ -1513,6 +1572,9 @@ void RenderInterface_GL3::RenderBlur(float sigma, const Gfx::FramebufferData& so
 
 void RenderInterface_GL3::ReleaseTexture(Rml::TextureHandle texture_handle)
 {
+	// Retroverse local change: the host owns the textures it registered.
+	if (FindExternalTexture(texture_handle) != nullptr)
+		return;
 	glDeleteTextures(1, (GLuint*)&texture_handle);
 }
 

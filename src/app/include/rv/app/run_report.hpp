@@ -318,6 +318,49 @@ struct InteractionRecord {
 
 /// The most interaction events a run report keeps.
 inline constexpr std::size_t kMaxInteractionEvents = 512;
+
+/// A change of the world's card (I3 step 14a).
+struct CardEventRecord {
+    std::uint64_t frame = 0;
+    /// "shown" (the card shows `game`), "hidden", "focus" (the focus moved to `button`), "press" (`button` pressed
+    /// `via` "activate": Enter or the pad's south button on the focused one, or "click"), and what the interaction
+    /// answered to the card or its shortcuts: "launch", "media", "info".
+    std::string event;
+    std::string button;
+    std::string via;
+    std::string game;
+
+    bool operator==(const CardEventRecord&) const = default;
+};
+
+/// The world's card beside the inspected item (I3 step 14a; ADR-0012 §5). Empty ({}) in runs without a room's
+/// collection.
+struct CardRecord {
+    bool bound = false;
+    /// Frames it showed, with its cover's texture, and with its content cut by its maximum height (0: never squeezed).
+    std::uint64_t shownFrames = 0;
+    std::uint64_t coverFrames = 0;
+    std::uint64_t squeezedFrames = 0;
+    /// What it showed last: the game (GameId), its title, platform, year (0 unknown), readiness and blocker keys, the
+    /// catalog's details known, the other versions, the focused button (ui::toString(CardButton); "" while hidden).
+    std::string game;
+    std::string title;
+    std::string platform;
+    std::uint64_t year = 0;
+    std::string readiness;
+    std::string blocker;
+    bool details = false;
+    std::uint64_t otherVersions = 0;
+    std::string focused;
+    /// The cover's box as last laid out with its texture: x, y, width, height in pixels of the window's view (empty:
+    /// none).
+    std::vector<double> coverBox;
+    /// The changes, in order (at most kMaxInteractionEvents; `eventsDropped` past them).
+    std::vector<CardEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const CardRecord&) const = default;
+};
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -471,6 +514,8 @@ struct WorldRecord {
     std::string hoveredGame;
     /// The interaction with the room's items (I3 step 13a).
     InteractionRecord interaction;
+    /// The card beside the inspected item (I3 step 14a).
+    CardRecord card;
     /// I3 step 10c: the persisted start's preview and its reconciliation (none without a stored plan shown); the room's
     /// items written for the next start; the games given to the hero CRT; the room's object fallbacks.
     std::optional<WorldPreviewRecord> preview;

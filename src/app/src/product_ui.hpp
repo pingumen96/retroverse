@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -11,6 +12,10 @@
 #include <rv/core/expected.hpp>
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
+#include <rv/ui/game_card_model.hpp>
+
+#include <glm/vec2.hpp>
+#include <glm/vec4.hpp>
 
 #include <rv/app/world_label_ui.hpp>
 
@@ -106,6 +111,26 @@ public:
     /// The hover's title label from now on (I3 step 13a; nothing: none): shown over the scene, in screenshots too,
     /// while neither the quick catalog nor the game-session panel shows. It takes no input.
     void setWorldLabel(std::optional<WorldLabelContent> content);
+    /// The world's card beside the inspected item from now on (I3 step 14a; nothing: none), its button `focused`
+    /// focused: shown over the scene, in screenshots too, while neither the quick catalog nor the game-session panel
+    /// shows. It takes no keys or pad buttons (the world reads them: WorldCard), only clicks while the mouse is free
+    /// (handleWorldCardEvent).
+    void setWorldCard(std::optional<ui::GameCardContent> content, ui::CardButton focused);
+    /// A mouse event while the card shows and the mouse is free: forwarded to it; true when it was a click on the card,
+    /// which the room must not see.
+    bool handleWorldCardEvent(const SDL_Event& event);
+    /// The card's button a click pressed since the last call.
+    [[nodiscard]] std::optional<ui::CardButton> takeWorldCardClick();
+    /// The card shows with its content cut by its maximum height; its cover's box in the view's pixels (x, y, width,
+    /// height), if it shows one.
+    [[nodiscard]] bool worldCardSqueezed() const;
+    [[nodiscard]] std::optional<glm::vec4> worldCardCoverBox() const;
+    /// Registers `texture` for the documents' image source "rv-texture:<key>" (ui::UiSystem::setTexture; 0: none).
+    void setUiTexture(std::string_view key, unsigned texture, glm::ivec2 size);
+    /// Counts the catalog's changes that show other rows (its opening, a readiness resolved, a refresh): a reader of a
+    /// game's row (the world's card) reads it again when it changed.
+    [[nodiscard]] std::uint64_t catalogRevision() const noexcept;
+
     /// The catalog the UI shows (the generated room asks it for the room's snapshot, I3 step 10b).
     [[nodiscard]] AppCatalog& catalog() noexcept;
 

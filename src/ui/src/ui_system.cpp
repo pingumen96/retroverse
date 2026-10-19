@@ -256,6 +256,14 @@ std::uint64_t UiSystem::drawCalls() const noexcept {
     return m_impl->renderer->draws();
 }
 
+void UiSystem::setTexture(std::string_view key, unsigned texture, glm::ivec2 size) {
+    m_impl->renderer->SetExternalTexture(Rml::String(key), texture, Rml::Vector2i(size.x, size.y));
+}
+
+unsigned UiSystem::texture(std::string_view key) const {
+    return m_impl->renderer->ExternalTexture(Rml::String(key));
+}
+
 TextInputMethodEditor_SDL& UiSystem::textInputEditor() noexcept {
     return m_impl->textInput;
 }

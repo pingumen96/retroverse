@@ -1,0 +1,101 @@
+<rml>
+<head>
+	<!--
+		The world's game card (I3 step 14a; ADR-0012 §5, style §16.3: a discreet card beside the inspected item, never
+		over it): the inspected game's cover, title, platform and year, its launch readiness with its first blocker's
+		sentence, its developer, genre, players and other versions, and its actions as buttons in a 2 x 2 grid.
+		Bound to the data model "game_card" of rv::ui::GameCardScreen (src/ui/src/game_card_screen.cpp), which also names
+		the ids below: keep them in step (src/ui/include/rv/ui/game_card_model.hpp, tests/unit/ui/test_game_card.cpp).
+		The readiness and blocker sentences are the quick catalog's (quick_catalog.rml), line for line: the test reads
+		both documents and compares them (one table). Every string is written here: the screen binds data and keys
+		only, and an empty field reads "n.d." (non disponibile). The cover is the application's texture
+		(rv-texture:game-card-cover): RmlUi never loads the user's files. The focus moves between the buttons with the
+		arrows and the D-pad (the screen moves it: the grid is its model's), Enter or A presses the focused one, a click
+		presses the one clicked.
+	-->
+	<title>Scheda del gioco</title>
+	<link type="text/rcss" href="game_card.rcss"/>
+</head>
+<body id="game-card" data-model="game_card">
+	<div class="cover-frame" data-class-empty="!card.cover">
+		<img id="game-card-cover" src="rv-texture:game-card-cover" data-if="card.cover"/>
+	</div>
+	<h2 id="game-card-title"><span data-if="card.title != ''">{{ card.title }}</span><span data-if="card.title == ''">Gioco senza titolo</span></h2>
+	<p class="subtitle"><span data-if="card.platform != ''">{{ card.platform }}</span><span data-if="card.platform == ''">n.d.</span>, <span data-if="card.year != ''">{{ card.year }}</span><span data-if="card.year == ''">n.d.</span></p>
+	<p id="card-reading" class="note" data-if="!card.details">Lettura dei dettagli dal catalogo...</p>
+	<p id="card-file-missing" class="state" data-if="card.unavailable && card.readiness == ''">Non disponibile: il file del gioco non si trova</p>
+	<!-- The quick catalog's lines (quick_catalog.rml), unchanged: the readiness as a one-line label, then a sentence for
+	     its first blocker's code. -->
+	<p class="state" data-if="card.readiness == '' && card.state == 'unavailable'">Non disponibile: il file del gioco non si trova</p>
+	<p class="state" data-if="card.readiness == '' && card.state == 'needs-configuration'">Da configurare: l'emulatore non è impostato</p>
+	<p class="state" data-if="card.readiness == '' && card.state == 'emulator-missing'">Emulatore non trovato</p>
+	<p id="card-readiness" class="state" data-if="card.readiness == 'source-unavailable'">Non disponibile: cartella non raggiungibile</p>
+	<p class="state" data-if="card.readiness == 'rom-missing'">Non disponibile: file del gioco assente</p>
+	<p class="state" data-if="card.readiness == 'requires-configuration'">Da configurare</p>
+	<p class="state" data-if="card.readiness == 'emulator-not-found'">Emulatore non trovato</p>
+	<p class="state" data-if="card.readiness == 'core-not-found'">Core dell'emulatore non trovato</p>
+	<p id="card-ready" class="ready" data-if="card.readiness == 'ready' && !card.verified">Pronto</p>
+	<p id="card-verified" class="ready" data-if="card.readiness == 'ready' && card.verified">Pronto: già avviato e tornato senza errori</p>
+	<p id="card-blocker" class="blocker" data-if="card.blocker == 'source-unavailable'">La cartella del sistema o del gioco non è raggiungibile: controlla che il disco sia collegato.</p>
+	<p class="blocker" data-if="card.blocker == 'rom-missing'">Il file del gioco non c'è più: forse è stato spostato o cancellato.</p>
+	<p class="blocker" data-if="card.blocker == 'rom-folder-unresolved'">La cartella dei giochi del sistema non è definita: controlla ROMDirectory in ES-DE.</p>
+	<p class="blocker" data-if="card.blocker == 'rom-root-unknown'">La cartella principale dei giochi (ROMDirectory) non è nota.</p>
+	<p class="blocker" data-if="card.blocker == 'system-unknown' || card.blocker == 'system-not-configured'">ES-DE non configura più questo sistema.</p>
+	<p class="blocker" data-if="card.blocker == 'library-unreadable'">La configurazione di ES-DE non si legge: controlla che ES-DE sia dove library.json lo indica.</p>
+	<p class="blocker" data-if="card.blocker == 'no-command'">Il sistema non ha nessun comando di avvio.</p>
+	<p class="blocker" data-if="card.blocker == 'choice-stale'">Il comando scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
+	<p class="blocker" data-if="card.blocker == 'profile-unknown'">Il profilo d'emulatore scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
+	<p class="blocker" data-if="card.blocker == 'profile-template'">Il profilo dell'emulatore contiene argomenti scritti male.</p>
+	<p class="blocker" data-if="card.blocker == 'profile-variable-missing'">Il profilo dell'emulatore usa una variabile che non ha un valore.</p>
+	<p class="blocker" data-if="card.blocker == 'profile-invalid-request' || card.blocker == 'invalid-request'">Windows non può avviare l'emulatore così com'è configurato.</p>
+	<p class="blocker" data-if="card.blocker == 'program-not-allowed'">Il comando non avvia un emulatore che Retroverse sappia trovare: serve un profilo d'emulatore.</p>
+	<p class="blocker" data-if="card.blocker == 'program-refused'">Il comando avvia un interprete di comandi o un programma di avvio, che Retroverse non esegue mai.</p>
+	<p class="blocker" data-if="card.blocker == 'program-repeated'">Il comando indica più di un emulatore.</p>
+	<p class="blocker" data-if="card.blocker == 'program-missing'">Il comando non indica l'emulatore in modo leggibile.</p>
+	<p class="blocker" data-if="card.blocker == 'install-unknown'">La cartella di ES-DE non è nota: indicala con "retroverse-cli library create --install".</p>
+	<p class="blocker" data-if="card.blocker == 'token-unsupported'">Il comando usa una funzione di ES-DE che Retroverse non esegue.</p>
+	<p class="blocker" data-if="card.blocker == 'token-malformed'">Il comando contiene un segnaposto scritto male.</p>
+	<p class="blocker" data-if="card.blocker == 'command-placeholder'">Il comando di questo sistema è solo un segnaposto: va configurato in ES-DE.</p>
+	<p class="blocker" data-if="card.blocker == 'inject-file'">ES-DE aggiungerebbe argomenti presi da un file del gioco: scegli un altro comando o un profilo.</p>
+	<p class="blocker" data-if="card.blocker == 'start-folder-missing'">La cartella di lavoro indicata dal comando non esiste.</p>
+	<p class="blocker" data-if="card.blocker == 'start-folder-repeated'">Il comando indica più di una cartella di lavoro.</p>
+	<p class="blocker" data-if="card.blocker == 'start-folder-glued'">Il comando indica la cartella di lavoro dentro un altro argomento.</p>
+	<p class="blocker" data-if="card.blocker == 'start-folder-relative'">La cartella di lavoro indicata dal comando non è un percorso completo.</p>
+	<p class="blocker" data-if="card.blocker == 'find-rules-missing'">Le regole di ricerca di ES-DE non dicono dove cercare l'emulatore o il core.</p>
+	<p class="blocker" data-if="card.blocker == 'find-rule-undecided'">Una regola di ricerca di ES-DE dipende da un programma sostitutivo, che Retroverse non usa.</p>
+	<p class="blocker" data-if="card.blocker == 'emulator-not-found'">L'emulatore non si trova in nessuno dei posti dove ES-DE lo cerca.</p>
+	<p class="blocker" data-if="card.blocker == 'core-not-found'">Il core richiesto dal comando non si trova.</p>
+	<p class="blocker" data-if="card.blocker == 'core-malformed'">Il comando indica il core in modo non leggibile.</p>
+	<p class="blocker" data-if="card.blocker == 'core-repeated'">Il comando indica più di un core.</p>
+	<!-- The last launch from the card, when it did not end normally (rv_app's launch outcome codes). -->
+	<p id="card-outcome" class="blocker" data-if="card.outcome == 'not-ready'">Il gioco non è pronto: la scheda dice perché.</p>
+	<p class="blocker" data-if="card.outcome == 'quick-exit'">Il programma si è chiuso subito: se il gioco è ancora aperto, il profilo deve attendere i suoi processi.</p>
+	<p class="blocker" data-if="card.outcome == 'processes-remained'">Il programma si è chiuso, ma il gioco potrebbe essere ancora aperto.</p>
+	<p class="blocker" data-if="card.outcome == 'left-running'">L'emulatore è rimasto aperto.</p>
+	<p class="blocker" data-if="card.outcome == 'crashed'">L'emulatore si è chiuso per un errore.</p>
+	<p class="blocker" data-if="card.outcome == 'failed-to-start'">L'emulatore non è partito.</p>
+	<p class="blocker" data-if="card.outcome == 'not-configured'">Il gioco non si può avviare così com'è configurato.</p>
+	<p class="blocker" data-if="card.outcome == 'emulator-missing'">L'emulatore non si trova.</p>
+	<p class="blocker" data-if="card.outcome == 'core-missing'">Il core dell'emulatore non si trova.</p>
+	<p class="blocker" data-if="card.outcome == 'rom-missing'">Il file del gioco non si trova.</p>
+	<p class="blocker" data-if="card.outcome != '' && card.outcomeKnown == false">L'avvio non è andato a buon fine.</p>
+	<div class="rows">
+		<div class="row"><span class="key">Sviluppatore</span><span class="value"><span data-if="card.developer != ''">{{ card.developer }}</span><span data-if="card.developer == ''">n.d.</span></span></div>
+		<div class="row"><span class="key">Genere</span><span class="value"><span data-if="card.genre != ''">{{ card.genre }}</span><span data-if="card.genre == ''">n.d.</span></span></div>
+		<div class="row"><span class="key">Giocatori</span><span class="value"><span data-if="card.players != ''">{{ card.players }}</span><span data-if="card.players == ''">n.d.</span></span></div>
+		<div id="card-versions" class="row" data-if="card.otherVersions == 1"><span class="key">Altre versioni</span><span class="value">1 nel catalogo</span></div>
+		<div class="row" data-if="card.otherVersions > 1"><span class="key">Altre versioni</span><span class="value">{{ card.otherVersions }} nel catalogo</span></div>
+	</div>
+	<div id="game-card-actions" class="actions">
+		<button id="card-play" class="action primary" data-event-click="press('play')">Avvia</button>
+		<button id="card-media" class="action" data-event-click="press('media')">Vedi media</button>
+		<button id="card-info" class="action" data-event-click="press('info')">Informazioni</button>
+		<button id="card-back" class="action" data-event-click="press('back')">Indietro</button>
+	</div>
+	<div class="hints">
+		<span class="hint"><span class="pad pad-y">Y</span>Vedi media</span>
+		<span class="hint"><span class="pad pad-x">X</span>Informazioni</span>
+		<span class="hint"><span class="pad pad-b">B</span>Indietro</span>
+	</div>
+</body>
+</rml>

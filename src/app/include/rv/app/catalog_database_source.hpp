@@ -84,6 +84,11 @@ public:
     [[nodiscard]] Status rows(std::size_t first, std::size_t count, std::vector<ui::CatalogEntry>& out) override;
     [[nodiscard]] std::optional<std::size_t> position(std::string_view id) const override;
 
+    /// The row of `game`, read now on the main thread's connection like a page of one (its readiness asked of the
+    /// worker as rows() asks it, the system's until it answers): nothing when the catalog is not open, lacks the game
+    /// or cannot be read (logged). I3 step 14a: the world's card.
+    [[nodiscard]] std::optional<ui::CatalogEntry> entryOf(const catalog::GameId& game);
+
     /// The readiness a row of `system` shows while its game's own is not known, and the system's chip; null for a
     /// system without games.
     [[nodiscard]] const CatalogSystem* findSystem(std::string_view name) const;

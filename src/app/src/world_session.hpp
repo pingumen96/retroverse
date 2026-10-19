@@ -32,6 +32,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -54,6 +55,7 @@
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/pick_index.hpp>
 
+#include "world_card.hpp"
 #include "world_hover.hpp"
 #include "world_notice_panel.hpp"
 
@@ -123,6 +125,11 @@ public:
     /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems), the hero texture's front
     /// of an item in its slot (dynamicItems()).
     [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems);
+    /// The card beside the inspected item (I3 step 14a, world_card.hpp): before interact(), what its input presses
+    /// this frame (for WorldHover::Frame::card); after it, its content given to the product UI with the item's hero
+    /// texture as its cover and the interaction's `result` recorded.
+    [[nodiscard]] std::optional<CardAction> cardPress(const input::ActionState* actions, ProductUi& product);
+    void showCard(const InteractionResult& result, ProductUi& product);
     /// The hover's title label as `camera` shows it in a view of `viewSize` pixels (WorldHover::labelFor).
     [[nodiscard]] std::optional<WorldLabelContent> label(const scene::Camera& camera, glm::ivec2 viewSize);
     /// A frame was rendered (the lockstep wait starts again).
@@ -209,6 +216,9 @@ private:
     std::unique_ptr<CoverLoader> m_loader;
     /// The hover, the pull-out and Focus over the collection (I3 step 13a).
     std::unique_ptr<WorldHover> m_interaction;
+    /// The card beside the inspected item, and the plan's other versions of each placed title (I3 step 14a).
+    WorldCard m_card;
+    std::map<std::uint64_t, std::uint32_t> m_otherVersions;
     /// The view's items when the dynamic path draws more than the scene's (viewItems()).
     std::vector<scene::RenderItem> m_viewItems;
     std::unique_ptr<HeroTextures> m_heroes;

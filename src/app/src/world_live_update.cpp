@@ -6,6 +6,7 @@
 
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/app_logic.hpp>
+#include <rv/app/world_card_ui.hpp>
 #include <rv/render/gl_device.hpp>
 
 #include "collection_instance.hpp"
@@ -47,6 +48,8 @@ void WorldSession::startLiveFlow(ProductUi& product) {
 
 void WorldSession::keepShown(const WorldBuild& build) {
     m_shown = shownRoomOf(build);
+    // The card's other versions of each title (I3 step 14a), from the plan shown.
+    m_otherVersions = build.plan ? otherVersionCounts(*build.plan) : std::map<std::uint64_t, std::uint32_t>{};
 }
 
 void WorldSession::releaseHero() {

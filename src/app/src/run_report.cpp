@@ -233,6 +233,27 @@ public:
         return strings;
     }
 
+    /// An array of finite numbers.
+    [[nodiscard]] std::vector<double> numberArray(std::string_view key) {
+        std::vector<double> numbers;
+        const nlohmann::json* value = required(key);
+        if (value == nullptr) {
+            return numbers;
+        }
+        if (!value->is_array()) {
+            fail(key, "expected an array of numbers");
+            return numbers;
+        }
+        for (const nlohmann::json& item : *value) {
+            if (!item.is_number() || !std::isfinite(item.get<double>())) {
+                fail(key, "expected an array of finite numbers");
+                return {};
+            }
+            numbers.push_back(item.get<double>());
+        }
+        return numbers;
+    }
+
     [[nodiscard]] bool has(std::string_view key) const { return find(key) != nullptr; }
 
     /// Records a validation error at `key` unless an earlier one is kept.
@@ -494,6 +515,75 @@ InteractionRecord readInteraction(FieldReader& fields) {
     return interaction;
 }
 
+/// An unbound record (no collection) is an empty object.
+Json cardToJson(const CardRecord& card) {
+    Json json = Json::object();
+    if (!card.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["shownFrames"] = card.shownFrames;
+    json["coverFrames"] = card.coverFrames;
+    json["squeezedFrames"] = card.squeezedFrames;
+    json["game"] = card.game;
+    json["title"] = card.title;
+    json["platform"] = card.platform;
+    json["year"] = card.year;
+    json["readiness"] = card.readiness;
+    json["blocker"] = card.blocker;
+    json["details"] = card.details;
+    json["otherVersions"] = card.otherVersions;
+    json["focused"] = card.focused;
+    json["coverBox"] = card.coverBox;
+    Json events = Json::array();
+    for (const CardEventRecord& event : card.events) {
+        Json entry{{"frame", event.frame}, {"event", event.event}};
+        for (const auto& [key, value] : {std::pair<const char*, const std::string*>{"button", &event.button},
+                                         {"via", &event.via},
+                                         {"game", &event.game}}) {
+            if (!value->empty()) {
+                entry[key] = *value;
+            }
+        }
+        events.push_back(std::move(entry));
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = card.eventsDropped;
+    return json;
+}
+
+CardRecord readCard(FieldReader& fields) {
+    CardRecord card;
+    if (!fields.has("bound")) {
+        return card;
+    }
+    card.bound = fields.boolean("bound");
+    card.shownFrames = fields.count("shownFrames");
+    card.coverFrames = fields.count("coverFrames");
+    card.squeezedFrames = fields.count("squeezedFrames");
+    card.game = fields.string("game");
+    card.title = fields.string("title");
+    card.platform = fields.string("platform");
+    card.year = fields.count("year");
+    card.readiness = fields.string("readiness");
+    card.blocker = fields.string("blocker");
+    card.details = fields.boolean("details");
+    card.otherVersions = fields.count("otherVersions");
+    card.focused = fields.string("focused");
+    card.coverBox = fields.numberArray("coverBox");
+    for (FieldReader& event : fields.objectArray("events")) {
+        CardEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.button = event.optionalString("button").value_or(std::string());
+        entry.via = event.optionalString("via").value_or(std::string());
+        entry.game = event.optionalString("game").value_or(std::string());
+        card.events.push_back(std::move(entry));
+    }
+    card.eventsDropped = fields.count("eventsDropped");
+    return card;
+}
+
 /// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
 Json worldToJson(const WorldRecord& world) {
     Json json = Json::object();
@@ -549,6 +639,7 @@ Json worldToJson(const WorldRecord& world) {
     json["hoveredPickId"] = world.hoveredPickId;
     json["hoveredGame"] = world.hoveredGame;
     json["interaction"] = interactionToJson(world.interaction);
+    json["card"] = cardToJson(world.card);
     if (world.preview) {
         const WorldPreviewRecord& preview = *world.preview;
         Json record{{"frame", preview.frame},
@@ -671,6 +762,9 @@ WorldRecord readWorld(FieldReader& fields) {
     world.hoveredGame = fields.string("hoveredGame");
     if (auto interaction = fields.optionalObject("interaction")) {
         world.interaction = readInteraction(*interaction);
+    }
+    if (auto card = fields.optionalObject("card")) {
+        world.card = readCard(*card);
     }
     if (auto preview = fields.optionalObject("preview")) {
         WorldPreviewRecord record;

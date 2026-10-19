@@ -92,6 +92,7 @@ InteractionResult WorldHover::update(const Frame& frame) {
     input.walker = frame.walker;
     input.back = frame.back;
     input.wheelNotches = frame.wheelNotches;
+    input.card = frame.card;
     // In Focus a held arrow or D-pad direction repeats its step (FocusStepRepeat); elsewhere it does not step.
     input::ActionState stepped;
     if (frame.actions != nullptr && m_interaction.context() == WorldContext::Focus) {
