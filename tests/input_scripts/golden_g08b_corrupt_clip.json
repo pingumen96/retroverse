@@ -1,0 +1,22 @@
+// I3 step 17a, golden G08b (style §26.1 8: a TV in fallback): the snes-room fixture's room, the walker in front of the
+// hero CRT (--spawn). The quick catalog selects Lilac Loom, whose clip is corrupt (the fixture's CorruptData clip, its
+// damage between 40 and 80% of the file, about 1.6 s into it); the CRT plays it after its dwell until the damage, then
+// falls back down the chain to the game's cover (ADR-0012 §7), which it shows at the end.
+//   frame 2         quick_catalog: the quick catalog opens
+//   frames 4, 6     ui_up: the focus to the search field
+//   frame 8         "lilac loom" typed: its one game selected, the CRT's selection after its dwell
+//   frames 40, 46,  ui_back: the focus back to the filter chips, then to the list (its history), then the quick
+//   52              catalog closed (the selection stays the CRT's)
+// tests/smoke/test_golden_room.cpp ("golden/G08b") takes the screenshot at the end (frame 239) and compares it with
+// assets/style_tests/screenshots/g08b_crt_fallback_golden.png.
+//   retroverse --spawn <the CRT's viewpoint> --input-script tests/input_scripts/golden_g08b_corrupt_clip.json
+//     --exit-after-frames --frames 240 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 4, "toFrame": 4, "actions": {"ui_up": 1}},
+  {"fromFrame": 6, "toFrame": 6, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "text": "lilac loom"},
+  {"fromFrame": 40, "toFrame": 40, "actions": {"ui_back": 1}},
+  {"fromFrame": 46, "toFrame": 46, "actions": {"ui_back": 1}},
+  {"fromFrame": 52, "toFrame": 52, "actions": {"ui_back": 1}}
+]

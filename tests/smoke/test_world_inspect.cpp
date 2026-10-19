@@ -251,8 +251,8 @@ TEST_CASE("world inspect: the cartridge lifted into the hand, turned, zoomed and
     CHECK(near(close.inspect.heldCenter, glm::vec3(0.0f, 0.0f, -0.4f), 1e-3f));
     requireScreenshot(zoomed, zoomShot, kShotSize);
 
-    // The whole script: zoomed out to 1.0 m (drawn short of the band), Vedi media on the north button, Indietro to
-    // Focus at frame 260, Back to FreeRoam at 300, the item back in its slot.
+    // The whole script: zoomed out to 1.0 m (drawn short of the band), Vedi media on the north button (the viewer
+    // closed again at frame 245), Indietro to Focus at frame 260, Back to FreeRoam at 300, the item back in its slot.
     const fs::path endShot = room.dir / "end.png";
     const AppRun run = runApp(retroverseExe(), room.dir, "inspect", roomArguments(340, endShot, script));
     const rv::app::InteractionRecord& record = requireInteraction(run);
@@ -276,6 +276,14 @@ TEST_CASE("world inspect: the cartridge lifted into the hand, turned, zoomed and
     CHECK(*inspect.maxDrawnDistance > 0.6);
     CHECK(inspect.mediaRequests == 1);
     CHECK(inspect.catalogOpenedInInspect == 0);
+    // Since step 14b Vedi media opens the media viewer over the card; the ui_back at frame 245 closes it, Inspect stays.
+    std::vector<std::string> screens;
+    for (const rv::app::GameScreenEventRecord& event : run.report->screens.events) {
+        if (event.event == "media" || event.event == "closed") {
+            screens.push_back(std::to_string(event.frame) + ":" + event.event + ":" + event.from);
+        }
+    }
+    CHECK(screens == std::vector<std::string>{"230:media:card", "245:closed:card"});
     // The lift (300 ms) and the lowering (200 ms): about 18 + 12 frames between pulled out and held.
     CHECK(inspect.liftFrames >= 27);
     CHECK(inspect.liftFrames <= 31);

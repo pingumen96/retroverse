@@ -7,7 +7,8 @@
 //   frames 140-219  the left trigger (ui_page_up): it goes away, to the zoom's farthest 1.0 m (drawn short of its
 //                   fixture: the band's box grown by 6 cm)
 //   frame 230       the pad's north button (quick_catalog and ui_media together, as its bindings give them): Vedi media
-//                   in Inspect, never the quick catalog
+//                   in Inspect (since step 14b it opens the media viewer), never the quick catalog
+//   frame 245       ui_back: the media viewer closes, Inspect with the card again
 //   frame 260       ui_back (Indietro): Focus on the same item, lowered to its pulled-out pose in 200 ms
 //   frame 300       back: FreeRoam, the item put back
 // tests/smoke/test_world_inspect.cpp checks the run report's world.interaction (its events and its inspect record) and
@@ -21,6 +22,7 @@
   {"fromFrame": 100, "toFrame": 129, "actions": {"ui_page_down": 1}},
   {"fromFrame": 140, "toFrame": 219, "actions": {"ui_page_up": 1}},
   {"fromFrame": 230, "toFrame": 230, "actions": {"quick_catalog": 1, "ui_media": 1}},
+  {"fromFrame": 245, "toFrame": 245, "actions": {"ui_back": 1}},
   {"fromFrame": 260, "toFrame": 260, "actions": {"ui_back": 1}},
   {"fromFrame": 300, "toFrame": 300, "actions": {"back": 1}}
 ]

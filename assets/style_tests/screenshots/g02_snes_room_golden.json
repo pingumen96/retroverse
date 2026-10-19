@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "99bc343a3fa84c9377923f6229a2411fa0694c54",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate B golden of the generated room (style 26.1 2): the snes-room fixture's 50 invented titles, every one face-out in the display cases, the featured wall shelf and the hero band, from the doorway (the plan's scene camera), the hero CRT's clip held at 1.0 s.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G02",
+  "image": {
+    "file": "g02_snes_room_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "4b9fa33774eb3dffce039ce53e53a09639cb22ede6eab9d6f68332f5a0cc0c92",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/snes-room",
+      "path": "tests/fixtures/esde/snes-room",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
+    },
+    "plan": {
+      "digest": "451c20f8196b4e88c34da4d6db893ef0d91edf153dd31769920bcc105063e39e",
+      "fileSha256": "451c20f8196b4e88c34da4d6db893ef0d91edf153dd31769920bcc105063e39e",
+      "items": 50,
+      "placements": 50
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "3d2dcb3e51f098dcd7b2268baee29ed3a0f9d2c2f8e3302a60e7009faf9678fb"
+    }
+  },
+  "renderedOn": "2026-10-19",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G02:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/snes-room into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g02.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "the plan's scene camera at the doorway (no --spawn)"
+}
