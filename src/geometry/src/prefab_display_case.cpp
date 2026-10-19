@@ -1,5 +1,6 @@
 // The display case (I3 step 1b): a low case with a glass front and tilted face-out levels (ADR-0010 §3, style §8
-// `furniture/display_case`).
+// `furniture/display_case`). Since I3 step 17a's review its vitrine is glass on every side but the back: slim corner
+// posts and a frame of rails hold the panes, so that the case reads as a lit glass vitrine from any side.
 
 #include <algorithm>
 #include <cmath>
@@ -37,7 +38,8 @@ constexpr float kReveal = 0.003f;
 constexpr float kKnobRadius = 0.009f;
 constexpr float kChamfer = 0.003f;
 
-// Vitrine: wooden sides, back and top rails, the glass front and top.
+// Vitrine: slim wooden corner posts, the back panel and the top rails framing the glass front, sides and top.
+/// The corner posts' square section, which also sets the vitrine's inner width (width - 2 * kSide).
 constexpr float kSide = 0.018f;
 constexpr float kBack = 0.012f;
 constexpr float kRailHeight = 0.03f;
@@ -216,13 +218,15 @@ ProceduralPrefab assemble(const DisplayCaseParams& p) {
         metal.cylinder(kKnobRadius, knobLength, 16, true, knob);
     }
 
-    // Vitrine: sides over the whole depth, the back panel and the rails between them.
+    // Vitrine: four slim corner posts, the back panel between the back posts, the top rails between the posts.
     const float vitrineHeight = p.height - l.floor;
     for (const float side : {-1.0f, 1.0f}) {
-        wood.chamferedBox(
-            glm::vec3(kSide, vitrineHeight, p.depth), kChamfer,
-            translation(glm::vec3(side * (halfWidth - 0.5f * kSide), l.floor + 0.5f * vitrineHeight, 0.0f)), kGrain,
-            kWoodTile, FaceMask::PosY);
+        for (const float end : {-1.0f, 1.0f}) {
+            wood.chamferedBox(glm::vec3(kSide, vitrineHeight, kSide), kChamfer,
+                              translation(glm::vec3(side * (halfWidth - 0.5f * kSide), l.floor + 0.5f * vitrineHeight,
+                                                    end * (halfDepth - 0.5f * kSide))),
+                              kGrain, kWoodTile, FaceMask::PosY);
+        }
     }
     panels.box(glm::vec3(l.innerWidth, l.interiorTop - l.floor, kBack),
                translation(glm::vec3(0.0f, 0.5f * (l.floor + l.interiorTop), -halfDepth + 0.5f * kBack)), kGrain,
@@ -232,12 +236,22 @@ ProceduralPrefab assemble(const DisplayCaseParams& p) {
             glm::vec3(l.innerWidth, kRailHeight, kRailDepth), kChamfer,
             translation(glm::vec3(0.0f, l.interiorTop + 0.5f * kRailHeight, side * (halfDepth - 0.5f * kRailDepth))),
             kGrain, kWoodTile, FaceMask::PosY);
+        wood.chamferedBox(glm::vec3(kSide, kRailHeight, p.depth - 2.0f * kSide), kChamfer,
+                          translation(glm::vec3(side * (halfWidth - 0.5f * kSide), l.interiorTop + 0.5f * kRailHeight,
+                                                0.0f)),
+                          kGrain, kWoodTile, FaceMask::PosY);
     }
-    // Glass: the front pane from the floor to the front rail, the top pane between the rails. Each pane is one sheet
-    // in the middle of its thickness: a blended, double-sided material shows it from both sides, and a box would lay
-    // two hazy layers over the items.
+    // Glass: the front pane from the floor to the front rail, a side pane between the posts on each side, the top pane
+    // between the rails. Each pane is one sheet in the middle of its thickness: a blended, double-sided material shows
+    // it from both sides, and a box would lay two hazy layers over the items.
     glass.quad(glm::vec2(l.innerWidth, l.interiorTop - l.floor),
                translation(glm::vec3(0.0f, 0.5f * (l.floor + l.interiorTop), l.glassInner + 0.5f * kGlass)));
+    for (const float side : {-1.0f, 1.0f}) {
+        // A quad faces +Z; turned a quarter about +Y it faces +X (side +1) or -X (side -1).
+        glm::mat4 pane = glm::rotate(glm::mat4(1.0f), side * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        pane[3] = glm::vec4(side * (halfWidth - 0.5f * kSide), 0.5f * (l.floor + l.interiorTop), 0.0f, 1.0f);
+        glass.quad(glm::vec2(p.depth - 2.0f * kSide, l.interiorTop - l.floor), pane);
+    }
     glass.plane(glm::vec2(l.innerWidth, p.depth - 2.0f * kRailDepth),
                 translation(glm::vec3(0.0f, p.height - kTopGlassDrop - 0.5f * kGlass, 0.0f)));
 

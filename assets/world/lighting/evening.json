@@ -35,6 +35,15 @@
      "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80},
     // The neon's glow on the wall around the sign.
     {"name": "sign_glow", "anchor": "sign", "type": "point", "position": [0.0, 0.0, 0.3], "color": "#B34DCE",
-     "intensity": 1.5, "range": 2.5}
+     "intensity": 1.5, "range": 2.5},
+    // A museum spot over each display case (style §4.1's accent lights on the cases): from above the aisle onto its
+    // levels, so that the covers read behind the glass and the case reads lit from the doorway.
+    {"name": "case_light", "on": "display", "anchor": "display_case", "type": "spot", "position": [0.0, 1.95, 0.6],
+     "target": [0.0, 0.62, -0.02], "color": "#FFEBD2", "intensity": 5, "range": 3.5, "innerConeDeg": 22,
+     "outerConeDeg": 38},
+    // A picture spot on the featured wall shelf beside the hero corner (the first featured titles stand there).
+    {"name": "shelf_light", "on": "display", "anchor": "wall_shelf", "type": "spot", "position": [0.0, 2.6, 1.3],
+     "target": [0.0, 1.28, 0.02], "color": "#FFEBD2", "intensity": 8, "range": 3.5, "innerConeDeg": 12,
+     "outerConeDeg": 22}
   ]
 }

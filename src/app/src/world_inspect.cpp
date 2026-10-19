@@ -36,6 +36,16 @@ namespace {
 
 } // namespace
 
+glm::vec3 heldCentre(const scene::Camera& camera, float distance) noexcept {
+    const InspectSettings settings;
+    const float fade = distance <= settings.distance
+                           ? 1.0f
+                           : std::clamp((settings.maxDistance - distance) / (settings.maxDistance - settings.distance),
+                                        0.0f, 1.0f);
+    const glm::vec2 offset = kHeldViewOffset * (distance * fade);
+    return camera.position() + camera.forward() * distance + camera.right() * offset.x + camera.up() * offset.y;
+}
+
 float heldRadius(const world::CollectionItem& item) noexcept {
     return item.slotBox.isEmpty() ? 0.0f : glm::length(item.slotBox.halfExtents());
 }
@@ -78,14 +88,14 @@ glm::mat4 heldItemTransform(const glm::mat4& pulled, const InspectView& view, co
     const scene::RigidPose from{glm::vec3(pulled[3]), glm::normalize(glm::quat_cast(pulledRotation))};
 
     // In the hand: the camera's axes (right, up, back: right-handed, since up = right x forward), the inspection's
-    // turn in them, the centre along the view.
+    // turn in them, the centre heldCentre() (left of and below the view's centre).
     const glm::vec3 forward = camera.forward();
     const glm::mat3 cameraAxes(camera.right(), camera.up(), -forward);
     const float yaw = std::isfinite(view.yaw) ? view.yaw : 0.0f;
     const float pitch = std::isfinite(view.pitch) ? view.pitch : 0.0f;
     const glm::mat3 held = cameraAxes * rotationX(-pitch) * rotationY(yaw);
     const float along = std::isfinite(distance) ? distance : InspectSettings{}.distance;
-    const scene::RigidPose to{camera.position() + forward * along, glm::normalize(glm::quat_cast(held))};
+    const scene::RigidPose to{heldCentre(camera, along), glm::normalize(glm::quat_cast(held))};
 
     const scene::RigidPose pose = lift >= 1.0f ? to : scene::interpolatePose(from, to, lift);
     glm::mat4 transform(glm::mat3_cast(pose.orientation));

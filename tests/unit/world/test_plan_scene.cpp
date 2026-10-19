@@ -321,14 +321,29 @@ TEST_CASE("world/plan_scene: the lights with the lighting profile's colours and 
         INFO(name);
         const PlanCase& entry = planCase(name);
         const rv::scene::SceneDescription scene = descriptionOf(entry);
-        // The plan's lights, then the profile's accents while the scene's limit leaves room for them.
+        // The plan's lights, then the profile's accents while the scene's limit leaves room for them: one on its hero
+        // corner part, or one on each display fixture of its kind (in the plan's fixture order).
+        std::vector<std::pair<std::string, std::string>> accents; // name, colour
+        for (const rv::world::AccentLight& accent : profile.accents) {
+            if (accent.on == rv::world::AccentAnchor::HeroCorner) {
+                accents.emplace_back("accent:" + accent.name, accent.color);
+                continue;
+            }
+            for (const rv::world::Fixture& fixture : entry.plan.fixtures) {
+                if (fixture.role == rv::world::FixtureRole::Display && fixture.prefab.kind == accent.anchor) {
+                    accents.emplace_back("accent:" + accent.name + ":" + fixture.id.socket(), accent.color);
+                }
+            }
+        }
+        CHECK(std::any_of(accents.begin(), accents.end(),
+                          [](const auto& accent) { return accent.first == "accent:case_light:dc01"; }));
         REQUIRE(scene.lights.size() >= entry.plan.lights.size());
         CHECK(scene.lights.size() ==
-              std::min<std::size_t>(rv::world::kMaxSceneLights, entry.plan.lights.size() + profile.accents.size()));
+              std::min<std::size_t>(rv::world::kMaxSceneLights, entry.plan.lights.size() + accents.size()));
         for (std::size_t i = entry.plan.lights.size(); i < scene.lights.size(); ++i) {
-            const rv::world::AccentLight& accent = profile.accents[i - entry.plan.lights.size()];
-            CHECK(scene.lights[i].name == "accent:" + accent.name);
-            CHECK(scene.lights[i].color == *rv::core::hexToLinearRgb(accent.color));
+            const auto& [accentName, accentColor] = accents[i - entry.plan.lights.size()];
+            CHECK(scene.lights[i].name == accentName);
+            CHECK(scene.lights[i].color == *rv::core::hexToLinearRgb(accentColor));
             CHECK_FALSE(scene.lights[i].castsShadows);
         }
         std::size_t shadowed = 0;

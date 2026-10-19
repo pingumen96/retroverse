@@ -207,6 +207,63 @@
       ],
       "range": 2.5,
       "type": "point"
+    },
+    {
+      "color": "#FFEBD2",
+      "innerConeDeg": 22.0,
+      "intensity": 5.0,
+      "name": "accent:case_light:dc01",
+      "outerConeDeg": 38.0,
+      "position": [
+        -0.4,
+        1.95,
+        1.0
+      ],
+      "range": 3.5,
+      "target": [
+        -1.02,
+        0.62,
+        1.0
+      ],
+      "type": "spot"
+    },
+    {
+      "color": "#FFEBD2",
+      "innerConeDeg": 22.0,
+      "intensity": 5.0,
+      "name": "accent:case_light:dc02",
+      "outerConeDeg": 38.0,
+      "position": [
+        0.4,
+        1.95,
+        1.0
+      ],
+      "range": 3.5,
+      "target": [
+        1.02,
+        0.62,
+        1.0
+      ],
+      "type": "spot"
+    },
+    {
+      "color": "#FFEBD2",
+      "innerConeDeg": 12.0,
+      "intensity": 8.0,
+      "name": "accent:shelf_light:fs01",
+      "outerConeDeg": 22.0,
+      "position": [
+        1.275,
+        2.6,
+        -3.63
+      ],
+      "range": 3.5,
+      "target": [
+        1.275,
+        1.28,
+        -4.91
+      ],
+      "type": "spot"
     }
   ],
   "name": "room:snes",
@@ -251,7 +308,7 @@
         "fabric": "MAT_Fabric_Display",
         "glass": "MAT_Glass_Display",
         "metal_trim": "MAT_Metal_Brushed",
-        "wood_primary": "MAT_Wood_Walnut",
+        "wood_primary": "MAT_Wood_Oak",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {},
@@ -273,7 +330,7 @@
         "fabric": "MAT_Fabric_Display",
         "glass": "MAT_Glass_Display",
         "metal_trim": "MAT_Metal_Brushed",
-        "wood_primary": "MAT_Wood_Walnut",
+        "wood_primary": "MAT_Wood_Oak",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {},

@@ -163,8 +163,8 @@ struct InteractionTimings {
 /// How the inspected item answers the look actions and the zoom (ADR-0012 §4, style §6.2).
 struct InspectSettings {
     /// From the eye, meters: where the item is held first, and the zoom's range.
-    float distance = 0.6f;
-    float minDistance = 0.4f;
+    float distance = 0.45f;
+    float minDistance = 0.3f;
     float maxDistance = 1.0f;
     /// Turn rate at full stick deflection (LookX, LookY).
     float stickDegreesPerSecond = 180.0f;
@@ -285,7 +285,7 @@ struct InspectView {
     float yaw = 0.0f;
     float pitch = 0.0f;
     /// From the eye, meters.
-    float distance = 0.6f;
+    float distance = 0.45f;
 
     bool operator==(const InspectView&) const = default;
 };
@@ -418,7 +418,7 @@ private:
     scene::PoseAnimator<float> m_lift;
     float m_inspectYaw = 0.0f;
     float m_inspectPitch = 0.0f;
-    float m_inspectDistance = 0.6f;
+    float m_inspectDistance = 0.45f;
     InteractionNotice m_notice = InteractionNotice::None;
     LaunchMessage m_noticeMessage;
     std::optional<WorldLaunchRecord> m_launch;

@@ -296,14 +296,15 @@ struct ArmchairParams {
 
 /// "display_case", pivot floor, front +Z; bounds = width x height x depth. A low collector's case (style §8
 /// `furniture/display_case`, §6.2: 0.80-1.10 m; ADR-0010 §3's display fixtures): a closed wooden base with two doors,
-/// and on it a vitrine with a glass front and a glass top between wooden sides, a back panel and two top rails. Inside,
+/// and on it a vitrine glazed on every side but the back: a glass front, two glass sides and a glass top held by four
+/// slim corner posts (18 mm), a back panel and a frame of top rails (I3 step 17a's review: no opaque side). Inside,
 /// `levels` face-out levels step up from the front (level 0, lowest) to the back: on each, the items stand on a ledge
 /// with a low lip and lean back by `tiltDeg` against a panel, the ledge resting on a riser that fills the level's band
-/// of the vitrine's depth (the case's sides hide the space under the tilted panels).
-/// Roles: "wood_primary" (base carcass, plinth and top, vitrine sides and rails), "wood_secondary" (doors, back
-/// panel), "metal_trim" (knobs), "fabric" (risers, ledges, lips and panels), "glass" (the front and top panes, one
-/// sheet each facing out: draw it with a blended, double-sided material such as MAT_Glass_Display, which casts no
-/// shadow).
+/// of the vitrine's depth (seen through the side glass, the risers close the space under the tilted panels).
+/// Roles: "wood_primary" (base carcass, plinth and top, corner posts and rails), "wood_secondary" (doors, back
+/// panel), "metal_trim" (knobs), "fabric" (risers, ledges, lips and panels), "glass" (the front, side and top panes,
+/// one sheet each facing out: draw it with a blended, double-sided material such as MAT_Glass_Display, which casts
+/// no shadow).
 /// Sockets: "Slot_<level>_<index>" (ShelfSlot), index 0 leftmost: slotsPerLevel as for the shelf, over the vitrine's
 /// inner width (width - 2 * 18 mm); transform = translation to the slot's bottom center on its ledge, turned back by
 /// tiltDeg about +X (the item's front faces up and forward); bounds = item volume [-w/2, 0, -d/2] .. [w/2, h, d/2].

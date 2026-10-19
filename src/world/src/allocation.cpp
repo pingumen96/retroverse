@@ -108,31 +108,51 @@ private:
 
     /// The slots of a level from `firstSlot` on hold one dressing prop.
     void dress(const LevelRef& ref, std::uint32_t firstSlot) {
-        const FixtureLevel& level = levelOf(ref);
         m_handled.push_back(ref);
-        if (firstSlot >= level.slots || m_input.shelfDressing.empty()) {
+        dressSpan(ref, firstSlot, levelOf(ref).slots - std::min(firstSlot, levelOf(ref).slots));
+    }
+
+    /// `count` slots of a level from `firstSlot` hold one dressing prop (the level's prop: every span of a level
+    /// shows the same one).
+    void dressSpan(const LevelRef& ref, std::uint32_t firstSlot, std::uint32_t count) {
+        const FixtureLevel& level = levelOf(ref);
+        if (count == 0 || firstSlot >= level.slots || m_input.shelfDressing.empty()) {
             return;
         }
         DressedLevel dressed;
         dressed.level = *LevelId::make(m_input.layout.fixtures[ref.fixture].fixture.id, level.level);
         dressed.firstSlot = firstSlot;
-        dressed.count = level.slots - firstSlot;
+        dressed.count = std::min(count, level.slots - firstSlot);
         dressed.prop = dressingProp(m_input.roomSeed, dressed.level, m_input.shelfDressing);
         m_result.dressing.push_back(std::move(dressed));
     }
 
-    /// Face-out titles over fixtures' face-out levels, each level whole before the next; the rest dressed.
+    /// Face-out titles over fixtures' face-out levels, each level whole before the next; the rest dressed. A level the
+    /// titles fill only partly holds them in its middle (generator 1.2: a lone title stands at the centre of its
+    /// ledge, framed by the dressing on both sides, instead of at its end), the first of them left of the centre when
+    /// the free slots do not split evenly.
     void fillFaceOut(const std::vector<std::size_t>& fixtures, std::span<const RoomTitle> titles) {
         const std::vector<const RoomTitle*> sorted = sortedSection(titles);
         std::size_t next = 0;
         for (const std::size_t fixture : fixtures) {
             for (const LevelRef& ref : readingOrder(fixture, LevelFacing::FaceOut)) {
                 const std::uint32_t slots = levelOf(ref).slots;
-                std::uint32_t index = 0;
-                for (; index < slots && next < sorted.size(); ++index) {
+                const auto count =
+                    static_cast<std::uint32_t>(std::min<std::size_t>(slots, sorted.size() - next));
+                if (count == 0 || count == slots) {
+                    for (std::uint32_t index = 0; index < count; ++index) {
+                        place(ref, index, *sorted[next++], true);
+                    }
+                    dress(ref, count);
+                    continue;
+                }
+                const std::uint32_t first = (slots - count) / 2;
+                for (std::uint32_t index = first; index < first + count; ++index) {
                     place(ref, index, *sorted[next++], true);
                 }
-                dress(ref, index);
+                m_handled.push_back(ref);
+                dressSpan(ref, 0, first);
+                dressSpan(ref, first + count, slots - first - count);
             }
         }
     }

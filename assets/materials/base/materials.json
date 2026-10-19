@@ -125,9 +125,9 @@
       "baseColorTexture": "procedural:ornate_rug/baseColor",
       "metallicRoughnessTexture": "procedural:ornate_rug/metallicRoughness"
     },
-    // The display cases' lining (I3 step 16): a deeper bordeaux velvet than the armchair's fabric, so that the
-    // face-out covers stand out from it.
-    "MAT_Fabric_Display": { "baseColor": "#4A2A30", "metallic": 0.0, "roughness": 0.95 },
+    // The display cases' lining (I3 step 16; lighter since step 17a's review, so that a lit case reads from the
+    // doorway): a bordeaux velvet of the armchair's family, dark enough that the face-out covers stand out from it.
+    "MAT_Fabric_Display": { "baseColor": "#6E3842", "metallic": 0.0, "roughness": 0.95 },
     // Storage boxes: kraft cardboard a shade darker than raw board, so the boxes stay behind the collection.
     "MAT_Cardboard_Box": { "baseColor": "#8E7151", "metallic": 0.0, "roughness": 0.85 },
     "MAT_Paper_Print": { "baseColor": "#EFEBE2", "metallic": 0.0, "roughness": 0.8 },

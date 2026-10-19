@@ -27,6 +27,7 @@
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
+#include <rv/app/world_inspect.hpp>
 #include <rv/core/math.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/plan_json.hpp>
@@ -215,9 +216,11 @@ TEST_CASE("world inspect: the cartridge lifted into the hand, turned, zoomed and
     CHECK(pose.liftFrames <= 19);
     CHECK(std::fabs(pose.yawDeg - 45.0) < 0.1);
     CHECK(std::fabs(pose.pitchDeg - 15.0) < 0.1);
-    CHECK(std::fabs(pose.distance - 0.6) < 1e-6);
+    CHECK(std::fabs(pose.distance - 0.45) < 1e-6);
     CHECK(pose.drawnDistance == pose.distance);
-    CHECK(near(pose.heldCenter, glm::vec3(0.0f, 0.0f, -0.6f), 1e-3f));
+    // In the hand: left of and below the view's centre, beside the card (rv::app::kHeldViewOffset).
+    const glm::vec3 handOffset(rv::app::kHeldViewOffset, -1.0f);
+    CHECK(near(pose.heldCenter, 0.45f * handOffset, 1e-3f));
     const float yaw = rv::core::degreesToRadians(45.0f);
     const float pitch = rv::core::degreesToRadians(15.0f);
     // Turned about the camera's up, then tilted about its right (heldItemTransform()).
@@ -241,14 +244,14 @@ TEST_CASE("world inspect: the cartridge lifted into the hand, turned, zoomed and
         CHECK(after / before < 0.55);
     }
 
-    // Zoomed in to the zoom's nearest end, 0.4 m.
+    // Zoomed in to the zoom's nearest end, 0.3 m.
     const fs::path zoomShot = room.dir / "zoom_in.png";
     const AppRun zoomed = runApp(retroverseExe(), room.dir, "zoom_in", roomArguments(131, zoomShot, script));
     const rv::app::InteractionRecord& close = requireInteraction(zoomed);
     INFO(zoomed.describe());
-    CHECK(std::fabs(close.inspect.distance - 0.4) < 1e-6);
-    CHECK(std::fabs(close.inspect.drawnDistance - 0.4) < 1e-6);
-    CHECK(near(close.inspect.heldCenter, glm::vec3(0.0f, 0.0f, -0.4f), 1e-3f));
+    CHECK(std::fabs(close.inspect.distance - 0.3) < 1e-6);
+    CHECK(std::fabs(close.inspect.drawnDistance - 0.3) < 1e-6);
+    CHECK(near(close.inspect.heldCenter, 0.3f * handOffset, 1e-3f));
     requireScreenshot(zoomed, zoomShot, kShotSize);
 
     // The whole script: zoomed out to 1.0 m (drawn short of the band), Vedi media on the north button (the viewer
@@ -269,7 +272,7 @@ TEST_CASE("world inspect: the cartridge lifted into the hand, turned, zoomed and
     CHECK(inspect.inspections == 1);
     REQUIRE(inspect.minDistance.has_value());
     REQUIRE(inspect.maxDistance.has_value());
-    CHECK(std::fabs(*inspect.minDistance - 0.4) < 1e-6);
+    CHECK(std::fabs(*inspect.minDistance - 0.3) < 1e-6);
     CHECK(std::fabs(*inspect.maxDistance - 1.0) < 1e-6);
     REQUIRE(inspect.maxDrawnDistance.has_value());
     CHECK(*inspect.maxDrawnDistance < 1.0);

@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "99bc343a3fa84c9377923f6229a2411fa0694c54",
+    "gitCommit": "a1f4e0031407d026abde4140827d23a96e6d12f3",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g10_snes_room_added_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "9a60895891d6b151c7c84496aa6a241ce0ddd23692774e5ef7f31b0ba8209e79",
+    "sha256": "196d69d25868f09494b0c656abe6a67fba737d6abee79c166b9ccb06433623e0",
     "width": 1920
   },
   "inputs": {
@@ -29,14 +29,14 @@
       "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
     },
     "plan": {
-      "digest": "5d67bb944d8cd236fb969483feab36d9e2364c24f0700fe36e15651ec9cd9d46",
-      "fileSha256": "5d67bb944d8cd236fb969483feab36d9e2364c24f0700fe36e15651ec9cd9d46",
+      "digest": "76019299513f68611a5bb5e41c7e11ca53f6718900d259d910ae1609ce982b9f",
+      "fileSha256": "76019299513f68611a5bb5e41c7e11ca53f6718900d259d910ae1609ce982b9f",
       "items": 60,
       "placements": 60
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "3d2dcb3e51f098dcd7b2268baee29ed3a0f9d2c2f8e3302a60e7009faf9678fb"
+      "sha256": "1b956a7693a6c4a561a7837dc8ed06dbb3015ff0b7d6bb4ee3d6f4035be50e6c"
     }
   },
   "renderedOn": "2026-10-19",

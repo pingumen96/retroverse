@@ -195,12 +195,12 @@ TEST_CASE("app/world_interaction: the triggers zoom in Inspect only", "[app][wor
     for (int frame = 0; frame < 12; ++frame) {
         inInspect.frame(right);
     }
-    // 0.5 m/s for 12 frames from 0.6 m.
-    CHECK(inInspect.interaction.inspectView().distance == Approx(0.6f - 0.5f * 12.0f * kFrameSeconds).margin(1e-4));
+    // 0.5 m/s for 12 frames from 0.45 m.
+    CHECK(inInspect.interaction.inspectView().distance == Approx(0.45f - 0.5f * 12.0f * kFrameSeconds).margin(1e-4));
     for (int frame = 0; frame < 200; ++frame) {
         inInspect.frame(right);
     }
-    CHECK(inInspect.interaction.inspectView().distance == 0.4f);
+    CHECK(inInspect.interaction.inspectView().distance == 0.3f);
     for (int frame = 0; frame < 200; ++frame) {
         inInspect.frame(left);
     }
@@ -559,13 +559,13 @@ TEST_CASE("app/world_interaction: Inspect lifts, rotates and zooms the item", "[
     walk.setAxis(Action::MoveForward, 1.0f);
     harness.frame(walk);
     CHECK(sameWalker(harness.pose(), walker));
-    // Back to Focus and in again: the inspection starts facing the front at 0.6 m.
+    // Back to Focus and in again: the inspection starts facing the front at 0.45 m.
     harness.frame(pressing({Action::UiBack}));
     harness.idle(20);
     harness.frame(pressing({Action::Interact}));
     CHECK(harness.interaction.inspectView().yaw == 0.0f);
     CHECK(harness.interaction.inspectView().pitch == 0.0f);
-    CHECK(harness.interaction.inspectView().distance == 0.6f);
+    CHECK(harness.interaction.inspectView().distance == 0.45f);
 }
 
 TEST_CASE("app/world_interaction: a face-out item is inspected straight from FreeRoam",

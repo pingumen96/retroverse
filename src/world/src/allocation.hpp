@@ -3,7 +3,8 @@
 // Private to rv_world (I3 step 3): the allocation of a fresh room's titles to slots (ADR-0010 §5, §6), on the fixtures
 // fixture_layout placed:
 //   - the featured titles fill the display fixtures in their order and the band's titles the hero band's levels, each
-//     level whole before the next, no reserve; the slots they leave hold shelf dressing;
+//     level whole before the next, no reserve; the slots they leave hold shelf dressing; a level they fill only
+//     partly holds them in its middle, dressed on both sides (generator 1.2);
 //   - the spine-out titles fill the modules one after the other in the collection's order: in each module the
 //     spine-out levels in band order (the level whose slots' centres are nearest the eye height first, then one level
 //     at a time alternately above and below, above first, one side's levels in order once the other's are taken),

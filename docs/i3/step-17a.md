@@ -90,6 +90,50 @@ load, step 16's note). Unit tests 1,709 of 1,709. Release was not run in this st
   saturated elements, warm wood; the ceiling and upper walls fall to black.
 - No golden shows a real title, cover or trademarked name: the fixtures' invented titles and generated pictures only.
 
+## Fixes after review
+
+The three look defects above were fixed and every room golden regenerated (G01 untouched: no material, shader or
+prefab of the test room changed).
+
+- **Display cases read as lit glass vitrines** (G02, G02s, G06, G10). The `display_case` prefab's vitrine is glass on
+  every side but the back: four 18 mm corner posts and a frame of top rails hold a front, two side and a top pane (the
+  opaque full-depth sides are gone; slots, bounds and sockets unchanged). The theme gives the cases an oak frame and
+  carcass (`MAT_Wood_Oak`) and a lighter bordeaux lining (`MAT_Fabric_Display` `#6E3842`, p90 chroma 80 against the
+  CRT's 112 and the sign's 123 in G02). Lighting profiles take accents on display fixtures (`"on": "display"`,
+  `"anchor"` a prefab kind, one light per fixture, named `accent:<name>:<socket>`): a museum spot over each case
+  (`case_light`, from above the aisle onto its levels) and a picture spot on the featured wall shelf (`shelf_light`),
+  drawn after the CRT's and the sign's while the scene's 16 lights leave room (the 50-title room 15 lights, the
+  2,000-title room 16: its shelf spot is left out). `collection_layout`'s occluders no longer count the cases' sides.
+  From the doorway the lining and the covers of both levels now read behind the glass; the base under the vitrine
+  stays dark wood on its unlit south face (luma about 10).
+- **The single title stands at the centre of its ledge** (G06). Generator **1.2** (a minor version: a fresh
+  generation's rule; no incremental update ever fills a face-out slot, so stored plans keep every placement): a
+  face-out level its titles fill only partly holds them in its middle, the first left of the centre when the free
+  slots do not split evenly, dressed on both sides (two spans of the level's prop). G06's one title moves from the end
+  of the featured shelf's top ledge (`fx:fs01/s:1.0`) to `s:1.2`, between the storage boxes and under the shelf's
+  spot; rooms whose face-out levels fill whole (G02's 50 titles, 56, 57, 890, 2,000) place every game as before.
+  Golden plans and scenes rewritten (`generatorVersion` 1.2 everywhere, the partial levels of the 1- and 15-title
+  plans centred). ADR-0010 §6 amended.
+- **The held cartridge reads in the hand** (G07). Inspect lifts the item to 0.45 m (was 0.6; the zoom 0.3 to 1.0 m)
+  and holds it left of and below the view's centre (`app::kHeldViewOffset`, tangents -0.25, -0.08: in the part of the
+  view the card leaves free), the offset fading to none as the zoom goes past 0.45 m so that a far item returns to
+  the view's axis, clear of its module's neighbours (`heldCentre()`; the clearance test over every Focus pose of the
+  50-, 890- and 2,000-title rooms holds). At the band's Focus pose the cartridge is about twice its neighbours' size
+  and overlaps the ledge below. `world_inspect.json` zooms out over frames 140-225 (from 0.3 m to 1.0 m). ADR-0012 §4
+  amended.
+
+Step 16's look probes (`gpu.world look: ...`) still hold: evening hero wall 0.102, eye bands 0.078, upper walls
+0.0028, chroma sign 122 / CRT 111 / the most saturated other tile 109 (the lit lining: a small margin); afternoon
+0.089, 0.073, 0.0051, 122 / 116 / 87. Their glass probe now bounds the median cover's darkest 5% by 70 and each
+cover's by 120: under the case's spot a pastel cover without darks of its own reads up to 107, a hazy pane would lift
+them all. Unit tests (`[world],[geometry],[app],[assets],[preview],[scene],[cli]`) 810 of 810, `rv_smoke_tests
+"[world]~[.bench]"` and `"[golden]"` passed (G01 0 pixels apart).
+
+Regenerated (Debug, reference machine), each looked at and reproduced 0 pixels apart by a second run:
+`assets/style_tests/screenshots/g02_snes_room_golden.png`, `g02s_snes_stress_golden.png`, `g06_snes_single_golden.png`,
+`g07_inspect_card_golden.png`, `g08a_crt_frozen_golden.png`, `g08b_crt_fallback_golden.png`,
+`g10_snes_room_added_golden.png` and their JSON.
+
 ## For the merge
 
 - **CLAUDE.md**, "Visual verification": the Gate B goldens beside G01 (the table above, `test_golden_room.cpp`,
@@ -101,5 +145,7 @@ load, step 16's note). Unit tests 1,709 of 1,709. Release was not run in this st
   filter to `golden/G01`.
 - **docs/roadmap.md**: row 17a done (the goldens, both checks; Release left to the gate).
 - **docs/testing/gate-b.md** (step 18): the style §26.2 checklist for G02 and G02s can start from the notes above.
-- **BACKLOG.md**: "Display cases lit and readable from the doorway" (the first note above); "The held cartridge
-  larger in Inspect".
+- **BACKLOG.md**: nothing for the display cases and the held cartridge (fixed after review, above); perhaps "The
+  display cases' base lit on the side facing the doorway".
+- **CLAUDE.md**: lighting profiles' `"on": "display"` accents (`case_light`, `shelf_light`); generator 1.2; Inspect at
+  0.45 m beside the card, zoom 0.3 to 1.0 m.

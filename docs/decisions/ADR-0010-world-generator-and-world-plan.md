@@ -2,6 +2,8 @@
 
 - Status: accepted
 - Date: 2026-10-18
+- Amended: 2026-10-19, at I3 step 17a's review: §6 centres the titles of a face-out level they fill only partly
+  (generator 1.2)
 - Relates to: ADR-0008 §1 (no new hash library), §5 (unknown media are never "no media") and §6 (world state is kept
   in files under `worlds/`, not in database rows: point 9 amends "choices made later go to the database" for world
   state until I4's editor)
@@ -202,7 +204,11 @@ Within each section the titles stand in the order (catalog sort key of the repre
 a title is found where the alphabet puts it: the featured titles in the display fixtures (fixtures in socket order),
 the hero band's titles in the band (the west module first), the spine-out titles in the spine-out modules; in each, as
 one reads a page: the band's top level first, left to right as one faces the shelf, then the level below, module by
-module in socket order. A placement names its slot, not a transform: the app derives the transform from the fixture's
+module in socket order. A face-out level the section's titles fill only partly holds them in its middle, the first
+left of the centre when the free slots do not split evenly, dressed on both sides (generator 1.2, amended at I3 step
+17a's review: a single-ROM room's one title stands at the centre of the featured shelf's ledge, framed by the dressing,
+not at its end; a fresh generation's rule only, since no incremental update fills a face-out slot). A placement names
+its slot, not a transform: the app derives the transform from the fixture's
 prefab and the slot, plus a small deterministic offset from the placement's seed (spine-out: pushed in by 0 to 4 mm;
 face-out: a yaw of at most 1.5 degrees), so that a row does not look machined.
 

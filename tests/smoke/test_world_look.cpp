@@ -430,6 +430,7 @@ void checkDisplayGlass(const ShownRoom& shown, const rv::assets::ImageData& imag
                        std::string_view profile) {
     INFO("profile " << profile);
     std::size_t probed = 0;
+    std::vector<double> darks;
     for (const rv::world::CollectionItem& item : shown.layout.items) {
         if (item.slot.fixture().socket() != "dc01") {
             continue;
@@ -444,10 +445,20 @@ void checkDisplayGlass(const ShownRoom& shown, const rv::assets::ImageData& imag
         const double dark = lumaQuantile(image, rect, 0.05);
         const double bright = lumaQuantile(image, rect, 0.95);
         INFO("item " << item.game.toString() << ": luma p5 " << dark << ", p95 " << bright);
-        CHECK(dark <= 70.0);
+        // Under the case's accent spot (step 17a's review) a pastel cover without darks of its own reads its darkest
+        // 5% above 70: each item is held to a looser ceiling, the median item to the haze bound (a hazy pane would
+        // lift every cover's darks).
+        CHECK(dark <= 120.0);
         CHECK(bright - dark >= 60.0);
+        darks.push_back(dark);
     }
     CHECK(probed >= 3);
+    if (!darks.empty()) {
+        std::sort(darks.begin(), darks.end());
+        const double median = darks[darks.size() / 2];
+        INFO("the median item's luma p5 " << median);
+        CHECK(median <= 70.0);
+    }
 }
 
 } // namespace

@@ -31,7 +31,7 @@
 {"depthMm":380,"heightMm":1050,"id":"room:snes/fx:w05","levels":[],"prefab":{"kind":"plant","manifest":"decor.plant.snake.generic"},"role":"decoration","widthMm":380,"xMm":-4280,"yMm":0,"yawCdeg":9000,"zMm":2000},
 {"depthMm":340,"heightMm":1500,"id":"room:snes/fx:w06","levels":[],"prefab":{"kind":"floor_lamp","manifest":"decor.lamp.floor_slim.generic"},"role":"decoration","widthMm":340,"xMm":-4300,"yMm":0,"yawCdeg":9000,"zMm":3000},
 {"depthMm":20,"heightMm":700,"id":"room:snes/fx:w07","levels":[],"prefab":{"kind":"poster_frame","manifest":"decor.poster_frame.generic"},"role":"decoration","widthMm":500,"xMm":-4470,"yMm":1550,"yawCdeg":9000,"zMm":4000}
-],"generatorVersion":"1.1","inputDigest":"1fc5129ad2b979f99f24772625eb1dd2277792b5830561cf2cd73be48bfe01a1","library":"esde","lights":[
+],"generatorVersion":"1.2","inputDigest":"f1a55f0efc2a0a137472b39ca3566fb5aaa368a90ffe3c2719ba5d48d85d3d4a","library":"esde","lights":[
 {"id":"room:snes/fx:dec-se.light","role":"lamp","spanMm":0,"targetXMm":2500,"targetYMm":1379,"targetZMm":4800,"xMm":2500,"yMm":1379,"zMm":4800},
 {"id":"room:snes/fx:e01.washer","role":"wall-washer","spanMm":900,"targetXMm":4470,"targetYMm":1000,"targetZMm":-4000,"xMm":3430,"yMm":2950,"zMm":-4000},
 {"id":"room:snes/fx:e02.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-3000,"xMm":4300,"yMm":1379,"zMm":-3000},

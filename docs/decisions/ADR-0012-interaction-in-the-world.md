@@ -2,6 +2,8 @@
 
 - Status: accepted
 - Date: 2026-10-18
+- Amended: 2026-10-19, at I3 step 17a's review: §4 holds the inspected item at 0.45 m, left of and below the view's
+  centre beside the card, the zoom from 0.3 to 1.0 m
 - Relates to: ADR-0004 (brings forward from I5 the screen material binding, `waitForStoppedDecoders()` at shutdown and
   the filter of NVIDIA's message 131154; the scheduler, the priority boost, upload staggering and audio stay I5's),
   ADR-0005 (Vedi media, Informazioni and pictures in the UI), ADR-0006 (the launch and the return, unchanged)
@@ -99,9 +101,13 @@ and UI contexts, so that no button means two things at once:
 
 ### 4. Inspection
 
-The item is drawn by the dynamic path (its static instance hidden by its flag) and lifted in **300 ms** to 0.6 m in
-front of the camera (style §6.2: 0.6-1.2 m), its front facing the eye; the look actions rotate it about its center (yaw
-unlimited, pitch +-80 degrees), the triggers or the wheel zoom between 0.4 and 1.0 m; the walker does not move. The
+The item is drawn by the dynamic path (its static instance hidden by its flag) and lifted in **300 ms** to 0.45 m
+from the eye, in the hand: left of and a little below the view's centre (`app::kHeldViewOffset`), in the part of the
+view the card leaves free, its front facing the eye (Amended at I3 step 17a's review: at 0.6 m on the view's axis, half
+again nearer than its shelf at the Focus pose, it read as standing in line with its neighbours); the look actions
+rotate it about its center (yaw unlimited, pitch +-80 degrees), the triggers or the wheel zoom between 0.3 and 1.0 m;
+the walker does not move. Style §6.2's 0.6-1.2 m is the walker's distance from what it inspects (the Focus pose's
+0.9 m), not the hand's. The
 scene behind is dimmed by one stop and vignetted through `PostSettings` (no depth of field in I3). Back returns it in
 **200 ms**. Every timing is skippable with the same button that started it and instant under `reduceMotion`.
 

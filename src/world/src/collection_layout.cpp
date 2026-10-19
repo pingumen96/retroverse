@@ -151,7 +151,8 @@ void stackedOccluders(std::vector<core::Aabb>& occluders, const geometry::Proced
     addPiece(occluders, fixture, glm::vec3(left, floor, back), glm::vec3(right, b.max.y, b.max.z));
 }
 
-/// A display case's solid pieces: its base under the levels, its sides and its back; the front and the top are glass.
+/// A display case's solid pieces: its base under the levels and its back; the front, the sides and the top are glass
+/// (the corner posts are too slim to hide an item).
 void vitrineOccluders(std::vector<core::Aabb>& occluders, const geometry::ProceduralPrefab& prefab,
                       const glm::mat4& fixture) {
     const std::vector<core::Aabb> levels = levelVolumes(prefab);
@@ -164,8 +165,6 @@ void vitrineOccluders(std::vector<core::Aabb>& occluders, const geometry::Proced
     }
     const core::Aabb& b = prefab.bounds;
     addPiece(occluders, fixture, b.min, glm::vec3(b.max.x, open.min.y, b.max.z));
-    addPiece(occluders, fixture, glm::vec3(b.min.x, open.min.y, b.min.z), glm::vec3(open.min.x, b.max.y, b.max.z));
-    addPiece(occluders, fixture, glm::vec3(open.max.x, open.min.y, b.min.z), glm::vec3(b.max.x, b.max.y, b.max.z));
     addPiece(occluders, fixture, glm::vec3(open.min.x, open.min.y, b.min.z), glm::vec3(open.max.x, b.max.y, open.min.z));
 }
 

@@ -225,16 +225,18 @@ void checkProperties(const GenerationResult& result, const rv::world::RoomSelect
     // quota for the section), the last no more; levels no title needs are dressed, never bare.
     std::map<std::pair<FixtureId, std::uint32_t>, std::uint32_t> perLevel;
     std::map<std::pair<FixtureId, std::uint32_t>, std::uint32_t> highestSlot;
+    std::map<std::pair<FixtureId, std::uint32_t>, std::uint32_t> lowestSlot;
     for (const rv::world::Placement& placement : plan.placements) {
         const auto key = std::pair{placement.slot.fixture(), placement.slot.level()};
         ++perLevel[key];
         highestSlot[key] = std::max(highestSlot[key], placement.slot.index());
+        lowestSlot[key] = lowestSlot.contains(key) ? std::min(lowestSlot[key], placement.slot.index())
+                                                   : placement.slot.index();
     }
-    std::map<std::pair<FixtureId, std::uint32_t>, const rv::world::DressedLevel*> dressed;
+    // A level's dressed spans, by first slot (plan.dressing is sorted by level, then first slot).
+    std::map<std::pair<FixtureId, std::uint32_t>, std::vector<const rv::world::DressedLevel*>> dressed;
     for (const rv::world::DressedLevel& level : plan.dressing) {
-        const auto key = std::pair{level.level.fixture(), level.level.level()};
-        EXPECT(!(dressed.contains(key)));
-        dressed[key] = &level;
+        dressed[std::pair{level.level.fixture(), level.level.level()}].push_back(&level);
     }
     std::vector<const Fixture*> modules;
     for (const std::string& socket : roomTemplate.collectionOrder) {
@@ -302,15 +304,28 @@ void checkProperties(const GenerationResult& result, const rv::world::RoomSelect
             where = fixture.id.toString() + " level " + std::to_string(level.level);
             const auto key = std::pair{fixture.id, level.level};
             const std::uint32_t count = perLevel.contains(key) ? perLevel.at(key) : 0;
-            // Titles stand from slot 0 without gaps; whatever follows them is dressed (face-out) or the reserve.
+            // Titles stand without gaps: from slot 0 on a spine-out level or a full face-out one (whatever follows them
+            // is the reserve or dressed), in the middle of a face-out level they fill only partly (generator 1.2: the
+            // first left of the centre, the slots either side dressed).
+            const bool centred = rv::world::isFaceOut(level.section) && count > 0 && count < level.slots;
+            const std::uint32_t first = centred ? (level.slots - count) / 2 : 0;
             if (count > 0) {
-                EXPECT(highestSlot.at(key) + 1 == count);
+                EXPECT(lowestSlot.at(key) == first);
+                EXPECT(highestSlot.at(key) + 1 == first + count);
             }
             const bool isDressed = dressed.contains(key);
             EXPECT((count > 0 || isDressed)); // no bare board
             if (isDressed) {
-                EXPECT(dressed.at(key)->firstSlot == count);
-                EXPECT(dressed.at(key)->firstSlot + dressed.at(key)->count == level.slots);
+                const std::vector<const rv::world::DressedLevel*>& spans = dressed.at(key);
+                if (centred && first > 0) {
+                    EXPECT(spans.size() == 2);
+                    EXPECT(spans.front()->firstSlot == 0);
+                    EXPECT(spans.front()->count == first);
+                } else {
+                    EXPECT(spans.size() == 1);
+                }
+                EXPECT(spans.back()->firstSlot == first + count);
+                EXPECT(spans.back()->firstSlot + spans.back()->count == level.slots);
             }
             if (isDressed && count > 0) {
                 EXPECT(rv::world::isFaceOut(level.section)); // a spine-out level keeps its free slots as the reserve
