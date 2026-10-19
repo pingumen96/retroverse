@@ -171,13 +171,24 @@ std::string describeTimes(const std::optional<TimeSummary>& times) {
                        times->p50Ms, times->p95Ms, times->p99Ms, times->maxMs);
 }
 
-/// The measurements of a run, once at its end: frame times, phases, CPU sections, GPU memory.
+/// "; GPU <pass> p50 <a> ms p99 <b> ms, ..." for the passes that reported a time, or nothing.
+std::string describeGpuPasses(const std::vector<GpuPassRecord>& passes) {
+    std::string text;
+    for (const GpuPassRecord& pass : passes) {
+        text += fmt::format("{}{} p50 {:.3f} ms p99 {:.3f} ms", text.empty() ? "; GPU " : ", ", pass.name,
+                            pass.times.p50Ms, pass.times.p99Ms);
+    }
+    return text;
+}
+
+/// The measurements of a run, once at its end: frame times (and GPU passes), phases, CPU sections, GPU memory.
 void logMeasurements(const RunReport& report) {
-    spdlog::info("Frame times of the run (the first {} frame(s) left out): {}", report.frameTimes.warmUpFrames,
-                 describeTimes(report.frameTimes.times));
+    spdlog::info("Frame times of the run (the first {} frame(s) left out): {}{}", report.frameTimes.warmUpFrames,
+                 describeTimes(report.frameTimes.times), describeGpuPasses(report.frameTimes.gpuPasses));
     for (const PhaseRecord& phase : report.phases) {
-        spdlog::info("Phase '{}': opened {} time(s){}, {} frame(s); frame times {}", phase.name, phase.opened,
-                     phase.open ? ", open at the end" : "", phase.frames, describeTimes(phase.times));
+        spdlog::info("Phase '{}': opened {} time(s){}, {} frame(s); frame times {}{}", phase.name, phase.opened,
+                     phase.open ? ", open at the end" : "", phase.frames, describeTimes(phase.times),
+                     describeGpuPasses(phase.gpuPasses));
     }
     for (const CpuSectionRecord& section : report.cpuSections) {
         spdlog::info("CPU section '{}': {}", section.name, describeTimes(section.times));

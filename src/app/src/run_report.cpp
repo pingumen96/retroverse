@@ -369,10 +369,38 @@ std::optional<TimeSummary> readOptionalTimes(FieldReader& fields) {
     return readTimes(fields);
 }
 
+/// "gpuPasses" (I3 step 17b) into `json`, left out when there is none.
+void putGpuPasses(Json& json, const std::vector<GpuPassRecord>& passes) {
+    if (passes.empty()) {
+        return;
+    }
+    Json array = Json::array();
+    for (const GpuPassRecord& pass : passes) {
+        Json entry;
+        entry["name"] = pass.name;
+        const Json times = timesToJson(pass.times);
+        for (const auto& [key, value] : times.items()) {
+            entry[key] = value;
+        }
+        array.push_back(std::move(entry));
+    }
+    json["gpuPasses"] = std::move(array);
+}
+
+/// What putGpuPasses() wrote (none for a report without the key: written before I3 step 17b, or without a view).
+std::vector<GpuPassRecord> readGpuPasses(FieldReader& fields) {
+    std::vector<GpuPassRecord> passes;
+    for (FieldReader& pass : fields.optionalObjectArray("gpuPasses")) {
+        passes.push_back(GpuPassRecord{pass.string("name"), readTimes(pass)});
+    }
+    return passes;
+}
+
 Json frameTimesToJson(const FrameTimesRecord& record) {
     Json json;
     json["warmUpFrames"] = record.warmUpFrames;
     putTimes(json, record.times);
+    putGpuPasses(json, record.gpuPasses);
     return json;
 }
 
@@ -383,6 +411,7 @@ Json phaseToJson(const PhaseRecord& phase) {
     json["open"] = phase.open;
     json["frames"] = phase.frames;
     putTimes(json, phase.times);
+    putGpuPasses(json, phase.gpuPasses);
     return json;
 }
 
@@ -393,6 +422,7 @@ PhaseRecord readPhase(FieldReader& fields) {
     phase.open = fields.boolean("open");
     phase.frames = fields.count("frames");
     phase.times = readOptionalTimes(fields);
+    phase.gpuPasses = readGpuPasses(fields);
     return phase;
 }
 
@@ -1801,6 +1831,7 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");
         report.frameTimes.times = readOptionalTimes(*frameTimes);
+        report.frameTimes.gpuPasses = readGpuPasses(*frameTimes);
     }
     for (FieldReader& phase : fields.objectArray("phases")) {
         report.phases.push_back(readPhase(phase));

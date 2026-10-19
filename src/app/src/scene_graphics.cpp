@@ -513,6 +513,8 @@ void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view,
     // describe an earlier view.
     if (state.viewRendered) {
         state.statsLog.record(context.clock().deltaSeconds(), state.renderer->stats());
+        // The run report's GPU times per pass, over the run and its phases (I3 step 17b).
+        context.frameTiming().recordGpuPasses(state.renderer->stats());
     } else {
         state.statsLog.recordWithoutView(context.clock().deltaSeconds());
     }

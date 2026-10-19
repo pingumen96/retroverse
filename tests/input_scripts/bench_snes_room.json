@@ -1,0 +1,39 @@
+// I3 step 17b: the benchmark path through the generated room (docs/roadmap.md, I3, "Budgets": frame p99 at most
+// 16.7 ms and p50 at most 8 ms over the "benchmark" phase, 1920 x 1080, Release, --no-vsync, on the snes-stress room of
+// 2,000 titles). It starts at the room's scene camera (inside the doorway, looking north: no --spawn), so that it plays
+// in any room of the template; walls and furniture stop the walker where a smaller room ends sooner (the real room).
+// With the default 0.0022 rad per mouse pixel, 714 px turn 90 degrees; at the walk speed of 2.5 m/s, 60 frames walk
+// 2.5 m. The phase holds frames 30 to 1259 (1,230 frames, all past the run's warm-up of 30):
+//   frames    0-29     standing at the doorway (the warm-up: the room and its layers in)
+//   frames   30-89     panning left 35 degrees: the west wall's modules from the doorway
+//   frames   90-209    panning right 70 degrees: the east wall's
+//   frames  210-269    back to the north, the hero wall at the end of the room
+//   frames  270-389    walking 5 m in along the circulation band, between the display cases
+//   frames  390-479    turning left 90 degrees: the west wall's spine-out modules close up
+//   frames  480-539    walking 2.5 m north sideways along them (move_right while facing west)
+//   frames  540-719    turning right 180 degrees: the east wall's modules
+//   frames  720-809    turning left 90 degrees: the hero wall, the CRT, the band
+//   frames  810-869    walking 1.5 m on towards it (stopped by the hero corner in a short room)
+//   frames  870-1049   turning 180 degrees: the whole room seen from the hero end, the doorway at its far side
+//   frames 1050-1199   walking back 6.25 m towards the doorway
+//   frames 1200-1259   standing
+//   frames 1260-1269   standing, past the phase: it closes before the run ends (the report's "open" is false)
+//   retroverse.exe --width 1920 --height 1080 --no-vsync --hidden --exit-after-frames --frames 1270
+//     --fixed-dt 0.016667 --input-script tests/input_scripts/bench_snes_room.json --run-report <report.json> --data-dir <a data directory
+//     whose library is the snes-stress fixture, imported>
+// tests/smoke/test_world_benchmark.cpp ("[.bench]") plays it on snes-stress, tests/unit/app/test_room_real.cpp
+// ("[real-library]") in the real room; both read the phase's frame times and GPU passes from the run report.
+[
+  {"fromFrame": 30, "toFrame": 1259, "phase": "benchmark"},
+  {"fromFrame": 30, "toFrame": 89, "actions": {"look_delta_x": -4.63}},
+  {"fromFrame": 90, "toFrame": 209, "actions": {"look_delta_x": 4.63}},
+  {"fromFrame": 210, "toFrame": 269, "actions": {"look_delta_x": -4.63}},
+  {"fromFrame": 270, "toFrame": 389, "actions": {"move_forward": 1.0}},
+  {"fromFrame": 390, "toFrame": 479, "actions": {"look_delta_x": -7.933}},
+  {"fromFrame": 480, "toFrame": 539, "actions": {"move_right": 1.0}},
+  {"fromFrame": 540, "toFrame": 719, "actions": {"look_delta_x": 7.933}},
+  {"fromFrame": 720, "toFrame": 809, "actions": {"look_delta_x": -7.933}},
+  {"fromFrame": 810, "toFrame": 869, "actions": {"move_forward": 0.6}},
+  {"fromFrame": 870, "toFrame": 1049, "actions": {"look_delta_x": 7.933}},
+  {"fromFrame": 1050, "toFrame": 1199, "actions": {"move_forward": 1.0}}
+]

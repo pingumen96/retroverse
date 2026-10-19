@@ -98,3 +98,47 @@ TEST_CASE("app/frame_timing: phases nest by name and may stay open", "[app][fram
     CHECK(early.closePhase(rv::app::kPhaseCoverLoad));
     CHECK(early.phases() == std::vector<PhaseRecord>{PhaseRecord{"coverLoad", 1, false, 2, std::nullopt}});
 }
+
+TEST_CASE("app/frame_timing: the GPU times per pass follow the run's and the phases' frames", "[app][frame_timing]") {
+    using rv::app::GpuPassRecord;
+    FrameTiming timing(1);
+    rv::gl::FrameStats stats;
+    stats.shadowGpuMilliseconds = 0.25;
+    stats.depthGpuMilliseconds = 0.5;
+    stats.sceneGpuMilliseconds = 1.0;
+    // Frame 0 is the warm-up: its GPU times count for nothing.
+    timing.recordGpuPasses(stats);
+    timing.recordFrame(0, std::nullopt);
+    CHECK(timing.runTimes().gpuPasses.empty());
+
+    timing.openPhase(rv::app::kPhaseBenchmark);
+    timing.recordGpuPasses(stats);
+    timing.recordFrame(1, 5.0);
+    // A frame without a view adds no GPU time; a negative or infinite time is no time.
+    timing.recordFrame(2, 5.0);
+    stats.shadowGpuMilliseconds = -1.0;
+    stats.depthGpuMilliseconds = std::numeric_limits<double>::infinity();
+    stats.outlineGpuMilliseconds = 0.125;
+    timing.recordGpuPasses(stats);
+    timing.recordFrame(3, 5.0);
+    CHECK(timing.closePhase(rv::app::kPhaseBenchmark));
+    stats.sceneGpuMilliseconds = 3.0;
+    timing.recordGpuPasses(stats);
+    timing.recordFrame(4, 5.0);
+
+    CHECK(timing.runTimes().gpuPasses ==
+          std::vector<GpuPassRecord>{GpuPassRecord{"shadow", TimeSummary{1, 0.25, 0.25, 0.25, 0.25}},
+                                     GpuPassRecord{"depth", TimeSummary{1, 0.5, 0.5, 0.5, 0.5}},
+                                     GpuPassRecord{"scene", TimeSummary{3, 1.0, 3.0, 3.0, 3.0}},
+                                     GpuPassRecord{"outline", TimeSummary{2, 0.125, 0.125, 0.125, 0.125}},
+                                     GpuPassRecord{"total", TimeSummary{3, 1.75, 3.125, 3.125, 3.125}}});
+    const std::vector<PhaseRecord> phases = timing.phases();
+    REQUIRE(phases.size() == 1);
+    CHECK(phases[0].frames == 3);
+    CHECK(phases[0].gpuPasses ==
+          std::vector<GpuPassRecord>{GpuPassRecord{"shadow", TimeSummary{1, 0.25, 0.25, 0.25, 0.25}},
+                                     GpuPassRecord{"depth", TimeSummary{1, 0.5, 0.5, 0.5, 0.5}},
+                                     GpuPassRecord{"scene", TimeSummary{2, 1.0, 1.0, 1.0, 1.0}},
+                                     GpuPassRecord{"outline", TimeSummary{1, 0.125, 0.125, 0.125, 0.125}},
+                                     GpuPassRecord{"total", TimeSummary{2, 1.125, 1.75, 1.75, 1.75}}});
+}
