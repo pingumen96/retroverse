@@ -387,8 +387,25 @@ struct WorldRecord {
     bool operator==(const WorldRecord&) const = default;
 };
 
-/// The collection's textures (I3 step 10b's loader; step 12 orders it): layers resident and pending, the cache's hits and
-/// misses, when the room was shown and when its last layer became resident. Empty ({}) without a room.
+/// The hero textures of the run (I3 step 12, ADR-0011 §8: the focused item's cover at up to 1,024 px, 8 kept):
+/// textures asked for, made, given up (no readable cover), evicted by the least-recently-used set, resident at the
+/// end and their bytes (now and at most), the longest upload (milliseconds), the game whose hero was shown at the end.
+struct HeroRecord {
+    std::uint64_t requests = 0;
+    std::uint64_t loaded = 0;
+    std::uint64_t failed = 0;
+    std::uint64_t evicted = 0;
+    std::uint64_t resident = 0;
+    std::uint64_t bytes = 0;
+    std::uint64_t peakBytes = 0;
+    double maxUploadMs = 0.0;
+    std::string shownGame;
+
+    bool operator==(const HeroRecord&) const = default;
+};
+
+/// The collection's textures (I3 step 10b's loader; step 12 orders it): layers resident and pending, the cache's hits
+/// and misses, when the room was shown and when its last layer became resident. Empty ({}) without a room.
 struct ResidencyRecord {
     bool bound = false;
     /// The arrays' format ("bc1-srgb", "rgba8-srgb") and their bytes.
@@ -423,6 +440,39 @@ struct ResidencyRecord {
     /// Frames (and idle wakes) that uploaded layers, and the most layers one of them uploaded.
     std::uint64_t uploadRounds = 0;
     std::uint64_t maxLayersPerRound = 0;
+
+    /// The loader's order (I3 step 12, ADR-0011 §6: the focused item, the view by projected size, the rest by
+    /// distance): the items in view when the room showed; when every item in view was first resident (from the room
+    /// shown) and how many items were resident then; how many of the first `viewItems` arrivals were in view; the mean
+    /// distance (meters, from the eye when each arrived) of each quarter of the arrivals that were out of view, in
+    /// arrival order (0 for an empty quarter).
+    std::uint64_t viewItems = 0;
+    std::optional<double> viewResidentAfterShownMs;
+    std::uint64_t residentAtViewResident = 0;
+    std::uint64_t inViewAmongFirst = 0;
+    std::array<double, 4> arrivalDistanceQuarters{};
+    /// Frame rounds whose uploads took longer than the frame's budget (1 ms), and the longest round (milliseconds; the
+    /// layers and the hero texture together). Idle wakes of a lockstep run, which have a budget of their own, are not
+    /// counted.
+    std::uint64_t overBudgetRounds = 0;
+    double maxRoundMs = 0.0;
+    /// Lockstep runs: frames whose update waited for their view (the camera brought items into view that were not
+    /// resident yet), and the time they waited in all.
+    std::uint64_t lockstepWaits = 0;
+    double lockstepWaitMs = 0.0;
+    /// Rounds that made and uploaded nothing because a launched game ran (ADR-0012 §6: the loader paused).
+    std::uint64_t pausedRounds = 0;
+    /// The loader's retries after the catalog's refreshes (ADR-0011 §6: the media root back): rounds, items queued
+    /// again (fronts not from their cover), and items whose pictures changed (uploaded again).
+    std::uint64_t retryRounds = 0;
+    std::uint64_t retriedItems = 0;
+    std::uint64_t retriedChanged = 0;
+    /// Items a new loader of the same collection took over from the one it replaced (I3 step 10c's textures
+    /// reconciliation), and those whose pictures changed (uploaded again; the others were not).
+    std::uint64_t adoptedItems = 0;
+    std::uint64_t adoptedChanged = 0;
+    /// The hero textures (ADR-0011 §8).
+    HeroRecord hero;
 
     bool operator==(const ResidencyRecord&) const = default;
 };

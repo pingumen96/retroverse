@@ -163,7 +163,9 @@ Status DerivedTextureCache::store(const CacheKey& key, const RvTexture& texture)
         return propagate(bytes.error());
     }
     const fs::path path = entryPath(key);
-    if (auto written = core::writeFileAtomic(path, *bytes); !written) {
+    // Derived data, checked when read and made again when lost: atomic, not flushed (I3 step 12: the flush was about a
+    // third of a cold cover's time on the workers).
+    if (auto written = core::writeFileAtomic(path, *bytes, core::Durability::Unflushed); !written) {
         ++m_storeFailures;
         return written;
     }

@@ -309,7 +309,7 @@ TEST_CASE("core/worker_pool: a job that ignores its cancellation is left to end 
     CHECK(*ended);
 }
 
-TEST_CASE("core/worker_pool: threads run below normal priority", "[core][worker_pool]") {
+TEST_CASE("core/worker_pool: threads run below normal priority, without dynamic boosts", "[core][worker_pool]") {
     const auto prioritiesOf = [](bool belowNormal) {
         WorkerPoolOptions options;
         options.threads = 2;
@@ -320,8 +320,11 @@ TEST_CASE("core/worker_pool: threads run below normal priority", "[core][worker_
         for (int i = 0; i < 8; ++i) {
             REQUIRE(pool.submit([&](const JobContext&) {
                             const int priority = GetThreadPriority(GetCurrentThread());
+                            BOOL boostDisabled = FALSE;
+                            static_cast<void>(GetThreadPriorityBoost(GetCurrentThread(), &boostDisabled));
                             const std::lock_guard lock(mutex);
-                            priorities.push_back(priority);
+                            // I3 step 12: below normal and without dynamic boosts, or normal with them.
+                            priorities.push_back(boostDisabled != FALSE ? priority + 100 : priority);
                         })
                         .has_value());
         }
@@ -330,7 +333,7 @@ TEST_CASE("core/worker_pool: threads run below normal priority", "[core][worker_
         return priorities;
     };
     for (const int priority : prioritiesOf(true)) {
-        CHECK(priority == THREAD_PRIORITY_BELOW_NORMAL);
+        CHECK(priority == THREAD_PRIORITY_BELOW_NORMAL + 100);
     }
     for (const int priority : prioritiesOf(false)) {
         CHECK(priority == THREAD_PRIORITY_NORMAL);

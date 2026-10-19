@@ -106,7 +106,16 @@ private:
 /// reach; IoError for access denied, which is what a destination that is a folder, read-only, or held open by another
 /// program without sharing its deletion gives), IoError for the parent folders; the temporary file is removed on every
 /// error. Never throws.
-[[nodiscard]] Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data);
+///
+/// `Durability::Unflushed` (I3 step 12: derived data, such as the derived-texture cache's entries) skips the flush: the
+/// rename is still atomic, so readers never see a partial file, but a power loss may leave the new name holding a file
+/// that was never written out; only data that is checked when read and can be made again may be written so.
+enum class Durability : std::uint8_t {
+    Flushed,   ///< FlushFileBuffers before the rename (the default)
+    Unflushed, ///< no flush: atomic for readers, not durable across a power loss
+};
+[[nodiscard]] Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data,
+                                     Durability durability = Durability::Flushed);
 [[nodiscard]] Status writeTextFileAtomic(const std::filesystem::path& path, std::string_view text);
 
 namespace detail {
@@ -120,7 +129,7 @@ enum class AtomicWriteStop {
 
 /// writeFileAtomic() stopped at `stop`: the temporary file is left as it is and Cancelled returned (tests only).
 [[nodiscard]] Status writeFileAtomicStoppingAt(const std::filesystem::path& path, std::span<const std::byte> data,
-                                               AtomicWriteStop stop);
+                                               AtomicWriteStop stop, Durability durability = Durability::Flushed);
 
 } // namespace detail
 

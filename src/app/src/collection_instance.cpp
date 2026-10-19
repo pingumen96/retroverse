@@ -113,6 +113,32 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
                                      gl::LayeredBaseColor{&instance->m_arrays.array(cls, index), spine}));
         }
     }
+    // The hero textures' front (I3 step 12): the label's material with a base colour texture of its own (white), which
+    // the hero texture shown overrides.
+    {
+        const assets::MaterialDesc& labelDesc = library.getOrFallback(roleMaterial("label"));
+        // Clamped like a picture: the sampler bound with the override follows this texture's wrap mode.
+        assets::ImageData white;
+        white.width = 1;
+        white.height = 1;
+        white.channels = 4;
+        white.pixels = {255, 255, 255, 255};
+        gl::TextureDesc whiteDesc;
+        whiteDesc.mipmaps = false;
+        whiteDesc.sampling.wrap = gl::TextureWrap::ClampToEdge;
+        whiteDesc.memoryKind = gl::GpuMemoryKind::HeroTextures;
+        auto base = gl::Texture2D::create(white, whiteDesc, "Collection hero base");
+        if (!base) {
+            return propagate(base.error());
+        }
+        instance->m_heroBase = std::move(*base);
+        gl::MaterialTextures textures = gl::resolveMaterialTextures(labelDesc, graphics.textures());
+        textures[static_cast<std::size_t>(gl::MaterialTextureSlot::BaseColor)] = &instance->m_heroBase;
+        instance->m_heroMaterial = materials.add(fmt::format("collection/{}/hero", family.mediaFamily),
+                                                 "collection hero front", labelDesc, textures);
+        instance->m_heroShader = materials.material(instance->m_heroMaterial).shader;
+    }
+    instance->m_frontMesh = partMeshes[static_cast<std::size_t>(Part::Front)];
     if (Status uploaded = materials.upload(uniformBufferOffsetAlignment, "MaterialUniforms"); !uploaded) {
         return propagate(uploaded.error());
     }
@@ -145,6 +171,8 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
         entry.game = placed.game;
         entry.frontKey = placed.frontLayerKey;
         entry.spineKey = placed.spineLayerKey;
+        entry.transform = placed.transform;
+        entry.bounds = placed.worldBounds();
         // The records name layer 0 (pending) until the item's pictures are uploaded.
         const scene::InstanceAttributes attributes = placed.attributes();
         for (std::size_t part = 0; part < kPartRoles.size(); ++part) {
@@ -190,6 +218,50 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
 std::optional<catalog::GameId> CollectionInstance::gameOf(world::PickId pickId) const {
     const auto found = m_byPick.find(pickId);
     return found == m_byPick.end() ? std::nullopt : std::optional<catalog::GameId>(m_items[found->second].game);
+}
+
+std::vector<core::Aabb> CollectionInstance::itemBounds() const {
+    std::vector<core::Aabb> bounds;
+    bounds.reserve(m_items.size());
+    for (const Item& item : m_items) {
+        bounds.push_back(item.bounds);
+    }
+    return bounds;
+}
+
+std::optional<std::size_t> CollectionInstance::itemOfPick(world::PickId pickId) const {
+    const auto found = m_byPick.find(pickId);
+    return found == m_byPick.end() ? std::nullopt : std::optional<std::size_t>(found->second);
+}
+
+Status CollectionInstance::setFrontHidden(std::size_t item, bool hidden) {
+    if (item >= m_items.size() || !m_items[item].front) {
+        return makeError(ErrorCode::InvalidArgument, "no front of that item", std::to_string(item));
+    }
+    const std::size_t source = *m_items[item].front;
+    scene::InstanceAttributes attributes = m_attributes[source];
+    if (hidden) {
+        attributes.flags |= scene::instance_flags::kHidden;
+    } else {
+        attributes.flags &= ~scene::instance_flags::kHidden;
+    }
+    return writeRecord(source, attributes);
+}
+
+Expected<scene::RenderItem> CollectionInstance::frontRenderItem(std::size_t item,
+                                                                scene::MaterialHandle material) const {
+    if (item >= m_items.size() || !m_items[item].front || !m_frontMesh) {
+        return makeError(ErrorCode::InvalidArgument, "no front of that item", std::to_string(item));
+    }
+    scene::RenderItem render;
+    render.mesh = *m_frontMesh;
+    render.material = material;
+    render.shader = m_heroShader;
+    render.model = m_items[item].transform;
+    render.castsShadow = false;
+    render.attributes = m_attributes[*m_items[item].front];
+    render.attributes.flags &= ~scene::instance_flags::kHidden;
+    return render;
 }
 
 std::optional<std::size_t> CollectionInstance::itemOfKey(const std::string& key) const {

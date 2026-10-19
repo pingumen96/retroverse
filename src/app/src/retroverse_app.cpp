@@ -403,6 +403,8 @@ struct RetroverseApp::State {
     /// on the GPU) goes before the graphics.
     std::unique_ptr<core::WorkerPool> pool;
     std::unique_ptr<WorldSession> world;
+    /// The view's items when the room adds dynamic ones (view()).
+    mutable std::vector<scene::RenderItem> viewItems;
     /// The scene as described: its camera (start, reset) and objects (the developer overlay's list).
     scene::SceneDescription description;
     /// Loads the scene's models (asset-relative paths, the model viewer's file).
@@ -495,6 +497,12 @@ struct RetroverseApp::State {
         view.wireframe = wireframe;
         if (world) {
             view.staticGroups = world->staticGroups();
+            // The room's dynamic items (I3 step 12: the hero texture's front) after the scene's.
+            if (const std::span<const scene::RenderItem> dynamic = world->dynamicItems(); !dynamic.empty()) {
+                viewItems.assign(view.items.begin(), view.items.end());
+                viewItems.insert(viewItems.end(), dynamic.begin(), dynamic.end());
+                view.items = viewItems;
+            }
         }
         return view;
     }
@@ -560,6 +568,9 @@ struct RetroverseApp::State {
                 return propagate(testRoom.error());
             }
             return replaceScene(context, std::move(testRoom->description), std::move(testRoom->loadModel));
+        };
+        host.camera = [this]() -> const scene::Camera& {
+            return camera;
         };
         world = std::make_unique<WorldSession>(context, std::move(options), *pool, *graphics, std::move(host),
                                                std::move(decided));
@@ -785,12 +796,12 @@ struct RetroverseApp::State {
         }
         devUi = std::move(*created);
         platform::GraphicsWindow& window = context.window();
-        devUi->addPanel(devui::makeStatsPanel({frameTimes, graphics->renderStats(), graphics->meshes(),
-                                               graphics->materials(), graphics->textures(), gl::gpuMemoryLedger(),
-                                               [this] {
-                                                   return screen ? screen->statusLines() : std::vector<std::string>{};
-                                               }}),
-                        devui::DockSlot::Left);
+        devUi->addPanel(
+            devui::makeStatsPanel({frameTimes, graphics->renderStats(), graphics->meshes(), graphics->materials(),
+                                   graphics->textures(), gl::gpuMemoryLedger(),
+                                   [this] { return screen ? screen->statusLines() : std::vector<std::string>{}; },
+                                   [this] { return world ? world->statusLines() : std::vector<std::string>{}; }}),
+            devui::DockSlot::Left);
         devUi->addPanel(devui::makeCameraPanel({camera, freeRoam->controller(), input->system(), collision,
                                                 [this] { resetToSceneCamera(); }}),
                         devui::DockSlot::LeftBottom);
@@ -1145,6 +1156,8 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.world->hover(inputContext == InputContext::World
                                ? std::optional<core::Ray>(state.camera.rayFromNdc(glm::vec2(0.0f)))
                                : std::nullopt);
+        // A lockstep run's frame waits for the layers of its view (I3 step 12).
+        state.world->settle(*state.product);
     }
     if (state.screen) {
         // The hero CRT follows the game selected in the quick catalog while it is open (the world's focus and

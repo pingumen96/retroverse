@@ -163,6 +163,9 @@ struct WorldBuild {
     std::vector<CoverItem> covers;
     /// The media root the covers are read under; none while the media are unknown (the cache alone serves them).
     std::optional<std::filesystem::path> mediaRoot;
+    /// The media root the room's paths are relative to, also while it is out of reach (I3 step 12: the cover loader
+    /// tries it again after the catalog's refresh); none when it could not be resolved.
+    std::optional<std::filesystem::path> mediaRootPath;
     /// The hero CRT's games (room_screen.hpp; none for a preview or while the media are unknown).
     std::vector<ScreenGame> screenGames;
     /// The room's prefabs that fell back (the scene data's, by the manifest the plan names).

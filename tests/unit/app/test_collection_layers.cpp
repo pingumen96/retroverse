@@ -8,9 +8,11 @@
 
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 
 #include <rv/app/collection_layers.hpp>
+#include <rv/assets/cover_fit.hpp>
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/assets/image_io.hpp>
 #include <rv/assets/test_patterns.hpp>
@@ -106,6 +108,24 @@ TEST_CASE("app/collection_layers: a cover through the cache, a hit, then served 
         CHECK(unknown.front->levels == built.front->levels);
         // The spine keeps the cover's colour: the same entry.
         CHECK(unknown.spineEntry == built.spineEntry);
+
+        // I3 step 12: the spine stands on the cover's dominant colour (ADR-0011 §5), not on the palette's colour of
+        // the placement's seed that a game without a cover gets.
+        const auto bytes = rv::core::readFileShared(media / rv::core::pathFromUtf8(coverPath), 1u << 26);
+        REQUIRE(bytes.has_value());
+        const auto cover = rv::assets::buildCoverLayer(std::as_bytes(std::span(bytes->data(), bytes->size())),
+                                                       rv::app::textureFormatOf(format), "cover");
+        REQUIRE(cover.has_value());
+        rv::assets::SpineRequest spine;
+        spine.title = item.title;
+        spine.fallbackTitle = item.fallbackTitle;
+        spine.coverColour = cover->texture.dominant;
+        spine.seed = item.seed;
+        CHECK(built.spineEntry ==
+              rv::assets::spineCacheKey(spine, rv::app::textureFormatOf(format), fonts.labels()).hex());
+        spine.coverColour.reset();
+        CHECK(built.spineEntry !=
+              rv::assets::spineCacheKey(spine, rv::app::textureFormatOf(format), fonts.labels()).hex());
     }
 
     // The cover gone, without an entry: the generated label instead.
