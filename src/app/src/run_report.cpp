@@ -549,6 +549,42 @@ Json worldToJson(const WorldRecord& world) {
     json["hoveredPickId"] = world.hoveredPickId;
     json["hoveredGame"] = world.hoveredGame;
     json["interaction"] = interactionToJson(world.interaction);
+    if (world.preview) {
+        const WorldPreviewRecord& preview = *world.preview;
+        Json record{{"frame", preview.frame},
+                    {"planDigest", preview.planDigest},
+                    {"items", preview.items},
+                    {"itemsKnown", preview.itemsKnown}};
+        putOptional(record, "committedAtMs", preview.committedAtMs);
+        putOptional(record, "buildMs", preview.buildMs);
+        putOptional(record, "commitMs", preview.commitMs);
+        if (preview.frontsResident) {
+            record["frontsResident"] = *preview.frontsResident;
+        }
+        if (preview.spinesResident) {
+            record["spinesResident"] = *preview.spinesResident;
+        }
+        json["preview"] = std::move(record);
+    }
+    if (world.reconcile) {
+        const WorldReconcileRecord& reconcile = *world.reconcile;
+        json["reconcile"] = Json{{"kind", reconcile.kind},
+                                 {"frame", reconcile.frame},
+                                 {"kept", reconcile.kept},
+                                 {"moved", reconcile.moved},
+                                 {"flagsChanged", reconcile.flagsChanged},
+                                 {"added", reconcile.added},
+                                 {"removed", reconcile.removed},
+                                 {"coversReloaded", reconcile.coversReloaded}};
+    }
+    json["itemsWritten"] = world.itemsWritten;
+    json["screenGames"] = world.screenGames;
+    Json fallbacks = Json::array();
+    for (const ObjectFallbackRecord& fallback : world.objectFallbacks) {
+        fallbacks.push_back(
+            Json{{"prefab", fallback.prefab}, {"source", fallback.source}, {"reason", fallback.reason}});
+    }
+    json["objectFallbacks"] = std::move(fallbacks);
     return json;
 }
 
@@ -610,6 +646,37 @@ WorldRecord readWorld(FieldReader& fields) {
     if (auto interaction = fields.optionalObject("interaction")) {
         world.interaction = readInteraction(*interaction);
     }
+    if (auto preview = fields.optionalObject("preview")) {
+        WorldPreviewRecord record;
+        record.frame = preview->count("frame");
+        record.planDigest = preview->string("planDigest");
+        record.items = preview->count("items");
+        record.itemsKnown = preview->count("itemsKnown");
+        record.committedAtMs = preview->optionalNumber("committedAtMs");
+        record.buildMs = preview->optionalNumber("buildMs");
+        record.commitMs = preview->optionalNumber("commitMs");
+        record.frontsResident = preview->optionalCount("frontsResident");
+        record.spinesResident = preview->optionalCount("spinesResident");
+        world.preview = std::move(record);
+    }
+    if (auto reconcile = fields.optionalObject("reconcile")) {
+        WorldReconcileRecord record;
+        record.kind = reconcile->string("kind");
+        record.frame = reconcile->count("frame");
+        record.kept = reconcile->count("kept");
+        record.moved = reconcile->count("moved");
+        record.flagsChanged = reconcile->count("flagsChanged");
+        record.added = reconcile->count("added");
+        record.removed = reconcile->count("removed");
+        record.coversReloaded = reconcile->boolean("coversReloaded");
+        world.reconcile = std::move(record);
+    }
+    world.itemsWritten = fields.boolean("itemsWritten");
+    world.screenGames = fields.count("screenGames");
+    for (FieldReader& fallback : fields.objectArray("objectFallbacks")) {
+        world.objectFallbacks.push_back(
+            ObjectFallbackRecord{fallback.string("prefab"), fallback.string("source"), fallback.string("reason")});
+    }
     return world;
 }
 
@@ -648,6 +715,26 @@ Json residencyToJson(const ResidencyRecord& residency) {
     }
     json["uploadRounds"] = residency.uploadRounds;
     json["maxLayersPerRound"] = residency.maxLayersPerRound;
+    Json arrival = Json{{"viewItems", residency.viewItems},
+                        {"residentAtViewResident", residency.residentAtViewResident},
+                        {"inViewAmongFirst", residency.inViewAmongFirst},
+                        {"distanceQuarters", Json{{"q1", residency.arrivalDistanceQuarters[0]},
+                                                  {"q2", residency.arrivalDistanceQuarters[1]},
+                                                  {"q3", residency.arrivalDistanceQuarters[2]},
+                                                  {"q4", residency.arrivalDistanceQuarters[3]}}}};
+    putOptional(arrival, "viewResidentAfterShownMs", residency.viewResidentAfterShownMs);
+    json["arrival"] = std::move(arrival);
+    json["uploads"] = Json{{"overBudgetRounds", residency.overBudgetRounds}, {"maxRoundMs", residency.maxRoundMs}};
+    json["lockstep"] = Json{{"waits", residency.lockstepWaits}, {"waitMs", residency.lockstepWaitMs}};
+    json["pausedRounds"] = residency.pausedRounds;
+    json["retries"] = Json{
+        {"rounds", residency.retryRounds}, {"items", residency.retriedItems}, {"changed", residency.retriedChanged}};
+    json["adopted"] = Json{{"items", residency.adoptedItems}, {"changed", residency.adoptedChanged}};
+    const HeroRecord& hero = residency.hero;
+    json["hero"] =
+        Json{{"requests", hero.requests},   {"loaded", hero.loaded},           {"failed", hero.failed},
+             {"evicted", hero.evicted},     {"resident", hero.resident},       {"bytes", hero.bytes},
+             {"peakBytes", hero.peakBytes}, {"maxUploadMs", hero.maxUploadMs}, {"shownGame", hero.shownGame}};
     return json;
 }
 
@@ -687,6 +774,46 @@ ResidencyRecord readResidency(FieldReader& fields) {
     residency.allResidentFrame = fields.optionalCount("allResidentFrame");
     residency.uploadRounds = fields.count("uploadRounds");
     residency.maxLayersPerRound = fields.count("maxLayersPerRound");
+    if (auto arrival = fields.object("arrival")) {
+        residency.viewItems = arrival->count("viewItems");
+        residency.residentAtViewResident = arrival->count("residentAtViewResident");
+        residency.inViewAmongFirst = arrival->count("inViewAmongFirst");
+        residency.viewResidentAfterShownMs = arrival->optionalNumber("viewResidentAfterShownMs");
+        if (auto quarters = arrival->object("distanceQuarters")) {
+            residency.arrivalDistanceQuarters = {quarters->number("q1"), quarters->number("q2"), quarters->number("q3"),
+                                                 quarters->number("q4")};
+        }
+    }
+    if (auto uploads = fields.object("uploads")) {
+        residency.overBudgetRounds = uploads->count("overBudgetRounds");
+        residency.maxRoundMs = uploads->number("maxRoundMs");
+    }
+    if (auto lockstep = fields.object("lockstep")) {
+        residency.lockstepWaits = lockstep->count("waits");
+        residency.lockstepWaitMs = lockstep->number("waitMs");
+    }
+    residency.pausedRounds = fields.count("pausedRounds");
+    if (auto retries = fields.object("retries")) {
+        residency.retryRounds = retries->count("rounds");
+        residency.retriedItems = retries->count("items");
+        residency.retriedChanged = retries->count("changed");
+    }
+    if (auto adopted = fields.object("adopted")) {
+        residency.adoptedItems = adopted->count("items");
+        residency.adoptedChanged = adopted->count("changed");
+    }
+    if (auto hero = fields.object("hero")) {
+        HeroRecord& record = residency.hero;
+        record.requests = hero->count("requests");
+        record.loaded = hero->count("loaded");
+        record.failed = hero->count("failed");
+        record.evicted = hero->count("evicted");
+        record.resident = hero->count("resident");
+        record.bytes = hero->count("bytes");
+        record.peakBytes = hero->count("peakBytes");
+        record.maxUploadMs = hero->number("maxUploadMs");
+        record.shownGame = hero->string("shownGame");
+    }
     return residency;
 }
 

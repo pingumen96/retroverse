@@ -83,6 +83,26 @@ TEST_CASE("core/file_io: an interrupted atomic write leaves the previous file", 
     CHECK(rv::core::readTextFile(plan).value() == next);
 }
 
+TEST_CASE("core/file_io: an unflushed atomic write replaces the file whole, its stops leave the previous one",
+          "[core][file_io]") {
+    // I3 step 12: the derived-texture cache's entries are written without the flush.
+    rv::test::TempDir dir("rv-atomic-unflushed");
+    const auto entry = dir.file("cache/front/ab/entry.rvtex");
+    const std::string previous(4096, 'p');
+    REQUIRE(rv::core::writeFileAtomic(entry, bytesOf(previous), rv::core::Durability::Unflushed).has_value());
+    CHECK(rv::core::readTextFile(entry).value() == previous);
+    const std::string next(100'000, 'n');
+    const auto stopped = rv::core::detail::writeFileAtomicStoppingAt(entry, bytesOf(next),
+                                                                     AtomicWriteStop::BeforeRename,
+                                                                     rv::core::Durability::Unflushed);
+    REQUIRE_FALSE(stopped.has_value());
+    CHECK(rv::core::readTextFile(entry).value() == previous);
+    REQUIRE(rv::core::writeFileAtomic(entry, bytesOf(next), rv::core::Durability::Unflushed).has_value());
+    CHECK(rv::core::readTextFile(entry).value() == next);
+    // The stopped write's temporary beside the entry, nothing else.
+    CHECK(namesIn(entry.parent_path()).size() == 2);
+}
+
 TEST_CASE("core/file_io: a failed replace leaves the previous file and no temporary", "[core][file_io]") {
     rv::test::TempDir dir("rv-atomic-locked");
     const auto file = dir.file("world-plan.json");

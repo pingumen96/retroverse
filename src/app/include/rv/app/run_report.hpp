@@ -263,8 +263,6 @@ struct LaunchRecord {
 // empty object, or an empty array of phases), so that a reader can tell a run that had nothing to report from one that
 // did not know the section.
 
-/// The generated room of the run (I3 step 10b): what showed, from which plan, how it came to be and when. Empty ({})
-/// in runs that ask for no room (--scene, --model, --mock-catalog, the asset preview).
 /// One change of the world's interaction (I3 step 13a), on the frame it happened.
 struct InteractionEventRecord {
     std::uint64_t frame = 0;
@@ -320,7 +318,54 @@ struct InteractionRecord {
 
 /// The most interaction events a run report keeps.
 inline constexpr std::size_t kMaxInteractionEvents = 512;
+/// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
+struct WorldPreviewRecord {
+    /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
+    /// commit on the main thread (milliseconds).
+    std::uint64_t frame = 0;
+    std::optional<double> committedAtMs;
+    std::optional<double> buildMs;
+    std::optional<double> commitMs;
+    /// Its plan's digest, its items, those the room's items of the last start knew (served from the cache at once).
+    std::string planDigest;
+    std::uint64_t items = 0;
+    std::uint64_t itemsKnown = 0;
+    /// Its fronts and spines resident when that frame was rendered (none until it was).
+    std::optional<std::uint64_t> frontsResident;
+    std::optional<std::uint64_t> spinesResident;
 
+    bool operator==(const WorldPreviewRecord&) const = default;
+};
+
+/// What the snapshot's result did to the stored plan's room shown (I3 step 10c, world_reconcile.hpp).
+struct WorldReconcileRecord {
+    /// app::toString(Reconciliation): "textures", "rebuild", "shell"; the frame it was committed in.
+    std::string kind;
+    std::uint64_t frame = 0;
+    /// The collection shown against the result's, by game (LayoutDifference).
+    std::uint64_t kept = 0;
+    std::uint64_t moved = 0;
+    std::uint64_t flagsChanged = 0;
+    std::uint64_t added = 0;
+    std::uint64_t removed = 0;
+    /// "textures": the covers were served again (they changed, or the media root is known: their sources checked).
+    bool coversReloaded = false;
+
+    bool operator==(const WorldReconcileRecord&) const = default;
+};
+
+/// A prefab of the room that fell back to its family's (style §21's object fallbacks).
+struct ObjectFallbackRecord {
+    /// The manifest the plan names, what replaced it ("family generic", "family procedural") and why.
+    std::string prefab;
+    std::string source;
+    std::string reason;
+
+    bool operator==(const ObjectFallbackRecord&) const = default;
+};
+
+/// The generated room of the run (I3 step 10b): what showed, from which plan, how it came to be and when. Empty ({})
+/// in runs that ask for no room (--scene, --model, --mock-catalog, the asset preview).
 struct WorldRecord {
     /// The run asked for the generated room (retroverse.exe without --scene, --model or --mock-catalog).
     bool bound = false;
@@ -371,15 +416,15 @@ struct WorldRecord {
     std::uint64_t staticRecords = 0;
     std::uint64_t pickTargets = 0;
     /// Times in milliseconds: from the process's creation to the catalog's snapshot done on its worker and to the
-    /// room's commit; the snapshot on the worker, the room's job on the pool, the commit on the main thread; from the
-    /// snapshot's answer to the commit.
+    /// room's commit (after a preview, its reconciliation's); the snapshot on the worker, the room's job on the pool,
+    /// the commit on the main thread; from the snapshot's answer to the commit.
     std::optional<double> snapshotAtMs;
     std::optional<double> committedAtMs;
     std::optional<double> snapshotMs;
     std::optional<double> buildMs;
     std::optional<double> commitMs;
     std::optional<double> snapshotToCommitMs;
-    /// The frame the room first showed in (none before it showed).
+    /// The frame the room first showed in (its preview's, after a persisted start; none before it showed).
     std::optional<std::uint64_t> firstFrame;
     /// The hover (I3 step 10b's outline on the picked item): changes of the hovered item, and the one hovered at the
     /// end (its pick id in hexadecimal, its GameId), if any.
@@ -388,12 +433,36 @@ struct WorldRecord {
     std::string hoveredGame;
     /// The interaction with the room's items (I3 step 13a).
     InteractionRecord interaction;
+    /// I3 step 10c: the persisted start's preview and its reconciliation (none without a stored plan shown); the room's
+    /// items written for the next start; the games given to the hero CRT; the room's object fallbacks.
+    std::optional<WorldPreviewRecord> preview;
+    std::optional<WorldReconcileRecord> reconcile;
+    bool itemsWritten = false;
+    std::uint64_t screenGames = 0;
+    std::vector<ObjectFallbackRecord> objectFallbacks;
 
     bool operator==(const WorldRecord&) const = default;
 };
 
-/// The collection's textures (I3 step 10b's loader; step 12 orders it): layers resident and pending, the cache's hits and
-/// misses, when the room was shown and when its last layer became resident. Empty ({}) without a room.
+/// The hero textures of the run (I3 step 12, ADR-0011 §8: the focused item's cover at up to 1,024 px, 8 kept):
+/// textures asked for, made, given up (no readable cover), evicted by the least-recently-used set, resident at the
+/// end and their bytes (now and at most), the longest upload (milliseconds), the game whose hero was shown at the end.
+struct HeroRecord {
+    std::uint64_t requests = 0;
+    std::uint64_t loaded = 0;
+    std::uint64_t failed = 0;
+    std::uint64_t evicted = 0;
+    std::uint64_t resident = 0;
+    std::uint64_t bytes = 0;
+    std::uint64_t peakBytes = 0;
+    double maxUploadMs = 0.0;
+    std::string shownGame;
+
+    bool operator==(const HeroRecord&) const = default;
+};
+
+/// The collection's textures (I3 step 10b's loader; step 12 orders it): layers resident and pending, the cache's hits
+/// and misses, when the room was shown and when its last layer became resident. Empty ({}) without a room.
 struct ResidencyRecord {
     bool bound = false;
     /// The arrays' format ("bc1-srgb", "rgba8-srgb") and their bytes.
@@ -428,6 +497,39 @@ struct ResidencyRecord {
     /// Frames (and idle wakes) that uploaded layers, and the most layers one of them uploaded.
     std::uint64_t uploadRounds = 0;
     std::uint64_t maxLayersPerRound = 0;
+
+    /// The loader's order (I3 step 12, ADR-0011 §6: the focused item, the view by projected size, the rest by
+    /// distance): the items in view when the room showed; when every item in view was first resident (from the room
+    /// shown) and how many items were resident then; how many of the first `viewItems` arrivals were in view; the mean
+    /// distance (meters, from the eye when each arrived) of each quarter of the arrivals that were out of view, in
+    /// arrival order (0 for an empty quarter).
+    std::uint64_t viewItems = 0;
+    std::optional<double> viewResidentAfterShownMs;
+    std::uint64_t residentAtViewResident = 0;
+    std::uint64_t inViewAmongFirst = 0;
+    std::array<double, 4> arrivalDistanceQuarters{};
+    /// Frame rounds whose uploads took longer than the frame's budget (1 ms), and the longest round (milliseconds; the
+    /// layers and the hero texture together). Idle wakes of a lockstep run, which have a budget of their own, are not
+    /// counted.
+    std::uint64_t overBudgetRounds = 0;
+    double maxRoundMs = 0.0;
+    /// Lockstep runs: frames whose update waited for their view (the camera brought items into view that were not
+    /// resident yet), and the time they waited in all.
+    std::uint64_t lockstepWaits = 0;
+    double lockstepWaitMs = 0.0;
+    /// Rounds that made and uploaded nothing because a launched game ran (ADR-0012 §6: the loader paused).
+    std::uint64_t pausedRounds = 0;
+    /// The loader's retries after the catalog's refreshes (ADR-0011 §6: the media root back): rounds, items queued
+    /// again (fronts not from their cover), and items whose pictures changed (uploaded again).
+    std::uint64_t retryRounds = 0;
+    std::uint64_t retriedItems = 0;
+    std::uint64_t retriedChanged = 0;
+    /// Items a new loader of the same collection took over from the one it replaced (I3 step 10c's textures
+    /// reconciliation), and those whose pictures changed (uploaded again; the others were not).
+    std::uint64_t adoptedItems = 0;
+    std::uint64_t adoptedChanged = 0;
+    /// The hero textures (ADR-0011 §8).
+    HeroRecord hero;
 
     bool operator==(const ResidencyRecord&) const = default;
 };

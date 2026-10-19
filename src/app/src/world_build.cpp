@@ -2,12 +2,17 @@
 
 #include <algorithm>
 #include <exception>
+#include <functional>
 #include <mutex>
+#include <span>
 #include <utility>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/app/room_items.hpp>
+#include <rv/app/room_screen.hpp>
+#include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog/metadata.hpp>
 #include <rv/world/incremental.hpp>
 #include <rv/world/overrides.hpp>
@@ -69,11 +74,17 @@ void noPlan(WorldBuild& build, std::string_view notice, std::string reason) {
     return found != snapshot.entries.end() && found->id == game ? &*found : nullptr;
 }
 
-/// The scene, the layout and the cover requests of the plan in `build` (ADR-0011 §1).
-Status buildScene(const WorldBuildInput& input, WorldBuild& build) {
+/// Fills a cover request's text for a layout's item (the game, the title, the keys and the seed are set): false when
+/// nothing is known of it (no request is made then: the item keeps the pending picture).
+using DescribeCover = std::function<bool(const world::CollectionItem& item, CoverItem& cover)>;
+
+/// The scene, the layout (with `titles`) and the cover requests (`describe`) of the plan in `build` (ADR-0011 §1), and
+/// the prefabs that fell back.
+Status buildScene(const WorldPaths& paths, WorldBuild& build, std::span<const world::CollectionTitle> titles,
+                  const DescribeCover& describe) {
     const world::WorldPlan& plan = *build.plan;
     const Clock::time_point sceneStart = Clock::now();
-    auto data = world::loadSceneData(input.paths.assetRoot, plan, build.room);
+    auto data = world::loadSceneData(paths.assetRoot, plan, build.room);
     if (!data) {
         return propagate(data.error());
     }
@@ -91,10 +102,14 @@ Status buildScene(const WorldBuildInput& input, WorldBuild& build) {
                      span.firstSlot, span.reason);
     }
     build.sceneMs = millisecondsSince(sceneStart);
+    for (const world::ScenePrefab& prefab : data->prefabs.prefabs) {
+        if (prefab.source != assets::PrefabSource::Requested) {
+            build.objectFallbacks.push_back(ObjectFallback{
+                prefab.ref.manifest, std::string(assets::toString(prefab.source)), prefab.fallbackReason});
+        }
+    }
 
     const Clock::time_point layoutStart = Clock::now();
-    const catalog::RoomSnapshot& snapshot = input.snapshot.snapshot;
-    const std::vector<world::CollectionTitle> titles = world::collectionTitles(snapshot);
     auto layout = world::collectionLayout(plan, build.room, *data, titles);
     if (!layout) {
         return propagate(layout.error());
@@ -114,20 +129,14 @@ Status buildScene(const WorldBuildInput& input, WorldBuild& build) {
         CoverItem cover;
         cover.game = item.game;
         cover.title = item.title;
-        cover.systemName = input.snapshot.systemFullName;
-        if (const catalog::RoomEntry* entry = entryOf(snapshot, item.game)) {
-            cover.fallbackTitle = catalog::titleFromFileStem(entry->key.relativePath(), entry->directory);
-            if (entry->year) {
-                cover.year = std::to_string(*entry->year);
-            }
-        }
         if (room != nullptr) {
             cover.seed = world::placementSeed(room->seed, item.game, room->mediaFamily);
         }
-        cover.coverPath = coverPathOf(input.snapshot.mediaPaths, item.game);
         cover.frontKey = item.frontLayerKey;
         cover.spineKey = item.spineLayerKey;
-        build.covers.push_back(std::move(cover));
+        if (describe(item, cover)) {
+            build.covers.push_back(std::move(cover));
+        }
     }
     build.layoutMs = millisecondsSince(layoutStart);
     build.sceneData = std::move(*data);
@@ -322,6 +331,8 @@ std::string_view toString(WorldPhase phase) noexcept {
         return "waiting-for-catalog";
     case WorldPhase::ReadingPlan:
         return "reading-plan";
+    case WorldPhase::Previewing:
+        return "previewing";
     case WorldPhase::Snapshot:
         return "snapshot";
     case WorldPhase::Building:
@@ -368,17 +379,94 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
             if (input.snapshot.snapshot.mediaKnown) {
                 build.mediaRoot = input.snapshot.mediaRoot;
             }
-            if (Status scene = buildScene(input, build); !scene) {
+            build.mediaRootPath = input.snapshot.mediaRoot;
+            const RoomSnapshotResult& snapshot = input.snapshot;
+            const std::vector<world::CollectionTitle> titles = world::collectionTitles(snapshot.snapshot);
+            const DescribeCover describe = [&](const world::CollectionItem& item, CoverItem& cover) {
+                cover.systemName = snapshot.systemFullName;
+                if (const catalog::RoomEntry* entry = entryOf(snapshot.snapshot, item.game)) {
+                    cover.fallbackTitle = catalog::titleFromFileStem(entry->key.relativePath(), entry->directory);
+                    if (entry->year) {
+                        cover.year = std::to_string(*entry->year);
+                    }
+                }
+                cover.coverPath = coverPathOf(snapshot.mediaPaths, item.game);
+                return true;
+            };
+            if (Status scene = buildScene(input.paths, build, titles, describe); !scene) {
                 spdlog::error("World: the room's scene cannot be made: {}", scene.error().toString());
                 build.scene.reset();
                 build.sceneData.reset();
                 build.layout.reset();
                 build.covers.clear();
+                build.objectFallbacks.clear();
                 noPlan(build, world_notice::kFailed, "the room's scene: " + scene.error().message);
+            } else {
+                // I3 step 10c: the hero CRT's games, and the room's items for the next start's preview.
+                build.screenGames = roomScreenGames(*build.plan, *build.layout, snapshot);
+                const std::filesystem::path items = roomItemsFile(input.paths.cacheDir, input.library, snapshot.system);
+                if (auto written = writeRoomItems(items, roomItemsOf(build.covers, *build.layout))) {
+                    build.itemsWritten = *written;
+                } else {
+                    build.itemsError = written.error();
+                    spdlog::warn("World: the room's items for the next start cannot be kept: {}",
+                                 written.error().message);
+                }
             }
         }
     } catch (const std::exception& error) {
         noPlan(build, world_notice::kFailed, std::string("the room could not be made: ") + error.what());
+    }
+    build.milliseconds = millisecondsSince(start);
+    return build;
+}
+
+WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library, const catalog::SystemName& system,
+                        const world::StoredPlan& stored) {
+    const Clock::time_point start = Clock::now();
+    WorldBuild build;
+    build.preview = true;
+    build.library = library;
+    try {
+        auto room = world::RoomId::forSystem(system);
+        if (!room) {
+            noPlan(build, world_notice::kFailed, room.error().message);
+            return build;
+        }
+        build.room = *room;
+        keep(build, stored, world_notice::kNone, "the stored plan, shown before the catalog's snapshot");
+        // The room's items as they last showed: a missing file leaves the items pending until the snapshot.
+        RoomItems items;
+        if (auto read = readRoomItems(roomItemsFile(paths.cacheDir, library, system))) {
+            items = std::move(*read);
+        } else if (read.error().code != ErrorCode::NotFound) {
+            spdlog::warn("World: the room's items kept at the last start are not used: {}", read.error().message);
+        }
+        const std::vector<world::CollectionTitle> titles = collectionTitlesOf(items, stored.plan);
+        const DescribeCover describe = [&](const world::CollectionItem& item, CoverItem& cover) {
+            const RoomItemText* text = items.find(item.game);
+            if (text == nullptr) {
+                return false;
+            }
+            cover.systemName = items.systemName;
+            cover.fallbackTitle = text->fallbackTitle;
+            cover.year = text->year;
+            cover.coverPath = text->coverPath;
+            return true;
+        };
+        if (Status scene = buildScene(paths, build, titles, describe); !scene) {
+            spdlog::error("World: the stored plan's room cannot be shown before the snapshot: {}",
+                          scene.error().toString());
+            build.scene.reset();
+            build.sceneData.reset();
+            build.layout.reset();
+            build.covers.clear();
+            build.objectFallbacks.clear();
+            noPlan(build, world_notice::kFailed, "the stored plan's scene: " + scene.error().message);
+        }
+        build.itemsRead = build.covers.size();
+    } catch (const std::exception& error) {
+        noPlan(build, world_notice::kFailed, std::string("the stored plan's room could not be made: ") + error.what());
     }
     build.milliseconds = millisecondsSince(start);
     return build;
@@ -389,6 +477,7 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
 struct WorldFlow::Mailbox {
     std::mutex mutex;
     std::optional<StoredWorldPlan> stored;
+    std::optional<WorldBuild> preview;
     std::optional<WorldBuild> build;
     /// The generation the results were made under (dropped when it is no longer the flow's).
     std::uint64_t generation = 0;
@@ -436,6 +525,34 @@ std::optional<WorldResult> WorldFlow::takeResult() {
     }
     m_phase = WorldPhase::Done;
     return std::exchange(m_result, std::nullopt);
+}
+
+std::optional<WorldBuild> WorldFlow::takePreview() {
+    if (m_phase != WorldPhase::Previewing || !m_preview) {
+        return std::nullopt;
+    }
+    m_previewTaken = true;
+    return std::exchange(m_preview, std::nullopt);
+}
+
+void WorldFlow::requestSnapshot(AppCatalog& catalog) {
+    RoomSnapshotRequest request;
+    request.serial = ++m_serial;
+    request.system = m_options.system;
+    if (m_stored && m_stored->stored) {
+        request.placedGames.reserve(m_stored->stored->plan.placements.size());
+        for (const world::Placement& placement : m_stored->stored->plan.placements) {
+            request.placedGames.push_back(placement.game);
+        }
+    }
+    if (!catalog.requestRoomSnapshot(std::move(request))) {
+        WorldResult result;
+        result.build = WorldBuild{};
+        noPlan(*result.build, world_notice::kFailed, "the catalog cannot take the room's snapshot now");
+        finish(std::move(result));
+        return;
+    }
+    m_phase = WorldPhase::Snapshot;
 }
 
 void WorldFlow::update(AppCatalog& catalog) {
@@ -503,24 +620,54 @@ void WorldFlow::update(AppCatalog& catalog) {
         if (stored->error) {
             spdlog::warn("World: the stored plan cannot be read: {}", stored->error->toString());
         }
-        RoomSnapshotRequest request;
-        request.serial = ++m_serial;
-        request.system = m_options.system;
-        if (stored->stored) {
-            request.placedGames.reserve(stored->stored->plan.placements.size());
-            for (const world::Placement& placement : stored->stored->plan.placements) {
-                request.placedGames.push_back(placement.game);
-            }
-        }
         m_stored = std::move(stored);
-        if (!catalog.requestRoomSnapshot(std::move(request))) {
-            WorldResult result;
-            result.build = WorldBuild{};
-            noPlan(*result.build, world_notice::kFailed, "the catalog cannot take the room's snapshot now");
-            finish(std::move(result));
+        if (m_stored->stored) {
+            // I3 step 10c: the stored plan's room first; the snapshot once it has been taken.
+            const std::uint64_t generation = m_generation.current();
+            core::JobOptions jobOptions;
+            jobOptions.priority = core::WorkerPool::kHighestPriority;
+            jobOptions.generation = &m_generation;
+            const Status submitted = m_pool.submit(
+                [mailbox = m_mailbox, paths = m_options.paths, library = m_library, system = m_options.system,
+                 stored = m_stored->stored, generation](const core::JobContext& job) {
+                    if (job.cancelled()) {
+                        return;
+                    }
+                    WorldBuild preview = previewWorld(paths, library, system, *stored);
+                    if (job.cancelled()) {
+                        return;
+                    }
+                    mailbox->post(generation, [&](Mailbox& box) { box.preview = std::move(preview); });
+                },
+                jobOptions);
+            if (submitted) {
+                m_phase = WorldPhase::Previewing;
+                return;
+            }
+            spdlog::warn("World: the stored plan's room cannot be made before the snapshot: {}",
+                         submitted.error().message);
+        }
+        requestSnapshot(catalog);
+        return;
+    }
+    case WorldPhase::Previewing: {
+        if (m_previewTaken) {
+            requestSnapshot(catalog);
             return;
         }
-        m_phase = WorldPhase::Snapshot;
+        if (m_preview) {
+            return; // made, waiting to be taken
+        }
+        {
+            const std::lock_guard lock(m_mailbox->mutex);
+            if (m_mailbox->generation == m_generation.current()) {
+                m_preview = std::exchange(m_mailbox->preview, std::nullopt);
+            }
+        }
+        if (m_preview) {
+            m_times.previewMs = elapsedMs();
+            m_times.previewJobMs = m_preview->milliseconds;
+        }
         return;
     }
     case WorldPhase::Snapshot: {

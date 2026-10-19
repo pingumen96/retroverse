@@ -242,6 +242,33 @@ TEST_CASE("assets/resolver: a removed manifest falls back to its family's prefab
     }
 }
 
+TEST_CASE("assets/resolver: a fallback met again in the same process is not warned about again", "[assets][resolver]") {
+    // I3 step 10c: a room resolves its prefabs in several jobs of one run (its capacity, its scene, its persisted
+    // start); the first resolution warns, the next ones log at debug level and resolve alike.
+    const ScratchRoot root;
+    const PrefabFamilies families = shippedFamilies();
+    std::filesystem::remove(root.manifest("decor.storage_box.generic"));
+    {
+        rv::test::LogCapture log;
+        const ResolvedPrefab first = resolveOk(root.dir.path(), families, "decor.storage_box.generic");
+        CHECK(first.source == PrefabSource::FamilyProcedural);
+        CHECK(log.count("warning") == 1);
+    }
+    for (int again = 0; again < 3; ++again) {
+        rv::test::LogCapture log;
+        const ResolvedPrefab resolved = resolveOk(root.dir.path(), families, "decor.storage_box.generic");
+        CHECK(resolved.source == PrefabSource::FamilyProcedural);
+        CHECK(resolved.fallbackReason == "the manifest is missing");
+        CHECK(log.count("warning") == 0);
+    }
+    // Another asset root is another fallback: warned about once again.
+    const ScratchRoot other;
+    std::filesystem::remove(other.manifest("decor.storage_box.generic"));
+    rv::test::LogCapture log;
+    static_cast<void>(resolveOk(other.dir.path(), families, "decor.storage_box.generic"));
+    CHECK(log.count("warning") == 1);
+}
+
 TEST_CASE("assets/resolver: an invalid manifest falls back like a missing one", "[assets][resolver]") {
     const PrefabFamilies families = shippedFamilies();
     struct Case {

@@ -378,6 +378,31 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     residency.allResidentFrame = 18;
     residency.uploadRounds = 4;
     residency.maxLayersPerRound = 64;
+    // I3 step 12: the loader's order, budget, waits, pause, retries and hero textures.
+    residency.viewItems = 12;
+    residency.viewResidentAfterShownMs = 40.5;
+    residency.residentAtViewResident = 14;
+    residency.inViewAmongFirst = 12;
+    residency.arrivalDistanceQuarters = {1.5, 2.25, 3.0, 6.75};
+    residency.overBudgetRounds = 1;
+    residency.maxRoundMs = 1.25;
+    residency.lockstepWaits = 2;
+    residency.lockstepWaitMs = 30.5;
+    residency.pausedRounds = 7;
+    residency.retryRounds = 1;
+    residency.retriedItems = 3;
+    residency.retriedChanged = 2;
+    residency.adoptedItems = 50;
+    residency.adoptedChanged = 1;
+    residency.hero.requests = 3;
+    residency.hero.loaded = 2;
+    residency.hero.failed = 1;
+    residency.hero.evicted = 0;
+    residency.hero.resident = 2;
+    residency.hero.bytes = 3616280;
+    residency.hero.peakBytes = 3616280;
+    residency.hero.maxUploadMs = 0.75;
+    residency.hero.shownGame = "g000000000000b002";
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->world == world);
@@ -388,6 +413,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.committedAtMs.reset();
     residency.allResidentAtMs.reset();
     residency.allResidentFrame.reset();
+    residency.viewResidentAfterShownMs.reset();
     const auto sparse = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(sparse.has_value());
     CHECK(sparse->world == world);
@@ -403,6 +429,68 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         editedReport(report, [](nlohmann::json& edited) { edited["residency"]["cache"]["hits"] = -1; }), "r.json");
     REQUIRE_FALSE(badCount.has_value());
     CHECK(badCount.error().context == "r.json:/residency/cache/hits");
+}
+
+TEST_CASE("app/run_report: the persisted start, its reconciliation and the object fallbacks read back (I3 step 10c)",
+          "[app][run_report]") {
+    RunReport report = measuredReport();
+    rv::app::WorldRecord& world = report.world;
+    world.bound = true;
+    world.state = "room";
+    world.room = "room:snes";
+    world.library = "esde";
+    world.outcome = "unchanged";
+    world.planDigest = std::string(64, 'b');
+    world.firstFrame = 0;
+    rv::app::WorldPreviewRecord preview;
+    preview.frame = 0;
+    preview.committedAtMs = 950.5;
+    preview.buildMs = 20.25;
+    preview.commitMs = 48.5;
+    preview.planDigest = std::string(64, 'b');
+    preview.items = 50;
+    preview.itemsKnown = 50;
+    preview.frontsResident = 50;
+    preview.spinesResident = 50;
+    world.preview = preview;
+    world.reconcile = rv::app::WorldReconcileRecord{"textures", 1, 50, 0, 0, 0, 0, true};
+    world.itemsWritten = true;
+    world.screenGames = 52;
+    world.objectFallbacks = {{"furniture.shelf.hero_module.generic", "family generic", "the manifest is missing"},
+                             {"decor.bookends.generic", "family procedural", "the manifest is missing"}};
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->world == world);
+
+    // A run without a stored plan has neither the preview nor the reconciliation; a preview not yet rendered has no
+    // residency; the fallbacks are an array that must be there.
+    world.preview->frontsResident.reset();
+    world.preview->spinesResident.reset();
+    world.preview->committedAtMs.reset();
+    const auto unrendered = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(unrendered.has_value());
+    CHECK(unrendered->world == world);
+    world.preview.reset();
+    world.reconcile.reset();
+    world.objectFallbacks.clear();
+    const auto none = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(none.has_value());
+    CHECK(none->world == world);
+    const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK_FALSE(json.at("world").contains("preview"));
+    CHECK(json.at("world").at("objectFallbacks").is_array());
+    const auto missing = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["world"].erase("objectFallbacks"); }), "r.json");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().context == "r.json:/world/objectFallbacks");
+    const auto badKind = rv::app::parseRunReport(editedReport(report,
+                                                              [](nlohmann::json& edited) {
+                                                                  edited["world"]["reconcile"] = nlohmann::json{
+                                                                      {"kind", "textures"}, {"frame", 1}};
+                                                              }),
+                                                 "r.json");
+    REQUIRE_FALSE(badKind.has_value());
+    CHECK(badKind.error().context == "r.json:/world/reconcile/kept");
 }
 
 TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 step 11)", "[app][run_report]") {

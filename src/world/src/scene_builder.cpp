@@ -384,6 +384,7 @@ Expected<ScenePrefabs> loadScenePrefabs(const std::filesystem::path& assetRoot, 
         ScenePrefab prefab;
         prefab.ref = ref;
         prefab.source = resolved->source;
+        prefab.fallbackReason = resolved->fallbackReason;
         if (resolved->prefab) {
             if (resolved->generator != ref.kind) {
                 return makeError(ErrorCode::ValidationFailed,

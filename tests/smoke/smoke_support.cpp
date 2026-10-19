@@ -169,6 +169,10 @@ void skipWithoutOpenGl(const AppRun& run) {
 }
 
 void requireCleanRun(const AppRun& run) {
+    requireCleanRun(run, std::nullopt);
+}
+
+void requireCleanRun(const AppRun& run, const std::optional<std::filesystem::path>& assetRoot) {
     INFO(run.describe());
     REQUIRE(run.report.has_value());
     const app::RunReport& report = *run.report;
@@ -203,6 +207,14 @@ void requireCleanRun(const AppRun& run) {
         CHECK((report.world.state == "room" || report.world.state == "shell" || report.world.state == "test-room" ||
                report.world.state == "generating"));
         CHECK(report.world.hardFindings == 0);
+        // I3 step 10c: the stored room shown first is the room's first frame; its reconciliation never moves an item.
+        if (report.world.preview) {
+            CHECK(report.world.firstFrame == std::optional<std::uint64_t>(report.world.preview->frame));
+        }
+        if (report.world.reconcile) {
+            CHECK(report.world.reconcile->moved == 0);
+            CHECK(report.world.reconcile->frame > report.world.preview.value_or(app::WorldPreviewRecord{}).frame);
+        }
     } else {
         CHECK(report.world == app::WorldRecord{});
     }
@@ -250,7 +262,11 @@ void requireCleanRun(const AppRun& run) {
     if (report.lastView) {
         CHECK(report.gpuMemory.usage(gl::GpuMemoryKind::Targets).bytes > 0);
     }
-    if (config.devAssetRoot) {
+    if (assetRoot) {
+        // The run was given its assets (--asset-root: a scratch copy, I3 step 10c's object fallbacks).
+        CHECK(report.assetRootSource == "command line");
+        CHECK(samePath(report.assetRoot, *assetRoot));
+    } else if (config.devAssetRoot) {
         CHECK(report.assetRootSource == "source tree");
         CHECK(samePath(report.assetRoot, sourceDir() / "assets"));
     } else {

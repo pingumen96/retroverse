@@ -92,7 +92,7 @@ std::optional<std::size_t> chooseStartGame(std::span<const ScreenGame> games) {
     std::optional<std::size_t> first;
     for (std::size_t index = 0; index < games.size(); ++index) {
         const ScreenGame& game = games[index];
-        if (!isPlayableVideoFile(game.media.video)) {
+        if (!game.startCandidate || !isPlayableVideoFile(game.media.video)) {
             continue;
         }
         if (!first) {

@@ -19,6 +19,7 @@
 // item stays at its pulled-out pose, and Avvia ends at once as if the game had returned (launching from the room is
 // I3 step 15a's). Main thread only.
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -87,6 +88,10 @@ public:
 
     [[nodiscard]] world::PickId hovered() const noexcept { return m_interaction.hovered(); }
     [[nodiscard]] world::PickId highlighted() const noexcept { return m_interaction.highlighted(); }
+    /// The item is off its static pose (drawn by viewItems()).
+    [[nodiscard]] bool isPulled(world::PickId id) const noexcept {
+        return id != world::kNoPick && std::binary_search(m_hidden.begin(), m_hidden.end(), id);
+    }
     [[nodiscard]] const WorldInteraction& interaction() const noexcept { return m_interaction; }
     /// Changes of the hovered item since the start.
     [[nodiscard]] std::uint64_t hoverChanges() const noexcept { return m_record.hoverChanges; }

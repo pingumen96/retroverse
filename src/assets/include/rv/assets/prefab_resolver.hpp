@@ -86,8 +86,9 @@ struct ResolvedPrefab {
 ///     under the asset root);
 ///  2. else the generic manifest of the id's family, under the same rules (skipped when it is the requested one);
 ///  3. else the family's procedural prefab.
-/// A fallback logs exactly one warning naming the id, why it could not be used and what replaces it; the requested
-/// manifest used as it is logs nothing. Errors: an invalid id (InvalidArgument); an unusable manifest with no family
+/// A fallback logs exactly one warning naming the id, why it could not be used and what replaces it, the first time
+/// this process meets it (the same asset root, id, replacement and reason; later ones log it at debug level, so that a
+/// room several jobs resolve warns once: I3 step 10c); the requested manifest used as it is logs nothing. Errors: an invalid id (InvalidArgument); an unusable manifest with no family
 /// (the reason, as its error); a family whose procedural prefab does not build (its error). Nothing is cached: the
 /// caller keeps what it resolved.
 [[nodiscard]] Expected<ResolvedPrefab> resolvePrefab(const std::filesystem::path& assetRoot,

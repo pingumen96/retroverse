@@ -8,8 +8,20 @@
 // camera), its collection on a static instance group (CollectionInstance) whose covers and spines the cover loader
 // brings in within the upload budget, its items' hover, pull-out and Focus (WorldHover, I3 step 13a). A catalog
 // that does not open or has no games of the room's system gives the test room (SceneHost::showTestRoom), a room that
-// cannot be made now the shell, each with its notice. Lockstep runs (--fixed-dt) wait between frames, at most
-// kLockstepWaitLimit at a time, while the room or its layers are on their way. Main thread only.
+// cannot be made now the shell, each with its notice. Lockstep runs (--fixed-dt) wait, at most kLockstepWaitLimit at a
+// time, while the room is on its way and until the layers of every item in the frame's view are resident (every item
+// before the run's last frame). Main thread only.
+//
+// The persisted start (I3 step 10c, world_start.cpp): with a plan stored, its room shows first, as it is (WorldFlow's
+// preview: its covers and spines from the cache by the room's items of the last start), before the catalog's snapshot
+// is even asked for; once a frame has shown it, the snapshot's result reconciles it (world_reconcile.hpp): an unchanged
+// room moves and rebuilds nothing (its covers served again, the hero CRT given its games), a changed one is committed
+// again with the walker where it stands, a plan that cannot be used gives the shell. A lockstep run's first frame shows
+// the stored room's view whole, the next ones the reconciled room.
+//
+// The covers (I3 step 12) come in the cover loader's order (the hero item, the view by projected size, the rest by
+// distance), the hero item's front shows its hero texture (drawn by the dynamic path), nothing is made or uploaded while
+// a launched game runs, and a refresh of the catalog lets the loader try the media root again.
 
 #include <chrono>
 #include <cstdint>
@@ -18,13 +30,20 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
+#include <rv/app/cover_requests.hpp>
+#include <rv/app/library_refresh.hpp>
 #include <rv/app/run_report.hpp>
+#include <rv/app/screen_policy.hpp>
 #include <rv/app/world_build.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/worker_pool.hpp>
 #include <rv/render/static_instance_group.hpp>
+#include <rv/render/texture_array_layout.hpp>
+#include <rv/scene/camera.hpp>
+#include <rv/scene/render_item.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/pick_index.hpp>
 
@@ -36,6 +55,7 @@ namespace rv::app {
 class AppContext;
 class CollectionInstance;
 class CoverLoader;
+class HeroTextures;
 class ProductUi;
 class SceneGraphics;
 
@@ -47,8 +67,17 @@ public:
         /// (or at --spawn). The session's collection is gone by then (the registries are cleared). Errors: the scene
         /// cannot be made.
         std::function<Status(scene::SceneDescription description)> showScene;
+        /// showScene with the walker kept where it stands (I3 step 10c: the stored plan's room replaced by its
+        /// reconciliation); showScene when unset.
+        std::function<Status(scene::SceneDescription description)> showSceneKeepingWalker;
         /// Shows the test room (m0_testroom) in place of the scene shown.
         std::function<Status()> showTestRoom;
+        /// The view camera of the frame (I3 step 12: the cover loader's priorities and the lockstep's view); without it
+        /// the loader keeps the layout's order.
+        std::function<const scene::Camera&()> camera;
+        /// The games the hero CRT of the scene shown may play (I3 step 10c: the room's, after the snapshot; none for
+        /// the stored plan's room shown before it); unset: nothing to do.
+        std::function<void(std::vector<ScreenGame> games)> setScreenGames;
     };
 
     struct Options {
@@ -84,12 +113,24 @@ public:
     [[nodiscard]] InteractionResult interact(const WorldHover::Frame& frame);
     /// The interaction's input context now (what the walker gets: walkerActionsFor()).
     [[nodiscard]] WorldContext context() const noexcept { return m_interaction->interaction().context(); }
-    /// The view's render items: the scene's with the pulled items' parts (WorldHover::viewItems).
+    /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems), the hero texture's front
+    /// of an item in its slot (dynamicItems()).
     [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems);
     /// The hover's title label as `camera` shows it in a view of `viewSize` pixels (WorldHover::labelFor).
     [[nodiscard]] std::optional<WorldLabelContent> label(const scene::Camera& camera, glm::ivec2 viewSize);
     /// A frame was rendered (the lockstep wait starts again).
     void frameRendered();
+    /// Lockstep runs (I3 step 12, ADR-0011 §6): after the frame's walker and hover moved, waits within the frame until
+    /// every item in its view (and the hero texture of the focused item) is resident, every item of the room before
+    /// the run's last frame, at most kLockstepWaitLimit; nothing in other runs.
+    void settle(ProductUi& product);
+    /// The item whose hero texture the room shows in place of its front (I3 step 12; interact() sets it each frame to
+    /// the interaction's focused item, else its hovered one): its pick id, or kNoPick.
+    void setHeroItem(world::PickId pickId);
+    /// What the dynamic path draws besides the scene's items this frame: the hero texture's front.
+    [[nodiscard]] std::span<const scene::RenderItem> dynamicItems() const noexcept { return m_dynamicItems; }
+    /// The Stats panel's "Collection" lines (nothing without a room).
+    [[nodiscard]] std::vector<std::string> statusLines() const;
 
     /// The room's static groups for the view (none before its collection exists).
     [[nodiscard]] std::span<const gl::StaticInstanceGroup* const> staticGroups() const noexcept;
@@ -102,7 +143,35 @@ public:
     void record(RunReport& report) const;
 
 private:
+    using Clock = std::chrono::steady_clock;
+
     void commit(WorldResult result);
+    /// The build's outcome, change report, plan and times into the record (logged).
+    void recordBuild(const WorldBuild& build);
+    /// Shows `build`'s room (it has its plan, scene, data and layout): the scene through the host (the walker kept
+    /// where it stands with `keepWalker`), the collection, the pick index, the cover loader, the CRT's games. False
+    /// when the scene could not be shown (the test room then, with its notice).
+    [[nodiscard]] bool showRoom(WorldBuild& build, bool keepWalker);
+    /// A cover loader for `covers` on the collection shown, in place of any (none without a collection or covers).
+    void startCoverLoader(std::vector<CoverItem> covers, const std::optional<std::filesystem::path>& mediaRoot,
+                          const catalog::LibraryId& library);
+    /// The commit's times, state, notice and log.
+    void finishCommit(const WorldBuild& build, Clock::time_point start);
+    /// I3 step 10c, the persisted start (world_start.cpp): the stored plan's room shown before the snapshot answers,
+    /// and the snapshot's result reconciled with it (world_reconcile.hpp).
+    void commitPreview(WorldBuild preview);
+    void reconcile(WorldResult result);
+    /// The cover loader's and the hero textures' round: within `budget` (`frame`: a frame's round, not an idle wake's
+    /// or a lockstep wait's), paused while a launched game runs.
+    void coverRound(ProductUi& product, const gl::UploadBudget& budget, bool frame);
+    /// The hero texture of the hero item shown in place of its front once it is resident (the dynamic item).
+    void showHero();
+    /// The frame's view for the loader (the window's camera, and the screenshot's aspect).
+    [[nodiscard]] CoverView currentView() const;
+    /// What a lockstep frame waits for is in: the loader's view (`all`: every item) and the hero item's texture.
+    [[nodiscard]] bool settled(bool all) const;
+    /// A refresh that ended since the last round lets the loader try the media root again.
+    void followRefresh(ProductUi& product);
     /// Shows `notice` from the next showNotice() on: for world_notice::kShownSeconds of the run's time (`timed`), or
     /// until another replaces it.
     void setNotice(WorldNoticeContent notice, bool timed);
@@ -120,6 +189,26 @@ private:
     std::unique_ptr<CoverLoader> m_loader;
     /// The hover, the pull-out and Focus over the collection (I3 step 13a).
     std::unique_ptr<WorldHover> m_interaction;
+    /// The view's items when the dynamic path draws more than the scene's (viewItems()).
+    std::vector<scene::RenderItem> m_viewItems;
+    std::unique_ptr<HeroTextures> m_heroes;
+    bool m_heroesKnowRoot = false;
+    /// The hero item (its index in the collection), the one whose front shows its hero texture now, the texture, the
+    /// dynamic item that draws it.
+    std::optional<std::size_t> m_heroItem;
+    std::optional<std::size_t> m_heroShown;
+    unsigned m_heroTexture = 0;
+    std::vector<scene::RenderItem> m_dynamicItems;
+    /// The media root the room's paths are relative to, also while it is out of reach (the loader's retry), and the
+    /// last refresh seen.
+    std::optional<std::filesystem::path> m_mediaRootPath;
+    std::optional<std::string> m_lastRefresh;
+    /// The next frame to render (lockstep: the run's last frame waits for the whole room), the frames that waited for
+    /// their view and how long.
+    std::uint64_t m_nextFrame = 0;
+    std::uint64_t m_lockstepWaits = 0;
+    double m_lockstepWaitMs = 0.0;
+    bool m_settleWarned = false;
     /// What showed, the notice and when it was set (seconds of the run's time; it hides after its time unless the
     /// shell shows), the record.
     std::string m_state = "generating";
@@ -129,8 +218,15 @@ private:
     WorldRecord m_record;
     std::optional<std::chrono::system_clock::time_point> m_shownAt;
     bool m_coverPhaseOpen = false;
+    /// The coverLoad phase waits to open until the frame after m_coverPhaseAfter (commit(), update()).
+    bool m_coverPhasePending = false;
+    std::uint64_t m_coverPhaseAfter = 0;
     std::optional<std::chrono::steady_clock::time_point> m_waitSince;
     bool m_waitWarned = false;
+    /// The stored plan's room shown (its plan, layout and cover requests; its scene given to the host), until the
+    /// snapshot's result reconciles it; whether no frame has shown it yet (the result waits for one).
+    std::optional<WorldBuild> m_shownPreview;
+    bool m_previewAwaitingFrame = false;
 };
 
 } // namespace rv::app
