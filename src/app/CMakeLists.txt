@@ -47,7 +47,8 @@ rv_forbid_link(rv_app_cli)
 # library's configuration, their play sessions, and the AppCatalog the product UI drives (the ES-DE catalog, or the mock
 # catalog of the tests); since I3 the catalog's refresh on its worker, the room's snapshot and the room's making up to
 # its commit (world_build: the jobs on the worker pool and the main thread's flow, step 10b), the persisted start's
-# reconciliation and the hero CRT's games of the room (world_reconcile, room_screen: step 10c). Kept apart from rv_app_cli,
+# reconciliation and the hero CRT's games of the room (world_reconcile, room_screen: step 10c), the live update's decision
+# (world_live_plan: step 15b). Kept apart from rv_app_cli,
 # which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
@@ -58,6 +59,7 @@ add_library(rv_app_catalog STATIC
     src/room_screen.cpp
     src/room_snapshot.cpp
     src/world_build.cpp
+    src/world_live_plan.cpp
     src/world_reconcile.cpp
 )
 add_library(rv::app_catalog ALIAS rv_app_catalog)

@@ -505,6 +505,32 @@ Json worldToJson(const WorldRecord& world) {
             Json{{"prefab", fallback.prefab}, {"source", fallback.source}, {"reason", fallback.reason}});
     }
     json["objectFallbacks"] = std::move(fallbacks);
+    Json live = Json::array();
+    for (const WorldLiveUpdateRecord& update : world.liveUpdates) {
+        Json record{{"trigger", update.trigger},
+                    {"requestFrame", update.requestFrame},
+                    {"frame", update.frame},
+                    {"kind", update.kind},
+                    {"reason", update.reason},
+                    {"outcome", update.outcome},
+                    {"rebuild", update.rebuild},
+                    {"planWritten", update.planWritten},
+                    {"kept", update.kept},
+                    {"moved", update.moved},
+                    {"flagsChanged", update.flagsChanged},
+                    {"added", update.added},
+                    {"removed", update.removed},
+                    {"coversChanged", update.coversChanged},
+                    {"arraysGrown", update.arraysGrown},
+                    {"arrayAdded", update.arrayAdded},
+                    {"items", update.items},
+                    {"staticRecords", update.staticRecords}};
+        putOptional(record, "requestToApplyMs", update.requestToApplyMs);
+        putOptional(record, "buildMs", update.buildMs);
+        putOptional(record, "applyMs", update.applyMs);
+        live.push_back(std::move(record));
+    }
+    json["liveUpdates"] = std::move(live);
     return json;
 }
 
@@ -593,6 +619,31 @@ WorldRecord readWorld(FieldReader& fields) {
     for (FieldReader& fallback : fields.objectArray("objectFallbacks")) {
         world.objectFallbacks.push_back(
             ObjectFallbackRecord{fallback.string("prefab"), fallback.string("source"), fallback.string("reason")});
+    }
+    for (FieldReader& update : fields.optionalObjectArray("liveUpdates")) {
+        WorldLiveUpdateRecord record;
+        record.trigger = update.string("trigger");
+        record.requestFrame = update.count("requestFrame");
+        record.frame = update.count("frame");
+        record.kind = update.string("kind");
+        record.reason = update.string("reason");
+        record.outcome = update.string("outcome");
+        record.rebuild = update.string("rebuild");
+        record.planWritten = update.boolean("planWritten");
+        record.kept = update.count("kept");
+        record.moved = update.count("moved");
+        record.flagsChanged = update.count("flagsChanged");
+        record.added = update.count("added");
+        record.removed = update.count("removed");
+        record.coversChanged = update.count("coversChanged");
+        record.arraysGrown = update.boolean("arraysGrown");
+        record.arrayAdded = update.boolean("arrayAdded");
+        record.items = update.count("items");
+        record.staticRecords = update.count("staticRecords");
+        record.requestToApplyMs = update.optionalNumber("requestToApplyMs");
+        record.buildMs = update.optionalNumber("buildMs");
+        record.applyMs = update.optionalNumber("applyMs");
+        world.liveUpdates.push_back(std::move(record));
     }
     return world;
 }

@@ -286,7 +286,8 @@ struct WorldPreviewRecord {
 
 /// What the snapshot's result did to the stored plan's room shown (I3 step 10c, world_reconcile.hpp).
 struct WorldReconcileRecord {
-    /// app::toString(Reconciliation): "textures", "rebuild", "shell"; the frame it was committed in.
+    /// app::toString(Reconciliation): "textures", "rebuild", "shell", or "items" (I3 step 15b: another collection of
+    /// the same static part, its items applied in place); the frame it was committed in.
     std::string kind;
     std::uint64_t frame = 0;
     /// The collection shown against the result's, by game (LayoutDifference).
@@ -299,6 +300,43 @@ struct WorldReconcileRecord {
     bool coversReloaded = false;
 
     bool operator==(const WorldReconcileRecord&) const = default;
+};
+
+/// A live update of the room shown (I3 step 15b, world_live_plan.hpp): the room's job run again after a refresh of the
+/// catalog, and what its result did to the room.
+struct WorldLiveUpdateRecord {
+    /// What started it ("refresh"), the frame it was asked in and the frame its result was applied in.
+    std::string trigger;
+    std::uint64_t requestFrame = 0;
+    std::uint64_t frame = 0;
+    /// app::toString(LiveUpdateKind): "unchanged", "textures", "items", "rebuild", "kept"; why a rebuild or kept.
+    std::string kind;
+    std::string reason;
+    /// app::toString(WorldOutcome) of the job ("updated", "unchanged", "kept", ...), the change report's rebuild level,
+    /// whether the plan was written.
+    std::string outcome;
+    std::string rebuild;
+    bool planWritten = false;
+    /// The room shown against the result's collection, by game (LayoutDifference), and the items whose cover requests
+    /// changed.
+    std::uint64_t kept = 0;
+    std::uint64_t moved = 0;
+    std::uint64_t flagsChanged = 0;
+    std::uint64_t added = 0;
+    std::uint64_t removed = 0;
+    std::uint64_t coversChanged = 0;
+    /// Items: the arrays grew, an array was added; the items and static records after it.
+    bool arraysGrown = false;
+    bool arrayAdded = false;
+    std::uint64_t items = 0;
+    std::uint64_t staticRecords = 0;
+    /// Milliseconds: from the request to the result's application, the room's job on the pool, the application on the
+    /// main thread.
+    std::optional<double> requestToApplyMs;
+    std::optional<double> buildMs;
+    std::optional<double> applyMs;
+
+    bool operator==(const WorldLiveUpdateRecord&) const = default;
 };
 
 /// A prefab of the room that fell back to its family's (style §21's object fallbacks).
@@ -383,6 +421,9 @@ struct WorldRecord {
     bool itemsWritten = false;
     std::uint64_t screenGames = 0;
     std::vector<ObjectFallbackRecord> objectFallbacks;
+    /// I3 step 15b: the live updates applied to the room shown, in order (after a reconciliation of the start that
+    /// applied its items in place, `reconcile.kind` is "items").
+    std::vector<WorldLiveUpdateRecord> liveUpdates;
 
     bool operator==(const WorldRecord&) const = default;
 };

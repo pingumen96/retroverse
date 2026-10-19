@@ -157,6 +157,9 @@ struct WorldBuild {
     /// The static part (toSceneFile read back), the data it was made with (the item's prefab, the theme) and the spans
     /// it left bare; the collection's layout and, in its item order, what the loader serves for each item.
     std::optional<scene::SceneDescription> scene;
+    /// The SHA-256 of the static part's scene file (world::toSceneFile's text): the live update (I3 step 15b,
+    /// world_live_plan.hpp) applies a build of the same static part without a rebuild of the scene.
+    std::string sceneDigest;
     std::optional<world::SceneData> sceneData;
     std::vector<world::UndressedSpan> undressed;
     std::optional<world::CollectionLayout> layout;
@@ -251,6 +254,9 @@ public:
         std::string writer;
         /// Called by a job once its result is posted (AppContext::wakeCallback(): thread-safe).
         std::function<void()> wake;
+        /// The stored plan's room is made before the snapshot is asked for (I3 step 10c's persisted start); false for
+        /// the live update after a refresh (I3 step 15b), whose room already shows: the snapshot at once.
+        bool preview = true;
     };
 
     WorldFlow(Options options, core::WorkerPool& pool);

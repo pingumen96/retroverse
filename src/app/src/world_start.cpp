@@ -82,13 +82,21 @@ void WorldSession::reconcile(WorldResult result) {
                   false);
         break;
     }
-    case Reconciliation::Rebuild:
-        // Another plan or another collection: committed again, the walker where it stands; the items that stood keep
-        // their places (the incremental rules move none).
-        if (showRoom(build, true)) {
+    case Reconciliation::Rebuild: {
+        // I3 step 15b: another collection of the same static part has its items applied in place (nothing that stood
+        // is rebuilt or loaded again); else committed again, the walker where it stands. Either way the items that
+        // stood keep their places (the incremental rules move none).
+        const LiveUpdatePlan live =
+            m_shown ? planLiveUpdate(*m_shown, build) : LiveUpdatePlan{};
+        WorldLiveUpdateRecord applied;
+        if (live.kind == LiveUpdateKind::Items && applyItems(build, live, applied)) {
+            record.kind = std::string(toString(LiveUpdateKind::Items));
+            finishCommit(build, start);
+        } else if (showRoom(build, true)) {
             finishCommit(build, start);
         }
         break;
+    }
     case Reconciliation::Textures:
         // Nothing moves and nothing is rebuilt: the covers are served again when they changed or their sources can
         // be checked now, and the hero CRT gets the room's games.
@@ -96,6 +104,7 @@ void WorldSession::reconcile(WorldResult result) {
         if (plan.reloadCovers) {
             startCoverLoader(build.covers, build.mediaRoot, build.library);
         }
+        keepShown(build); // I3 step 15b: the next live update compares with the snapshot's room
         if (m_host.setScreenGames) {
             m_host.setScreenGames(build.screenGames);
         }
