@@ -106,7 +106,9 @@ InteractionResult WorldHover::update(const Frame& frame) {
     if (m_room && frame.ray) {
         input.hover = m_index.sample(*frame.ray, m_interaction.hovered());
     }
+    const WorldState before = m_interaction.state();
     InteractionResult result = m_interaction.update(input);
+    m_inspection.observe(m_interaction, before, result);
     if (result.launch) {
         // Launching from the room is I3 step 15a's: Avvia ends at once as if the game had returned, the item still in
         // the hand.
@@ -147,7 +149,8 @@ void WorldHover::syncCollection() {
         }
     }
     m_hidden = std::move(pulled);
-    if (Status set = m_collection->setHovered(m_interaction.highlighted()); !set) {
+    // The outline's mark: the highlighted item, else the item in the hand (the inspection's dimming, I3 step 13b).
+    if (Status set = m_collection->setHovered(WorldInspection::markedItem(m_interaction)); !set) {
         spdlog::error("World: the hover outline: {}", set.error().toString());
     }
 }
@@ -246,15 +249,18 @@ void WorldHover::syncAnimationPhase(bool animating) {
     }
 }
 
-std::span<const scene::RenderItem> WorldHover::viewItems(std::span<const scene::RenderItem> sceneItems) {
+std::span<const scene::RenderItem> WorldHover::viewItems(std::span<const scene::RenderItem> sceneItems,
+                                                         const scene::Camera& camera) {
     if (m_collection == nullptr || m_room == nullptr || m_hidden.empty()) {
         return sceneItems;
     }
     m_viewItems.assign(sceneItems.begin(), sceneItems.end());
     for (const PulledItem& pulled : m_interaction.pulledItems()) {
         if (const world::CollectionItem* item = m_room->find(pulled.id)) {
-            m_collection->appendRenderItems(
-                pulled.id, pulledItemTransform(*item, pulled.progress, m_room->reachOf(pulled.id)), m_viewItems);
+            const glm::mat4 model = pulledItemTransform(*item, pulled.progress, m_room->reachOf(pulled.id));
+            m_collection->appendRenderItems(pulled.id,
+                                            m_inspection.itemModel(m_interaction, *m_room, *item, model, camera),
+                                            m_viewItems);
         }
     }
     return m_viewItems;
@@ -281,11 +287,17 @@ std::optional<WorldLabelContent> WorldHover::labelFor(const scene::Camera& camer
                              anchor->y};
 }
 
+std::string WorldHover::focusedGame() const {
+    const world::CollectionItem* item = m_room ? m_room->find(m_interaction.focused()) : nullptr;
+    return item != nullptr ? item->game.toString() : std::string();
+}
+
 void WorldHover::record(InteractionRecord& record) const {
     record = m_record;
     if (!record.bound) {
         return;
     }
+    m_inspection.record(record.inspect);
     record.state = std::string(toString(m_interaction.state()));
     record.hoveredPickId = pickText(m_interaction.hovered());
     record.focusedPickId = pickText(m_interaction.focused());

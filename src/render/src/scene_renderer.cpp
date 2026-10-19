@@ -442,7 +442,8 @@ void SceneRenderer::drawOutline(GLDevice& device, const SceneShaders& shaders, c
             }
         }
     }
-    m_outline.drawEdge(device, *shaders.outline.edge, view.outline, targets, rect);
+    const ShaderProgram* dim = usable(shaders.outline.dim) ? shaders.outline.dim : nullptr;
+    m_outline.drawEdge(device, *shaders.outline.edge, dim, view.outline, targets, rect);
 }
 
 void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const RenderView& view,

@@ -10,6 +10,7 @@
 #include <rv/app/app_logic.hpp>
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/scene_graphics.hpp>
+#include <rv/app/world_inspect.hpp>
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/material_registry.hpp>
@@ -589,8 +590,13 @@ InteractionResult WorldSession::interact(const WorldHover::Frame& frame) {
     return result;
 }
 
-std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene::RenderItem> sceneItems) {
-    const std::span<const scene::RenderItem> items = m_interaction->viewItems(sceneItems);
+std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene::RenderItem> sceneItems,
+                                                           const scene::Camera& camera) {
+    // The held item's front shows the hero texture when it is the hero item shown (I3 step 13b's record).
+    const world::PickId heroPick = m_heroShown && m_collection ? m_collection->pickOf(*m_heroShown) : world::kNoPick;
+    m_interaction->inspection().setHeroFront(heroPick != world::kNoPick &&
+                                             heroPick == m_interaction->interaction().focused());
+    const std::span<const scene::RenderItem> items = m_interaction->viewItems(sceneItems, camera);
     // The hero texture's front at the item's static pose; a pulled hero item's front travels with its dynamic copy.
     const bool heroPulled = m_heroShown && m_collection &&
                             m_interaction->isPulled(m_collection->pickOf(*m_heroShown));
@@ -600,6 +606,10 @@ std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene
     m_viewItems.assign(items.begin(), items.end());
     m_viewItems.insert(m_viewItems.end(), m_dynamicItems.begin(), m_dynamicItems.end());
     return m_viewItems;
+}
+
+std::optional<std::string> WorldSession::screenSelection(const std::optional<std::string>& catalogSelection) const {
+    return app::screenSelection(catalogSelection, m_interaction->interaction().state(), m_interaction->focusedGame());
 }
 
 std::optional<CardAction> WorldSession::cardPress(const input::ActionState* actions, ProductUi& product) {

@@ -223,9 +223,10 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
     // fullscreen passes on post/fullscreen.vert: the ambient occlusion (ssao, ssao_blur) and the post-processing,
     // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample, post and fxaa. The asset
     // preview adds the inspection views on pbr.vert (debug/inspect.frag with RV_INSPECT_*). The hover outline marks on
-    // pbr.vert (outline_mark, also with RV_ALPHA_TEST) and draws its edge on post/fullscreen.vert (outline_edge).
+    // pbr.vert (outline_mark, also with RV_ALPHA_TEST) and draws its edge on post/fullscreen.vert (outline_edge), the
+    // inspection's dimming too (outline_dim, I3 step 13b).
     CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "debug/inspect.frag",
-                                             "depth/depth.frag", "outline/outline_edge.frag",
+                                             "depth/depth.frag", "outline/outline_dim.frag", "outline/outline_edge.frag",
                                              "outline/outline_mark.frag", "pbr/pbr.frag", "pbr/pbr.vert",
                                              "post/bloom_downsample.frag", "post/bloom_upsample.frag",
                                              "post/fullscreen.vert", "post/fxaa.frag", "post/post.frag",
@@ -662,7 +663,7 @@ TEST_CASE("integration/shaders: the post-processing passes draw a fullscreen tri
     // The fragment stages read the uv it writes at location 0.
     CHECK(std::regex_search(vertex, std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*out\s+vec2\s+vUv\s*;)")));
     for (const char* stage : {"post/bloom_downsample.frag", "post/bloom_upsample.frag", "post/post.frag",
-                              "post/fxaa.frag", "outline/outline_edge.frag"}) {
+                              "post/fxaa.frag", "outline/outline_edge.frag", "outline/outline_dim.frag"}) {
         INFO(stage);
         CHECK(std::regex_search(glslWithoutComments(stage),
                                 std::regex(R"(layout\s*\(\s*location\s*=\s*0\s*\)\s*in\s+vec2\s+vUv\s*;)")));
