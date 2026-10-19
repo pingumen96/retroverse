@@ -117,10 +117,12 @@ private:
 };
 
 /// The arguments of a catalog run: the script, `frames` frames at a fixed step (lockstep with the catalog worker) from
-/// the spawn point.
+/// the spawn point, in the test room (--scene: the standard fixture has snes games, which would open the generated
+/// room, I3 step 10b; the catalog's behaviour is the same in either).
 std::vector<std::string> catalogArguments(std::string_view script, std::string_view frames) {
-    return {"--input-script", arg(inputScript(script)), "--exit-after-frames", "--frames", std::string(frames),
-            "--fixed-dt", "0.016667", "--spawn", std::string(kSpawn)};
+    return {"--scene",    "m0_testroom", "--input-script", arg(inputScript(script)), "--exit-after-frames",
+            "--frames",   std::string(frames), "--fixed-dt", "0.016667",          "--spawn",
+            std::string(kSpawn)};
 }
 
 } // namespace

@@ -30,12 +30,18 @@
 #include <rv/app/scene_graphics.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/self_check.hpp>
+#include <rv/app/world_build.hpp>
 #include <rv/assets/gltf_loader.hpp>
+#include <rv/assets/surface_textures.hpp>
+#include <rv/catalog_db/database.hpp>
 #include <rv/core/frame_clock.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/version.hpp>
+#include <rv/core/worker_pool.hpp>
 #include <rv/devui/overlay_input.hpp>
+#include <rv/esde/discovery.hpp>
 #include <rv/input/action.hpp>
 #include <rv/input/input_script.hpp>
 #include <rv/launcher/emulator_profile.hpp>
@@ -46,6 +52,7 @@
 #include <rv/render/gpu_memory.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/shadow_settings.hpp>
+#include <rv/render/texture_cache.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/scene_description.hpp>
@@ -66,6 +73,7 @@
 #include "product_ui.hpp"
 #include "screen_service.hpp"
 #include "srgb_self_check.hpp"
+#include "world_session.hpp"
 
 namespace rv::app {
 namespace {
@@ -153,11 +161,9 @@ SceneSource modelViewerSource(const std::filesystem::path& file) {
     return source;
 }
 
-Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const core::Paths& paths) {
-    if (options.model) {
-        return modelViewerSource(*options.model);
-    }
-    const std::filesystem::path scenePath = resolveScenePath(options.scene, paths.assetRoot());
+/// The scene file `scene` names (resolveScenePath: the test room when empty).
+Expected<SceneSource> sceneFileSource(const std::optional<std::string>& scene, const core::Paths& paths) {
+    const std::filesystem::path scenePath = resolveScenePath(scene, paths.assetRoot());
     auto description = scene::loadSceneDescription(scenePath);
     if (!description) {
         Error error = description.error();
@@ -167,6 +173,53 @@ Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const c
     spdlog::info("Scene '{}' loaded from {}", description->name, core::pathToUtf8(scenePath));
     SceneSource source;
     source.description = std::move(*description);
+    source.loadModel = scene::assetModelLoader(paths.assetRoot());
+    return source;
+}
+
+/// The generated room is the run's scene (I3 step 10b): no --scene, --model or --mock-catalog.
+bool roomMode(const CommandLineOptions& options) noexcept {
+    return !options.scene && !options.model && !options.mockCatalog;
+}
+
+/// Without library.json or the catalog's database the ES-DE catalog cannot open: the room is decided at once (the test
+/// room, its notice naming the catalog's state), so that such runs never show the room's shell first.
+std::optional<WorldResult> roomWithoutCatalog(const core::Paths& paths) {
+    std::error_code ignored;
+    std::string state;
+    if (!std::filesystem::exists(paths.configDir() / esde::kLibraryFileName, ignored)) {
+        state = std::string(toString(CatalogState::NoLibrary));
+    } else if (!std::filesystem::exists(catalog_db::databaseFile(paths), ignored)) {
+        state = std::string(toString(CatalogState::NoDatabase));
+    } else {
+        return std::nullopt;
+    }
+    WorldResult result;
+    result.testRoom = true;
+    result.notice = std::string(world_notice::kNoCatalog);
+    result.catalogState = state;
+    result.reason = fmt::format("the ES-DE catalog is not open ({})", state);
+    return result;
+}
+
+Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const core::Paths& paths,
+                                      const std::optional<WorldResult>& decided) {
+    if (options.model) {
+        return modelViewerSource(*options.model);
+    }
+    if (!roomMode(options) || decided) {
+        return sceneFileSource(options.scene, paths);
+    }
+    // While the room is made: the empty room's shell (the WorldGenerating state).
+    auto shell = WorldSession::shellScene(paths.assetRoot(), catalog::SystemName::parse(kRoomSystem).value());
+    if (!shell) {
+        spdlog::error("The room's shell cannot be made, the test room shows while the room is made: {}",
+                      shell.error().toString());
+        return sceneFileSource(std::nullopt, paths);
+    }
+    spdlog::info("Scene '{}': the empty room while the room is made", shell->name);
+    SceneSource source;
+    source.description = std::move(*shell);
     source.loadModel = scene::assetModelLoader(paths.assetRoot());
     return source;
 }
@@ -345,8 +398,15 @@ struct RetroverseApp::State {
     /// scene's first CRT; none without a CRT (the model viewer). Destroyed before the graphics, whose material registry
     /// shows its pictures.
     std::unique_ptr<ScreenService> screen;
+    /// The app's worker pool (ADR-0011 §6: the room's generation and its covers) and the generated room (I3 step 10b),
+    /// in room mode only. The pool outlives the session, whose destructor cancels its jobs; the session (its collection
+    /// on the GPU) goes before the graphics.
+    std::unique_ptr<core::WorkerPool> pool;
+    std::unique_ptr<WorldSession> world;
     /// The scene as described: its camera (start, reset) and objects (the developer overlay's list).
     scene::SceneDescription description;
+    /// Loads the scene's models (asset-relative paths, the model viewer's file).
+    scene::ModelLoader loadModel;
     /// Reference grid of the debug lines.
     DebugGrid debugGrid;
     /// Debug lines wanted (--debug-draw, the developer overlay) and those shown.
@@ -433,7 +493,113 @@ struct RetroverseApp::State {
         view.post.antialiasing = antialiasing;
         view.timeSeconds = static_cast<float>(simulatedSeconds);
         view.wireframe = wireframe;
+        if (world) {
+            view.staticGroups = world->staticGroups();
+        }
         return view;
+    }
+
+    /// The hero CRT's service on the scene's first CRT, if it has one (not in the model viewer).
+    void createScreen(const AppContext& context, std::vector<ScreenGame> games) {
+        const CommandLineOptions& options = context.options();
+        if (options.model) {
+            return;
+        }
+        if (std::optional<HeroScreen> hero = findHeroScreen(description, *scene, graphics->materials())) {
+            ScreenServiceOptions screenOptions;
+            screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
+            screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
+            screen = std::make_unique<ScreenService>(std::move(*hero), graphics->materials(), std::move(games),
+                                                     screenOptions);
+        } else {
+            spdlog::info("Scene '{}' has no hero CRT (a crt object with a picture on its screen): no video",
+                         description.name);
+        }
+    }
+
+    /// The generated room of the run (I3 step 10b): the worker pool and the session that makes and shows it; `decided`:
+    /// the test room the run shows already for want of a catalog.
+    void startWorld(AppContext& context, std::optional<WorldResult> decided) {
+        const core::Paths& paths = context.paths();
+        if (!decided) {
+            // Every procedural surface now, as the test room's start makes them: the room's commit then only builds
+            // and uploads its meshes (a surface generated at the commit would hold that frame for its time).
+            for (const assets::ProceduralSurfaceInfo& surface : assets::proceduralSurfaces()) {
+                static_cast<void>(graphics->textures().procedural(
+                    fmt::format("{}/{}", surface.name, assets::toString(assets::SurfaceMap::BaseColor)),
+                    gl::ColorSpace::Srgb));
+            }
+        }
+        pool = std::make_unique<core::WorkerPool>();
+        WorldSession::Options options;
+        options.paths = WorldPaths{paths.assetRoot(), paths.userDataRoot(), paths.configDir(), paths.cacheDir()};
+        options.system = catalog::SystemName::parse(kRoomSystem).value();
+        options.writer = fmt::format("retroverse ({})", core::versionBanner());
+        const bool lockstep = context.options().fixedDeltaSeconds.has_value();
+        options.lockstep = lockstep;
+        options.processCreated = platform_win::currentProcessIdentity().creationTime;
+        WorldSession::SceneHost host;
+        host.showScene = [this, &context](scene::SceneDescription next) {
+            return replaceScene(context, std::move(next), scene::assetModelLoader(context.paths().assetRoot()));
+        };
+        host.showTestRoom = [this, &context]() -> Status {
+            auto testRoom = sceneFileSource(std::nullopt, context.paths());
+            if (!testRoom) {
+                return propagate(testRoom.error());
+            }
+            return replaceScene(context, std::move(testRoom->description), std::move(testRoom->loadModel));
+        };
+        world = std::make_unique<WorldSession>(context, std::move(options), *pool, *graphics, std::move(host),
+                                               std::move(decided));
+        spdlog::info("World: the room of {} on a worker pool of {} thread(s){}", kRoomSystem, pool->threadCount(),
+                     lockstep ? " (lockstep: frames wait for the room and its layers)" : "");
+    }
+
+    /// Shows `next` in place of the scene shown, at a frame boundary (the generated room after its shell, the test room
+    /// instead of it; I3 step 10b): the hero CRT's service, the content of the registries and the scene go, the new
+    /// scene is instantiated, the walker stands at its camera (or at --spawn), the camera's lens is its, the CRT's
+    /// service starts again on its CRT, the debug lines are made again. The world's collection is gone by then.
+    Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader) {
+        if (screen) {
+            screen->shutdown();
+            screen->record(context.report().video);
+            screen.reset();
+        }
+        graphics->clearContent();
+        // The overlay's panels refer to members of the scene instance (its environment, its lights' packing): the new
+        // instance takes the old one's place in the same storage, which they keep referring to.
+        scene.reset();
+        description = std::move(next);
+        loadModel = std::move(loader);
+        auto instance =
+            SceneInstance::create(description, graphics->materialLibrary(), loadModel, graphics->resources());
+        if (!instance) {
+            // Never without a scene (the views and the overlay's panels read it): an empty one in its place, with the
+            // camera the failed one had, until the caller shows another.
+            Error error = instance.error();
+            scene::SceneDescription empty;
+            empty.name = "empty";
+            empty.camera = description.camera;
+            empty.environment = description.environment;
+            description = std::move(empty);
+            if (auto blank =
+                    SceneInstance::create(description, graphics->materialLibrary(), loadModel, graphics->resources())) {
+                scene.emplace(std::move(*blank));
+                freeRoam->resetScene(description, scene->collisionWorld(), context.options().spawn);
+            }
+            return propagate(std::move(error));
+        }
+        scene.emplace(std::move(*instance));
+        freeRoam->resetScene(description, scene->collisionWorld(), context.options().spawn);
+        camera.setLens(description.camera.lens);
+        // The camera takes the walker's new pose now: this frame renders the new scene from it.
+        freeRoam->update(input::ActionState{}, 0.0f, camera);
+        createScreen(context, {});
+        shownDebugLines = DebugLineSelection{};
+        if (Status shown = syncDebugLines(); !shown) {
+            spdlog::error("Debug lines unavailable: {}", shown.error().toString());
+        }
+        return ok();
     }
 
     /// Shows the debug lines of `debugLines` (--debug-draw, the developer overlay's toggles) when they differ from
@@ -613,7 +779,8 @@ struct RetroverseApp::State {
                                                 [this] { resetToSceneCamera(); }}),
                         devui::DockSlot::LeftBottom);
         // Tabs of one node; the first is shown.
-        devUi->addPanel(devui::makeLightsPanel({scene->sceneLights(), scene->environment(), scene->droppedLights(),
+        devUi->addPanel(devui::makeLightsPanel({[this] { return scene->sceneLights(); }, scene->environment(),
+                                                scene->droppedLights(),
                                                 scene->shadowLight(), scene->shadowNote(),
                                                 [this] { scene->applyLighting(); }}),
                         devui::DockSlot::Right);
@@ -725,7 +892,11 @@ RetroverseApp::~RetroverseApp() = default;
 Status RetroverseApp::onInit(AppContext& context) {
     const core::Paths& paths = context.paths();
     const CommandLineOptions& options = context.options();
-    auto source = loadSceneSource(options, paths);
+    // Without --scene, --model or --mock-catalog the run shows the generated room (I3 step 10b): its shell while it is
+    // made, or the test room at once when the catalog cannot open at all.
+    const bool room = roomMode(options);
+    std::optional<WorldResult> decided = room ? roomWithoutCatalog(paths) : std::nullopt;
+    auto source = loadSceneSource(options, paths, decided);
     if (!source) {
         return propagate(source.error());
     }
@@ -755,6 +926,7 @@ Status RetroverseApp::onInit(AppContext& context) {
     }
     auto state = std::make_unique<State>();
     state->description = std::move(source->description);
+    state->loadModel = std::move(source->loadModel);
     state->debugGrid = source->grid;
     auto graphics = SceneGraphics::create(context);
     if (!graphics) {
@@ -762,24 +934,12 @@ Status RetroverseApp::onInit(AppContext& context) {
     }
     state->graphics = std::move(*graphics);
     auto sceneInstance = SceneInstance::create(state->description, state->graphics->materialLibrary(),
-                                               source->loadModel, state->graphics->resources());
+                                               state->loadModel, state->graphics->resources());
     if (!sceneInstance) {
         return propagate(sceneInstance.error());
     }
     state->scene.emplace(std::move(*sceneInstance));
-    if (!options.model) {
-        if (std::optional<HeroScreen> hero =
-                findHeroScreen(state->description, *state->scene, state->graphics->materials())) {
-            ScreenServiceOptions screenOptions;
-            screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
-            screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
-            state->screen = std::make_unique<ScreenService>(std::move(*hero), state->graphics->materials(),
-                                                            std::move(screenGames), screenOptions);
-        } else {
-            spdlog::info("Scene '{}' has no hero CRT (a crt object with a picture on its screen): no video",
-                         state->description.name);
-        }
-    }
+    state->createScreen(context, std::move(screenGames));
     if (options.debugDraw) {
         state->debugLines = kAllDebugLines;
         if (auto shown = state->syncDebugLines(); !shown) {
@@ -819,6 +979,9 @@ Status RetroverseApp::onInit(AppContext& context) {
             }
         };
         state->product->setLaunchHooks(std::move(hooks));
+        if (room) {
+            state->startWorld(context, std::move(decided));
+        }
     }
 #if defined(RV_DEV_UI)
     if (auto created = state->createDevUi(context); !created) {
@@ -860,6 +1023,10 @@ Status RetroverseApp::onInit(AppContext& context) {
             runFxaaCheck(context, *state->graphics);
             break;
         }
+    }
+    // A lockstep run's first frame waits for the room (the host idles before it: onIdle).
+    if (state->world && state->world->waits()) {
+        context.setIdle(true);
     }
     m_state = std::move(state);
     return ok();
@@ -954,6 +1121,14 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
             context.setIdle(true);
         }
     }
+    if (state.world) {
+        // The room (I3 step 10b): its result committed at this frame boundary, its covers' round; then the hover of
+        // the item the reticle points at while the world has the input (the outline).
+        state.world->update(*state.product, false, state.simulatedSeconds);
+        state.world->hover(inputContext == InputContext::World
+                               ? std::optional<core::Ray>(state.camera.rayFromNdc(glm::vec2(0.0f)))
+                               : std::nullopt);
+    }
     if (state.screen) {
         // The hero CRT follows the game selected in the quick catalog while it is open (the world's focus and
         // inspection from I3 step 13b), after its dwell.
@@ -974,6 +1149,13 @@ void RetroverseApp::onRender(AppContext& context) {
     State& state = *m_state;
     state.graphics->renderFrame(context, state.view(), state.screenshotRequested);
     state.screenshotRequested = false;
+    if (state.world) {
+        state.world->frameRendered();
+        // A lockstep run waits for the room or its layers before its next frame.
+        if (state.world->waits()) {
+            context.setIdle(true);
+        }
+    }
     if (state.product) {
         state.product->frameRendered();
         // A question nobody can see is presented once: the host waits after this frame (LaunchFlow::hostIdle).
@@ -990,7 +1172,11 @@ void RetroverseApp::onIdle(AppContext& context) {
     }
     State& state = *m_state;
     state.product->onIdle();
-    context.setIdle(state.product->wantsIdle());
+    // A lockstep run's wait for the room (never while a game has the screen: nothing is committed or uploaded then).
+    if (state.world && !state.product->launchActive()) {
+        state.world->update(*state.product, true, state.simulatedSeconds);
+    }
+    context.setIdle(state.product->wantsIdle() || (state.world && state.world->waits()));
     if (!context.idle()) {
         // Frames resume: whatever the wait dropped (the release of the button that launched among them) is released.
         state.input->releaseAll();
@@ -1002,6 +1188,13 @@ void RetroverseApp::onShutdown(AppContext& context) {
         // The quit hook: a game still running is left running and recorded, before anything else ends.
         if (m_state->product) {
             m_state->product->finish();
+        }
+        // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
+        if (m_state->world) {
+            m_state->world->record(context.report());
+        }
+        if (m_state->pool) {
+            m_state->pool->shutdown();
         }
         // A decoder stopped for a game still running stays stopped; every decoder thread is waited for.
         if (m_state->screen) {

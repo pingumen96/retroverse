@@ -32,6 +32,7 @@
 #include <rv/ui/ui_view.hpp>
 
 #include "game_session_panel.hpp"
+#include "world_notice_panel.hpp"
 
 namespace rv::app {
 namespace {
@@ -93,6 +94,10 @@ struct ProductUi::Impl {
     std::unique_ptr<ui::QuickCatalogModel> model;
     std::unique_ptr<ui::QuickCatalogScreen> screen;
     std::unique_ptr<GameSessionPanel> panel;
+    /// The world's notice (I3 step 10b) and what the application wants it to say; shown while neither the catalog nor
+    /// the panel is.
+    std::unique_ptr<WorldNoticePanel> notice;
+    WorldNoticeContent wantedNotice;
 
     ui::NavInput nav;
     ui::UiCommandList commands;
@@ -130,7 +135,21 @@ struct ProductUi::Impl {
     std::optional<std::chrono::steady_clock::time_point> lastFrame;
     static constexpr std::size_t kMaxFrameSamples = 100000;
 
-    [[nodiscard]] bool visible() const noexcept { return catalogOpen || panel->visible(); }
+    [[nodiscard]] bool visible() const noexcept {
+        return catalogOpen || panel->visible() || (notice && notice->visible());
+    }
+
+    /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
+    void syncNotice() {
+        if (!notice) {
+            return;
+        }
+        if (wantedNotice.notice.empty() || catalogOpen || panel->visible()) {
+            notice->hide();
+        } else {
+            notice->show(wantedNotice);
+        }
+    }
 
     /// What the quick catalog and the walker show now.
     [[nodiscard]] CatalogView currentView() const {
@@ -428,6 +447,12 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
         return propagate(panel.error());
     }
     s.panel = std::move(*panel);
+    if (auto notice = WorldNoticePanel::create(*s.view)) {
+        s.notice = std::move(*notice);
+    } else {
+        // The world goes on without its notice (style §21: a missing asset never stops the app).
+        spdlog::error("World notice unavailable: {}", notice.error().toString());
+    }
     if (s.refreshOnOpen && !s.catalog->supportsRefresh()) {
         // The mock catalog: nothing to import (recorded as such).
         s.refreshAsked = true;
@@ -520,6 +545,14 @@ void ProductUi::setLaunchHooks(LaunchHooks hooks) {
     m_impl->hooks = std::move(hooks);
 }
 
+void ProductUi::setWorldNotice(WorldNoticeContent content) {
+    m_impl->wantedNotice = std::move(content);
+}
+
+AppCatalog& ProductUi::catalog() noexcept {
+    return *m_impl->catalog;
+}
+
 std::optional<std::string> ProductUi::selectedGameId() const {
     const Impl& s = *m_impl;
     if (!s.catalogOpen) {
@@ -582,6 +615,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         closeCatalog();
     }
     s.syncPanel();
+    s.syncNotice();
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);
@@ -615,6 +649,10 @@ void ProductUi::catalogBack() {
 
 bool ProductUi::wantsIdle() const noexcept {
     return m_impl->flow.hostIdle() || m_impl->waitsForCatalog();
+}
+
+bool ProductUi::launchActive() const noexcept {
+    return m_impl->flow.pending() || m_impl->flow.hostIdle();
 }
 
 void ProductUi::onIdle() {

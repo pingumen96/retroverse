@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -36,14 +37,15 @@ public:
     void draw() override {
         bool changed = drawEnvironment();
         ImGui::SeparatorText("Lights");
-        if (m_model.lights.empty()) {
+        const std::span<scene::Light> lights = m_model.lights ? m_model.lights() : std::span<scene::Light>{};
+        if (lights.empty()) {
             ImGui::TextDisabled("The scene has no lights");
         }
-        drawKeyLight();
+        drawKeyLight(lights);
         ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, kLightIndentEms * ImGui::GetFontSize());
-        for (std::size_t index = 0; index < m_model.lights.size(); ++index) {
+        for (std::size_t index = 0; index < lights.size(); ++index) {
             ImGui::PushID(static_cast<int>(index));
-            changed |= drawLight(m_model.lights[index]);
+            changed |= drawLight(lights[index]);
             ImGui::PopID();
         }
         ImGui::PopStyleVar();
@@ -57,7 +59,7 @@ public:
 
 private:
     /// Which light casts the shadows, or why none does.
-    void drawKeyLight() const {
+    void drawKeyLight(std::span<const scene::Light> lights) const {
         if (!m_model.shadowNote.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, kWarningColor);
             ImGui::TextWrapped("No shadows: %s", m_model.shadowNote.c_str());
@@ -65,9 +67,9 @@ private:
             return;
         }
         const gl::ShadowLight& key = m_model.shadowLight;
-        const auto first = std::find_if(m_model.lights.begin(), m_model.lights.end(),
+        const auto first = std::find_if(lights.begin(), lights.end(),
                                         [](const scene::Light& light) { return light.castsShadows; });
-        if (!key.casts() || first == m_model.lights.end()) {
+        if (!key.casts() || first == lights.end()) {
             ImGui::TextDisabled("No light casts shadows");
             return;
         }

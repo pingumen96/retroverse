@@ -25,6 +25,10 @@
 // systems' games), and the main thread learns it (CatalogResults::refreshed) with the readiness generation that drops
 // the answers resolved before. stop() sets the import's cancel flag and interrupts the writer while the import writes:
 // the import is rolled back or committed whole, within the stop's bound.
+//
+// Since I3 step 10b it also takes the room's snapshot (roomSnapshot(), room_snapshot.hpp), the database part of making
+// the generated room: the bulk query on its reader, the media root checked, the media paths derived, the aliases of
+// placed games; the selection, the generation and the plan's write run on the app's worker pool, never here.
 
 #include <chrono>
 #include <cstddef>
@@ -40,6 +44,7 @@
 #include <vector>
 
 #include <rv/app/library_refresh.hpp>
+#include <rv/app/room_snapshot.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/launch_resolution.hpp>
 #include <rv/catalog/library_source.hpp>
@@ -210,13 +215,15 @@ struct CatalogResults {
     /// The refresh running: where it is (the latest), and its end.
     std::optional<RefreshProgress> refreshProgress;
     std::optional<CatalogRefreshed> refreshed;
+    /// The latest room snapshot (I3 step 10b).
+    std::optional<RoomSnapshotResult> room;
     /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
     /// asked of it will be answered any more. Posted last.
     bool ended = false;
 
     [[nodiscard]] bool empty() const noexcept {
         return !opened && !list && readiness.empty() && launches.empty() && sessions.empty() && verified.empty() &&
-               !refreshProgress && !refreshed && !ended;
+               !refreshProgress && !refreshed && !room && !ended;
     }
 };
 
@@ -280,6 +287,12 @@ public:
     /// and nothing asked, while a refresh is queued or runs, or once the worker stops or ended. Only once the catalog
     /// opened Ready: a catalog that did not open answers nothing more.
     bool refresh();
+
+    /// Takes the room's snapshot of `request.system` (room_snapshot.hpp: the bulk query, the media root checked, the
+    /// media paths, the aliases of the requested placed games the snapshot lacks; CatalogResults::room). A request
+    /// still queued is replaced. Queued behind a refresh and never answered during one (the aliases read the writer's
+    /// store). Only once the catalog opened Ready: a catalog that did not open answers nothing more.
+    void roomSnapshot(RoomSnapshotRequest request);
 
     /// What it answered since the last call (main thread).
     [[nodiscard]] CatalogResults take();

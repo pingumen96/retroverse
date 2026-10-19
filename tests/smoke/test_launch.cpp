@@ -310,14 +310,16 @@ TEST_CASE("launch: closing Retroverse while the game runs leaves the game runnin
 
 TEST_CASE("launch: a closed catalog draws nothing over the scene", "[gpu][launch]") {
     // The same frames with the mock catalog and with the ES-DE catalog of an empty data directory, neither opened: the
-    // product UI adds nothing to them (golden G01's runs have the latter).
+    // product UI adds nothing to them (golden G01's runs have the latter). The test room by --scene: without it, a run
+    // of the ES-DE catalog asks for the generated room and shows why it shows the test room instead (I3 step 10b).
     ensureLaunchAllowList();
     const std::filesystem::path dir = freshCaseDir("launch/closed_catalog");
     const std::filesystem::path catalog = writeFakeCatalog(dir, {fake_games::kReturns});
     const std::filesystem::path without = dir / "without_catalog.png";
     const std::filesystem::path with = dir / "with_catalog.png";
     const AppRun plain = runApp(retroverseExe(), dir, "without_catalog",
-                                {"--smoke", "--frames", "5", "--fixed-dt", "0.016667", "--screenshot", arg(without)});
+                                {"--scene", "m0_testroom", "--smoke", "--frames", "5", "--fixed-dt", "0.016667",
+                                 "--screenshot", arg(without)});
     skipWithoutOpenGl(plain);
     requireCleanRun(plain);
     const AppRun withCatalog =

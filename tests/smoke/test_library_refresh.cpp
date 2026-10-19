@@ -80,9 +80,11 @@ struct ImportedLibrary {
     }
 };
 
+/// The test room (--scene: the standard fixture has snes games, which would open the generated room, I3 step 10b; the
+/// refresh is the catalog's, whatever the room).
 std::vector<std::string> refreshArguments(std::string_view frames) {
-    return {"--refresh-library", "--exit-after-frames", "--frames", std::string(frames), "--fixed-dt", "0.016667",
-            "--spawn", std::string(kSpawn)};
+    return {"--scene", "m0_testroom", "--refresh-library", "--exit-after-frames", "--frames", std::string(frames),
+            "--fixed-dt", "0.016667", "--spawn", std::string(kSpawn)};
 }
 
 const rv::app::PhaseRecord* findPhase(const rv::app::RunReport& report, std::string_view name) {

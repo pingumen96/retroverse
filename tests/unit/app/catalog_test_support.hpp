@@ -45,22 +45,26 @@ inline rv::catalog::LibraryProfile fixtureLibrary(const rv::test::Fixture& fixtu
     return library;
 }
 
-/// The standard fixture recorded as the library of a user data directory and imported into its catalog database, psx
-/// assigned the fixture's "Fake Emulator (Inject)" command (Solo Disc's %INJECT% file is usable: inject-file).
+/// The standard fixture (or `fixtureName`'s) recorded as the library of a user data directory and imported into its
+/// catalog database; for the standard fixture, psx assigned the fixture's "Fake Emulator (Inject)" command (Solo Disc's
+/// %INJECT% file is usable: inject-file).
 struct ImportedFixture {
     rv::test::TempDir dir;
     rv::test::Fixture fixture;
     std::filesystem::path data;
     rv::core::Paths paths;
 
-    explicit ImportedFixture(std::string_view prefix, bool import = true)
-        : dir(prefix), fixture(rv::test::Fixture::materialize("esde/standard").value()), data(dir.file("data")),
+    explicit ImportedFixture(std::string_view prefix, bool import = true,
+                             std::string_view fixtureName = "esde/standard")
+        : dir(prefix), fixture(rv::test::Fixture::materialize(fixtureName).value()), data(dir.file("data")),
           paths(pathsOf(data)) {
         REQUIRE(rv::esde::writeLibraryFile(data / "config" / "library.json", fixtureLibrary(fixture),
                                            rv::esde::ExistingFile::Keep)
                     .has_value());
         if (import) {
             importLibrary();
+        }
+        if (import && fixtureName == "esde/standard") {
             auto database = openDatabase();
             auto store = rv::catalog_db::SessionStore::open(database.writer()).value();
             REQUIRE(store->setSystemChoice(rv::catalog::LibraryId::parse("esde").value(),

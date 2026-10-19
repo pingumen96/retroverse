@@ -25,6 +25,11 @@ public:
     FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision,
              const std::optional<SpawnPoint>& spawn = std::nullopt);
 
+    /// Another scene in place of the one walked in (the generated room after its shell, I3 step 10b): its collision
+    /// world, the walker at its camera or at `spawn`, as the constructor places it; the walker's settings are kept.
+    void resetScene(const scene::SceneDescription& scene, scene::CollisionWorld collision,
+                    const std::optional<SpawnPoint>& spawn = std::nullopt);
+
     /// Advances the walker by one frame of `deltaSeconds` and writes the camera pose.
     void update(const input::ActionState& actions, float deltaSeconds, scene::Camera& camera);
 
