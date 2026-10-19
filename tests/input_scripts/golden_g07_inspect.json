@@ -1,0 +1,15 @@
+// I3 step 17a, golden G07 (style §26.1 7: an object inspected up close): the snes-room fixture's room, the walker at the
+// Focus pose of the hero wall's band item fx:hw-w/s:5.4 (--spawn), the reticle on it; it never moves.
+//   frame 40        interact: the face-out item is inspected at once, lifted into the hand in 300 ms (frames 40-58),
+//                   the card beside it with its game and Avvia focused
+//   frames 60-69    the right stick at half deflection (look_x 0.5): the item turns 15 degrees, its front to the right,
+//                   so that its side shows beside the cover
+// tests/smoke/test_golden_room.cpp ("golden/G07") takes the screenshot at the end (frame 89) and compares it with
+// assets/style_tests/screenshots/g07_inspect_card_golden.png.
+//   retroverse --spawn <fx:hw-w/s:5.4's Focus pose> --input-script tests/input_scripts/golden_g07_inspect.json
+//     --video-freeze-pts 1 --exit-after-frames --frames 90 --fixed-dt 0.016667 --hidden
+//     --data-dir <a data directory with the fixture imported>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 60, "toFrame": 69, "actions": {"look_x": 0.5}}
+]

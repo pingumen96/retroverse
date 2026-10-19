@@ -1,0 +1,61 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "99bc343a3fa84c9377923f6229a2411fa0694c54",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate B golden of the inspection (style 26.1 7): the snes-room fixture's band item fx:hw-w/s:5.4 held in the hand, turned 15 degrees, the scene behind dimmed, its card beside it (the product UI, laid out for the 1280x720 window and drawn into the screenshot), the hero CRT's clip held at 1.0 s.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G07",
+  "image": {
+    "file": "g07_inspect_card_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "3726a20d45ae54b551b1a5ec3df47f8edec6c63320747badda3566c2ac001874",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/snes-room",
+      "path": "tests/fixtures/esde/snes-room",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
+    },
+    "inputScript": {
+      "file": "tests/input_scripts/golden_g07_inspect.json",
+      "sha256": "a8e46daef56d421354f543ff41062ec7933011e726cc00ed49b6abcdebb6f922"
+    },
+    "plan": {
+      "digest": "451c20f8196b4e88c34da4d6db893ef0d91edf153dd31769920bcc105063e39e",
+      "fileSha256": "451c20f8196b4e88c34da4d6db893ef0d91edf153dd31769920bcc105063e39e",
+      "items": 50,
+      "placements": 50
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "3d2dcb3e51f098dcd7b2268baee29ed3a0f9d2c2f8e3302a60e7009faf9678fb"
+    }
+  },
+  "renderedOn": "2026-10-19",
+  "run": {
+    "capturedFrame": 89,
+    "frames": 90,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G07:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/snes-room into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --exit-after-frames --frames 90 --fixed-dt 0.016667 --screenshot <case>/g07.png --screenshot-size 1920x1080 --spawn -2.24834681,0,-3.84005356,0.619996011,-14.4847298 --input-script tests/input_scripts/golden_g07_inspect.json --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--spawn at the Focus pose of fx:hw-w/s:5.4 (app::focusPoseFor, the 16:9 window), tests/input_scripts/golden_g07_inspect.json"
+}
