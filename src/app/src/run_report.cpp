@@ -584,6 +584,63 @@ CardRecord readCard(FieldReader& fields) {
     return card;
 }
 
+/// An unbound record (no product UI) is an empty object (I3 step 14b).
+Json screensToJson(const GameScreensRecord& screens) {
+    Json json = Json::object();
+    if (!screens.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["viewerFrames"] = screens.viewerFrames;
+    json["infoFrames"] = screens.infoFrames;
+    json["pictures"] = screens.pictures;
+    json["failures"] = screens.failures;
+    json["pictureBox"] = screens.pictureBox;
+    json["stageBox"] = screens.stageBox;
+    Json events = Json::array();
+    for (const GameScreenEventRecord& event : screens.events) {
+        Json entry{{"frame", event.frame}, {"event", event.event}};
+        for (const auto& [key, value] : {std::pair<const char*, const std::string*>{"game", &event.game},
+                                         {"from", &event.from},
+                                         {"kind", &event.kind},
+                                         {"detail", &event.detail}}) {
+            if (!value->empty()) {
+                entry[key] = *value;
+            }
+        }
+        events.push_back(std::move(entry));
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = screens.eventsDropped;
+    return json;
+}
+
+GameScreensRecord readScreens(FieldReader& fields) {
+    GameScreensRecord screens;
+    if (!fields.has("bound")) {
+        return screens;
+    }
+    screens.bound = fields.boolean("bound");
+    screens.viewerFrames = fields.count("viewerFrames");
+    screens.infoFrames = fields.count("infoFrames");
+    screens.pictures = fields.count("pictures");
+    screens.failures = fields.count("failures");
+    screens.pictureBox = fields.numberArray("pictureBox");
+    screens.stageBox = fields.numberArray("stageBox");
+    for (FieldReader& event : fields.objectArray("events")) {
+        GameScreenEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.game = event.optionalString("game").value_or(std::string());
+        entry.from = event.optionalString("from").value_or(std::string());
+        entry.kind = event.optionalString("kind").value_or(std::string());
+        entry.detail = event.optionalString("detail").value_or(std::string());
+        screens.events.push_back(std::move(entry));
+    }
+    screens.eventsDropped = fields.count("eventsDropped");
+    return screens;
+}
+
 /// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
 Json worldToJson(const WorldRecord& world) {
     Json json = Json::object();
@@ -1488,6 +1545,7 @@ std::string formatRunReport(const RunReport& report) {
     json["world"] = worldToJson(report.world);
     json["residency"] = residencyToJson(report.residency);
     json["video"] = videoToJson(report.video);
+    json["screens"] = screensToJson(report.screens);
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -1587,6 +1645,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto video = fields.object("video")) {
         report.video = readVideo(*video);
+    }
+    if (auto screens = fields.optionalObject("screens")) {
+        report.screens = readScreens(*screens);
     }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");

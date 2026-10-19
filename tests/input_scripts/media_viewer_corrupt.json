@@ -1,0 +1,18 @@
+// I3 step 14b: the quick catalog's Vedi media on a game whose screenshot is truncated (the snes-room fixture's Bramble
+// Burrow Rally: a cover, a cartridge picture and a truncated screenshot).
+//   frame 40   quick_catalog: the quick catalog opens (the room shown)   frames 43, 46  ui_up: the search field
+//   frame 49   "rally" typed                              frame 52  ui_activate: the list, Bramble Burrow Rally selected
+//   frame 56   ui_media: the viewer, on the cover (1 of 3)
+//   frame 60   ui_end: the screenshot (3 of 3), which cannot be decoded: its fallback shows
+// tests/smoke/test_media_viewer.cpp checks the run report's screens record and the screenshot at the end.
+//   retroverse --input-script tests/input_scripts/media_viewer_corrupt.json --exit-after-frames --frames 67
+//     --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 43, "toFrame": 43, "actions": {"ui_up": 1}},
+  {"fromFrame": 46, "toFrame": 46, "actions": {"ui_up": 1}},
+  {"fromFrame": 49, "toFrame": 49, "text": "rally"},
+  {"fromFrame": 52, "toFrame": 52, "actions": {"ui_activate": 1}},
+  {"fromFrame": 56, "toFrame": 56, "actions": {"ui_media": 1}},
+  {"fromFrame": 60, "toFrame": 60, "actions": {"ui_end": 1}}
+]

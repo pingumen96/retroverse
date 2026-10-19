@@ -327,4 +327,15 @@ TEST_CASE("world card: the inspected item's card shows its game, its buttons rea
     CHECK(run.report->world.interaction.state == "focus");
     CHECK(card.focused.empty());
     CHECK(card.shownFrames > 100);
+    // I3 step 14b: Vedi media and Informazioni open their screens over the card (from the card), Back closes each.
+    std::vector<std::string> screens;
+    for (const rv::app::GameScreenEventRecord& event : run.report->screens.events) {
+        if (event.event == "media" || event.event == "info" || event.event == "closed") {
+            screens.push_back(std::to_string(event.frame) + ":" + event.event + ":" + event.from);
+        }
+    }
+    const std::vector<std::string> expectedScreens{"76:media:card", "79:closed:card", "94:info:card",
+                                                   "97:closed:card", "106:media:card", "109:closed:card",
+                                                   "112:info:card", "115:closed:card"};
+    CHECK(screens == expectedScreens);
 }

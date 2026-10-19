@@ -129,6 +129,12 @@ public:
     [[nodiscard]] virtual std::optional<ui::CatalogEntry> gameEntry(const catalog::GameId& /*game*/) {
         return std::nullopt;
     }
+    /// Everything the catalog holds about `game` (catalog_db::SqliteCatalogQuery::details: its key, metadata and stored
+    /// media), read at once on the main thread for the media viewer and Informazioni (I3 step 14b). Nothing when the
+    /// catalog lacks the game, cannot be read or has no database (the mock catalog).
+    [[nodiscard]] virtual std::optional<catalog_db::GameDetails> gameDetails(const catalog::GameId& /*game*/) {
+        return std::nullopt;
+    }
 
     /// A frame showed a page of the catalog (the quick catalog open with rows bound).
     virtual void pageShown() {}
@@ -215,6 +221,9 @@ public:
 
     [[nodiscard]] std::optional<ui::CatalogEntry> gameEntry(const catalog::GameId& game) override {
         return m_source.entryOf(game);
+    }
+    [[nodiscard]] std::optional<catalog_db::GameDetails> gameDetails(const catalog::GameId& game) override {
+        return m_source.detailsOf(game);
     }
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;

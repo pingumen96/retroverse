@@ -1,0 +1,52 @@
+<rml>
+<head>
+	<!--
+		Informazioni (I3 step 14b; ADR-0012 §5, specification §12.1): a game's description and metadata and the other
+		versions of its title in the catalog with their regions, over the world's card or the quick catalog. Bound to the
+		data model "game_info" of rv::ui::GameInfoScreen (src/ui/src/game_info_screen.cpp), which also names the ids
+		below: keep them in step (src/ui/include/rv/ui/game_info_model.hpp, tests/unit/ui/test_media_viewer.cpp). Every
+		string is written here: the screen binds catalog data as it comes, and an empty field reads "n.d." (non
+		disponibile). Up and Down scroll the body, Back (B, Esc) closes, Y opens the media viewer of the same game; a
+		click on a button does the same. The buttons never take the focus: the input stays with the application.
+	-->
+	<title>Informazioni</title>
+	<link type="text/rcss" href="game_info.rcss"/>
+</head>
+<body id="game-info" data-model="game_info">
+	<div class="panel">
+		<h2 id="game-info-title"><span data-if="info.title != ''">{{ info.title }}</span><span data-if="info.title == ''">Gioco senza titolo</span></h2>
+		<p class="subtitle"><span data-if="info.platform != ''">{{ info.platform }}</span><span data-if="info.platform == ''">n.d.</span>, <span data-if="info.year != ''">{{ info.year }}</span><span data-if="info.year == ''">n.d.</span></p>
+		<div id="game-info-body" class="body">
+			<p id="info-reading" class="note" data-if="!info.details">Lettura dei dettagli dal catalogo...</p>
+			<div class="rows">
+				<div class="row"><span class="key">Sviluppatore</span><span class="value"><span data-if="info.developer != ''">{{ info.developer }}</span><span data-if="info.developer == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Editore</span><span class="value"><span data-if="info.publisher != ''">{{ info.publisher }}</span><span data-if="info.publisher == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Genere</span><span class="value"><span data-if="info.genre != ''">{{ info.genre }}</span><span data-if="info.genre == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Giocatori</span><span class="value"><span data-if="info.players != ''">{{ info.players }}</span><span data-if="info.players == ''">n.d.</span></span></div>
+			</div>
+			<h3>Descrizione</h3>
+			<p id="game-info-description" class="description" data-if="info.description != ''">{{ info.description }}</p>
+			<p id="info-no-description" class="note" data-if="info.description == ''">Il catalogo non ha una descrizione di questo gioco.</p>
+			<h3>Altre versioni</h3>
+			<div id="game-info-versions" class="versions" data-if="info.versionCount > 0">
+				<div class="version" data-for="version : versions">
+					<span class="version-title"><span data-if="version.title != ''">{{ version.title }}</span><span data-if="version.title == ''">Versione senza titolo</span></span>
+					<span class="version-region"><span data-if="version.region != ''">{{ version.region }}</span><span data-if="version.region == ''">regione non indicata</span></span>
+				</div>
+				<p id="info-more-versions" class="note" data-if="info.more == 1">e un'altra versione</p>
+				<p class="note" data-if="info.more > 1">e altre {{ info.more }} versioni</p>
+			</div>
+			<p id="info-no-versions" class="note" data-if="info.versionCount == 0">Nessun'altra versione di questo titolo nel catalogo.</p>
+		</div>
+		<div class="footer">
+			<button id="info-media" class="action" data-event-click="act('media')">Vedi media</button>
+			<div class="hints">
+				<span class="hint"><span class="pad pad-dpad">^ v</span>Scorri</span>
+				<span class="hint"><span class="pad pad-y">Y</span>Vedi media</span>
+				<span class="hint"><span class="pad pad-b">B</span>Chiudi</span>
+			</div>
+			<button id="info-close" class="action close" data-event-click="act('close')">Chiudi</button>
+		</div>
+	</div>
+</body>
+</rml>

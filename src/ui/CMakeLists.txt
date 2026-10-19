@@ -17,6 +17,7 @@ add_library(rv_ui_model STATIC
     src/focus_history.cpp
     src/focus_regions.cpp
     src/game_card_model.cpp
+    src/game_info_model.cpp
     src/in_memory_catalog_source.cpp
     src/media_viewer_model.cpp
     src/nav_input.cpp
