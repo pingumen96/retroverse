@@ -171,9 +171,10 @@ struct GenerationResult {
 };
 
 /// The generator's version (ADR-0010 §8, §10): 1.0 is I3 step 3's fresh generation with step 9's incremental rules
-/// (incremental.hpp), both first released in I3 (schema 1 stays open until Gate B). A change that places any game
-/// differently is a new major version; one that only adds rules keeping every placement a new minor one.
-inline constexpr GeneratorVersion kGeneratorVersion{1, 0};
+/// (incremental.hpp), both first released in I3 (schema 1 stays open until Gate B); 1.1 (I3 step 16) keeps a decoration
+/// from repeating the one beside it on its wall. A change that places any game differently is a new major version; one
+/// that only adds rules keeping every placement a new minor one.
+inline constexpr GeneratorVersion kGeneratorVersion{1, 1};
 
 /// The one room template of I3 (ADR-0010 §4).
 inline constexpr std::string_view kDefaultRoomTemplate = "console_room_9x10";

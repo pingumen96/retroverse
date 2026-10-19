@@ -12,7 +12,8 @@
 //    "placement": {"include": "covered"}}
 // world.json (JSON with comments; every key optional): "preset", "seed" (an integer from 0 to 2^64 - 1, or null for the
 // default), "decorationDensityPermille", "growthReservePermille", "mainPassageWidthMm", "minClearWidthMm",
-// "placement": {"include"}, "reduceMotion" (ADR-0012 §3; until I7's settings screen).
+// "placement": {"include"}, "reduceMotion" (ADR-0012 §3; until I7's settings screen), "lightingProfile" (a lighting
+// profile's id under assets/world/lighting, I3 step 16: how the room is lit when drawn, never what it holds).
 // The canonical form (worldConfigToJson()) holds every key, "seed" null when it is not set.
 
 #include <cstdint>
@@ -32,6 +33,8 @@ namespace rv::world {
 
 /// The preset a world uses when world.json names none.
 inline constexpr std::string_view kDefaultPreset = "retro_museum_cozy";
+/// The lighting profile a room is drawn with when world.json names none (style §8.1's default; room_look.hpp).
+inline constexpr std::string_view kDefaultLightingProfile = "evening";
 
 /// Which games of a system are eligible for its room (ADR-0010 §3).
 enum class PlacementInclude : std::uint8_t {
@@ -73,6 +76,9 @@ struct WorldConfig {
     PlacementInclude include = PlacementInclude::Covered;
     /// Every transition instant (ADR-0012 §3). How the room is shown, not what it holds: the generator reads it never.
     bool reduceMotion = false;
+    /// The lighting profile the room is drawn with (a data id; room_look.hpp). How the room is shown, like
+    /// reduceMotion: the generator reads it never, so that switching profiles moves nothing.
+    std::string lightingProfile = std::string(kDefaultLightingProfile);
 
     bool operator==(const WorldConfig&) const = default;
 };
@@ -82,7 +88,8 @@ struct WorldConfig {
 [[nodiscard]] std::uint64_t worldSeed(const WorldConfig& config, const catalog::LibraryId& library);
 
 /// The values within their ranges: permilles from 0 to 1000, the minimum clear width from kMinClearWidthMm to the main
-/// passage's width, which is at most kMaxPassageWidthMm. Errors: InvalidArgument naming the key.
+/// passage's width, which is at most kMaxPassageWidthMm; the preset and the lighting profile data ids. Errors:
+/// InvalidArgument naming the key.
 [[nodiscard]] Status checkWorldConfig(const WorldConfig& config);
 
 /// Reads a preset file. Errors (context and line): ParseError, ValidationFailed (a key missing, unknown or out of
@@ -103,6 +110,7 @@ struct WorldConfigOverrides {
     std::optional<std::int64_t> minClearWidthMm;
     std::optional<PlacementInclude> include;
     std::optional<bool> reduceMotion;
+    std::optional<std::string> lightingProfile;
 
     bool operator==(const WorldConfigOverrides&) const = default;
 };

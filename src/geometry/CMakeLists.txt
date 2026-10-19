@@ -13,6 +13,7 @@ add_library(rv_geometry STATIC
     src/prefab_display_case.cpp
     src/prefab_factory.cpp
     src/prefab_floor_lamp.cpp
+    src/prefab_plant.cpp
     src/prefab_poster_frame.cpp
     src/prefab_room_shell.cpp
     src/prefab_rug.cpp

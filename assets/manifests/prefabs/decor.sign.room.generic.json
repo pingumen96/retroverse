@@ -1,0 +1,34 @@
+// The room's sign (I3 step 16, style §17.1 room signage): a landscape panel of 1.6 x 0.4 m whose picture is the
+// platform manifest's lettering on the neon diffuser, the size of the test room's sign, above the hero corner.
+{
+  "schemaVersion": 1,
+  "id": "decor.sign.room.generic",
+  "assetType": "decor",
+  "category": "sign",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-19",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "poster_frame",
+    "params": {"width": 1.6, "height": 0.4, "frameWidth": 0.025, "depth": 0.04},
+    "scaleMeters": [1.6, 0.4, 0.04],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "picture": "Picture"
+    },
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "sign", "neon", "wall", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

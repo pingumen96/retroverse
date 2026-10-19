@@ -85,7 +85,9 @@ Status buildScene(const WorldPaths& paths, WorldBuild& build, std::span<const wo
                   const DescribeCover& describe) {
     const world::WorldPlan& plan = *build.plan;
     const Clock::time_point sceneStart = Clock::now();
-    auto data = world::loadSceneData(paths.assetRoot, plan, build.room);
+    // The lighting profile world.json names (I3 step 16): how the room is drawn, never what the plan holds.
+    auto data = world::loadSceneData(paths.assetRoot, plan, build.room,
+                                     world::roomLightingProfile(paths.assetRoot, paths.configDir));
     if (!data) {
         return propagate(data.error());
     }

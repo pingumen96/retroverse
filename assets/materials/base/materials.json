@@ -33,9 +33,27 @@
       "metallicRoughnessTexture": "procedural:varnished_wood/metallicRoughness",
       "normalTexture": "procedural:varnished_wood/normal"
     },
+    // The generated rooms' varnished wood (I3 step 16): the varnished wood darker and less red (the tint takes more red
+    // than blue), for the shelves' back panels and fronts and the wainscot: under the warm spots the reddish varnish
+    // read orange, more saturated than the sign and the CRT; the concept's panelling is a deep brown.
+    "MAT_Wood_Varnished_Dark": {
+      "baseColor": "#B0A8A6", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:varnished_wood/baseColor",
+      "metallicRoughnessTexture": "procedural:varnished_wood/metallicRoughness",
+      "normalTexture": "procedural:varnished_wood/normal"
+    },
     // Oak floor planks #76513A: per-plank tint, joints with a dark gap and a micro-bevel, satin varnish.
     "MAT_Floor_OakPlanks": {
       "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:oak_planks/baseColor",
+      "metallicRoughnessTexture": "procedural:oak_planks/metallicRoughness",
+      "normalTexture": "procedural:oak_planks/normal"
+    },
+
+    // The generated rooms' parquet (I3 step 16): the oak planks a little darker and less orange (the tint takes more
+    // red than blue), so that tungsten light on a large floor reads warm brown, as in the concept, not orange.
+    "MAT_Floor_Parquet": {
+      "baseColor": "#D2C3BA", "metallic": 0.0, "roughness": 1.0,
       "baseColorTexture": "procedural:oak_planks/baseColor",
       "metallicRoughnessTexture": "procedural:oak_planks/metallicRoughness",
       "normalTexture": "procedural:oak_planks/normal"
@@ -85,9 +103,12 @@
     "MAT_Plastic_Accent": { "baseColor": "#7D6E9E", "metallic": 0.0, "roughness": 0.4 },
 
     // Display-case glass: thin, blended, visible from both sides.
+    // Display-case glass (I3 step 16): blended straight alpha shows alpha x the glass's own radiance over the items,
+    // so a pale glass lays a milky haze over them under the key light. A dark, nearly transparent glass leaves the
+    // items clear and keeps only the reflections of the lights on its panes.
     "MAT_Glass_Display": {
-      "baseColor": "#DCE6EA",
-      "alpha": 0.18,
+      "baseColor": "#1C2224",
+      "alpha": 0.07,
       "alphaMode": "blend",
       "doubleSided": true,
       "metallic": 0.0,
@@ -104,8 +125,24 @@
       "baseColorTexture": "procedural:ornate_rug/baseColor",
       "metallicRoughnessTexture": "procedural:ornate_rug/metallicRoughness"
     },
-    "MAT_Cardboard_Box": { "baseColor": "#A3825E", "metallic": 0.0, "roughness": 0.85 },
+    // The display cases' lining (I3 step 16): a deeper bordeaux velvet than the armchair's fabric, so that the
+    // face-out covers stand out from it.
+    "MAT_Fabric_Display": { "baseColor": "#4A2A30", "metallic": 0.0, "roughness": 0.95 },
+    // Storage boxes: kraft cardboard a shade darker than raw board, so the boxes stay behind the collection.
+    "MAT_Cardboard_Box": { "baseColor": "#8E7151", "metallic": 0.0, "roughness": 0.85 },
     "MAT_Paper_Print": { "baseColor": "#EFEBE2", "metallic": 0.0, "roughness": 0.8 },
+    // Shelf dressing (I3 step 16): magazines' coated paper, aged and glossier than poster paper (white page edges would
+    // outshine the covers on the shelves); cloth book bindings in two muted colours of the palette (a forest green and a
+    // navy) beside the bordeaux.
+    "MAT_Paper_Magazine": { "baseColor": "#B9AE9A", "metallic": 0.0, "roughness": 0.5 },
+    "MAT_Book_Cloth": { "baseColor": "#4A6450", "metallic": 0.0, "roughness": 0.85 },
+    "MAT_Book_Cloth_Alt": { "baseColor": "#45547A", "metallic": 0.0, "roughness": 0.85 },
+    // The plant (I3 step 16): a glazed terracotta pot, dark soil, the leaves' two greens (desaturated, style §3.1's
+    // 70/20/10: a plant is a detail, never an accent).
+    "MAT_Ceramic_Glazed": { "baseColor": "#7A4A33", "metallic": 0.0, "roughness": 0.4 },
+    "MAT_Soil": { "baseColor": "#2B2119", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Plant_Leaf": { "baseColor": "#3D5634", "metallic": 0.0, "roughness": 0.55 },
+    "MAT_Plant_Leaf_Light": { "baseColor": "#69783F", "metallic": 0.0, "roughness": 0.55 },
 
     "MAT_Neon_Diffuser": { "shading": "unlit", "baseColor": "#B34DCE", "emissiveStrength": 1.5 },
     // In-world screens: multiplied by the video or test pattern texture.
@@ -116,6 +153,14 @@
     // Scanlines and grille fade out below a few pixels: legible at any distance.
     "MAT_Screen_CRT": {
       "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 2.0,
+      "crt": {"lineCount": 240, "scanlineStrength": 0.35, "maskTriadCount": 320, "maskStrength": 0.25,
+              "curvature": 0.06, "vignette": 0.3, "glassReflection": 0.25}
+    },
+    // The generated rooms' CRT (I3 step 16): the same tube a little less bright, so that the filmic tonemap keeps its
+    // picture's colours (at 2.0 the brightest bars roll off towards white): the screen stays the room's most saturated
+    // picture beside the sign, in tungsten light.
+    "MAT_Screen_CRT_Room": {
+      "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 1.3,
       "crt": {"lineCount": 240, "scanlineStrength": 0.35, "maskTriadCount": 320, "maskStrength": 0.25,
               "curvature": 0.06, "vignette": 0.3, "glassReflection": 0.25}
     },
@@ -130,6 +175,10 @@
     },
     // Printed label, meant to be multiplied by a cover texture.
     "MAT_Label_Print": { "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 0.6 },
+    // The collection's covers and spines (I3 step 16): matte printed paper. At MAT_Label_Print's 0.6 a lamp's
+    // highlight gathers into a bright lobe that lifts a held cover's blacks to brown at 45 degrees (step 13b); spread
+    // over a rough surface its peak stays well below the print's darks.
+    "MAT_Label_Cover": { "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 0.9 },
 
     // Returned for unknown material names (style.md section 21).
     "MAT_Fallback_Magenta": { "shading": "unlit", "baseColor": "#FF00FF" }

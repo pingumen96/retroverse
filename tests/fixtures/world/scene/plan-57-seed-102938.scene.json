@@ -28,8 +28,32 @@
   },
   "lights": [
     {
+      "color": "#FFC88A",
+      "intensity": 4.0,
+      "name": "fx:e01.light",
+      "position": [
+        4.3,
+        1.379,
+        -4.0
+      ],
+      "range": 4.0,
+      "type": "point"
+    },
+    {
+      "color": "#FFC88A",
+      "intensity": 4.0,
+      "name": "fx:e06.light",
+      "position": [
+        4.3,
+        1.379,
+        3.0
+      ],
+      "range": 4.0,
+      "type": "point"
+    },
+    {
       "castsShadows": true,
-      "color": "#FFE0C0",
+      "color": "#FFE6CC",
       "innerConeDeg": 24.37,
       "intensity": 70.0,
       "name": "fx:hero.key-light",
@@ -61,11 +85,11 @@
       "type": "point"
     },
     {
-      "color": "#FFE0C0",
-      "innerConeDeg": 15.1,
+      "color": "#F0B8E8",
+      "innerConeDeg": 31.17,
       "intensity": 8.0,
       "name": "fx:hero.sign-light",
-      "outerConeDeg": 25.17,
+      "outerConeDeg": 51.94,
       "position": [
         -0.625,
         3.05,
@@ -74,15 +98,15 @@
       "range": 4.0,
       "target": [
         -0.625,
-        2.45,
+        2.5,
         -4.97
       ],
       "type": "spot"
     },
     {
-      "color": "#FFE0C0",
+      "color": "#FFE6CC",
       "innerConeDeg": 17.92,
-      "intensity": 10.0,
+      "intensity": 12.0,
       "name": "fx:hw-e.washer",
       "outerConeDeg": 32.0,
       "position": [
@@ -99,9 +123,9 @@
       "type": "spot"
     },
     {
-      "color": "#FFE0C0",
+      "color": "#FFE6CC",
       "innerConeDeg": 17.92,
-      "intensity": 10.0,
+      "intensity": 12.0,
       "name": "fx:hw-w.washer",
       "outerConeDeg": 32.0,
       "position": [
@@ -118,7 +142,7 @@
       "type": "spot"
     },
     {
-      "color": "#FFE0C0",
+      "color": "#FFD7B0",
       "intensity": 16.0,
       "name": "fx:room.pendant",
       "position": [
@@ -128,6 +152,61 @@
       ],
       "range": 10.0,
       "type": "point"
+    },
+    {
+      "color": "#FFC88A",
+      "intensity": 4.0,
+      "name": "fx:w02.light",
+      "position": [
+        -4.3,
+        1.379,
+        -3.0
+      ],
+      "range": 4.0,
+      "type": "point"
+    },
+    {
+      "color": "#FFC88A",
+      "intensity": 4.0,
+      "name": "fx:w05.light",
+      "position": [
+        -4.3,
+        1.379,
+        2.0
+      ],
+      "range": 4.0,
+      "type": "point"
+    },
+    {
+      "color": "#D2D8E4",
+      "innerConeDeg": 45.0,
+      "intensity": 2.5,
+      "name": "accent:crt_glow",
+      "outerConeDeg": 80.0,
+      "position": [
+        -0.805,
+        0.85,
+        -4.27
+      ],
+      "range": 3.5,
+      "target": [
+        -0.805,
+        0.45,
+        -3.29
+      ],
+      "type": "spot"
+    },
+    {
+      "color": "#B34DCE",
+      "intensity": 1.5,
+      "name": "accent:sign_glow",
+      "position": [
+        -0.625,
+        2.5,
+        -4.67
+      ],
+      "range": 2.5,
+      "type": "point"
     }
   ],
   "name": "room:snes",
@@ -136,9 +215,9 @@
       "id": "room",
       "materials": {
         "ceiling": "MAT_Wall_Painted",
-        "floor": "MAT_Floor_OakPlanks",
+        "floor": "MAT_Floor_Parquet",
         "trim": "MAT_Wood_Walnut",
-        "wainscot": "MAT_Wood_Varnished",
+        "wainscot": "MAT_Wood_Varnished_Dark",
         "wall": "MAT_Wall_Painted"
       },
       "params": {
@@ -169,11 +248,11 @@
     {
       "id": "fx:dc01",
       "materials": {
-        "fabric": "MAT_Fabric_Sofa",
+        "fabric": "MAT_Fabric_Display",
         "glass": "MAT_Glass_Display",
         "metal_trim": "MAT_Metal_Brushed",
         "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished"
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {},
       "position": [
@@ -191,11 +270,11 @@
     {
       "id": "fx:dc02",
       "materials": {
-        "fabric": "MAT_Fabric_Sofa",
+        "fabric": "MAT_Fabric_Display",
         "glass": "MAT_Glass_Display",
         "metal_trim": "MAT_Metal_Brushed",
         "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished"
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {},
       "position": [
@@ -238,112 +317,108 @@
       }
     },
     {
-      "castsShadows": false,
       "id": "fx:dec-se",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "depth": 0.36,
+        "drawers": 3,
+        "height": 0.72,
+        "legHeight": 0.08,
+        "width": 0.8
+      },
       "position": [
         2.5,
-        1.55,
-        4.97
+        0.0,
+        4.79
       ],
-      "prefab": "poster_frame",
+      "prefab": "tv_cabinet",
       "rotationDeg": [
         0.0,
         180.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 632407,
-          "title": "SUNSET SPEEDWAY"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:e01",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "lamp_shade": "MAT_Lamp_Shade",
+        "metal": "MAT_Metal_Graphite"
       },
-      "params": {},
+      "params": {
+        "baseRadius": 0.13,
+        "height": 1.5,
+        "shadeHeight": 0.26,
+        "shadeRadius": 0.17
+      },
       "position": [
-        4.47,
-        1.55,
+        4.3,
+        0.0,
         -4.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "floor_lamp",
       "rotationDeg": [
         0.0,
         270.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 507387,
-          "title": "COMET CARNIVAL"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:e02",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "depth": 0.36,
+        "drawers": 3,
+        "height": 0.72,
+        "legHeight": 0.08,
+        "width": 0.8
+      },
       "position": [
-        4.47,
-        1.55,
+        4.29,
+        0.0,
         -3.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "tv_cabinet",
       "rotationDeg": [
         0.0,
         270.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 580929,
-          "title": "CRYSTAL CANYON"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:e03",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "leaves": "MAT_Plant_Leaf",
+        "leaves_alt": "MAT_Plant_Leaf_Light",
+        "pot": "MAT_Ceramic_Glazed",
+        "soil": "MAT_Soil"
       },
-      "params": {},
+      "params": {
+        "height": 1.05,
+        "leaves": 14,
+        "potHeight": 0.3,
+        "potRadius": 0.15,
+        "seed": 7,
+        "spread": 0.19
+      },
       "position": [
-        4.47,
-        1.55,
+        4.28,
+        0.0,
         -2.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "plant",
       "rotationDeg": [
         0.0,
         270.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 322677,
-          "title": "CRYSTAL CANYON"
-        }
-      }
+      ]
     },
     {
       "castsShadows": false,
@@ -373,91 +448,88 @@
       }
     },
     {
-      "castsShadows": false,
       "id": "fx:e05",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "depth": 0.36,
+        "drawers": 3,
+        "height": 0.72,
+        "legHeight": 0.08,
+        "width": 0.8
+      },
       "position": [
-        4.47,
-        1.55,
+        4.29,
+        0.0,
         2.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "tv_cabinet",
       "rotationDeg": [
         0.0,
         270.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 155798,
-          "title": "COMET CARNIVAL"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:e06",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "lamp_shade": "MAT_Lamp_Shade",
+        "metal": "MAT_Metal_Graphite"
       },
-      "params": {},
+      "params": {
+        "baseRadius": 0.13,
+        "height": 1.5,
+        "shadeHeight": 0.26,
+        "shadeRadius": 0.17
+      },
       "position": [
-        4.47,
-        1.55,
+        4.3,
+        0.0,
         3.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "floor_lamp",
       "rotationDeg": [
         0.0,
         270.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 856522,
-          "title": "PIXEL PILOTS"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:e07",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "leaves": "MAT_Plant_Leaf",
+        "leaves_alt": "MAT_Plant_Leaf_Light",
+        "pot": "MAT_Ceramic_Glazed",
+        "soil": "MAT_Soil"
       },
-      "params": {},
+      "params": {
+        "height": 1.05,
+        "leaves": 14,
+        "potHeight": 0.3,
+        "potRadius": 0.15,
+        "seed": 7,
+        "spread": 0.19
+      },
       "position": [
-        4.47,
-        1.55,
+        4.28,
+        0.0,
         4.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "plant",
       "rotationDeg": [
         0.0,
         270.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 498589,
-          "title": "MOONLIGHT DERBY"
-        }
-      }
+      ]
     },
     {
       "id": "fx:fs01",
       "materials": {
         "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished"
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {},
       "position": [
@@ -517,7 +589,7 @@
         "plastic_bezel": "MAT_Plastic_Black",
         "plastic_body": "MAT_Plastic_AgedIvory",
         "plastic_dark": "MAT_Plastic_Black",
-        "screen": "MAT_Screen_CRT"
+        "screen": "MAT_Screen_CRT_Room"
       },
       "params": {},
       "position": [
@@ -583,10 +655,15 @@
         "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Neon_Diffuser"
       },
-      "params": {},
+      "params": {
+        "depth": 0.04,
+        "frameWidth": 0.025,
+        "height": 0.4,
+        "width": 1.6
+      },
       "position": [
         -0.625,
-        2.45,
+        2.5,
         -4.97
       ],
       "prefab": "poster_frame",
@@ -607,7 +684,7 @@
       "materials": {
         "metal_trim": "MAT_Metal_Brushed",
         "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished"
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {},
       "position": [
@@ -626,7 +703,7 @@
       "id": "fx:hw-e",
       "materials": {
         "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished"
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {
         "back": true,
@@ -671,7 +748,7 @@
       "id": "fx:hw-w",
       "materials": {
         "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished"
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {
         "back": true,
@@ -713,85 +790,80 @@
       ]
     },
     {
-      "castsShadows": false,
       "id": "fx:w01",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "depth": 0.36,
+        "drawers": 3,
+        "height": 0.72,
+        "legHeight": 0.08,
+        "width": 0.8
+      },
       "position": [
-        -4.47,
-        1.55,
+        -4.29,
+        0.0,
         -4.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "tv_cabinet",
       "rotationDeg": [
         0.0,
         90.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 90592,
-          "title": "NEON HARBOR"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:w02",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "lamp_shade": "MAT_Lamp_Shade",
+        "metal": "MAT_Metal_Graphite"
       },
-      "params": {},
+      "params": {
+        "baseRadius": 0.13,
+        "height": 1.5,
+        "shadeHeight": 0.26,
+        "shadeRadius": 0.17
+      },
       "position": [
-        -4.47,
-        1.55,
+        -4.3,
+        0.0,
         -3.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "floor_lamp",
       "rotationDeg": [
         0.0,
         90.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 189755,
-          "title": "CASTLE OF LANTERNS"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:w03",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "depth": 0.36,
+        "drawers": 3,
+        "height": 0.72,
+        "legHeight": 0.08,
+        "width": 0.8
+      },
       "position": [
-        -4.47,
-        1.55,
+        -4.29,
+        0.0,
         -2.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "tv_cabinet",
       "rotationDeg": [
         0.0,
         90.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 143626,
-          "title": "MOONLIGHT DERBY"
-        }
-      }
+      ]
     },
     {
       "castsShadows": false,
@@ -821,91 +893,88 @@
       }
     },
     {
-      "castsShadows": false,
       "id": "fx:w05",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "lamp_shade": "MAT_Lamp_Shade",
+        "metal": "MAT_Metal_Graphite"
       },
-      "params": {},
+      "params": {
+        "baseRadius": 0.13,
+        "height": 1.5,
+        "shadeHeight": 0.26,
+        "shadeRadius": 0.17
+      },
       "position": [
-        -4.47,
-        1.55,
+        -4.3,
+        0.0,
         2.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "floor_lamp",
       "rotationDeg": [
         0.0,
         90.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 785799,
-          "title": "PIXEL PILOTS"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:w06",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "metal_trim": "MAT_Metal_Brushed",
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "depth": 0.36,
+        "drawers": 3,
+        "height": 0.72,
+        "legHeight": 0.08,
+        "width": 0.8
+      },
       "position": [
-        -4.47,
-        1.55,
+        -4.29,
+        0.0,
         3.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "tv_cabinet",
       "rotationDeg": [
         0.0,
         90.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 830093,
-          "title": "TURBO TIDES"
-        }
-      }
+      ]
     },
     {
-      "castsShadows": false,
       "id": "fx:w07",
       "materials": {
-        "frame": "MAT_Wood_Oak",
-        "picture": "MAT_Paper_Print"
+        "leaves": "MAT_Plant_Leaf",
+        "leaves_alt": "MAT_Plant_Leaf_Light",
+        "pot": "MAT_Ceramic_Glazed",
+        "soil": "MAT_Soil"
       },
-      "params": {},
+      "params": {
+        "height": 1.05,
+        "leaves": 14,
+        "potHeight": 0.3,
+        "potRadius": 0.15,
+        "seed": 7,
+        "spread": 0.19
+      },
       "position": [
-        -4.47,
-        1.55,
+        -4.28,
+        0.0,
         4.0
       ],
-      "prefab": "poster_frame",
+      "prefab": "plant",
       "rotationDeg": [
         0.0,
         90.0,
         0.0
-      ],
-      "textures": {
-        "picture": {
-          "pattern": "cover",
-          "seed": 573524,
-          "title": "STARLIGHT SAFARI"
-        }
-      }
+      ]
     },
     {
       "id": "dress:fx:hw-e/l:0",
       "materials": {
-        "book": "MAT_Fabric_Sofa",
-        "book_alt": "MAT_Plastic_Black",
+        "book": "MAT_Book_Cloth",
+        "book_alt": "MAT_Book_Cloth_Alt",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -929,8 +998,8 @@
     {
       "id": "dress:fx:hw-e/l:1",
       "materials": {
-        "book": "MAT_Fabric_Sofa",
-        "book_alt": "MAT_Plastic_Black",
+        "book": "MAT_Book_Cloth",
+        "book_alt": "MAT_Book_Cloth_Alt",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -955,7 +1024,7 @@
       "id": "dress:fx:hw-e/l:2",
       "materials": {
         "cover": "MAT_Label_Print",
-        "paper": "MAT_Paper_Print"
+        "paper": "MAT_Paper_Magazine"
       },
       "params": {
         "depth": 0.232,
@@ -985,8 +1054,8 @@
     {
       "id": "dress:fx:hw-e/l:3",
       "materials": {
-        "book": "MAT_Fabric_Sofa",
-        "book_alt": "MAT_Plastic_Black",
+        "book": "MAT_Book_Cloth",
+        "book_alt": "MAT_Book_Cloth_Alt",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -1011,7 +1080,7 @@
       "id": "dress:fx:hw-e/l:4",
       "materials": {
         "cover": "MAT_Label_Print",
-        "paper": "MAT_Paper_Print"
+        "paper": "MAT_Paper_Magazine"
       },
       "params": {
         "depth": 0.232,
@@ -1114,7 +1183,7 @@
       "id": "dress:fx:hw-w/l:2",
       "materials": {
         "cover": "MAT_Label_Print",
-        "paper": "MAT_Paper_Print"
+        "paper": "MAT_Paper_Magazine"
       },
       "params": {
         "depth": 0.232,
@@ -1145,7 +1214,7 @@
       "id": "dress:fx:hw-w/l:3",
       "materials": {
         "cover": "MAT_Label_Print",
-        "paper": "MAT_Paper_Print"
+        "paper": "MAT_Paper_Magazine"
       },
       "params": {
         "depth": 0.232,
@@ -1176,7 +1245,7 @@
       "id": "dress:fx:hw-w/l:6",
       "materials": {
         "cover": "MAT_Label_Print",
-        "paper": "MAT_Paper_Print"
+        "paper": "MAT_Paper_Magazine"
       },
       "params": {
         "depth": 0.232,

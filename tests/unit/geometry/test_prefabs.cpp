@@ -162,7 +162,7 @@ void checkPrefab(const ProceduralPrefab& prefab) {
 const std::vector<std::string_view> kExpectedKinds{
     "room_shell", "shelf",        "cartridge",  "crt",         "tv_cabinet",     "console_cartridge", "poster_frame",
     "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
-    "bookends"};
+    "bookends",   "plant"};
 
 } // namespace
 
@@ -201,6 +201,7 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"storage_box", {"cardboard", "label"}},
         {"magazine_stack", {"paper", "cover"}},
         {"bookends", {"metal", "book", "book_alt"}},
+        {"plant", {"pot", "soil", "leaves", "leaves_alt"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -317,6 +318,7 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"storage_box", {}},
         {"magazine_stack", {}},
         {"bookends", {}},
+        {"plant", {}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -1350,6 +1352,28 @@ TEST_CASE("geometry/prefabs: parameter sweeps stay valid and keep their bounds",
                                                      params["depth"].get<float>())));
         CHECK(position(socket(chair, "Seat")).y == Approx(params["seatHeight"].get<float>()));
     }
+}
+
+TEST_CASE("geometry/prefabs: the plant stands within its spread, its tallest leaf at its height", "[geometry][prefabs]") {
+    for (const int seed : {0, 7, 12345}) {
+        const json params{{"height", 1.05}, {"potRadius", 0.15}, {"potHeight", 0.3},
+                          {"spread", 0.19}, {"leaves", 14},      {"seed", seed}};
+        const ProceduralPrefab plant = buildOk("plant", params);
+        INFO("seed " << seed);
+        checkPrefab(plant);
+        CHECK(plant.bounds.max.y == Approx(1.05f).margin(1e-3f)); // a leaning tip's back face, within a millimetre
+        CHECK(plant.bounds.min.y == Approx(0.0f).margin(1e-6f));
+        for (const float extent : {plant.bounds.min.x, plant.bounds.min.z, -plant.bounds.max.x, -plant.bounds.max.z}) {
+            CHECK(extent >= -0.19f - 1e-5f);
+        }
+        // Exact, symmetric footprint: the saucer as wide as the leaves' reach.
+        CHECK(plant.bounds.min.x == Approx(-0.19f));
+        CHECK(plant.bounds.max.z == Approx(0.19f));
+    }
+    // Another seed, another rosette.
+    CHECK(rv::geometry::hashMesh(part(buildOk("plant", {{"seed", 1}}), "leaves").mesh) !=
+          rv::geometry::hashMesh(part(buildOk("plant", {{"seed", 2}}), "leaves").mesh));
+    CHECK_FALSE(rv::geometry::buildPrefab("plant", {{"spread", 0.1}}).has_value()); // narrower than its pot
 }
 
 TEST_CASE("geometry/primitives: defaults, overrides and errors", "[geometry][primitives]") {

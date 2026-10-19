@@ -44,4 +44,17 @@ struct DressingProp {
                                                                  const DressedLevel& dressed, const ScenePrefab& prop,
                                                                  std::string& reason);
 
+/// A riser card on a display case's empty level (I3 step 16): a thin poster frame ("poster_frame" parameters) as wide
+/// as the span's slots less 1 cm at each end and as tall as their items, leaning on the level's panel in the slots'
+/// frame; `transform` takes the card's space (pivot at its back's centre) to the room's frame.
+struct RiserCard {
+    nlohmann::json params = nlohmann::json::object();
+    glm::mat4 transform{1.0f};
+};
+
+/// The riser card of `dressed` on `fixture`, when its prefab is a display case whose level holds the span's slots and
+/// the span is at least 6 cm wide; nothing otherwise.
+[[nodiscard]] std::optional<RiserCard> riserCard(const Fixture& fixture, const ScenePrefab& fixturePrefab,
+                                                 const DressedLevel& dressed);
+
 } // namespace rv::world::detail

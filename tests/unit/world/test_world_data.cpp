@@ -19,6 +19,7 @@
 #include <rv/core/text.hpp>
 #include <rv/world/media_family.hpp>
 #include <rv/world/platform_manifest.hpp>
+#include <rv/world/room_look.hpp>
 #include <rv/world/room_template.hpp>
 #include <rv/world/world_config.hpp>
 
@@ -128,13 +129,17 @@ TEST_CASE("world/data: every file under assets/world is read", "[world][data]") 
             CHECK(rv::world::loadPlatformManifest(kAssets, *rv::catalog::SystemName::parse(stem)).has_value());
         } else if (folder == "presets") {
             CHECK(rv::world::loadPreset(kAssets, stem).has_value());
+        } else if (folder == "lighting") {
+            CHECK(rv::world::loadLightingProfile(kAssets, stem).has_value());
+        } else if (folder == "themes") {
+            CHECK(rv::world::loadThemeMaterials(kAssets, stem).has_value());
         } else {
             REQUIRE(relative.generic_string() == "media_families.json");
             CHECK(rv::world::loadMediaFamilies(kAssets).has_value());
         }
         ++read;
     }
-    CHECK(read == 4);
+    CHECK(read == 7); // I3 step 16: the two lighting profiles and the theme pack
 }
 
 TEST_CASE("world/data: no model path anywhere in assets/world", "[world][data]") {
@@ -154,7 +159,7 @@ TEST_CASE("world/data: no model path anywhere in assets/world", "[world][data]")
 TEST_CASE("world/data: the console room template holds ADR-0010's sockets", "[world][data]") {
     const RoomTemplate room = shippedTemplate();
     CHECK(room.id == "console_room_9x10");
-    CHECK(room.version == 1);
+    CHECK(room.version == 2);
     CHECK(room.widthMm == 9000);
     CHECK(room.depthMm == 10000);
     CHECK(room.heightMm == 3200);
@@ -385,7 +390,7 @@ TEST_CASE("world/data: a malformed template is refused with its line", "[world][
     }
 
     // A syntax error and a key twice name their line too.
-    const std::string missingComma = replaced(shipped, "\"version\": 1,", "\"version\": 1");
+    const std::string missingComma = replaced(shipped, "\"version\": 2,", "\"version\": 2");
     const rv::Error syntax = templateRefusal(missingComma);
     CHECK(syntax.code == rv::ErrorCode::ParseError);
     CHECK(syntax.context == "console_room_9x10.json:" + std::to_string(lineOf(missingComma, "\"room\":")));

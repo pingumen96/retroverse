@@ -361,6 +361,21 @@ struct ShelfDressingParams {
     int seed = 0;         ///< [0, 2147483647]
 };
 
+/// "plant", pivot floor (I3 step 16); bounds within [-spread, 0, -spread] .. [spread, height, spread] (the tallest leaf's
+/// tip at `height` within a millimetre). A potted plant of original design: a rosette of upright sword leaves in a
+/// tapered ceramic pot with a rolled rim on a saucer of radius `spread`, filled with soil to the brim; `seed` varies the
+/// leaves' angles, heights, widths, lean and twist deterministically (core::Random). Roles: "pot" (the saucer too),
+/// "soil", "leaves" and "leaves_alt" (every third leaf, a lighter shade). No sockets; its bounds collide, as every
+/// fixture's do.
+struct PlantParams {
+    float height = 1.0f;     ///< [0.3, 2.5]
+    float potRadius = 0.15f; ///< the pot's top radius, [0.05, 0.6]
+    float potHeight = 0.3f;  ///< [0.08, height / 2]
+    float spread = 0.19f;    ///< how far the leaves reach from the axis, [potRadius + 8 mm, 1]
+    int leaves = 14;         ///< [3, 64]
+    int seed = 0;            ///< [0, 2147483647]
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -380,6 +395,7 @@ struct ShelfDressingParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildStorageBox(const ShelfDressingParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildMagazineStack(const ShelfDressingParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildBookends(const ShelfDressingParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildPlant(const PlantParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -401,7 +417,7 @@ struct ShelfDressingParams {
 
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
 /// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
-/// bookends.
+/// bookends, plant.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

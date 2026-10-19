@@ -29,6 +29,11 @@ constexpr std::int64_t kWasherTargetHeightMm = 1000; ///< aimed at the wall behi
 /// Two modules on one wall whose sockets are at most this far apart form one run under the wall-washers (the template's
 /// side-wall sockets are 100 mm apart; a door-reserved socket breaks a run).
 constexpr std::int64_t kAdjacentModuleGapMm = 200;
+/// Decoration whose socket's anchor lies this close to another's on its wall stands beside it (the side-wall sockets
+/// are 1 m apart; across a door-reserved socket 2.5 m).
+constexpr std::int64_t kNeighbourDecorationMm = 1200;
+/// A lamp standing as decoration keeps at least this far from another on its wall while another choice fits.
+constexpr std::int64_t kLampSpacingMm = 2200;
 
 /// A socket's frame: rotating +Z by an axis-aligned yaw gives the front (frontX, frontZ), rotating +X the right.
 struct Axes {
@@ -392,7 +397,12 @@ private:
     }
 
     void decorate(const TemplateSocket& socket) {
-        auto decoration = decorationIn(m_input, socket, lightsLeft());
+        std::vector<Fixture> placed;
+        placed.reserve(m_layout.fixtures.size());
+        for (const PlacedFixture& fixture : m_layout.fixtures) {
+            placed.push_back(fixture.fixture);
+        }
+        auto decoration = decorationIn(m_input, socket, lightsLeft(), placed);
         if (!decoration) {
             return;
         }
@@ -540,14 +550,46 @@ std::vector<PlanLight> wallWasherLights(const LayoutInput& input, std::span<cons
 }
 
 std::optional<PlacedDecoration> decorationIn(const LayoutInput& input, const TemplateSocket& socket,
-                                             std::size_t lightsLeft) {
+                                             std::size_t lightsLeft, std::span<const Fixture> placed) {
+    // The prefabs of the decoration standing beside this socket on its wall (I3 step 16, style §13.4: no uniform
+    // sequences): a choice is not repeated next to itself while another one fits.
+    const Frame here = frameOf(input.roomTemplate, socket, input.counts.growthSteps);
+    // Lamps keep a wider spacing: an amber pool every few metres, not a row of them.
+    std::vector<PrefabRef> neighbours;
+    bool lampNearby = false;
+    for (const Fixture& fixture : placed) {
+        if (fixture.role != FixtureRole::Decoration) {
+            continue;
+        }
+        const TemplateSocket* other = input.roomTemplate.socket(fixture.id.socket());
+        if (other == nullptr || other->wall != socket.wall || other->id == socket.id) {
+            continue;
+        }
+        const Frame there = frameOf(input.roomTemplate, *other, input.counts.growthSteps);
+        const std::int64_t dx = there.anchor.xMm - here.anchor.xMm;
+        const std::int64_t dz = there.anchor.zMm - here.anchor.zMm;
+        const std::int64_t squared = dx * dx + dz * dz;
+        if (squared <= kNeighbourDecorationMm * kNeighbourDecorationMm) {
+            neighbours.push_back(fixture.prefab);
+        }
+        const PrefabInfo* info = input.prefabs.find(fixture.prefab);
+        if (info != nullptr && info->lightSource && squared <= kLampSpacingMm * kLampSpacingMm) {
+            lampNearby = true;
+        }
+    }
     std::vector<std::pair<const DecorationChoice*, const PrefabInfo*>> candidates;
+    std::vector<std::pair<const DecorationChoice*, const PrefabInfo*>> repeats;
     for (const DecorationChoice& choice : input.roomTemplate.decoration) {
         const PrefabInfo* info = input.prefabs.find(choice.prefab);
         if (info == nullptr || !fitsSocket(*info, socket) || (info->lightSource && lightsLeft == 0)) {
             continue;
         }
-        candidates.emplace_back(&choice, info);
+        const bool repeated = std::find(neighbours.begin(), neighbours.end(), choice.prefab) != neighbours.end() ||
+                              (info->lightSource && lampNearby);
+        (repeated ? repeats : candidates).emplace_back(&choice, info);
+    }
+    if (candidates.empty()) {
+        candidates = std::move(repeats);
     }
     if (candidates.empty()) {
         return std::nullopt;

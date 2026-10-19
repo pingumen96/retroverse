@@ -1,0 +1,43 @@
+// The theme pack Classic16BitWarm (I3 step 16, style §14.1: SNES, Mega Drive and the 8- and 16-bit rooms; read by
+// rv/world/room_look.hpp, which documents the format): the library materials (assets/materials/base/materials.json)
+// of each prefab kind's material roles, as the room is drawn. Parquet and a rug, dark walnut shelves and varnished
+// fronts, an aged ivory CRT, a bordeaux armchair and display lining, tungsten paper and cardboard, a little green.
+{
+  "schemaVersion": 1,
+  "id": "classic_16bit_warm",
+  "name": "Classic16BitWarm",
+  "kinds": {
+    "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Painted", "ceiling": "MAT_Wall_Painted",
+                   "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
+    "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark"},
+    "wall_shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark"},
+    "crt": {"plastic_body": "MAT_Plastic_AgedIvory", "plastic_bezel": "MAT_Plastic_Black", "screen": "MAT_Screen_CRT_Room",
+            "plastic_dark": "MAT_Plastic_Black"},
+    "tv_cabinet": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                   "metal_trim": "MAT_Metal_Brushed"},
+    "console_cartridge": {"plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
+                          "plastic_accent": "MAT_Plastic_Accent"},
+    "poster_frame": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
+    "rug": {"fabric": "MAT_Carpet_Ornate"},
+    "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade"},
+    "armchair": {"fabric": "MAT_Fabric_Sofa", "wood": "MAT_Wood_Walnut"},
+    // The cases' lining a deeper bordeaux than the armchair, their glass clear (no haze over the covers).
+    "display_case": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                     "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display", "glass": "MAT_Glass_Display"},
+    // The shelf dressing: kraft boxes with paper cards, coated magazines, cloth bindings in green and navy between
+    // graphite bookends (the collection's colour stays the covers').
+    "storage_box": {"cardboard": "MAT_Cardboard_Box", "label": "MAT_Paper_Print"},
+    "magazine_stack": {"paper": "MAT_Paper_Magazine", "cover": "MAT_Label_Print"},
+    "bookends": {"metal": "MAT_Metal_Graphite", "book": "MAT_Book_Cloth", "book_alt": "MAT_Book_Cloth_Alt"},
+    "plant": {"pot": "MAT_Ceramic_Glazed", "soil": "MAT_Soil", "leaves": "MAT_Plant_Leaf",
+              "leaves_alt": "MAT_Plant_Leaf_Light"},
+    // A display case's empty level: a paper riser card with an invented cover.
+    "riser_card": {"frame": "MAT_Paper_Print", "picture": "MAT_Label_Print"},
+    // The collection's item.
+    "cartridge": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Cover", "spine": "MAT_Label_Cover"}
+  },
+  "heroParts": {
+    // The room's sign: the platform's lettering on the neon diffuser in a walnut frame.
+    "sign": {"frame": "MAT_Wood_Walnut", "picture": "MAT_Neon_Diffuser"}
+  }
+}

@@ -32,7 +32,11 @@ const std::vector<std::string> kSharedNames = {
     "MAT_Plastic_Accent",  "MAT_Glass_Display", "MAT_Glass_CRT",      "MAT_Fabric_Sofa",
     "MAT_Carpet_Ornate",   "MAT_Cardboard_Box", "MAT_Paper_Print",    "MAT_Neon_Diffuser",
     "MAT_Screen_Emissive", "MAT_Screen_CRT",    "MAT_Lamp_Shade",     "MAT_Label_Print",
-    "MAT_Fallback_Magenta"};
+    "MAT_Fallback_Magenta",
+    // The generated rooms' own (I3 step 16).
+    "MAT_Floor_Parquet", "MAT_Wood_Varnished_Dark", "MAT_Screen_CRT_Room", "MAT_Fabric_Display", "MAT_Paper_Magazine",
+    "MAT_Book_Cloth", "MAT_Book_Cloth_Alt", "MAT_Ceramic_Glazed", "MAT_Soil", "MAT_Plant_Leaf", "MAT_Plant_Leaf_Light",
+    "MAT_Label_Cover"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.

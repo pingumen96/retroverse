@@ -12,8 +12,13 @@
     {"id": "decor.lamp", "generic": "decor.lamp.floor.generic", "generator": "floor_lamp", "params": {}},
     {"id": "decor.magazine_stack", "generic": "decor.magazine_stack.generic", "generator": "magazine_stack",
      "params": {}},
+    // I3 step 16: the side-wall sockets' plant and the room's sign (a landscape poster frame of its own size).
+    {"id": "decor.plant", "generic": "decor.plant.snake.generic", "generator": "plant",
+     "params": {"height": 1.05, "potRadius": 0.15, "potHeight": 0.3, "spread": 0.19, "leaves": 14, "seed": 7}},
     {"id": "decor.poster_frame", "generic": "decor.poster_frame.generic", "generator": "poster_frame", "params": {}},
     {"id": "decor.rug", "generic": "decor.rug.generic", "generator": "rug", "params": {}},
+    {"id": "decor.sign", "generic": "decor.sign.room.generic", "generator": "poster_frame",
+     "params": {"width": 1.6, "height": 0.4, "frameWidth": 0.025, "depth": 0.04}},
     {"id": "decor.storage_box", "generic": "decor.storage_box.generic", "generator": "storage_box", "params": {}},
     {"id": "electronics.crt", "generic": "electronics.crt.consumer.generic", "generator": "crt", "params": {}},
     {"id": "furniture.armchair", "generic": "furniture.armchair.generic", "generator": "armchair", "params": {}},

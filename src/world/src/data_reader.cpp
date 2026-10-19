@@ -568,6 +568,24 @@ std::string ObjectReader::string(std::string_view key) const {
     return readString(m_document, member, pointer(key));
 }
 
+double ObjectReader::number(std::string_view key, double minimum, double maximum) const {
+    const nlohmann::json& member = value(key);
+    if (m_document.failed()) {
+        return minimum;
+    }
+    if (!member.is_number()) {
+        m_document.fail(pointer(key), "expected a number, found " + describeType(member));
+        return minimum;
+    }
+    const double number = member.get<double>();
+    if (!(number >= minimum && number <= maximum)) {
+        m_document.fail(pointer(key), "expected a number from " + nlohmann::json(minimum).dump() + " to " +
+                                          nlohmann::json(maximum).dump() + ", found " + member.dump());
+        return minimum;
+    }
+    return number;
+}
+
 bool ObjectReader::boolean(std::string_view key) const {
     const nlohmann::json& member = value(key);
     if (m_document.failed()) {

@@ -1,0 +1,30 @@
+// The lighting profile "afternoon" (I3 step 16, style §8.1's second profile; read by rv/world/room_look.hpp): the same
+// room on a bright afternoon. A soft, cooler daylight fill as if from windows outside the view (a stronger hemispheric
+// ambient, bluish from above), the ceiling spots a more neutral white, the lamps and the neon glow subdued, less bloom
+// and vignette: the collection evenly legible, the upper walls no longer black, the warm wood still dominant. Chosen
+// with "lightingProfile": "afternoon" in <user data>/config/world.json; it moves nothing.
+{
+  "schemaVersion": 1,
+  "id": "afternoon",
+  "name": "Afternoon",
+  "roles": {
+    "key": {"color": "#FFF0DE", "intensity": 55, "range": 12, "minOuterConeDeg": 30, "coneMarginDeg": 3,
+            "innerConeRatio": 0.55},
+    "pendant": {"color": "#FFEBD6", "intensity": 12, "range": 10},
+    "lamp": {"color": "#FFC88A", "intensity": 2, "range": 3},
+    "picture": {"color": "#FFF0DE", "intensity": 6, "range": 4, "minOuterConeDeg": 25, "coneMarginDeg": 10,
+                "innerConeRatio": 0.6},
+    "wallWasher": {"color": "#FFF2E4", "intensity": 9, "range": 5, "minOuterConeDeg": 32, "coneMarginDeg": 8,
+                   "innerConeRatio": 0.56}
+  },
+  "keyShadowStrength": 0.8,
+  "environment": {
+    "clearColor": "#3A3836", "ambientSky": "#DCE4EE", "ambientGround": "#6A5E52", "ambientIntensity": 0.6,
+    "exposure": 1.35, "bloomStrength": 0.1, "bloomRadius": 0.5, "vignette": 0.03,
+    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
+  },
+  "accents": [
+    {"name": "crt_glow", "anchor": "crt", "type": "spot", "position": [0.0, 0.3, 0.42], "target": [0.0, -0.1, 1.4],
+     "color": "#D2D8E4", "intensity": 1.5, "range": 3.0, "innerConeDeg": 45, "outerConeDeg": 80}
+  ]
+}

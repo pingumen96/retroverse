@@ -197,7 +197,7 @@ TEST_CASE("cli/worldplan show: a plan's summary, its listing, and the plans it r
     REQUIRE(shown.code == ExitCode::Ok);
     CHECK(contains(shown.out, "Plan "));
     CHECK(contains(shown.out, "Digest:          " +rv::core::sha256Hex(planText)));
-    CHECK(contains(shown.out, "room:snes (console_room_9x10 v1): 9000 x 10000 x 3200 mm, 0 growth steps"));
+    CHECK(contains(shown.out, "room:snes (console_room_9x10 v2): 9000 x 10000 x 3200 mm, 0 growth steps"));
     CHECK(contains(shown.out, "featured slots:  44 titles in 44 slots"));
     CHECK(contains(shown.out, "band slots:      6 titles in 12 slots, 0 free, 6 dressed"));
     CHECK(contains(shown.out, "spine slots:     0 titles in 396 slots, 0 free, 396 dressed"));

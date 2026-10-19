@@ -53,8 +53,11 @@ struct FitResult {
                                            const FitOptions& options = {});
 
 /// The most common colour of the region (x, y, w, h) of an RGBA8 or RGB image: the pixels counted in bins of 4 bits per
-/// channel, the fullest bin chosen (the lowest on a tie) and the mean of its pixels taken in linear light. The whole
-/// image when the region is empty or outside it; black for an invalid image.
+/// channel, the fullest bin chosen (the lowest on a tie) and the mean of its pixels taken in linear light. Colourful
+/// bins come first (I3 step 16: a cover's black or white frame made monotone spines): when the bins whose centre has a
+/// channel spread of at least 48 and a brightest channel of at least 64 (sRGB steps) hold 15% of the region together,
+/// the fullest of them is chosen (the lowest on a tie). The whole image when the region is empty or outside it; black
+/// for an invalid image.
 [[nodiscard]] Rgb8 dominantColour(const ImageData& image, int x = 0, int y = 0, int width = 0, int height = 0);
 
 /// A cover's front layer and what the fit decided.

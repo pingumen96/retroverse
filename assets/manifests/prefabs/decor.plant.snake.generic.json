@@ -1,0 +1,32 @@
+// A potted plant (I3 step 16, style §8 "decor/plant_*"): a rosette of upright sword leaves in a glazed pot,
+// 0.38 m across, so that it stands in a side-wall socket (0.9 x 0.4 m) beside the modules.
+{
+  "schemaVersion": 1,
+  "id": "decor.plant.snake.generic",
+  "assetType": "decor",
+  "category": "plant",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-19",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "plant",
+    "params": {"height": 1.05, "potRadius": 0.15, "potHeight": 0.3, "spread": 0.19, "leaves": 14, "seed": 7},
+    "scaleMeters": [0.38, 1.05, 0.38],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "plant", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

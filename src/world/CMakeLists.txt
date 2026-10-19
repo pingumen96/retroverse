@@ -25,6 +25,7 @@ add_library(rv_world STATIC
     src/plan_json.cpp
     src/platform_manifest.cpp
     src/room_selection.cpp
+    src/room_look.cpp
     src/room_template.cpp
     src/scene_builder.cpp
     src/seeds.cpp

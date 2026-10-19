@@ -40,10 +40,11 @@ void checkInDocument(DocumentReader& document, const WorldConfig& config) {
 
 WorldConfig readCanonicalDocument(DocumentReader& document, const Json& value) {
     const ObjectReader reader(document, value, "",
-                              {"decorationDensityPermille", "growthReservePermille", "mainPassageWidthMm",
-                               "minClearWidthMm", "placement", "preset", "reduceMotion", "seed"});
+                              {"decorationDensityPermille", "growthReservePermille", "lightingProfile",
+                               "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed"});
     WorldConfig config;
     config.preset = reader.dataId("preset");
+    config.lightingProfile = reader.dataId("lightingProfile");
     config.seed = reader.nullableUnsignedInteger("seed");
     readPresetValues(reader, config);
     config.reduceMotion = reader.boolean("reduceMotion");
@@ -59,7 +60,8 @@ Json documentJson(const WorldConfig& config) {
                 {"mainPassageWidthMm", config.mainPassageWidthMm},
                 {"minClearWidthMm", config.minClearWidthMm},
                 {"placement", Json{{"include", toString(config.include)}}},
-                {"reduceMotion", config.reduceMotion}};
+                {"reduceMotion", config.reduceMotion},
+                {"lightingProfile", config.lightingProfile}};
 }
 
 std::filesystem::path presetPath(const std::filesystem::path& assetRoot, std::string_view id) {
@@ -81,6 +83,10 @@ Status checkWorldConfig(const WorldConfig& config) {
     };
     if (!isValidDataId(config.preset)) {
         return makeError(ErrorCode::InvalidArgument, "not a preset id: \"" + config.preset + "\"", "preset");
+    }
+    if (!isValidDataId(config.lightingProfile)) {
+        return makeError(ErrorCode::InvalidArgument, "not a lighting profile id: \"" + config.lightingProfile + "\"",
+                         "lightingProfile");
     }
     if (config.decorationDensityPermille < 0 || config.decorationDensityPermille > kMaxPermille) {
         return outside("decorationDensityPermille", config.decorationDensityPermille, 0, kMaxPermille);
@@ -152,8 +158,8 @@ Expected<WorldConfigOverrides> parseWorldConfigOverrides(std::string_view text, 
     }
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
-                              {"decorationDensityPermille", "growthReservePermille", "mainPassageWidthMm",
-                               "minClearWidthMm", "placement", "preset", "reduceMotion", "seed"});
+                              {"decorationDensityPermille", "growthReservePermille", "lightingProfile",
+                               "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed"});
     WorldConfigOverrides overrides;
     if (reader.has("preset")) {
         overrides.preset = reader.dataId("preset");
@@ -173,6 +179,9 @@ Expected<WorldConfigOverrides> parseWorldConfigOverrides(std::string_view text, 
         }
     }
     overrides.reduceMotion = reader.optionalBoolean("reduceMotion");
+    if (reader.has("lightingProfile")) {
+        overrides.lightingProfile = reader.dataId("lightingProfile");
+    }
     if (document.failed()) {
         return propagate(document.error());
     }
@@ -203,6 +212,9 @@ Expected<WorldConfig> applyOverrides(WorldConfig base, const WorldConfigOverride
     }
     if (overrides.reduceMotion) {
         base.reduceMotion = *overrides.reduceMotion;
+    }
+    if (overrides.lightingProfile) {
+        base.lightingProfile = *overrides.lightingProfile;
     }
     if (auto status = checkWorldConfig(base); !status) {
         return propagate(status.error());

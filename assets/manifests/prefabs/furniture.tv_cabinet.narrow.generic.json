@@ -1,0 +1,34 @@
+// A narrow low cabinet (I3 step 16, style §6.1: "credenza bassa" between the tall modules): the media console
+// 0.8 m wide and 0.36 m deep, so that it stands in a side-wall socket (0.9 x 0.4 m).
+{
+  "schemaVersion": 1,
+  "id": "furniture.tv_cabinet.narrow.generic",
+  "assetType": "furniture",
+  "category": "tv_cabinet",
+  "role": "support",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-19",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "tv_cabinet",
+    "params": {"width": 0.8, "height": 0.72, "depth": 0.36, "drawers": 3, "legHeight": 0.08},
+    "scaleMeters": [0.8, 0.72, 0.36],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "top": "Top"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "tv_cabinet", "sideboard", "console_room", "procedural"],
+  "fallbackPrefab": "furniture.tv_cabinet.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

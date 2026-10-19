@@ -8,6 +8,7 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <spdlog/spdlog.h>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <rv/core/math.hpp>
@@ -71,68 +72,6 @@ std::int64_t toMm(float value) noexcept {
     return static_cast<std::int64_t>(std::llround(static_cast<double>(value) * 1000.0));
 }
 
-/// The theme's materials per role of a prefab kind; the sign's poster frame is lit from inside.
-std::map<std::string, std::string> themeMaterials(std::string_view kind, bool sign) {
-    using Roles = std::map<std::string, std::string>;
-    if (kind == "room_shell") {
-        return Roles{{"floor", "MAT_Floor_OakPlanks"},
-                     {"wall", "MAT_Wall_Painted"},
-                     {"ceiling", "MAT_Wall_Painted"},
-                     {"trim", "MAT_Wood_Walnut"},
-                     {"wainscot", "MAT_Wood_Varnished"}};
-    }
-    if (kind == "shelf" || kind == "wall_shelf") {
-        return Roles{{"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished"}};
-    }
-    if (kind == "crt") {
-        return Roles{{"plastic_body", "MAT_Plastic_AgedIvory"},
-                     {"plastic_bezel", "MAT_Plastic_Black"},
-                     {"screen", "MAT_Screen_CRT"},
-                     {"plastic_dark", "MAT_Plastic_Black"}};
-    }
-    if (kind == "tv_cabinet") {
-        return Roles{
-            {"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished"}, {"metal_trim", "MAT_Metal_Brushed"}};
-    }
-    if (kind == "console_cartridge") {
-        return Roles{
-            {"plastic_body", "MAT_Plastic_Gray"}, {"plastic_dark", "MAT_Plastic_Black"}, {"plastic_accent", "MAT_Plastic_Accent"}};
-    }
-    if (kind == "poster_frame") {
-        return sign ? Roles{{"frame", "MAT_Wood_Walnut"}, {"picture", "MAT_Neon_Diffuser"}}
-                    : Roles{{"frame", "MAT_Wood_Oak"}, {"picture", "MAT_Paper_Print"}};
-    }
-    if (kind == "rug") {
-        return Roles{{"fabric", "MAT_Carpet_Ornate"}};
-    }
-    if (kind == "floor_lamp") {
-        return Roles{{"metal", "MAT_Metal_Graphite"}, {"lamp_shade", "MAT_Lamp_Shade"}};
-    }
-    if (kind == "armchair") {
-        return Roles{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}};
-    }
-    if (kind == "display_case") {
-        return Roles{{"wood_primary", "MAT_Wood_Walnut"},
-                     {"wood_secondary", "MAT_Wood_Varnished"},
-                     {"metal_trim", "MAT_Metal_Brushed"},
-                     {"fabric", "MAT_Fabric_Sofa"},
-                     {"glass", "MAT_Glass_Display"}};
-    }
-    if (kind == "storage_box") {
-        return Roles{{"cardboard", "MAT_Cardboard_Box"}, {"label", "MAT_Paper_Print"}};
-    }
-    if (kind == "magazine_stack") {
-        return Roles{{"paper", "MAT_Paper_Print"}, {"cover", "MAT_Label_Print"}};
-    }
-    if (kind == "bookends") {
-        return Roles{{"metal", "MAT_Metal_Graphite"}, {"book", "MAT_Fabric_Sofa"}, {"book_alt", "MAT_Plastic_Black"}};
-    }
-    if (kind == "cartridge") {
-        return Roles{{"plastic_shell", "MAT_Plastic_Gray"}, {"label", "MAT_Label_Print"}, {"spine", "MAT_Label_Print"}};
-    }
-    return {};
-}
-
 json coverTexture(std::uint64_t seed) {
     core::Random random(seed);
     const auto title = kPictureTitles[static_cast<std::size_t>(random.below(kPictureTitles.size()))];
@@ -173,9 +112,10 @@ const Room* findRoom(const WorldPlan& plan, const RoomId& id) noexcept {
 }
 
 /// A prefab object of the scene file: the prefab as it resolved (with `params` instead of its own when given), its
-/// theme, where it stands.
+/// theme's materials (those of the hero corner's part `heroPart` when the theme lists it), where it stands.
 json prefabObject(std::string id, const ScenePrefab& prefab, const json* params, json position, json rotationDeg,
-                  bool sign, const PlatformManifest& platform, std::uint64_t seed) {
+                  std::string_view heroPart, const SceneData& data, std::uint64_t seed) {
+    const bool sign = heroPart == "sign";
     json object{{"id", std::move(id)}, {"position", std::move(position)}, {"rotationDeg", std::move(rotationDeg)}};
     if (!prefab.prefab) {
         object["model"] = prefab.model;
@@ -183,8 +123,8 @@ json prefabObject(std::string id, const ScenePrefab& prefab, const json* params,
     }
     object["prefab"] = prefab.generator;
     object["params"] = params != nullptr ? *params : prefab.params;
-    object["materials"] = materialsJson(themeMaterials(prefab.generator, sign));
-    if (json textures = themeTextures(prefab.generator, sign, platform, seed); !textures.empty()) {
+    object["materials"] = materialsJson(data.theme.materials(prefab.generator, heroPart));
+    if (json textures = themeTextures(prefab.generator, sign, data.platform, seed); !textures.empty()) {
         object["textures"] = std::move(textures);
     }
     // Thin geometry on walls casts no shadow (its shadow would be narrower than the filter); the rug lies on the floor
@@ -292,7 +232,46 @@ json environmentJson(const LightingProfile& profile) {
                 {"bloomStrength", profile.bloomStrength},
                 {"bloomRadius", profile.bloomRadius},
                 {"vignette", profile.vignette},
-                {"ssao", json{{"enabled", true}, {"radius", 0.4}, {"intensity", 1.0}}}};
+                {"ssao", json{{"enabled", profile.ssaoEnabled},
+                              {"radius", profile.ssaoRadius},
+                              {"intensity", profile.ssaoIntensity}}}};
+}
+
+/// An accent light of the profile at its anchor's pivot and yaw (meters rounded to micrometres).
+json accentJson(const AccentLight& accent, const Fixture& anchor) {
+    const glm::mat4 frame = room_frames::fixtureTransform(anchor);
+    const auto toRoom = [&](const glm::dvec3& local) {
+        const glm::vec4 p = frame * glm::vec4(glm::vec3(local), 1.0f);
+        return vec3Json(rounded(p.x, 1e6), rounded(p.y, 1e6), rounded(p.z, 1e6));
+    };
+    json object{{"name", "accent:" + accent.name},
+                {"position", toRoom(accent.position)},
+                {"color", accent.color},
+                {"intensity", accent.intensity},
+                {"range", accent.range}};
+    if (accent.spot) {
+        object["type"] = "spot";
+        object["target"] = toRoom(accent.target);
+        object["outerConeDeg"] = accent.outerConeDeg;
+        object["innerConeDeg"] = accent.innerConeDeg;
+    } else {
+        object["type"] = "point";
+    }
+    return object;
+}
+
+/// A riser card (detail::riserCard) as a poster frame of the theme's "riser_card" materials with an invented cover.
+json riserCardObject(std::string id, const detail::RiserCard& card, const SceneData& data, std::uint64_t seed) {
+    json object{{"id", std::move(id)},
+                {"prefab", "poster_frame"},
+                {"params", card.params},
+                {"position", positionOf(card.transform)},
+                {"rotationDeg", rotationOf(card.transform)},
+                {"materials", materialsJson(data.theme.materials("riser_card"))},
+                {"textures", json{{"picture", coverTexture(seed)}}},
+                {"castsShadows", false},
+                {"collides", false}};
+    return object;
 }
 
 /// The dressed span's object id: "dress:fx:w03/l:2", with ".<first slot>" for a span that does not start at slot 0.
@@ -305,47 +284,6 @@ std::string dressingId(const DressedLevel& dressed) {
 }
 
 } // namespace
-
-std::map<std::string, std::string> themeMaterials(std::string_view kind) {
-    return themeMaterials(kind, false);
-}
-
-const LightStyle& LightingProfile::style(LightRole role) const noexcept {
-    switch (role) {
-    case LightRole::Key:
-        return key;
-    case LightRole::Pendant:
-        return pendant;
-    case LightRole::Lamp:
-        return lamp;
-    case LightRole::Picture:
-        return picture;
-    case LightRole::WallWasher:
-        return wallWasher;
-    }
-    return key;
-}
-
-const LightingProfile& eveningLightingProfile() {
-    static const LightingProfile profile = [] {
-        LightingProfile p;
-        p.name = "evening";
-        // The test room's ceiling key (70 at 3.4 m, cones 24 / 44 degrees): grounds the hero wall with soft shadows.
-        p.key = LightStyle{"#FFE0C0", 70.0, 12.0, 30.0, 3.0, 0.55};
-        // Its pendant fill over the circulation band.
-        p.pendant = LightStyle{"#FFE0C0", 16.0, 10.0, 0.0, 0.0, 0.0};
-        // The amber practicals (the floor lamp's bulb, a little brighter than the test room's, which had two more
-        // spots).
-        p.lamp = LightStyle{"#FFC88A", 4.0, 4.0, 0.0, 0.0, 0.0};
-        // A warm spot on the sign (the test room's poster wash, nearer).
-        p.picture = LightStyle{"#FFE0C0", 8.0, 4.0, 25.0, 10.0, 0.6};
-        // The shelf spots (9 to 11 at 2.2 m, cones 18 / 32 degrees): the whole module's height in the cone.
-        p.wallWasher = LightStyle{"#FFE0C0", 10.0, 5.0, 32.0, 8.0, 0.56};
-        p.keyShadowStrength = 1.0;
-        return p;
-    }();
-    return profile;
-}
 
 const ScenePrefab* ScenePrefabs::find(const PrefabRef& ref) const noexcept {
     const auto it = std::lower_bound(prefabs.begin(), prefabs.end(), ref,
@@ -411,7 +349,8 @@ Expected<ScenePrefabs> loadScenePrefabs(const std::filesystem::path& assetRoot, 
     return result;
 }
 
-Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan, const RoomId& roomId) {
+Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan, const RoomId& roomId,
+                                  const std::optional<LightingProfile>& lighting) {
     const Room* room = findRoom(plan, roomId);
     if (room == nullptr) {
         return makeError(ErrorCode::NotFound, "the plan has no such room", roomId.toString());
@@ -453,7 +392,22 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
         return propagate(prefabs.error());
     }
     data.prefabs = std::move(*prefabs);
-    data.lighting = eveningLightingProfile();
+    if (auto theme = loadThemeMaterials(assetRoot, data.platform.themePack)) {
+        data.theme = std::move(*theme);
+    } else {
+        spdlog::warn("World: the theme pack \"{}\" does not load ({}); the built-in materials are used",
+                     data.platform.themePack, theme.error().toString());
+        data.theme = builtInThemeMaterials();
+    }
+    if (lighting) {
+        data.lighting = *lighting;
+    } else if (auto profile = loadLightingProfile(assetRoot, kDefaultLightingProfile)) {
+        data.lighting = std::move(*profile);
+    } else {
+        spdlog::warn("World: the lighting profile \"{}\" does not load ({}); the built-in evening profile is used",
+                     kDefaultLightingProfile, profile.error().toString());
+        data.lighting = eveningLightingProfile();
+    }
     return data;
 }
 
@@ -470,7 +424,7 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                            {"prefab", "room_shell"},
                            {"params", shell.params},
                            {"position", vec3Json(shell.position.x, shell.position.y, shell.position.z)},
-                           {"materials", materialsJson(themeMaterials("room_shell", false))}});
+                           {"materials", materialsJson(data.theme.materials("room_shell"))}});
 
     for (const Fixture& fixture : plan.fixtures) {
         if (fixture.id.room() != roomId) {
@@ -481,10 +435,10 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
             return makeError(ErrorCode::NotFound, "no prefab for the fixture's " + fixture.prefab.manifest,
                              fixture.id.toString());
         }
-        const bool sign = fixture.role == FixtureRole::HeroCorner && fixture.id.part() == "sign";
+        const std::string heroPart = fixture.role == FixtureRole::HeroCorner ? fixture.id.part() : std::string();
         objects.push_back(prefabObject(fixture.id.localText(), *prefab, nullptr,
                                        pointJson(fixture.xMm, fixture.yMm, fixture.zMm),
-                                       vec3Json(0.0, degrees(fixture.yawCdeg), 0.0), sign, data.platform,
+                                       vec3Json(0.0, degrees(fixture.yawCdeg), 0.0), heroPart, data,
                                        fixtureSeed(room->seed, fixture.id)));
     }
 
@@ -515,11 +469,16 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
             return propagate(placed.error());
         }
         if (!*placed) {
+            // A level too thin for any prop (a display case's leaning level) shows a riser card instead.
+            if (auto card = detail::riserCard(*fixture, *fixturePrefab, dressed)) {
+                objects.push_back(riserCardObject(dressingId(dressed), *card, data, propSeed(room->seed, dressed.level)));
+                continue;
+            }
             build.undressed.push_back(UndressedSpan{dressed.level, dressed.firstSlot, dressed.count, std::move(reason)});
             continue;
         }
         objects.push_back(prefabObject(dressingId(dressed), *prop, &(*placed)->params, positionOf((*placed)->transform),
-                                       rotationOf((*placed)->transform), false, data.platform,
+                                       rotationOf((*placed)->transform), {}, data,
                                        propSeed(room->seed, dressed.level)));
     }
 
@@ -534,6 +493,19 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                          fmt::format("{} lights, more than the {} a scene takes", lights.size(),
                                      kMaxSceneLights),
                          roomId.toString());
+    }
+    // The profile's accents on the hero corner's parts, while the scene's limit leaves room for them.
+    for (const AccentLight& accent : data.lighting.accents) {
+        if (lights.size() >= kMaxSceneLights) {
+            break;
+        }
+        for (const Fixture& fixture : plan.fixtures) {
+            if (fixture.id.room() == roomId && fixture.role == FixtureRole::HeroCorner &&
+                fixture.id.part() == accent.anchor) {
+                lights.push_back(accentJson(accent, fixture));
+                break;
+            }
+        }
     }
 
     build.sceneFile = json{{"schemaVersion", scene::kSceneSchemaVersion},
@@ -770,6 +742,55 @@ Expected<std::optional<DressingProp>> dressingProp(const Room& room, const Fixtu
     result.transform = room_frames::fixtureTransform(fixture) * level->transform *
                        glm::translate(glm::mat4(1.0f), glm::vec3(centreX, floorY, centreZ));
     return std::optional<DressingProp>{std::move(result)};
+}
+
+std::optional<RiserCard> riserCard(const Fixture& fixture, const ScenePrefab& fixturePrefab,
+                                   const DressedLevel& dressed) {
+    if (!fixturePrefab.prefab || fixturePrefab.generator != "display_case") {
+        return std::nullopt;
+    }
+    const geometry::ProceduralPrefab& built = *fixturePrefab.prefab;
+    const std::uint32_t levelNumber = dressed.level.level();
+    const geometry::Socket* level = levelSocket(built, levelNumber);
+    const std::uint32_t slots = slotCount(built, levelNumber);
+    if (level == nullptr || dressed.count == 0 || dressed.firstSlot + dressed.count > slots) {
+        return std::nullopt;
+    }
+    const geometry::Socket* first = slotSocket(built, levelNumber, dressed.firstSlot);
+    const geometry::Socket* last = slotSocket(built, levelNumber, dressed.firstSlot + dressed.count - 1);
+    if (first == nullptr || last == nullptr) {
+        return std::nullopt;
+    }
+    // The card spans the slots' width less a margin and stands as tall as their items, leaning on the level's panel
+    // like the items it stands in for; a card no wider than kMinCardWidthMm is not worth showing.
+    const glm::mat4 toLevel = glm::inverse(level->transform);
+    const glm::mat4 firstFrame = toLevel * first->transform;
+    const glm::mat4 lastFrame = toLevel * last->transform;
+    const float left = firstFrame[3].x + first->bounds.min.x;
+    const float right = lastFrame[3].x + last->bounds.max.x;
+    constexpr float kMarginM = 0.01f;
+    constexpr std::int64_t kMinCardWidthMm = 60;
+    constexpr std::int64_t kCardDepthMm = 5; // poster_frame's thinnest
+    constexpr std::int64_t kCardFrameMm = 5;
+    const std::int64_t widthMm = toMm(right - left - 2.0f * kMarginM);
+    const std::int64_t heightMm = toMm(first->bounds.size().y);
+    if (widthMm < kMinCardWidthMm || heightMm < 3 * kCardFrameMm) {
+        return std::nullopt;
+    }
+    RiserCard card;
+    card.params = json{{"width", meters(widthMm)},
+                       {"height", meters(heightMm)},
+                       {"frameWidth", meters(kCardFrameMm)},
+                       {"depth", meters(kCardDepthMm)}};
+    // The poster frame's pivot is its back's centre: on the first slot's back plane, half the card up from its floor.
+    const glm::vec3 slotBack = glm::vec3(firstFrame * glm::vec4(0.0f, 0.0f, first->bounds.min.z, 1.0f));
+    const float centreX = static_cast<float>(meters(toMm(0.5f * (left + right))));
+    const glm::mat4 slotInLevel = firstFrame;
+    glm::mat4 frame = slotInLevel;
+    frame[3] = glm::vec4(centreX, slotBack.y, slotBack.z, 1.0f);
+    card.transform = room_frames::fixtureTransform(fixture) * level->transform * frame *
+                     glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, static_cast<float>(meters(heightMm)) * 0.5f, 0.0f));
+    return card;
 }
 
 } // namespace detail

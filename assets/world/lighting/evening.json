@@ -1,0 +1,40 @@
+// The lighting profile "evening" (I3 step 16, style §4.1, §4.2, §8.1; read by rv/world/room_look.hpp, which documents
+// the format): the default. A '90s room at dusk lit by its own lamps: warm tungsten ceiling spots on the collection,
+// amber practicals, the CRT and the sign as the most saturated light, a light magenta accent around the sign, the upper
+// walls and the ceiling falling off into shadow. The plan places the lights; this file gives each role its colour,
+// intensity, range and cones, so that switching profiles (world.json's "lightingProfile") moves nothing.
+{
+  "schemaVersion": 1,
+  "id": "evening",
+  "name": "Evening",
+  "roles": {
+    // The ceiling key over the hero wall: grounds the hero corner and its modules with the room's one soft shadow.
+    "key": {"color": "#FFE6CC", "intensity": 70, "range": 12, "minOuterConeDeg": 30, "coneMarginDeg": 3,
+            "innerConeRatio": 0.55},
+    // The pendant over the circulation band: the fill that keeps the middle of the room and the display cases legible.
+    "pendant": {"color": "#FFD7B0", "intensity": 16, "range": 10},
+    // The amber lamps (the hero corner's and those standing as decoration).
+    "lamp": {"color": "#FFC88A", "intensity": 4, "range": 4},
+    // The picture light on the sign, tinted towards the neon: the magenta accent of style §4.2's 16-bit room.
+    "picture": {"color": "#F0B8E8", "intensity": 8, "range": 4, "minOuterConeDeg": 25, "coneMarginDeg": 10,
+                "innerConeRatio": 0.6},
+    // The wall-washers over the side-wall modules: the whole module's height in the cone.
+    "wallWasher": {"color": "#FFE6CC", "intensity": 12, "range": 5, "minOuterConeDeg": 32, "coneMarginDeg": 8,
+                   "innerConeRatio": 0.56}
+  },
+  "keyShadowStrength": 1.0,
+  "environment": {
+    "clearColor": "#221E1A", "ambientSky": "#E6E2DC", "ambientGround": "#4A4642", "ambientIntensity": 0.25,
+    "exposure": 1.5, "bloomStrength": 0.18, "bloomRadius": 0.5, "vignette": 0.05,
+    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
+  },
+  // Lights of the look alone, drawn while the room's sixteen lights leave room for them (in this order).
+  "accents": [
+    // The tube's cool spill on the rug and the cabinet in front of it (style §4.3: a fictitious light near the TV).
+    {"name": "crt_glow", "anchor": "crt", "type": "spot", "position": [0.0, 0.3, 0.42], "target": [0.0, -0.1, 1.4],
+     "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80},
+    // The neon's glow on the wall around the sign.
+    {"name": "sign_glow", "anchor": "sign", "type": "point", "position": [0.0, 0.0, 0.3], "color": "#B34DCE",
+     "intensity": 1.5, "range": 2.5}
+  ]
+}
