@@ -58,6 +58,7 @@
 
 #include "world_card.hpp"
 #include "world_hover.hpp"
+#include "world_launch.hpp"
 #include "world_notice_panel.hpp"
 
 namespace rv::app {
@@ -137,6 +138,12 @@ public:
     /// texture as its cover and the interaction's `result` recorded.
     [[nodiscard]] std::optional<CardAction> cardPress(const input::ActionState* actions, ProductUi& product);
     void showCard(const InteractionResult& result, ProductUi& product);
+    /// Launching from the world and "Mostra nella stanza" (I3 step 15a, world_launch.hpp): before interact(), the quick
+    /// catalog's room placement, a "Mostra nella stanza" taken to its item and a launch's end given to the
+    /// interaction (`walker`: the walker as the frame starts); after it, Avvia asked of the product UI and the restore
+    /// recorded (`walker`: where the frame leaves the walker).
+    void beforeInteraction(ProductUi& product, const scene::WalkerPose& walker);
+    void afterInteraction(const InteractionResult& result, ProductUi& product, const scene::WalkerPose& walker);
     /// The other versions of `game`'s title in the room's plan (I3 step 14b: Informazioni); none without a room.
     [[nodiscard]] std::vector<catalog::GameId> otherVersionsOf(const catalog::GameId& game) const {
         return m_versionGroups.othersOf(game);
@@ -230,6 +237,8 @@ private:
     /// The card beside the inspected item, and the plan's other versions of each placed title (I3 step 14a).
     WorldCard m_card;
     std::map<std::uint64_t, std::uint32_t> m_otherVersions;
+    /// Launching from the world and "Mostra nella stanza" (I3 step 15a).
+    WorldLaunch m_launch;
     /// The other versions of each title for Informazioni (I3 step 14b), from the same plan.
     VersionGroups m_versionGroups;
     /// The view's items when the dynamic path draws more than the scene's (viewItems()).

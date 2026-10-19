@@ -643,6 +643,92 @@ CardRecord readCard(FieldReader& fields) {
     return card;
 }
 
+Json spawnToJson(const SpawnPoint& pose);
+SpawnPoint readSpawn(FieldReader& camera);
+
+/// An unbound record (no plan shown) is an empty object (I3 step 15a).
+Json roomLaunchToJson(const RoomLaunchRecord& launch) {
+    Json json = Json::object();
+    if (!launch.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["launches"] = launch.launches;
+    json["returned"] = launch.returned;
+    json["notReturned"] = launch.notReturned;
+    json["showInRoom"] = launch.showInRoom;
+    json["showInRoomFailed"] = launch.showInRoomFailed;
+    if (launch.walkerBefore) {
+        json["walkerBefore"] = spawnToJson(*launch.walkerBefore);
+    }
+    if (launch.walkerAfter) {
+        json["walkerAfter"] = spawnToJson(*launch.walkerAfter);
+    }
+    json["poseRestored"] = launch.poseRestored;
+    json["placementQueries"] = launch.placementQueries;
+    json["placementGame"] = launch.placementGame;
+    json["placement"] = launch.placement;
+    Json events = Json::array();
+    for (const RoomLaunchEventRecord& event : launch.events) {
+        Json entry{{"frame", event.frame}, {"event", event.event}};
+        for (const auto& [key, value] : {std::pair<const char*, const std::string*>{"game", &event.game},
+                                         {"pickId", &event.pickId},
+                                         {"outcome", &event.outcome},
+                                         {"reason", &event.reason},
+                                         {"state", &event.state}}) {
+            if (!value->empty()) {
+                entry[key] = *value;
+            }
+        }
+        if (event.walker) {
+            entry["walker"] = spawnToJson(*event.walker);
+        }
+        events.push_back(std::move(entry));
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = launch.eventsDropped;
+    return json;
+}
+
+RoomLaunchRecord readRoomLaunch(FieldReader& fields) {
+    RoomLaunchRecord launch;
+    if (!fields.has("bound")) {
+        return launch;
+    }
+    launch.bound = fields.boolean("bound");
+    launch.launches = fields.count("launches");
+    launch.returned = fields.count("returned");
+    launch.notReturned = fields.count("notReturned");
+    launch.showInRoom = fields.count("showInRoom");
+    launch.showInRoomFailed = fields.count("showInRoomFailed");
+    if (auto before = fields.optionalObject("walkerBefore")) {
+        launch.walkerBefore = readSpawn(*before);
+    }
+    if (auto after = fields.optionalObject("walkerAfter")) {
+        launch.walkerAfter = readSpawn(*after);
+    }
+    launch.poseRestored = fields.boolean("poseRestored");
+    launch.placementQueries = fields.count("placementQueries");
+    launch.placementGame = fields.string("placementGame");
+    launch.placement = fields.string("placement");
+    for (FieldReader& event : fields.objectArray("events")) {
+        RoomLaunchEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.game = event.optionalString("game").value_or(std::string());
+        entry.pickId = event.optionalString("pickId").value_or(std::string());
+        entry.outcome = event.optionalString("outcome").value_or(std::string());
+        entry.reason = event.optionalString("reason").value_or(std::string());
+        entry.state = event.optionalString("state").value_or(std::string());
+        if (auto walker = event.optionalObject("walker")) {
+            entry.walker = readSpawn(*walker);
+        }
+        launch.events.push_back(std::move(entry));
+    }
+    launch.eventsDropped = fields.count("eventsDropped");
+    return launch;
+}
+
 /// An unbound record (no product UI) is an empty object (I3 step 14b).
 Json screensToJson(const GameScreensRecord& screens) {
     Json json = Json::object();
@@ -756,6 +842,7 @@ Json worldToJson(const WorldRecord& world) {
     json["hoveredGame"] = world.hoveredGame;
     json["interaction"] = interactionToJson(world.interaction);
     json["card"] = cardToJson(world.card);
+    json["launch"] = roomLaunchToJson(world.launch);
     if (world.preview) {
         const WorldPreviewRecord& preview = *world.preview;
         Json record{{"frame", preview.frame},
@@ -878,6 +965,9 @@ WorldRecord readWorld(FieldReader& fields) {
     world.hoveredGame = fields.string("hoveredGame");
     if (auto interaction = fields.optionalObject("interaction")) {
         world.interaction = readInteraction(*interaction);
+    }
+    if (auto launch = fields.optionalObject("launch")) {
+        world.launch = readRoomLaunch(*launch);
     }
     if (auto card = fields.optionalObject("card")) {
         world.card = readCard(*card);

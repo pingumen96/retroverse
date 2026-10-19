@@ -109,21 +109,30 @@ InteractionResult WorldHover::update(const Frame& frame) {
     const WorldState before = m_interaction.state();
     InteractionResult result = m_interaction.update(input);
     m_inspection.observe(m_interaction, before, result);
-    if (result.launch) {
-        // Launching from the room is I3 step 15a's: Avvia ends at once as if the game had returned, the item still in
-        // the hand.
-        spdlog::info("Avvia on {} in the room: launching from the room comes with I3 step 15a (the quick catalog's "
-                     "Avvia launches it)",
-                     result.launch->game.toString());
-        m_interaction.launchEnded(LaunchMessage{std::string(launch_outcome::kReturned), {}, {}});
-        result.launch.reset();
-    }
+    // Avvia (result.launch) goes to the product UI through the application (I3 step 15a, WorldLaunch).
     if (result.showMedia || result.showInfo) {
         spdlog::debug("{} in the room: I3 step 14b", result.showMedia ? "Vedi media" : "Informazioni");
     }
     syncCollection();
     observe(input.actions == &stepped && arrowPressed(stepped), fromCursor);
     return result;
+}
+
+world::PickId WorldHover::pickOf(const catalog::GameId& game) const noexcept {
+    if (!m_room) {
+        return world::kNoPick;
+    }
+    const world::CollectionItem* item = m_room->layout().findGame(game);
+    return item != nullptr ? item->pickId : world::kNoPick;
+}
+
+world::PickId WorldHover::showInRoom(const catalog::GameId& game, const scene::WalkerPose& walker) {
+    const world::PickId id = pickOf(game);
+    if (id == world::kNoPick || !m_interaction.showInRoom(id, walker)) {
+        return world::kNoPick;
+    }
+    syncCollection();
+    return id;
 }
 
 void WorldHover::syncCollection() {

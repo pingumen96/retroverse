@@ -145,6 +145,12 @@ struct ProductUi::Impl {
     std::vector<RefreshRecord> refreshes;
     /// The application's hooks around launches (the hero CRT's decoder).
     LaunchHooks hooks;
+    /// I3 step 15a: the token of the launch the room asked for (launchWorldGame) until it ended, and how it ended (until
+    /// taken); the room's placement of a game for the catalog's card; a "Mostra nella stanza" not taken yet.
+    std::optional<std::uint64_t> worldToken;
+    std::optional<LaunchMessage> worldEnded;
+    std::function<std::string(std::string_view)> roomPlacement;
+    std::optional<std::string> showInRoomAsked;
     /// The wall-clock times of the frames that showed games of the catalog (CatalogRecord::frames; at most
     /// kMaxFrameSamples), and when the last frame's update began (none after an idle wait, which is no frame time).
     std::vector<double> frameMs;
@@ -213,14 +219,38 @@ struct ProductUi::Impl {
     }
 
     /// Avvia on `entry`: the catalog decides, at once (the mock) or on its worker; applyDecision() acts on it.
-    void launch(const ui::CatalogEntry& entry) {
+    /// The token of the launch asked (nothing while one is decided, waits or runs: nothing asked).
+    std::optional<std::uint64_t> launch(const ui::CatalogEntry& entry) {
         if (flow.pending() || flow.sessionActive() || catalog->deciding()) {
-            return;
+            return std::nullopt;
         }
         const std::uint64_t token = flow.records().size();
-        if (catalog->requestLaunch(token, entry)) {
-            before = currentView();
+        if (!catalog->requestLaunch(token, entry)) {
+            return std::nullopt;
         }
+        before = currentView();
+        return token;
+    }
+
+    /// The room's launch `token` ended with `message` (I3 step 15a).
+    void worldLaunchEnded(std::uint64_t token, const LaunchMessage& message) {
+        if (worldToken == token) {
+            worldEnded = message;
+            worldToken.reset();
+        }
+    }
+
+    /// The card's room key of `entry` (setRoomPlacement()).
+    void applyRoomPlacement() {
+        if (!screen) {
+            return;
+        }
+        if (!roomPlacement) {
+            screen->setRoomPlacement({});
+            return;
+        }
+        screen->setRoomPlacement(
+            [placement = roomPlacement](const ui::CatalogEntry& entry) { return placement(entry.id); });
     }
 
     /// The media viewer of `gameId` (I3 step 14b): its catalog row (`entry` when the caller has it, else read now) and
@@ -299,9 +329,13 @@ struct ProductUi::Impl {
         if (decision->request) {
             sessionToken = decision->token;
             flow.request(std::move(*decision->request), std::move(decision->info), frame);
-        } else if (flow.refuse(std::move(decision->refusal), std::move(decision->info), frame)) {
-            catalog->sessionRefused(decision->token);
-            afterPending = true;
+        } else {
+            const LaunchMessage refusal = decision->refusal;
+            if (flow.refuse(std::move(decision->refusal), std::move(decision->info), frame)) {
+                catalog->sessionRefused(decision->token);
+                afterPending = true;
+            }
+            worldLaunchEnded(decision->token, refusal);
         }
         if (before) {
             flow.noteBefore(std::move(*before));
@@ -426,6 +460,7 @@ struct ProductUi::Impl {
         if (hooks.ended) {
             hooks.ended();
         }
+        worldLaunchEnded(sessionToken, flow.message());
         nav.reset();
         afterPending = true;
         if (!handover) {
@@ -622,12 +657,19 @@ void ProductUi::openCatalog() {
         };
         events.close = [state] { state->closeRequested = true; };
         events.refresh = [state] { state->refreshRequested = true; };
+        events.showInRoom = [state](const ui::CatalogEntry& entry) {
+            spdlog::info("Frame {}: Mostra nella stanza on '{}' ({}): the catalog closes", state->context.frameIndex(),
+                         entry.title, entry.id);
+            state->showInRoomAsked = entry.id;
+            state->closeRequested = true;
+        };
         auto screen = ui::QuickCatalogScreen::create(*s.view, *s.model, std::move(events), kWatchDocuments);
         if (!screen) {
             spdlog::error("Quick catalog unavailable: {}", screen.error().toString());
             return;
         }
         s.screen = std::move(*screen);
+        s.applyRoomPlacement();
         s.screen->setNotice(s.catalog->notice());
     } else {
         // QuickCatalogScreen::show() learns the focus it restores from RmlUi's focus event, which RmlUi sends only when
@@ -691,6 +733,35 @@ void ProductUi::typeText(std::string_view text) {
 
 void ProductUi::setLaunchHooks(LaunchHooks hooks) {
     m_impl->hooks = std::move(hooks);
+}
+
+bool ProductUi::launchWorldGame(const catalog::GameId& game, std::string_view title) {
+    Impl& s = *m_impl;
+    ui::CatalogEntry entry;
+    entry.id = game.toString();
+    entry.title = std::string(title);
+    const std::optional<std::uint64_t> token = s.launch(entry);
+    if (!token) {
+        return false;
+    }
+    s.worldToken = token;
+    s.worldEnded.reset();
+    spdlog::info("Frame {}: Avvia in the room on '{}' ({}): launch {} asked", s.context.frameIndex(), entry.title,
+                 entry.id, *token);
+    return true;
+}
+
+std::optional<LaunchMessage> ProductUi::takeWorldLaunchEnded() {
+    return std::exchange(m_impl->worldEnded, std::nullopt);
+}
+
+void ProductUi::setRoomPlacement(std::function<std::string(std::string_view gameId)> placement) {
+    m_impl->roomPlacement = std::move(placement);
+    m_impl->applyRoomPlacement();
+}
+
+std::optional<std::string> ProductUi::takeShowInRoom() {
+    return std::exchange(m_impl->showInRoomAsked, std::nullopt);
 }
 
 void ProductUi::setWorldNotice(WorldNoticeContent content) {

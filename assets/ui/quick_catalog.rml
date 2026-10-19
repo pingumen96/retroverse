@@ -158,7 +158,17 @@
 			<button id="act-play" class="action primary" data-event-click="launch()">Avvia</button>
 			<button id="act-media" class="action" data-event-click="media()">Vedi media</button>
 			<button id="act-info" class="action" data-event-click="info()">Informazioni</button>
+			<!-- I3 step 15a: a game the room places is reached there (the catalog closes, the walker goes to its item);
+			     for one it does not, the sentence below says why (card.room: rv/ui/quick_catalog_room.hpp). -->
+			<div class="room-row" data-if="card.room == 'placed'">
+				<button id="act-room" class="action" data-event-click="show_in_room()">Mostra nella stanza</button>
+			</div>
 		</div>
+		<p id="room-reason" class="room-reason" data-if="card.room == 'duplicate-title'">Non esposto: un'altra versione è sullo scaffale</p>
+		<p class="room-reason" data-if="card.room == 'no-cover'">Non esposto: senza copertina</p>
+		<p class="room-reason" data-if="card.room == 'unavailable'">Non esposto: il file del gioco mancava quando la stanza è stata allestita</p>
+		<p class="room-reason" data-if="card.room == 'capacity'">Non esposto: la stanza è piena</p>
+		<p class="room-reason" data-if="card.room == 'not-in-room'">Non esposto: questa stanza raccoglie i giochi di un altro sistema</p>
 		<p id="status" class="status" data-if="status != ''">{{ status }}</p>
 	</div>
 

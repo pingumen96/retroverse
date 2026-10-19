@@ -16,8 +16,9 @@
 //    which the application performs), the "animation" phase while an animation runs, the run report's
 //    world.interaction record.
 // Inspect (I3 step 13b, WorldInspection): the focused item lifted from its pulled-out pose into the hand, turned and
-// zoomed, the scene behind it dimmed; Avvia ends at once as if the game had returned (launching from the room is I3
-// step 15a's). Main thread only.
+// zoomed, the scene behind it dimmed. Avvia comes out as the result's launch, which the application asks of the product
+// UI (I3 step 15a, world_launch.hpp: launchEnded() at its end; "Mostra nella stanza" is showInRoom()). Main thread
+// only.
 
 #include <algorithm>
 #include <cstdint>
@@ -105,6 +106,12 @@ public:
         return id != world::kNoPick && std::binary_search(m_hidden.begin(), m_hidden.end(), id);
     }
     [[nodiscard]] const WorldInteraction& interaction() const noexcept { return m_interaction; }
+    /// I3 step 15a: the launch of the result's `launch` ended (WorldInteraction::launchEnded); "Mostra nella stanza" on
+    /// `game` (WorldInteraction::showInRoom from `walker`): the item's pick id, or kNoPick when the room shown has no
+    /// item of it or the state takes none (the interaction's notice tells which); the pick id of `game`'s item.
+    void launchEnded(const LaunchMessage& outcome) { m_interaction.launchEnded(outcome); }
+    [[nodiscard]] world::PickId showInRoom(const catalog::GameId& game, const scene::WalkerPose& walker);
+    [[nodiscard]] world::PickId pickOf(const catalog::GameId& game) const noexcept;
     /// The room's item `id`, or null (no room, no such item).
     [[nodiscard]] const world::CollectionItem* item(world::PickId id) const noexcept {
         return m_room ? m_room->find(id) : nullptr;

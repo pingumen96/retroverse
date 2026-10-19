@@ -1173,8 +1173,17 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     const WorldContext worldContext = state.world ? state.world->context() : WorldContext::FreeRoam;
     InteractionResult worldResult;
     if (state.world) {
+        // I3 step 15a: "Mostra nella stanza" and a launch's end before the interaction, Avvia after it.
+        const scene::FirstPersonController& walker = state.freeRoam->controller();
+        const scene::WalkerPose walkerNow{walker.feetPosition(), walker.yaw(), walker.pitch()};
+        if (state.product) {
+            state.world->beforeInteraction(*state.product, walkerNow);
+        }
         worldResult = state.interactWorld(context, inputContext == InputContext::World ? &actions : nullptr,
                                           static_cast<float>(deltaSeconds));
+        if (state.product) {
+            state.world->afterInteraction(worldResult, *state.product, worldResult.walker.value_or(walkerNow));
+        }
     }
     if (inputContext == InputContext::World) {
         if (state.world) {

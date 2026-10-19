@@ -1,0 +1,19 @@
+// I3 step 15a: "Mostra nella stanza" on the quick catalog's card, in the generated room of the snes-room fixture.
+// QuickCatalog opens it on frame 2; ui_up on frames 5 and 8 takes the focus to the search field; "acorn" is typed on
+// frame 11 (one game: Acorn Errands, on the wall shelf); ui_activate on frame 14 moves to the list (the game selected,
+// its card filled); ui_right on frame 17 reaches the card's actions (Avvia), ui_down on frame 20 "Mostra nella stanza",
+// which ui_activate presses on frame 23: the catalog closes and the walker eases in 600 ms to the item's Focus pose,
+// the item pulled out. tests/smoke/test_world_launch.cpp runs it with --frames 80, and with "thistle" typed instead
+// (world_show_unplaced.json).
+//   retroverse --input-script tests/input_scripts/world_show_in_room.json --exit-after-frames --frames 80
+//     --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture imported>
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 5, "toFrame": 5, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_up": 1}},
+  {"fromFrame": 11, "toFrame": 11, "text": "acorn"},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_activate": 1}},
+  {"fromFrame": 17, "toFrame": 17, "actions": {"ui_right": 1}},
+  {"fromFrame": 20, "toFrame": 20, "actions": {"ui_down": 1}},
+  {"fromFrame": 23, "toFrame": 23, "actions": {"ui_activate": 1}}
+]

@@ -402,6 +402,52 @@ struct CardRecord {
 
     bool operator==(const CardRecord&) const = default;
 };
+/// An event of the launches from the room and of "Mostra nella stanza" (I3 step 15a; ADR-0012 §6, §8).
+struct RoomLaunchEventRecord {
+    std::uint64_t frame = 0;
+    /// "launch" (Avvia asked: game, pickId, walker), "refused" (the product UI took no launch now: outcome, reason),
+    /// "ended" (the launch's outcome, reason), "restored" (the frame the interaction came back: state, pickId, walker),
+    /// "show-in-room" (game, pickId), "show-in-room-failed" (game; reason: the card's room key, "item-unavailable" or
+    /// "state").
+    std::string event;
+    std::string game;
+    std::string pickId;
+    std::string outcome;
+    std::string reason;
+    std::string state;
+    std::optional<SpawnPoint> walker;
+
+    bool operator==(const RoomLaunchEventRecord&) const = default;
+};
+
+/// The launches from the room and "Mostra nella stanza" (I3 step 15a). Empty ({}) in runs that never showed a room's
+/// plan.
+struct RoomLaunchRecord {
+    bool bound = false;
+    /// Avvia asked, launches that ended returned (launch_outcome::kReturned) and otherwise (refused, failed, ...);
+    /// "Mostra nella stanza" taken to an item and refused.
+    std::uint64_t launches = 0;
+    std::uint64_t returned = 0;
+    std::uint64_t notReturned = 0;
+    std::uint64_t showInRoom = 0;
+    std::uint64_t showInRoomFailed = 0;
+    /// The last launch: the walker when Avvia asked for it and once the interaction came back, and whether they are
+    /// equal (exactly: the restore places the recorded pose).
+    std::optional<SpawnPoint> walkerBefore;
+    std::optional<SpawnPoint> walkerAfter;
+    bool poseRestored = false;
+    /// The quick catalog's card asked where games stand this many times; the last game asked and its room key
+    /// (ui::quick_catalog's kRoomPlaced or why not).
+    std::uint64_t placementQueries = 0;
+    std::string placementGame;
+    std::string placement;
+    /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
+    std::vector<RoomLaunchEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const RoomLaunchRecord&) const = default;
+};
+
 
 /// A change of the media viewer or of Informazioni (I3 step 14b).
 struct GameScreenEventRecord {
@@ -594,6 +640,8 @@ struct WorldRecord {
     InteractionRecord interaction;
     /// The card beside the inspected item (I3 step 14a).
     CardRecord card;
+    /// The launches from the room and "Mostra nella stanza" (I3 step 15a).
+    RoomLaunchRecord launch;
     /// I3 step 10c: the persisted start's preview and its reconciliation (none without a stored plan shown); the room's
     /// items written for the next start; the games given to the hero CRT; the room's object fallbacks.
     std::optional<WorldPreviewRecord> preview;

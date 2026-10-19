@@ -635,6 +635,15 @@ void WorldSession::showCard(const InteractionResult& result, ProductUi& product)
     }
 }
 
+void WorldSession::beforeInteraction(ProductUi& product, const scene::WalkerPose& walker) {
+    m_launch.beforeInteraction(product, *m_interaction, walker, m_context.frameIndex());
+}
+
+void WorldSession::afterInteraction(const InteractionResult& result, ProductUi& product,
+                                    const scene::WalkerPose& walker) {
+    m_launch.afterInteraction(result, product, *m_interaction, walker, m_context.frameIndex());
+}
+
 std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera, glm::ivec2 viewSize) {
     return m_interaction->labelFor(camera, viewSize);
 }
@@ -693,6 +702,7 @@ void WorldSession::dropCollection() {
     m_interaction->clear();
     m_collection.reset();
     m_shown.reset();
+    m_launch.setPlan(nullptr);
     if (std::exchange(m_coverPhaseOpen, false)) {
         m_context.frameTiming().closePhase(kPhaseCoverLoad);
     }
@@ -704,6 +714,7 @@ void WorldSession::record(RunReport& report) const {
     world.hoverChanges = m_interaction->hoverChanges();
     m_interaction->record(world.interaction);
     world.card = m_card.record();
+    world.launch = m_launch.record();
     if (m_collection) {
         if (const world::PickId hovered = m_collection->hovered(); hovered != world::kNoPick) {
             world.hoveredPickId = fmt::format("{:08X}", hovered);

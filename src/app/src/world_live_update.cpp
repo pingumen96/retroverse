@@ -50,6 +50,8 @@ void WorldSession::keepShown(const WorldBuild& build) {
     m_shown = shownRoomOf(build);
     // The card's other versions of each title (I3 step 14a), from the plan shown.
     m_otherVersions = build.plan ? otherVersionCounts(*build.plan) : std::map<std::uint64_t, std::uint32_t>{};
+    // Where each game stands, for "Mostra nella stanza" (I3 step 15a).
+    m_launch.setPlan(build.plan ? &*build.plan : nullptr);
     m_versionGroups = build.plan ? VersionGroups::of(*build.plan) : VersionGroups{}; // Informazioni (I3 step 14b)
 }
 

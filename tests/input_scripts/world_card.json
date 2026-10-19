@@ -10,8 +10,8 @@
 //              (since I3 step 14b Vedi media and Informazioni open their screens over the card: ui_back on frames
 //              79, 97, 109 and 115 closes each, back to Inspect with the card)
 //   frame 118  confirm: Avvia (the pad's Start)         frame 130  ui_activate: Avvia pressed on the card
-//              (launching from the room is I3 step 15a's: until then Avvia ends at once as if the game had returned,
-//              and Inspect of the same item comes back with the card, Avvia focused)
+//              (I3 step 15a: each launches the game, decided on the next frame; Inspect of the same item comes back
+//              the frame after, with the card on Avvia)
 //   frame 150  ui_right: Vedi media focused             frame 156  ui_down: Indietro focused
 //   frame 170  ui_activate: Indietro pressed: Focus of the same item, the card gone
 //   frame 200  interact: Inspect again, the card again on Avvia
