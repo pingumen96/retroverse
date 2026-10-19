@@ -9,17 +9,20 @@ It is a native Windows application written in C++20 with OpenGL 4.5 and SDL3, wi
 does not emulate anything and never copies or rewrites the collection: ROMs, `gamelist.xml` metadata and media
 stay where ES-DE keeps them.
 
-> **Status:** milestone M0 (native foundations) is done, Gate A (the first room's look) passes and the I1 risk spikes
-> (video on a texture, the RmlUi product UI, the return from an emulator; ADR-0004 to ADR-0006) are done. Retroverse
-> renders a hand-composed test room, not your library yet: reading the ES-DE catalog and launching emulators come next
-> (I2, milestone M1). See [docs/roadmap.md](docs/roadmap.md).
+> **Status:** milestones M0 (native foundations) and M1 (the ES-DE catalog and the launcher) are done but for their
+> manual sign-offs, and so is the I3 vertical slice (milestone M2): Retroverse reads your ES-DE library in place and
+> generates one room for its SNES games, one cartridge per title with its real cover, which you can walk up to, pull
+> out, inspect, read about and launch, while the CRT plays the selected game's clip. Gate B's automated checks pass
+> ([docs/testing/gate-b.md](docs/testing/gate-b.md)); its manual session awaits the user. Multi-room worlds come next
+> (I4, milestone M3). See [docs/roadmap.md](docs/roadmap.md).
 
-![The M0 test room: golden G01](assets/style_tests/screenshots/m0_testroom_golden.png)
+![A generated room: golden G02s](assets/style_tests/screenshots/g02s_snes_stress_golden.png)
 
-*Golden G01: the M0 test room from its scene camera at 1920x1080. Everything in it is procedural and original:
-the room, the furniture, the CRT and its color bars, the cartridge labels, the posters and the "16-BIT CORNER" sign,
-and the wood, plaster, rug, metal and plastic surfaces. The checklist of style.md section 26.2 for this image is in
-[docs/testing/gate-a.md](docs/testing/gate-a.md).*
+*Golden G02s: the room generated for a 2,000-title test fixture (invented titles, generated covers) from its doorway at
+1920x1080. Everything in it is procedural and original: the room, the shelves, display cases and furniture, the CRT,
+the cartridges' labels and spines, the posters and the sign, and the wood, plaster, rug, metal and plastic surfaces.
+The checklist of style.md section 26.2 for the room goldens is in [docs/testing/gate-b.md](docs/testing/gate-b.md),
+for the M0 test room (golden G01) in [docs/testing/gate-a.md](docs/testing/gate-a.md).*
 
 ## What M0 delivers
 
@@ -57,6 +60,7 @@ and the wood, plaster, rug, metal and plastic surfaces. The checklist of style.m
 ./scripts/test.ps1                                 # unit tests
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu      # unit tests and GPU smoke tests
 ./scripts/gate.ps1 -Gate A                         # Debug, RelWithDebInfo, Release builds; tests of Debug and Release
+./scripts/gate.ps1 -Gate B                         # Gate A, every golden, the I3 checks and the benchmarks
 ```
 
 Other presets: `msvc-x64-relwithdebinfo`, `msvc-x64-release` (no developer overlay, assets deployed next to the
@@ -66,16 +70,20 @@ executable), `msvc-x64-profile` (Tracy). The scripts enter the Visual Studio dev
 ## Run
 
 ```powershell
-./build/msvc-x64-debug/bin/retroverse.exe                      # the test room; Esc releases the mouse, again quits
+./build/msvc-x64-release/bin/retroverse-cli.exe library create  # once: find ES-DE and record the library
+./build/msvc-x64-release/bin/retroverse-cli.exe import          # import its catalog (again to refresh)
+./build/msvc-x64-release/bin/retroverse.exe                     # the room of your SNES games (else the test room)
+./build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom   # the M0 test room; Esc releases the mouse, again quits
 ./build/msvc-x64-debug/bin/retroverse.exe --scene material_test
 ./build/msvc-x64-debug/bin/retroverse.exe --model path/to/model.glb
 ./build/msvc-x64-debug/bin/retroverse-asset-preview.exe prefab:crt
 ./build/msvc-x64-debug/bin/retroverse.exe --help
 ```
 
-Controls: WASD or the left stick walk (Left Shift sprints), the mouse or the right stick look around, Esc (gamepad B)
-leaves one level, F1 toggles the developer overlay, F5 reloads the shaders, F12 saves a screenshot, Alt+Enter
-toggles fullscreen.
+Controls: WASD or the left stick walk (Left Shift sprints), the mouse or the right stick look around; E, a click or
+the pad's A takes the cartridge you point at (Focus, then Inspect with its card: Avvia, Vedi media, Informazioni);
+Tab (gamepad Y) opens the quick catalog; Esc (gamepad B) leaves one level, F1 toggles the developer overlay, F5
+reloads the shaders, F12 saves a screenshot, Alt+Enter toggles fullscreen.
 
 ## Repository layout
 

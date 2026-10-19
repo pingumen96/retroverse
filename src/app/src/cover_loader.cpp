@@ -404,7 +404,10 @@ Status CoverLoader::update(CollectionInstance& collection, const Round& round) {
         arrays.pendingUploads() > 0 ? arrays.uploadPending(budget) : gl::LayerUploadResult{};
     if (!uploads.completed.empty()) {
         ++m_uploadRounds;
-        m_maxLayersPerRound = std::max<std::uint64_t>(m_maxLayersPerRound, uploads.completed.size());
+        // The frame's budget bounds a frame's uploads; an idle wake of a lockstep run has a larger budget of its own.
+        if (round.frame) {
+            m_maxLayersPerRound = std::max<std::uint64_t>(m_maxLayersPerRound, uploads.completed.size());
+        }
     }
     if (round.frame && (!uploads.completed.empty() || round.spent.count() > 0)) {
         const double milliseconds = std::chrono::duration<double, std::milli>(uploads.elapsed + round.spent).count();

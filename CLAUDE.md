@@ -29,6 +29,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/gate.ps1 -Gate A                            # Gate A end to end: build matrix, tests, golden G01; -Clean
 ./scripts/gate.ps1 -Gate M1                           # Gate M1: Gate A + the catalog's checks, under focus_watch.py
 ./scripts/gate.ps1 -Gate M1 -RealLibrary              # also the real library (ES-DE closed): NFR-01, NFR-02, imports
+./scripts/gate.ps1 -Gate B                            # Gate B: Gate A + every golden, the I3 checks, the benchmarks
+./scripts/gate.ps1 -Gate B -RealLibrary               # also the real SNES room (ES-DE closed) against its budgets
 ./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
@@ -64,12 +66,25 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   data directory without `library.json`); since I3 the measurements (`gpu.measurements/...`), the collection's texture
   arrays and static instance groups through `rv_collection_probe` (`gpu.collection arrays/...`: 2,049 items in two
   arrays per class, arrays grown mid-run, BC1 and the RGBA8 fallback; `gpu.static groups/...`: 2,000 items, the static
-  path equal to the dynamic one to the bit, the hover outline), the hero CRT's video (`gpu.video: ...`) and the
-  catalog's refresh (`gpu.refresh: ...`). Every clean run is also checked for the run report's I3 sections (the GPU
-  memory adding up, at most one decoder thread, joined at exit). Every case of `rv_smoke_tests` (the gpu
-  cases and the desktop one) runs with `RV_LAUNCH_ALLOWLIST` naming the build's `rv_fake_emulator.exe` (ctest
-  `ENVIRONMENT`; the launch tests set it themselves when run outside ctest). A case is skipped (exit code 77) when no
-  OpenGL 4.5 context can be created, and the golden comparison on another GPU or driver. One case:
+  path equal to the dynamic one to the bit, the hover outline), the hero CRT's video (`gpu.video: ...`), the
+  catalog's refresh (`gpu.refresh: ...`) and the generated room in `retroverse.exe`, each case on a fixture recorded as
+  the case's library and imported with `retroverse-cli`: the room (`gpu.world: ...` of `test_world_room.cpp`, the
+  persisted start of `test_world_start.cpp`, `[world_start]`, and the live update after a refresh of
+  `test_world_live_update.cpp`, `[world_live]`), its covers (`gpu.covers: ...`), hover, pull-out and Focus (`gpu.world
+  focus: ...`), inspection (`gpu.world inspect: ...`), the card (`gpu.world card: ...`), the media viewer and
+  Informazioni (`gpu.media viewer: ...`), launching from the room and "Mostra nella stanza" (`gpu.world launch: ...`),
+  the look's probes (`gpu.world look: ...`) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see
+  "Visual verification"); the room's test files repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run
+  by hand in Release, `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its
+  covers cold and warm, the animations' frame budget and the benchmark path (`[benchmark]`,
+  `tests/input_scripts/bench_snes_room.json`: 1,230 frames at 1920 x 1080 with `--no-vsync` and `--fixed-dt 0.016667`,
+  frame p99 at most 16.7 ms, p50 at most 8 ms, each GPU pass within its budget at its median, since on a desktop GPU
+  shared with other programs a timer query's tail holds their time slices too). Every clean run is also
+  checked for the run report's I3 sections (the GPU memory adding up, at most one decoder thread, joined at exit).
+  Every case of `rv_smoke_tests` (the gpu cases and the desktop one) runs with `RV_LAUNCH_ALLOWLIST` naming the build's
+  `rv_fake_emulator.exe` (ctest `ENVIRONMENT`; the launch tests set it themselves when run outside ctest). A case is
+  skipped (exit code 77) when no OpenGL 4.5 context can be created, and the golden comparison on another GPU or
+  driver. One case:
   `build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden*"` (Catch2 test names), or `./scripts/test.ps1 -Preset
   msvc-x64-debug-gpu -Filter golden` (`-Filter gpu.launch` for the launches: a bare `launch` also matches unit tests).
   The visible launch, `desktop.smoke.launch_visible` (Catch2 tag `[.desktop]`), takes over the screen and runs only
@@ -96,6 +111,18 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   rebuild-index`, `db check`, `media --coverage`, NFR-01 with `retroverse.exe` (three starts, limit 5 s) into
   `build/gate-m1/real-measurements` (`figures.json`), then the `[real-library]` tests of Release; each figure a row with
   its limit. `-FullHashPass` adds the whole library's quick-hash pass (`identities hash`, about 45 minutes cold).
+- `scripts/gate.ps1 -Gate B` (`docs/testing/gate-b.md`, logs in `build/gate-b`) runs Gate A's steps with every golden
+  (G01 and the room goldens; Gates A and M1 run `gpu.golden/G01` alone), a row per golden and preset with the verdict
+  its case writes next to its screenshot (`build/<preset>/smoke/golden_g01/comparison.txt`,
+  `smoke/golden_room/<case>/comparison.txt`), rows for the I3 unit tests and GPU cases (counted from those runs), then
+  in Release the hidden benchmarks, `rv_tests "[bench]"` and `rv_smoke_tests "[bench]"` (a row per GPU case with the
+  figures it printed; their XML reports in `build/gate-b`), and the benchmark path's frame times, GPU passes and GPU
+  memory read from its run report against the roadmap's budgets; the whole gate under `scripts/focus_watch.py`.
+  `-RealLibrary` adds `scripts/real-library.ps1 -Filter '[real-library][room-real]'` (snapshots before and after, 0
+  differences) and reads the test's run reports (`build/msvc-x64-release/real-library/room/<run>.json`): the plan
+  generated twice, the restart after a second import (no rebuild, 0 moves), the time to the room (the restart within 5
+  s), the covers resident cold (10 s) and warm (1.0 s), the frames while they load (p99 33.3 ms), the benchmark path's
+  budgets, the refresh of the whole library (p99 33.3 ms, 0 moves) and NFR-01 with the room.
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`, built by the
   vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
   restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure
@@ -121,8 +148,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   roots (listings only) with `scripts/snapshot_tree.py`, runs `rv_tests.exe "[real-library]"` (with
   `RV_LAUNCH_BACKGROUND=1` and `RV_LAUNCH_ALLOWLIST` naming the build's fake emulator alone), snapshots again and
   fails on a failed test or any difference (outputs in `build/real-library`). Narrower runs: `-Filter
-  '[real-library][media]'` (the media tree and the coverage against ADR-0003), `-Filter '[real-library][launch]'` (the readiness of the real systems and the five launches ES-DE logged,
-  read from the git-ignored, machine-local `tests/real_library/local/esde_logged_launches.json`; these two tests are
+  '[real-library][media]'` (the media tree and the coverage against ADR-0003), `-Filter '[real-library][launch]'` (the
+  readiness of the real systems and the five launches ES-DE logged, read from the git-ignored, machine-local
+  `tests/real_library/local/esde_logged_launches.json`; these two tests are
   skipped without `-RetroArchExe`), `-Filter '[real-library][import]'` (the whole library imported into a new database
   under `build/<preset>/real-library/import`: a first and a second import, `db rebuild-index`, the ROM root unplugged
   and back), `-Filter '[real-library][reconciliation]'` (gb imported alone, then the quick-hash pass over it, twice;
@@ -132,8 +160,14 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   creation, and scrolled through every game) and `-Filter '[real-library][query]'` (NFR-02 on the real catalog: the
   benchmark's kinds of search with every order and a filter, p95 within 100 ms, pages within 5 ms); since I3 `-Filter
   '[real-library][room_selection]'` (snes imported alone under `build/<preset>/real-library/room-selection`, its room
-  selection printed) and `-Filter '[real-library][covers]'` (a sample of the real SNES covers through the cover
-  pipeline, its cache in `build/<preset>/real-library-covers`). `-OutDir <dir>`
+  selection printed), `-Filter '[real-library][covers]'` (a sample of the real SNES covers through the cover
+  pipeline, its cache in `build/<preset>/real-library-covers`), `-Filter '[real-library][world]'` (the real room in
+  `retroverse.exe`, its data directory under `build/<preset>/real-library/world`), `-Filter
+  '[real-library][covers-room]'` (its covers cold and warm, close-ups under `build/<preset>/real-library/covers`) and
+  `-Filter '[real-library][room-real]'` (Gate B's: snes imported alone under `build/<preset>/real-library/room`, the
+  plan generated twice with one SHA-256, a restart after a second import moving nothing, the covers cold and warm, the
+  benchmark path, four screenshots, a refresh of the whole library with the quick catalog open; the runs' reports and
+  screenshots stay there, never committed: the user's covers). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
   <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python
@@ -176,8 +210,9 @@ build/rvdata`).
   `times` {`openedMs`, `firstListMs`, `firstPageMs`} from the process's creation (NFR-01), `pages` and `frames` (p50,
   p95, p99, max of the page fetches and of the frames while it showed games), `interruptedSessions`, `cardSqueezed`
   (the card's blocks the layout cut: empty in every smoke case), `listed` and `shownCount` (the games of the list and
-  the count the screen showed, equal once a list from the catalog's worker is shown)) and every launch (`launches`: game, profile, final
-  state, `outcome` with `reason` and `detail`, exit code, the panels shown in order (`panels`), `frames` of the request,
+  the count the screen showed, equal once a list from the catalog's worker is shown)) and every launch (`launches`:
+  game, profile, final state, `outcome` with `reason` and `detail`, exit code, the panels shown in order (`panels`),
+  `frames` of the request,
   start and end, `idleWakes`, `times`; for the ES-DE catalog `before` and `after`, the selection, search, filter and
   walker's pose when Avvia asked and on the first frame after the end, and `session` {`id`, `error`, `verified`}), and
   since I3 these sections, written by every report (empty or not): `frameTimes` (p50, p95, p99, max swap to swap, the
@@ -187,11 +222,24 @@ build/rvdata`).
   renderer's own accounting per kind: `proceduralSurfaces`, `collectionArrays`, `heroTextures`, `video`, `targets`,
   `sceneTextures`, `buffers`; now and peak), `video` (the hero CRT: the game and picture shown, the one decoder, the
   first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings; `{}` without a CRT),
-  `world` and `residency` (empty until I3 steps 10b and 12); also `catalog.refreshes` (one per refresh: trigger,
-  outcome, times, the longest slice, counts, the lists asked meanwhile, `before` and `after`), and in `lastView` the
-  static instance groups (`staticGroups`), `outlinedInstances` and `gpuMilliseconds.outline`, only when the view has
-  them. Frame-limited runs log the frame times, phases, CPU sections and GPU memory at the end. Read it instead of the
-  log in scripts and tests.
+  `world` (`{}` without a room: the state, notice, outcome and rebuild, the plan's digest, placements per section and
+  `unplaced` per reason, items, clusters, lights, findings, `times` from the process's creation; `preview`,
+  `reconcile`, `itemsWritten`, `screenGames`, `objectFallbacks` of the persisted start; `interaction` (events, counts,
+  `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
+  `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
+  placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
+  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown)), `residency` (the collection's layers: format,
+  array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
+  {`shownAtMs`, `allResidentAtMs`, `residentAfterShownMs`}, `arrival`, `uploads`, `lockstep`, `pausedRounds`,
+  `retries`, `hero`) and `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
+  `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog); also `catalog.refreshes`
+  (one per refresh: trigger, outcome, times, the longest slice, counts, the lists asked meanwhile, `before` and
+  `after`), `catalog.lists` (the waits of the lists), `gpuPasses` in `frameTimes` and in every phase (`shadow`,
+  `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
+  reported them; I3 step 17b), and in `lastView` the static instance groups (`staticGroups`), `outlinedInstances` and
+  `gpuMilliseconds.outline`, only when the view has them. Phases opened by the code: `refresh`, `coverLoad`,
+  `animation`, and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
+  phases, CPU sections and GPU memory at the end. Read it instead of the log in scripts and tests.
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
   `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
@@ -253,8 +301,8 @@ build/rvdata`).
   estimate, depth-aware blur; occluders farther than the radius in depth count for nothing, so no halos) darkens the
   ambient light only, never a light's (a subtle effect in rooms lit mostly by lights). The model viewer has neither.
   Shadows are world-locked (the maps depend on the light, not on the camera): walking never makes them shimmer.
-- The collection's rendering (I3 steps 0c, 6, 8; `retroverse.exe` draws no collection before step 10b,
-  `rv_collection_probe` does): every instance carries an 80-byte record (`scene::InstanceData`: the matrix, then the
+- The collection's rendering (I3 steps 0c, 6, 8; the room's cartridges, and `rv_collection_probe`'s test items): every
+  instance carries an 80-byte record (`scene::InstanceData`: the matrix, then the
   front and spine layers, flags and pick id at attribute location 8). Covers and spines live in texture arrays per
   class (fronts 256 x 188, spines 40 x 256, BC1 sRGB; the log's extensions line names `EXT_texture_compression_s3tc` and
   `EXT_texture_sRGB`), layer 0 the pending picture, uploads within 1 ms a frame (`layerUploads`);
@@ -264,14 +312,56 @@ build/rvdata`).
   post-processing (a 2 px ring at 1080p in #F4EFE6, scaled with the output's height, its own GPU timer); one flagged
   hidden is not drawn.
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
-  room's): one 480-row decoder, never two decoder threads. It plays the selected game's clip (the quick catalog's
-  selection after a 300 ms dwell; before any, the most recently played game with a video), else its screenshot, title
-  screen or cover (fitted to 640 x 480 on a worker), else its colour bars; it pauses out of view, stops (joined within 1
-  s) before a launch and reopens at its position after the return. Its games come from `--mock-catalog`'s `"media"`
-  (`video`, `screenshot`, `titlescreen`, `cover`; absolute or relative to the file) and `"lastPlayed"`; the ES-DE
-  catalog gives it none until I3 step 10c (the colour bars meanwhile). `--video-freeze-pts <seconds>` (frame-limited
+  room's or the generated room's): one 480-row decoder, never two decoder threads. It plays the selected game's clip
+  (the quick catalog's selection, or the room's item focused or inspected, after a 300 ms dwell; before any, the most
+  recently played placed game with a video, else the first featured one), else its screenshot, title screen or cover
+  (fitted to 640 x 480 on a worker), else its colour bars; it pauses out of view, stops (joined within 1 s) before a
+  launch and reopens at its position after the return. Its games come from the ES-DE catalog (the room's items, since
+  I3 step 10c) or from `--mock-catalog`'s `"media"` (`video`, `screenshot`, `titlescreen`, `cover`; absolute or
+  relative to the file) and `"lastPlayed"`. `--video-freeze-pts <seconds>` (frame-limited
   runs, 0 to 86400) opens every clip paused at that time and holds the frame: two runs give the same screenshot byte for
   byte. NVIDIA's message 131154 (every video upload) is dropped like the informational ids.
+- The generated room (I3, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012): without `--scene`, `--model`
+  or `--mock-catalog`, `retroverse.exe` opens the room of its ES-DE catalog's snes games: the plan under
+  `<user data>/worlds/<library id>/` generated or updated and saved (generator 1.2), the covers and spines through the
+  derived-texture cache `<user data>/cache/textures/<library id>`; the empty room while it is made; the test room with
+  a notice when there is no catalog (no library.json or database) or no snes games; the empty room with a notice when
+  the media root is out of reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test
+  room as before (G01's command has it). With a plan stored, its room shows at the first frame (covers and spines from
+  the cache by the room's items, `<user data>/cache/world/<library id>/room-<system>.json`) before the snapshot is asked
+  for, then is reconciled with it (unchanged: nothing moved, rebuilt or written; changed: committed again with the
+  walker kept). A manifest missing from the asset root falls back to its family's prefab, warned once per run. The
+  walker starts at the room's doorway camera (or `--spawn`). Covers come nearest first (the hovered item, the view by
+  projected size, the rest by distance); the hovered item's front shows its hero texture (its cover at up to 1,024 px,
+  8 kept); nothing is loaded while a game runs; after "Aggiorna libreria" the covers the media root could not give are
+  tried again. Lockstep runs (`--fixed-dt`) wait before the first frame and between frames for the room, the layers of
+  the frame's view and the hovered item's hero texture, and for the whole room before their last frame (10 s at a time):
+  a stored room at frame 0, the reconciled one from frame 1.
+  The item the reticle rests on within 2.5 m is outlined and labelled with its title; after 150 ms it leaves its slot (a
+  face-out cartridge tips forward, a spine-out one slides out and turns its cover to the viewer). E, a captured left
+  click or the pad's south button focuses a spine-out cartridge (the walker eased to 0.9 m in front of it) or inspects
+  a face-out one; in Focus the arrows and the D-pad step between cartridges (repeating while held). In Inspect the item
+  is held upright 0.45 m in front of the eye, left of and below the view's centre (beside the card), the scene dimmed by
+  one stop; the right stick or the captured mouse turns it, the triggers, Page Up / Down and the wheel zoom it (0.3 to
+  1.0 m); a card beside it shows its game (cover, title, platform, year, readiness and first blocker, developer, genre,
+  players, other versions): the arrows and the D-pad move between Avvia, Vedi media, Informazioni and Indietro, Enter or
+  A presses, a click (mouse free) the one clicked; Y, X and Start are Vedi media, Informazioni and Avvia; Esc / B leaves
+  one level (Inspect to Focus to free roam). The hero CRT plays the clip of the item focused or inspected for 300 ms.
+  Vedi media (the card's button, Y; the quick catalog's too) opens the media viewer: the game's images one page per kind
+  (cover, back cover, physical media, 3D box, screenshot, title screen, marquee, fan art; the missing kinds skipped),
+  left and right page, Home and End jump, Back closes; a file that cannot be read shows its fallback. Informazioni (X)
+  shows the description, the metadata and the other versions the plan knows with their regions; Up and Down scroll; X
+  and Y switch between the two. Avvia launches as the quick catalog's does; after the return the walker stands where it
+  stood and the item is in the hand again; the hero CRT's decoder stops before the launch and reopens at the clip's
+  position after it. The quick catalog's card offers "Mostra nella stanza" for a game the room places (the walker eased
+  to its item's Focus pose) and says why for one it does not. After "Aggiorna libreria" or `--refresh-library` the room
+  follows the refreshed catalog live (the room's job again, the plan saved; new titles placed into their slots with
+  their covers, nothing else moved; a dressed level, module or growth commits the room again with the walker and the
+  pictures kept; never during a game). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
+  instant) and `"lightingProfile": "evening" | "afternoon"` (`assets/world/lighting`, applied when the room is drawn,
+  never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
+  featured shelf, `shelf_light`, while the 16 lights leave room); the room's materials come from
+  `assets/world/themes/classic_16bit_warm.json`. With the mouse free (the developer overlay open) the cursor picks.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); Esc (gamepad B)
@@ -298,7 +388,8 @@ build/rvdata`).
   Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the shadow map, the
   depth pre-pass, the ambient occlusion, the scene pass, the post-processing and the outline, what the last view drew
   with its static groups' draw calls, instances and clusters, GPU resources, the GPU memory per kind now and at its
-  peak, the hero CRT's "Video" section), Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision
+  peak, the hero CRT's "Video" section, the room's "Collection" section: layers resident, the cache, the hero
+  textures), Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision
   off = noclip, reset to the scene camera), Lights (the key light, every scene light with its shadow flag and strength,
   the background and the ambient, live), Materials (base color, metallic, roughness, emissive strength, live and never
   saved), Rendering (debug line kinds, wireframe, vsync, the key light's shadow on/off with its slope and constant bias
@@ -350,7 +441,7 @@ build/rvdata`).
   `rv/app/mock_catalog.hpp`: JSON with comments, `schemaVersion` 1, `games` each with an optional `launch` {`profile`,
   `rom` absolute or relative to the file, `system`, `variables`}, optional `profiles` over the shipped and the user's;
   unknown fields are errors, a file that cannot be loaded exits 2). Either way, Tab opens and
-  closes the catalog (the pad's Y opens it and is "Vedi media" inside, which does nothing yet, like "Informazioni"),
+  closes the catalog (the pad's Y opens it and is "Vedi media" inside, X "Informazioni": the screens above),
   arrows or the D-pad move, Enter (A) on a game is "Avvia": the launch is planned with the game's profile and started
   through `LaunchSession` on `Win32ProcessRunner` (the guard applies) with ADR-0006's keep policy. While the game runs
   the host renders nothing and waits for events, at most 100 ms at a time, woken by the runner: frames, the `--frames`
@@ -460,10 +551,31 @@ build/msvc-x64-debug/bin/retroverse.exe --model build/models/orientation_cube.gl
   --frames 5 --hidden --screenshot build/screenshots/model.png --data-dir build/rvdata
 ```
 
+The Gate B goldens (I3 step 17a, `tests/smoke/test_golden_room.cpp`, `gpu.golden/G02` ... `G10`, `[golden_room]`)
+sit beside G01 in `assets/style_tests/screenshots/`, each with a JSON like G01's (the GPU and driver, the commit, the
+SHA-256 of the image, of the fixture's tree, of the plan shown, of the input script and of `assets/world`, the view and
+every command of the run): G02 (`g02_snes_room_golden.png`: `snes-room`'s 50 titles, all face-out, from the doorway),
+G02s (`snes-stress`: spine-out modules, the hero band, the display cases), G06 (`snes-single`: one ROM, no media, a
+generated label), G07 (an inspected cartridge with its card, `golden_g07_inspect.json`), G08a (the CRT's clip frozen
+at 1.0 s), G08b (the corrupt clip's fallback to the cover, `golden_g08b_corrupt_clip.json`) and G10 (G02 after the ten
+`additions/` imported; also compared with G02's golden: every differing pixel on the level the ten took, heatmap
+`g10_against_g02_heatmap.png`). Each case imports its fixture, makes the plan and fills the cache in a first run of
+300 frames, then renders the stored room hidden and lockstep at 1920 x 1080 (`--video-freeze-pts 1` but for G08b),
+checks the run report and compares within G01's tolerance (`comparison.txt` and a heatmap in
+`build/<preset>/smoke/golden_room/<case>`), skipped on another GPU or driver. `$env:RV_UPDATE_GOLDEN=1;
+build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden/G02:*"` rewrites one (then the case fails: look at it, run it
+again without the variable, update `docs/testing/gate-b.md`'s checklist). The room's own screenshots: a data directory
+with a fixture recorded and imported (`retroverse-cli --data-dir <dir> library create --home <materialized fixture>
+--install <fixture>/Programs/ES-DE`, then `import`), then `retroverse.exe --exit-after-frames --frames 30 --fixed-dt
+0.016667 --hidden --data-dir <dir> --screenshot build/screenshots/room.png` (the doorway); the `gpu.world*` cases leave
+theirs under `build/<preset>/smoke/world*/`. The benchmark path: `--width 1920 --height 1080 --no-vsync
+--exit-after-frames --frames 1270 --fixed-dt 0.016667 --input-script tests/input_scripts/bench_snes_room.json` from the
+room's scene camera (the `benchmark` phase of the run report, with its GPU passes).
+
 A generated room's static part is checked as a scene: `retroverse-cli --data-dir build/rvdata worldplan show
 tests/fixtures/world/golden/plan-890-seed-102938.json --scene build/scenes/room_890.json`, then `retroverse.exe --scene
-build/scenes/room_890.json` as above (the shell, the hero corner, the modules, displays, dressing and lights; the
-cartridges come with I3 step 10b). The collection's arrays and static groups show at a glance with
+build/scenes/room_890.json` as above (the shell, the hero corner, the modules, displays, dressing and lights, without
+the cartridges). The collection's arrays and static groups show at a glance with
 `build/msvc-x64-debug/bin/rv_collection_probe.exe --probe-scenario chunks --exit-after-frames --frames 240 --hidden
 --screenshot build/screenshots/arrays.png --data-dir build/rvdata` (`--probe-scenario groups --probe-camera close
 --probe-highlight` for the outline).
@@ -627,12 +739,14 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
 - `worldplan` (I3, ADR-0010, `docs/i3/step-3.md`, `step-4.md`, `step-9.md`, `step-10a.md`): a room's plan, the canonical
   JSON `<user data>/worlds/<library id>/world-plan.json` (beside it `world-plan.meta.json`, `overrides.json`'s pins,
   read and never written, the last 10 plans in `backups/` and the world lock `world.lock`, waited for 2 s).
-  `worldplan generate --system <system> [--selection <file>] [--seed <n>] [--library <id>] [--replace | --plan <file>] [--json]`
-  generates a fresh plan from the catalog's selection (or a canonical selection file), validates it and saves it under
+  `worldplan generate --system <system> [--selection <file>] [--seed <n>] [--library <id>] [--replace | --plan <file>]
+  [--json]` generates a fresh plan from the catalog's selection (or a canonical selection file), validates it and saves
+  it under
   the world lock, never over an existing plan unless `--replace` (the explicit regeneration, which chooses the face-out
   titles again, after a backup); `--seed` defaults to `world.json`'s, else the library's seed.
-  `worldplan update --system <system> [--selection <file>] [--previous <plan>] [--seed <n>] [--library <id>] [--plan <file>] [--diff] [--json]`
-  applies ADR-0010 §10's rules (every placement kept, new titles spine-out next to their alphabetical predecessor, then
+  `worldplan update --system <system> [--selection <file>] [--previous <plan>] [--seed <n>] [--library <id>] [--plan
+  <file>] [--diff] [--json]` applies ADR-0010 §10's rules (every placement kept, new titles spine-out next to their
+  alphabetical predecessor, then
   a dressed level, a new module in place of decoration, growth, `capacity`; the face-out set unchanged) and prints the
   change report. Both exit 0 written or up to date; 1 nothing written (a plan exists without `--replace`; no plan to
   update, one edited by hand or newer, one that needs `generate --replace`: another seed, preset, template or generator
@@ -715,10 +829,21 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `rv_catalog`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_ui_model`; tested by `tests/unit/app`; since I3 step
   13r also the refresh, `library_refresh.hpp`: the import in slices, GPU-free). Since I3 `rv_app` links `rv_media` (the
   hero CRT's `ScreenService`, private, step 11) and `rv_world` (also linked by `rv_app_cli` and `rv_cli_core`);
-  `rv_app_cli` holds the frame timing and phases (`frame_timing.hpp`, step 0d), the interaction model
-  (`world_interaction.hpp`, step 7: the world's states, input contexts and Back levels; unused until step 13a) and the
-  hero screen's policy (`screen_policy.hpp`, step 11). Files that later I3 steps fill are stubs naming their step
-  (`docs/i3/step-0a.md`).
+  `rv_app_cli` holds the frame timing and phases (`frame_timing.hpp`, step 0d; the GPU passes, 17b), the interaction
+  model (`world_interaction.hpp`, step 7: the world's states, input contexts and Back levels), the hero screen's policy
+  (`screen_policy.hpp`, step 11) and the room's GPU-free parts: `collection_layers` (an item's front and spine through
+  the cache) and `world_notice_ui.hpp` (10b), `room_items` (10c), `cover_requests` (the loader's order, the hero set's
+  LRU; 12), `world_focus.hpp` (the room's side of the hover, the pull-out and Focus) and `world_label_ui.hpp` (13a),
+  `world_inspect.hpp` (the held pose, the dimming, the CRT's selection; 13b), `world_card_ui.hpp` (14a),
+  `world_launch_ui.hpp` (15a). `rv_app_catalog` holds the room's flow up to its commit: `room_snapshot` and
+  `world_build` (10b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp` (14b), `world_live_plan` (15b).
+  `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
+  `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
+  `world_hover` and `world_label_panel` (13a), `world_inspection` (13b), `world_card` (14a), `game_screens_panel`
+  (14b), `world_launch` (15a), `world_live_update` (15b); the outline pass's dimming shader
+  `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
+  `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
+  `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
 - `rv_world` (`src/world`, `docs/i3/`): ids (`room:snes/fx:w03/s:3.12`), the WorldPlan and its canonical JSON
   (`plan_json.hpp`: `writePlan`, `readPlan`, `planDigest`; a newer schema refused, a hand-edited plan refused; integers
   only: millimetres, hundredths of a degree, permille), `WorldConfig` with the preset and `world.json`, the readers of
@@ -728,13 +853,14 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   29 rules) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and `slot_navigation.hpp` (the D-pad
   steps; 7); `world_store.hpp` (the world's files and lock, `savePlan`), `incremental.hpp` (`update`), `overrides.hpp`
   (pins: protected, never applied) and `where_is.hpp` (`PlanIndex`; 9); `scene_builder.hpp` (`toSceneFile`,
-  `toSceneDescription`, `loadSceneData`, the evening lighting profile, the theme's materials) and
-  `collection_layout.hpp` (items with transforms, pick ids, layer keys and flags, clusters, groups, occluders,
-  navigation; 10a). I3's other modules: `rv_geometry` the collection's prefabs (`display_case`, `wall_shelf`,
-  `storage_box`, `magazine_stack`, `bookends`, the cartridge's `spineLabel`, `shelf`'s display levels and front inset;
-  `Slot_<level>_<index>` and `Level_<n>` sockets, `SlotFacing`, `slotLevels`; 1b); `rv_assets` the prefab families
-  (`assets/manifests/families.json`, `resolvePrefab`: style §21's object fallbacks, one warning each; 1b) and the
-  collection's layers (5, GPU-free, safe on the worker pool: `cover_fit`, `mip_chain`, `bc1`, `text_raster`,
+  `toSceneDescription`, `loadSceneData`) and `collection_layout.hpp` (items with transforms, pick ids, layer keys and
+  flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme pack as
+  data, `assets/world/lighting`, `assets/world/themes`; 16). I3's other modules: `rv_geometry` the collection's
+  prefabs (`display_case`, `wall_shelf`, `storage_box`, `magazine_stack`, `bookends`, `plant` (16), the cartridge's
+  `spineLabel`, `shelf`'s display levels and front inset; `Slot_<level>_<index>` and `Level_<n>` sockets, `SlotFacing`,
+  `slotLevels`; 1b); `rv_assets` the prefab families (`assets/manifests/families.json`, `resolvePrefab`: style §21's
+  object fallbacks, one warning each; 1b) and the collection's layers (5, GPU-free, safe on the worker pool:
+  `cover_fit`, `mip_chain`, `bc1`, `text_raster`,
   `collection_labels`, `rvtex`, `derived_texture_cache`); `rv_scene` the 80-byte `InstanceData` (0c), the eased
   `PoseAnimator` (7) and the static groups' layout and the outline's geometry (`instance_clusters.hpp`, 8); `rv_catalog`
   `RoomEntry`, `RoomSnapshot` and `ICatalogQuery::roomEntries` (1a), which `SqliteCatalogQuery` answers in one read with
@@ -815,7 +941,8 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `assets/world/presets/<id>.json` under `world.json` (per key: `preset` names another preset, `seed` a seed or null,
   integers only, millimetres and permille; a broken file is left out whole with one issue). The world's data, read
   strictly (unknown or duplicate keys and fractions refused with their line): `assets/world/templates/` (the room
-  template `console_room_9x10.json`), `platforms/`, `media_families.json`; prefab families in
+  template `console_room_9x10.json`), `platforms/`, `media_families.json`, `lighting/` (the profiles `evening` and
+  `afternoon`), `themes/` (the room's materials); prefab families in
   `assets/manifests/families.json`. The one exception,
   `library.json` (the library's id, the ES-DE home and install, root overrides), is written only by `retroverse-cli
   library create`; choices made later go to the database (ADR-0008 §6).
@@ -859,12 +986,13 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   `unit`, `shuffle`, `kRandomAlgorithm` `splitmix64/1`; never the standard distributions or `std::shuffle`),
   `canonical_json.hpp` (`writeCanonicalJson`, `canonicalJsonDigest`, `parseCanonicalJson`, which refuses any text that
   is not canonical: keys by code point, integers only, top-level arrays one element per line, a final LF),
-  `worker_pool.hpp` (`WorkerPool`: `min(6, hardware threads - 3)` threads below normal priority, bounded (a full queue
-  refuses, never blocks), priorities, `JobGeneration` cancellation, a 2 s shutdown bound), `backups.hpp`
-  (`backUpFile`, the newest 10 by default, named as the database's backups), `cpu_timers.hpp` (`CpuTimers`,
-  `mainThreadCpuTimers`, `CpuSectionScope`, `summarizeDurations`, the one nearest-rank percentile rule); `file_io.hpp`'s
-  `writeFileAtomic` flushes before a write-through rename; `log.hpp`'s `logLinesSince` reads the in-memory lines and
-  their count under one lock.
+  `worker_pool.hpp` (`WorkerPool`: `min(6, hardware threads - 3)` threads below normal priority without dynamic
+  boosts, bounded (a full queue refuses, never blocks), priorities, `JobGeneration` cancellation, a 2 s shutdown
+  bound), `backups.hpp` (`backUpFile`, the newest 10 by default, named as the database's backups), `cpu_timers.hpp`
+  (`CpuTimers`, `mainThreadCpuTimers`, `CpuSectionScope`, `summarizeDurations`, the one nearest-rank percentile rule);
+  `file_io.hpp`'s `writeFileAtomic` flushes before a write-through rename (`core::Durability::Unflushed` only for
+  derived data checked when read, such as the derived-texture cache); `log.hpp`'s `logLinesSince` reads the in-memory
+  lines and their count under one lock.
 - GPU memory (`rv/render/gpu_memory.hpp`: `GpuMemoryLedger`, `gpuMemoryLedger()`, `GpuMemoryAllocation`,
   `textureBytes`): every texture and buffer of `rv_render` records its bytes under a `GpuMemoryKind`. A texture created
   outside the texture cache records a kind of its own (`TextureDesc::memoryKind = HeroTextures` for the hero CRT's

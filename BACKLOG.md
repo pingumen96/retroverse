@@ -152,17 +152,16 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   preset and run the unit tests; its GPU smoke tests would skip (no OpenGL 4.5 context: exit code 77), so the GPU tests
   and the golden comparison need a self-hosted runner on the reference machine (`scripts/gate.ps1 -Gate A` is the
   command), and the vcpkg binary cache a shared location.
-- **More golden images:** G01 is the only golden and is compared on the reference machine only (GL_RENDERER and
-  GL_VERSION must match its metadata). G02-G10 (style §26.1) come with the rooms they show (I3-I8); golden images per
-  quality profile come with the profiles (I8). Other machines could compare with a perceptual metric and a looser
-  tolerance instead of skipping.
+- **More golden images:** G01 and the room goldens G02, G02s, G06, G07, G08a/b and G10 (I3 step 17a) are compared on
+  the reference machine only (GL_RENDERER and GL_VERSION must match their metadata). G09 and golden images per quality
+  profile come with the profiles (I8). Other machines could compare with a perceptual metric and a looser tolerance
+  instead of skipping.
 - **Run report of an invalid command line:** `--run-report` takes effect once the command line parses, so a script
   that passes a bad option gets exit code 2 and the usage on stderr but no report. A minimal report (exit code, the
   parse error) would need the report path read before the other options are validated.
 - **Benchmark runs:** the frame time benchmarks of specification NFR-03 and NFR-04 (60 FPS at 1080p, a p99 of at
-  most 33.3 ms) have their measurement since I3 step 0d (the run report's frame-time percentiles, named phases, CPU sections and
-  GPU memory) and get their scripted camera path in I3 step 17b (`bench_snes_room.json`, a `benchmark` phase, no
-  `--bench` mode); the full suite across rooms and profiles is I8's.
+  most 33.3 ms) run in Gate B on one room (I3 step 17b's `bench_snes_room.json`, the `benchmark` phase with its GPU
+  passes, `[benchmark]` and `[real-library][room-real]`); the full suite across rooms and profiles is I8's.
 
 ### Platform and infrastructure
 
@@ -212,10 +211,10 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Localization:** tables in `assets/ui/locale` bound through RmlUi's data model, and number formatting with them (the
   quick catalog's count reads "100000 giochi"); the game-session panel's sentences, which hold the game's title, are
   written in `assets/ui/game_session.rml` itself until then (I2 step A1; I7).
-- **Pictures in the UI:** an image source scheme (`rv-texture:<key>`) mapping covers and video frames to
-  `gl::TextureCache` textures in the render interface (I3, I5).
-- **Upstream:** propose the vendored renderer's three local changes to RmlUi (output target, state-backup opt-out,
-  sampler reset).
+- **Video frames in the UI:** the `rv-texture:<key>` images (I3 step 14a: covers in the world's card and the media
+  viewer) for the video frames of the media viewer and the quick catalog's card (I5).
+- **Upstream:** propose the vendored renderer's local changes to RmlUi (output target, state-backup opt-out, sampler
+  reset, the `rv-texture:` images; `third_party/rmlui_backends`'s README lists them).
 - **Registry:** register `ui/quick_catalog.rml`, `ui/quick_catalog.rcss`, `ui/game_session.rml` and
   `ui/game_session.rcss` (kinds ui-document and ui-style-sheet, provenance retroverse-original) once the asset validator
   covers `assets/ui`.
@@ -384,8 +383,8 @@ The I1 spike's product UI items stay under "Product UI" above; these come from I
 - **The game-session panel in `rv_ui`:** `GameSessionPanel` is private to `rv_app` (its GPU-free contract in
   `game_session_ui.hpp`); it can move beside `QuickCatalogScreen`. Its document, `assets/ui/game_session.rml`, does not
   reload when saved in developer builds yet (the catalog's documents do).
-- **"Vedi media" and "Informazioni"** (`ui_media`, `ui_info`) do nothing in the app yet: the media viewer and the game's
-  details come with the media and screens (I3, I5).
+- **Videos and manuals in the media viewer:** Vedi media pages the images (I3 step 14b); the clip with audio and the
+  manual's pages come with the decoder scheduler and audio (I5).
 
 ## Follow-ups from I3
 
@@ -397,9 +396,47 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
   (`assets::kDefaultLabelPalette`, style §3's roles; I3 step 5) until a theme's data holds one (style §14's theme
   packs); `paletteColour` already takes any palette, so the label requests would carry the room's.
 
+- **The display cases' base lit on the side facing the doorway** (I3 step 17a): the vitrines read as lit glass since
+  the step's review, but the wooden base under them stays dark on its unlit south face (luma about 10 from the doorway).
+- **Light positions in the template's data** (I3 step 16): the lights' positions are still constants in
+  `fixture_layout.cpp`; moving them into the template is a template version of its own, for when a second template
+  exists.
+- **The empty room in the chosen profile** (I3 step 16): while the plan is made, `world_session.cpp`'s empty room uses
+  the built-in evening profile (`shellScene` could pass `roomLightingProfile`), and the collection instance its built-in
+  `themeMaterials` instead of `SceneData::theme.materials("cartridge")`.
+- **ES-DE's lastplayed in the room's snapshot** (I3 step 10c): `<lastplayed>` is not in `RoomEntry`, so the hero CRT's
+  start choice knows only Retroverse's sessions (a user who never launched from Retroverse sees the first featured
+  title's clip); adding it is a catalog change.
+- **The import's unknown media recorded** (I3 steps 2 and 10b): after an import whose `ImportStatistics::mediaUnknown`
+  was not 0 the stored media presence may be stale, and the database does not record it, so a later start cannot tell.
+
+### The app's room
+
+- **The room's static part built on the pool** (I3 step 10b): the commit builds the static part's meshes on the main
+  thread (about 50 ms in Release for the reference rooms, one hitch); `scene::buildSceneGeometry` could run on the
+  worker pool (the material library's missing-name log would need a lock).
+- **A pixel buffer ring for the collection's uploads** (I3 step 12, ADR-0011 §6): single layer uploads of 12 to 92 ms
+  appeared in cold runs on a loaded machine (the first layer of a frame always goes, and a driver stall lands on it);
+  `VideoTexture`'s ring is the remedy if a quiet machine sees them too.
+- **Shared helpers of the room's smoke tests:** `test_world_focus.cpp`, `test_world_inspect.cpp`,
+  `test_world_card.cpp`, `test_media_viewer.cpp` and `test_world_launch.cpp` each repeat a few helpers of
+  `test_world_room.cpp` (the imported fixture, the room shown, `comparePicture`), kept apart while the steps of a wave
+  ran in parallel; fold them into one header.
+
 ### Measurement
 
-- **The refresh on the real library:** I3 step 13r measured the catalog's refresh on the fixtures only; a
-  `[real-library][refresh]` test would run `retroverse.exe` on the imported real library with `--refresh-library`
-  through `scripts/real-library.ps1` and give the gate the frame p99 over the `refresh` phase (at most 33.3 ms, Release)
-  and the lists' waits during the import (within 100 ms).
+- **Gate B on a quiet machine** (I3 step 18, `docs/testing/gate-b.md`): both gate runs passed every correctness check
+  but missed timing rows while the user's programs loaded the machine (about 60% CPU with the gate idle): the real
+  covers cold 23.7 s (10 s), the snes-stress covers warm 2.2 s (1.5 s) and its benchmark path's p99 19.2 ms (16.7 ms;
+  4.06 ms in the other run), the fixture's materialization 10.3 s (10 s), a Debug upload median 1.07 ms (1.05 ms), the
+  video upload p99 0.98 ms (0.5 ms, not a gate row). Run `./scripts/gate.ps1 -Gate B -RealLibrary` with the desktop's
+  programs closed and update the page; if the cold covers still miss, the pool's priority while the room loads (its
+  workers run below normal without boosts and yield to every busy program) or ADR-0004's process boost (I5) are the
+  remedies, the latter also for NFR-04 over a cold load (frame p99 140 to 204 ms on snes-stress, I3 step 12).
+- **GPU pass times on a dedicated GPU** (I3 step 18): the per-pass budgets are checked at the median because a timer
+  query's tail holds the time slices of the desktop's other GPU programs (p99 0.9 to 1.1 ms for passes whose median is
+  0.4 ms); a profiling session with nothing else on the GPU (or GPU-side markers in a capture) would give the passes'
+  own tails (I8).
+- **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
+  runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
+  a run when the room is whole.
