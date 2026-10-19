@@ -1,0 +1,38 @@
+// I3 step 14a: the card beside the inspected item in the generated room of the snes-room fixture (every title
+// face-out). The walker starts at the Focus pose of the hero wall's band item fx:hw-w/s:5.4 (--spawn), the reticle on
+// it.
+//   frame 40   interact: the face-out item is inspected at once, the card shows its game with Avvia focused (the lift
+//              takes 300 ms, 18 frames: the card's presses wait for the item in the hand)
+//   frame 70   ui_right: Vedi media focused             frame 76   ui_activate: Vedi media pressed (Enter, A)
+//   frame 82   ui_down: Indietro focused                frame 88   ui_left: Informazioni focused
+//   frame 94   ui_activate: Informazioni pressed        frame 100  ui_up: Avvia focused
+//   frame 106  ui_media: Vedi media (the pad's Y)       frame 112  ui_info: Informazioni (the pad's X)
+//   frame 118  confirm: Avvia (the pad's Start)         frame 130  ui_activate: Avvia pressed on the card
+//              (launching from the room is I3 step 15a's: until then Avvia ends at once as if the game had returned,
+//              and Inspect of the same item comes back with the card, Avvia focused)
+//   frame 150  ui_right: Vedi media focused             frame 156  ui_down: Indietro focused
+//   frame 170  ui_activate: Indietro pressed: Focus of the same item, the card gone
+//   frame 200  interact: Inspect again, the card again on Avvia
+//   frame 230  ui_back (Esc, B): Focus, the card gone
+// tests/smoke/test_world_card.cpp checks the run report's world.card events and takes screenshots at frame 145 (the
+// card with Avvia focused) and at the end.
+//   retroverse --spawn <fx:hw-w/s:5.4's Focus pose> --input-script tests/input_scripts/world_card.json
+//     --exit-after-frames --frames 260 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 70, "toFrame": 70, "actions": {"ui_right": 1}},
+  {"fromFrame": 76, "toFrame": 76, "actions": {"ui_activate": 1}},
+  {"fromFrame": 82, "toFrame": 82, "actions": {"ui_down": 1}},
+  {"fromFrame": 88, "toFrame": 88, "actions": {"ui_left": 1}},
+  {"fromFrame": 94, "toFrame": 94, "actions": {"ui_activate": 1}},
+  {"fromFrame": 100, "toFrame": 100, "actions": {"ui_up": 1}},
+  {"fromFrame": 106, "toFrame": 106, "actions": {"ui_media": 1}},
+  {"fromFrame": 112, "toFrame": 112, "actions": {"ui_info": 1}},
+  {"fromFrame": 118, "toFrame": 118, "actions": {"confirm": 1}},
+  {"fromFrame": 130, "toFrame": 130, "actions": {"ui_activate": 1}},
+  {"fromFrame": 150, "toFrame": 150, "actions": {"ui_right": 1}},
+  {"fromFrame": 156, "toFrame": 156, "actions": {"ui_down": 1}},
+  {"fromFrame": 170, "toFrame": 170, "actions": {"ui_activate": 1}},
+  {"fromFrame": 200, "toFrame": 200, "actions": {"interact": 1}},
+  {"fromFrame": 230, "toFrame": 230, "actions": {"ui_back": 1}}
+]

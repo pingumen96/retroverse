@@ -104,6 +104,20 @@ std::string_view toString(InteractionNotice notice) noexcept {
     return "unknown";
 }
 
+std::string_view toString(CardAction action) noexcept {
+    switch (action) {
+    case CardAction::Launch:
+        return "launch";
+    case CardAction::Media:
+        return "media";
+    case CardAction::Info:
+        return "info";
+    case CardAction::Back:
+        return "back";
+    }
+    return "unknown";
+}
+
 bool readsAction(WorldContext context, Action action) noexcept {
     if (isGlobalAction(action)) {
         return true;
@@ -277,8 +291,10 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
     if (frame.actions != nullptr) {
         const WorldContext context = this->context();
         const input::ActionState actions = actionsFor(context, *frame.actions);
-        const bool backPressed = context == WorldContext::Inspect ? actions.pressed(Action::UiBack)
-                                                                  : actions.pressed(Action::Back);
+        // Indietro on the card (I3 step 14a) is ui_back.
+        const bool backPressed = context == WorldContext::Inspect
+                                     ? actions.pressed(Action::UiBack) || frame.card == CardAction::Back
+                                     : actions.pressed(Action::Back);
         const WorldState before = m_state;
         if (backPressed) {
             back(frame.back, result);
@@ -293,7 +309,7 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
                 readFocus(actions, result);
                 break;
             case WorldState::Inspect:
-                readInspect(actions, dt, finiteOrZero(frame.wheelNotches), result);
+                readInspect(actions, dt, finiteOrZero(frame.wheelNotches), frame.card, result);
                 break;
             case WorldState::Launching:
             case WorldState::Returning:
@@ -407,7 +423,7 @@ void WorldInteraction::readFocus(const input::ActionState& actions, InteractionR
 }
 
 void WorldInteraction::readInspect(const input::ActionState& actions, float dt, float wheelNotches,
-                                   InteractionResult& result) {
+                                   std::optional<CardAction> card, InteractionResult& result) {
     const InspectSettings& inspect = m_settings.inspect;
     // Rotation about the item's center: positive yaw turns its front to the viewer's right, positive pitch tilts it up.
     const float stickRate = core::degreesToRadians(inspect.stickDegreesPerSecond) * dt;
@@ -435,7 +451,10 @@ void WorldInteraction::readInspect(const input::ActionState& actions, float dt, 
         }
         return;
     }
-    if (actions.pressed(Action::UiActivate) || actions.pressed(Action::Confirm)) {
+    // Avvia: the card's button (Enter or the pad's south button on it, a click), or confirm alone (the pad's Start):
+    // Enter is confirm and ui_activate at once, and presses the card's focused button instead (I3 step 14a).
+    const bool startPressed = actions.pressed(Action::Confirm) && !actions.pressed(Action::UiActivate);
+    if (card == CardAction::Launch || startPressed) {
         const auto item = roomItem(m_focused);
         if (!item) {
             toFreeRoam(InteractionNotice::ItemUnavailable);
@@ -447,9 +466,9 @@ void WorldInteraction::readInspect(const input::ActionState& actions, float dt, 
         clearNotice();
         return;
     }
-    if (actions.pressed(Action::UiMedia)) {
+    if (card == CardAction::Media || actions.pressed(Action::UiMedia)) {
         result.showMedia = true;
-    } else if (actions.pressed(Action::UiInfo)) {
+    } else if (card == CardAction::Info || actions.pressed(Action::UiInfo)) {
         result.showInfo = true;
     }
 }

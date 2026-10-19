@@ -10,6 +10,7 @@
 #include <rv/app/app_logic.hpp>
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/scene_graphics.hpp>
+#include <rv/app/world_card_ui.hpp>
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/material_registry.hpp>
@@ -488,7 +489,9 @@ bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
     // they are drawn (a copy: the persisted start keeps the shown build's layout to reconcile it, I3 step 10c).
     if (m_collection) {
         m_record.pickTargets = m_interaction->setRoom(*build.layout, m_collection.get());
+        m_card.bind();
     }
+    m_otherVersions = build.plan ? otherVersionCounts(*build.plan) : std::map<std::uint64_t, std::uint32_t>{};
     startCoverLoader(build.covers, build.mediaRoot, build.library);
     // The hero CRT of the scene just shown plays the room's games (I3 step 10c; none for a preview).
     if (m_host.setScreenGames) {
@@ -581,6 +584,23 @@ std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene
     return m_viewItems;
 }
 
+std::optional<CardAction> WorldSession::cardPress(const input::ActionState* actions, ProductUi& product) {
+    return m_card.press(m_interaction->interaction(), actions, product, m_context.frameIndex());
+}
+
+void WorldSession::showCard(const InteractionResult& result, ProductUi& product) {
+    const WorldInteraction& interaction = m_interaction->interaction();
+    const world::CollectionItem* item = m_interaction->item(interaction.focused());
+    const gl::Texture2D* hero = item != nullptr && m_heroes ? m_heroes->find(item->game) : nullptr;
+    std::uint32_t others = 0;
+    if (item != nullptr) {
+        if (const auto found = m_otherVersions.find(item->game.value()); found != m_otherVersions.end()) {
+            others = found->second;
+        }
+    }
+    m_card.update(interaction, result, item, hero, others, product, m_context.frameIndex());
+}
+
 std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera, glm::ivec2 viewSize) {
     return m_interaction->labelFor(camera, viewSize);
 }
@@ -648,6 +668,7 @@ void WorldSession::record(RunReport& report) const {
     world.state = m_state;
     world.hoverChanges = m_interaction->hoverChanges();
     m_interaction->record(world.interaction);
+    world.card = m_card.record();
     if (m_collection) {
         if (const world::PickId hovered = m_collection->hovered(); hovered != world::kNoPick) {
             world.hoveredPickId = fmt::format("{:08X}", hovered);

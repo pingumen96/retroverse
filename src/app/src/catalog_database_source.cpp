@@ -276,6 +276,27 @@ Status CatalogDatabaseSource::rows(std::size_t first, std::size_t count, std::ve
     return ok();
 }
 
+std::optional<ui::CatalogEntry> CatalogDatabaseSource::entryOf(const catalog::GameId& game) {
+    if (!m_pages || !game.isValid()) {
+        return std::nullopt;
+    }
+    auto fetched = m_pages->fetch(std::span<const catalog::GameId>(&game, 1));
+    if (!fetched) {
+        spdlog::warn("Catalog row of game {} cannot be read: {}", game.toString(), fetched.error().toString());
+        return std::nullopt;
+    }
+    if (fetched->empty() || fetched->front().id != game) {
+        return std::nullopt;
+    }
+    m_toAsk.clear();
+    ui::CatalogEntry entry;
+    fill(fetched->front(), entry);
+    if (!m_toAsk.empty()) {
+        m_worker.readiness(m_toAsk);
+    }
+    return entry;
+}
+
 void CatalogDatabaseSource::fill(const catalog::CatalogRow& row, ui::CatalogEntry& entry) {
     entry.id = row.id.toString();
     entry.title = row.title;

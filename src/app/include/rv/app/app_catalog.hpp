@@ -122,6 +122,14 @@ public:
     [[nodiscard]] virtual std::optional<RoomSnapshotResult> takeRoomSnapshot() { return std::nullopt; }
     [[nodiscard]] virtual bool workerEnded() const noexcept { return true; }
 
+    /// The catalog's row of `game` as the quick catalog shows it (its readiness and first blocker included), read at
+    /// once on the main thread (a page of one; the readiness the game's system has until the worker resolved the
+    /// game's own: poll()'s rowsChanged tells when to read it again), for the world's card (I3 step 14a). Nothing when
+    /// the catalog lacks the game, cannot be read or has no rows (the mock catalog).
+    [[nodiscard]] virtual std::optional<ui::CatalogEntry> gameEntry(const catalog::GameId& /*game*/) {
+        return std::nullopt;
+    }
+
     /// A frame showed a page of the catalog (the quick catalog open with rows bound).
     virtual void pageShown() {}
     /// The end of the run: what is pending is finished within a bound (the worker ends: CatalogWorker::stop).
@@ -205,6 +213,9 @@ public:
     [[nodiscard]] std::optional<RoomSnapshotResult> takeRoomSnapshot() override { return std::exchange(m_room, {}); }
     [[nodiscard]] bool workerEnded() const noexcept override { return m_stopped || m_source.ended(); }
 
+    [[nodiscard]] std::optional<ui::CatalogEntry> gameEntry(const catalog::GameId& game) override {
+        return m_source.entryOf(game);
+    }
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;
     [[nodiscard]] const CatalogDatabaseSource& databaseSource() const noexcept { return m_source; }
