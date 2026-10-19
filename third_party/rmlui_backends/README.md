@@ -44,9 +44,16 @@ All in `RmlUi_Renderer_GL3.*`, each marked `Retroverse local change`:
 3. **Sampler objects.** `BeginFrame()` unbinds the sampler objects of texture units 0 and 1 (`glBindSampler(unit, 0)`).
    The renderer samples its textures (font atlases, layers) with their own parameters and no mipmaps; the samplers
    Retroverse's material registry leaves bound (trilinear) made them incomplete, and the whole UI read as opaque black.
+4. **Host textures (`rv-texture:`).** `SetExternalTexture(key, texture, size)` registers an OpenGL texture the host
+   owns under a key; an image source `rv-texture:<key>` (an `<img src>`, an image decorator) loads as a handle of the
+   key's slot, `RenderGeometry()` binds the texture the slot names when it draws (nothing is drawn while the slot is
+   empty) and `ReleaseTexture()` never deletes it. RmlUi thus never reads a picture from a file: the product UI shows
+   the app's textures (I3 step 14a: the world's card shows the inspected game's hero texture, through an RGBA8 view of
+   its sRGB storage, since the UI composites sRGB-encoded values). A slot's handle stays valid while the host replaces
+   or empties its texture, so a document keeps its `<img>` across games.
 
-Upstream issues worth raising: an output framebuffer for `EndFrame()`, an opt-out of the state backup and the sampler
-reset would make every local change unnecessary.
+Upstream issues worth raising: an output framebuffer for `EndFrame()`, an opt-out of the state backup, the sampler
+reset and textures registered by the host would make every local change unnecessary.
 
 ## License
 

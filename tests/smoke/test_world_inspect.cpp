@@ -230,9 +230,9 @@ TEST_CASE("world inspect: the cartridge lifted into the hand, turned, zoomed and
     REQUIRE(held.report->finalCamera.has_value());
     REQUIRE(plain.report->finalCamera.has_value());
     CHECK(near(held.report->finalCamera->feet, plain.report->finalCamera->feet, 1e-5f));
-    // The scene behind dimmed by one stop (and the vignette) where neither item stands: the wall left of the band.
+    // The scene behind dimmed by one stop (and the vignette) away from the item and from the card (the right 35%).
     const rv::assets::ImageData heldImage = requireScreenshot(held, heldShot, kShotSize);
-    for (const glm::ivec2 probe : {glm::ivec2(240, 540), glm::ivec2(1680, 540), glm::ivec2(960, 120)}) {
+    for (const glm::ivec2 probe : {glm::ivec2(240, 540), glm::ivec2(600, 950), glm::ivec2(960, 120)}) {
         INFO("probe " << probe.x << ", " << probe.y);
         const double before = linearLuminance(plainImage, probe, 40);
         const double after = linearLuminance(heldImage, probe, 40);

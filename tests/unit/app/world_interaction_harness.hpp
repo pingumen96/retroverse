@@ -136,10 +136,11 @@ public:
 
     /// One frame of the app's loop: the reticle's ray sampled, the interaction updated, its walker pose applied or the
     /// walker given its context's actions. `actions` nullptr: the product UI has the input.
-    app::InteractionResult frame(const input::ActionState* actions, float dt = kFrameSeconds,
-                                 float wheelNotches = 0.0f) {
+    app::InteractionResult frame(const input::ActionState* actions, float dt = kFrameSeconds, float wheelNotches = 0.0f,
+                                 std::optional<app::CardAction> card = std::nullopt) {
         app::InteractionFrame frame;
         frame.actions = actions;
+        frame.card = card;
         frame.deltaSeconds = dt;
         frame.walker = pose();
         frame.hover = room.index().sample(camera.rayFromNdc({0.0f, 0.0f}), interaction.hovered());
@@ -160,6 +161,11 @@ public:
     app::InteractionResult frame(const input::ActionState& actions, float dt = kFrameSeconds,
                                  float wheelNotches = 0.0f) {
         return frame(&actions, dt, wheelNotches);
+    }
+
+    /// One frame in which the card's button `card` is pressed (I3 step 14a), with `actions`.
+    app::InteractionResult press(app::CardAction card, const input::ActionState& actions = {}) {
+        return frame(&actions, kFrameSeconds, 0.0f, card);
     }
 
     /// `count` frames without input; the last result.

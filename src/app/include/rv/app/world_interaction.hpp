@@ -58,9 +58,11 @@ enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Retu
 ///  - Focus: the look actions (they move the pick within the shelf section), ui_up / ui_down / ui_left / ui_right (the
 ///    arrows and the D-pad step between items), interact and ui_activate (inspect), Back, QuickCatalog. No walking.
 ///  - Inspect: the look actions (they rotate the item), ui_page_up / ui_page_down (the triggers and Page Up / Down
-///    zoom; the wheel too, InteractionFrame::wheelNotches), the card's ui_activate and confirm (Avvia), ui_media (Vedi
-///    media), ui_info (Informazioni), ui_back (Indietro, Back's levels) and the arrows (its buttons), interact (skips the
-///    lift). Neither QuickCatalog nor Back: the pad's north button is Vedi media here, the quick catalog elsewhere.
+///    zoom; the wheel too, InteractionFrame::wheelNotches), the card's actions: confirm without ui_activate (the pad's
+///    Start: Avvia), ui_media (Vedi media), ui_info (Informazioni), ui_back (Indietro, Back's levels), the arrows and
+///    ui_activate (its buttons' focus and the press of the focused one, I3 step 14a: InteractionFrame::card, so Enter,
+///    which is both confirm and ui_activate, presses the focused button), interact and ui_activate (skip the lift).
+///    Neither QuickCatalog nor Back: the pad's north button is Vedi media here, the quick catalog elsewhere.
 ///  - Suspended (Launching, Returning): nothing; A1's game-session panel has the input meanwhile.
 /// ToggleDevUI, ReloadShaders and Screenshot are read in every context (isGlobalAction).
 enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended };
@@ -212,6 +214,14 @@ public:
                                                             world::StepDirection direction) const = 0;
 };
 
+/// A button of the inspected item's card pressed (I3 step 14a, ADR-0012 §5: the card's buttons have the focus, so Enter
+/// and the pad's south button press the focused one and a click the one clicked; the app's WorldCard turns them into
+/// this entry). Launch is Avvia, Media Vedi media, Info Informazioni, Back Indietro (ui_back's Back levels).
+enum class CardAction : std::uint8_t { Launch, Media, Info, Back };
+
+/// "launch", "media", "info", "back".
+[[nodiscard]] std::string_view toString(CardAction action) noexcept;
+
 /// One frame as the interaction sees it.
 struct InteractionFrame {
     /// The frame's actions as resolved (before any context), or nullptr while the product UI has the input
@@ -228,6 +238,9 @@ struct InteractionFrame {
     float wheelNotches = 0.0f;
     /// The shell's levels, read when Back is pressed.
     BackState back;
+    /// A button of the card pressed this frame (I3 step 14a), read in Inspect with the frame's actions (ignored without
+    /// them): like the action of its button, once the item is in the hand (Back at any time).
+    std::optional<CardAction> card;
 };
 
 /// Avvia on the inspected item: what to launch (AppCatalog::requestLaunch by GameId, ADR-0012 §6).
@@ -357,7 +370,8 @@ private:
 
     void readFreeRoam(const input::ActionState& actions, InteractionResult& result);
     void readFocus(const input::ActionState& actions, InteractionResult& result);
-    void readInspect(const input::ActionState& actions, float dt, float wheelNotches, InteractionResult& result);
+    void readInspect(const input::ActionState& actions, float dt, float wheelNotches, std::optional<CardAction> card,
+                     InteractionResult& result);
     void back(const BackState& shell, InteractionResult& result);
     void track(const world::HoverSample& sample);
     void finishReturn();

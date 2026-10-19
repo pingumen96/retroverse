@@ -61,6 +61,9 @@ public:
     /// none went up).
     double update(bool paused, std::span<const std::string> pinned);
 
+    /// Forgets `game`'s texture (its cover changed: I3 step 15b's live update), a picture on its way included; the
+    /// next request() asks again. The caller stops showing it first.
+    void forget(const catalog::GameId& game);
     /// The resident hero texture of `game`, if any.
     [[nodiscard]] const gl::Texture2D* find(const catalog::GameId& game) const;
     /// A job for `game` runs or its picture waits for its upload.
@@ -85,6 +88,8 @@ private:
     /// Games whose job runs or whose picture waits; games that failed (not asked again until the media root changes).
     std::set<std::string, std::less<>> m_loading;
     std::map<std::string, std::string, std::less<>> m_failed;
+    /// Games forgotten while their job ran: their pictures are dropped when they come.
+    std::set<std::string, std::less<>> m_discarded;
     std::uint64_t m_requests = 0;
     std::uint64_t m_loaded = 0;
     std::uint64_t m_evicted = 0;

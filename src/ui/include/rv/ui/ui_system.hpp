@@ -4,7 +4,10 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#include <glm/vec2.hpp>
 
 #include <rv/core/expected.hpp>
 #include <rv/ui/ui_assets.hpp>
@@ -73,6 +76,15 @@ public:
     [[nodiscard]] RenderInterface_GL3& renderer() noexcept;
     /// Draws the renderer has issued since the system was created (geometry, clip masks, fullscreen passes).
     [[nodiscard]] std::uint64_t drawCalls() const noexcept;
+    /// A texture the application owns, shown by documents as the image source "rv-texture:<key>" (I3 step 14a: the
+    /// world card's cover; the vendored renderer's SetExternalTexture): `texture` an OpenGL 2D texture name holding
+    /// sRGB-encoded RGBA (the UI composites sRGB values: give an sRGB texture through an RGBA8 view), `size` its
+    /// pixels. 0 empties the key (its images draw nothing). The application keeps the texture alive while it is
+    /// registered and sets the key again (or empties it) before deleting it. Main thread only.
+    void setTexture(std::string_view key, unsigned texture, glm::ivec2 size);
+    /// The texture registered for `key` now (0 for none).
+    [[nodiscard]] unsigned texture(std::string_view key) const;
+
     /// The text input method editor that SDL_EVENT_TEXT_EDITING events go to (rv_ui internal).
     [[nodiscard]] TextInputMethodEditor_SDL& textInputEditor() noexcept;
 

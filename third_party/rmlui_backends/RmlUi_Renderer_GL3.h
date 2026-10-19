@@ -38,6 +38,17 @@ public:
 	// Enabled by default, as upstream.
 	void SetStateBackup(bool enabled);
 
+	// Retroverse local change: textures the host registers by key, for image sources "rv-texture:<key>" (an <img src>
+	// or an image decorator), so that RmlUi never loads a picture from a file itself. LoadTexture() answers such a
+	// source with a handle of the key's slot (made on first use, empty until registered: its geometry is then not
+	// drawn), RenderGeometry() binds whatever OpenGL texture the slot names at that moment, and ReleaseTexture() never
+	// deletes it: the host owns the texture, sets it again when it changes (0 empties the slot) and keeps it alive
+	// while it is registered. `size` is what LoadTexture() reports as the image's dimensions (a slot empty at the first
+	// load reports 1 x 1: size such images in the style sheet).
+	void SetExternalTexture(const Rml::String& key, unsigned int texture, Rml::Vector2i size);
+	// The OpenGL texture registered for `key` now (0 for none).
+	unsigned int ExternalTexture(const Rml::String& key) const;
+
 	// Sets up OpenGL states for taking rendering commands from RmlUi.
 	void BeginFrame();
 	// Draws the result to the output (SetOutput; upstream: always the default framebuffer) and restores OpenGL state
@@ -129,6 +140,18 @@ private:
 	int output_width = 0;
 	int output_height = 0;
 	bool state_backup = true;
+
+	// Retroverse local change: the slots of SetExternalTexture, a handle each (kExternalTextureBase + index).
+	struct ExternalTextureSlot {
+		Rml::String key;
+		unsigned int texture = 0;
+		Rml::Vector2i size = {1, 1};
+	};
+	Rml::Vector<ExternalTextureSlot> external_textures;
+	// The slot of `key`, made empty when it has none.
+	size_t ExternalTextureSlotOf(const Rml::String& key);
+	// The slot a texture handle names, or null for any other handle.
+	const ExternalTextureSlot* FindExternalTexture(Rml::TextureHandle handle) const;
 
 	Rml::CompiledGeometryHandle fullscreen_quad_geometry = {};
 

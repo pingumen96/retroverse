@@ -24,6 +24,7 @@
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/window_handover.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
+#include <rv/ui/game_card_screen.hpp>
 #include <rv/ui/nav_input.hpp>
 #include <rv/ui/quick_catalog_model.hpp>
 #include <rv/ui/quick_catalog_screen.hpp>
@@ -102,6 +103,12 @@ struct ProductUi::Impl {
     /// The hover's title label (I3 step 13a) and what the application wants it to show, likewise.
     std::unique_ptr<WorldLabelPanel> label;
     std::optional<WorldLabelContent> wantedLabel;
+    /// The world's card beside the inspected item (I3 step 14a) and what the application wants it to show, likewise.
+    std::unique_ptr<ui::GameCardScreen> card;
+    std::optional<ui::GameCardContent> wantedCard;
+    ui::CardButton wantedCardFocus = ui::CardButton::Play;
+    /// The catalog's changes that show other rows (catalogRevision()).
+    std::uint64_t catalogRevision = 0;
 
     ui::NavInput nav;
     ui::UiCommandList commands;
@@ -140,7 +147,8 @@ struct ProductUi::Impl {
     static constexpr std::size_t kMaxFrameSamples = 100000;
 
     [[nodiscard]] bool visible() const noexcept {
-        return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible());
+        return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
+               (card && card->visible());
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -164,6 +172,18 @@ struct ProductUi::Impl {
             label->hide();
         } else {
             label->show(*wantedLabel, context.framebufferSize());
+        }
+    }
+
+    /// The world's card likewise.
+    void syncCard() {
+        if (!card) {
+            return;
+        }
+        if (!wantedCard || catalogOpen || panel->visible()) {
+            card->hide();
+        } else {
+            card->show(*wantedCard, wantedCardFocus);
         }
     }
 
@@ -221,6 +241,9 @@ struct ProductUi::Impl {
     /// update). Polled here rather than only by the screen, which does not exist before the catalog first opens.
     void syncCatalog() {
         const CatalogChanges changes = catalog->poll();
+        if (changes.opened || changes.rowsChanged || changes.refreshed) {
+            ++catalogRevision;
+        }
         if (changes.opened) {
             model->refresh();
         }
@@ -474,6 +497,11 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
     } else {
         spdlog::error("Hover label unavailable: {}", label.error().toString());
     }
+    if (auto card = ui::GameCardScreen::create(*s.view)) {
+        s.card = std::move(*card);
+    } else {
+        spdlog::error("World card unavailable: {}", card.error().toString());
+    }
     if (s.refreshOnOpen && !s.catalog->supportsRefresh()) {
         // The mock catalog: nothing to import (recorded as such).
         s.refreshAsked = true;
@@ -574,6 +602,35 @@ void ProductUi::setWorldLabel(std::optional<WorldLabelContent> content) {
     m_impl->wantedLabel = std::move(content);
 }
 
+void ProductUi::setWorldCard(std::optional<ui::GameCardContent> content, ui::CardButton focused) {
+    m_impl->wantedCard = std::move(content);
+    m_impl->wantedCardFocus = focused;
+}
+
+bool ProductUi::handleWorldCardEvent(const SDL_Event& event) {
+    return m_impl->card && m_impl->card->handlePointer(event);
+}
+
+std::optional<ui::CardButton> ProductUi::takeWorldCardClick() {
+    return m_impl->card ? m_impl->card->takeClicked() : std::nullopt;
+}
+
+bool ProductUi::worldCardSqueezed() const {
+    return m_impl->card && m_impl->card->squeezed();
+}
+
+std::optional<glm::vec4> ProductUi::worldCardCoverBox() const {
+    return m_impl->card ? m_impl->card->coverBox() : std::nullopt;
+}
+
+void ProductUi::setUiTexture(std::string_view key, unsigned texture, glm::ivec2 size) {
+    m_impl->system->setTexture(key, texture, size);
+}
+
+std::uint64_t ProductUi::catalogRevision() const noexcept {
+    return m_impl->catalogRevision;
+}
+
 AppCatalog& ProductUi::catalog() noexcept {
     return *m_impl->catalog;
 }
@@ -642,6 +699,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.syncPanel();
     s.syncNotice();
     s.syncLabel();
+    s.syncCard();
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);

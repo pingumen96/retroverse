@@ -359,6 +359,49 @@ struct InteractionRecord {
 
 /// The most interaction events a run report keeps.
 inline constexpr std::size_t kMaxInteractionEvents = 512;
+
+/// A change of the world's card (I3 step 14a).
+struct CardEventRecord {
+    std::uint64_t frame = 0;
+    /// "shown" (the card shows `game`), "hidden", "focus" (the focus moved to `button`), "press" (`button` pressed
+    /// `via` "activate": Enter or the pad's south button on the focused one, or "click"), and what the interaction
+    /// answered to the card or its shortcuts: "launch", "media", "info".
+    std::string event;
+    std::string button;
+    std::string via;
+    std::string game;
+
+    bool operator==(const CardEventRecord&) const = default;
+};
+
+/// The world's card beside the inspected item (I3 step 14a; ADR-0012 §5). Empty ({}) in runs without a room's
+/// collection.
+struct CardRecord {
+    bool bound = false;
+    /// Frames it showed, with its cover's texture, and with its content cut by its maximum height (0: never squeezed).
+    std::uint64_t shownFrames = 0;
+    std::uint64_t coverFrames = 0;
+    std::uint64_t squeezedFrames = 0;
+    /// What it showed last: the game (GameId), its title, platform, year (0 unknown), readiness and blocker keys, the
+    /// catalog's details known, the other versions, the focused button (ui::toString(CardButton); "" while hidden).
+    std::string game;
+    std::string title;
+    std::string platform;
+    std::uint64_t year = 0;
+    std::string readiness;
+    std::string blocker;
+    bool details = false;
+    std::uint64_t otherVersions = 0;
+    std::string focused;
+    /// The cover's box as last laid out with its texture: x, y, width, height in pixels of the window's view (empty:
+    /// none).
+    std::vector<double> coverBox;
+    /// The changes, in order (at most kMaxInteractionEvents; `eventsDropped` past them).
+    std::vector<CardEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const CardRecord&) const = default;
+};
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -380,7 +423,8 @@ struct WorldPreviewRecord {
 
 /// What the snapshot's result did to the stored plan's room shown (I3 step 10c, world_reconcile.hpp).
 struct WorldReconcileRecord {
-    /// app::toString(Reconciliation): "textures", "rebuild", "shell"; the frame it was committed in.
+    /// app::toString(Reconciliation): "textures", "rebuild", "shell", or "items" (I3 step 15b: another collection of
+    /// the same static part, its items applied in place); the frame it was committed in.
     std::string kind;
     std::uint64_t frame = 0;
     /// The collection shown against the result's, by game (LayoutDifference).
@@ -393,6 +437,43 @@ struct WorldReconcileRecord {
     bool coversReloaded = false;
 
     bool operator==(const WorldReconcileRecord&) const = default;
+};
+
+/// A live update of the room shown (I3 step 15b, world_live_plan.hpp): the room's job run again after a refresh of the
+/// catalog, and what its result did to the room.
+struct WorldLiveUpdateRecord {
+    /// What started it ("refresh"), the frame it was asked in and the frame its result was applied in.
+    std::string trigger;
+    std::uint64_t requestFrame = 0;
+    std::uint64_t frame = 0;
+    /// app::toString(LiveUpdateKind): "unchanged", "textures", "items", "rebuild", "kept"; why a rebuild or kept.
+    std::string kind;
+    std::string reason;
+    /// app::toString(WorldOutcome) of the job ("updated", "unchanged", "kept", ...), the change report's rebuild level,
+    /// whether the plan was written.
+    std::string outcome;
+    std::string rebuild;
+    bool planWritten = false;
+    /// The room shown against the result's collection, by game (LayoutDifference), and the items whose cover requests
+    /// changed.
+    std::uint64_t kept = 0;
+    std::uint64_t moved = 0;
+    std::uint64_t flagsChanged = 0;
+    std::uint64_t added = 0;
+    std::uint64_t removed = 0;
+    std::uint64_t coversChanged = 0;
+    /// Items: the arrays grew, an array was added; the items and static records after it.
+    bool arraysGrown = false;
+    bool arrayAdded = false;
+    std::uint64_t items = 0;
+    std::uint64_t staticRecords = 0;
+    /// Milliseconds: from the request to the result's application, the room's job on the pool, the application on the
+    /// main thread.
+    std::optional<double> requestToApplyMs;
+    std::optional<double> buildMs;
+    std::optional<double> applyMs;
+
+    bool operator==(const WorldLiveUpdateRecord&) const = default;
 };
 
 /// A prefab of the room that fell back to its family's (style §21's object fallbacks).
@@ -474,6 +555,8 @@ struct WorldRecord {
     std::string hoveredGame;
     /// The interaction with the room's items (I3 step 13a).
     InteractionRecord interaction;
+    /// The card beside the inspected item (I3 step 14a).
+    CardRecord card;
     /// I3 step 10c: the persisted start's preview and its reconciliation (none without a stored plan shown); the room's
     /// items written for the next start; the games given to the hero CRT; the room's object fallbacks.
     std::optional<WorldPreviewRecord> preview;
@@ -481,6 +564,9 @@ struct WorldRecord {
     bool itemsWritten = false;
     std::uint64_t screenGames = 0;
     std::vector<ObjectFallbackRecord> objectFallbacks;
+    /// I3 step 15b: the live updates applied to the room shown, in order (after a reconciliation of the start that
+    /// applied its items in place, `reconcile.kind` is "items").
+    std::vector<WorldLiveUpdateRecord> liveUpdates;
 
     bool operator==(const WorldRecord&) const = default;
 };

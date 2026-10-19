@@ -110,7 +110,10 @@ worktrees building and testing (timings informative). Debug only, as the step's 
   inspect` and `world start` cases; 21 of 23 in the second run: the two failures are the snes-stress cover cases, its
   2,000-title room still "generating" or 1,533 of 2,000 layers resident when the run ended under the machine's load:
   they never reach the interaction) and golden G01 (`golden*`: 0 pixels apart; the run has no world, and `edge` true,
-  `dimOutside` 0 draw what step 8 drew). Repeated after merging main (step 15b), see the commit.
+  `dimOutside` 0 draw what step 8 drew).
+- **After merging main (steps 14a and 15b)**: Debug built with 0 warnings; the unit cases above with `[world_card]` (65)
+  and the shaders' (20) passed; `rv_smoke_tests "[world_inspect],[world_focus],[world_card],golden*"` passed 9 of 9
+  (G01 0 pixels apart). One dimming probe moved out of the card's right 35% of the view.
 - **Figures** (the smoke runs): the lift 17 frames drawn between the pulled pose and the hand, the lowering 11; the
   scene behind at 0.47 to 0.50 of its linear light at the probes (one stop, the vignette's r^4 barely reaching them);
   zoomed out to 1.0 m the item is drawn at 0.79 m (the band's box); the hero texture on the held cover in every held
@@ -125,6 +128,9 @@ comes with 14a):
   turned 45 degrees to the right and tilted up 15, its slot in the band empty behind it, the shelf, the magazines and
   the floor lamp a stop darker; `plain.png` the same view before the inspection (the item hovered, outlined, labelled);
   `zoom_in.png` at 0.4 m; `end.png` back in FreeRoam, the item in its slot, hovered.
+- After 14a's merge `held.png` shows the card beside the held cartridge (the right 35% of the view, drawn by the
+  product UI over the dimmed scene, not dimmed itself), the cartridge clear of it at every zoom (0.4 m: about 280 px
+  wide at the view's centre, turned): G07's candidate.
 - Reviewed: the cartridge upright with its cover (the hero texture) facing the eye, no outline or label while held, the
   item undimmed against the dimmed room, nothing of the shelf in front of it. Turned towards the floor lamp, the
   label's sheen lightens the cover's darks (the black stripes read brown at 45 degrees; facing the eye they stay
@@ -173,6 +179,9 @@ comes with 14a):
   - `src/render/include/rv/render/outline_pass.hpp`, `src/render/src/outline_pass.cpp`, `scene_renderer.cpp`: the dim
     program and settings; `src/app/src/scene_graphics.cpp`: two lines;
   - `src/app/CMakeLists.txt`: `src/world_inspect.cpp` in `rv_app_cli`.
+  Merged with 14a and 15b already (two conflicts in `world_session.hpp`, `.cpp`: 13b's `viewItems(items, camera)`,
+  `applyInspection()` and `screenSelection()` kept beside 14a's `cardPress()` and `showCard()`; the mouse stays
+  captured in Inspect for the rotation, so the card's clicks need the overlay open, as 14a's note says).
   14a's card goes beside the held item (`FocusViewer::area` for Focus; the held item stays on the view's axis, so the
   card's area may want `heldItemTransform()` to take an offset: 14a's call); 15a's launch keeps `WorldLaunchRecord`'s
   inspection, which this step draws as it is restored.

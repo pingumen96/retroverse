@@ -229,12 +229,14 @@ TEST_CASE("app/world_interaction: keyboard, mouse and pad reach the same transit
     CHECK_FALSE(rv::app::actionsFor(WorldContext::Inspect, escape).pressed(Action::Back));
     CHECK(rv::app::actionsFor(WorldContext::Inspect, escape).pressed(Action::UiBack));
 
-    // Enter inspects in Focus, and launches in Inspect.
+    // Enter inspects in Focus; in Inspect it presses the card's focused button (I3 step 14a: the card's entry, Avvia
+    // when the card has it focused), so the interaction alone launches nothing.
     InteractionHarness byKeyboard = focused();
     byKeyboard.frame(keyPress(rv::input::Key::Enter));
     CHECK(byKeyboard.interaction.state() == WorldState::Inspect);
     byKeyboard.idle(30);
-    CHECK(byKeyboard.frame(keyPress(rv::input::Key::Enter)).launch.has_value());
+    CHECK_FALSE(byKeyboard.frame(keyPress(rv::input::Key::Enter)).launch.has_value());
+    CHECK(byKeyboard.press(rv::app::CardAction::Launch, keyPress(rv::input::Key::Enter)).launch.has_value());
     // The pad's south button inspects, Start launches.
     InteractionHarness byPad = focused();
     byPad.frame(padPress(rv::input::GamepadButton::South));
@@ -670,7 +672,7 @@ TEST_CASE("app/world_interaction: Avvia launches and the return comes back to th
     harness.frame(turn);
     const rv::app::InspectView view = harness.interaction.inspectView();
     const rv::scene::WalkerPose walker = harness.pose();
-    const rv::app::InteractionResult result = harness.frame(pressing({Action::UiActivate}));
+    const rv::app::InteractionResult result = harness.press(rv::app::CardAction::Launch);
     REQUIRE(result.launch.has_value());
     CHECK(result.launch->item == item);
     CHECK(result.launch->game == rv::test::ShelfRoom::gameOf(item));
@@ -753,7 +755,7 @@ TEST_CASE("app/world_interaction: an item the room no longer holds falls back to
     // Removed during a launch: the return restores the walker, then FreeRoam.
     InteractionHarness launching = inspecting();
     const rv::scene::WalkerPose atLaunch = launching.pose();
-    REQUIRE(launching.frame(pressing({Action::UiActivate})).launch.has_value());
+    REQUIRE(launching.press(rv::app::CardAction::Launch).launch.has_value());
     launching.room.remove(launching.room.at(0, 4, 16));
     launching.interaction.roomChanged();
     CHECK(launching.interaction.state() == WorldState::Launching);
@@ -869,4 +871,64 @@ TEST_CASE("app/world_interaction: names for the log", "[app][world_interaction]"
     CHECK(rv::app::toString(InteractionNotice::None) == "none");
     CHECK(rv::app::toString(InteractionNotice::ItemUnavailable) == "item unavailable");
     CHECK(rv::app::toString(InteractionNotice::LaunchOutcome) == "launch outcome");
+}
+
+TEST_CASE("app/world_interaction: the card's buttons are the entry of Avvia, Vedi media, Informazioni and Indietro",
+          "[app][world_interaction][card]") {
+    // I3 step 14a: the card's buttons have the focus, so ui_activate alone launches nothing; Enter (confirm and
+    // ui_activate at once through the default bindings) presses the card's focused button instead; the pad's Start
+    // (confirm alone) is Avvia.
+    using rv::app::CardAction;
+    InteractionHarness enter = inspecting();
+    CHECK_FALSE(enter.frame(pressing({Action::UiActivate})).launch.has_value());
+    const ActionState enterKey = keyPress(rv::input::Key::Enter);
+    REQUIRE(enterKey.pressed(Action::Confirm));
+    REQUIRE(enterKey.pressed(Action::UiActivate));
+    CHECK_FALSE(enter.frame(enterKey).launch.has_value());
+    CHECK(enter.interaction.state() == WorldState::Inspect);
+    InteractionHarness start = inspecting();
+    const rv::app::InteractionResult started = start.frame(pressing({Action::Confirm}));
+    REQUIRE(started.launch.has_value());
+    CHECK(start.interaction.state() == WorldState::Launching);
+
+    InteractionHarness card = inspecting();
+    const PickId item = card.interaction.focused();
+    CHECK(card.press(CardAction::Media).showMedia);
+    CHECK(card.press(CardAction::Info).showInfo);
+    CHECK(card.interaction.state() == WorldState::Inspect);
+    // Indietro is ui_back: back to Focus of the same item.
+    const rv::app::InteractionResult back = card.press(CardAction::Back);
+    CHECK_FALSE(back.shellBack.has_value());
+    CHECK(card.interaction.state() == WorldState::Focus);
+    CHECK(card.interaction.focused() == item);
+    // Outside Inspect a card press means nothing.
+    CHECK_FALSE(card.press(CardAction::Launch).launch.has_value());
+    CHECK(card.interaction.state() == WorldState::Focus);
+    // Avvia by the card.
+    InteractionHarness launch = inspecting();
+    const rv::app::InteractionResult launched = launch.press(CardAction::Launch);
+    REQUIRE(launched.launch.has_value());
+    CHECK(launched.launch->item == item);
+    // Without the frame's actions (the product UI has the input) nothing is read, the card's press included.
+    InteractionHarness noInput = inspecting();
+    CHECK_FALSE(noInput.frame(nullptr, kFrameSeconds, 0.0f, CardAction::Launch).launch.has_value());
+    CHECK(noInput.interaction.state() == WorldState::Inspect);
+    CHECK(rv::app::toString(CardAction::Launch) == "launch");
+    CHECK(rv::app::toString(CardAction::Back) == "back");
+}
+
+TEST_CASE("app/world_interaction: the card's presses wait for the item in the hand, but Indietro",
+          "[app][world_interaction][card]") {
+    using rv::app::CardAction;
+    InteractionHarness lifting = focused();
+    lifting.frame(pressing({Action::UiActivate}));
+    REQUIRE(lifting.interaction.state() == WorldState::Inspect);
+    lifting.idle(3);
+    REQUIRE(lifting.interaction.inspectView().lift < 1.0f);
+    CHECK_FALSE(lifting.press(CardAction::Launch).launch.has_value());
+    CHECK_FALSE(lifting.press(CardAction::Media).showMedia);
+    CHECK_FALSE(lifting.press(CardAction::Info).showInfo);
+    CHECK(lifting.interaction.state() == WorldState::Inspect);
+    lifting.press(CardAction::Back);
+    CHECK(lifting.interaction.state() == WorldState::Focus);
 }

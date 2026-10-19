@@ -43,6 +43,8 @@ const gl::UploadBudget kIdleUploadBudget{std::chrono::milliseconds(8), 512};
                        summary->added, summary->removed, summary->changed, summary->moved);
 }
 
+} // namespace
+
 /// The placements per section and the unplaced games per reason of the plan shown, into `record` (the counts of a
 /// room shown before replaced).
 void countPlan(const WorldBuild& build, WorldRecord& record) {
@@ -86,8 +88,6 @@ void countPlan(const WorldBuild& build, WorldRecord& record) {
         }
     }
 }
-
-} // namespace
 
 WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPool& pool, SceneGraphics& graphics,
                            SceneHost host, std::optional<WorldResult> decided)
@@ -189,9 +189,12 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
         if (std::optional<WorldBuild> preview = m_flow->takePreview()) {
             commitPreview(std::move(*preview));
         }
-        if (!m_previewAwaitingFrame) {
+        // I3 step 15b: a live update's result waits while a launched game runs (ADR-0012 §6).
+        if (!m_previewAwaitingFrame && !(m_liveFlow && product.launchActive())) {
             if (std::optional<WorldResult> result = m_flow->takeResult()) {
-                if (m_shownPreview) {
+                if (std::exchange(m_liveFlow, false)) {
+                    applyLive(std::move(*result));
+                } else if (m_shownPreview) {
                     reconcile(std::move(*result));
                 } else {
                     commit(std::move(*result));
@@ -202,6 +205,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
         commit(*std::exchange(m_decided, std::nullopt));
     }
     followRefresh(product);
+    startLiveFlow(product);
     coverRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
 }
@@ -269,6 +273,9 @@ void WorldSession::followRefresh(ProductUi& product) {
         spdlog::info("Frame {}: the catalog was refreshed; the cover loader tries the media root again",
                      m_context.frameIndex());
         m_loader->retry(*m_mediaRootPath);
+    }
+    if (state.last->outcome == RefreshOutcome::Done) {
+        requestLiveUpdate(); // I3 step 15b
     }
 }
 
@@ -449,6 +456,14 @@ void WorldSession::recordBuild(const WorldBuild& build) {
 }
 
 bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
+    // I3 step 15b: a room committed again over the one shown (the walker kept) keeps its items' pictures: the arrays
+    // pass to the new collection and the cover loader's work is adopted, so only new or changed pictures go up.
+    std::optional<CollectionPictures> pictures;
+    std::unique_ptr<CoverLoader> shownLoader;
+    if (keepWalker && m_collection) {
+        pictures = m_collection->takePictures();
+        shownLoader = std::move(m_loader);
+    }
     dropCollection();
     const std::size_t objects = build.scene->objects.size();
     const std::size_t lights = build.scene->lights.size();
@@ -476,8 +491,9 @@ bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
 
     // A room of no title (every game without a cover, say) has the static part alone.
     if (!build.layout->items.empty()) {
-        auto collection = CollectionInstance::create(*build.layout, *build.sceneData, m_graphics,
-                                                     m_context.device().caps().uniformBufferOffsetAlignment);
+        auto collection =
+            CollectionInstance::create(*build.layout, *build.sceneData, m_graphics,
+                                       m_context.device().caps().uniformBufferOffsetAlignment, std::move(pictures));
         if (collection) {
             m_collection = std::move(*collection);
             m_record.staticRecords = m_collection->group().layout().instances().size();
@@ -489,8 +505,13 @@ bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
     // they are drawn (a copy: the persisted start keeps the shown build's layout to reconcile it, I3 step 10c).
     if (m_collection) {
         m_record.pickTargets = m_interaction->setRoom(*build.layout, m_collection.get());
+        m_card.bind();
+    }
+    if (m_collection && shownLoader) {
+        m_loader = std::move(shownLoader); // adopted by the new loader (startCoverLoader)
     }
     startCoverLoader(build.covers, build.mediaRoot, build.library);
+    keepShown(build); // I3 step 15b: the next live update compares with it
     // The hero CRT of the scene just shown plays the room's games (I3 step 10c; none for a preview).
     if (m_host.setScreenGames) {
         m_host.setScreenGames(build.screenGames);
@@ -591,6 +612,23 @@ std::optional<std::string> WorldSession::screenSelection(const std::optional<std
     return app::screenSelection(catalogSelection, m_interaction->interaction().state(), m_interaction->focusedGame());
 }
 
+std::optional<CardAction> WorldSession::cardPress(const input::ActionState* actions, ProductUi& product) {
+    return m_card.press(m_interaction->interaction(), actions, product, m_context.frameIndex());
+}
+
+void WorldSession::showCard(const InteractionResult& result, ProductUi& product) {
+    const WorldInteraction& interaction = m_interaction->interaction();
+    const world::CollectionItem* item = m_interaction->item(interaction.focused());
+    const gl::Texture2D* hero = item != nullptr && m_heroes ? m_heroes->find(item->game) : nullptr;
+    std::uint32_t others = 0;
+    if (item != nullptr) {
+        if (const auto found = m_otherVersions.find(item->game.value()); found != m_otherVersions.end()) {
+            others = found->second;
+        }
+    }
+    m_card.update(interaction, result, item, hero, others, product, m_context.frameIndex());
+}
+
 std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera, glm::ivec2 viewSize) {
     return m_interaction->labelFor(camera, viewSize);
 }
@@ -648,6 +686,7 @@ void WorldSession::dropCollection() {
     m_loader.reset();
     m_interaction->clear();
     m_collection.reset();
+    m_shown.reset();
     if (std::exchange(m_coverPhaseOpen, false)) {
         m_context.frameTiming().closePhase(kPhaseCoverLoad);
     }
@@ -658,6 +697,7 @@ void WorldSession::record(RunReport& report) const {
     world.state = m_state;
     world.hoverChanges = m_interaction->hoverChanges();
     m_interaction->record(world.interaction);
+    world.card = m_card.record();
     if (m_collection) {
         if (const world::PickId hovered = m_collection->hovered(); hovered != world::kNoPick) {
             world.hoveredPickId = fmt::format("{:08X}", hovered);

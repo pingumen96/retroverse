@@ -514,6 +514,10 @@ struct RetroverseApp::State {
         const scene::FirstPersonController& walker = freeRoam->controller();
         WorldHover::Frame frame;
         frame.actions = actions;
+        // The card's buttons (I3 step 14a): the arrows, ui_activate and the clicks on it press them.
+        if (product) {
+            frame.card = world->cardPress(actions, *product);
+        }
         frame.deltaSeconds = deltaSeconds;
         frame.walker = scene::WalkerPose{walker.feetPosition(), walker.yaw(), walker.pitch()};
         frame.back = backState();
@@ -1122,6 +1126,10 @@ void RetroverseApp::onEvent(AppContext& context, const SDL_Event& event) {
         return;
     }
 #endif
+    // The world's card takes the clicks on it while the mouse is free (I3 step 14a; keys and pads reach it as actions).
+    if (state.world && state.product && !state.input->mouseCaptured() && state.product->handleWorldCardEvent(event)) {
+        return;
+    }
     // Then the product UI while it has the input (the mouse, text, keys that are not UI commands), then the game. A
     // click the UI did not use never captures the mouse while the catalog is open.
     if (state.product && state.product->hasInput()) {
@@ -1202,6 +1210,8 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.product->setWorldLabel(inputContext == InputContext::World
                                          ? state.world->label(state.camera, context.window().drawableSize())
                                          : std::nullopt);
+        // The card beside the inspected item (I3 step 14a).
+        state.world->showCard(worldResult, *state.product);
     }
     if (state.product) {
         // Text an --input-script types on this frame, into the product UI's focused field (the catalog's search).

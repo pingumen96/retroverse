@@ -1,0 +1,196 @@
+/*
+	The world's game card (game_card.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI
+	neutral #171B22, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green #6EAF93). Sizes in dp. The document
+	is the card itself, on the right of the view beside the inspected item (style 16.3: never over it), so that a click
+	beside it reaches the room. Its height follows its content; the buttons stand in a 2 x 2 grid. No color animations:
+	RmlUi rebuilds the geometry of every animated frame.
+*/
+
+body {
+	position: absolute;
+	right: 4%;
+	top: 7%;
+	width: 31%;
+	max-height: 86%;
+	overflow: hidden;
+	box-sizing: border-box;
+	margin: 0dp;
+	padding: 22dp 26dp 16dp 26dp;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-radius: 18dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 22dp;
+	color: #F4EFE6;
+}
+
+div, p, h2 {
+	display: block;
+}
+
+/* Text never takes the focus: a click on it focuses nothing. */
+p, h2, span, div, img {
+	focus: none;
+}
+
+/* The cover at the front label's aspect (256 x 188, the hero texture's), framed while it loads. */
+.cover-frame {
+	width: 256dp;
+	height: 188dp;
+	margin-bottom: 14dp;
+	border-radius: 6dp;
+	background-color: #FFFFFF0F;
+}
+
+#game-card-cover {
+	width: 256dp;
+	height: 188dp;
+}
+
+h2 {
+	font-size: 30dp;
+	font-weight: bold;
+	line-height: 1.15em;
+}
+
+.subtitle {
+	font-size: 21dp;
+	color: #F4EFE6B3;
+	margin-top: 4dp;
+	margin-bottom: 12dp;
+}
+
+.note {
+	font-size: 19dp;
+	color: #F4EFE6A6;
+	margin-bottom: 10dp;
+}
+
+/* What keeps the game from starting, why (its first blocker's sentence), a game ready to start. */
+.state {
+	font-size: 21dp;
+	color: #FFC88A;
+	margin-bottom: 10dp;
+}
+
+.blocker {
+	font-size: 19dp;
+	line-height: 1.3em;
+	color: #F4EFE6E6;
+	margin-top: -4dp;
+	margin-bottom: 10dp;
+}
+
+.ready {
+	font-size: 20dp;
+	color: #A8E6B0;
+	margin-bottom: 10dp;
+}
+
+.rows {
+	border-top: 2dp #F4EFE61F;
+	padding-top: 10dp;
+	margin-bottom: 14dp;
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	font-size: 20dp;
+	padding: 2dp 0dp;
+}
+
+.key {
+	width: 42%;
+	color: #F4EFE6A6;
+}
+
+.value {
+	width: 58%;
+}
+
+/* The buttons: a 2 x 2 grid, each half the card's width. */
+.actions {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: space-between;
+}
+
+.action {
+	display: block;
+	box-sizing: border-box;
+	width: 48.5%;
+	padding: 9dp 10dp;
+	margin-bottom: 10dp;
+	font-size: 22dp;
+	text-align: center;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+	focus: auto;
+}
+
+.action.primary {
+	background-color: #6EAF9340;
+}
+
+.action:hover {
+	border-color: #F4EFE659;
+}
+
+.action:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.action.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+.hints {
+	text-align: center;
+	font-size: 17dp;
+	color: #F4EFE6B3;
+	margin-top: 2dp;
+}
+
+.hint {
+	margin: 0dp 8dp;
+}
+
+.pad {
+	display: inline-block;
+	width: 24dp;
+	height: 24dp;
+	line-height: 24dp;
+	border-radius: 12dp;
+	margin-right: 6dp;
+	text-align: center;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.pad-y { background-color: #FFC88A; }
+.pad-x { background-color: #4C8BC9; }
+.pad-b { background-color: #C8645A; }
+
+/* Small views (1280 x 720 at 125%): a smaller cover and denser text, so that the card stays whole. */
+@media (theme: compact) {
+	body { top: 4%; max-height: 92%; padding: 14dp 18dp 10dp 18dp; font-size: 19dp; }
+	.cover-frame, #game-card-cover { width: 160dp; height: 118dp; }
+	.cover-frame { margin-bottom: 8dp; }
+	h2 { font-size: 24dp; }
+	.subtitle { font-size: 18dp; margin-bottom: 8dp; }
+	.state, .note { font-size: 18dp; margin-bottom: 6dp; }
+	.blocker, .ready { font-size: 17dp; margin-bottom: 6dp; }
+	.rows { padding-top: 6dp; margin-bottom: 8dp; }
+	.row { font-size: 17dp; padding: 1dp 0dp; }
+	.action { font-size: 19dp; padding: 6dp 8dp; margin-bottom: 6dp; }
+	.hints { font-size: 15dp; }
+	.pad { width: 20dp; height: 20dp; line-height: 20dp; border-radius: 10dp; }
+}

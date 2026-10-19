@@ -64,6 +64,8 @@ public:
         float wheelNotches = 0.0f;
         /// Where Focus poses are framed from (the walker's floor and eye, the camera's lens, the view's aspect).
         FocusViewer viewer;
+        /// A button of the card pressed (I3 step 14a: WorldCard::press).
+        std::optional<CardAction> card;
     };
 
     WorldHover(AppContext& context, InteractionSettings settings);
@@ -103,6 +105,10 @@ public:
         return id != world::kNoPick && std::binary_search(m_hidden.begin(), m_hidden.end(), id);
     }
     [[nodiscard]] const WorldInteraction& interaction() const noexcept { return m_interaction; }
+    /// The room's item `id`, or null (no room, no such item).
+    [[nodiscard]] const world::CollectionItem* item(world::PickId id) const noexcept {
+        return m_room ? m_room->find(id) : nullptr;
+    }
     /// Changes of the hovered item since the start.
     [[nodiscard]] std::uint64_t hoverChanges() const noexcept { return m_record.hoverChanges; }
 
