@@ -101,6 +101,8 @@ public:
     /// unsignedInteger(), or nothing for null (the member must be there either way).
     [[nodiscard]] std::optional<std::uint64_t> nullableUnsignedInteger(std::string_view key) const;
     [[nodiscard]] std::string string(std::string_view key) const;
+    /// A JSON number (an integer or one with a fraction) within [minimum, maximum] (lighting profiles, I3 step 16).
+    [[nodiscard]] double number(std::string_view key, double minimum, double maximum) const;
     [[nodiscard]] bool boolean(std::string_view key) const;
     [[nodiscard]] std::optional<bool> optionalBoolean(std::string_view key) const;
     /// The member, which must be an array (an empty array is returned with the problem recorded).

@@ -18,6 +18,12 @@
 namespace rv::assets {
 namespace {
 
+/// dominantColour()'s colourful bins (I3 step 16): channel spread and brightest channel of the bin's centre, in sRGB
+/// steps, and the share of the region they must hold together to be preferred over a neutral fullest bin.
+constexpr int kMinDominantChroma = 48;
+constexpr int kMinDominantBrightness = 64;
+constexpr std::uint64_t kMinColourfulPermille = 150;
+
 bool isOpaqueRgba(const ImageData& image) noexcept {
     if (image.channels != 4) {
         return false;
@@ -216,7 +222,32 @@ Rgb8 dominantColour(const ImageData& image, int x, int y, int width, int height)
             ++counts[binOf(pixelAt(px, py))];
         }
     }
-    const auto fullest = static_cast<std::size_t>(std::distance(counts.begin(), std::max_element(counts.begin(), counts.end())));
+    // I3 step 16: a cover's fullest bin is often its frame (the black border of many 16-bit covers), which gave near
+    // black spines; the fullest colourful bin is taken instead when the colourful bins hold enough of the picture.
+    const auto isColourful = [](std::size_t bin) {
+        const int r = static_cast<int>((bin >> 8) & 0xF) * 16 + 8;
+        const int g = static_cast<int>((bin >> 4) & 0xF) * 16 + 8;
+        const int b = static_cast<int>(bin & 0xF) * 16 + 8;
+        const int high = std::max({r, g, b});
+        const int low = std::min({r, g, b});
+        return high - low >= kMinDominantChroma && high >= kMinDominantBrightness;
+    };
+    std::uint64_t colourfulPixels = 0;
+    std::size_t fullestColourful = kBins;
+    for (std::size_t bin = 0; bin < kBins; ++bin) {
+        if (counts[bin] == 0 || !isColourful(bin)) {
+            continue;
+        }
+        colourfulPixels += counts[bin];
+        if (fullestColourful == kBins || counts[bin] > counts[fullestColourful]) {
+            fullestColourful = bin;
+        }
+    }
+    const std::uint64_t regionPixels = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
+    const auto fullest =
+        fullestColourful != kBins && colourfulPixels * 1000 >= regionPixels * kMinColourfulPermille
+            ? fullestColourful
+            : static_cast<std::size_t>(std::distance(counts.begin(), std::max_element(counts.begin(), counts.end())));
     double sum[3] = {0.0, 0.0, 0.0};
     for (int py = y; py < y + height; ++py) {
         for (int px = x; px < x + width; ++px) {

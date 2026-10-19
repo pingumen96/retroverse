@@ -144,7 +144,8 @@ TEST_CASE("assets/manifest: every shipped prefab manifest parses and validates",
         CHECK(manifest->source.kind == "original");
         CHECK(manifest->source.author == "Retroverse contributors");
         CHECK(manifest->source.license == "MIT");
-        CHECK((manifest->source.acquiredAt == "2026-10-14" || manifest->source.acquiredAt == "2026-10-18"));
+        CHECK((manifest->source.acquiredAt == "2026-10-14" || manifest->source.acquiredAt == "2026-10-18" ||
+               manifest->source.acquiredAt == "2026-10-19"));
         CHECK(manifest->source.redistributionApproved);
         CHECK_FALSE(manifest->tags.empty());
         if (!manifest->fallbackPrefab.empty()) {
@@ -152,8 +153,9 @@ TEST_CASE("assets/manifest: every shipped prefab manifest parses and validates",
         }
     }
     // At least one manifest per procedural prefab kind; the shelf has three, the generic one and the collection's
-    // hero-wall and side-wall modules (I3 step 1b).
-    CHECK(count == kGeneratorKinds.size() + 2);
+    // hero-wall and side-wall modules (I3 step 1b); the floor lamp, the TV cabinet and the poster frame two each, the
+    // slim lamp, the narrow cabinet and the room's sign (I3 step 16).
+    CHECK(count == kGeneratorKinds.size() + 5);
     CHECK(generators == kGeneratorKinds);
     // Every kind the geometry builds is a manifest kind.
     const auto built = rv::geometry::prefabKinds();

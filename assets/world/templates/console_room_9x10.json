@@ -16,10 +16,14 @@
 //
 // Prefabs are named by manifest id and kind, never by a model path. The modules, the display fixtures and the shelf
 // dressing are I3 step 1b's prefabs; the hero corner reuses the test room's furniture.
+//
+// Version 2 (I3 step 16): the sign is a landscape panel of its own (decor.sign.room.generic, 1.6 x 0.4 m, the test
+// room's size), and the decoration is what fits the side-wall sockets (0.9 x 0.4 m): a poster, a slim floor lamp, a
+// narrow cabinet and a plant (version 1's floor lamp, 0.44 m deep, and sideboard, 0.5 m deep, fitted no socket).
 {
   "schemaVersion": 1,
   "id": "console_room_9x10",
-  "version": 1,
+  "version": 2,
   "room": {"widthMm": 9000, "depthMm": 10000, "heightMm": 3200, "wallThicknessMm": 150},
   "doorway": {"wall": "south", "offsetMm": 0, "widthMm": 1600, "heightMm": 2300, "clearWidthMm": 1600,
               "clearDepthMm": 1500},
@@ -44,8 +48,8 @@
        {"role": "crt", "prefab": {"manifest": "electronics.crt.consumer.generic", "kind": "crt"},
         "xMm": -180, "yMm": 550, "zMm": 280, "yawCdeg": 0},
        {"role": "console", "prefab": null, "xMm": 420, "yMm": 550, "zMm": 300, "yawCdeg": 35200},
-       {"role": "sign", "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
-        "xMm": 0, "yMm": 2450, "zMm": 0, "yawCdeg": 0},
+       {"role": "sign", "prefab": {"manifest": "decor.sign.room.generic", "kind": "poster_frame"},
+        "xMm": 0, "yMm": 2500, "zMm": 0, "yawCdeg": 0},
        {"role": "rug", "prefab": {"manifest": "decor.rug.generic", "kind": "rug"},
         "xMm": 0, "yMm": 0, "zMm": 1500, "yawCdeg": 0},
        {"role": "armchair", "prefab": {"manifest": "furniture.armchair.generic", "kind": "armchair"},
@@ -150,13 +154,17 @@
   "heroBand": ["hw-w", "hw-e"],
   // The featured titles fill the featured wall shelf beside the hero corner first, then the two display cases.
   "displayOrder": ["fs01", "dc01", "dc02"],
-  // What a socket the collection does not need may hold (ADR-0010 §3: the room never looks sparse).
+  // What a socket the collection does not need may hold (ADR-0010 §3: the room never looks sparse; style §6.1 and
+  // §13.4: varied rhythm and heights, a low cabinet, a poster, a lamp, a plant beside the tall modules), each at most
+  // 0.9 x 0.4 m so that it fits the side-wall sockets; a lamp only while the room's light limit allows its light.
   "decoration": [
     {"name": "poster", "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
      "mountHeightMm": 1550},
-    {"name": "floor-lamp", "prefab": {"manifest": "decor.lamp.floor.generic", "kind": "floor_lamp"},
+    {"name": "floor-lamp", "prefab": {"manifest": "decor.lamp.floor_slim.generic", "kind": "floor_lamp"},
      "mountHeightMm": 0},
-    {"name": "sideboard", "prefab": {"manifest": "furniture.tv_cabinet.generic", "kind": "tv_cabinet"},
+    {"name": "cabinet", "prefab": {"manifest": "furniture.tv_cabinet.narrow.generic", "kind": "tv_cabinet"},
+     "mountHeightMm": 0},
+    {"name": "plant", "prefab": {"manifest": "decor.plant.snake.generic", "kind": "plant"},
      "mountHeightMm": 0}
   ],
   // Shelf dressing on the levels no title needs (ADR-0010 §5), one prop per level from its prop seed.

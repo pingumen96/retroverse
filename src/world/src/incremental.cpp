@@ -594,7 +594,7 @@ private:
             }
             const std::size_t limit = std::min(m_template.lightLimit, kMaxSceneLights);
             const std::size_t left = limit - std::min(limit, m_plan.lights.size());
-            if (auto decoration = detail::decorationIn(*m_layoutInput, *socket, left)) {
+            if (auto decoration = detail::decorationIn(*m_layoutInput, *socket, left, m_plan.fixtures)) {
                 m_plan.fixtures.push_back(std::move(decoration->fixture.fixture));
                 if (decoration->light) {
                     m_plan.lights.push_back(*decoration->light);

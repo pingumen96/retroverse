@@ -377,6 +377,21 @@ Expected<ProceduralPrefab> rugFromJson(const Json& params) {
     return buildRug(p);
 }
 
+Expected<ProceduralPrefab> plantFromJson(const Json& params) {
+    PlantParams p;
+    ParamReader r("plant", params, {"height", "potRadius", "potHeight", "spread", "leaves", "seed"});
+    r.read("height", p.height);
+    r.read("potRadius", p.potRadius);
+    r.read("potHeight", p.potHeight);
+    r.read("spread", p.spread);
+    r.read("leaves", p.leaves);
+    r.read("seed", p.seed);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildPlant(p);
+}
+
 Expected<ProceduralPrefab> floorLampFromJson(const Json& params) {
     FloorLampParams p;
     ParamReader r("floor_lamp", params, {"height", "baseRadius", "shadeRadius", "shadeHeight"});
@@ -601,7 +616,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 15> kPrefabs{{
+constexpr std::array<PrefabEntry, 16> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -617,6 +632,7 @@ constexpr std::array<PrefabEntry, 15> kPrefabs{{
     {"storage_box", &storageBoxFromJson},
     {"magazine_stack", &magazineStackFromJson},
     {"bookends", &bookendsFromJson},
+    {"plant", &plantFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

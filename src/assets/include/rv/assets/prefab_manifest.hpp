@@ -79,10 +79,10 @@ inline constexpr std::string_view kPlaceholderHash = "sha256:TO_BE_GENERATED_BY_
 
 /// Procedural prefab kinds of the shared geometry contract (the kinds rv::geometry::buildPrefab builds), the only
 /// values accepted for runtime.generator.
-inline constexpr std::array<std::string_view, 15> kProceduralPrefabKinds = {
+inline constexpr std::array<std::string_view, 16> kProceduralPrefabKinds = {
     "room_shell", "shelf",      "cartridge", "crt",          "tv_cabinet", "console_cartridge", "poster_frame",
     "rug",        "floor_lamp", "armchair",  "display_case", "wall_shelf", "storage_box",       "magazine_stack",
-    "bookends"};
+    "bookends",   "plant"};
 
 /// Parses the structure of a manifest: JSON types, unknown keys (errors), required keys ("schemaVersion" = 1,
 /// "id", "assetType", "category", "source", "runtime"). Optional strings may be null. Semantic rules are checked by

@@ -96,6 +96,12 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
         return RoleMaterials{
             {"metal", "MAT_Metal_Graphite"}, {"book", "MAT_Fabric_Sofa"}, {"book_alt", "MAT_Plastic_Black"}};
     }
+    if (kind == "plant") {
+        return RoleMaterials{{"pot", "MAT_Ceramic_Glazed"},
+                             {"soil", "MAT_Soil"},
+                             {"leaves", "MAT_Plant_Leaf"},
+                             {"leaves_alt", "MAT_Plant_Leaf_Light"}};
+    }
     return {};
 }
 

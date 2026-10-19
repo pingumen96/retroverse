@@ -263,6 +263,12 @@ TEST_CASE("world/plan_scene: the dressing stands in its levels' free volumes; di
             }
             INFO(id);
             const rv::scene::SceneObject& object = objectOf(scene, id);
+            if (dressed.level.fixture().socket().rfind("dc", 0) == 0 && object.kind == "poster_frame") {
+                // A display case's level too thin for the prop: its riser card (I3 step 16).
+                CHECK_FALSE(object.castsShadows);
+                CHECK(rv::geometry::buildPrefab(object.kind, object.params).has_value());
+                continue;
+            }
             CHECK(object.kind == dressed.prop.kind);
             CHECK(object.castsShadows);
             auto built = rv::geometry::buildPrefab(object.kind, object.params);
@@ -288,22 +294,45 @@ TEST_CASE("world/plan_scene: the dressing stands in its levels' free volumes; di
             }
         }
     }
-    // The empty room dresses every level of the modules and the wall shelf, and leaves the display cases' bare.
+    // The empty room dresses every level of the modules and the wall shelf, and the display cases' levels, too thin for
+    // a prop, with riser cards (I3 step 16): no level stands bare.
     const rv::world::SceneBuild empty = sceneOf(planCase("plan-0-seed-102938"));
-    CHECK(empty.undressed.size() == 4);
+    CHECK(empty.undressed.empty());
+    std::size_t cards = 0;
+    for (const auto& object : empty.sceneFile["objects"]) {
+        if (object["id"].get<std::string>().rfind("dress:fx:dc0", 0) == 0) {
+            CHECK(object["prefab"] == "poster_frame");
+            CHECK(object["materials"]["picture"] == "MAT_Label_Print");
+            CHECK(object["textures"]["picture"]["pattern"] == "cover");
+            ++cards;
+        }
+    }
+    CHECK(cards == 4);
 }
 
 TEST_CASE("world/plan_scene: the lights with the lighting profile's colours and intensities",
           "[world][plan_scene]") {
-    const rv::world::LightingProfile& profile = rv::world::eveningLightingProfile();
+    // The shipped default profile (assets/world/lighting/evening.json), which the scene data reads.
+    const auto loaded = rv::world::loadLightingProfile(rv::test::world::sourceAssetRoot(), "evening");
+    REQUIRE(loaded.has_value());
+    const rv::world::LightingProfile& profile = *loaded;
+    REQUIRE_FALSE(profile.accents.empty());
     for (const std::string& name : {"plan-0-seed-102938", "plan-890-seed-102938", "plan-8000-seed-102938"}) {
         INFO(name);
         const PlanCase& entry = planCase(name);
         const rv::scene::SceneDescription scene = descriptionOf(entry);
-        REQUIRE(scene.lights.size() == entry.plan.lights.size());
-        CHECK(scene.lights.size() <= rv::world::kMaxSceneLights);
+        // The plan's lights, then the profile's accents while the scene's limit leaves room for them.
+        REQUIRE(scene.lights.size() >= entry.plan.lights.size());
+        CHECK(scene.lights.size() ==
+              std::min<std::size_t>(rv::world::kMaxSceneLights, entry.plan.lights.size() + profile.accents.size()));
+        for (std::size_t i = entry.plan.lights.size(); i < scene.lights.size(); ++i) {
+            const rv::world::AccentLight& accent = profile.accents[i - entry.plan.lights.size()];
+            CHECK(scene.lights[i].name == "accent:" + accent.name);
+            CHECK(scene.lights[i].color == *rv::core::hexToLinearRgb(accent.color));
+            CHECK_FALSE(scene.lights[i].castsShadows);
+        }
         std::size_t shadowed = 0;
-        for (std::size_t i = 0; i < scene.lights.size(); ++i) {
+        for (std::size_t i = 0; i < entry.plan.lights.size(); ++i) {
             const rv::world::PlanLight& planned = entry.plan.lights[i];
             const rv::scene::Light& light = scene.lights[i];
             INFO(planned.id.toString());
@@ -367,7 +396,7 @@ TEST_CASE("world/plan_scene: the scene file reads back as the scene description,
     CHECK(sign.texturesByRole.at("picture").pattern == "sign");
     CHECK(sign.texturesByRole.at("picture").title == entry.data.platform.signText);
     CHECK(loaded->findObject("fx:hero.crt")->texturesByRole.at("screen").pattern == "color_bars");
-    CHECK(loaded->findObject("fx:hero.crt")->materialNameForRole("screen") == "MAT_Screen_CRT");
+    CHECK(loaded->findObject("fx:hero.crt")->materialNameForRole("screen") == "MAT_Screen_CRT_Room");
 }
 
 TEST_CASE("world/plan_scene: the theme dresses every role of every prefab kind, the collection's item included",

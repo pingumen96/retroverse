@@ -34,7 +34,7 @@ Json slotSpecJson(const SlotSpec& spec) {
 }
 
 /// The canonical document of what the generator read (ADR-0010 §8's inputDigest; generation.hpp): the configuration as
-/// it shapes the room (reduceMotion only shows it), the world seed, the selection, the template by id and version (a
+/// it shapes the room (reduceMotion and lightingProfile only show it), the world seed, the selection, the template by id and version (a
 /// template whose sockets change is a new version), what the plan takes from the platform manifest and the media
 /// family, and every prefab as measured.
 /// `checkedSelection` false takes the selection's document without the reader's check (the update checks it itself).
@@ -45,6 +45,7 @@ Expected<std::string> inputDigest(const GenerationInput& input, const WorldData&
         return propagate(config.error());
     }
     config->erase("reduceMotion");
+    config->erase("lightingProfile");
     auto selection = checkedSelection ? roomSelectionToJson(input.selection)
                                       : Expected<Json>(detail::roomSelectionDocument(input.selection));
     if (!selection) {

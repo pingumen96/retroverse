@@ -25,7 +25,10 @@
 //   - every plan light: one point or spot light (lightKind()) named by its id within the room, the profile's colour,
 //     intensity and range for its role, a spot's cones from its span (outer = atan(span / 2 / distance) plus the
 //     role's margin, at least the role's minimum, inner = outer x the role's ratio, rounded to 0.01 degrees); the key
-//     alone casts shadows, with the profile's strength;
+//     alone casts shadows, with the profile's strength; then the profile's accent lights on the hero corner's parts
+//     while the scene's limit leaves room (I3 step 16);
+//   - an empty level of a display case (too thin for a dressing prop): a riser card leaning on it, an invented cover
+//     on a card the level's size (I3 step 16), so that no display level stands bare;
 //   - the profile's environment and a camera at the doorway, at eye height, looking north.
 // The collection's items are not scene objects: collection_layout.hpp places them (ADR-0011 §1).
 
@@ -47,60 +50,11 @@
 #include <rv/world/ids.hpp>
 #include <rv/world/media_family.hpp>
 #include <rv/world/platform_manifest.hpp>
+#include <rv/world/room_look.hpp>
 #include <rv/world/room_template.hpp>
 #include <rv/world/world_plan.hpp>
 
 namespace rv::world {
-
-/// How the room is lit when it is drawn (ADR-0010 §4, style §4.2, §8.1): the plan places the lights, the profile gives
-/// them colour, intensity, range and cones, so that switching profiles moves nothing (step 16 adds the second profile
-/// and reads it from world.json).
-struct LightStyle {
-    /// sRGB "#RRGGBB".
-    std::string color = "#FFE0C0";
-    double intensity = 1.0;
-    /// Meters, > 0.
-    double range = 5.0;
-    /// Spots only: the outer cone is the half angle the span subtends at the target plus `coneMarginDeg`, at least
-    /// `minOuterConeDeg`, at most kMaxOuterConeDeg; the inner one `innerConeRatio` of it.
-    double minOuterConeDeg = 30.0;
-    double coneMarginDeg = 4.0;
-    double innerConeRatio = 0.55;
-};
-
-/// The widest outer cone a profile gives a spot (the scene format takes less than 90 degrees).
-inline constexpr double kMaxOuterConeDeg = 80.0;
-
-struct LightingProfile {
-    std::string name;
-    LightStyle key;
-    LightStyle pendant;
-    LightStyle lamp;
-    LightStyle picture;
-    LightStyle wallWasher;
-    /// The key light's shadowStrength, [0, 1].
-    double keyShadowStrength = 1.0;
-    /// The scene's environment (scene_description.hpp's keys): colours as sRGB "#RRGGBB".
-    std::string clearColor = "#221E1A";
-    std::string ambientSky = "#E6E2DC";
-    std::string ambientGround = "#4A4642";
-    double ambientIntensity = 0.25;
-    double exposure = 1.5;
-    double bloomStrength = 0.18;
-    double bloomRadius = 0.5;
-    double vignette = 0.05;
-
-    [[nodiscard]] const LightStyle& style(LightRole role) const noexcept;
-};
-
-/// The evening profile (style §8.1's default): the test room's tungsten light, warm white ceiling spots and amber
-/// lamps, its environment and post-processing (assets/style_tests/reference_scenes/m0_testroom.json).
-[[nodiscard]] const LightingProfile& eveningLightingProfile();
-
-/// The theme's library materials per material role of a prefab kind (the theme pack classic_16bit_warm: the test
-/// room's materials; step 16 tunes them), the collection item's ("cartridge": plastic_shell, label, spine) included;
-/// empty for a kind the theme does not dress.
-[[nodiscard]] std::map<std::string, std::string> themeMaterials(std::string_view kind);
 
 /// A prefab the plan names, resolved as the room draws it.
 struct ScenePrefab {
@@ -137,22 +91,26 @@ struct ScenePrefabs {
                                                       std::span<const PrefabRef> refs);
 
 /// What drawing a room of a plan reads besides the plan: its template (wall thickness, doorway, the sockets' walls and
-/// order), the system's platform manifest (the sign's text), its media family (the item), the prefabs and the lighting
-/// profile.
+/// order), the system's platform manifest (the sign's text), its media family (the item), the prefabs, the lighting
+/// profile and the theme pack's materials (room_look.hpp).
 struct SceneData {
     RoomTemplate roomTemplate;
     PlatformManifest platform;
     MediaFamily mediaFamily;
     ScenePrefabs prefabs;
-    LightingProfile lighting;
+    LightingProfile lighting = eveningLightingProfile();
+    ThemeMaterials theme = builtInThemeMaterials();
 };
 
 /// Reads the scene data of `room` of `plan` from the asset root: the room's template (by its templateId), the
 /// platform manifest of its system, the room's media family, the families and every prefab scenePrefabRefs() names;
-/// the evening lighting profile. Errors: NotFound for a room the plan lacks; those of the readers; a template whose
-/// version is not the room's (ValidationFailed); a media family the registry lacks (NotFound).
+/// the platform's theme pack (builtInThemeMaterials(), logged, when it does not load); `lighting`, else the default
+/// lighting profile (kDefaultLightingProfile; the built-in one, logged, when it does not load). Errors: NotFound for a
+/// room the plan lacks; those of the readers; a template whose version is not the room's (ValidationFailed); a media
+/// family the registry lacks (NotFound).
 [[nodiscard]] Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan,
-                                                const RoomId& room);
+                                                const RoomId& room,
+                                                const std::optional<LightingProfile>& lighting = std::nullopt);
 
 /// A dressed span the scene leaves bare, and why.
 struct UndressedSpan {

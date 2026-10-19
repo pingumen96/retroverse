@@ -163,11 +163,11 @@ TEST_CASE("world/validation: rooms, templates and sizes", "[world][validation]")
         CHECK_THAT(findings[0].message, ContainsSubstring("'lounge_room_8x8' is not known"));
 
         plan = rv::test::validRoomPlan();
-        plan.rooms[0].templateVersion = 2;
+        plan.rooms[0].templateVersion = 3;
         findings = requireOnlyHard(validate(plan), rule::kRoomTemplate);
         REQUIRE(findings.size() == 1);
-        CHECK_THAT(findings[0].message, ContainsSubstring("version 2 of the template 'console_room_9x10', which is now "
-                                                          "version 1"));
+        CHECK_THAT(findings[0].message, ContainsSubstring("version 3 of the template 'console_room_9x10', which is now "
+                                                          "version 2"));
     }
     SECTION("room-size: bounds or height other than the template's, or more growth than it allows") {
         WorldPlan plan = rv::test::validRoomPlan();

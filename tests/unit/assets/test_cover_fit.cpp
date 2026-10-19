@@ -224,6 +224,39 @@ TEST_CASE("assets/cover_fit: the dominant colour is the most common one", "[asse
     CHECK(dominantColour(ImageData{}) == Rgb8{});
 }
 
+TEST_CASE("assets/cover_fit: a cover's black frame gives way to its colours (I3 step 16)", "[assets][cover_fit]") {
+    // 60% black frame, 25% red picture, 15% grey: the red is the spine's colour, not the frame.
+    ImageData image;
+    image.width = 100;
+    image.height = 100;
+    image.channels = 4;
+    image.pixels.assign(100 * 100 * 4, 0xFF);
+    for (int y = 0; y < 100; ++y) {
+        for (int x = 0; x < 100; ++x) {
+            std::uint8_t* pixel = image.pixels.data() + (static_cast<std::size_t>(y) * 100 + x) * 4;
+            const bool red = y >= 60 && y < 85;
+            const bool grey = y >= 85;
+            pixel[0] = red ? 0xC0 : grey ? 0x80 : 0x08;
+            pixel[1] = red ? 0x20 : grey ? 0x80 : 0x08;
+            pixel[2] = red ? 0x28 : grey ? 0x80 : 0x08;
+        }
+    }
+    const Rgb8 dominant = dominantColour(image);
+    CHECK(dominant.r == 0xC0);
+    CHECK(dominant.g == 0x20);
+    CHECK(dominant.b == 0x28);
+    // Under 15% of colour the frame stays: a black cover with a small red title gives a black spine.
+    for (int y = 60; y < 80; ++y) {
+        for (int x = 0; x < 100; ++x) {
+            std::uint8_t* pixel = image.pixels.data() + (static_cast<std::size_t>(y) * 100 + x) * 4;
+            pixel[0] = pixel[1] = pixel[2] = 0x08;
+        }
+    }
+    const Rgb8 frame = dominantColour(image);
+    CHECK(frame.r == 0x08);
+    CHECK(frame.b == 0x08);
+}
+
 TEST_CASE("assets/cover_fit: every failure falls back to the generated label", "[assets][cover_fit]") {
     const auto& fonts = rv::test::covers::bundledFonts();
     const LabelFonts labelFonts{&fonts.title, &fonts.detail};

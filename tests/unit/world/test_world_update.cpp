@@ -870,7 +870,7 @@ TEST_CASE("world/update: another seed, preset, template or generator major needs
     input.config.preset = std::string(rv::world::kDefaultPreset);
 
     rv::world::WorldData otherTemplate = snesData();
-    otherTemplate.roomTemplate.version = 2;
+    otherTemplate.roomTemplate.version += 1;
     refused(*rv::world::update(input, otherTemplate), "template");
 
     input.previous.generatorVersion = {0, 9};

@@ -211,7 +211,7 @@ TEST_CASE("cli/worldplan update: plans it refuses and where it reads and writes"
     CHECK(handEdited.code == ExitCode::ProblemsFound);
     CHECK(contains(handEdited.err, "the plan is refused"));
     std::string newerText = before;
-    newerText.replace(newerText.find("\"generatorVersion\":\"1.0\""), 24, "\"generatorVersion\":\"1.9\"");
+    newerText.replace(newerText.find("\"generatorVersion\":\"1.1\""), 24, "\"generatorVersion\":\"1.9\"");
     const std::filesystem::path newer = session.dir.file("newer.json");
     REQUIRE(rv::core::writeTextFileAtomic(newer, newerText).has_value());
     const RunResult newerRun = session.update(session.moreFile, {"--previous", rv::core::pathToUtf8(newer)});

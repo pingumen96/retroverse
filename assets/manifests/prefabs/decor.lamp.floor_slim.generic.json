@@ -1,0 +1,34 @@
+// A slim floor lamp (I3 step 16): the floor lamp with a narrower base and shade, 0.34 m across, so that it
+// stands in a side-wall socket (0.9 x 0.4 m); its bulb is a plan light (LightSource).
+{
+  "schemaVersion": 1,
+  "id": "decor.lamp.floor_slim.generic",
+  "assetType": "decor",
+  "category": "floor_lamp",
+  "role": "light",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-19",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "floor_lamp",
+    "params": {"height": 1.5, "baseRadius": 0.13, "shadeRadius": 0.17, "shadeHeight": 0.26},
+    "scaleMeters": [0.34, 1.5, 0.34],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "light": "LightSource"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "lighting", "lamp", "tungsten", "procedural"],
+  "fallbackPrefab": "decor.lamp.floor.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

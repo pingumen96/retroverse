@@ -114,7 +114,7 @@ TEST_CASE("cli/worldplan check: a valid plan passes, its soft findings and Layou
     INFO(text.out << text.err);
     CHECK(text.code == ExitCode::Ok);
     CHECK_THAT(text.out, StartsWith("Plan: " + plan + "\nDigest: "));
-    CHECK_THAT(text.out, ContainsSubstring("Room room:snes: template console_room_9x10 version 1, 9000 x 10000 mm, 0 "
+    CHECK_THAT(text.out, ContainsSubstring("Room room:snes: template console_room_9x10 version 2, 9000 x 10000 mm, 0 "
                                            "growth steps, 28 fixtures\n"));
     CHECK_THAT(text.out, ContainsSubstring("Placements: 30, dressed spans: 2, unplaced: 2\n"));
     CHECK_THAT(text.out, ContainsSubstring("Selection: none (games missing from the plan are not checked)\n"));

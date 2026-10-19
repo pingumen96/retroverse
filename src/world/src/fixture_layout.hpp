@@ -78,9 +78,11 @@ struct PlacedDecoration {
     std::optional<PlanLight> light;
 };
 /// The decoration layOutRoom() puts in `socket`: one of the template's choices that fits it, drawn from the socket's
-/// prop seed, a lamp only while `lightsLeft` is not 0; nothing when no choice fits.
+/// prop seed, a lamp only while `lightsLeft` is not 0, neither the prefab of a decoration of `placed` standing beside it
+/// on its wall (within 1.2 m) nor a lamp within 2.2 m of another lamp there while another choice fits (I3 step 16);
+/// nothing when no choice fits.
 [[nodiscard]] std::optional<PlacedDecoration> decorationIn(const LayoutInput& input, const TemplateSocket& socket,
-                                                           std::size_t lightsLeft);
+                                                           std::size_t lightsLeft, std::span<const Fixture> placed);
 
 /// A collection module for the wall-washers: its socket and its fixture's depth.
 struct ModuleOnWall {
