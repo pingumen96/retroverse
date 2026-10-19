@@ -117,6 +117,9 @@ double HeroTextures::update(bool paused, std::span<const std::string> pinned) {
         return 0.0;
     }
     m_loading.erase(next->game);
+    if (m_discarded.erase(next->game) > 0) {
+        return 0.0; // forgotten while it loaded (its cover changed: I3 step 15b); asked again when needed
+    }
     if (!next->picture) {
         // The error names the cover's file, one of the user's: at debug level only.
         spdlog::debug("Hero texture of {} not made: {}", next->game, next->error ? next->error->toString() : "?");
@@ -154,6 +157,16 @@ double HeroTextures::update(bool paused, std::span<const std::string> pinned) {
     spdlog::debug("Hero texture of {}: {}x{} in {:.2f} ms ({} held)", next->game, next->picture->width,
                   next->picture->height, milliseconds, m_textures.size());
     return milliseconds;
+}
+
+void HeroTextures::forget(const catalog::GameId& game) {
+    const std::string key = game.toString();
+    m_textures.erase(key);
+    m_lru.erase(key);
+    m_failed.erase(key);
+    if (m_loading.contains(key)) {
+        m_discarded.insert(key);
+    }
 }
 
 const gl::Texture2D* HeroTextures::find(const catalog::GameId& game) const {

@@ -39,19 +39,55 @@ namespace rv::app {
 
 class SceneGraphics;
 
+/// What CollectionInstance::applyLayout did (I3 step 15b).
+struct CollectionUpdate {
+    /// Items whose layers were released (their games gone from the room).
+    std::size_t released = 0;
+    /// The arrays grew (a GPU copy), and an array was added (with its layered material).
+    bool grown = false;
+    bool arraysAdded = false;
+};
+
+/// A collection's arrays taken over by the next collection of the same room (I3 step 15b: the room committed again
+/// over the one shown keeps the pictures its items hold), with the family they were made for and the layer keys of the
+/// items that held them.
+struct CollectionPictures {
+    gl::CollectionArrays arrays;
+    std::string family;
+    std::vector<std::string> frontKeys;
+    std::vector<std::string> spineKeys;
+};
+
 class CollectionInstance {
 public:
     /// Registers the family's meshes and the collection's materials in `graphics`' registries (after the scene's: the
     /// materials are uploaded again), creates the arrays of `graphics`' format for the room's placements (rounded up to
     /// 64 layers), acquires every item's layers and uploads the group's records. Errors: the item prefab is missing
     /// or has no shell, a mesh or the arrays cannot be created, the group cannot be built.
-    [[nodiscard]] static Expected<std::unique_ptr<CollectionInstance>> create(const world::CollectionLayout& layout,
-                                                                              const world::SceneData& data,
-                                                                              SceneGraphics& graphics,
-                                                                              int uniformBufferOffsetAlignment);
+    ///
+    /// `pictures` (I3 step 15b): the arrays of the collection this one replaces, used instead of new ones when they are
+    /// of the same family and format: the layers of the games gone released, the arrays grown to the room, every item
+    /// that stood showing its picture from the first frame.
+    [[nodiscard]] static Expected<std::unique_ptr<CollectionInstance>>
+    create(const world::CollectionLayout& layout, const world::SceneData& data, SceneGraphics& graphics,
+           int uniformBufferOffsetAlignment, std::optional<CollectionPictures> pictures = std::nullopt);
+    /// Gives up its arrays to the collection that replaces it (CollectionInstance::create's `pictures`); this one is
+    /// only to be destroyed then.
+    [[nodiscard]] CollectionPictures takePictures();
     ~CollectionInstance();
     CollectionInstance(const CollectionInstance&) = delete;
     CollectionInstance& operator=(const CollectionInstance&) = delete;
+
+    /// The live update (I3 step 15b, world_live_plan.hpp's Items): `layout` (another collection of the same room, its
+    /// static part unchanged, the same media family) applied in place. The items of the games that stood keep their
+    /// layers and the pictures in them; the new ones acquire layers (the arrays grown by a GPU copy past their
+    /// headroom, an array added with its layered material), the gone ones release theirs; the static group is made
+    /// again from the layout's records (flags as the layout has them, the hovered item still highlighted when it
+    /// stands). The meshes and materials stay. Call it at a frame boundary. Errors: another family (nothing changed),
+    /// those of the arrays' growth and of the group's build (the collection may then be partly updated: commit the
+    /// room again).
+    [[nodiscard]] Expected<CollectionUpdate> applyLayout(const world::CollectionLayout& layout, SceneGraphics& graphics,
+                                                         int uniformBufferOffsetAlignment);
 
     /// The view's static groups (RenderView::staticGroups).
     [[nodiscard]] std::span<const gl::StaticInstanceGroup* const> groups() const noexcept { return m_groupList; }
@@ -124,6 +160,12 @@ private:
         bool heroFront = false;
     };
 
+    /// One layered material per array and class not yet given one.
+    void addLayeredMaterials(SceneGraphics& graphics);
+    /// The items of `layout`: their layers acquired, their records built (resident layers named; the hover's
+    /// highlight and the pulled-out and hero-front hidden reasons of the items that stand carried over by pick id) and
+    /// the group made.
+    [[nodiscard]] Status setItems(const world::CollectionLayout& layout, SceneGraphics& graphics);
     [[nodiscard]] Status writeFlag(std::size_t item, std::uint32_t flag, bool on);
     /// Writes the hidden flag of the item's records from its `pulled` and `heroFront`.
     [[nodiscard]] Status writeHidden(std::size_t item);
@@ -140,6 +182,13 @@ private:
     std::map<world::PickId, std::size_t> m_byPick;
     world::PickId m_hovered = world::kNoPick;
     std::optional<scene::MeshHandle> m_frontMesh;
+    /// The media family, its part meshes (shell, front, spine), the shell's material, the label and spine materials'
+    /// names and one layered material per array and class (kept for the live update's new items and arrays).
+    std::string m_family;
+    std::array<std::optional<scene::MeshHandle>, 3> m_partMeshes{};
+    scene::MaterialHandle m_shellMaterial;
+    std::array<std::string, gl::kCollectionClassCount> m_labelMaterials;
+    std::array<std::vector<scene::MaterialHandle>, gl::kCollectionClassCount> m_layered;
     /// The hero front's material and its own base colour texture (overridden by the hero texture shown).
     gl::Texture2D m_heroBase;
     scene::MaterialHandle m_heroMaterial;

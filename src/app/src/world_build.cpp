@@ -14,6 +14,7 @@
 #include <rv/app/room_screen.hpp>
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog/metadata.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/world/incremental.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/room_input.hpp>
@@ -96,6 +97,7 @@ Status buildScene(const WorldPaths& paths, WorldBuild& build, std::span<const wo
     if (!description) {
         return propagate(description.error());
     }
+    build.sceneDigest = core::sha256Hex(world::sceneFileText(sceneBuild->sceneFile));
     build.undressed = std::move(sceneBuild->undressed);
     for (const world::UndressedSpan& span : build.undressed) {
         spdlog::info("World scene: {} slot(s) of {} from slot {} left bare: {}", span.count, span.level.toString(),
@@ -621,7 +623,7 @@ void WorldFlow::update(AppCatalog& catalog) {
             spdlog::warn("World: the stored plan cannot be read: {}", stored->error->toString());
         }
         m_stored = std::move(stored);
-        if (m_stored->stored) {
+        if (m_stored->stored && m_options.preview) {
             // I3 step 10c: the stored plan's room first; the snapshot once it has been taken.
             const std::uint64_t generation = m_generation.current();
             core::JobOptions jobOptions;

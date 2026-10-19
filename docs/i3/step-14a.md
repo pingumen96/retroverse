@@ -31,7 +31,8 @@ media and Informazioni are recorded and open nothing yet (14b).
 
 - `src/app/src/world_hover.hpp`, `.cpp`: `Frame::card` and its one line into `InteractionFrame`; `item(PickId)` (inline).
 - `src/app/src/world_session.hpp`, `.cpp`: members `m_card` (`WorldCard`) and `m_otherVersions`; `cardPress()`,
-  `showCard()`; in `showRoom()` two lines (`m_card.bind()`, `m_otherVersions = otherVersionCounts(plan)`); in `record()`
+  `showCard()`; in `showRoom()` one line (`m_card.bind()`), in 15b's `keepShown()` (`world_live_update.cpp`) one line
+  (`m_otherVersions = otherVersionCounts(plan)`, so a live update's plan counts too); in `record()`
   one line (`world.card`).
 - `src/app/src/retroverse_app.cpp`: `interactWorld()` sets `frame.card = world->cardPress(...)`; `onUpdate` calls
   `world->showCard(worldResult, *product)` after the label; `onEvent` gives the card the mouse events while the mouse is

@@ -88,9 +88,10 @@ public:
     /// Blocks until a job posts a result, at most `timeout` (a lockstep wait within a frame).
     void waitForResults(std::chrono::milliseconds timeout) const;
 
-    /// Takes over what `previous` (a loader of the same collection, now replaced) showed: each item of the same game
-    /// that it had made is served again as a retry is, its pictures uploaded only when they changed (I3 step 10c's
-    /// textures reconciliation serves the stored room's covers again with the media root).
+    /// Takes over what `previous` (a loader of the same collection, or of the collection before a live update, now
+    /// replaced) showed: each item of a game that it had made is served again as a retry is, its pictures uploaded
+    /// only when they changed (I3 step 10c's textures reconciliation serves the stored room's covers again with the
+    /// media root; step 15b's live update the room's items that stood, matched by game).
     void adoptShown(const CoverLoader& previous);
     /// Checks `mediaRoot` on a worker and, when it can be read, serves again every item whose front did not come from
     /// its cover (after the catalog's refresh: ADR-0011 §6). Nothing while a check is on its way.

@@ -22,6 +22,12 @@
 // The covers (I3 step 12) come in the cover loader's order (the hero item, the view by projected size, the rest by
 // distance), the hero item's front shows its hero texture (drawn by the dynamic path), nothing is made or uploaded while
 // a launched game runs, and a refresh of the catalog lets the loader try the media root again.
+//
+// The live update (I3 step 15b, world_live_update.cpp): after a refresh of the catalog the room's job runs again (the
+// snapshot, world::update, the plan saved) while the room shows, and its result is applied at a frame boundary with as
+// little rebuilt as it needs (world_live_plan.hpp): nothing, the covers served again, the collection's items applied in
+// place (titles placed into their slots, the items that stood unmoved with their pictures, the scene and the walker
+// untouched), or the room committed again with the walker kept. Never while a launched game runs.
 
 #include <chrono>
 #include <cstdint>
@@ -38,6 +44,7 @@
 #include <rv/app/run_report.hpp>
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/app/world_live_plan.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/worker_pool.hpp>
@@ -182,6 +189,19 @@ private:
     /// Shows `notice` from the next showNotice() on: for world_notice::kShownSeconds of the run's time (`timed`), or
     /// until another replaces it.
     void setNotice(WorldNoticeContent notice, bool timed);
+    /// I3 step 15b, the live update (world_live_update.cpp): a refresh ended (the room's job runs again once nothing
+    /// else does), the job started, its result applied; what the room shows kept for the next comparison; the
+    /// collection's items applied in place (false: not applicable, commit the room again); the hero's front given back
+    /// to the static path before the loader is replaced.
+    void requestLiveUpdate();
+    void startLiveFlow(ProductUi& product);
+    void applyLive(WorldResult result);
+    void keepShown(const WorldBuild& build);
+    [[nodiscard]] bool applyItems(WorldBuild& build, const LiveUpdatePlan& plan, WorldLiveUpdateRecord& record);
+    void releaseHero();
+    /// The interaction (I3 step 13a) lets go of the room's items before they are applied in place: hover, Focus and
+    /// pull-out reset, every pulled-out item's records shown in its slot again.
+    void releaseInteraction();
     void showNotice(ProductUi& product, double timeSeconds);
     [[nodiscard]] std::optional<double> sinceProcessStart(std::chrono::system_clock::time_point at) const;
 
@@ -237,6 +257,17 @@ private:
     /// snapshot's result reconciles it; whether no frame has shown it yet (the result waits for one).
     std::optional<WorldBuild> m_shownPreview;
     bool m_previewAwaitingFrame = false;
+    /// I3 step 15b: what the room shown is (none without a room), a live update asked for (a refresh ended) and when,
+    /// and whether m_flow is a live update's.
+    std::optional<ShownRoom> m_shown;
+    bool m_liveRequested = false;
+    std::uint64_t m_liveRequestFrame = 0;
+    std::optional<Clock::time_point> m_liveRequestedAt;
+    bool m_liveFlow = false;
 };
+
+/// The placements per section and the unplaced games per reason of `build`'s plan and layout, into `record`
+/// (world_session.cpp; I3 step 15b's live update counts them again).
+void countPlan(const WorldBuild& build, WorldRecord& record);
 
 } // namespace rv::app
