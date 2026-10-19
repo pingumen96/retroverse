@@ -8,8 +8,8 @@
 //   frame 94   ui_activate: Informazioni pressed        frame 100  ui_up: Avvia focused
 //   frame 106  ui_media: Vedi media (the pad's Y)       frame 112  ui_info: Informazioni (the pad's X)
 //   frame 118  confirm: Avvia (the pad's Start)         frame 130  ui_activate: Avvia pressed on the card
-//              (launching from the room is I3 step 15a's: until then Avvia ends at once as if the game had returned,
-//              and Inspect of the same item comes back with the card, Avvia focused)
+//              (I3 step 15a: each launches the game, decided on the next frame; Inspect of the same item comes back
+//              the frame after, with the card on Avvia)
 //   frame 150  ui_right: Vedi media focused             frame 156  ui_down: Indietro focused
 //   frame 170  ui_activate: Indietro pressed: Focus of the same item, the card gone
 //   frame 200  interact: Inspect again, the card again on Avvia

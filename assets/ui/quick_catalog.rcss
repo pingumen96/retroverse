@@ -460,6 +460,18 @@ h2 {
 	background-color: #6EAF9340;
 }
 
+/* "Mostra nella stanza" (I3 step 15a) on a row of its own below the other actions, and why a game is not in the room. */
+.room-row {
+	display: block;
+}
+
+.room-reason {
+	flex: 0 0 auto;
+	font-size: 20dp;
+	color: #F4EFE6B3;
+	margin-top: 4dp;
+}
+
 /* The last button has no margin to its right: it would count against the row and wrap a button that fits. */
 #act-info {
 	margin-right: 0dp;
@@ -573,6 +585,7 @@ body.high-contrast .fade-after {
 	.row { font-size: 19dp; padding: 1dp 0dp; }
 	.action { font-size: 20dp; padding: 7dp 14dp; margin-right: 8dp; margin-bottom: 8dp; }
 	.status { font-size: 18dp; margin-top: 2dp; }
+	.room-reason { font-size: 17dp; margin-top: 2dp; }
 	.action.refresh { font-size: 17dp; padding: 3dp 10dp; }
 	.refresh-status { font-size: 17dp; }
 	#library-bar { margin-bottom: 10dp; }

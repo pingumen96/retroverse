@@ -7,7 +7,9 @@
 // catalog's title, platform, year and readiness of the inspected game; its buttons are reached with the arrows and the
 // D-pad and pressed with ui_activate (Enter, A), Vedi media and Informazioni also with their pad buttons, Avvia with
 // the pad's Start; Indietro and Back close it; its cover holds the game's hero texture (the fixture's cover fitted as
-// the hero picture, compared pixel by pixel); its content is never cut. Helpers repeat test_world_focus.cpp's (see
+// the hero picture, compared pixel by pixel); its content is never cut. Avvia launches the game (I3 step 15a): the
+// fixture's snes games run the fake emulator of this build through the "fake-return" profile (as test_world_launch.cpp
+// assigns it), and Inspect of the same item comes back after the return. Helpers repeat test_world_focus.cpp's (see
 // docs/i3/step-14a.md, "For the merge").
 
 #include <catch2/catch_test_macros.hpp>
@@ -22,6 +24,7 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 #include <rv/app/cover_requests.hpp>
 #include <rv/app/run_report.hpp>
@@ -64,6 +67,17 @@ struct ImportedRoom {
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
+        // Avvia launches the fake emulator of this build (I3 step 15a), never the fixture's own copy.
+        const nlohmann::json profile{
+            {"id", "fake-return"},
+            {"executable", arg(fakeEmulatorExe())},
+            {"arguments", {"--sleep-ms", "2500", "--exit-timeout-ms", "30000", "--", "{rom}"}},
+            {"windowTimeoutSeconds", 0},
+            {"hideConsoleWindow", true},
+            {"systems", {{"snes", nlohmann::json::object()}}}};
+        const nlohmann::json document{{"schemaVersion", 1}, {"profiles", nlohmann::json::array({profile})}};
+        REQUIRE(rv::core::writeTextFileAtomic(data / "config" / "emulators.json", document.dump(2) + "\n").has_value());
+        cli("assign", {"assign", "snes", "--profile", "fake-return"});
     }
 
     void cli(std::string_view name, std::vector<std::string> arguments) const {
@@ -247,6 +261,7 @@ PictureMatch comparePicture(const rv::assets::ImageData& shot, const std::vector
 TEST_CASE("world card: the inspected item's card shows its game, its buttons reached and pressed by pad and keyboard, "
           "Indietro and Back close it",
           "[gpu][world][world_card]") {
+    ensureLaunchAllowList();
     ImportedRoom room("buttons");
     const AppRun first = runApp(retroverseExe(), room.dir, "first", roomArguments(2, room.dir / "first.png"));
     skipWithoutOpenGl(first);
@@ -296,10 +311,10 @@ TEST_CASE("world card: the inspected item's card shows its game, its buttons rea
     const AppRun run = runApp(retroverseExe(), room.dir, "all", roomArguments(260, endShot, script));
     const rv::app::CardRecord& card = requireCard(run);
     INFO(run.describe());
-    // Shown on entering Inspect (frame 40), hidden while Avvia "ran" and shown again, hidden at Indietro (170), shown
-    // at the second Inspect (200), hidden at Back (230).
-    // Avvia (frames 118 and 130) ends at once until I3 step 15a: the card hides for that frame and shows again.
-    CHECK(framesOf(card, "shown") == std::vector<std::uint64_t>{40, 119, 131, 200});
+    // Shown on entering Inspect (frame 40), hidden while Avvia's launch runs and shown again after its return (I3 step
+    // 15a: the decision the next frame, the game while the host waits, Inspect again the frame after), hidden at
+    // Indietro (170), shown at the second Inspect (200), hidden at Back (230).
+    CHECK(framesOf(card, "shown") == std::vector<std::uint64_t>{40, 120, 132, 200});
     CHECK(framesOf(card, "hidden") == std::vector<std::uint64_t>{118, 130, 170, 230});
     // The focus moved by the arrows and the D-pad within the grid (Avvia, Vedi media / Informazioni, Indietro); a
     // card shown again starts on Avvia.
@@ -316,7 +331,9 @@ TEST_CASE("world card: the inspected item's card shows its game, its buttons rea
     CHECK(framesOf(card, "info") == std::vector<std::uint64_t>{94, 112});
     CHECK(framesOf(card, "launch") == std::vector<std::uint64_t>{118, 130});
     // The interaction's states: Inspect at 40, Focus at Indietro (170), Inspect at 200, Focus at Back (230), Avvia's
-    // round trips between.
+    // round trips between (two launches, both returned).
+    CHECK(run.report->launches.size() == 2);
+    CHECK(run.report->world.launch.returned == 2);
     std::vector<std::uint64_t> focusStates;
     for (const rv::app::InteractionEventRecord& event : run.report->world.interaction.events) {
         if (event.event == "state" && event.state == "focus") {

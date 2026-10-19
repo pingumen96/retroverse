@@ -1,0 +1,13 @@
+// I3 step 15a: the quick catalog's card of a game the room does not show. As world_show_in_room.json up to frame 20,
+// with "thistle" typed (Thistle Trellis, which has no cover: the plan leaves it out as no-cover): the card says
+// "Non esposto: senza copertina" and offers no "Mostra nella stanza", so ui_down on frame 20 finds no button below
+// Avvia. Nothing is pressed. tests/smoke/test_world_launch.cpp runs it with --frames 30 and a screenshot.
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 5, "toFrame": 5, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_up": 1}},
+  {"fromFrame": 11, "toFrame": 11, "text": "thistle"},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_activate": 1}},
+  {"fromFrame": 17, "toFrame": 17, "actions": {"ui_right": 1}},
+  {"fromFrame": 20, "toFrame": 20, "actions": {"ui_down": 1}}
+]

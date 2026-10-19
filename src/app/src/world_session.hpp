@@ -57,6 +57,7 @@
 
 #include "world_card.hpp"
 #include "world_hover.hpp"
+#include "world_launch.hpp"
 #include "world_notice_panel.hpp"
 
 namespace rv::app {
@@ -130,6 +131,12 @@ public:
     /// texture as its cover and the interaction's `result` recorded.
     [[nodiscard]] std::optional<CardAction> cardPress(const input::ActionState* actions, ProductUi& product);
     void showCard(const InteractionResult& result, ProductUi& product);
+    /// Launching from the world and "Mostra nella stanza" (I3 step 15a, world_launch.hpp): before interact(), the quick
+    /// catalog's room placement, a "Mostra nella stanza" taken to its item and a launch's end given to the
+    /// interaction (`walker`: the walker as the frame starts); after it, Avvia asked of the product UI and the restore
+    /// recorded (`walker`: where the frame leaves the walker).
+    void beforeInteraction(ProductUi& product, const scene::WalkerPose& walker);
+    void afterInteraction(const InteractionResult& result, ProductUi& product, const scene::WalkerPose& walker);
     /// The hover's title label as `camera` shows it in a view of `viewSize` pixels (WorldHover::labelFor).
     [[nodiscard]] std::optional<WorldLabelContent> label(const scene::Camera& camera, glm::ivec2 viewSize);
     /// A frame was rendered (the lockstep wait starts again).
@@ -219,6 +226,8 @@ private:
     /// The card beside the inspected item, and the plan's other versions of each placed title (I3 step 14a).
     WorldCard m_card;
     std::map<std::uint64_t, std::uint32_t> m_otherVersions;
+    /// Launching from the world and "Mostra nella stanza" (I3 step 15a).
+    WorldLaunch m_launch;
     /// The view's items when the dynamic path draws more than the scene's (viewItems()).
     std::vector<scene::RenderItem> m_viewItems;
     std::unique_ptr<HeroTextures> m_heroes;

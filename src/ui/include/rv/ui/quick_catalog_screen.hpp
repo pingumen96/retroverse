@@ -33,6 +33,9 @@ struct QuickCatalogEvents {
     std::function<void(const FocusTarget&)> focusChanged;
     /// "Aggiorna libreria": the button (I3 step 13r). The application refreshes the catalog from ES-DE.
     std::function<void()> refresh;
+    /// "Mostra nella stanza": the button, shown for a game the room places (I3 step 15a, setRoomPlacement()). The
+    /// application closes the catalog and takes the walker to the game's item.
+    std::function<void(const CatalogEntry&)> showInRoom;
 };
 
 /// What the quick catalog shows of the catalog's refresh (I3 step 13r): whether it offers "Aggiorna libreria", and the
@@ -127,6 +130,11 @@ public:
     [[nodiscard]] std::optional<FocusTarget> focus() const;
     /// Focuses the element `id` of the document (scrolled into view); false when there is none.
     bool focusElement(std::string_view id);
+    /// Where a game stands in the room, for the card (I3 step 15a, quick_catalog_room.hpp): "" while no room shows (no
+    /// button, no sentence), quick_catalog::kRoomPlaced (the "Mostra nella stanza" button), or why the room does not
+    /// show it (a sentence of the document). Asked whenever the card fills; the card shown fills again at once (call it
+    /// again when the room changed). Unset: no room.
+    void setRoomPlacement(std::function<std::string(const CatalogEntry&)> placement);
     /// The line under the card's actions ("Avvio di ..."), until another game is selected; empty hides it.
     void setStatus(std::string_view text);
     /// What the list says about the catalog itself while it shows no game of it (quick_catalog::kNotice*: the catalog

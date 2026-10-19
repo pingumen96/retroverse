@@ -9,6 +9,8 @@
 
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/command_line.hpp>
+#include <rv/app/launch_outcome.hpp>
+#include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
@@ -102,6 +104,20 @@ public:
 
     /// The application's hooks around launches (replacing any set before).
     void setLaunchHooks(LaunchHooks hooks);
+    /// Avvia on an item of the room (I3 step 15a, ADR-0012 §6): `game` launched as the quick catalog's Avvia launches a
+    /// game (AppCatalog::requestLaunch: the ES-DE catalog resolves it on its worker right before the launch; then the
+    /// LaunchFlow, its play session, the launch hooks). False, and nothing asked, while another launch is being decided,
+    /// waits or runs.
+    bool launchWorldGame(const catalog::GameId& game, std::string_view title);
+    /// How the room's launch asked by launchWorldGame() ended, once: its outcome as the game-session panel tells it
+    /// (launch_outcome::kReturned after a normal return; a refusal's or a failure's message otherwise).
+    [[nodiscard]] std::optional<LaunchMessage> takeWorldLaunchEnded();
+    /// Where a game (its catalog id) stands in the room, for the quick catalog's card (I3 step 15a, ADR-0012 §8:
+    /// ui::QuickCatalogScreen::setRoomPlacement's keys); the card shown fills again. Unset: no room.
+    void setRoomPlacement(std::function<std::string(std::string_view gameId)> placement);
+    /// The game (its catalog id) whose "Mostra nella stanza" was pressed since the last call; the catalog closes at
+    /// the end of that frame.
+    [[nodiscard]] std::optional<std::string> takeShowInRoom();
     /// The game selected in the quick catalog while it is open (its catalog id); nothing while it is closed or empty.
     [[nodiscard]] std::optional<std::string> selectedGameId() const;
 

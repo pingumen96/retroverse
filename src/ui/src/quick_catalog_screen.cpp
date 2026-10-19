@@ -33,6 +33,7 @@
 #include <rv/core/text.hpp>
 #include <rv/ui/filter_count_log.hpp>
 #include <rv/ui/focus_regions.hpp>
+#include <rv/ui/quick_catalog_room.hpp>
 #include <rv/ui/ui_system.hpp>
 #include <rv/ui/ui_view.hpp>
 
@@ -88,6 +89,8 @@ struct CardData {
     Rml::String blocker;
     Rml::String detail;
     bool verified = false;
+    /// Where the game stands in the room (I3 step 15a, quick_catalog_room.hpp): "" no room, "placed", or why not.
+    Rml::String room;
 };
 
 /// The scroll indicator beside the list: its thumb's top and height in percent of the track.
@@ -250,6 +253,7 @@ struct QuickCatalogScreen::Impl {
             cardStruct.RegisterMember("blocker", &CardData::blocker);
             cardStruct.RegisterMember("detail", &CardData::detail);
             cardStruct.RegisterMember("verified", &CardData::verified);
+            cardStruct.RegisterMember("room", &CardData::room);
         }
         if (auto scrollStruct = constructor.RegisterStruct<ScrollData>()) {
             scrollStruct.RegisterMember("shown", &ScrollData::shown);
@@ -291,6 +295,10 @@ struct QuickCatalogScreen::Impl {
                                       [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) { media(); });
         constructor.BindEventCallback("info",
                                       [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) { info(); });
+        constructor.BindEventCallback(Rml::String(qc::kShowInRoomEvent),
+                                      [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+                                          showInRoom();
+                                      });
         constructor.BindEventCallback("refresh", [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
             if (refreshShown.available && events.refresh) {
                 events.refresh();
@@ -584,6 +592,7 @@ struct QuickCatalogScreen::Impl {
             card.detail = selected->blockerDetail;
             card.verified = selected->verified;
         }
+        card.room = selected != nullptr && roomPlacement ? Rml::String(roomPlacement(*selected)) : Rml::String();
         handle.DirtyVariable("card");
     }
 
@@ -677,6 +686,15 @@ struct QuickCatalogScreen::Impl {
         settleCardNow();
         if (const CatalogEntry* selected = model.selected(); selected != nullptr && events.media) {
             events.media(*selected);
+        }
+    }
+
+    /// "Mostra nella stanza" (I3 step 15a): only for a game the room places (the button shows for it alone).
+    void showInRoom() {
+        settleCardNow();
+        if (const CatalogEntry* selected = model.selected();
+            selected != nullptr && card.room == qc::kRoomPlaced && events.showInRoom) {
+            events.showInRoom(*selected);
         }
     }
 
@@ -1128,6 +1146,8 @@ struct QuickCatalogScreen::Impl {
     UiView& view;
     QuickCatalogModel& model;
     QuickCatalogEvents events;
+    /// The card's room key of a game (I3 step 15a: setRoomPlacement()); unset: no room.
+    std::function<std::string(const CatalogEntry&)> roomPlacement;
     Listener listener;
     Rml::ElementDocument* document = nullptr;
     Rml::DataModelHandle handle;
@@ -1320,6 +1340,13 @@ std::optional<FocusTarget> QuickCatalogScreen::focus() const {
 
 bool QuickCatalogScreen::focusElement(std::string_view id) {
     return m_impl->focusElement(id);
+}
+
+void QuickCatalogScreen::setRoomPlacement(std::function<std::string(const CatalogEntry&)> placement) {
+    m_impl->roomPlacement = std::move(placement);
+    if (m_impl->card.present) {
+        m_impl->refreshCard();
+    }
 }
 
 void QuickCatalogScreen::setStatus(std::string_view text) {
