@@ -9,8 +9,9 @@
 # (--mock-catalog), a launch from Avvia to the return around a LaunchSession (LaunchFlow) and its outcome as the product
 # UI tells it; since I3 (skeletons naming their steps) the frame timing of the run report, the world's interaction
 # states, what the hero CRT plays, the cover loader's order, a collection item's layers through the derived-texture
-# cache and the world notice's keys (step 10b), the room's items kept for the persisted start (step 10c). Kept apart from rv_app so that rv_tests can unit-test it without SDL or
-# OpenGL, and the GPU smoke tests can read the reports of the runs they start.
+# cache and the world notice's keys (step 10b), the room's items kept for the persisted start (step 10c), the room's
+# side of the hover, the pull-out and Focus and the hover label's keys (step 13a). Kept apart from rv_app so that
+# rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the reports of the runs they start.
 add_library(rv_app_cli STATIC
     src/back_action.cpp
     src/collection_layers.cpp
@@ -32,6 +33,7 @@ add_library(rv_app_cli STATIC
     src/screen_policy.cpp
     src/screenshot_name.cpp
     src/self_check.cpp
+    src/world_focus.cpp
     src/world_interaction.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
@@ -91,6 +93,7 @@ add_library(rv_app STATIC
     src/world_card.cpp
     src/world_hover.cpp
     src/world_inspection.cpp
+    src/world_label_panel.cpp
     src/world_launch.cpp
     src/world_live_update.cpp
     src/world_notice_panel.cpp

@@ -18,6 +18,7 @@
 #include <spdlog/spdlog.h>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_mouse.h>
 
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/back_action.hpp>
@@ -403,8 +404,6 @@ struct RetroverseApp::State {
     /// on the GPU) goes before the graphics.
     std::unique_ptr<core::WorkerPool> pool;
     std::unique_ptr<WorldSession> world;
-    /// The view's items when the room adds dynamic ones (view()).
-    mutable std::vector<scene::RenderItem> viewItems;
     /// The scene as described: its camera (start, reset) and objects (the developer overlay's list).
     scene::SceneDescription description;
     /// Loads the scene's models (asset-relative paths, the model viewer's file).
@@ -497,14 +496,47 @@ struct RetroverseApp::State {
         view.wireframe = wireframe;
         if (world) {
             view.staticGroups = world->staticGroups();
-            // The room's dynamic items (I3 step 12: the hero texture's front) after the scene's.
-            if (const std::span<const scene::RenderItem> dynamic = world->dynamicItems(); !dynamic.empty()) {
-                viewItems.assign(view.items.begin(), view.items.end());
-                viewItems.insert(viewItems.end(), dynamic.begin(), dynamic.end());
-                view.items = viewItems;
-            }
+            // The room's dynamic path after the scene's items: the items pulled out of their slots (I3 step 13a), the
+            // hero texture's front (I3 step 12).
+            view.items = world->viewItems(view.items);
         }
         return view;
+    }
+
+    /// The world's interaction this frame (I3 step 13a), before the walker moves: `actions` in the World context (null
+    /// while the product UI has the input, which also casts no pick ray), the ray from the reticle or, while the mouse
+    /// is free, from the cursor (frame-limited runs never read the user's mouse: their cursor rests at the window's
+    /// centre).
+    [[nodiscard]] InteractionResult interactWorld(AppContext& context, const input::ActionState* actions,
+                                                  float deltaSeconds) {
+        const scene::FirstPersonController& walker = freeRoam->controller();
+        WorldHover::Frame frame;
+        frame.actions = actions;
+        frame.deltaSeconds = deltaSeconds;
+        frame.walker = scene::WalkerPose{walker.feetPosition(), walker.yaw(), walker.pitch()};
+        frame.back = backState();
+        const glm::ivec2 drawable = context.window().drawableSize();
+        frame.viewer.floorY = walker.feetPosition().y;
+        frame.viewer.eyeHeight = walker.settings().eyeHeight;
+        frame.viewer.lens = camera.lens();
+        frame.viewer.aspect = aspectOf(drawable);
+        if (actions != nullptr) {
+            frame.raySource = pickRaySource(input->mouseCaptured(), actions->activeDevice());
+            const glm::vec2 windowSize(context.window().windowSize());
+            glm::vec2 cursor = 0.5f * windowSize;
+            if (frame.raySource == PickRaySource::Cursor && !context.options().frameLimit) {
+                SDL_GetMouseState(&cursor.x, &cursor.y);
+            }
+            frame.ray = pickRay(camera, frame.raySource, cursor, windowSize);
+        }
+        return world->interact(frame);
+    }
+
+    /// Places the walker where the world's interaction drives it this frame (an ease, a skip, a restore), the camera
+    /// with it.
+    void placeWalker(const scene::WalkerPose& pose) {
+        freeRoam->controller().teleport(pose.feet, pose.yaw, pose.pitch);
+        freeRoam->update(input::ActionState{}, 0.0f, camera);
     }
 
     /// The hero CRT's service on the scene's first CRT, if it has one (not in the model viewer).
@@ -752,8 +784,11 @@ struct RetroverseApp::State {
     }
 
     /// Back (Esc, gamepad B; ui_back while the product UI has the input): leaves one level (backAction).
-    void back(AppContext& context) {
-        switch (backAction(backState())) {
+    void back(AppContext& context) { performBack(context, backAction(backState())); }
+
+    /// Performs the Back level `action` (backAction's, or the shell's level the world's interaction leaves to it).
+    void performBack(AppContext& context, BackAction action) {
+        switch (action) {
         case BackAction::Ignore:
             break;
         case BackAction::ClosePopup:
@@ -1114,12 +1149,30 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     if (actions.pressed(input::Action::Screenshot)) {
         state.screenshotRequested = true;
     }
+    // With a room (I3 step 13a) the world's interaction reads the World context: Back's levels (its own, then the
+    // shell's it leaves to the application), the quick catalog, the hover, the pull-out and Focus; its context decides
+    // what the walker gets.
+    const WorldContext worldContext = state.world ? state.world->context() : WorldContext::FreeRoam;
+    InteractionResult worldResult;
+    if (state.world) {
+        worldResult = state.interactWorld(context, inputContext == InputContext::World ? &actions : nullptr,
+                                          static_cast<float>(deltaSeconds));
+    }
     if (inputContext == InputContext::World) {
-        if (actions.pressed(input::Action::Back)) {
-            state.back(context);
-        }
-        if (catalogToggleRequested(inputContext, actions)) {
-            state.openCatalog();
+        if (state.world) {
+            if (worldResult.shellBack) {
+                state.performBack(context, *worldResult.shellBack);
+            }
+            if (worldResult.openCatalog) {
+                state.openCatalog();
+            }
+        } else {
+            if (actions.pressed(input::Action::Back)) {
+                state.back(context);
+            }
+            if (catalogToggleRequested(inputContext, actions)) {
+                state.openCatalog();
+            }
         }
     } else if (catalogToggleRequested(inputContext, actions) && !state.product->panelOpen()) {
         state.product->closeCatalog();
@@ -1132,7 +1185,20 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         spdlog::error("Debug lines unavailable: {}", shown.error().toString());
     }
     state.freeRoam->setCollisionEnabled(state.collision);
-    state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);
+    if (worldResult.walker) {
+        state.placeWalker(*worldResult.walker); // an ease of the world drives the walker: no actions this frame
+    } else if (state.world) {
+        state.freeRoam->update(walkerActionsFor(worldContext, actionsFor(inputContext, actions)),
+                               static_cast<float>(deltaSeconds), state.camera);
+    } else {
+        state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);
+    }
+    if (state.world && state.product) {
+        // The hover's title label over the item as this frame's camera shows it (none under the product UI).
+        state.product->setWorldLabel(inputContext == InputContext::World
+                                         ? state.world->label(state.camera, context.window().drawableSize())
+                                         : std::nullopt);
+    }
     if (state.product) {
         // Text an --input-script types on this frame, into the product UI's focused field (the catalog's search).
         if (const input::InputScript* script = state.input->script()) {
@@ -1150,12 +1216,8 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         }
     }
     if (state.world) {
-        // The room (I3 step 10b): its result committed at this frame boundary, its covers' round; then the hover of
-        // the item the reticle points at while the world has the input (the outline).
+        // The room (I3 step 10b): its result committed at this frame boundary, its covers' round.
         state.world->update(*state.product, false, state.simulatedSeconds);
-        state.world->hover(inputContext == InputContext::World
-                               ? std::optional<core::Ray>(state.camera.rayFromNdc(glm::vec2(0.0f)))
-                               : std::nullopt);
         // A lockstep run's frame waits for the layers of its view (I3 step 12).
         state.world->settle(*state.product);
     }

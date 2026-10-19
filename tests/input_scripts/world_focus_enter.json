@@ -1,0 +1,11 @@
+// I3 step 13a: interact on a spine-out cartridge enters Focus. The walker starts at the item's Focus pose (--spawn),
+// the reticle on its spine: the hover from frame 2, the pull-out after the 150 ms dwell (it slides out of its row and
+// turns its cover to the viewer in 250 ms). Frame 40: interact, Focus on it (the walker already at its Focus pose, the
+// item kept out). Frame 100: back, FreeRoam; the item put back stays in while the hover rests on it.
+// tests/smoke/test_world_focus.cpp checks the run report's world.interaction events and a screenshot at frame 69.
+//   retroverse --spawn <the item's Focus pose> --input-script tests/input_scripts/world_focus_enter.json
+//     --exit-after-frames --frames 130 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 100, "toFrame": 100, "actions": {"back": 1}}
+]

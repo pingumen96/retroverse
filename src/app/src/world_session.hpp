@@ -6,7 +6,7 @@
 // (the WorldGenerating state); the result is committed at a frame boundary: the room's static part through the
 // application's scene (SceneHost::showScene: a SceneInstance of its SceneDescription, the walker at its doorway
 // camera), its collection on a static instance group (CollectionInstance) whose covers and spines the cover loader
-// brings in within the upload budget, the pick index of its items (world::PickIndex) for the hover outline. A catalog
+// brings in within the upload budget, its items' hover, pull-out and Focus (WorldHover, I3 step 13a). A catalog
 // that does not open or has no games of the room's system gives the test room (SceneHost::showTestRoom), a room that
 // cannot be made now the shell, each with its notice. Lockstep runs (--fixed-dt) wait, at most kLockstepWaitLimit at a
 // time, while the room is on its way and until the layers of every item in the frame's view are resident (every item
@@ -54,6 +54,7 @@
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/pick_index.hpp>
 
+#include "world_hover.hpp"
 #include "world_notice_panel.hpp"
 
 namespace rv::app {
@@ -114,17 +115,24 @@ public:
     /// committed (the scene replaced: call it at a frame boundary), the notice updated at the run's time
     /// `timeSeconds`; and the covers' round (within the frame's budget, or a larger one in an idle wake).
     void update(ProductUi& product, bool idleWake, double timeSeconds);
-    /// The hover, once per frame: `ray` from the reticle while the world has the input, nothing otherwise (the hover
-    /// lets go at once). The hovered item is outlined.
-    void hover(const std::optional<core::Ray>& ray);
+    /// The world's interaction, once per frame before the walker moves (I3 step 13a: WorldHover::update): the hover of
+    /// the frame's ray, the pull-out, Focus, the world's Back levels and the quick catalog in the World context.
+    [[nodiscard]] InteractionResult interact(const WorldHover::Frame& frame);
+    /// The interaction's input context now (what the walker gets: walkerActionsFor()).
+    [[nodiscard]] WorldContext context() const noexcept { return m_interaction->interaction().context(); }
+    /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems), the hero texture's front
+    /// of an item in its slot (dynamicItems()).
+    [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems);
+    /// The hover's title label as `camera` shows it in a view of `viewSize` pixels (WorldHover::labelFor).
+    [[nodiscard]] std::optional<WorldLabelContent> label(const scene::Camera& camera, glm::ivec2 viewSize);
     /// A frame was rendered (the lockstep wait starts again).
     void frameRendered();
     /// Lockstep runs (I3 step 12, ADR-0011 §6): after the frame's walker and hover moved, waits within the frame until
     /// every item in its view (and the hero texture of the focused item) is resident, every item of the room before
     /// the run's last frame, at most kLockstepWaitLimit; nothing in other runs.
     void settle(ProductUi& product);
-    /// The item whose hero texture the room shows in place of its front (I3 step 12: the hovered one; step 13a's
-    /// focus, pull-out and inspection set it): its pick id, or kNoPick.
+    /// The item whose hero texture the room shows in place of its front (I3 step 12; interact() sets it each frame to
+    /// the interaction's focused item, else its hovered one): its pick id, or kNoPick.
     void setHeroItem(world::PickId pickId);
     /// What the dynamic path draws besides the scene's items this frame: the hero texture's front.
     [[nodiscard]] std::span<const scene::RenderItem> dynamicItems() const noexcept { return m_dynamicItems; }
@@ -184,6 +192,9 @@ private:
     void keepShown(const WorldBuild& build);
     [[nodiscard]] bool applyItems(WorldBuild& build, const LiveUpdatePlan& plan, WorldLiveUpdateRecord& record);
     void releaseHero();
+    /// The interaction (I3 step 13a) lets go of the room's items before they are applied in place: hover, Focus and
+    /// pull-out reset, every pulled-out item's records shown in its slot again.
+    void releaseInteraction();
     void showNotice(ProductUi& product, double timeSeconds);
     [[nodiscard]] std::optional<double> sinceProcessStart(std::chrono::system_clock::time_point at) const;
 
@@ -196,6 +207,10 @@ private:
     std::optional<WorldResult> m_decided;
     std::unique_ptr<CollectionInstance> m_collection;
     std::unique_ptr<CoverLoader> m_loader;
+    /// The hover, the pull-out and Focus over the collection (I3 step 13a).
+    std::unique_ptr<WorldHover> m_interaction;
+    /// The view's items when the dynamic path draws more than the scene's (viewItems()).
+    std::vector<scene::RenderItem> m_viewItems;
     std::unique_ptr<HeroTextures> m_heroes;
     bool m_heroesKnowRoot = false;
     /// The hero item (its index in the collection), the one whose front shows its hero texture now, the texture, the
@@ -214,8 +229,6 @@ private:
     std::uint64_t m_lockstepWaits = 0;
     double m_lockstepWaitMs = 0.0;
     bool m_settleWarned = false;
-    world::PickIndex m_pickIndex;
-    world::HoverTracker m_hover;
     /// What showed, the notice and when it was set (seconds of the run's time; it hides after its time unless the
     /// shell shows), the record.
     std::string m_state = "generating";

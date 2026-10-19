@@ -60,12 +60,30 @@ void WorldSession::releaseHero() {
     m_dynamicItems.clear();
 }
 
+void WorldSession::releaseInteraction() {
+    m_interaction->clear();
+    if (m_collection) {
+        // clear() leaves the collection's records as they are: the items it had pulled out go back to their slots.
+        for (const world::PickId id : m_collection->hiddenItems()) {
+            if (Status shown = m_collection->setHidden(id, false); !shown) {
+                spdlog::error("World: an item back in its slot: {}", shown.error().toString());
+            }
+        }
+        if (Status cleared = m_collection->setHovered(world::kNoPick); !cleared) {
+            spdlog::error("World: the hover outline: {}", cleared.error().toString());
+        }
+    }
+}
+
 bool WorldSession::applyItems(WorldBuild& build, const LiveUpdatePlan& plan, WorldLiveUpdateRecord& record) {
     if (!m_collection || !build.layout || build.layout->items.empty()) {
         return false;
     }
-    // The hero's front goes back to the static path (the items' indices change); the next hover shows it again.
+    // The hero's front goes back to the static path (the items' indices change); the next hover shows it again. The
+    // interaction (I3 step 13a) lets go of its items: a pulled-out item back in its slot, Focus left; it starts again
+    // over the new layout below.
     releaseHero();
+    releaseInteraction();
     auto updated =
         m_collection->applyLayout(*build.layout, m_graphics, m_context.device().caps().uniformBufferOffsetAlignment);
     if (!updated) {
@@ -75,19 +93,14 @@ bool WorldSession::applyItems(WorldBuild& build, const LiveUpdatePlan& plan, Wor
     }
     record.arraysGrown = updated->grown;
     record.arrayAdded = updated->arraysAdded;
-    if (auto index = world::PickIndex::build(build.layout->pickTargets(), build.layout->occluders)) {
-        m_pickIndex = std::move(*index);
-    } else {
-        spdlog::error("World: the room's pick index cannot be built: {}", index.error().toString());
-        m_pickIndex = world::PickIndex{};
-    }
-    // The pick ids of the items that stood are theirs still: the hover goes on.
+    // The hover, the pull-out and Focus over the new layout (its pick targets and D-pad steps; the pick ids of the
+    // items that stood are theirs still).
+    m_record.pickTargets = m_interaction->setRoom(*build.layout, m_collection.get());
     countPlan(build, m_record);
     m_record.items = build.layout->items.size();
     m_record.clusters = build.layout->clusters.size();
     m_record.skipped = build.layout->skipped.size();
     m_record.staticRecords = m_collection->group().layout().instances().size();
-    m_record.pickTargets = m_pickIndex.targetCount();
     record.items = m_record.items;
     record.staticRecords = m_record.staticRecords;
     if (m_heroes) {

@@ -96,7 +96,12 @@ place as well (`reconcile.kind` `items`).
 5. **Step 12's retry stays the media root's path back**: a `textures` update whose cover requests are unchanged (the
    media root reachable again) keeps the loader that `followRefresh()` already asked to retry, so its records
    (`retryRounds`, `retriedItems`) stay those of step 12's smoke case.
-6. **A live update never takes the room away**: a build with nothing to show leaves the room as it is (logged), unlike
+6. **An in-place update lets the interaction go** (merged over step 13a): `releaseInteraction()` clears the
+   interaction (hover, Focus, pull-out) and shows every pulled-out item in its slot again before `applyLayout`, and
+   `WorldHover::setRoom()` then takes the new layout (pick targets, D-pad steps). A refresh is started from the quick
+   catalog or the command line, so the user is rarely in Focus when its result comes; `setItems()` still carries each
+   standing item's hidden reasons (pulled, hero front) by pick id, so the records never disagree with the item's state.
+7. **A live update never takes the room away**: a build with nothing to show leaves the room as it is (logged), unlike
    the start, which shows the shell.
 
 ## Open issues
@@ -110,7 +115,11 @@ place as well (`reconcile.kind` `items`).
 
 ## For the merge
 
-- **Hooks in shared files** (13a's rebase): `src/world_session.cpp`: `update()` takes a live flow's result with
+- **Merged over step 13a** (main after 13a, conflicts resolved in this branch): `setItems()` keeps 13a's `m_sources`
+  and carries each item's `pulled` and `heroFront` by pick id; `applyItems()` calls `releaseHero()` and
+  `releaseInteraction()` before `applyLayout()` and `WorldHover::setRoom()` after it (13a's pick index and D-pad steps
+  replace the session's own); `showRoom()` hands the layout to `setRoom()` as 13a does.
+- **Hooks in shared files**: `src/world_session.cpp`: `update()` takes a live flow's result with
   `applyLive()` (`m_liveFlow`; held while `product.launchActive()`) and calls `startLiveFlow(product)` after
   `followRefresh()`; `followRefresh()` calls `requestLiveUpdate()` on a `done` refresh; `showRoom()` takes the shown
   collection's pictures and loader when the walker is kept, and ends with `keepShown(build)`; `dropCollection()` resets
