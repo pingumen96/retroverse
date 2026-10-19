@@ -48,11 +48,14 @@ struct ScreenMedia {
 };
 
 /// A game the hero CRT may play: its catalog id (ui::CatalogEntry::id, the GameId's text), its media and when it was
-/// last played (any clock whose larger values are later, such as seconds since 1970; nothing: never).
+/// last played (any clock whose larger values are later, such as seconds since 1970; nothing: never). A game that is
+/// no start candidate is played only when selected (the generated room's games it does not place, I3 step 10c: the
+/// start choice is a placed game, ADR-0012 §7).
 struct ScreenGame {
     std::string id;
     ScreenMedia media;
     std::optional<std::int64_t> lastPlayed;
+    bool startCandidate = true;
 
     bool operator==(const ScreenGame&) const = default;
 };
@@ -70,9 +73,9 @@ inline constexpr std::string_view kScreenVideoExtensions[] = {".mp4", ".mkv", ".
 /// The file of `picture` in `media`; null for the idle pattern and for a picture the game does not have.
 [[nodiscard]] const std::filesystem::path* mediaPath(const ScreenMedia& media, ScreenPicture picture) noexcept;
 
-/// The game the hero CRT plays before anything is selected (ADR-0012 §7): the most recently played game with a video
-/// (isPlayableVideoFile), else the first game with one, in `games`' order (the featured order); nothing when no game
-/// has one (the idle pattern). Equal play times keep the earlier game.
+/// The game the hero CRT plays before anything is selected (ADR-0012 §7): the most recently played start candidate
+/// with a video (isPlayableVideoFile), else the first one with one, in `games`' order (the featured order); nothing
+/// when none has one (the idle pattern). Equal play times keep the earlier game.
 [[nodiscard]] std::optional<std::size_t> chooseStartGame(std::span<const ScreenGame> games);
 
 /// The decoder's life around launches (ADR-0012 §6).

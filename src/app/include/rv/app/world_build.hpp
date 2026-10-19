@@ -11,6 +11,11 @@
 //   the catalog opened Ready with games of the
 //   room's system ------------------------------->  readWorldPlan: the world's stored
 //                                                    plan (world-plan.json), its digest
+//   a plan stored: ------------------------------>  previewWorld (I3 step 10c): the
+//                                                    stored plan's room as it is, the
+//                                                    room's items' text from the cache
+//   takePreview(): shown at a frame boundary <-----
+//   (the persisted start), then
 //   requestRoomSnapshot(placed games) <------------
 //     ------------------------------------------------------------------------------>  takeRoomSnapshot: the bulk
 //                                                                                         query, the media root, the
@@ -23,7 +28,13 @@
 //                                                    data, the scene, the collection's
 //                                                    layout, the items' cover requests
 //   takeResult(): committed at a frame boundary <--
-//   (app::WorldSession: the scene, the collection)
+//   (app::WorldSession: the scene, the collection;
+//   after a preview, reconciled with the room shown:
+//   world_reconcile.hpp)
+//
+// The preview is asked for the snapshot only once it has been taken (shown), so that the stored room always shows
+// before the snapshot answers (ADR-0010 §12: "shows the room at once, then reconciles it"), and the catalog worker's
+// first jobs are the quick catalog's.
 //
 // The catalog that does not open, or has no games of the room's system, gives the test room (WorldResult::testRoom)
 // with its notice; a room that cannot be made now (the media root out of reach with no plan stored, a plan that breaks
@@ -44,6 +55,7 @@
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/collection_layers.hpp>
 #include <rv/app/room_snapshot.hpp>
+#include <rv/app/screen_policy.hpp>
 #include <rv/app/world_notice_ui.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
@@ -108,8 +120,22 @@ struct WorldBuildInput {
     std::chrono::milliseconds lockWait = world::kWorldLockWait;
 };
 
+/// A prefab of the room that fell back to its family's (style §21's object fallbacks, assets::resolvePrefab: logged
+/// once).
+struct ObjectFallback {
+    /// The manifest the plan names, what replaced it (assets::toString(PrefabSource)) and why.
+    std::string prefab;
+    std::string source;
+    std::string reason;
+
+    bool operator==(const ObjectFallback&) const = default;
+};
+
 /// The room to commit (an immutable value made on the pool, ADR-0010 §12).
 struct WorldBuild {
+    /// The stored plan's room shown before the catalog's snapshot answers (previewWorld(), I3 step 10c: outcome Kept,
+    /// the covers of the room's items the cache knows, no media root, no CRT games); else the room's job's result.
+    bool preview = false;
     WorldOutcome outcome = WorldOutcome::NoPlan;
     /// The world notice it shows (world_notice), and why, in English (the log, the run report).
     std::string notice;
@@ -137,6 +163,15 @@ struct WorldBuild {
     std::vector<CoverItem> covers;
     /// The media root the covers are read under; none while the media are unknown (the cache alone serves them).
     std::optional<std::filesystem::path> mediaRoot;
+    /// The hero CRT's games (room_screen.hpp; none for a preview or while the media are unknown).
+    std::vector<ScreenGame> screenGames;
+    /// The room's prefabs that fell back (the scene data's, by the manifest the plan names).
+    std::vector<ObjectFallback> objectFallbacks;
+    /// The room's items (room_items.hpp) written this run (they changed), and why they could not be (the room shows
+    /// all the same). A preview reads them: `itemsRead` of its items were known.
+    bool itemsWritten = false;
+    std::optional<Error> itemsError;
+    std::size_t itemsRead = 0;
     /// Milliseconds on the worker: the lock and the plan read under it, the selection, the generation or update with
     /// its validation, the plan's write, the scene data and scene, the layout and the cover requests, the whole job.
     double lockMs = 0.0;
@@ -151,6 +186,14 @@ struct WorldBuild {
 /// The second job (see the file comment). Never fails as a whole: what went wrong is its outcome, notice and reason.
 /// Returns early (NoPlan, "cancelled") once `job` is cancelled.
 [[nodiscard]] WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job);
+
+/// The preview job (I3 step 10c, the persisted start): `stored`'s room of `system` as it is, before the catalog's
+/// snapshot: its scene, its collection's layout with the titles of the room's items as they last showed
+/// (room_items.hpp, read from <cache>/world/<library>/), and the cover requests of the items they know, served from the
+/// derived-texture cache alone (no media root: the snapshot says whether it can be reached). Outcome Kept, `preview`
+/// set, no change report, nothing written. Never fails as a whole: a room that cannot be made has no scene (logged).
+[[nodiscard]] WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library,
+                                      const catalog::SystemName& system, const world::StoredPlan& stored);
 
 /// What the flow ends with (WorldFlow::takeResult()).
 struct WorldResult {
@@ -168,19 +211,23 @@ struct WorldResult {
 enum class WorldPhase : std::uint8_t {
     WaitingForCatalog, ///< the catalog opens
     ReadingPlan,       ///< the stored plan is read on the pool
+    Previewing,        ///< the stored plan's room is made on the pool, or waits to be taken (takePreview())
     Snapshot,          ///< the catalog worker takes the room's snapshot
     Building,          ///< the room is made on the pool
     Ready,             ///< a result waits to be taken
     Done,              ///< taken
 };
 
-/// "waiting-for-catalog", "reading-plan", "snapshot", "building", "ready", "done".
+/// "waiting-for-catalog", "reading-plan", "previewing", "snapshot", "building", "ready", "done".
 [[nodiscard]] std::string_view toString(WorldPhase phase) noexcept;
 
 /// When each part of the flow ended, from its start (milliseconds of the steady clock).
 struct WorldFlowTimes {
     std::optional<double> catalogMs;
     std::optional<double> planReadMs;
+    /// The preview made (I3 step 10c), and its job's own time.
+    std::optional<double> previewMs;
+    std::optional<double> previewJobMs;
     std::optional<double> snapshotMs;
     std::optional<double> builtMs;
     /// The snapshot as the worker timed it, and when the worker was done with it (the run report counts from the
@@ -216,6 +263,9 @@ public:
     [[nodiscard]] bool busy() const noexcept { return m_phase != WorldPhase::Ready && m_phase != WorldPhase::Done; }
     /// The result, once (phase Ready, then Done).
     [[nodiscard]] std::optional<WorldResult> takeResult();
+    /// The stored plan's room (previewWorld()), once, when a plan was stored (phase Previewing). The snapshot is asked
+    /// for at the next update() after it is taken: show it at this frame boundary.
+    [[nodiscard]] std::optional<WorldBuild> takePreview();
     [[nodiscard]] const WorldFlowTimes& times() const noexcept { return m_times; }
 
     /// What the jobs and the flow share (world_build.cpp).
@@ -223,6 +273,8 @@ public:
 
 private:
     void finish(WorldResult result);
+    /// Asks the catalog worker for the room's snapshot (the stored plan's placed games for their aliases).
+    void requestSnapshot(AppCatalog& catalog);
     [[nodiscard]] double elapsedMs() const;
 
     Options m_options;
@@ -233,6 +285,9 @@ private:
     std::optional<WorldResult> m_result;
     catalog::LibraryId m_library;
     std::optional<StoredWorldPlan> m_stored;
+    /// The preview made, until taken; whether it was taken.
+    std::optional<WorldBuild> m_preview;
+    bool m_previewTaken = false;
     std::uint64_t m_serial = 0;
     std::chrono::steady_clock::time_point m_start;
     WorldFlowTimes m_times;

@@ -10,6 +10,13 @@
 // that does not open or has no games of the room's system gives the test room (SceneHost::showTestRoom), a room that
 // cannot be made now the shell, each with its notice. Lockstep runs (--fixed-dt) wait between frames, at most
 // kLockstepWaitLimit at a time, while the room or its layers are on their way. Main thread only.
+//
+// The persisted start (I3 step 10c, world_start.cpp): with a plan stored, its room shows first, as it is (WorldFlow's
+// preview: its covers and spines from the cache by the room's items of the last start), before the catalog's snapshot
+// is even asked for; once a frame has shown it, the snapshot's result reconciles it (world_reconcile.hpp): an unchanged
+// room moves and rebuilds nothing (its covers served again, the hero CRT given its games), a changed one is committed
+// again with the walker where it stands, a plan that cannot be used gives the shell. A lockstep run's first frame shows
+// the stored room whole, the next ones the reconciled room.
 
 #include <chrono>
 #include <cstdint>
@@ -20,6 +27,7 @@
 #include <string>
 
 #include <rv/app/run_report.hpp>
+#include <rv/app/screen_policy.hpp>
 #include <rv/app/world_build.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/core/math.hpp>
@@ -46,8 +54,14 @@ public:
         /// (or at --spawn). The session's collection is gone by then (the registries are cleared). Errors: the scene
         /// cannot be made.
         std::function<Status(scene::SceneDescription description)> showScene;
+        /// showScene with the walker kept where it stands (I3 step 10c: the stored plan's room replaced by its
+        /// reconciliation); showScene when unset.
+        std::function<Status(scene::SceneDescription description)> showSceneKeepingWalker;
         /// Shows the test room (m0_testroom) in place of the scene shown.
         std::function<Status()> showTestRoom;
+        /// The games the hero CRT of the scene shown may play (I3 step 10c: the room's, after the snapshot; none for
+        /// the stored plan's room shown before it); unset: nothing to do.
+        std::function<void(std::vector<ScreenGame> games)> setScreenGames;
     };
 
     struct Options {
@@ -95,7 +109,24 @@ public:
     void record(RunReport& report) const;
 
 private:
+    using Clock = std::chrono::steady_clock;
+
     void commit(WorldResult result);
+    /// The build's outcome, change report, plan and times into the record (logged).
+    void recordBuild(const WorldBuild& build);
+    /// Shows `build`'s room (it has its plan, scene, data and layout): the scene through the host (the walker kept
+    /// where it stands with `keepWalker`), the collection, the pick index, the cover loader, the CRT's games. False
+    /// when the scene could not be shown (the test room then, with its notice).
+    [[nodiscard]] bool showRoom(WorldBuild& build, bool keepWalker);
+    /// A cover loader for `covers` on the collection shown, in place of any (none without a collection or covers).
+    void startCoverLoader(std::vector<CoverItem> covers, const std::optional<std::filesystem::path>& mediaRoot,
+                          const catalog::LibraryId& library);
+    /// The commit's times, state, notice and log.
+    void finishCommit(const WorldBuild& build, Clock::time_point start);
+    /// I3 step 10c, the persisted start (world_start.cpp): the stored plan's room shown before the snapshot answers,
+    /// and the snapshot's result reconciled with it (world_reconcile.hpp).
+    void commitPreview(WorldBuild preview);
+    void reconcile(WorldResult result);
     /// Shows `notice` from the next showNotice() on: for world_notice::kShownSeconds of the run's time (`timed`), or
     /// until another replaces it.
     void setNotice(WorldNoticeContent notice, bool timed);
@@ -124,6 +155,10 @@ private:
     bool m_coverPhaseOpen = false;
     std::optional<std::chrono::steady_clock::time_point> m_waitSince;
     bool m_waitWarned = false;
+    /// The stored plan's room shown (its plan, layout and cover requests; its scene given to the host), until the
+    /// snapshot's result reconciles it; whether no frame has shown it yet (the result waits for one).
+    std::optional<WorldBuild> m_shownPreview;
+    bool m_previewAwaitingFrame = false;
 };
 
 } // namespace rv::app

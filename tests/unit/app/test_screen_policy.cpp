@@ -90,6 +90,20 @@ TEST_CASE("app/screen_policy: the start choice is the most recently played game 
     // Equal times keep the earlier game.
     const std::vector<ScreenGame> tie{game("a", "a.mp4", 5), game("b", "b.mp4", 5)};
     CHECK(chooseStartGame(tie) == 0u);
+    // I3 step 10c: a game that is no start candidate (one the room does not place) is never the start choice, however
+    // recently played; it plays when selected.
+    std::vector<ScreenGame> unplaced{game("a", "a.mp4", 90), game("b", "b.mp4", 10), game("c", "c.mp4")};
+    unplaced[0].startCandidate = false;
+    CHECK(chooseStartGame(unplaced) == 1u);
+    unplaced[1].startCandidate = false;
+    CHECK(chooseStartGame(unplaced) == 2u);
+    unplaced[2].startCandidate = false;
+    CHECK_FALSE(chooseStartGame(unplaced).has_value());
+    ScreenPolicy selecting(unplaced);
+    CHECK(selecting.targetId().empty());
+    static_cast<void>(hoverFor(selecting, std::string("a"), 19, 0.0));
+    CHECK(selecting.targetId() == "a");
+    CHECK(selecting.wantsDecoder());
 
     const ScreenPolicy policy(played);
     CHECK(policy.targetId() == "b");
