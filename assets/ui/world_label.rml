@@ -1,0 +1,25 @@
+<rml>
+<head>
+	<!--
+		The hover's title label (I3 step 13a; ADR-0012 §3, style §16: a small contextual label): the title of the
+		cartridge the reticle rests on in the room (FreeRoam) or of the one in Focus, just above it as the view shows it.
+		Bound to the data model "world_label" of rv::app::WorldLabelPanel (src/app/src/world_label_panel.cpp), which also
+		names the ids below: keep them in step (src/app/include/rv/app/world_label_ui.hpp,
+		tests/unit/app/test_world_label_document.cpp).
+		title: the catalog's title, shown as it is (data, not a sentence of the UI); "" for a game the catalog lacks.
+		available: false when the game's file is not there. left, bottom, width: the band the label is centred in, in
+		pixels of the view (the panel computes them). It takes no input and never the focus.
+	-->
+	<title>Etichetta</title>
+	<link type="text/rcss" href="world_label.rcss"/>
+</head>
+<body data-model="world_label">
+	<div id="world-label" data-style-left="left" data-style-bottom="bottom" data-style-width="width">
+		<span class="label">
+			<span data-if="title != ''">{{ title }}</span>
+			<span data-if="title == ''">Gioco senza titolo</span>
+			<span class="unavailable" data-if="!available"> (file non trovato)</span>
+		</span>
+	</div>
+</body>
+</rml>

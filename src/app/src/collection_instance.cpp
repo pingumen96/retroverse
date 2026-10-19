@@ -201,6 +201,7 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     }
     auto group = gl::StaticInstanceGroup::create(records, static_cast<std::uint32_t>(layout.clusters.size()), meshes,
                                                  materials, "Collection");
+    instance->m_sources = records;
     if (!group) {
         return propagate(group.error());
     }
@@ -238,14 +239,28 @@ Status CollectionInstance::setFrontHidden(std::size_t item, bool hidden) {
     if (item >= m_items.size() || !m_items[item].front) {
         return makeError(ErrorCode::InvalidArgument, "no front of that item", std::to_string(item));
     }
-    const std::size_t source = *m_items[item].front;
-    scene::InstanceAttributes attributes = m_attributes[source];
-    if (hidden) {
-        attributes.flags |= scene::instance_flags::kHidden;
-    } else {
-        attributes.flags &= ~scene::instance_flags::kHidden;
+    m_items[item].heroFront = hidden;
+    return writeHidden(item);
+}
+
+Status CollectionInstance::writeHidden(std::size_t item) {
+    const Item& entry = m_items[item];
+    for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
+        if (!source) {
+            continue;
+        }
+        const bool hidden = entry.pulled || (entry.heroFront && source == entry.front);
+        scene::InstanceAttributes attributes = m_attributes[*source];
+        if (hidden) {
+            attributes.flags |= scene::instance_flags::kHidden;
+        } else {
+            attributes.flags &= ~scene::instance_flags::kHidden;
+        }
+        if (Status written = writeRecord(*source, attributes); !written) {
+            return written;
+        }
     }
-    return writeRecord(source, attributes);
+    return ok();
 }
 
 Expected<scene::RenderItem> CollectionInstance::frontRenderItem(std::size_t item,
@@ -293,17 +308,17 @@ Status CollectionInstance::layerResident(const gl::LayerUpload& upload) {
     return writeRecord(*source, attributes);
 }
 
-Status CollectionInstance::writeFlags(std::size_t item, bool highlighted) {
+Status CollectionInstance::writeFlag(std::size_t item, std::uint32_t flag, bool on) {
     const Item& entry = m_items[item];
     for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
         if (!source) {
             continue;
         }
         scene::InstanceAttributes attributes = m_attributes[*source];
-        if (highlighted) {
-            attributes.flags |= scene::instance_flags::kHighlighted;
+        if (on) {
+            attributes.flags |= flag;
         } else {
-            attributes.flags &= ~scene::instance_flags::kHighlighted;
+            attributes.flags &= ~flag;
         }
         if (Status written = writeRecord(*source, attributes); !written) {
             return written;
@@ -317,18 +332,80 @@ Status CollectionInstance::setHovered(world::PickId pickId) {
         return ok();
     }
     if (const auto previous = m_byPick.find(m_hovered); previous != m_byPick.end()) {
-        if (Status cleared = writeFlags(previous->second, false); !cleared) {
+        if (Status cleared = writeFlag(previous->second, scene::instance_flags::kHighlighted, false); !cleared) {
             return cleared;
         }
     }
     m_hovered = world::kNoPick;
     if (const auto next = m_byPick.find(pickId); next != m_byPick.end()) {
-        if (Status set = writeFlags(next->second, true); !set) {
+        if (Status set = writeFlag(next->second, scene::instance_flags::kHighlighted, true); !set) {
             return set;
         }
         m_hovered = pickId;
     }
     return ok();
+}
+
+Status CollectionInstance::setHidden(world::PickId pickId, bool hidden) {
+    const auto found = m_byPick.find(pickId);
+    if (found == m_byPick.end()) {
+        return ok();
+    }
+    m_items[found->second].pulled = hidden;
+    return writeHidden(found->second);
+}
+
+std::vector<world::PickId> CollectionInstance::hiddenItems() const {
+    std::vector<world::PickId> hidden;
+    for (const auto& [pickId, index] : m_byPick) {
+        const Item& entry = m_items[index];
+        for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
+            const bool heroShown = entry.heroFront && source == entry.front;
+            if (source && !heroShown && (m_attributes[*source].flags & scene::instance_flags::kHidden) != 0) {
+                hidden.push_back(pickId);
+                break;
+            }
+        }
+    }
+    return hidden;
+}
+
+bool CollectionInstance::staticDrawn(world::PickId pickId) const {
+    const auto found = m_byPick.find(pickId);
+    if (found == m_byPick.end()) {
+        return false;
+    }
+    const Item& entry = m_items[found->second];
+    for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
+        if (source && (m_attributes[*source].flags & scene::instance_flags::kHidden) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CollectionInstance::appendRenderItems(world::PickId pickId, const glm::mat4& model,
+                                           std::vector<scene::RenderItem>& out) const {
+    const auto found = m_byPick.find(pickId);
+    if (found == m_byPick.end()) {
+        return;
+    }
+    const Item& entry = m_items[found->second];
+    for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
+        if (!source) {
+            continue;
+        }
+        const scene::StaticInstance& part = m_sources[*source];
+        scene::InstanceAttributes attributes = m_attributes[*source];
+        attributes.flags &= ~scene::instance_flags::kHidden;
+        if (entry.heroFront && source == entry.front) {
+            // The hero texture's front (I3 step 12) travels with the pulled item.
+            out.push_back(scene::RenderItem{part.mesh, m_heroMaterial, m_heroShader, model, false, attributes});
+        } else {
+            out.push_back(
+                scene::RenderItem{part.mesh, part.material, part.shader, model, part.castsShadow, attributes});
+        }
+    }
 }
 
 } // namespace rv::app
