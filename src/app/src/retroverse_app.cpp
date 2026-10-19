@@ -542,6 +542,18 @@ struct RetroverseApp::State {
         host.showScene = [this, &context](scene::SceneDescription next) {
             return replaceScene(context, std::move(next), scene::assetModelLoader(context.paths().assetRoot()));
         };
+        // I3 step 10c: the stored plan's room replaced by its reconciliation keeps the walker where it stands; the
+        // room's hero CRT plays the room's games.
+        host.showSceneKeepingWalker = [this, &context](scene::SceneDescription next) {
+            return replaceScene(context, std::move(next), scene::assetModelLoader(context.paths().assetRoot()), true);
+        };
+        host.setScreenGames = [this](std::vector<ScreenGame> games) {
+            if (screen) {
+                screen->setGames(std::move(games));
+            } else if (!games.empty()) {
+                spdlog::info("World: the room has no hero CRT for its {} game(s) with media", games.size());
+            }
+        };
         host.showTestRoom = [this, &context]() -> Status {
             auto testRoom = sceneFileSource(std::nullopt, context.paths());
             if (!testRoom) {
@@ -559,7 +571,11 @@ struct RetroverseApp::State {
     /// instead of it; I3 step 10b): the hero CRT's service, the content of the registries and the scene go, the new
     /// scene is instantiated, the walker stands at its camera (or at --spawn), the camera's lens is its, the CRT's
     /// service starts again on its CRT, the debug lines are made again. The world's collection is gone by then.
-    Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader) {
+    /// `keepWalker`: the walker stays where it stands (I3 step 10c: a room committed again in place of itself).
+    Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader,
+                        bool keepWalker = false) {
+        const std::optional<SpawnPoint> spawn =
+            keepWalker ? std::optional<SpawnPoint>(freeRoam->pose()) : context.options().spawn;
         if (screen) {
             screen->shutdown();
             screen->record(context.report().video);
@@ -585,12 +601,12 @@ struct RetroverseApp::State {
             if (auto blank =
                     SceneInstance::create(description, graphics->materialLibrary(), loadModel, graphics->resources())) {
                 scene.emplace(std::move(*blank));
-                freeRoam->resetScene(description, scene->collisionWorld(), context.options().spawn);
+                freeRoam->resetScene(description, scene->collisionWorld(), spawn);
             }
             return propagate(std::move(error));
         }
         scene.emplace(std::move(*instance));
-        freeRoam->resetScene(description, scene->collisionWorld(), context.options().spawn);
+        freeRoam->resetScene(description, scene->collisionWorld(), spawn);
         camera.setLens(description.camera.lens);
         // The camera takes the walker's new pose now: this frame renders the new scene from it.
         freeRoam->update(input::ActionState{}, 0.0f, camera);
@@ -908,7 +924,8 @@ Status RetroverseApp::onInit(AppContext& context) {
     if (!mock) {
         return propagate(std::move(mock.error()));
     }
-    // The games the hero CRT may play: the mock catalog's media (the ES-DE catalog's come with the room, I3 step 10c).
+    // The games the hero CRT may play: the mock catalog's media (the ES-DE catalog's come with the room once its
+    // snapshot answered: WorldSession's setScreenGames, I3 step 10c).
     std::vector<ScreenGame> screenGames = *mock ? (*mock)->screenGames() : std::vector<ScreenGame>{};
     // The catalog first: the ES-DE catalog's worker opens the database while the scene loads (NFR-01: the first page
     // within 5 s of the start). --mock-catalog takes precedence; the model viewer has none.

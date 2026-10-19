@@ -2,14 +2,19 @@
 
 #include <algorithm>
 #include <exception>
+#include <mutex>
+#include <set>
 #include <span>
+#include <string>
 #include <system_error>
 #include <utility>
 
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 
 #include "json_util.hpp"
 #include "path_util.hpp"
@@ -18,6 +23,30 @@ namespace rv::assets {
 namespace {
 
 constexpr int kFamiliesSchemaVersion = 1;
+
+/// Logs a fallback's warning the first time this process meets it (the same asset root, id, replacement and reason);
+/// later resolutions of it log at debug level, so that a room that several jobs of one run resolve (its capacity, its
+/// scene, its persisted start) warns once (style §26.3; I3 step 10c).
+void warnFallbackOnce(const std::filesystem::path& assetRoot, std::string_view id, std::string_view replacement,
+                      std::string_view reason, const std::string& message) {
+    static std::mutex mutex;
+    static std::set<std::string, std::less<>> warned;
+    std::string key = core::pathToUtf8Lossy(assetRoot);
+    for (const std::string_view part : {id, replacement, reason}) {
+        key.push_back('\0');
+        key.append(part);
+    }
+    bool first = false;
+    {
+        const std::lock_guard lock(mutex);
+        first = warned.insert(std::move(key)).second;
+    }
+    if (first) {
+        spdlog::warn("{}", message);
+    } else {
+        spdlog::debug("{} (warned before)", message);
+    }
+}
 
 Expected<PrefabFamily> parseFamily(const nlohmann::json& entry, const std::string& context) {
     if (auto status = detail::requireObject(entry, context); !status) {
@@ -249,8 +278,9 @@ Expected<ResolvedPrefab> resolvePrefab(const std::filesystem::path& assetRoot, c
     if (family->generic != id) {
         auto generic = loadUsable(assetRoot, family->generic);
         if (generic) {
-            spdlog::warn("Prefab '{}' cannot be used ({}); using its family's generic prefab '{}'", id, reason,
-                         family->generic);
+            warnFallbackOnce(assetRoot, id, family->generic, reason,
+                             fmt::format("Prefab '{}' cannot be used ({}); using its family's generic prefab '{}'", id,
+                                         reason, family->generic));
             ResolvedPrefab resolved = fromManifest(id, PrefabSource::FamilyGeneric, std::move(*generic));
             resolved.fallbackReason = std::move(reason);
             return resolved;
@@ -261,8 +291,9 @@ Expected<ResolvedPrefab> resolvePrefab(const std::filesystem::path& assetRoot, c
     if (!prefab) {
         return propagate(prefab.error());
     }
-    spdlog::warn("Prefab '{}' cannot be used ({}); using its family's procedural prefab '{}'", id, reason,
-                 family->generator);
+    warnFallbackOnce(assetRoot, id, family->generator, reason,
+                     fmt::format("Prefab '{}' cannot be used ({}); using its family's procedural prefab '{}'", id,
+                                 reason, family->generator));
     ResolvedPrefab resolved;
     resolved.requestedId = std::string(id);
     resolved.source = PrefabSource::FamilyProcedural;

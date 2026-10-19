@@ -77,6 +77,8 @@ void skipWithoutOpenGl(const AppRun& run);
 /// medium OpenGL debug message (builds with debug output), the assets of its configuration (the source tree in
 /// developer builds, the deployed copy next to the executable otherwise).
 void requireCleanRun(const AppRun& run);
+/// requireCleanRun() of a run given `assetRoot` with --asset-root (its assets from the command line); none: the build's.
+void requireCleanRun(const AppRun& run, const std::optional<std::filesystem::path>& assetRoot);
 
 /// Checks that the run wrote `file` at `size` (its report and the PNG) and that the picture shows something: neither
 /// uniform nor black. Returns the image (empty when it cannot be read).

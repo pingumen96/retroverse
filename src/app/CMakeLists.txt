@@ -9,7 +9,7 @@
 # (--mock-catalog), a launch from Avvia to the return around a LaunchSession (LaunchFlow) and its outcome as the product
 # UI tells it; since I3 (skeletons naming their steps) the frame timing of the run report, the world's interaction
 # states, what the hero CRT plays, the cover loader's order, a collection item's layers through the derived-texture
-# cache and the world notice's keys (step 10b). Kept apart from rv_app so that rv_tests can unit-test it without SDL or
+# cache and the world notice's keys (step 10b), the room's items kept for the persisted start (step 10c). Kept apart from rv_app so that rv_tests can unit-test it without SDL or
 # OpenGL, and the GPU smoke tests can read the reports of the runs they start.
 add_library(rv_app_cli STATIC
     src/back_action.cpp
@@ -26,6 +26,7 @@ add_library(rv_app_cli STATIC
     src/mock_catalog.cpp
     src/model_viewer.cpp
     src/overlay_policy.cpp
+    src/room_items.cpp
     src/run_report.cpp
     src/scene_content_plan.cpp
     src/screen_policy.cpp
@@ -45,7 +46,8 @@ rv_forbid_link(rv_app_cli)
 # and the queries on its own thread), the quick catalog's source over it, the launches of the catalog resolved with the
 # library's configuration, their play sessions, and the AppCatalog the product UI drives (the ES-DE catalog, or the mock
 # catalog of the tests); since I3 the catalog's refresh on its worker, the room's snapshot and the room's making up to
-# its commit (world_build: the jobs on the worker pool and the main thread's flow, step 10b). Kept apart from rv_app_cli,
+# its commit (world_build: the jobs on the worker pool and the main thread's flow, step 10b), the persisted start's
+# reconciliation and the hero CRT's games of the room (world_reconcile, room_screen: step 10c). Kept apart from rv_app_cli,
 # which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
@@ -53,8 +55,10 @@ add_library(rv_app_catalog STATIC
     src/catalog_launch_library.cpp
     src/catalog_worker.cpp
     src/library_refresh.cpp
+    src/room_screen.cpp
     src/room_snapshot.cpp
     src/world_build.cpp
+    src/world_reconcile.cpp
 )
 add_library(rv::app_catalog ALIAS rv_app_catalog)
 rv_set_target_defaults(rv_app_catalog)

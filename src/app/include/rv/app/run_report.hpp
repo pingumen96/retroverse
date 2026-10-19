@@ -265,6 +265,52 @@ struct LaunchRecord {
 
 /// The generated room of the run (I3 step 10b): what showed, from which plan, how it came to be and when. Empty ({})
 /// in runs that ask for no room (--scene, --model, --mock-catalog, the asset preview).
+/// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
+struct WorldPreviewRecord {
+    /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
+    /// commit on the main thread (milliseconds).
+    std::uint64_t frame = 0;
+    std::optional<double> committedAtMs;
+    std::optional<double> buildMs;
+    std::optional<double> commitMs;
+    /// Its plan's digest, its items, those the room's items of the last start knew (served from the cache at once).
+    std::string planDigest;
+    std::uint64_t items = 0;
+    std::uint64_t itemsKnown = 0;
+    /// Its fronts and spines resident when that frame was rendered (none until it was).
+    std::optional<std::uint64_t> frontsResident;
+    std::optional<std::uint64_t> spinesResident;
+
+    bool operator==(const WorldPreviewRecord&) const = default;
+};
+
+/// What the snapshot's result did to the stored plan's room shown (I3 step 10c, world_reconcile.hpp).
+struct WorldReconcileRecord {
+    /// app::toString(Reconciliation): "textures", "rebuild", "shell"; the frame it was committed in.
+    std::string kind;
+    std::uint64_t frame = 0;
+    /// The collection shown against the result's, by game (LayoutDifference).
+    std::uint64_t kept = 0;
+    std::uint64_t moved = 0;
+    std::uint64_t flagsChanged = 0;
+    std::uint64_t added = 0;
+    std::uint64_t removed = 0;
+    /// "textures": the covers were served again (they changed, or the media root is known: their sources checked).
+    bool coversReloaded = false;
+
+    bool operator==(const WorldReconcileRecord&) const = default;
+};
+
+/// A prefab of the room that fell back to its family's (style §21's object fallbacks).
+struct ObjectFallbackRecord {
+    /// The manifest the plan names, what replaced it ("family generic", "family procedural") and why.
+    std::string prefab;
+    std::string source;
+    std::string reason;
+
+    bool operator==(const ObjectFallbackRecord&) const = default;
+};
+
 struct WorldRecord {
     /// The run asked for the generated room (retroverse.exe without --scene, --model or --mock-catalog).
     bool bound = false;
@@ -315,21 +361,28 @@ struct WorldRecord {
     std::uint64_t staticRecords = 0;
     std::uint64_t pickTargets = 0;
     /// Times in milliseconds: from the process's creation to the catalog's snapshot done on its worker and to the
-    /// room's commit; the snapshot on the worker, the room's job on the pool, the commit on the main thread; from the
-    /// snapshot's answer to the commit.
+    /// room's commit (after a preview, its reconciliation's); the snapshot on the worker, the room's job on the pool,
+    /// the commit on the main thread; from the snapshot's answer to the commit.
     std::optional<double> snapshotAtMs;
     std::optional<double> committedAtMs;
     std::optional<double> snapshotMs;
     std::optional<double> buildMs;
     std::optional<double> commitMs;
     std::optional<double> snapshotToCommitMs;
-    /// The frame the room first showed in (none before it showed).
+    /// The frame the room first showed in (its preview's, after a persisted start; none before it showed).
     std::optional<std::uint64_t> firstFrame;
     /// The hover (I3 step 10b's outline on the picked item): changes of the hovered item, and the one hovered at the
     /// end (its pick id in hexadecimal, its GameId), if any.
     std::uint64_t hoverChanges = 0;
     std::string hoveredPickId;
     std::string hoveredGame;
+    /// I3 step 10c: the persisted start's preview and its reconciliation (none without a stored plan shown); the room's
+    /// items written for the next start; the games given to the hero CRT; the room's object fallbacks.
+    std::optional<WorldPreviewRecord> preview;
+    std::optional<WorldReconcileRecord> reconcile;
+    bool itemsWritten = false;
+    std::uint64_t screenGames = 0;
+    std::vector<ObjectFallbackRecord> objectFallbacks;
 
     bool operator==(const WorldRecord&) const = default;
 };

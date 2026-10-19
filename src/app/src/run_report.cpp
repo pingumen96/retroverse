@@ -469,6 +469,42 @@ Json worldToJson(const WorldRecord& world) {
     json["hoverChanges"] = world.hoverChanges;
     json["hoveredPickId"] = world.hoveredPickId;
     json["hoveredGame"] = world.hoveredGame;
+    if (world.preview) {
+        const WorldPreviewRecord& preview = *world.preview;
+        Json record{{"frame", preview.frame},
+                    {"planDigest", preview.planDigest},
+                    {"items", preview.items},
+                    {"itemsKnown", preview.itemsKnown}};
+        putOptional(record, "committedAtMs", preview.committedAtMs);
+        putOptional(record, "buildMs", preview.buildMs);
+        putOptional(record, "commitMs", preview.commitMs);
+        if (preview.frontsResident) {
+            record["frontsResident"] = *preview.frontsResident;
+        }
+        if (preview.spinesResident) {
+            record["spinesResident"] = *preview.spinesResident;
+        }
+        json["preview"] = std::move(record);
+    }
+    if (world.reconcile) {
+        const WorldReconcileRecord& reconcile = *world.reconcile;
+        json["reconcile"] = Json{{"kind", reconcile.kind},
+                                 {"frame", reconcile.frame},
+                                 {"kept", reconcile.kept},
+                                 {"moved", reconcile.moved},
+                                 {"flagsChanged", reconcile.flagsChanged},
+                                 {"added", reconcile.added},
+                                 {"removed", reconcile.removed},
+                                 {"coversReloaded", reconcile.coversReloaded}};
+    }
+    json["itemsWritten"] = world.itemsWritten;
+    json["screenGames"] = world.screenGames;
+    Json fallbacks = Json::array();
+    for (const ObjectFallbackRecord& fallback : world.objectFallbacks) {
+        fallbacks.push_back(
+            Json{{"prefab", fallback.prefab}, {"source", fallback.source}, {"reason", fallback.reason}});
+    }
+    json["objectFallbacks"] = std::move(fallbacks);
     return json;
 }
 
@@ -527,6 +563,37 @@ WorldRecord readWorld(FieldReader& fields) {
     world.hoverChanges = fields.count("hoverChanges");
     world.hoveredPickId = fields.string("hoveredPickId");
     world.hoveredGame = fields.string("hoveredGame");
+    if (auto preview = fields.optionalObject("preview")) {
+        WorldPreviewRecord record;
+        record.frame = preview->count("frame");
+        record.planDigest = preview->string("planDigest");
+        record.items = preview->count("items");
+        record.itemsKnown = preview->count("itemsKnown");
+        record.committedAtMs = preview->optionalNumber("committedAtMs");
+        record.buildMs = preview->optionalNumber("buildMs");
+        record.commitMs = preview->optionalNumber("commitMs");
+        record.frontsResident = preview->optionalCount("frontsResident");
+        record.spinesResident = preview->optionalCount("spinesResident");
+        world.preview = std::move(record);
+    }
+    if (auto reconcile = fields.optionalObject("reconcile")) {
+        WorldReconcileRecord record;
+        record.kind = reconcile->string("kind");
+        record.frame = reconcile->count("frame");
+        record.kept = reconcile->count("kept");
+        record.moved = reconcile->count("moved");
+        record.flagsChanged = reconcile->count("flagsChanged");
+        record.added = reconcile->count("added");
+        record.removed = reconcile->count("removed");
+        record.coversReloaded = reconcile->boolean("coversReloaded");
+        world.reconcile = std::move(record);
+    }
+    world.itemsWritten = fields.boolean("itemsWritten");
+    world.screenGames = fields.count("screenGames");
+    for (FieldReader& fallback : fields.objectArray("objectFallbacks")) {
+        world.objectFallbacks.push_back(
+            ObjectFallbackRecord{fallback.string("prefab"), fallback.string("source"), fallback.string("reason")});
+    }
     return world;
 }
 

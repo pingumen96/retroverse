@@ -107,6 +107,8 @@ struct ScenePrefab {
     PrefabRef ref;
     /// What resolvePrefab ended on (the requested manifest, the family's generic one, the family's procedural prefab).
     assets::PrefabSource source = assets::PrefabSource::Requested;
+    /// Why the requested manifest could not be used (assets::ResolvedPrefab::fallbackReason; empty for Requested).
+    std::string fallbackReason;
     /// A procedural prefab: its generator and parameters (an object) and the prefab they build.
     std::string generator;
     nlohmann::json params = nlohmann::json::object();
