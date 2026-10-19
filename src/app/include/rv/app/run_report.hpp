@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec3.hpp>
+
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
 #include <rv/app/self_check.hpp>
@@ -277,8 +279,46 @@ struct InteractionEventRecord {
     bool operator==(const InteractionEventRecord&) const = default;
 };
 
+/// The inspection (I3 step 13b; ADR-0012 §4): the item lifted into the hand, turned and zoomed, the scene behind it
+/// dimmed. Under InteractionRecord::inspect.
+struct InspectRecord {
+    /// Inspections entered; frames drawn with the item on its way into or out of the hand (0 < lift < 1) and held
+    /// (lift 1); frames drawn with the scene behind it dimmed.
+    std::uint64_t inspections = 0;
+    std::uint64_t liftFrames = 0;
+    std::uint64_t heldFrames = 0;
+    std::uint64_t dimmedFrames = 0;
+    /// Vedi media and Informazioni asked for in Inspect (I3 step 14b opens them), and the quick catalog opened while
+    /// in Inspect: never (the pad's north button is Vedi media there).
+    std::uint64_t mediaRequests = 0;
+    std::uint64_t infoRequests = 0;
+    std::uint64_t catalogOpenedInInspect = 0;
+    /// Over the frames drawn held: the zoom's distance (the interaction's, 0.4 to 1.0 m) and the distance drawn
+    /// (heldDistance(): kept out of its fixture), at their nearest and farthest (meters); nothing before any.
+    std::optional<double> minDistance;
+    std::optional<double> maxDistance;
+    std::optional<double> minDrawnDistance;
+    std::optional<double> maxDrawnDistance;
+    /// The last frame drawn with the item off its pulled-out pose (lift above 0): the item, the lift, the turn in
+    /// degrees, the zoom's distance and the distance drawn; the held item's centre, its front (its prefab's +Z) and up
+    /// (+Y) in the camera's frame (x right, y up, z towards the viewer); whether its front showed the hero texture.
+    std::string pickId;
+    double lift = 0.0;
+    double yawDeg = 0.0;
+    double pitchDeg = 0.0;
+    double distance = 0.0;
+    double drawnDistance = 0.0;
+    glm::vec3 heldCenter{0.0f};
+    glm::vec3 heldFront{0.0f};
+    glm::vec3 heldUp{0.0f};
+    bool heroFront = false;
+
+    bool operator==(const InspectRecord&) const = default;
+};
+
 /// The world's interaction (I3 step 13a; ADR-0012 §1-§3): the hover with its outline and label, the pull-out on the
-/// dynamic path, Focus and its D-pad steps. Empty ({}) in runs without a room's collection.
+/// dynamic path, Focus and its D-pad steps; the inspection (I3 step 13b). Empty ({}) in runs without a room's
+/// collection.
 struct InteractionRecord {
     bool bound = false;
     /// The world's reduceMotion (world.json) as the run had it.
@@ -312,6 +352,7 @@ struct InteractionRecord {
     /// The changes, in order (at most app::kMaxInteractionEvents; `eventsDropped` past them).
     std::vector<InteractionEventRecord> events;
     std::uint64_t eventsDropped = 0;
+    InspectRecord inspect;
 
     bool operator==(const InteractionRecord&) const = default;
 };
@@ -407,6 +448,43 @@ struct RoomLaunchRecord {
     bool operator==(const RoomLaunchRecord&) const = default;
 };
 
+
+/// A change of the media viewer or of Informazioni (I3 step 14b).
+struct GameScreenEventRecord {
+    std::uint64_t frame = 0;
+    /// "media" (the viewer opened on `game` from `from`, "card" or "catalog"; `detail` its pages' kinds joined by ','),
+    /// "page" (the page of `kind` shows; `detail` its position from 1), "picture" (`kind`'s picture: `detail`
+    /// "shown <width>x<height>" or "failed"), "info" (Informazioni opened on `game` from `from`; `detail` its other
+    /// versions, "<title> (<region>)" joined by "; "), "scroll" (`detail` the step), "closed" (`detail` "media" or
+    /// "info").
+    std::string event;
+    std::string game;
+    std::string from;
+    std::string kind;
+    std::string detail;
+
+    bool operator==(const GameScreenEventRecord&) const = default;
+};
+
+/// The media viewer and Informazioni (I3 step 14b; ADR-0012 §5), from the world's card and the quick catalog. Empty
+/// ({}) in runs without the product UI.
+struct GameScreensRecord {
+    bool bound = false;
+    /// Frames each showed; pictures uploaded and pictures that could not be read or decoded.
+    std::uint64_t viewerFrames = 0;
+    std::uint64_t infoFrames = 0;
+    std::uint64_t pictures = 0;
+    std::uint64_t failures = 0;
+    /// The viewer's picture and stage as last laid out with a picture: x, y, width, height in pixels of the window's
+    /// view (empty: none).
+    std::vector<double> pictureBox;
+    std::vector<double> stageBox;
+    /// The changes, in order (at most kMaxInteractionEvents; `eventsDropped` past them).
+    std::vector<GameScreenEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const GameScreensRecord&) const = default;
+};
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -884,6 +962,8 @@ struct RunReport {
     WorldRecord world;
     ResidencyRecord residency;
     VideoRecord video;
+    /// The media viewer and Informazioni (I3 step 14b; the product UI), always written ("screens").
+    GameScreensRecord screens;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

@@ -123,13 +123,14 @@ frame M                                  beforeInteraction: takeWorldLaunchEnded
   an item the room lost refused); the record read back from the run report.
 - `tests/smoke/test_world_launch.cpp` (`gpu.world launch: ...`, hidden, lockstep, snes-room imported, the fake's
   `fake-return` profile assigned to snes, `RV_LAUNCH_ALLOWLIST` the fake):
-  - **Avvia** (`world_launch.json`, 120 frames): the launch asked at frame 80, requested at 81, `Returned` with exit code
+  - **Avvia** (`world_launch.json`, 120 frames, from the Focus pose of Amber Lantern, whose clip the hero CRT plays
+    while it is inspected since 13b): the launch asked at frame 80, requested at 81, `Returned` with exit code
     0 and the fake's 2.5 s, no frame rendered while it ran; `LaunchRecord::before.camera == after.camera`; the play
     session in the catalog database, returned and verified; `world.launch`: launch, ended (returned) and restored
     (Inspect of the same item) on one frame, `poseRestored`, the final camera the pose at Avvia; the card shown at 40 and
-    again on the restore frame, hidden at 80, on the same game; the hero CRT's decoder ran at the launch, its thread
-    ended before the hand-over (`threadsRunning` 0, stopped in about 1 ms) and reopened after the return (at the
-    clip's position when a frame of it had shown).
+    again on the restore frame, hidden at 80, on the same game; the hero CRT on that game, at most one decoder thread,
+    the decoder running at the launch, its thread ended before the hand-over (`threadsRunning` 0, stopped in about
+    1.3 ms) and reopened after the return (at the clip's position when a frame of it had shown: none had in this run).
   - **Mostra nella stanza** (`world_show_in_room.json`, 80 frames): Acorn Errands searched, Down from Avvia reaches the
     button, pressed at 23; at 24 `show-in-room` on its GameId, the catalog closed, no launch, the interaction in Focus of
     it, at least 30 eased frames, the final camera at the item's Focus pose (1 mm, 0.05 degrees). **An unplaced game**
@@ -146,10 +147,14 @@ other worktrees building meanwhile (the compiler ran out of heap at `-j 6`; buil
 - `rv_tests "[app],[ui]"`: 312 passed, 1 skipped (the hidden bench).
 - `rv_smoke_tests "[world_launch]"`: both cases passed; `"[world_card],[world_focus],golden*"`: 7 cases passed, golden
   G01 0 pixels apart (the run has no world).
+- After merging main (13b, 14b): Debug built with 0 warnings; `rv_tests "[world_launch],[run_report],[app][world_card],
+  [app][world_interaction]"` passed; `rv_smoke_tests "[world_launch],[world_card],[media_viewer],golden*"` passed (the
+  Avvia case moved to Amber Lantern: since 13b the CRT follows the inspected item, and the band item first used has no
+  clip, so no decoder ran at its launch).
 - The cover loader's `pausedRounds` was 0 in the Avvia case: lockstep runs have every cover resident before Avvia, so the
   paused rounds had nothing to hold back (they count rounds with work held); the pause itself is step 12's (tested on
   `CoverSchedule`), and no frame is rendered while the game runs.
 - Screenshots (not committed, the fixture's invented titles): `build/msvc-x64-debug/smoke/world_launch/avvia/
-  returned.png` (Trellis Tales in the hand again, its card on Avvia, "Pronto: già avviato e tornato senza errori": the
+  returned.png` (before the merge: Trellis Tales in the hand again, its card on Avvia, "Pronto: già avviato e tornato senza errori": the
   session verified), `show_in_room/show_in_room.png` (Focus on Acorn Errands on the wall shelf, its label),
   `show_in_room/unplaced.png` (Thistle Trellis's card: "Non esposto: senza copertina", no button).

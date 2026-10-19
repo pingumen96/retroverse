@@ -437,6 +437,61 @@ GpuMemoryRecord readGpuMemory(FieldReader& fields) {
 }
 
 /// An unbound record (no collection) is an empty object.
+Json vec3ToJson(const glm::vec3& value) {
+    return Json::array({static_cast<double>(value.x), static_cast<double>(value.y), static_cast<double>(value.z)});
+}
+
+Json inspectToJson(const InspectRecord& inspect) {
+    Json json{{"inspections", inspect.inspections},
+              {"liftFrames", inspect.liftFrames},
+              {"heldFrames", inspect.heldFrames},
+              {"dimmedFrames", inspect.dimmedFrames},
+              {"mediaRequests", inspect.mediaRequests},
+              {"infoRequests", inspect.infoRequests},
+              {"catalogOpenedInInspect", inspect.catalogOpenedInInspect},
+              {"pickId", inspect.pickId},
+              {"lift", inspect.lift},
+              {"yawDeg", inspect.yawDeg},
+              {"pitchDeg", inspect.pitchDeg},
+              {"distance", inspect.distance},
+              {"drawnDistance", inspect.drawnDistance},
+              {"heldCenter", vec3ToJson(inspect.heldCenter)},
+              {"heldFront", vec3ToJson(inspect.heldFront)},
+              {"heldUp", vec3ToJson(inspect.heldUp)},
+              {"heroFront", inspect.heroFront}};
+    putOptional(json, "minDistance", inspect.minDistance);
+    putOptional(json, "maxDistance", inspect.maxDistance);
+    putOptional(json, "minDrawnDistance", inspect.minDrawnDistance);
+    putOptional(json, "maxDrawnDistance", inspect.maxDrawnDistance);
+    return json;
+}
+
+InspectRecord readInspect(FieldReader& fields) {
+    InspectRecord inspect;
+    inspect.inspections = fields.count("inspections");
+    inspect.liftFrames = fields.count("liftFrames");
+    inspect.heldFrames = fields.count("heldFrames");
+    inspect.dimmedFrames = fields.count("dimmedFrames");
+    inspect.mediaRequests = fields.count("mediaRequests");
+    inspect.infoRequests = fields.count("infoRequests");
+    inspect.catalogOpenedInInspect = fields.count("catalogOpenedInInspect");
+    inspect.minDistance = fields.optionalNumber("minDistance");
+    inspect.maxDistance = fields.optionalNumber("maxDistance");
+    inspect.minDrawnDistance = fields.optionalNumber("minDrawnDistance");
+    inspect.maxDrawnDistance = fields.optionalNumber("maxDrawnDistance");
+    inspect.pickId = fields.string("pickId");
+    inspect.lift = fields.number("lift");
+    inspect.yawDeg = fields.number("yawDeg");
+    inspect.pitchDeg = fields.number("pitchDeg");
+    inspect.distance = fields.number("distance");
+    inspect.drawnDistance = fields.number("drawnDistance");
+    inspect.heldCenter = fields.vec3("heldCenter");
+    inspect.heldFront = fields.vec3("heldFront");
+    inspect.heldUp = fields.vec3("heldUp");
+    inspect.heroFront = fields.boolean("heroFront");
+    return inspect;
+}
+
 Json interactionToJson(const InteractionRecord& interaction) {
     Json json = Json::object();
     if (!interaction.bound) {
@@ -475,6 +530,7 @@ Json interactionToJson(const InteractionRecord& interaction) {
     }
     json["events"] = std::move(events);
     json["eventsDropped"] = interaction.eventsDropped;
+    json["inspect"] = inspectToJson(interaction.inspect);
     return json;
 }
 
@@ -512,6 +568,9 @@ InteractionRecord readInteraction(FieldReader& fields) {
         interaction.events.push_back(std::move(entry));
     }
     interaction.eventsDropped = fields.count("eventsDropped");
+    if (std::optional<FieldReader> inspect = fields.optionalObject("inspect")) {
+        interaction.inspect = readInspect(*inspect);
+    }
     return interaction;
 }
 
@@ -668,6 +727,63 @@ RoomLaunchRecord readRoomLaunch(FieldReader& fields) {
     }
     launch.eventsDropped = fields.count("eventsDropped");
     return launch;
+}
+
+/// An unbound record (no product UI) is an empty object (I3 step 14b).
+Json screensToJson(const GameScreensRecord& screens) {
+    Json json = Json::object();
+    if (!screens.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["viewerFrames"] = screens.viewerFrames;
+    json["infoFrames"] = screens.infoFrames;
+    json["pictures"] = screens.pictures;
+    json["failures"] = screens.failures;
+    json["pictureBox"] = screens.pictureBox;
+    json["stageBox"] = screens.stageBox;
+    Json events = Json::array();
+    for (const GameScreenEventRecord& event : screens.events) {
+        Json entry{{"frame", event.frame}, {"event", event.event}};
+        for (const auto& [key, value] : {std::pair<const char*, const std::string*>{"game", &event.game},
+                                         {"from", &event.from},
+                                         {"kind", &event.kind},
+                                         {"detail", &event.detail}}) {
+            if (!value->empty()) {
+                entry[key] = *value;
+            }
+        }
+        events.push_back(std::move(entry));
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = screens.eventsDropped;
+    return json;
+}
+
+GameScreensRecord readScreens(FieldReader& fields) {
+    GameScreensRecord screens;
+    if (!fields.has("bound")) {
+        return screens;
+    }
+    screens.bound = fields.boolean("bound");
+    screens.viewerFrames = fields.count("viewerFrames");
+    screens.infoFrames = fields.count("infoFrames");
+    screens.pictures = fields.count("pictures");
+    screens.failures = fields.count("failures");
+    screens.pictureBox = fields.numberArray("pictureBox");
+    screens.stageBox = fields.numberArray("stageBox");
+    for (FieldReader& event : fields.objectArray("events")) {
+        GameScreenEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.game = event.optionalString("game").value_or(std::string());
+        entry.from = event.optionalString("from").value_or(std::string());
+        entry.kind = event.optionalString("kind").value_or(std::string());
+        entry.detail = event.optionalString("detail").value_or(std::string());
+        screens.events.push_back(std::move(entry));
+    }
+    screens.eventsDropped = fields.count("eventsDropped");
+    return screens;
 }
 
 /// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
@@ -1578,6 +1694,7 @@ std::string formatRunReport(const RunReport& report) {
     json["world"] = worldToJson(report.world);
     json["residency"] = residencyToJson(report.residency);
     json["video"] = videoToJson(report.video);
+    json["screens"] = screensToJson(report.screens);
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -1677,6 +1794,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto video = fields.object("video")) {
         report.video = readVideo(*video);
+    }
+    if (auto screens = fields.optionalObject("screens")) {
+        report.screens = readScreens(*screens);
     }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");

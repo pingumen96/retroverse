@@ -297,6 +297,18 @@ std::optional<ui::CatalogEntry> CatalogDatabaseSource::entryOf(const catalog::Ga
     return entry;
 }
 
+std::optional<catalog_db::GameDetails> CatalogDatabaseSource::detailsOf(const catalog::GameId& game) {
+    if (!m_pages || !game.isValid()) {
+        return std::nullopt;
+    }
+    auto details = m_pages->details(game);
+    if (!details) {
+        spdlog::warn("Catalog details of game {} cannot be read: {}", game.toString(), details.error().toString());
+        return std::nullopt;
+    }
+    return std::move(*details);
+}
+
 void CatalogDatabaseSource::fill(const catalog::CatalogRow& row, ui::CatalogEntry& entry) {
     entry.id = row.id.toString();
     entry.title = row.title;

@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/command_line.hpp>
@@ -77,7 +78,8 @@ public:
     ProductUi& operator=(const ProductUi&) = delete;
 
     [[nodiscard]] bool catalogOpen() const noexcept;
-    /// The game-session panel shows (a game running and asking, an outcome).
+    /// The game-session panel shows (a game running and asking, an outcome), or the media viewer or Informazioni (I3
+    /// step 14b: Back's PanelBack level closes them first).
     [[nodiscard]] bool panelOpen() const noexcept;
     /// The product UI has the input (InputContext::Ui): the catalog or the panel is open.
     [[nodiscard]] bool hasInput() const noexcept { return catalogOpen() || panelOpen(); }
@@ -143,6 +145,15 @@ public:
     [[nodiscard]] std::optional<glm::vec4> worldCardCoverBox() const;
     /// Registers `texture` for the documents' image source "rv-texture:<key>" (ui::UiSystem::setTexture; 0: none).
     void setUiTexture(std::string_view key, unsigned texture, glm::ivec2 size);
+    /// The media viewer and Informazioni (I3 step 14b; game_screens_panel.hpp) of `game`, from the world's card
+    /// (`from`: kScreenFromCard; the quick catalog opens them itself): the catalog's row and stored media, `title` until
+    /// the catalog answers. They take the UI's input while they show (panelOpen()); Back closes them (panelBack()).
+    void openGameMedia(const catalog::GameId& game, std::string_view title, std::string_view from);
+    void openGameInfo(const catalog::GameId& game, std::string_view title, std::string_view from);
+    /// The other versions of a game's title Informazioni lists (the room's plan: VersionGroups; unset: none).
+    void setVersionLookup(std::function<std::vector<catalog::GameId>(const catalog::GameId&)> lookup);
+    /// The media viewer or Informazioni shows.
+    [[nodiscard]] bool gameScreenOpen() const noexcept;
     /// Counts the catalog's changes that show other rows (its opening, a readiness resolved, a refresh): a reader of a
     /// game's row (the world's card) reads it again when it changed.
     [[nodiscard]] std::uint64_t catalogRevision() const noexcept;

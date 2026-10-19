@@ -52,6 +52,7 @@ void WorldSession::keepShown(const WorldBuild& build) {
     m_otherVersions = build.plan ? otherVersionCounts(*build.plan) : std::map<std::uint64_t, std::uint32_t>{};
     // Where each game stands, for "Mostra nella stanza" (I3 step 15a).
     m_launch.setPlan(build.plan ? &*build.plan : nullptr);
+    m_versionGroups = build.plan ? VersionGroups::of(*build.plan) : VersionGroups{}; // Informazioni (I3 step 14b)
 }
 
 void WorldSession::releaseHero() {

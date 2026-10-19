@@ -10,8 +10,9 @@
 # UI tells it; since I3 (skeletons naming their steps) the frame timing of the run report, the world's interaction
 # states, what the hero CRT plays, the cover loader's order, a collection item's layers through the derived-texture
 # cache and the world notice's keys (step 10b), the room's items kept for the persisted start (step 10c), the room's
-# side of the hover, the pull-out and Focus and the hover label's keys (step 13a). Kept apart from rv_app so that
-# rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the reports of the runs they start.
+# side of the hover, the pull-out and Focus and the hover label's keys (step 13a), the held item's pose (step 13b).
+# Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the
+# reports of the runs they start.
 add_library(rv_app_cli STATIC
     src/back_action.cpp
     src/collection_layers.cpp
@@ -34,6 +35,7 @@ add_library(rv_app_cli STATIC
     src/screenshot_name.cpp
     src/self_check.cpp
     src/world_focus.cpp
+    src/world_inspect.cpp
     src/world_interaction.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
@@ -50,13 +52,15 @@ rv_forbid_link(rv_app_cli)
 # catalog of the tests); since I3 the catalog's refresh on its worker, the room's snapshot and the room's making up to
 # its commit (world_build: the jobs on the worker pool and the main thread's flow, step 10b), the persisted start's
 # reconciliation and the hero CRT's games of the room (world_reconcile, room_screen: step 10c), the live update's decision
-# (world_live_plan: step 15b). Kept apart from rv_app_cli,
+# (world_live_plan: step 15b), what the media viewer and Informazioni show of a game (game_screens: step 14b). Kept
+# apart from rv_app_cli,
 # which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
     src/catalog_launch_library.cpp
     src/catalog_worker.cpp
+    src/game_screens.cpp
     src/library_refresh.cpp
     src/room_screen.cpp
     src/room_snapshot.cpp
@@ -81,6 +85,7 @@ add_library(rv_app STATIC
     src/cover_loader.cpp
     src/free_roam.cpp
     src/fxaa_self_check.cpp
+    src/game_screens_panel.cpp
     src/game_session_panel.cpp
     src/hero_textures.cpp
     src/product_ui.cpp

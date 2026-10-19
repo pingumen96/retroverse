@@ -1,5 +1,5 @@
-// I3 step 15a: launching from the world. The walker starts at the Focus pose of the hero wall's band item
-// fx:hw-w/s:5.4 of the snes-room fixture (--spawn), the reticle on it.
+// I3 step 15a: launching from the world. The walker starts at the Focus pose of Amber Lantern's item in the snes-room
+// fixture's room (--spawn), the reticle on it; the game has a clip, which the hero CRT plays while it is inspected.
 //   frame 40   interact: the face-out item is inspected at once, its card shows (Avvia focused)
 //   frame 80   confirm: Avvia (the pad's Start). The catalog worker resolves the game right before the launch, the next
 //              frame shows "Gioco in corso", the hero CRT's decoder stops and its thread is waited for, the cover
@@ -7,7 +7,7 @@
 //              the decoder opens again at the clip's position and the walker and Inspect of the same item come back.
 // tests/smoke/test_world_launch.cpp checks the run report (launches, world.launch, world.interaction, video) and the
 // play session in the catalog database.
-//   retroverse --spawn <fx:hw-w/s:5.4's Focus pose> --input-script tests/input_scripts/world_launch.json
+//   retroverse --spawn <Amber Lantern's Focus pose> --input-script tests/input_scripts/world_launch.json
 //     --exit-after-frames --frames 120 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture and
 //     the fake emulator's profile assigned to snes>
 [

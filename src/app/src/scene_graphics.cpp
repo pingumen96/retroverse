@@ -91,6 +91,7 @@ struct ScenePrograms {
     gl::ShaderHandle outlineMark;
     gl::ShaderHandle outlineMarkMasked;
     gl::ShaderHandle outlineEdge;
+    gl::ShaderHandle outlineDim;
 };
 
 /// Loads the programs of ScenePrograms. A program that does not build is logged and stays empty until a reload
@@ -115,6 +116,7 @@ Expected<ScenePrograms> loadScenePrograms(gl::ShaderLibrary& library) {
         {&ScenePrograms::outlineMarkMasked,
          {"outline_mark_masked", "pbr/pbr.vert", "outline/outline_mark.frag", {"RV_ALPHA_TEST"}}},
         {&ScenePrograms::outlineEdge, {"outline_edge", "post/fullscreen.vert", "outline/outline_edge.frag", {}}},
+        {&ScenePrograms::outlineDim, {"outline_dim", "post/fullscreen.vert", "outline/outline_dim.frag", {}}},
     };
     for (const auto& [handle, description] : descriptions) {
         auto loaded = library.load(description);
@@ -225,6 +227,7 @@ struct SceneGraphics::State {
         shaderSet.outline.mark = &shaders->get(programs.outlineMark);
         shaderSet.outline.markMasked = &shaders->get(programs.outlineMarkMasked);
         shaderSet.outline.edge = &shaders->get(programs.outlineEdge);
+        shaderSet.outline.dim = &shaders->get(programs.outlineDim);
         gl::RenderView shown = view;
         shown.debugDraw = debugDraw && debugLinesShown ? &*debugDraw : nullptr;
         if (surfaceView != gl::SurfaceView::Lit) {

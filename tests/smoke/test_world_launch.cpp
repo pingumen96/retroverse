@@ -3,8 +3,8 @@
 // an emulators.json whose "fake-return" profile runs the fake emulator of this build (about 2.5 s), assigned to snes;
 // retroverse.exe without --scene, lockstep (--fixed-dt), hidden, the automation guard listing the fake alone
 // (RV_LAUNCH_ALLOWLIST) and every launch in the background (RV_LAUNCH_BACKGROUND, main.cpp).
-//  - Avvia on the inspected item's card (world_launch.json from the Focus pose of the hero wall's band item
-//    fx:hw-w/s:5.4): the launch resolved on the catalog worker, Returned, its play session recorded and verified; the
+//  - Avvia on the inspected item's card (world_launch.json from the Focus pose of Amber Lantern, which has a clip the
+//    hero CRT plays while it is inspected): the launch resolved on the catalog worker, Returned, its play session recorded and verified; the
 //    walker's pose and Inspect of the same item restored, the card shown again; the hero CRT's decoder stopped with its
 //    thread ended before the hand-over and opened again after the return, at the clip's position; the cover loader
 //    paused, no frame rendered while the game ran.
@@ -148,15 +148,6 @@ ShownRoom shownRoom(const ImportedRoom& room, const rv::app::RunReport& report) 
     return ShownRoom{scene->camera, std::move(*layout)};
 }
 
-const rv::world::CollectionItem& itemIn(const ShownRoom& room, std::string_view slot) {
-    const auto found = std::find_if(room.layout.items.begin(), room.layout.items.end(), [&](const auto& item) {
-        return item.slot.toString().ends_with("/" + std::string(slot));
-    });
-    INFO("the item in " << slot);
-    REQUIRE(found != room.layout.items.end());
-    return *found;
-}
-
 const rv::world::CollectionItem& itemOf(const ShownRoom& room, const rv::catalog::GameId& game) {
     const rv::world::CollectionItem* item = room.layout.findGame(game);
     INFO("the item of " << game.toString());
@@ -214,7 +205,9 @@ TEST_CASE("world launch: Avvia on the card launches the game and the room comes 
     ensureLaunchAllowList();
     ImportedRoom room("avvia");
     const ShownRoom shown = firstRun(room);
-    const rv::world::CollectionItem& item = itemIn(shown, "fx:hw-w/s:5.4");
+    // Amber Lantern has a clip: the hero CRT plays it while the item is inspected (I3 step 13b), so a decoder runs at
+    // Avvia.
+    const rv::world::CollectionItem& item = itemOf(shown, room.gameAt("Amber Lantern (USA).sfc"));
     const std::string game = item.game.toString();
     const fs::path shot = room.dir / "returned.png";
     const AppRun run = runApp(retroverseExe(), room.dir, "avvia",
@@ -299,6 +292,10 @@ TEST_CASE("world launch: Avvia on the card launches the game and the room comes 
     const rv::app::VideoLaunchRecord& stop = video.launches.front();
     WARN("decoder at the launch: ran " << stop.decoderRan << ", stopped in " << stop.stopMs << " ms, position "
                                        << stop.positionSeconds.value_or(-1.0));
+    CHECK(video.gameId == game);
+    CHECK(video.maxDecoderThreads <= 1);
+    CHECK(stop.decoderRan);
+    CHECK(stop.stopMs < 1000.0);
     CHECK(stop.threadsRunning == 0);
     CHECK(stop.reopened);
     if (stop.positionSeconds) {

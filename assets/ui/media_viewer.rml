@@ -1,0 +1,62 @@
+<rml>
+<head>
+	<!--
+		The media viewer (I3 step 14b; ADR-0012 §5, specification §12.1 "Vedi media"): the images a game has, one page
+		per image kind (cover, back cover, physical media, 3D box, screenshot, title screen, marquee, fan art; the kinds
+		it lacks are skipped), over the world's card or the quick catalog. Bound to the data model "media_viewer" of
+		rv::ui::MediaViewerScreen (src/ui/src/media_viewer_screen.cpp), which also names the ids below: keep them in
+		step (src/ui/include/rv/ui/media_viewer_model.hpp, tests/unit/ui/test_media_viewer.cpp). Every string is written
+		here: the screen binds the kind's key, the page's state and catalog data. The picture is the application's
+		texture (rv-texture:media-viewer-picture), sized by the screen to fit the stage without stretching: RmlUi never
+		loads the user's files. Left and right (D-pad, arrows, shoulders) page, Back (B, Esc) closes, a click on a
+		button pages or closes. The buttons never take the focus: the input stays with the application.
+	-->
+	<title>Vedi media</title>
+	<link type="text/rcss" href="media_viewer.rcss"/>
+</head>
+<body id="media-viewer" data-model="media_viewer">
+	<div class="panel">
+		<div class="header">
+			<div class="names">
+				<h2 id="media-viewer-title"><span data-if="viewer.title != ''">{{ viewer.title }}</span><span data-if="viewer.title == ''">Gioco senza titolo</span></h2>
+				<p class="subtitle"><span data-if="viewer.platform != ''">{{ viewer.platform }}</span><span data-if="viewer.platform == ''">Vedi media</span></p>
+			</div>
+			<div class="page-name" data-if="viewer.count > 0">
+				<p id="media-kind" class="kind">
+					<span data-if="viewer.kind == 'covers'">Copertina</span>
+					<span data-if="viewer.kind == 'backcovers'">Retro della confezione</span>
+					<span data-if="viewer.kind == 'physicalmedia'">Supporto fisico</span>
+					<span data-if="viewer.kind == '3dboxes'">Confezione 3D</span>
+					<span data-if="viewer.kind == 'screenshots'">Schermata di gioco</span>
+					<span data-if="viewer.kind == 'titlescreens'">Schermata del titolo</span>
+					<span data-if="viewer.kind == 'marquees'">Insegna (marquee)</span>
+					<span data-if="viewer.kind == 'fanart'">Fan art</span>
+				</p>
+				<p id="media-position" class="position">{{ viewer.position }} di {{ viewer.count }}</p>
+			</div>
+		</div>
+		<div id="media-viewer-stage" class="stage">
+			<img id="media-viewer-picture" src="rv-texture:media-viewer-picture" data-if="viewer.state == 'shown'" data-style-width="viewer.width" data-style-height="viewer.height"/>
+			<p id="media-loading" class="note" data-if="viewer.state == 'loading'">Caricamento dell'immagine...</p>
+			<div id="media-failed" class="fallback" data-if="viewer.state == 'failed'">
+				<p class="fallback-title">Immagine non leggibile</p>
+				<p class="note">Il file c'è, ma non si apre: forse è danneggiato o non è un'immagine PNG o JPEG.</p>
+			</div>
+			<div id="media-none" class="fallback" data-if="viewer.count == 0">
+				<p class="fallback-title">Nessuna immagine</p>
+				<p class="note">Per questo gioco non ci sono copertine, schermate o altre immagini nella cartella dei media di ES-DE.</p>
+			</div>
+		</div>
+		<div class="footer">
+			<button id="media-previous" class="action" data-class-disabled="!viewer.hasPrevious" data-event-click="page('previous')">Precedente</button>
+			<div class="hints">
+				<span class="hint"><span class="pad pad-dpad">&lt; &gt;</span>Sfoglia</span>
+				<span class="hint"><span class="pad pad-x">X</span>Informazioni</span>
+				<span class="hint"><span class="pad pad-b">B</span>Chiudi</span>
+			</div>
+			<button id="media-next" class="action" data-class-disabled="!viewer.hasNext" data-event-click="page('next')">Successiva</button>
+			<button id="media-close" class="action close" data-event-click="page('close')">Chiudi</button>
+		</div>
+	</div>
+</body>
+</rml>

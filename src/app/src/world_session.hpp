@@ -40,6 +40,7 @@
 #include <vector>
 
 #include <rv/app/cover_requests.hpp>
+#include <rv/app/game_screens.hpp>
 #include <rv/app/library_refresh.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/screen_policy.hpp>
@@ -123,9 +124,15 @@ public:
     [[nodiscard]] InteractionResult interact(const WorldHover::Frame& frame);
     /// The interaction's input context now (what the walker gets: walkerActionsFor()).
     [[nodiscard]] WorldContext context() const noexcept { return m_interaction->interaction().context(); }
-    /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems), the hero texture's front
-    /// of an item in its slot (dynamicItems()).
-    [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems);
+    /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems: the inspected one in the
+    /// hand in front of `camera`, I3 step 13b), the hero texture's front of an item in its slot (dynamicItems()).
+    [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems,
+                                                               const scene::Camera& camera);
+    /// The inspection's dimming of the frame's view (I3 step 13b: WorldInspection::apply).
+    void applyInspection(gl::RenderView& view) { m_interaction->applyInspection(view); }
+    /// The game the hero CRT follows (I3 step 13b, screenSelection()): `catalogSelection` (the quick catalog's, while
+    /// it is open), else the item in Focus or Inspect.
+    [[nodiscard]] std::optional<std::string> screenSelection(const std::optional<std::string>& catalogSelection) const;
     /// The card beside the inspected item (I3 step 14a, world_card.hpp): before interact(), what its input presses
     /// this frame (for WorldHover::Frame::card); after it, its content given to the product UI with the item's hero
     /// texture as its cover and the interaction's `result` recorded.
@@ -137,6 +144,10 @@ public:
     /// recorded (`walker`: where the frame leaves the walker).
     void beforeInteraction(ProductUi& product, const scene::WalkerPose& walker);
     void afterInteraction(const InteractionResult& result, ProductUi& product, const scene::WalkerPose& walker);
+    /// The other versions of `game`'s title in the room's plan (I3 step 14b: Informazioni); none without a room.
+    [[nodiscard]] std::vector<catalog::GameId> otherVersionsOf(const catalog::GameId& game) const {
+        return m_versionGroups.othersOf(game);
+    }
     /// The hover's title label as `camera` shows it in a view of `viewSize` pixels (WorldHover::labelFor).
     [[nodiscard]] std::optional<WorldLabelContent> label(const scene::Camera& camera, glm::ivec2 viewSize);
     /// A frame was rendered (the lockstep wait starts again).
@@ -228,6 +239,8 @@ private:
     std::map<std::uint64_t, std::uint32_t> m_otherVersions;
     /// Launching from the world and "Mostra nella stanza" (I3 step 15a).
     WorldLaunch m_launch;
+    /// The other versions of each title for Informazioni (I3 step 14b), from the same plan.
+    VersionGroups m_versionGroups;
     /// The view's items when the dynamic path draws more than the scene's (viewItems()).
     std::vector<scene::RenderItem> m_viewItems;
     std::unique_ptr<HeroTextures> m_heroes;

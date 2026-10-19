@@ -21,6 +21,7 @@
 #include <rv/core/cpu_timers.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/esde/discovery.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/window_handover.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
@@ -32,6 +33,7 @@
 #include <rv/ui/ui_system.hpp>
 #include <rv/ui/ui_view.hpp>
 
+#include "game_screens_panel.hpp"
 #include "game_session_panel.hpp"
 #include "world_label_panel.hpp"
 #include "world_notice_panel.hpp"
@@ -109,6 +111,9 @@ struct ProductUi::Impl {
     ui::CardButton wantedCardFocus = ui::CardButton::Play;
     /// The catalog's changes that show other rows (catalogRevision()).
     std::uint64_t catalogRevision = 0;
+    /// The media viewer and Informazioni (I3 step 14b), over everything else, and the other versions' lookup.
+    std::unique_ptr<GameScreensPanel> screens;
+    std::function<std::vector<catalog::GameId>(const catalog::GameId&)> versionLookup;
 
     ui::NavInput nav;
     ui::UiCommandList commands;
@@ -154,15 +159,18 @@ struct ProductUi::Impl {
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
-               (card && card->visible());
+               (card && card->visible()) || screensOpen();
     }
+
+    /// The media viewer or Informazioni shows (I3 step 14b).
+    [[nodiscard]] bool screensOpen() const noexcept { return screens && screens->visible(); }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
     void syncNotice() {
         if (!notice) {
             return;
         }
-        if (wantedNotice.notice.empty() || catalogOpen || panel->visible()) {
+        if (wantedNotice.notice.empty() || catalogOpen || panel->visible() || screensOpen()) {
             notice->hide();
         } else {
             notice->show(wantedNotice);
@@ -174,7 +182,7 @@ struct ProductUi::Impl {
         if (!label) {
             return;
         }
-        if (!wantedLabel || catalogOpen || panel->visible()) {
+        if (!wantedLabel || catalogOpen || panel->visible() || screensOpen()) {
             label->hide();
         } else {
             label->show(*wantedLabel, context.framebufferSize());
@@ -186,7 +194,7 @@ struct ProductUi::Impl {
         if (!card) {
             return;
         }
-        if (!wantedCard || catalogOpen || panel->visible()) {
+        if (!wantedCard || catalogOpen || panel->visible() || screensOpen()) {
             card->hide();
         } else {
             card->show(*wantedCard, wantedCardFocus);
@@ -243,6 +251,72 @@ struct ProductUi::Impl {
         }
         screen->setRoomPlacement(
             [placement = roomPlacement](const ui::CatalogEntry& entry) { return placement(entry.id); });
+    }
+
+    /// The media viewer of `gameId` (I3 step 14b): its catalog row (`entry` when the caller has it, else read now) and
+    /// stored media's pages; `title` until the catalog answers.
+    void openMedia(std::string_view gameId, std::string_view title, std::optional<ui::CatalogEntry> entry,
+                   std::string_view from) {
+        if (!screens) {
+            return;
+        }
+        GameScreensPanel::MediaRequest request;
+        request.gameId = std::string(gameId);
+        request.title = std::string(title);
+        request.from = std::string(from);
+        if (const auto game = catalog::GameId::parse(gameId)) {
+            if (!entry) {
+                entry = catalog->gameEntry(*game);
+            }
+            if (const std::optional<catalog_db::GameDetails> details = catalog->gameDetails(*game)) {
+                request.pages = viewerPagesOf(*details);
+            }
+        }
+        if (entry) {
+            if (!entry->title.empty()) {
+                request.title = entry->title;
+            }
+            request.platform = entry->platform;
+        }
+        screens->openMedia(std::move(request), context.frameIndex());
+    }
+
+    /// Informazioni of `gameId` (I3 step 14b), likewise, with the other versions the lookup knows.
+    void openInfo(std::string_view gameId, std::string_view title, std::optional<ui::CatalogEntry> entry,
+                  std::string_view from) {
+        if (!screens) {
+            return;
+        }
+        std::vector<ui::OtherVersion> versions;
+        if (const auto game = catalog::GameId::parse(gameId)) {
+            if (!entry) {
+                entry = catalog->gameEntry(*game);
+            }
+            if (versionLookup) {
+                for (const catalog::GameId& other : versionLookup(*game)) {
+                    // Their titles and regions for those listed; the rest are counted.
+                    versions.push_back(versions.size() < ui::game_info::kMaxVersions
+                                           ? otherVersionOf(other, catalog->gameDetails(other))
+                                           : ui::OtherVersion{other.toString(), {}, {}});
+                }
+            }
+        }
+        screens->openInfo(gameInfoOf(gameId, title, entry, std::move(versions)), std::string(from),
+                          context.frameIndex());
+    }
+
+    /// What the screens asked of the product UI (the other screen of the same game).
+    void switchScreen(GameScreensPanel::Switch asked) {
+        if (!screens || asked == GameScreensPanel::Switch::None) {
+            return;
+        }
+        const std::string game = screens->gameId();
+        const std::string from = screens->from();
+        if (asked == GameScreensPanel::Switch::Media) {
+            openMedia(game, {}, std::nullopt, from);
+        } else {
+            openInfo(game, {}, std::nullopt, from);
+        }
     }
 
     /// A decision the catalog made: the launch requested, or refused with its message (and its play session).
@@ -357,7 +431,8 @@ struct ProductUi::Impl {
 
     /// The lockstep run waits for the catalog worker (within kLockstepWaitLimit).
     [[nodiscard]] bool waitsForCatalog() const noexcept {
-        if (!lockstep || !catalog->busy()) {
+        // The media viewer's pictures too (I3 step 14b), so that scripted runs see them on the same frames.
+        if (!lockstep || (!catalog->busy() && !(screens && screens->loading()))) {
             return false;
         }
         return !catalogWaitSince || std::chrono::steady_clock::now() - *catalogWaitSince < kLockstepWaitLimit;
@@ -537,6 +612,13 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
     } else {
         spdlog::error("World card unavailable: {}", card.error().toString());
     }
+    // The media viewer and Informazioni (I3 step 14b), loaded after the other documents: over them when shown.
+    if (auto screens = GameScreensPanel::create(*s.view, *s.system, paths.configDir() / esde::kLibraryFileName,
+                                                context.wakeCallback())) {
+        s.screens = std::move(*screens);
+    } else {
+        spdlog::error("Media viewer and Informazioni unavailable: {}", screens.error().toString());
+    }
     if (s.refreshOnOpen && !s.catalog->supportsRefresh()) {
         // The mock catalog: nothing to import (recorded as such).
         s.refreshAsked = true;
@@ -552,7 +634,7 @@ bool ProductUi::catalogOpen() const noexcept {
 }
 
 bool ProductUi::panelOpen() const noexcept {
-    return m_impl->panel->visible() || m_impl->flow.panel() != SessionPanel::None;
+    return m_impl->panel->visible() || m_impl->flow.panel() != SessionPanel::None || m_impl->screensOpen();
 }
 
 void ProductUi::openCatalog() {
@@ -566,6 +648,13 @@ void ProductUi::openCatalog() {
         ui::QuickCatalogEvents events;
         Impl* state = &s;
         events.launch = [state](const ui::CatalogEntry& entry) { state->launch(entry); };
+        // Vedi media and Informazioni open the same screens as the world's card (I3 step 14b).
+        events.media = [state](const ui::CatalogEntry& entry) {
+            state->openMedia(entry.id, entry.title, entry, kScreenFromCatalog);
+        };
+        events.info = [state](const ui::CatalogEntry& entry, bool /*shown*/) {
+            state->openInfo(entry.id, entry.title, entry, kScreenFromCatalog);
+        };
         events.close = [state] { state->closeRequested = true; };
         events.refresh = [state] { state->refreshRequested = true; };
         events.showInRoom = [state](const ui::CatalogEntry& entry) {
@@ -612,7 +701,17 @@ void ProductUi::closeCatalog() {
 }
 
 bool ProductUi::handleEvent(const SDL_Event& event) {
-    return hasInput() && m_impl->view->handleEvent(event);
+    if (!hasInput()) {
+        return false;
+    }
+    // Over the media viewer and Informazioni only the mouse reaches RmlUi (their buttons, the wheel): keys and text
+    // must not reach the quick catalog's search field under them (I3 step 14b).
+    if (m_impl->screensOpen() && event.type != SDL_EVENT_MOUSE_MOTION && event.type != SDL_EVENT_MOUSE_BUTTON_DOWN &&
+        event.type != SDL_EVENT_MOUSE_BUTTON_UP && event.type != SDL_EVENT_MOUSE_WHEEL &&
+        event.type != SDL_EVENT_WINDOW_MOUSE_LEAVE) {
+        return false;
+    }
+    return m_impl->view->handleEvent(event);
 }
 
 void ProductUi::focusChanged(bool focused) {
@@ -698,6 +797,22 @@ void ProductUi::setUiTexture(std::string_view key, unsigned texture, glm::ivec2 
     m_impl->system->setTexture(key, texture, size);
 }
 
+void ProductUi::openGameMedia(const catalog::GameId& game, std::string_view title, std::string_view from) {
+    m_impl->openMedia(game.toString(), title, std::nullopt, from);
+}
+
+void ProductUi::openGameInfo(const catalog::GameId& game, std::string_view title, std::string_view from) {
+    m_impl->openInfo(game.toString(), title, std::nullopt, from);
+}
+
+void ProductUi::setVersionLookup(std::function<std::vector<catalog::GameId>(const catalog::GameId&)> lookup) {
+    m_impl->versionLookup = std::move(lookup);
+}
+
+bool ProductUi::gameScreenOpen() const noexcept {
+    return m_impl->screensOpen();
+}
+
 std::uint64_t ProductUi::catalogRevision() const noexcept {
     return m_impl->catalogRevision;
 }
@@ -753,6 +868,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 }
             } else if (s.panel->visible()) {
                 s.panel->apply(command);
+            } else if (s.screensOpen()) {
+                s.switchScreen(s.screens->apply(command, s.context.frameIndex()));
             } else if (s.catalogOpen && s.screen) {
                 s.screen->apply(command);
             }
@@ -767,6 +884,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     if (std::exchange(s.closeRequested, false)) {
         closeCatalog();
     }
+    if (s.screens) {
+        s.switchScreen(s.screens->update(s.context.frameIndex()));
+    }
     s.syncPanel();
     s.syncNotice();
     s.syncLabel();
@@ -776,6 +896,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         s.system->setTime(timeSeconds);
         s.view->resize(s.context.framebufferSize(), s.context.window().displayScale());
         s.view->update();
+        if (s.screens) {
+            s.screens->afterUpdate();
+        }
         if (s.screen) {
             s.screen->setNotice(s.catalog->notice());
             s.screen->setRefresh(shownRefresh(s.catalog->refreshState()));
@@ -791,6 +914,11 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
 }
 
 void ProductUi::panelBack() {
+    // The media viewer and Informazioni close first (I3 step 14b), unless the game-session panel shows over them.
+    if (m_impl->screensOpen() && !m_impl->panel->visible()) {
+        m_impl->screens->close(m_impl->context.frameIndex());
+        return;
+    }
     if (m_impl->flow.panelBack(LaunchClock::now())) {
         m_impl->handForegroundToGame();
     }
@@ -813,7 +941,8 @@ bool ProductUi::launchActive() const noexcept {
 void ProductUi::onIdle() {
     Impl& s = *m_impl;
     s.lastFrame.reset(); // the wait is no frame time
-    if (s.lockstep && !s.catalogWaitSince && !s.flow.hostIdle() && s.catalog->busy()) {
+    if (s.lockstep && !s.catalogWaitSince && !s.flow.hostIdle() &&
+        (s.catalog->busy() || (s.screens && s.screens->loading()))) {
         s.catalogWaitSince = std::chrono::steady_clock::now();
     }
     // A decision the worker brings is applied by the next frame's update, which renders its "Gioco in corso" first.
@@ -900,6 +1029,9 @@ void ProductUi::finish() {
     RunReport& report = s.context.report();
     report.catalog = std::move(record);
     report.launches = s.flow.records();
+    if (s.screens) {
+        report.screens = s.screens->record();
+    }
     for (std::size_t index = 0; index < report.launches.size(); ++index) {
         s.catalog->recordLaunch(index, report.launches[index]);
     }
