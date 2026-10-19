@@ -12,6 +12,8 @@
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
 
+#include "world_notice_panel.hpp"
+
 union SDL_Event;
 
 namespace rv::gl {
@@ -96,6 +98,12 @@ public:
     /// The game selected in the quick catalog while it is open (its catalog id); nothing while it is closed or empty.
     [[nodiscard]] std::optional<std::string> selectedGameId() const;
 
+    /// What the world's notice says from now on (I3 step 10b; an empty notice: none): shown over the scene, in
+    /// screenshots too, while neither the quick catalog nor the game-session panel shows. It takes no input.
+    void setWorldNotice(WorldNoticeContent content);
+    /// The catalog the UI shows (the generated room asks it for the room's snapshot, I3 step 10b).
+    [[nodiscard]] AppCatalog& catalog() noexcept;
+
     /// One frame: follows a session whose panel shows and the window's return, applies the UI commands of
     /// `uiActions` (the frame's actions in the UI context; null: the product UI had no input when the frame began),
     /// shows the panel the launch wants and updates the view at `timeSeconds` (the simulated time).
@@ -108,6 +116,8 @@ public:
     /// The host must idle: a launch waits for the frame boundary, or a game has the screen (LaunchFlow::hostIdle), or a
     /// lockstep run waits for the catalog worker.
     [[nodiscard]] bool wantsIdle() const noexcept;
+    /// A launch is about to start or a game has the screen (LaunchFlow::pending, LaunchFlow::hostIdle).
+    [[nodiscard]] bool launchActive() const noexcept;
     /// One wake of the host's idle wait: collects the catalog worker's answers, starts a pending launch (the window
     /// handed over before the process runs), follows the session, takes the window back once it ends.
     void onIdle();

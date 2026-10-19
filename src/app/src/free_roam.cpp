@@ -11,8 +11,13 @@
 namespace rv::app {
 
 FreeRoam::FreeRoam(const scene::SceneDescription& scene, scene::CollisionWorld collision,
-                   const std::optional<SpawnPoint>& spawn)
-    : m_collision(std::move(collision)) {
+                   const std::optional<SpawnPoint>& spawn) {
+    resetScene(scene, std::move(collision), spawn);
+}
+
+void FreeRoam::resetScene(const scene::SceneDescription& scene, scene::CollisionWorld collision,
+                          const std::optional<SpawnPoint>& spawn) {
+    m_collision = std::move(collision);
     const scene::FirstPersonSettings& settings = m_controller.settings();
     if (spawn) {
         m_controller.teleport(spawn->feet, core::degreesToRadians(spawn->yawDeg.value_or(scene.camera.yawDeg)),

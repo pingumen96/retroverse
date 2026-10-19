@@ -174,6 +174,10 @@ struct CatalogRecord {
     /// The frames rendered while the catalog showed games (open, its list not empty): their wall-clock times (the
     /// measured frame time, so not with --fixed-dt, which replaces it); absent when there was none.
     std::optional<TimeSummary> frames;
+    /// "esde": every list the worker answered, from the request to the answer (CatalogList::waitedMs: the time in its
+    /// queue, behind a refresh's slice or the room's snapshot, and the materialization; I3 step 10b); absent when there
+    /// was none.
+    std::optional<TimeSummary> lists;
     /// "esde": play sessions closed as interrupted when the catalog opened (their owner was gone: ADR-0008 §9).
     std::size_t interruptedSessions = 0;
     /// The card's blocks cut by the layout when the run ended (ui::QuickCatalogScreen::squeezedCardBlocks: a line or a
@@ -259,14 +263,114 @@ struct LaunchRecord {
 // empty object, or an empty array of phases), so that a reader can tell a run that had nothing to report from one that
 // did not know the section.
 
-/// The generated room of the run (I3 step 10b: the plan's digest, placements per section, unplaced games per reason).
+/// The generated room of the run (I3 step 10b): what showed, from which plan, how it came to be and when. Empty ({})
+/// in runs that ask for no room (--scene, --model, --mock-catalog, the asset preview).
 struct WorldRecord {
+    /// The run asked for the generated room (retroverse.exe without --scene, --model or --mock-catalog).
+    bool bound = false;
+    /// What showed at the end: "room" (the plan's room), "shell" (the empty room: no plan to show), "test-room" (the
+    /// fallback: no catalog, no games of the room's system), "generating" (still being made when the run ended).
+    std::string state;
+    /// The world notice shown last (world_notice_ui.hpp's keys; "" none) and why, in English.
+    std::string notice;
+    std::string reason;
+    /// The catalog's state when the test room showed for want of a catalog ("no-library", ...).
+    std::string catalogState;
+    /// The room ("room:snes") and the library.
+    std::string room;
+    std::string library;
+    /// app::toString(WorldOutcome): "generated", "updated", "unchanged", "kept", "no-plan"; and the change report's
+    /// outcome and rebuild level when a generation or update ran.
+    std::string outcome;
+    std::string changeOutcome;
+    std::string rebuild;
+    /// The SHA-256 of the plan shown, and whether this run wrote it (world-plan.json).
+    std::string planDigest;
+    bool planWritten = false;
+    std::string saveError;
+    /// Placements, per section, and the unplaced games, per reason.
+    std::uint64_t placements = 0;
+    std::uint64_t featured = 0;
+    std::uint64_t band = 0;
+    std::uint64_t spine = 0;
+    std::uint64_t unplaced = 0;
+    std::uint64_t duplicateTitle = 0;
+    std::uint64_t noCover = 0;
+    std::uint64_t unavailable = 0;
+    std::uint64_t capacity = 0;
+    /// The change report's counts: games added, placements kept.
+    std::uint64_t added = 0;
+    std::uint64_t kept = 0;
+    /// The validation's findings of the plan made (a hard one keeps the plan from showing).
+    std::uint64_t hardFindings = 0;
+    std::uint64_t softFindings = 0;
+    /// The scene: its objects and lights, the dressed spans it left bare; the collection: items, clusters, placements
+    /// it could not draw, the static group's records (three per item: shell, front, spine) and pick targets.
+    std::uint64_t objects = 0;
+    std::uint64_t lights = 0;
+    std::uint64_t undressed = 0;
+    std::uint64_t items = 0;
+    std::uint64_t clusters = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t staticRecords = 0;
+    std::uint64_t pickTargets = 0;
+    /// Times in milliseconds: from the process's creation to the catalog's snapshot done on its worker and to the
+    /// room's commit; the snapshot on the worker, the room's job on the pool, the commit on the main thread; from the
+    /// snapshot's answer to the commit.
+    std::optional<double> snapshotAtMs;
+    std::optional<double> committedAtMs;
+    std::optional<double> snapshotMs;
+    std::optional<double> buildMs;
+    std::optional<double> commitMs;
+    std::optional<double> snapshotToCommitMs;
+    /// The frame the room first showed in (none before it showed).
+    std::optional<std::uint64_t> firstFrame;
+    /// The hover (I3 step 10b's outline on the picked item): changes of the hovered item, and the one hovered at the
+    /// end (its pick id in hexadecimal, its GameId), if any.
+    std::uint64_t hoverChanges = 0;
+    std::string hoveredPickId;
+    std::string hoveredGame;
+
     bool operator==(const WorldRecord&) const = default;
 };
 
-/// The collection's textures (I3 step 12: layers resident and pending, the cache's hits and misses, when the plan was
-/// shown and when the room's last layer became resident).
+/// The collection's textures (I3 step 10b's loader; step 12 orders it): layers resident and pending, the cache's hits and
+/// misses, when the room was shown and when its last layer became resident. Empty ({}) without a room.
 struct ResidencyRecord {
+    bool bound = false;
+    /// The arrays' format ("bc1-srgb", "rgba8-srgb") and their bytes.
+    std::string format;
+    std::uint64_t arrayBytes = 0;
+    /// Items, and the layers of each class resident and still pending at the end.
+    std::uint64_t items = 0;
+    std::uint64_t frontsResident = 0;
+    std::uint64_t spinesResident = 0;
+    std::uint64_t pending = 0;
+    /// Fronts from covers (read now or from the cache), from the cache with their cover out of reach, generated labels
+    /// (no cover; a cover that could not be used), and layers that could not be made.
+    std::uint64_t covers = 0;
+    std::uint64_t cachedCovers = 0;
+    std::uint64_t labels = 0;
+    std::uint64_t coverFailures = 0;
+    std::uint64_t failed = 0;
+    /// The derived-texture cache's counters (assets::CacheStats).
+    std::uint64_t cacheHits = 0;
+    std::uint64_t cacheHitsWithoutSource = 0;
+    std::uint64_t cacheMisses = 0;
+    std::uint64_t cacheStale = 0;
+    std::uint64_t cacheCorrupt = 0;
+    std::uint64_t cacheStored = 0;
+    std::uint64_t cacheStoreFailures = 0;
+    /// Milliseconds from the process's creation to the room shown and to its last layer resident, and between them.
+    std::optional<double> shownAtMs;
+    std::optional<double> allResidentAtMs;
+    std::optional<double> residentAfterShownMs;
+    /// The frame whose uploads made the last layer resident.
+    std::optional<std::uint64_t> allResidentFrame;
+    /// Frames (and idle wakes) that uploaded layers, and the most layers one of them uploaded.
+    std::uint64_t uploadRounds = 0;
+    std::uint64_t maxLayersPerRound = 0;
+
     bool operator==(const ResidencyRecord&) const = default;
 };
 
@@ -480,8 +584,9 @@ struct RunReport {
     std::optional<CatalogRecord> catalog;
     /// The launches from the quick catalog, in order.
     std::vector<LaunchRecord> launches;
-    /// The sections of I3 (above), always written: world and residency empty until their steps; video filled by
-    /// RetroverseApp (I3 step 11), empty in runs without the hero CRT's service (the model viewer, the asset preview).
+    /// The sections of I3 (above), always written: world and residency filled by RetroverseApp's generated room (I3
+    /// step 10b), empty in runs that ask for none; video filled by RetroverseApp (I3 step 11), empty in runs without
+    /// the hero CRT's service (the model viewer, the asset preview).
     WorldRecord world;
     ResidencyRecord residency;
     VideoRecord video;

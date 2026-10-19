@@ -277,6 +277,9 @@ CatalogChanges EsdeAppCatalog::poll() {
     if (results.list && !results.list->error && m_refreshRunning) {
         m_refreshLists.push_back(results.list->waitedMs); // a list answered while the refresh ran
     }
+    if (results.list && !results.list->error && m_listWaits.size() < kMaxListWaits) {
+        m_listWaits.push_back(results.list->waitedMs);
+    }
     const CatalogDatabaseSource::Collected collected = m_source.collect(results);
     const bool refreshEnded = collectRefresh(results, m_source.ended());
     for (ResolvedLaunch& resolved : results.launches) {
@@ -321,7 +324,28 @@ CatalogChanges EsdeAppCatalog::poll() {
         m_resolving.reset();
     }
     collectSessions(results);
+    if (results.room) {
+        m_room = std::move(results.room);
+    }
     return CatalogChanges{collected.opened, collected.rowsChanged, refreshEnded, collected.refreshed};
+}
+
+bool EsdeAppCatalog::hasGamesOf(const catalog::SystemName& system) const {
+    if (m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    const std::vector<CatalogSystem>& systems = m_source.systems();
+    return std::any_of(systems.begin(), systems.end(),
+                       [&](const CatalogSystem& listed) { return listed.name == system && listed.games > 0; });
+}
+
+bool EsdeAppCatalog::requestRoomSnapshot(RoomSnapshotRequest request) {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_room.reset();
+    m_worker.roomSnapshot(std::move(request));
+    return true;
 }
 
 bool EsdeAppCatalog::collectRefresh(CatalogResults& results, bool ended) {
@@ -453,6 +477,8 @@ void EsdeAppCatalog::record(CatalogRecord& record) const {
     record.firstListMs = m_firstListMs;
     record.firstPageMs = m_firstPageMs;
     record.pages = m_source.pageTimes();
+    std::vector<double> lists = m_listWaits;
+    record.lists = summarizeTimes(lists);
     record.interruptedSessions = m_source.interruptedSessions();
 }
 

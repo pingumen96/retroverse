@@ -415,6 +415,198 @@ GpuMemoryRecord readGpuMemory(FieldReader& fields) {
     return memory;
 }
 
+/// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
+Json worldToJson(const WorldRecord& world) {
+    Json json = Json::object();
+    if (!world.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["state"] = world.state;
+    json["notice"] = world.notice;
+    json["reason"] = world.reason;
+    json["catalogState"] = world.catalogState;
+    json["room"] = world.room;
+    json["library"] = world.library;
+    json["outcome"] = world.outcome;
+    json["changeOutcome"] = world.changeOutcome;
+    json["rebuild"] = world.rebuild;
+    json["planDigest"] = world.planDigest;
+    json["planWritten"] = world.planWritten;
+    json["saveError"] = world.saveError;
+    json["placements"] = Json{{"total", world.placements},
+                              {"featured", world.featured},
+                              {"band", world.band},
+                              {"spine", world.spine}};
+    json["unplaced"] = Json{{"total", world.unplaced},
+                            {"duplicateTitle", world.duplicateTitle},
+                            {"noCover", world.noCover},
+                            {"unavailable", world.unavailable},
+                            {"capacity", world.capacity}};
+    json["added"] = world.added;
+    json["kept"] = world.kept;
+    json["hardFindings"] = world.hardFindings;
+    json["softFindings"] = world.softFindings;
+    json["objects"] = world.objects;
+    json["lights"] = world.lights;
+    json["undressed"] = world.undressed;
+    json["items"] = world.items;
+    json["clusters"] = world.clusters;
+    json["skipped"] = world.skipped;
+    json["staticRecords"] = world.staticRecords;
+    json["pickTargets"] = world.pickTargets;
+    Json times = Json::object();
+    putOptional(times, "snapshotAtMs", world.snapshotAtMs);
+    putOptional(times, "committedAtMs", world.committedAtMs);
+    putOptional(times, "snapshotMs", world.snapshotMs);
+    putOptional(times, "buildMs", world.buildMs);
+    putOptional(times, "commitMs", world.commitMs);
+    putOptional(times, "snapshotToCommitMs", world.snapshotToCommitMs);
+    json["times"] = std::move(times);
+    if (world.firstFrame) {
+        json["firstFrame"] = *world.firstFrame;
+    }
+    json["hoverChanges"] = world.hoverChanges;
+    json["hoveredPickId"] = world.hoveredPickId;
+    json["hoveredGame"] = world.hoveredGame;
+    return json;
+}
+
+WorldRecord readWorld(FieldReader& fields) {
+    WorldRecord world;
+    if (!fields.has("bound")) {
+        return world;
+    }
+    world.bound = fields.boolean("bound");
+    world.state = fields.string("state");
+    world.notice = fields.string("notice");
+    world.reason = fields.string("reason");
+    world.catalogState = fields.string("catalogState");
+    world.room = fields.string("room");
+    world.library = fields.string("library");
+    world.outcome = fields.string("outcome");
+    world.changeOutcome = fields.string("changeOutcome");
+    world.rebuild = fields.string("rebuild");
+    world.planDigest = fields.string("planDigest");
+    world.planWritten = fields.boolean("planWritten");
+    world.saveError = fields.string("saveError");
+    if (auto placements = fields.object("placements")) {
+        world.placements = placements->count("total");
+        world.featured = placements->count("featured");
+        world.band = placements->count("band");
+        world.spine = placements->count("spine");
+    }
+    if (auto unplaced = fields.object("unplaced")) {
+        world.unplaced = unplaced->count("total");
+        world.duplicateTitle = unplaced->count("duplicateTitle");
+        world.noCover = unplaced->count("noCover");
+        world.unavailable = unplaced->count("unavailable");
+        world.capacity = unplaced->count("capacity");
+    }
+    world.added = fields.count("added");
+    world.kept = fields.count("kept");
+    world.hardFindings = fields.count("hardFindings");
+    world.softFindings = fields.count("softFindings");
+    world.objects = fields.count("objects");
+    world.lights = fields.count("lights");
+    world.undressed = fields.count("undressed");
+    world.items = fields.count("items");
+    world.clusters = fields.count("clusters");
+    world.skipped = fields.count("skipped");
+    world.staticRecords = fields.count("staticRecords");
+    world.pickTargets = fields.count("pickTargets");
+    if (auto times = fields.object("times")) {
+        world.snapshotAtMs = times->optionalNumber("snapshotAtMs");
+        world.committedAtMs = times->optionalNumber("committedAtMs");
+        world.snapshotMs = times->optionalNumber("snapshotMs");
+        world.buildMs = times->optionalNumber("buildMs");
+        world.commitMs = times->optionalNumber("commitMs");
+        world.snapshotToCommitMs = times->optionalNumber("snapshotToCommitMs");
+    }
+    world.firstFrame = fields.optionalCount("firstFrame");
+    world.hoverChanges = fields.count("hoverChanges");
+    world.hoveredPickId = fields.string("hoveredPickId");
+    world.hoveredGame = fields.string("hoveredGame");
+    return world;
+}
+
+/// An unbound record (no room) is the empty object it was before I3 step 10b.
+Json residencyToJson(const ResidencyRecord& residency) {
+    Json json = Json::object();
+    if (!residency.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["format"] = residency.format;
+    json["arrayBytes"] = residency.arrayBytes;
+    json["items"] = residency.items;
+    json["frontsResident"] = residency.frontsResident;
+    json["spinesResident"] = residency.spinesResident;
+    json["pending"] = residency.pending;
+    json["fronts"] = Json{{"covers", residency.covers},
+                          {"cachedCovers", residency.cachedCovers},
+                          {"labels", residency.labels},
+                          {"coverFailures", residency.coverFailures},
+                          {"failed", residency.failed}};
+    json["cache"] = Json{{"hits", residency.cacheHits},
+                         {"hitsWithoutSource", residency.cacheHitsWithoutSource},
+                         {"misses", residency.cacheMisses},
+                         {"stale", residency.cacheStale},
+                         {"corrupt", residency.cacheCorrupt},
+                         {"stored", residency.cacheStored},
+                         {"storeFailures", residency.cacheStoreFailures}};
+    Json times = Json::object();
+    putOptional(times, "shownAtMs", residency.shownAtMs);
+    putOptional(times, "allResidentAtMs", residency.allResidentAtMs);
+    putOptional(times, "residentAfterShownMs", residency.residentAfterShownMs);
+    json["times"] = std::move(times);
+    if (residency.allResidentFrame) {
+        json["allResidentFrame"] = *residency.allResidentFrame;
+    }
+    json["uploadRounds"] = residency.uploadRounds;
+    json["maxLayersPerRound"] = residency.maxLayersPerRound;
+    return json;
+}
+
+ResidencyRecord readResidency(FieldReader& fields) {
+    ResidencyRecord residency;
+    if (!fields.has("bound")) {
+        return residency;
+    }
+    residency.bound = fields.boolean("bound");
+    residency.format = fields.string("format");
+    residency.arrayBytes = fields.count("arrayBytes");
+    residency.items = fields.count("items");
+    residency.frontsResident = fields.count("frontsResident");
+    residency.spinesResident = fields.count("spinesResident");
+    residency.pending = fields.count("pending");
+    if (auto fronts = fields.object("fronts")) {
+        residency.covers = fronts->count("covers");
+        residency.cachedCovers = fronts->count("cachedCovers");
+        residency.labels = fronts->count("labels");
+        residency.coverFailures = fronts->count("coverFailures");
+        residency.failed = fronts->count("failed");
+    }
+    if (auto cache = fields.object("cache")) {
+        residency.cacheHits = cache->count("hits");
+        residency.cacheHitsWithoutSource = cache->count("hitsWithoutSource");
+        residency.cacheMisses = cache->count("misses");
+        residency.cacheStale = cache->count("stale");
+        residency.cacheCorrupt = cache->count("corrupt");
+        residency.cacheStored = cache->count("stored");
+        residency.cacheStoreFailures = cache->count("storeFailures");
+    }
+    if (auto times = fields.object("times")) {
+        residency.shownAtMs = times->optionalNumber("shownAtMs");
+        residency.allResidentAtMs = times->optionalNumber("allResidentAtMs");
+        residency.residentAfterShownMs = times->optionalNumber("residentAfterShownMs");
+    }
+    residency.allResidentFrame = fields.optionalCount("allResidentFrame");
+    residency.uploadRounds = fields.count("uploadRounds");
+    residency.maxLayersPerRound = fields.count("maxLayersPerRound");
+    return residency;
+}
+
 /// An unbound record (no hero CRT) is the empty object it was before I3 step 11.
 Json videoToJson(const VideoRecord& video) {
     Json json = Json::object();
@@ -673,6 +865,10 @@ Json catalogToJson(const CatalogRecord& catalog) {
     if (catalog.frames) {
         json["frames"] = timesToJson(*catalog.frames);
     }
+    // I3 step 10b (optional when read).
+    if (catalog.lists) {
+        json["lists"] = timesToJson(*catalog.lists);
+    }
     json["interruptedSessions"] = catalog.interruptedSessions;
     json["cardSqueezed"] = catalog.cardSqueezed;
     // I3 step 13r (optional when read).
@@ -772,6 +968,9 @@ CatalogRecord readCatalog(FieldReader& fields) {
     }
     if (auto frames = fields.optionalObject("frames")) {
         catalog.frames = readTimes(*frames);
+    }
+    if (auto lists = fields.optionalObject("lists")) {
+        catalog.lists = readTimes(*lists);
     }
     catalog.interruptedSessions =
         static_cast<std::size_t>(fields.optionalCount("interruptedSessions", kMaxSize).value_or(0));
@@ -930,9 +1129,9 @@ std::string formatRunReport(const RunReport& report) {
         }
         json["launches"] = std::move(launches);
     }
-    // The sections of I3: always written; world and residency empty until their steps fill them.
-    json["world"] = Json::object();
-    json["residency"] = Json::object();
+    // The sections of I3: always written, empty ({}) in runs without what they record.
+    json["world"] = worldToJson(report.world);
+    json["residency"] = residencyToJson(report.residency);
     json["video"] = videoToJson(report.video);
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
@@ -1024,9 +1223,13 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     for (FieldReader& launch : fields.optionalObjectArray("launches")) {
         report.launches.push_back(readLaunch(launch));
     }
-    // The sections of I3 must be there; world and residency are empty until their steps fill them.
-    static_cast<void>(fields.object("world"));
-    static_cast<void>(fields.object("residency"));
+    // The sections of I3 must be there (empty in runs without what they record).
+    if (auto world = fields.object("world")) {
+        report.world = readWorld(*world);
+    }
+    if (auto residency = fields.object("residency")) {
+        report.residency = readResidency(*residency);
+    }
     if (auto video = fields.object("video")) {
         report.video = readVideo(*video);
     }

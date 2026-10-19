@@ -1,0 +1,18 @@
+// I3 step 10b: the quick catalog used while the generated room is made. QuickCatalog opens it on frame 1; ui_up on
+// frames 3 and 5 takes the focus to the filter chips, then to the search field; "lantern" is typed on frame 7 and "o" on
+// frame 9 (two lists asked of the catalog worker, which also takes the room's snapshot meanwhile); Back on frame 12 and
+// 14 leaves the search field and closes the catalog. Expected without --fixed-dt (frames never wait for the worker) on a
+// data directory with the snes-room fixture imported: every list answered within 100 ms (the run report's
+// catalog.lists), the room shown in the end.
+//   retroverse --input-script tests/input_scripts/world_catalog_search.json --exit-after-frames --frames 240 --hidden
+//     --data-dir <a data directory with library.json and the imported catalog>
+// tests/smoke/test_world_room.cpp runs it.
+[
+  {"fromFrame": 1, "toFrame": 1, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 3, "toFrame": 3, "actions": {"ui_up": 1}},
+  {"fromFrame": 5, "toFrame": 5, "actions": {"ui_up": 1}},
+  {"fromFrame": 7, "toFrame": 7, "text": "lantern"},
+  {"fromFrame": 9, "toFrame": 9, "text": "o"},
+  {"fromFrame": 12, "toFrame": 12, "actions": {"ui_back": 1}},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_back": 1}}
+]

@@ -1,0 +1,50 @@
+/*
+	The world's notice (world_notice.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI
+	neutral #171B22, ivory text #F4EFE6, tungsten #FFC88A). Sizes in dp. A band at the bottom of the view, over the room,
+	that takes no input. No color transitions (RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 22dp;
+	color: #F4EFE6;
+}
+
+div, p, h1 {
+	display: block;
+}
+
+p, h1, span {
+	focus: none;
+}
+
+#world-notice {
+	position: absolute;
+	left: 25%;
+	width: 50%;
+	bottom: 5%;
+	box-sizing: border-box;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-radius: 14dp;
+	padding: 12dp 22dp 4dp 22dp;
+}
+
+h1 {
+	font-size: 22dp;
+	font-weight: bold;
+	color: #FFC88A;
+	margin-bottom: 6dp;
+}
+
+p {
+	font-size: 19dp;
+	line-height: 1.35em;
+	margin-bottom: 10dp;
+}

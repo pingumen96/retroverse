@@ -197,10 +197,22 @@ void requireCleanRun(const AppRun& run) {
     } else {
         CHECK_FALSE(report.debugMessages.has_value());
     }
-    // The sections of I3 are in every report (readRunReport requires them) and empty until the steps that fill them:
-    // each step changes its own line here.
-    CHECK(report.world == app::WorldRecord{});         // I3 step 10b
-    CHECK(report.residency == app::ResidencyRecord{}); // I3 step 12
+    // The sections of I3 are in every report (readRunReport requires them), empty in runs without what they record.
+    // I3 step 10b: a run that asked for the generated room says what showed; its layers have their arrays' memory.
+    if (report.world.bound) {
+        CHECK((report.world.state == "room" || report.world.state == "shell" || report.world.state == "test-room" ||
+               report.world.state == "generating"));
+        CHECK(report.world.hardFindings == 0);
+    } else {
+        CHECK(report.world == app::WorldRecord{});
+    }
+    if (report.residency.bound) {
+        CHECK(report.world.state == "room");
+        CHECK(report.residency.arrayBytes <=
+              report.gpuMemory.usage(gl::GpuMemoryKind::CollectionArrays).peakBytes);
+    } else {
+        CHECK(report.residency == app::ResidencyRecord{});
+    }
     // I3 step 11: the hero CRT never had two decoder threads, none ran at the end, its video memory is the renderer's.
     if (report.video.bound) {
         CHECK(report.video.maxDecoderThreads <= 1);

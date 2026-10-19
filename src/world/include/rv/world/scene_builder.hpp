@@ -181,6 +181,14 @@ struct SceneBuild {
 /// feed.
 [[nodiscard]] std::string sceneFileText(const nlohmann::json& sceneFile);
 
+/// The empty room of `roomTemplate` at its base size (I3 step 10b): what the app shows while the room's plan is being
+/// made, or when there is none to show (the media root out of reach, a plan that cannot be made): toSceneDescription()
+/// of a plan holding that one room and nothing else, so the shell, its surfaces, the environment and the doorway's
+/// camera are the room's own; no fixture, one light (the room's pendant over the middle of the base room, as every
+/// plan has it). Errors: those of toSceneFile().
+[[nodiscard]] Expected<scene::SceneDescription> shellSceneDescription(
+    const RoomId& room, const RoomTemplate& roomTemplate, const LightingProfile& lighting = eveningLightingProfile());
+
 /// Where an item, a dressing prop and a fixture of a room stand: the room's frame in meters (ADR-0002), shared by the
 /// scene and the collection layout.
 namespace room_frames {

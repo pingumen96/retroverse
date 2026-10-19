@@ -556,6 +556,43 @@ std::string sceneFileText(const nlohmann::json& sceneFile) {
     return sceneFile.dump(2) + "\n";
 }
 
+Expected<scene::SceneDescription> shellSceneDescription(const RoomId& roomId, const RoomTemplate& roomTemplate,
+                                                        const LightingProfile& lighting) {
+    const Footprint interior = interiorFootprint(roomTemplate, 0);
+    Room room;
+    room.id = roomId;
+    room.templateId = roomTemplate.id;
+    room.templateVersion = roomTemplate.version;
+    room.minXMm = interior.minXMm;
+    room.maxXMm = interior.maxXMm;
+    room.minZMm = interior.minZMm;
+    room.maxZMm = interior.maxZMm;
+    room.heightMm = roomTemplate.heightMm;
+    WorldPlan plan;
+    // The pendant every room has (I3 step 3: over the middle of the base room, 1.1 m below the ceiling), so that the
+    // empty room reads as a room and not as a dark box.
+    constexpr std::int64_t kShellPendantBelowCeilingMm = 1100;
+    auto pendant = FixtureId::make(roomId, "room", "pendant");
+    if (!pendant) {
+        return propagate(pendant.error());
+    }
+    PlanLight light;
+    light.id = *pendant;
+    light.role = LightRole::Pendant;
+    light.xMm = interior.minXMm + (interior.maxXMm - interior.minXMm) / 2;
+    light.yMm = roomTemplate.heightMm - kShellPendantBelowCeilingMm;
+    light.zMm = interior.minZMm + (interior.maxZMm - interior.minZMm) / 2;
+    light.targetXMm = light.xMm;
+    light.targetYMm = light.yMm;
+    light.targetZMm = light.zMm;
+    plan.lights.push_back(light);
+    plan.rooms.push_back(std::move(room));
+    SceneData data;
+    data.roomTemplate = roomTemplate;
+    data.lighting = lighting;
+    return toSceneDescription(plan, roomId, data);
+}
+
 namespace room_frames {
 
 glm::mat4 yawRotation(std::int32_t yawCdeg) noexcept {

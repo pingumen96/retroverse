@@ -8,10 +8,12 @@
 # statistics log, the run report (--run-report), and the launch shell of the quick catalog: the mock catalog
 # (--mock-catalog), a launch from Avvia to the return around a LaunchSession (LaunchFlow) and its outcome as the product
 # UI tells it; since I3 (skeletons naming their steps) the frame timing of the run report, the world's interaction
-# states, what the hero CRT plays and the cover loader's order. Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests
-# can read the reports of the runs they start.
+# states, what the hero CRT plays, the cover loader's order, a collection item's layers through the derived-texture
+# cache and the world notice's keys (step 10b). Kept apart from rv_app so that rv_tests can unit-test it without SDL or
+# OpenGL, and the GPU smoke tests can read the reports of the runs they start.
 add_library(rv_app_cli STATIC
     src/back_action.cpp
+    src/collection_layers.cpp
     src/command_line.cpp
     src/cover_requests.cpp
     src/debug_line_selection.cpp
@@ -42,8 +44,9 @@ rv_forbid_link(rv_app_cli)
 # GPU-free part of the application layer over the ES-DE catalog (I2 step 13): the catalog worker (the database's writer
 # and the queries on its own thread), the quick catalog's source over it, the launches of the catalog resolved with the
 # library's configuration, their play sessions, and the AppCatalog the product UI drives (the ES-DE catalog, or the mock
-# catalog of the tests); since I3 the catalog's refresh on its worker and the room's snapshot. Kept apart from
-# rv_app_cli, which the GPU smoke tests link for the run report alone.
+# catalog of the tests); since I3 the catalog's refresh on its worker, the room's snapshot and the room's making up to
+# its commit (world_build: the jobs on the worker pool and the main thread's flow, step 10b). Kept apart from rv_app_cli,
+# which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
@@ -51,6 +54,7 @@ add_library(rv_app_catalog STATIC
     src/catalog_worker.cpp
     src/library_refresh.cpp
     src/room_snapshot.cpp
+    src/world_build.cpp
 )
 add_library(rv::app_catalog ALIAS rv_app_catalog)
 rv_set_target_defaults(rv_app_catalog)
@@ -83,6 +87,7 @@ add_library(rv_app STATIC
     src/world_inspection.cpp
     src/world_launch.cpp
     src/world_live_update.cpp
+    src/world_notice_panel.cpp
     src/world_session.cpp
     src/world_start.cpp
 )

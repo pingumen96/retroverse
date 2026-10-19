@@ -1,0 +1,77 @@
+<rml>
+<head>
+	<!--
+		The world's notice (I3 step 10b; ADR-0010 §11, §12): a band over the room telling why the room shows as it does
+		when it is not the generated room of the catalog: being made (the empty room), the test room instead (no ES-DE
+		catalog, no games of the room's system), the empty room (the media folder out of reach before a first plan, a
+		plan that cannot be used or made), the room as it was (the media folder out of reach, a plan to regenerate).
+		Bound to the data model "world_notice" of rv::app::WorldNoticePanel (src/app/src/world_notice_panel.cpp), which
+		also names the ids below: keep them in step (src/app/include/rv/app/world_notice_ui.hpp,
+		tests/unit/app/test_world_notice_document.cpp).
+		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed.
+		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
+		unavailable). system: the room's system, as ES-DE names it. Every string is written here (CLAUDE.md): the panel
+		binds keys only. It takes no input: the quick catalog (Tab) is where to act.
+	-->
+	<title>Stanza</title>
+	<link type="text/rcss" href="world_notice.rcss"/>
+</head>
+<body data-model="world_notice">
+	<div id="world-notice">
+		<div data-if="notice == 'generating'">
+			<h1>Preparazione della stanza...</h1>
+			<p>La stanza dei giochi si sta componendo a partire dal catalogo. Il catalogo rapido (Tab) è già
+				disponibile.</p>
+		</div>
+
+		<div data-if="notice == 'no-catalog'">
+			<h1>Stanza di prova</h1>
+			<p data-if="state == 'no-library'">Nessuna libreria ES-DE è associata a Retroverse: la stanza dei giochi si
+				genera dopo "retroverse-cli library create" e "retroverse-cli import".</p>
+			<p data-if="state == 'no-database'">Il catalogo non è ancora stato importato: "retroverse-cli import" lo
+				crea, poi la stanza dei giochi si genera al prossimo avvio.</p>
+			<p data-if="state == 'data-directory'">La cartella dei dati di Retroverse è dentro le cartelle della
+				libreria: il catalogo non si apre. Il catalogo rapido (Tab) dice come fare.</p>
+			<p data-if="state == 'library-mismatch'">Il catalogo appartiene a un'altra libreria: il catalogo rapido
+				(Tab) dice come associarla di nuovo.</p>
+			<p data-if="state == 'unavailable'">Il catalogo non si apre: "retroverse-cli db check" dice perché.</p>
+		</div>
+
+		<div data-if="notice == 'no-games'">
+			<h1>Stanza di prova</h1>
+			<p>Il catalogo non ha giochi del sistema della stanza ({{ system }}): i suoi giochi sono nel catalogo rapido
+				(Tab).</p>
+		</div>
+
+		<div data-if="notice == 'media-unknown'">
+			<h1>Cartella dei media non raggiungibile</h1>
+			<p>La stanza dei giochi si genera quando la cartella dei media di ES-DE è di nuovo raggiungibile. Intanto il
+				catalogo rapido (Tab) elenca tutti i giochi.</p>
+		</div>
+
+		<div data-if="notice == 'media-unknown-kept'">
+			<h1>Cartella dei media non raggiungibile</h1>
+			<p>La stanza resta com'era l'ultima volta: le copertine che Retroverse conserva restano al loro posto, le
+				altre mostrano il titolo.</p>
+		</div>
+
+		<div data-if="notice == 'regeneration'">
+			<h1>La stanza resta com'era</h1>
+			<p>La configurazione del mondo è cambiata: "retroverse-cli worldplan generate --replace" genera di nuovo la
+				stanza, dopo averne conservato una copia.</p>
+		</div>
+
+		<div data-if="notice == 'refused'">
+			<h1>Piano della stanza non utilizzabile</h1>
+			<p>Il piano salvato è stato modificato a mano o scritto da una versione più recente di Retroverse:
+				"retroverse-cli worldplan generate --replace" lo genera di nuovo. Intanto il catalogo rapido (Tab) elenca
+				tutti i giochi.</p>
+		</div>
+
+		<div data-if="notice == 'failed'">
+			<h1>La stanza non si può generare</h1>
+			<p>Il registro di Retroverse dice perché. Intanto il catalogo rapido (Tab) elenca tutti i giochi.</p>
+		</div>
+	</div>
+</body>
+</rml>

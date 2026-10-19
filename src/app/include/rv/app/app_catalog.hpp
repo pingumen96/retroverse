@@ -24,6 +24,7 @@
 #include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
 #include <rv/app/mock_catalog.hpp>
+#include <rv/app/room_snapshot.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/catalog/play_session.hpp>
 #include <rv/core/paths.hpp>
@@ -110,6 +111,17 @@ public:
                               LaunchEndCause /*cause*/, bool /*stoppedAwaiting*/) {}
     virtual void sessionRefused(std::uint64_t /*token*/) {}
 
+    /// The generated room's part of the catalog (I3 step 10b): where the catalog stands (Opening until its worker
+    /// answered; a catalog without rooms, the mock, says Unavailable), its library, whether it has games of a system,
+    /// the room's snapshot asked of its worker (false, and nothing asked, unless the catalog is open: room_snapshot.hpp)
+    /// and taken once answered (collected by poll()), and whether its worker ended (nothing asked will be answered).
+    [[nodiscard]] virtual CatalogState roomCatalogState() const noexcept { return CatalogState::Unavailable; }
+    [[nodiscard]] virtual catalog::LibraryId roomLibrary() const { return {}; }
+    [[nodiscard]] virtual bool hasGamesOf(const catalog::SystemName& /*system*/) const { return false; }
+    virtual bool requestRoomSnapshot(RoomSnapshotRequest /*request*/) { return false; }
+    [[nodiscard]] virtual std::optional<RoomSnapshotResult> takeRoomSnapshot() { return std::nullopt; }
+    [[nodiscard]] virtual bool workerEnded() const noexcept { return true; }
+
     /// A frame showed a page of the catalog (the quick catalog open with rows bound).
     virtual void pageShown() {}
     /// The end of the run: what is pending is finished within a bound (the worker ends: CatalogWorker::stop).
@@ -186,6 +198,13 @@ public:
     void record(CatalogRecord& record) const override;
     void recordLaunch(std::uint64_t token, LaunchRecord& record) const override;
 
+    [[nodiscard]] CatalogState roomCatalogState() const noexcept override { return m_source.state(); }
+    [[nodiscard]] catalog::LibraryId roomLibrary() const override { return m_source.library(); }
+    [[nodiscard]] bool hasGamesOf(const catalog::SystemName& system) const override;
+    bool requestRoomSnapshot(RoomSnapshotRequest request) override;
+    [[nodiscard]] std::optional<RoomSnapshotResult> takeRoomSnapshot() override { return std::exchange(m_room, {}); }
+    [[nodiscard]] bool workerEnded() const noexcept override { return m_stopped || m_source.ended(); }
+
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;
     [[nodiscard]] const CatalogDatabaseSource& databaseSource() const noexcept { return m_source; }
@@ -230,6 +249,11 @@ private:
     std::optional<TimeSummary> m_lastRefreshLists;
     /// How long shutdown() waited for the worker to stop.
     std::optional<double> m_stopMs;
+    /// The room's snapshot answered and not taken yet (I3 step 10b).
+    std::optional<RoomSnapshotResult> m_room;
+    /// Every list's wait (CatalogRecord::lists), at most kMaxListWaits.
+    static constexpr std::size_t kMaxListWaits = 100000;
+    std::vector<double> m_listWaits;
 };
 
 /// The Running session of a launch that began (`session` as the resolution gave it: the game, the choice, the owner):

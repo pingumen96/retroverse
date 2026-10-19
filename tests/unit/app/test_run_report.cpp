@@ -261,7 +261,7 @@ TEST_CASE("app/run_report: the sections of I3 are always written and required", 
     minimal.exitCode = 2;
     minimal.outcome = "initialization failed";
     const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(minimal));
-    // Empty until their steps.
+    // Empty in a run without what they record.
     for (const char* key : {"world", "residency", "video"}) {
         CAPTURE(key);
         REQUIRE(json.contains(key));
@@ -302,6 +302,107 @@ TEST_CASE("app/run_report: the sections of I3 are always written and required", 
         editedReport(report, [](nlohmann::json& edited) { edited["phases"][0].erase("name"); }), "r.json");
     REQUIRE_FALSE(unnamed.has_value());
     CHECK(unnamed.error().context == "r.json:/phases/0/name");
+}
+
+TEST_CASE("app/run_report: the generated room and its layers read back field for field (I3 step 10b)",
+          "[app][run_report]") {
+    RunReport report = measuredReport();
+    rv::app::WorldRecord& world = report.world;
+    world.bound = true;
+    world.state = "room";
+    world.notice = "media-unknown-kept";
+    world.reason = "the media are unknown";
+    world.catalogState = "";
+    world.room = "room:snes";
+    world.library = "esde";
+    world.outcome = "updated";
+    world.changeOutcome = "updated";
+    world.rebuild = "local-reflow";
+    world.planDigest = std::string(64, 'a');
+    world.planWritten = true;
+    world.saveError = "";
+    world.placements = 51;
+    world.featured = 44;
+    world.band = 6;
+    world.spine = 1;
+    world.unplaced = 5;
+    world.duplicateTitle = 2;
+    world.noCover = 3;
+    world.unavailable = 0;
+    world.capacity = 0;
+    world.added = 1;
+    world.kept = 50;
+    world.hardFindings = 0;
+    world.softFindings = 2;
+    world.objects = 42;
+    world.lights = 6;
+    world.undressed = 0;
+    world.items = 51;
+    world.clusters = 5;
+    world.skipped = 0;
+    world.staticRecords = 153;
+    world.pickTargets = 51;
+    world.snapshotAtMs = 812.5;
+    world.committedAtMs = 1203.25;
+    world.snapshotMs = 6.5;
+    world.buildMs = 120.75;
+    world.commitMs = 45.5;
+    world.snapshotToCommitMs = 390.75;
+    world.firstFrame = 0;
+    world.hoverChanges = 3;
+    world.hoveredPickId = "0100C00C";
+    world.hoveredGame = "g000000000000b002";
+    rv::app::ResidencyRecord& residency = report.residency;
+    residency.bound = true;
+    residency.format = "bc1-srgb";
+    residency.arrayBytes = 20103168;
+    residency.items = 51;
+    residency.frontsResident = 51;
+    residency.spinesResident = 50;
+    residency.pending = 1;
+    residency.covers = 48;
+    residency.cachedCovers = 1;
+    residency.labels = 2;
+    residency.coverFailures = 2;
+    residency.failed = 0;
+    residency.cacheHits = 99;
+    residency.cacheHitsWithoutSource = 1;
+    residency.cacheMisses = 4;
+    residency.cacheStale = 1;
+    residency.cacheCorrupt = 0;
+    residency.cacheStored = 2;
+    residency.cacheStoreFailures = 0;
+    residency.shownAtMs = 1203.25;
+    residency.allResidentAtMs = 1500.5;
+    residency.residentAfterShownMs = 297.25;
+    residency.allResidentFrame = 18;
+    residency.uploadRounds = 4;
+    residency.maxLayersPerRound = 64;
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->world == world);
+    CHECK(parsed->residency == residency);
+
+    // Optional values left out read back as absent; a bound record needs its fields.
+    world.firstFrame.reset();
+    world.committedAtMs.reset();
+    residency.allResidentAtMs.reset();
+    residency.allResidentFrame.reset();
+    const auto sparse = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(sparse.has_value());
+    CHECK(sparse->world == world);
+    CHECK(sparse->residency == residency);
+    const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK_FALSE(json.at("world").contains("firstFrame"));
+    CHECK(json.at("world").at("placements").at("featured") == 44);
+    const auto missing = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["world"]["unplaced"].erase("capacity"); }), "r.json");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().context == "r.json:/world/unplaced/capacity");
+    const auto badCount = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["residency"]["cache"]["hits"] = -1; }), "r.json");
+    REQUIRE_FALSE(badCount.has_value());
+    CHECK(badCount.error().context == "r.json:/residency/cache/hits");
 }
 
 TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 step 11)", "[app][run_report]") {

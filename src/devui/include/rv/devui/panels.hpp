@@ -86,8 +86,9 @@ struct CameraPanelModel {
 /// live; the lights the renderer leaves out are listed with the reason. The exposure and the ambient occlusion are the
 /// Rendering panel's.
 struct LightsPanelModel {
-    /// The scene's lights as described (linear colors), edited in place.
-    std::span<scene::Light> lights;
+    /// The scene's lights as described (linear colors), edited in place: asked each time the panel is drawn, since the
+    /// application may replace its scene (the generated room after its shell, I3 step 10b).
+    std::function<std::span<scene::Light>()> lights;
     /// Edited in place.
     scene::EnvironmentSetup& environment;
     /// Lights left out of the lights block by the last apply().
