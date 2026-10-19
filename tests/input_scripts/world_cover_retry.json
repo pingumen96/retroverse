@@ -1,0 +1,14 @@
+// I3 step 12: the generated room's covers tried again after a refresh. The quick catalog opens on frame 2 over the room;
+// Home selects the list's first game, then Up four times reaches "Aggiorna libreria" (as catalog_refresh.json reaches
+// it), which A presses on frame 300, long after the room showed (the test puts the media folder back meanwhile): the
+// refresh ends, the cover loader finds the media root readable again and serves again the items whose fronts did not
+// come from their covers. tests/smoke/test_world_covers.cpp runs it.
+[
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 4, "toFrame": 4, "actions": {"ui_home": 1}},
+  {"fromFrame": 6, "toFrame": 6, "actions": {"ui_up": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_up": 1}},
+  {"fromFrame": 10, "toFrame": 10, "actions": {"ui_up": 1}},
+  {"fromFrame": 12, "toFrame": 12, "actions": {"ui_up": 1}},
+  {"fromFrame": 300, "toFrame": 300, "actions": {"ui_activate": 1}}
+]

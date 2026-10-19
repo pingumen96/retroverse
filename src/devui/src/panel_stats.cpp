@@ -33,6 +33,7 @@ public:
         drawResources();
         drawGpuMemory();
         drawVideo();
+        drawCollection();
     }
 
 private:
@@ -154,6 +155,21 @@ private:
             return;
         }
         ImGui::SeparatorText("Video");
+        for (const std::string& line : lines) {
+            ImGui::TextWrapped("%s", line.c_str());
+        }
+    }
+
+    /// The generated room's collection (I3 step 12), what the run report's residency section records.
+    void drawCollection() const {
+        if (!m_model.collectionStatus) {
+            return;
+        }
+        const std::vector<std::string> lines = m_model.collectionStatus();
+        if (lines.empty()) {
+            return;
+        }
+        ImGui::SeparatorText("Collection");
         for (const std::string& line : lines) {
             ImGui::TextWrapped("%s", line.c_str());
         }

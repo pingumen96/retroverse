@@ -12,10 +12,12 @@
 #include <rv/app/scene_graphics.hpp>
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/render/material_registry.hpp>
 #include <rv/world/room_template.hpp>
 
 #include "collection_instance.hpp"
 #include "cover_loader.hpp"
+#include "hero_textures.hpp"
 #include "product_ui.hpp"
 
 namespace rv::app {
@@ -28,6 +30,15 @@ const gl::UploadBudget kIdleUploadBudget{std::chrono::milliseconds(8), 512};
 
 [[nodiscard]] double millisecondsSince(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+}
+
+/// What tells one refresh's summary from the next (RefreshSummary has no equality: its error has none), none for none.
+[[nodiscard]] std::optional<std::string> refreshSignature(const std::optional<RefreshSummary>& summary) {
+    if (!summary) {
+        return std::nullopt;
+    }
+    return fmt::format("{}/{}/{}/{}/{}/{}/{}", toString(summary->outcome), summary->milliseconds, summary->entries,
+                       summary->added, summary->removed, summary->changed, summary->moved);
 }
 
 /// The placements per section and the unplaced games per reason of the plan shown, into `record` (the counts of a
@@ -101,6 +112,7 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
 
 WorldSession::~WorldSession() {
     // The loader's and the flow's jobs are cancelled before the collection they would feed goes.
+    m_heroes.reset();
     m_loader.reset();
     m_flow.reset();
     m_collection.reset();
@@ -149,6 +161,14 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     if (idleWake && !m_waitSince) {
         m_waitSince = Clock::now();
     }
+    // The coverLoad phase opens after the room's first two frames (commit()).
+    if (!idleWake && m_coverPhasePending && m_nextFrame > m_coverPhaseAfter) {
+        m_coverPhasePending = false;
+        if (m_loader && !m_loader->done()) {
+            m_context.frameTiming().openPhase(kPhaseCoverLoad);
+            m_coverPhaseOpen = true;
+        }
+    }
     if (m_flow) {
         m_flow->update(product.catalog());
         // I3 step 10c: the stored plan's room shows first (world_start.cpp); the snapshot's result waits until a frame
@@ -168,17 +188,172 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     } else if (m_decided) {
         commit(*std::exchange(m_decided, std::nullopt));
     }
-    if (m_collection && m_loader && !m_loader->done()) {
-        const Status round =
-            m_loader->update(*m_collection, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, m_context.frameIndex());
-        if (!round) {
-            spdlog::error("Cover loader: {}", round.error().toString());
+    followRefresh(product);
+    coverRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
+    showNotice(product, timeSeconds);
+}
+
+CoverView WorldSession::currentView() const {
+    if (!m_host.camera) {
+        return CoverView{};
+    }
+    const CommandLineOptions& options = m_context.options();
+    std::optional<float> screenshotAspect;
+    if (options.screenshot && options.screenshotHeight > 0) {
+        screenshotAspect = static_cast<float>(options.screenshotWidth) / static_cast<float>(options.screenshotHeight);
+    }
+    return CoverView::of(m_host.camera(), screenshotAspect);
+}
+
+void WorldSession::coverRound(ProductUi& product, const gl::UploadBudget& budget, bool frame) {
+    if (!m_collection || !m_loader) {
+        return;
+    }
+    // ADR-0012 §6: while a launched game runs nothing is made or uploaded.
+    const bool paused = product.launchActive();
+    double heroMs = 0.0;
+    if (m_heroes) {
+        // The hero texture shown is never evicted; the loader's media root, once known (a retry), is the heroes' too.
+        if (m_loader->mediaRoot() && !m_heroesKnowRoot) {
+            m_heroes->setMediaRoot(m_loader->mediaRoot());
+            m_heroesKnowRoot = true;
         }
-        if (m_loader->done() && std::exchange(m_coverPhaseOpen, false)) {
-            m_context.frameTiming().closePhase(kPhaseCoverLoad);
+        std::vector<std::string> pinned;
+        if (m_heroShown) {
+            pinned.push_back(m_loader->items()[*m_heroShown].game.toString());
+        }
+        heroMs = m_heroes->update(paused, pinned);
+    }
+    const bool wasDone = m_loader->done();
+    CoverLoader::Round round;
+    round.view = currentView();
+    round.focused = m_heroItem;
+    round.paused = paused;
+    round.budget = budget;
+    round.spent =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double, std::milli>(heroMs));
+    round.frame = frame;
+    round.frameIndex = m_context.frameIndex();
+    if (const Status updated = m_loader->update(*m_collection, round); !updated) {
+        spdlog::error("Cover loader: {}", updated.error().toString());
+    }
+    if (!wasDone && m_loader->done() && std::exchange(m_coverPhaseOpen, false)) {
+        m_context.frameTiming().closePhase(kPhaseCoverLoad);
+    }
+}
+
+void WorldSession::followRefresh(ProductUi& product) {
+    AppCatalog& catalog = product.catalog();
+    if (!catalog.supportsRefresh()) {
+        return;
+    }
+    const RefreshState state = catalog.refreshState();
+    if (!state.last || refreshSignature(state.last) == m_lastRefresh) {
+        return;
+    }
+    m_lastRefresh = refreshSignature(state.last);
+    if (m_loader && m_mediaRootPath && state.last->outcome == RefreshOutcome::Done) {
+        spdlog::info("Frame {}: the catalog was refreshed; the cover loader tries the media root again",
+                     m_context.frameIndex());
+        m_loader->retry(*m_mediaRootPath);
+    }
+}
+
+void WorldSession::setHeroItem(world::PickId pickId) {
+    m_heroItem = m_collection ? m_collection->itemOfPick(pickId) : std::nullopt;
+    showHero();
+}
+
+void WorldSession::showHero() {
+    if (!m_collection) {
+        return;
+    }
+    const gl::Texture2D* texture = nullptr;
+    if (m_heroItem && m_heroes && m_loader) {
+        const CoverItem& item = m_loader->items()[*m_heroItem];
+        m_heroes->request(item);
+        texture = m_heroes->find(item.game);
+    }
+    const std::optional<std::size_t> shown = texture != nullptr ? m_heroItem : std::nullopt;
+    if (shown != m_heroShown) {
+        if (m_heroShown) {
+            if (Status restored = m_collection->setFrontHidden(*m_heroShown, false); !restored) {
+                spdlog::error("World: the hero's front: {}", restored.error().toString());
+            }
+        }
+        if (shown) {
+            if (Status hidden = m_collection->setFrontHidden(*shown, true); !hidden) {
+                spdlog::error("World: the hero's front: {}", hidden.error().toString());
+            }
+        }
+        m_heroShown = shown;
+    }
+    const unsigned textureId = texture != nullptr ? texture->id() : 0u;
+    if (textureId != m_heroTexture) {
+        if (Status set = m_graphics.materials().setTextureOverride(m_collection->heroMaterial(),
+                                                                   gl::MaterialTextureSlot::BaseColor, textureId);
+            !set) {
+            spdlog::error("World: the hero texture: {}", set.error().toString());
+        }
+        m_heroTexture = textureId;
+    }
+    m_dynamicItems.clear();
+    if (shown) {
+        // Its attributes as the front record has them now (the hover's highlight), drawn by the dynamic path.
+        if (auto item = m_collection->frontRenderItem(*shown, m_collection->heroMaterial())) {
+            m_dynamicItems.push_back(*item);
         }
     }
-    showNotice(product, timeSeconds);
+}
+
+bool WorldSession::settled(bool all) const {
+    if (m_loader && !(all ? m_loader->done() : m_loader->viewDone())) {
+        return false;
+    }
+    if (m_heroItem && m_heroes && m_loader && m_heroes->loading(m_loader->items()[*m_heroItem].game)) {
+        return false;
+    }
+    return true;
+}
+
+void WorldSession::settle(ProductUi& product) {
+    if (!m_options.lockstep || !m_collection || !m_loader) {
+        return;
+    }
+    const std::optional<std::uint32_t> limit = m_context.options().frameLimit;
+    const bool lastFrame = limit && m_context.frameIndex() + 1 >= *limit;
+    // update() ranked the loader with the frame's view (the walker had moved), hover() asked for the hero texture.
+    if (settled(lastFrame) || product.launchActive()) {
+        return;
+    }
+    const Clock::time_point start = Clock::now();
+    ++m_lockstepWaits;
+    while (!settled(lastFrame)) {
+        if (Clock::now() - start >= kLockstepWaitLimit) {
+            if (!std::exchange(m_settleWarned, true)) {
+                spdlog::warn("Frame {}: the layers of the view did not come within {} s; frames go on without them",
+                             m_context.frameIndex(), kLockstepWaitLimit.count());
+            }
+            break;
+        }
+        m_loader->waitForResults(std::chrono::milliseconds(20));
+        coverRound(product, kIdleUploadBudget, false);
+        showHero();
+    }
+    m_lockstepWaitMs += millisecondsSince(start);
+}
+
+std::vector<std::string> WorldSession::statusLines() const {
+    if (!m_collection || !m_loader) {
+        return {};
+    }
+    std::vector<std::string> lines = m_loader->statusLines(*m_collection);
+    if (m_heroes) {
+        lines.push_back(
+            fmt::format("Hero textures: {} of {} held ({:.1f} MiB){}", m_heroes->resident(), HeroLru::kDefaultCapacity,
+                        static_cast<double>(m_heroes->bytes()) / (1024.0 * 1024.0), m_heroShown ? ", one shown" : ""));
+    }
+    return lines;
 }
 
 void WorldSession::commit(WorldResult result) {
@@ -240,6 +415,9 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.hardFindings = build.hardFindings.size();
     m_record.softFindings = build.softFindings;
     m_record.buildMs = build.milliseconds;
+    if (build.mediaRootPath) {
+        m_mediaRootPath = build.mediaRootPath; // the cover loader's retry after a refresh (I3 step 12)
+    }
     m_record.itemsWritten = build.itemsWritten;
     m_record.screenGames = build.screenGames.size();
     m_record.objectFallbacks.clear();
@@ -313,7 +491,7 @@ bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
 void WorldSession::startCoverLoader(std::vector<CoverItem> covers,
                                     const std::optional<std::filesystem::path>& mediaRoot,
                                     const catalog::LibraryId& library) {
-    m_loader.reset();
+    std::unique_ptr<CoverLoader> previous = std::move(m_loader);
     auto cacheRoot = assets::textureCacheRoot(m_options.paths.cacheDir, library.str());
     if (!cacheRoot) {
         // The items keep the pending picture (nothing is written outside the user data directory's cache).
@@ -329,10 +507,31 @@ void WorldSession::startCoverLoader(std::vector<CoverItem> covers,
     loader.format = m_graphics.collectionArrayFormat();
     loader.mediaRoot = mediaRoot;
     loader.wake = m_context.wakeCallback();
-    m_loader = std::make_unique<CoverLoader>(std::move(loader), m_pool, std::move(covers));
-    if (!m_coverPhaseOpen) {
-        m_context.frameTiming().openPhase(kPhaseCoverLoad);
-        m_coverPhaseOpen = true;
+    // Each item's box in the room: the loader ranks by it (in view, projected size, distance).
+    m_loader = std::make_unique<CoverLoader>(std::move(loader), m_pool, std::move(covers), m_collection->itemBounds());
+    if (previous) {
+        // The same collection served again (I3 step 10c's textures reconciliation): only the pictures that changed go
+        // up again.
+        m_loader->adoptShown(*previous);
+        previous.reset();
+    }
+    if (!m_heroes) {
+        HeroTextures::Options heroes;
+        heroes.wake = m_context.wakeCallback();
+        heroes.anisotropy = gl::clampAnisotropy(8.0f, m_context.device().caps().maxAnisotropy);
+        m_heroes = std::make_unique<HeroTextures>(std::move(heroes), m_pool);
+        m_heroesKnowRoot = false;
+    }
+    if (mediaRoot) {
+        m_heroes->setMediaRoot(mediaRoot);
+        m_heroesKnowRoot = true;
+    }
+    // The coverLoad phase opens after the room's first two frames (update()): the frame that commits it and the next,
+    // which waits for the new scene's first GPU work (300 to 350 ms measured on snes-stress in either array format),
+    // are the commit's hitch, as the run's first 30 frames are its warm-up.
+    if (!m_coverPhaseOpen && !m_coverPhasePending) {
+        m_coverPhasePending = true;
+        m_coverPhaseAfter = m_context.frameIndex() + 1;
     }
 }
 
@@ -361,16 +560,17 @@ void WorldSession::hover(const std::optional<core::Ray>& ray) {
     } else {
         m_hover.reset();
     }
-    if (hovered == m_collection->hovered()) {
-        return;
+    if (hovered != m_collection->hovered()) {
+        if (Status set = m_collection->setHovered(hovered); !set) {
+            spdlog::error("World: the hover outline: {}", set.error().toString());
+        } else {
+            ++m_record.hoverChanges;
+            spdlog::debug("Frame {}: hover {}", m_context.frameIndex(),
+                          hovered == world::kNoPick ? std::string("none") : fmt::format("{:08X}", hovered));
+        }
     }
-    if (Status set = m_collection->setHovered(hovered); !set) {
-        spdlog::error("World: the hover outline: {}", set.error().toString());
-        return;
-    }
-    ++m_record.hoverChanges;
-    spdlog::debug("Frame {}: hover {}", m_context.frameIndex(),
-                  hovered == world::kNoPick ? std::string("none") : fmt::format("{:08X}", hovered));
+    // I3 step 12: the hovered item is the hero item until step 13a's focus takes that role.
+    setHeroItem(m_collection->hovered());
 }
 
 void WorldSession::frameRendered() {
@@ -380,6 +580,7 @@ void WorldSession::frameRendered() {
         m_waitWarned = true;
     }
     m_waitSince.reset();
+    m_nextFrame = m_context.frameIndex() + 1;
     if (std::exchange(m_previewAwaitingFrame, false) && m_record.preview) {
         // The stored plan's room as its first frame showed it (I3 step 10c); the snapshot's result may come now.
         m_record.preview->frontsResident =
@@ -400,19 +601,28 @@ bool WorldSession::waits() const {
     if (!m_options.lockstep) {
         return false;
     }
-    const bool pending =
-        m_decided.has_value() || (m_flow && m_flow->phase() != WorldPhase::Done) || (m_loader && !m_loader->done());
+    // Before the run's last frame the whole room, before the others the frame's view (ADR-0011 §6).
+    const std::optional<std::uint32_t> limit = m_context.options().frameLimit;
+    const bool lastFrameNext = limit && m_nextFrame + 1 >= *limit;
+    const bool pending = m_decided.has_value() || (m_flow && m_flow->phase() != WorldPhase::Done) ||
+                         (m_collection && !settled(lastFrameNext));
     if (!pending) {
         return false;
     }
     // The stored plan's room, its layers in, is shown by a frame before its reconciliation is waited for (I3 step 10c).
-    if (m_previewAwaitingFrame && (!m_loader || m_loader->done())) {
+    if (m_previewAwaitingFrame && (!m_collection || settled(lastFrameNext))) {
         return false;
     }
     return !m_waitSince || Clock::now() - *m_waitSince < kLockstepWaitLimit;
 }
 
 void WorldSession::dropCollection() {
+    m_coverPhasePending = false;
+    m_dynamicItems.clear();
+    m_heroItem.reset();
+    m_heroShown.reset();
+    m_heroTexture = 0;
+    m_heroes.reset();
     m_loader.reset();
     m_collection.reset();
     m_pickIndex = world::PickIndex{};
@@ -445,6 +655,18 @@ void WorldSession::record(RunReport& report) const {
             if (m_shownAt) {
                 residency.residentAfterShownMs =
                     std::chrono::duration<double, std::milli>(*resident - *m_shownAt).count();
+            }
+        }
+        if (const auto viewResident = m_loader->viewResidentAt(); viewResident && m_shownAt) {
+            residency.viewResidentAfterShownMs =
+                std::chrono::duration<double, std::milli>(*viewResident - *m_shownAt).count();
+        }
+        residency.lockstepWaits = m_lockstepWaits;
+        residency.lockstepWaitMs = m_lockstepWaitMs;
+        if (m_heroes) {
+            m_heroes->record(residency.hero);
+            if (m_heroShown) {
+                residency.hero.shownGame = m_loader->items()[*m_heroShown].game.toString();
             }
         }
         report.residency = std::move(residency);

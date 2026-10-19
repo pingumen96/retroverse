@@ -361,7 +361,7 @@ Expected<SharedFileReader::Facts> listedFileFacts(const std::filesystem::path& p
 namespace detail {
 
 Status writeFileAtomicStoppingAt(const std::filesystem::path& path, std::span<const std::byte> data,
-                                 AtomicWriteStop stop) {
+                                 AtomicWriteStop stop, Durability durability) {
     const std::string context = pathToUtf8Lossy(path);
     std::error_code ec;
     if (path.has_parent_path()) {
@@ -403,9 +403,9 @@ Status writeFileAtomicStoppingAt(const std::filesystem::path& path, std::span<co
         if (stop == AtomicWriteStop::AfterPartialWrite) {
             return makeError(ErrorCode::Cancelled, "stopped after a partial write (test)", context);
         }
-        // The bytes on the disk before the name points at them: a crash or a power loss after the rename never finds
-        // the new name holding a file that was not written out.
-        if (FlushFileBuffers(file.get()) == FALSE) {
+        // The bytes on the disk before the name points at them (Durability::Flushed): a crash or a power loss after the
+        // rename never finds the new name holding a file that was not written out.
+        if (durability == Durability::Flushed && FlushFileBuffers(file.get()) == FALSE) {
             const DWORD error = GetLastError();
             CloseHandle(file.release());
             return abandon(error, "cannot flush the temporary file");
@@ -425,8 +425,8 @@ Status writeFileAtomicStoppingAt(const std::filesystem::path& path, std::span<co
 
 } // namespace detail
 
-Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data) {
-    return detail::writeFileAtomicStoppingAt(path, data, detail::AtomicWriteStop::None);
+Status writeFileAtomic(const std::filesystem::path& path, std::span<const std::byte> data, Durability durability) {
+    return detail::writeFileAtomicStoppingAt(path, data, detail::AtomicWriteStop::None, durability);
 }
 
 Status writeTextFileAtomic(const std::filesystem::path& path, std::string_view text) {

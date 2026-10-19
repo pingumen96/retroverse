@@ -88,8 +88,8 @@ struct WorkerPoolOptions {
     std::size_t threads = 0;
     /// The jobs the queue holds at most (stale ones included until they are dropped); 0 is taken as 1.
     std::size_t capacity = 4096;
-    /// THREAD_PRIORITY_BELOW_NORMAL for every thread (ADR-0011 §6), so that the main thread and the video decoder
-    /// always come first.
+    /// THREAD_PRIORITY_BELOW_NORMAL for every thread (ADR-0011 §6), without the scheduler's dynamic boosts (I3 step
+    /// 12: SetThreadPriorityBoost), so that the main thread and the video decoder always come first.
     bool belowNormalPriority = true;
     /// The threads' description ("<name> <n>", seen in debuggers and profilers) and the logs' name of the pool.
     std::string name = "rv-worker";

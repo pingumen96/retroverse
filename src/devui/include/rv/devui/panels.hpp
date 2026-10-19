@@ -61,6 +61,10 @@ struct StatsPanelModel {
     /// The hero CRT's video, one line each (its "Video" section; none without it): the picture shown, the decoder's
     /// state and threads, the frames uploaded (I3 step 11).
     std::function<std::vector<std::string>()> videoStatus = {};
+    /// The generated room's collection, one line each (its "Collection" section; none without a room): the layers
+    /// resident, where the fronts came from, the cache's hits and misses, the loader's queue, the hero textures (I3
+    /// step 12).
+    std::function<std::vector<std::string>()> collectionStatus = {};
 };
 [[nodiscard]] std::unique_ptr<Panel> makeStatsPanel(const StatsPanelModel& model);
 

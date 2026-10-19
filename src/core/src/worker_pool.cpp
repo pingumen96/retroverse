@@ -78,6 +78,13 @@ void prepareThread(const std::string& name, std::size_t index, bool belowNormal)
         spdlog::warn("Worker pool '{}': thread {} keeps its normal priority: {}", name, index + 1,
                      lastSystemErrorMessage());
     }
+    // Without the scheduler's dynamic boosts (I3 step 12): a worker woken by its file reads would otherwise be
+    // lifted to the main thread's priority and share its core in turns, which made the frames of a cold cover load
+    // about four times slower on the reference machine (coverLoad p50 40 ms, 11 ms without the boosts).
+    if (belowNormal && SetThreadPriorityBoost(GetCurrentThread(), TRUE) == FALSE) {
+        spdlog::warn("Worker pool '{}': thread {} keeps its priority boosts: {}", name, index + 1,
+                     lastSystemErrorMessage());
+    }
     if (const auto description = utf8ToWide(name + " " + std::to_string(index + 1))) {
         // Only for debuggers and profilers: a failure changes nothing else.
         static_cast<void>(SetThreadDescription(GetCurrentThread(), description->c_str()));

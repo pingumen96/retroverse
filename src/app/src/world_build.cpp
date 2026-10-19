@@ -379,6 +379,7 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
             if (input.snapshot.snapshot.mediaKnown) {
                 build.mediaRoot = input.snapshot.mediaRoot;
             }
+            build.mediaRootPath = input.snapshot.mediaRoot;
             const RoomSnapshotResult& snapshot = input.snapshot;
             const std::vector<world::CollectionTitle> titles = world::collectionTitles(snapshot.snapshot);
             const DescribeCover describe = [&](const world::CollectionItem& item, CoverItem& cover) {

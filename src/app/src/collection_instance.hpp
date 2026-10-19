@@ -23,6 +23,8 @@
 #include <rv/core/expected.hpp>
 #include <rv/render/collection_arrays.hpp>
 #include <rv/render/static_instance_group.hpp>
+#include <rv/render/texture.hpp>
+#include <rv/scene/render_item.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/pick_index.hpp>
 #include <rv/world/scene_builder.hpp>
@@ -67,6 +69,19 @@ public:
     [[nodiscard]] world::PickId hovered() const noexcept { return m_hovered; }
     /// The game of the item of `pickId`, if any.
     [[nodiscard]] std::optional<catalog::GameId> gameOf(world::PickId pickId) const;
+    /// Every item's box in the room, in the layout's order (the cover loader ranks by them).
+    [[nodiscard]] std::vector<core::Aabb> itemBounds() const;
+    /// The item of `pickId` (its index in the layout's order), if any.
+    [[nodiscard]] std::optional<std::size_t> itemOfPick(world::PickId pickId) const;
+
+    /// The hero texture's front (I3 step 12, ADR-0011 §8): the material that draws a hero texture on the family's front
+    /// quad (its base colour overridden with the texture, MaterialRegistry::setTextureOverride), the item's front
+    /// record hidden while the dynamic path draws it, and the render item that does (the front quad at the item's
+    /// transform with `material`, drawn like the hero material, its attributes but kHidden, casting no shadow). Errors:
+    /// no item, no front part.
+    [[nodiscard]] scene::MaterialHandle heroMaterial() const noexcept { return m_heroMaterial; }
+    [[nodiscard]] Status setFrontHidden(std::size_t item, bool hidden);
+    [[nodiscard]] Expected<scene::RenderItem> frontRenderItem(std::size_t item, scene::MaterialHandle material) const;
 
 private:
     CollectionInstance() = default;
@@ -81,6 +96,9 @@ private:
         std::optional<std::size_t> shell;
         std::optional<std::size_t> front;
         std::optional<std::size_t> spine;
+        /// From the item prefab's space to the room (world::CollectionItem::transform), and its box in the room.
+        glm::mat4 transform{1.0f};
+        core::Aabb bounds;
     };
 
     [[nodiscard]] Status writeFlags(std::size_t item, bool highlighted);
@@ -95,6 +113,11 @@ private:
     std::map<std::string, std::size_t, std::less<>> m_byKey;
     std::map<world::PickId, std::size_t> m_byPick;
     world::PickId m_hovered = world::kNoPick;
+    std::optional<scene::MeshHandle> m_frontMesh;
+    /// The hero front's material and its own base colour texture (overridden by the hero texture shown).
+    gl::Texture2D m_heroBase;
+    scene::MaterialHandle m_heroMaterial;
+    scene::ShaderKind m_heroShader = scene::ShaderKind::Pbr;
 };
 
 } // namespace rv::app
