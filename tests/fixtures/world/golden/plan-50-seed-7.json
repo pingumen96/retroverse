@@ -44,7 +44,7 @@
 ],"floors":[
 {"id":"ground","order":0},
 {"id":"gen4","order":3}
-],"generatorVersion":"1.3","inputDigest":"bb51f1e40fb219e076752a21852678422d7f7a90a0c68aa4e9dd5db55eebfe1d","library":"esde","lights":[
+],"generatorVersion":"1.3","inputDigest":"845a20f9b42afb8f244380b02e30a9cda9f215167d0eca4269bd9dabc457be21","library":"esde","lights":[
 {"id":"room:snes/fx:dec-se.light","role":"lamp","spanMm":0,"targetXMm":2500,"targetYMm":1379,"targetZMm":4800,"xMm":2500,"yMm":1379,"zMm":4800},
 {"id":"room:snes/fx:e07.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":4000,"xMm":4300,"yMm":1379,"zMm":4000},
 {"id":"room:snes/fx:hero.key-light","role":"key","spanMm":5750,"targetXMm":0,"targetYMm":500,"targetZMm":-4870,"xMm":0,"yMm":2920,"zMm":-2670},

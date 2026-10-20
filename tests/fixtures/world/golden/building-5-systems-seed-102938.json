@@ -204,7 +204,7 @@
 {"id":"gen5","order":4},
 {"id":"handheld","order":7},
 {"id":"computer","order":8}
-],"generatorVersion":"1.3","inputDigest":"b7863920b0e1d9d622abc379e934617728ee51954e14d271e67c4368f817c004","library":"esde","lights":[
+],"generatorVersion":"1.3","inputDigest":"ff5e501678b4cab3e777f31cb78b037a06fa2af27fd9975972fa020ac01055dd","library":"esde","lights":[
 {"id":"room:megadrive/fx:dec-nw.light","role":"lamp","spanMm":0,"targetXMm":-3650,"targetYMm":1379,"targetZMm":-4800,"xMm":-3650,"yMm":1379,"zMm":-4800},
 {"id":"room:megadrive/fx:e02.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-3000,"xMm":4300,"yMm":1379,"zMm":-3000},
 {"id":"room:megadrive/fx:e06.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":3000,"xMm":4300,"yMm":1379,"zMm":3000},

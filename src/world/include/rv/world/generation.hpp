@@ -269,8 +269,9 @@ struct BuildingInput {
 
 /// The plan's inputDigest for these inputs (ADR-0010 §8, ADR-0013 §5), provenance only: the SHA-256 of the canonical
 /// document of the configuration as it shapes the rooms (reduceMotion and the lighting profile only show them), the
-/// generator's version, the library, the world seed, building.json, the plan's systems.json rows with their platform
-/// tags, and per room its selection, its template by id and version, what the plan takes from its platform and media
+/// generator's version, the library, the world seed, building.json, the plan's systems as classify() places them (the
+/// row each takes and why: its own, or the one its ES-DE platform tags matched, or the fallback, with those tags, so
+/// that tags decide the digest only when they decide the place), and per room its selection, its template by id and version, what the plan takes from its platform and media
 /// family, and every prefab as measured. The overrides are not part of it (they are protected, never applied). The
 /// incremental update (incremental.hpp) records the digest of the inputs it read the same way (over the rooms it
 /// updated), so a plan's inputDigest names the inputs of its last generation or update. Errors: InvalidArgument for a

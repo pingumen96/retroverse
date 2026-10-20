@@ -147,7 +147,14 @@ Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
         const std::vector<std::string> platformTags =
             tags != input.platformTags.end() ? tags->second : std::vector<std::string>{};
         const Classification classification = classify(system, platformTags, input.systems, input.building);
-        systems.push_back(Json{{"row", systemEntryToJson(classification.entry)}, {"platformTags", platformTags}});
+        // What decided the system's place (ADR-0013 §2, §5): its own row, or the row its platform tags matched, or the
+        // fallback, the tags then in the row. A system with a row of its own hashes alike whatever tags its caller
+        // knows, so that the app (none) and the CLI (the catalog's) write one plan for one catalog.
+        Json row{{"row", systemEntryToJson(classification.entry)}, {"source", toString(classification.source)}};
+        if (classification.source == ClassificationSource::PlatformTag) {
+            row["matched"] = classification.matched.str();
+        }
+        systems.push_back(std::move(row));
         auto room = roomInputJson(*selection, *data, input.checkedSelections);
         if (!room) {
             return propagate(room.error());

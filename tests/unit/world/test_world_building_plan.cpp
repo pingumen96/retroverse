@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -234,6 +236,42 @@ TEST_CASE("world/building plan: the golden building of five systems", "[world][b
     auto read = rv::world::readPlan(*expected, "building.json");
     REQUIRE(read.has_value());
     CHECK(*rv::world::writePlan(*read) == *expected);
+}
+
+TEST_CASE("world/building plan: platform tags count only when they place a system", "[world][building]") {
+    // The app knows no platform tags, the CLI the catalog's: for systems with a row of their own both write one plan,
+    // and an update with the tags of a plan made without them (or the other way round) changes nothing.
+    const Building building = fiveSystems();
+    Building tagged = building;
+    for (const RoomSelection& selection : tagged.input.selections) {
+        tagged.input.platformTags[selection.room.system()] = {selection.room.system().str(), "zzz"};
+    }
+    const GenerationResult plain = generateBuilding(building);
+    CHECK(*rv::world::writePlan(generateBuilding(tagged).plan) == *rv::world::writePlan(plain.plan));
+    rv::world::BuildingUpdateInput input;
+    input.library = building.input.library;
+    input.selections = building.input.selections;
+    input.platformTags = tagged.input.platformTags;
+    input.config = building.input.config;
+    input.previous = plain.plan;
+    auto updated = rv::world::updateBuilding(input, snesData().building, testSystems(), building.rooms);
+    REQUIRE(updated.has_value());
+    CHECK(updated->changes.digestAfter == updated->changes.digestBefore);
+
+    // A system without a row is placed by its tags: then they are part of the inputs.
+    Building custom;
+    custom.input.library = building.input.library;
+    custom.input.config = building.input.config;
+    custom.rooms = {dataOf("snes-hacks")};
+    custom.input.selections = {selectionOf("snes-hacks", 20, 3000)};
+    custom.input.platformTags[name("snes-hacks")] = {"snes"};
+    const GenerationResult byTag = generateBuilding(custom);
+    CHECK(roomOf(byTag.plan, "snes-hacks").floor == "gen4");
+    Building otherTags = custom;
+    otherTags.input.platformTags[name("snes-hacks")] = {"zzz", "snes"};
+    const GenerationResult byOtherTags = generateBuilding(otherTags);
+    CHECK(roomOf(byOtherTags.plan, "snes-hacks").floor == "gen4");
+    CHECK(byOtherTags.plan.inputDigest != byTag.plan.inputDigest);
 }
 
 TEST_CASE("world/building plan: inputs it refuses", "[world][building]") {

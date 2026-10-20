@@ -202,6 +202,19 @@ enum class ClassificationSource : std::uint8_t {
     Fallback,    ///< no row matched: kind Other, the fallback's family, order and sign
 };
 
+/// "table", "platform-tag", "fallback".
+[[nodiscard]] constexpr std::string_view toString(ClassificationSource source) noexcept {
+    switch (source) {
+    case ClassificationSource::Table:
+        return "table";
+    case ClassificationSource::PlatformTag:
+        return "platform-tag";
+    case ClassificationSource::Fallback:
+        return "fallback";
+    }
+    return "unknown";
+}
+
 /// What a system is in the building (ADR-0013 §2).
 struct Classification {
     /// The row it takes, its `system` the classified system's own name (its platforms the classified system's tags
