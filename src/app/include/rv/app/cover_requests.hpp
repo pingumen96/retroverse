@@ -174,8 +174,11 @@ inline constexpr int kHeroMaxSide = 1024;
 /// The size of the hero picture of a cover of `sourceWidth` x `sourceHeight`: the front label's aspect (256 x 188, as
 /// the label quad's texture coordinates span it; the label quad's own shape for a family whose covers are fitted to it,
 /// `label`, ADR-0013 §4), as wide as the cover's pixels need, the cover fitted into it without stretching
-/// (assets::fitCover's rules), at most `maxSide` wide and at least 16 x 12. A 680 x 497 cover gives 680 x 499, a
-/// 476 x 864 portrait one 1024 x 752 (its height kept up to the cap), a 2,050 x 1,440 scan 1024 x 752.
+/// (assets::fitCover's rules), within ADR-0011 §8's bounds whatever the shape: the long side at most `maxSide`, and
+/// at most the pixels of the layer's shape at `maxSide` wide (1,024 x 752 = 770,048: the set of 8 within 32 MiB);
+/// at least 16 x 12. A 680 x 497 cover gives 680 x 499, a 476 x 864 portrait one 1024 x 752 (its height kept up to
+/// the cap), a 2,050 x 1,440 scan 1024 x 752; at the jewel case's square label a large scan gives 877 x 877, at the
+/// keep case's 123 x 178 one 707 x 1023.
 [[nodiscard]] glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide = kHeroMaxSide,
                                          const assets::LabelAspect& label = {}) noexcept;
 

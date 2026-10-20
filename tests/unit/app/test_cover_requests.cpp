@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -20,7 +21,11 @@
 #include <rv/assets/image_io.hpp>
 #include <rv/assets/test_patterns.hpp>
 #include <rv/core/aabb.hpp>
+#include <rv/core/text.hpp>
+#include <rv/render/gpu_memory.hpp>
+#include <rv/render/texture_memory.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/world/media_family.hpp>
 
 using rv::app::CoverPriority;
 using rv::app::CoverRank;
@@ -323,7 +328,10 @@ TEST_CASE("app/cover_requests: a family's hero picture is made at its label's sh
     CHECK(rv::app::heroPictureSize(680, 497, rv::app::kHeroMaxSide, square) == glm::ivec2(680, 680));
     CHECK(rv::app::heroPictureSize(600, 600, rv::app::kHeroMaxSide, square) == glm::ivec2(600, 600));
     CHECK(rv::app::heroPictureSize(476, 864, rv::app::kHeroMaxSide, keepCase) == glm::ivec2(597, 864));
-    CHECK(rv::app::heroPictureSize(2000, 3000, rv::app::kHeroMaxSide, keepCase) == glm::ivec2(1024, 1482));
+    // ADR-0011 §8's bounds whatever the shape: the long side at most 1,024 px, at most 1,024 x 752 pixels.
+    CHECK(rv::app::heroPictureSize(2000, 3000, rv::app::kHeroMaxSide, keepCase) == glm::ivec2(707, 1023));
+    CHECK(rv::app::heroPictureSize(2000, 2000, rv::app::kHeroMaxSide, square) == glm::ivec2(877, 877));
+    CHECK(rv::app::heroPictureSize(3000, 2000, rv::app::kHeroMaxSide, {96, 60}) == glm::ivec2(1024, 640));
     // The layer's own shape is I3's.
     CHECK(rv::app::heroPictureSize(680, 497, rv::app::kHeroMaxSide, {}) == rv::app::heroPictureSize(680, 497));
     const rv::assets::ImageData portrait =
@@ -334,4 +342,34 @@ TEST_CASE("app/cover_requests: a family's hero picture is made at its label's sh
     REQUIRE(picture.has_value());
     CHECK(picture->width == 597);
     CHECK(picture->height == 864);
+}
+
+TEST_CASE("app/cover_requests: every family's hero pictures keep ADR-0011's hero bounds, 8 of them within 32 MiB",
+          "[app][cover_requests]") {
+    const auto registry = rv::world::loadMediaFamilies(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR));
+    REQUIRE(registry.has_value());
+    REQUIRE(registry->families.size() >= 9);
+    constexpr std::size_t kHeroBudgetBytes = 32ull * 1024ull * 1024ull;
+    const std::array<glm::ivec2, 5> sources{glm::ivec2(4000, 4000), glm::ivec2(3000, 4500), glm::ivec2(4500, 3000),
+                                            glm::ivec2(1500, 2100), glm::ivec2(2050, 1440)};
+    for (const rv::world::MediaFamily& family : registry->families) {
+        for (const glm::ivec2 source : sources) {
+            const glm::ivec2 size =
+                rv::app::heroPictureSize(source.x, source.y, rv::app::kHeroMaxSide, family.coverAspect());
+            INFO(family.id << ": " << source.x << " x " << source.y << " gives " << size.x << " x " << size.y);
+            CHECK(std::max(size.x, size.y) <= rv::app::kHeroMaxSide);
+            CHECK(static_cast<std::size_t>(size.x) * static_cast<std::size_t>(size.y) <= 1024u * 752u);
+            // The texture as HeroTextures makes it: RGBA8 sRGB with its whole mip chain.
+            const std::size_t bytes =
+                rv::gl::textureBytes(rv::gl::GpuFormat::Srgb8Alpha8, size, rv::gl::fullMipLevelCount(size));
+            CHECK(bytes * rv::app::HeroLru::kDefaultCapacity <= kHeroBudgetBytes);
+            // At the label's shape (its aspect within the rounding of a side).
+            const rv::assets::LabelAspect label = family.coverAspect();
+            if (!label.isLayer()) {
+                const double aspect = static_cast<double>(label.width) / static_cast<double>(label.height);
+                CHECK(std::abs(static_cast<double>(size.x) / static_cast<double>(size.y) - aspect) <=
+                      aspect / static_cast<double>(std::min(size.x, size.y)));
+            }
+        }
+    }
 }
