@@ -46,8 +46,9 @@
 // placed game that represents its title), every placed game keeps its placement and no entry besides; it records this
 // generator's version. A selection for a system that has no room yet is refused (new systems enter the building with
 // I4 step 6a). The plan records the highest of its rooms' generator versions, the selections' sort-key version and
-// the inputDigest of the inputs read (generationInputDigest(), over the rooms given a selection), so that an update of
-// an unchanged catalog gives the previous plan byte for byte. The change report lists the games added, the placements
+// the inputDigest of the inputs read (generationInputDigest(), over the rooms given a selection; an update that gives
+// some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an update of an
+// unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given. The change report lists the games added, the placements
 // kept, the games newly unplaced, the fixtures added, removed and moved, the dressing removed, the slots freed, the
 // pins, the rooms kept, the rebuild level (NoRebuild when no placement, fixture, light or dressing changed; a slot
 // handed to an alias's identity is a texture swap) and the digests before (the stored file's SHA-256: previousDigest)

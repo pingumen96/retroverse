@@ -899,6 +899,14 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     if (!input.selections.empty()) {
         plan.catalogSortKeyVersion = input.selections.front().catalogSortKeyVersion;
     }
+    sortPlan(plan);
+    // The inputDigest (provenance only) names the inputs this update read: the rooms given a selection. An update that
+    // leaves a room of the building without one (the app's one room until I4 step 5a, `worldplan update --system`) and
+    // changes nothing keeps the plan's provenance, which named more: an update with nothing new then writes nothing
+    // whichever rooms it was given (plan still holds the previous inputDigest here).
+    const bool partial = std::any_of(previous.rooms.begin(), previous.rooms.end(),
+                                     [&](const Room& room) { return !selectionOf.contains(room.id); });
+    const bool keepProvenance = selectionOf.empty() || (partial && plan == previous);
     detail::BuildingDigestInput digestInput;
     digestInput.config = input.config;
     digestInput.library = input.library;
@@ -910,7 +918,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     for (const auto& [room, selection] : selectionOf) {
         digestInput.rooms.emplace_back(selection, dataOf.at(room));
     }
-    if (!digestInput.rooms.empty()) {
+    if (!keepProvenance) {
         auto digest = detail::buildingInputDigest(digestInput);
         if (!digest) {
             Error error = digest.error();
@@ -919,7 +927,6 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         }
         plan.inputDigest = std::move(*digest);
     }
-    sortPlan(plan);
 
     ChangeReport& changes = result.changes;
     changes.outcome = GenerationOutcome::Updated;

@@ -379,9 +379,29 @@ TEST_CASE("world/building plan: the update per room", "[world][building]") {
                 *rv::world::roomContentDigest(updated.plan, room.id) == *rv::world::roomContentDigest(plan, room.id);
             CHECK(sameDigest == (room.id != megadrive));
         }
-        // Only the selections given are read: the snes room alone, the others as they stand.
+        // Only the selections given are read: the snes room alone, the others as they stand; with nothing new for it
+        // the plan stays byte for byte (its inputDigest, which named every room, kept), as the whole update's does.
         const GenerationResult partial = update({selections[0]}, updated.plan);
         CHECK(roomPart(partial.plan, megadrive) == roomPart(updated.plan, megadrive));
+        CHECK(partial.plan == updated.plan);
+        CHECK(partial.changes.digestAfter == partial.changes.digestBefore);
+        CHECK(update(selections, partial.plan).changes.digestAfter == partial.changes.digestAfter);
+    }
+    SECTION("a partial update that changes its room records the inputs it read; the whole one then once more") {
+        std::vector<RoomSelection> selections = building.input.selections;
+        std::set<std::uint64_t> taken = rv::test::world::gameValuesOf(selections[0]);
+        rv::core::Random random(17);
+        rv::test::world::addTitle(selections[0], random, taken);
+        const GenerationResult partial = update({selections[0]}, plan);
+        CHECK(partial.changes.added.size() == 1);
+        CHECK(partial.plan.inputDigest != plan.inputDigest);
+        const GenerationResult whole = update(selections, partial.plan);
+        CHECK(whole.changes.added.empty());
+        CHECK(whole.plan.inputDigest != partial.plan.inputDigest);
+        // From then on, either kind of update with nothing new writes nothing.
+        CHECK(update(selections, whole.plan).changes.digestAfter == whole.changes.digestAfter);
+        CHECK(update({selections[0]}, whole.plan).changes.digestAfter == whole.changes.digestAfter);
+        CHECK(update({selections[2], selections[4]}, whole.plan).changes.digestAfter == whole.changes.digestAfter);
     }
     SECTION("growth moves a room away from the hall, its x kept") {
         std::vector<RoomSelection> selections = building.input.selections;
