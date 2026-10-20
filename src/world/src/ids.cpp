@@ -6,6 +6,8 @@ namespace rv::world {
 namespace {
 
 constexpr std::string_view kRoomPrefix = "room:";
+constexpr std::string_view kSharedPrefix = "area:shared:";
+constexpr std::string_view kArcadeId = "area:arcade";
 constexpr std::string_view kFixtureSeparator = "/fx:";
 constexpr std::string_view kLevelSeparator = "/l:";
 constexpr std::string_view kSlotSeparator = "/s:";
@@ -104,28 +106,135 @@ bool isValidRuleName(std::string_view text) noexcept {
 // RoomId
 
 Expected<RoomId> RoomId::forSystem(const catalog::SystemName& system) {
+    return forSystem(system, 1);
+}
+
+Expected<RoomId> RoomId::forSystem(const catalog::SystemName& system, std::uint32_t index) {
     if (system.empty()) {
         return makeError(ErrorCode::InvalidArgument, "a room needs a system");
     }
+    if (index < 1 || index > kMaxRoomIndex) {
+        return makeError(ErrorCode::InvalidArgument, "a room's index runs from 1 to " + decimal(kMaxRoomIndex),
+                         std::string(kRoomPrefix) + system.str() + ":" + decimal(index));
+    }
     RoomId room;
+    room.m_kind = RoomIdKind::System;
     room.m_system = system;
+    room.m_index = index;
     return room;
 }
 
+Expected<RoomId> RoomId::sharedArea(std::string_view floor, std::uint32_t index) {
+    if (!isValidDataId(floor) || index < 1 || index > kMaxRoomIndex) {
+        return makeError(ErrorCode::InvalidArgument, "not a valid shared room",
+                         std::string(kSharedPrefix) + std::string(floor) + ":" + decimal(index));
+    }
+    RoomId room;
+    room.m_kind = RoomIdKind::Shared;
+    room.m_floor = floor;
+    room.m_index = index;
+    return room;
+}
+
+Expected<RoomId> RoomId::arcadeArea(std::uint32_t index) {
+    if (index < 1 || index > kMaxRoomIndex) {
+        return makeError(ErrorCode::InvalidArgument, "not a valid arcade room",
+                         std::string(kArcadeId) + ":" + decimal(index));
+    }
+    RoomId room;
+    room.m_kind = RoomIdKind::Arcade;
+    room.m_index = index;
+    return room;
+}
+
+namespace {
+
+/// "<name>" or "<name>:<n>" (n from 2, no leading zeros): the name and the index (1 without a number).
+std::optional<std::pair<std::string_view, std::uint32_t>> splitIndex(std::string_view text) {
+    const std::size_t colon = text.find(':');
+    if (colon == std::string_view::npos) {
+        return std::pair{text, std::uint32_t{1}};
+    }
+    const auto index = detail::parseDecimal(text.substr(colon + 1), kMaxRoomIndex);
+    if (!index || *index < 2) {
+        return std::nullopt;
+    }
+    return std::pair{text.substr(0, colon), *index};
+}
+
+} // namespace
+
 Expected<RoomId> RoomId::parse(std::string_view text) {
-    if (!text.starts_with(kRoomPrefix)) {
+    // A SystemName holds neither '/' nor ':', so the room id ends where a fixture's separator starts, and its index,
+    // when it has one, follows the first ':' after the prefix.
+    if (text.starts_with(kRoomPrefix)) {
+        const auto parts = splitIndex(text.substr(kRoomPrefix.size()));
+        if (parts) {
+            if (auto system = catalog::SystemName::parse(parts->first)) {
+                return forSystem(*system, parts->second);
+            }
+        }
         return invalid("room id", text);
     }
-    // A SystemName holds neither '/' nor ':', so the room id ends where a fixture's separator starts.
-    auto system = catalog::SystemName::parse(text.substr(kRoomPrefix.size()));
-    if (!system) {
+    if (text.starts_with(kSharedPrefix)) {
+        const auto parts = splitIndex(text.substr(kSharedPrefix.size()));
+        if (parts && isValidDataId(parts->first)) {
+            return sharedArea(parts->first, parts->second);
+        }
         return invalid("room id", text);
     }
-    return forSystem(*system);
+    if (text == kArcadeId) {
+        return arcadeArea(1);
+    }
+    if (text.starts_with(kArcadeId) && text.size() > kArcadeId.size() && text[kArcadeId.size()] == ':') {
+        const auto parts = splitIndex(text.substr(kArcadeId.size()));
+        if (parts && parts->first.empty()) {
+            return arcadeArea(parts->second);
+        }
+    }
+    return invalid("room id", text);
+}
+
+RoomId RoomId::head() const {
+    RoomId room = *this;
+    room.m_index = 1;
+    return room;
 }
 
 std::string RoomId::toString() const {
-    return empty() ? std::string() : std::string(kRoomPrefix) + m_system.str();
+    if (empty()) {
+        return {};
+    }
+    std::string text;
+    switch (m_kind) {
+    case RoomIdKind::System:
+        text = std::string(kRoomPrefix) + m_system.str();
+        break;
+    case RoomIdKind::Shared:
+        text = std::string(kSharedPrefix) + m_floor;
+        break;
+    case RoomIdKind::Arcade:
+        text = std::string(kArcadeId);
+        break;
+    }
+    if (m_index > 1) {
+        text += ":" + decimal(m_index);
+    }
+    return text;
+}
+
+std::strong_ordering RoomId::operator<=>(const RoomId& other) const {
+    const auto rank = [](const RoomId& room) { return room.empty() ? 0 : 1 + static_cast<int>(room.m_kind); };
+    const auto name = [](const RoomId& room) -> const std::string& {
+        return room.m_kind == RoomIdKind::Shared ? room.m_floor : room.m_system.str();
+    };
+    if (const auto order = rank(*this) <=> rank(other); order != 0) {
+        return order;
+    }
+    if (const auto order = name(*this) <=> name(other); order != 0) {
+        return order;
+    }
+    return m_index <=> other.m_index;
 }
 
 // FixtureId

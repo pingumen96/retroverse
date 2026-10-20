@@ -59,6 +59,14 @@ SEED_TUPLES = [
     ('fixture', 'room:snes/fx:w03'),
     ('prop', 'fx:w03/l:2'),
     ('place', 'g3c374d5e06145c9b', 'cartridge_home_16bit'),
+    # The room ids of the building (ADR-0013 section 5): an expansion of a console room, a floor's shared room and its
+    # expansion, the arcade room and its expansion, and a fixture of a shared room; seeds derive from the id's text.
+    ('room', 'room:snes:2'),
+    ('room', 'area:shared:gen4'),
+    ('room', 'area:shared:gen4:2'),
+    ('room', 'area:arcade'),
+    ('room', 'area:arcade:3'),
+    ('fixture', 'area:shared:gen4/fx:w03'),
     # Integers as their decimal digits: zero, negative, the 64-bit limits.
     ('0',),
     ('-42',),
