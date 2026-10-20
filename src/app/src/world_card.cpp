@@ -63,8 +63,9 @@ std::optional<CardAction> WorldCard::press(const WorldInteraction& interaction, 
 }
 
 void WorldCard::update(const WorldInteraction& interaction, const InteractionResult& result,
-                       const world::CollectionItem* item, const gl::Texture2D* hero, std::uint32_t otherVersions,
-                       ProductUi& product, std::uint64_t frame) {
+                       const world::CollectionItem* item, const gl::Texture2D* hero,
+                       const assets::LabelAspect& coverShape, std::uint32_t otherVersions, ProductUi& product,
+                       std::uint64_t frame) {
     const std::string game = item != nullptr ? item->game.toString() : std::string();
     // Avvia: Inspect left for the launch (13a's stand-in ends it at once, Returning, I3 step 15a launches).
     const WorldState state = interaction.state();
@@ -101,9 +102,14 @@ void WorldCard::update(const WorldInteraction& interaction, const InteractionRes
         m_entryRevision = product.catalogRevision();
     }
     setCover(hero, product);
-    const ui::GameCardContent content =
+    ui::GameCardContent content =
         cardContentOf(item->game, item->title, (item->flags & scene::instance_flags::kUnavailable) != 0, m_entry,
                       otherVersions, m_coverView != 0, interaction.notice(), interaction.noticeMessage());
+    // The hero picture's shape: the card shows it at that aspect (the layer's own, 0 x 0, fills the frame as in I3).
+    if (!coverShape.isLayer()) {
+        content.coverWidth = coverShape.width;
+        content.coverHeight = coverShape.height;
+    }
     const bool newGame = !m_shown || m_model.gameId() != content.gameId;
     m_model.show(content.gameId);
     product.setWorldCard(content, m_model.focused());

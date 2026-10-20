@@ -9,16 +9,17 @@
 		The readiness and blocker sentences are the quick catalog's (quick_catalog.rml), line for line: the test reads
 		both documents and compares them (one table). Every string is written here: the screen binds data and keys
 		only, and an empty field reads "n.d." (non disponibile). The cover is the application's texture
-		(rv-texture:game-card-cover): RmlUi never loads the user's files. The focus moves between the buttons with the
-		arrows and the D-pad (the screen moves it: the grid is its model's), Enter or A presses the focused one, a click
-		presses the one clicked.
+		(rv-texture:game-card-cover): RmlUi never loads the user's files. It stands in its frame at its own shape (the
+		room's family's label, ADR-0013 §4: a jewel case's square cover pillarboxed), never stretched; the screen binds
+		its box. The focus moves between the buttons with the arrows and the D-pad (the screen moves it: the grid is its
+		model's), Enter or A presses the focused one, a click presses the one clicked.
 	-->
 	<title>Scheda del gioco</title>
 	<link type="text/rcss" href="game_card.rcss"/>
 </head>
 <body id="game-card" data-model="game_card">
 	<div class="cover-frame" data-class-empty="!card.cover">
-		<img id="game-card-cover" src="rv-texture:game-card-cover" data-if="card.cover"/>
+		<img id="game-card-cover" src="rv-texture:game-card-cover" data-if="card.cover" data-style-width="card.coverWidth" data-style-height="card.coverHeight" data-style-margin-left="card.coverLeft" data-style-margin-top="card.coverTop"/>
 	</div>
 	<h2 id="game-card-title"><span data-if="card.title != ''">{{ card.title }}</span><span data-if="card.title == ''">Gioco senza titolo</span></h2>
 	<p class="subtitle"><span data-if="card.platform != ''">{{ card.platform }}</span><span data-if="card.platform == ''">n.d.</span>, <span data-if="card.year != ''">{{ card.year }}</span><span data-if="card.year == ''">n.d.</span></p>

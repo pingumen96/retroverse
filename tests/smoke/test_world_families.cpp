@@ -2,9 +2,11 @@
 // (tests/fixtures/esde/building) recorded as the library of the case's data directory and imported with retroverse-cli;
 // retroverse.exe --room-system psx then opens its jewel-case room (disc_case_cd: the family's item and fixtures, every
 // cover fitted to the square label quad, its cache entry named with the shape) and --room-system amiga its big-box
-// room without any media (every front a generated label laid out at the box's shape). The checks: the run report's
-// world and residency records, the plan's room and fixtures, the cache's entries, and the band's fronts showing their
-// pictures up close.
+// room without any media (every front a generated label laid out at the box's shape), --room-system mame its arcade
+// room of portrait flyers (generic_case). The checks: the run report's world and residency records, the plan's room and
+// fixtures, the cache's entries, the band's fronts showing their pictures up close, and the card of an inspected item
+// (tests/input_scripts/golden_g07_inspect.json from the item's Focus pose): its cover at the family's label shape, the
+// hero picture made at that shape, unstretched (ADR-0011 §5), the hero textures within ADR-0011 §8's budget.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,8 +22,11 @@
 
 #include <glm/glm.hpp>
 
+#include <rv/app/cover_requests.hpp>
 #include <rv/app/run_report.hpp>
+#include <rv/app/world_focus.hpp>
 #include <rv/assets/derived_texture_cache.hpp>
+#include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
 #include <rv/world/collection_layout.hpp>
@@ -40,8 +45,12 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr glm::ivec2 kShotSize{1920, 1080};
+/// The window's size: the UI is laid out for it and drawn into the screenshot scaled uniformly.
+constexpr glm::vec2 kWindowSize{1280.0f, 720.0f};
 /// The walker's eye above its feet (scene::FirstPersonController's default).
 constexpr float kEyeHeight = 1.65f;
+/// ADR-0011 §8: 8 hero textures of at most 1,024 px, about 32 MiB.
+constexpr std::uint64_t kHeroBudgetBytes = 32ull * 1024ull * 1024ull;
 
 fs::path retroverseCliExe() {
     return retroverseExe().parent_path() / "retroverse-cli.exe";
@@ -202,6 +211,147 @@ std::pair<std::size_t, std::size_t> bandFronts(const ImportedBuilding& building,
     return {probed, textured};
 }
 
+rv::app::SpawnPoint focusSpawn(const rv::world::CollectionItem& item, const rv::scene::CameraSetup& lens) {
+    rv::app::FocusViewer viewer;
+    viewer.lens = lens.lens;
+    viewer.aspect = kWindowSize.x / kWindowSize.y;
+    const rv::scene::WalkerPose pose = rv::app::focusPoseFor(item, viewer);
+    rv::app::SpawnPoint spawn;
+    spawn.feet = pose.feet;
+    spawn.yawDeg = rv::core::radiansToDegrees(pose.yaw);
+    spawn.pitchDeg = rv::core::radiansToDegrees(pose.pitch);
+    return spawn;
+}
+
+/// The fixture's cover of `title` in `system` (its file stem is the title and its region, or the title itself: a
+/// playlist without a gamelist entry is titled by its file name).
+fs::path coverOf(const ImportedBuilding& building, std::string_view system, const std::string& title) {
+    std::vector<fs::path> matches;
+    for (const fs::directory_entry& entry :
+         fs::directory_iterator(building.fixture.path("media/" + std::string(system) + "/covers"))) {
+        const std::string stem = rv::core::pathToUtf8(entry.path().stem());
+        if (stem == title || stem.starts_with(title + " (")) {
+            matches.push_back(entry.path());
+        }
+    }
+    INFO("the cover of " << title);
+    REQUIRE(matches.size() == 1);
+    return matches.front();
+}
+
+/// The mean absolute difference per channel (0-255) between the screenshot's pixels inside `box` (window pixels:
+/// x, y, width, height; its border `inset` of its size left out) and `picture` box-filtered to their footprint; and
+/// the screenshot's luma spread there (a flat box is no picture). As test_world_card.cpp's, but for `columns`: the
+/// share of the picture's width the box shows, centred (all of it by default; a stretched picture's middle part).
+struct PictureMatch {
+    double meanDifference = 0.0;
+    double lumaSpread = 0.0;
+};
+
+PictureMatch comparePicture(const rv::assets::ImageData& shot, const std::vector<double>& box,
+                            const rv::assets::ImageData& picture, double inset, double columns = 1.0) {
+    const double scale = static_cast<double>(kShotSize.x) / static_cast<double>(kWindowSize.x);
+    const double firstColumn = (1.0 - columns) / 2.0 * static_cast<double>(picture.width);
+    const double x0 = (box[0] + inset * box[2]) * scale;
+    const double y0 = (box[1] + inset * box[3]) * scale;
+    const double x1 = (box[0] + (1.0 - inset) * box[2]) * scale;
+    const double y1 = (box[1] + (1.0 - inset) * box[3]) * scale;
+    const double toPictureX = columns * static_cast<double>(picture.width) / (box[2] * scale);
+    const double toPictureY = static_cast<double>(picture.height) / (box[3] * scale);
+    double sum = 0.0;
+    std::size_t samples = 0;
+    double lumaMin = 255.0;
+    double lumaMax = 0.0;
+    for (int y = static_cast<int>(std::ceil(y0)); y < static_cast<int>(y1); ++y) {
+        for (int x = static_cast<int>(std::ceil(x0)); x < static_cast<int>(x1); ++x) {
+            const double px0 = firstColumn + (x - box[0] * scale) * toPictureX;
+            const double py0 = (y - box[1] * scale) * toPictureY;
+            const int ix0 = std::clamp(static_cast<int>(std::floor(px0)), 0, picture.width - 1);
+            const int iy0 = std::clamp(static_cast<int>(std::floor(py0)), 0, picture.height - 1);
+            const int ix1 = std::clamp(static_cast<int>(std::ceil(px0 + toPictureX)), ix0 + 1, picture.width);
+            const int iy1 = std::clamp(static_cast<int>(std::ceil(py0 + toPictureY)), iy0 + 1, picture.height);
+            double expected[3] = {0.0, 0.0, 0.0};
+            int count = 0;
+            for (int v = iy0; v < iy1; ++v) {
+                for (int u = ix0; u < ix1; ++u) {
+                    const std::size_t at = (static_cast<std::size_t>(v) * static_cast<std::size_t>(picture.width) +
+                                            static_cast<std::size_t>(u)) *
+                                           static_cast<std::size_t>(picture.channels);
+                    for (int c = 0; c < 3; ++c) {
+                        expected[c] += picture.pixels[at + static_cast<std::size_t>(c)];
+                    }
+                    ++count;
+                }
+            }
+            const std::size_t at =
+                (static_cast<std::size_t>(y) * static_cast<std::size_t>(shot.width) + static_cast<std::size_t>(x)) *
+                static_cast<std::size_t>(shot.channels);
+            double luma = 0.0;
+            for (int c = 0; c < 3; ++c) {
+                const double actual = shot.pixels[at + static_cast<std::size_t>(c)];
+                sum += std::abs(actual - expected[c] / count);
+                luma += actual / 3.0;
+            }
+            lumaMin = std::min(lumaMin, luma);
+            lumaMax = std::max(lumaMax, luma);
+            samples += 3;
+        }
+    }
+    REQUIRE(samples > 0);
+    return PictureMatch{sum / static_cast<double>(samples), lumaMax - lumaMin};
+}
+
+/// `item` of `system`'s room (face-out) inspected from its Focus pose (golden_g07_inspect.json: interact at frame 40,
+/// the card beside it from then on): the card's cover box has the family's label shape `label` at its frame's height,
+/// and shows the hero picture made at that shape, unstretched; the hero textures stay within their budget.
+void checkInspectedCard(const ImportedBuilding& building, const ShownRoom& shown, std::string_view system,
+                        const rv::world::CollectionItem& item, const rv::assets::LabelAspect& label) {
+    const fs::path shot = building.dir / (std::string(system) + "-card.png");
+    const AppRun run = runApp(retroverseExe(), building.dir, std::string(system) + "_card",
+                              roomArguments(system, "60", shot,
+                                            {"--spawn", spawnArgument(focusSpawn(item, shown.scene.camera)),
+                                             "--input-script", arg(inputScript("golden_g07_inspect.json"))}));
+    requireCleanRun(run);
+    INFO(run.describe());
+    CHECK(run.report->world.interaction.state == "inspect");
+    const rv::app::CardRecord& card = run.report->world.card;
+    REQUIRE(card.bound);
+    CHECK(card.game == item.game.toString());
+    CHECK(card.coverFrames > 0);
+    REQUIRE(card.coverBox.size() == 4);
+    // The frame's height (188 dp), at the label's aspect: a square cover square, a portrait one portrait.
+    const double aspect = static_cast<double>(label.width) / static_cast<double>(label.height);
+    WARN(system << "'s card cover box: " << card.coverBox[2] << " x " << card.coverBox[3] << " px, label aspect "
+                << aspect);
+    CHECK(card.coverBox[3] > 100.0);
+    CHECK(std::abs(card.coverBox[2] / card.coverBox[3] - aspect) <= aspect * 0.02);
+    // Its picture: the fixture's cover made into the hero picture at the label's shape, unstretched in the box.
+    const rv::assets::ImageData image = requireScreenshot(run, shot, kShotSize);
+    const fs::path coverFile = coverOf(building, system, card.title);
+    auto bytes = rv::core::readBinaryFile(coverFile);
+    REQUIRE(bytes.has_value());
+    auto hero =
+        rv::app::makeHeroPicture(*bytes, rv::core::pathToUtf8(coverFile.filename()), rv::app::kHeroMaxSide, label);
+    REQUIRE(hero.has_value());
+    CHECK(std::abs(static_cast<double>(hero->width) / static_cast<double>(hero->height) - aspect) <= aspect * 0.01);
+    const PictureMatch match = comparePicture(image, card.coverBox, *hero, 0.08);
+    // What I4 step 2's first card showed: the picture stretched across its whole 256:188 frame, the box's share of it
+    // in the middle.
+    const double frameWidth = card.coverBox[3] * 256.0 / 188.0;
+    const PictureMatch stretched = comparePicture(image, card.coverBox, *hero, 0.08, card.coverBox[2] / frameWidth);
+    WARN(system << "'s card cover vs hero picture: mean difference " << match.meanDifference << " (stretched "
+                << stretched.meanDifference << "), luma spread " << match.lumaSpread);
+    CHECK(match.meanDifference < 16.0);
+    CHECK(match.meanDifference * 2.0 < stretched.meanDifference);
+    CHECK(match.lumaSpread > 40.0);
+    // ADR-0011 §8's budget whatever the shape.
+    const rv::app::HeroRecord& heroes = run.report->residency.hero;
+    CHECK(heroes.loaded >= 1);
+    CHECK(heroes.peakBytes <= kHeroBudgetBytes);
+    CHECK(heroes.bytes * rv::app::HeroLru::kDefaultCapacity <=
+          std::max<std::uint64_t>(1, heroes.resident) * kHeroBudgetBytes);
+}
+
 } // namespace
 
 TEST_CASE("world families: the building's jewel-case room with its covers fitted to their label",
@@ -261,6 +411,35 @@ TEST_CASE("world families: the building's jewel-case room with its covers fitted
     const auto [probed, textured] = bandFronts(building, shown, "psx");
     CHECK(probed >= 2);
     CHECK(textured == probed);
+
+    // Inspected, a band case's square cover is square on the card too.
+    const auto band =
+        std::find_if(shown.layout.items.begin(), shown.layout.items.end(),
+                     [](const rv::world::CollectionItem& item) { return item.section == rv::world::Section::Band; });
+    REQUIRE(band != shown.layout.items.end());
+    checkInspectedCard(building, shown, "psx", *band, {120, 120});
+}
+
+TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and on the card, at their label's shape",
+          "[gpu][world][families]") {
+    ImportedBuilding building("mame");
+    const fs::path doorway = building.dir / "mame-doorway.png";
+    const AppRun run = runApp(retroverseExe(), building.dir, "mame_doorway", roomArguments("mame", "40", doorway));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    // The 15 sets with a cover, every one face-out on the display slots; the 10 without one unplaced (no-cover).
+    requireRoomShown(run, "room:mame", 15);
+    CHECK(run.report->world.featured == 15);
+    CHECK(run.report->residency.covers == 15);
+    CHECK(run.report->residency.coverFailures == 0);
+    (void)requireScreenshot(run, doorway, kShotSize);
+    const ShownRoom shown = shownRoom(building, *run.report);
+    const rv::world::Room& room = shown.stored.plan.rooms.front();
+    CHECK(room.mediaFamily == "generic_case");
+    CHECK(room.floor == "ground");
+    // A flyer inspected: portrait on the card, at the case's 118 x 168 mm label.
+    REQUIRE_FALSE(shown.layout.items.empty());
+    checkInspectedCard(building, shown, "mame", shown.layout.items.front(), {118, 168});
 }
 
 TEST_CASE("world families: the building's big-box room without media shows generated labels",
