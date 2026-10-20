@@ -131,18 +131,28 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `generate --replace`: another seed, preset or generator major version; the media unknown; no such system in the
   catalog; a system without a room in the plan, which new systems need, I4 step 6a); 2 usage; 3 the data, catalog,
   selections or overrides unreadable, a hard rule broken, the world locked by another program, a failed write.
-  `worldplan show [<plan>] [--library <id>] [--placements] [--scene <file> [--room <id>]] [--json]` summarizes a plan:
-  its floors (order, rooms), each room with its kind, floor, sections, row and place on the floor and generator (JSON
-  `floors`, `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`, `fileSchemaVersion`, `lifted`); exit
-  1 no plan, 2 usage (`--scene` on a plan of several rooms without `--room`, a `--room` the plan lacks), 3 a plan
-  refused or a scene not written; `--scene` also writes the static part of one room (shell, fixtures, dressing,
-  lights; no collection items) as a scene file that `retroverse.exe --scene <file>` renders: the plan's only room, or
-  the one `--room` names ("Scene <file> of <room>: ...", JSON `sceneRoom`; a floor's scene with its hall is I4 step
-  3's), its sign and plastics classified with the catalog's platform tags of its system when the catalog holds the
-  plan's library (a custom system's room as `generate` classified it; without a catalog, systems.json's fallback).
+  `worldplan show [<plan>] [--library <id>] [--placements] [--floor <id>] [--scene <file> [--room <id>]] [--json]`
+  summarizes a plan: its floors (order, rooms), each room with its kind, floor, sections, row and place on the floor
+  and generator (JSON `floors`, `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`,
+  `fileSchemaVersion`, `lifted`); exit 1 no plan, 2 usage (`--scene` on a plan of several rooms without `--room` or
+  `--floor`, a `--room` or `--floor` the plan lacks, `--room` with `--floor`), 3 a plan refused or a scene not
+  written; `--scene` also writes the static part of one room (shell, fixtures, dressing, lights; no collection items)
+  as a scene file that `retroverse.exe --scene <file>` renders: the plan's only room, or the one `--room` names
+  ("Scene <file> of <room>: ...", JSON `sceneRoom`), its sign and plastics classified with the catalog's platform tags
+  of its system when the catalog holds the plan's library (a custom system's room as `generate` classified it;
+  without a catalog, systems.json's fallback). `--floor <id>` (I4 step 3, `docs/i4/step-3.md`) also summarizes that
+  floor: its hall derived from its rooms (length, width, height, its lights every 6 m, the elevator at its west end)
+  and each room with its row and its doorway onto the hall ("Floor <id>: hall ...", JSON `floorScene` {`floor`,
+  `lobby`, `hall`, `rooms`}); with `--scene` it writes the whole floor instead of a room ("Scene <file> of floor
+  <id>: ...", JSON `sceneFloor`): every room moved onto the floor by its placement (its ids prefixed with the room's,
+  its doorway's stop left out), the hall's walls, floor, ceiling, lights and lamps, the elevator stand-in with the
+  floor's sign (building.json), the lobby's entrance doors on the ground floor, the areas whose lights the app packs
+  (each room's interior with its doorway's passage, the hall), a camera in front of the elevator facing east.
   `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,
-  the world's configuration and the building's data (34 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
-  floors, no two rooms of a floor overlapping, every system in one room; a room of an older template version or
+  the world's configuration and the building's data (37 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
+  floors, no two rooms of a floor overlapping, every system in one room; since I4 step 3 each floor's derived hall: no
+  room overlapping it, every doorway in its room's doorway wall on the hall's edge, every room walked to from the
+  elevator on the floor's navigation grid; a room of an older template version or
   another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a hard rule broken or not
   a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3 unreadable). Every subcommand
   takes `--output <file>`.

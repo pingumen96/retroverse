@@ -50,6 +50,9 @@ tools).
   catalog (made with `retroverse-cli --data-dir <dir> library create ...` and `import`); `--scene m0_testroom` shows
   the test room; `--room-system <system>` shows another system's room (its media family). Fixtures for rooms:
   `tests/fixtures/esde/snes-room`, `snes-single`, `snes-stress`, and `building` (I4: every kind of system).
+- A floor of the building (I4 step 3): `retroverse-cli worldplan show --floor <id> --scene <file>` writes its rooms
+  and derived hall as a scene with areas, which `--scene <file>` walks from the elevator (each area lit by its own
+  lights).
 - Anything that may launch a game runs with `RV_LAUNCH_ALLOWLIST` naming the build's `rv_fake_emulator.exe` (Safety).
 
 ## Visual verification

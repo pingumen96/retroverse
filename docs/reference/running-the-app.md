@@ -58,12 +58,24 @@ build/rvdata`).
   `after`), `catalog.lists` (the waits of the lists), `gpuPasses` in `frameTimes` and in every phase (`shadow`,
   `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
   reported them; I3 step 17b), and in `lastView` the static instance groups (`staticGroups`), `outlinedInstances` and
-  `gpuMilliseconds.outline`, only when the view has them. Phases opened by the code: `refresh`, `coverLoad`,
-  `animation`, and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
+  `gpuMilliseconds.outline`, only when the view has them; since I4 step 3, for a scene with areas, `sceneAreas`
+  (`areas`, the `area` that held the eye at the last view, the `lights` packed for it by name and its `keyLight`, and
+  `changes`, the area at the first view and each change with its frame). Phases opened by the code: `refresh`,
+  `coverLoad`, `animation`, and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
   phases, CPU sections and GPU memory at the end. Read it instead of the log in scripts and tests.
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
   `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
+  A scene file may hold `"areas"` (I4 step 3, ADR-0013 §9; `rv/scene/scene_description.hpp`): parts of the scene,
+  each an `id` and `boxes` ({`min`, `max`} in meters), whose lights are their own; every light then names its
+  `"area"`. Each frame the app finds the area that holds the walker's eye (the first holding it, else the last one
+  held) and the renderer packs only that area's lights: its key light (its first light with `castsShadows`) shadowed,
+  its other point and spot lights nearest the eye up to the 16 the block holds; the other areas get the ambient only
+  (`rv/scene/scene_areas.hpp`). A scene without areas packs all its lights in list order as before. A floor's scene
+  (`retroverse-cli worldplan show --floor <id> --scene <file>`, `docs/reference/cli.md`) has an area per room (its
+  interior and its doorway's passage) and one for the hall (`hall:<floor>`); its camera stands in front of the
+  elevator facing east, and the rooms' doorways are open onto the hall (their stops left out), so the walker can walk
+  from the elevator into any room.
 - `--model <file.gltf|.glb>` (not with `--scene`): model viewer, the model at the origin with a three-point light rig
   and a camera framing its bounds from the front right and above, on a dark mid-grey background (about sRGB 61, so
   dark and light models both stand out), without bloom or vignette; a file that cannot be loaded is shown as the

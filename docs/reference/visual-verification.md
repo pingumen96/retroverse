@@ -131,6 +131,17 @@ the cartridges). The collection's arrays and static groups show at a glance with
 --screenshot build/screenshots/arrays.png --data-dir build/rvdata` (`--probe-scenario groups --probe-camera close
 --probe-highlight` for the outline).
 
+A floor of the building (I4 step 3) is checked the same way: a data directory with the building fixture recorded and
+imported (`tests/fixtures/esde/building`, materialized by the tests; the GPU case `gpu.world floor: ...` leaves one in
+`build/<preset>/smoke/world_floor/data`), `retroverse-cli --data-dir <dir> worldplan generate --seed 102938`, then
+`worldplan show --floor gen4 --scene build/scenes/gen4.json` and `retroverse.exe --scene build/scenes/gen4.json
+--exit-after-frames --frames 5 --hidden --screenshot build/screenshots/gen4.png --data-dir build/rvdata`: the hall
+from the elevator facing east, the rooms' doorways along it (doors aligned across the hall, no gap in its walls). The
+elevator and the floor's sign: `--spawn 8,0,0,-90,0`; a north-row room from inside, looking out: `--spawn
+7.65,0,-4.5,180,0`; the walk from the elevator into the first room: `--input-script
+tests/input_scripts/floor_walk_into_room.json --fixed-dt 0.016667 --frames 255` (the hall lit by its own lights, the
+room by its own; seen from one, the other shows its ambient only, ADR-0013's accepted cost).
+
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),
 then edit or break the copy's shaders while it runs; the log shows each rebuild or `<file>:<line>: error ...`.
