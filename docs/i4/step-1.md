@@ -66,6 +66,9 @@ amends [ADR-0010](../decisions/ADR-0010-world-generator-and-world-plan.md), whic
   - One golden building was added, `building-5-systems-seed-102938.json`.
   - The scene goldens did not change.
   - `tests/fixtures/world/v1/` is untouched.
+  - The room goldens G01 to G10 match 0 pixels apart in Release. Their JSON files still record the plan digests of
+    schema 1, which their test only warns about. Step 5a renders them again on `--start-room` and records the new
+    digests.
 
 ## Deviations and limits
 
