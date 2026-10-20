@@ -1,9 +1,10 @@
 #pragma once
 
-// Private to rv_cli_core (I3 step 3): what `worldplan generate` and `worldplan show` share: the plan file's default
-// place under the user data directory, the library a plan belongs to, and a plan's summary as text and as JSON (its
-// room, fixtures by role, slots and titles per section, the reserve left, dressing, lights, unplaced games per reason).
-// Header only, so that the subcommands keep one source each.
+// Private to rv_cli_core (I3 step 3, I4 step 1): what the worldplan subcommands and where-is share: the plan file's
+// default place under the user data directory, the library a plan belongs to, a plan file read and lifted when it is
+// of schema 1 (ADR-0013 §5), and a plan's summary as text and as JSON (its floors, its rooms with their kind, floor,
+// sections and placement, fixtures by role, slots and titles per section, the reserve left, dressing, lights, unplaced
+// games per reason). Header only, so that the subcommands keep one source each.
 
 #include <array>
 #include <cstddef>
@@ -22,6 +23,8 @@
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/world/building.hpp>
+#include <rv/world/lift.hpp>
 #include <rv/world/world_plan.hpp>
 #include <rv/world/world_store.hpp>
 
@@ -54,6 +57,60 @@ inline std::optional<catalog::LibraryId> libraryOf(CommandContext& context, std:
         return std::nullopt;
     }
     return profile->id;
+}
+
+/// A plan file as a building: its plan (lifted when the file is of schema 1), the file's digest and schema.
+struct PlanFile {
+    world::WorldPlan plan;
+    std::string digest;
+    std::int64_t fileSchema = world::kPlanSchemaVersion;
+
+    [[nodiscard]] bool lifted() const noexcept { return fileSchema != plan.schemaVersion; }
+};
+
+/// Reads a plan file (world::readStoredPlan) and lifts a schema-1 plan with the building's data under the asset root.
+/// Errors: those of readStoredPlan() (NotFound: no file; ValidationFailed, ParseError, Unsupported: refused), those of
+/// reading the building's data, and the lift's (InvalidArgument: a schema-1 plan that is no building's room).
+inline Expected<PlanFile> readPlanFile(const core::Paths& paths, const std::filesystem::path& file) {
+    auto stored = world::readStoredPlan(file);
+    if (!stored) {
+        return propagate(stored.error());
+    }
+    PlanFile read;
+    read.digest = std::move(stored->digest);
+    read.fileSchema = stored->plan.schemaVersion;
+    if (stored->plan.schemaVersion == world::kPlanSchemaVersion) {
+        read.plan = std::move(stored->plan);
+        return read;
+    }
+    auto building = world::loadBuildingData(paths.assetRoot());
+    if (!building) {
+        return propagate(building.error());
+    }
+    auto systems = world::loadSystemsData(paths.assetRoot());
+    if (!systems) {
+        return propagate(systems.error());
+    }
+    auto lifted = world::lift(stored->plan, *building, *systems);
+    if (!lifted) {
+        return propagate(lifted.error());
+    }
+    read.plan = std::move(*lifted);
+    return read;
+}
+
+/// "north row" or "south row".
+inline std::string_view rowText(const world::RoomPlacement& placement) {
+    return world::rowOf(placement) == world::Row::North ? "north row" : "south row";
+}
+
+/// The rooms' ids, ", "-separated ("the building" for none).
+inline std::string roomsText(const world::WorldPlan& plan) {
+    std::string text;
+    for (const world::Room& room : plan.rooms) {
+        text += (text.empty() ? "" : ", ") + room.id.toString();
+    }
+    return text.empty() ? std::string("the building (no room)") : text;
 }
 
 /// What a plan holds, counted.
@@ -133,11 +190,28 @@ inline std::string planSummaryText(const world::WorldPlan& plan, std::string_vie
     line("Generator", fmt::format("{} ({}, {}, sort keys {})", plan.generatorVersion.toString(), plan.randomAlgorithm,
                                   plan.titleKeyRule, plan.catalogSortKeyVersion));
     line("Library", fmt::format("{}, seed {}, preset {}", plan.library.str(), plan.seed, plan.preset));
+    std::string floors;
+    for (const world::Floor& floor : plan.floors) {
+        std::size_t rooms = 0;
+        for (const world::Room& room : plan.rooms) {
+            rooms += room.floor == floor.id ? 1 : 0;
+        }
+        floors += fmt::format("{}{} (order {}, {} room{})", floors.empty() ? "" : ", ", floor.id, floor.order, rooms,
+                              rooms == 1 ? "" : "s");
+    }
+    line("Floors", floors.empty() ? std::string("none") : floors);
     for (const world::Room& room : plan.rooms) {
         line("Room", fmt::format("{} ({} v{}): {} x {} x {} mm, {} growth step{}, {}, {}", room.id.toString(),
                                  room.templateId, room.templateVersion, room.maxXMm - room.minXMm,
                                  room.maxZMm - room.minZMm, room.heightMm, room.growthSteps,
                                  room.growthSteps == 1 ? "" : "s", room.mediaFamily, room.themePack));
+        std::string sections;
+        for (const catalog::SystemName& system : room.sections) {
+            sections += (sections.empty() ? "" : ", ") + system.str();
+        }
+        line("  on floor", fmt::format("{}, {} room of {}, {} at x {} z {} mm, generator {}", room.floor,
+                                       world::toString(room.kind), sections, rowText(room.placement),
+                                       room.placement.xMm, room.placement.zMm, room.generatorVersion.toString()));
     }
     line("Fixtures", fmt::format("{} ({})", plan.fixtures.size(), countsText(summary.fixturesByRole)));
     for (const world::Section section : {world::Section::Featured, world::Section::Band, world::Section::Spine}) {
@@ -173,9 +247,26 @@ inline CatalogJson planSummaryJson(const world::WorldPlan& plan, std::string_vie
     json["library"] = plan.library.str();
     json["seed"] = plan.seed;
     json["preset"] = plan.preset;
+    CatalogJson floors = CatalogJson::array();
+    for (const world::Floor& floor : plan.floors) {
+        floors.push_back(CatalogJson{{"id", floor.id}, {"order", floor.order}});
+    }
+    json["floors"] = std::move(floors);
     CatalogJson rooms = CatalogJson::array();
     for (const world::Room& room : plan.rooms) {
+        CatalogJson sections = CatalogJson::array();
+        for (const catalog::SystemName& system : room.sections) {
+            sections.push_back(system.str());
+        }
         rooms.push_back(CatalogJson{{"id", room.id.toString()},
+                                    {"kind", world::toString(room.kind)},
+                                    {"floor", room.floor},
+                                    {"sections", std::move(sections)},
+                                    {"placement", CatalogJson{{"xMm", room.placement.xMm},
+                                                              {"zMm", room.placement.zMm},
+                                                              {"yawHalfTurns", room.placement.yawHalfTurns},
+                                                              {"row", rowText(room.placement)}}},
+                                    {"generatorVersion", room.generatorVersion.toString()},
                                     {"template", room.templateId},
                                     {"templateVersion", room.templateVersion},
                                     {"widthMm", room.maxXMm - room.minXMm},

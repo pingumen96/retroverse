@@ -1,15 +1,20 @@
-// retroverse-cli worldplan update: the incremental update of a previous plan (ADR-0010 §10; I3 step 9): every placement
-// kept, the new titles added in the spine-out section next to their alphabetical predecessors (a dressed level, a new
-// side-wall module, the room's growth when the section is full; capacity beyond the template's limit), the face-out set
-// unchanged, pins protected, and the change report (--diff lists every change). The room's selection is the catalog's
-// as `worldplan generate` makes it (the aliases of placed games it no longer lists asked from the catalog), or a
-// canonical selection file (--selection); nothing is updated while the media are unknown (exit 1: unknown media
-// change nothing). The previous plan is the world's (<user data>/worlds/<library id>/world-plan.json, read and saved
-// again under the world's lock, the plan it replaces kept in backups/) or the file --previous names; a plan edited by
-// hand or written by a newer Retroverse is refused, and one of another seed, preset, template or generator major
-// version needs the explicit regeneration (`worldplan generate --replace`): exit 1, nothing written. The updated plan
-// is validated (a hard rule broken: exit 3, nothing written) and written to the world's plan or to --plan.
+// retroverse-cli worldplan update: the incremental update of a previous building (ADR-0010 §10, ADR-0013 §5; I3 step 9,
+// I4 step 1): in each room every placement kept, the new titles added in the spine-out section next to their
+// alphabetical predecessors (a dressed level, a new side-wall module, the room's growth when the section is full;
+// capacity beyond the template's limit), the face-out set unchanged, pins protected, a room whose template, prefab
+// levels or generator major changed kept as it is (its new games unplaced as room-kept), and the change report (--diff
+// lists every change). The rooms updated are those of the systems --system names (repeatable), else every console
+// room of the plan; a system without a room is refused (new systems enter the building with I4 step 6a). The rooms'
+// selections are the catalog's as `worldplan generate` makes them (the aliases of placed games they no longer list
+// asked from the catalog), or canonical selection files (--selection, repeatable); nothing is updated while the media
+// are unknown (exit 1: unknown media change nothing). The previous plan is the world's
+// (<user data>/worlds/<library id>/world-plan.json, read and saved again under the world's lock, the plan it replaces
+// kept in backups/) or the file --previous names, of schema 2 or of schema 1 (lifted); a plan edited by hand or written
+// by a newer Retroverse is refused, and one of another seed, preset or generator major version needs the explicit
+// regeneration (`worldplan generate --replace`): exit 1, nothing written. The updated plan is validated (a hard rule
+// broken: exit 3, nothing written) and written to the world's plan or to --plan.
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -18,6 +23,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -47,39 +53,44 @@ namespace {
 constexpr std::string_view kName = "retroverse-cli worldplan update";
 
 constexpr std::string_view kUsage =
-    "Usage: retroverse-cli [global options] worldplan update --system <system> [--selection <file>]\n"
+    "Usage: retroverse-cli [global options] worldplan update [--system <system>]... [--selection <file>]...\n"
     "                      [--previous <plan>] [--seed <n>] [--library <id>] [--plan <file>] [--diff] [--json]\n"
     "                      [--output <file>]\n"
     "\n"
-    "Updates a room's plan to the catalog as it is now, moving nothing that stands: every placement is kept (also a\n"
-    "missing or unreachable game's), each new title goes to the spine-out shelves next to its alphabetical\n"
-    "predecessor (taking a dressed level, then a new shelf module in place of decoration, then the room's growth when\n"
-    "the shelves are full), and the face-out titles stay as they are (only 'worldplan generate --replace' chooses\n"
-    "them again). Pins of the world's overrides.json are never moved. Nothing is updated while the library's media root\n"
-    "cannot be reached. The updated plan is validated, then saved as the world's plan (the previous one kept in the\n"
-    "world's backups/ folder) and the change report goes to stdout.\n"
+    "Updates the building's plan to the catalog as it is now, moving nothing that stands: in each room every\n"
+    "placement is kept (also a missing or unreachable game's), each new title goes to the spine-out shelves next to\n"
+    "its alphabetical predecessor (taking a dressed level, then a new shelf module in place of decoration, then the\n"
+    "room's growth when the shelves are full), and the face-out titles stay as they are (only 'worldplan generate\n"
+    "--replace' chooses them again). A room made from an older template or prefabs, or by another generator major, is\n"
+    "kept as it is and its new games listed as unplaced (room-kept). Pins of the world's overrides.json are never\n"
+    "moved. Nothing is updated while the library's media root cannot be reached. The updated plan is validated, then\n"
+    "saved as the world's plan (the previous one kept in the world's backups/ folder) and the change report goes to\n"
+    "stdout. A plan of schema 1 (I3's one room) is lifted into the building first.\n"
     "\n"
     "Options:\n"
-    "  --system <system>   The room's system, as ES-DE names it (snes).\n"
-    "  --selection <file>  Take the room's selection from this file (canonical JSON) instead of the catalog.\n"
+    "  --system <system>   Update this system's room only, as ES-DE names it (snes); repeatable. Default: every\n"
+    "                      console room of the plan. A system without a room is refused (new systems come later).\n"
+    "  --selection <file>  Take a room's selection from this file (canonical JSON) instead of the catalog;\n"
+    "                      repeatable, one per system.\n"
     "  --previous <plan>   The plan to update (default: <user data>/worlds/<library id>/world-plan.json).\n"
     "  --seed <n>          The world seed, 0 to 18446744073709551615 (default: world.json's, else derived from the\n"
     "                      library id); a plan of another seed needs 'worldplan generate --replace'.\n"
     "  --library <id>      The library the plan belongs to (default: the one library.json records; with the catalog's\n"
-    "                      selection it must be that one).\n"
+    "                      selections it must be that one).\n"
     "  --plan <file>       Write the updated plan to this file instead of the world's plan (replaced when it exists;\n"
     "                      no backup).\n"
     "  --diff              List every change: the games added and newly unplaced, the fixtures added, removed and\n"
-    "                      moved, the dressing removed, the slots freed, the pins.\n"
+    "                      moved, the dressing removed, the slots freed, the pins, the rooms kept.\n"
     "  --json              Write the results as JSON.\n"
     "  --output <file>     Write the results to this file (UTF-8) instead of stdout.\n"
     "  -h, --help          Show this help and exit.\n"
     "\n"
     "Exit codes: 0 updated, or nothing to change; 1 nothing written: there is no plan to update, the plan is refused\n"
-    "(edited by hand or written by a newer Retroverse) or needs an explicit regeneration (another seed, preset,\n"
-    "template or generator major version), the media are unknown, or the catalog has no such system; 2 usage error;\n"
-    "3 the data, the catalog, the selection or the overrides could not be read, the updated plan breaks a hard rule\n"
-    "of the validation, the world is locked by another program, or the plan could not be read or written.\n";
+    "(edited by hand or written by a newer Retroverse) or needs an explicit regeneration (another seed, preset or\n"
+    "generator major version), the media are unknown, the catalog has no such system, or the plan has no room for it;\n"
+    "2 usage error; 3 the data, the catalog, the selections or the overrides could not be read, the updated plan\n"
+    "breaks a hard rule of the validation, the world is locked by another program, or the plan could not be read or\n"
+    "written.\n";
 
 ExitCode failure(CommandContext& context, std::string_view what, const Error& error) {
     context.err.writeLine(fmt::format("{}: {}: {}", kName, what, error.toString()));
@@ -96,8 +107,8 @@ bool isRefusedPlan(const Error& error) {
 
 ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string> arguments) {
     core::ArgParser parser{std::string(kName)};
-    parser.option("system", "system", "The room's system.");
-    parser.option("selection", "file", "The room's selection (canonical JSON).");
+    parser.option("system", "system", "A system whose room to update (repeatable).");
+    parser.option("selection", "file", "A room's selection (canonical JSON; repeatable).");
     parser.option("previous", "plan", "The plan to update.");
     parser.option("seed", "n", "The world seed.");
     parser.option("library", "id", "The library the plan belongs to.");
@@ -117,13 +128,15 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
     if (!file) {
         return usageError(context, file.error().toString());
     }
-    const auto systemText = args->value("system");
-    if (!systemText) {
-        return usageError(context, "--system is required");
-    }
-    auto system = catalog::SystemName::parse(*systemText);
-    if (!system) {
-        return usageError(context, fmt::format("--system: {}", system.error().toString()));
+    std::vector<catalog::SystemName> systems;
+    for (const std::string& text : args->values("system")) {
+        auto system = catalog::SystemName::parse(text);
+        if (!system) {
+            return usageError(context, fmt::format("--system: {}", system.error().toString()));
+        }
+        if (std::find(systems.begin(), systems.end(), *system) == systems.end()) {
+            systems.push_back(std::move(*system));
+        }
     }
     std::optional<std::uint64_t> seed;
     if (const auto seedText = args->value("seed")) {
@@ -137,18 +150,17 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
     if (!config) {
         return ExitCode::RuntimeFailure;
     }
-    const auto selectionFile = args->value("selection");
-    Selected selected =
-        selectionFile ? selectionFromFile(context, kName, *selectionFile, args->value("library"))
-                      : selectionFromCatalog(context, kName, *system, args->value("library"), *config, "no update");
-    if (!selected.selection) {
-        return selected.failure;
+    const auto info = loadBuildingInfo(context, kName);
+    if (!info) {
+        return ExitCode::RuntimeFailure;
     }
-    auto data = world::loadWorldData(context.paths.assetRoot(), *system);
-    if (!data) {
-        return failure(context, "the world's data", data.error());
+    const std::vector<std::string> selectionFiles = args->values("selection");
+    ExitCode libraryFailure = ExitCode::UsageError;
+    const auto library = libraryOf(context, kName, args->value("library"), libraryFailure);
+    if (!library) {
+        return libraryFailure;
     }
-    const world::WorldFiles files = world::worldFiles(context.paths.userDataRoot(), selected.library);
+    const world::WorldFiles files = world::worldFiles(context.paths.userDataRoot(), *library);
     const auto planOption = args->value("plan");
     const auto previousOption = args->value("previous");
     const std::filesystem::path previousPath = previousOption ? core::pathFromUtf8(*previousOption) : files.plan;
@@ -162,14 +174,14 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
         }
         lock.emplace(std::move(*acquired));
     }
-    auto previous = world::readStoredPlan(previousPath);
+    auto previous = readPlanFile(context.paths, previousPath);
     if (!previous) {
         if (previous.error().code == ErrorCode::NotFound) {
             context.err.writeLine(fmt::format("{}: no plan to update at {} (run 'retroverse-cli worldplan generate')",
                                               kName, pathText(previousPath)));
             return ExitCode::ProblemsFound;
         }
-        if (isRefusedPlan(previous.error())) {
+        if (isRefusedPlan(previous.error()) || previous.error().code == ErrorCode::InvalidArgument) {
             context.err.writeLine(fmt::format("{}: the plan is refused, nothing written: {} ('worldplan generate "
                                               "--replace' regenerates it after a backup)",
                                               kName, previous.error().toString()));
@@ -177,11 +189,62 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
         }
         return failure(context, "the plan", previous.error());
     }
+    // The systems whose rooms to update: those named, else every console room's.
+    if (systems.empty() && selectionFiles.empty()) {
+        for (const world::Room& room : previous->plan.rooms) {
+            if (room.kind == world::RoomKind::Console) {
+                systems.push_back(room.id.system());
+            }
+        }
+    }
+    for (const catalog::SystemName& system : systems) {
+        const bool hasRoom = std::any_of(previous->plan.rooms.begin(), previous->plan.rooms.end(),
+                                         [&](const world::Room& room) {
+                                             return std::find(room.sections.begin(), room.sections.end(), system) !=
+                                                    room.sections.end();
+                                         });
+        if (!hasRoom) {
+            context.err.writeLine(fmt::format("{}: the plan has no room for {}: nothing written (new systems enter "
+                                              "the building with I4 step 6a)",
+                                              kName, system.str()));
+            return ExitCode::ProblemsFound;
+        }
+    }
+    Selected selected =
+        !selectionFiles.empty()
+            ? selectionsFromFiles(context, kName, selectionFiles, args->value("library"))
+            : selectionsFromCatalog(context, kName, systems, args->value("library"), *config, "no update", *info);
+    if (!selected.ok) {
+        return selected.failure;
+    }
+    for (const world::RoomSelection& selection : selected.selections) {
+        const bool hasRoom = std::any_of(previous->plan.rooms.begin(), previous->plan.rooms.end(),
+                                         [&](const world::Room& room) { return room.id == selection.room; });
+        if (!hasRoom) {
+            context.err.writeLine(fmt::format("{}: the plan has no room for {}: nothing written (new systems enter "
+                                              "the building with I4 step 6a)",
+                                              kName, selection.room.system().str()));
+            return ExitCode::ProblemsFound;
+        }
+    }
+    // The data of every room of the plan, with its recorded family, theme pack and template.
+    std::vector<world::WorldData> rooms;
+    for (const world::Room& room : previous->plan.rooms) {
+        const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
+        const auto tags = selected.platformTags.find(system);
+        auto data = world::loadRoomData(context.paths.assetRoot(), room,
+                                        tags != selected.platformTags.end() ? std::span<const std::string>(tags->second)
+                                                                            : std::span<const std::string>());
+        if (!data) {
+            return failure(context, fmt::format("the world's data of {}", room.id.toString()), data.error());
+        }
+        rooms.push_back(std::move(*data));
+    }
     auto overrides = world::loadOverrides(files.overrides);
     if (!overrides) {
         return failure(context, "the world's overrides", overrides.error());
     }
-    world::UpdateInput input;
+    world::BuildingUpdateInput input;
     if (selected.fromCatalog) {
         auto aliases = catalogAliases(context.paths, previous->plan, selected.snapshotGames);
         if (!aliases) {
@@ -190,14 +253,16 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
         input.aliases = std::move(*aliases);
     }
     input.library = selected.library;
-    input.selection = std::move(*selected.selection);
+    input.selections = std::move(selected.selections);
+    input.platformTags = std::move(selected.platformTags);
     input.config = std::move(*config);
     input.overrides = std::move(*overrides);
+    const bool lifted = previous->lifted();
     input.previous = std::move(previous->plan);
     input.previousDigest = std::move(previous->digest);
 
     const auto started = std::chrono::steady_clock::now();
-    auto result = world::update(input, *data);
+    auto result = world::updateBuilding(input, info->building, info->systems, rooms);
     if (!result) {
         if (result.error().code == ErrorCode::Unsupported) {
             context.err.writeLine(fmt::format("{}: the plan is refused, nothing written: {}", kName,
@@ -216,6 +281,7 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
             CatalogJson document;
             document["plan"] = pathText(planPath);
             document["written"] = written;
+            document["lifted"] = lifted;
             document["changes"] = changeReportJson(changes);
             document["summary"] = planSummaryJson(result->plan, changes.digestAfter);
             return jsonText(document);
@@ -242,6 +308,9 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
     for (const std::string& change : changes.needsConfirmation) {
         spdlog::warn("worldplan update: not applied, needs a confirmation: {}", change);
     }
+    for (const world::KeptRoom& kept : changes.keptRooms) {
+        spdlog::warn("worldplan update: {} kept as it is: {}", kept.room.toString(), kept.reason);
+    }
 
     std::filesystem::path planPath = files.plan;
     bool written = true;
@@ -267,9 +336,11 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
     spdlog::info("worldplan update: {} {} ({} added, {} kept, rebuild {}, digest {})", pathText(planPath),
                  written ? "written" : "unchanged", changes.added.size(), changes.kept,
                  world::toString(changes.rebuild), changes.digestAfter);
-    const std::string room = result->plan.rooms.front().id.toString();
-    const std::string heading = written ? fmt::format("Updated the plan of {}: {}", room, pathText(planPath))
-                                        : fmt::format("The plan of {} is up to date: {}", room, pathText(planPath));
+    const std::string roomList = roomsText(result->plan);
+    const std::string heading =
+        written ? fmt::format("Updated the plan of {}{}: {}", roomList, lifted ? " (lifted from schema 1)" : "",
+                              pathText(planPath))
+                : fmt::format("The plan of {} is up to date: {}", roomList, pathText(planPath));
     return writeResults(context, *file, results(heading, planPath, written), ExitCode::Ok);
 }
 

@@ -1,6 +1,7 @@
-// retroverse-cli where-is: where a game stands in its room's plan, from the plan's index (ADR-0010 §9; I3 step 9):
-// `where-is <gameId>` reads the world's plan (<user data>/worlds/<library id>/world-plan.json) or the file --plan
-// names, indexes it (world::PlanIndex: no table, the plan alone) and names the game's room, fixture, slot and section,
+// retroverse-cli where-is: where a game stands in the building's plan, from the plan's index (ADR-0010 §9, ADR-0013
+// §12; I3 step 9, I4 step 1): `where-is <gameId>` reads the world's plan (<user data>/worlds/<library id>/
+// world-plan.json) or the file --plan names (a schema-1 plan lifted into the building), indexes it (world::PlanIndex:
+// no table, the plan alone) and names the game's floor, room, fixture, slot and section,
 // or the reason it is not placed (a duplicate title with its representative and where that one stands). Nothing is
 // written but the log.
 
@@ -32,10 +33,11 @@ constexpr std::string_view kUsage =
     "Usage: retroverse-cli [global options] where-is <gameId> [--plan <file>] [--library <id>] [--json]\n"
     "                      [--output <file>]\n"
     "\n"
-    "Tells where a game stands in its room's plan: the room, the fixture and its slot (level and index, 0 the lowest\n"
-    "level and the leftmost slot as one faces the fixture), and whether it stands face-out (on a display fixture or\n"
-    "in the hero band) or spine-out; or why the room does not place it (another version of its title stands there,\n"
-    "it has no cover, its file was missing, or the room is full), with the version that stands for it.\n"
+    "Tells where a game stands in the building's plan: the floor, the room, the fixture and its slot (level and\n"
+    "index, 0 the lowest level and the leftmost slot as one faces the fixture), and whether it stands face-out (on a\n"
+    "display fixture or in the hero band) or spine-out; or why its room does not place it (another version of its\n"
+    "title stands there, it has no cover, its file was missing, the room is full, or the room is kept as an older\n"
+    "version made it), with the version that stands for it. A plan of schema 1 is read lifted into the building.\n"
     "\n"
     "Arguments:\n"
     "  <gameId>           The game's GameId ('g' and 16 hexadecimal digits, as 'retroverse-cli games' lists it).\n"
@@ -75,6 +77,7 @@ std::string answerText(const world::GameLocation& location) {
     if (location.place) {
         const world::GamePlace& place = *location.place;
         text += fmt::format("{} stands in {}\n", location.game.toString(), location.room.toString());
+        line("Floor", location.floor.empty() ? std::string("none") : location.floor);
         line("Slot", fmt::format("{} (level {}, slot {})", place.slot.toString(), place.slot.level(),
                                  place.slot.index()));
         line("Fixture", fmt::format("{} ({}, {})", place.slot.fixture().toString(), world::toString(place.role),
@@ -84,6 +87,7 @@ std::string answerText(const world::GameLocation& location) {
     }
     text += fmt::format("{} is not placed in {}: {}\n", location.game.toString(), location.room.toString(),
                         world::toString(*location.reason));
+    line("Floor", location.floor.empty() ? std::string("none (the plan has no such room)") : location.floor);
     if (location.representative.isValid()) {
         line("Representative", location.representative.toString());
         if (location.representativePlace) {
@@ -137,7 +141,7 @@ ExitCode runWhereIs(CommandContext& context) {
         }
         planPath = defaultPlanPath(context.paths, *library);
     }
-    auto stored = world::readStoredPlan(planPath);
+    auto stored = readPlanFile(context.paths, planPath);
     if (!stored) {
         if (stored.error().code == ErrorCode::NotFound) {
             context.err.writeLine(fmt::format("{}: no plan at {} (run 'retroverse-cli worldplan generate')", kName,
@@ -160,6 +164,7 @@ ExitCode runWhereIs(CommandContext& context) {
         CatalogJson json;
         json["game"] = location->game.toString();
         json["room"] = location->room.toString();
+        json["floor"] = location->floor.empty() ? CatalogJson(nullptr) : CatalogJson(location->floor);
         json["plan"] = pathText(planPath);
         json["digest"] = stored->digest;
         json["placed"] = location->placed();

@@ -1,9 +1,10 @@
-// retroverse-cli worldplan show: a plan as text or JSON (ADR-0010 §8, I3 step 3): the plan file given, or the world's
-// plan of the library <user data>/config/library.json records (or --library names), read with world::readPlan (a
-// hand-edited or newer plan is refused), summarized: its versions and digest, the room, the fixtures by role, the
-// slots and titles of each section with the reserve left, the dressing, the lights and the unplaced games by reason;
-// with --placements every fixture with its levels and every placement too. With --scene <file>, its static part written
-// as a scene file (I3 step 10a).
+// retroverse-cli worldplan show: a plan as text or JSON (ADR-0010 §8, ADR-0013 §12; I3 step 3, I4 step 1): the plan
+// file given, or the world's plan of the library <user data>/config/library.json records (or --library names), read
+// with world::readPlan (a hand-edited or newer plan is refused; a schema-1 plan lifted into the building), summarized:
+// its versions and digest, its floors, its rooms (kind, floor, sections, placement), the fixtures by role, the slots
+// and titles of each section with the reserve left, the dressing, the lights and the unplaced games by reason; with
+// --placements every fixture with its levels and every placement too. With --scene <file>, the static part of the
+// plan's first room written as a scene file (I3 step 10a; a floor's scene with its hall is I4 step 3's).
 
 #include <filesystem>
 #include <map>
@@ -20,7 +21,6 @@
 #include <rv/cli/output.hpp>
 #include <rv/core/arg_parser.hpp>
 #include <rv/core/file_io.hpp>
-#include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/scene/scene_description.hpp>
@@ -42,9 +42,10 @@ constexpr std::string_view kUsage =
     "Usage: retroverse-cli [global options] worldplan show [<plan>] [--library <id>] [--placements] [--json]\n"
     "                      [--scene <file>] [--output <file>]\n"
     "\n"
-    "Shows a plan: its versions and digest, the room, the fixtures by role, the slots and titles of each section\n"
-    "(featured and band face-out, spine spine-out) with the reserve left free, the shelf dressing, the lights and the\n"
-    "games the room does not place, by reason.\n"
+    "Shows a plan: its versions and digest, its floors and rooms (kind, floor, systems, place on the floor), the\n"
+    "fixtures by role, the slots and titles of each section (featured and band face-out, spine spine-out) with the\n"
+    "reserve left free, the shelf dressing, the lights and the games the rooms do not place, by reason. A plan of\n"
+    "schema 1 (I3's one room) is shown lifted into the building.\n"
     "\n"
     "Arguments:\n"
     "  <plan>             A plan file (default: <user data>/worlds/<library id>/world-plan.json).\n"
@@ -52,9 +53,9 @@ constexpr std::string_view kUsage =
     "Options:\n"
     "  --library <id>     The library whose plan to show (default: the one <user data>/config/library.json records).\n"
     "  --placements       Also list every fixture with its levels and every placement with its section.\n"
-    "  --scene <file>     Also write the static part of the plan's room (the shell, the fixtures, the dressing, the\n"
-    "                     lights) as a scene file that 'retroverse --scene <file>' renders (prefabs and lighting\n"
-    "                     from the asset root; the collection's items are not part of it).\n"
+    "  --scene <file>     Also write the static part of the plan's first room (the shell, the fixtures, the\n"
+    "                     dressing, the lights) as a scene file that 'retroverse --scene <file>' renders (prefabs\n"
+    "                     and lighting from the asset root; the collection's items are not part of it).\n"
     "  --json             Write the results as JSON.\n"
     "  --output <file>    Write the results to this file (UTF-8) instead of stdout.\n"
     "  -h, --help         Show this help and exit.\n"
@@ -203,22 +204,18 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         }
         planPath = defaultPlanPath(context.paths, *library);
     }
-    auto text = core::readTextFile(planPath);
-    if (!text) {
-        if (text.error().code == ErrorCode::NotFound) {
+    auto read = readPlanFile(context.paths, planPath);
+    if (!read) {
+        if (read.error().code == ErrorCode::NotFound) {
             context.err.writeLine(fmt::format("{}: no plan at {} (run 'retroverse-cli worldplan generate')", kName,
                                               pathText(planPath)));
             return ExitCode::ProblemsFound;
         }
-        context.err.writeLine(fmt::format("{}: {}", kName, text.error().toString()));
+        context.err.writeLine(fmt::format("{}: {}", kName, read.error().toString()));
         return ExitCode::RuntimeFailure;
     }
-    auto plan = world::readPlan(*text, pathText(planPath.filename()));
-    if (!plan) {
-        context.err.writeLine(fmt::format("{}: {}", kName, plan.error().toString()));
-        return ExitCode::RuntimeFailure;
-    }
-    const std::string digest = core::sha256Hex(*text);
+    const world::WorldPlan* plan = &read->plan;
+    const std::string& digest = read->digest;
     std::optional<std::string> sceneLine;
     if (const auto scenePath = args->value("scene")) {
         sceneLine = writeScene(context, *plan, core::pathFromUtf8(*scenePath));
@@ -230,6 +227,8 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
     if (args->has("json")) {
         CatalogJson json = planSummaryJson(*plan, digest);
         json["plan"] = pathText(planPath);
+        json["fileSchemaVersion"] = read->fileSchema;
+        json["lifted"] = read->lifted();
         if (args->has("placements")) {
             json = listingJson(*plan, std::move(json));
         }
@@ -238,7 +237,9 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         }
         results = jsonText(json);
     } else {
-        results = planSummaryText(*plan, digest, fmt::format("Plan {}", pathText(planPath)));
+        results = planSummaryText(*plan, digest,
+                                  fmt::format("Plan {}{}", pathText(planPath),
+                                              read->lifted() ? " (schema 1, lifted into the building)" : ""));
         if (args->has("placements")) {
             results += listingText(*plan);
         }
