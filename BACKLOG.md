@@ -428,3 +428,14 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.
+
+## Follow-ups from I4
+
+- **`worldplan check` and kept rooms (I4 step 1):** the check judges a room made from an older template version or by
+  another generator major as kept (`room-kept`, soft), but a room whose prefabs' levels changed still fails
+  `prefab-slots` there, while `world::updateBuilding` keeps such a room and saves the plan (`docs/i4/step-1.md`). The
+  check could load each room's data (`loadRoomData`) and ask `roomKeepReason()` as the update does.
+- **The plan's inputDigest after a partial update (I4 step 1):** `updateBuilding` hashes the rooms it was given a
+  selection for, so the app (which updates only the SNES room until step 5a's building job) and a whole-building CLI
+  update record different provenance digests for one catalog, and each rewrites the plan once when the other wrote it
+  last. Provenance only; the building job of step 5a updates every room.
