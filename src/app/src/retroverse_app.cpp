@@ -183,6 +183,12 @@ bool roomMode(const CommandLineOptions& options) noexcept {
     return !options.scene && !options.model && !options.mockCatalog;
 }
 
+/// The system whose room the run shows: --room-system's (I4 step 2), else the SNES's.
+catalog::SystemName roomSystemOf(const CommandLineOptions& options) {
+    return catalog::SystemName::parse(options.roomSystem.empty() ? kRoomSystem : std::string_view(options.roomSystem))
+        .value();
+}
+
 /// Without library.json or the catalog's database the ES-DE catalog cannot open: the room is decided at once (the test
 /// room, its notice naming the catalog's state), so that such runs never show the room's shell first.
 std::optional<WorldResult> roomWithoutCatalog(const core::Paths& paths) {
@@ -212,7 +218,7 @@ Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const c
         return sceneFileSource(options.scene, paths);
     }
     // While the room is made: the empty room's shell (the WorldGenerating state).
-    auto shell = WorldSession::shellScene(paths.assetRoot(), catalog::SystemName::parse(kRoomSystem).value());
+    auto shell = WorldSession::shellScene(paths.assetRoot(), roomSystemOf(options));
     if (!shell) {
         spdlog::error("The room's shell cannot be made, the test room shows while the room is made: {}",
                       shell.error().toString());
@@ -581,7 +587,7 @@ struct RetroverseApp::State {
         pool = std::make_unique<core::WorkerPool>();
         WorldSession::Options options;
         options.paths = WorldPaths{paths.assetRoot(), paths.userDataRoot(), paths.configDir(), paths.cacheDir()};
-        options.system = catalog::SystemName::parse(kRoomSystem).value();
+        options.system = roomSystemOf(context.options());
         options.writer = fmt::format("retroverse ({})", core::versionBanner());
         const bool lockstep = context.options().fixedDeltaSeconds.has_value();
         options.lockstep = lockstep;
@@ -612,6 +618,7 @@ struct RetroverseApp::State {
         host.camera = [this]() -> const scene::Camera& {
             return camera;
         };
+        const std::string roomSystem = options.system.str();
         world = std::make_unique<WorldSession>(context, std::move(options), *pool, *graphics, std::move(host),
                                                std::move(decided));
         if (product) {
@@ -620,7 +627,7 @@ struct RetroverseApp::State {
                 return world ? world->otherVersionsOf(game) : std::vector<catalog::GameId>{};
             });
         }
-        spdlog::info("World: the room of {} on a worker pool of {} thread(s){}", kRoomSystem, pool->threadCount(),
+        spdlog::info("World: the room of {} on a worker pool of {} thread(s){}", roomSystem, pool->threadCount(),
                      lockstep ? " (lockstep: frames wait for the room and its layers)" : "");
     }
 

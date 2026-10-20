@@ -62,7 +62,8 @@ void HeroTextures::request(const CoverItem& item) {
     options.priority = kJobPriority;
     options.generation = &m_generation;
     const Status submitted = m_pool.submit(
-        [shared = m_shared, game, path = std::move(*source), maxSide = m_options.maxSide](const core::JobContext& job) {
+        [shared = m_shared, game, path = std::move(*source), maxSide = m_options.maxSide,
+         label = item.label](const core::JobContext& job) {
             if (job.cancelled()) {
                 return;
             }
@@ -71,7 +72,8 @@ void HeroTextures::request(const CoverItem& item) {
             if (auto bytes = core::readFileShared(path, assets::kMaxImageFileBytes); !bytes) {
                 finished.error = bytes.error();
             } else if (auto picture =
-                           makeHeroPicture(std::as_bytes(std::span(bytes->data(), bytes->size())), game, maxSide);
+                           makeHeroPicture(std::as_bytes(std::span(bytes->data(), bytes->size())), game, maxSide,
+                                           label);
                        !picture) {
                 finished.error = picture.error();
             } else {

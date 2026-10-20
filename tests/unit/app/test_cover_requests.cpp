@@ -314,3 +314,24 @@ TEST_CASE("app/cover_requests: the hero picture keeps the cover's pixels at the 
     const std::array<std::byte, 4> junk{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
     CHECK_FALSE(rv::app::makeHeroPicture(junk, "junk").has_value());
 }
+
+TEST_CASE("app/cover_requests: a family's hero picture is made at its label's shape (I4 step 2)",
+          "[app][cover_requests]") {
+    // ADR-0013 §4: the hero picture of a jewel case is square, of a keep case portrait, as wide as the cover needs.
+    const rv::assets::LabelAspect square{120, 120};
+    const rv::assets::LabelAspect keepCase{123, 178};
+    CHECK(rv::app::heroPictureSize(680, 497, rv::app::kHeroMaxSide, square) == glm::ivec2(680, 680));
+    CHECK(rv::app::heroPictureSize(600, 600, rv::app::kHeroMaxSide, square) == glm::ivec2(600, 600));
+    CHECK(rv::app::heroPictureSize(476, 864, rv::app::kHeroMaxSide, keepCase) == glm::ivec2(597, 864));
+    CHECK(rv::app::heroPictureSize(2000, 3000, rv::app::kHeroMaxSide, keepCase) == glm::ivec2(1024, 1482));
+    // The layer's own shape is I3's.
+    CHECK(rv::app::heroPictureSize(680, 497, rv::app::kHeroMaxSide, {}) == rv::app::heroPictureSize(680, 497));
+    const rv::assets::ImageData portrait =
+        rv::assets::makeCheckerboard(476, 864, 17, {200, 40, 40, 255}, {20, 20, 160, 255});
+    const auto portraitPng = rv::assets::encodePng(portrait);
+    REQUIRE(portraitPng.has_value());
+    const auto picture = rv::app::makeHeroPicture(*portraitPng, "portrait", rv::app::kHeroMaxSide, keepCase);
+    REQUIRE(picture.has_value());
+    CHECK(picture->width == 597);
+    CHECK(picture->height == 864);
+}

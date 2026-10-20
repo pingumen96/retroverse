@@ -12,6 +12,7 @@
 
 #include <fmt/format.h>
 
+#include <rv/catalog/ids.hpp>
 #include <rv/core/arg_parser.hpp>
 #include <rv/core/text.hpp>
 
@@ -94,7 +95,10 @@ core::ArgParser makeParser() {
                 "frame, for goldens.")
         .flag("no-texture-compression", "Keep the collection's covers and spines in RGBA8 at half the resolution "
                                         "instead of BC1, as without the S3TC extensions (the log names the format "
-                                        "and why).");
+                                        "and why).")
+        .option("room-system", "system",
+                "The ES-DE system whose generated room is shown instead of the SNES's (e.g. psx: its media family's "
+                "items and fixtures, its covers fitted to their labels); until the building's floors.");
     return parser;
 }
 
@@ -533,6 +537,16 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     }
     options.refreshLibrary = args->has("refresh-library");
     options.noTextureCompression = args->has("no-texture-compression");
+    auto roomSystem = nonEmptyValue(*args, "room-system");
+    if (!roomSystem) {
+        return propagate(roomSystem.error());
+    }
+    if (*roomSystem) {
+        if (!catalog::SystemName::parse(**roomSystem)) {
+            return makeError(ErrorCode::InvalidArgument, "not an ES-DE system name", "--room-system=" + **roomSystem);
+        }
+        options.roomSystem = **roomSystem;
+    }
     if (auto pending = pendingOptionError(options); !pending) {
         return propagate(pending.error());
     }

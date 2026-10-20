@@ -305,9 +305,10 @@ std::size_t CoverSchedule::inViewPending() const noexcept {
 
 // --- Hero pictures ---------------------------------------------------------------------------------------------------
 
-glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide) noexcept {
+glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide, const assets::LabelAspect& label) noexcept {
     const assets::LayerSize front = assets::layerSize(assets::TextureClass::Front, assets::TextureFormat::Bc1Srgb);
-    const double aspect = static_cast<double>(front.width) / static_cast<double>(front.height);
+    const double aspect = label.isLayer() ? static_cast<double>(front.width) / static_cast<double>(front.height)
+                                          : static_cast<double>(label.width) / static_cast<double>(label.height);
     const int cap = std::max(16, maxSide);
     // As wide as the cover needs to keep its pixels: its width, or its height at the label's aspect.
     const double wanted = std::max(static_cast<double>(std::max(1, sourceWidth)),
@@ -317,12 +318,14 @@ glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide) noexc
     return {width, height};
 }
 
-Expected<assets::ImageData> makeHeroPicture(std::span<const std::byte> bytes, std::string_view context, int maxSide) {
+Expected<assets::ImageData> makeHeroPicture(std::span<const std::byte> bytes, std::string_view context, int maxSide,
+                                            const assets::LabelAspect& label) {
     auto image = assets::decodeImage(bytes, 0, context);
     if (!image) {
         return propagate(image.error());
     }
-    const glm::ivec2 size = heroPictureSize(image->width, image->height, maxSide);
+    // At the label's shape the picture is fitted to its own size: the quad shows it unstretched.
+    const glm::ivec2 size = heroPictureSize(image->width, image->height, maxSide, label);
     auto fitted = assets::fitCover(*image, size.x, size.y);
     if (!fitted) {
         return propagate(fitted.error());

@@ -22,6 +22,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <rv/assets/cover_fit.hpp>
 #include <rv/assets/image_data.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -171,16 +172,19 @@ private:
 inline constexpr int kHeroMaxSide = 1024;
 
 /// The size of the hero picture of a cover of `sourceWidth` x `sourceHeight`: the front label's aspect (256 x 188, as
-/// the label quad's texture coordinates span it), as wide as the cover's pixels need, the cover fitted into it without
-/// stretching (assets::fitCover's rules), at most `maxSide` wide and at least 16 x 12. A 680 x 497 cover gives
-/// 680 x 499, a 476 x 864 portrait one 1024 x 752 (its height kept up to the cap), a 2,050 x 1,440 scan 1024 x 752.
-[[nodiscard]] glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide = kHeroMaxSide) noexcept;
+/// the label quad's texture coordinates span it; the label quad's own shape for a family whose covers are fitted to it,
+/// `label`, ADR-0013 §4), as wide as the cover's pixels need, the cover fitted into it without stretching
+/// (assets::fitCover's rules), at most `maxSide` wide and at least 16 x 12. A 680 x 497 cover gives 680 x 499, a
+/// 476 x 864 portrait one 1024 x 752 (its height kept up to the cap), a 2,050 x 1,440 scan 1024 x 752.
+[[nodiscard]] glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide = kHeroMaxSide,
+                                         const assets::LabelAspect& label = {}) noexcept;
 
-/// The hero picture of a cover file's bytes (on a worker): decoded (PNG or JPEG), fitted to heroPictureSize(), RGBA8
-/// sRGB, top row first. Errors: those of assets::decodeImage and assets::fitCover, with `context` (it names the
-/// user's file: log it at debug level only).
+/// The hero picture of a cover file's bytes (on a worker): decoded (PNG or JPEG), fitted to heroPictureSize() (of the
+/// label's shape: the quad then shows it as it is), RGBA8 sRGB, top row first. Errors: those of assets::decodeImage and
+/// assets::fitCover, with `context` (it names the user's file: log it at debug level only).
 [[nodiscard]] Expected<assets::ImageData> makeHeroPicture(std::span<const std::byte> bytes, std::string_view context,
-                                                          int maxSide = kHeroMaxSide);
+                                                          int maxSide = kHeroMaxSide,
+                                                          const assets::LabelAspect& label = {});
 
 /// The hero textures' set (ADR-0011 §8): at most `capacity` keys (GameIds), least recently used first out. Main thread
 /// only.

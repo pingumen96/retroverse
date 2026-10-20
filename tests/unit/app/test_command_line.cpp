@@ -649,3 +649,18 @@ TEST_CASE("app/command_line: --no-texture-compression keeps the collection's arr
     CHECK(helpListsOption(help, "--no-texture-compression"));
     CHECK(help.find("Not implemented yet (I3 step 6)") == std::string::npos);
 }
+
+TEST_CASE("app/command_line: --room-system shows another system's room (I4 step 2)", "[app][command_line]") {
+    CHECK(parse({"--smoke"})->roomSystem.empty());
+    const auto psx = parse({"--smoke", "--room-system", "psx"});
+    REQUIRE(psx.has_value());
+    CHECK(psx->roomSystem == "psx");
+    for (const char* value : {"bad/name", "a:b"}) {
+        INFO(value);
+        const auto refused = parse({"--smoke", "--room-system", value});
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().code == ErrorCode::InvalidArgument);
+    }
+    CHECK_FALSE(parse({"--smoke", "--room-system", ""}).has_value());
+    CHECK(helpListsOption(rv::app::commandLineHelp(), "--room-system"));
+}

@@ -167,6 +167,8 @@ Status buildScene(const WorldPaths& paths, WorldBuild& build, std::span<const wo
         }
         cover.frontKey = item.frontLayerKey;
         cover.spineKey = item.spineLayerKey;
+        // The room's family's label shape (ADR-0013 §4): the 16-bit cartridges keep I3's fit.
+        cover.label = data->mediaFamily.coverAspect();
         if (describe(item, cover)) {
             build.covers.push_back(std::move(cover));
         }

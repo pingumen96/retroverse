@@ -48,7 +48,7 @@ ItemLayers serveItemLayers(assets::DerivedTextureCache& cache, const assets::Lab
         if (!item.coverPath.empty()) {
             const std::string_view kind = catalog::toString(catalog::MediaKind::Cover);
             const assets::CacheKey key =
-                assets::coverCacheKey(assets::TextureClass::Front, textureFormat, kind, item.coverPath);
+                assets::coverCacheKey(assets::TextureClass::Front, textureFormat, kind, item.coverPath, item.label);
             std::optional<std::filesystem::path> source;
             if (mediaRoot) {
                 if (auto below = core::extendedLengthPathBelow(*mediaRoot, item.coverPath)) {
@@ -58,7 +58,9 @@ ItemLayers serveItemLayers(assets::DerivedTextureCache& cache, const assets::Lab
             Expected<assets::ServedLayer> served =
                 makeError(ErrorCode::Unavailable, "the media root is not known", item.game.toString());
             if (source) {
-                served = assets::serveCover(cache, textureFormat, kind, item.coverPath, *source);
+                assets::FitOptions options;
+                options.label = item.label;
+                served = assets::serveCover(cache, textureFormat, kind, item.coverPath, *source, options);
             } else if (assets::Lookup found = cache.lookup(key, std::nullopt, true);
                        found.outcome == assets::LookupOutcome::Hit && found.texture) {
                 // No media root to read it under: the cover's entry is found by its name and served as it was.
@@ -92,6 +94,7 @@ ItemLayers serveItemLayers(assets::DerivedTextureCache& cache, const assets::Lab
             request.systemName = item.systemName;
             request.year = item.year;
             request.seed = item.seed;
+            request.label = item.label;
             if (auto label = assets::serveFrontLabel(cache, fonts, request, textureFormat)) {
                 layers.front = toLayerImage(label->texture);
                 layers.frontOutcome = label->outcome;

@@ -153,6 +153,10 @@ struct CommandLineOptions {
     /// fallback without the S3TC extensions (ADR-0011 §4; implemented by I3 step 6: gl::chooseCollectionArrayFormat,
     /// SceneGraphics::collectionArrayFormat).
     bool noTextureCompression = false;
+    /// --room-system <system>: the ES-DE system whose generated room the app shows instead of the SNES's (kRoomSystem),
+    /// a valid system name (I4 step 2: the families' rooms with their covers, until step 5a's floors and
+    /// --start-room). Empty: kRoomSystem.
+    std::string roomSystem;
 };
 
 /// Why `options` cannot run yet: the first option it sets that this build parses but does not implement yet, refused
