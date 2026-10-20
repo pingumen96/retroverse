@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rv/assets/material_library.hpp>
@@ -12,6 +14,7 @@
 #include <rv/scene/collision.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/render_item.hpp>
+#include <rv/scene/scene_areas.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
 
@@ -50,6 +53,11 @@ struct SceneResources {
 ///    environment also holds the background radiance, the ambient occlusion and the post-processing (exposure, bloom,
 ///    vignette), which the renderer reads per view (gl::postSettingsFor). The developer overlay edits the lights and
 ///    the environment in place (sceneLights(), environment()) and repacks the lights with applyLighting().
+///  - Areas (I4 step 3, ADR-0013 §9): in a scene with areas (a floor: its rooms and its hall), the lights block holds
+///    the lights of the area that holds the eye (scene::AreaLighting: the first area holding it, else the last one
+///    held), its key light shadowed and its point and spot lights nearest the eye up to the block's capacity; the
+///    application calls followEye() every frame with the camera's eye. A scene without areas packs its lights once, in
+///    list order, as before.
 ///  - Collision: scene::buildCollisionWorld of the content, for first-person navigation.
 ///  - Debug lines: the bounds of every object instance (scene::addSceneBoundsLines) and the axes of its sockets
 ///    (scene::addSceneSocketLines), kept apart so that each kind can be shown on its own.
@@ -79,13 +87,27 @@ public:
     /// The scene's lights as described (linear colors): the source of lights(). Edited in place by the developer
     /// overlay, then applyLighting().
     [[nodiscard]] std::span<scene::Light> sceneLights() noexcept { return m_sceneLights; }
+    [[nodiscard]] std::span<const scene::Light> sceneLights() const noexcept { return m_sceneLights; }
     /// The scene's environment: the source of the ambient of lights(), the background radiance and the
     /// post-processing of every view, edited in place by the developer overlay.
     [[nodiscard]] scene::EnvironmentSetup& environment() noexcept { return m_environment; }
     [[nodiscard]] const scene::EnvironmentSetup& environment() const noexcept { return m_environment; }
     /// Packs sceneLights() and the ambient of environment() into lights(); the lights left out are droppedLights(), the
-    /// light that casts the shadows is shadowLight() (or shadowNote() says why none does).
+    /// light that casts the shadows is shadowLight() (or shadowNote() says why none does). In a scene with areas, the
+    /// lights the area that holds the eye selects (chosen again first, the lights' flags or places perhaps edited).
     void applyLighting();
+
+    /// The scene's areas (empty: none).
+    [[nodiscard]] std::span<const scene::SceneArea> areas() const noexcept { return m_areas; }
+    /// The id of the area that holds the eye; empty in a scene without areas.
+    [[nodiscard]] std::string_view areaId() const noexcept;
+    /// The scene lights packed into lights() for the area that holds the eye, as indices into sceneLights() in their
+    /// order; empty in a scene without areas (every light, in list order).
+    [[nodiscard]] std::span<const std::uint32_t> areaSelection() const noexcept { return m_areaLighting.selection(); }
+    /// Follows the eye (the camera's position, world space) in a scene with areas: the area that holds it, and the
+    /// lights packed for it when they change (cheap: a pass over the area's lights). Returns true when the area that
+    /// holds the eye changed; nothing happens in a scene without areas.
+    bool followEye(const glm::vec3& eye);
     /// Scene lights that the last packing left out, with the reason.
     [[nodiscard]] const std::vector<gl::DroppedLight>& droppedLights() const noexcept { return m_droppedLights; }
     /// The key light of the last packing: the light that casts the views' shadow (casts() is false for none).
@@ -99,6 +121,9 @@ public:
     [[nodiscard]] const core::Aabb& shadowCasterBounds() const noexcept { return m_shadowCasterBounds; }
 
 private:
+    /// Packs the lights (all, or the area's selection) into m_lights with the key light and what was left out.
+    void packLighting();
+
     std::string m_name;
     std::vector<scene::RenderItem> m_items;
     std::vector<scene::Light> m_sceneLights;
@@ -108,6 +133,10 @@ private:
     gl::ShadowLight m_shadowLight;
     std::string m_shadowNote;
     core::Aabb m_shadowCasterBounds;
+    std::vector<scene::SceneArea> m_areas;
+    scene::AreaLighting m_areaLighting;
+    /// The eye the area lighting last followed.
+    glm::vec3 m_eye{0.0f};
     scene::CollisionWorld m_collision;
     scene::DebugLines m_boundsLines;
     scene::DebugLines m_socketLines;

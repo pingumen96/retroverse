@@ -2,6 +2,7 @@
 
 // GPU-free (target rv_render_uniforms): no OpenGL header is included.
 
+#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
@@ -48,6 +49,12 @@ struct PackedLights {
 /// instead of reaching the shaders; ranges below 1 mm count as 1 mm and directions are normalized. The scene loader
 /// already rejects such lights, so this only guards hand-made input. Unused entries stay zero (intensity 0).
 [[nodiscard]] PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment);
+
+/// packLights() of the lights `selection` names (indices into `lights`, in the order to pack them; an index past the
+/// list is ignored): the lights of the area that holds the eye (scene::AreaLighting, I4 step 3), the first light with
+/// castsShadows among them the key light. The dropped lights are named by their index in `lights`.
+[[nodiscard]] PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
+                                      const scene::EnvironmentSetup& environment);
 
 /// What packLights() cannot know: whether anything casts a shadow. A directional key light's map is fitted to the
 /// shadow casters (directionalShadowProjection), so with `casterBounds` empty (no item casts shadows) it has no map to

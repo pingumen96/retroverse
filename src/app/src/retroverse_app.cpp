@@ -401,6 +401,8 @@ struct RetroverseApp::State {
     /// content and the overlay, which refer to it.
     std::unique_ptr<SceneGraphics> graphics;
     std::optional<SceneInstance> scene;
+    /// The area that held the eye at the first view of a scene with areas, then each change (I4 step 3).
+    std::vector<SceneAreaChange> areaChanges;
     /// The hero CRT's screen service (I3 step 11): its one video decoder and the pictures of its fallback chain on the
     /// scene's first CRT; none without a CRT (the model viewer). Destroyed before the graphics, whose material registry
     /// shows its pictures.
@@ -491,6 +493,45 @@ struct RetroverseApp::State {
                              steps[index].fromFrame, steps[index].toFrame, freeRoam->describePose());
             }
         }
+    }
+
+    /// In a scene with areas (a floor), the lights of the area that holds this frame's eye (I4 step 3); each change of
+    /// area is recorded for the run report.
+    void followSceneAreas(std::uint64_t frame) {
+        if (!scene || scene->areas().empty()) {
+            return;
+        }
+        (void)scene->followEye(camera.position());
+        if (areaChanges.empty() || areaChanges.back().area != scene->areaId()) {
+            areaChanges.push_back(SceneAreaChange{frame, std::string(scene->areaId())});
+            spdlog::info("Frame {}: the eye is in the area '{}' ({} light(s) packed)", frame, scene->areaId(),
+                         scene->lights().punctualLightCount);
+        }
+    }
+
+    /// The scene's areas for the run report: the area that held the eye at the last view and its lights.
+    [[nodiscard]] std::optional<SceneAreasRecord> sceneAreasRecord() const {
+        if (!scene || scene->areas().empty()) {
+            return std::nullopt;
+        }
+        SceneAreasRecord record;
+        record.areas = scene->areas().size();
+        record.area = std::string(scene->areaId());
+        const std::span<const scene::Light> lights = scene->sceneLights();
+        bool keySeen = false;
+        for (const std::uint32_t index : scene->areaSelection()) {
+            const scene::Light& light = lights[index];
+            const std::string name = light.name.empty() ? fmt::format("#{}", index) : light.name;
+            record.lights.push_back(name);
+            if (light.castsShadows && !keySeen) {
+                keySeen = true;
+                if (scene->shadowLight().casts()) {
+                    record.keyLight = name;
+                }
+            }
+        }
+        record.changes = areaChanges;
+        return record;
     }
 
     /// The view of the frame: the scene from the walker's camera, with the overlay's rendering toggles.
@@ -1278,6 +1319,7 @@ void RetroverseApp::onRender(AppContext& context) {
         return;
     }
     State& state = *m_state;
+    state.followSceneAreas(context.frameIndex());
     state.graphics->renderFrame(context, state.view(), state.screenshotRequested);
     state.screenshotRequested = false;
     if (state.world) {
@@ -1336,6 +1378,7 @@ void RetroverseApp::onShutdown(AppContext& context) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }
         context.report().finalCamera = m_state->freeRoam->pose();
+        context.report().sceneAreas = m_state->sceneAreasRecord();
         m_state->graphics->finishRun(context);
     }
     m_state.reset();

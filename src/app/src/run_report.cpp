@@ -1711,6 +1711,17 @@ std::string formatRunReport(const RunReport& report) {
                                  {"passed", report.selfCheck->passed},
                                  {"summary", report.selfCheck->summary}};
     }
+    if (report.sceneAreas) {
+        Json changes = Json::array();
+        for (const SceneAreaChange& change : report.sceneAreas->changes) {
+            changes.push_back(Json{{"frame", change.frame}, {"area", change.area}});
+        }
+        json["sceneAreas"] = Json{{"areas", report.sceneAreas->areas},
+                                  {"area", report.sceneAreas->area},
+                                  {"lights", report.sceneAreas->lights},
+                                  {"keyLight", report.sceneAreas->keyLight},
+                                  {"changes", std::move(changes)}};
+    }
     if (report.catalog) {
         json["catalog"] = catalogToJson(*report.catalog);
     }
@@ -1810,6 +1821,17 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
         }
         report.selfCheck = SelfCheckRecord{known.value_or(SelfCheck::Srgb), check->boolean("passed"),
                                            check->string("summary")};
+    }
+    if (auto areas = fields.optionalObject("sceneAreas")) {
+        SceneAreasRecord record;
+        record.areas = static_cast<std::size_t>(areas->count("areas", kMaxSize));
+        record.area = areas->string("area");
+        record.lights = areas->stringArray("lights");
+        record.keyLight = areas->string("keyLight");
+        for (FieldReader& change : areas->objectArray("changes")) {
+            record.changes.push_back(SceneAreaChange{change.count("frame"), change.string("area")});
+        }
+        report.sceneAreas = std::move(record);
     }
     if (auto catalog = fields.optionalObject("catalog")) {
         report.catalog = readCatalog(*catalog);

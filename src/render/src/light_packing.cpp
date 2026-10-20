@@ -85,7 +85,12 @@ glm::vec2 spotConeScaleOffset(float innerConeDeg, float outerConeDeg) noexcept {
     return {scale, -cosOuter * scale};
 }
 
-PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment) {
+namespace {
+
+/// packLights() over the lights at `indexOf(0)`, ..., `indexOf(count - 1)` of `lights`.
+template <class IndexOf>
+PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count, IndexOf indexOf,
+                         const scene::EnvironmentSetup& environment) {
     PackedLights packed;
     LightsUniforms& block = packed.uniforms;
     bool directionalUsed = false;
@@ -98,7 +103,11 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
         }
         packed.dropped.push_back({name, std::move(reason)});
     };
-    for (std::size_t index = 0; index < lights.size(); ++index) {
+    for (std::size_t position = 0; position < count; ++position) {
+        const std::size_t index = indexOf(position);
+        if (index >= lights.size()) {
+            continue;
+        }
         const scene::Light& light = lights[index];
         // The first light that asks for shadows is the key light, whether or not it can have them.
         const bool key = light.castsShadows && !keyLightSeen;
@@ -155,6 +164,20 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
     block.ambientGround = environment.ambientGround;
     block.ambientIntensity = environment.ambientIntensity;
     return packed;
+}
+
+} // namespace
+
+PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment) {
+    return packIndexed(
+        lights, lights.size(), [](std::size_t position) { return position; }, environment);
+}
+
+PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
+                        const scene::EnvironmentSetup& environment) {
+    return packIndexed(
+        lights, selection.size(), [selection](std::size_t position) { return static_cast<std::size_t>(selection[position]); },
+        environment);
 }
 
 void requireShadowCasters(PackedLights& packed, std::span<const scene::Light> lights, const core::Aabb& casterBounds) {

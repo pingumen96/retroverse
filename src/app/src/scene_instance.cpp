@@ -155,10 +155,29 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
 
     instance.m_sceneLights = description.lights;
     instance.m_environment = description.environment;
+    if (!description.areas.empty()) {
+        // The area of the scene camera's eye until the application follows the walker's (followEye()).
+        instance.m_areas = description.areas;
+        instance.m_eye = description.camera.position;
+        instance.m_areaLighting = scene::AreaLighting(instance.m_areas, instance.m_sceneLights, instance.m_eye,
+                                                      gl::kMaxPunctualLights);
+        spdlog::info("Scene '{}': {} area(s); the views pack the lights of the area that holds the eye, '{}' at the "
+                     "start",
+                     description.name, instance.m_areas.size(), instance.areaId());
+    }
     instance.applyLighting();
     logLights(description.name, instance.m_lights, instance.m_droppedLights, instance.m_environment);
-    logShadows(description.name, instance.m_sceneLights, instance.m_shadowLight, instance.m_shadowNote,
-               instance.m_environment.ssao);
+    if (instance.m_areas.empty()) {
+        logShadows(description.name, instance.m_sceneLights, instance.m_shadowLight, instance.m_shadowNote,
+                   instance.m_environment.ssao);
+    } else {
+        std::vector<scene::Light> packed;
+        for (const std::uint32_t index : instance.areaSelection()) {
+            packed.push_back(instance.m_sceneLights[index]);
+        }
+        logShadows(description.name, packed, instance.m_shadowLight, instance.m_shadowNote,
+                   instance.m_environment.ssao);
+    }
     instance.m_collision = scene::buildCollisionWorld(geometry);
     scene::addSceneBoundsLines(geometry, instance.m_boundsLines);
     scene::addSceneSocketLines(geometry, instance.m_socketLines);
@@ -183,12 +202,45 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
 }
 
 void SceneInstance::applyLighting() {
-    gl::PackedLights packed = gl::packLights(m_sceneLights, m_environment);
+    if (!m_areaLighting.empty()) {
+        (void)m_areaLighting.reselect(m_sceneLights, m_eye);
+    }
+    packLighting();
+}
+
+void SceneInstance::packLighting() {
+    gl::PackedLights packed = m_areaLighting.empty()
+                                  ? gl::packLights(m_sceneLights, m_environment)
+                                  : gl::packLights(m_sceneLights, m_areaLighting.selection(), m_environment);
     gl::requireShadowCasters(packed, m_sceneLights, m_shadowCasterBounds);
     m_lights = packed.uniforms;
     m_droppedLights = std::move(packed.dropped);
     m_shadowLight = packed.shadowLight;
     m_shadowNote = std::move(packed.shadowNote);
+}
+
+std::string_view SceneInstance::areaId() const noexcept {
+    const auto area = m_areaLighting.area();
+    return area && *area < m_areas.size() ? std::string_view(m_areas[*area].id) : std::string_view();
+}
+
+bool SceneInstance::followEye(const glm::vec3& eye) {
+    if (m_areaLighting.empty()) {
+        return false;
+    }
+    m_eye = eye;
+    const auto before = m_areaLighting.area();
+    if (!m_areaLighting.update(m_areas, m_sceneLights, eye)) {
+        return false;
+    }
+    packLighting();
+    const bool areaChanged = before != m_areaLighting.area();
+    if (areaChanged) {
+        spdlog::debug("Scene '{}': the eye entered the area '{}': {} light(s) packed, {}", m_name, areaId(),
+                      m_lights.punctualLightCount, m_shadowLight.casts() ? "its key light casts the shadows"
+                                                                         : "no shadow");
+    }
+    return areaChanged;
 }
 
 } // namespace rv::app

@@ -383,9 +383,10 @@ Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& a
 Expected<Light> parseLight(const json& value, const Location& at) {
     Fields fields(value, at,
                   {"name", "type", "position", "direction", "target", "color", "intensity", "range", "innerConeDeg",
-                   "outerConeDeg", "castsShadows", "shadowStrength"});
+                   "outerConeDeg", "castsShadows", "shadowStrength", "area"});
     Light light;
     fields.optional("name", light.name, readString);
+    fields.optional("area", light.area, readNonEmptyString);
 
     std::string typeName;
     fields.required("type", typeName, readString);
@@ -444,6 +445,45 @@ Expected<Light> parseLight(const json& value, const Location& at) {
         return propagate(fields.error());
     }
     return light;
+}
+
+Expected<core::Aabb> parseAreaBox(const json& value, const Location& at) {
+    Fields fields(value, at, {"min", "max"});
+    glm::vec3 minimum(0.0f);
+    glm::vec3 maximum(0.0f);
+    fields.required("min", minimum, readVec3);
+    fields.required("max", maximum, readVec3);
+    fields.check(minimum.x < maximum.x && minimum.y < maximum.y && minimum.z < maximum.z, "max",
+                 "must be greater than \"min\" on every axis");
+    if (fields.failed()) {
+        return propagate(fields.error());
+    }
+    return core::Aabb::fromMinMax(minimum, maximum);
+}
+
+Expected<SceneArea> parseArea(const json& value, const Location& at) {
+    Fields fields(value, at, {"id", "boxes"});
+    SceneArea area;
+    fields.required("id", area.id, readNonEmptyString);
+    fields.required("boxes", area.boxes, [](const json& boxes, const Location& boxesAt) -> Expected<std::vector<core::Aabb>> {
+        if (!boxes.is_array() || boxes.empty()) {
+            return fail(boxesAt, "expected an array of at least one box");
+        }
+        std::vector<core::Aabb> result;
+        result.reserve(boxes.size());
+        for (std::size_t i = 0; i < boxes.size(); ++i) {
+            auto box = parseAreaBox(boxes[i], boxesAt.index(i));
+            if (!box) {
+                return propagate(box.error());
+            }
+            result.push_back(*box);
+        }
+        return result;
+    });
+    if (fields.failed()) {
+        return propagate(fields.error());
+    }
+    return area;
 }
 
 Expected<TextureSource> parseTexture(const json& value, const Location& at) {
@@ -648,7 +688,7 @@ Expected<SceneObject> parseObject(const json& value, const Location& at, std::si
 }
 
 Expected<SceneDescription> parseDocument(const json& document, const Location& root) {
-    Fields fields(document, root, {"schemaVersion", "name", "camera", "environment", "lights", "objects"});
+    Fields fields(document, root, {"schemaVersion", "name", "camera", "environment", "lights", "objects", "areas"});
     std::uint64_t version = 0;
     fields.required("schemaVersion", version, [](const json& value, const Location& at) {
         return readCount(value, at, std::numeric_limits<std::uint32_t>::max());
@@ -666,8 +706,27 @@ Expected<SceneDescription> parseDocument(const json& document, const Location& r
     fields.check(lights == nullptr || lights->is_array(), "lights", "expected an array");
     const json* objects = fields.get("objects");
     fields.check(objects == nullptr || objects->is_array(), "objects", "expected an array");
+    const json* areas = fields.get("areas");
+    fields.check(areas == nullptr || areas->is_array(), "areas", "expected an array");
     if (fields.failed()) {
         return propagate(fields.error());
+    }
+
+    const Location areasAt = root.key("areas");
+    const std::size_t areaCount = areas != nullptr ? areas->size() : 0;
+    scene.areas.reserve(areaCount);
+    std::map<std::string, std::size_t> areaIndex;
+    for (std::size_t i = 0; i < areaCount; ++i) {
+        auto area = parseArea((*areas)[i], areasAt.index(i));
+        if (!area) {
+            return propagate(area.error());
+        }
+        const auto [first, inserted] = areaIndex.emplace(area->id, i);
+        if (!inserted) {
+            return fail(areasAt.index(i).key("id"), "duplicate area id \"" + area->id + "\" (first used by " +
+                                                        areasAt.index(first->second).pointer() + ")");
+        }
+        scene.areas.push_back(std::move(*area));
     }
 
     const Location lightsAt = root.key("lights");
@@ -677,6 +736,17 @@ Expected<SceneDescription> parseDocument(const json& document, const Location& r
         auto light = parseLight((*lights)[i], lightsAt.index(i));
         if (!light) {
             return propagate(light.error());
+        }
+        // A scene with areas gives every light one of them; a scene without has none to give.
+        if (scene.areas.empty() && !light->area.empty()) {
+            return fail(lightsAt.index(i).key("area"),
+                        "names the area \"" + light->area + "\" but the scene has no \"areas\"");
+        }
+        if (!scene.areas.empty() && light->area.empty()) {
+            return fail(lightsAt.index(i), "missing required key \"area\" (the scene has \"areas\")");
+        }
+        if (!scene.areas.empty() && !areaIndex.contains(light->area)) {
+            return fail(lightsAt.index(i).key("area"), "unknown area \"" + light->area + "\"");
         }
         scene.lights.push_back(std::move(*light));
     }
@@ -723,6 +793,19 @@ std::span<const glm::mat4> SceneObject::instanceTransforms() const noexcept {
 std::string_view SceneObject::materialNameForRole(std::string_view role) const {
     const auto it = materialsByRole.find(std::string(role));
     return it != materialsByRole.end() ? std::string_view(it->second) : std::string_view(material);
+}
+
+bool SceneArea::contains(const glm::vec3& point) const noexcept {
+    return std::any_of(boxes.begin(), boxes.end(), [&](const core::Aabb& box) { return box.contains(point); });
+}
+
+std::optional<std::size_t> SceneDescription::findArea(std::string_view id) const noexcept {
+    for (std::size_t i = 0; i < areas.size(); ++i) {
+        if (areas[i].id == id) {
+            return i;
+        }
+    }
+    return std::nullopt;
 }
 
 const SceneObject* SceneDescription::findObject(std::string_view id) const noexcept {

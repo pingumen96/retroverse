@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -13,6 +14,7 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
+#include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/light.hpp>
@@ -61,7 +63,14 @@ namespace rv::scene {
 ///       "innerConeDeg": 25, "outerConeDeg": 35,    0 <= inner <= outer < 90 (inner == outer: hard edge)
 ///       "castsShadows": false,                     the first light that casts shadows is the key light: a spot
 ///                                                  or directional one is shadow-mapped, a point light casts none
-///       "shadowStrength": 1.0                      [0, 1]: share of the light its shadows take away
+///       "shadowStrength": 1.0,                     [0, 1]: share of the light its shadows take away
+///       "area": "room:snes"                        the area it lights: required in a scene with "areas", an
+///                                                  error in one without
+///     }],
+///     "areas": [{                                  optional (I4 step 3, ADR-0013 §9): parts of the scene that each
+///                                                  hold their own lights, such as a floor's rooms and its hall
+///       "id": "room:snes",                         required, non-empty, unique in the file
+///       "boxes": [{"min": [x, y, z], "max": [x, y, z]}]   required, at least one; min < max on every axis
 ///     }],
 ///     "objects": [{                                optional
 ///       "id": "shelf_main",                        required, non-empty, unique in the file
@@ -78,6 +87,11 @@ namespace rv::scene {
 ///       "castsShadows": true, "collides": true
 ///     }]
 ///   }
+///
+/// Areas: the area that holds the viewer's eye (the first whose boxes contain it, else the last one that held it) is the
+/// one whose lights the views use: the renderer packs that area's lights nearest the eye, its key light (its first
+/// light with castsShadows) shadowed, and the other areas' lights are left out (scene_areas.hpp). A scene without areas
+/// packs all its lights in list order, as it always did.
 ///
 /// "model" objects are drawn with the materials and textures of their glTF file: their "material", "materials",
 /// "textures" and "inlineMaterial" keys are ignored, with a warning that names them; "params" (builder parameters)
@@ -166,6 +180,19 @@ struct TextureSource {
     std::string procedural;
 };
 
+/// One entry of "areas": a part of the scene that holds its own lights (a room extended through its doorway passage, a
+/// floor's hall), as the boxes it spans in world space.
+struct SceneArea {
+    std::string id;
+    /// World space, meters; each with min < max on every axis.
+    std::vector<core::Aabb> boxes;
+
+    /// True when one of the boxes holds `point` (its faces included).
+    [[nodiscard]] bool contains(const glm::vec3& point) const noexcept;
+
+    bool operator==(const SceneArea&) const = default;
+};
+
 /// One entry of "objects": a procedural prefab, a primitive or a glTF model, placed once or as a grid.
 struct SceneObject {
     enum class Source : std::uint8_t { Prefab, Primitive, Model };
@@ -207,9 +234,13 @@ struct SceneDescription {
     EnvironmentSetup environment;
     std::vector<Light> lights;
     std::vector<SceneObject> objects;
+    /// Empty: every light lights the whole scene. Otherwise every light names one of them (Light::area).
+    std::vector<SceneArea> areas;
 
     /// Object with the given id, or nullptr.
     [[nodiscard]] const SceneObject* findObject(std::string_view id) const noexcept;
+    /// The index of the area `id` in `areas`, or nothing.
+    [[nodiscard]] std::optional<std::size_t> findArea(std::string_view id) const noexcept;
 };
 
 /// Validates and converts a parsed document. `context` prefixes every error location (usually the file name).
