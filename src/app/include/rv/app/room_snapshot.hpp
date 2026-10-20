@@ -60,6 +60,9 @@ struct RoomSnapshotResult {
     std::optional<std::filesystem::path> mediaRoot;
     /// The system's full name (its <fullname>, else its name): the generated labels' system line.
     std::string systemFullName;
+    /// The system's ES-DE platform tags (CatalogSystem::platforms; set by the worker): world::classify()'s fallback
+    /// for a system systems.json does not name, so that the app classifies a custom system as the CLI does.
+    std::vector<std::string> platformTags;
     /// The aliases of the requested placed games the snapshot lacks, in GameId order (world::UpdateInput::aliases).
     std::vector<world::GameAlias> aliases;
     /// An alias could not be read: the update then runs without aliases (a game gone keeps its slot, ADR-0010 §10).

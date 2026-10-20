@@ -871,7 +871,9 @@ TEST_CASE("app/world_build: a building of two rooms: the snes room updated and s
 
 TEST_CASE("app/world_build: the app and retroverse-cli's catalog commands write one plan for one catalog",
           "[app][world_build]") {
-    // The app knows no platform tags, the CLI the catalog's: a plan either writes the other leaves as it is.
+    // The app and the CLI classify by the catalog's platform tags; a system with a row of its own hashes alike
+    // whatever tags its caller knows (here the app's snapshot carries none): a plan either writes the other leaves as
+    // it is.
     const ImportedFixture imported("world-build-cli", true, "esde/snes-room");
     const rv::app::WorldBuildInput input = inputOf(imported, snapshotOf(imported));
     const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
@@ -896,6 +898,63 @@ TEST_CASE("app/world_build: the app and retroverse-cli's catalog commands write 
     const CliRun generated = runCli(imported, {"worldplan", "generate"});
     INFO(generated.err);
     REQUIRE(generated.code == rv::cli::ExitCode::Ok);
+    CHECK(rv::core::readTextFile(planFile).value() == text);
+    const WorldBuild second = rv::app::buildWorld(input, rv::core::JobContext{});
+    CHECK(second.outcome == WorldOutcome::Unchanged);
+    CHECK_FALSE(second.written);
+}
+
+TEST_CASE("app/world_build: a custom system is classified by the catalog's platform tags, as the CLI classifies it",
+          "[app][world_build]") {
+    // I4 step 2: the building fixture's pocketlab, a system systems.json does not name, with gb's platform tag. The
+    // catalog worker hands the room's snapshot the catalog's tags (CatalogSystem::platforms): the first plan, the
+    // scene, the room's items and the preview classify it as gb's row (the handheld cartridge, gb's sign), as worldplan
+    // does.
+    const ImportedFixture imported("world-build-custom", true, "esde/building");
+    const rv::catalog::SystemName pocketlab = rv::catalog::SystemName::parse("pocketlab").value();
+    RoomSnapshotResult snapshot = snapshotOf(imported, {}, pocketlab);
+    REQUIRE_FALSE(snapshot.error.has_value());
+    {
+        auto database = imported.openDatabase();
+        auto query = rv::catalog_db::SqliteCatalogQuery::open(database.openReader().value()).value();
+        const auto summaries = query->systems();
+        REQUIRE(summaries.has_value());
+        for (const rv::catalog_db::SystemSummary& summary : *summaries) {
+            if (summary.system.name == pocketlab) {
+                snapshot.platformTags = summary.system.platforms;
+            }
+        }
+    }
+    CHECK(snapshot.platformTags == std::vector<std::string>{"gb"});
+    const rv::app::WorldBuildInput input = inputOf(imported, snapshot);
+    const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
+    INFO(first.reason);
+    REQUIRE(first.outcome == WorldOutcome::Generated);
+    REQUIRE(first.plan.has_value());
+    REQUIRE(first.plan->rooms.size() == 1);
+    CHECK(first.plan->rooms.front().mediaFamily == "cartridge_handheld");
+    CHECK(first.plan->rooms.front().floor == "handheld");
+    REQUIRE(first.sceneData.has_value());
+    CHECK(first.sceneData->platform.signText == "POCKET GAMES");
+    const auto items =
+        rv::app::readRoomItems(rv::app::roomItemsFile(imported.paths.cacheDir(), input.library, pocketlab));
+    REQUIRE(items.has_value());
+    CHECK(items->platforms == std::vector<std::string>{"gb"});
+
+    // The next start's preview, before the snapshot: the room's items carry the tags.
+    const auto stored = rv::world::readStoredPlan(planFileOf(imported));
+    REQUIRE(stored.has_value());
+    const WorldBuild preview = rv::app::previewWorld(worldPathsOf(imported), input.library, pocketlab, *stored);
+    REQUIRE(preview.sceneData.has_value());
+    CHECK(preview.sceneData->platform.signText == "POCKET GAMES");
+
+    // The CLI's update of that room finds it up to date (one classification, one inputDigest), its scene alike.
+    const fs::path planFile = planFileOf(imported);
+    const std::string text = rv::core::readTextFile(planFile).value();
+    const CliRun updated = runCli(imported, {"worldplan", "update", "--system", "pocketlab"});
+    INFO(updated.err);
+    CHECK(updated.code == rv::cli::ExitCode::Ok);
+    CHECK(updated.out.find("is up to date") != std::string::npos);
     CHECK(rv::core::readTextFile(planFile).value() == text);
     const WorldBuild second = rv::app::buildWorld(input, rv::core::JobContext{});
     CHECK(second.outcome == WorldOutcome::Unchanged);

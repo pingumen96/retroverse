@@ -160,7 +160,7 @@ Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
         const Classification classification = classify(system, platformTags, input.systems, input.building);
         // What decided the system's place (ADR-0013 §2, §5): its own row, or the row its platform tags matched, or the
         // fallback, the tags then in the row. A system with a row of its own hashes alike whatever tags its caller
-        // knows, so that the app (none) and the CLI (the catalog's) write one plan for one catalog.
+        // knows (a selection file's none, the app's and the CLI's the catalog's), so that one catalog gives one plan.
         Json row{{"row", systemEntryToJson(classification.entry)}, {"source", toString(classification.source)}};
         if (classification.source == ClassificationSource::PlatformTag) {
             row["matched"] = classification.matched.str();

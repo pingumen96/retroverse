@@ -103,14 +103,17 @@ struct SceneData {
 };
 
 /// Reads the scene data of `room` of `plan` from the asset root: the room's template (by its templateId), the
-/// platform manifest of its system, the room's media family, the families and every prefab scenePrefabRefs() names;
-/// the platform's theme pack (builtInThemeMaterials(), logged, when it does not load); `lighting`, else the default
+/// platform of its first system (resolvePlatform() with `platformTags`, the system's ES-DE platform tags: a system
+/// systems.json does not name takes the sign and plastics of the row its tags match, as when its room was generated;
+/// none, the fallback's), the room's media family, the families and every prefab scenePrefabRefs() names; the
+/// platform's theme pack (builtInThemeMaterials(), logged, when it does not load); `lighting`, else the default
 /// lighting profile (kDefaultLightingProfile; the built-in one, logged, when it does not load). Errors: NotFound for a
 /// room the plan lacks; those of the readers; a template whose version is not the room's (ValidationFailed); a media
 /// family the registry lacks (NotFound).
 [[nodiscard]] Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan,
                                                 const RoomId& room,
-                                                const std::optional<LightingProfile>& lighting = std::nullopt);
+                                                const std::optional<LightingProfile>& lighting = std::nullopt,
+                                                std::span<const std::string> platformTags = {});
 
 /// A dressed span the scene leaves bare, and why.
 struct UndressedSpan {

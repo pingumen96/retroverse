@@ -321,8 +321,8 @@ TEST_CASE("cli/worldplan: a stored building is regenerated whole; --system and -
 TEST_CASE("cli/worldplan: the building fixture's whole building, then its additions", "[cli][worldplan]") {
     // I4 step 2 (tests/fixtures/esde/building/README.md): every system of the catalog gets its console room on its
     // floor with its media family (shared rooms and the arcade room are step 4's), kodi is excluded, the custom system
-    // takes gb's row by its platform tag; then additions/ brings titles to three rooms, which an update places without
-    // moving anything, and a new system, which the update cannot place yet (step 6a).
+    // takes gb's row by its platform tag (its scene too); then additions/ brings titles to three rooms, which an update
+    // places without moving anything, and a new system, which the update cannot place yet (step 6a).
     auto fixture = rv::test::Fixture::materialize("esde/building");
     INFO((fixture ? "materialized" : fixture.error().toString()));
     REQUIRE(fixture.has_value());
@@ -390,6 +390,24 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     const RunResult checked = session.run({"worldplan", "check", rv::core::pathToUtf8(session.files.plan)});
     INFO(checked.out);
     CHECK(checked.code == ExitCode::Ok);
+
+    // The custom system's scene: gb's row by the catalog's platform tag, as its generation classified it (its sign,
+    // not the fallback's).
+    const std::filesystem::path pocketScene = session.dir.file("pocketlab.scene.json");
+    const RunResult scene =
+        session.run({"worldplan", "show", "--scene", rv::core::pathToUtf8(pocketScene), "--room", "room:pocketlab"});
+    INFO(scene.err);
+    REQUIRE(scene.code == ExitCode::Ok);
+    const nlohmann::json pocketObjects = nlohmann::json::parse(readText(pocketScene))["objects"];
+    std::vector<std::string> signs;
+    for (const nlohmann::json& object : pocketObjects) {
+        const auto textures = object.find("textures");
+        if (textures != object.end() && textures->contains("picture") &&
+            (*textures)["picture"].value("pattern", "") == "sign") {
+            signs.push_back((*textures)["picture"].value("title", ""));
+        }
+    }
+    CHECK(signs == std::vector<std::string>{"POCKET GAMES"});
 
     // additions/: five titles more for snes and psx, 24 for pokemini (past 30), and the new megadrive.
     REQUIRE(fixture->applyOverlay("additions"));
