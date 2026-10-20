@@ -128,7 +128,8 @@ const FloorSpec* BuildingData::floorFor(SystemKind kind, std::uint32_t generatio
         if (std::find(spec.kinds.begin(), spec.kinds.end(), kind) == spec.kinds.end()) {
             continue;
         }
-        if (spec.generations.empty() ||
+        // A floor's generations hold only for the kinds that have generations, as the reader counts them.
+        if (spec.generations.empty() || !hasGenerations(kind) ||
             std::find(spec.generations.begin(), spec.generations.end(), generation) != spec.generations.end()) {
             return &spec;
         }

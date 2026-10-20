@@ -287,6 +287,31 @@ TEST_CASE("world/building: the readers refuse malformed data", "[world][building
     CHECK_THAT(systemsRefusal(head + badSign + "]}").message, ContainsSubstring("/systems/0/sign"));
 }
 
+TEST_CASE("world/building: a floor's generations bind only the kinds that have them", "[world][building]") {
+    // A floor of the first home generations that also holds "other": the reader counts every "other" system there, and
+    // floorFor() and classify() find it there too (a system the reader accepts never stays without a floor).
+    const std::string text = R"({"schemaVersion": 1, "floors": [{"id": "ground", "kinds": ["arcade"]},
+        {"id": "gen2", "kinds": ["home", "other"], "generations": [1, 2]},
+        {"id": "home", "kinds": ["home"], "generations": [3, 4, 5, 6, 7, 8, 9]},
+        {"id": "pocket", "kinds": ["handheld"]}, {"id": "pc", "kinds": ["computer"]}],
+        "layout": {"hallWidthMm": 3000, "lobbyWidthMm": 6000, "rowStartXMm": 3000, "wallAllowanceMm": 150,
+                   "maxRoomsPerRow": 12}})";
+    auto data = rv::world::parseBuildingData(text, "building.json");
+    REQUIRE(data.has_value());
+    CHECK(data->floorFor(SystemKind::Other, 0)->id == "gen2");
+    CHECK(data->floorFor(SystemKind::Home, 2)->id == "gen2");
+    CHECK(data->floorFor(SystemKind::Home, 3)->id == "home");
+    CHECK(data->floorFor(SystemKind::Handheld, 4)->id == "pocket");
+    CHECK(data->floorFor(SystemKind::Computer, 0)->id == "pc");
+    const Classification pico = rv::world::classify(systemName("pico8"), {}, systems(), *data);
+    CHECK(pico.kind() == SystemKind::Other);
+    CHECK(pico.floor == "gen2");
+    CHECK(pico.hasRoom());
+    const Classification mystery = rv::world::classify(systemName("mystery"), {}, systems(), *data);
+    CHECK(mystery.source == ClassificationSource::Fallback);
+    CHECK(mystery.floor == "gen2");
+}
+
 TEST_CASE("world/building: rooms enter the shorter row at its east end, north on a tie", "[world][building]") {
     const rv::world::BuildingLayout& layout = building().layout;
     std::vector<Room> rooms;

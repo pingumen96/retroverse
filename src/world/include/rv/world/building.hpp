@@ -8,7 +8,8 @@
 //    "layout": {"hallWidthMm": 3000, "lobbyWidthMm": 6000, "rowStartXMm": 3000, "wallAllowanceMm": 150,
 //               "maxRoomsPerRow": 12}}
 // The floors in the elevator's order (a floor's order is its index; the first is the ground floor, kGroundFloor), each
-// holding the systems of its kinds, and of those generations only when "generations" (optional, 1 to 9) is given. The
+// holding the systems of its kinds, and of those generations only when "generations" (optional, 1 to 9) is given
+// (generations bind only the kinds that have them: a floor of ["home", "other"] with [1, 2] holds every "other"). The
 // reader requires every kind but "excluded" to land on exactly one floor at every generation from 1 to 9. Layout:
 // the hall's and the ground floor's lobby's widths (even), the x where the rooms' rows start east of the hall's west
 // end (the elevator's landing), the allowance a room's walls add around its interior on the floor, and the rooms a row
@@ -96,7 +97,8 @@ inline constexpr std::uint32_t kMaxGeneration = 9;
 struct FloorSpec {
     std::string id;
     std::vector<SystemKind> kinds;
-    /// The generations it holds of its kinds; empty: every generation.
+    /// The generations it holds of its kinds that have generations (home, handheld); empty: every generation. Its
+    /// other kinds it holds whatever this says.
     std::vector<std::uint32_t> generations;
 
     bool operator==(const FloorSpec&) const = default;
