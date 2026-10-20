@@ -56,7 +56,9 @@ Expected<PlatformManifest> parsePlatformManifest(std::string_view text, std::str
     manifest.cartridgePlastic = plastic.checkedString("cartridge", isSrgbHexColor, kColourForm);
     manifest.consolePlastic = plastic.checkedString("console", isSrgbHexColor, kColourForm);
     manifest.accentPlastic = plastic.checkedString("accent", isSrgbHexColor, kColourForm);
-    manifest.console = reader.prefab("console");
+    if (!document.failed() && !reader.value("console").is_null()) {
+        manifest.console = reader.prefab("console");
+    }
     const ObjectReader sign = reader.object("sign", {"text"});
     manifest.signText =
         sign.checkedString("text", isSignText, "1 to 32 printable ASCII characters without a space at either end");

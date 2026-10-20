@@ -14,10 +14,12 @@ add_library(rv_world STATIC
     src/collection_layout.cpp
     src/data_reader.cpp
     src/fixture_layout.cpp
+    src/building.cpp
     src/generation.cpp
     src/ids.cpp
     src/incremental.cpp
     src/layout_score.cpp
+    src/lift.cpp
     src/media_family.cpp
     src/nav_grid.cpp
     src/overrides.cpp

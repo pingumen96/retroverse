@@ -1,6 +1,7 @@
 #include <rv/world/world_plan.hpp>
 
 #include <algorithm>
+#include <tuple>
 
 namespace rv::world {
 
@@ -22,6 +23,8 @@ std::optional<GeneratorVersion> GeneratorVersion::parse(std::string_view text) n
 }
 
 void sortPlan(WorldPlan& plan) {
+    std::sort(plan.floors.begin(), plan.floors.end(),
+              [](const Floor& a, const Floor& b) { return std::tie(a.order, a.id) < std::tie(b.order, b.id); });
     std::sort(plan.rooms.begin(), plan.rooms.end(), [](const Room& a, const Room& b) { return a.id < b.id; });
     for (Fixture& fixture : plan.fixtures) {
         std::sort(fixture.levels.begin(), fixture.levels.end());

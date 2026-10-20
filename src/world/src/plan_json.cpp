@@ -1,5 +1,8 @@
 #include <rv/world/plan_json.hpp>
 
+#include <algorithm>
+#include <initializer_list>
+#include <set>
 #include <tuple>
 #include <utility>
 
@@ -24,17 +27,44 @@ constexpr std::int64_t kMaxVersion = 999'999;
 constexpr std::int64_t kMaxPlacementYawCdeg = 18'000;
 constexpr std::int64_t kMaxInsetMm = 1'000;
 constexpr std::int64_t kMaxGrowthSteps = 1'000;
+constexpr std::int64_t kMaxFloorOrder = 999;
 
 Json prefabJson(const PrefabRef& prefab) {
     return Json{{"kind", prefab.kind}, {"manifest", prefab.manifest}};
 }
 
 Json roomJson(const Room& room) {
-    return Json{
-        {"id", room.id.toString()}, {"template", room.templateId},     {"templateVersion", room.templateVersion},
-        {"minXMm", room.minXMm},    {"maxXMm", room.maxXMm},           {"minZMm", room.minZMm},
-        {"maxZMm", room.maxZMm},    {"heightMm", room.heightMm},       {"growthSteps", room.growthSteps},
-        {"seed", room.seed},        {"mediaFamily", room.mediaFamily}, {"themePack", room.themePack}};
+    Json sections = Json::array();
+    for (const catalog::SystemName& system : room.sections) {
+        sections.push_back(system.str());
+    }
+    Json json{{"id", room.id.toString()},
+              {"kind", toString(room.kind)},
+              {"floor", room.floor},
+              {"sections", std::move(sections)},
+              {"placement", Json{{"xMm", room.placement.xMm},
+                                 {"zMm", room.placement.zMm},
+                                 {"yawHalfTurns", room.placement.yawHalfTurns}}},
+              {"generatorVersion", room.generatorVersion.toString()},
+              {"template", room.templateId},
+              {"templateVersion", room.templateVersion},
+              {"minXMm", room.minXMm},
+              {"maxXMm", room.maxXMm},
+              {"minZMm", room.minZMm},
+              {"maxZMm", room.maxZMm},
+              {"heightMm", room.heightMm},
+              {"growthSteps", room.growthSteps},
+              {"seed", room.seed},
+              {"mediaFamily", room.mediaFamily},
+              {"themePack", room.themePack}};
+    if (!room.expands.empty()) {
+        json["expands"] = room.expands.toString();
+    }
+    return json;
+}
+
+Json floorJson(const Floor& floor) {
+    return Json{{"id", floor.id}, {"order", floor.order}};
 }
 
 Json fixtureJson(const Fixture& fixture) {
@@ -84,9 +114,9 @@ Json lightJson(const PlanLight& light) {
 UnplacedGame readUnplaced(const ObjectReader& reader) {
     UnplacedGame unplaced;
     unplaced.game = reader.parsed<catalog::GameId>("game", catalog::GameId::parse, "a GameId");
-    unplaced.room = reader.parsed<RoomId>("room", RoomId::parse, "a room id (room:<system>)");
-    unplaced.reason = reader.enumeration<UnplacedReason>("reason", parseUnplacedReason,
-                                                         "one of duplicate-title, no-cover, unavailable, capacity");
+    unplaced.room = reader.parsed<RoomId>("room", RoomId::parse, "a room id (room:<system>, area:...)");
+    unplaced.reason = reader.enumeration<UnplacedReason>(
+        "reason", parseUnplacedReason, "one of duplicate-title, no-cover, unavailable, capacity, room-kept");
     if (reader.document().failed()) {
         return unplaced;
     }
@@ -131,6 +161,10 @@ std::vector<UnplacedGame> readUnplacedList(const ObjectReader& reader, std::stri
 namespace {
 
 Json documentJson(const WorldPlan& plan) {
+    Json floors = Json::array();
+    for (const Floor& floor : plan.floors) {
+        floors.push_back(floorJson(floor));
+    }
     Json rooms = Json::array();
     for (const Room& room : plan.rooms) {
         rooms.push_back(roomJson(room));
@@ -164,6 +198,7 @@ Json documentJson(const WorldPlan& plan) {
                 {"seed", plan.seed},
                 {"preset", plan.preset},
                 {"inputDigest", plan.inputDigest},
+                {"floors", std::move(floors)},
                 {"rooms", std::move(rooms)},
                 {"fixtures", std::move(fixtures)},
                 {"placements", std::move(placements)},
@@ -172,9 +207,77 @@ Json documentJson(const WorldPlan& plan) {
                 {"unplaced", std::move(unplaced)}};
 }
 
-Room readRoom(const ObjectReader& reader) {
+/// The keys of a room of each schema.
+const std::initializer_list<std::string_view> kRoomKeysV1{"growthSteps", "heightMm", "id", "maxXMm", "maxZMm",
+                                                          "mediaFamily", "minXMm", "minZMm", "seed", "template",
+                                                          "templateVersion", "themePack"};
+const std::initializer_list<std::string_view> kRoomKeysV2{
+    "expands", "floor",    "generatorVersion", "growthSteps", "heightMm",    "id",       "kind",
+    "maxXMm",  "maxZMm",   "mediaFamily",      "minXMm",      "minZMm",      "placement", "sections",
+    "seed",    "template", "templateVersion",  "themePack"};
+
+/// Schema 2's own fields of a room, and their agreement with its id (the kind of the id's form, a console room's one
+/// section its system, a shared room's floor, an expansion's head).
+void readBuildingFields(const ObjectReader& reader, Room& room) {
+    DocumentReader& document = reader.document();
+    room.kind = reader.enumeration<RoomKind>("kind", parseRoomKind, "one of console, shared, arcade");
+    room.floor = reader.dataId("floor");
+    const Json& sections = reader.array("sections");
+    detail::forEachElement(sections, reader.pointer("sections"), [&](const Json& element, const std::string& pointer) {
+        const std::string text = detail::readString(document, element, pointer);
+        if (document.failed()) {
+            return;
+        }
+        auto system = catalog::SystemName::parse(text);
+        if (!system) {
+            document.fail(pointer, "expected an ES-DE system name, found \"" + text + "\"");
+            return;
+        }
+        if (std::find(room.sections.begin(), room.sections.end(), *system) != room.sections.end()) {
+            document.fail(pointer, "appears twice");
+            return;
+        }
+        room.sections.push_back(std::move(*system));
+    });
+    if (!document.failed() && room.sections.empty()) {
+        document.fail(reader.pointer("sections"), "names no system");
+    }
+    const ObjectReader placement = reader.object("placement", {"xMm", "yawHalfTurns", "zMm"});
+    room.placement.xMm = placement.integer("xMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    room.placement.zMm = placement.integer("zMm", -kMaxCoordinateMm, kMaxCoordinateMm);
+    room.placement.yawHalfTurns = static_cast<std::uint32_t>(placement.integer("yawHalfTurns", 0, 1));
+    room.generatorVersion =
+        reader.enumeration<GeneratorVersion>("generatorVersion", GeneratorVersion::parse, "a version <major>.<minor>");
+    if (reader.has("expands")) {
+        room.expands = reader.parsed<RoomId>("expands", RoomId::parse, "a room id");
+    }
+    if (document.failed()) {
+        return;
+    }
+    const RoomIdKind form = room.kind == RoomKind::Console  ? RoomIdKind::System
+                            : room.kind == RoomKind::Shared ? RoomIdKind::Shared
+                                                            : RoomIdKind::Arcade;
+    if (room.id.kind() != form) {
+        document.fail(reader.pointer("kind"),
+                      "a " + std::string(toString(room.kind)) + " room's id is not " + room.id.toString());
+    } else if (room.kind == RoomKind::Console &&
+               (room.sections.size() != 1 || room.sections.front() != room.id.system())) {
+        document.fail(reader.pointer("sections"), "a console room holds exactly its own system");
+    } else if (room.kind == RoomKind::Shared && room.id.floor() != room.floor) {
+        document.fail(reader.pointer("floor"), "a shared room stands on the floor its id names");
+    } else if (room.id.isExpansion() != !room.expands.empty() ||
+               (!room.expands.empty() && room.expands != room.id.head())) {
+        document.fail(reader.pointer("expands"), "an expansion, and only one, names the head of its chain");
+    }
+}
+
+Room readRoom(const ObjectReader& reader, std::int64_t schema) {
     Room room;
-    room.id = reader.parsed<RoomId>("id", RoomId::parse, "a room id (room:<system>)");
+    room.id = reader.parsed<RoomId>("id", RoomId::parse, "a room id (room:<system>, area:...)");
+    if (schema == 1 && !reader.document().failed() &&
+        (room.id.kind() != RoomIdKind::System || room.id.isExpansion())) {
+        reader.document().fail(reader.pointer("id"), "a schema-1 room is a system's room, room:<system>");
+    }
     room.templateId = reader.dataId("template");
     room.templateVersion = static_cast<std::uint32_t>(reader.integer("templateVersion", 1, kMaxVersion));
     room.minXMm = reader.integer("minXMm", -kMaxCoordinateMm, kMaxCoordinateMm);
@@ -191,6 +294,9 @@ Room readRoom(const ObjectReader& reader) {
     }
     if (!reader.document().failed() && room.minZMm >= room.maxZMm) {
         reader.document().fail(reader.pointer("maxZMm"), "must be greater than minZMm");
+    }
+    if (schema >= 2 && !reader.document().failed()) {
+        readBuildingFields(reader, room);
     }
     return room;
 }
@@ -285,14 +391,19 @@ std::vector<T> readList(const ObjectReader& document, std::string_view key,
     return items;
 }
 
-/// Reads the plan from its document, recording the first problem in `document`.
-WorldPlan readDocument(DocumentReader& document, const Json& value) {
-    const ObjectReader reader(document, value, "",
-                              {"catalogSortKeyVersion", "dressing", "fixtures", "generatorVersion", "inputDigest",
-                               "library", "lights", "placements", "preset", "randomAlgorithm", "rooms", "schemaVersion",
-                               "seed", "titleKeyRule", "unplaced"});
+/// Reads the plan from its document, of schema `schema` (1 or 2), recording the first problem in `document`.
+WorldPlan readDocument(DocumentReader& document, const Json& value, std::int64_t schema) {
+    const ObjectReader reader =
+        schema == 1 ? ObjectReader(document, value, "",
+                                   {"catalogSortKeyVersion", "dressing", "fixtures", "generatorVersion", "inputDigest",
+                                    "library", "lights", "placements", "preset", "randomAlgorithm", "rooms",
+                                    "schemaVersion", "seed", "titleKeyRule", "unplaced"})
+                    : ObjectReader(document, value, "",
+                                   {"catalogSortKeyVersion", "dressing", "fixtures", "floors", "generatorVersion",
+                                    "inputDigest", "library", "lights", "placements", "preset", "randomAlgorithm",
+                                    "rooms", "schemaVersion", "seed", "titleKeyRule", "unplaced"});
     WorldPlan plan;
-    plan.schemaVersion = reader.integer("schemaVersion", kPlanSchemaVersion, kPlanSchemaVersion);
+    plan.schemaVersion = reader.integer("schemaVersion", schema, schema);
     plan.generatorVersion =
         reader.enumeration<GeneratorVersion>("generatorVersion", GeneratorVersion::parse, "a version <major>.<minor>");
     plan.randomAlgorithm = reader.checkedString("randomAlgorithm", isValidRuleName, "a rule name (<name>/<version>)");
@@ -303,12 +414,37 @@ WorldPlan readDocument(DocumentReader& document, const Json& value) {
     plan.preset = reader.dataId("preset");
     plan.inputDigest = reader.checkedString("inputDigest", isSha256Hex, "a SHA-256 in lowercase hexadecimal");
 
-    plan.rooms = readList<Room>(reader, "rooms",
-                                {"growthSteps", "heightMm", "id", "maxXMm", "maxZMm", "mediaFamily", "minXMm", "minZMm",
-                                 "seed", "template", "templateVersion", "themePack"},
-                                readRoom);
+    if (schema >= 2) {
+        plan.floors = readList<Floor>(reader, "floors", {"id", "order"}, [](const ObjectReader& floor) {
+            Floor read;
+            read.id = floor.dataId("id");
+            read.order = static_cast<std::uint32_t>(floor.integer("order", 0, kMaxFloorOrder));
+            return read;
+        });
+        detail::requireStrictOrder(
+            document, plan.floors, "/floors", [](const Floor& floor) { return std::tie(floor.order, floor.id); },
+            "floors are sorted by order, then id");
+        std::set<std::string> floorIds;
+        for (std::size_t i = 0; i < plan.floors.size() && !document.failed(); ++i) {
+            if (!floorIds.insert(plan.floors[i].id).second) {
+                document.fail(detail::pointerChild(detail::pointerChild("/floors", i), "id"), "appears twice");
+            }
+        }
+    }
+    plan.rooms = readList<Room>(reader, "rooms", schema == 1 ? kRoomKeysV1 : kRoomKeysV2,
+                                [schema](const ObjectReader& room) { return readRoom(room, schema); });
     detail::requireStrictOrder(
         document, plan.rooms, "/rooms", [](const Room& room) { return std::tie(room.id); }, "rooms are sorted by id");
+    if (schema >= 2 && !document.failed() && !plan.rooms.empty()) {
+        GeneratorVersion highest = plan.rooms.front().generatorVersion;
+        for (const Room& room : plan.rooms) {
+            highest = std::max(highest, room.generatorVersion);
+        }
+        if (plan.generatorVersion != highest) {
+            document.fail("/generatorVersion",
+                          "the plan's generator version is the highest of its rooms', " + highest.toString());
+        }
+    }
     plan.fixtures = readList<Fixture>(
         reader, "fixtures",
         {"depthMm", "heightMm", "id", "levels", "prefab", "role", "widthMm", "xMm", "yMm", "yawCdeg", "zMm"},
@@ -333,12 +469,26 @@ WorldPlan readDocument(DocumentReader& document, const Json& value) {
         document, plan.lights, "/lights", [](const PlanLight& light) { return std::tie(light.id); },
         "lights are sorted by id");
     plan.unplaced = detail::readUnplacedList(reader, "unplaced");
+    if (schema == 1) {
+        for (std::size_t i = 0; i < plan.unplaced.size() && !document.failed(); ++i) {
+            if (plan.unplaced[i].reason == UnplacedReason::RoomKept) {
+                document.fail(detail::pointerChild(detail::pointerChild("/unplaced", i), "reason"),
+                              "schema 1 has no reason room-kept");
+            }
+        }
+    }
     return plan;
 }
 
 /// The plan's canonical document and text. The writer checks what it wrote with the reader, so that a plan it writes
-/// is always one it reads back.
+/// is always one it reads back. Only schema 2 is written.
 Expected<std::pair<Json, std::string>> canonicalPlan(const WorldPlan& plan) {
+    if (plan.schemaVersion != kPlanSchemaVersion) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "only schema " + std::to_string(kPlanSchemaVersion) + " is written; a plan of schema " +
+                             std::to_string(plan.schemaVersion) + " is lifted first (lift.hpp)",
+                         "/schemaVersion");
+    }
     WorldPlan sorted = plan;
     sortPlan(sorted);
     Json document = documentJson(sorted);
@@ -347,7 +497,7 @@ Expected<std::pair<Json, std::string>> canonicalPlan(const WorldPlan& plan) {
         return propagate(text.error());
     }
     DocumentReader reader(*text, "world plan");
-    (void)readDocument(reader, document);
+    (void)readDocument(reader, document, kPlanSchemaVersion);
     if (reader.failed()) {
         Error error = reader.error();
         error.code = ErrorCode::InvalidArgument;
@@ -392,23 +542,76 @@ Expected<WorldPlan> readPlan(std::string_view text, std::string_view context) {
         return propagate(value.error());
     }
     DocumentReader document(text, std::string(context));
-    // The schema first: a newer plan is reported as such, whatever else it holds.
+    // The schema first: a newer plan is reported as such, whatever else it holds; an older one is read by its own
+    // keys.
+    std::int64_t schema = kPlanSchemaVersion;
     if (value->is_object()) {
         const auto found = value->find("schemaVersion");
-        if (found != value->end() && found->is_number_unsigned() &&
-            found->get<std::uint64_t>() > static_cast<std::uint64_t>(kPlanSchemaVersion)) {
-            document.fail("/schemaVersion",
-                          "schema " + found->dump() + " is newer than this build reads (" +
-                              std::to_string(kPlanSchemaVersion) + "): the plan was written by a newer Retroverse",
-                          ErrorCode::Unsupported);
-            return propagate(document.error());
+        if (found != value->end() && found->is_number_unsigned()) {
+            const std::uint64_t written = found->get<std::uint64_t>();
+            if (written > static_cast<std::uint64_t>(kPlanSchemaVersion)) {
+                document.fail("/schemaVersion",
+                              "schema " + found->dump() + " is newer than this build reads (" +
+                                  std::to_string(kPlanSchemaVersion) + "): the plan was written by a newer Retroverse",
+                              ErrorCode::Unsupported);
+                return propagate(document.error());
+            }
+            if (written >= static_cast<std::uint64_t>(kOldestPlanSchemaVersion)) {
+                schema = static_cast<std::int64_t>(written);
+            }
         }
     }
-    WorldPlan plan = readDocument(document, *value);
+    WorldPlan plan = readDocument(document, *value, schema);
     if (document.failed()) {
         return propagate(document.error());
     }
     return plan;
+}
+
+Expected<std::string> roomContentDigest(const WorldPlan& plan, const RoomId& room) {
+    WorldPlan sorted = plan;
+    sortPlan(sorted);
+    const auto found = std::find_if(sorted.rooms.begin(), sorted.rooms.end(),
+                                    [&](const Room& candidate) { return candidate.id == room; });
+    if (found == sorted.rooms.end()) {
+        return makeError(ErrorCode::NotFound, "the plan has no such room", room.toString());
+    }
+    Json fixtures = Json::array();
+    for (const Fixture& fixture : sorted.fixtures) {
+        if (fixture.id.room() == room) {
+            fixtures.push_back(fixtureJson(fixture));
+        }
+    }
+    Json placements = Json::array();
+    for (const Placement& placement : sorted.placements) {
+        if (placement.slot.fixture().room() == room) {
+            placements.push_back(placementJson(placement));
+        }
+    }
+    Json dressing = Json::array();
+    for (const DressedLevel& dressed : sorted.dressing) {
+        if (dressed.level.fixture().room() == room) {
+            dressing.push_back(dressingJson(dressed));
+        }
+    }
+    Json lights = Json::array();
+    for (const PlanLight& light : sorted.lights) {
+        if (light.id.room() == room) {
+            lights.push_back(lightJson(light));
+        }
+    }
+    Json unplaced = Json::array();
+    for (const UnplacedGame& game : sorted.unplaced) {
+        if (game.room == room) {
+            unplaced.push_back(detail::unplacedJson(game));
+        }
+    }
+    return core::canonicalJsonDigest(Json{{"room", roomJson(*found)},
+                                          {"fixtures", std::move(fixtures)},
+                                          {"placements", std::move(placements)},
+                                          {"dressing", std::move(dressing)},
+                                          {"lights", std::move(lights)},
+                                          {"unplaced", std::move(unplaced)}});
 }
 
 } // namespace rv::world

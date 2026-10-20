@@ -118,6 +118,12 @@ world::Room roomOf(const world::RoomTemplate& roomTemplate, std::uint32_t growth
     room.seed = 42;
     room.mediaFamily = "cartridge_home_16bit";
     room.themePack = "classic_16bit_warm";
+    // Schema 2's fields (I4 step 1): the console room of snes on gen4, at the north row's first position.
+    room.kind = world::RoomKind::Console;
+    room.floor = "gen4";
+    room.sections = {room.id.system()};
+    room.generatorVersion = {1, 0};
+    room.placement = world::RoomPlacement{3000 + 150 - interior.minXMm, -1500 - 150 - interior.maxZMm, 0};
     return room;
 }
 
@@ -131,6 +137,7 @@ world::WorldPlan emptyPlan() {
     plan.seed = 7;
     plan.preset = "retro_museum_cozy";
     plan.inputDigest = std::string(64, 'a');
+    plan.floors = {{"ground", 0}, {"gen4", 3}};
     return plan;
 }
 

@@ -843,7 +843,7 @@ TEST_CASE("world/update: pins are kept, orphans reported, a change that would mo
     CHECK(updateRoom(full, more, kWorldSeed).plan.rooms.front().growthSteps == 1);
 }
 
-TEST_CASE("world/update: another seed, preset, template or generator major needs an explicit regeneration",
+TEST_CASE("world/update: another seed, preset or generator major needs an explicit regeneration",
           "[world][update]") {
     const RoomSelection selection = makeSelection(57, kSelectionSeed);
     const WorldPlan plan = generateSelection(selection, kWorldSeed).plan;
@@ -869,11 +869,9 @@ TEST_CASE("world/update: another seed, preset, template or generator major needs
     refused(*rv::world::update(input, snesData()), "preset");
     input.config.preset = std::string(rv::world::kDefaultPreset);
 
-    rv::world::WorldData otherTemplate = snesData();
-    otherTemplate.roomTemplate.version += 1;
-    refused(*rv::world::update(input, otherTemplate), "template");
-
+    // The world-level generator major (the plan's, the highest of its rooms').
     input.previous.generatorVersion = {0, 9};
+    input.previous.rooms.front().generatorVersion = {0, 9};
     refused(*rv::world::update(input, snesData()), "generator", input.previous);
 
     // A plan of a newer generator or schema is refused outright, as are a plan of another library or room.
@@ -904,16 +902,69 @@ TEST_CASE("world/update: another seed, preset, template or generator major needs
         }
     }
     CHECK(rv::world::update(input, snesData()).error().code == rv::ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("world/update: a room of another template version or prefab levels is kept, its new games room-kept",
+          "[world][update]") {
+    // ADR-0013 §5: compatibility per room. The room's contents stay as they are, every game of its selection that it
+    // does not place is unplaced as room-kept, the outcome is Updated with the room and its reason.
+    RoomSelection selection = makeSelection(57, kSelectionSeed);
+    const WorldPlan plan = generateSelection(selection, kWorldSeed).plan;
+    std::set<std::uint64_t> taken = gameValuesOf(selection);
+    rv::core::Random random(5713);
+    const RoomTitle added = addTitle(selection, random, taken);
+    const auto keptRoom = [&](const GenerationResult& result, std::string_view why) {
+        CHECK(result.changes.outcome == GenerationOutcome::Updated);
+        REQUIRE(result.changes.keptRooms.size() == 1);
+        CHECK(result.changes.keptRooms.front().room == plan.rooms.front().id);
+        CHECK_THAT(result.changes.keptRooms.front().reason, ContainsSubstring(std::string(why)));
+        CHECK(result.plan.rooms == plan.rooms);
+        CHECK(result.plan.fixtures == plan.fixtures);
+        CHECK(result.plan.placements == plan.placements);
+        CHECK(result.plan.dressing == plan.dressing);
+        CHECK(result.plan.lights == plan.lights);
+        CHECK(result.changes.added.empty());
+        CHECK(result.changes.rebuild == RebuildLevel::NoRebuild);
+        // The new title and every unplaced game of the selection: room-kept.
+        CHECK(result.plan.unplaced.size() == selection.unplaced.size() + 1);
+        for (const UnplacedGame& game : result.plan.unplaced) {
+            CHECK(game.reason == UnplacedReason::RoomKept);
+            CHECK(game.room == plan.rooms.front().id);
+        }
+        const auto found = std::find_if(result.plan.unplaced.begin(), result.plan.unplaced.end(),
+                                        [&](const UnplacedGame& game) { return game.game == added.game; });
+        CHECK(found != result.plan.unplaced.end());
+        // The building still saves: no hard finding, the room reported as kept.
+        CHECK(result.validation.passed());
+        const bool reported = std::any_of(result.validation.findings.begin(), result.validation.findings.end(),
+                                          [](const rv::world::ValidationFinding& finding) {
+                                              return finding.rule == rv::world::rule::kRoomKept;
+                                          });
+        CHECK(reported);
+    };
+    rv::world::UpdateInput input;
+    input.library = rv::test::world::library();
     input.selection = selection;
-    // The prefabs' slots changed (a manifest edited): the slots the placements name may not exist.
+    input.config.seed = kWorldSeed;
     input.previous = plan;
+
+    rv::world::WorldData otherTemplate = snesData();
+    otherTemplate.roomTemplate.version += 1;
+    keptRoom(*rv::world::update(input, otherTemplate), "template");
+
+    // The prefabs' slots changed (a manifest edited): the slots the placements name may not exist.
     rv::world::WorldData otherSlots = snesData();
     for (rv::world::PrefabInfo& info : otherSlots.prefabs.prefabs) {
         if (info.ref == otherSlots.roomTemplate.heroModule) {
             info.levels.front().slots += 1;
         }
     }
-    refused(*rv::world::update(input, otherSlots), "levels");
+    keptRoom(*rv::world::update(input, otherSlots), "levels");
+
+    // The recorded family is authoritative: data of another family is refused (loadRoomData reads the room's own).
+    rv::world::WorldData otherFamily = snesData();
+    otherFamily.mediaFamily.id = "cartridge_home_8bit";
+    CHECK(rv::world::update(input, otherFamily).error().code == rv::ErrorCode::InvalidArgument);
 }
 
 TEST_CASE("world/update: every plan of 1000 seeds at four catalog sizes is valid", "[world][update]") {

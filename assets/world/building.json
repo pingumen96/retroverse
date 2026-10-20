@@ -1,0 +1,35 @@
+// The building (ADR-0013 §1, §7; read by rv/world/building.hpp, which documents the format): its floors in the
+// elevator's order and the layout constants of a floor. Every floor is its own scene; the hall runs east from the
+// elevator at its west end, the rooms stand in two rows along it (the north row facing south, the south row turned by
+// half a turn), each room's doorway wall against the hall.
+//
+// A floor holds the systems of its kinds; a floor naming generations holds those generations of its kinds only. Every
+// kind but "excluded" lands on exactly one floor for each generation from 1 to 9 (home consoles and handhelds) or for
+// any (the others): generations 1 and 2 on gen2, 7 to 9 on gen7, every handheld on handheld, the computers and the
+// kind "other" (engines, ports, PC shortcuts, fantasy consoles, mobile) on computer. The ground floor, first, holds the
+// lobby and the arcade game room.
+//
+// Layout, in millimetres: the halls 3.0 m wide and the ground floor's lobby 6.0 m; the rooms' rows start 3.0 m east of
+// the hall's west end (the elevator's landing); a room's footprint on its floor is its interior grown by the wall
+// allowance (the room template's wall, 150 mm); at most 12 rooms stand in a row.
+{
+  "schemaVersion": 1,
+  "floors": [
+    {"id": "ground", "kinds": ["arcade"]},
+    {"id": "gen2", "kinds": ["home"], "generations": [1, 2]},
+    {"id": "gen3", "kinds": ["home"], "generations": [3]},
+    {"id": "gen4", "kinds": ["home"], "generations": [4]},
+    {"id": "gen5", "kinds": ["home"], "generations": [5]},
+    {"id": "gen6", "kinds": ["home"], "generations": [6]},
+    {"id": "gen7", "kinds": ["home"], "generations": [7, 8, 9]},
+    {"id": "handheld", "kinds": ["handheld"]},
+    {"id": "computer", "kinds": ["computer", "other"]}
+  ],
+  "layout": {
+    "hallWidthMm": 3000,
+    "lobbyWidthMm": 6000,
+    "rowStartXMm": 3000,
+    "wallAllowanceMm": 150,
+    "maxRoomsPerRow": 12
+  }
+}

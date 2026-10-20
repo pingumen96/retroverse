@@ -1,11 +1,12 @@
 #pragma once
 
-// The WorldPlan's validation (ADR-0010 §11, specification §7.3 step 13 and §21.3): validatePlan() judges a plan
-// against the templates of its rooms, the world's configuration and, when given, the rooms' selections, the prefabs'
-// slots, the rooms' lights and the pins. A hard finding makes the plan unusable (never saved or shown: the app keeps
-// the previous plan, or the empty room shell and the quick catalog); a soft one is reported and the plan kept. The
-// report lists the findings rule by rule in the order of validationRules(), each rule's findings sorted by subject
-// then message, and the LayoutScore (style §13.5) as a diagnostic that chooses nothing in I3 (ADR-0010 §4).
+// The WorldPlan's validation (ADR-0010 §11, ADR-0013 §11, specification §7.3 step 13 and §21.3): validatePlan() judges
+// a plan against the templates of its rooms, the world's configuration and, when given, the rooms' selections, the
+// prefabs' slots, the rooms' lights, the pins, the building's data and the rooms an update kept. A hard finding makes
+// the plan unusable (never saved or shown: the app keeps the previous plan, or the empty room shell and the quick
+// catalog); a soft one is reported and the plan kept. The report lists the findings rule by rule in the order of
+// validationRules(), each rule's findings sorted by subject then message, and the LayoutScore (style §13.5) as a
+// diagnostic that chooses nothing in I3 (ADR-0010 §4).
 //
 // Geometry (millimetres in the room's frame, world_plan.hpp): a fixture is the axis-aligned box around its prefab's
 // bounds turned by its yaw about its pivot, the prefab's origin as rv/geometry/prefabs.hpp places it by kind: the
@@ -18,6 +19,13 @@
 // overlaps nothing, blocks no cell and hides nothing, but it may not lie in the doorway's clear area nor leave the
 // room. Every other fixture is an obstacle of the navigation grid (nav_grid.hpp), wall-mounted ones included (they
 // stand against a wall the walker cannot cross anyway).
+//
+// The building (ADR-0013 §11; the rules that need no hall: the halls' are I4 step 3's): the plan holds the ground
+// floor, every room stands on a floor of the plan (and every floor is building.json's, at its order, when the building
+// is given), the rooms of a floor do not overlap (their footprints on the floor: the interior grown by the building's
+// wall allowance, building.hpp), every system stands in exactly one room or one section, and the arcade room stands on
+// the ground floor. A room an update kept as it is (ValidationContext::keptRooms) is reported (soft, room-kept); its
+// template's version and its prefabs' slots are not judged, since it keeps what an older template or prefab made.
 //
 // Reachability: the grid of each room, its obstacles dilated by half the configuration's minimum clear width
 // (WorldConfig::minClearWidthMm, 1.2 m), is searched from the cell at the centre of the doorway's clear area. A
@@ -38,6 +46,7 @@
 
 #include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/overrides.hpp>
@@ -52,6 +61,10 @@ namespace rv::world {
 namespace rule {
 // Hard rules.
 inline constexpr std::string_view kRoomUnknown = "room-unknown";
+inline constexpr std::string_view kGroundFloorMissing = "ground-floor";
+inline constexpr std::string_view kFloorUnknown = "floor-unknown";
+inline constexpr std::string_view kRoomsOverlap = "rooms-overlap";
+inline constexpr std::string_view kSystemRooms = "system-rooms";
 inline constexpr std::string_view kRoomTemplate = "room-template";
 inline constexpr std::string_view kRoomSize = "room-size";
 inline constexpr std::string_view kFixtureSocket = "fixture-socket";
@@ -75,6 +88,7 @@ inline constexpr std::string_view kHeroTvMissing = "hero-tv-missing";
 inline constexpr std::string_view kDoorwayBlocked = "doorway-blocked";
 inline constexpr std::string_view kUnreachable = "unreachable";
 // Soft rules.
+inline constexpr std::string_view kRoomKept = "room-kept";
 inline constexpr std::string_view kPrefabUnresolved = "prefab-unresolved";
 inline constexpr std::string_view kPinOrphaned = "pin-orphaned";
 inline constexpr std::string_view kTvLineOfSight = "tv-line-of-sight";
@@ -152,6 +166,11 @@ struct ValidationContext {
     /// Pins honoured (pin-broken) or orphaned (pin-orphaned).
     std::vector<GamePin> gamePins;
     std::vector<FixturePin> fixturePins;
+    /// The building's data: its floors (floor-unknown) and the wall allowance of the rooms' footprints
+    /// (rooms-overlap); nothing: the plan's floors are taken as they are and rooms' interiors compared.
+    std::optional<BuildingData> building;
+    /// The rooms an update kept as they are (room-kept), with the reason.
+    std::vector<KeptRoom> keptRooms;
 };
 
 /// Judges `plan` (as readPlan() returns it, or any plan in memory: the lists need not be sorted) against `context`.

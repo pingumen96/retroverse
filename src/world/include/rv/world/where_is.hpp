@@ -1,14 +1,16 @@
 #pragma once
 
-// Where-is (ADR-0010 §9; I3 step 9): the index of a plan, computed from the plan alone, no table: GameId to its slot
-// and the fixture it stands in, slot to GameId, and the unplaced games with their reasons (a duplicate title with its
-// representative and where that one stands). `retroverse-cli where-is <gameId>` reads the plan and asks it; the app
-// keeps the index of the plan it shows (I3 step 15a's "Mostra nella stanza"). Built in a few milliseconds for the
-// reference room's 890 placements and 6,907 unplaced games: sorted vectors searched by binary search, nothing
-// iterated from an unordered container.
+// Where-is (ADR-0010 §9; I3 step 9; the floor since I4 step 1): the index of a plan, computed from the plan alone, no
+// table: GameId to its room, floor, slot and the fixture it stands in, slot to GameId, and the unplaced games with
+// their reasons (a duplicate title with its representative and where that one stands). `retroverse-cli where-is
+// <gameId>` reads the plan and asks it; the app keeps the index of the plan it shows (I3 step 15a's "Mostra nella
+// stanza"). Built in a few milliseconds for the reference room's 890 placements and 6,907 unplaced games: sorted
+// vectors searched by binary search, nothing iterated from an unordered container.
 
 #include <cstddef>
 #include <optional>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include <rv/catalog/ids.hpp>
@@ -33,6 +35,9 @@ struct GamePlace {
 struct GameLocation {
     catalog::GameId game;
     RoomId room;
+    /// The room's floor (ADR-0013 §12: where-is names the floor); empty when the plan lacks the room (a console room a
+    /// full floor did not take, or a schema-1 plan not lifted).
+    std::string floor;
     /// Set for a placed game.
     std::optional<GamePlace> place;
     /// Set for an unplaced one, with the representative of a duplicate title and where it stands (when placed).
@@ -74,10 +79,12 @@ private:
     };
 
     [[nodiscard]] const PlacedEntry* placedEntry(const catalog::GameId& game) const;
+    [[nodiscard]] std::string floorOf(const RoomId& room) const;
 
     std::vector<PlacedEntry> m_placed;    ///< by game
     std::vector<SlotEntry> m_slots;       ///< by slot
     std::vector<UnplacedGame> m_unplaced; ///< by game
+    std::vector<std::pair<RoomId, std::string>> m_floors; ///< each room's floor, by room
 };
 
 } // namespace rv::world

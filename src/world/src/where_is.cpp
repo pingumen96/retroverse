@@ -41,6 +41,18 @@ PlanIndex::PlanIndex(const WorldPlan& plan) {
     });
     m_unplaced = plan.unplaced;
     std::sort(m_unplaced.begin(), m_unplaced.end());
+    for (const Room& room : plan.rooms) {
+        m_floors.emplace_back(room.id, room.floor);
+    }
+    std::sort(m_floors.begin(), m_floors.end());
+}
+
+std::string PlanIndex::floorOf(const RoomId& room) const {
+    const auto found = std::lower_bound(m_floors.begin(), m_floors.end(), room,
+                                        [](const std::pair<RoomId, std::string>& entry, const RoomId& key) {
+                                            return entry.first < key;
+                                        });
+    return found != m_floors.end() && found->first == room ? found->second : std::string();
 }
 
 const PlanIndex::PlacedEntry* PlanIndex::placedEntry(const catalog::GameId& game) const {
@@ -53,7 +65,7 @@ const PlanIndex::PlacedEntry* PlanIndex::placedEntry(const catalog::GameId& game
 
 std::optional<GameLocation> PlanIndex::find(const catalog::GameId& game) const {
     if (const PlacedEntry* entry = placedEntry(game)) {
-        return GameLocation{game, entry->room, entry->place, std::nullopt, {}, std::nullopt};
+        return GameLocation{game, entry->room, floorOf(entry->room), entry->place, std::nullopt, {}, std::nullopt};
     }
     const auto found = std::lower_bound(m_unplaced.begin(), m_unplaced.end(), game,
                                         [](const UnplacedGame& entry, const catalog::GameId& key) {
@@ -62,7 +74,8 @@ std::optional<GameLocation> PlanIndex::find(const catalog::GameId& game) const {
     if (found == m_unplaced.end() || found->game != game) {
         return std::nullopt;
     }
-    GameLocation location{game, found->room, std::nullopt, found->reason, found->representative, std::nullopt};
+    GameLocation location{game,           found->room,           floorOf(found->room), std::nullopt,
+                          found->reason, found->representative, std::nullopt};
     if (found->representative.isValid()) {
         if (const PlacedEntry* representative = placedEntry(found->representative)) {
             location.representativePlace = representative->place;
