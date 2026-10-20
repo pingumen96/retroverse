@@ -20,7 +20,7 @@ inline constexpr std::string_view kRoomPlaced = "placed";
 /// does not hold at all (another system's: the room collects one system). tests/unit/app checks that the world's names
 /// are these.
 inline constexpr std::string_view kRoomNotInRoom = "not-in-room";
-inline constexpr std::array<std::string_view, 5> kRoomUnplacedKeys{"duplicate-title", "no-cover", "unavailable",
-                                                                   "capacity", kRoomNotInRoom};
+inline constexpr std::array<std::string_view, 6> kRoomUnplacedKeys{"duplicate-title", "no-cover", "unavailable",
+                                                                   "capacity",        "room-kept", kRoomNotInRoom};
 
 } // namespace rv::ui::quick_catalog

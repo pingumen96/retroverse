@@ -77,6 +77,7 @@ TEST_CASE("app/world_launch: where a game stands in the room, as the quick catal
     const rv::world::RoomId roomId = plan.rooms.front().id;
     plan.unplaced.push_back({rv::test::testGameId(900001), roomId, rv::world::UnplacedReason::Unavailable, {}});
     plan.unplaced.push_back({rv::test::testGameId(900002), roomId, rv::world::UnplacedReason::Capacity, {}});
+    plan.unplaced.push_back({rv::test::testGameId(900004), roomId, rv::world::UnplacedReason::RoomKept, {}});
     const rv::world::PlanIndex index(plan);
 
     const rv::catalog::GameId placed = plan.placements.front().game;
@@ -91,7 +92,7 @@ TEST_CASE("app/world_launch: where a game stands in the room, as the quick catal
               qc::kRoomUnplacedKeys.end());
         reasons.push_back(key);
     }
-    for (const std::string_view reason : {"duplicate-title", "no-cover", "unavailable", "capacity"}) {
+    for (const std::string_view reason : {"duplicate-title", "no-cover", "unavailable", "capacity", "room-kept"}) {
         CHECK(std::find(reasons.begin(), reasons.end(), reason) != reasons.end());
     }
     // A game the plan does not hold (another system's).
@@ -100,10 +101,14 @@ TEST_CASE("app/world_launch: where a game stands in the room, as the quick catal
     // The world's reasons are the document's keys, in order, then "not in the room".
     using rv::world::UnplacedReason;
     const UnplacedReason all[] = {UnplacedReason::DuplicateTitle, UnplacedReason::NoCover, UnplacedReason::Unavailable,
-                                  UnplacedReason::Capacity};
+                                  UnplacedReason::Capacity, UnplacedReason::RoomKept};
     for (std::size_t i = 0; i < std::size(all); ++i) {
         CHECK(rv::world::toString(all[i]) == qc::kRoomUnplacedKeys[i]);
+        // Every reason, and nothing past the last: the plan reader takes these and no other.
+        CHECK(rv::world::parseUnplacedReason(qc::kRoomUnplacedKeys[i]) == all[i]);
     }
+    CHECK(std::size(all) + 1 == qc::kRoomUnplacedKeys.size());
+    CHECK_FALSE(rv::world::parseUnplacedReason(qc::kRoomNotInRoom).has_value());
     CHECK(qc::kRoomUnplacedKeys.back() == qc::kRoomNotInRoom);
 }
 
@@ -130,6 +135,7 @@ TEST_CASE("app/world_launch: the quick catalog's card offers Mostra nella stanza
     CHECK(contains(rml, "Non esposto: un'altra versione è sullo scaffale"));
     CHECK(contains(rml, "Non esposto: senza copertina"));
     CHECK(contains(rml, "Non esposto: la stanza è piena"));
+    CHECK(contains(rml, "Non esposto: la stanza resta com'era finché non viene generata di nuovo"));
     CHECK(contains(rcss, ".room-reason"));
     CHECK_FALSE(contains(rcss, "transition:"));
 }

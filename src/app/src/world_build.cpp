@@ -333,6 +333,17 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
         }
         return;
     }
+    // A room kept as it is until a regeneration (ADR-0013 §5: an older template version, prefab levels that changed,
+    // another generator major) places nothing new: said in the log, and by the regeneration's notice when it is the
+    // room shown (I3 showed it for the same changes, which refused the whole plan then).
+    for (const world::KeptRoom& kept : result->changes.keptRooms) {
+        spdlog::warn("World: {} is kept as it is until 'retroverse-cli worldplan generate --replace' (its new games "
+                     "are not placed): {}",
+                     kept.room.toString(), kept.reason);
+        if (kept.room == build.room) {
+            build.notice = std::string(world_notice::kRegeneration);
+        }
+    }
     build.plan = std::move(result->plan);
     build.planDigest = result->changes.digestAfter;
     const bool unchanged = stored && result->changes.digestAfter == stored->digest;

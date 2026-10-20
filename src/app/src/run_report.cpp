@@ -843,7 +843,8 @@ Json worldToJson(const WorldRecord& world) {
                             {"duplicateTitle", world.duplicateTitle},
                             {"noCover", world.noCover},
                             {"unavailable", world.unavailable},
-                            {"capacity", world.capacity}};
+                            {"capacity", world.capacity},
+                            {"roomKept", world.roomKept}};
     json["added"] = world.added;
     json["kept"] = world.kept;
     json["hardFindings"] = world.hardFindings;
@@ -968,6 +969,7 @@ WorldRecord readWorld(FieldReader& fields) {
         world.noCover = unplaced->count("noCover");
         world.unavailable = unplaced->count("unavailable");
         world.capacity = unplaced->count("capacity");
+        world.roomKept = unplaced->count("roomKept");
     }
     world.added = fields.count("added");
     world.kept = fields.count("kept");
