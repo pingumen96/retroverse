@@ -6,7 +6,8 @@
 // building is every system of the catalog that gets a room (classify(): not excluded) and has a placeable title, those
 // whose data the asset root cannot give yet left out with a note; --system (repeatable) restricts it to those systems,
 // only with --plan or when no plan is stored. --selection (repeatable) takes canonical selection files instead (tests,
-// selections kept from elsewhere), each naming its system. Then the world configuration (the preset under
+// selections kept from elsewhere), each naming its system (--system, when given with them, names the same systems);
+// with --replace over a stored plan they must hold every system of the stored building. Then the world configuration (the preset under
 // <user data>/config/world.json, the seed from --seed when given), the world's data under the asset root, the world's
 // overrides (overrides.json: a fresh plan that does not honour a pin is refused), and world::generateBuilding, whose
 // plan is validated (world::validatePlan): a plan that breaks a hard rule is never written (exit 3, its findings on
@@ -28,6 +29,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/catalog/ids.hpp>
@@ -76,6 +78,8 @@ constexpr std::string_view kUsage =
     "                      with a note).\n"
     "  --selection <file>  Take a room's selection from this file (canonical JSON: the titles in priority order and\n"
     "                      the games the room does not place) instead of the catalog; repeatable, one per system.\n"
+    "                      The files name the building's systems (with --replace over a stored plan, every system\n"
+    "                      of the stored building).\n"
     "  --seed <n>          The world seed, 0 to 18446744073709551615 (default: world.json's, else derived from the\n"
     "                      library id).\n"
     "  --library <id>      The library the plan belongs to (default: the one library.json records; with the catalog's\n"
@@ -89,9 +93,10 @@ constexpr std::string_view kUsage =
     "  -h, --help          Show this help and exit.\n"
     "\n"
     "Exit codes: 0 ok; 1 nothing written: a plan exists already (without --replace), the media are unknown, or the\n"
-    "catalog has no such system; 2 usage error (--system with --replace over a stored plan); 3 the data, the catalog,\n"
-    "the selections or the overrides could not be read, the plan breaks a hard rule of the validation, the world is\n"
-    "locked by another program, or the plan could not be written.\n";
+    "catalog has no such system; 2 usage error (--system with --replace over a stored plan, or --selection files that\n"
+    "leave out a system of the stored building); 3 the data, the catalog, the selections or the overrides could not be\n"
+    "read, the plan breaks a hard rule of the validation, the world is locked by another program, or the plan could\n"
+    "not be written.\n";
 
 ExitCode failure(CommandContext& context, std::string_view what, const Error& error) {
     context.err.writeLine(fmt::format("{}: {}: {}", kName, what, error.toString()));
@@ -161,8 +166,8 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     if (!selected.ok) {
         return selected.failure;
     }
-    if (!selectionFiles.empty()) {
-        // The files name the building's systems; --system, when given, names them too.
+    if (!selectionFiles.empty() && !systems.empty()) {
+        // The files name the building's systems; --system, when given, names the same ones.
         for (const catalog::SystemName& system : systems) {
             const bool named = std::any_of(selected.selections.begin(), selected.selections.end(),
                                            [&](const world::RoomSelection& selection) {
@@ -170,6 +175,12 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
                                            });
             if (!named) {
                 return usageError(context, fmt::format("--system {} has no --selection file", system.str()));
+            }
+        }
+        for (const world::RoomSelection& selection : selected.selections) {
+            if (std::find(systems.begin(), systems.end(), selection.room.system()) == systems.end()) {
+                return usageError(context, fmt::format("the --selection file of {} names a system --system does not",
+                                                       selection.room.system().str()));
             }
         }
     }
@@ -207,6 +218,32 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         if (stored && restricted) {
             return usageError(context, "--system restricts the building only with --plan or when no plan is stored: "
                                        "--replace regenerates the whole building");
+        }
+        if (stored && !selectionFiles.empty()) {
+            // Selection files over the stored plan: the building they make must hold every system of the stored one,
+            // since --replace regenerates the whole building and never drops a room. A plan this program cannot read
+            // (edited by hand, newer) is replaced whatever it held.
+            if (auto previous = readPlanFile(context.paths, files.plan)) {
+                std::vector<std::string> missing;
+                for (const world::Room& room : previous->plan.rooms) {
+                    for (const catalog::SystemName& system : room.sections) {
+                        const bool kept = std::any_of(selected.selections.begin(), selected.selections.end(),
+                                                      [&](const world::RoomSelection& selection) {
+                                                          return selection.room.system() == system;
+                                                      });
+                        if (!kept) {
+                            missing.push_back(system.str());
+                        }
+                    }
+                }
+                if (!missing.empty()) {
+                    return usageError(context,
+                                      fmt::format("the --selection files leave out {} of the stored building: "
+                                                  "--replace regenerates the whole building (--plan writes a "
+                                                  "smaller one elsewhere)",
+                                                  fmt::join(missing, ", ")));
+                }
+            }
         }
     }
 

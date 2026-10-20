@@ -6,7 +6,9 @@
 // lists every change). The rooms updated are those of the systems --system names (repeatable), else every console
 // room of the plan; a system without a room is refused (new systems enter the building with I4 step 6a). The rooms'
 // selections are the catalog's as `worldplan generate` makes them (the aliases of placed games they no longer list
-// asked from the catalog), or canonical selection files (--selection, repeatable); nothing is updated while the media
+// asked from the catalog), or canonical selection files (--selection, repeatable: the rooms updated are the files',
+// and --system given with them names the same systems). An update of some rooms only that changes nothing keeps the
+// plan's inputDigest, so it writes nothing (incremental.hpp); nothing is updated while the media
 // are unknown (exit 1: unknown media change nothing). The previous plan is the world's
 // (<user data>/worlds/<library id>/world-plan.json, read and saved again under the world's lock, the plan it replaces
 // kept in backups/) or the file --previous names, of schema 2 or of schema 1 (lifted); a plan edited by hand or written
@@ -26,6 +28,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/catalog/ids.hpp>
@@ -71,7 +74,8 @@ constexpr std::string_view kUsage =
     "  --system <system>   Update this system's room only, as ES-DE names it (snes); repeatable. Default: every\n"
     "                      console room of the plan. A system without a room is refused (new systems come later).\n"
     "  --selection <file>  Take a room's selection from this file (canonical JSON) instead of the catalog;\n"
-    "                      repeatable, one per system.\n"
+    "                      repeatable, one per system: the rooms updated are the files' (--system, given too, names\n"
+    "                      the same systems).\n"
     "  --previous <plan>   The plan to update (default: <user data>/worlds/<library id>/world-plan.json).\n"
     "  --seed <n>          The world seed, 0 to 18446744073709551615 (default: world.json's, else derived from the\n"
     "                      library id); a plan of another seed needs 'worldplan generate --replace'.\n"
@@ -88,9 +92,9 @@ constexpr std::string_view kUsage =
     "Exit codes: 0 updated, or nothing to change; 1 nothing written: there is no plan to update, the plan is refused\n"
     "(edited by hand or written by a newer Retroverse) or needs an explicit regeneration (another seed, preset or\n"
     "generator major version), the media are unknown, the catalog has no such system, or the plan has no room for it;\n"
-    "2 usage error; 3 the data, the catalog, the selections or the overrides could not be read, the updated plan\n"
-    "breaks a hard rule of the validation, the world is locked by another program, or the plan could not be read or\n"
-    "written.\n";
+    "2 usage error (--system and --selection files naming other systems); 3 the data, the catalog, the selections or\n"
+    "the overrides could not be read, the updated plan breaks a hard rule of the validation, the world is locked by\n"
+    "another program, or the plan could not be read or written.\n";
 
 ExitCode failure(CommandContext& context, std::string_view what, const Error& error) {
     context.err.writeLine(fmt::format("{}: {}: {}", kName, what, error.toString()));
@@ -216,6 +220,24 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
             : selectionsFromCatalog(context, kName, systems, args->value("library"), *config, "no update", *info);
     if (!selected.ok) {
         return selected.failure;
+    }
+    if (!selectionFiles.empty() && !systems.empty()) {
+        // The rooms updated are the files' systems': --system, given with them, names the same ones.
+        std::vector<std::string> named;
+        for (const world::RoomSelection& selection : selected.selections) {
+            named.push_back(selection.room.system().str());
+        }
+        std::vector<std::string> asked;
+        for (const catalog::SystemName& system : systems) {
+            asked.push_back(system.str());
+        }
+        std::sort(named.begin(), named.end());
+        std::sort(asked.begin(), asked.end());
+        if (named != asked) {
+            return usageError(context, fmt::format("--system names {}, the --selection files {}: with both, they name "
+                                                   "the same systems",
+                                                   fmt::join(asked, ", "), fmt::join(named, ", ")));
+        }
     }
     for (const world::RoomSelection& selection : selected.selections) {
         const bool hasRoom = std::any_of(previous->plan.rooms.begin(), previous->plan.rooms.end(),

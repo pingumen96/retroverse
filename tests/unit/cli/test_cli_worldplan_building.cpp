@@ -236,3 +236,81 @@ TEST_CASE("cli/worldplan: a frozen schema-1 plan shown, checked, asked and updat
     CHECK(again.code == ExitCode::Ok);
     CHECK(contains(again.out, "is up to date"));
 }
+
+TEST_CASE("cli/worldplan: a stored building is regenerated whole; --system and --selection agree; --scene's room",
+          "[cli][worldplan]") {
+    const Session session;
+    const LoggingReset loggingReset;
+    const rv::world::RoomSelection snes = selectionOf("snes", 57, 1);
+    rv::world::RoomSelection megadrive = selectionOf("megadrive", 30, 2);
+    const std::string snesFile = session.write("snes.json", snes);
+    const std::string megadriveFile = session.write("megadrive.json", megadrive);
+    const std::vector<std::string> common{"--library", "esde", "--seed", "102938"};
+    const auto run = [&](std::vector<std::string> arguments) {
+        arguments.insert(arguments.end(), common.begin(), common.end());
+        return session.run(arguments);
+    };
+    REQUIRE(run({"worldplan", "generate", "--selection", snesFile, "--selection", megadriveFile}).code ==
+            ExitCode::Ok);
+    const std::string stored = readText(session.files.plan);
+
+    // --replace regenerates the whole building: selection files that leave out a stored room's system are refused,
+    // with --system or without, and the plan stays as it was.
+    const RunResult withSystem =
+        run({"worldplan", "generate", "--system", "snes", "--selection", snesFile, "--replace"});
+    CHECK(withSystem.code == ExitCode::UsageError);
+    CHECK(contains(withSystem.err, "leave out megadrive of the stored building"));
+    const RunResult filesOnly = run({"worldplan", "generate", "--selection", snesFile, "--replace"});
+    CHECK(filesOnly.code == ExitCode::UsageError);
+    CHECK(readText(session.files.plan) == stored);
+    // --system and the files name the same systems.
+    const RunResult moreFiles =
+        run({"worldplan", "generate", "--system", "snes", "--selection", snesFile, "--selection", megadriveFile,
+             "--plan", rv::core::pathToUtf8(session.dir.file("elsewhere.json"))});
+    CHECK(moreFiles.code == ExitCode::UsageError);
+    CHECK(contains(moreFiles.err, "the --selection file of megadrive names a system --system does not"));
+    // Every stored system given: the building regenerated (here the same plan, so the file stays as it was).
+    const RunResult whole =
+        run({"worldplan", "generate", "--selection", snesFile, "--selection", megadriveFile, "--replace"});
+    INFO(whole.err);
+    CHECK(whole.code == ExitCode::Ok);
+    CHECK(contains(whole.out, "Regenerated the plan of room:megadrive, room:snes: "));
+    CHECK(readText(session.files.plan) == stored);
+
+    // update: the rooms updated are the files'; --system given with them names the same systems.
+    std::set<std::uint64_t> taken = rv::test::world::gameValuesOf(megadrive);
+    rv::core::Random random(6);
+    rv::test::world::addTitle(megadrive, random, taken);
+    const std::string moreFile = session.write("megadrive-more.json", megadrive);
+    const RunResult mismatched = run({"worldplan", "update", "--system", "snes", "--selection", moreFile});
+    CHECK(mismatched.code == ExitCode::UsageError);
+    CHECK(contains(mismatched.err, "--system names snes, the --selection files megadrive"));
+    CHECK(readText(session.files.plan) == stored);
+    // One room's selection with nothing new: up to date, the plan as it was (its inputDigest, of both rooms, kept).
+    const RunResult oneRoom = run({"worldplan", "update", "--system", "snes", "--selection", snesFile});
+    INFO(oneRoom.err);
+    CHECK(oneRoom.code == ExitCode::Ok);
+    CHECK(contains(oneRoom.out, "is up to date"));
+    CHECK(readText(session.files.plan) == stored);
+
+    // --scene on a building of two rooms names its room.
+    const std::string scene = rv::core::pathToUtf8(session.dir.file("room.scene.json"));
+    const RunResult unnamed = session.run({"worldplan", "show", "--library", "esde", "--scene", scene});
+    CHECK(unnamed.code == ExitCode::UsageError);
+    CHECK(contains(unnamed.err, "the plan holds 2 rooms: --room <id>"));
+    const RunResult absent =
+        session.run({"worldplan", "show", "--library", "esde", "--scene", scene, "--room", "room:genesis"});
+    CHECK(absent.code == ExitCode::UsageError);
+    CHECK(contains(absent.err, "the plan holds no room room:genesis"));
+    const RunResult named =
+        session.run({"worldplan", "show", "--library", "esde", "--scene", scene, "--room", "room:snes"});
+    INFO(named.err);
+    REQUIRE(named.code == ExitCode::Ok);
+    CHECK(contains(named.out, " of room:snes: "));
+    const RunResult namedJson = session.run(
+        {"worldplan", "show", "--library", "esde", "--scene", scene, "--room", "room:megadrive", "--json"});
+    REQUIRE(namedJson.code == ExitCode::Ok);
+    CHECK(nlohmann::json::parse(namedJson.out)["sceneRoom"] == "room:megadrive");
+    CHECK(session.run({"worldplan", "show", "--library", "esde", "--room", "room:snes"}).code ==
+          ExitCode::UsageError);
+}
