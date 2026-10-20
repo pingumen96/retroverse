@@ -834,6 +834,21 @@ TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their wa
     // In the thinnest wall allowed the stop fills the depth of the opening, still inside the wall.
     const std::map<std::string, Aabb> thin = byName(buildOk("room_shell", {{"wallThickness", 0.02}}));
     CHECK(closeTo(thin.at("south_doorway"), Aabb::fromMinMax({-0.8f, 0.0f, 5.0f}, {0.8f, 2.3f, 5.02f})));
+
+    // A doorway onto a hall (I4 step 3) drops the stop and nothing else: the walker passes the door rectangle.
+    const ProceduralPrefab open = buildOk("room_shell", {{"doorway", {{"wall", "south"}, {"stop", false}}}});
+    std::map<std::string, Aabb> openWalls = byName(open);
+    CHECK(openWalls.size() == 6);
+    CHECK_FALSE(openWalls.contains("south_doorway"));
+    std::map<std::string, Aabb> stopped = walls;
+    stopped.erase("south_doorway");
+    CHECK(openWalls == stopped);
+    CHECK(open.parts.size() == room.parts.size());
+    for (std::size_t i = 0; i < open.parts.size() && i < room.parts.size(); ++i) {
+        CHECK(open.parts[i].mesh.vertices.size() == room.parts[i].mesh.vertices.size());
+    }
+    // "stop": true is the default.
+    CHECK(byName(buildOk("room_shell", {{"doorway", {{"wall", "south"}, {"stop", true}}}})) == walls);
 }
 
 TEST_CASE("geometry/prefabs: cartridge label sits in a recessed pocket", "[geometry][prefabs][cartridge]") {

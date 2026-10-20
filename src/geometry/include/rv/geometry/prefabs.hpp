@@ -74,6 +74,10 @@ struct DoorwayParams {
     float offset = 0.0f;
     float width = 1.6f;  ///< [0.3, 20]
     float height = 2.3f; ///< [0.5, 50]; height + 7 cm casing <= wallHeight
+    /// The 2 cm stop in the opening's outer face (the collider "<wall>_doorway", see RoomShellParams): true for a room
+    /// standing alone, whose walker must not leave it; false for a doorway that opens onto a hall (a floor's scene, I4
+    /// step 3, ADR-0013 §6), so that the walker passes. JSON "stop", default true; nothing else changes.
+    bool stop = true;
 };
 
 /// "room_shell", pivot floor. The interior rectangle is exactly `size` (x, z) centered on the origin; walls are
@@ -91,8 +95,8 @@ struct DoorwayParams {
 /// direction they extend to ("south_west" and "south_east" for the south wall, "east_north" and "east_south" for the
 /// east wall), and the part above it ("south_above"). Nothing lies beyond a doorway, so "<wall>_doorway"
 /// ("south_doorway") closes the door rectangle with a 2 cm stop in the wall's outer face: a walker can step into the
-/// opening but not leave the room (a connection to another room will drop this one box). Floor, ceiling and trim
-/// (less than 2 cm deep) have none.
+/// opening but not leave the room; a doorway onto a hall drops this one box (DoorwayParams::stop false). Floor,
+/// ceiling and trim (less than 2 cm deep) have none.
 struct RoomShellParams {
     glm::vec2 size{9.0f, 10.0f}; ///< interior x and z, each [0.5, 200]
     float wallHeight = 3.0f;     ///< [1, 50]
