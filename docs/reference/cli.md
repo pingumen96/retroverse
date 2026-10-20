@@ -101,32 +101,47 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   options; 3 the catalog cannot be read. A GameId that became an alias stands for its game in `launch`, `assign` and
   `sessions`: the JSON of `launch` and `sessions` gives the identity as `game` and the alias as `requestedGame`,
   `assign`'s as `game.id` and `game.requested`; the text says "(for <alias>, an alias)".
-- `worldplan` (I3, ADR-0010, `docs/i3/step-3.md`, `step-4.md`, `step-9.md`, `step-10a.md`): a room's plan, the canonical
-  JSON `<user data>/worlds/<library id>/world-plan.json` (beside it `world-plan.meta.json`, `overrides.json`'s pins,
-  read and never written, the last 10 plans in `backups/` and the world lock `world.lock`, waited for 2 s).
-  `worldplan generate --system <system> [--selection <file>] [--seed <n>] [--library <id>] [--replace | --plan <file>]
-  [--json]` generates a fresh plan from the catalog's selection (or a canonical selection file), validates it and saves
-  it under
-  the world lock, never over an existing plan unless `--replace` (the explicit regeneration, which chooses the face-out
-  titles again, after a backup); `--seed` defaults to `world.json`'s, else the library's seed.
-  `worldplan update --system <system> [--selection <file>] [--previous <plan>] [--seed <n>] [--library <id>] [--plan
-  <file>] [--diff] [--json]` applies ADR-0010 §10's rules (every placement kept, new titles spine-out next to their
-  alphabetical predecessor, then
-  a dressed level, a new module in place of decoration, growth, `capacity`; the face-out set unchanged) and prints the
-  change report. Both exit 0 written or up to date; 1 nothing written (a plan exists without `--replace`; no plan to
-  update, one edited by hand or newer, one that needs `generate --replace`: another seed, preset, template or generator
-  major version; the media unknown; no such system in the catalog); 2 usage; 3 the data, catalog, selection or overrides
+- `worldplan` (I3, ADR-0010, `docs/i3/step-3.md`, `step-4.md`, `step-9.md`, `step-10a.md`; the building since I4 step
+  1, ADR-0013, `docs/i4/step-1.md`): the building's plan, the canonical JSON `<user data>/worlds/<library id>/
+  world-plan.json` in schema 2 (its floors and rooms; beside it `world-plan.meta.json`, `overrides.json`'s pins, read
+  and never written, the last 10 plans in `backups/` and the world lock `world.lock`, waited for 2 s). A plan of schema 1
+  (I3's one room) is read lifted into the building (`world::lift`: the room on its system's floor at the north row's
+  first position, the ground floor) by every subcommand and `where-is`; the first update writes it in schema 2.
+  `worldplan generate [--system <system>]... [--selection <file>]... [--seed <n>] [--library <id>] [--replace | --plan
+  <file>] [--json]` generates a fresh building from the catalog's selections (or canonical selection files, one per
+  system, which name the building's systems), validates it and saves it under the world lock, never over an existing
+  plan unless `--replace` (the explicit regeneration of the whole building, which chooses the face-out titles again,
+  after a backup); `--seed` defaults to `world.json`'s, else the library's seed. Without `--system` the building holds
+  every system of the catalog that gets a room (`assets/world/systems.json`: not excluded) and has a placeable title,
+  the systems whose data the asset root cannot give yet left out with a note ("Left out:", JSON `leftOut`); `--system`
+  (repeatable) restricts it, only with `--plan` or when no plan is stored (else exit 2). Each system gets its own console
+  room in I4 step 1 (shared and arcade rooms are step 4's).
+  `worldplan update [--system <system>]... [--selection <file>]... [--previous <plan>] [--seed <n>] [--library <id>]
+  [--plan <file>] [--diff] [--json]` applies ADR-0010 §10's rules to every console room of the plan, or to the rooms of
+  the systems named (the others stay as they are): every placement kept, new titles spine-out next to their
+  alphabetical predecessor, then a dressed level, a new module in place of decoration, growth (the room moves away from
+  its hall, its x kept), `capacity`; the face-out set unchanged. A room of an older template version, of prefabs whose
+  levels changed or of another generator major is kept as it is, its new games unplaced as `room-kept` ("Room kept:",
+  JSON `changes.keptRooms`). It prints the change report. Both exit 0 written or up to date; 1 nothing written (a plan
+  exists without `--replace`; no plan to update, one edited by hand or newer, one that needs `generate --replace`:
+  another seed, preset or generator major version; the media unknown; no such system in the catalog; a system without a
+  room in the plan, which new systems need, I4 step 6a); 2 usage; 3 the data, catalog, selections or overrides
   unreadable, a hard rule broken, the world locked by another program, a failed write.
-  `worldplan show [<plan>] [--library <id>] [--placements] [--scene <file>] [--json]` summarizes a plan (exit 1 no plan,
-  3 a plan refused or a scene not written); `--scene` also writes the room's static part (shell, fixtures, dressing,
-  lights; no collection items) as a scene file that `retroverse.exe --scene <file>` renders.
-  `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots
-  and the world's configuration (29 rules, `rv/world/validation.hpp`; the plan's lights counted, no pins judged: exit 1
-  a hard rule broken or not a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3
-  unreadable). Every subcommand takes `--output <file>`.
-- `where-is <gameId> [--plan <file> | --library <id>] [--json]` tells where a game stands in its room's plan (room,
-  fixture, slot, face-out or spine-out) or why it is not placed, with the version that stands for it; exit 1 no plan
-  or a game the plan does not hold, 2 usage, 3 a plan refused.
+  `worldplan show [<plan>] [--library <id>] [--placements] [--scene <file>] [--json]` summarizes a plan: its floors
+  (order, rooms), each room with its kind, floor, sections, row and place on the floor and generator (JSON `floors`,
+  `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`, `fileSchemaVersion`, `lifted`); exit 1 no plan,
+  3 a plan refused or a scene not written; `--scene` also writes the static part of its first room (shell, fixtures,
+  dressing, lights; no collection items) as a scene file that `retroverse.exe --scene <file>` renders (a floor's
+  scene with its hall is I4 step 3's).
+  `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,
+  the world's configuration and the building's data (34 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
+  floors, no two rooms of a floor overlapping, every system in one room; a room of an older template version or
+  another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a hard rule broken or not
+  a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3 unreadable). Every subcommand
+  takes `--output <file>`.
+- `where-is <gameId> [--plan <file> | --library <id>] [--json]` tells where a game stands in the building's plan
+  (floor, room, fixture, slot, face-out or spine-out; JSON `floor`) or why it is not placed, with the version that
+  stands for it; exit 1 no plan or a game the plan does not hold, 2 usage, 3 a plan refused.
 - `import`, `db rebuild-index`, `media`, `profiles`, `launch`, `assign` and `identities` (but `identities show`) read
   the library `library.json` records (exit 2 without one: `library create` first); so do `worldplan` and `where-is`
   for the world's own plan unless `--library` names it (always with the catalog's selection).
