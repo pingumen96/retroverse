@@ -11,9 +11,10 @@
 // with the reason (`worldplan generate --replace` regenerates after a backup). Otherwise each room whose system has a
 // selection is updated with it, and every other room stays as it is:
 //   - a room is KEPT, its contents untouched, when its template version is no longer the asset root's current one, its
-//     collection fixtures' levels are no longer their prefabs', or its generator major is another: the games of its
-//     selection that it does not place are unplaced with reason room-kept, and the report lists it with the reason
-//     (ChangeReport::keptRooms). The room's recorded media family and theme pack are authoritative: its data is read
+//     collection fixtures' levels are no longer their prefabs', or its generator major is another: its placements and
+//     unplaced entries stand as they were (a duplicate keeps its representative), the games of its selection that it
+//     neither places nor lists are unplaced with reason room-kept (entries that follow the selection: an update with
+//     the same selection changes nothing), and the report lists it with the reason (ChangeReport::keptRooms). The room's recorded media family and theme pack are authoritative: its data is read
 //     with them (loadRoomData()), so a data change never freezes a room;
 //   - in any other room every placement is kept as it is, also a game's that is now unavailable, no longer eligible
 //     (its cover gone: it keeps its slot with a generated label), hidden, or gone from the catalog's snapshot: its slot

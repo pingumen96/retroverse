@@ -906,10 +906,18 @@ TEST_CASE("world/update: another seed, preset or generator major needs an explic
 
 TEST_CASE("world/update: a room of another template version or prefab levels is kept, its new games room-kept",
           "[world][update]") {
-    // ADR-0013 §5: compatibility per room. The room's contents stay as they are, every game of its selection that it
-    // does not place is unplaced as room-kept, the outcome is Updated with the room and its reason.
-    RoomSelection selection = makeSelection(57, kSelectionSeed);
-    const WorldPlan plan = generateSelection(selection, kWorldSeed).plan;
+    // ADR-0013 §5: compatibility per room. The room's contents stay as they are, its unplaced entries too (the
+    // duplicate's representative kept), a game of its selection that it neither places nor lists is unplaced as
+    // room-kept, the outcome is Updated with the room and its reason.
+    const RoomSelection original = makeSelection(57, kSelectionSeed);
+    RoomSelection selection = original;
+    const GenerationResult generated = generateSelection(selection, kWorldSeed);
+    const WorldPlan& plan = generated.plan;
+    // The selection's duplicate (with its representative) and its game without a cover.
+    REQUIRE(plan.unplaced.size() == 2);
+    REQUIRE(std::any_of(plan.unplaced.begin(), plan.unplaced.end(), [](const UnplacedGame& game) {
+        return game.reason == UnplacedReason::DuplicateTitle && game.representative.isValid();
+    }));
     std::set<std::uint64_t> taken = gameValuesOf(selection);
     rv::core::Random random(5713);
     const RoomTitle added = addTitle(selection, random, taken);
@@ -925,15 +933,22 @@ TEST_CASE("world/update: a room of another template version or prefab levels is 
         CHECK(result.plan.lights == plan.lights);
         CHECK(result.changes.added.empty());
         CHECK(result.changes.rebuild == RebuildLevel::NoRebuild);
-        // The new title and every unplaced game of the selection: room-kept.
-        CHECK(result.plan.unplaced.size() == selection.unplaced.size() + 1);
-        for (const UnplacedGame& game : result.plan.unplaced) {
-            CHECK(game.reason == UnplacedReason::RoomKept);
-            CHECK(game.room == plan.rooms.front().id);
+        // The previous entries as they stood (the duplicate naming its representative), and the new title room-kept.
+        std::vector<UnplacedGame> expected = plan.unplaced;
+        expected.push_back({added.game, plan.rooms.front().id, UnplacedReason::RoomKept, {}});
+        std::sort(expected.begin(), expected.end());
+        CHECK(result.plan.unplaced == expected);
+        // where-is still names the representative's slot for the duplicate.
+        const rv::world::PlanIndex index(result.plan);
+        for (const UnplacedGame& game : plan.unplaced) {
+            if (game.reason == UnplacedReason::DuplicateTitle) {
+                const auto where = index.find(game.game);
+                REQUIRE(where.has_value());
+                CHECK(where->reason == UnplacedReason::DuplicateTitle);
+                CHECK(where->representative == game.representative);
+                CHECK(where->representativePlace.has_value());
+            }
         }
-        const auto found = std::find_if(result.plan.unplaced.begin(), result.plan.unplaced.end(),
-                                        [&](const UnplacedGame& game) { return game.game == added.game; });
-        CHECK(found != result.plan.unplaced.end());
         // The building still saves: no hard finding, the room reported as kept.
         CHECK(result.validation.passed());
         const bool reported = std::any_of(result.validation.findings.begin(), result.validation.findings.end(),
@@ -950,7 +965,33 @@ TEST_CASE("world/update: a room of another template version or prefab levels is 
 
     rv::world::WorldData otherTemplate = snesData();
     otherTemplate.roomTemplate.version += 1;
-    keptRoom(*rv::world::update(input, otherTemplate), "template");
+    const GenerationResult kept = *rv::world::update(input, otherTemplate);
+    keptRoom(kept, "template");
+    // Updated again with the same selection: nothing changes, nothing to write.
+    rv::world::UpdateInput again = input;
+    again.previous = kept.plan;
+    const GenerationResult same = *rv::world::update(again, otherTemplate);
+    CHECK(same.plan == kept.plan);
+    CHECK(same.changes.digestAfter == same.changes.digestBefore);
+    // The room-kept entries follow the selection: the title gone, its entry goes and the room's entries are the
+    // generated ones again.
+    again.selection = original;
+    const GenerationResult back = *rv::world::update(again, otherTemplate);
+    CHECK(back.plan.unplaced == plan.unplaced);
+    CHECK(back.plan.placements == plan.placements);
+    // A room that becomes kept with nothing new keeps every element as it was; only the inputDigest records the data
+    // it read now (I3 step 9's rule 7: the last inputs read), so it is written once and then left as it is.
+    rv::world::UpdateInput unchanged = input;
+    unchanged.selection = original;
+    const GenerationResult becomes = *rv::world::update(unchanged, otherTemplate);
+    REQUIRE(becomes.changes.keptRooms.size() == 1);
+    WorldPlan elements = becomes.plan;
+    elements.inputDigest = plan.inputDigest;
+    CHECK(elements == plan);
+    rv::world::UpdateInput thereafter = unchanged;
+    thereafter.previous = becomes.plan;
+    const GenerationResult left = *rv::world::update(thereafter, otherTemplate);
+    CHECK(left.changes.digestAfter == left.changes.digestBefore);
 
     // The prefabs' slots changed (a manifest edited): the slots the placements name may not exist.
     rv::world::WorldData otherSlots = snesData();

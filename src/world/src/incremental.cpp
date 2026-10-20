@@ -847,14 +847,23 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             if (selection == selectionOf.end()) {
                 continue;
             }
-            // Its contents untouched; every game of its selection it does not place is unplaced as room-kept.
-            std::set<GameId> placed;
+            // Its contents untouched, its unplaced entries too (a duplicate keeps its representative); a game of its
+            // selection that it neither places nor lists is unplaced as room-kept. The room-kept entries follow the
+            // selection: those of a game no longer in it go, so an update with the same selection changes nothing.
+            std::erase_if(plan.unplaced, [&](const UnplacedGame& game) {
+                return game.room == room.id && game.reason == UnplacedReason::RoomKept;
+            });
+            std::set<GameId> held;
             for (const Placement& placement : plan.placements) {
                 if (placement.slot.fixture().room() == room.id) {
-                    placed.insert(placement.game);
+                    held.insert(placement.game);
                 }
             }
-            std::erase_if(plan.unplaced, [&](const UnplacedGame& game) { return game.room == room.id; });
+            for (const UnplacedGame& game : plan.unplaced) {
+                if (game.room == room.id) {
+                    held.insert(game.game);
+                }
+            }
             std::set<GameId> games;
             for (const RoomTitle& title : selection->second->titles) {
                 games.insert(title.game);
@@ -863,7 +872,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                 games.insert(game.game);
             }
             for (const GameId& game : games) {
-                if (!placed.contains(game)) {
+                if (!held.contains(game)) {
                     plan.unplaced.push_back({game, room.id, UnplacedReason::RoomKept, {}});
                 }
             }
