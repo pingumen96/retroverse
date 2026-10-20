@@ -9,9 +9,10 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I1 | Risk spikes: FFmpeg decode to GL texture via PBO, RmlUi with gamepad navigation, emulator launch/return with fullscreen restore | Success criteria met or fallback recorded in an ADR |
 | I2 | M1 ES-DE catalog (discovery, gamelist/media/es_systems parsing, SQLite + FTS5, stable IDs) + Windows launcher + `retroverse-cli` | M1 Done: reads a real ES-DE collection without moving ROMs, launches an emulator and returns |
 | I3 | M2 SNES vertical slice: single-room generator and persistent WorldPlan (one cartridge per title with media, spine-out shelves and face-out displays), instanced cartridges with real covers in texture arrays, picking, inspect, play from the world, the hero CRT's video (one decoder), incremental update (with I2's step 13r: the catalog's refresh on the app's worker) | Gate B: already looks like the concept with one room; deterministic WorldPlan snapshot; NFR-08; 60 FPS at 1080p |
-| I4 | M3 multi-room world: hub, room graph, PS1 room, theme packs, streaming, overrides/pins, map and teleport | Gate C: different rooms, same world |
+| I4 | M3 part 1, the building (ADR-0013): every system of the library in a room, one room per console, floors by console generation joined by an elevator, a lobby and the arcade room on the ground floor, a handheld floor and a computer floor, small systems sharing a room per floor, functional media families, one floor resident, the directory (floors, rooms, favourites and recent games) and teleport | Gate C: the whole library in one building, walkable floor by floor, functional look |
+| I4b | M3 part 2, customization: the editor and pins written to `overrides.json`, "Rigenera stanza / piano / mondo" with an impact preview, backup and undo, expansion rooms if I4 did not need them | M3 Done |
 | I5 | M4 screens and media: decoder scheduler, audio, CRT shader, playlists, fallbacks for missing videos | Every room has working TVs within the decoder budget |
-| I6 | Arcade and handheld rooms | Gate D |
+| I6 | Faithful media families (side-face spines, boxes, handheld cases), arcade cabinets, the styling pass of the building's floors and rooms | Gate D |
 | I7 | M5 part 1: wizard, emulator management, settings, statistics, file watcher (games and media added in ES-DE appear without a restart), media coverage report per system | 30-minute controller-only session |
 | I8 | Performance, Blender hero assets, license audit, golden screenshots, fault injection | Gate E + style §28 DoD |
 | I9 | Installer, portable build, release | M5 Done |
@@ -22,8 +23,8 @@ reads its metadata and media in place and uses generated labels and screenshots 
 Deferred beyond v1: gamelist write-back, legacy EmulationStation/RetroBat/Batocera adapters, VR, hardware video
 decoding, Linux, an OpenGL 3.3 fallback.
 
-Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. Next: I4,
-whose world topology is to be decided (an ADR) before its steps are planned.
+Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. In
+progress: I4, the building ([ADR-0013](decisions/ADR-0013-the-building.md)).
 
 ## Acceptable performance
 
@@ -42,6 +43,8 @@ reported for information and never fail a gate. The hidden `[.bench]` cases run 
 | Catalog queries (NFR-02) | p95 at most 100 ms |
 | Video | the first frame within 2 s of the selection |
 | Per-frame CPU work checked by smoke tests | loosely, at the median (cover uploads 4 ms, collection planning 1 ms) |
+| An elevator ride (ADR-0013 §13) | the view back within 3 s warm and 10 s cold; the frames behind the fade exempt |
+| The room that holds the walker on a floor | covers resident within 30 s cold and 3 s warm; the rest of the floor informative |
 
 Correctness is never relaxed: determinism, NFR-08's stability, the read-only snapshots of the real library and the
 focus rules stay exact.
@@ -198,6 +201,39 @@ FR-013 in 9; FR-014 in A1 and 13; FR-018 and NFR-10 in 0b and 14; FR-019 in 10 a
 SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the tests and gate figures that prove it,
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
+
+## I4: M3 part 1, the building (in progress)
+
+The building of [ADR-0013](decisions/ADR-0013-the-building.md), decided with the user on October 20, 2026:
+- **one room per console**, on **one floor per console generation**, joined by an **elevator**;
+- the **ground floor** holds the lobby and the **arcade room**;
+- a **handheld floor** and a **computer floor**;
+- the systems under 30 distinct titles **share their floor's room**;
+- a **functional look**: the styling pass is I6's.
+
+The ADR was reviewed the same day by four adversarial readers (stability, feasibility, runtime, scope), and the plan
+below is theirs, revised.
+
+The reference library (a read-only census, `build/i4-survey`) has:
+- 48 systems with games;
+- 19,547 distinct titles with a cover;
+- busiest floors of about 5,300 (computers) and 4,500 (handhelds) placeable titles.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | Docs and oracles: ADR-0013, this plan, the acceptable rows of a ride and of a floor's room; I3's schema-1 plans frozen in `tests/fixtures/world/v1/` as the lift's oracles; a real SNES plan of generator 1.2 kept under `build/i4-oracle` | | The files exist; the real plan made through `scripts/real-library.ps1` with 0 differences | done |
+| 1 | Schema 2 and the lift: floors, room kinds, sections, placement, `generatorVersion` per room, `expands` reserved; the `room:`/`area:` ids; the schema-1 lift; compatibility per room with the `room-kept` reason; the store; `where-is` with the floor; generator 1.3 | 0 | Every v1 oracle lifted and updated with its selection keeps its room and elements equal; an update with nothing new writes nothing; `worldplan show` and `where-is` on the real v1 plan | |
+| 2 | Systems, families, the building fixture: `systems.json` (every ES-DE system, the platform-tag fallback, `excluded`), the families with their item and fixture manifests, covers fitted to the family's label (the 16-bit exception), capacity per family, `esde/building` (a few hundred titles over three or four floors, one small, one arcade, one cover-less, one custom and one excluded system) with `additions/` | 1 | The classification is total; every family's item and fixtures build and face it; the SNES goldens unchanged; portrait covers in `[label-preview]`; a jewel-case room rendered through `worldplan generate --system psx --plan` and `show --scene`; a per-family capacity census of the real library, which decides on expansion rooms | |
+| 3 | Floors of console rooms: classification, sticky own rooms, `building.json`, two rows on a derived hall with the elevator stand-in, open doorways, lights per area (the scene file's areas, the renderer packing the eye's area), the building rules, `worldplan generate`/`show --floor --scene`/`check` | 2 | A golden building, Debug equal to Release; a smoke walk from the hall into a room, each area lit by its own lights | |
+| 4 | Shared and arcade rooms: sections, `generic_case`, the threshold on all-title counts, sticky; the arcade room with its CRT and no console | 3 | Golden plans; a system crossing the threshold moves nothing; a shared room rendered with `--scene` | |
+| 5a | The floor in the app from a fresh plan: the building job (every snapshot in one read transaction on the pool), the floor-build job, a collection per room with room-scoped keys, a pick index per room, one cover loader with the eye's area as the view, the lobby start, `--start-room`, `--spawn` in the room's frame; every `gpu.world*` case, G02-G10, the benchmark path and `[room-real]` on `--start-room room:snes` | 3 (beside 4) | G02-G10 0 pixels apart; a walk from the hall into room A then room B, a cover inspected in B; residency per room in the run report | |
+| 6a | The building update: new systems, sections and floors, compatibility per room, `room-kept`, expansion rooms if step 2 needs them; the building's NFR-08 property suite on a small test template | 4 | The suite; on the real library through the CLI: the building twice with one SHA-256, a second import moving nothing, the lifted SNES room equal to the oracle | |
+| 6b | The persisted start, live updates and the CRT of the eye's room: the items files per system, the floor previewed and reconciled room by room, the CRT rebound without blocking, a refresh applied to the resident floor (the walker kept in its room's frame), other floors saved | 5a, 6a | `gpu.world` start and live cases on `esde/building`'s additions; on the real library NFR-01 to the lobby within 5 s and the busiest floor within 512 MiB | |
+| 7 | The elevator and the directory: one panel (interact at the elevator, M or Select anywhere) with the floors, their rooms and counts, and favourites and recent games; the ride (fade, swap, failure path, memory given back, lockstep); teleport to a doorway; "Mostra nella stanza" across floors | 6b | A ride from the ground floor to `gen4` and back, a room teleport, `world.rides`, the arrays after a ride the destination's; a quick-catalog game on another floor ends in its Focus pose; on the real library a ride to the busiest floor within the acceptable rows | |
+| 8 | Gate C: `scripts/gate.ps1 -Gate C`, at most three new goldens (the lobby, a jewel-case room, a shared room), the real-library rows, the documentation | 7 | The gate passes; the user walks the building and declares I4 done | |
+
+Order: 0, 1, 2, 3, then 4 followed by 6a beside 5a, then 6b, 7, 8. Steps 4 and 6a change `rv_world` and step 5a
+changes `rv_app`, with the building API's signatures frozen at the end of step 3.
 
 ## I3: M2 SNES vertical slice (done)
 
@@ -370,11 +406,12 @@ passed and the user declared M2 done on October 20, 2026 (the manual session uns
 
 ### Deferred
 
-- **I4**: the hub, the room graph and doors, rooms for other systems, room streaming, linked expansion rooms for titles
-  past a room's capacity (until then `unplaced` with reason `capacity`), L-shaped and lounge templates, several layout
-  candidates chosen by the LayoutScore, theme packs, the editor with overrides and pins, "Regenerate room" and
-  "Regenerate world" with an impact preview, backup and undo (the in-app way to choose the face-out set again), the map
-  and the teleport between rooms; a table for where-is if worlds outgrow an in-memory index.
+- **I4** (since replanned by ADR-0013, above): the hub, the room graph and doors, rooms for other systems, room
+  streaming, the map and the teleport between rooms; **I4b**: linked expansion rooms for titles past a room's capacity
+  (until then `unplaced` with reason `capacity`), the editor with overrides and pins, "Regenerate room" and "Regenerate
+  world" with an impact preview, backup and undo (the in-app way to choose the face-out set again); **I6**: L-shaped
+  and lounge templates, several layout candidates chosen by the LayoutScore, theme packs; a table for where-is if
+  worlds outgrow an in-memory index.
 - **I5**: the decoder scheduler (two decoders, priorities, visibility, shared textures), RoomShuffle and the other
   playlists, secondary TVs with video, audio (miniaudio, the 96 kHz clips resampled), the process priority boost and the
   upload staggering of ADR-0004, CRT presets, videos and manuals in the media viewer, the optional insertion animation
