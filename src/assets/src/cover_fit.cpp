@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <new>
+#include <numeric>
 #include <string>
 
 #include <rv/assets/image_io.hpp>
@@ -119,6 +120,50 @@ std::string_view toString(FitMode mode) noexcept {
     return mode == FitMode::Cropped ? "cropped" : "banded";
 }
 
+LabelAspect LabelAspect::reduced() const noexcept {
+    if (isLayer()) {
+        return {};
+    }
+    const std::uint32_t divisor = std::gcd(width, height);
+    return {width / divisor, height / divisor};
+}
+
+std::string LabelAspect::key() const {
+    if (isLayer()) {
+        return {};
+    }
+    const LabelAspect lowest = reduced();
+    return std::to_string(lowest.width) + "x" + std::to_string(lowest.height);
+}
+
+CanvasSize labelCanvas(const LabelAspect& label, int layerWidth, int layerHeight) noexcept {
+    if (label.isLayer() || layerWidth < 1 || layerHeight < 1) {
+        return {layerWidth, layerHeight};
+    }
+    const double aspect = static_cast<double>(label.width) / static_cast<double>(label.height);
+    const int width = std::max(layerWidth, static_cast<int>(std::lround(layerHeight * aspect)));
+    const int height = std::max(layerHeight, static_cast<int>(std::lround(layerWidth / aspect)));
+    return {width, height};
+}
+
+Expected<ImageData> resampleSrgb(const ImageData& rgba, int width, int height) {
+    if (!rgba.isValid() || rgba.channels != 4 || width < 1 || height < 1) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "cannot resample a " + std::to_string(rgba.width) + "x" + std::to_string(rgba.height) +
+                             " picture to " + std::to_string(width) + "x" + std::to_string(height),
+                         "picture");
+    }
+    try {
+        ImageData output = blankRgba(width, height);
+        if (!resizeSrgb(rgba, 0.0, 0.0, 1.0, 1.0, output)) {
+            return makeError(ErrorCode::OutOfRange, "the picture could not be resampled", "picture");
+        }
+        return output;
+    } catch (const std::bad_alloc&) {
+        return makeError(ErrorCode::OutOfRange, "out of memory while resampling a picture", "picture");
+    }
+}
+
 Expected<FitResult> fitCover(const ImageData& source, int width, int height, const FitOptions& options) {
     if (!source.isValid() || width < 1 || height < 1) {
         return makeError(ErrorCode::InvalidArgument,
@@ -135,8 +180,16 @@ Expected<FitResult> fitCover(const ImageData& source, int width, int height, con
         const ImageData& rgba = converted.isValid() ? converted : source;
         const double sourceWidth = rgba.width;
         const double sourceHeight = rgba.height;
-        const double scaleX = width / sourceWidth;
-        const double scaleY = height / sourceHeight;
+        // The label the cover is fitted to, in its own units: the picture's pixels (I3's fit), or the label quad's
+        // shape (ADR-0013 §4), whose units then map to the picture's pixels axis by axis (the one resample).
+        const bool layer = options.label.isLayer();
+        const LabelAspect shape = options.label.reduced();
+        const double labelWidth = layer ? static_cast<double>(width) : static_cast<double>(shape.width);
+        const double labelHeight = layer ? static_cast<double>(height) : static_cast<double>(shape.height);
+        const double pixelsPerUnitX = layer ? 1.0 : width / labelWidth;
+        const double pixelsPerUnitY = layer ? 1.0 : height / labelHeight;
+        const double scaleX = labelWidth / sourceWidth;
+        const double scaleY = labelHeight / sourceHeight;
 
         FitResult result;
         result.picture = blankRgba(width, height);
@@ -145,7 +198,7 @@ Expected<FitResult> fitCover(const ImageData& source, int width, int height, con
         // Scaled to cover: the axis with the smaller scale overflows and would be cropped.
         const double cover = std::max(scaleX, scaleY);
         const bool cropWidth = scaleY > scaleX; // scaled by the height, the width overflows
-        const double kept = cropWidth ? width / (sourceWidth * cover) : height / (sourceHeight * cover);
+        const double kept = cropWidth ? labelWidth / (sourceWidth * cover) : labelHeight / (sourceHeight * cover);
         const double share = 1.0 - kept;
         if (share <= kMaxCoverCropShare + 1e-12) {
             result.mode = FitMode::Cropped;
@@ -163,8 +216,9 @@ Expected<FitResult> fitCover(const ImageData& source, int width, int height, con
 
         // Scaled to fit, bands of the edge's colour on the axis left uncovered.
         const double fit = std::min(scaleX, scaleY);
-        const int coverWidth = std::clamp(static_cast<int>(std::lround(sourceWidth * fit)), 1, width);
-        const int coverHeight = std::clamp(static_cast<int>(std::lround(sourceHeight * fit)), 1, height);
+        const int coverWidth = std::clamp(static_cast<int>(std::lround(sourceWidth * fit * pixelsPerUnitX)), 1, width);
+        const int coverHeight =
+            std::clamp(static_cast<int>(std::lround(sourceHeight * fit * pixelsPerUnitY)), 1, height);
         const bool sideBands = coverWidth < width;
         ImageData scaled = blankRgba(coverWidth, coverHeight);
         if (!resizeSrgb(rgba, 0.0, 0.0, 1.0, 1.0, scaled)) {

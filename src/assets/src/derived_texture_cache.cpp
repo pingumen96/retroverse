@@ -81,10 +81,13 @@ std::string CacheKey::hex() const {
 }
 
 CacheKey coverCacheKey(TextureClass textureClass, TextureFormat format, std::string_view mediaKind,
-                       std::string_view mediaRelativePath) {
+                       std::string_view mediaRelativePath, const LabelAspect& label) {
     KeyHasher hasher(textureClass, format, "media");
     hasher.add(mediaKind);
     hasher.add(mediaRelativePath);
+    if (!label.isLayer()) {
+        hasher.add("label=" + label.key());
+    }
     return {hasher.finish(), textureClass};
 }
 
@@ -111,9 +114,12 @@ CacheKey spineCacheKey(const SpineRequest& request, TextureFormat format, const 
 CacheKey frontLabelCacheKey(const FrontLabelRequest& request, TextureFormat format, const LabelFonts& fonts) {
     const std::string_view texts[] = {request.title, request.fallbackTitle, request.systemName, request.year};
     const FontFace* detail = fonts.detail != nullptr ? fonts.detail : fonts.title;
-    const std::string_view shas[] = {fonts.title != nullptr ? std::string_view(fonts.title->sha256()) : "",
-                                     detail != nullptr ? std::string_view(detail->sha256()) : ""};
-    return generatedCacheKey(TextureClass::Front, format, texts, paletteColour(request.seed), shas);
+    const std::string shape = request.label.isLayer() ? std::string() : "label=" + request.label.key();
+    const std::string_view parts[] = {fonts.title != nullptr ? std::string_view(fonts.title->sha256()) : "",
+                                      detail != nullptr ? std::string_view(detail->sha256()) : "", shape};
+    // The shape is one more element after the fonts, only for a shape other than the layer's (I3's keys unchanged).
+    return generatedCacheKey(TextureClass::Front, format, texts, paletteColour(request.seed),
+                             std::span<const std::string_view>(parts, shape.empty() ? 2 : 3));
 }
 
 DerivedTextureCache::DerivedTextureCache(fs::path root) : m_root(std::move(root)) {}
@@ -281,7 +287,7 @@ std::string_view toString(ServeOutcome outcome) noexcept {
 Expected<ServedLayer> serveCover(DerivedTextureCache& cache, TextureFormat format, std::string_view mediaKind,
                                  std::string_view mediaRelativePath, const fs::path& sourcePath,
                                  const FitOptions& options) {
-    const CacheKey key = coverCacheKey(TextureClass::Front, format, mediaKind, mediaRelativePath);
+    const CacheKey key = coverCacheKey(TextureClass::Front, format, mediaKind, mediaRelativePath, options.label);
     const auto serveWithoutSource = [&](const Error& why) -> Expected<ServedLayer> {
         Lookup found = cache.lookup(key, std::nullopt, true);
         if (found.outcome == LookupOutcome::Hit) {

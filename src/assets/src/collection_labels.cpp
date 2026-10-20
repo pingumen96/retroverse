@@ -477,10 +477,11 @@ TitleLayout layoutSpineTitle(const FontFace& font, std::string_view title, std::
                           kSpineTwoLinesMax * thickness, kSpineTwoLinesMin * thickness, usedFallback);
 }
 
-TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title, std::string_view fallbackTitle,
-                             TextureFormat format) {
-    const float k = frontScale(format);
-    const float available = (kFrontTextRight - kFrontTextLeft) * k;
+namespace {
+
+/// The front title's layout at the scale `k` (the layer's width over 256) in a line of `available` pixels.
+TitleLayout layoutFrontTitleIn(const FontFace& font, std::string_view title, std::string_view fallbackTitle, float k,
+                               float available) {
     bool usedFallback = false;
     const std::u32string text = chooseTitleText(font, title, fallbackTitle, &usedFallback);
     if (text.empty()) {
@@ -567,6 +568,26 @@ TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title, std::
     return finish(font, std::move(lines), size, split, true, usedFallback);
 }
 
+} // namespace
+
+TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title, std::string_view fallbackTitle,
+                             TextureFormat format) {
+    const float k = frontScale(format);
+    return layoutFrontTitleIn(font, title, fallbackTitle, k, (kFrontTextRight - kFrontTextLeft) * k);
+}
+
+TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title, std::string_view fallbackTitle,
+                             TextureFormat format, const LabelAspect& label) {
+    if (label.isLayer()) {
+        return layoutFrontTitle(font, title, fallbackTitle, format);
+    }
+    const float k = frontScale(format);
+    const LayerSize size = layerSize(TextureClass::Front, format);
+    const CanvasSize canvas = labelCanvas(label, size.width, size.height);
+    return layoutFrontTitleIn(font, title, fallbackTitle, k,
+                              static_cast<float>(canvas.width) - 2.0F * kFrontTextLeft * k);
+}
+
 Rgb8 spineBaseColour(const SpineRequest& request) noexcept {
     return request.coverColour ? *request.coverColour : paletteColour(request.seed);
 }
@@ -632,11 +653,16 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
     }
     const FontFace& titleFont = *fonts.title;
     const FontFace& detailFont = fonts.detail != nullptr ? *fonts.detail : titleFont;
-    const LayerSize size = layerSize(TextureClass::Front, format);
+    const LayerSize layer = layerSize(TextureClass::Front, format);
+    // Laid out on a canvas of the label's shape (ADR-0013 §4), resampled once into the layer below; the layer itself
+    // for I3's shape.
+    const bool onCanvas = !request.label.isLayer();
+    const CanvasSize size = labelCanvas(request.label, layer.width, layer.height);
     const float k = frontScale(format);
     GeneratedPicture result;
     result.colours = labelColours(paletteColour(request.seed));
-    result.layout = layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format);
+    result.layout = onCanvas ? layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format, request.label)
+                             : layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format);
     result.picture = filledImage(size.width, size.height, result.colours.background);
     const Rgb8 background = result.colours.background;
     const Rgb8 text = result.colours.text;
@@ -645,6 +671,9 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
     const Rgb8 frame = toSrgb8(mixLinear(background, text, 0.45F));
     const auto w = static_cast<float>(size.width);
     const auto h = static_cast<float>(size.height);
+    // What a canvas taller than the layer's 188 (at k) adds below the stripes: the title's band grows, the details
+    // stay at the bottom (0 for the layer).
+    const float extra = onCanvas ? h - static_cast<float>(layer.height) : 0.0F;
     const float inset = kFrontFrameInset * k;
     const float stroke = kFrontFrameStroke * k;
     fillRect(result.picture, inset, inset, w - inset, inset + stroke, frame);
@@ -657,13 +686,13 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
 
     std::vector<PlacedRun> runs;
     const float left = kFrontTextLeft * k;
-    const float right = kFrontTextRight * k;
+    const float right = onCanvas ? w - kFrontTextLeft * k : kFrontTextRight * k;
     const float pixelHeight = result.layout.pixelHeight;
     const float cap = titleFont.capHeight(pixelHeight);
     const std::size_t lineCount = result.layout.lines.size();
     const float pitch = kFrontLinePitch * pixelHeight;
     const float block = cap + pitch * static_cast<float>(lineCount > 0 ? lineCount - 1 : 0);
-    float baseline = (kFrontTitleTop + kFrontTitleBottom) * k / 2.0F - block / 2.0F + cap;
+    float baseline = ((kFrontTitleTop + kFrontTitleBottom) * k + extra) / 2.0F - block / 2.0F + cap;
     for (const std::string& line : result.layout.lines) {
         PlacedRun run;
         run.font = &titleFont;
@@ -677,7 +706,7 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
 
     // The system's name at the bottom left, the year at the bottom right.
     const float detailSize = kFrontDetailSize * k;
-    const float detailBaseline = kFrontDetailBaseline * k;
+    const float detailBaseline = kFrontDetailBaseline * k + extra;
     const std::u32string year = collapseWhitespace(decodeUtf8(request.year));
     float yearWidth = 0.0F;
     if (!year.empty()) {
@@ -691,6 +720,13 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
                         detailBaseline});
     }
     drawText(result.picture, text, runs);
+    if (onCanvas) {
+        auto squeezed = resampleSrgb(result.picture, layer.width, layer.height);
+        if (!squeezed) {
+            return propagate(squeezed.error());
+        }
+        result.picture = std::move(*squeezed);
+    }
     return result;
 }
 

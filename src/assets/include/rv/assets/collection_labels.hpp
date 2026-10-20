@@ -15,7 +15,8 @@
 //
 // Generated front label (256 x 188 in BC1, 128 x 94 in RGBA8): a frame inset from the edge and two stripes across the
 // top in tints of the text colour, the title centred in the space between them, the system's name at the bottom left
-// and the year at the bottom right. Readable, never an imitation of a real layout. The title (sizes in pixels at
+// and the year at the bottom right (for a label quad of another shape, laid out at that shape and resampled into the
+// layer: FrontLabelRequest::label). Readable, never an imitation of a real layout. The title (sizes in pixels at
 // 256 px wide, scaled with the layer): one line from 34 down to 20 px; else two or three lines from 26 down to 14 px,
 // a separator forcing the first break and each part broken between words where its widest line is narrowest, the
 // largest size winning unless fewer lines reach 85% of it; else three lines at 14 px, the last one cut with an
@@ -119,6 +120,11 @@ struct TitleLayout {
 /// The generated front label's title layout in `format`.
 [[nodiscard]] TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title,
                                            std::string_view fallbackTitle, TextureFormat format);
+/// The same on the canvas of `label`'s shape (labelCanvas(): the line as wide as the canvas allows, the sizes those of
+/// the layer's scale); layoutFrontTitle() above for the layer's shape.
+[[nodiscard]] TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title,
+                                           std::string_view fallbackTitle, TextureFormat format,
+                                           const LabelAspect& label);
 
 struct SpineRequest {
     std::string title;
@@ -134,6 +140,10 @@ struct FrontLabelRequest {
     std::string systemName; ///< the system's full name (catalog data; an invented one in committed fixtures)
     std::string year;       ///< "1994", or empty
     std::uint64_t seed = 0;
+    /// The label quad's shape (ADR-0013 §4): the label is laid out on a canvas of that shape (labelCanvas(): the
+    /// frame, the stripes and the title at the layer's scale, the title's band taller or the lines wider), then
+    /// resampled once into the layer; the layer's own shape by default (I3's label).
+    LabelAspect label;
 };
 
 /// The colour a spine starts from: the cover's dominant colour, else the palette's colour for the seed.

@@ -336,3 +336,51 @@ TEST_CASE("assets/collection_labels: generated pixels are stable (hashed)", "[as
         CHECK(c.actual == c.expected);
     }
 }
+
+TEST_CASE("assets/collection_labels: a front label laid out at its label's shape (I4 step 2)",
+          "[assets][collection_labels]") {
+    // ADR-0013 §4: laid out on a canvas of the label quad's shape, then resampled once into the 256 x 188 layer, which
+    // the quad stretches back. The layer's shape is I3's label to the pixel.
+    const char* title = "Harbor Lights : Return of the Night Ferry";
+    FrontLabelRequest i3{title, "", "Fantasy Home System", "1994", 5};
+    FrontLabelRequest layer = i3;
+    layer.label = {};
+    auto drawnI3 = drawFrontLabel(fonts(), i3, TextureFormat::Bc1Srgb);
+    auto drawnLayer = drawFrontLabel(fonts(), layer, TextureFormat::Bc1Srgb);
+    REQUIRE(drawnI3.has_value());
+    REQUIRE(drawnLayer.has_value());
+    CHECK(drawnI3->picture.pixels == drawnLayer->picture.pixels);
+    for (const LabelAspect shape : {LabelAspect{120, 120}, LabelAspect{123, 178}, LabelAspect{96, 60}}) {
+        INFO(shape.key());
+        for (const TextureFormat format : {TextureFormat::Bc1Srgb, TextureFormat::Rgba8Srgb}) {
+            FrontLabelRequest request = i3;
+            request.label = shape;
+            auto drawn = drawFrontLabel(fonts(), request, format);
+            REQUIRE(drawn.has_value());
+            const LayerSize size = layerSize(TextureClass::Front, format);
+            CHECK(drawn->picture.width == size.width);
+            CHECK(drawn->picture.height == size.height);
+            CHECK(drawn->picture.pixels != drawFrontLabel(fonts(), i3, format)->picture.pixels);
+            // The lines fit the canvas's width.
+            const CanvasSize canvas = labelCanvas(shape, size.width, size.height);
+            const float k = static_cast<float>(size.width) / 256.0F;
+            for (const std::string& line : drawn->layout.lines) {
+                CHECK(titleFont().layout(decodeUtf8(line), drawn->layout.pixelHeight).width <=
+                      static_cast<float>(canvas.width) - 40.0F * k + 1e-3F);
+            }
+            // Readable after BC1.
+            if (format == TextureFormat::Bc1Srgb) {
+                auto layerTexture = buildFrontLabelLayer(fonts(), request, format);
+                REQUIRE(layerTexture.has_value());
+                const ImageData decoded = decodeLevel(layerTexture->texture, 0);
+                CHECK(textContrast(decoded, mostCommon(decoded)) >= kMinTextContrast);
+            }
+        }
+    }
+    // A landscape canvas lays a long title out on wider lines: never more of them.
+    const TitleLayout onLayer = layoutFrontTitle(titleFont(), title, "", TextureFormat::Bc1Srgb);
+    const TitleLayout onWide = layoutFrontTitle(titleFont(), title, "", TextureFormat::Bc1Srgb, LabelAspect{2, 1});
+    CHECK(onWide.lines.size() <= onLayer.lines.size());
+    const TitleLayout onSquare = layoutFrontTitle(titleFont(), title, "", TextureFormat::Bc1Srgb, LabelAspect{1, 1});
+    CHECK(onSquare.lines == onLayer.lines); // as wide as the layer
+}
