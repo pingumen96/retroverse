@@ -117,6 +117,12 @@ theirs under `build/<preset>/smoke/world*/`. The benchmark path: `--width 1920 -
 --exit-after-frames --frames 1270 --fixed-dt 0.016667 --input-script tests/input_scripts/bench_snes_room.json` from the
 room's scene camera (the `benchmark` phase of the run report, with its GPU passes).
 
+Another family's room with its items and covers (I4 step 2): a data directory with that system's catalog, then
+`retroverse.exe --room-system psx --exit-after-frames --frames 40 --fixed-dt 0.016667 --hidden --data-dir <dir>
+--screenshot build/screenshots/psx.png` (with `--spawn -2.45,0,-3.9,0,-8` a hero-wall module up close, `--spawn
+-3.3,0,-4.0,-90,-12` the first west side-wall module, `--spawn -0.25,0,1.0,-90,-38` the west display case); the
+`esde/building` fixture's systems or any invented library under `build/`.
+
 A generated room's static part is checked as a scene: `retroverse-cli --data-dir build/rvdata worldplan show
 tests/fixtures/world/golden/plan-890-seed-102938.json --scene build/scenes/room_890.json`, then `retroverse.exe --scene
 build/scenes/room_890.json` as above (the shell, the hero corner, the modules, displays, dressing and lights, without

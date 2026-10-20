@@ -56,7 +56,16 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   bundled fonts, loaded only when their SHA-256 matches `assets/registry/assets.json`; the derived-texture cache under
   `<user data>/cache/textures/<library id>` (`.rvtex` entries named without the source, found while it is out of
   reach, invalidated by its size and time, trimmed to 512 MiB). Raise `kCoverPipelineVersion` (`rvtex.hpp`) with any
-  change of a layer's pixels.
+  change of a layer's pixels. Since I4 step 2 (ADR-0013 §4) a front is made for its family's label quad
+  (`assets::LabelAspect`, `world::MediaFamily::coverAspect()`): the cover fitted to that shape and the generated label
+  laid out at it, then resampled once into the 256 x 188 layer, the shape in lowest terms the last element of the front
+  keys; the layer's own shape (the 16-bit cartridges, `coverFit: "layer"`) runs I3's code and keys unchanged.
+- Media families (`assets/world/media_families.json`, `rv/world/media_family.hpp`, ADR-0013 §4): ids are permanent (a
+  new definition takes a new id). A family names its item manifest (the `cartridge` prefab at its size, its label quad
+  proven by `checkItemManifest()`) and optionally its fixtures (hero-wall and side-wall modules, display case, featured
+  wall shelf at its slot sizes); `withFamilyFixtures()` stands them in the template's sockets wherever a room's data is
+  read, so the plan records them by ref. A fixture's levels must face the family exactly (`LevelFacing`), as
+  `tests/unit/world/test_world_families.cpp` checks for every family.
 - World plans (ADR-0010, ADR-0013 §5): a plan is `writePlan()`'s canonical text, in schema 2 (the building), and is
   only ever written through `world::savePlan()` under the world lock (a hard rule broken is never saved); never edit
   one by hand (it is then refused). A schema-1 plan is read and lifted (`world::lift`), never written. Placements are

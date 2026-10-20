@@ -153,7 +153,9 @@ build/rvdata`).
   `<user data>/cache/textures/<library id>`; the empty room while it is made; the test room with a notice when there is
   no catalog (no library.json or database) or no snes games; the empty room with a notice when the media root is out of
   reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
-  command has it). With a plan stored, its room shows at the first frame (covers and spines from the cache by the room's
+  command has it). `--room-system <system>` (I4 step 2, until step 5a's floors and `--start-room`) shows another
+  system's room instead of the snes one, its media family's items and fixtures and its covers fitted to their labels
+  (ADR-0013 §4; a data directory with that system's catalog: the `esde/building` fixture's, or any). With a plan stored, its room shows at the first frame (covers and spines from the cache by the room's
   items, `<user data>/cache/world/<library id>/room-<system>.json`) before the snapshot is asked for, then is reconciled
   with it (unchanged: nothing moved, rebuilt or written; changed: committed again with the walker kept). A manifest
   missing from the asset root falls back to its family's prefab, warned once per run. The walker starts at the room's
