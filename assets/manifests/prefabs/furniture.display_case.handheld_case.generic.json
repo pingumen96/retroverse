@@ -1,6 +1,5 @@
 // The low display case of the media family case_handheld (ADR-0013 §4; I4 step 2): the 16-bit case's vitrine, levels,
-// tilt, gaps and margins, its face-out slots the item's 12.5 x 14.000000000000002 x 1.4000000000000001 cm. Falls back
-// to the 16-bit case.
+// tilt, gaps and margins, its face-out slots the item's 12.5 x 14 x 1.4 cm. Falls back to the 16-bit case.
 {
   "schemaVersion": 1,
   "id": "furniture.display_case.handheld_case.generic",

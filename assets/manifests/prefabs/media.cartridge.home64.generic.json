@@ -1,7 +1,7 @@
-// The 64-bit home cartridge (generation 5 and later) (media family cartridge_home_64bit, ADR-0013 §4; I4 step 2),
-// 11.600000000000001 x 7.6 x 1.7999999999999998 cm: the 'cartridge' prefab at the family's size, its front label (the
-// cover, fitted to the 96 x 60 mm label quad) and its spine label on its top face, shown when it stands spine-out in a
-// 1.7999999999999998 x 11.600000000000001 x 7.6 cm slot. Functional, of no real model.
+// The 64-bit home cartridge (generation 5 and later) (media family cartridge_home_64bit, ADR-0013 §4; I4 step 2), 11.6
+// x 7.6 x 1.8 cm: the 'cartridge' prefab at the family's size, its front label (the cover, fitted to the 96 x 60 mm
+// label quad) and its spine label on its top face, shown when it stands spine-out in a 1.8 x 11.6 x 7.6 cm slot.
+// Functional, of no real model.
 {
   "schemaVersion": 1,
   "id": "media.cartridge.home64.generic",

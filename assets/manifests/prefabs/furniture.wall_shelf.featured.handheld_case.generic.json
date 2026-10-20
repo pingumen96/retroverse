@@ -1,6 +1,6 @@
 // The featured wall shelf of the media family case_handheld (ADR-0013 §4; I4 step 2): the 16-bit shelf's two picture
-// ledges, tilt, gaps and margins hung at 1.1 m, as tall and deep as a leaning item of 12.5 x 14.000000000000002 x
-// 1.4000000000000001 cm needs. Falls back to the 16-bit shelf.
+// ledges, tilt, gaps and margins hung at 1.1 m, as tall and deep as a leaning item of 12.5 x 14 x 1.4 cm needs. Falls
+// back to the 16-bit shelf.
 {
   "schemaVersion": 1,
   "id": "furniture.wall_shelf.featured.handheld_case.generic",

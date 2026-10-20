@@ -1,6 +1,6 @@
 // The featured wall shelf of the media family cartridge_home_64bit (ADR-0013 §4; I4 step 2): the 16-bit shelf's two
-// picture ledges, tilt, gaps and margins hung at 1.1 m, as tall and deep as a leaning item of 11.600000000000001 x 7.6
-// x 1.7999999999999998 cm needs. Falls back to the 16-bit shelf.
+// picture ledges, tilt, gaps and margins hung at 1.1 m, as tall and deep as a leaning item of 11.6 x 7.6 x 1.8 cm
+// needs. Falls back to the 16-bit shelf.
 {
   "schemaVersion": 1,
   "id": "furniture.wall_shelf.featured.home64.generic",

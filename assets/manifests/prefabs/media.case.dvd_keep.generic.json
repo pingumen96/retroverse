@@ -1,7 +1,6 @@
-// The DVD keep case (media family disc_case_dvd, ADR-0013 §4; I4 step 2), 13.5 x 19 x 1.4000000000000001 cm: the
-// 'cartridge' prefab at the family's size, its front label (the cover, fitted to the 123 x 178 mm label quad) and its
-// spine label on its top face, shown when it stands spine-out in a 1.4000000000000001 x 13.5 x 19 cm slot. Functional,
-// of no real model.
+// The DVD keep case (media family disc_case_dvd, ADR-0013 §4; I4 step 2), 13.5 x 19 x 1.4 cm: the 'cartridge' prefab at
+// the family's size, its front label (the cover, fitted to the 123 x 178 mm label quad) and its spine label on its top
+// face, shown when it stands spine-out in a 1.4 x 13.5 x 19 cm slot. Functional, of no real model.
 {
   "schemaVersion": 1,
   "id": "media.case.dvd_keep.generic",

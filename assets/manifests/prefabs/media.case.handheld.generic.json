@@ -1,7 +1,6 @@
-// The handheld game case (media family case_handheld, ADR-0013 §4; I4 step 2), 12.5 x 14.000000000000002 x
-// 1.4000000000000001 cm: the 'cartridge' prefab at the family's size, its front label (the cover, fitted to the 115 x
-// 130 mm label quad) and its spine label on its top face, shown when it stands spine-out in a 1.4000000000000001 x 12.5
-// x 14.000000000000002 cm slot. Functional, of no real model.
+// The handheld game case (media family case_handheld, ADR-0013 §4; I4 step 2), 12.5 x 14 x 1.4 cm: the 'cartridge'
+// prefab at the family's size, its front label (the cover, fitted to the 115 x 130 mm label quad) and its spine label
+// on its top face, shown when it stands spine-out in a 1.4 x 12.5 x 14 cm slot. Functional, of no real model.
 {
   "schemaVersion": 1,
   "id": "media.case.handheld.generic",

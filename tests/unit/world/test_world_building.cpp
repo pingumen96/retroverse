@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <array>
 #include <map>
 #include <set>
 #include <string>
@@ -192,6 +193,21 @@ TEST_CASE("world/building: systems.json classifies every system of ES-DE 3.4.1",
         // A floor and a generic sign (test_world_families.cpp checks the families).
         CHECK(classification.hasRoom());
         CHECK_FALSE(classification.entry.sign.empty());
+    }
+    // Signs are generic texts, never a trade name (ADR-0013 §1, style §17.2): none names a maker, a console or a
+    // trademarked format.
+    constexpr std::array<std::string_view, 42> kTradeNames{
+        "LASERDISC", "NINTENDO",  "SEGA",     "SONY",          "PLAYSTATION", "ATARI",      "COMMODORE",
+        "AMIGA",     "WORKBENCH", "GAME BOY", "GAMEBOY",       "XBOX",        "NEO GEO",    "NEOGEO",
+        "SNES",      "FAMICOM",   "GENESIS",  "MEGA DRIVE",    "DREAMCAST",   "WINDOWS",    "MS-DOS",
+        "MSX",       "SPECTRUM",  "COLECO",   "INTELLIVISION", "VECTREX",     "TURBOGRAFX", "PC ENGINE",
+        "3DO",       "JAGUAR",    "LYNX",     "WONDERSWAN",    "BANDAI",      "SNK",        "CAPCOM",
+        "STEAM",     "ANDROID",   "PIONEER",  "PHILIPS",       "APPLE",       "MACINTOSH",  "SATURN"};
+    for (const rv::world::SystemEntry& entry : systems().systems) {
+        for (const std::string_view name : kTradeNames) {
+            INFO(entry.system.str() << "'s sign \"" << entry.sign << "\"");
+            CHECK(entry.sign.find(name) == std::string::npos);
+        }
     }
     // The rows stand in the floors' order (the platform-tag fallback takes the first match), the excluded ones last.
     for (const rv::world::SystemEntry& entry : systems().systems) {
