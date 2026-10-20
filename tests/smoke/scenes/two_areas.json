@@ -1,0 +1,32 @@
+// I4 step 3's areas (ADR-0013 §9): two areas side by side on one floor, each lit by its own key spot, a warm one in the
+// west and a cool one in the east, neither reaching the other's pool (range 8 m from 3.5 m up, 8 m apart). A view
+// from the west packs the west area's light alone, from the east the east's: the other pool shows the ambient only. A
+// grey floor and a pillar under each spot (whose shadow the area's key light casts). tests/smoke/test_world_floor.cpp
+// renders it from a spawn in each area and from a variant without areas (both lights packed).
+{
+  "schemaVersion": 1,
+  "name": "two_areas",
+  "camera": {"position": [0.0, 1.65, 8.0], "yawDeg": 0.0, "pitchDeg": -20.0, "horizontalFovDeg": 75.0},
+  "environment": {
+    "clearColor": "#101010", "ambientSky": "#FFFFFF", "ambientGround": "#808080", "ambientIntensity": 0.08,
+    "exposure": 1.0, "bloomStrength": 0.0, "vignette": 0.0, "ssao": {"enabled": false}
+  },
+  "areas": [
+    {"id": "west", "boxes": [{"min": [-12.0, 0.0, -8.0], "max": [0.0, 4.0, 12.0]}]},
+    {"id": "east", "boxes": [{"min": [0.0, 0.0, -8.0], "max": [12.0, 4.0, 12.0]}]}
+  ],
+  "lights": [
+    {"name": "west key", "type": "spot", "position": [-4.0, 3.5, 0.0], "target": [-4.0, 0.0, 0.0], "color": "#FFB080",
+     "intensity": 30.0, "range": 8.0, "innerConeDeg": 30.0, "outerConeDeg": 45.0, "castsShadows": true, "area": "west"},
+    {"name": "east key", "type": "spot", "position": [4.0, 3.5, 0.0], "target": [4.0, 0.0, 0.0], "color": "#80B0FF",
+     "intensity": 30.0, "range": 8.0, "innerConeDeg": 30.0, "outerConeDeg": 45.0, "castsShadows": true, "area": "east"}
+  ],
+  "objects": [
+    {"id": "floor", "primitive": "box", "params": {"size": [24.0, 0.02, 20.0]}, "position": [0.0, -0.01, 2.0],
+     "material": "MAT_Concrete_Warm"},
+    {"id": "west pillar", "primitive": "box", "params": {"size": [0.4, 1.2, 0.4]}, "position": [-4.6, 0.6, -1.0],
+     "material": "MAT_Concrete_Warm"},
+    {"id": "east pillar", "primitive": "box", "params": {"size": [0.4, 1.2, 0.4]}, "position": [4.6, 0.6, -1.0],
+     "material": "MAT_Concrete_Warm"}
+  ]
+}
