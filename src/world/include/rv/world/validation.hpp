@@ -23,8 +23,8 @@
 // The building (ADR-0013 §11; the rules that need no hall: the halls' are I4 step 3's): the plan holds the ground
 // floor, every room stands on a floor of the plan (and every floor is building.json's, at its order, when the building
 // is given), the rooms of a floor do not overlap (their footprints on the floor: the interior grown by the building's
-// wall allowance, building.hpp), every system stands in exactly one room or one section, and the arcade room stands on
-// the ground floor. A room an update kept as it is (ValidationContext::keptRooms) is reported (soft, room-kept); its
+// wall allowance, building.hpp), every system stands in exactly one room (an expansion counted with its chain's head)
+// or one section, and the arcade room stands on the ground floor. A room an update kept as it is (ValidationContext::keptRooms) is reported (soft, room-kept); its
 // template's version and its prefabs' slots are not judged, since it keeps what an older template or prefab made.
 //
 // Reachability: the grid of each room, its obstacles dilated by half the configuration's minimum clear width

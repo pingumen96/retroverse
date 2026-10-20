@@ -255,6 +255,54 @@ TEST_CASE("world/plan_json: the text is read back as the plan and written again 
     CHECK(*rv::world::readPlan(*emptyText, "empty.json") == empty);
 }
 
+TEST_CASE("world/plan_json: shared, arcade and expansion rooms round-trip byte for byte", "[world][plan_json]") {
+    // Schema 2's reserved forms (ADR-0013 §5, §8), which nothing generates yet: a shared room of several sections in
+    // their recorded order, the arcade room, an expansion of a console room and one of the shared room.
+    WorldPlan plan = samplePlan();
+    const rv::world::Room head = plan.rooms.front();
+    const auto system = [](std::string_view name) { return *rv::catalog::SystemName::parse(name); };
+    rv::world::Room shared = head;
+    shared.id = *RoomId::sharedArea("gen4");
+    shared.kind = rv::world::RoomKind::Shared;
+    shared.sections = {system("pcengine"), system("megadrive")};
+    shared.placement = {7650, 6650, 1};
+    rv::world::Room sharedMore = shared;
+    sharedMore.id = *RoomId::sharedArea("gen4", 2);
+    sharedMore.expands = shared.id;
+    sharedMore.placement = {16950, 6650, 1};
+    rv::world::Room arcade = head;
+    arcade.id = *RoomId::arcadeArea();
+    arcade.kind = rv::world::RoomKind::Arcade;
+    arcade.floor = "ground";
+    arcade.sections = {system("mame"), system("fbneo")};
+    arcade.mediaFamily = "generic_case";
+    rv::world::Room expansion = head;
+    expansion.id = *RoomId::forSystem(head.id.system(), 2);
+    expansion.expands = head.id;
+    expansion.placement = {16950, -6650, 0};
+    plan.rooms = {sharedMore, expansion, arcade, head, shared};
+    plan.unplaced.push_back({game(9), shared.id, UnplacedReason::Capacity, {}});
+
+    auto text = rv::world::writePlan(plan);
+    REQUIRE(text.has_value());
+    CHECK_THAT(*text, ContainsSubstring(R"("expands":"room:snes")"));
+    CHECK_THAT(*text, ContainsSubstring(R"("expands":"area:shared:gen4")"));
+    CHECK_THAT(*text, ContainsSubstring(R"("sections":["pcengine","megadrive"])"));
+    CHECK_THAT(*text, ContainsSubstring(R"("id":"area:arcade","kind":"arcade")"));
+    auto read = rv::world::readPlan(*text, "building.json");
+    REQUIRE(read.has_value());
+    rv::world::sortPlan(plan);
+    CHECK(*read == plan);
+    CHECK(*rv::world::writePlan(*read) == *text);
+    // Rooms in id order: the arcade room, the shared rooms, then the systems' rooms, each chain's head first.
+    std::vector<std::string> ids;
+    for (const rv::world::Room& room : read->rooms) {
+        ids.push_back(room.id.toString());
+    }
+    CHECK(ids == std::vector<std::string>{"area:arcade", "area:shared:gen4", "area:shared:gen4:2", "room:snes",
+                                          "room:snes:2"});
+}
+
 TEST_CASE("world/plan_json: a schema-1 text is read as its content and never written", "[world][plan_json]") {
     auto v1 = rv::world::readPlan(kSampleTextV1, "world-plan.json");
     REQUIRE(v1.has_value());

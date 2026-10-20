@@ -33,7 +33,8 @@ constexpr std::array<ValidationRule, 34> kRules{{
      "Every room stands on a floor of the plan, and every floor of the plan is the building's, at its order."},
     {rule::kRoomsOverlap, Severity::Hard, "No two rooms' footprints on one floor overlap."},
     {rule::kSystemRooms, Severity::Hard,
-     "Every system stands in exactly one room or one section; the arcade room stands on the ground floor."},
+     "Every system stands in exactly one room (with its chain of expansions) or one section; the arcade room stands "
+     "on the ground floor."},
     {rule::kRoomTemplate, Severity::Hard, "Every room's template is known, at the version the room was made from."},
     {rule::kRoomSize, Severity::Hard,
      "Every room has its template's interior and height at its growth step, within the template's growth limit."},
@@ -490,7 +491,8 @@ private:
         }
         const BuildingLayout layout = m_context.building ? m_context.building->layout : BuildingLayout{0, 0, 0, 0, 0};
         std::map<std::string, std::vector<const Room*>> byFloor;
-        std::map<catalog::SystemName, std::vector<std::string>> standsIn;
+        // The chains each system stands in, by their head: an expansion holds its head's systems (ADR-0013 §8).
+        std::map<catalog::SystemName, std::set<RoomId>> standsIn;
         for (const Room& room : m_plan.rooms) {
             if (!floors.contains(room.floor)) {
                 m_findings.add(rule::kFloorUnknown, room.id.toString(),
@@ -504,12 +506,15 @@ private:
             }
             byFloor[room.floor].push_back(&room);
             for (const catalog::SystemName& system : room.sections) {
-                standsIn[system].push_back(room.id.toString());
+                standsIn[system].insert(room.id.head());
             }
         }
-        for (auto& [system, rooms] : standsIn) {
-            std::sort(rooms.begin(), rooms.end());
-            if (rooms.size() > 1) {
+        for (const auto& [system, heads] : standsIn) {
+            if (heads.size() > 1) {
+                std::vector<std::string> rooms;
+                for (const RoomId& head : heads) {
+                    rooms.push_back(head.toString());
+                }
                 m_findings.add(rule::kSystemRooms, system.str(),
                                fmt::format("the system stands in {} rooms or sections: {}", rooms.size(),
                                            fmt::join(rooms, ", ")));

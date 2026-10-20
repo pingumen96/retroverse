@@ -769,6 +769,24 @@ TEST_CASE("world/validation: the building's rules", "[world][validation]") {
         CHECK(findings[0].subject == "snes");
         CHECK_THAT(findings[0].message, ContainsSubstring("area:shared:gen4, room:snes"));
 
+        // An expansion holds its head's system: one chain, one room (ADR-0013 §8).
+        plan = rv::test::validRoomPlan();
+        rv::world::Room expansion = secondRoom(plan);
+        expansion.id = *rv::world::RoomId::forSystem(plan.rooms.front().id.system(), 2);
+        expansion.expands = plan.rooms.front().id;
+        expansion.sections = {plan.rooms.front().id.system()};
+        plan.rooms.push_back(expansion);
+        CHECK(findingsOf(validate(plan), rule::kSystemRooms).empty());
+        // A chain and another room of the same system: two.
+        rv::world::Room section = secondRoom(plan);
+        section.id = *rv::world::RoomId::sharedArea("gen4");
+        section.kind = rv::world::RoomKind::Shared;
+        section.sections = {plan.rooms.front().id.system()};
+        plan.rooms.push_back(section);
+        findings = findingsOf(validate(plan), rule::kSystemRooms);
+        REQUIRE(findings.size() == 1);
+        CHECK_THAT(findings[0].message, ContainsSubstring("stands in 2 rooms or sections: area:shared:gen4, room:snes"));
+
         plan = rv::test::validRoomPlan();
         rv::world::Room arcade = secondRoom(plan);
         arcade.id = *rv::world::RoomId::arcadeArea();
