@@ -177,19 +177,20 @@ TEST_CASE("cli/worldplan generate: usage and failures", "[cli][worldplan]") {
     const RunResult noLibrary = generate({"--system", "snes", "--selection", selectionText});
     CHECK(noLibrary.code == ExitCode::UsageError);
     CHECK(contains(noLibrary.err, "library create"));
-    // A system whose data the asset root cannot give yet (nes: its family comes with I4 step 2), a selection that is
-    // not one: exit 3.
-    rv::world::RoomSelection nesSelection = rv::test::world::makeSelection(10, 1);
-    nesSelection.room = *rv::world::RoomId::forSystem(*rv::catalog::SystemName::parse("nes"));
-    for (rv::world::UnplacedGame& game : nesSelection.unplaced) {
-        game.room = nesSelection.room;
+    // A system whose room the asset root cannot give (kodi: excluded, ADR-0013 §2), a selection that is not one:
+    // exit 3.
+    rv::world::RoomSelection kodiSelection = rv::test::world::makeSelection(10, 1);
+    kodiSelection.room = *rv::world::RoomId::forSystem(*rv::catalog::SystemName::parse("kodi"));
+    for (rv::world::UnplacedGame& game : kodiSelection.unplaced) {
+        game.room = kodiSelection.room;
     }
-    REQUIRE(rv::core::writeTextFileAtomic(dir.file("nes.json"), *rv::world::writeRoomSelection(nesSelection))
+    REQUIRE(rv::core::writeTextFileAtomic(dir.file("kodi.json"), *rv::world::writeRoomSelection(kodiSelection))
                 .has_value());
-    const RunResult nes =
-        generate({"--system", "nes", "--selection", rv::core::pathToUtf8(dir.file("nes.json")), "--library", "esde"});
-    CHECK(nes.code == ExitCode::RuntimeFailure);
-    CHECK(contains(nes.err, "the world's data of nes"));
+    const RunResult kodi =
+        generate({"--system", "kodi", "--selection", rv::core::pathToUtf8(dir.file("kodi.json")), "--library", "esde"});
+    CHECK(kodi.code == ExitCode::RuntimeFailure);
+    CHECK(contains(kodi.err, "the world's data of kodi"));
+    CHECK(contains(kodi.err, "gets no room (excluded)"));
     REQUIRE(rv::core::writeTextFileAtomic(dir.file("broken.json"), "{}\n").has_value());
     const RunResult broken =
         generate({"--system", "snes", "--selection", rv::core::pathToUtf8(dir.file("broken.json")), "--library", "esde"});

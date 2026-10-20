@@ -1,9 +1,27 @@
-// The media family registry (ADR-0010 §2, style §22; read by rv/world/media_family.hpp, which documents the format):
-// how the games of each family stand on a shelf, in millimetres. The item's size is its manifest's scaleMeters
-// (media.cartridge.home16.generic: 12.5 x 8.5 x 2.0 cm, the label on its front); spine-out the cartridge stands on its
-// end with its top face outward, a 2.0 x 12.5 cm spine 8.5 cm deep, at a 2.4 cm pitch; face-out it shows its front, as
-// in the test room. The gaps and margins are the shelf prefab's defaults; the headroom is the free height kept above an
-// item in its level, so that it can be pulled out (ADR-0012 §3).
+// The media family registry (ADR-0010 §2, ADR-0013 §4; read by rv/world/media_family.hpp, which documents the format):
+// how the games of each family stand on a shelf, in millimetres. An item's size is its manifest's scaleMeters, the
+// 'cartridge' prefab at the family's size with its label on its front and its spine label on its top face; spine-out
+// an item stands on its end with its top face outward (its width tall, its height deep), face-out it shows its front.
+// The gaps and margins are the shelf prefab's; the headroom is the free height kept above an item in its level, so
+// that it can be pulled out (ADR-0012 §3). The label is the item's label quad (its front less the label margin), what
+// a cover is fitted to before its one resample into the 256 x 188 front layer (ADR-0013 §4); cartridge_home_16bit
+// keeps I3's fit to the layer itself (coverFit "layer", ADR-0013 §4's stated exception: no SNES pixel moves).
+//
+// cartridge_home_16bit (I3): 12.5 x 8.5 x 2.0 cm, a 2.0 x 12.5 cm spine 8.5 cm deep at a 2.4 cm pitch; the template's
+// own fixtures. The families of I4 step 2 are functional (ADR-0013 §4: realistic generic sizes, no real model; the rare
+// formats take the nearest), each with its own fixtures at its slot sizes (assets/manifests/prefabs, hand-computed:
+// the 16-bit fixtures' widths, boards, gaps and margins, the most levels whose compartments hold the item and its
+// headroom, the hero band on the level nearest the eye):
+//   cartridge_home_8bit   12.0 x 13.3 x 2.0 cm   home cartridges of generations 2 and 3
+//   cartridge_home_64bit  11.6 x 7.6 x 1.8 cm    home cartridges of generation 5 and later
+//   cartridge_handheld    5.7 x 6.5 x 0.8 cm     handheld cartridges (and the disk cards)
+//   case_handheld         12.5 x 14.0 x 1.4 cm   handheld game cases (cards and small discs)
+//   disc_case_cd          14.2 x 12.5 x 1.0 cm   CD jewel cases, a 12 x 12 cm insert
+//   disc_case_dvd         13.5 x 19.0 x 1.4 cm   DVD and Blu-ray keep cases
+//   big_box               19.0 x 24.0 x 4.5 cm   the 16- and 32-bit computers' and the PCs' boxes
+//   generic_case          13.0 x 18.0 x 1.5 cm   everything else: the arcade room, the shared rooms, the 8-bit
+//                                                computers, the other kinds
+// Family ids are permanent: a family is never removed or redefined, a new definition takes a new id.
 {
   "schemaVersion": 1,
   "families": [
@@ -13,8 +31,155 @@
       "itemWidthMm": 125,
       "itemHeightMm": 85,
       "itemDepthMm": 20,
+      "labelWidthMm": 101,
+      "labelHeightMm": 61,
+      "coverFit": "layer",
       "spineOut": {"widthMm": 20, "heightMm": 125, "depthMm": 85, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "faceOut": {"widthMm": 125, "heightMm": 85, "depthMm": 20, "gapMm": 4, "marginMm": 30, "headroomMm": 20}
+    },
+    {
+      "id": "cartridge_home_8bit",
+      "item": {"manifest": "media.cartridge.home8.generic", "kind": "cartridge"},
+      "itemWidthMm": 120,
+      "itemHeightMm": 133,
+      "itemDepthMm": 20,
+      "labelWidthMm": 100,
+      "labelHeightMm": 113,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 20, "heightMm": 120, "depthMm": 133, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 120, "heightMm": 133, "depthMm": 20, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.home8.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.home8.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.home8.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.home8.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "cartridge_home_64bit",
+      "item": {"manifest": "media.cartridge.home64.generic", "kind": "cartridge"},
+      "itemWidthMm": 116,
+      "itemHeightMm": 76,
+      "itemDepthMm": 18,
+      "labelWidthMm": 96,
+      "labelHeightMm": 60,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 18, "heightMm": 116, "depthMm": 76, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 116, "heightMm": 76, "depthMm": 18, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.home64.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.home64.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.home64.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.home64.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "cartridge_handheld",
+      "item": {"manifest": "media.cartridge.handheld.generic", "kind": "cartridge"},
+      "itemWidthMm": 57,
+      "itemHeightMm": 65,
+      "itemDepthMm": 8,
+      "labelWidthMm": 47,
+      "labelHeightMm": 53,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 8, "heightMm": 57, "depthMm": 65, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 57, "heightMm": 65, "depthMm": 8, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.handheld_cart.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.handheld_cart.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.handheld_cart.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.handheld_cart.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "case_handheld",
+      "item": {"manifest": "media.case.handheld.generic", "kind": "cartridge"},
+      "itemWidthMm": 125,
+      "itemHeightMm": 140,
+      "itemDepthMm": 14,
+      "labelWidthMm": 115,
+      "labelHeightMm": 130,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 14, "heightMm": 125, "depthMm": 140, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 125, "heightMm": 140, "depthMm": 14, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.handheld_case.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.handheld_case.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.handheld_case.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.handheld_case.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "disc_case_cd",
+      "item": {"manifest": "media.case.cd_jewel.generic", "kind": "cartridge"},
+      "itemWidthMm": 142,
+      "itemHeightMm": 125,
+      "itemDepthMm": 10,
+      "labelWidthMm": 120,
+      "labelHeightMm": 120,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 10, "heightMm": 142, "depthMm": 125, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 142, "heightMm": 125, "depthMm": 10, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.cd_jewel.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.cd_jewel.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.cd_jewel.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.cd_jewel.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "disc_case_dvd",
+      "item": {"manifest": "media.case.dvd_keep.generic", "kind": "cartridge"},
+      "itemWidthMm": 135,
+      "itemHeightMm": 190,
+      "itemDepthMm": 14,
+      "labelWidthMm": 123,
+      "labelHeightMm": 178,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 14, "heightMm": 135, "depthMm": 190, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 135, "heightMm": 190, "depthMm": 14, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.dvd_keep.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.dvd_keep.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.dvd_keep.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.dvd_keep.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "big_box",
+      "item": {"manifest": "media.box.big.generic", "kind": "cartridge"},
+      "itemWidthMm": 190,
+      "itemHeightMm": 240,
+      "itemDepthMm": 45,
+      "labelWidthMm": 180,
+      "labelHeightMm": 230,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 45, "heightMm": 190, "depthMm": 240, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 190, "heightMm": 240, "depthMm": 45, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.big_box.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.big_box.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.big_box.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.big_box.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "generic_case",
+      "item": {"manifest": "media.case.plain.generic", "kind": "cartridge"},
+      "itemWidthMm": 130,
+      "itemHeightMm": 180,
+      "itemDepthMm": 15,
+      "labelWidthMm": 118,
+      "labelHeightMm": 168,
+      "coverFit": "label",
+      "spineOut": {"widthMm": 15, "heightMm": 130, "depthMm": 180, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "faceOut": {"widthMm": 130, "heightMm": 180, "depthMm": 15, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.shelf.hero_module.plain_case.generic", "kind": "shelf"},
+        "sideModule": {"manifest": "furniture.shelf.side_module.plain_case.generic", "kind": "shelf"},
+        "display": {"manifest": "furniture.display_case.plain_case.generic", "kind": "display_case"},
+        "wallShelf": {"manifest": "furniture.wall_shelf.featured.plain_case.generic", "kind": "wall_shelf"}
+      }
     }
   ]
 }

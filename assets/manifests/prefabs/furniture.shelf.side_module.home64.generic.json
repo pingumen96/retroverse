@@ -1,0 +1,40 @@
+// The side-wall module of the media family cartridge_home_64bit (ADR-0013 §4; I4 step 2): the 16-bit module's 0.9 x
+// 1.775 m shelf, its 0.35 m base, boards, 4 mm gaps and 3 cm margins, with 8 levels of the 64-bit home cartridge
+// (generation 5 and later) (on its end, its top face out) in 1.7999999999999998 x 11.600000000000001 x 7.6 cm slots:
+// the most levels whose compartments hold the item and its 2 cm of headroom. Falls back to the 16-bit side module.
+{
+  "schemaVersion": 1,
+  "id": "furniture.shelf.side_module.home64.generic",
+  "assetType": "furniture",
+  "category": "shelf",
+  "role": "storage",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-20",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "shelf",
+    "params": {
+      "width": 0.9, "height": 1.775, "depth": 0.24, "levels": 8, "boardThickness": 0.025, "back": true,
+      "plinthHeight": 0.35, "slotSize": [0.018, 0.116, 0.076], "slotGap": 0.004, "slotMargin": 0.03,
+      "slotFrontInset": 0.01
+    },
+    "scaleMeters": [0.9, 1.775, 0.24],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "firstSlot": "Slot_0_0"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "shelf", "storage", "game_slots", "spine_out", "collection_module", "procedural"],
+  "fallbackPrefab": "furniture.shelf.side_module.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

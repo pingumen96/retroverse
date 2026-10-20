@@ -103,7 +103,7 @@ ResolvedPrefab resolveOk(const std::filesystem::path& root, const PrefabFamilies
 
 TEST_CASE("assets/families: every shipped manifest has a family whose fallbacks exist", "[assets][families]") {
     const PrefabFamilies families = shippedFamilies();
-    REQUIRE(families.families.size() == 18); // I3 step 16: decor.plant, decor.sign
+    REQUIRE(families.families.size() == 20); // I3 step 16: decor.plant, decor.sign; I4 step 2: media.box, media.case
     for (std::size_t i = 1; i < families.families.size(); ++i) {
         CHECK(families.families[i - 1].id < families.families[i].id);
     }

@@ -398,6 +398,8 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
         return makeError(ErrorCode::NotFound, "the media family registry has no such family", room->mediaFamily);
     }
     data.mediaFamily = *family;
+    // The template as the room's family stands it (ADR-0013 §4); the plan's fixtures name their prefabs themselves.
+    data.roomTemplate = withFamilyFixtures(std::move(data.roomTemplate), data.mediaFamily);
     auto families = assets::loadPrefabFamilies(assetRoot);
     if (!families) {
         return propagate(families.error());

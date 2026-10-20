@@ -1,0 +1,39 @@
+// The CD jewel case (media family disc_case_cd, ADR-0013 §4; I4 step 2), 14.2 x 12.5 x 1 cm: the 'cartridge' prefab at
+// the family's size, its front label (the cover, fitted to the 120 x 120 mm label quad) and its spine label on its top
+// face, shown when it stands spine-out in a 1 x 14.2 x 12.5 cm slot. Functional, of no real model.
+{
+  "schemaVersion": 1,
+  "id": "media.case.cd_jewel.generic",
+  "assetType": "physical_media",
+  "category": "case",
+  "role": "collection_item",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-20",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cartridge",
+    "params": {
+      "size": [0.142, 0.125, 0.01], "chamfer": 0.0008, "labelMargin": [0.011, 0.0025], "labelInset": 0.0008,
+      "gripRidges": false, "spineLabel": true, "spineLabelSize": [0.007, 0.0448]
+    },
+    "scaleMeters": [0.142, 0.125, 0.01],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "label": "Label",
+      "spine": "Spine"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["media", "case", "cd", "jewel_case", "procedural"],
+  "fallbackPrefab": "media.case.plain.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}
