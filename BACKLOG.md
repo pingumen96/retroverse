@@ -435,7 +435,8 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
   another generator major as kept (`room-kept`, soft), but a room whose prefabs' levels changed still fails
   `prefab-slots` there, while `world::updateBuilding` keeps such a room and saves the plan (`docs/i4/step-1.md`). The
   check could load each room's data (`loadRoomData`) and ask `roomKeepReason()` as the update does.
-- **The plan's inputDigest after a partial update (I4 step 1):** `updateBuilding` hashes the rooms it was given a
-  selection for, so the app (which updates only the SNES room until step 5a's building job) and a whole-building CLI
-  update record different provenance digests for one catalog, and each rewrites the plan once when the other wrote it
-  last. Provenance only; the building job of step 5a updates every room.
+- **Old template versions for kept rooms (I4 step 1):** a room `world::updateBuilding` keeps for an older template
+  version, or for prefab levels that no longer hold its placements or dressing, cannot be drawn: the scene builder
+  reads the template's current version and the prefabs as they are, so the app shows the shell with the `failed`
+  notice (as I3 did for the same changes). ADR-0013 §4 keeps an old template version's file while a plan names it;
+  `loadRoomTemplate` could read the version a room names (`docs/i4/step-1.md`).

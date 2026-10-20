@@ -44,7 +44,7 @@ build/rvdata`).
   `sceneTextures`, `buffers`; now and peak), `video` (the hero CRT: the game and picture shown, the one decoder, the
   first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings; `{}` without a CRT),
   `world` (`{}` without a room: the state, notice, outcome and rebuild, the plan's digest, placements per section and
-  `unplaced` per reason, items, clusters, lights, findings, `times` from the process's creation; `preview`,
+  `unplaced` per reason (`roomKept` since I4 step 1), items, clusters, lights, findings, `times` from the process's creation; `preview`,
   `reconcile`, `itemsWritten`, `screenGames`, `objectFallbacks` of the persisted start; `interaction` (events, counts,
   `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
   `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
@@ -142,22 +142,27 @@ build/rvdata`).
   relative to the file) and `"lastPlayed"`. `--video-freeze-pts <seconds>` (frame-limited
   runs, 0 to 86400) opens every clip paused at that time and holds the frame: two runs give the same screenshot byte for
   byte. NVIDIA's message 131154 (every video upload) is dropped like the informational ids.
-- The generated room (I3, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012): without `--scene`, `--model`
-  or `--mock-catalog`, `retroverse.exe` opens the room of its ES-DE catalog's snes games: the plan under
-  `<user data>/worlds/<library id>/` generated or updated and saved (generator 1.2), the covers and spines through the
-  derived-texture cache `<user data>/cache/textures/<library id>`; the empty room while it is made; the test room with
-  a notice when there is no catalog (no library.json or database) or no snes games; the empty room with a notice when
-  the media root is out of reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test
-  room as before (G01's command has it). With a plan stored, its room shows at the first frame (covers and spines from
-  the cache by the room's items, `<user data>/cache/world/<library id>/room-<system>.json`) before the snapshot is asked
-  for, then is reconciled with it (unchanged: nothing moved, rebuilt or written; changed: committed again with the
-  walker kept). A manifest missing from the asset root falls back to its family's prefab, warned once per run. The
-  walker starts at the room's doorway camera (or `--spawn`). Covers come nearest first (the hovered item, the view by
-  projected size, the rest by distance); the hovered item's front shows its hero texture (its cover at up to 1,024 px,
-  8 kept); nothing is loaded while a game runs; after "Aggiorna libreria" the covers the media root could not give are
-  tried again. Lockstep runs (`--fixed-dt`) wait before the first frame and between frames for the room, the layers of
-  the frame's view and the hovered item's hero texture, and for the whole room before their last frame (10 s at a time):
-  a stored room at frame 0, the reconciled one from frame 1.
+- The generated room (I3, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since I4 step 1,
+  ADR-0013, `docs/i4/step-1.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe` opens the room of
+  its ES-DE catalog's snes games: the plan under `<user data>/worlds/<library id>/` generated or updated and saved
+  (generator 1.3, schema 2: the building, of which the app updates and shows the snes room alone, in its own frame, the
+  other rooms as they stand, until I4 step 5a; a stored schema-1 plan of I3 is read lifted into the building and written
+  in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is, for an older
+  template version, prefab levels that changed or another generator major, shows with the regeneration's notice and its
+  new games unplaced as `room-kept`), the covers and spines through the derived-texture cache
+  `<user data>/cache/textures/<library id>`; the empty room while it is made; the test room with a notice when there is
+  no catalog (no library.json or database) or no snes games; the empty room with a notice when the media root is out of
+  reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
+  command has it). With a plan stored, its room shows at the first frame (covers and spines from the cache by the room's
+  items, `<user data>/cache/world/<library id>/room-<system>.json`) before the snapshot is asked for, then is reconciled
+  with it (unchanged: nothing moved, rebuilt or written; changed: committed again with the walker kept). A manifest
+  missing from the asset root falls back to its family's prefab, warned once per run. The walker starts at the room's
+  doorway camera (or `--spawn`). Covers come nearest first (the hovered item, the view by projected size, the rest by
+  distance); the hovered item's front shows its hero texture (its cover at up to 1,024 px, 8 kept); nothing is loaded
+  while a game runs; after "Aggiorna libreria" the covers the media root could not give are tried again. Lockstep runs
+  (`--fixed-dt`) wait before the first frame and between frames for the room, the layers of the frame's view and the
+  hovered item's hero texture, and for the whole room before their last frame (10 s at a time): a stored room at frame
+  0, the reconciled one from frame 1.
   The item the reticle rests on within 2.5 m is outlined and labelled with its title; after 150 ms it leaves its slot (a
   face-out cartridge tips forward, a spine-out one slides out and turns its cover to the viewer). E, a captured left
   click or the pad's south button focuses a spine-out cartridge (the walker eased to 0.9 m in front of it) or inspects

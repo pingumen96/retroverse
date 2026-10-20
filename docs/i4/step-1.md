@@ -27,17 +27,20 @@ amends [ADR-0010](../decisions/ADR-0010-world-generator-and-world-plan.md), whic
 - **The update per room** (`incremental.hpp`): `updateBuilding()` lifts a schema-1 plan and updates each room that has
   a selection exactly as ADR-0010 §10 did. World-level checks (seed, preset, generator major, random algorithm,
   title-key rule) stay global. A room is kept when its template version, its prefab levels or its generator major
-  changed: its contents are untouched, and every game of its selection that it does not place becomes `room-kept`.
-  `update()` is the one-system form.
+  changed: its contents are untouched, its unplaced entries too, and a game of its selection that it neither places
+  nor lists becomes `room-kept`. `update()` is the one-system form.
 - **Validation** (`validation.hpp`, 34 rules): new hard rules `ground-floor`, `floor-unknown`, `rooms-overlap` and
-  `system-rooms` (each system in exactly one room, the arcade room on the ground floor). New soft rule `room-kept`. A
-  kept room's template version and prefab slots are not judged.
+  `system-rooms` (each system in exactly one room, an expansion counted with its chain's head, the arcade room on the
+  ground floor). New soft rule `room-kept`. A kept room's template version and prefab slots are not judged.
 - **CLI**: `worldplan generate | update` plan the building. `--system` and `--selection` are repeatable
-  (`ArgParser::values`). `show` prints floors and rooms, and `where-is` names the floor. `show`, `check`, `where-is`
-  and `update` lift a schema-1 plan. Reference: [cli.md](../reference/cli.md).
+  (`ArgParser::values`). `show` prints floors and rooms, `show --scene` writes the only room's scene or `--room`'s, and
+  `where-is` names the floor. `show`, `check`, `where-is` and `update` lift a schema-1 plan. Reference:
+  [cli.md](../reference/cli.md).
 - **App**: it lifts a stored schema-1 plan when it reads it. It updates its SNES room through `updateBuilding`, with
   each room's data read under its recorded family (`loadRoomData`). The first update writes schema 2 and backs up the
-  v1 file. The room is still shown in its own frame: floors in the app are step 5a's.
+  v1 file. The room is still shown in its own frame: floors in the app are step 5a's. A kept SNES room shows with the
+  regeneration's notice (a warning names the room), the quick catalog's card says why a `room-kept` game is not there,
+  and the run report counts `world.unplaced.roomKept`.
 
 ## Decisions
 
@@ -54,16 +57,32 @@ amends [ADR-0010](../decisions/ADR-0010-world-generator-and-world-plan.md), whic
   optional. Without a console, the hero corner stands without its console part (arcade, computer, other).
 - **A full floor** (12 rooms per row on both rows): every game of the system is unplaced as `capacity`, naming
   `room:<system>`. `room-unknown` accepts such entries.
+- **What the `inputDigest` hashes of the systems.** It hashes each system's classification: the row it takes and
+  why (its own row, a platform-tag match with the system matched, or the fallback). The ES-DE platform tags therefore
+  count only when they decide the row, and then they are in it. A system with a row of its own hashes alike with or
+  without tags, so the app (which knows none) and the CLI (the catalog's) write one plan for one catalog.
 - **Rooms without a selection** are left as they are by the update. The `inputDigest` hashes the rooms that were given
-  a selection, so it remains provenance only.
-- **The update's `--system`** restricts the rooms updated and is always allowed. `generate --system` restricts the
-  building, but only with `--plan` or when no plan is stored; with `--replace` over a stored plan it is a usage error.
-  Selection files name the building's systems.
+  a selection (provenance only). An update that leaves some room without a selection and changes nothing keeps the
+  plan's `inputDigest`, which named more. So an update with nothing new writes nothing, whichever rooms it was given:
+  the app's SNES room alone, `update --system`, or the whole building. A whole update still records new inputs that
+  change nothing (I3 step 9's rule 7). After a partial update that changed its room, the next whole update rewrites the
+  digest once.
+- **The update's `--system`** restricts the rooms updated and is always allowed. This deviates from ADR-0013 §12; the
+  rule above makes it harmless. With selection files, the rooms updated are the files', and `--system` given with them
+  must name the same systems (else exit 2).
+- **`generate`'s restrictions.** `generate --system` restricts the building, but only with `--plan` or when no plan is
+  stored; with `--replace` over a stored plan it is a usage error. Selection files name the building's systems
+  (`--system`, given with them, names the same ones). With `--replace` over a stored plan, they must hold every system
+  of the stored building, so `--replace` never drops a room (else exit 2).
+- **Floors' generations** bind only the kinds that have generations, in the reader and in `floorFor()` alike. A floor
+  of `["home", "other"]` with generations `[1, 2]` holds every `other` system.
 - **Goldens.**
   - The plan goldens were rewritten with `RV_UPDATE_GOLDEN=1`, 28 files. Each changes only in `schemaVersion`,
     `generatorVersion`, `inputDigest`, `floors` and the room's new fields: 3 lines out and 6 in per file. No fixture,
     placement, dressing, light or unplaced entry moved.
   - One golden building was added, `building-5-systems-seed-102938.json`.
+  - The review's fixes rewrote those 29 files again, in their `inputDigest` line only (the systems hashed by their
+    classification).
   - The scene goldens did not change.
   - `tests/fixtures/world/v1/` is untouched.
   - The room goldens G01 to G10 match 0 pixels apart in Release. Their JSON files still record the plan digests of
@@ -79,8 +98,13 @@ amends [ADR-0010](../decisions/ADR-0010-world-generator-and-world-plan.md), whic
   - `generateBuilding()` itself gives a room to every selection it is given, so the I3 suites keep their 0-title rooms.
 - **`worldplan check`.** It judges a room of an older template version or of another generator major as kept. A room
   whose prefab levels changed still fails `prefab-slots` there, although the update keeps such a room.
-- **The app** updates only the SNES room. In a building made by the CLI, the other rooms stay as they are, and the
-  app's `inputDigest` names only the rooms it updated.
+- **The app** updates only the SNES room. In a building made by the CLI, the other rooms stay as they are; the app's
+  update with nothing new writes nothing.
+- **A kept room that cannot be drawn.** The scene builder draws a room from its template's current version and its
+  prefabs as they are now. A room kept for an older template version, or for prefab levels that no longer hold its
+  placements or dressing, therefore shows as the empty shell with the `failed` notice, as I3 did for the same changes.
+  A kept room whose prefabs still hold its slots (a level added, for instance) shows as it stands. ADR-0013 §4 keeps
+  old template versions; reading them is a follow-up.
 
 ## The real oracle (read-only, `E:/Progetti/retroverse/build/i4-oracle/snes-v1-world-plan.json`, generator 1.2)
 
@@ -112,3 +136,5 @@ Plan .../snes-v1-world-plan.json (schema 1, lifted into the building)
 - **Step 5a:** the app's floors and the building job, which will update every room.
 - **Step 6a:** new systems in the update; until then a selection for a system without a room is refused, and the CLI
   exits 1.
+- **Old template versions** (ADR-0013 §4): a kept room's template read at its version, so that the room can still be
+  drawn (BACKLOG).
