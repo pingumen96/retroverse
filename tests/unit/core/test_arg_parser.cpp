@@ -39,6 +39,20 @@ TEST_CASE("core/arg_parser: flags, options and defaults", "[core][arg_parser]") 
     CHECK_FALSE(args->positional("model").has_value());
 }
 
+TEST_CASE("core/arg_parser: an option given several times", "[core][arg_parser]") {
+    const ArgParser parser = makeParser();
+
+    const auto args = parse(parser, {"--scene", "a", "--frames", "5", "--scene=b", "--scene", "a"});
+    REQUIRE(args.has_value());
+    CHECK(args->values("scene") == std::vector<std::string>{"a", "b", "a"});
+    CHECK(args->value("scene") == "a"); // the last one
+    CHECK(args->values("frames") == std::vector<std::string>{"5"});
+    const auto none = parse(parser, {});
+    REQUIRE(none.has_value());
+    CHECK(none->values("scene").empty());
+    CHECK(none->values("frames") == std::vector<std::string>{"3"}); // the default alone
+}
+
 TEST_CASE("core/arg_parser: positionals and the -- separator", "[core][arg_parser]") {
     const ArgParser parser = makeParser();
     const auto args = parse(parser, {"--frames", "10", "crt.glb"});

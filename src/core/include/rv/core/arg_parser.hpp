@@ -16,8 +16,11 @@ class ParsedArgs {
 public:
     /// True when a flag or option was given on the command line.
     [[nodiscard]] bool has(std::string_view name) const;
-    /// Option value (or its default when declared with one).
+    /// Option value (or its default when declared with one); the last one when the option was given several times.
     [[nodiscard]] std::optional<std::string> value(std::string_view name) const;
+    /// Every value of an option given several times ("--system a --system b"), in the order given; its default alone
+    /// when it was not given and has one; empty otherwise.
+    [[nodiscard]] std::vector<std::string> values(std::string_view name) const;
     /// Integer option value, `fallback` when absent; ParseError when present but not an integer.
     [[nodiscard]] Expected<int> intValue(std::string_view name, int fallback) const;
     /// Floating point option value, `fallback` when absent; ParseError when malformed.
@@ -30,6 +33,7 @@ private:
     std::map<std::string, std::string, std::less<>> m_values; // options with values (explicit or default)
     std::map<std::string, bool, std::less<>> m_present;       // flags and options given explicitly
     std::map<std::string, std::string, std::less<>> m_positionals;
+    std::map<std::string, std::vector<std::string>, std::less<>> m_given; // every value given, by option
 };
 
 /// Minimal GNU-style command line parser: `--flag`, `--option value`, `--option=value`, positionals.
