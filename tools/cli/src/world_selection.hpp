@@ -1,16 +1,17 @@
 #pragma once
 
-// Private to rv_cli_core (I3 steps 3 and 9): what `worldplan generate` and `worldplan update` share: a room's
-// selection from a canonical selection file or from the catalog, as the app's catalog worker makes it (I3 step 2:
-// SqliteCatalogQuery::roomEntries on a read-only connection, esde::checkRoomMedia against the media root of the library
-// <user data>/config/library.json records, world::selectRoom; nothing while the media are unknown), the aliases the
-// catalog records for placed games its snapshot no longer holds (ADR-0008 §4, for the update), the world seed option,
-// the world configuration, and the change report as text and JSON. Header only, so that each subcommand keeps one
-// source.
+// Private to rv_cli_core (I3 steps 3 and 9, I4 step 1): what `worldplan generate` and `worldplan update` share: the
+// rooms' selections of a building from canonical selection files or from the catalog, as the app's catalog worker
+// makes them (I3 step 2: SqliteCatalogQuery::roomEntries on a read-only connection, esde::checkRoomMedia against the
+// media root of the library <user data>/config/library.json records, world::selectRoom; nothing while the media are
+// unknown) with the systems' platform tags, the building's data, the aliases the catalog records for placed games its
+// snapshots no longer hold (ADR-0008 §4, for the update), the world seed option, the world configuration, and the
+// change report as text and JSON. Header only, so that each subcommand keeps one source.
 
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -24,11 +25,13 @@
 
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/room_entry.hpp>
+#include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/cli/command.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
 #include <rv/esde/media_resolver.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/incremental.hpp>
 #include <rv/world/room_input.hpp>
@@ -73,45 +76,78 @@ inline std::optional<world::WorldConfig> loadWorldConfiguration(CommandContext& 
     return config;
 }
 
-/// A room's selection and the library it is for, or how the command ends.
+/// The building's data (building.json, systems.json) under the asset root. On failure the message is on stderr and the
+/// command exits 3.
+struct BuildingInfo {
+    world::BuildingData building;
+    world::SystemsData systems;
+};
+inline std::optional<BuildingInfo> loadBuildingInfo(CommandContext& context, std::string_view name) {
+    auto building = world::loadBuildingData(context.paths.assetRoot());
+    if (!building) {
+        context.err.writeLine(fmt::format("{}: the building's data: {}", name, building.error().toString()));
+        return std::nullopt;
+    }
+    auto systems = world::loadSystemsData(context.paths.assetRoot());
+    if (!systems) {
+        context.err.writeLine(fmt::format("{}: the systems' data: {}", name, systems.error().toString()));
+        return std::nullopt;
+    }
+    return BuildingInfo{std::move(*building), std::move(*systems)};
+}
+
+/// The rooms' selections of a building and the library they are for, or how the command ends.
 struct Selected {
-    std::optional<world::RoomSelection> selection;
+    /// Set when the selections were made (possibly none).
+    bool ok = false;
+    std::vector<world::RoomSelection> selections;
+    /// The systems' ES-DE platform tags (the catalog's; none for selection files).
+    std::map<catalog::SystemName, std::vector<std::string>> platformTags;
     catalog::LibraryId library;
-    /// The catalog's selection only: the snapshot's GameIds, for the aliases of placed games it lacks.
+    /// The catalog's selections only: the snapshots' GameIds, for the aliases of placed games they lack.
     std::set<catalog::GameId> snapshotGames;
     bool fromCatalog = false;
+    /// The catalog's systems left out of the building, and why (excluded, no placeable title, no data yet).
+    std::vector<std::pair<catalog::SystemName, std::string>> leftOut;
     ExitCode failure = ExitCode::RuntimeFailure;
 };
 
-/// The selection of a canonical selection file, for the library `given` (--library) names or library.json records.
-inline Selected selectionFromFile(CommandContext& context, std::string_view name, const std::string& file,
-                                  const std::optional<std::string>& given) {
+/// The selections of canonical selection files (each names its room's system), for the library `given` (--library)
+/// names or library.json records.
+inline Selected selectionsFromFiles(CommandContext& context, std::string_view name,
+                                    const std::vector<std::string>& files, const std::optional<std::string>& given) {
     Selected selected;
     const auto library = libraryOf(context, name, given, selected.failure);
     if (!library) {
         return selected;
     }
     selected.library = *library;
-    const std::filesystem::path path = core::pathFromUtf8(file);
-    auto text = core::readTextFile(path);
-    if (!text) {
-        context.err.writeLine(fmt::format("{}: the selection: {}", name, text.error().toString()));
-        return selected;
+    for (const std::string& file : files) {
+        const std::filesystem::path path = core::pathFromUtf8(file);
+        auto text = core::readTextFile(path);
+        if (!text) {
+            context.err.writeLine(fmt::format("{}: the selection: {}", name, text.error().toString()));
+            return selected;
+        }
+        auto selection = world::readRoomSelection(*text, pathText(path));
+        if (!selection) {
+            context.err.writeLine(fmt::format("{}: the selection: {}", name, selection.error().toString()));
+            return selected;
+        }
+        selected.selections.push_back(std::move(*selection));
     }
-    auto selection = world::readRoomSelection(*text, pathText(path));
-    if (!selection) {
-        context.err.writeLine(fmt::format("{}: the selection: {}", name, selection.error().toString()));
-        return selected;
-    }
-    selected.selection = std::move(*selection);
+    selected.ok = true;
     return selected;
 }
 
-/// The catalog's selection for `system`: the bulk snapshot, the media root checked, world::selectRoom. Unknown media
-/// decide nothing (ADR-0010 §3): no selection, exit 1, "<name>: <nothing> while the media are unknown: ...".
-inline Selected selectionFromCatalog(CommandContext& context, std::string_view name, const catalog::SystemName& system,
-                                     const std::optional<std::string>& given, const world::WorldConfig& config,
-                                     std::string_view nothing) {
+/// The catalog's selections of `systems` (each must be in the catalog: exit 1 "the catalog has no system"), or, with
+/// none named, of every system of the catalog that classify() gives a room and that has a placeable title (ADR-0013
+/// §3); the others are left out, with why. Unknown media decide nothing (ADR-0010 §3): no selection, exit 1,
+/// "<name>: <nothing> while the media are unknown: ...".
+inline Selected selectionsFromCatalog(CommandContext& context, std::string_view name,
+                                      const std::vector<catalog::SystemName>& systems,
+                                      const std::optional<std::string>& given, const world::WorldConfig& config,
+                                      std::string_view nothing, const BuildingInfo& info) {
     Selected selected;
     selected.fromCatalog = true;
     const auto profile = readRecordedLibrary(context, name, selected.failure);
@@ -131,34 +167,104 @@ inline Selected selectionFromCatalog(CommandContext& context, std::string_view n
         selected.failure = catalogFailure(context, reader.error());
         return selected;
     }
-    auto snapshot = reader->query->roomEntries(system);
-    if (!snapshot) {
-        if (snapshot.error().code == ErrorCode::NotFound) {
-            context.err.writeLine(fmt::format("{}: the catalog has no system {}", name, system.str()));
-            selected.failure = ExitCode::ProblemsFound;
-            return selected;
-        }
-        selected.failure = catalogFailure(context, snapshot.error());
+    auto summaries = reader->query->systems();
+    if (!summaries) {
+        selected.failure = catalogFailure(context, summaries.error());
         return selected;
+    }
+    std::map<catalog::SystemName, std::vector<std::string>> tags;
+    for (const catalog_db::SystemSummary& summary : *summaries) {
+        if (summary.library == profile->id) {
+            tags[summary.system.name] = summary.system.platforms;
+        }
+    }
+    const bool whole = systems.empty();
+    std::vector<catalog::SystemName> wanted = systems;
+    if (whole) {
+        for (const auto& [system, platforms] : tags) {
+            const world::Classification classification =
+                world::classify(system, platforms, info.systems, info.building);
+            if (!classification.hasRoom()) {
+                selected.leftOut.emplace_back(system,
+                                              fmt::format("no room ({})", world::toString(classification.kind())));
+                continue;
+            }
+            wanted.push_back(system);
+        }
     }
     esde::EsdeMediaResolver resolver(mediaRootOf(*profile));
-    esde::checkRoomMedia(*snapshot, resolver);
-    for (const catalog::RoomEntry& entry : snapshot->entries) {
-        selected.snapshotGames.insert(entry.id);
-    }
-    auto selection = world::selectRoom(world::RoomInput{profile->id, std::move(*snapshot)}, config);
-    if (!selection) {
-        if (selection.error().code == ErrorCode::Unavailable) {
-            context.err.writeLine(
-                fmt::format("{}: {} while the media are unknown: {}", name, nothing, selection.error().message));
-            selected.failure = ExitCode::ProblemsFound;
+    for (const catalog::SystemName& system : wanted) {
+        auto snapshot = reader->query->roomEntries(system);
+        if (!snapshot) {
+            if (snapshot.error().code == ErrorCode::NotFound) {
+                if (whole) {
+                    selected.leftOut.emplace_back(system, "no entries in the catalog");
+                    continue;
+                }
+                context.err.writeLine(fmt::format("{}: the catalog has no system {}", name, system.str()));
+                selected.failure = ExitCode::ProblemsFound;
+                return selected;
+            }
+            selected.failure = catalogFailure(context, snapshot.error());
             return selected;
         }
-        context.err.writeLine(fmt::format("{}: the room's selection: {}", name, selection.error().toString()));
-        return selected;
+        esde::checkRoomMedia(*snapshot, resolver);
+        for (const catalog::RoomEntry& entry : snapshot->entries) {
+            selected.snapshotGames.insert(entry.id);
+        }
+        auto selection = world::selectRoom(world::RoomInput{profile->id, std::move(*snapshot)}, config);
+        if (!selection) {
+            if (selection.error().code == ErrorCode::Unavailable) {
+                context.err.writeLine(
+                    fmt::format("{}: {} while the media are unknown: {}", name, nothing, selection.error().message));
+                selected.failure = ExitCode::ProblemsFound;
+                return selected;
+            }
+            context.err.writeLine(fmt::format("{}: the room's selection of {}: {}", name, system.str(),
+                                              selection.error().toString()));
+            return selected;
+        }
+        if (whole && selection->titles.empty()) {
+            selected.leftOut.emplace_back(system, "no placeable title");
+            continue;
+        }
+        if (const auto found = tags.find(system); found != tags.end()) {
+            selected.platformTags[system] = found->second;
+        }
+        selected.selections.push_back(std::move(*selection));
     }
-    selected.selection = std::move(*selection);
+    selected.ok = true;
     return selected;
+}
+
+/// The data of each selection's room (loadWorldData() with the system's platform tags), for a fresh building. A system
+/// named explicitly (`strict`) whose data the asset root cannot give fails the command (exit 3, "the world's data");
+/// otherwise it is left out of the selections, reported in `selected.leftOut`.
+inline std::optional<std::vector<world::WorldData>> loadSelectionsData(CommandContext& context, std::string_view name,
+                                                                       Selected& selected, bool strict) {
+    std::vector<world::WorldData> rooms;
+    std::vector<world::RoomSelection> kept;
+    for (world::RoomSelection& selection : selected.selections) {
+        world::RoomDataRequest request;
+        request.system = selection.room.system();
+        if (const auto tags = selected.platformTags.find(request.system); tags != selected.platformTags.end()) {
+            request.platformTags = tags->second;
+        }
+        auto data = world::loadWorldData(context.paths.assetRoot(), request);
+        if (!data) {
+            if (strict) {
+                context.err.writeLine(fmt::format("{}: the world's data of {}: {}", name, request.system.str(),
+                                                  data.error().toString()));
+                return std::nullopt;
+            }
+            selected.leftOut.emplace_back(request.system, "no data yet: " + data.error().message);
+            continue;
+        }
+        rooms.push_back(std::move(*data));
+        kept.push_back(std::move(selection));
+    }
+    selected.selections = std::move(kept);
+    return rooms;
 }
 
 /// The aliases the catalog records for the placed games of `plan` that its snapshot (`snapshotGames`) lacks: each
@@ -214,6 +320,9 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
                                 changes.slotsFreed.size() == 1 ? "" : "s"));
     line("Pins", fmt::format("{} orphaned, {} need a confirmation", changes.orphanedPins.size(),
                              changes.needsConfirmation.size()));
+    for (const world::KeptRoom& kept : changes.keptRooms) {
+        line("Room kept", fmt::format("{}: {}", kept.room.toString(), kept.reason));
+    }
     line("Digest before", changes.digestBefore.empty() ? std::string("none") : changes.digestBefore);
     line("Digest after", changes.digestAfter);
     if (!detailed) {
@@ -237,9 +346,21 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
     list("Fixtures moved", changes.fixturesMoved, id);
     list("Dressing removed", changes.dressingRemoved, id);
     list("Slots freed", changes.slotsFreed, id);
+    list("Rooms kept", changes.keptRooms, [](const world::KeptRoom& kept) {
+        return fmt::format("{}: {}", kept.room.toString(), kept.reason);
+    });
     list("Orphaned pins", changes.orphanedPins, plain);
     list("Needs confirmation", changes.needsConfirmation, plain);
     return text;
+}
+
+/// The rooms an update kept, as JSON: [{"room", "reason"}].
+inline CatalogJson keptRoomsJson(const std::vector<world::KeptRoom>& rooms) {
+    CatalogJson array = CatalogJson::array();
+    for (const world::KeptRoom& kept : rooms) {
+        array.push_back(CatalogJson{{"room", kept.room.toString()}, {"reason", kept.reason}});
+    }
+    return array;
 }
 
 /// The change report as JSON: outcome, rebuild, reason, the lists (ids as text), kept, the digests.
@@ -264,6 +385,7 @@ inline CatalogJson changeReportJson(const world::ChangeReport& changes) {
                        {"slotsFreed", ids(changes.slotsFreed)},
                        {"orphanedPins", changes.orphanedPins},
                        {"needsConfirmation", changes.needsConfirmation},
+                       {"keptRooms", keptRoomsJson(changes.keptRooms)},
                        {"digestBefore", changes.digestBefore},
                        {"digestAfter", changes.digestAfter}};
 }

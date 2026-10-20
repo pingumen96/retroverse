@@ -5,8 +5,10 @@
 // main thread's flow over a catalog and a worker pool (the test room without a catalog or without games of the room's
 // system, the stored plan read, the snapshot asked with its placed games, the build taken once). I3 step 10c: the
 // stored plan's room previewed before the snapshot is asked for and reconciled with its result, the room's items kept
-// for it, the hero CRT's games of the room, an object fallback warned once. On the snes-room fixture
-// (tests/fixtures/esde/snes-room: 50 titles with covers) imported into a user data directory.
+// for it, the hero CRT's games of the room, an object fallback warned once. I4 step 1: a stored schema-1 plan lifted
+// and saved once in schema 2, a building of two rooms (the snes room updated, the other as it stood), one plan for the
+// app and retroverse-cli's catalog commands, a room kept as it is with the regeneration's notice. On the snes-room
+// fixture (tests/fixtures/esde/snes-room: 50 titles with covers) imported into a user data directory.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -28,15 +30,25 @@
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
+#include <rv/cli/command.hpp>
+#include <rv/cli/output.hpp>
+#include <rv/core/canonical_json.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/log.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/core/worker_pool.hpp>
 #include <rv/ui/in_memory_catalog_source.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/generation.hpp>
+#include <rv/world/plan_json.hpp>
 #include <rv/world/room_input.hpp>
 #include <rv/world/room_selection.hpp>
 #include <rv/world/world_config.hpp>
 #include <rv/world/world_store.hpp>
 
+#include <nlohmann/json.hpp>
+
+#include "../world/world_generation_support.hpp"
 #include "catalog_test_support.hpp"
 #include "support/log_capture.hpp"
 
@@ -146,6 +158,59 @@ private:
     rv::ui::InMemoryCatalogSource m_source;
     std::optional<RoomSnapshotResult> m_answer;
 };
+
+/// The schema-1 text I3 wrote for the one-room schema-2 plan `text`: no floors, the room without the building's fields,
+/// generator 1.2, canonical (the same elements: generator 1.3 places a console room as 1.2 did).
+std::string schemaOneText(const std::string& text) {
+    nlohmann::json json = nlohmann::json::parse(text);
+    json["schemaVersion"] = 1;
+    json["generatorVersion"] = "1.2";
+    json.erase("floors");
+    for (nlohmann::json& room : json["rooms"]) {
+        for (const char* key : {"expands", "floor", "generatorVersion", "kind", "placement", "sections"}) {
+            room.erase(key);
+        }
+    }
+    auto written = rv::core::writeCanonicalJson(json);
+    REQUIRE(written.has_value());
+    return *written;
+}
+
+/// The texts of the plans in the world's backups/ folder.
+std::vector<std::string> backupTexts(const ImportedFixture& imported) {
+    std::vector<std::string> texts;
+    const fs::path folder =
+        rv::world::worldFiles(imported.paths.userDataRoot(), rv::test::fixtureLibrary(imported.fixture).id).backups;
+    if (fs::exists(folder)) {
+        for (const fs::directory_entry& entry : fs::directory_iterator(folder)) {
+            texts.push_back(rv::core::readTextFile(entry.path()).value());
+        }
+    }
+    return texts;
+}
+
+/// retroverse-cli run in this process on the imported fixture's data directory (stdout, stderr, the exit code).
+struct CliRun {
+    rv::cli::ExitCode code = rv::cli::ExitCode::Ok;
+    std::string out;
+    std::string err;
+};
+
+CliRun runCli(const ImportedFixture& imported, std::vector<std::string> arguments) {
+    arguments.insert(arguments.begin(), {"--data-dir", rv::core::pathToUtf8(imported.data)});
+    rv::core::PathEnvironment environment;
+    environment.executableDir = rv::test::testProgramsDir();
+    environment.sourceAssetDir = rv::core::pathFromUtf8(RV_TEST_ASSET_DIR);
+    rv::cli::Output out = rv::cli::Output::memory();
+    rv::cli::Output err = rv::cli::Output::memory();
+    const rv::cli::ExitCode code = rv::cli::run(arguments, out, err, environment);
+    // The dispatcher configures the logging for its run: the plain console logger back afterwards.
+    rv::core::LogConfig config;
+    config.console = false;
+    rv::core::initLogging(config);
+    rv::core::shutdownLogging();
+    return CliRun{code, out.text(), err.text()};
+}
 
 /// Updates `flow` until it has its result (or 60 s pass), taking its preview (I3 step 10c) into `preview` when it
 /// makes one, as the session shows it.
@@ -685,4 +750,197 @@ TEST_CASE("app/world_build: a manifest removed from a scratch asset root falls b
     const WorldBuild second = rv::app::buildWorld(input, rv::core::JobContext{});
     CHECK(second.outcome == WorldOutcome::Unchanged);
     CHECK(log.count("warning Prefab 'furniture.shelf.hero_module.generic' cannot be used") == 1);
+}
+
+TEST_CASE("app/world_build: a stored schema-1 plan is lifted, saved once in schema 2 after a backup, then left as it is",
+          "[app][world_build]") {
+    // The user's I3 room on disk (ADR-0013 §5): the app's own first plan, written back as I3 wrote it.
+    const ImportedFixture imported("world-build-lift", true, "esde/snes-room");
+    const rv::app::WorldBuildInput input = inputOf(imported, snapshotOf(imported));
+    const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
+    REQUIRE(first.outcome == WorldOutcome::Generated);
+    const fs::path planFile = planFileOf(imported);
+    const std::string schemaTwo = rv::core::readTextFile(planFile).value();
+    const std::string schemaOne = schemaOneText(schemaTwo);
+    REQUIRE(rv::core::writeTextFileAtomic(planFile, schemaOne).has_value());
+
+    // The persisted start reads it lifted, its digest the file's.
+    const rv::app::StoredWorldPlan read = rv::app::readWorldPlan(worldPathsOf(imported), input.library);
+    REQUIRE_FALSE(read.error.has_value());
+    REQUIRE(read.stored.has_value());
+    CHECK(read.stored->digest == rv::core::sha256Hex(schemaOne));
+    CHECK(read.stored->plan.schemaVersion == rv::world::kPlanSchemaVersion);
+    REQUIRE(read.stored->plan.rooms.size() == 1);
+    CHECK(read.stored->plan.rooms.front().floor == "gen4");
+    CHECK(read.stored->plan.rooms.front().generatorVersion == rv::world::GeneratorVersion{1, 2});
+    CHECK(read.stored->plan.placements == first.plan->placements);
+    const WorldBuild preview = rv::app::previewWorld(worldPathsOf(imported), input.library, kSnes, *read.stored);
+    REQUIRE(preview.layout.has_value());
+    CHECK(preview.layout->items.size() == 50);
+
+    // The first update writes schema 2 (the room's elements as they were: the same plan the app made in schema 2) and
+    // keeps the schema-1 file in backups/.
+    const WorldBuild updated = rv::app::buildWorld(input, rv::core::JobContext{});
+    INFO(updated.reason);
+    REQUIRE(updated.outcome == WorldOutcome::Updated);
+    CHECK(updated.written);
+    REQUIRE(updated.changes.has_value());
+    CHECK(updated.changes->digestBefore == rv::core::sha256Hex(schemaOne));
+    CHECK(updated.changes->kept == 50);
+    CHECK(updated.changes->added.empty());
+    CHECK(updated.notice.empty());
+    CHECK(rv::core::readTextFile(planFile).value() == schemaTwo);
+    const std::vector<std::string> backups = backupTexts(imported);
+    CHECK(std::find(backups.begin(), backups.end(), schemaOne) != backups.end());
+    REQUIRE(updated.layout.has_value());
+    CHECK(updated.layout->items.size() == 50);
+
+    // The next start: nothing written.
+    const WorldBuild again = rv::app::buildWorld(input, rv::core::JobContext{});
+    CHECK(again.outcome == WorldOutcome::Unchanged);
+    CHECK_FALSE(again.written);
+    CHECK(backupTexts(imported).size() == backups.size());
+}
+
+TEST_CASE("app/world_build: a building of two rooms: the snes room updated and shown, the other as it stood",
+          "[app][world_build]") {
+    const ImportedFixture imported("world-build-building", true, "esde/snes-room");
+    const rv::app::WorldBuildInput input = inputOf(imported, snapshotOf(imported));
+    const fs::path assets = input.paths.assetRoot;
+    const auto config = rv::world::loadWorldConfig(assets, input.paths.configDir).value().config;
+    auto snes = rv::world::selectRoom(rv::world::RoomInput{input.library, input.snapshot.snapshot}, config);
+    REQUIRE(snes.has_value());
+    // The snes room made before its last title came (one no other version names), and a megadrive room beside it,
+    // as `worldplan generate --selection a --selection b` makes the building.
+    rv::catalog::GameId later;
+    for (auto title = snes->titles.rbegin(); title != snes->titles.rend() && !later.isValid(); ++title) {
+        const bool represents =
+            std::any_of(snes->unplaced.begin(), snes->unplaced.end(),
+                        [&](const rv::world::UnplacedGame& game) { return game.representative == title->game; });
+        if (!represents) {
+            later = title->game;
+        }
+    }
+    REQUIRE(later.isValid());
+    rv::world::RoomSelection earlier = *snes;
+    std::erase_if(earlier.titles, [&](const rv::world::RoomTitle& title) { return title.game == later; });
+    rv::world::RoomSelection megadrive = rv::test::world::makeSelection(30, 2);
+    megadrive.room = *rv::world::RoomId::forSystem(rv::catalog::SystemName::parse("megadrive").value());
+    for (rv::world::UnplacedGame& game : megadrive.unplaced) {
+        game.room = megadrive.room;
+    }
+    rv::world::BuildingInput building;
+    building.library = input.library;
+    building.selections = {earlier, megadrive};
+    building.config = config;
+    const std::vector<rv::world::WorldData> rooms{rv::world::loadWorldData(assets, kSnes).value(),
+                                                  rv::world::loadWorldData(assets, megadrive.room.system()).value()};
+    auto made = rv::world::generateBuilding(building, rv::world::loadBuildingData(assets).value(),
+                                            rv::world::loadSystemsData(assets).value(), rooms);
+    REQUIRE(made.has_value());
+    REQUIRE(made->validation.passed());
+    const fs::path planFile = planFileOf(imported);
+    REQUIRE(rv::core::writeTextFileAtomic(planFile, rv::world::writePlan(made->plan).value()).has_value());
+
+    // The app updates its room alone: the new title placed, the megadrive room byte for byte as it stood.
+    const WorldBuild updated = rv::app::buildWorld(input, rv::core::JobContext{});
+    INFO(updated.reason);
+    REQUIRE(updated.outcome == WorldOutcome::Updated);
+    CHECK(updated.room.toString() == "room:snes");
+    REQUIRE(updated.changes.has_value());
+    CHECK(updated.changes->added == std::vector<rv::catalog::GameId>{later});
+    REQUIRE(updated.plan.has_value());
+    CHECK(updated.plan->rooms.size() == 2);
+    CHECK(rv::world::roomContentDigest(*updated.plan, megadrive.room).value() ==
+          rv::world::roomContentDigest(made->plan, megadrive.room).value());
+    CHECK(rv::world::roomContentDigest(*updated.plan, earlier.room).value() !=
+          rv::world::roomContentDigest(made->plan, earlier.room).value());
+    REQUIRE(updated.layout.has_value());
+    CHECK(updated.layout->items.size() == 50);
+    // The snes room's items only: the room shown in its own frame.
+    for (const rv::world::CollectionItem& item : updated.layout->items) {
+        CHECK(item.slot.fixture().room() == earlier.room);
+    }
+    // The next start, the catalog unchanged: nothing written (the plan's inputDigest, of both rooms, kept).
+    const std::string written = rv::core::readTextFile(planFile).value();
+    const WorldBuild again = rv::app::buildWorld(input, rv::core::JobContext{});
+    CHECK(again.outcome == WorldOutcome::Unchanged);
+    CHECK_FALSE(again.written);
+    CHECK(rv::core::readTextFile(planFile).value() == written);
+}
+
+TEST_CASE("app/world_build: the app and retroverse-cli's catalog commands write one plan for one catalog",
+          "[app][world_build]") {
+    // The app knows no platform tags, the CLI the catalog's: a plan either writes the other leaves as it is.
+    const ImportedFixture imported("world-build-cli", true, "esde/snes-room");
+    const rv::app::WorldBuildInput input = inputOf(imported, snapshotOf(imported));
+    const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
+    REQUIRE(first.outcome == WorldOutcome::Generated);
+    const fs::path planFile = planFileOf(imported);
+    const std::string text = rv::core::readTextFile(planFile).value();
+
+    const CliRun updated = runCli(imported, {"worldplan", "update"});
+    INFO(updated.err);
+    CHECK(updated.code == rv::cli::ExitCode::Ok);
+    CHECK(updated.out.find("is up to date") != std::string::npos);
+    CHECK(rv::core::readTextFile(planFile).value() == text);
+    const CliRun regenerated = runCli(imported, {"worldplan", "generate", "--replace"});
+    INFO(regenerated.err);
+    CHECK(regenerated.code == rv::cli::ExitCode::Ok);
+    CHECK(regenerated.out.find("the previous plan was this plan already") != std::string::npos);
+    CHECK(rv::core::readTextFile(planFile).value() == text);
+    CHECK(backupTexts(imported).empty());
+
+    // And the CLI's plan, made first, is the app's.
+    fs::remove(planFile);
+    const CliRun generated = runCli(imported, {"worldplan", "generate"});
+    INFO(generated.err);
+    REQUIRE(generated.code == rv::cli::ExitCode::Ok);
+    CHECK(rv::core::readTextFile(planFile).value() == text);
+    const WorldBuild second = rv::app::buildWorld(input, rv::core::JobContext{});
+    CHECK(second.outcome == WorldOutcome::Unchanged);
+    CHECK_FALSE(second.written);
+}
+
+TEST_CASE("app/world_build: a room kept as it is (its prefab levels changed): shown as it stands, with the "
+          "regeneration's notice",
+          "[app][world_build]") {
+    const ImportedFixture imported("world-build-kept", true, "esde/snes-room");
+    rv::app::WorldBuildInput input = inputOf(imported, snapshotOf(imported));
+    const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
+    REQUIRE(first.outcome == WorldOutcome::Generated);
+    // A copy of the assets whose hero-wall module holds an eighth level (a manifest edited). Every level the room's
+    // placements and dressing name keeps its slots, so it shows as it stands (a prefab whose slots no longer hold
+    // them cannot be drawn, kept or not).
+    const fs::path assets = imported.dir.file("assets");
+    fs::copy(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR), assets, fs::copy_options::recursive);
+    const fs::path manifest = rv::assets::prefabManifestPath(assets, "furniture.shelf.hero_module.generic");
+    std::string text = rv::core::readTextFile(manifest).value();
+    const std::string levels = R"("levels": 7)";
+    const std::size_t at = text.find(levels);
+    REQUIRE(at != std::string::npos);
+    text.replace(at, levels.size(), R"("levels": 8)");
+    REQUIRE(rv::core::writeTextFileAtomic(manifest, text).has_value());
+    input.paths.assetRoot = assets;
+
+    rv::test::LogCapture log;
+    const WorldBuild kept = rv::app::buildWorld(input, rv::core::JobContext{});
+    INFO(kept.reason);
+    REQUIRE(kept.changes.has_value());
+    CHECK(kept.changes->outcome == rv::world::GenerationOutcome::Updated);
+    REQUIRE(kept.changes->keptRooms.size() == 1);
+    CHECK(kept.changes->keptRooms.front().room.toString() == "room:snes");
+    CHECK(kept.notice == rv::app::world_notice::kRegeneration);
+    CHECK(kept.hardFindings.empty());
+    REQUIRE(kept.plan.has_value());
+    CHECK(kept.plan->placements == first.plan->placements);
+    CHECK(kept.plan->fixtures == first.plan->fixtures);
+    CHECK(kept.plan->unplaced == first.plan->unplaced);
+    REQUIRE(kept.layout.has_value());
+    CHECK(kept.layout->items.size() == 50);
+    CHECK(log.count("is kept as it is until 'retroverse-cli worldplan generate --replace'") == 1);
+    // The next start: the same notice, nothing written.
+    const WorldBuild again = rv::app::buildWorld(input, rv::core::JobContext{});
+    CHECK(again.notice == rv::app::world_notice::kRegeneration);
+    CHECK_FALSE(again.written);
 }

@@ -215,9 +215,9 @@ TEST_CASE("cli/worldplan check: a text that is not a plan exits 1, a missing fil
 
     // A newer schema.
     std::string newer = *canonical;
-    const std::size_t at = newer.find("\"schemaVersion\":1");
+    const std::size_t at = newer.find("\"schemaVersion\":2");
     REQUIRE(at != std::string::npos);
-    newer.replace(at, 17, "\"schemaVersion\":2");
+    newer.replace(at, 17, "\"schemaVersion\":3");
     const RunResult schema = check.run({check.writeFile("newer.json", newer)});
     CHECK(schema.code == ExitCode::ProblemsFound);
     CHECK_THAT(schema.out, ContainsSubstring("Not a plan this program reads: "));

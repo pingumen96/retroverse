@@ -1,18 +1,23 @@
 #pragma once
 
-// The WorldPlan's canonical JSON (ADR-0010 §8): the file world-plan.json holds exactly writePlan()'s text, written with
-// core::writeCanonicalJson (keys by code point, integers only, one element per line in the top-level arrays, a final
-// line feed), so that one plan is one text in Debug and Release and its SHA-256 is the plan digest. The reader takes
-// back only such a text: a plan edited by hand or written by another writer is refused, not normalized, and so is a
-// plan of a newer schema.
+// The WorldPlan's canonical JSON (ADR-0010 §8, ADR-0013 §5): the file world-plan.json holds exactly writePlan()'s
+// text, written with core::writeCanonicalJson (keys by code point, integers only, one element per line in the
+// top-level arrays, a final line feed), so that one plan is one text in Debug and Release and its SHA-256 is the plan
+// digest. The reader takes back only such a text: a plan edited by hand or written by another writer is refused, not
+// normalized, and so is a plan of a newer schema. Schema 2 is the only one written; schema 1 (I3's one room) is read
+// as it is, its content with schemaVersion 1, for world::lift() (lift.hpp) to make a building of it.
 //
-// The document (every key required unless noted):
-//   {"catalogSortKeyVersion": 1, "generatorVersion": "1.0", "inputDigest": "<64 hex>", "library": "esde",
-//    "preset": "retro_museum_cozy", "randomAlgorithm": "splitmix64/1", "schemaVersion": 1, "seed": <0..2^64-1>,
+// The document of schema 2 (every key required unless noted):
+//   {"catalogSortKeyVersion": 1, "generatorVersion": "1.3", "inputDigest": "<64 hex>", "library": "esde",
+//    "preset": "retro_museum_cozy", "randomAlgorithm": "splitmix64/1", "schemaVersion": 2, "seed": <0..2^64-1>,
 //    "titleKeyRule": "title-key/1",
-//    "rooms": [{"id": "room:snes", "template": "console_room_9x10", "templateVersion": 1, "minXMm": -4500,
-//               "maxXMm": 4500, "minZMm": -5000, "maxZMm": 5000, "heightMm": 3200, "growthSteps": 0, "seed": <u64>,
-//               "mediaFamily": "cartridge_home_16bit", "themePack": "classic_16bit_warm"}],
+//    "floors": [{"id": "ground", "order": 0}, {"id": "gen4", "order": 3}],
+//    "rooms": [{"id": "room:snes", "kind": "console", "floor": "gen4", "sections": ["snes"],
+//               "placement": {"xMm": 7650, "zMm": -6650, "yawHalfTurns": 0}, "generatorVersion": "1.3",
+//               "template": "console_room_9x10", "templateVersion": 2, "minXMm": -4500, "maxXMm": 4500,
+//               "minZMm": -5000, "maxZMm": 5000, "heightMm": 3200, "growthSteps": 0, "seed": <u64>,
+//               "mediaFamily": "cartridge_home_16bit", "themePack": "classic_16bit_warm",
+//               "expands": "room:snes" (an expansion only)}],
 //    "fixtures": [{"id": "room:snes/fx:w01", "role": "side-module",
 //                  "prefab": {"kind": "shelf", "manifest": "furniture.shelf.side_module.generic"},
 //                  "xMm": -4295, "yMm": 0, "zMm": -4000, "yawCdeg": 9000, "widthMm": 900, "heightMm": 2000,
@@ -23,15 +28,21 @@
 //    "lights": [{"id": "room:snes/fx:w01.washer", "role": "wall-washer", "xMm": -3270, "yMm": 2950, "zMm": -3500,
 //                "targetXMm": -4230, "targetYMm": 1000, "targetZMm": -3500, "spanMm": 1900}],
 //    "unplaced": [{"game": "g...", "room": "room:snes", "reason": "duplicate-title", "representative": "g..."}]}
-// "representative" is there exactly for "duplicate-title"; a point light's target is its own position and its span 0
-// (I3 step 3 added the lights). The lists are sorted as sortPlan() sorts them (rooms and fixtures by id, levels by
-// level, placements by slot then game, dressing by level then first slot, lights by id, unplaced by game), and no list
-// holds one key twice (an id, a level, a slot with its game, a level with its first slot, an unplaced entry).
+// Schema 1 has neither "floors" nor a room's "kind", "floor", "sections", "placement", "generatorVersion" and
+// "expands", only "room:<system>" rooms and no reason "room-kept". "representative" is there exactly for
+// "duplicate-title"; a point light's target is its own position and its span 0 (I3 step 3 added the lights). The lists
+// are sorted as sortPlan() sorts them (floors by order then id, rooms and fixtures by id, levels by level, placements
+// by slot then game, dressing by level then first slot, lights by id, unplaced by game; a room's sections keep their
+// order), and no list holds one key twice (a floor id, an id, a level, a slot with its game, a level with its first
+// slot, an unplaced entry, a room's section).
 //
-// The reader checks the form of every field (types, ranges, ids, enumerations, digests, versions) and the order; it
-// does not check how the lists refer to each other (a placement's fixture in the plan, a slot within its level, a game
-// both placed and unplaced): that is the validation's (rv/world/validation.hpp, I3 step 4), which judges a plan it can
-// read.
+// The reader checks the form of every field (types, ranges, ids, enumerations, digests, versions), the order, and what
+// a record says of itself: a room's kind is its id's form (console room:<system>, shared area:shared:<floor>, arcade
+// area:arcade), a console room holds exactly its own system, a shared room stands on the floor its id names, an
+// expansion (and only one) names its chain's head in "expands", the plan's generatorVersion is the highest of its
+// rooms'. It does not check how the lists refer to each other (a room's floor among the floors, a placement's fixture
+// in the plan, a slot within its level, a game both placed and unplaced): that is the validation's
+// (rv/world/validation.hpp), which judges a plan it can read.
 
 #include <string>
 #include <string_view>
@@ -44,7 +55,8 @@
 namespace rv::world {
 
 /// The plan as its canonical document (its lists sorted, the plan itself untouched). Errors: InvalidArgument when the
-/// plan holds what the reader would refuse (an empty id, a field out of its range, a key twice), naming the field.
+/// plan holds what the reader would refuse (an empty id, a field out of its range, a key twice), naming the field, or
+/// is not of schema kPlanSchemaVersion (a schema-1 plan is lifted first).
 [[nodiscard]] Expected<nlohmann::json> planToJson(const WorldPlan& plan);
 
 /// The canonical text of the plan: world-plan.json's bytes. Errors: those of planToJson().
@@ -54,10 +66,16 @@ namespace rv::world {
 /// written gives the same). Errors: those of planToJson().
 [[nodiscard]] Expected<std::string> planDigest(const WorldPlan& plan);
 
-/// Reads a plan file's text back. Errors (context `context` and the line, "world-plan.json:12"): ParseError (not JSON),
-/// ValidationFailed (a text that is not the canonical text of what it holds, a field missing, unknown, of another type
-/// or out of its range, a list out of order or holding a key twice), Unsupported (a schemaVersion newer than
+/// Reads a plan file's text back: schema 2 as it is, schema 1 as its content (schemaVersion 1, for lift()). Errors
+/// (context `context` and the line, "world-plan.json:12"): ParseError (not JSON), ValidationFailed (a text that is not
+/// the canonical text of what it holds, a field missing, unknown, of another type or out of its range, a list out of
+/// order or holding a key twice, a record that contradicts itself), Unsupported (a schemaVersion newer than
 /// kPlanSchemaVersion: written by a newer Retroverse).
 [[nodiscard]] Expected<WorldPlan> readPlan(std::string_view text, std::string_view context);
+
+/// A room's content digest (ADR-0013 §5): the SHA-256 of the canonical document of its record and every element of it
+/// (its fixtures, placements, dressing, lights and unplaced games), so that two plans' rooms compare without their
+/// other rooms. Computed, never stored. Errors: NotFound for a room the plan lacks; those of core::canonicalJsonDigest.
+[[nodiscard]] Expected<std::string> roomContentDigest(const WorldPlan& plan, const RoomId& room);
 
 } // namespace rv::world

@@ -428,3 +428,15 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.
+
+## Follow-ups from I4
+
+- **`worldplan check` and kept rooms (I4 step 1):** the check judges a room made from an older template version or by
+  another generator major as kept (`room-kept`, soft), but a room whose prefabs' levels changed still fails
+  `prefab-slots` there, while `world::updateBuilding` keeps such a room and saves the plan (`docs/i4/step-1.md`). The
+  check could load each room's data (`loadRoomData`) and ask `roomKeepReason()` as the update does.
+- **Old template versions for kept rooms (I4 step 1):** a room `world::updateBuilding` keeps for an older template
+  version, or for prefab levels that no longer hold its placements or dressing, cannot be drawn: the scene builder
+  reads the template's current version and the prefabs as they are, so the app shows the shell with the `failed`
+  notice (as I3 did for the same changes). ADR-0013 §4 keeps an old template version's file while a plan names it;
+  `loadRoomTemplate` could read the version a room names (`docs/i4/step-1.md`).

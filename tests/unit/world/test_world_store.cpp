@@ -237,7 +237,7 @@ TEST_CASE("world/store: plans it refuses to read or to save", "[world][store]") 
     CHECK(rv::world::readStoredPlan(files.plan).error().code == rv::ErrorCode::ValidationFailed);
     // Written by a newer Retroverse.
     std::string newer = text;
-    newer.replace(newer.find("\"schemaVersion\":1"), 17, "\"schemaVersion\":2");
+    newer.replace(newer.find("\"schemaVersion\":2"), 17, "\"schemaVersion\":3");
     REQUIRE(rv::core::writeTextFileAtomic(files.plan, newer).has_value());
     CHECK(rv::world::readStoredPlan(files.plan).error().code == rv::ErrorCode::Unsupported);
 

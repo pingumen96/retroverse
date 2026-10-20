@@ -1,6 +1,8 @@
-// The WorldPlan's validation (rv/world/validation.hpp, ADR-0010 §11): a hand-built plan of the shipped template that
-// passes every rule, and for every rule a plan changed from it that breaks that rule and no other hard one; the
-// findings' order, the LayoutScore and the prefab slots read from the asset root's manifests.
+// The WorldPlan's validation (rv/world/validation.hpp, ADR-0010 §11, ADR-0013 §11): a hand-built plan of the shipped
+// template that passes every rule, and for every rule a plan changed from it that breaks that rule and no other hard
+// one; the building's rules that need no hall (the ground floor, the floors, the rooms' footprints on a floor, every
+// system in one room); a kept room; the findings' order, the LayoutScore and the prefab slots read from the asset
+// root's manifests.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -13,6 +15,7 @@
 #include <vector>
 
 #include <rv/core/text.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/validation.hpp>
 
 #include "world_test_plans.hpp"
@@ -86,7 +89,7 @@ std::vector<ValidationFinding> requireOnlyHard(const ValidationReport& report, s
 TEST_CASE("world/validation: the rules are named once each, hard ones first, every name a rule name",
           "[world][validation]") {
     const auto rules = rv::world::validationRules();
-    REQUIRE(rules.size() == 29);
+    REQUIRE(rules.size() == 34);
     std::set<std::string_view> names;
     bool soft = false;
     for (const rv::world::ValidationRule& entry : rules) {
@@ -679,4 +682,148 @@ TEST_CASE("world/validation: the prefab slots of the shipped manifests", "[world
     CHECK_FALSE(slots({"furniture.tv_cabinet.generic", "shelf"}).has_value());
     CHECK_FALSE(slots({"furniture.no_such_thing.generic", "shelf"}).has_value());
     CHECK_FALSE(slots({"Not An Id", "shelf"}).has_value());
+}
+
+TEST_CASE("world/validation: the building's rules", "[world][validation]") {
+    const auto building = rv::world::loadBuildingData(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR));
+    REQUIRE(building.has_value());
+    const auto megadrive = *rv::world::RoomId::forSystem(*rv::catalog::SystemName::parse("megadrive"));
+    // A second console room of the plan's floor: the first's record moved to the south row (half a turn), without
+    // fixtures (its own rules fail: hero-tv-missing).
+    const auto secondRoom = [&](const WorldPlan& plan) {
+        rv::world::Room room = plan.rooms.front();
+        room.id = megadrive;
+        room.sections = {megadrive.system()};
+        const auto placement =
+            rv::world::placeEnteringRoom(room, rv::world::floorRows(plan.rooms, "gen4", building->layout),
+                                         building->layout);
+        REQUIRE(placement.has_value());
+        room.placement = *placement;
+        return room;
+    };
+
+    SECTION("ground-floor: the plan holds the ground floor") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        plan.floors = {{"gen4", 3}};
+        const auto findings = requireOnlyHard(validate(plan), rule::kGroundFloorMissing);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject.empty());
+    }
+    SECTION("floor-unknown: a room on a floor the plan lacks, a floor the building lacks or at another order") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        plan.rooms.front().floor = "gen5";
+        auto findings = requireOnlyHard(validate(plan), rule::kFloorUnknown);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "room:snes");
+        CHECK_THAT(findings[0].message, ContainsSubstring("'gen5', which the plan does not list"));
+
+        plan = rv::test::validRoomPlan();
+        plan.floors = {{"ground", 0}, {"gen4", 4}, {"attic", 9}};
+        ValidationContext context = rv::test::validContextFor(plan);
+        context.building = *building;
+        const ValidationReport report = rv::world::validatePlan(plan, context);
+        findings = requireOnlyHard(report, rule::kFloorUnknown);
+        REQUIRE(findings.size() == 2);
+        CHECK(findings[0].subject == "attic");
+        CHECK_THAT(findings[0].message, ContainsSubstring("the building has no such floor"));
+        CHECK(findings[1].subject == "gen4");
+        CHECK_THAT(findings[1].message, ContainsSubstring("the floor's order is 4, the building's 3"));
+    }
+    SECTION("rooms-overlap: two rooms' footprints on a floor, the wall allowance included") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        plan.rooms.push_back(secondRoom(plan));
+        ValidationContext context = rv::test::validContextFor(plan);
+        context.building = *building;
+        ValidationReport report = rv::world::validatePlan(plan, context);
+        INFO(describe(report));
+        CHECK_FALSE(hardRules(report).contains(std::string(rule::kRoomsOverlap)));
+        CHECK_FALSE(hardRules(report).contains(std::string(rule::kSystemRooms)));
+        // The second room in the first's place: they overlap; touching footprints do not.
+        plan.rooms.back().placement = plan.rooms.front().placement;
+        report = rv::world::validatePlan(plan, context);
+        auto findings = findingsOf(report, rule::kRoomsOverlap);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "room:megadrive");
+        CHECK_THAT(findings[0].message, ContainsSubstring("overlaps room:snes's"));
+        plan.rooms.back().placement.xMm = plan.rooms.front().placement.xMm + 9300;
+        report = rv::world::validatePlan(plan, context);
+        CHECK(findingsOf(report, rule::kRoomsOverlap).empty());
+        plan.rooms.back().placement.xMm -= 1;
+        report = rv::world::validatePlan(plan, context);
+        CHECK(findingsOf(report, rule::kRoomsOverlap).size() == 1);
+        // Rooms of different floors never overlap.
+        plan.rooms.back().floor = "gen3";
+        plan.floors.push_back({"gen3", 2});
+        report = rv::world::validatePlan(plan, context);
+        CHECK(findingsOf(report, rule::kRoomsOverlap).empty());
+    }
+    SECTION("system-rooms: a system in two rooms or sections, the arcade room off the ground floor") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        rv::world::Room shared = secondRoom(plan);
+        shared.id = *rv::world::RoomId::sharedArea("gen4");
+        shared.kind = rv::world::RoomKind::Shared;
+        shared.sections = {megadrive.system(), plan.rooms.front().id.system()};
+        plan.rooms.push_back(shared);
+        auto findings = findingsOf(validate(plan), rule::kSystemRooms);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "snes");
+        CHECK_THAT(findings[0].message, ContainsSubstring("area:shared:gen4, room:snes"));
+
+        // An expansion holds its head's system: one chain, one room (ADR-0013 §8).
+        plan = rv::test::validRoomPlan();
+        rv::world::Room expansion = secondRoom(plan);
+        expansion.id = *rv::world::RoomId::forSystem(plan.rooms.front().id.system(), 2);
+        expansion.expands = plan.rooms.front().id;
+        expansion.sections = {plan.rooms.front().id.system()};
+        plan.rooms.push_back(expansion);
+        CHECK(findingsOf(validate(plan), rule::kSystemRooms).empty());
+        // A chain and another room of the same system: two.
+        rv::world::Room section = secondRoom(plan);
+        section.id = *rv::world::RoomId::sharedArea("gen4");
+        section.kind = rv::world::RoomKind::Shared;
+        section.sections = {plan.rooms.front().id.system()};
+        plan.rooms.push_back(section);
+        findings = findingsOf(validate(plan), rule::kSystemRooms);
+        REQUIRE(findings.size() == 1);
+        CHECK_THAT(findings[0].message, ContainsSubstring("stands in 2 rooms or sections: area:shared:gen4, room:snes"));
+
+        plan = rv::test::validRoomPlan();
+        rv::world::Room arcade = secondRoom(plan);
+        arcade.id = *rv::world::RoomId::arcadeArea();
+        arcade.kind = rv::world::RoomKind::Arcade;
+        arcade.sections = {*rv::catalog::SystemName::parse("mame")};
+        plan.rooms.push_back(arcade);
+        findings = findingsOf(validate(plan), rule::kSystemRooms);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "area:arcade");
+        CHECK_THAT(findings[0].message, ContainsSubstring("not on the ground floor"));
+    }
+    SECTION("room-unknown: games of a console room a full floor did not take may name it, unplaced for capacity") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        const auto nes = *rv::world::RoomId::forSystem(*rv::catalog::SystemName::parse("nes"));
+        plan.unplaced.push_back({testGameId(201), nes, rv::world::UnplacedReason::Capacity, {}});
+        const ValidationReport report = validate(plan);
+        INFO(describe(report));
+        CHECK(report.passed());
+        plan.unplaced.push_back(
+            {testGameId(202), *rv::world::RoomId::sharedArea("gen3"), rv::world::UnplacedReason::Capacity, {}});
+        const auto findings = requireOnlyHard(validate(plan), rule::kRoomUnknown);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "g00000000000000ca");
+    }
+    SECTION("room-kept: a kept room's older template and prefab slots are not judged, the room is reported") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        plan.rooms.front().templateVersion = 1;
+        ValidationContext context = rv::test::validContextFor(plan);
+        REQUIRE(hardRules(rv::world::validatePlan(plan, context)).contains(std::string(rule::kRoomTemplate)));
+        context.keptRooms = {{plan.rooms.front().id, "its template is console_room_9x10 v1"}};
+        const ValidationReport report = rv::world::validatePlan(plan, context);
+        INFO(describe(report));
+        CHECK(report.passed());
+        const auto kept = findingsOf(report, rule::kRoomKept);
+        REQUIRE(kept.size() == 1);
+        CHECK(kept[0].severity == Severity::Soft);
+        CHECK(kept[0].subject == "room:snes");
+        CHECK_THAT(kept[0].message, ContainsSubstring("kept as it is until a regeneration: its template is"));
+    }
 }

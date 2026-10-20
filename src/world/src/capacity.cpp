@@ -109,7 +109,7 @@ void PrefabCatalog::put(PrefabInfo info) {
     }
 }
 
-std::vector<PrefabRef> prefabsToRead(const RoomTemplate& roomTemplate, const PrefabRef& console,
+std::vector<PrefabRef> prefabsToRead(const RoomTemplate& roomTemplate, const std::optional<PrefabRef>& console,
                                      const MediaFamily& family) {
     std::vector<PrefabRef> refs;
     addUnique(refs, roomTemplate.heroModule);
@@ -119,7 +119,11 @@ std::vector<PrefabRef> prefabsToRead(const RoomTemplate& roomTemplate, const Pre
             addUnique(refs, *socket.prefab);
         }
         for (const HeroPart& part : socket.parts) {
-            addUnique(refs, part.prefab ? *part.prefab : console);
+            if (part.prefab) {
+                addUnique(refs, *part.prefab);
+            } else if (console) {
+                addUnique(refs, *console);
+            }
         }
     }
     for (const DecorationChoice& choice : roomTemplate.decoration) {

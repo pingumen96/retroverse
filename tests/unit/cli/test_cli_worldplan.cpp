@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -153,12 +154,17 @@ TEST_CASE("cli/worldplan generate: usage and failures", "[cli][worldplan]") {
 
     const RunResult help = generate({"--help"});
     CHECK(help.code == ExitCode::Ok);
-    CHECK(contains(help.out, "Usage: retroverse-cli [global options] worldplan generate --system <system>"));
+    CHECK(contains(help.out, "Usage: retroverse-cli [global options] worldplan generate [--system <system>]..."));
     // The catalog's selection needs the library library.json records.
     const RunResult noSelection = generate({"--system", "snes", "--library", "esde"});
     CHECK(noSelection.code == ExitCode::UsageError);
     CHECK(contains(noSelection.err, "library create"));
-    CHECK(generate({"--selection", selectionText, "--library", "esde"}).code == ExitCode::UsageError);
+    CHECK(generate({"--system", "sn/es", "--selection", selectionText, "--library", "esde"}).code ==
+          ExitCode::UsageError);
+    // --system names the selection files' systems.
+    const RunResult unnamed = generate({"--system", "nes", "--selection", selectionText, "--library", "esde"});
+    CHECK(unnamed.code == ExitCode::UsageError);
+    CHECK(contains(unnamed.err, "--system nes has no --selection file"));
     for (const std::string_view seed : {"-1", "18446744073709551616", "01", "x", ""}) {
         INFO(seed);
         const RunResult bad =
@@ -171,10 +177,19 @@ TEST_CASE("cli/worldplan generate: usage and failures", "[cli][worldplan]") {
     const RunResult noLibrary = generate({"--system", "snes", "--selection", selectionText});
     CHECK(noLibrary.code == ExitCode::UsageError);
     CHECK(contains(noLibrary.err, "library create"));
-    // A system without a platform manifest, a selection of another room, a selection that is not one: exit 3.
-    const RunResult nes = generate({"--system", "nes", "--selection", selectionText, "--library", "esde"});
+    // A system whose data the asset root cannot give yet (nes: its family comes with I4 step 2), a selection that is
+    // not one: exit 3.
+    rv::world::RoomSelection nesSelection = rv::test::world::makeSelection(10, 1);
+    nesSelection.room = *rv::world::RoomId::forSystem(*rv::catalog::SystemName::parse("nes"));
+    for (rv::world::UnplacedGame& game : nesSelection.unplaced) {
+        game.room = nesSelection.room;
+    }
+    REQUIRE(rv::core::writeTextFileAtomic(dir.file("nes.json"), *rv::world::writeRoomSelection(nesSelection))
+                .has_value());
+    const RunResult nes =
+        generate({"--system", "nes", "--selection", rv::core::pathToUtf8(dir.file("nes.json")), "--library", "esde"});
     CHECK(nes.code == ExitCode::RuntimeFailure);
-    CHECK(contains(nes.err, "the world's data"));
+    CHECK(contains(nes.err, "the world's data of nes"));
     REQUIRE(rv::core::writeTextFileAtomic(dir.file("broken.json"), "{}\n").has_value());
     const RunResult broken =
         generate({"--system", "snes", "--selection", rv::core::pathToUtf8(dir.file("broken.json")), "--library", "esde"});
@@ -224,7 +239,7 @@ TEST_CASE("cli/worldplan show: a plan's summary, its listing, and the plans it r
     CHECK(runCli({"--data-dir", data, "worldplan", "show", rv::core::pathToUtf8(dir.file("edited.json"))}, environment)
               .code == ExitCode::RuntimeFailure);
     std::string newer = planText;
-    newer.replace(newer.find("\"schemaVersion\":1"), 17, "\"schemaVersion\":2");
+    newer.replace(newer.find("\"schemaVersion\":2"), 17, "\"schemaVersion\":3");
     REQUIRE(rv::core::writeTextFileAtomic(dir.file("newer.json"), newer).has_value());
     const RunResult refused =
         runCli({"--data-dir", data, "worldplan", "show", rv::core::pathToUtf8(dir.file("newer.json"))}, environment);
@@ -282,4 +297,33 @@ TEST_CASE("cli/worldplan generate: the catalog's selection of an imported librar
     REQUIRE(plan.has_value());
     CHECK(plan->seed == 102938);
     CHECK(plan->placements.size() == summary["placements"].get<std::size_t>());
+
+    // I4 step 1: --system restricts the building only with --plan or when no plan is stored.
+    const RunResult restricted = run({"worldplan", "generate", "--system", "snes", "--replace"});
+    CHECK(restricted.code == ExitCode::UsageError);
+    CHECK(contains(restricted.err, "--system restricts the building only with --plan or when no plan is stored"));
+    CHECK(run({"worldplan", "generate", "--system", "snes", "--plan", rv::core::pathToUtf8(dir.file("small.json"))})
+              .code == ExitCode::Ok);
+    // The whole building: every system of the catalog with a room and a placeable title; those whose data the asset
+    // root lacks yet (their families come with I4 step 2) left out with a note.
+    const RunResult whole = run({"worldplan", "generate", "--replace", "--seed", "102938"});
+    INFO(whole.err);
+    REQUIRE(whole.code == ExitCode::Ok);
+    CHECK(contains(whole.out, "Regenerated the plan of "));
+    CHECK(contains(whole.out, "room:snes"));
+    auto building = rv::world::readPlan(readText(dir.file("data") / "worlds" / "esde" / "world-plan.json"), "plan");
+    REQUIRE(building.has_value());
+    CHECK(std::any_of(building->rooms.begin(), building->rooms.end(),
+                      [](const rv::world::Room& room) { return room.id.toString() == "room:snes"; }));
+    CHECK(std::any_of(building->floors.begin(), building->floors.end(),
+                      [](const rv::world::Floor& floor) { return floor.id == "ground"; }));
+    // The update of every room of the plan: nothing new.
+    const RunResult updated = run({"worldplan", "update", "--seed", "102938"});
+    INFO(updated.err);
+    CHECK(updated.code == ExitCode::Ok);
+    CHECK(contains(updated.out, "is up to date"));
+    // A system without a room: refused, nothing written (new systems come with I4 step 6a).
+    const RunResult newSystem = run({"worldplan", "update", "--system", "nosuch", "--seed", "102938"});
+    CHECK(newSystem.code == ExitCode::ProblemsFound);
+    CHECK(contains(newSystem.err, "the plan has no room for nosuch"));
 }

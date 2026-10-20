@@ -57,10 +57,12 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `<user data>/cache/textures/<library id>` (`.rvtex` entries named without the source, found while it is out of
   reach, invalidated by its size and time, trimmed to 512 MiB). Raise `kCoverPipelineVersion` (`rvtex.hpp`) with any
   change of a layer's pixels.
-- World plans (ADR-0010): a plan is `writePlan()`'s canonical text and is only ever written through
-  `world::savePlan()` under the world lock (a hard rule broken is never saved); never edit one by hand (it is then
-  refused). Placements are never moved by an update; only `worldplan generate --replace` chooses the face-out titles
-  again.
+- World plans (ADR-0010, ADR-0013 §5): a plan is `writePlan()`'s canonical text, in schema 2 (the building), and is
+  only ever written through `world::savePlan()` under the world lock (a hard rule broken is never saved); never edit
+  one by hand (it is then refused). A schema-1 plan is read and lifted (`world::lift`), never written. Placements are
+  never moved by an update; only `worldplan generate --replace` chooses the face-out titles again. The frozen oracles
+  `tests/fixtures/world/v1/` are never rewritten; the goldens of `tests/fixtures/world/golden/` only with
+  `RV_UPDATE_GOLDEN=1`.
 - Catalog identities (ADR-0008 §4, `rv_catalog`): a GameId is derived once from (`rv-game/1`, library, system, lookup
   key) and then persisted; never derive it again for a stored identity. The golden GameIds of
   `tests/unit/catalog/test_identity.cpp` come from `scripts/game_id_oracle.py` (Python's hashlib): a change of the

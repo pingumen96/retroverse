@@ -28,7 +28,9 @@ inline constexpr std::string_view kNoGames = "no-games";
 /// The media root is out of reach: no plan yet (the shell), or the stored plan shown as it was.
 inline constexpr std::string_view kMediaUnknown = "media-unknown";
 inline constexpr std::string_view kMediaUnknownKept = "media-unknown-kept";
-/// The stored plan shown as it was: another seed, preset, template or generator major version (ADR-0010 §10).
+/// The stored plan shown as it was: another seed, preset, template or generator major version (ADR-0010 §10); or the
+/// room shown kept as it is by an update that saved the building (ADR-0013 §5: its template version, prefab levels or
+/// generator major changed), its new games unplaced as room-kept.
 inline constexpr std::string_view kRegeneration = "regeneration";
 /// The stored plan cannot be used (edited by hand, written by a newer Retroverse): the shell.
 inline constexpr std::string_view kRefused = "refused";

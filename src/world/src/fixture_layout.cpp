@@ -244,7 +244,10 @@ private:
             }
             const Frame where = frame(hero);
             for (const HeroPart& part : hero.parts) {
-                auto info = prefab(part.prefab ? *part.prefab : m_input.platform.console);
+                if (!part.prefab && !m_input.platform.console) {
+                    continue; // the console's part, in a room without a console (ADR-0013 §2)
+                }
+                auto info = prefab(part.prefab ? *part.prefab : *m_input.platform.console);
                 if (!info) {
                     return propagate(info.error());
                 }

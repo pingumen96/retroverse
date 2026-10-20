@@ -17,6 +17,7 @@
 #include <rv/assets/prefab_manifest.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/media_family.hpp>
 #include <rv/world/platform_manifest.hpp>
 #include <rv/world/room_look.hpp>
@@ -95,7 +96,8 @@ std::set<rv::world::PrefabRef> namedPrefabs() {
     prefabs.insert(roomTemplate.shelfDressing.begin(), roomTemplate.shelfDressing.end());
     auto platform = rv::world::loadPlatformManifest(kAssets, *rv::catalog::SystemName::parse("snes"));
     REQUIRE(platform.has_value());
-    prefabs.insert(platform->console);
+    REQUIRE(platform->console.has_value());
+    prefabs.insert(*platform->console);
     auto families = rv::world::loadMediaFamilies(kAssets);
     REQUIRE(families.has_value());
     for (const rv::world::MediaFamily& family : families->families) {
@@ -133,13 +135,17 @@ TEST_CASE("world/data: every file under assets/world is read", "[world][data]") 
             CHECK(rv::world::loadLightingProfile(kAssets, stem).has_value());
         } else if (folder == "themes") {
             CHECK(rv::world::loadThemeMaterials(kAssets, stem).has_value());
+        } else if (relative.generic_string() == "building.json") {
+            CHECK(rv::world::loadBuildingData(kAssets).has_value());
+        } else if (relative.generic_string() == "systems.json") {
+            CHECK(rv::world::loadSystemsData(kAssets).has_value());
         } else {
             REQUIRE(relative.generic_string() == "media_families.json");
             CHECK(rv::world::loadMediaFamilies(kAssets).has_value());
         }
         ++read;
     }
-    CHECK(read == 7); // I3 step 16: the two lighting profiles and the theme pack
+    CHECK(read == 9); // I3 step 16: the two lighting profiles and the theme pack; I4 step 1: building and systems
 }
 
 TEST_CASE("world/data: no model path anywhere in assets/world", "[world][data]") {

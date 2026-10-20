@@ -6,11 +6,18 @@
 // GameIds, the world's ids and versions; no floating-point number, no title and no path (the catalog's text is read
 // when the room is drawn), so the file carries nothing from the user's library but GameIds.
 //
-// Coordinates are a room's frame (ADR-0010 §4, ADR-0002): millimetres, +X east, +Y up, north = -Z, the origin on the
-// floor at the centre of the template's base room. A room that grew keeps that origin (its north wall stays where it
-// was) and extends south, so its bounds are not centred on it. Yaws are hundredths of a degree from 0 to 35999 about
-// +Y, right-handed (glm::rotate's sense: counter-clockwise seen from above), applied to a prefab whose front faces +Z:
-// 0 faces south, 9000 east, 18000 north, 27000 west.
+// Schema 2 (ADR-0013 §5) holds a building: its floors (each its own scene, in building.json's order) and, per room, its
+// kind (a system's console room, a floor's shared room, the arcade room), its floor, its sections (the systems it
+// holds, in order), its placement on its floor and the generator version that last generated or updated it. The halls
+// are not stored: they are derived from a floor's rooms when its scene is built (I4 step 3). Schema 1 (I3: one room,
+// no floors) is read and lifted (lift.hpp), never written.
+//
+// A room's contents are in the room's frame (ADR-0010 §4, ADR-0002): millimetres, +X east, +Y up, north = -Z, the
+// origin on the floor at the centre of the template's base room. A room that grew keeps that origin (its north wall
+// stays where it was) and extends south, so its bounds are not centred on it. Yaws are hundredths of a degree from 0 to
+// 35999 about +Y, right-handed (glm::rotate's sense: counter-clockwise seen from above), applied to a prefab whose
+// front faces +Z: 0 faces south, 9000 east, 18000 north, 27000 west. A room's placement puts its frame on its floor's
+// frame (building.hpp: the hall along +X from the elevator at its west end, the north row's rooms facing south).
 
 #include <cstdint>
 #include <optional>
@@ -23,10 +30,11 @@
 
 namespace rv::world {
 
-/// The plan file's format. Schema 1 stays open until Gate B: the I3 steps add fields to it (as the catalog's schema v1
-/// stayed open until Gate M1), and a plan written by an earlier build of the iteration is generated again, never
-/// migrated. A plan of a newer schema is refused (plan_json.hpp).
-inline constexpr std::int64_t kPlanSchemaVersion = 1;
+/// The plan file's format (ADR-0013 §5): schema 2, the building, is the only one written; schema 1 (I3's one room) is
+/// read and lifted (lift.hpp). A plan of a newer schema is refused (plan_json.hpp).
+inline constexpr std::int64_t kPlanSchemaVersion = 2;
+/// The oldest schema this program reads (and lifts).
+inline constexpr std::int64_t kOldestPlanSchemaVersion = 1;
 
 /// The generator's version (ADR-0010 §8): a minor change adds rules that keep every existing placement, a major one
 /// may place games differently and needs an explicit regeneration (ADR-0010 §10). Text form "major.minor" ("1.0").
@@ -105,10 +113,12 @@ enum class UnplacedReason : std::uint8_t {
     DuplicateTitle, ///< another version of its title is the room's representative (UnplacedGame::representative)
     NoCover,        ///< it has no cover while other games of its system have one (WorldConfig's include "covered")
     Unavailable,    ///< its file was missing when it was first considered
-    Capacity,       ///< the room at its template's limit holds no more titles (linked rooms are I4's)
+    Capacity,       ///< the room at its template's limit holds no more titles, or its floor has no place for the room
+    RoomKept,       ///< its room is kept as it is until a regeneration (ADR-0013 §5: an old template version, prefab
+                    ///< levels that changed, another generator major), so the room places nothing new
 };
 
-/// "duplicate-title", "no-cover", "unavailable", "capacity".
+/// "duplicate-title", "no-cover", "unavailable", "capacity", "room-kept".
 [[nodiscard]] constexpr std::string_view toString(UnplacedReason reason) noexcept {
     switch (reason) {
     case UnplacedReason::DuplicateTitle:
@@ -119,16 +129,77 @@ enum class UnplacedReason : std::uint8_t {
         return "unavailable";
     case UnplacedReason::Capacity:
         return "capacity";
+    case UnplacedReason::RoomKept:
+        return "room-kept";
     }
     return "unknown";
 }
 [[nodiscard]] constexpr std::optional<UnplacedReason> parseUnplacedReason(std::string_view text) noexcept {
-    return detail::enumFromString(text, UnplacedReason::Capacity);
+    return detail::enumFromString(text, UnplacedReason::RoomKept);
 }
+
+/// A floor of the building (ADR-0013 §1): building.json's id and its place in the elevator's order (0 the ground
+/// floor). A floor is in a plan when it holds a room; the ground floor always is.
+struct Floor {
+    std::string id;
+    std::uint32_t order = 0;
+
+    auto operator<=>(const Floor&) const = default;
+};
+
+/// The ground floor's id (building.json's first floor: the lobby and the arcade room).
+inline constexpr std::string_view kGroundFloor = "ground";
+
+/// What a room of the building is (ADR-0013 §3, §5).
+enum class RoomKind : std::uint8_t {
+    Console, ///< a system's own room, "room:<system>"
+    Shared,  ///< a floor's shared room, "area:shared:<floor>": a section per small system
+    Arcade,  ///< the arcade game room on the ground floor, "area:arcade": a section per arcade system
+};
+
+/// "console", "shared", "arcade".
+[[nodiscard]] constexpr std::string_view toString(RoomKind kind) noexcept {
+    switch (kind) {
+    case RoomKind::Console:
+        return "console";
+    case RoomKind::Shared:
+        return "shared";
+    case RoomKind::Arcade:
+        return "arcade";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<RoomKind> parseRoomKind(std::string_view text) noexcept {
+    return detail::enumFromString(text, RoomKind::Arcade);
+}
+
+/// Where a room stands on its floor (ADR-0013 §7): its frame's origin in the floor's frame, in millimetres, and its
+/// yaw in half turns (0: the north row, its doorway facing south onto the hall; 1: the south row, turned by half a
+/// turn). x is set when the room enters the plan and never changes; z follows the room's depth, so that its doorway
+/// wall always abuts the hall (building.hpp's placement functions).
+struct RoomPlacement {
+    std::int64_t xMm = 0;
+    std::int64_t zMm = 0;
+    std::uint32_t yawHalfTurns = 0;
+
+    auto operator<=>(const RoomPlacement&) const = default;
+};
 
 /// A room of the world.
 struct Room {
     RoomId id;
+    /// Its kind, its floor (one of the plan's floors), the systems it holds in their order (exactly its own for a
+    /// console room) and its place on the floor (ADR-0013 §5). Schema 1's room, read and not yet lifted, has the
+    /// defaults (lift.hpp sets them).
+    RoomKind kind = RoomKind::Console;
+    std::string floor;
+    std::vector<catalog::SystemName> sections;
+    RoomPlacement placement;
+    /// The generator that last generated or updated the room (a room kept as it is keeps its version); the plan's
+    /// generatorVersion is the highest of its rooms'.
+    GeneratorVersion generatorVersion;
+    /// The room an expansion extends, the head of its chain (ADR-0013 §8: reserved, empty for every room I4 makes).
+    RoomId expands;
     /// The template it was generated from and its version (ADR-0010 §8's templateVersion, kept with its room so that
     /// I4's rooms of several templates each record theirs).
     std::string templateId;
@@ -289,6 +360,7 @@ struct UnplacedGame {
 /// of that text, so it is not a field.
 struct WorldPlan {
     std::int64_t schemaVersion = kPlanSchemaVersion;
+    /// The highest of the rooms' versions (the generator's own when the plan has no room).
     GeneratorVersion generatorVersion;
     /// core::kRandomAlgorithm ("splitmix64/1").
     std::string randomAlgorithm;
@@ -303,6 +375,8 @@ struct WorldPlan {
     /// The SHA-256 of the canonical form of the inputs the generator read, 64 lowercase hexadecimal digits.
     std::string inputDigest;
 
+    /// The floors holding a room, and the ground floor, by order.
+    std::vector<Floor> floors;
     std::vector<Room> rooms;
     std::vector<Fixture> fixtures;
     std::vector<Placement> placements;
@@ -313,9 +387,9 @@ struct WorldPlan {
     bool operator==(const WorldPlan&) const = default;
 };
 
-/// The order of each list in the canonical text (ADR-0010 §8): rooms by id, fixtures by id (their levels by level),
-/// placements by slot then game, dressing by level then first slot, lights by id, unplaced by game then room, reason
-/// and representative. Ids order by their parts (ids.hpp).
+/// The order of each list in the canonical text (ADR-0010 §8): floors by order then id, rooms by id, fixtures by id
+/// (their levels by level), placements by slot then game, dressing by level then first slot, lights by id, unplaced by
+/// game then room, reason and representative. Ids order by their parts (ids.hpp).
 void sortPlan(WorldPlan& plan);
 
 /// A lowercase hexadecimal SHA-256 digest: exactly 64 of 0-9 and a-f.

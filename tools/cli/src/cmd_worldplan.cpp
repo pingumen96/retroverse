@@ -1,9 +1,9 @@
-// retroverse-cli worldplan: the plan of a system's room (ADR-0010), one source per subcommand so that the I3 steps
+// retroverse-cli worldplan: the plan of the building (ADR-0010, ADR-0013), one source per subcommand so that the steps
 // implementing them never edit one file:
-//   worldplan generate  a fresh plan from the catalog's snapshot of a system (cmd_worldplan_generate.cpp, I3 step 3;
-//                       --replace, the explicit regeneration after a backup, I3 step 9)
+//   worldplan generate  a fresh plan from the catalog's snapshots (cmd_worldplan_generate.cpp, I3 step 3; --replace,
+//                       the explicit regeneration after a backup, I3 step 9; the building, I4 step 1)
 //   worldplan update    the incremental update of a previous plan, with its change report (cmd_worldplan_update.cpp,
-//                       I3 step 9)
+//                       I3 step 9; per room, I4 step 1)
 //   worldplan show      a plan as text or JSON (cmd_worldplan_show.cpp, I3 step 3; --scene, its static part as a scene
 //                       file, I3 step 10a)
 //   worldplan check     a plan's validation, exit 1 on a hard failure (cmd_worldplan_check.cpp, I3 step 4)
@@ -26,11 +26,11 @@ namespace {
 constexpr std::string_view kUsage =
     "Usage: retroverse-cli [global options] worldplan <subcommand> [options]\n"
     "\n"
-    "The plan of a system's room: which games it shows and where, generated from the catalog's snapshot and\n"
-    "kept under <user data>/worlds/<library id>/.\n"
+    "The plan of the building: its floors and rooms, which games each room shows and where, generated from the\n"
+    "catalog's snapshots and kept under <user data>/worlds/<library id>/.\n"
     "\n"
     "Subcommands:\n"
-    "  generate  Generate a fresh plan for a system's room.\n"
+    "  generate  Generate a fresh plan of the building (or of the systems named).\n"
     "  update    Update a previous plan incrementally and report what changed.\n"
     "  show      Show a plan.\n"
     "  check     Validate a plan; exit 1 when a hard rule fails.\n"

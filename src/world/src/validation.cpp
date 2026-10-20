@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <rv/assets/prefab_manifest.hpp>
 #include <rv/core/text.hpp>
@@ -23,8 +24,17 @@ namespace {
 
 using catalog::GameId;
 
-constexpr std::array<ValidationRule, 29> kRules{{
-    {rule::kRoomUnknown, Severity::Hard, "Every fixture and unplaced entry names a room the plan lists."},
+constexpr std::array<ValidationRule, 34> kRules{{
+    {rule::kRoomUnknown, Severity::Hard,
+     "Every fixture and unplaced entry names a room the plan lists (a console room's games unplaced for capacity may "
+     "name the room its full floor did not take)."},
+    {rule::kGroundFloorMissing, Severity::Hard, "The plan holds the ground floor."},
+    {rule::kFloorUnknown, Severity::Hard,
+     "Every room stands on a floor of the plan, and every floor of the plan is the building's, at its order."},
+    {rule::kRoomsOverlap, Severity::Hard, "No two rooms' footprints on one floor overlap."},
+    {rule::kSystemRooms, Severity::Hard,
+     "Every system stands in exactly one room (with its chain of expansions) or one section; the arcade room stands "
+     "on the ground floor."},
     {rule::kRoomTemplate, Severity::Hard, "Every room's template is known, at the version the room was made from."},
     {rule::kRoomSize, Severity::Hard,
      "Every room has its template's interior and height at its growth step, within the template's growth limit."},
@@ -60,6 +70,8 @@ constexpr std::array<ValidationRule, 29> kRules{{
     {rule::kUnreachable, Severity::Hard,
      "Every module, display fixture and the hero TV can be walked to from the doorway through the minimum clear "
      "width."},
+    {rule::kRoomKept, Severity::Soft,
+     "A room an update kept as it is (an older template or prefab, another generator major) is reported."},
     {rule::kPrefabUnresolved, Severity::Soft, "Every collection fixture's prefab can be resolved and its slots read."},
     {rule::kPinOrphaned, Severity::Soft, "No pin names a game, slot, fixture or socket that no longer exists."},
     {rule::kTvLineOfSight, Severity::Soft, "The hero TV can be seen from the doorway."},
@@ -384,6 +396,7 @@ public:
 
     ValidationReport run() {
         indexPlan();
+        checkBuilding();
         checkRoomTemplates();
         checkFixtureSockets();
         checkFixtureLevels();
@@ -429,7 +442,9 @@ private:
             room->second.fixtures.push_back(fixture);
         }
         for (const UnplacedGame& unplaced : m_plan.unplaced) {
-            if (!m_rooms.contains(unplaced.room)) {
+            const bool notTaken = unplaced.reason == UnplacedReason::Capacity &&
+                                  unplaced.room.kind() == RoomIdKind::System && !unplaced.room.isExpansion();
+            if (!m_rooms.contains(unplaced.room) && !notTaken) {
                 m_findings.add(rule::kRoomUnknown, unplaced.game.toString(),
                                fmt::format("the game is listed as unplaced in {}, which the plan does not list",
                                            unplaced.room.toString()));
@@ -447,6 +462,80 @@ private:
         }
     }
 
+    [[nodiscard]] bool isKept(const RoomId& room) const noexcept {
+        return std::any_of(m_context.keptRooms.begin(), m_context.keptRooms.end(),
+                           [&](const KeptRoom& kept) { return kept.room == room; });
+    }
+
+    /// The building's rules that need no hall (ADR-0013 §11).
+    void checkBuilding() {
+        for (const KeptRoom& kept : m_context.keptRooms) {
+            m_findings.add(rule::kRoomKept, kept.room.toString(),
+                           fmt::format("the room is kept as it is until a regeneration: {}", kept.reason));
+        }
+        std::map<std::string, std::uint32_t> floors;
+        for (const Floor& floor : m_plan.floors) {
+            floors.emplace(floor.id, floor.order);
+            if (m_context.building) {
+                const auto order = m_context.building->order(floor.id);
+                if (!order) {
+                    m_findings.add(rule::kFloorUnknown, floor.id, "the building has no such floor");
+                } else if (*order != floor.order) {
+                    m_findings.add(rule::kFloorUnknown, floor.id,
+                                   fmt::format("the floor's order is {}, the building's {}", floor.order, *order));
+                }
+            }
+        }
+        if (!floors.contains(std::string(kGroundFloor))) {
+            m_findings.add(rule::kGroundFloorMissing, "", "the plan does not hold the ground floor");
+        }
+        const BuildingLayout layout = m_context.building ? m_context.building->layout : BuildingLayout{0, 0, 0, 0, 0};
+        std::map<std::string, std::vector<const Room*>> byFloor;
+        // The chains each system stands in, by their head: an expansion holds its head's systems (ADR-0013 §8).
+        std::map<catalog::SystemName, std::set<RoomId>> standsIn;
+        for (const Room& room : m_plan.rooms) {
+            if (!floors.contains(room.floor)) {
+                m_findings.add(rule::kFloorUnknown, room.id.toString(),
+                               fmt::format("the room stands on the floor '{}', which the plan does not list",
+                                           room.floor));
+            }
+            if (room.kind == RoomKind::Arcade && room.floor != kGroundFloor) {
+                m_findings.add(rule::kSystemRooms, room.id.toString(),
+                               fmt::format("the arcade room stands on the floor '{}', not on the ground floor",
+                                           room.floor));
+            }
+            byFloor[room.floor].push_back(&room);
+            for (const catalog::SystemName& system : room.sections) {
+                standsIn[system].insert(room.id.head());
+            }
+        }
+        for (const auto& [system, heads] : standsIn) {
+            if (heads.size() > 1) {
+                std::vector<std::string> rooms;
+                for (const RoomId& head : heads) {
+                    rooms.push_back(head.toString());
+                }
+                m_findings.add(rule::kSystemRooms, system.str(),
+                               fmt::format("the system stands in {} rooms or sections: {}", rooms.size(),
+                                           fmt::join(rooms, ", ")));
+            }
+        }
+        for (auto& [floor, rooms] : byFloor) {
+            std::sort(rooms.begin(), rooms.end(), [](const Room* a, const Room* b) { return a->id < b->id; });
+            for (std::size_t i = 0; i < rooms.size(); ++i) {
+                const Footprint a = floorFootprint(*rooms[i], layout);
+                for (std::size_t j = i + 1; j < rooms.size(); ++j) {
+                    const Footprint b = floorFootprint(*rooms[j], layout);
+                    if (a.overlaps(b)) {
+                        m_findings.add(rule::kRoomsOverlap, rooms[i]->id.toString(),
+                                       fmt::format("its footprint on the floor '{}', {}, overlaps {}'s, {}", floor,
+                                                   footprintText(a), rooms[j]->id.toString(), footprintText(b)));
+                    }
+                }
+            }
+        }
+    }
+
     void checkRoomTemplates() {
         for (auto& [id, view] : m_rooms) {
             const Room& room = *view.room;
@@ -457,6 +546,9 @@ private:
                 m_findings.add(rule::kRoomTemplate, id.toString(),
                                fmt::format("the room's template '{}' is not known", room.templateId));
                 continue;
+            }
+            if (found->version != room.templateVersion && isKept(id)) {
+                continue; // kept as an older template made it: its geometry is not judged against the new one
             }
             if (found->version != room.templateVersion) {
                 m_findings.add(rule::kRoomTemplate, id.toString(),
@@ -604,7 +696,7 @@ private:
         }
         std::map<PrefabRef, Expected<std::vector<PrefabSlotLevel>>> resolved;
         for (const auto& [id, fixture] : m_fixtures) {
-            if (!isCollectionFixture(fixture->role)) {
+            if (!isCollectionFixture(fixture->role) || isKept(id.room())) {
                 continue;
             }
             auto found = resolved.find(fixture->prefab);

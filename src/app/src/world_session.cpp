@@ -50,7 +50,7 @@ const gl::UploadBudget kIdleUploadBudget{std::chrono::milliseconds(8), 512};
 void countPlan(const WorldBuild& build, WorldRecord& record) {
     record.featured = record.band = record.spine = 0;
     record.placements = record.unplaced = 0;
-    record.duplicateTitle = record.noCover = record.unavailable = record.capacity = 0;
+    record.duplicateTitle = record.noCover = record.unavailable = record.capacity = record.roomKept = 0;
     if (build.layout) {
         for (const world::CollectionItem& item : build.layout->items) {
             switch (item.section) {
@@ -84,6 +84,9 @@ void countPlan(const WorldBuild& build, WorldRecord& record) {
             break;
         case world::UnplacedReason::Capacity:
             ++record.capacity;
+            break;
+        case world::UnplacedReason::RoomKept:
+            ++record.roomKept;
             break;
         }
     }

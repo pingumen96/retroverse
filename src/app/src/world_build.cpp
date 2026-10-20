@@ -15,7 +15,9 @@
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog/metadata.hpp>
 #include <rv/core/sha256.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/incremental.hpp>
+#include <rv/world/lift.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/room_input.hpp>
 #include <rv/world/room_selection.hpp>
@@ -35,6 +37,33 @@ using Clock = std::chrono::steady_clock;
 [[nodiscard]] bool isRefusedPlan(const Error& error) noexcept {
     return error.code == ErrorCode::ValidationFailed || error.code == ErrorCode::ParseError ||
            error.code == ErrorCode::Unsupported;
+}
+
+/// Reads a plan file (world::readStoredPlan) and lifts a schema-1 plan into the building (ADR-0013 §5: the app shows a
+/// stored I3 room on its floor's frame later, step 5a; the lifted plan is saved in schema 2 by its first update). The
+/// digest stays the file's. Errors: those of readStoredPlan(), of the building's data, of the lift.
+Expected<world::StoredPlan> readLiftedPlan(const std::filesystem::path& assetRoot, const std::filesystem::path& file) {
+    auto stored = world::readStoredPlan(file);
+    if (!stored || stored->plan.schemaVersion == world::kPlanSchemaVersion) {
+        return stored;
+    }
+    auto building = world::loadBuildingData(assetRoot);
+    if (!building) {
+        return propagate(building.error());
+    }
+    auto systems = world::loadSystemsData(assetRoot);
+    if (!systems) {
+        return propagate(systems.error());
+    }
+    auto lifted = world::lift(stored->plan, *building, *systems);
+    if (!lifted) {
+        Error error = lifted.error();
+        error.code = ErrorCode::ValidationFailed; // a plan this program does not take
+        return propagate(std::move(error));
+    }
+    spdlog::info("World: the stored plan of schema 1 is lifted into the building (room {} on floor {})",
+                 lifted->rooms.front().id.toString(), lifted->rooms.front().floor);
+    return world::StoredPlan{std::move(*lifted), std::move(stored->digest)};
 }
 
 /// Logs the validation's findings of a plan made (ADR-0010 §11: every hard one), into `build`.
@@ -164,7 +193,7 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
                      acquired.error().toString());
     }
     std::optional<world::StoredPlan> stored;
-    if (auto read = world::readStoredPlan(files.plan)) {
+    if (auto read = readLiftedPlan(input.paths.assetRoot, files.plan)) {
         stored = std::move(*read);
     } else if (read.error().code != ErrorCode::NotFound) {
         spdlog::warn("World: the stored plan is not used: {}", read.error().toString());
@@ -193,13 +222,37 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     for (const Error& issue : config->issues) {
         spdlog::warn("world.json left out: {}", issue.toString());
     }
-    auto data = world::loadWorldData(input.paths.assetRoot, snapshot.system);
-    if (!data) {
+    // The data of the building and of every room: a stored room's with its recorded family, theme pack and template
+    // (ADR-0013 §3), a first plan's room's with its system's.
+    std::vector<world::WorldData> rooms;
+    const auto noData = [&](const Error& error) {
         if (stored) {
-            keep(build, *stored, world_notice::kNone, "the world's data: " + data.error().message);
+            keep(build, *stored, world_notice::kNone, "the world's data: " + error.message);
         } else {
-            noPlan(build, world_notice::kFailed, "the world's data: " + data.error().message);
+            noPlan(build, world_notice::kFailed, "the world's data: " + error.message);
         }
+    };
+    if (stored) {
+        for (const world::Room& room : stored->plan.rooms) {
+            auto data = world::loadRoomData(input.paths.assetRoot, room);
+            if (!data) {
+                noData(data.error());
+                return;
+            }
+            rooms.push_back(std::move(*data));
+        }
+    } else {
+        auto data = world::loadWorldData(input.paths.assetRoot, snapshot.system);
+        if (!data) {
+            noData(data.error());
+            return;
+        }
+        rooms.push_back(std::move(*data));
+    }
+    auto building = world::loadBuildingData(input.paths.assetRoot);
+    auto systems = world::loadSystemsData(input.paths.assetRoot);
+    if (!building || !systems) {
+        noData(!building ? building.error() : systems.error());
         return;
     }
     world::WorldOverrides overrides;
@@ -232,22 +285,24 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     const Clock::time_point planStart = Clock::now();
     Expected<world::GenerationResult> result = makeError(ErrorCode::Unknown, "no plan made");
     if (stored) {
-        world::UpdateInput update;
+        // The room of the snapshot's system is updated; the building's other rooms stay as they are (the app's
+        // building job, which updates every room, is I4 step 5a's).
+        world::BuildingUpdateInput update;
         update.library = input.library;
-        update.selection = std::move(*selection);
+        update.selections = {std::move(*selection)};
         update.config = config->config;
         update.overrides = std::move(overrides);
         update.previous = stored->plan;
         update.previousDigest = stored->digest;
         update.aliases = snapshot.aliases;
-        result = world::update(update, *data);
+        result = world::updateBuilding(update, *building, *systems, rooms);
     } else {
-        world::GenerationInput generation;
+        world::BuildingInput generation;
         generation.library = input.library;
-        generation.selection = std::move(*selection);
+        generation.selections = {std::move(*selection)};
         generation.config = config->config;
         generation.overrides = std::move(overrides);
-        result = world::generate(generation, *data);
+        result = world::generateBuilding(generation, *building, *systems, rooms);
     }
     build.planMs = millisecondsSince(planStart);
     if (!result) {
@@ -277,6 +332,17 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
             noPlan(build, world_notice::kFailed, reason);
         }
         return;
+    }
+    // A room kept as it is until a regeneration (ADR-0013 §5: an older template version, prefab levels that changed,
+    // another generator major) places nothing new: said in the log, and by the regeneration's notice when it is the
+    // room shown (I3 showed it for the same changes, which refused the whole plan then).
+    for (const world::KeptRoom& kept : result->changes.keptRooms) {
+        spdlog::warn("World: {} is kept as it is until 'retroverse-cli worldplan generate --replace' (its new games "
+                     "are not placed): {}",
+                     kept.room.toString(), kept.reason);
+        if (kept.room == build.room) {
+            build.notice = std::string(world_notice::kRegeneration);
+        }
     }
     build.plan = std::move(result->plan);
     build.planDigest = result->changes.digestAfter;
@@ -353,7 +419,7 @@ StoredWorldPlan readWorldPlan(const WorldPaths& paths, const catalog::LibraryId&
     const Clock::time_point start = Clock::now();
     StoredWorldPlan result;
     result.library = library;
-    auto stored = world::readStoredPlan(world::worldFiles(paths.userDataRoot, library).plan);
+    auto stored = readLiftedPlan(paths.assetRoot, world::worldFiles(paths.userDataRoot, library).plan);
     if (stored) {
         result.stored = std::move(*stored);
     } else if (stored.error().code != ErrorCode::NotFound) {

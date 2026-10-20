@@ -49,7 +49,10 @@
 {"depthMm":380,"heightMm":1050,"id":"room:snes/fx:w05","levels":[],"prefab":{"kind":"plant","manifest":"decor.plant.snake.generic"},"role":"decoration","widthMm":380,"xMm":-4280,"yMm":0,"yawCdeg":9000,"zMm":2000},
 {"depthMm":340,"heightMm":1500,"id":"room:snes/fx:w06","levels":[],"prefab":{"kind":"floor_lamp","manifest":"decor.lamp.floor_slim.generic"},"role":"decoration","widthMm":340,"xMm":-4300,"yMm":0,"yawCdeg":9000,"zMm":3000},
 {"depthMm":20,"heightMm":700,"id":"room:snes/fx:w07","levels":[],"prefab":{"kind":"poster_frame","manifest":"decor.poster_frame.generic"},"role":"decoration","widthMm":500,"xMm":-4470,"yMm":1550,"yawCdeg":9000,"zMm":4000}
-],"generatorVersion":"1.2","inputDigest":"ceb24e535201f3bfb53042c20fa5c90af79325bf6a55dd1267e0a17ce3718f2f","library":"esde","lights":[
+],"floors":[
+{"id":"ground","order":0},
+{"id":"gen4","order":3}
+],"generatorVersion":"1.3","inputDigest":"7181571ea08375eaac722eb1b1fc4dd611ed803d6c6073caf24e40c8fbe804e4","library":"esde","lights":[
 {"id":"room:snes/fx:dec-se.light","role":"lamp","spanMm":0,"targetXMm":2500,"targetYMm":1379,"targetZMm":4800,"xMm":2500,"yMm":1379,"zMm":4800},
 {"id":"room:snes/fx:e07.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":4000,"xMm":4300,"yMm":1379,"zMm":4000},
 {"id":"room:snes/fx:hero.key-light","role":"key","spanMm":5750,"targetXMm":0,"targetYMm":500,"targetZMm":-4870,"xMm":0,"yMm":2920,"zMm":-2670},
@@ -62,5 +65,5 @@
 ],"placements":[
 {"game":"g777ace47fa76a48c","insetMm":0,"slot":"room:snes/fx:fs01/s:1.2","yawCdeg":-3}
 ],"preset":"retro_museum_cozy","randomAlgorithm":"splitmix64/1","rooms":[
-{"growthSteps":0,"heightMm":3200,"id":"room:snes","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"seed":17603924443371940729,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
-],"schemaVersion":1,"seed":7,"titleKeyRule":"title-key/1","unplaced":[]}
+{"floor":"gen4","generatorVersion":"1.3","growthSteps":0,"heightMm":3200,"id":"room:snes","kind":"console","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["snes"],"seed":17603924443371940729,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
+],"schemaVersion":2,"seed":7,"titleKeyRule":"title-key/1","unplaced":[]}

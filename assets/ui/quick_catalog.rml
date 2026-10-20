@@ -168,6 +168,7 @@
 		<p class="room-reason" data-if="card.room == 'no-cover'">Non esposto: senza copertina</p>
 		<p class="room-reason" data-if="card.room == 'unavailable'">Non esposto: il file del gioco mancava quando la stanza è stata allestita</p>
 		<p class="room-reason" data-if="card.room == 'capacity'">Non esposto: la stanza è piena</p>
+		<p class="room-reason" data-if="card.room == 'room-kept'">Non esposto: la stanza resta com'era finché non viene generata di nuovo</p>
 		<p class="room-reason" data-if="card.room == 'not-in-room'">Non esposto: questa stanza raccoglie i giochi di un altro sistema</p>
 		<p id="status" class="status" data-if="status != ''">{{ status }}</p>
 	</div>

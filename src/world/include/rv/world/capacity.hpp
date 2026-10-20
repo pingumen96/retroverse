@@ -102,9 +102,9 @@ struct PrefabCatalog {
 };
 
 /// The prefabs a generation reads: the template's modules, display fixtures, hero corner parts, decoration and shelf
-/// dressing, the platform's console and the media family's item.
-[[nodiscard]] std::vector<PrefabRef> prefabsToRead(const RoomTemplate& roomTemplate, const PrefabRef& console,
-                                                   const MediaFamily& family);
+/// dressing, the platform's console (when it has one) and the media family's item.
+[[nodiscard]] std::vector<PrefabRef> prefabsToRead(const RoomTemplate& roomTemplate,
+                                                   const std::optional<PrefabRef>& console, const MediaFamily& family);
 
 /// Reads one prefab through assets::resolvePrefab (the requested manifest, else its family's generic manifest, else
 /// the family's procedural prefab, each fallback logged once) and measures it: a procedural prefab is built and read

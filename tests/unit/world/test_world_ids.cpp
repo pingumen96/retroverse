@@ -1,9 +1,11 @@
-// The world's identifiers (rv/world/ids.hpp, ADR-0010 §7): their text forms, read back exactly, the malformed ones
+// The world's identifiers (rv/world/ids.hpp, ADR-0010 §7, ADR-0013 §5): their text forms (the four forms of a room
+// id among them, with hostile system names), read back exactly, the malformed ones
 // refused, and their order (by parts, numbers as numbers).
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -153,4 +155,98 @@ TEST_CASE("world/ids: ids order by their parts, numbers as numbers", "[world][id
     CHECK(FixtureId{}.toString().empty());
     CHECK(SlotId{}.toString().empty());
     CHECK(SlotId{}.levelId().empty());
+}
+
+TEST_CASE("world/ids: the room ids' four forms, read back exactly", "[world][ids]") {
+    // ADR-0013 §5: room:<system>, room:<system>:<n> (n from 2), area:shared:<floor>[:<n>], area:arcade[:<n>].
+    struct Case {
+        std::string_view text;
+        rv::world::RoomIdKind kind;
+        std::string_view system;
+        std::string_view floor;
+        std::uint32_t index;
+    };
+    const Case cases[] = {
+        {"room:snes", rv::world::RoomIdKind::System, "snes", "", 1},
+        {"room:snes:2", rv::world::RoomIdKind::System, "snes", "", 2},
+        {"room:snes:999", rv::world::RoomIdKind::System, "snes", "", 999},
+        {"area:shared:gen4", rv::world::RoomIdKind::Shared, "", "gen4", 1},
+        {"area:shared:gen4:3", rv::world::RoomIdKind::Shared, "", "gen4", 3},
+        {"area:shared:computer", rv::world::RoomIdKind::Shared, "", "computer", 1},
+        {"area:arcade", rv::world::RoomIdKind::Arcade, "", "", 1},
+        {"area:arcade:2", rv::world::RoomIdKind::Arcade, "", "", 2},
+        // Hostile system names that are still ES-DE system names: spaces, dots, Unicode, a name like a form.
+        {"room:Arcade Plus é", rv::world::RoomIdKind::System, "Arcade Plus é", "", 1},
+        {"room:a.b", rv::world::RoomIdKind::System, "a.b", "", 1},
+        {"room:area", rv::world::RoomIdKind::System, "area", "", 1},
+        {"room:fx", rv::world::RoomIdKind::System, "fx", "", 1},
+        {"room:🎮 games:7", rv::world::RoomIdKind::System, "🎮 games", "", 7},
+    };
+    for (const Case& test : cases) {
+        INFO(test.text);
+        auto parsed = RoomId::parse(test.text);
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->kind() == test.kind);
+        CHECK(parsed->system().str() == test.system);
+        CHECK(parsed->floor() == test.floor);
+        CHECK(parsed->index() == test.index);
+        CHECK(parsed->isExpansion() == (test.index > 1));
+        CHECK(parsed->toString() == test.text);
+        CHECK(parsed->head().index() == 1);
+        // Fixtures, levels and slots of every form.
+        auto slot = SlotId::make(*FixtureId::make(*parsed, "w03"), 3, 12);
+        REQUIRE(slot.has_value());
+        CHECK(slot->toString() == std::string(test.text) + "/fx:w03/s:3.12");
+        CHECK(*SlotId::parse(slot->toString()) == *slot);
+        CHECK(LevelId::parse(std::string(test.text) + "/fx:w03/l:2")->fixture().room() == *parsed);
+    }
+    // The makers give the same ids; forSystem() keeps the SNES room's id.
+    CHECK(room().toString() == "room:snes");
+    CHECK(*RoomId::forSystem(*rv::catalog::SystemName::parse("snes"), 1) == room());
+    CHECK(RoomId::forSystem(*rv::catalog::SystemName::parse("snes"), 2)->toString() == "room:snes:2");
+    CHECK(RoomId::forSystem(*rv::catalog::SystemName::parse("snes"), 2)->head() == room());
+    CHECK(RoomId::sharedArea("gen4")->toString() == "area:shared:gen4");
+    CHECK(RoomId::sharedArea("gen4", 2)->toString() == "area:shared:gen4:2");
+    CHECK(RoomId::arcadeArea()->toString() == "area:arcade");
+    CHECK(RoomId::arcadeArea(3)->toString() == "area:arcade:3");
+    CHECK_FALSE(RoomId::forSystem(*rv::catalog::SystemName::parse("snes"), 0).has_value());
+    CHECK_FALSE(RoomId::forSystem(*rv::catalog::SystemName::parse("snes"), 1000).has_value());
+    CHECK_FALSE(RoomId::sharedArea("Gen4").has_value());
+    CHECK_FALSE(RoomId::sharedArea("gen4", 0).has_value());
+    CHECK_FALSE(RoomId::arcadeArea(0).has_value());
+    CHECK(RoomId{}.empty());
+    CHECK(RoomId{}.toString().empty());
+}
+
+TEST_CASE("world/ids: malformed room ids of every form are refused", "[world][ids]") {
+    for (const std::string_view text :
+         {"room:snes:", "room:snes:0", "room:snes:1", "room:snes:01", "room:snes:02", "room:snes:1000",
+          "room:snes:2:3", "room:snes:x", "room:snes:-2", "room:snes: 2", "room::2", "area:", "area", "area:shared",
+          "area:shared:", "area:shared:Gen4", "area:shared:gen 4", "area:shared:gen4:", "area:shared:gen4:1",
+          "area:shared:gen4:01", "area:shared:gen4:2:2", "area:shared:4gen", "area:arcade:", "area:arcade:1",
+          "area:arcade:01", "area:arcade:x", "area:arcadex", "area:arcade:shared", "area:lobby", "Area:arcade",
+          "area:arcade ", " area:arcade", "room:sn:es", "room:a\b", "room:.", "room:..", "room:snes."}) {
+        INFO(text);
+        CHECK_FALSE(RoomId::parse(text).has_value());
+    }
+    for (const std::string_view text : {"area:shared:gen4/fx:", "area:arcade/fx:W03", "room:snes:1/fx:w03",
+                                        "area:arcade:1/fx:w03", "area:shared:/fx:w03"}) {
+        INFO(text);
+        CHECK_FALSE(FixtureId::parse(text).has_value());
+    }
+}
+
+TEST_CASE("world/ids: room ids order by form, then floor or system, then index", "[world][ids]") {
+    std::vector<RoomId> rooms = {*RoomId::parse("room:snes:10"), *RoomId::parse("room:snes"),
+                                 *RoomId::parse("area:shared:gen4"), *RoomId::parse("room:snes:2"),
+                                 *RoomId::parse("area:arcade:2"), *RoomId::parse("area:arcade"),
+                                 *RoomId::parse("room:nes"), *RoomId::parse("area:shared:gen3:2"), RoomId{}};
+    std::sort(rooms.begin(), rooms.end());
+    std::vector<std::string> texts;
+    for (const RoomId& id : rooms) {
+        texts.push_back(id.toString());
+    }
+    CHECK(texts == std::vector<std::string>{"", "area:arcade", "area:arcade:2", "area:shared:gen3:2",
+                                            "area:shared:gen4", "room:nes", "room:snes", "room:snes:2",
+                                            "room:snes:10"});
 }

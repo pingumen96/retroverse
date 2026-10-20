@@ -21,6 +21,16 @@ std::optional<std::string> ParsedArgs::value(std::string_view name) const {
     return it->second;
 }
 
+std::vector<std::string> ParsedArgs::values(std::string_view name) const {
+    if (const auto given = m_given.find(name); given != m_given.end()) {
+        return given->second;
+    }
+    if (const auto fallback = m_values.find(name); fallback != m_values.end()) {
+        return {fallback->second};
+    }
+    return {};
+}
+
 Expected<int> ParsedArgs::intValue(std::string_view name, int fallback) const {
     const auto text = value(name);
     if (!text) {
@@ -135,6 +145,7 @@ Expected<ParsedArgs> ArgParser::parse(std::span<const std::string> arguments) co
                 inlineValue = arguments[++i];
             }
             result.m_values[spec->name] = *inlineValue;
+            result.m_given[spec->name].push_back(*inlineValue);
             result.m_present[spec->name] = true;
             continue;
         }

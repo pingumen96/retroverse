@@ -9,7 +9,8 @@
 // side-wall modules on each side wall (w01-w03, e01-e03) and decoration on the other side-wall sockets (posters and two
 // floor lamps), the two display cases, a sideboard either side of the doorway and the hero wall's corners left empty;
 // 30 games placed (spine, band, featured), two dressed spans, a duplicate title and a game without a cover unplaced.
-// It passes every rule, the soft ones included.
+// It passes every rule, the soft ones included. Its room is a schema-2 console room of snes on the floor gen4, at the
+// north row's first position, the plan holding the ground floor and gen4 (I4 step 1).
 
 #include <cstdint>
 #include <string_view>

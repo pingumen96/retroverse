@@ -1,6 +1,7 @@
-// The WorldPlan's canonical JSON (rv/world/plan_json.hpp, ADR-0010 §8): one plan is one text, its lists sorted
-// whatever their order in memory; the text is read back as the same plan and written again byte for byte; a plan of a
-// newer schema, a hand-edited text and every malformed field are refused with the line they stand on.
+// The WorldPlan's canonical JSON (rv/world/plan_json.hpp, ADR-0010 §8, ADR-0013 §5): one plan is one text, its lists
+// sorted whatever their order in memory; the text is read back as the same plan and written again byte for byte; a
+// plan of a newer schema (3), a hand-edited text and every malformed field are refused with the line they stand on; a
+// schema-1 text is read as its content and never written; a room's content digest covers its record and elements.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -58,6 +59,7 @@ WorldPlan samplePlan() {
     plan.seed = 18446744073709551615ull;
     plan.preset = "retro_museum_cozy";
     plan.inputDigest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    plan.floors = {{"gen4", 3}, {"ground", 0}};
 
     rv::world::Room room;
     room.id = snesRoom();
@@ -71,6 +73,11 @@ WorldPlan samplePlan() {
     room.seed = 42;
     room.mediaFamily = "cartridge_home_16bit";
     room.themePack = "classic_16bit_warm";
+    room.kind = rv::world::RoomKind::Console;
+    room.floor = "gen4";
+    room.sections = {room.id.system()};
+    room.placement = {7650, -6650, 0};
+    room.generatorVersion = {1, 0};
     plan.rooms.push_back(room);
 
     Fixture module;
@@ -117,6 +124,42 @@ WorldPlan samplePlan() {
 // The canonical text of samplePlan(), written by hand from the format: keys by code point, one element per line in the
 // top-level arrays, nothing else between the tokens, a final line feed.
 const std::string kSampleText =
+    "{\"catalogSortKeyVersion\":1,\"dressing\":[\n"
+    "{\"count\":31,\"firstSlot\":2,\"level\":\"room:snes/fx:hw-w/l:0\","
+    "\"prop\":{\"kind\":\"storage_box\",\"manifest\":\"decor.storage_box.generic\"}}\n"
+    "],\"fixtures\":[\n"
+    "{\"depthMm\":500,\"heightMm\":900,\"id\":\"room:snes/fx:dc01\","
+    "\"levels\":[{\"level\":0,\"section\":\"featured\",\"slots\":11}],"
+    "\"prefab\":{\"kind\":\"display_case\",\"manifest\":\"furniture.display_case.generic\"},\"role\":\"display\","
+    "\"widthMm\":1200,\"xMm\":-1000,\"yMm\":0,\"yawCdeg\":9000,\"zMm\":1000},\n"
+    "{\"depthMm\":560,\"heightMm\":610,\"id\":\"room:snes/fx:hero.crt\",\"levels\":[],"
+    "\"prefab\":{\"kind\":\"crt\",\"manifest\":\"electronics.crt.consumer.generic\"},\"role\":\"hero-corner\","
+    "\"widthMm\":710,\"xMm\":-805,\"yMm\":550,\"yawCdeg\":0,\"zMm\":-4690},\n"
+    "{\"depthMm\":350,\"heightMm\":2000,\"id\":\"room:snes/fx:hw-w\","
+    "\"levels\":[{\"level\":0,\"section\":\"spine\",\"slots\":33},{\"level\":4,\"section\":\"band\",\"slots\":6}],"
+    "\"prefab\":{\"kind\":\"shelf\",\"manifest\":\"furniture.shelf.hero_module.generic\"},\"role\":\"hero-module\","
+    "\"widthMm\":900,\"xMm\":-2425,\"yMm\":0,\"yawCdeg\":0,\"zMm\":-4795}\n"
+    "],\"floors\":[\n"
+    "{\"id\":\"ground\",\"order\":0},\n"
+    "{\"id\":\"gen4\",\"order\":3}\n"
+    "],\"generatorVersion\":\"1.0\","
+    "\"inputDigest\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"library\":\"esde\","
+    "\"lights\":[],\"placements\":[\n"
+    "{\"game\":\"g0000000000000002\",\"insetMm\":0,\"slot\":\"room:snes/fx:dc01/s:0.0\",\"yawCdeg\":120},\n"
+    "{\"game\":\"g0000000000000001\",\"insetMm\":3,\"slot\":\"room:snes/fx:hw-w/s:0.1\",\"yawCdeg\":0}\n"
+    "],\"preset\":\"retro_museum_cozy\",\"randomAlgorithm\":\"splitmix64/1\",\"rooms\":[\n"
+    "{\"floor\":\"gen4\",\"generatorVersion\":\"1.0\",\"growthSteps\":0,\"heightMm\":3200,\"id\":\"room:snes\","
+    "\"kind\":\"console\",\"maxXMm\":4500,\"maxZMm\":5000,\"mediaFamily\":\"cartridge_home_16bit\",\"minXMm\":-4500,"
+    "\"minZMm\":-5000,\"placement\":{\"xMm\":7650,\"yawHalfTurns\":0,\"zMm\":-6650},\"sections\":[\"snes\"],"
+    "\"seed\":42,\"template\":\"console_room_9x10\",\"templateVersion\":1,\"themePack\":\"classic_16bit_warm\"}\n"
+    "],\"schemaVersion\":2,\"seed\":18446744073709551615,\"titleKeyRule\":\"title-key/1\",\"unplaced\":[\n"
+    "{\"game\":\"g0000000000000003\",\"reason\":\"duplicate-title\",\"representative\":\"g0000000000000001\","
+    "\"room\":\"room:snes\"},\n"
+    "{\"game\":\"g0000000000000004\",\"reason\":\"no-cover\",\"room\":\"room:snes\"}\n"
+    "]}\n";
+
+// The same plan as I3 wrote it in schema 1 (no floors, no building fields in its room).
+const std::string kSampleTextV1 =
     "{\"catalogSortKeyVersion\":1,\"dressing\":[\n"
     "{\"count\":31,\"firstSlot\":2,\"level\":\"room:snes/fx:hw-w/l:0\","
     "\"prop\":{\"kind\":\"storage_box\",\"manifest\":\"decor.storage_box.generic\"}}\n"
@@ -208,7 +251,125 @@ TEST_CASE("world/plan_json: the text is read back as the plan and written again 
     auto emptyText = rv::world::writePlan(empty);
     REQUIRE(emptyText.has_value());
     CHECK_THAT(*emptyText, ContainsSubstring("\"fixtures\":[],"));
+    rv::world::sortPlan(empty);
     CHECK(*rv::world::readPlan(*emptyText, "empty.json") == empty);
+}
+
+TEST_CASE("world/plan_json: shared, arcade and expansion rooms round-trip byte for byte", "[world][plan_json]") {
+    // Schema 2's reserved forms (ADR-0013 §5, §8), which nothing generates yet: a shared room of several sections in
+    // their recorded order, the arcade room, an expansion of a console room and one of the shared room.
+    WorldPlan plan = samplePlan();
+    const rv::world::Room head = plan.rooms.front();
+    const auto system = [](std::string_view name) { return *rv::catalog::SystemName::parse(name); };
+    rv::world::Room shared = head;
+    shared.id = *RoomId::sharedArea("gen4");
+    shared.kind = rv::world::RoomKind::Shared;
+    shared.sections = {system("pcengine"), system("megadrive")};
+    shared.placement = {7650, 6650, 1};
+    rv::world::Room sharedMore = shared;
+    sharedMore.id = *RoomId::sharedArea("gen4", 2);
+    sharedMore.expands = shared.id;
+    sharedMore.placement = {16950, 6650, 1};
+    rv::world::Room arcade = head;
+    arcade.id = *RoomId::arcadeArea();
+    arcade.kind = rv::world::RoomKind::Arcade;
+    arcade.floor = "ground";
+    arcade.sections = {system("mame"), system("fbneo")};
+    arcade.mediaFamily = "generic_case";
+    rv::world::Room expansion = head;
+    expansion.id = *RoomId::forSystem(head.id.system(), 2);
+    expansion.expands = head.id;
+    expansion.placement = {16950, -6650, 0};
+    plan.rooms = {sharedMore, expansion, arcade, head, shared};
+    plan.unplaced.push_back({game(9), shared.id, UnplacedReason::Capacity, {}});
+
+    auto text = rv::world::writePlan(plan);
+    REQUIRE(text.has_value());
+    CHECK_THAT(*text, ContainsSubstring(R"("expands":"room:snes")"));
+    CHECK_THAT(*text, ContainsSubstring(R"("expands":"area:shared:gen4")"));
+    CHECK_THAT(*text, ContainsSubstring(R"("sections":["pcengine","megadrive"])"));
+    CHECK_THAT(*text, ContainsSubstring(R"("id":"area:arcade","kind":"arcade")"));
+    auto read = rv::world::readPlan(*text, "building.json");
+    REQUIRE(read.has_value());
+    rv::world::sortPlan(plan);
+    CHECK(*read == plan);
+    CHECK(*rv::world::writePlan(*read) == *text);
+    // Rooms in id order: the arcade room, the shared rooms, then the systems' rooms, each chain's head first.
+    std::vector<std::string> ids;
+    for (const rv::world::Room& room : read->rooms) {
+        ids.push_back(room.id.toString());
+    }
+    CHECK(ids == std::vector<std::string>{"area:arcade", "area:shared:gen4", "area:shared:gen4:2", "room:snes",
+                                          "room:snes:2"});
+}
+
+TEST_CASE("world/plan_json: a schema-1 text is read as its content and never written", "[world][plan_json]") {
+    auto v1 = rv::world::readPlan(kSampleTextV1, "world-plan.json");
+    REQUIRE(v1.has_value());
+    CHECK(v1->schemaVersion == 1);
+    CHECK(v1->floors.empty());
+    REQUIRE(v1->rooms.size() == 1);
+    CHECK(v1->rooms.front().floor.empty());
+    CHECK(v1->rooms.front().sections.empty());
+    // Its content is the schema-2 plan's but for the building's fields.
+    WorldPlan expected = samplePlan();
+    rv::world::sortPlan(expected);
+    CHECK(v1->fixtures == expected.fixtures);
+    CHECK(v1->placements == expected.placements);
+    CHECK(v1->dressing == expected.dressing);
+    CHECK(v1->unplaced == expected.unplaced);
+    // Only schema 2 is written: a schema-1 plan is lifted first (lift.hpp).
+    auto refused = rv::world::writePlan(*v1);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().code == rv::ErrorCode::InvalidArgument);
+    CHECK_THAT(refused.error().message, ContainsSubstring("lifted first"));
+    // A schema-1 text with schema 2's keys, a room-kept entry or an area's room, and a schema-2 text without its
+    // floors, are refused.
+    CHECK(refusal(replaced(kSampleTextV1, "{\"catalogSortKeyVersion\":1,",
+                           "{\"catalogSortKeyVersion\":1,\"floors\":[],"))
+              .code == rv::ErrorCode::ValidationFailed);
+    CHECK_THAT(refusal(replaced(kSampleTextV1, "\"reason\":\"no-cover\"", "\"reason\":\"room-kept\""))
+                   .message,
+               ContainsSubstring("schema 1 has no reason room-kept"));
+    CHECK_THAT(refusal(replaced(kSampleText, "],\"floors\":[\n{\"id\":\"ground\",\"order\":0},\n"
+                                             "{\"id\":\"gen4\",\"order\":3}\n],",
+                                "],"))
+                   .message,
+               ContainsSubstring("/floors: missing"));
+}
+
+TEST_CASE("world/plan_json: a room's content digest covers its record and its elements", "[world][plan_json]") {
+    const WorldPlan plan = samplePlan();
+    const RoomId room = snesRoom();
+    auto digest = rv::world::roomContentDigest(plan, room);
+    REQUIRE(digest.has_value());
+    CHECK(rv::world::isSha256Hex(*digest));
+    // The order in memory and the plan's header do not matter; the room's elements do.
+    WorldPlan reversed = plan;
+    std::reverse(reversed.fixtures.begin(), reversed.fixtures.end());
+    reversed.inputDigest = std::string(64, 'b');
+    reversed.seed = 7;
+    CHECK(*rv::world::roomContentDigest(reversed, room) == *digest);
+    WorldPlan moved = plan;
+    moved.placements.front().insetMm += 1;
+    CHECK(*rv::world::roomContentDigest(moved, room) != *digest);
+    WorldPlan grown = plan;
+    grown.rooms.front().placement.zMm -= 2000;
+    CHECK(*rv::world::roomContentDigest(grown, room) != *digest);
+    WorldPlan relisted = plan;
+    relisted.unplaced.pop_back();
+    CHECK(*rv::world::roomContentDigest(relisted, room) != *digest);
+    // Another room's elements do not: a second room added to the plan leaves this one's digest.
+    WorldPlan building = plan;
+    rv::world::Room other = plan.rooms.front();
+    other.id = *RoomId::forSystem(*rv::catalog::SystemName::parse("megadrive"));
+    other.sections = {other.id.system()};
+    other.placement.yawHalfTurns = 1;
+    building.rooms.push_back(other);
+    building.unplaced.push_back({game(77), other.id, UnplacedReason::NoCover, {}});
+    CHECK(*rv::world::roomContentDigest(building, room) == *digest);
+    CHECK(*rv::world::roomContentDigest(building, other.id) != *digest);
+    CHECK(rv::world::roomContentDigest(plan, other.id).error().code == rv::ErrorCode::NotFound);
 }
 
 TEST_CASE("world/plan_json: a large plan round-trips byte for byte", "[world][plan_json]") {
@@ -233,17 +394,17 @@ TEST_CASE("world/plan_json: a large plan round-trips byte for byte", "[world][pl
 }
 
 TEST_CASE("world/plan_json: a newer schema is refused as such", "[world][plan_json]") {
-    const rv::Error newer = refusal(replaced(kSampleText, "\"schemaVersion\":1", "\"schemaVersion\":2"));
+    const rv::Error newer = refusal(replaced(kSampleText, "\"schemaVersion\":2", "\"schemaVersion\":3"));
     CHECK(newer.code == rv::ErrorCode::Unsupported);
     CHECK_THAT(newer.message, ContainsSubstring("newer"));
-    CHECK(newer.context == "world-plan.json:12");
+    CHECK(newer.context == "world-plan.json:15");
 
     // Even when the rest of it would not be read by this build.
-    std::string future = replaced(kSampleText, "\"schemaVersion\":1", "\"schemaVersion\":7");
+    std::string future = replaced(kSampleText, "\"schemaVersion\":2", "\"schemaVersion\":7");
     future = replaced(future, "{\"catalogSortKeyVersion\":1,", "{\"aNewList\":[],\"catalogSortKeyVersion\":1,");
     CHECK(refusal(future).code == rv::ErrorCode::Unsupported);
 
-    const rv::Error older = refusal(replaced(kSampleText, "\"schemaVersion\":1", "\"schemaVersion\":0"));
+    const rv::Error older = refusal(replaced(kSampleText, "\"schemaVersion\":2", "\"schemaVersion\":0"));
     CHECK(older.code == rv::ErrorCode::ValidationFailed);
     CHECK_THAT(older.message, ContainsSubstring("/schemaVersion"));
 }
@@ -307,6 +468,27 @@ TEST_CASE("world/plan_json: malformed fields are refused with their line", "[wor
          "/unplaced/1/representative: only a duplicate-title", "no-cover"},
         {"\"representative\":\"g0000000000000001\",", "", "/unplaced/0/representative: missing", "duplicate-title"},
         {"\"reason\":\"no-cover\"", "\"reason\":\"hidden\"", "/unplaced/1/reason", "hidden"},
+        // Schema 2's fields (I4 step 1).
+        {"{\"id\":\"ground\",\"order\":0},\n{\"id\":\"gen4\",\"order\":3}",
+         "{\"id\":\"gen4\",\"order\":3},\n{\"id\":\"ground\",\"order\":0}", "/floors/1: out of order",
+         "\"ground\""},
+        {"{\"id\":\"gen4\",\"order\":3}", "{\"id\":\"ground\",\"order\":3}", "/floors/1/id: appears twice",
+         "\"order\":3"},
+        {"{\"id\":\"gen4\",\"order\":3}", "{\"id\":\"Gen4\",\"order\":3}", "/floors/1/id", "Gen4"},
+        {"\"kind\":\"console\"", "\"kind\":\"hall\"", "/rooms/0/kind: expected one of", "hall"},
+        {"\"kind\":\"console\"", "\"kind\":\"shared\"", "/rooms/0/kind: a shared room's id is not room:snes",
+         "\"kind\":\"shared\""},
+        {"\"sections\":[\"snes\"]", "\"sections\":[\"nes\"]", "/rooms/0/sections: a console room holds exactly",
+         "\"nes\""},
+        {"\"sections\":[\"snes\"]", "\"sections\":[]", "/rooms/0/sections: names no system", "\"sections\":[]"},
+        {"\"sections\":[\"snes\"]", "\"sections\":[\"snes\",\"snes\"]", "/rooms/0/sections/1: appears twice",
+         "\"sections\""},
+        {"\"floor\":\"gen4\",", "\"floor\":\"\",", "/rooms/0/floor", "\"floor\":\"\""},
+        {"\"yawHalfTurns\":0", "\"yawHalfTurns\":2", "/rooms/0/placement/yawHalfTurns", "\"yawHalfTurns\":2"},
+        {"{\"floor\":\"gen4\",", "{\"expands\":\"room:snes\",\"floor\":\"gen4\",",
+         "/rooms/0/expands: an expansion, and only one", "expands"},
+        {"\"floor\":\"gen4\",\"generatorVersion\":\"1.0\"", "\"floor\":\"gen4\",\"generatorVersion\":\"1.1\"",
+         "/generatorVersion: the plan's generator version is the highest of its rooms', 1.1", "\"inputDigest\""},
     };
     for (const Case& test : cases) {
         INFO(test.to);
@@ -327,13 +509,13 @@ TEST_CASE("world/plan_json: lists out of order or holding a key twice are refuse
     const std::string swapped = replaced(kSampleText, first + ",\n" + second, second + ",\n" + first);
     const rv::Error outOfOrder = refusal(swapped);
     CHECK_THAT(outOfOrder.message, ContainsSubstring("/placements/1: out of order: placements are sorted by slot"));
-    CHECK(outOfOrder.context == "world-plan.json:9");
+    CHECK(outOfOrder.context == "world-plan.json:12");
 
     // The same slot and game twice, even with another offset.
     const std::string again = replaced(second, "\"insetMm\":3", "\"insetMm\":4");
     const rv::Error twice = refusal(replaced(kSampleText, second, second + ",\n" + again));
     CHECK_THAT(twice.message, ContainsSubstring("/placements/2: appears twice"));
-    CHECK(twice.context == "world-plan.json:10");
+    CHECK(twice.context == "world-plan.json:13");
 
     // Two games in one slot are a plan the reader reads: the validation (I3 step 4) refuses it.
     const std::string shared = replaced(second, "g0000000000000001", "g0000000000000005");
@@ -379,8 +561,11 @@ TEST_CASE("world/plan_json: the writer refuses what the reader would", "[world][
     CHECK_FALSE(rv::world::planDigest(badDigest).has_value());
 
     WorldPlan newer = samplePlan();
-    newer.schemaVersion = 2;
+    newer.schemaVersion = 3;
     CHECK_FALSE(rv::world::writePlan(newer).has_value());
+    WorldPlan older = samplePlan();
+    older.schemaVersion = 1;
+    CHECK_FALSE(rv::world::writePlan(older).has_value());
 }
 
 TEST_CASE("world/plan_json: generator versions and enumerations as text", "[world][plan_json]") {
@@ -396,8 +581,14 @@ TEST_CASE("world/plan_json: generator versions and enumerations as text", "[worl
         CHECK(rv::world::parseFixtureRole(rv::world::toString(role)) == role);
     }
     for (const UnplacedReason reason : {UnplacedReason::DuplicateTitle, UnplacedReason::NoCover,
-                                        UnplacedReason::Unavailable, UnplacedReason::Capacity}) {
+                                        UnplacedReason::Unavailable, UnplacedReason::Capacity,
+                                        UnplacedReason::RoomKept}) {
         CHECK(rv::world::parseUnplacedReason(rv::world::toString(reason)) == reason);
+    }
+    CHECK(rv::world::toString(UnplacedReason::RoomKept) == "room-kept");
+    for (const rv::world::RoomKind kind :
+         {rv::world::RoomKind::Console, rv::world::RoomKind::Shared, rv::world::RoomKind::Arcade}) {
+        CHECK(rv::world::parseRoomKind(rv::world::toString(kind)) == kind);
     }
     CHECK(rv::world::parseSection("band") == Section::Band);
     CHECK(rv::world::isFaceOut(Section::Featured));

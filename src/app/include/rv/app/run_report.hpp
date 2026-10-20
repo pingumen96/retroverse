@@ -604,6 +604,8 @@ struct WorldRecord {
     std::uint64_t noCover = 0;
     std::uint64_t unavailable = 0;
     std::uint64_t capacity = 0;
+    /// In a room an update keeps as it is until a regeneration (ADR-0013 §5).
+    std::uint64_t roomKept = 0;
     /// The change report's counts: games added, placements kept.
     std::uint64_t added = 0;
     std::uint64_t kept = 0;

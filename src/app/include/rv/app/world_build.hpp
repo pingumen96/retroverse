@@ -69,7 +69,9 @@
 
 namespace rv::app {
 
-/// The system whose room I3 generates (ES-DE's name; ADR-0010: one room, SNES).
+/// The system whose room the app generates and shows (ES-DE's name; ADR-0010: one room, SNES). Since I4 step 1 the
+/// plan is a building (ADR-0013), of which the app updates and shows this system's room in its own frame; the floors
+/// come with I4 step 5a.
 inline constexpr std::string_view kRoomSystem = "snes";
 
 /// Where the world's jobs read and write.
@@ -92,7 +94,8 @@ struct StoredWorldPlan {
     double milliseconds = 0.0;
 };
 
-/// Reads <user data>/worlds/<library>/world-plan.json (world::readStoredPlan), without the lock (readers need none).
+/// Reads <user data>/worlds/<library>/world-plan.json (world::readStoredPlan), without the lock (readers need none); a
+/// plan of schema 1 is lifted into the building (world::lift, ADR-0013 §5), its digest the file's.
 [[nodiscard]] StoredWorldPlan readWorldPlan(const WorldPaths& paths, const catalog::LibraryId& library);
 
 /// How the room that shows came to be.

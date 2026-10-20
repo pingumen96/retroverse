@@ -1,18 +1,27 @@
 #pragma once
 
-// The world's identifiers (ADR-0010 §7). They name what the template and the catalog name, never a random choice of
-// the generator, so that a plan's ids are the same whatever the seed:
-//   - RoomId: "room:" and the system's ES-DE name ("room:snes");
+// The world's identifiers (ADR-0010 §7, ADR-0013 §5). They name what the template, the building and the catalog name,
+// never a random choice of the generator, so that a plan's ids are the same whatever the seed:
+//   - RoomId, a tagged id of four forms:
+//       "room:<system>"            a system's console room ("room:snes"; RoomId::forSystem());
+//       "room:<system>:<n>"        an expansion of it, n from 2 (ADR-0013 §8: reserved, nothing generates one yet);
+//       "area:shared:<floor>[:<n>]" the shared room of a floor ("area:shared:gen4"), its expansions from 2;
+//       "area:arcade[:<n>]"        the arcade game room on the ground floor, its expansions from 2.
+//     The system is an ES-DE system name (catalog::SystemName, which never holds ':' or '/'), the floor a data id
+//     ("gen4": building.json's), n a decimal number from 2 to kMaxRoomIndex without leading zeros; the head of a chain
+//     has no number (index 1). A room's seed derives from its id's text (seeds.hpp), so "room:snes" keeps its seed;
 //   - FixtureId: the room, "/fx:" and the template's socket ("room:snes/fx:w03", "room:snes/fx:dc01"), with "." and a
 //     part when a socket holds several fixtures ("room:snes/fx:hero.crt");
 //   - LevelId: a fixture, "/l:" and a level of its slots, 0 the lowest ("room:snes/fx:w03/l:2"): a dressed level;
 //   - SlotId: a fixture, "/s:", its level, "." and the slot's index in it, 0 the leftmost as one faces the fixture
 //     ("room:snes/fx:w03/s:3.12"), as the prefab's "Slot_<level>_<index>" socket names it.
+// Fixtures, levels and slots work alike in every form of room ("area:shared:gen4/fx:w03/s:3.12").
 // Socket and part names are 1 to 32 characters among lowercase ASCII letters, digits and '-', starting with a letter;
 // levels run from 0 to kMaxLevel and indices from 0 to kMaxSlotIndex, written in decimal without leading zeros. Every
 // id is validated when it is made or parsed, so a value of these types is always well-formed (a default-constructed one
 // is empty and stands for "none"), and its text can enter a seed's tuple (no NUL, well-formed UTF-8). Ids order by
-// their parts (room, socket, part, level, index), numbers as numbers: "s:2.0" before "s:10.0".
+// their parts, numbers as numbers: rooms by form (area:arcade, area:shared, room), then floor or system, then index;
+// fixtures by room, socket, part; "s:2.0" before "s:10.0".
 
 #include <compare>
 #include <cstdint>
@@ -32,25 +41,57 @@ inline constexpr std::uint32_t kMaxSlotIndex = 9999;
 /// A socket or part name: 1 to kMaxSocketNameLength characters among a-z, 0-9 and '-', the first a letter.
 [[nodiscard]] bool isValidSocketName(std::string_view text) noexcept;
 
-/// A room: one per system in I3 ("room:snes").
+/// The largest number of a room of a chain ("room:snes:999").
+inline constexpr std::uint32_t kMaxRoomIndex = 999;
+
+/// What a room id names (its form).
+enum class RoomIdKind : std::uint8_t {
+    Arcade, ///< "area:arcade[:<n>]"
+    Shared, ///< "area:shared:<floor>[:<n>]"
+    System, ///< "room:<system>[:<n>]"
+};
+
+/// A room of the world (the file's comment: four forms).
 class RoomId {
 public:
     RoomId() = default;
 
-    /// The room of `system`. Errors: InvalidArgument for "no system".
+    /// The console room of `system`, "room:<system>". Errors: InvalidArgument for "no system".
     [[nodiscard]] static Expected<RoomId> forSystem(const catalog::SystemName& system);
-    /// "room:" and a valid SystemName. Errors: InvalidArgument naming the text.
+    /// Room `index` of `system`'s chain: 1 the head ("room:<system>"), from 2 an expansion ("room:<system>:<n>").
+    /// Errors: InvalidArgument for "no system" or an index outside 1 to kMaxRoomIndex.
+    [[nodiscard]] static Expected<RoomId> forSystem(const catalog::SystemName& system, std::uint32_t index);
+    /// The shared room of `floor` (a data id), "area:shared:<floor>[:<n>]". Errors: InvalidArgument for a floor that
+    /// is not a data id or an index outside 1 to kMaxRoomIndex.
+    [[nodiscard]] static Expected<RoomId> sharedArea(std::string_view floor, std::uint32_t index = 1);
+    /// The arcade game room, "area:arcade[:<n>]". Errors: InvalidArgument for an index outside 1 to kMaxRoomIndex.
+    [[nodiscard]] static Expected<RoomId> arcadeArea(std::uint32_t index = 1);
+    /// Any of the four forms. Errors: InvalidArgument naming the text.
     [[nodiscard]] static Expected<RoomId> parse(std::string_view text);
 
+    [[nodiscard]] RoomIdKind kind() const noexcept { return m_kind; }
+    /// The system of a "room:" id; empty for an area.
     [[nodiscard]] const catalog::SystemName& system() const noexcept { return m_system; }
-    [[nodiscard]] bool empty() const noexcept { return m_system.empty(); }
-    /// "room:snes"; empty for "no room".
+    /// The floor of a shared room; empty otherwise.
+    [[nodiscard]] const std::string& floor() const noexcept { return m_floor; }
+    /// The room's place in its chain: 1 the head, from 2 an expansion.
+    [[nodiscard]] std::uint32_t index() const noexcept { return m_index; }
+    [[nodiscard]] bool isExpansion() const noexcept { return m_index > 1; }
+    /// The head of the room's chain (the room itself when it is one).
+    [[nodiscard]] RoomId head() const;
+    [[nodiscard]] bool empty() const noexcept { return m_kind == RoomIdKind::System && m_system.empty(); }
+    /// "room:snes", "room:snes:2", "area:shared:gen4", "area:arcade"; empty for "no room".
     [[nodiscard]] std::string toString() const;
 
-    auto operator<=>(const RoomId&) const = default;
+    bool operator==(const RoomId&) const = default;
+    /// By form (empty first, then area:arcade, area:shared, room), then floor or system, then index.
+    std::strong_ordering operator<=>(const RoomId& other) const;
 
 private:
+    RoomIdKind m_kind = RoomIdKind::System;
     catalog::SystemName m_system;
+    std::string m_floor;
+    std::uint32_t m_index = 1;
 };
 
 /// A fixture of a room: what stands in one of its template's sockets, or one part of it.

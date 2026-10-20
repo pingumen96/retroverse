@@ -211,7 +211,11 @@ TEST_CASE("cli/worldplan update: plans it refuses and where it reads and writes"
     CHECK(handEdited.code == ExitCode::ProblemsFound);
     CHECK(contains(handEdited.err, "the plan is refused"));
     std::string newerText = before;
-    newerText.replace(newerText.find("\"generatorVersion\":\"1.2\""), 24, "\"generatorVersion\":\"1.9\"");
+    // Every generator version of it (the plan's is the highest of its rooms').
+    for (std::size_t at = newerText.find("\"generatorVersion\":\"1.3\""); at != std::string::npos;
+         at = newerText.find("\"generatorVersion\":\"1.3\"", at)) {
+        newerText.replace(at, 24, "\"generatorVersion\":\"1.9\"");
+    }
     const std::filesystem::path newer = session.dir.file("newer.json");
     REQUIRE(rv::core::writeTextFileAtomic(newer, newerText).has_value());
     const RunResult newerRun = session.update(session.moreFile, {"--previous", rv::core::pathToUtf8(newer)});
@@ -237,7 +241,7 @@ TEST_CASE("cli/worldplan update: plans it refuses and where it reads and writes"
     CHECK(session.update(session.moreFile, {"--seed", "x"}).code == ExitCode::UsageError);
     const RunResult help = session.run({"worldplan", "update", "--help"});
     CHECK(help.code == ExitCode::Ok);
-    CHECK(contains(help.out, "Usage: retroverse-cli [global options] worldplan update --system <system>"));
+    CHECK(contains(help.out, "Usage: retroverse-cli [global options] worldplan update [--system <system>]..."));
 }
 
 TEST_CASE("cli/worldplan generate --replace: the face-out set chosen again after a backup", "[cli][worldplan]") {

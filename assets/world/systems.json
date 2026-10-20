@@ -1,0 +1,101 @@
+// The systems' classification (ADR-0013 §2; read by rv/world/building.hpp, which documents the format): for each ES-DE
+// system its kind (home, handheld, arcade, computer, other or excluded), the generation of a home console or a
+// handheld (1 to 9), its media family (media_families.json; the families of I4 step 2 are named already), its entry
+// order on its floor, a generic sign and its ES-DE platform tags (es_systems.xml's <platform>, which the fallback
+// compares). Signs are generic texts, never a trade name (style §1, §17.2).
+//
+// A system the table does not name takes the entry of the first system of the table (in the file's order) that shares
+// one of its platform tags; failing that, it is "other" with the fallback's family, order and sign. Excluded systems
+// get no room: their games stay in the quick catalog. They come last, so that a custom system of their platform tag
+// ("pcwindows") takes the entry of "windows" first.
+//
+// The defaults per kind give a room's theme pack, its console prefab (none for arcade, computer and other: the hero
+// corner stands without one) and its plastics (sRGB hex codes); assets/world/platforms/<system>.json, when it exists,
+// overrides them for its system (snes.json).
+//
+// I4 step 1 lists the systems its tests and the lift use; step 2 completes the table with every system of ES-DE 3.4.1
+// and adds the families.
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "home": {
+      "themePack": "classic_16bit_warm",
+      "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"},
+      "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"}
+    },
+    "handheld": {
+      "themePack": "classic_16bit_warm",
+      "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"},
+      "plastic": {"cartridge": "#8E8E8A", "console": "#C9C4B6", "accent": "#6E7F9E"}
+    },
+    "arcade": {
+      "themePack": "classic_16bit_warm",
+      "console": null,
+      "plastic": {"cartridge": "#3A3A3E", "console": "#2E2E33", "accent": "#B0503C"}
+    },
+    "computer": {
+      "themePack": "classic_16bit_warm",
+      "console": null,
+      "plastic": {"cartridge": "#B8B2A2", "console": "#D8D2C0", "accent": "#5E6E86"}
+    },
+    "other": {
+      "themePack": "classic_16bit_warm",
+      "console": null,
+      "plastic": {"cartridge": "#7E8A8E", "console": "#C8CCCC", "accent": "#5E8E7A"}
+    }
+  },
+  "fallback": {"family": "generic_case", "order": 9999, "sign": "MORE GAMES"},
+  "systems": [
+    {"system": "arcade", "kind": "arcade", "family": "generic_case", "order": 100, "sign": "ARCADE",
+     "platforms": ["arcade"]},
+    {"system": "mame", "kind": "arcade", "family": "generic_case", "order": 101, "sign": "ARCADE",
+     "platforms": ["arcade"]},
+    {"system": "fbneo", "kind": "arcade", "family": "generic_case", "order": 102, "sign": "ARCADE",
+     "platforms": ["arcade"]},
+    {"system": "nes", "kind": "home", "generation": 3, "family": "cartridge_home_8bit", "order": 300,
+     "sign": "8-BIT HOME", "platforms": ["nes"]},
+    {"system": "famicom", "kind": "home", "generation": 3, "family": "cartridge_home_8bit", "order": 301,
+     "sign": "8-BIT HOME", "platforms": ["famicom"]},
+    {"system": "mastersystem", "kind": "home", "generation": 3, "family": "cartridge_home_8bit", "order": 302,
+     "sign": "8-BIT HOME", "platforms": ["mastersystem"]},
+    {"system": "snes", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 400,
+     "sign": "16-BIT CORNER", "platforms": ["snes"]},
+    {"system": "sfc", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 401,
+     "sign": "16-BIT CORNER", "platforms": ["snes"]},
+    {"system": "megadrive", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 402,
+     "sign": "16-BIT HOME", "platforms": ["megadrive"]},
+    {"system": "genesis", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 403,
+     "sign": "16-BIT HOME", "platforms": ["genesis"]},
+    {"system": "pcengine", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 404,
+     "sign": "16-BIT HOME", "platforms": ["pcengine"]},
+    {"system": "n64", "kind": "home", "generation": 5, "family": "cartridge_home_64bit", "order": 500,
+     "sign": "64-BIT HOME", "platforms": ["n64"]},
+    {"system": "psx", "kind": "home", "generation": 5, "family": "disc_case_cd", "order": 501, "sign": "CD HOME",
+     "platforms": ["psx"]},
+    {"system": "gb", "kind": "handheld", "generation": 4, "family": "cartridge_handheld", "order": 700,
+     "sign": "POCKET GAMES", "platforms": ["gb"]},
+    {"system": "gbc", "kind": "handheld", "generation": 5, "family": "cartridge_handheld", "order": 701,
+     "sign": "POCKET GAMES", "platforms": ["gbc"]},
+    {"system": "gba", "kind": "handheld", "generation": 6, "family": "cartridge_handheld", "order": 702,
+     "sign": "POCKET GAMES", "platforms": ["gba"]},
+    {"system": "nds", "kind": "handheld", "generation": 7, "family": "case_handheld", "order": 703,
+     "sign": "DUAL SCREENS", "platforms": ["nds"]},
+    {"system": "psp", "kind": "handheld", "generation": 7, "family": "case_handheld", "order": 704,
+     "sign": "POCKET DISCS", "platforms": ["psp"]},
+    {"system": "amiga", "kind": "computer", "family": "big_box", "order": 800, "sign": "HOME COMPUTERS",
+     "platforms": ["amiga"]},
+    {"system": "dos", "kind": "computer", "family": "big_box", "order": 801, "sign": "PC CLASSICS",
+     "platforms": ["dos"]},
+    {"system": "pc", "kind": "computer", "family": "big_box", "order": 802, "sign": "PC CLASSICS",
+     "platforms": ["pc"]},
+    {"system": "windows", "kind": "other", "family": "generic_case", "order": 900, "sign": "PC SHORTCUTS",
+     "platforms": ["pcwindows"]},
+    {"system": "ports", "kind": "other", "family": "generic_case", "order": 901, "sign": "PORTS",
+     "platforms": ["pc", "pcwindows"]},
+    {"system": "pico8", "kind": "other", "family": "generic_case", "order": 902, "sign": "FANTASY CONSOLES",
+     "platforms": ["pico8"]},
+    {"system": "desktop", "kind": "excluded", "platforms": ["pcwindows"]},
+    {"system": "emulators", "kind": "excluded", "platforms": ["pcwindows"]},
+    {"system": "kodi", "kind": "excluded", "platforms": ["pcwindows"]}
+  ]
+}

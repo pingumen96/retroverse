@@ -1,5 +1,8 @@
 #include <rv/world/scene_builder.hpp>
 
+#include <rv/world/building.hpp>
+#include <rv/world/generation.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -368,11 +371,24 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
                          room->templateId);
     }
     data.roomTemplate = std::move(*roomTemplate);
-    auto platform = loadPlatformManifest(assetRoot, roomId.system());
+    // The platform of the room's first system (its manifest, or what systems.json gives it), with the room's recorded
+    // family and theme pack, which are authoritative (ADR-0013 §3).
+    auto building = loadBuildingData(assetRoot);
+    if (!building) {
+        return propagate(building.error());
+    }
+    auto systems = loadSystemsData(assetRoot);
+    if (!systems) {
+        return propagate(systems.error());
+    }
+    const catalog::SystemName system = room->sections.empty() ? roomId.system() : room->sections.front();
+    auto platform = resolvePlatform(assetRoot, system, {}, *systems, *building);
     if (!platform) {
         return propagate(platform.error());
     }
     data.platform = std::move(*platform);
+    data.platform.mediaFamily = room->mediaFamily;
+    data.platform.themePack = room->themePack;
     auto registry = loadMediaFamilies(assetRoot);
     if (!registry) {
         return propagate(registry.error());

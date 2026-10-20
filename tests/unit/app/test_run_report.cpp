@@ -330,11 +330,12 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.featured = 44;
     world.band = 6;
     world.spine = 1;
-    world.unplaced = 5;
+    world.unplaced = 6;
     world.duplicateTitle = 2;
     world.noCover = 3;
     world.unavailable = 0;
     world.capacity = 0;
+    world.roomKept = 1;
     world.added = 1;
     world.kept = 50;
     world.hardFindings = 0;

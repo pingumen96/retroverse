@@ -43,13 +43,16 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
   `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
-- `rv_world` (`src/world`, `docs/i3/`): ids (`room:snes/fx:w03/s:3.12`), the WorldPlan and its canonical JSON
-  (`plan_json.hpp`: `writePlan`, `readPlan`, `planDigest`; a newer schema refused, a hand-edited plan refused; integers
-  only: millimetres, hundredths of a degree, permille), `WorldConfig` with the preset and `world.json`, the readers of
+- `rv_world` (`src/world`, `docs/i3/`, `docs/i4/`): ids (`room:snes/fx:w03/s:3.12`; since I4 step 1 the room ids'
+  four forms, `room:<system>[:<n>]`, `area:shared:<floor>[:<n>]`, `area:arcade[:<n>]`), the WorldPlan and its canonical
+  JSON (`plan_json.hpp`: `writePlan`, `readPlan`, `planDigest`, `roomContentDigest`; schema 2 written, schema 1 read; a
+  newer schema refused, a hand-edited plan refused; integers only: millimetres, hundredths of a degree, permille), the
+  building (I4 step 1: `building.hpp`, `assets/world/building.json` and `systems.json`, `classify`, the floor layout's
+  placement functions; `lift.hpp`, the schema-1 lift; `generateBuilding` and `updateBuilding`), `WorldConfig` with the preset and `world.json`, the readers of
   `assets/world` (errors name `<file>:<line>` and a JSON pointer; 1a); `selectRoom` and `title_key.hpp` (the room's
   titles, `title-key/1`, representatives by region rank, status and revision, priority; 2); `generation.hpp`
   (`generate`, `loadWorldData`), `capacity.hpp`, `seeds.hpp`, the plan's lights (3); `validation.hpp` (`validatePlan`,
-  29 rules) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and `slot_navigation.hpp` (the D-pad
+  34 rules since I4 step 1) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and `slot_navigation.hpp` (the D-pad
   steps; 7); `world_store.hpp` (the world's files and lock, `savePlan`), `incremental.hpp` (`update`), `overrides.hpp`
   (pins: protected, never applied) and `where_is.hpp` (`PlanIndex`; 9); `scene_builder.hpp` (`toSceneFile`,
   `toSceneDescription`, `loadSceneData`) and `collection_layout.hpp` (items with transforms, pick ids, layer keys and

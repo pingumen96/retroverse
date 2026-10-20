@@ -8,11 +8,14 @@
 // The file (JSON with comments; every key required):
 //   {"schemaVersion": 1, "system": "snes", "mediaFamily": "cartridge_home_16bit", "themePack": "classic_16bit_warm",
 //    "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"},
-//    "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"},
+//    "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"} (or null: none),
 //    "sign": {"text": "16-BIT CORNER"}}
+// The manifest is optional since I4 (ADR-0013 §2): a system without one takes what systems.json gives it
+// (generation.hpp's resolvePlatform()); one with a manifest takes the manifest whole.
 // Colours are sRGB hex codes "#RRGGBB" (style §3), uppercase; the room converts them to linear when it draws.
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -34,7 +37,9 @@ struct PlatformManifest {
     std::string cartridgePlastic;
     std::string consolePlastic;
     std::string accentPlastic;
-    PrefabRef console;
+    /// The hero corner's console; none for a room without one (arcade, computer and other systems: the hero corner
+    /// stands without its console part).
+    std::optional<PrefabRef> console;
     std::string signText;
 
     bool operator==(const PlatformManifest&) const = default;
