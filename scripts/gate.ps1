@@ -40,17 +40,17 @@
     tests/smoke/test_golden_room.cpp, their verdicts in build/<preset>/smoke/golden_room/<case>/comparison.txt), and
       5. per Debug and Release, the I3 test cases counted from the unit and GPU runs (the world's snapshot goldens and
          property suites, the room in the app: gpu.world*, gpu.covers, gpu.media viewer, gpu.refresh, ...);
-      6. in Release, the hidden benchmarks: rv_tests "[bench]" (the GPU-free budgets: generation, update, validation,
-         the room's snapshot query, covers, picking, NFR-02) and rv_smoke_tests "[bench]" (the snes-stress room's
-         figures, its covers cold and warm, the animations' frame budget, and the benchmark path of 2,000 titles at
-         1920 x 1080 with --no-vsync), the benchmark's frame times, GPU passes and GPU memory read from its run report
-         against the roadmap's budgets (docs/roadmap.md, I3, "Budgets");
+      6. in Release, the benchmark path of 2,000 titles at 1920 x 1080 with --no-vsync (rv_smoke_tests
+         "[benchmark]"): its frame times and GPU memory read from its run report against the acceptable limits
+         (docs/roadmap.md, "Acceptable performance"), its GPU passes reported; with -Benchmarks also every hidden
+         benchmark, rv_tests "[bench]" and rv_smoke_tests "[bench]", as informative rows (a slow figure never fails
+         the gate);
       7. with -RealLibrary, scripts/real-library.ps1 -Filter '[real-library][room-real]' (ES-DE closed, read-only
          snapshots before and after, RV_LAUNCH_ALLOWLIST naming the fake emulator alone): the real SNES room's plan
          generated twice, the restart after a second import, the covers cold and warm, the benchmark path, a refresh
          of the whole library with the quick catalog open; the figures read from the test's run reports (time to the
          room, covers resident cold and warm, frame p99 on the benchmark path and over the refresh, NFR-01 with the
-         room) against their limits.
+         room) against the acceptable limits.
     Gates M1 and B run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
     shows a window where the user sees it, or a system error dialog during the run, fails the gate. The watcher counts
     a failing program of the user's (a WerFault or loader box) against the run too: its row names the rule that
@@ -69,6 +69,7 @@
         -RomRoot D:\ROMs -MediaRoot C:\Users\me\ES-DE\downloaded_media     # example paths: give your own
     ./scripts/gate.ps1 -Gate B
     ./scripts/gate.ps1 -Gate B -RealLibrary     # the folders from the RV_REAL_* variables, or the options above
+    ./scripts/gate.ps1 -Gate B -Benchmarks      # also every hidden benchmark, informative
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -81,7 +82,8 @@ param(
     [string]$RomRoot = $env:RV_REAL_ROM_ROOT,
     [string]$MediaRoot = $env:RV_REAL_MEDIA_ROOT,
     [string]$RetroArchExe = $env:RV_REAL_RETROARCH_EXE,
-    [switch]$FullHashPass
+    [switch]$FullHashPass,
+    [switch]$Benchmarks
 )
 $ErrorActionPreference = 'Stop'
 # Numbers in the summary are formatted with the invariant culture: an Italian Windows would print 1235 s as "1.235 s".
@@ -95,6 +97,10 @@ $focusReport = Join-Path $logDir 'focus_watch.json'
 
 if (($RealLibrary -and $Gate -eq 'A') -or ($FullHashPass -and $Gate -ne 'M1')) {
     Write-Host 'gate: -RealLibrary belongs to -Gate M1 and B, -FullHashPass to -Gate M1' -ForegroundColor Red
+    exit 2
+}
+if ($Benchmarks -and $Gate -ne 'B') {
+    Write-Host 'gate: -Benchmarks belongs to -Gate B' -ForegroundColor Red
     exit 2
 }
 if ($FullHashPass -and -not $RealLibrary) {
@@ -508,10 +514,8 @@ $i3UnitPattern = '^unit\.(world|app/(world|room|collection|cover|hero|screen_pol
     'cli/(worldplan|where-is)|esde/snes_fixtures|integration/room_walk|game screens|media viewer|Informazioni)'
 $i3GpuPattern = '^gpu\.(world|covers|media viewer|refresh|collection arrays|static groups|measurements|video)'
 
-# The budgets of the GPU passes (docs/roadmap.md, I3, "Budgets"), checked at each pass's median as the benchmark case
-# does: a timer query measures the GPU's time between two commands, so on a desktop GPU shared with other programs a
-# pass's tail holds their time slices too (docs/testing/gate-b.md); the p99 is reported beside it.
-$passBudgets = [ordered]@{ shadow = 0.4; depth = 0.4; ssao = 0.5; scene = 2.0; post = 0.6; outline = 0.1; total = 5.0 }
+# The GPU passes the benchmark path reports (informative: the frame times are what must be acceptable).
+$passNames = @('shadow', 'depth', 'ssao', 'scene', 'post', 'outline', 'total')
 
 function Read-Report([string]$File) {
     if (Test-Path -LiteralPath $File) { return Get-Content -Raw -LiteralPath $File | ConvertFrom-Json }
@@ -526,41 +530,32 @@ function Get-Phase($Report, [string]$Name) {
 function Format-Ms($Value) { if ($null -eq $Value) { 'n/a' } else { '{0:N2} ms' -f [double]$Value } }
 function Format-MiB($Bytes) { '{0:N1} MiB' -f ([double]$Bytes / 1MB) }
 
-# The benchmark path's rows from a run report: the "benchmark" phase's frame times, the GPU passes at their p99 and the
-# GPU memory, each against its budget.
+# The benchmark path's rows from a run report: the "benchmark" phase's frame times and the GPU memory against the
+# acceptable limits (docs/roadmap.md, "Acceptable performance"), the GPU passes at their p50 and p99 for information.
 function Add-BenchmarkRows([string]$Label, [string]$ReportFile) {
     $report = Read-Report $ReportFile
     $phase = Get-Phase $report 'benchmark'
     if (-not $phase -or [int]$phase.count -eq 0) {
-        Add-Result "$Label, frame times" 'FAILED' "no benchmark phase in $ReportFile" 0 'p99 <= 16.7 ms, p50 <= 8 ms'
+        Add-Result "$Label, frame times" 'FAILED' "no benchmark phase in $ReportFile" 0 'p99 <= 33.3 ms, p50 <= 16.7 ms'
         return
     }
-    $framesOk = [double]$phase.p99Ms -le 16.7 -and [double]$phase.p50Ms -le 8.0
+    $framesOk = [double]$phase.p99Ms -le 33.3 -and [double]$phase.p50Ms -le 16.7
     Add-Result "$Label, frame times" ($(if ($framesOk) { 'passed' } else { 'FAILED' })) `
         ('p50 {0}, p95 {1}, p99 {2}, max {3} over {4} frames ({5:N0} FPS at p99)' -f (Format-Ms $phase.p50Ms),
             (Format-Ms $phase.p95Ms), (Format-Ms $phase.p99Ms), (Format-Ms $phase.maxMs), $phase.count,
-            (1000.0 / [double]$phase.p99Ms)) 0 'p99 <= 16.7 ms, p50 <= 8 ms'
-    $over = @()
+            (1000.0 / [double]$phase.p99Ms)) 0 'p99 <= 33.3 ms, p50 <= 16.7 ms'
     $texts = @()
-    foreach ($name in $passBudgets.Keys) {
+    foreach ($name in $passNames) {
+        # The outline is drawn only while an item is hovered: the path need not hover one.
         $pass = @($phase.gpuPasses | Where-Object { $_.name -eq $name }) | Select-Object -First 1
-        if (-not $pass) {
-            # The outline is drawn only while an item is hovered: the path need not hover one.
-            if ($name -ne 'outline') { $over += "$name missing" }
-            $texts += "$name not drawn"
-            continue
-        }
-        if ([double]$pass.p50Ms -gt $passBudgets[$name]) { $over += $name }
-        $texts += ('{0} {1:N3}/{2:N3}' -f $name, [double]$pass.p50Ms, [double]$pass.p99Ms)
+        $texts += $(if ($pass) { '{0} {1:N3}/{2:N3}' -f $name, [double]$pass.p50Ms, [double]$pass.p99Ms } else { "$name not drawn" })
     }
-    Add-Result "$Label, GPU per pass" ($(if ($over.Count -eq 0) { 'passed' } else { 'FAILED' })) `
-        (('p50/p99 ms: ' + ($texts -join ', ')) + $(if ($over.Count -gt 0) { '; over: ' + ($over -join ', ') } else { '' })) 0 `
-        'p50: shadow 0.4, depth 0.4, ssao 0.5, scene 2.0, post 0.6, outline 0.1, total 5 ms'
+    Add-Result "$Label, GPU per pass" 'info' ('p50/p99 ms: ' + ($texts -join ', ')) 0
     $arrays = [double]$report.residency.arrayBytes
     $peak = [double]$report.gpuMemory.peakTotalBytes
-    Add-Result "$Label, GPU memory" ($(if ($arrays -le 80MB -and $peak -le 256MB) { 'passed' } else { 'FAILED' })) `
+    Add-Result "$Label, GPU memory" ($(if ($peak -gt 0 -and $peak -le 512MB) { 'passed' } else { 'FAILED' })) `
         ('collection arrays {0} ({1}, {2} items), all textures at most {3}' -f (Format-MiB $arrays),
-            $report.residency.format, $report.residency.items, (Format-MiB $peak)) 0 'arrays <= 80 MiB, all <= 256 MiB'
+            $report.residency.format, $report.residency.items, (Format-MiB $peak)) 0 'all <= 512 MiB'
 }
 
 # Runs a Catch2 executable of the Release build with a test spec (hidden cases included), its XML report and log in
@@ -589,16 +584,33 @@ function Invoke-Catch([string]$Step, [string]$Name, [string]$Executable, [string
     return $cases
 }
 
-# The hidden benchmarks of Release: the GPU-free ones, then the GPU ones with the benchmark path's budgets.
+# The benchmark path in Release against the acceptable limits; with -Benchmarks also every hidden benchmark, whose
+# rows are informative: a slow figure (a budget the case checks) is reported, never a failure of the gate.
 function Invoke-Benchmarks {
     $bin = Join-Path $root 'build/msvc-x64-release/bin'
-    Invoke-Catch 'Benchmarks, GPU-free (Release)' 'bench-unit' (Join-Path $bin 'rv_tests.exe') '[bench]' | Out-Null
-    $cases = Invoke-Catch 'Benchmarks, GPU (Release)' 'bench-gpu' (Join-Path $bin 'rv_smoke_tests.exe') '[bench]'
+    $first = $results.Count
+    $spec = '[benchmark]'
+    if ($Benchmarks) {
+        Invoke-Catch 'Benchmarks, GPU-free (Release)' 'bench-unit' (Join-Path $bin 'rv_tests.exe') '[bench]' | Out-Null
+        $spec = '[bench]'
+    }
+    $cases = Invoke-Catch 'Benchmarks, GPU (Release)' 'bench-gpu' (Join-Path $bin 'rv_smoke_tests.exe') $spec
     # The figures each case printed (WARN), a row per case.
+    $pathFailed = $false
     foreach ($case in $cases) {
         $warnings = @($case.SelectNodes('.//Warning') | ForEach-Object { ($_.InnerText -replace '\s+', ' ').Trim() })
         $result = if ($case.OverallResult.success -ne 'true') { 'FAILED' } else { 'passed' }
+        $isPath = $case.name -like 'world benchmark: the benchmark path*'
+        if ($result -eq 'FAILED' -and $isPath) { $pathFailed = $true }
+        if ($result -eq 'FAILED' -and -not $isPath) { $result = 'info' }
         Add-Result ('  ' + $case.name) $result ($warnings -join ' | ') ([double]$case.OverallResult.durationInSeconds)
+    }
+    # The suites' rows count every failed case: only the benchmark path's failure (or a suite that did not run) fails.
+    foreach ($row in @($results | Select-Object -Skip $first)) {
+        if ($row.Result -ne 'FAILED' -or $row.Details -match 'no test results') { continue }
+        if (($row.Step -eq 'Benchmarks, GPU (Release)' -and $pathFailed) -or
+            $row.Step -like '  world benchmark: the benchmark path*') { continue }
+        $row.Result = 'info'
     }
     Add-BenchmarkRows 'Benchmark path, snes-stress (2,000)' `
         (Join-Path $root 'build/msvc-x64-release/smoke/world_benchmark/stress/benchmark.json')
@@ -649,20 +661,20 @@ function Invoke-RealRoom {
                     (Format-Ms $restart.residency.times.shownAtMs), (Format-Ms $cold.residency.times.shownAtMs),
                     (Format-Ms $again.residency.times.shownAtMs)) 0 'restart <= 5 s (NFR-01)'
             $coldMs = $cold.residency.times.residentAfterShownMs
-            Add-Result 'Real room: covers resident, cold' ($(if ($null -ne $coldMs -and [double]$coldMs -le 10000) { 'passed' } else { 'FAILED' })) `
+            Add-Result 'Real room: covers resident, cold' ($(if ($null -ne $coldMs -and [double]$coldMs -le 30000) { 'passed' } else { 'FAILED' })) `
                 ('{0} after the room showed ({1} items; {2} cache misses, {3} stored); coverLoad p99 {4}' -f
                     (Format-Ms $coldMs), $cold.residency.items, $cold.residency.cache.misses, $cold.residency.cache.stored,
-                    (Format-Ms (Get-Phase $cold 'coverLoad').p99Ms)) 0 '<= 10 s'
+                    (Format-Ms (Get-Phase $cold 'coverLoad').p99Ms)) 0 '<= 30 s'
             $warm = @($again.residency.times.residentAfterShownMs, $restart.residency.times.residentAfterShownMs)
-            $warmOk = @($warm | Where-Object { $null -eq $_ -or [double]$_ -gt 1000 }).Count -eq 0
+            $warmOk = @($warm | Where-Object { $null -eq $_ -or [double]$_ -gt 3000 }).Count -eq 0
             Add-Result 'Real room: covers resident, warm' ($(if ($warmOk) { 'passed' } else { 'FAILED' })) `
                 ('{0} (the plan generated again), {1} (restart) after the room showed ({2} cache hits)' -f
-                    (Format-Ms $warm[0]), (Format-Ms $warm[1]), $restart.residency.cache.hits) 0 '<= 1.0 s'
+                    (Format-Ms $warm[0]), (Format-Ms $warm[1]), $restart.residency.cache.hits) 0 '<= 3 s'
             $loads = @(@($cold, $again, $restart) | ForEach-Object { Get-Phase $_ 'coverLoad' } | Where-Object { $_ -and [int]$_.count -gt 0 })
             $loadP99 = ($loads | ForEach-Object { [double]$_.p99Ms } | Measure-Object -Maximum).Maximum
-            Add-Result 'Real room: frames while covers load' ($(if ($loads.Count -gt 0 -and $loadP99 -le 33.3) { 'passed' } else { 'FAILED' })) `
+            Add-Result 'Real room: frames while covers load' ($(if ($loads.Count -gt 0 -and $loadP99 -le 50) { 'passed' } else { 'FAILED' })) `
                 ('coverLoad p99 {0} (cold), {1} (again), {2} (restart)' -f (Format-Ms (Get-Phase $cold 'coverLoad').p99Ms),
-                    (Format-Ms (Get-Phase $again 'coverLoad').p99Ms), (Format-Ms (Get-Phase $restart 'coverLoad').p99Ms)) 0 'p99 <= 33.3 ms (NFR-04)'
+                    (Format-Ms (Get-Phase $again 'coverLoad').p99Ms), (Format-Ms (Get-Phase $restart 'coverLoad').p99Ms)) 0 'p99 <= 50 ms'
         }
         Add-BenchmarkRows 'Real room: benchmark path' (Join-Path $roomDir 'benchmark.json')
         $phase = Get-Phase $refresh 'refresh'
@@ -670,18 +682,18 @@ function Invoke-RealRoom {
             $record = @($refresh.catalog.refreshes)[0]
             $live = @($refresh.world.liveUpdates)
             $liveMoved = ($live | ForEach-Object { [int]$_.moved } | Measure-Object -Sum).Sum
-            Add-Result 'Real room: refresh of the library' ($(if ($record.outcome -eq 'done' -and [double]$phase.p99Ms -le 33.3 -and $live.Count -gt 0 -and $liveMoved -eq 0) { 'passed' } else { 'FAILED' })) `
+            Add-Result 'Real room: refresh of the library' ($(if ($record.outcome -eq 'done' -and [double]$phase.p99Ms -le 50 -and $live.Count -gt 0 -and $liveMoved -eq 0) { 'passed' } else { 'FAILED' })) `
                 ('refresh phase {0} frames p50 {1}, p99 {2}, max {3}; the import {4} in {5} ({6} entries, {7} added); the room''s live update {8}, {9} moved' -f
                     $phase.frames, (Format-Ms $phase.p50Ms), (Format-Ms $phase.p99Ms), (Format-Ms $phase.maxMs), $record.outcome,
                     (Format-Ms $record.times.ms), $record.entries, $record.added, (@($live | ForEach-Object { $_.kind }) -join ', '),
-                    $liveMoved) 0 'p99 <= 33.3 ms (NFR-04), 0 moves'
+                    $liveMoved) 0 'p99 <= 50 ms, 0 moves'
             $page = $refresh.catalog.times.firstPageMs
             Add-Result 'NFR-01 with the room' ($(if ($null -ne $page -and [double]$page -lt 5000) { 'passed' } else { 'FAILED' })) `
                 ('the quick catalog''s first page {0} after the process started ({1} games; the room shown at {2})' -f
                     (Format-Ms $page), $refresh.catalog.games, (Format-Ms $refresh.residency.times.shownAtMs)) 0 '< 5,000 ms'
         }
         else {
-            Add-Result 'Real room: refresh of the library' 'FAILED' "no refresh report, see $testLog" 0 'p99 <= 33.3 ms (NFR-04), 0 moves'
+            Add-Result 'Real room: refresh of the library' 'FAILED' "no refresh report, see $testLog" 0 'p99 <= 50 ms, 0 moves'
         }
     }
     if ($realCode -ne 0 -and -not (@($results | Select-Object -Skip $firstRow) | Where-Object { $_.Result -eq 'FAILED' })) {

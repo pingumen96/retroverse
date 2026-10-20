@@ -7,8 +7,9 @@ decisions it rests on are in [ADR-0008](../decisions/ADR-0008-esde-catalog.md) (
 what each I2 step built and measured is in [docs/i2/](../i2/). This page says what the gate checks, how to run it, the
 figures of its run on the reference machine, where each M1 requirement is proven, and the manual session the user signs.
 
-**Status: gate passed, manual checklist pending** (October 17, 2026, reference machine: `./scripts/gate.ps1 -Gate M1`
-and `./scripts/gate.ps1 -Gate M1 -RealLibrary`). M1 is done once the user has signed the manual checklist below.
+**Status: done** (October 17, 2026, reference machine: `./scripts/gate.ps1 -Gate M1` and `./scripts/gate.ps1 -Gate M1
+-RealLibrary` passed). The user declared M1 done on October 20, 2026 without signing the manual checklist below, which
+stays as a guide for trying the catalog by hand.
 
 ## What the gate checks
 

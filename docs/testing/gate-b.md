@@ -11,11 +11,12 @@ the world, the hero CRT); what each I3 step built and measured is in [docs/i3/](
 checks, how to run it, the figures of its run on the reference machine, the style §26.2 checklist for the goldens and
 the real room, where each M2 requirement is proven, and the manual session the user signs.
 
-**Status: correctness checks passed, timing budgets to confirm on a quiet machine, manual checklist pending** (October
-19, 2026, reference machine: `./scripts/gate.ps1 -Gate B`, then `./scripts/gate.ps1 -Gate B -RealLibrary`). Every
-golden, unit, GPU, real-library and focus check passed; the gate's verdict was FAILED on timing rows measured while the
-user's programs loaded the machine (below). M2 is done once a quiet run passes and the user has signed the manual
-checklist and the verdict below.
+**Status: done** (October 19, 2026, reference machine: `./scripts/gate.ps1 -Gate B`, then `./scripts/gate.ps1 -Gate B
+-RealLibrary`). Every golden, unit, GPU, real-library and focus check passed; the timing rows that missed I3's tight
+budgets on a loaded machine (below) are within the acceptable limits that replaced them on October 20, 2026
+([roadmap](../roadmap.md), "Acceptable performance"), when the user declared M2 done without signing the manual
+session, which stays as a guide for trying the room by hand. The figures below are the run's, against the old
+budgets.
 
 ## What the gate checks
 

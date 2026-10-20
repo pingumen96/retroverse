@@ -22,6 +22,49 @@ reads its metadata and media in place and uses generated labels and screenshots 
 Deferred beyond v1: gamelist write-back, legacy EmulationStation/RetroBat/Batocera adapters, VR, hardware video
 decoding, Linux, an OpenGL 3.3 fallback.
 
+Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. Next: I4,
+whose world topology is to be decided (an ADR) before its steps are planned.
+
+## Acceptable performance
+
+Performance must be acceptable, not maximal (decided October 20, 2026). Gates and tests check these limits only, in
+Release at 1920 x 1080 on the reference machine; finer figures (GPU passes, CPU sections, GPU-free benchmarks) are
+reported for information and never fail a gate. The hidden `[.bench]` cases run on demand (`./scripts/gate.ps1 -Gate B
+-Benchmarks`, informative rows). I3's tighter budgets are kept below as its history.
+
+| Measure | Acceptable |
+|---|---|
+| Frame time in a populated room (the benchmark path, `--no-vsync`) | p50 at most 16.7 ms (60 FPS typically), p99 at most 33.3 ms (never below 30 FPS) |
+| Frames while loading covers, refreshing or animating | p99 at most 50 ms |
+| From the start to the room, and to the quick catalog's first page (NFR-01) | 5 s |
+| Covers resident after the room shows | cold 30 s, warm 3 s |
+| GPU memory | all textures at most 512 MiB |
+| Catalog queries (NFR-02) | p95 at most 100 ms |
+| Video | the first frame within 2 s of the selection |
+| Per-frame CPU work checked by smoke tests | loosely, at the median (cover uploads 4 ms, collection planning 1 ms) |
+
+Correctness is never relaxed: determinism, NFR-08's stability, the read-only snapshots of the real library and the
+focus rules stay exact.
+
+## Working method (from I4)
+
+Lighter than I2 and I3 (decided October 20, 2026):
+
+- **Steps**: each step delivers a feature that can be seen or tried, with unit tests for its logic and, for what draws,
+  a GPU smoke case. No step exists only to measure.
+- **Notes**: `docs/<iteration>/step-<n>.md` stays short: what was built, the decisions, the deviations, the follow-ups;
+  figures only where they decided something.
+- **Performance**: only the acceptable limits above; no per-pass or per-section budgets, no reruns on a quiet machine.
+- **Goldens**: few, for the views that define the look (at most one per new kind of room); regenerated when the look
+  changes on purpose.
+- **The real library**: its `[real-library]` tests run when a step touches the catalog, the import or the real rooms,
+  not at every step; its read-only snapshots stay.
+- **Gates**: one script run (the build matrix, the tests, the goldens, the acceptable performance) under the focus
+  watcher; then the user tries the result and declares the milestone done. No signed checklist.
+- **Parallel worktrees** only for steps that are truly independent; otherwise one step at a time.
+- **Documentation**: `CLAUDE.md` holds the essentials, the reference is in `docs/reference/`; the architecture and the
+  ADRs change when a decision does.
+
 ## I0 / M0 step checklist
 
 | # | Step | Status |
@@ -105,7 +148,7 @@ once more after the merge with no other agent running; see each report):
   through a job object, crashes are reported with their NTSTATUS name, nothing is ever terminated; the window is kept
   (not minimized) and `AttachThreadInput` brings the foreground back when another window holds it.
 
-## I2: M1 ES-DE catalog and launcher (in progress)
+## I2: M1 ES-DE catalog and launcher (done)
 
 M1 Done (spec §22): Retroverse reads an existing ES-DE collection without moving anything, and a title selected in the
 quick catalog launches in its emulator and comes back. The decisions (what a game is, identities, storage,
@@ -123,8 +166,8 @@ started recording no exit; 1,238 unit tests passed in Debug and in Release) are 
 outside the numbered plan (automated tests never take the Windows foreground, `step-focus.md`); what each step of a
 wave built and decided is in its notes, `step-<n>.md` in [i2/](i2/). Wave 4 is done: step 13 (the real catalog in
 the app) is done, and step 13r (the refresh on a worker) moved to I3 at the gate (M1 refreshes with `retroverse-cli
-import`); then step 14, Gate M1: the gate passed, the manual checklist is pending
-([testing/gate-m1.md](testing/gate-m1.md)).
+import`); then step 14, Gate M1: the gate passed and the user declared M1 done on
+October 20, 2026 ([testing/gate-m1.md](testing/gate-m1.md)).
 
 | # | Step | Wave (needs) | Closes with | Status |
 |---|---|---|---|---|
@@ -147,7 +190,7 @@ import`); then step 14, Gate M1: the gate passed, the manual checklist is pendin
 | focus | Automated tests never take the Windows foreground: `RV_LAUNCH_BACKGROUND`, set by the unit and gpu presets, `rv_tests`, `rv_smoke_tests` and `scripts/real-library.ps1` (`Win32ProcessRunner` starts console programs without a window and GUI programs inactive and off-screen, grants no foreground; the fake emulator's window off-screen and never active), `disableFailureDialogs()` (no loader, crash or C runtime box) in test programs and unattended runs; `scripts/focus_watch.py` | after wave 3 (A1, 12) | `focus_watch.py` around `scripts/test.ps1`: no foreground change to, and no visible window of, a test process | done: before, one CLI launch test gave 2 foreground changes to test processes (Windows Terminal windows of the launched programs' consoles); after, 0 foreground changes to test processes and 0 visible windows of test processes over the unit and gpu presets (Debug unit 1,242 tests, Debug gpu 1,267, Release gpu 1,265), the one allowed window the fake's off-screen window; the culprit was `CREATE_NEW_CONSOLE` under Windows Terminal as the default terminal application |
 | 13 | The real catalog in the app: queries on the worker, readiness on the card, sessions | 4 (A1, 9, 10, 11a, 11b, 12) | Smoke on the imported `standard` fixture: selection, search, filter and camera equal after the return; NFR-01 in Release; a manual pad-only session | done: `retroverse.exe` shows the ES-DE catalog of its data directory; a catalog worker thread owns the writer and runs the lists, each game's readiness, Avvia's resolution right before the launch and the play sessions, the main thread fetching pages on its own reader and never waiting (lockstep only with `--fixed-dt`, bounded to 10 s); the card shows the readiness and the first blocker in Italian, never cut through a line (`catalog.cardSqueezed`); notices for a missing library or database; the GPU cases on the imported fixture: search, filter, launch into the fake and back with the selection, search, filter, readiness and camera equal, the session recorded and verified; a blocked game refused with its reason; NFR-01 on the real library (Release, 90,246 games): the first page 1,089 and 1,064 ms after the process's creation (limit 5 s), page fetches p95 0.16 to 0.18 ms; the manual pad-only session is Gate M1's checklist |
 | 13r | Refresh on a worker: cancellation, the log race fix | moved to I3 | Frame p99 within 33.3 ms during a refresh; quitting during a refresh ends within a bound | moved to I3 at Gate M1 (decided by the orchestrator): M1 refreshes with `retroverse-cli import`; `docs/i2/step-13.md` ("Notes for step 13r") and BACKLOG keep the plan |
-| 14 | Gate M1: `scripts/gate.ps1 -Gate M1` (fixtures; `-RealLibrary` with ES-DE closed and snapshots before and after), `docs/testing/gate-m1.md`, documentation | after the wave-4 merge | The gate passes with NFR-01, NFR-02 and the import timed on a quiet machine, the real ROM scan cold among them (step 7 timed the load with 8 sheet readers only warm: 1.7 to 3.1 s, 4.8 s while other worktrees built; with the sheets cold and read one by one, an earlier build took 22.2 s, 19.9 s of it on sheets; cold with 8 readers, the sheets are estimated at 4 to 5 s, unconfirmed) and `media --coverage` (3.0 to 3.6 s warm over the library snapshot, at the integration of steps 7 and 8); the quick hash's whole-library cold pass timed on demand, not in the default run (about 45 minutes estimated from step 11b's gb sample); the manual checklist is signed | gate passed, manual checklist pending: `scripts/gate.ps1 -Gate M1` and `-RealLibrary` pass on 2026-10-17 on a quiet machine ([testing/gate-m1.md](testing/gate-m1.md); `docs/i2/step-14.md`), under `scripts/focus_watch.py` (0 findings): the build matrix without a warning, 1,266 unit tests and 28/26 GPU cases in Debug/Release (630 of them M1's, 11 `gpu.catalog`/`gpu.launch`), golden G01 0 pixels apart, `retroverse-cli` as processes on the fixture; on the real library 0 differences among 542,082 entries; NFR-01 1,144 to 1,585 ms (limit 5 s); NFR-02 p95 3.44 ms on 10,000 generated games and 42.05 ms on the real 90,246 (limit 100 ms); the first import 14.3 s, the second 5.6 s writing nothing, `db rebuild-index` 14.7 s, the ROM scan 2.0 s and `media --coverage` 2.7 s, all warm (51 h after the boot; inside the gate the ROM listing is always warm, the snapshot having just listed the tree: a run right after a reboot makes only the scan's sheet reads cold and, with `-FullHashPass`, the whole quick-hash pass); the `[real-library]` tests 12 of 12. The manual pad-only session with RetroArch (the gate page's checklist) awaits the user's signature |
+| 14 | Gate M1: `scripts/gate.ps1 -Gate M1` (fixtures; `-RealLibrary` with ES-DE closed and snapshots before and after), `docs/testing/gate-m1.md`, documentation | after the wave-4 merge | The gate passes with NFR-01, NFR-02 and the import timed on a quiet machine, the real ROM scan cold among them (step 7 timed the load with 8 sheet readers only warm: 1.7 to 3.1 s, 4.8 s while other worktrees built; with the sheets cold and read one by one, an earlier build took 22.2 s, 19.9 s of it on sheets; cold with 8 readers, the sheets are estimated at 4 to 5 s, unconfirmed) and `media --coverage` (3.0 to 3.6 s warm over the library snapshot, at the integration of steps 7 and 8); the quick hash's whole-library cold pass timed on demand, not in the default run (about 45 minutes estimated from step 11b's gb sample); the manual checklist is signed | done: `scripts/gate.ps1 -Gate M1` and `-RealLibrary` pass on 2026-10-17 on a quiet machine ([testing/gate-m1.md](testing/gate-m1.md); `docs/i2/step-14.md`), under `scripts/focus_watch.py` (0 findings): the build matrix without a warning, 1,266 unit tests and 28/26 GPU cases in Debug/Release (630 of them M1's, 11 `gpu.catalog`/`gpu.launch`), golden G01 0 pixels apart, `retroverse-cli` as processes on the fixture; on the real library 0 differences among 542,082 entries; NFR-01 1,144 to 1,585 ms (limit 5 s); NFR-02 p95 3.44 ms on 10,000 generated games and 42.05 ms on the real 90,246 (limit 100 ms); the first import 14.3 s, the second 5.6 s writing nothing, `db rebuild-index` 14.7 s, the ROM scan 2.0 s and `media --coverage` 2.7 s, all warm (51 h after the boot; inside the gate the ROM listing is always warm, the snapshot having just listed the tree: a run right after a reboot makes only the scan's sheet reads cold and, with `-FullHashPass`, the whole quick-hash pass); the `[real-library]` tests 12 of 12. The user declared M1 done on 2026-10-20 without the manual session |
 
 Where each M1 requirement closes: FR-002 in 2; FR-003 in 11a; FR-004 in 8; FR-011 in 12 and 13; FR-012 in A1 and 13;
 FR-013 in 9; FR-014 in A1 and 13; FR-018 and NFR-10 in 0b and 14; FR-019 in 10 and A1; FR-020 and SC-10 in 12; FR-026 in
@@ -156,7 +199,7 @@ SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the test
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
 
-## I3: M2 SNES vertical slice (in progress)
+## I3: M2 SNES vertical slice (done)
 
 M2 Done (specification §22): a real room generated from the data shows the cartridges of the system and stays stable
 after an incremental import. Gate B (style §27, phase B): the room already looks like the concept although it is only
@@ -231,7 +274,7 @@ the gate measures them on a quiet machine. GPU-free timings are hidden `[.bench]
 pattern); frame and GPU timings come from run reports. Step 13r keeps its name from I2; the I3 steps 13a and 13b are
 others. Done: every step, 0a to 17b (what each built and decided is in its notes, `docs/i3/step-<n>.md`; their
 timings were taken while other worktrees built, so they are informative), and step 18, Gate B: every correctness check
-passed, the timing budgets are to confirm on a quiet machine, the manual checklist is pending
+passed and the user declared M2 done on October 20, 2026, its timings judged against the acceptable limits
 ([testing/gate-b.md](testing/gate-b.md)).
 
 | # | Step | Wave (needs) | Closes with | Status |
@@ -266,11 +309,11 @@ passed, the timing budgets are to confirm on a quiet machine, the manual checkli
 | 16 | Look development of the generated room (style §4.2, §5.3, §6, §8.1, §13.4, §14.1, §15): light levels along the collection walls, the key light on the hero wall, the theme's materials, posters and sign, the rhythm of the spine-out modules and the decoration between them, the hero band, the dressing and the displays, decoration density, two lighting profiles (style §8.1: the evening default and a second one chosen in `world.json`, applied when the room is drawn and not stored in the plan, so that switching moves nothing); tuned in `assets/world` data and material presets | 5 (10c, 12, 13a) | Screenshots from the doorway, the hero corner and its band, a spine-out shelf at 1 m (spine titles at least 8 px tall at 1920 x 1080) and the display cases reviewed against `example.png`, for both profiles; probe checks added to the smoke suite: every collection module's eye-height band at least a third of the hero wall's luminance from the doorway, the sign and the CRT the most saturated regions, the upper walls darker than the shelves; the style §26.2 checklist pre-answered in `docs/i3/step-16.md`; at most 16 lights; frame budgets kept | done (`docs/i3/step-16.md`): two lighting profiles (`evening`, `afternoon`) and the theme pack as data under `assets/world`, chosen by world.json and moving nothing; decoration that fits the side-wall sockets (a slim lamp, a narrow cabinet, a plant) and does not repeat beside itself; the sign its own 1.6 x 0.4 m manifest (template v2); clear display glass, riser cards on empty display levels, dressing materials, colourful spine colours; the probes pass in both profiles (bands at least a third of the hero wall, upper walls darker, the sign and the CRT the most saturated, the covers clear behind the glass); G01 0 pixels apart |
 | 17a | Goldens: G02 (50 games, all face-out: the display fixtures and the hero band), G02s (the `snes-stress` room: spine-out shelves, the hero band and a display case in view; an addition to style §26.1's list), G06 (one ROM, no media), G07 (an inspected cartridge with its card), G08 (a: the clip frozen at 1.0 s; b: the corrupt clip's fallback), G10 (G02 after 10 games added), each from a fixture and with G01's metadata | after 15a, 15b, 16 | Each golden reproduced within G01's tolerance (6/255, at most 0.5% of the pixels) in Debug and Release on the reference machine, skipped elsewhere; G10 differs from G02 only where the 10 items stand (heatmap); no golden shows a real title, cover or trademarked name | done (`docs/i3/step-17a.md`): the seven goldens in `assets/style_tests/screenshots`, each reproduced 0 pixels apart in Debug; G10 against G02: 1,224 pixels differ, all on the level the ten took; after the review the display cases became lit glass vitrines, a lone title stands at the centre of its ledge (generator 1.2) and the held cartridge reads in the hand, every room golden regenerated; Release reproduced at the gate (step 18) |
 | 17b | Benchmark and the real room: the benchmark path `tests/input_scripts/bench_snes_room.json` on `snes-stress` (a `benchmark` phase); the `[real-library]` room tests | after 15b, 16 (parallel with 17a) | The benchmark at 1920 x 1080, Release, `--no-vsync`, 2,000 titles: frame p99 at most 16.7 ms and every pass within the budgets below; real library (`real-library.ps1`, `RV_LAUNCH_ALLOWLIST` set and empty): the plan generated twice with one SHA-256, a second import updating with `NoRebuild` and 0 moves, covers cold and warm timed, the benchmark path's p99 in the real room, screenshots only under `build/`, 0 differences | done (`docs/i3/step-17b.md`): the path `bench_snes_room.json` (a 1,230-frame `benchmark` phase), the GPU passes per phase in the run report (`gpuPasses`), `[benchmark]` and `[real-library][room-real]`; on a loaded machine snes-stress frame p99 8.35 ms, p50 2.98 ms, the post-processing's p99 0.88 ms over its 0.6 ms; the real room's plan twice with one SHA-256, the restart `no-rebuild` with 0 moves, 0 differences; the quiet figures are the gate's |
-| 18 | Gate B: `scripts/gate.ps1 -Gate B` (and `-RealLibrary`), `docs/testing/gate-b.md`, the reference hardware's measured limits (specification §18.1), documentation (CLAUDE.md, architecture, README, BACKLOG) | after 14b, 17a, 17b | The gate passes on a quiet machine under `scripts/focus_watch.py` (0 findings); every budget below measured; the style §26.2 checklist answered for G02, G02s and the real room; `docs/testing/reference-hardware.md` records the first populated room's FPS and VRAM figures; the manual session signed by the user | correctness checks passed, timing budgets to confirm on a quiet machine, manual checklist pending: `scripts/gate.ps1 -Gate B` and `-RealLibrary` on 2026-10-19 ([testing/gate-b.md](testing/gate-b.md)), under `scripts/focus_watch.py` (0 findings), with the user's programs loading the machine: the build matrix without a warning, 1,710 unit tests and 71/68 GPU cases in Debug/Release, the eight goldens 0 pixels apart in both, on the real library 0 differences among 542,120 entries, the plan twice with one SHA-256, the restart `no-rebuild` with 0 moves, the room shown 1.81 s after the start, covers warm 0.76 to 0.81 s, the benchmark path p99 6.80 ms (147 FPS) with 33.6 MiB of arrays and 214.9 MiB in all, the refresh's p99 10.0 ms moving nothing, NFR-01 with the room 2.07 s; missed under the load: the real covers cold 23.7 s (10 s; 7.1 s in step 12), the snes-stress covers warm 2.2 s (1.5 s) and its path's p99 19.2 ms (4.06 ms in the first run), the video upload p99 0.98 ms (0.5 ms), the fixture's materialization 10.3 s (10 s); fixed at the gate: `maxLayersPerRound` counted the idle wakes of lockstep runs, and the GPU passes are budgeted at their median (a timer query's tail holds the desktop's other GPU programs) |
+| 18 | Gate B: `scripts/gate.ps1 -Gate B` (and `-RealLibrary`), `docs/testing/gate-b.md`, the reference hardware's measured limits (specification §18.1), documentation (CLAUDE.md, architecture, README, BACKLOG) | after 14b, 17a, 17b | The gate passes on a quiet machine under `scripts/focus_watch.py` (0 findings); every budget below measured; the style §26.2 checklist answered for G02, G02s and the real room; `docs/testing/reference-hardware.md` records the first populated room's FPS and VRAM figures; the manual session signed by the user | done: `scripts/gate.ps1 -Gate B` and `-RealLibrary` on 2026-10-19 ([testing/gate-b.md](testing/gate-b.md)), under `scripts/focus_watch.py` (0 findings), with the user's programs loading the machine: the build matrix without a warning, 1,710 unit tests and 71/68 GPU cases in Debug/Release, the eight goldens 0 pixels apart in both, on the real library 0 differences among 542,120 entries, the plan twice with one SHA-256, the restart `no-rebuild` with 0 moves, the room shown 1.81 s after the start, covers warm 0.76 to 0.81 s, the benchmark path p99 6.80 ms (147 FPS) with 33.6 MiB of arrays and 214.9 MiB in all, the refresh's p99 10.0 ms moving nothing, NFR-01 with the room 2.07 s; missed under the load: the real covers cold 23.7 s (10 s; 7.1 s in step 12), the snes-stress covers warm 2.2 s (1.5 s) and its path's p99 19.2 ms (4.06 ms in the first run), the video upload p99 0.98 ms (0.5 ms), the fixture's materialization 10.3 s (10 s); fixed at the gate: `maxLayersPerRound` counted the idle wakes of lockstep runs, and the GPU passes are budgeted at their median (a timer query's tail holds the desktop's other GPU programs) |
 
 ### Budgets
 
-Measured in Release at 1920 x 1080 on the reference machine (RTX 2080 SUPER, `docs/testing/reference-hardware.md`), on
+Superseded on October 20, 2026 by "Acceptable performance" above; kept as I3's design targets. Measured in Release at 1920 x 1080 on the reference machine (RTX 2080 SUPER, `docs/testing/reference-hardware.md`), on
 the `snes-stress` room (2,000 titles) unless stated; the steps that first measure them are in parentheses. Frame and
 phase percentiles come from the run report (step 0d), main-thread times from its CPU sections, GPU times from the
 per-pass timer queries, GPU memory from the renderer's own accounting (`gpuMemory`, not the driver), GPU-free times from
@@ -322,8 +365,8 @@ controller") and style §29's first expected result, the style §26.2 checklist 
 room, and the manual session (the controller checklist of the approved plan's §7): pad only, in the real SNES room, a
 title found in a display case and one on a spine-out shelf, pulled out, inspected, launched in RetroArch and back in
 the same pose, the hero CRT playing its clip, "Mostra nella stanza" from the quick catalog, "Aggiorna libreria" with
-nothing changed (0 moves), the media viewer; then the card's actions with keyboard and mouse. Gate B passes when the
-script passes and the user signs the manual session and the verdict that the room already looks like the concept.
+nothing changed (0 moves), the media viewer; then the card's actions with keyboard and mouse. The script
+passed and the user declared M2 done on October 20, 2026 (the manual session unsigned, kept as a guide).
 
 ### Deferred
 

@@ -1,14 +1,12 @@
-// The benchmark path through the snes-stress room (I3 step 17b; docs/roadmap.md, I3, "Budgets"). Hidden ([.bench]:
+// The benchmark path through the snes-stress room (I3 step 17b). Hidden ([.bench]:
 // run by hand in Release, rv_smoke_tests "[benchmark]"): the snes-stress fixture (tests/fixtures/esde/snes-stress,
 // 2,000 invented titles) recorded as the library of the case's data directory and imported with retroverse-cli; a first
 // run without a lockstep makes the plan and fills the derived-texture cache, then retroverse.exe plays
 // tests/input_scripts/bench_snes_room.json at 1920 x 1080 with --no-vsync (the frames never wait for the display) and
 // --fixed-dt (the same path on every machine). The figures are printed (WARN) for docs/i3/step-17b.md: the frame times
 // and the GPU time of every pass over the "benchmark" phase, what the last view drew, the GPU memory. In Release the
-// budgets are checked: frame p99 at most 16.7 ms (NFR-03's 60 FPS) and p50 at most 8 ms; per pass, at its median (I3
-// step 18, Gate B: a timer query measures the GPU's time between two commands, so on a desktop GPU shared with other
-// programs its tail holds their time slices too; the p95 and p99 are printed), shadow map 0.4 ms, depth pre-pass 0.4
-// ms, ambient occlusion 0.5 ms, scene 2.0 ms, post-processing 0.6 ms, outline 0.1 ms, their sum 5 ms.
+// frame times must be acceptable (docs/roadmap.md, "Acceptable performance"): p99 at most 33.3 ms (never under 30 FPS)
+// and p50 at most 16.7 ms (60 FPS typically); the GPU passes are only reported.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -17,7 +15,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -35,10 +32,6 @@ namespace {
 
 /// The benchmark path's frames: the phase holds frames 30 to 1259 of a 1,270-frame run (bench_snes_room.json).
 constexpr std::uint64_t kBenchmarkFrames = 1230;
-
-/// The budgets per pass (milliseconds; docs/roadmap.md, I3, "Budgets"), by GpuPassRecord name.
-const std::vector<std::pair<std::string_view, double>> kPassBudgets{
-    {"shadow", 0.4}, {"depth", 0.4}, {"ssao", 0.5}, {"scene", 2.0}, {"post", 0.6}, {"outline", 0.1}, {"total", 5.0}};
 
 /// The snes-stress fixture recorded as the library of <caseDir>/data and imported with retroverse-cli.
 struct ImportedRoom {
@@ -150,15 +143,8 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
         CHECK(passOf(benchmark->gpuPasses, name) != nullptr);
     }
 #if defined(NDEBUG)
-    // The budgets (Release, 1920 x 1080, --no-vsync, on the reference machine).
-    CHECK(times.p99Ms <= 16.7);
-    CHECK(times.p50Ms <= 8.0);
-    for (const auto& [name, budget] : kPassBudgets) {
-        if (const rv::app::GpuPassRecord* pass = passOf(benchmark->gpuPasses, name)) {
-            INFO("GPU pass " << name << " p50 " << pass->times.p50Ms << " ms (p99 " << pass->times.p99Ms
-                             << " ms), budget " << budget << " ms");
-            CHECK(pass->times.p50Ms <= budget);
-        }
-    }
+    // Acceptable frame times (Release, 1920 x 1080, --no-vsync).
+    CHECK(times.p99Ms <= 33.3);
+    CHECK(times.p50Ms <= 16.7);
 #endif
 }

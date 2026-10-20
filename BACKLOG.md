@@ -425,18 +425,6 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 
 ### Measurement
 
-- **Gate B on a quiet machine** (I3 step 18, `docs/testing/gate-b.md`): both gate runs passed every correctness check
-  but missed timing rows while the user's programs loaded the machine (about 60% CPU with the gate idle): the real
-  covers cold 23.7 s (10 s), the snes-stress covers warm 2.2 s (1.5 s) and its benchmark path's p99 19.2 ms (16.7 ms;
-  4.06 ms in the other run), the fixture's materialization 10.3 s (10 s), a Debug upload median 1.07 ms (1.05 ms), the
-  video upload p99 0.98 ms (0.5 ms, not a gate row). Run `./scripts/gate.ps1 -Gate B -RealLibrary` with the desktop's
-  programs closed and update the page; if the cold covers still miss, the pool's priority while the room loads (its
-  workers run below normal without boosts and yield to every busy program) or ADR-0004's process boost (I5) are the
-  remedies, the latter also for NFR-04 over a cold load (frame p99 140 to 204 ms on snes-stress, I3 step 12).
-- **GPU pass times on a dedicated GPU** (I3 step 18): the per-pass budgets are checked at the median because a timer
-  query's tail holds the time slices of the desktop's other GPU programs (p99 0.9 to 1.1 ms for passes whose median is
-  0.4 ms); a profiling session with nothing else on the GPU (or GPU-side markers in a capture) would give the passes'
-  own tails (I8).
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.
