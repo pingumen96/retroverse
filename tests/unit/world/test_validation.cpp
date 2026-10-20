@@ -89,7 +89,7 @@ std::vector<ValidationFinding> requireOnlyHard(const ValidationReport& report, s
 TEST_CASE("world/validation: the rules are named once each, hard ones first, every name a rule name",
           "[world][validation]") {
     const auto rules = rv::world::validationRules();
-    REQUIRE(rules.size() == 34);
+    REQUIRE(rules.size() == 37);
     std::set<std::string_view> names;
     bool soft = false;
     for (const rv::world::ValidationRule& entry : rules) {
@@ -810,6 +810,75 @@ TEST_CASE("world/validation: the building's rules", "[world][validation]") {
         const auto findings = requireOnlyHard(validate(plan), rule::kRoomUnknown);
         REQUIRE(findings.size() == 1);
         CHECK(findings[0].subject == "g00000000000000ca");
+    }
+    SECTION("hall-overlap, doorway-off-hall, floor-unreachable: the rooms against their floor's hall (I4 step 3)") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        ValidationContext context = rv::test::validContextFor(plan);
+        context.building = *building;
+        ValidationReport report = rv::world::validatePlan(plan, context);
+        INFO(describe(report));
+        CHECK(report.passed());
+        CHECK(report.findings.empty());
+        // A second room in the south row: both doorways open onto the hall, both rooms walked to from the elevator.
+        plan.rooms.push_back(secondRoom(plan));
+        report = rv::world::validatePlan(plan, context);
+        CHECK(findingsOf(report, rule::kHallOverlap).empty());
+        CHECK(findingsOf(report, rule::kDoorwayOffHall).empty());
+        CHECK(findingsOf(report, rule::kFloorUnreachable).empty());
+
+        // A room pushed half a metre into the hall: it overlaps the hall and its doorway's wall stands off the edge.
+        plan = rv::test::validRoomPlan();
+        plan.rooms.front().placement.zMm += 500;
+        report = rv::world::validatePlan(plan, context);
+        auto findings = findingsOf(report, rule::kHallOverlap);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "room:snes");
+        CHECK_THAT(findings[0].message, ContainsSubstring("overlaps the hall's"));
+        findings = findingsOf(report, rule::kDoorwayOffHall);
+        REQUIRE(findings.size() == 1);
+        CHECK_THAT(findings[0].message, ContainsSubstring("stands at z -1000 on the floor 'gen4', the hall's edge at z -1500"));
+        // Away from the hall: no overlap, the doorway's wall still off the edge.
+        plan.rooms.front().placement.zMm -= 1000;
+        report = rv::world::validatePlan(plan, context);
+        CHECK(findingsOf(report, rule::kHallOverlap).empty());
+        CHECK(findingsOf(report, rule::kDoorwayOffHall).size() == 1);
+
+        // A fixture standing just inside the doorway: the room cannot be walked to from the elevator.
+        plan = rv::test::validRoomPlan();
+        Fixture blocker = plan.fixtures.front();
+        blocker.id = snesFixtureId("dec-door");
+        blocker.role = FixtureRole::Decoration;
+        blocker.levels.clear();
+        blocker.xMm = 0;
+        blocker.yMm = 0;
+        blocker.zMm = plan.rooms.front().maxZMm - 700;
+        blocker.yawCdeg = 0;
+        blocker.widthMm = 2400;
+        blocker.depthMm = 400;
+        blocker.heightMm = 1000;
+        plan.fixtures.push_back(blocker);
+        report = rv::world::validatePlan(plan, context);
+        findings = findingsOf(report, rule::kFloorUnreachable);
+        INFO(describe(report));
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "room:snes");
+        CHECK_THAT(findings[0].message, ContainsSubstring("cannot be walked to from the elevator through 1200 mm"));
+
+        // A template whose doorway is in a side wall: the doorway does not open onto the hall.
+        plan = rv::test::validRoomPlan();
+        context.templates.front().doorway.wall = rv::world::Wall::East;
+        context.templates.front().doorway.offsetMm = 2000;
+        report = rv::world::validatePlan(plan, context);
+        findings = findingsOf(report, rule::kDoorwayOffHall);
+        REQUIRE(findings.size() == 1);
+        CHECK_THAT(findings[0].message, ContainsSubstring("not in its south wall"));
+
+        // Without the building the halls are not judged.
+        context = rv::test::validContextFor(plan);
+        plan.rooms.front().placement.zMm += 500;
+        report = rv::world::validatePlan(plan, context);
+        CHECK(findingsOf(report, rule::kHallOverlap).empty());
+        CHECK(findingsOf(report, rule::kDoorwayOffHall).empty());
     }
     SECTION("room-kept: a kept room's older template and prefab slots are not judged, the room is reported") {
         WorldPlan plan = rv::test::validRoomPlan();

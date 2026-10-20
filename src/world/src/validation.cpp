@@ -15,6 +15,7 @@
 #include <rv/assets/prefab_manifest.hpp>
 #include <rv/core/text.hpp>
 #include <rv/geometry/prefabs.hpp>
+#include <rv/world/floor_layout.hpp>
 #include <rv/world/nav_grid.hpp>
 
 #include "layout_score.hpp"
@@ -24,7 +25,7 @@ namespace {
 
 using catalog::GameId;
 
-constexpr std::array<ValidationRule, 34> kRules{{
+constexpr std::array<ValidationRule, 37> kRules{{
     {rule::kRoomUnknown, Severity::Hard,
      "Every fixture and unplaced entry names a room the plan lists (a console room's games unplaced for capacity may "
      "name the room its full floor did not take)."},
@@ -35,6 +36,14 @@ constexpr std::array<ValidationRule, 34> kRules{{
     {rule::kSystemRooms, Severity::Hard,
      "Every system stands in exactly one room (with its chain of expansions) or one section; the arcade room stands "
      "on the ground floor."},
+    {rule::kHallOverlap, Severity::Hard,
+     "No room of a floor overlaps the floor's hall (derived from its rooms, the elevator's end and the far end's wall "
+     "included)."},
+    {rule::kDoorwayOffHall, Severity::Hard,
+     "Every room's doorway is in its doorway wall, whose outer face stands on its floor's hall's edge."},
+    {rule::kFloorUnreachable, Severity::Hard,
+     "Every room of a floor can be walked to from the elevator through the minimum clear width, on the floor's "
+     "navigation grid."},
     {rule::kRoomTemplate, Severity::Hard, "Every room's template is known, at the version the room was made from."},
     {rule::kRoomSize, Severity::Hard,
      "Every room has its template's interior and height at its growth step, within the template's growth limit."},
@@ -398,6 +407,7 @@ public:
         indexPlan();
         checkBuilding();
         checkRoomTemplates();
+        checkFloors();
         checkFixtureSockets();
         checkFixtureLevels();
         checkPrefabSlots();
@@ -572,6 +582,93 @@ private:
                                            "is {}, {} high",
                                            footprintText(actual), room.heightMm, room.growthSteps,
                                            footprintText(expected), roomTemplate.heightMm));
+            }
+        }
+    }
+
+    /// The building's rules that need the halls (ADR-0013 §11, I4 step 3): each floor's hall derived from its rooms
+    /// (those whose template is known and current stand with their doorways and walls; the others as their
+    /// footprints), the rooms against it, their doorways on it, and the walk from the elevator to every doorway.
+    void checkFloors() {
+        if (!m_context.building) {
+            return;
+        }
+        const BuildingLayout& layout = m_context.building->layout;
+        std::map<std::string, std::vector<FloorRoom>> byFloor;
+        for (const Floor& floor : m_plan.floors) {
+            byFloor.try_emplace(floor.id);
+        }
+        for (const auto& [id, view] : m_rooms) {
+            byFloor[view.room->floor].push_back(FloorRoom{view.room, view.roomTemplate});
+        }
+        const std::int64_t clearance = (m_context.config.minClearWidthMm + 1) / 2;
+        for (const auto& [floor, rooms] : byFloor) {
+            const Hall hall = deriveHall(floor, rooms, layout);
+            const Footprint hallFootprint = hall.footprint();
+            Footprint extent = hallFootprint;
+            extent.minZMm -= hall.wallMm;
+            extent.maxZMm += hall.wallMm;
+            std::vector<Footprint> obstacles;
+            for (const HallWall& wall : hall.walls) {
+                obstacles.push_back(wall.footprint);
+            }
+            obstacles.push_back(hall.elevator);
+            for (const FloorRoom& entry : rooms) {
+                const Room& room = *entry.room;
+                const Footprint footprint = floorFootprint(room, layout);
+                extent = Footprint{std::min(extent.minXMm, footprint.minXMm), std::min(extent.minZMm, footprint.minZMm),
+                                   std::max(extent.maxXMm, footprint.maxXMm), std::max(extent.maxZMm, footprint.maxZMm)};
+                if (footprint.overlaps(hallFootprint)) {
+                    m_findings.add(rule::kHallOverlap, room.id.toString(),
+                                   fmt::format("its footprint on the floor '{}', {}, overlaps the hall's, {}", floor,
+                                               footprintText(footprint), footprintText(hallFootprint)));
+                }
+                if (entry.roomTemplate == nullptr) {
+                    obstacles.push_back(footprint); // its walls and doorway are not known
+                    continue;
+                }
+                for (const Footprint& wall : floorRoomWalls(room, *entry.roomTemplate)) {
+                    obstacles.push_back(wall);
+                }
+                const auto view = m_rooms.find(room.id);
+                for (const Fixture* fixture : view->second.fixtures) {
+                    if (!isFloorCovering(*fixture)) {
+                        obstacles.push_back(roomToFloor(room.placement, floorOf(boxOf(*fixture))));
+                    }
+                }
+            }
+            for (const FloorDoorway& doorway : hall.doorways) {
+                const std::string subject = doorway.room.toString();
+                if (!doorway.inDoorwayWall) {
+                    m_findings.add(rule::kDoorwayOffHall, subject,
+                                   "the room's doorway is not in its south wall, the wall that faces the hall");
+                } else if (doorway.outerMm != doorway.hallEdgeZMm) {
+                    m_findings.add(rule::kDoorwayOffHall, subject,
+                                   fmt::format("the doorway's wall stands at z {} on the floor '{}', the hall's edge at "
+                                               "z {}",
+                                               doorway.outerMm, floor, doorway.hallEdgeZMm));
+                }
+            }
+            if (hall.doorways.empty()) {
+                continue;
+            }
+            const NavGrid grid(extent, obstacles, clearance);
+            const std::optional<NavCell> start = grid.cellAt(hall.arrival.xMm, hall.arrival.zMm);
+            if (!start || !grid.isFree(*start)) {
+                m_findings.add(rule::kFloorUnreachable, floor,
+                               fmt::format("no body {} mm wide can stand in front of the elevator (x {}, z {})",
+                                           m_context.config.minClearWidthMm, hall.arrival.xMm, hall.arrival.zMm));
+                continue;
+            }
+            const NavReach reach(grid, *start);
+            for (const FloorDoorway& doorway : hall.doorways) {
+                if (!reach.reachesNear(doorway.clearCentre.xMm, doorway.clearCentre.zMm, kInteractionRadiusMm)) {
+                    m_findings.add(rule::kFloorUnreachable, doorway.room.toString(),
+                                   fmt::format("its doorway's clear area (x {}, z {} on the floor '{}') cannot be walked "
+                                               "to from the elevator through {} mm",
+                                               doorway.clearCentre.xMm, doorway.clearCentre.zMm, floor,
+                                               m_context.config.minClearWidthMm));
+                }
             }
         }
     }

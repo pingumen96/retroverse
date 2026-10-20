@@ -20,11 +20,18 @@
 // room. Every other fixture is an obstacle of the navigation grid (nav_grid.hpp), wall-mounted ones included (they
 // stand against a wall the walker cannot cross anyway).
 //
-// The building (ADR-0013 §11; the rules that need no hall: the halls' are I4 step 3's): the plan holds the ground
-// floor, every room stands on a floor of the plan (and every floor is building.json's, at its order, when the building
-// is given), the rooms of a floor do not overlap (their footprints on the floor: the interior grown by the building's
-// wall allowance, building.hpp), every system stands in exactly one room (an expansion counted with its chain's head)
-// or one section, and the arcade room stands on the ground floor. A room an update kept as it is (ValidationContext::keptRooms) is reported (soft, room-kept); its
+// The building (ADR-0013 §11): the plan holds the ground floor, every room stands on a floor of the plan (and every
+// floor is building.json's, at its order, when the building is given), the rooms of a floor do not overlap (their
+// footprints on the floor: the interior grown by the building's wall allowance, building.hpp), every system stands in
+// exactly one room (an expansion counted with its chain's head) or one section, and the arcade room stands on the
+// ground floor. With the building given, each floor's hall is derived from its rooms (floor_layout.hpp's deriveHall(),
+// I4 step 3) and judged with them: no room overlaps the hall (hall-overlap), every room's doorway is in its doorway
+// wall, which stands on the hall's edge (doorway-off-hall), and every room can be walked to from the elevator
+// (floor-unreachable): the floor's navigation grid (nav_grid.hpp, 0.1 m cells over the hall and the floor's rooms;
+// obstacles the hall's walls, the elevator's frame, the rooms' walls around their doorways and their fixtures, dilated
+// by half the minimum clear width) searched from the arrival point in front of the elevator reaches every doorway's
+// clear area's centre within kInteractionRadiusMm. The hall's lights are not the plan's: only the rooms keep the
+// light limit. A room an update kept as it is (ValidationContext::keptRooms) is reported (soft, room-kept); its
 // template's version and its prefabs' slots are not judged, since it keeps what an older template or prefab made.
 //
 // Reachability: the grid of each room, its obstacles dilated by half the configuration's minimum clear width
@@ -65,6 +72,9 @@ inline constexpr std::string_view kGroundFloorMissing = "ground-floor";
 inline constexpr std::string_view kFloorUnknown = "floor-unknown";
 inline constexpr std::string_view kRoomsOverlap = "rooms-overlap";
 inline constexpr std::string_view kSystemRooms = "system-rooms";
+inline constexpr std::string_view kHallOverlap = "hall-overlap";
+inline constexpr std::string_view kDoorwayOffHall = "doorway-off-hall";
+inline constexpr std::string_view kFloorUnreachable = "floor-unreachable";
 inline constexpr std::string_view kRoomTemplate = "room-template";
 inline constexpr std::string_view kRoomSize = "room-size";
 inline constexpr std::string_view kFixtureSocket = "fixture-socket";
@@ -166,8 +176,9 @@ struct ValidationContext {
     /// Pins honoured (pin-broken) or orphaned (pin-orphaned).
     std::vector<GamePin> gamePins;
     std::vector<FixturePin> fixturePins;
-    /// The building's data: its floors (floor-unknown) and the wall allowance of the rooms' footprints
-    /// (rooms-overlap); nothing: the plan's floors are taken as they are and rooms' interiors compared.
+    /// The building's data: its floors (floor-unknown), the wall allowance of the rooms' footprints (rooms-overlap)
+    /// and the halls' widths (hall-overlap, doorway-off-hall, floor-unreachable); nothing: the plan's floors are taken
+    /// as they are, rooms' interiors compared and the halls not judged.
     std::optional<BuildingData> building;
     /// The rooms an update kept as they are (room-kept), with the reason.
     std::vector<KeptRoom> keptRooms;
