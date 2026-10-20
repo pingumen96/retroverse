@@ -1,0 +1,39 @@
+// The computer game's big box (media family big_box, ADR-0013 §4; I4 step 2), 19 x 24 x 4.5 cm: the 'cartridge' prefab
+// at the family's size, its front label (the cover, fitted to the 180 x 230 mm label quad) and its spine label on its
+// top face, shown when it stands spine-out in a 4.5 x 19 x 24 cm slot. Functional, of no real model.
+{
+  "schemaVersion": 1,
+  "id": "media.box.big.generic",
+  "assetType": "physical_media",
+  "category": "case",
+  "role": "collection_item",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-20",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cartridge",
+    "params": {
+      "size": [0.19, 0.24, 0.045], "chamfer": 0.0015, "labelMargin": [0.005, 0.005], "labelInset": 0.0008,
+      "gripRidges": false, "spineLabel": true, "spineLabelSize": [0.029, 0.1856]
+    },
+    "scaleMeters": [0.19, 0.24, 0.045],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "label": "Label",
+      "spine": "Spine"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["media", "box", "big_box", "computer", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

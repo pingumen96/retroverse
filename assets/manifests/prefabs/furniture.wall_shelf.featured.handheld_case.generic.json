@@ -1,0 +1,37 @@
+// The featured wall shelf of the media family case_handheld (ADR-0013 §4; I4 step 2): the 16-bit shelf's two picture
+// ledges, tilt, gaps and margins hung at 1.1 m, as tall and deep as a leaning item of 12.5 x 14 x 1.4 cm needs. Falls
+// back to the 16-bit shelf.
+{
+  "schemaVersion": 1,
+  "id": "furniture.wall_shelf.featured.handheld_case.generic",
+  "assetType": "furniture",
+  "category": "wall_shelf",
+  "role": "display",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-20",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "wall_shelf",
+    "params": {
+      "height": 0.37, "slotSize": [0.125, 0.14, 0.014]
+    },
+    "scaleMeters": [0.9, 0.37, 0.08],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "firstSlot": "Slot_0_0"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "shelf", "wall", "game_slots", "face_out", "featured", "procedural"],
+  "fallbackPrefab": "furniture.wall_shelf.featured.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

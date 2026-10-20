@@ -165,3 +165,45 @@ TEST_CASE("app/collection_layers: generated labels for no cover and a cover that
     REQUIRE(bare.error.has_value());
     CHECK(bare.error->code == rv::ErrorCode::Unavailable);
 }
+
+TEST_CASE("app/collection_layers: a family's label shape names and shapes its front (I4 step 2)",
+          "[app][collection_layers]") {
+    // ADR-0013 §4: the cover fitted to the room's family's label quad, its entry named with the shape; a game without
+    // a cover gets a label laid out at that shape. The 16-bit family's items (the layer's shape) keep I3's entries.
+    const rv::test::TempDir dir("collection-layers-shape");
+    const fs::path media = dir.file("media");
+    const std::string coverPath = "psx/covers/Amber Lantern (USA).png";
+    fs::create_directories(media / "psx" / "covers");
+    REQUIRE(rv::assets::writePng(media / rv::core::pathFromUtf8(coverPath),
+                                 rv::assets::makeCoverPlaceholder(600, 600, "Amber Lantern", 100))
+                .has_value());
+    const Fonts fonts = loadFonts();
+    rv::assets::DerivedTextureCache cache(dir.file("cache"));
+    const auto format = rv::gl::CollectionArrayFormat::Bc1Srgb;
+    const CoverItem layerItem = itemOf(coverPath);
+    CoverItem squareItem = itemOf(coverPath);
+    squareItem.label = {120, 120};
+    const ItemLayers layer = rv::app::serveItemLayers(cache, fonts.labels(), format, media, layerItem);
+    const ItemLayers square = rv::app::serveItemLayers(cache, fonts.labels(), format, media, squareItem);
+    checkLayers(layer, format);
+    checkLayers(square, format);
+    CHECK(layer.frontEntry == rv::assets::coverCacheKey(rv::assets::TextureClass::Front,
+                                                        rv::assets::TextureFormat::Bc1Srgb, "covers", coverPath)
+                                  .hex());
+    CHECK(square.frontEntry == rv::assets::coverCacheKey(rv::assets::TextureClass::Front,
+                                                         rv::assets::TextureFormat::Bc1Srgb, "covers", coverPath,
+                                                         squareItem.label)
+                                   .hex());
+    CHECK(square.frontEntry != layer.frontEntry);
+    CHECK(square.front->levels != layer.front->levels);
+    // The spine does not depend on the shape.
+    CHECK(square.spineEntry == layer.spineEntry);
+
+    CoverItem squareLabel = itemOf("");
+    squareLabel.label = {120, 120};
+    const ItemLayers generated = rv::app::serveItemLayers(cache, fonts.labels(), format, media, squareLabel);
+    const ItemLayers i3Label = rv::app::serveItemLayers(cache, fonts.labels(), format, media, itemOf(""));
+    checkLayers(generated, format);
+    CHECK(generated.frontSource == FrontSource::Label);
+    CHECK(generated.frontEntry != i3Label.frontEntry);
+}

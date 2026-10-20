@@ -105,8 +105,13 @@ Json roomItemsToJson(const RoomItems& items) {
                             {"coverPath", item.coverPath},
                             {"available", item.available}});
     }
-    return Json{
+    Json document{
         {"schemaVersion", kRoomItemsSchemaVersion}, {"systemName", items.systemName}, {"items", std::move(list)}};
+    // Only when there are any: a room of a catalog without tags keeps I3's bytes.
+    if (!items.platforms.empty()) {
+        document["platforms"] = items.platforms;
+    }
+    return document;
 }
 
 Expected<RoomItems> parseRoomItems(const Json& document, std::string_view context) {
@@ -126,6 +131,17 @@ Expected<RoomItems> parseRoomItems(const Json& document, std::string_view contex
     RoomItems items;
     if (Status read = readString(document, "systemName", context, "", items.systemName); !read) {
         return propagate(read.error());
+    }
+    if (const auto platforms = document.find("platforms"); platforms != document.end()) {
+        if (!platforms->is_array()) {
+            return parseError(context, "/platforms", "expected an array of strings");
+        }
+        for (std::size_t index = 0; index < platforms->size(); ++index) {
+            if (!(*platforms)[index].is_string()) {
+                return parseError(context, fmt::format("/platforms/{}", index), "expected a string");
+            }
+            items.platforms.push_back((*platforms)[index].get<std::string>());
+        }
     }
     const auto list = document.find("items");
     if (list == document.end() || !list->is_array()) {

@@ -1,0 +1,43 @@
+// The hero-wall module of the media family case_handheld (ADR-0013 §4; I4 step 2): its side-wall module with 7 levels
+// (the most whose compartments hold the item face-out with its headroom), level 4, the one whose items' centre is
+// nearest the 1.3 m eye height, given to the hero band: the item face-out, 6 mm apart. Falls back to the 16-bit side
+// module.
+{
+  "schemaVersion": 1,
+  "id": "furniture.shelf.hero_module.handheld_case.generic",
+  "assetType": "furniture",
+  "category": "shelf",
+  "role": "storage",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-20",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "shelf",
+    "params": {
+      "width": 0.9, "height": 1.775, "depth": 0.24, "levels": 7, "boardThickness": 0.025, "back": true,
+      "plinthHeight": 0.35, "slotSize": [0.014, 0.125, 0.14], "slotGap": 0.004, "slotMargin": 0.03,
+      "slotFrontInset": 0.01, "displayLevels": [4], "displaySlotSize": [0.125, 0.14, 0.014], "displaySlotGap": 0.006,
+      "displaySlotMargin": 0.025
+    },
+    "scaleMeters": [0.9, 1.775, 0.24],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "firstSlot": "Slot_0_0",
+      "heroBand": "Slot_4_0"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "shelf", "storage", "game_slots", "spine_out", "face_out", "hero_band", "collection_module",
+           "procedural"],
+  "fallbackPrefab": "furniture.shelf.side_module.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

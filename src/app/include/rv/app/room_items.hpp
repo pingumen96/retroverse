@@ -47,6 +47,9 @@ struct RoomItemText {
 struct RoomItems {
     /// The system's full name (CoverItem::systemName).
     std::string systemName;
+    /// The system's ES-DE platform tags (RoomSnapshotResult::platformTags): the preview's scene classifies a system
+    /// systems.json does not name by them, as the snapshot's does. A file without them (I3's) reads as none.
+    std::vector<std::string> platforms;
     /// By GameId, each game once.
     std::vector<RoomItemText> items;
 
@@ -70,11 +73,11 @@ struct RoomItems {
 [[nodiscard]] std::filesystem::path roomItemsFile(const std::filesystem::path& cacheDir,
                                                   const catalog::LibraryId& library, const catalog::SystemName& system);
 
-/// {"schemaVersion": 1, "systemName": "...", "items": [{"game", "title", "fallbackTitle", "year", "coverPath",
-/// "available"}, ...]}.
+/// {"schemaVersion": 1, "systemName": "...", "platforms": ["..."], "items": [{"game", "title", "fallbackTitle", "year",
+/// "coverPath", "available"}, ...]}; "platforms" only when there are any.
 [[nodiscard]] nlohmann::json roomItemsToJson(const RoomItems& items);
-/// Errors (ParseError, context "<context>:<JSON pointer>"): not that shape, a newer schemaVersion, a GameId that does
-/// not parse, a game listed twice or out of order.
+/// Errors (ParseError, context "<context>:<JSON pointer>"): not that shape ("platforms", optional, an array of
+/// strings), a newer schemaVersion, a GameId that does not parse, a game listed twice or out of order.
 [[nodiscard]] Expected<RoomItems> parseRoomItems(const nlohmann::json& document, std::string_view context);
 
 /// Reads `file`. Errors: NotFound when there is none, those of the read and of parseRoomItems().

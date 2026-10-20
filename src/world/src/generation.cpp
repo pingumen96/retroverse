@@ -49,15 +49,26 @@ Expected<Json> roomInputJson(const RoomSelection& selection, const WorldData& da
         return propagate(document.error());
     }
     const MediaFamily& family = data.mediaFamily;
+    Json familyJson{{"id", family.id},
+                    {"item", prefabJson(family.item)},
+                    {"itemWidthMm", family.itemWidthMm},
+                    {"itemHeightMm", family.itemHeightMm},
+                    {"itemDepthMm", family.itemDepthMm},
+                    {"spineOut", slotSpecJson(family.spineOut)},
+                    {"faceOut", slotSpecJson(family.faceOut)}};
+    // The fixtures a family names shape its rooms (ADR-0013 §4); a family without any (the 16-bit cartridges') hashes
+    // as before them. The label and the cover fit only draw the room.
+    if (!family.fixtures.empty()) {
+        const auto optionalPrefab = [](const std::optional<PrefabRef>& ref) {
+            return ref ? prefabJson(*ref) : Json();
+        };
+        familyJson["fixtures"] = Json{{"heroModule", optionalPrefab(family.fixtures.heroModule)},
+                                      {"sideModule", optionalPrefab(family.fixtures.sideModule)},
+                                      {"display", optionalPrefab(family.fixtures.display)},
+                                      {"wallShelf", optionalPrefab(family.fixtures.wallShelf)}};
+    }
     return Json{{"room", selection.room.toString()},
-                {"mediaFamily",
-                 Json{{"id", family.id},
-                      {"item", prefabJson(family.item)},
-                      {"itemWidthMm", family.itemWidthMm},
-                      {"itemHeightMm", family.itemHeightMm},
-                      {"itemDepthMm", family.itemDepthMm},
-                      {"spineOut", slotSpecJson(family.spineOut)},
-                      {"faceOut", slotSpecJson(family.faceOut)}}},
+                {"mediaFamily", std::move(familyJson)},
                 {"platform", Json{{"system", data.platform.system.str()},
                                   {"mediaFamily", data.platform.mediaFamily},
                                   {"themePack", data.platform.themePack},
@@ -149,7 +160,7 @@ Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
         const Classification classification = classify(system, platformTags, input.systems, input.building);
         // What decided the system's place (ADR-0013 §2, §5): its own row, or the row its platform tags matched, or the
         // fallback, the tags then in the row. A system with a row of its own hashes alike whatever tags its caller
-        // knows, so that the app (none) and the CLI (the catalog's) write one plan for one catalog.
+        // knows (a selection file's none, the app's and the CLI's the catalog's), so that one catalog gives one plan.
         Json row{{"row", systemEntryToJson(classification.entry)}, {"source", toString(classification.source)}};
         if (classification.source == ClassificationSource::PlatformTag) {
             row["matched"] = classification.matched.str();
@@ -346,6 +357,9 @@ Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const 
                          "world/media_families.json");
     }
     data.mediaFamily = *family;
+    // The room stands the family's fixtures in the template's sockets (ADR-0013 §4): every consumer of the data (the
+    // capacity, the layout, the update's modules) reads them from the template, and the plan records them by ref.
+    data.roomTemplate = withFamilyFixtures(std::move(data.roomTemplate), data.mediaFamily);
     // The family's slots are its item's size in each orientation: a manifest that disagrees would make the shelves'
     // slots wrong for the item drawn in them. A missing item manifest falls back like any prefab.
     if (auto item = assets::loadPrefabManifest(assets::prefabManifestPath(assetRoot, family->item.manifest))) {

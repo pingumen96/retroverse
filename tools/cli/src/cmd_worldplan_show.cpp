@@ -5,7 +5,8 @@
 // and titles of each section with the reserve left, the dressing, the lights and the unplaced games by reason; with
 // --placements every fixture with its levels and every placement too. With --scene <file>, the static part of one room
 // written as a scene file (I3 step 10a): the plan's only room, or the one --room names in a building of several (a
-// floor's scene with its hall is I4 step 3's).
+// floor's scene with its hall is I4 step 3's), its sign and plastics classified with the catalog's platform tags of its
+// system when the catalog holds the plan's library (a custom system's, I4 step 2).
 
 #include <algorithm>
 #include <filesystem>
@@ -16,6 +17,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -137,10 +139,43 @@ CatalogJson listingJson(const world::WorldPlan& plan, CatalogJson json) {
     return json;
 }
 
+/// The ES-DE platform tags of `system` as the catalog of the user data directory records them for `library` (as
+/// `worldplan generate` took them: a system systems.json does not name was classified by them); none without a
+/// catalog of that library (logged at debug level).
+std::vector<std::string> catalogPlatformTags(const core::Paths& paths, const catalog::LibraryId& library,
+                                             const catalog::SystemName& system) {
+    auto reader = openCatalogReader(paths);
+    if (!reader) {
+        spdlog::debug("worldplan show: no platform tags of {} from the catalog: {}", system.str(),
+                      reader.error().toString());
+        return {};
+    }
+    auto summaries = reader->query->systems();
+    if (!summaries) {
+        spdlog::debug("worldplan show: no platform tags of {} from the catalog: {}", system.str(),
+                      summaries.error().toString());
+        return {};
+    }
+    for (const catalog_db::SystemSummary& summary : *summaries) {
+        if (summary.library == library && summary.system.name == system) {
+            return summary.system.platforms;
+        }
+    }
+    return {};
+}
+
 /// Writes the scene file of the plan's room `room`; the line the summary gains, or nothing after a failure (reported).
 std::optional<std::string> writeScene(CommandContext& context, const world::WorldPlan& plan, const world::RoomId& room,
                                       const std::filesystem::path& scenePath) {
-    auto data = world::loadSceneData(context.paths.assetRoot(), plan, room);
+    // The room's first system's platform tags: its sign and plastics as its generation classified it.
+    std::vector<std::string> platformTags;
+    if (const auto held = std::find_if(plan.rooms.begin(), plan.rooms.end(),
+                                       [&](const world::Room& candidate) { return candidate.id == room; });
+        held != plan.rooms.end()) {
+        platformTags = catalogPlatformTags(context.paths, plan.library,
+                                           held->sections.empty() ? room.system() : held->sections.front());
+    }
+    auto data = world::loadSceneData(context.paths.assetRoot(), plan, room, std::nullopt, platformTags);
     if (!data) {
         context.err.writeLine(fmt::format("{}: the scene's data: {}", kName, data.error().toString()));
         return std::nullopt;

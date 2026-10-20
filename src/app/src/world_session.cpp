@@ -623,13 +623,21 @@ void WorldSession::showCard(const InteractionResult& result, ProductUi& product)
     const WorldInteraction& interaction = m_interaction->interaction();
     const world::CollectionItem* item = m_interaction->item(interaction.focused());
     const gl::Texture2D* hero = item != nullptr && m_heroes ? m_heroes->find(item->game) : nullptr;
+    // The shape its hero picture was made at (the room's family's label, ADR-0013 §4).
+    assets::LabelAspect coverShape;
+    if (item != nullptr && m_collection && m_loader) {
+        if (const std::optional<std::size_t> index = m_collection->itemOfPick(interaction.focused());
+            index && *index < m_loader->items().size()) {
+            coverShape = m_loader->items()[*index].label;
+        }
+    }
     std::uint32_t others = 0;
     if (item != nullptr) {
         if (const auto found = m_otherVersions.find(item->game.value()); found != m_otherVersions.end()) {
             others = found->second;
         }
     }
-    m_card.update(interaction, result, item, hero, others, product, m_context.frameIndex());
+    m_card.update(interaction, result, item, hero, coverShape, others, product, m_context.frameIndex());
     // Vedi media and Informazioni of the inspected game (I3 step 14b): the product UI's screens, over the card.
     if (item != nullptr && result.showMedia) {
         product.openGameMedia(item->game, item->title, kScreenFromCard);

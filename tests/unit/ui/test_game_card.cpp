@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <map>
@@ -140,6 +141,32 @@ TEST_CASE("ui/game_card: button names and element ids", "[ui][game_card]") {
     CHECK(gc::kCoverSource == std::string(gc::kTextureScheme) + std::string(gc::kCoverTexture));
 }
 
+TEST_CASE("ui/game_card: the cover stands in its frame at its own shape, never stretched", "[ui][game_card]") {
+    using rv::ui::CardCoverBox;
+    using rv::ui::cardCoverBox;
+    // The frame's own shape (the 16-bit cartridges', I3's card) and none fill it.
+    CHECK(cardCoverBox(0, 0) == CardCoverBox{});
+    CHECK(cardCoverBox(256, 188) == CardCoverBox{});
+    CHECK(cardCoverBox(64, 47) == CardCoverBox{});
+    // A jewel case's square cover: the frame's height, pillarboxed and centred.
+    const CardCoverBox square = cardCoverBox(120, 120);
+    CHECK(square.height == 1.0);
+    CHECK(square.width == 188.0 / 256.0);
+    CHECK(square.left == (1.0 - 188.0 / 256.0) / 2.0);
+    CHECK(square.top == 0.0);
+    // A keep case's portrait one, and a box's.
+    const CardCoverBox keepCase = cardCoverBox(123, 178);
+    CHECK(keepCase.height == 1.0);
+    CHECK(std::abs(keepCase.width * 256.0 / 188.0 - 123.0 / 178.0) < 1e-12);
+    CHECK(std::abs(keepCase.left * 2.0 + keepCase.width - 1.0) < 1e-12);
+    // A shape wider than the frame (the 64-bit cartridge's 96 x 60): the frame's width, letterboxed.
+    const CardCoverBox wide = cardCoverBox(96, 60);
+    CHECK(wide.width == 1.0);
+    CHECK(wide.left == 0.0);
+    CHECK(std::abs(256.0 / (wide.height * 188.0) - 96.0 / 60.0) < 1e-12);
+    CHECK(std::abs(wide.top * 2.0 + wide.height - 1.0) < 1e-12);
+}
+
 TEST_CASE("ui/game_card: the document has the ids, bindings, buttons and keys its screen uses",
           "[ui][game_card][documents]") {
     const std::string rml = readAsset(gc::kDocumentPath);
@@ -174,7 +201,9 @@ TEST_CASE("ui/game_card: the document has the ids, bindings, buttons and keys it
     for (const std::string_view binding :
          {"{{ card.title }}", "{{ card.platform }}", "{{ card.year }}", "{{ card.developer }}", "{{ card.genre }}",
           "{{ card.players }}", "{{ card.otherVersions }}", "card.cover", "card.details", "card.unavailable",
-          "card.verified", "card.outcomeKnown"}) {
+          "card.verified", "card.outcomeKnown", "data-style-width=\"card.coverWidth\"",
+          "data-style-height=\"card.coverHeight\"", "data-style-margin-left=\"card.coverLeft\"",
+          "data-style-margin-top=\"card.coverTop\""}) {
         INFO(binding);
         CHECK(contains(rml, binding));
     }

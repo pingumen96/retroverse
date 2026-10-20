@@ -20,11 +20,18 @@
 //    (".jpg") when i % 10 == 3 and a portrait PNG (497 x 680) when i % 50 == 11 (i is the title's index; both releases
 //    of a title share the picture's seed);
 //  - the first `videos` titles have a 4:3 clip in `mediaFolder`/videos (".mp4", 4 s at 30 fps, 320 x 240).
+// I4 step 2's optional keys (tests/fixtures/esde/building): "coverSizes", sizes [width, height] taken in turn by the
+// titles' covers (title i the (i % n)-th; then no portrait swap); "covers", how many titles from the first have a
+// cover (default all: the others have no media); "from", the first title whose files (ROM, media) are written, the
+// gamelist listing every title: the same seed and counts with more titles give the same first titles, so an overlay
+// (Fixture::applyOverlay) adds titles to a system with its whole gamelist and the new titles' files alone.
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json_fwd.hpp>
@@ -47,6 +54,12 @@ struct CollectionSpec {
     std::uint64_t romSize = 0;
     std::string gamelist;
     std::string mediaFolder;
+    /// The covers' sizes in turn (empty: 680 x 497 with I3's portrait swap).
+    std::vector<std::pair<int, int>> coverSizes;
+    /// How many titles from the first have a cover (the others have no media at all); nothing: every title.
+    std::optional<std::size_t> covers;
+    /// The first title whose files are written (the gamelist lists every title).
+    std::size_t from = 0;
 };
 
 /// One ROM file of a generated collection.
@@ -70,6 +83,8 @@ struct CollectionGame {
     PicturePayload cover;
     /// Its cover's extension: ".png" or ".jpg".
     std::string coverExtension;
+    /// It has a cover (CollectionSpec::covers).
+    bool hasCover = true;
     bool hasVideo = false;
     ClipPayload video;
 };
@@ -83,8 +98,10 @@ struct GeneratedCollection {
 };
 
 /// Reads a "collections" item: {"seed", "titles", "duplicates", "videos", "romFolder", "romExtension", "romSize",
-/// "gamelist", "mediaFolder"}, all required. Errors: ValidationFailed naming the key (more duplicates than 3 per 20
-/// titles allow, more videos than titles, more than 20,000 titles, a ROM larger than 64 MiB), `context` prefixed.
+/// "gamelist", "mediaFolder"}, all required, and the optional "coverSizes", "covers" and "from". Errors:
+/// ValidationFailed naming the key (more duplicates than 3 per 20 titles allow, more videos than titles, more than
+/// 20,000 titles, a ROM larger than 64 MiB, a cover size outside 1 to 4,096, more covers or a later "from" than
+/// titles), `context` prefixed.
 [[nodiscard]] Expected<CollectionSpec> parseCollectionSpec(const nlohmann::json& value, std::string_view context);
 
 /// The collection a spec describes.

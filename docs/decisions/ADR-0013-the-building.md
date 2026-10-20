@@ -7,6 +7,10 @@
   stanza" across floors); specification §7.3, §7.4, §13.2, §14.4, §21.3 and style §5.2, §5.6 as recorded under
   "Amendments"
 - Relates to: ADR-0008 (the catalog), ADR-0004 (one decoder until I5)
+- Amended: 2026-10-20, at I4 step 2's review: §4's front cache keys gain the label quad's shape in lowest terms (only
+  for a shape other than the layer's), not the family id; the hero pictures at the label's shape keep ADR-0011 §8's
+  bounds (1,024 px on the long side, at most 1,024 x 752 pixels, so the set of 8 stays within 32 MiB), and the card
+  shows them at that shape
 
 ## Context
 
@@ -130,7 +134,13 @@ The families added in I4 are functional, and the rare formats map to the nearest
   §5's rules, then resampled once into the unchanged 256 x 188 front layer. The same holds for the generated front
   labels and the hero pictures.
   - `cartridge_home_16bit` keeps today's fit as a stated exception, so no SNES pixel moves.
-  - The front cache keys gain the family id. `kCoverPipelineVersion` is not raised, so warm caches stay warm.
+  - The front cache keys gain the label quad's shape in lowest terms (`1x1` for the jewel case), only for a shape
+    other than the layer's: a front's pixels depend on the shape alone, so two families of one shape share their
+    entries and the 16-bit cartridges' keys do not change (amended at I4 step 2's review; the family id first).
+    `kCoverPipelineVersion` is not raised, so warm caches stay warm.
+  - The hero pictures keep ADR-0011 §8's bounds whatever the shape: 1,024 px on the long side and at most the pixels
+    of the layer's shape at 1,024 px wide (1,024 x 752), so that 8 of them stay within 32 MiB. The card shows the
+    picture at its shape inside its 256 x 188 frame, never stretched.
   - Spines stay 40 x 256.
 
 ### 5. The plan: schema 2

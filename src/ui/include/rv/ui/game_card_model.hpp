@@ -36,6 +36,10 @@ inline constexpr std::string_view kCoverId = "game-card-cover";
 inline constexpr std::string_view kTextureScheme = "rv-texture:";
 inline constexpr std::string_view kCoverTexture = "game-card-cover";
 inline constexpr std::string_view kCoverSource = "rv-texture:game-card-cover";
+/// The cover's frame (game_card.rcss's .cover-frame, in dp: 160 x 118 in the compact theme): the front label's aspect,
+/// which the 16-bit cartridges' hero pictures have (I3).
+inline constexpr std::uint32_t kCoverFrameWidth = 256;
+inline constexpr std::uint32_t kCoverFrameHeight = 188;
 /// The buttons' region and the buttons, in focus order (CardButton).
 inline constexpr std::string_view kActionsId = "game-card-actions";
 inline constexpr std::string_view kPlayId = "card-play";
@@ -96,12 +100,29 @@ struct GameCardContent {
     std::uint32_t otherVersions = 0;
     /// The cover's texture is registered (the hero texture is resident): else the card shows its frame alone.
     bool cover = false;
+    /// The cover's shape, width by height in any unit: the hero picture's, its room's family's label quad (ADR-0013
+    /// §4). 0 x 0 is the frame's own shape (the 16-bit cartridges', I3's card).
+    std::uint32_t coverWidth = 0;
+    std::uint32_t coverHeight = 0;
     /// The last launch from the card did not end normally: its outcome code (game_card::kOutcomeCodes, or another code
     /// the general sentence covers); empty when nothing is to be told.
     std::string outcome;
 
     bool operator==(const GameCardContent&) const = default;
 };
+
+/// Where the cover stands in its frame (game_card::kCoverFrameWidth x kCoverFrameHeight), as fractions of the frame's
+/// width (width, left) and height (height, top): the cover at its shape's aspect, as large as the frame holds and
+/// centred, never stretched (ADR-0011 §5). The frame's own shape (and 0 x 0) fills it: {1, 1, 0, 0}.
+struct CardCoverBox {
+    double width = 1.0;
+    double height = 1.0;
+    double left = 0.0;
+    double top = 0.0;
+
+    bool operator==(const CardCoverBox&) const = default;
+};
+[[nodiscard]] CardCoverBox cardCoverBox(std::uint32_t shapeWidth, std::uint32_t shapeHeight) noexcept;
 
 /// The card's focus and what its input presses. Focus moves only with the directions; a click moves it to the button
 /// clicked.

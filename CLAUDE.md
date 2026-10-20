@@ -48,7 +48,8 @@ tools).
 
 - Without `--scene`, `--model` or `--mock-catalog` the app opens the generated room of its data directory's ES-DE
   catalog (made with `retroverse-cli --data-dir <dir> library create ...` and `import`); `--scene m0_testroom` shows
-  the test room. Fixtures for rooms: `tests/fixtures/esde/snes-room`, `snes-single`, `snes-stress`.
+  the test room; `--room-system <system>` shows another system's room (its media family). Fixtures for rooms:
+  `tests/fixtures/esde/snes-room`, `snes-single`, `snes-stress`, and `building` (I4: every kind of system).
 - Anything that may launch a game runs with `RV_LAUNCH_ALLOWLIST` naming the build's `rv_fake_emulator.exe` (Safety).
 
 ## Visual verification

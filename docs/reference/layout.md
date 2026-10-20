@@ -48,7 +48,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   JSON (`plan_json.hpp`: `writePlan`, `readPlan`, `planDigest`, `roomContentDigest`; schema 2 written, schema 1 read; a
   newer schema refused, a hand-edited plan refused; integers only: millimetres, hundredths of a degree, permille), the
   building (I4 step 1: `building.hpp`, `assets/world/building.json` and `systems.json`, `classify`, the floor layout's
-  placement functions; `lift.hpp`, the schema-1 lift; `generateBuilding` and `updateBuilding`), `WorldConfig` with the preset and `world.json`, the readers of
+  placement functions; `lift.hpp`, the schema-1 lift; `generateBuilding` and `updateBuilding`; since step 2
+  `media_family.hpp`'s label quad, cover fit and family fixtures, `withFamilyFixtures`), `WorldConfig` with the preset
+  and `world.json`, the readers of
   `assets/world` (errors name `<file>:<line>` and a JSON pointer; 1a); `selectRoom` and `title_key.hpp` (the room's
   titles, `title-key/1`, representatives by region rank, status and revision, priority; 2); `generation.hpp`
   (`generate`, `loadWorldData`), `capacity.hpp`, `seeds.hpp`, the plan's lights (3); `validation.hpp` (`validatePlan`,
@@ -121,7 +123,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   record; for I3 `esde/snes-room` (50 invented titles with generated covers and clips, damaged ones among them, G10's
   ten in `additions/`), `esde/snes-single` (one ROM, no media) and `esde/snes-stress` (2,000 generated titles, 300
   second releases), their system `snes` with the invented full name "Lumen 16 Home System", their READMEs stating the
-  counts the tests assert; `tests/fixtures/world/` the golden selections, plans and scenes), `tests/fake_emulator`
+  counts the tests assert; for I4 `esde/building` (step 2: nine systems with invented full names over the ground
+  floor and four floors, every family's covers, a custom system, an excluded one, `additions/` with a new system); `tests/fixtures/world/` the golden selections, plans and scenes), `tests/fake_emulator`
   (`rv_fake_emulator`, built with the tests or the spikes), `tests/collection_probe` (`rv_collection_probe`, built with
   the tests; its `probe_layout.hpp` shared with the smoke tests),
   `tests/input_scripts` (scripted verification runs),

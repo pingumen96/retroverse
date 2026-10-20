@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -311,4 +312,92 @@ TEST_CASE("assets/cover_fit: every failure falls back to the generated label", "
     CHECK(cover->origin == FrontOrigin::Cover);
     CHECK_FALSE(cover->coverError.has_value());
     CHECK(toString(FrontOrigin::CoverFailed) == "cover-failed");
+}
+
+TEST_CASE("assets/cover_fit: a label's shape, its key and its canvas (I4 step 2)", "[assets][cover_fit]") {
+    // ADR-0013 §4: a family's label quad; 0 x 0 is the layer's own shape (I3's fit).
+    CHECK(LabelAspect{}.isLayer());
+    CHECK(LabelAspect{}.key().empty());
+    CHECK(LabelAspect{120, 0}.isLayer());
+    CHECK(LabelAspect{120, 120}.reduced() == LabelAspect{1, 1});
+    CHECK(LabelAspect{120, 120}.key() == "1x1");
+    CHECK(LabelAspect{180, 230}.key() == "18x23");
+    CHECK(LabelAspect{123, 178}.key() == "123x178");
+    // The canvas: the label's aspect, at least the layer on both sides.
+    CHECK(labelCanvas({}, 256, 188) == CanvasSize{256, 188});
+    CHECK(labelCanvas({1, 1}, 256, 188) == CanvasSize{256, 256});
+    CHECK(labelCanvas({123, 178}, 256, 188) == CanvasSize{256, 370});
+    CHECK(labelCanvas({96, 60}, 256, 188) == CanvasSize{301, 188});
+    CHECK(labelCanvas({1, 1}, 128, 94) == CanvasSize{128, 128});
+}
+
+TEST_CASE("assets/cover_fit: a cover fitted to its label's shape, resampled once into the layer (I4 step 2)",
+          "[assets][cover_fit]") {
+    // The rules of I3's fit (never stretched, at most 8% cropped, else bands) against the label quad's shape: seen on
+    // the quad, which shows the 256 x 188 layer stretched to its own shape, the cover keeps its aspect.
+    struct Case {
+        const char* name;
+        int width;
+        int height;
+        LabelAspect label;
+        FitMode mode;
+    };
+    const Case cases[] = {
+        {"a square insert on a jewel case", 600, 600, {120, 120}, FitMode::Cropped},
+        {"a near-square insert on a jewel case", 640, 620, {120, 120}, FitMode::Cropped},
+        {"a portrait box on a jewel case", 476, 864, {120, 120}, FitMode::Banded},
+        {"a keep case's cover on a keep case", 700, 1000, {123, 178}, FitMode::Cropped},
+        {"a landscape cover on a keep case", 680, 497, {123, 178}, FitMode::Banded},
+        {"a big box's cover", 760, 1000, {180, 230}, FitMode::Cropped},
+        {"a landscape box on a 64-bit cartridge", 680, 497, {96, 60}, FitMode::Banded},
+    };
+    for (const Case& c : cases) {
+        INFO(c.name);
+        FitOptions options;
+        options.label = c.label;
+        auto fit = fitCover(makeCover(c.width, c.height, 5), 256, 188, options);
+        REQUIRE(fit.has_value());
+        CHECK(fit->mode == c.mode);
+        CHECK(fit->picture.width == 256);
+        CHECK(fit->picture.height == 188);
+        const double labelAspect = static_cast<double>(c.label.width) / c.label.height;
+        const double sourceAspect = static_cast<double>(c.width) / c.height;
+        if (fit->mode == FitMode::Cropped) {
+            // What is kept of the source has the label's aspect.
+            const bool cropsWidth = sourceAspect > labelAspect;
+            const double kept =
+                cropsWidth ? sourceAspect * (1.0 - fit->cropShare) : sourceAspect / (1.0 - fit->cropShare);
+            CHECK(std::abs(kept - labelAspect) < 1e-9);
+            CHECK(fit->cropShare <= kMaxCoverCropShare);
+            CHECK(fit->coverWidth == 256);
+            CHECK(fit->coverHeight == 188);
+        } else {
+            // The cover's place on the quad (in the label's units) keeps its aspect within a pixel's rounding.
+            const double onQuad = (fit->coverWidth / 256.0 * c.label.width) / (fit->coverHeight / 188.0 * c.label.height);
+            const double pixel = std::max(1.0 / fit->coverWidth, 1.0 / fit->coverHeight);
+            CHECK(std::abs(onQuad / sourceAspect - 1.0) <= pixel + 1e-9);
+            CHECK(fit->cropShare == 0.0);
+        }
+    }
+    // The layer's shape is I3's fit to the pixel.
+    FitOptions layer;
+    layer.label = {};
+    auto i3 = fitCover(makeCover(476, 864, 5), 256, 188);
+    auto same = fitCover(makeCover(476, 864, 5), 256, 188, layer);
+    REQUIRE(i3.has_value());
+    REQUIRE(same.has_value());
+    CHECK(i3->picture.pixels == same->picture.pixels);
+    // A square cover on a square label fills the layer, squeezed vertically: the quad undoes it.
+    FitOptions square;
+    square.label = {120, 120};
+    auto squeezed = fitCover(makeCover(600, 600, 5), 256, 188, square);
+    REQUIRE(squeezed.has_value());
+    CHECK(squeezed->cropShare == 0.0);
+    CHECK(squeezed->picture.pixels != fitCover(makeCover(600, 600, 5), 256, 188)->picture.pixels);
+    // buildCoverLayer() fits to the options' shape.
+    auto layered = buildCoverLayer(png(makeCover(476, 864, 3)), TextureFormat::Bc1Srgb, "portrait", square);
+    REQUIRE(layered.has_value());
+    CHECK(layered->mode == FitMode::Banded);
+    CHECK(layered->texture.width == 256);
+    CHECK(layered->texture.height == 188);
 }

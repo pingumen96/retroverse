@@ -1,0 +1,36 @@
+// The low display case of the media family cartridge_home_64bit (ADR-0013 §4; I4 step 2): the 16-bit case's vitrine,
+// levels, tilt, gaps and margins, its face-out slots the item's 11.6 x 7.6 x 1.8 cm. Falls back to the 16-bit case.
+{
+  "schemaVersion": 1,
+  "id": "furniture.display_case.home64.generic",
+  "assetType": "furniture",
+  "category": "display_case",
+  "role": "display",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-20",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "display_case",
+    "params": {
+      "slotSize": [0.116, 0.076, 0.018]
+    },
+    "scaleMeters": [1.2, 0.95, 0.5],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "firstSlot": "Slot_0_0"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "display_case", "glass", "game_slots", "face_out", "procedural"],
+  "fallbackPrefab": "furniture.display_case.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

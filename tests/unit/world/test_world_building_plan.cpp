@@ -275,13 +275,13 @@ TEST_CASE("world/building plan: platform tags count only when they place a syste
 }
 
 TEST_CASE("world/building plan: a stored room's recorded family and theme pack are authoritative", "[world][building]") {
-    // ADR-0013 §3, §5: the data a room was made with may change (systems.json names nes's family cartridge_home_8bit,
-    // which I4 step 2 adds); a room recorded with another family and theme pack is read and updated with its own, never
+    // ADR-0013 §3, §5: the data a room was made with may change (systems.json names nes's family cartridge_home_8bit
+    // since I4 step 2); a room recorded with another family and theme pack is read and updated with its own, never
     // refused nor kept for it, and keeps them.
     const std::filesystem::path assets = rv::test::world::assetRoot();
     const auto now = rv::world::loadWorldData(assets, name("nes"));
-    REQUIRE_FALSE(now.has_value());
-    CHECK_THAT(now.error().message, ContainsSubstring("no media family cartridge_home_8bit"));
+    REQUIRE(now.has_value());
+    CHECK(now->mediaFamily.id == "cartridge_home_8bit");
     rv::world::RoomDataRequest request;
     request.system = name("nes");
     request.mediaFamily = "cartridge_home_16bit";

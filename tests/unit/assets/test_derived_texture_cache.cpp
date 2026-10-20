@@ -403,3 +403,44 @@ TEST_CASE("assets/derived_texture_cache: workers share one cache", "[assets][tex
                   ->outcome == ServeOutcome::CacheHit);
     }
 }
+
+TEST_CASE("assets/derived_texture_cache: a label's shape names its front entries (I4 step 2)", "[assets][texture_cache]") {
+    // ADR-0013 §4: the front keys gain the label's shape, in lowest terms, but for the layer's own (the 16-bit
+    // cartridges' entries keep their names; kCoverPipelineVersion is not raised).
+    const std::string_view path = "psx/covers/Comet Courier.png";
+    const CacheKey layer = coverCacheKey(TextureClass::Front, TextureFormat::Bc1Srgb, kKind, path);
+    CHECK(coverCacheKey(TextureClass::Front, TextureFormat::Bc1Srgb, kKind, path, LabelAspect{}) == layer);
+    const CacheKey square = coverCacheKey(TextureClass::Front, TextureFormat::Bc1Srgb, kKind, path, {120, 120});
+    CHECK_FALSE(square == layer);
+    CHECK(coverCacheKey(TextureClass::Front, TextureFormat::Bc1Srgb, kKind, path, {1, 1}) == square);
+    CHECK_FALSE(coverCacheKey(TextureClass::Front, TextureFormat::Bc1Srgb, kKind, path, {123, 178}) == square);
+
+    const auto& fonts = rv::test::covers::bundledFonts();
+    const LabelFonts labelFonts{&fonts.title, &fonts.detail};
+    FrontLabelRequest request{"Comet Courier", "", "Fantasy Home System", "1994", 3};
+    const CacheKey label = frontLabelCacheKey(request, TextureFormat::Bc1Srgb, labelFonts);
+    // The layer's key is I3's: the texts, the colour and the two fonts.
+    const std::string_view texts[] = {"Comet Courier", "", "Fantasy Home System", "1994"};
+    const std::string_view shas[] = {fonts.title.sha256(), fonts.detail.sha256()};
+    CHECK(label == generatedCacheKey(TextureClass::Front, TextureFormat::Bc1Srgb, texts, paletteColour(3), shas));
+    request.label = {120, 120};
+    const CacheKey squareLabel = frontLabelCacheKey(request, TextureFormat::Bc1Srgb, labelFonts);
+    CHECK_FALSE(squareLabel == label);
+    request.label = {5, 5};
+    CHECK(frontLabelCacheKey(request, TextureFormat::Bc1Srgb, labelFonts) == squareLabel);
+
+    // serveCover() stores and finds the entry under the shape's name.
+    const Library library;
+    const fs::path source = library.writeCover(std::string(path), 2, 600, 600);
+    DerivedTextureCache cache(library.cacheRoot);
+    FitOptions options;
+    options.label = {120, 120};
+    auto served = serveCover(cache, TextureFormat::Bc1Srgb, kKind, path, source, options);
+    REQUIRE(served.has_value());
+    CHECK(served->outcome == ServeOutcome::Built);
+    CHECK(fs::exists(cache.entryPath(square)));
+    CHECK_FALSE(fs::exists(cache.entryPath(layer)));
+    auto again = serveCover(cache, TextureFormat::Bc1Srgb, kKind, path, source, options);
+    REQUIRE(again.has_value());
+    CHECK(again->outcome == ServeOutcome::CacheHit);
+}

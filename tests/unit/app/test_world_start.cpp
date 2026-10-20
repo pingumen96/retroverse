@@ -123,6 +123,17 @@ TEST_CASE("app/room_items: the room's items round trip as canonical JSON, by Gam
     changed.items[0].title = "Amber Lantern Deluxe";
     CHECK(rv::app::writeRoomItems(file, changed).value());
     CHECK(rv::app::readRoomItems(file).value() == changed);
+
+    // The system's platform tags (I4 step 2: the preview classifies a custom system by them): kept when there are any,
+    // a file without them (I3's) reads as none.
+    CHECK_FALSE(rv::app::roomItemsToJson(items).contains("platforms"));
+    RoomItems tagged = changed;
+    tagged.platforms = {"gb", "gbc"};
+    const nlohmann::json taggedJson = rv::app::roomItemsToJson(tagged);
+    CHECK(taggedJson["platforms"] == nlohmann::json::array({"gb", "gbc"}));
+    CHECK(rv::app::parseRoomItems(taggedJson, "items.json").value() == tagged);
+    CHECK(rv::app::writeRoomItems(file, tagged).value());
+    CHECK(rv::app::readRoomItems(file).value() == tagged);
 }
 
 TEST_CASE("app/room_items: a file of another shape is refused with its JSON pointer", "[app][world_start]") {
@@ -147,6 +158,10 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
     noAvailability["items"][0].erase("available");
     nlohmann::json numberTitle = good;
     numberTitle["items"][0]["title"] = 7;
+    nlohmann::json platformsObject = good;
+    platformsObject["platforms"] = nlohmann::json::object();
+    nlohmann::json platformNumber = good;
+    platformNumber["platforms"] = nlohmann::json::array({"gb", 7});
     const std::vector<Case> cases{
         {"not an object", nlohmann::json::array(), rv::ErrorCode::ParseError, "items.json:"},
         {"a newer schema", newer, rv::ErrorCode::Unsupported, "items.json:/schemaVersion"},
@@ -155,6 +170,8 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
         {"a game twice", twice, rv::ErrorCode::ParseError, "items.json:/items/1/game"},
         {"no availability", noAvailability, rv::ErrorCode::ParseError, "items.json:/items/0/available"},
         {"a title that is no string", numberTitle, rv::ErrorCode::ParseError, "items.json:/items/0/title"},
+        {"platforms that are no array", platformsObject, rv::ErrorCode::ParseError, "items.json:/platforms"},
+        {"a platform that is no string", platformNumber, rv::ErrorCode::ParseError, "items.json:/platforms/1"},
     };
     for (const Case& c : cases) {
         INFO(c.name);

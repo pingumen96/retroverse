@@ -353,7 +353,8 @@ Expected<ScenePrefabs> loadScenePrefabs(const std::filesystem::path& assetRoot, 
 }
 
 Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan, const RoomId& roomId,
-                                  const std::optional<LightingProfile>& lighting) {
+                                  const std::optional<LightingProfile>& lighting,
+                                  std::span<const std::string> platformTags) {
     const Room* room = findRoom(plan, roomId);
     if (room == nullptr) {
         return makeError(ErrorCode::NotFound, "the plan has no such room", roomId.toString());
@@ -371,8 +372,8 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
                          room->templateId);
     }
     data.roomTemplate = std::move(*roomTemplate);
-    // The platform of the room's first system (its manifest, or what systems.json gives it), with the room's recorded
-    // family and theme pack, which are authoritative (ADR-0013 §3).
+    // The platform of the room's first system (its manifest, or what systems.json gives it, by its platform tags for a
+    // system without a row), with the room's recorded family and theme pack, which are authoritative (ADR-0013 §3).
     auto building = loadBuildingData(assetRoot);
     if (!building) {
         return propagate(building.error());
@@ -382,7 +383,7 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
         return propagate(systems.error());
     }
     const catalog::SystemName system = room->sections.empty() ? roomId.system() : room->sections.front();
-    auto platform = resolvePlatform(assetRoot, system, {}, *systems, *building);
+    auto platform = resolvePlatform(assetRoot, system, platformTags, *systems, *building);
     if (!platform) {
         return propagate(platform.error());
     }
@@ -398,6 +399,8 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
         return makeError(ErrorCode::NotFound, "the media family registry has no such family", room->mediaFamily);
     }
     data.mediaFamily = *family;
+    // The template as the room's family stands it (ADR-0013 §4); the plan's fixtures name their prefabs themselves.
+    data.roomTemplate = withFamilyFixtures(std::move(data.roomTemplate), data.mediaFamily);
     auto families = assets::loadPrefabFamilies(assetRoot);
     if (!families) {
         return propagate(families.error());

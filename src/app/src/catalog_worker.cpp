@@ -445,6 +445,7 @@ private:
         CatalogSystem system;
         system.name = summary.system.name;
         system.fullName = summary.system.fullName.empty() ? summary.system.name.str() : summary.system.fullName;
+        system.platforms = summary.system.platforms;
         system.games = summary.games;
         if (!m_library) {
             system.launch = libraryUnreadable(*m_libraryError);
@@ -795,8 +796,10 @@ private:
 
     void handle(RoomJob& job) {
         std::string fullName;
+        std::vector<std::string> platforms;
         if (const auto system = m_systems.find(job.request.system.str()); system != m_systems.end()) {
             fullName = system->second.fullName;
+            platforms = system->second.platforms;
         }
         // ES-DE's settings as they are now: the media root it would use (library.json's override over them).
         const auto settings = esde::readSettings(m_profile.esdeHome);
@@ -813,6 +816,7 @@ private:
         }
         RoomSnapshotResult result =
             takeRoomSnapshot(*m_query, store.get(), mediaRoot, m_profile.id, std::move(fullName), job.request);
+        result.platformTags = std::move(platforms);
         if (result.error) {
             spdlog::warn("Room snapshot of {} failed: {}", job.request.system.str(), result.error->toString());
         } else {

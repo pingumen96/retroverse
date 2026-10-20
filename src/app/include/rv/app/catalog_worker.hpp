@@ -95,6 +95,9 @@ struct CatalogSystem {
     catalog::SystemName name;
     /// Its <fullname>, the chip's label (its name when the catalog has none).
     std::string fullName;
+    /// Its ES-DE platform tags (catalog::SystemInfo::platforms): world::classify()'s fallback for a system systems.json
+    /// does not name (a custom system's room).
+    std::vector<std::string> platforms;
     /// Available Game entries: what the chip's filter lists without a search (SqliteCatalogQuery::systems).
     std::size_t games = 0;
     /// The readiness its games share (catalog::resolveLaunch without a game), resolved when the catalog opened, and

@@ -1,7 +1,11 @@
 #include <rv/ui/game_card_screen.hpp>
 
 #include <algorithm>
+#include <array>
+#include <charconv>
+#include <cstddef>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include <RmlUi/Core/Context.h>
@@ -32,10 +36,28 @@ struct CardData {
     bool unavailable = false;
     int otherVersions = 0;
     bool cover = false;
+    /// The cover's box in its frame (cardCoverBox()) as CSS percentages: its width and height, its left and top
+    /// margins (of the frame's width, as CSS takes a margin's percentage).
+    Rml::String coverWidth = "100%";
+    Rml::String coverHeight = "100%";
+    Rml::String coverLeft = "0%";
+    Rml::String coverTop = "0%";
     Rml::String outcome;
     /// The outcome has a sentence of its own (game_card::kOutcomeCodes): else the general one.
     bool outcomeKnown = false;
 };
+
+/// `fraction` as a CSS percentage ("73.4375%"), to a ten-thousandth of a percent.
+[[nodiscard]] Rml::String percent(double fraction) {
+    std::array<char, 32> text{};
+    const auto [end, error] =
+        std::to_chars(text.data(), text.data() + text.size() - 1, fraction * 100.0, std::chars_format::fixed, 4);
+    if (error != std::errc()) {
+        return "100%";
+    }
+    *end = '%';
+    return Rml::String(text.data(), static_cast<std::size_t>(end - text.data()) + 1);
+}
 
 [[nodiscard]] bool isPointerButton(Uint32 type) noexcept {
     return type == SDL_EVENT_MOUSE_BUTTON_DOWN || type == SDL_EVENT_MOUSE_BUTTON_UP;
@@ -85,6 +107,10 @@ struct GameCardScreen::Impl {
             card.RegisterMember("unavailable", &CardData::unavailable);
             card.RegisterMember("otherVersions", &CardData::otherVersions);
             card.RegisterMember("cover", &CardData::cover);
+            card.RegisterMember("coverWidth", &CardData::coverWidth);
+            card.RegisterMember("coverHeight", &CardData::coverHeight);
+            card.RegisterMember("coverLeft", &CardData::coverLeft);
+            card.RegisterMember("coverTop", &CardData::coverTop);
             card.RegisterMember("outcome", &CardData::outcome);
             card.RegisterMember("outcomeKnown", &CardData::outcomeKnown);
         }
@@ -124,6 +150,14 @@ struct GameCardScreen::Impl {
         data.unavailable = content.unavailable;
         data.otherVersions = static_cast<int>(std::min<std::uint32_t>(content.otherVersions, 1000000));
         data.cover = content.cover;
+        // The cover at its own shape in the frame (a jewel case's square cover pillarboxed), never stretched; the
+        // frame's shape fills it as I3's card did.
+        const CardCoverBox box = cardCoverBox(content.coverWidth, content.coverHeight);
+        data.coverWidth = percent(box.width);
+        data.coverHeight = percent(box.height);
+        data.coverLeft = percent(box.left);
+        data.coverTop = percent(box.top * static_cast<double>(game_card::kCoverFrameHeight) /
+                                static_cast<double>(game_card::kCoverFrameWidth));
         data.outcome = Rml::String(content.outcome);
         data.outcomeKnown = std::find(game_card::kOutcomeCodes.begin(), game_card::kOutcomeCodes.end(),
                                       content.outcome) != game_card::kOutcomeCodes.end();

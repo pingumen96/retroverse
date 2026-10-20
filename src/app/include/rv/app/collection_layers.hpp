@@ -5,7 +5,8 @@
 // One collection item's two texture layers as the room's loader makes them on the worker pool (I3 step 10b; ADR-0011
 // §5 to §7, I3 step 5's pipeline): the front from the cover through the derived-texture cache (assets::serveCover: a
 // hit served without reading the cover, a cover that cannot be read served from its entry as it was), else the
-// generated front label (no cover, or one that is no usable image); the spine always generated from the title on the
+// generated front label (no cover, or one that is no usable image), both made for the item's label shape (I4 step 2,
+// ADR-0013 §4: CoverItem::label, part of their cache keys); the spine always generated from the title on the
 // cover's dominant colour (the palette's colour for the placement's seed without a cover). The layers come out as
 // gl::LayerImage of the run's array format, ready for gl::CollectionArrays::submit on the main thread. The user's paths
 // are logged at debug level only (the errors carry them).
@@ -43,6 +44,9 @@ struct CoverItem {
     /// Its layers' keys in the collection's arrays (world::CollectionItem::frontLayerKey, spineLayerKey).
     std::string frontKey;
     std::string spineKey;
+    /// The shape of its room's family's label quad (world::MediaFamily::coverAspect(), ADR-0013 §4): its cover, its
+    /// generated label and its hero picture are made for it; the layer's own shape (I3's fit) for the 16-bit family.
+    assets::LabelAspect label;
 
     bool operator==(const CoverItem&) const = default;
 };

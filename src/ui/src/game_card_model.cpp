@@ -39,6 +39,26 @@ std::string_view elementIdOf(CardButton button) noexcept {
     return game_card::kPlayId;
 }
 
+CardCoverBox cardCoverBox(std::uint32_t shapeWidth, std::uint32_t shapeHeight) noexcept {
+    CardCoverBox box;
+    // The shape against the frame's, cross-multiplied: exact for the frame's own shape.
+    const std::uint64_t across = static_cast<std::uint64_t>(shapeWidth) * game_card::kCoverFrameHeight;
+    const std::uint64_t down = static_cast<std::uint64_t>(shapeHeight) * game_card::kCoverFrameWidth;
+    if (shapeWidth == 0 || shapeHeight == 0 || across == down) {
+        return box;
+    }
+    if (across < down) {
+        // Narrower than the frame: its whole height, bands of the frame left and right.
+        box.width = static_cast<double>(across) / static_cast<double>(down);
+        box.left = (1.0 - box.width) / 2.0;
+    } else {
+        // Wider: its whole width, bands above and below.
+        box.height = static_cast<double>(down) / static_cast<double>(across);
+        box.top = (1.0 - box.height) / 2.0;
+    }
+    return box;
+}
+
 CardButton stepFocus(CardButton from, NavDirection direction) noexcept {
     // The grid, row-major: Play (0, 0), Media (1, 0), Info (0, 1), Back (1, 1).
     const auto index = static_cast<int>(from);

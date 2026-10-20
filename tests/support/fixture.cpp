@@ -415,10 +415,15 @@ Status generate(const std::filesystem::path& manifest, const std::filesystem::pa
         const CollectionGame* previous = nullptr;
         std::size_t previousCover = 0; // the job of `previous`'s cover
         for (const CollectionGame& game : collection.games) {
+            if (game.titleIndex < spec->from) {
+                continue; // listed in the gamelist, its files another collection's (an overlay's base)
+            }
             Status done = add(spec->romFolder + "/" + game.stem + spec->romExtension,
                               FileJob::Payload{game.romSeed, static_cast<std::size_t>(spec->romSize)});
             const std::string cover = spec->mediaFolder + "/covers/" + game.stem + game.coverExtension;
-            if (done && previous != nullptr && previous->titleIndex == game.titleIndex) {
+            if (!game.hasCover) {
+                // No media at all.
+            } else if (done && previous != nullptr && previous->titleIndex == game.titleIndex) {
                 // The second release of a title shows the same picture: encoded once, written twice.
                 auto relative = claim(nlohmann::json(cover));
                 if (relative) {

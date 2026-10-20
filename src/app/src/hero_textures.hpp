@@ -1,13 +1,14 @@
 #pragma once
 
 // The hero textures (I3 step 12; ADR-0011 §8): the focused, pulled-out or inspected item's cover at its source size up
-// to 1,024 px (app::heroPictureSize: the front label's aspect, the cover fitted without stretching), RGBA8 sRGB with
-// mips, a gl::Texture2D recorded under GpuMemoryKind::HeroTextures, in a least-recently-used set of 8 (app::HeroLru: at
-// most about 32 MiB; the one shown is never evicted). Loaded on demand on the worker pool (read with
-// core::readFileShared, never written, never cached on disk), at a priority above the covers' layers, and uploaded on
-// the main thread, one a round. While the media root is unknown nothing is asked (the item keeps its layer); a cover
-// that cannot be read or decoded is not asked again. Paused (no job, no upload) while a launched game runs. The card
-// (I3 step 14a) and the media viewer (14b) take their cover from here. Main thread only, but for its jobs.
+// to 1,024 px on the long side and 1,024 x 752 pixels (app::heroPictureSize: the front label's aspect, the cover
+// fitted without stretching), RGBA8 sRGB with mips, a gl::Texture2D recorded under GpuMemoryKind::HeroTextures, in a
+// least-recently-used set of 8 (app::HeroLru: at most about 32 MiB; the one shown is never evicted). Loaded on demand
+// on the worker pool (read with core::readFileShared, never written, never cached on disk), at a priority above the
+// covers' layers, and uploaded on the main thread, one a round. While the media root is unknown nothing is asked (the
+// item keeps its layer); a cover that cannot be read or decoded is not asked again. Paused (no job, no upload) while a
+// launched game runs. The card (I3 step 14a) and the media viewer (14b) take their cover from here. Main thread only,
+// but for its jobs.
 
 #include <cstddef>
 #include <cstdint>

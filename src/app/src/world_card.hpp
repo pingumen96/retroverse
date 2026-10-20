@@ -16,6 +16,7 @@
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_interaction.hpp>
+#include <rv/assets/cover_fit.hpp>
 #include <rv/input/action_state.hpp>
 #include <rv/ui/catalog_source.hpp>
 #include <rv/ui/game_card_model.hpp>
@@ -43,10 +44,13 @@ public:
                                                   const input::ActionState* actions, ProductUi& product,
                                                   std::uint64_t frame);
     /// After it: the card's content (Inspect of `item`) or none, given to the product UI with its cover; `hero` the
-    /// item's resident hero texture (null: none yet), `otherVersions` the plan's other versions of its title. What the
-    /// interaction did is recorded: its result's Vedi media and Informazioni, a launch (Inspect left for Launching).
+    /// item's resident hero texture (null: none yet) and `coverShape` its shape (the room's family's label, ADR-0013
+    /// §4: the card shows it at that aspect, never stretched), `otherVersions` the plan's other versions of its title.
+    /// What the interaction did is recorded: its result's Vedi media and Informazioni, a launch (Inspect left for
+    /// Launching).
     void update(const WorldInteraction& interaction, const InteractionResult& result, const world::CollectionItem* item,
-                const gl::Texture2D* hero, std::uint32_t otherVersions, ProductUi& product, std::uint64_t frame);
+                const gl::Texture2D* hero, const assets::LabelAspect& coverShape, std::uint32_t otherVersions,
+                ProductUi& product, std::uint64_t frame);
     [[nodiscard]] const ui::GameCardModel& model() const noexcept { return m_model; }
     /// The run report's record (bound once a room's collection showed).
     void bind() noexcept { m_record.bound = true; }

@@ -1,0 +1,61 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe, the fake emulator's copy, the discs of the two
+// multi-disc games with their covers, the kodi shortcuts, and a generated collection per system
+// (tests/support/fixture_collection.hpp): ROM payloads, gamelist, covers and a few clips. Under additions/ what a later
+// import finds (Fixture::applyOverlay("additions")): a new system and more titles of three.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 1000},
+        {"path": "Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe", "copyOf": "rv_fake_emulator.exe"},
+        {"path": "roms/psx/Twin Harbor Saga (USA) (Disc 1).chd", "size": 8192, "seed": 3901,
+         "mtime": "1999-03-01T12:00:00Z"},
+        {"path": "roms/psx/Twin Harbor Saga (USA) (Disc 2).chd", "size": 8192, "seed": 3902,
+         "mtime": "1999-03-01T12:00:00Z"},
+        {"path": "media/psx/covers/Twin Harbor Saga (USA).png",
+         "cover": {"title": "Twin Harbor Saga", "seed": 3901, "width": 476, "height": 680}},
+        {"path": "roms/psx/Starfall Requiem (Europe) (Disc 1).chd", "size": 8192, "seed": 3911,
+         "mtime": "1998-11-20T12:00:00Z"},
+        {"path": "roms/psx/Starfall Requiem (Europe) (Disc 2).chd", "size": 8192, "seed": 3912,
+         "mtime": "1998-11-20T12:00:00Z"},
+        {"path": "roms/psx/Starfall Requiem (Europe) (Disc 3).chd", "size": 8192, "seed": 3913,
+         "mtime": "1998-11-20T12:00:00Z"},
+        {"path": "media/psx/covers/Starfall Requiem (Europe).png",
+         "cover": {"title": "Starfall Requiem", "seed": 3911, "width": 600, "height": 600}},
+        {"path": "roms/kodi/Media Library.lnk", "size": 512, "seed": 9001},
+        {"path": "roms/kodi/Music Player.lnk", "size": 512, "seed": 9002}
+    ],
+    "collections": [
+        {"seed": 3100, "titles": 25, "duplicates": 0, "videos": 1, "covers": 15, "coverSizes": [[476, 680]],
+         "romFolder": "roms/mame", "romExtension": ".zip", "romSize": 2048,
+         "gamelist": "ES-DE/gamelists/mame/gamelist.xml", "mediaFolder": "media/mame"},
+        {"seed": 3200, "titles": 40, "duplicates": 2, "videos": 2,
+         "romFolder": "roms/snes", "romExtension": ".sfc", "romSize": 4096,
+         "gamelist": "ES-DE/gamelists/snes/gamelist.xml", "mediaFolder": "media/snes"},
+        {"seed": 3300, "titles": 38, "duplicates": 0, "videos": 2, "coverSizes": [[600, 600], [600, 600], [476, 680]],
+         "romFolder": "roms/psx", "romExtension": ".chd", "romSize": 4096,
+         "gamelist": "ES-DE/gamelists/psx/gamelist.xml", "mediaFolder": "media/psx"},
+        {"seed": 3400, "titles": 30, "duplicates": 2, "videos": 1, "coverSizes": [[600, 610], [680, 497]],
+         "romFolder": "roms/gb", "romExtension": ".gb", "romSize": 2048,
+         "gamelist": "ES-DE/gamelists/gb/gamelist.xml", "mediaFolder": "media/gb"},
+        {"seed": 3500, "titles": 8, "duplicates": 0, "videos": 0, "coverSizes": [[600, 600]],
+         "romFolder": "roms/pokemini", "romExtension": ".min", "romSize": 1024,
+         "gamelist": "ES-DE/gamelists/pokemini/gamelist.xml", "mediaFolder": "media/pokemini"},
+        {"seed": 3600, "titles": 20, "duplicates": 0, "videos": 0, "covers": 0,
+         "romFolder": "roms/amiga", "romExtension": ".adf", "romSize": 4096,
+         "gamelist": "ES-DE/gamelists/amiga/gamelist.xml", "mediaFolder": "media/amiga"},
+        {"seed": 3700, "titles": 6, "duplicates": 0, "videos": 0,
+         "romFolder": "roms/pocketlab", "romExtension": ".gb", "romSize": 2048,
+         "gamelist": "ES-DE/gamelists/pocketlab/gamelist.xml", "mediaFolder": "media/pocketlab"},
+        {"seed": 3800, "titles": 12, "duplicates": 0, "videos": 0,
+         "romFolder": "additions/roms/megadrive", "romExtension": ".md", "romSize": 4096,
+         "gamelist": "additions/ES-DE/gamelists/megadrive/gamelist.xml", "mediaFolder": "additions/media/megadrive"},
+        {"seed": 3200, "titles": 45, "duplicates": 2, "videos": 2, "from": 40,
+         "romFolder": "additions/roms/snes", "romExtension": ".sfc", "romSize": 4096,
+         "gamelist": "additions/ES-DE/gamelists/snes/gamelist.xml", "mediaFolder": "additions/media/snes"},
+        {"seed": 3300, "titles": 43, "duplicates": 0, "videos": 2, "coverSizes": [[600, 600], [600, 600], [476, 680]],
+         "from": 38, "romFolder": "additions/roms/psx", "romExtension": ".chd", "romSize": 4096,
+         "gamelist": "additions/ES-DE/gamelists/psx/gamelist.xml", "mediaFolder": "additions/media/psx"},
+        {"seed": 3500, "titles": 32, "duplicates": 0, "videos": 0, "coverSizes": [[600, 600]], "from": 8,
+         "romFolder": "additions/roms/pokemini", "romExtension": ".min", "romSize": 1024,
+         "gamelist": "additions/ES-DE/gamelists/pokemini/gamelist.xml", "mediaFolder": "additions/media/pokemini"}
+    ]
+}

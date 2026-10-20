@@ -165,13 +165,14 @@ Expected<CollectionSpec> parseCollectionSpec(const nlohmann::json& value, std::s
     if (!value.is_object()) {
         return fail("a collection must be an object");
     }
-    static constexpr std::array<std::string_view, 9> kKeys{
-        "seed", "titles", "duplicates", "videos", "romFolder", "romExtension", "romSize", "gamelist", "mediaFolder"};
+    static constexpr std::array<std::string_view, 12> kKeys{
+        "seed",     "titles",      "duplicates", "videos", "romFolder", "romExtension",
+        "romSize",  "gamelist",    "mediaFolder", "coverSizes", "covers", "from"};
     for (const auto& [key, item] : value.items()) {
         if (std::find(kKeys.begin(), kKeys.end(), key) == kKeys.end()) {
             return fail("unknown key \"" + key +
                         "\" of a collection (seed, titles, duplicates, videos, romFolder, romExtension, romSize, "
-                        "gamelist, mediaFolder)");
+                        "gamelist, mediaFolder, coverSizes, covers, from)");
         }
     }
     std::uint64_t seed = 0;
@@ -214,6 +215,40 @@ Expected<CollectionSpec> parseCollectionSpec(const nlohmann::json& value, std::s
     if (romSize > kMaxRomBytes) {
         return fail("\"romSize\" must be at most 64 MiB");
     }
+    if (value.contains("coverSizes")) {
+        const nlohmann::json& sizes = value.at("coverSizes");
+        if (!sizes.is_array() || sizes.empty()) {
+            return fail("\"coverSizes\" must be a non-empty array of [width, height]");
+        }
+        for (const nlohmann::json& size : sizes) {
+            const bool valid = size.is_array() && size.size() == 2 && size[0].is_number_unsigned() &&
+                               size[1].is_number_unsigned() && size[0].get<std::uint64_t>() >= 1 &&
+                               size[0].get<std::uint64_t>() <= 4096 && size[1].get<std::uint64_t>() >= 1 &&
+                               size[1].get<std::uint64_t>() <= 4096;
+            if (!valid) {
+                return fail("\"coverSizes\" must be a non-empty array of [width, height], each 1 to 4096");
+            }
+            spec.coverSizes.emplace_back(size[0].get<int>(), size[1].get<int>());
+        }
+    }
+    for (const auto& [key, target] : {std::pair{"covers", static_cast<std::size_t*>(nullptr)},
+                                      std::pair{"from", &spec.from}}) {
+        if (!value.contains(key)) {
+            continue;
+        }
+        auto number = unsignedKey(value, key, context);
+        if (!number) {
+            return propagate(number.error());
+        }
+        if (*number > titles) {
+            return fail(fmt::format("\"{}\" must be at most \"titles\"", key));
+        }
+        if (target != nullptr) {
+            *target = static_cast<std::size_t>(*number);
+        } else {
+            spec.covers = static_cast<std::size_t>(*number);
+        }
+    }
     if (!spec.romExtension.starts_with('.') || spec.romExtension.find_first_of("/\\") != std::string::npos) {
         return fail("\"romExtension\" must be an extension such as \".sfc\"");
     }
@@ -248,9 +283,14 @@ GeneratedCollection generateCollection(const CollectionSpec& spec) {
             cover.format = PictureFormat::Jpeg;
             coverExtension = ".jpg";
         }
-        if (index % 50 == 11) {
+        if (!spec.coverSizes.empty()) {
+            const auto& [width, height] = spec.coverSizes[index % spec.coverSizes.size()];
+            cover.width = width;
+            cover.height = height;
+        } else if (index % 50 == 11) {
             std::swap(cover.width, cover.height);
         }
+        const bool hasCover = !spec.covers || index < *spec.covers;
 
         const auto addRelease = [&](std::string tags, bool representative) {
             CollectionGame game;
@@ -262,10 +302,11 @@ GeneratedCollection generateCollection(const CollectionSpec& spec) {
             game.romSeed = spec.seed * 1'000'003u + collection.games.size();
             game.cover = cover;
             game.coverExtension = coverExtension;
+            game.hasCover = hasCover;
             if (representative) {
                 game.favorite = index % 25 == 0;
                 game.playCount = random.below(4) == 0 ? static_cast<std::uint32_t>(random.between(1, 60)) : 0u;
-                game.hasVideo = index < spec.videos;
+                game.hasVideo = hasCover && index < spec.videos;
                 game.video.spec.width = 320;
                 game.video.spec.height = 240;
                 game.video.spec.seed = cover.seed;

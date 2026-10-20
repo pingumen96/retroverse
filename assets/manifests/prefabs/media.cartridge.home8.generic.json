@@ -1,0 +1,40 @@
+// The 8-bit home cartridge (generations 2 and 3) (media family cartridge_home_8bit, ADR-0013 §4; I4 step 2), 12 x 13.3
+// x 2 cm: the 'cartridge' prefab at the family's size, its front label (the cover, fitted to the 100 x 113 mm label
+// quad) and its spine label on its top face, shown when it stands spine-out in a 2 x 12 x 13.3 cm slot. Functional, of
+// no real model.
+{
+  "schemaVersion": 1,
+  "id": "media.cartridge.home8.generic",
+  "assetType": "physical_media",
+  "category": "cartridge",
+  "role": "collection_item",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-20",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cartridge",
+    "params": {
+      "size": [0.12, 0.133, 0.02], "chamfer": 0.002, "labelMargin": [0.01, 0.01], "labelInset": 0.001,
+      "gripRidges": true, "spineLabel": true, "spineLabelSize": [0.0135, 0.0864]
+    },
+    "scaleMeters": [0.12, 0.133, 0.02],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "label": "Label",
+      "spine": "Spine"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["media", "cartridge", "8bit", "home_console", "procedural"],
+  "fallbackPrefab": "media.cartridge.home16.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

@@ -59,16 +59,19 @@ struct CacheKey {
 };
 
 /// A cover's key: `mediaKind` as the catalog names it ("covers"), `mediaRelativePath` its path relative to the media
-/// root as the catalog derives it ("snes/covers/Game (USA).png", '/' between the elements).
+/// root as the catalog derives it ("snes/covers/Game (USA).png", '/' between the elements), and the label's shape the
+/// cover is fitted to (ADR-0013 §4: one more element, "label=<w>x<h>" in lowest terms, only for a shape other than the
+/// layer's, so that the 16-bit cartridges' entries keep their names and a warm cache stays warm).
 [[nodiscard]] CacheKey coverCacheKey(TextureClass textureClass, TextureFormat format, std::string_view mediaKind,
-                                     std::string_view mediaRelativePath);
+                                     std::string_view mediaRelativePath, const LabelAspect& label = {});
 
 /// A generated layer's key from its texts, base colour and fonts.
 [[nodiscard]] CacheKey generatedCacheKey(TextureClass textureClass, TextureFormat format,
                                          std::span<const std::string_view> texts, Rgb8 colour,
                                          std::span<const std::string_view> fontSha256s);
 
-/// The keys of a spine and a generated front label: every input that changes their pixels.
+/// The keys of a spine and a generated front label: every input that changes their pixels (the label's shape as a
+/// last element "label=<w>x<h>" for a shape other than the layer's).
 [[nodiscard]] CacheKey spineCacheKey(const SpineRequest& request, TextureFormat format, const LabelFonts& fonts);
 [[nodiscard]] CacheKey frontLabelCacheKey(const FrontLabelRequest& request, TextureFormat format,
                                           const LabelFonts& fonts);
@@ -165,7 +168,8 @@ struct ServedLayer {
 
 /// A cover's front layer, ADR-0011 §6 and §7: the source opened for reading (full sharing) and its size and time
 /// compared with the entry's; a hit is served without reading the file; else the file is read, decoded and fitted
-/// (buildCoverLayer()), stamped, stored and served. When the source cannot be opened (NotFound, Unavailable, Conflict,
+/// (buildCoverLayer(), to FitOptions::label's shape, which names the entry too), stamped, stored and served. When the
+/// source cannot be opened (NotFound, Unavailable, Conflict,
 /// IoError) a valid entry is served as it is. Errors: the source's when there is no entry to serve, and those of
 /// buildCoverLayer() for a file that is not a usable image (the caller then shows the generated label).
 /// `mediaRelativePath` goes into the key; `sourcePath` is the file itself (logged at debug level only).

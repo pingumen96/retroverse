@@ -109,14 +109,15 @@ void noPlan(WorldBuild& build, std::string_view notice, std::string reason) {
 using DescribeCover = std::function<bool(const world::CollectionItem& item, CoverItem& cover)>;
 
 /// The scene, the layout (with `titles`) and the cover requests (`describe`) of the plan in `build` (ADR-0011 §1), and
-/// the prefabs that fell back.
+/// the prefabs that fell back; `platformTags` the room's system's ES-DE platform tags (its sign and plastics for a
+/// system systems.json does not name).
 Status buildScene(const WorldPaths& paths, WorldBuild& build, std::span<const world::CollectionTitle> titles,
-                  const DescribeCover& describe) {
+                  const DescribeCover& describe, std::span<const std::string> platformTags) {
     const world::WorldPlan& plan = *build.plan;
     const Clock::time_point sceneStart = Clock::now();
     // The lighting profile world.json names (I3 step 16): how the room is drawn, never what the plan holds.
     auto data = world::loadSceneData(paths.assetRoot, plan, build.room,
-                                     world::roomLightingProfile(paths.assetRoot, paths.configDir));
+                                     world::roomLightingProfile(paths.assetRoot, paths.configDir), platformTags);
     if (!data) {
         return propagate(data.error());
     }
@@ -167,6 +168,8 @@ Status buildScene(const WorldPaths& paths, WorldBuild& build, std::span<const wo
         }
         cover.frontKey = item.frontLayerKey;
         cover.spineKey = item.spineLayerKey;
+        // The room's family's label shape (ADR-0013 §4): the 16-bit cartridges keep I3's fit.
+        cover.label = data->mediaFamily.coverAspect();
         if (describe(item, cover)) {
             build.covers.push_back(std::move(cover));
         }
@@ -232,9 +235,16 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
             noPlan(build, world_notice::kFailed, "the world's data: " + error.message);
         }
     };
+    // The snapshot's system's platform tags (the catalog's, as the CLI takes them): a system systems.json does not name
+    // is classified by them, here as there (ADR-0013 §2).
+    const auto tagsOf = [&](const catalog::SystemName& system) {
+        return system == snapshot.system ? std::span<const std::string>(snapshot.platformTags)
+                                         : std::span<const std::string>();
+    };
     if (stored) {
         for (const world::Room& room : stored->plan.rooms) {
-            auto data = world::loadRoomData(input.paths.assetRoot, room);
+            auto data = world::loadRoomData(input.paths.assetRoot, room,
+                                            tagsOf(room.sections.empty() ? room.id.system() : room.sections.front()));
             if (!data) {
                 noData(data.error());
                 return;
@@ -242,7 +252,10 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
             rooms.push_back(std::move(*data));
         }
     } else {
-        auto data = world::loadWorldData(input.paths.assetRoot, snapshot.system);
+        world::RoomDataRequest request;
+        request.system = snapshot.system;
+        request.platformTags = snapshot.platformTags;
+        auto data = world::loadWorldData(input.paths.assetRoot, request);
         if (!data) {
             noData(data.error());
             return;
@@ -295,6 +308,7 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
         update.previous = stored->plan;
         update.previousDigest = stored->digest;
         update.aliases = snapshot.aliases;
+        update.platformTags[snapshot.system] = snapshot.platformTags;
         result = world::updateBuilding(update, *building, *systems, rooms);
     } else {
         world::BuildingInput generation;
@@ -302,6 +316,7 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
         generation.selections = {std::move(*selection)};
         generation.config = config->config;
         generation.overrides = std::move(overrides);
+        generation.platformTags[snapshot.system] = snapshot.platformTags;
         result = world::generateBuilding(generation, *building, *systems, rooms);
     }
     build.planMs = millisecondsSince(planStart);
@@ -463,7 +478,7 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
                 cover.coverPath = coverPathOf(snapshot.mediaPaths, item.game);
                 return true;
             };
-            if (Status scene = buildScene(input.paths, build, titles, describe); !scene) {
+            if (Status scene = buildScene(input.paths, build, titles, describe, snapshot.platformTags); !scene) {
                 spdlog::error("World: the room's scene cannot be made: {}", scene.error().toString());
                 build.scene.reset();
                 build.sceneData.reset();
@@ -475,7 +490,9 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
                 // I3 step 10c: the hero CRT's games, and the room's items for the next start's preview.
                 build.screenGames = roomScreenGames(*build.plan, *build.layout, snapshot);
                 const std::filesystem::path items = roomItemsFile(input.paths.cacheDir, input.library, snapshot.system);
-                if (auto written = writeRoomItems(items, roomItemsOf(build.covers, *build.layout))) {
+                RoomItems kept = roomItemsOf(build.covers, *build.layout);
+                kept.platforms = snapshot.platformTags;
+                if (auto written = writeRoomItems(items, kept)) {
                     build.itemsWritten = *written;
                 } else {
                     build.itemsError = written.error();
@@ -524,7 +541,7 @@ WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& libra
             cover.coverPath = text->coverPath;
             return true;
         };
-        if (Status scene = buildScene(paths, build, titles, describe); !scene) {
+        if (Status scene = buildScene(paths, build, titles, describe, items.platforms); !scene) {
             spdlog::error("World: the stored plan's room cannot be shown before the snapshot: {}",
                           scene.error().toString());
             build.scene.reset();

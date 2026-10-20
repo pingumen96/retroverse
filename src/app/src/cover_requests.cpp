@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <utility>
 
 #include <glm/geometric.hpp>
@@ -305,24 +306,44 @@ std::size_t CoverSchedule::inViewPending() const noexcept {
 
 // --- Hero pictures ---------------------------------------------------------------------------------------------------
 
-glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide) noexcept {
+glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide, const assets::LabelAspect& label) noexcept {
     const assets::LayerSize front = assets::layerSize(assets::TextureClass::Front, assets::TextureFormat::Bc1Srgb);
-    const double aspect = static_cast<double>(front.width) / static_cast<double>(front.height);
+    const double aspect = label.isLayer() ? static_cast<double>(front.width) / static_cast<double>(front.height)
+                                          : static_cast<double>(label.width) / static_cast<double>(label.height);
     const int cap = std::max(16, maxSide);
+    // ADR-0011 §8's bounds whatever the label's shape: the long side at most `cap`, and at most the pixels of the
+    // layer's shape at `cap` wide (1,024 x 752), so that the set of 8 stays within its 32 MiB. The layer's own shape
+    // meets both at `cap` wide, as in I3.
+    const auto capHeight = static_cast<std::int64_t>(
+        std::lround(static_cast<double>(cap) * static_cast<double>(front.height) / static_cast<double>(front.width)));
+    const std::int64_t capArea = static_cast<std::int64_t>(cap) * capHeight;
+    const double widest = std::min({static_cast<double>(cap), static_cast<double>(cap) * aspect,
+                                    std::sqrt(static_cast<double>(capArea) * aspect)});
+    const int widestWidth = std::max(16, static_cast<int>(std::floor(widest + 1e-6)));
     // As wide as the cover needs to keep its pixels: its width, or its height at the label's aspect.
     const double wanted = std::max(static_cast<double>(std::max(1, sourceWidth)),
                                    static_cast<double>(std::max(1, sourceHeight)) * aspect);
-    const int width = std::clamp(static_cast<int>(std::lround(wanted)), 16, cap);
-    const int height = std::max(12, static_cast<int>(std::lround(width / aspect)));
+    int width = std::clamp(static_cast<int>(std::lround(wanted)), 16, widestWidth);
+    const auto heightOf = [aspect](int w) {
+        return std::max(12, static_cast<int>(std::lround(w / aspect)));
+    };
+    int height = heightOf(width);
+    // The height's rounding may take a pixel row past the area: one column less then.
+    while (width > 16 && static_cast<std::int64_t>(width) * height > capArea) {
+        --width;
+        height = heightOf(width);
+    }
     return {width, height};
 }
 
-Expected<assets::ImageData> makeHeroPicture(std::span<const std::byte> bytes, std::string_view context, int maxSide) {
+Expected<assets::ImageData> makeHeroPicture(std::span<const std::byte> bytes, std::string_view context, int maxSide,
+                                            const assets::LabelAspect& label) {
     auto image = assets::decodeImage(bytes, 0, context);
     if (!image) {
         return propagate(image.error());
     }
-    const glm::ivec2 size = heroPictureSize(image->width, image->height, maxSide);
+    // At the label's shape the picture is fitted to its own size: the quad shows it unstretched.
+    const glm::ivec2 size = heroPictureSize(image->width, image->height, maxSide, label);
     auto fitted = assets::fitCover(*image, size.x, size.y);
     if (!fitted) {
         return propagate(fitted.error());

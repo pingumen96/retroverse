@@ -63,7 +63,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `test_world_live_update.cpp`, `[world_live]`), its covers (`gpu.covers: ...`), hover, pull-out and Focus (`gpu.world
   focus: ...`), inspection (`gpu.world inspect: ...`), the card (`gpu.world card: ...`), the media viewer and
   Informazioni (`gpu.media viewer: ...`), launching from the room and "Mostra nella stanza" (`gpu.world launch: ...`),
-  the look's probes (`gpu.world look: ...`) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see
+  the look's probes (`gpu.world look: ...`), the media families' rooms of the `esde/building` fixture through
+  `--room-system` (`gpu.world families: ...`, I4 step 2) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see
   "Visual verification"); the room's test files repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run
   by hand in Release, `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its
   covers cold and warm, the animations' frame budget and the benchmark path (`[benchmark]`,
@@ -126,7 +127,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   "[bench]"` (informative unless the machine is quiet); so are I3's budgets (the room query, generation, validation,
   the update, picking, the plan's scene, `[bench][covers]`, the static groups' planning, `snes-stress` materialized).
   `rv_tests.exe "[label-preview]"` writes sample spines, labels and fitted covers to `build/<preset>/label-preview` for
-  a visual review. Golden files are compared byte for byte and rewritten only with `RV_UPDATE_GOLDEN=1` (the test then
+  a visual review (since I4 step 2 also `shape_<family>_*.png`: covers and generated labels made for a jewel case's,
+  a keep case's and a big box's label quad, the stored layer beside the same layer stretched back to its quad). Golden files are compared byte for byte and rewritten only with `RV_UPDATE_GOLDEN=1` (the test then
   fails, so a rewrite never passes unnoticed): selections in `tests/fixtures/world/selection`, plans and update
   sequences in `tests/fixtures/world/golden`, the plans' scenes and collections in `tests/fixtures/world/scene`;
   `RV_WORLD_SCENE_OUT=<folder>` makes `rv_tests "cli/worldplan show --scene: the snes-room*"` leave the `snes-room`
