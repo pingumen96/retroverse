@@ -35,7 +35,7 @@ Every system runs the fake emulator (`%EMULATOR_FAKE-EMULATOR% -- %ROM%`, found 
 | `gb` | Pocket Lumen | gb | `.gb` | handheld | cartridge_handheld | handheld cartridges: 30 titles, 2 second releases |
 | `pokemini` | Pico Pocket | pokemini | `.min` | handheld | cartridge_handheld | a small system: 8 titles (under 30; `additions/` takes it past) |
 | `pocketlab` | Pocket Lab Homebrew | gb | `.gb` | handheld | cartridge_handheld | a custom system (`ES-DE/custom_systems`) with a name systems.json does not know: gb's row by its platform tag |
-| `amiga` | Workbench Home Computer | amiga | `.adf` | computer | big_box | no media at all: every game placed with a generated label |
+| `amiga` | Lumen Desk Computer | amiga | `.adf` | computer | big_box | no media at all: every game placed with a generated label |
 | `kodi` | Media Center Shortcuts | pcwindows | `.lnk` | none | none | excluded: 2 shortcuts, no gamelist, no room |
 
 ## The collections (`files.json`)
@@ -78,7 +78,7 @@ The library snapshot (entries, games, disc members; games with a cover; clips):
 | snes | 42, 42; 42 covers (41 landscape, 1 portrait), 2 clips | 47, 47; 47 covers |
 | megadrive | none (no folder) | 12, 12; 12 covers |
 | psx | 45 entries, 40 games, 5 disc members (2 groups); 40 covers (27 square, 13 portrait), 2 clips | 50, 45, 5; 45 covers |
-| gb | 32, 32; 32 covers (16 square-ish 600 x 610, 16 landscape), 1 clip | the same |
+| gb | 32, 32; 32 covers (16 portrait 600 x 610, 16 landscape), 1 clip | the same |
 | pokemini | 8, 8; 8 covers (square) | 32, 32; 32 covers |
 | pocketlab | 6, 6; 6 covers | the same |
 | amiga | 20, 20; no media | the same |

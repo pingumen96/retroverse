@@ -58,7 +58,7 @@
     </system>
     <system>
         <name>amiga</name>
-        <fullname>Workbench Home Computer</fullname>
+        <fullname>Lumen Desk Computer</fullname>
         <path>%ROMPATH%\amiga</path>
         <extension>.adf .ADF .zip .ZIP</extension>
         <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>

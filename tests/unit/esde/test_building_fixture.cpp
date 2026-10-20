@@ -103,7 +103,7 @@ TEST_CASE("esde/building_fixture: the building's systems, games and media", "[es
         platforms[system.name.str()] = system.platforms;
     }
     // ES-DE's systems with invented full names, the custom one with gb's platform tag; megadrive's folder is not there.
-    CHECK(fullNames == std::map<std::string, std::string>{{"amiga", "Workbench Home Computer"},
+    CHECK(fullNames == std::map<std::string, std::string>{{"amiga", "Lumen Desk Computer"},
                                                           {"gb", "Pocket Lumen"},
                                                           {"kodi", "Media Center Shortcuts"},
                                                           {"mame", "Arcade Board Library"},

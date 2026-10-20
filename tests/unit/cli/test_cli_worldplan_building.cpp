@@ -376,6 +376,17 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         }
         CHECK(placed == expected[i].placed);
     }
+    // The arcade sets without a cover: unplaced, no-cover (the room places only the covered ones).
+    const rv::world::RoomId mame = *rv::world::RoomId::parse("room:mame");
+    std::size_t noCover = 0;
+    std::size_t otherwise = 0;
+    for (const rv::world::UnplacedGame& unplaced : plan->unplaced) {
+        if (unplaced.room == mame) {
+            (unplaced.reason == rv::world::UnplacedReason::NoCover ? noCover : otherwise) += 1;
+        }
+    }
+    CHECK(noCover == 10);
+    CHECK(otherwise == 0);
     const RunResult checked = session.run({"worldplan", "check", rv::core::pathToUtf8(session.files.plan)});
     INFO(checked.out);
     CHECK(checked.code == ExitCode::Ok);
