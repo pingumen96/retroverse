@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<!-- The building fixture's systems under ES-DE's names, their full names invented (see README.md); megadrive's folder
+     comes with additions/ -->
+<systemList>
+    <system>
+        <name>mame</name>
+        <fullname>Arcade Board Library</fullname>
+        <path>%ROMPATH%\mame</path>
+        <extension>.zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>arcade</platform>
+        <theme>mame</theme>
+    </system>
+    <system>
+        <name>snes</name>
+        <fullname>Lumen 16 Home System</fullname>
+        <path>%ROMPATH%\snes</path>
+        <extension>.sfc .SFC .smc .SMC .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>snes</platform>
+        <theme>snes</theme>
+    </system>
+    <system>
+        <name>megadrive</name>
+        <fullname>Lumen Drive Home System</fullname>
+        <path>%ROMPATH%\megadrive</path>
+        <extension>.md .MD .gen .GEN .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>megadrive</platform>
+        <theme>megadrive</theme>
+    </system>
+    <system>
+        <name>psx</name>
+        <fullname>Orbit Disc System</fullname>
+        <path>%ROMPATH%\psx</path>
+        <extension>.chd .CHD .cue .CUE .m3u .M3U</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>psx</platform>
+        <theme>psx</theme>
+    </system>
+    <system>
+        <name>gb</name>
+        <fullname>Pocket Lumen</fullname>
+        <path>%ROMPATH%\gb</path>
+        <extension>.gb .GB .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>gb</platform>
+        <theme>gb</theme>
+    </system>
+    <system>
+        <name>pokemini</name>
+        <fullname>Pico Pocket</fullname>
+        <path>%ROMPATH%\pokemini</path>
+        <extension>.min .MIN .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>pokemini</platform>
+        <theme>pokemini</theme>
+    </system>
+    <system>
+        <name>amiga</name>
+        <fullname>Workbench Home Computer</fullname>
+        <path>%ROMPATH%\amiga</path>
+        <extension>.adf .ADF .zip .ZIP</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>amiga</platform>
+        <theme>amiga</theme>
+    </system>
+    <system>
+        <name>kodi</name>
+        <fullname>Media Center Shortcuts</fullname>
+        <path>%ROMPATH%\kodi</path>
+        <extension>.lnk .LNK</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>pcwindows</platform>
+        <theme>kodi</theme>
+    </system>
+</systemList>

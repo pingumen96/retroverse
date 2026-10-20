@@ -435,7 +435,62 @@ TEST_CASE("support/fixture_collection: files.json's collection object", "[suppor
     broken("romSize", 64ull * 1024ull * 1024ull + 1u);
     broken("romExtension", "sfc"); // no dot
     broken("gamelist", "");
-    broken("covers", "media/snes/covers"); // an unknown key
+    broken("coverFolder", "media/snes/covers"); // an unknown key
+    // I4 step 2's optional keys.
+    broken("coverSizes", nlohmann::json::array());
+    broken("coverSizes", nlohmann::json::parse("[[600, 0]]"));
+    broken("coverSizes", nlohmann::json::parse("[[600]]"));
+    broken("covers", 41u);
+    broken("covers", "all");
+    broken("from", 41u);
+    nlohmann::json optional = base;
+    optional["coverSizes"] = nlohmann::json::parse("[[600, 600], [476, 680]]");
+    optional["covers"] = 30u;
+    optional["from"] = 12u;
+    const auto withOptional = rv::test::parseCollectionSpec(optional, "a collection");
+    REQUIRE(withOptional.has_value());
+    CHECK(withOptional->coverSizes == std::vector<std::pair<int, int>>{{600, 600}, {476, 680}});
+    CHECK(withOptional->covers == std::optional<std::size_t>(30));
+    CHECK(withOptional->from == 12u);
+    CHECK_FALSE(valid->covers.has_value());
+    CHECK(valid->from == 0u);
+}
+
+TEST_CASE("support/fixture_collection: cover sizes, games without media, and a later first title (I4 step 2)",
+          "[support][fixture][collection]") {
+    rv::test::CollectionSpec spec;
+    spec.seed = 77;
+    spec.titles = 30;
+    spec.duplicates = 2;
+    spec.videos = 2;
+    spec.romFolder = "roms/psx";
+    spec.romExtension = ".chd";
+    spec.romSize = 16;
+    spec.gamelist = "ES-DE/gamelists/psx/gamelist.xml";
+    spec.mediaFolder = "media/psx";
+    spec.coverSizes = {{600, 600}, {476, 680}};
+    spec.covers = 20;
+    const rv::test::GeneratedCollection collection = rv::test::generateCollection(spec);
+    for (const rv::test::CollectionGame& game : collection.games) {
+        INFO(game.stem);
+        CHECK(game.hasCover == (game.titleIndex < 20));
+        CHECK(game.cover.width == (game.titleIndex % 2 == 0 ? 600 : 476));
+        CHECK(game.cover.height == (game.titleIndex % 2 == 0 ? 600 : 680));
+        if (game.hasVideo) {
+            CHECK(game.titleIndex < 2);
+        }
+    }
+    // More titles from the same seed: the same first titles, the gamelist growing at its end.
+    rv::test::CollectionSpec more = spec;
+    more.titles = 36;
+    more.from = 30;
+    const rv::test::GeneratedCollection grown = rv::test::generateCollection(more);
+    REQUIRE(grown.games.size() > collection.games.size());
+    for (std::size_t i = 0; i < collection.games.size(); ++i) {
+        CHECK(grown.games[i].stem == collection.games[i].stem);
+    }
+    const std::string closing = "</gameList>\n";
+    CHECK(grown.gamelist.starts_with(collection.gamelist.substr(0, collection.gamelist.size() - closing.size())));
 }
 
 TEST_CASE("support/fixture: generated media, collections and an overlay", "[support][fixture][payloads]") {

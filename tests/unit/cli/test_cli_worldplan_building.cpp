@@ -5,7 +5,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
+#include <iterator>
 #include <set>
 #include <string>
 #include <string_view>
@@ -27,6 +29,7 @@
 
 #include "../world/world_generation_support.hpp"
 #include "../world/world_update_support.hpp"
+#include "support/fixture.hpp"
 #include "support/temp_dir.hpp"
 
 using rv::cli::ExitCode;
@@ -313,4 +316,92 @@ TEST_CASE("cli/worldplan: a stored building is regenerated whole; --system and -
     CHECK(nlohmann::json::parse(namedJson.out)["sceneRoom"] == "room:megadrive");
     CHECK(session.run({"worldplan", "show", "--library", "esde", "--room", "room:snes"}).code ==
           ExitCode::UsageError);
+}
+
+TEST_CASE("cli/worldplan: the building fixture's whole building, then its additions", "[cli][worldplan]") {
+    // I4 step 2 (tests/fixtures/esde/building/README.md): every system of the catalog gets its console room on its
+    // floor with its media family (shared rooms and the arcade room are step 4's), kodi is excluded, the custom system
+    // takes gb's row by its platform tag; then additions/ brings titles to three rooms, which an update places without
+    // moving anything, and a new system, which the update cannot place yet (step 6a).
+    auto fixture = rv::test::Fixture::materialize("esde/building");
+    INFO((fixture ? "materialized" : fixture.error().toString()));
+    REQUIRE(fixture.has_value());
+    const Session session;
+    const LoggingReset loggingReset;
+    const RunResult created =
+        session.run({"library", "create", "--home", rv::core::pathToUtf8(fixture->root().lexically_normal()),
+                     "--install", rv::core::pathToUtf8(fixture->path("Programs/ES-DE").lexically_normal())});
+    INFO(created.err);
+    REQUIRE(created.code == ExitCode::Ok);
+    const RunResult imported = session.run({"import"});
+    INFO(imported.out << imported.err);
+    REQUIRE(imported.code == ExitCode::Ok);
+
+    const RunResult generated = session.run({"worldplan", "generate", "--seed", "102938"});
+    INFO(generated.out << generated.err);
+    REQUIRE(generated.code == ExitCode::Ok);
+    CHECK(contains(generated.err, "kodi left out of the building: no room (excluded)"));
+    auto plan = rv::world::readPlan(readText(session.files.plan), "plan");
+    REQUIRE(plan.has_value());
+    struct Expected {
+        std::string_view room;
+        std::string_view floor;
+        std::string_view family;
+        std::size_t placed;
+    };
+    const Expected expected[] = {
+        {"room:amiga", "computer", "big_box", 20},          // no media at all: every game, generated labels
+        {"room:gb", "handheld", "cartridge_handheld", 30},  // 32 games, 2 second releases
+        {"room:mame", "ground", "generic_case", 15},        // 25 sets, 15 with a cover
+        {"room:pocketlab", "handheld", "cartridge_handheld", 6}, // gb's row by its platform tag
+        {"room:pokemini", "handheld", "cartridge_handheld", 8},
+        {"room:psx", "gen5", "disc_case_cd", 40},           // two of them multi-disc
+        {"room:snes", "gen4", "cartridge_home_16bit", 40},  // 42 games, 2 second releases
+    };
+    REQUIRE(plan->rooms.size() == std::size(expected));
+    std::vector<std::string> floors;
+    for (const rv::world::Floor& floor : plan->floors) {
+        floors.push_back(floor.id);
+    }
+    CHECK(floors == std::vector<std::string>{"ground", "gen4", "gen5", "handheld", "computer"});
+    for (std::size_t i = 0; i < plan->rooms.size(); ++i) {
+        const rv::world::Room& room = plan->rooms[i];
+        INFO(room.id.toString());
+        CHECK(room.id.toString() == expected[i].room);
+        CHECK(room.floor == expected[i].floor);
+        CHECK(room.mediaFamily == expected[i].family);
+        std::size_t placed = 0;
+        for (const rv::world::Placement& placement : plan->placements) {
+            placed += placement.slot.fixture().room() == room.id ? 1 : 0;
+        }
+        CHECK(placed == expected[i].placed);
+    }
+    const RunResult checked = session.run({"worldplan", "check", rv::core::pathToUtf8(session.files.plan)});
+    INFO(checked.out);
+    CHECK(checked.code == ExitCode::Ok);
+
+    // additions/: five titles more for snes and psx, 24 for pokemini (past 30), and the new megadrive.
+    REQUIRE(fixture->applyOverlay("additions"));
+    const RunResult again = session.run({"import"});
+    INFO(again.out << again.err);
+    REQUIRE(again.code == ExitCode::Ok);
+    const RunResult updated = session.run({"worldplan", "update", "--system", "snes", "--system", "psx", "--system",
+                                           "pokemini", "--seed", "102938"});
+    INFO(updated.out << updated.err);
+    REQUIRE(updated.code == ExitCode::Ok);
+    CHECK(contains(updated.out, "Changes:         34 added, "));
+    auto after = rv::world::readPlan(readText(session.files.plan), "after");
+    REQUIRE(after.has_value());
+    // Nothing placed before moved; the rooms not updated are as they were.
+    for (const rv::world::Placement& placement : plan->placements) {
+        const auto kept = std::find(after->placements.begin(), after->placements.end(), placement);
+        CHECK(kept != after->placements.end());
+    }
+    for (const std::string_view room : {"room:amiga", "room:gb", "room:mame", "room:pocketlab"}) {
+        const rv::world::RoomId id = *rv::world::RoomId::parse(room);
+        CHECK(*rv::world::roomContentDigest(*after, id) == *rv::world::roomContentDigest(*plan, id));
+    }
+    const RunResult megadrive = session.run({"worldplan", "update", "--system", "megadrive", "--seed", "102938"});
+    CHECK(megadrive.code == ExitCode::ProblemsFound);
+    CHECK(contains(megadrive.err, "the plan has no room for megadrive"));
 }

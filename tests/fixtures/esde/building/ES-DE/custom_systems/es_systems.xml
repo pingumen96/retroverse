@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- The building fixture's custom system: a name ES-DE does not bundle (systems.json has no row for it), the platform
+     tag of a known system (gb): the building classifies it by that tag (see README.md) -->
+<systemList>
+    <system>
+        <name>pocketlab</name>
+        <fullname>Pocket Lab Homebrew</fullname>
+        <path>%ROMPATH%\pocketlab</path>
+        <extension>.gb .GB</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>gb</platform>
+        <theme>pocketlab</theme>
+    </system>
+</systemList>
