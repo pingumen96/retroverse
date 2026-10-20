@@ -1,7 +1,7 @@
 // The side-wall module of the media family cartridge_handheld (ADR-0013 §4; I4 step 2): the 16-bit module's 0.9 x 1.775
 // m shelf, its 0.35 m base, boards, 4 mm gaps and 3 cm margins, with 12 levels of the handheld cartridge (on its end,
-// its top face out) in 0.8 x 5.7 x 6.5 cm slots: the most levels whose compartments hold the item and its 2 cm of
-// headroom. Falls back to the 16-bit side module.
+// its top face out) in 0.8 x 5.7 x 6.5 cm slots: the hero module's levels, one fewer than the most whose compartments
+// hold the item and its 2 cm of headroom, so that both walls show one pitch. Falls back to the 16-bit side module.
 {
   "schemaVersion": 1,
   "id": "furniture.shelf.side_module.handheld_cart.generic",

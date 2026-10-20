@@ -54,9 +54,10 @@ Roadmap row: I4 step 2. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
   custom `pcwindows` system therefore takes `windows9x`'s row (a computer, big boxes), not `windows`'s (PC shortcuts):
   both stand on the computer floor.
 - **The fixtures' rule.** Each family's fixtures keep the 16-bit ones' widths, heights, plinth, boards, gaps and
-  margins. The side module holds the most levels whose compartments fit the item spine-out with its 2 cm headroom; the
-  hero module the most that also fit it face-out, the band on the level whose items' centre is nearest the 1.3 m eye
-  height. The display case is the 16-bit one at the item's face-out size; the wall shelf grows to a leaning item.
+  margins (the big box's modules are 0.27 m deep for its 24 cm). The side module holds the most levels whose
+  compartments fit the item spine-out with its 2 cm headroom (the handheld cartridge's takes its hero module's 12 rather
+  than 13, one pitch on both walls); the hero module the most that also fit it face-out, the band on the level whose
+  items' centre is nearest the 1.3 m eye height. The display case is the 16-bit one at the item's face-out size; the wall shelf grows to a leaning item.
 - **The spine label keeps the spine texture's 40 x 256 aspect** on every item: a thin item's label is short (the
   handheld cartridge's 4.8 x 30.7 mm) rather than its text stretched.
 - **The front keys name the shape, not the family** (ADR-0013 §4 says "the family id"; the task allowed either): the
