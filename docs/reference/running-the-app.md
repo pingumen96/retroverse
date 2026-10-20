@@ -155,25 +155,28 @@ build/rvdata`).
   reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
   command has it). `--room-system <system>` (I4 step 2, until step 5a's floors and `--start-room`) shows another
   system's room instead of the snes one, its media family's items and fixtures and its covers fitted to their labels
-  (ADR-0013 §4; a data directory with that system's catalog: the `esde/building` fixture's, or any). With a plan stored, its room shows at the first frame (covers and spines from the cache by the room's
-  items, `<user data>/cache/world/<library id>/room-<system>.json`) before the snapshot is asked for, then is reconciled
-  with it (unchanged: nothing moved, rebuilt or written; changed: committed again with the walker kept). A manifest
-  missing from the asset root falls back to its family's prefab, warned once per run. The walker starts at the room's
-  doorway camera (or `--spawn`). Covers come nearest first (the hovered item, the view by projected size, the rest by
-  distance); the hovered item's front shows its hero texture (its cover at up to 1,024 px, 8 kept); nothing is loaded
-  while a game runs; after "Aggiorna libreria" the covers the media root could not give are tried again. Lockstep runs
-  (`--fixed-dt`) wait before the first frame and between frames for the room, the layers of the frame's view and the
-  hovered item's hero texture, and for the whole room before their last frame (10 s at a time): a stored room at frame
-  0, the reconciled one from frame 1.
+  (ADR-0013 §4; a data directory with that system's catalog: the `esde/building` fixture's, or any); a system
+  systems.json does not name is classified by the catalog's platform tags of it, as `worldplan` does. With a plan
+  stored, its room shows at the first frame (covers and spines from the cache by the room's items and the system's
+  platform tags, `<user data>/cache/world/<library id>/room-<system>.json`) before the snapshot is asked for, then is
+  reconciled with it (unchanged: nothing moved, rebuilt or written; changed: committed again with the walker kept). A
+  manifest missing from the asset root falls back to its family's prefab, warned once per run. The walker starts at the
+  room's doorway camera (or `--spawn`). Covers come nearest first (the hovered item, the view by projected size, the
+  rest by distance); the hovered item's front shows its hero texture (its cover at its label's shape, up to 1,024 px on
+  the long side and 1,024 x 752 pixels, 8 kept); nothing is loaded while a game runs; after "Aggiorna libreria" the
+  covers the media root could not give are tried again. Lockstep runs (`--fixed-dt`) wait before the first frame and
+  between frames for the room, the layers of the frame's view and the hovered item's hero texture, and for the whole
+  room before their last frame (10 s at a time): a stored room at frame 0, the reconciled one from frame 1.
   The item the reticle rests on within 2.5 m is outlined and labelled with its title; after 150 ms it leaves its slot (a
   face-out cartridge tips forward, a spine-out one slides out and turns its cover to the viewer). E, a captured left
-  click or the pad's south button focuses a spine-out cartridge (the walker eased to 0.9 m in front of it) or inspects
-  a face-out one; in Focus the arrows and the D-pad step between cartridges (repeating while held). In Inspect the item
-  is held upright 0.45 m in front of the eye, left of and below the view's centre (beside the card), the scene dimmed by
+  click or the pad's south button focuses a spine-out cartridge (the walker eased to 0.9 m in front of it) or inspects a
+  face-out one; in Focus the arrows and the D-pad step between cartridges (repeating while held). In Inspect the item is
+  held upright 0.45 m in front of the eye, left of and below the view's centre (beside the card), the scene dimmed by
   one stop; the right stick or the captured mouse turns it, the triggers, Page Up / Down and the wheel zoom it (0.3 to
-  1.0 m); a card beside it shows its game (cover, title, platform, year, readiness and first blocker, developer, genre,
-  players, other versions): the arrows and the D-pad move between Avvia, Vedi media, Informazioni and Indietro, Enter or
-  A presses, a click (mouse free) the one clicked; Y, X and Start are Vedi media, Informazioni and Avvia; Esc / B leaves
+  1.0 m); a card beside it shows its game (cover, at its family's label shape within the 256 x 188 dp frame, title,
+  platform, year, readiness and first blocker, developer, genre, players, other versions): the arrows and the D-pad move
+  between Avvia, Vedi media, Informazioni and Indietro, Enter or A presses, a click (mouse free) the one clicked; Y, X
+  and Start are Vedi media, Informazioni and Avvia; Esc / B leaves
   one level (Inspect to Focus to free roam). The hero CRT plays the clip of the item focused or inspected for 300 ms.
   Vedi media (the card's button, Y; the quick catalog's too) opens the media viewer: the game's images one page per kind
   (cover, back cover, physical media, 3D box, screenshot, title screen, marquee, fan art; the missing kinds skipped),

@@ -138,7 +138,8 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   refused or a scene not written; `--scene` also writes the static part of one room (shell, fixtures, dressing,
   lights; no collection items) as a scene file that `retroverse.exe --scene <file>` renders: the plan's only room, or
   the one `--room` names ("Scene <file> of <room>: ...", JSON `sceneRoom`; a floor's scene with its hall is I4 step
-  3's).
+  3's), its sign and plastics classified with the catalog's platform tags of its system when the catalog holds the
+  plan's library (a custom system's room as `generate` classified it; without a catalog, systems.json's fallback).
   `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,
   the world's configuration and the building's data (34 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
   floors, no two rooms of a floor overlapping, every system in one room; a room of an older template version or

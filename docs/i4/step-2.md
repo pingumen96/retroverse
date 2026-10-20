@@ -29,12 +29,22 @@ Roadmap row: I4 step 2. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
 - **Covers fitted to the label's shape** (`rv/assets/cover_fit.hpp`'s `LabelAspect`): I3's rules (never stretched,
   at most 8% cropped, else bands) decided against the label quad's shape, then one resample into the 256 x 188 layer;
   the generated front label laid out on a canvas of that shape (`labelCanvas()`) and resampled likewise; the hero
-  picture made at the label's aspect. The front cache keys gain the shape; `kCoverPipelineVersion` is unchanged. The
-  app's cover requests carry the room's family's shape (`CoverItem::label`).
+  picture made at the label's aspect within ADR-0011 §8's bounds (1,024 px on the long side, at most 1,024 x 752
+  pixels: 877 x 877 for the jewel case, 707 x 1023 for the keep case), and the card beside an inspected item shows it
+  at that shape in its 256 x 188 frame (`ui::cardCoverBox()`: pillarboxed, never stretched). The front cache keys gain
+  the shape; `kCoverPipelineVersion` is unchanged. The app's cover requests carry the room's family's shape
+  (`CoverItem::label`).
 - **`--room-system <system>`** shows another system's generated room (its family's items, fixtures and covers), until
   step 5a's floors and `--start-room`. The GPU cases `gpu.world families: ...` open the building fixture's jewel-case
   room (40 covers fitted to the square label, their cache entries named with the shape, the band's fronts showing
-  their pictures) and its big-box room without media (20 generated labels, no console).
+  their pictures, an inspected case's card with its square cover), its big-box room without media (20 generated
+  labels, no console) and its arcade room (15 portrait flyers, an inspected one's card portrait; each card's picture
+  compared with the hero picture, and with what a stretched one would show).
+- **The catalog's platform tags reach the app and the scene**: the catalog worker hands the room's snapshot its
+  system's ES-DE platform tags (`CatalogSystem::platforms`, `RoomSnapshotResult::platformTags`), so the app classifies
+  a custom system as `worldplan` does (its first plan, its update's digest, its scene's sign and plastics); the room's
+  items cache keeps them (`"platforms"`) for the next start's preview, and `worldplan show --scene` reads them from the
+  catalog (`loadSceneData(..., platformTags)`).
 - **The building fixture** `tests/fixtures/esde/building` ([README](../../tests/fixtures/esde/building/README.md)):
   nine systems (mame, snes, psx with two multi-disc games, gb, pokemini, a custom `pocketlab` with gb's platform tag,
   amiga without media, kodi excluded, megadrive in `additions/`), 180 entries. The collection generator gains
@@ -57,13 +67,20 @@ Roadmap row: I4 step 2. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
   margins (the big box's modules are 0.27 m deep for its 24 cm). The side module holds the most levels whose
   compartments fit the item spine-out with its 2 cm headroom (the handheld cartridge's takes its hero module's 12 rather
   than 13, one pitch on both walls); the hero module the most that also fit it face-out, the band on the level whose
-  items' centre is nearest the 1.3 m eye height. The display case is the 16-bit one at the item's face-out size; the wall shelf grows to a leaning item.
+  items' centre is nearest the 1.3 m eye height. The display case is the 16-bit one at the item's face-out size; the
+  wall shelf grows to a leaning item.
 - **The spine label keeps the spine texture's 40 x 256 aspect** on every item: a thin item's label is short (the
   handheld cartridge's 4.8 x 30.7 mm) rather than its text stretched.
-- **The front keys name the shape, not the family** (ADR-0013 §4 says "the family id"; the task allowed either): the
-  pixels depend on the shape alone, so two families of one shape share their entries. The shape is the label in lowest
-  terms ("1x1" for the jewel case), one more key element, only for a shape other than the layer's: the 16-bit
-  cartridges' entries keep their names and warm caches stay warm.
+- **The front keys name the shape, not the family** (ADR-0013 §4, amended at this step's review): the pixels depend
+  on the shape alone, so two families of one shape share their entries. The shape is the label in lowest terms ("1x1"
+  for the jewel case), one more key element, only for a shape other than the layer's: the 16-bit cartridges' entries
+  keep their names and warm caches stay warm.
+- **Hero pictures keep I3's bounds** (ADR-0011 §8, ADR-0013 §4 amended): the long side at most 1,024 px and at most
+  1,024 x 752 pixels whatever the label's shape, so the 8 held stay within 32 MiB (a unit test over every family's
+  shape; the families' GPU cases check the budget). The card's cover box follows the shape; the 16-bit card is I3's
+  (its box the whole frame, as before: G07 did not move).
+- **Signs never name a format's trade name**: the laserdisc systems' sign reads "VIDEODISC ARCADE"; a unit test keeps
+  every sign clear of a list of makers', consoles' and formats' names.
 - **The 16-bit exception is data**: `coverFit: "layer"` runs I3's code. Its labels, keys and hero pictures are I3's to
   the pixel (the hashed layers of `test_collection_labels.cpp` did not move).
 - **The inputDigest** adds a family's fixtures only when it names any. The 16-bit family's rooms hash as before, and
@@ -78,15 +95,15 @@ game's title) by the family of this step's `systems.json`.
 
 | Family | 9 x 10 m | 16 m | Reference systems (placeable titles) |
 |---|--:|--:|---|
-| cartridge_home_16bit | 3,205 | 5,615 | snes 890, megadrive 779, neogeo 0 (2 titles, no cover) |
+| cartridge_home_16bit | 3,205 | 5,615 | snes 890, megadrive 779, neogeo 2 (no game with a cover: every game) |
 | cartridge_home_8bit | 3,606 | 6,361 | nes 2,217, atari2600 563, mastersystem 413, colecovision 273, intellivision 155, atari5200 95, odyssey2 82, atari7800 60, channelf 27 |
 | cartridge_home_64bit | 3,993 | 6,998 | atarijaguar 73, n64 2 |
 | cartridge_handheld | 11,001 | 19,266 | gba 1,690, gb 1,392, gbc 1,107, fds 188, atarilynx 97, virtualboy 60, ngpc 24, pokemini 11 |
-| case_handheld | 4,793 | 8,466 | nds 107, psp 12, switch 0 (229 titles, no cover) |
-| disc_case_cd | 5,398 | 9,488 | psx 1,401, dreamcast 82, amigacd32, pcengine, saturn, segacd 1 each, pcfx 0 (11 titles, no cover) |
+| case_handheld | 4,793 | 8,466 | nds 107, psp 12, switch 229 (no cover: every game) |
+| disc_case_cd | 5,398 | 9,488 | psx 1,401, dreamcast 82, pcfx 11 (no cover: every game), amigacd32, pcengine, saturn, segacd 1 each |
 | disc_case_dvd | 4,097 | 7,311 | ps2 2,134, gc 450, ps3 6, wii 2 |
-| big_box | 1,088 | 1,923 | amiga 1,055, atarist 295, dos 7, pc 0 (21 titles, no cover) |
-| generic_case | 4,391 | 7,813 | amstradcpc 1,646, atari800 1,207, apple2 494, c64 408, mame 36, vic20 2, windows 1, trs-80 0 (178 titles, no cover) |
+| big_box | 1,088 | 1,923 | amiga 1,055, atarist 295, pc 21 (no cover: every game), dos 7 |
+| generic_case | 4,391 | 7,813 | amstradcpc 1,646, atari800 1,207, apple2 494, c64 408, trs-80 178 (no cover: every game), mame 36, vic20 2, windows 1 |
 
 - **No reference system overflows a room grown to its limit**, nor even the 9 x 10 m room: the closest is amiga, 1,055
   titles in a big-box room of 1,088. Per ADR-0013 §8, **expansion rooms move to I4b**; `unplaced: capacity` stays. (For
@@ -111,6 +128,9 @@ imported into `build/step2/data-eye`, planned with `retroverse-cli worldplan gen
   spine a text strip (the big boxes' titles read at 1 m, the jewel cases' small), square covers square on the jewel
   cases, portrait covers banded, the big boxes' covers whole; no item through a board, every item within its
   compartment, the hovered item pulled out as in I3.
+- After the review, the card of an inspected item (`build/msvc-x64-release/smoke/world_families/psx/psx-card.png`,
+  `mame/mame-card.png`): the jewel case's square cover square beside the held case, the arcade flyer portrait in its
+  frame with the frame's tint either side; before, both were stretched to the frame's 256:188.
 
 ## Deviations and limits
 
@@ -125,5 +145,4 @@ imported into `build/step2/data-eye`, planned with `retroverse-cli worldplan gen
 ## Follow-ups
 
 - **Step 3:** floors of these rooms; **step 4:** the shared and arcade rooms with `generic_case`.
-- ADR-0013 §4's "front cache keys gain the family id" reads "the label's shape" (above): to align at Gate C.
 - The styling pass: face-out items without a top label, side-face spines for cases and boxes, faithful families.
