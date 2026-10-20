@@ -9,21 +9,21 @@
 // kind "other" (engines, ports, PC shortcuts, fantasy consoles, mobile) on computer. The ground floor, first, holds the
 // lobby and the arcade game room.
 //
-// Layout, in millimetres: the halls 3.0 m wide and the ground floor's lobby 6.0 m; the rooms' rows start 3.0 m east of
+// Each floor's "sign" is the generic text by its elevator (I4 step 3; never a trade name). Layout, in millimetres: the halls 3.0 m wide and the ground floor's lobby 6.0 m; the rooms' rows start 3.0 m east of
 // the hall's west end (the elevator's landing); a room's footprint on its floor is its interior grown by the wall
 // allowance (the room template's wall, 150 mm); at most 12 rooms stand in a row.
 {
   "schemaVersion": 1,
   "floors": [
-    {"id": "ground", "kinds": ["arcade"]},
-    {"id": "gen2", "kinds": ["home"], "generations": [1, 2]},
-    {"id": "gen3", "kinds": ["home"], "generations": [3]},
-    {"id": "gen4", "kinds": ["home"], "generations": [4]},
-    {"id": "gen5", "kinds": ["home"], "generations": [5]},
-    {"id": "gen6", "kinds": ["home"], "generations": [6]},
-    {"id": "gen7", "kinds": ["home"], "generations": [7, 8, 9]},
-    {"id": "handheld", "kinds": ["handheld"]},
-    {"id": "computer", "kinds": ["computer", "other"]}
+    {"id": "ground", "kinds": ["arcade"], "sign": "LOBBY AND ARCADE"},
+    {"id": "gen2", "kinds": ["home"], "generations": [1, 2], "sign": "EARLY CONSOLES"},
+    {"id": "gen3", "kinds": ["home"], "generations": [3], "sign": "8-BIT CONSOLES"},
+    {"id": "gen4", "kinds": ["home"], "generations": [4], "sign": "16-BIT CONSOLES"},
+    {"id": "gen5", "kinds": ["home"], "generations": [5], "sign": "32 AND 64-BIT CONSOLES"},
+    {"id": "gen6", "kinds": ["home"], "generations": [6], "sign": "SIXTH GENERATION"},
+    {"id": "gen7", "kinds": ["home"], "generations": [7, 8, 9], "sign": "MODERN CONSOLES"},
+    {"id": "handheld", "kinds": ["handheld"], "sign": "HANDHELDS"},
+    {"id": "computer", "kinds": ["computer", "other"], "sign": "COMPUTERS AND MORE"}
   ],
   "layout": {
     "hallWidthMm": 3000,

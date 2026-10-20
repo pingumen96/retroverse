@@ -4,13 +4,17 @@
 //
 // assets/world/building.json (JSON with comments; every key required unless noted):
 //   {"schemaVersion": 1,
-//    "floors": [{"id": "ground", "kinds": ["arcade"]}, {"id": "gen2", "kinds": ["home"], "generations": [1, 2]}, ...],
+//    "floors": [{"id": "ground", "kinds": ["arcade"], "sign": "LOBBY AND ARCADE"},
+//               {"id": "gen2", "kinds": ["home"], "generations": [1, 2], "sign": "EARLY CONSOLES"}, ...],
 //    "layout": {"hallWidthMm": 3000, "lobbyWidthMm": 6000, "rowStartXMm": 3000, "wallAllowanceMm": 150,
 //               "maxRoomsPerRow": 12}}
 // The floors in the elevator's order (a floor's order is its index; the first is the ground floor, kGroundFloor), each
 // holding the systems of its kinds, and of those generations only when "generations" (optional, 1 to 9) is given
 // (generations bind only the kinds that have them: a floor of ["home", "other"] with [1, 2] holds every "other"). The
-// reader requires every kind but "excluded" to land on exactly one floor at every generation from 1 to 9. Layout:
+// reader requires every kind but "excluded" to land on exactly one floor at every generation from 1 to 9. A floor's
+// "sign" (optional; 1 to 32 printable ASCII characters, a generic text, never a trade name; default its id in
+// uppercase) is the text by its elevator (I4 step 3): it only draws the floor, so the plans' inputDigest leaves it out
+// (buildingDataToJson()). Layout:
 // the hall's and the ground floor's lobby's widths (even), the x where the rooms' rows start east of the hall's west
 // end (the elevator's landing), the allowance a room's walls add around its interior on the floor, and the rooms a row
 // holds at most.
@@ -100,6 +104,8 @@ struct FloorSpec {
     /// The generations it holds of its kinds that have generations (home, handheld); empty: every generation. Its
     /// other kinds it holds whatever this says.
     std::vector<std::uint32_t> generations;
+    /// The sign by its elevator (I4 step 3): a generic text, 1 to 32 printable ASCII characters.
+    std::string sign;
 
     bool operator==(const FloorSpec&) const = default;
 };
@@ -138,7 +144,8 @@ struct BuildingData {
 [[nodiscard]] Expected<BuildingData> parseBuildingData(std::string_view text, std::string_view context);
 /// Reads <assetRoot>/world/building.json.
 [[nodiscard]] Expected<BuildingData> loadBuildingData(const std::filesystem::path& assetRoot);
-/// The canonical document of the building's data (the plans' inputDigest).
+/// The canonical document of the building's data (the plans' inputDigest): the floors' ids, kinds and generations and
+/// the layout; the floors' signs only draw them and are left out.
 [[nodiscard]] nlohmann::json buildingDataToJson(const BuildingData& building);
 
 // --- systems.json ---------------------------------------------------------------------------------------------------

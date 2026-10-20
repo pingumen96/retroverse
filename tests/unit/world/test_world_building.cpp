@@ -115,6 +115,10 @@ TEST_CASE("world/building: building.json and systems.json as shipped", "[world][
     CHECK_FALSE(data.order("attic").has_value());
     CHECK(data.planFloor("gen4") == rv::world::Floor{"gen4", 3});
     CHECK(data.layout == rv::world::BuildingLayout{3000, 6000, 3000, 150, 12});
+    // Each floor's generic sign by its elevator (I4 step 3).
+    CHECK(data.floor("ground")->sign == "LOBBY AND ARCADE");
+    CHECK(data.floor("gen4")->sign == "16-BIT CONSOLES");
+    CHECK(data.floor("handheld")->sign == "HANDHELDS");
     // Generations 1 and 2 on gen2, 7 to 9 on gen7; every handheld on handheld; computers and "other" together.
     CHECK(data.floorFor(SystemKind::Home, 1)->id == "gen2");
     CHECK(data.floorFor(SystemKind::Home, 2)->id == "gen2");
@@ -330,6 +334,20 @@ TEST_CASE("world/building: the readers refuse malformed data", "[world][building
     std::string odd = floors + complete + layout;
     odd.replace(odd.find("3000"), 4, "3001");
     CHECK_THAT(buildingRefusal(odd).message, ContainsSubstring("must be even"));
+    // A floor's sign (I4 step 3): optional, its id in uppercase by default; a sign is a generic printable text.
+    const auto signed_ = rv::world::parseBuildingData(
+        floors + R"({"id": "ground", "kinds": ["arcade"], "sign": "THE LOBBY"},
+        {"id": "home", "kinds": ["home", "handheld"]}, {"id": "pc", "kinds": ["computer", "other"]})" + layout,
+        "building.json");
+    REQUIRE(signed_.has_value());
+    CHECK(signed_->floor("ground")->sign == "THE LOBBY");
+    CHECK(signed_->floor("home")->sign == "HOME");
+    CHECK(rv::world::buildingDataToJson(*signed_) ==
+          rv::world::buildingDataToJson(*rv::world::parseBuildingData(floors + complete + layout, "building.json")));
+    CHECK_THAT(buildingRefusal(floors + R"({"id": "ground", "kinds": ["arcade"], "sign": " LOBBY"},
+        {"id": "home", "kinds": ["home", "handheld"]}, {"id": "pc", "kinds": ["computer", "other"]})" + layout)
+                   .message,
+               ContainsSubstring("/floors/0/sign"));
 
     const std::string head = R"({"schemaVersion": 1, "defaults": {
         "home": {"themePack": "t", "console": null, "plastic": {"cartridge": "#000000", "console": "#000000",

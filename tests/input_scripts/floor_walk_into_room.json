@@ -1,0 +1,16 @@
+// I4 step 3 verification: from a floor's arrival point in front of the elevator (the floor scene's camera: feet at
+// (1.2, 0, 0), facing east down the hall), walk east along the hall to the first north-row room's doorway (its centre
+// at x 7.65 m: the rows start 3.0 m east of the elevator and a 9 x 10 m room is 9.3 m wide with its walls), turn left
+// to face north and walk through the doorway into the room.
+// Expected (2.5 m/s, 0.0022 rad per mouse pixel, --fixed-dt 0.016667): frames 0-154 walk 6.46 m east, feet
+// (7.659, 0, 0), in the hall; frames 155-164 turn 90 degrees left (10 x 71.4 x 0.0022 rad), yaw 0 (north); frames
+// 165-254 walk 3.75 m north through the doorway (its stop left out on a floor), feet (7.659, 0, -3.75), 2.1 m into the
+// room past its south wall's inner face at z -1.65.
+//   worldplan show --floor gen4 --scene build/scenes/gen4.json, then
+//   retroverse.exe --scene build/scenes/gen4.json --exit-after-frames --frames 255 --fixed-dt 0.016667 --hidden
+//     --input-script tests/input_scripts/floor_walk_into_room.json --data-dir build/rvdata
+[
+  {"fromFrame": 0, "toFrame": 154, "actions": {"move_forward": 1.0}},
+  {"fromFrame": 155, "toFrame": 164, "actions": {"look_delta_x": -71.4}},
+  {"fromFrame": 165, "toFrame": 254, "actions": {"move_forward": 1.0}}
+]
