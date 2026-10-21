@@ -1,7 +1,9 @@
 // The floor in the app (I4 step 5a, ADR-0013 §7, §9): the building fixture (tests/fixtures/esde/building) recorded as
 // the library of the case's data directory, imported and planned whole (building_support.hpp), then retroverse.exe
 // without --scene:
-//   - two rooms of one media family on a floor (derived from the plan: the handheld floor's cartridge rooms), started in
+//   - two rooms of one media family on a floor (derived from the plan: the handheld floor's cartridge rooms, each small
+//     system in a console room of its own since I4 step 4 by the case's world.json, sharedRoomMinTitles 0,
+//     building_support.hpp), started in
 //     the first with --start-room: each room's collection samples its own texture arrays (the registry keys carry the
 //     room id; the run report's residency.rooms), every room's covers resident, a static group per room, the floor's
 //     GPU memory within the acceptable 512 MiB; the cover loader's first view the start room's items and those of the
@@ -12,7 +14,10 @@
 //     stanza" takes the walker to a title's item and it is inspected: the areas the eye crossed in order, the card of
 //     the second room's game;
 //   - the start in the ground floor's lobby without --start-room (no hero CRT bound), and a start room the building
-//     lacks (exit 2).
+//     lacks (exit 2);
+//   - under the shipped threshold (I4 step 4, at its merge with step 5a): the arcade room and the handheld floor's
+//     shared room from their doorways (--start-room area:arcade, area:shared:handheld), every item's cover resident,
+//     their CRT the hero CRT, and up close a title of each section hovered with its cover.
 // The screenshots stay in build/<preset>/smoke/world_floor_app for a look.
 
 #include <catch2/catch_test_macros.hpp>
@@ -256,11 +261,11 @@ void requireFloorShown(const AppRun& run, const PlannedBuilding& building, std::
 }
 
 /// The items of a room's layout of `section` whose face projects into the view of `camera`, and how many of them show
-/// a picture (luma spread at their face's middle).
+/// a picture (luma spread in the square of `radius` pixels at their face's middle).
 std::pair<std::size_t, std::size_t> texturedFronts(const rv::assets::ImageData& image,
                                                    const rv::scene::CameraSetup& camera,
                                                    const rv::world::CollectionLayout& layout,
-                                                   rv::world::Section section) {
+                                                   rv::world::Section section, int radius = 8) {
     std::size_t probed = 0;
     std::size_t textured = 0;
     for (const rv::world::CollectionItem& item : layout.items) {
@@ -272,8 +277,12 @@ std::pair<std::size_t, std::size_t> texturedFronts(const rv::assets::ImageData& 
             continue;
         }
         ++probed;
-        const double spread = lumaSpread(image, *pixel, 8);
-        INFO("item " << item.game.toString() << " at (" << pixel->x << ", " << pixel->y << "): luma spread " << spread);
+        const double spread = lumaSpread(image, *pixel, radius);
+        if (spread < 6.0) {
+            // Said with the caller's next assertion.
+            UNSCOPED_INFO("item " << item.game.toString() << " at (" << pixel->x << ", " << pixel->y
+                                  << "): luma spread " << spread);
+        }
         textured += spread >= 6.0 ? 1 : 0;
     }
     return {probed, textured};
@@ -509,8 +518,8 @@ TEST_CASE("world floor app: two rooms of one media family each sample their own 
         CHECK(closeRun.report->world.hoverChanges >= 1);
         const rv::assets::ImageData image = requireScreenshot(closeRun, shot, kShotSize);
         const auto [probed, textured] = texturedFronts(image, close.camera, layout, item.section);
+        CHECK(textured == probed); // first: it carries the probes that found no picture
         CHECK(probed >= 2);
-        CHECK(textured == probed);
     }
 }
 
@@ -672,4 +681,84 @@ TEST_CASE("world floor app: without --start-room the run starts in the ground fl
     REQUIRE(missing.report.has_value());
     CHECK(missing.report->exitCode == 2);
     CHECK(missing.report->failure.value_or(std::string()).find("room:megadrive") != std::string::npos);
+}
+
+TEST_CASE("world floor app: the arcade room and a floor's shared room show their sections' covers",
+          "[gpu][world][world_floor_app]") {
+    // The building under the shipped threshold (30 distinct titles, no world.json): mame in the arcade room, pocketlab
+    // (6 titles) and pokemini (8) in the sections of the handheld floor's shared room (I4 step 4).
+    const PlannedBuilding building("world_floor_app/shared", false);
+    const rv::world::StoredPlan stored = building.plan();
+    CHECK(building.roomOf("mame") == "area:arcade");
+    CHECK(building.roomOf("pocketlab") == "area:shared:handheld");
+    CHECK(building.roomOf("pokemini") == "area:shared:handheld");
+    const rv::catalog::LibraryId library = rv::catalog::LibraryId::parse("esde").value();
+    for (const std::string id : {"area:shared:handheld", "area:arcade"}) {
+        INFO(id);
+        const rv::world::Room& planned = roomIn(stored.plan, id);
+        CHECK(planned.mediaFamily == "generic_case");
+        const fs::path doorway = building.dir / (fileStem(id) + "-doorway.png");
+        const AppRun run =
+            runApp(retroverseExe(), building.dir, fileStem(id) + "_doorway", floorArguments(id, 40, doorway));
+        skipWithoutOpenGl(run);
+        requireCleanRun(run);
+        requireFloorShown(run, building, planned.floor);
+        INFO(run.describe());
+        const rv::app::RunReport& report = *run.report;
+        CHECK(report.world.room == id);
+        // Every item of the floor shows its cover (every placed game of these systems has one).
+        CHECK(report.residency.covers == report.residency.items);
+        CHECK(report.residency.labels == 0);
+        CHECK(report.residency.coverFailures == 0);
+        // The room's CRT is the hero CRT (mame's one clip playing in the arcade room; the shared room's sections have
+        // no clip: its colour bars).
+        CHECK(report.video.bound);
+        if (id == "area:arcade") {
+            CHECK(placementsIn(stored.plan, id) == 15);
+            const auto played = rv::catalog::GameId::parse(report.video.gameId);
+            REQUIRE(played.has_value());
+            CHECK(std::any_of(stored.plan.placements.begin(), stored.plan.placements.end(),
+                              [&](const rv::world::Placement& placement) {
+                                  return placement.game == *played &&
+                                         placement.slot.fixture().room().toString() == id;
+                              }));
+        } else {
+            CHECK(placementsIn(stored.plan, id) == 14);
+        }
+        (void)requireScreenshot(run, doorway, kShotSize);
+
+        // Up close, a face-out title of each section (the sections' games told apart by their items files: each holds
+        // the text of its own games): hovered in the room, its cover its hero picture, the fronts around it pictures.
+        const std::vector<FloorRoom> rooms = floorRooms(stored.plan, planned.floor, report.assetRoot);
+        const FloorRoom& room = roomNamed(rooms, id);
+        for (const rv::catalog::SystemName& section : planned.sections) {
+            INFO(section.str());
+            const auto items =
+                rv::app::readRoomItems(rv::app::roomItemsFile(building.data / "cache", library, section));
+            REQUIRE(items.has_value());
+            const auto found =
+                std::find_if(room.layout.items.begin(), room.layout.items.end(), [&](const rv::world::CollectionItem& item) {
+                    const rv::app::RoomItemText* text = items->find(item.game);
+                    return item.stance == rv::world::ItemStance::FaceOut && text != nullptr && !text->coverPath.empty();
+                });
+            REQUIRE(found != room.layout.items.end());
+            const Viewpoint close = focusViewpoint(*found, room.camera);
+            const std::string name = fileStem(id) + "_" + section.str() + "_close";
+            const fs::path shot = building.dir / (name + ".png");
+            const AppRun closeRun = runApp(retroverseExe(), building.dir, name,
+                                           floorArguments(id, 12, shot, {"--spawn", spawnArgument(close.spawn)}));
+            requireCleanRun(closeRun);
+            INFO(closeRun.describe());
+            CHECK(closeRun.report->world.room == id);
+            CHECK(closeRun.report->world.hoveredGame == found->game.toString());
+            CHECK(closeRun.report->residency.hero.shownGame == found->game.toString());
+            CHECK(closeRun.report->residency.hero.failed == 0);
+            const rv::assets::ImageData image = requireScreenshot(closeRun, shot, kShotSize);
+            // A generic case's front is about twice a cartridge's on screen, and the fixture's pictures' stripes as
+            // wide: a wider probe than the cartridges' (a flat stripe is no flat label).
+            const auto [probed, textured] = texturedFronts(image, close.camera, room.layout, found->section, 24);
+            CHECK(textured == probed); // first: it carries the probes that found no picture
+            CHECK(probed >= 1);
+        }
+    }
 }
