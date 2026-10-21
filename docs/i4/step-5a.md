@@ -74,8 +74,8 @@ API frozen in [step 3](step-3.md).
 - "Mostra nella stanza" serves the room that holds the eye. A game placed in another room, or any placed game while
   the eye is in a hall, is "Esposto altrove nell'edificio" (`other-room`); one the building does not hold "non ha una
   stanza per il suo sistema" (`not-in-room`). Across rooms and floors is step 7's.
-- The test room's `no-games` notice speaks of the building (no system of the catalog gives a room); it names a
-  system only when `--start-room` gives one.
+- The test room's `no-games` notice speaks of the building (no system of the catalog gives a room); it names the
+  start room (its id, `room:snes` or an area's) only when `--start-room` gives one.
 - The items files hold no CRT media paths, so the hero CRT's games come from the building job's snapshots, not the
   preview.
 
@@ -112,7 +112,15 @@ merged into this branch with a merge commit, then adapted (ADR-0013 §3, §6, §
   covers and the layout's titles alike, so the preview from the items files and the building's floor agree (the new
   unit test fails with 33 assertions without it).
 - **The shared room's CRT** plays its sections' games, their snapshots taken together (`roomScreenGames()` over a
-  room's sections): the placed games in the room's featured order whatever their section, then the others.
+  room's sections): the placed games in the room's featured order whatever their section, then the others. A unit
+  test (`app/room_screen: a shared room's CRT plays its sections' placed games ...`) gives two invented sections whose
+  featured-first game is the second section's: a per-section concatenation fails it (the CRT would start on the first
+  section's clip).
+- **The notice's start room.** The test room's `no-games` notice named the start room by its system, empty for an
+  area id, so `--start-room area:arcade` lost the sentence about the room asked for. It now names the start room by
+  its id (`room:snes`, `area:arcade`, `area:shared:handheld`; the document binds `room`, no longer `system`), and the
+  run report's `world.noticeRoom` records it; `gpu.world: without a catalog, ...` checks it for `room:snes`, both
+  areas and the lobby (empty).
 - **The tests.** `gpu.world families: ...`'s mame case starts with `--start-room area:arcade` (its room read from the
   plan) and expects that room with its 15 flyers; step 4's temporary skip is gone. The floor-app cases keep their two
   console rooms of one family: their `PlannedBuilding` writes `{"sharedRoomMinTitles": 0}` (step 5a's provision), so
@@ -121,17 +129,20 @@ merged into this branch with a merge commit, then adapted (ADR-0013 §3, §6, §
   which is why those cases keep the threshold at 0. A new case, `gpu.world floor app: the arcade room and a floor's
   shared room show their sections' covers`, plans the fixture under the shipped threshold: from `--start-room
   area:shared:handheld` (14 items, beside `room:gb`'s 30) and `area:arcade` (15) every item's cover resident, the
-  room's CRT the hero CRT (mame's clip in the arcade room, the colour bars in the shared room, whose sections have no
-  clip), and up close a face-out title of each section hovered with its cover as its hero picture. A unit test (`app/
-  world_build: the shared and arcade rooms in the app: ...`) checks the same rooms GPU-free, the preview, the CLI's plan
-  equal to the app's, the held room, and `additions/` updating the shared room by both its sections (34 titles placed,
-  nothing moved).
+  room's CRT the hero CRT (`video.screen` the room's `fx:hero.crt`, not `room:gb`'s; its games every section's,
+  `world.screenGames` 15 and 14; mame's clip in the arcade room, the colour bars in the shared room, whose sections
+  have no clip), and up close a face-out title of each section hovered with its cover as its hero picture. A unit
+  test (`app/world_build: the shared and arcade rooms in the app: ...`) checks the same rooms GPU-free, the preview,
+  the CLI's plan equal to the app's, the held room, and `additions/` updating the shared room by both its sections (34
+  titles placed, nothing moved).
 - **The goldens.** G02 to G10's metadata re-recorded once from `msvc-x64-debug` with `RV_UPDATE_GOLDEN=1` (the plans'
   digests moved with step 4's `inputDigest`, the world data's hash with its preset and `systems.json`; G06's plan is
   step 4's), then compared without it: every image byte for byte as committed.
 
 Measured on the reference machine after the merge: the Release suite (1,882 tests, unit and GPU) passes, the overlay's
 case skipped as in every Release run; the Debug unit suite (1,796) and its 40 `gpu.world*` and `gpu.golden` cases pass;
-G01 to G10 are 0 pixels apart in both. The handheld floor started in its shared room holds 44 covers
+G01 to G10 are 0 pixels apart in both. After the review's fixes (the notice's start room, the CRT's checks, the
+featured order's unit test): the Release unit suite (1,797) and its 40 `gpu.world*` and `gpu.golden` cases pass (the
+overlay's skipped), G01 to G10 0 pixels apart. The handheld floor started in its shared room holds 44 covers
 (`area:shared:handheld` 14, `room:gb` 30, each in 2 arrays of 2.4 MiB), GPU memory peak 230.6 MiB in Release; the
 ground floor with the arcade room 219.0 MiB.
