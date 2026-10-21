@@ -60,8 +60,8 @@ Roadmap row: I4 step 6b. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
   - the computer floor (10 rooms, 5,314 items, its largest room 1,646): GPU memory at its peak 407.3 MiB (arrays
     210.9 MiB, BC1), cold and warm (limit 512 MiB); cold, its floor's build took 13 s on a pool busy with the covers;
   - `worldplan update` on the unchanged library: 4.3 s (14.3 s in step 6a).
-- **90,000 generated entries** (`rv_tests "[world_build][bench]"`): the unchanged start's job 3.4 s whole, 59 ms by
-  the stamp.
+- **90,000 generated entries** in 11 systems (`rv_tests "[world_build][bench]"`): the unchanged start's job 3.4 s
+  whole before the snapshot's index fix, 2.8 s after it (the snapshot 1.1 s, then 0.6 s), 58 ms by the stamp.
 - The CRT's rebind (`gpu.world floor app: the hero CRT rebound on a floor that runs freely ...`): 0.06 ms on the main
   thread, the 60 frames after it p99 10.9 ms (limit 50 ms); on the lockstep walk its previous clip's decoder thread
   was still ending as it returned, never joined there.
