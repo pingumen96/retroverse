@@ -24,10 +24,13 @@ Roadmap row: I4 step 6a. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
   (two rooms per row) and systems.json. Random sequences of titles arriving and leaving, bursts that add modules, grow
   rooms and reach capacity, new systems (large, small, arcade, a custom system with gb's platform tag, one no tag
   places), threshold crossings, full floors and selections left out. After every step: every placement as it stood;
-  every stored room's floor, kind, x, yaw and expansion head kept, its sections a prefix of the new ones; z changed
-  only with growth; the halls' lights only appended; every selected game placed or unplaced exactly once; no hard
-  finding; a new room at the east end of its row; a left-out system's room unchanged. 2 seeds of 8 steps in Debug
-  (about 12 s: entries, growth, crossings, capacity), 16 of 24 in Release (about 20 s: also held rooms and a waiting
+  every stored room's floor, kind, x, yaw and expansion head kept, its sections a prefix of the new ones, the rest of
+  its record as it was; z and depth changed only with growth; every fixture of a stored room but decoration as it
+  stood, but for those a growth moved south; the stored rooms' face-out set unchanged and their new placements
+  spine-out, the new placements' games the report's `added`; the halls' lights only appended; every selected game
+  placed or unplaced exactly once, no capacity entry of a system that found no place for a game it no longer holds; no
+  hard finding; a new room at the east end of its row; a left-out system's room unchanged. 2 seeds of 8 steps in Debug
+  (about 14 s: entries, growth, crossings, capacity), 16 of 24 in Release (about 21 s: also held rooms and a waiting
   system).
 - **A golden update sequence** (`building-update-esde-seed-102938.json`): the building fixture's systems, then
   `additions/`, then neogeo (a section after megadrive), fbneo (after mame) and nes (its own room on a new floor,
@@ -38,20 +41,25 @@ Roadmap row: I4 step 6a. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
   `leftOut`). [cli.md](../reference/cli.md).
 - **The building fixture's `additions/`** through the CLI: an update of snes, psx and pokemini places 34 titles; the
   whole update then opens gen4's shared room for megadrive's 12 titles (under 30) in the south row; pokemini, past 30,
-  stays in its section; nothing moves.
+  stays in its section; nothing moves. With one room per row (a test asset root), a building of gb and pocketlab fills
+  the handheld floor, and `--system pokemini` (past 30, no room there) joins its shared room instead of waiting.
 
 ## Decisions
 
 - **A system waits for a held room.** A system that would take a section of a shared or arcade room whose sections
   are not all given (held, or not updated at all) does not enter: the plan does not say which section an unplaced
   game was of, so the room cannot be updated in part. It is reported (`systemsWaiting`) and enters with the next
-  update given every section. From the catalog, the CLI reads that room's sections itself, so a named new system
-  never waits there.
+  update given every section. From the catalog, the CLI then reads the sections of the rooms systems wait for and runs
+  the update again (an arcade or small system, or a console system its full floor sends to the shared room), so a
+  named new system never waits there.
 - **A kept room takes the section.** A shared room kept as it is (ADR-0013 §5) has the new section appended to its
   record, and the section's games are `room-kept`: every system stands in one room, every game has its entry.
-- **Capacity entries are recomputed.** The entries of a system that found no place name a room the plan does not
-  hold. An update given that system's selection drops them and enters it again; without its selection they stand
-  (SC-06).
+- **Capacity entries are recomputed where the plan can tell.** The entries of a system that found no place name a
+  room the plan does not hold. An update given that system's selection enters it again: every entry naming its console
+  room gives way (a game that left the system leaves no entry). Entries naming a shared or arcade room that found no
+  place mix that room's systems, and the plan does not say which an entry was of: only those of the selection's games
+  give way, so an entry of a game that left such a system stands until a regeneration (it might as well be of a system
+  whose selection is unknown). Without its selection, a system's entries stand (SC-06).
 - **Digests.** An entering system is hashed with the data of the room it stands in, as a fresh building hashes it, so
   the next update with nothing new writes nothing.
 - **Expansion rooms stay I4b's** (step 2's census: no reference system overflows a room grown to its limit).
@@ -64,13 +72,13 @@ Through `scripts/real-library.ps1 -Filter '[real-library][room_selection]' -Meas
 the Release CLI; data directories under `build/i4-real`, never committed): 0 differences among the snapshots' 542,120
 entries, the tests passed.
 
-- **The building twice**, `library create`, `import` and `worldplan generate` in two data directories: one SHA-256
-  (`365db53f…`). The import took 20.8 s cold and 12.7 s warm; the whole building's generation 14.4 s.
+- **The building twice**, `library create`, `import` and `worldplan generate` in two data directories: one SHA-256.
+  The import took 20.8 s cold and 12.7 s warm; the whole building's generation 14.4 s.
 - **A second import** wrote nothing (5.4 s); the **update** after it was Updated, no-rebuild, 19,985 placements kept,
   nothing written (14.3 s, the catalog's selections included, as for the generation).
-- **The lift**: the real schema-1 SNES plan (generator 1.2) as the stored plan of a third data directory, then the update
-  of the whole library. The SNES room's record and its 28 fixtures, 890 placements, 3 dressed levels, 10 lights and
-  6,907 unplaced entries equal the oracle's; 46 systems entered 43 new rooms (19,095 placements). The building is
+- **The lift**: the real schema-1 SNES plan (generator 1.2) as the stored plan of a third data directory, then the
+  update of the whole library. The SNES room's record and its 28 fixtures, 890 placements, 3 dressed levels, 10 lights
+  and 6,907 unplaced entries equal the oracle's; 46 systems entered 43 new rooms (19,095 placements). The building is
   **byte for byte the fresh one** (the same SHA-256). A second update wrote nothing.
 - **The building**: 9 floors (ground, gen2 to gen7, handheld, computer), 44 rooms. Rooms per floor: ground 1, gen2 6,
   gen3 4, gen4 4, gen5 6, gen6 3, gen7 2, handheld 8, computer 10. Shared sections: arcade `mame`; gen2 `channelf`;
@@ -87,6 +95,8 @@ entries, the tests passed.
   added here.
 - A system waiting for a held room has no entry in the plan meanwhile: the quick catalog cannot say where it will
   stand.
+- On a full floor without a shared room, a capacity entry of a small system's game that left the catalog stays until a
+  regeneration (above). The real library has no full floor.
 
 ## Follow-ups
 

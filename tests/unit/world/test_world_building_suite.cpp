@@ -1,15 +1,16 @@
 // The building's NFR-08 property suite (rv/world/incremental.hpp's updateBuilding(); ADR-0013 §3, §5, §7; I4 step 6a):
 // random sequences (fixed seeds) of a building's updates, on a test-only small room template that fills, grows and runs
 // out of capacity within a few hundred titles and test copies of building.json (two rooms per row) and systems.json
-// (tests/fixtures/world/building-suite/, laid over a copy of the shipped world data): titles arriving and leaving, bursts
-// that add modules, grow rooms and reach their capacity, new systems (large, small, arcade, a custom one with gb's
-// platform tag, a custom one no tag places), small systems crossing the shared threshold, full floors, selections left
-// out (SC-06: unknown is not empty, a shared room held, a system waiting for it). After every step the update keeps the
-// building's invariants (world_building_support.hpp's checkBuildingUpdate(): every placement, every room's floor,
-// kind, x, yaw and sections, z only with growth, the halls' lights only appended, every selected game placed or unplaced
-// exactly once, no hard finding); a room whose selection is left out stands as it is; a new room takes the east end of
-// its row; an update with nothing new writes nothing; and at the end the update of the building of no room is the
-// fresh building of the same selections. A Debug build runs fewer seeds and steps of the same sequences.
+// (tests/fixtures/world/building-suite/, laid over a copy of the shipped world data): titles arriving and leaving,
+// bursts that add modules, grow rooms and reach their capacity, new systems (large, small, arcade, a custom one with
+// gb's platform tag, a custom one no tag places), small systems crossing the shared threshold, full floors, selections
+// left out (SC-06: unknown is not empty, a shared room held, a system waiting for it). After every step the update
+// keeps the building's invariants (world_building_support.hpp's checkBuildingUpdate(): every placement, every room's
+// floor, kind, x, yaw, sections and the rest of its record, z only with growth, every fixture but decoration and what a
+// growth moved, the face-out set, new placements spine-out, the halls' lights only appended, every selected game placed
+// or unplaced exactly once, no hard finding); a room whose selection is left out stands as it is; a new room takes the
+// east end of its row; an update with nothing new writes nothing; and at the end the update of the building of no room
+// is the fresh building of the same selections. A Debug build runs fewer seeds and steps of the same sequences.
 
 #include <catch2/catch_test_macros.hpp>
 
