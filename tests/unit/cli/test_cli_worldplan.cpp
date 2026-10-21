@@ -332,8 +332,9 @@ TEST_CASE("cli/worldplan generate: the catalog's selection of an imported librar
     INFO(updated.err);
     CHECK(updated.code == ExitCode::Ok);
     CHECK(contains(updated.out, "is up to date"));
-    // A system without a room: refused, nothing written (new systems come with I4 step 6a).
+    // A system without a room enters the building (I4 step 6a); one the catalog does not hold: exit 1, nothing
+    // written.
     const RunResult newSystem = run({"worldplan", "update", "--system", "nosuch", "--seed", "102938"});
     CHECK(newSystem.code == ExitCode::ProblemsFound);
-    CHECK(contains(newSystem.err, "the plan has no room for nosuch"));
+    CHECK(contains(newSystem.err, "the catalog has no system nosuch"));
 }

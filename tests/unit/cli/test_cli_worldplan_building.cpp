@@ -1,7 +1,8 @@
 // retroverse-cli worldplan and where-is on a building (I4 step 1, ADR-0013 §12): a building of two systems generated
 // from selection files (--selection repeatable), shown with its floors and rooms, a game found with its floor, the
-// building updated room by room (nothing new, then one room's new titles), a system without a room refused, and a
-// frozen schema-1 plan (tests/fixtures/world/v1/) shown, checked, asked and updated lifted into the building.
+// building updated room by room (nothing new, then one room's new titles), a system without a room entering it (I4 step
+// 6a), and a frozen schema-1 plan (tests/fixtures/world/v1/) shown, checked, asked and updated lifted into the
+// building; the building fixture's whole building, then its additions/ (I4 steps 2, 4 and 6a).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -175,14 +176,55 @@ TEST_CASE("cli/worldplan: a building of selection files, its floors, where-is wi
     CHECK(*rv::world::roomContentDigest(*plan, megadrive.room) !=
           *rv::world::roomContentDigest(*previous, megadrive.room));
 
-    // A system without a room: exit 1, nothing written.
+    // A system without a room enters the building (I4 step 6a): genesis's 10 titles open gen4's shared room at the
+    // east end of its north row (both rows end alike: the north one on a tie); the rooms that stood do not move.
     const std::string genesisFile = session.write("genesis.json", selectionOf("genesis", 10, 3));
-    const std::string after = readText(session.files.plan);
-    const RunResult refused =
+    const RunResult entered =
         session.run({"worldplan", "update", "--selection", genesisFile, "--library", "esde", "--seed", "102938"});
-    CHECK(refused.code == ExitCode::ProblemsFound);
-    CHECK(contains(refused.err, "the plan has no room for genesis"));
-    CHECK(readText(session.files.plan) == after);
+    INFO(entered.err);
+    REQUIRE(entered.code == ExitCode::Ok);
+    CHECK(contains(entered.out, "Updated the plan of area:shared:gen4, room:megadrive, room:snes: "));
+    CHECK(contains(entered.out, "Changes:         10 added, "));
+    CHECK(contains(entered.out, "Entered:         genesis in area:shared:gen4 (a new room)\n"));
+    auto withGenesis = rv::world::readPlan(readText(session.files.plan), "with genesis");
+    REQUIRE(withGenesis.has_value());
+    for (const rv::world::RoomId& room : {snes.room, megadrive.room}) {
+        CHECK(*rv::world::roomContentDigest(*withGenesis, room) == *rv::world::roomContentDigest(*plan, room));
+    }
+    const auto shared =
+        std::find_if(withGenesis->rooms.begin(), withGenesis->rooms.end(),
+                     [](const rv::world::Room& room) { return room.id.toString() == "area:shared:gen4"; });
+    REQUIRE(shared != withGenesis->rooms.end());
+    CHECK(shared->placement == rv::world::RoomPlacement{16950, -6650, 0});
+    const RunResult enteredJson = session.run(
+        {"worldplan", "update", "--selection", genesisFile, "--library", "esde", "--seed", "102938", "--json"});
+    REQUIRE(enteredJson.code == ExitCode::Ok);
+    const nlohmann::json report = nlohmann::json::parse(enteredJson.out);
+    CHECK(report["written"] == false);
+    CHECK(report["changes"]["roomsAdded"].empty());
+    CHECK(report["changes"]["systemsEntered"].empty());
+
+    // A selection file of a system that would take a section of a shared room given no selection of its sections:
+    // the system waits, nothing written; with genesis's file, sfc (5 titles) enters as the section after genesis.
+    const std::string sfcFile = session.write("sfc.json", selectionOf("sfc", 5, 4));
+    const std::string beforeSfc = readText(session.files.plan);
+    const RunResult waits =
+        session.run({"worldplan", "update", "--selection", sfcFile, "--library", "esde", "--seed", "102938"});
+    INFO(waits.err);
+    REQUIRE(waits.code == ExitCode::Ok);
+    CHECK(contains(waits.out, "is up to date"));
+    CHECK(contains(waits.out, "Waiting:         sfc for area:shared:gen4 "));
+    CHECK(readText(session.files.plan) == beforeSfc);
+    const RunResult joins = session.run({"worldplan", "update", "--selection", sfcFile, "--selection", genesisFile,
+                                         "--library", "esde", "--seed", "102938", "--json"});
+    INFO(joins.err);
+    REQUIRE(joins.code == ExitCode::Ok);
+    const nlohmann::json joined = nlohmann::json::parse(joins.out);
+    CHECK(joined["written"] == true);
+    CHECK(joined["changes"]["systemsEntered"] ==
+          nlohmann::json::array({{{"room", "area:shared:gen4"}, {"system", "sfc"}}}));
+    CHECK(joined["changes"]["roomsAdded"].empty());
+    CHECK(joined["changes"]["added"].size() == 5);
 }
 
 TEST_CASE("cli/worldplan: a frozen schema-1 plan shown, checked, asked and updated lifted", "[cli][worldplan]") {
@@ -319,12 +361,12 @@ TEST_CASE("cli/worldplan: a stored building is regenerated whole; --system and -
 }
 
 TEST_CASE("cli/worldplan: the building fixture's whole building, then its additions", "[cli][worldplan]") {
-    // I4 steps 2 and 4 (tests/fixtures/esde/building/README.md): every system of the catalog gets its room on its floor
-    // with its media family, or a section: mame of the arcade room, the systems under 30 distinct titles of their
+    // I4 steps 2, 4 and 6a (tests/fixtures/esde/building/README.md): every system of the catalog gets its room on its
+    // floor with its media family, or a section: mame of the arcade room, the systems under 30 distinct titles of their
     // floor's shared room (amiga's 20 on the computer floor; the custom system, on the handheld floor by gb's platform
     // tag, and pokemini); kodi is excluded; then additions/ brings titles to three systems (pokemini past 30: it stays
-    // in its section), which an update places without moving anything, and a new system, which the update cannot place
-    // yet (step 6a).
+    // in its section), which an update places without moving anything, and a new system, megadrive, which the update
+    // of the whole building enters: its 12 titles open gen4's shared room, nothing that stands moves.
     auto fixture = rv::test::Fixture::materialize("esde/building");
     INFO((fixture ? "materialized" : fixture.error().toString()));
     REQUIRE(fixture.has_value());
@@ -473,6 +515,43 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     CHECK(both.code == ExitCode::UsageError);
     CHECK(contains(both.err, "--room and --floor exclude each other"));
 
+    // I4 step 6a: a new system named from the catalog that would take a section of a standing shared room brings that
+    // room's sections' selections (else it would wait): in a building of gb and pokemini alone, pocketlab (gb's row by
+    // its platform tag) enters area:shared:handheld as the section after pokemini.
+    const std::string small = rv::core::pathToUtf8(session.dir.file("small.json"));
+    const RunResult smallBuilding = session.run(
+        {"worldplan", "generate", "--system", "gb", "--system", "pokemini", "--plan", small, "--seed", "102938"});
+    INFO(smallBuilding.err);
+    REQUIRE(smallBuilding.code == ExitCode::Ok);
+    const RunResult pocket = session.run(
+        {"worldplan", "update", "--system", "pocketlab", "--previous", small, "--plan", small, "--seed", "102938"});
+    INFO(pocket.out << pocket.err);
+    REQUIRE(pocket.code == ExitCode::Ok);
+    CHECK(contains(pocket.out, "Entered:         pocketlab in area:shared:handheld (a new section)\n"));
+    CHECK(contains(pocket.out, "Changes:         6 added, "));
+    CHECK(readText(session.files.plan) == generatedText);
+    // A full floor: with an asset root whose building.json holds one room per row, gb and pocketlab fill the handheld
+    // floor (gb's room in the north row, the shared room in the south one).
+    const std::filesystem::path narrowRoot = session.dir.file("narrow-assets");
+    std::filesystem::create_directories(narrowRoot);
+    for (const std::string_view folder : {"world", "manifests"}) {
+        std::filesystem::copy(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR) / folder, narrowRoot / folder,
+                              std::filesystem::copy_options::recursive);
+    }
+    std::string buildingJson = readText(narrowRoot / "world" / "building.json");
+    const std::string_view rowLimit = "\"maxRoomsPerRow\": 12";
+    const std::size_t limitAt = buildingJson.find(rowLimit);
+    REQUIRE(limitAt != std::string::npos);
+    buildingJson.replace(limitAt, rowLimit.size(), "\"maxRoomsPerRow\": 1");
+    REQUIRE(rv::core::writeTextFileAtomic(narrowRoot / "world" / "building.json", buildingJson).has_value());
+    const std::string narrow = rv::core::pathToUtf8(narrowRoot);
+    const std::string full = rv::core::pathToUtf8(session.dir.file("full.json"));
+    const RunResult fullBuilding = session.run({"--asset-root", narrow, "worldplan", "generate", "--system", "gb",
+                                                "--system", "pocketlab", "--plan", full, "--seed", "102938"});
+    INFO(fullBuilding.out << fullBuilding.err);
+    REQUIRE(fullBuilding.code == ExitCode::Ok);
+    CHECK(contains(fullBuilding.out, "Generated the plan of area:shared:handheld, room:gb: "));
+
     // additions/: five titles more for snes and psx, 24 for pokemini (past 30), and the new megadrive.
     REQUIRE(fixture->applyOverlay("additions"));
     const RunResult again = session.run({"import"});
@@ -503,12 +582,56 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         sharedPlaced += placement.slot.fixture().room() == sharedId ? 1 : 0;
     }
     CHECK(sharedPlaced == 14 + 24);
-    // An update of the whole building (every room's sections) records the inputs of every room once, places nothing;
-    // again, it writes nothing.
+    // On the full handheld floor pokemini, past 30 titles now and without a room there, finds no place for a console
+    // room of its own: it joins the floor's shared room (ADR-0013 §7), whose other sections the update reads from the
+    // catalog, so that it does not wait for them.
+    const RunResult joinsFull = session.run({"--asset-root", narrow, "worldplan", "update", "--system", "pokemini",
+                                             "--previous", full, "--plan", full, "--seed", "102938"});
+    INFO(joinsFull.out << joinsFull.err);
+    REQUIRE(joinsFull.code == ExitCode::Ok);
+    CHECK(contains(joinsFull.out, "Entered:         pokemini in area:shared:handheld (a new section)\n"));
+    CHECK(contains(joinsFull.out, "Changes:         32 added, "));
+    CHECK_FALSE(contains(joinsFull.out, "Waiting:"));
+    auto joinedFull = rv::world::readPlan(readText(session.dir.file("full.json")), "full");
+    REQUIRE(joinedFull.has_value());
+    CHECK(joinedFull->rooms.size() == 2);
+    // An update of the whole building (every room's sections and every other system of the catalog) enters megadrive
+    // (I4 step 6a): its 12 titles, under 30, open gen4's shared room in the south row (snes stands in the north row's
+    // first place); nothing that stands moves; again, it writes nothing, nor does an update of megadrive alone.
+    const std::string partialText = readText(session.files.plan);
+    auto partial = rv::world::readPlan(partialText, "partial");
+    REQUIRE(partial.has_value());
     const RunResult whole = session.run({"worldplan", "update", "--seed", "102938"});
     INFO(whole.out << whole.err);
     REQUIRE(whole.code == ExitCode::Ok);
-    CHECK(contains(whole.out, "Changes:         0 added, "));
+    CHECK(contains(whole.out, "Changes:         12 added, "));
+    CHECK(contains(whole.out, "Entered:         megadrive in area:shared:gen4 (a new room)\n"));
+    CHECK(contains(whole.err, "kodi left out of the building: no room (excluded)"));
+    auto entered = rv::world::readPlan(readText(session.files.plan), "entered");
+    REQUIRE(entered.has_value());
+    for (const rv::world::Placement& placement : partial->placements) {
+        CHECK(std::find(entered->placements.begin(), entered->placements.end(), placement) !=
+              entered->placements.end());
+    }
+    for (const rv::world::Room& room : partial->rooms) {
+        INFO(room.id.toString());
+        CHECK(*rv::world::roomContentDigest(*entered, room.id) == *rv::world::roomContentDigest(*partial, room.id));
+    }
+    const auto gen4 = std::find_if(entered->rooms.begin(), entered->rooms.end(), [](const rv::world::Room& room) {
+        return room.id.toString() == "area:shared:gen4";
+    });
+    REQUIRE(gen4 != entered->rooms.end());
+    CHECK(gen4->floor == "gen4");
+    CHECK(gen4->placement == rv::world::RoomPlacement{7650, 6650, 1});
+    CHECK(gen4->sections == std::vector<rv::catalog::SystemName>{*rv::catalog::SystemName::parse("megadrive")});
+    std::size_t megadrivePlaced = 0;
+    for (const rv::world::Placement& placement : entered->placements) {
+        megadrivePlaced += placement.slot.fixture().room() == gen4->id ? 1 : 0;
+    }
+    CHECK(megadrivePlaced == 12);
+    const RunResult checkedAfter = session.run({"worldplan", "check", rv::core::pathToUtf8(session.files.plan)});
+    INFO(checkedAfter.out);
+    CHECK(checkedAfter.code == ExitCode::Ok);
     const std::string wholeText = readText(session.files.plan);
     const RunResult same = session.run({"worldplan", "update", "--seed", "102938"});
     INFO(same.out << same.err);
@@ -516,6 +639,8 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     CHECK(contains(same.out, "is up to date"));
     CHECK(readText(session.files.plan) == wholeText);
     const RunResult megadrive = session.run({"worldplan", "update", "--system", "megadrive", "--seed", "102938"});
-    CHECK(megadrive.code == ExitCode::ProblemsFound);
-    CHECK(contains(megadrive.err, "the plan has no room for megadrive"));
+    INFO(megadrive.out << megadrive.err);
+    CHECK(megadrive.code == ExitCode::Ok);
+    CHECK(contains(megadrive.out, "is up to date"));
+    CHECK(readText(session.files.plan) == wholeText);
 }

@@ -1,0 +1,64 @@
+// A test copy of assets/world/systems.json (I4 step 6a's building property suite): the shipped defaults and fallback,
+// and a few of the shipped rows as they are (kinds, generations, families, orders, signs, platform tags): two arcade
+// systems, a third-generation console (a floor of its own), five fourth-generation ones, three handhelds, a computer and
+// an excluded system. A system the suite invents takes a row by its platform tag (a custom system with gb's) or the
+// fallback (the kind "other", on the computer floor).
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "home": {
+      "themePack": "classic_16bit_warm",
+      "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"},
+      "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"}
+    },
+    "handheld": {
+      "themePack": "classic_16bit_warm",
+      "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"},
+      "plastic": {"cartridge": "#8E8E8A", "console": "#C9C4B6", "accent": "#6E7F9E"}
+    },
+    "arcade": {
+      "themePack": "classic_16bit_warm",
+      "console": null,
+      "plastic": {"cartridge": "#3A3A3E", "console": "#2E2E33", "accent": "#B0503C"},
+      "sign": "ARCADE"
+    },
+    "computer": {
+      "themePack": "classic_16bit_warm",
+      "console": null,
+      "plastic": {"cartridge": "#B8B2A2", "console": "#D8D2C0", "accent": "#5E6E86"}
+    },
+    "other": {
+      "themePack": "classic_16bit_warm",
+      "console": null,
+      "plastic": {"cartridge": "#7E8A8E", "console": "#C8CCCC", "accent": "#5E8E7A"}
+    }
+  },
+  "fallback": {"family": "generic_case", "order": 9999, "sign": "MORE GAMES"},
+  "systems": [
+    {"system": "mame", "kind": "arcade", "family": "generic_case", "order": 101, "sign": "ARCADE",
+     "platforms": ["arcade"]},
+    {"system": "fbneo", "kind": "arcade", "family": "generic_case", "order": 102, "sign": "ARCADE",
+     "platforms": ["arcade"]},
+    {"system": "nes", "kind": "home", "generation": 3, "family": "cartridge_home_8bit", "order": 300,
+     "sign": "8-BIT HOME", "platforms": ["nes"]},
+    {"system": "snes", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 400,
+     "sign": "16-BIT CORNER", "platforms": ["snes"]},
+    {"system": "sfc", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 401,
+     "sign": "16-BIT CORNER", "platforms": ["snes"]},
+    {"system": "megadrive", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 402,
+     "sign": "16-BIT HOME", "platforms": ["megadrive"]},
+    {"system": "genesis", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 403,
+     "sign": "16-BIT HOME", "platforms": ["genesis"]},
+    {"system": "neogeo", "kind": "home", "generation": 4, "family": "cartridge_home_16bit", "order": 406,
+     "sign": "ARCADE AT HOME", "platforms": ["neogeo"]},
+    {"system": "gb", "kind": "handheld", "generation": 4, "family": "cartridge_handheld", "order": 700,
+     "sign": "POCKET GAMES", "platforms": ["gb"]},
+    {"system": "atarilynx", "kind": "handheld", "generation": 4, "family": "cartridge_handheld", "order": 721,
+     "sign": "POCKET GAMES", "platforms": ["atarilynx"]},
+    {"system": "pokemini", "kind": "handheld", "generation": 6, "family": "cartridge_handheld", "order": 740,
+     "sign": "POCKET GAMES", "platforms": ["pokemini"]},
+    {"system": "amiga", "kind": "computer", "family": "big_box", "order": 800, "sign": "HOME COMPUTERS",
+     "platforms": ["amiga"]},
+    {"system": "kodi", "kind": "excluded", "platforms": ["pcwindows"]}
+  ]
+}

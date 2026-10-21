@@ -94,6 +94,15 @@ struct KeptRoom {
     auto operator<=>(const KeptRoom&) const = default;
 };
 
+/// A system and a room (I4 step 6a): the room a system entering the building took or whose section it became, or the
+/// shared or arcade room a system waits for.
+struct SystemRoom {
+    catalog::SystemName system;
+    RoomId room;
+
+    auto operator<=>(const SystemRoom&) const = default;
+};
+
 /// What changed from the previous plan (ADR-0010 §10). Lists are sorted (GameIds, ids, text) so that two runs report
 /// alike.
 struct ChangeReport {
@@ -127,6 +136,16 @@ struct ChangeReport {
     /// of), by room, each reason naming those sections (I4 step 4). Their entries stand as they were, none of their
     /// games is unplaced for it, and an update given every section's selection updates them.
     std::vector<KeptRoom> heldRooms;
+    /// The rooms this change added to the building (a new system's console room, a shared or arcade room its first
+    /// section opened), by id, and the systems that entered the building, each with the room it took or whose section
+    /// it became, by system (ADR-0013 §3, §7; I4 step 6a); a fresh plan lists every room and every system placed in
+    /// one. A system its floor had no place for is in neither: its games are unplaced for capacity, naming the room.
+    std::vector<RoomId> roomsAdded;
+    std::vector<SystemRoom> systemsEntered;
+    /// The systems that could not enter (I4 step 6a): the shared or arcade room they would take a section of is held as
+    /// it stands (a section of it has no selection), by system, each with that room; their selections are not read,
+    /// and an update given every section's selection enters them.
+    std::vector<SystemRoom> systemsWaiting;
     /// The plan digests before (empty without a previous plan) and after.
     std::string digestBefore;
     std::string digestAfter;

@@ -1,0 +1,75 @@
+// A test-only room template (I4 step 6a's building property suite, tests/unit/world/test_world_building_suite.cpp):
+// console_room_9x10 v2 (assets/world/templates) cut down so that a room fills, grows and runs out of capacity with a
+// few hundred titles: its 9.0 x 10.0 m shell, doorway, hero wall (the two hero-wall modules, the hero corner, the
+// featured wall shelf), one side-wall socket in the base room and one growth step of 2.0 m that adds one more, the two
+// decoration sockets of the south wall (which move with the growth). No display case, no door-reserved socket, no
+// corner decoration. The prefabs are the shipped ones (and the families' fixtures stand in its sockets as in the
+// shipped template).
+{
+  "schemaVersion": 1,
+  "id": "suite_room_small",
+  "version": 1,
+  "room": {"widthMm": 9000, "depthMm": 10000, "heightMm": 3200, "wallThicknessMm": 150},
+  "doorway": {"wall": "south", "offsetMm": 0, "widthMm": 1600, "heightMm": 2300, "clearWidthMm": 1600,
+              "clearDepthMm": 1500},
+  "circulationWidthMm": 1400,
+  "eyeHeightMm": 1300,
+  "growth": {"stepMm": 2000, "maxDepthMm": 12000},
+  "lightLimit": 16,
+  "modules": {
+    "hero": {"manifest": "furniture.shelf.hero_module.generic", "kind": "shelf"},
+    "side": {"manifest": "furniture.shelf.side_module.generic", "kind": "shelf"}
+  },
+  "sockets": [
+    {"id": "hw-w", "kind": "hero-module", "wall": "north", "xMm": -2425, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "hero", "kind": "hero-corner", "wall": "north", "xMm": -625, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 2400, "depthMm": 3000,
+     "parts": [
+       {"role": "tv-cabinet", "prefab": {"manifest": "furniture.tv_cabinet.generic", "kind": "tv_cabinet"},
+        "xMm": 0, "yMm": 0, "zMm": 250, "yawCdeg": 0},
+       {"role": "crt", "prefab": {"manifest": "electronics.crt.consumer.generic", "kind": "crt"},
+        "xMm": -180, "yMm": 550, "zMm": 280, "yawCdeg": 0},
+       {"role": "console", "prefab": null, "xMm": 420, "yMm": 550, "zMm": 300, "yawCdeg": 35200},
+       {"role": "sign", "prefab": {"manifest": "decor.sign.room.generic", "kind": "poster_frame"},
+        "xMm": 0, "yMm": 2500, "zMm": 0, "yawCdeg": 0},
+       {"role": "rug", "prefab": {"manifest": "decor.rug.generic", "kind": "rug"},
+        "xMm": 0, "yMm": 0, "zMm": 1500, "yawCdeg": 0},
+       {"role": "armchair", "prefab": {"manifest": "furniture.armchair.generic", "kind": "armchair"},
+        "xMm": 850, "yMm": 0, "zMm": 2500, "yawCdeg": 21000},
+       {"role": "lamp", "prefab": {"manifest": "decor.lamp.floor.generic", "kind": "floor_lamp"},
+        "xMm": -1050, "yMm": 0, "zMm": 250, "yawCdeg": 0}
+     ]},
+    {"id": "fs01", "kind": "display", "wall": "north", "xMm": 1275, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 1100, "depthMm": 400,
+     "prefab": {"manifest": "furniture.wall_shelf.featured.generic", "kind": "wall_shelf"}},
+    {"id": "hw-e", "kind": "hero-module", "wall": "north", "xMm": 2425, "zMm": -4970, "yawCdeg": 0,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "w01", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": -4000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400},
+    {"id": "dec-sw", "kind": "decoration", "wall": "south", "xMm": -2500, "zMm": 4970, "yawCdeg": 18000,
+     "widthMm": 1400, "depthMm": 400},
+    {"id": "dec-se", "kind": "decoration", "wall": "south", "xMm": 2500, "zMm": 4970, "yawCdeg": 18000,
+     "widthMm": 1400, "depthMm": 400},
+    {"id": "w08", "kind": "side-wall", "wall": "west", "xMm": -4470, "zMm": 5000, "yawCdeg": 9000,
+     "widthMm": 900, "depthMm": 400, "growthStep": 1}
+  ],
+  "collectionOrder": ["hw-w", "hw-e", "w01", "w08"],
+  "heroBand": ["hw-w", "hw-e"],
+  "displayOrder": ["fs01"],
+  "decoration": [
+    {"name": "poster", "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
+     "mountHeightMm": 1550},
+    {"name": "floor-lamp", "prefab": {"manifest": "decor.lamp.floor_slim.generic", "kind": "floor_lamp"},
+     "mountHeightMm": 0},
+    {"name": "cabinet", "prefab": {"manifest": "furniture.tv_cabinet.narrow.generic", "kind": "tv_cabinet"},
+     "mountHeightMm": 0},
+    {"name": "plant", "prefab": {"manifest": "decor.plant.snake.generic", "kind": "plant"},
+     "mountHeightMm": 0}
+  ],
+  "shelfDressing": [
+    {"manifest": "decor.storage_box.generic", "kind": "storage_box"},
+    {"manifest": "decor.magazine_stack.generic", "kind": "magazine_stack"},
+    {"manifest": "decor.bookends.generic", "kind": "bookends"}
+  ]
+}

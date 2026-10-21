@@ -113,29 +113,45 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   plan unless `--replace` (the explicit regeneration of the whole building, which chooses the face-out titles again,
   after a backup); `--seed` defaults to `world.json`'s, else the library's seed. Without `--system` the building holds
   every system of the catalog that gets a room (`assets/world/systems.json`: not excluded) and has a placeable title,
-  the systems whose data the asset root cannot give yet left out with a note ("Left out:", JSON `leftOut`); `--system`
-  (repeatable) restricts it, only with `--plan` or when no plan is stored (else exit 2). Selection files given with
-  `--system` name the same systems, and with `--replace` over a stored plan they must hold every system of the stored
-  building (else exit 2: `--replace` never drops a room). Since I4 step 4 (`docs/i4/step-4.md`) every arcade system
-  takes a section of the arcade room `area:arcade` on the ground floor, a system with fewer distinct titles over all
-  its games (with a cover or not) than `world.json`'s `sharedRoomMinTitles` (default 30) a section of its floor's shared
-  room `area:shared:<floor>`, every other system its own console room; the room and section are recorded and sticky.
+  every other system left out with a note on stderr ("<system> left out of the building: <why>": no room (excluded), no
+  entries in the catalog, no placeable title, or no data yet, the asset root not giving its data) and in the summary
+  ("Left out:", JSON `leftOut` {`system`, `reason`}); `--system` (repeatable) restricts it, only with `--plan` or when
+  no plan is stored (else exit 2). Selection files given with `--system` name the same systems, and with `--replace`
+  over a stored plan they must hold every system of the stored building (else exit 2: `--replace` never drops a room).
+  Since I4 step 4 (`docs/i4/step-4.md`) every arcade system takes a section of the arcade room `area:arcade` on the
+  ground floor, a system with fewer distinct titles over all its games (with a cover or not) than `world.json`'s
+  `sharedRoomMinTitles` (default 30) a section of its floor's shared room `area:shared:<floor>`, every other system its
+  own console room; the room and section are recorded and sticky.
   `worldplan update [--system <system>]... [--selection <file>]... [--previous <plan>] [--seed <n>] [--library <id>]
-  [--plan <file>] [--diff] [--json]` applies ADR-0010 §10's rules to every room of the plan, or to the rooms of the
-  systems named or of the selection files (the others stay as they are; `--system` given with files names the same
-  systems, else exit 2; a system of a shared or arcade room updates the whole room with every section's selection, and
-  selection files must give every section, else exit 2; an update of some rooms that changes nothing keeps the plan's
-  `inputDigest`, so it writes nothing): every placement kept, new titles spine-out next to their alphabetical
-  predecessor (in a shared or arcade room, within their section: its collection is ordered by section, sort key, title
-  key and GameId), a system grown past the threshold staying in its section, then a dressed level, a
-  new module in place of decoration, growth (the room moves away from its hall, its x kept), `capacity`; the face-out
-  set unchanged. A room of an older template version, of prefabs whose levels changed or of another generator major is
-  kept as it is, its unplaced entries too, the games of its selection it neither places nor lists unplaced as
-  `room-kept` ("Room kept:", JSON `changes.keptRooms`). It prints the change report. Both exit 0 written or up to date;
-  1 nothing written (a plan exists without `--replace`; no plan to update, one edited by hand or newer, one that needs
-  `generate --replace`: another seed, preset or generator major version; the media unknown; no such system in the
-  catalog; a system without a room in the plan, which new systems need, I4 step 6a); 2 usage; 3 the data, catalog,
-  selections or overrides unreadable, a hard rule broken, the world locked by another program, a failed write.
+  [--plan <file>] [--diff] [--json]` applies ADR-0010 §10's rules to every room of the plan and enters every other
+  system of the catalog that gets a room and has a placeable title (each of the others left out with a note on stderr,
+  "retroverse-cli worldplan update: <system> left out of the building: <why>", JSON `leftOut` {`system`, `reason`}: no
+  room (excluded), no entries in the catalog, no placeable title, or no data yet, the asset root not giving its data),
+  or works on the systems named or of the selection files only (the others stay as they are; `--system` given with files
+  names the same systems, else exit 2; a system of a shared or arcade room updates the whole room with every section's
+  selection, and selection files must give every section, else exit 2; an update of some rooms that changes nothing
+  keeps the plan's `inputDigest`, so it writes nothing): every placement kept, new titles spine-out next to their
+  alphabetical predecessor (in a shared or arcade room, within their section: its collection is ordered by section, sort
+  key, title key and GameId), a system grown past the threshold staying in its section, then a dressed level, a new
+  module in place of decoration, growth (the room moves away from its hall, its x kept), `capacity`; the face-out set
+  unchanged. A room of an older template version, of prefabs whose levels changed or of another generator major is kept
+  as it is, its unplaced entries too, the games of its selection it neither places nor lists unplaced as `room-kept`
+  ("Room kept:", JSON `changes.keptRooms`); a shared room some of whose sections have no selection is held ("Room
+  held:", JSON `changes.heldRooms`). Since I4 step 6a (`docs/i4/step-6a.md`) a system that no room holds enters the
+  building as in a fresh one, nothing that stands moving: its own room at the east end of the shorter row of its floor
+  (a floor that held no room appears), or a section appended to its floor's shared room or to the arcade room (opened
+  when absent); on a full floor it joins the shared room, else its games are unplaced for capacity, naming the room it
+  would have had (when it enters again, those naming its console room give way to its entry; those naming a shared or
+  arcade room that found no place, only for its selection's games). A new system taking a section of a standing shared
+  or arcade room (an arcade system, one under the threshold, or a console system its full floor sends to the shared
+  room) needs that room's sections' selections: named from the catalog, it has them read too (the update runs again with
+  them), so it never waits; from selection files without them it waits ("Waiting:", JSON `changes.systemsWaiting`), the
+  room held. The report says "Entered: <system> in <room> (a new room | a new section)" (JSON `changes.systemsEntered`,
+  `changes.roomsAdded`). It prints the change report. Both exit 0 written or up to date; 1 nothing written (a plan
+  exists without `--replace`; no plan to update, one edited by hand or newer, one that needs `generate --replace`:
+  another seed, preset or generator major version; the media unknown; no such system in the catalog); 2 usage; 3 the
+  data, catalog, selections or overrides unreadable (a system named that gets no room, an excluded one, included), a
+  hard rule broken, the world locked by another program, a failed write.
   `worldplan show [<plan>] [--library <id>] [--placements] [--floor <id>] [--scene <file> [--room <id>]] [--json]`
   summarizes a plan: its floors (order, rooms), each room with its kind, floor, sections, row and place on the floor
   and generator (JSON `floors`, `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`,
