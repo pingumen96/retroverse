@@ -49,6 +49,15 @@ struct LayoutDifference {
 /// Compares the items of `before` and `after` by game (their GameIds; a game is in a layout once).
 [[nodiscard]] LayoutDifference compareLayouts(const world::CollectionLayout& before,
                                               const world::CollectionLayout& after);
+/// The same for two layouts of one room in the scene's frame, its room standing at `beforeAt` and at `afterAt` there
+/// (world::floorCollectionLayout): the items compared in the room's own frame, so that a room moved as a whole (its
+/// growth, ADR-0013 §7: followDepth; the start room's growth moving the others in its frame) moves none of its items.
+/// The same placement compares exactly, as compareLayouts(); another one within 0.1 mm and 1e-4 of a rotation (a
+/// slot's place is whole millimetres: the frames' float arithmetic is the only difference).
+[[nodiscard]] LayoutDifference compareLayouts(const world::CollectionLayout& before,
+                                              const world::RoomPlacement& beforeAt,
+                                              const world::CollectionLayout& after,
+                                              const world::RoomPlacement& afterAt);
 
 enum class Reconciliation : std::uint8_t {
     Textures, ///< the room as it shows, its covers served again when they changed, the CRT's games

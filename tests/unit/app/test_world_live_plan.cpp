@@ -22,6 +22,7 @@
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/core/worker_pool.hpp>
 #include <rv/scene/instance_data.hpp>
+#include <rv/world/floor_scene.hpp>
 #include <rv/world/world_store.hpp>
 
 #include "catalog_test_support.hpp"
@@ -412,4 +413,55 @@ TEST_CASE("app/world_live_plan: a floor of two rooms is compared room by room", 
     WorldBuild added = twoRooms({item(110, 1), item(115, 5, 0.05f), item(120, 2, 0.1f)}, "scene-a");
     added.planDigest = "plan-b";
     CHECK(rv::app::planReconciliation(before, added).kind == rv::app::Reconciliation::Rebuild);
+}
+
+TEST_CASE("app/world_live_plan: a room moved as a whole on its floor moves none of its items; an item moved in it does",
+          "[app][world_live]") {
+    // ADR-0013 §7: a room that grows moves away from the hall as a whole (followDepth), its items keeping their places
+    // in its own frame; in the scene's frame (floorCollectionLayout) every item's transform changes.
+    const rv::world::RoomId pocketlab = rv::world::RoomId::parse("room:pocketlab").value();
+    const rv::world::CollectionLayout inRoom =
+        layoutOf({item(110, 1, 0.5f), item(120, 2, 1.25f), item(130, 3, 2.0f)}, "cartridge", pocketlab);
+    const auto placedAt = [&](const rv::world::CollectionLayout& layout, const rv::world::RoomPlacement& at) {
+        WorldBuild build = threeTitles();
+        rv::app::RoomCollection room = collectionOf(rv::world::floorCollectionLayout(layout, at),
+                                                    {cover(110, "A"), cover(120, "B"), cover(130, "C")});
+        room.scenePlacement = at;
+        room.placement = at;
+        build.rooms.push_back(std::move(room));
+        return build;
+    };
+    // Across the hall (half-turned), then grown: its placement 1.2 m further from the hall.
+    const rv::world::RoomPlacement before{14'300, 5'750, 1};
+    const rv::world::RoomPlacement grown{14'300, 6'950, 1};
+    const ShownFloor shown = shownOf(placedAt(inRoom, before));
+    REQUIRE(shown.rooms.size() == 2);
+    CHECK(shown.rooms.back().scenePlacement == before);
+    WorldBuild moved = placedAt(inRoom, grown);
+    moved.planDigest = "plan-b";
+    moved.sceneDigest = "scene-b";
+    REQUIRE(moved.rooms.back().layout.items.front().transform != shown.rooms.back().layout.items.front().transform);
+    const LiveUpdatePlan plan = rv::app::planLiveUpdate(shown, moved);
+    CHECK(plan.difference == rv::app::LayoutDifference{6, 0, 0, 0, 0});
+    // Its static part changed (the room's walls, the hall): the floor committed again, for that reason.
+    CHECK(plan.kind == LiveUpdateKind::Rebuild);
+    CHECK(plan.reason.find("static part") != std::string::npos);
+    const rv::app::ReconcilePlan reconciled = rv::app::planReconciliation(placedAt(inRoom, before), moved);
+    CHECK(reconciled.kind == rv::app::Reconciliation::Rebuild);
+    CHECK(reconciled.difference == rv::app::LayoutDifference{6, 0, 0, 0, 0});
+
+    // An item of the room at another place in its own frame (1 mm along its level) is moved, whatever the placement.
+    rv::world::CollectionLayout shifted = inRoom;
+    shifted.items[1].transform = glm::translate(shifted.items[1].transform, glm::vec3(0.001f, 0.0f, 0.0f));
+    CHECK(rv::app::planLiveUpdate(shown, placedAt(shifted, grown)).difference ==
+          rv::app::LayoutDifference{5, 1, 0, 0, 0});
+    CHECK(rv::app::planLiveUpdate(shown, placedAt(shifted, before)).difference ==
+          rv::app::LayoutDifference{5, 1, 0, 0, 0});
+    // The comparison itself: the same placement is exact, another one is the room's own frame.
+    CHECK(rv::app::compareLayouts(rv::world::floorCollectionLayout(inRoom, before), before,
+                                  rv::world::floorCollectionLayout(inRoom, grown), grown) ==
+          rv::app::LayoutDifference{3, 0, 0, 0, 0});
+    CHECK(rv::app::compareLayouts(rv::world::floorCollectionLayout(inRoom, before),
+                                  rv::world::floorCollectionLayout(inRoom, grown))
+              .moved == 3);
 }

@@ -28,8 +28,10 @@
 //
 // Since I4 step 5a the room shown is a floor (world_build.hpp): its collections are compared room by room (matched by
 // room id, the items by game within them), the static part is the floor's scene file, and Items applies each room's
-// collection in place. Per-room reconciliation (a room rebuilt while the others stand) is I4 step 6b's: here any change
-// of the floor's static part commits the whole floor again, the walker kept.
+// collection in place. The items are compared in their room's frame, so that a room moved as a whole (its growth)
+// counts none of its items as moved. Per-room reconciliation (a room rebuilt while the others stand) is I4 step 6b's:
+// here any change of the floor's static part commits the whole floor again, the walker kept where it stands in the
+// scene's frame (in the room's own frame when a room that grew holds it: ADR-0013 §7, I4 step 6b).
 
 #include <cstddef>
 #include <cstdint>
@@ -47,11 +49,13 @@
 
 namespace rv::app {
 
-/// A collection room of the floor shown: its layout and its cover requests.
+/// A collection room of the floor shown: its layout (in the scene's frame, its room standing at `scenePlacement` there:
+/// RoomCollection's) and its cover requests.
 struct ShownCollection {
     world::RoomId room;
     world::CollectionLayout layout;
     std::vector<CoverItem> covers;
+    world::RoomPlacement scenePlacement;
 };
 
 /// What the session keeps of the floor it shows, to compare the next build with (a WorldBuild without its scene, scene
@@ -73,7 +77,9 @@ struct ShownFloor {
 /// What `build` (with a plan; its scene may have been given away) shows; nullopt for a build without a plan.
 [[nodiscard]] std::optional<ShownFloor> shownFloorOf(const WorldBuild& build);
 
-/// The floor shown against `build`'s collections, by room and by game (a room in one only: its items added or removed).
+/// The floor shown against `build`'s collections, by room and by game (a room in one only: its items added or removed),
+/// each room's items in its own frame (compareLayouts() with its scene placements: a room that grew, or the others in
+/// the frame of a start room that grew, moved none of its items).
 [[nodiscard]] LayoutDifference compareFloors(const ShownFloor& shown, const WorldBuild& build);
 
 enum class LiveUpdateKind : std::uint8_t {

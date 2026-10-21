@@ -66,7 +66,7 @@ std::optional<ShownFloor> shownFloorOf(const WorldBuild& build) {
     shown.floor = build.floor;
     shown.sceneDigest = build.sceneDigest;
     for (const RoomCollection& room : build.rooms) {
-        shown.rooms.push_back(ShownCollection{room.room, room.layout, room.covers});
+        shown.rooms.push_back(ShownCollection{room.room, room.layout, room.covers, room.scenePlacement});
     }
     shown.mediaKnown = build.mediaRoot.has_value();
     shown.screenGames = build.screenGames;
@@ -83,7 +83,8 @@ LayoutDifference compareFloors(const ShownFloor& shown, const WorldBuild& build)
             difference.added += room.layout.items.size();
             continue;
         }
-        const LayoutDifference part = compareLayouts(before->layout, room.layout);
+        const LayoutDifference part =
+            compareLayouts(before->layout, before->scenePlacement, room.layout, room.scenePlacement);
         difference.kept += part.kept;
         difference.moved += part.moved;
         difference.flagsChanged += part.flagsChanged;
