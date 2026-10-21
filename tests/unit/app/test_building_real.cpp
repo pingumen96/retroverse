@@ -11,11 +11,12 @@
 //     of the process's creation; the building job skipped by its stamp;
 //   - the building stamp removed: the whole job on an unchanged library (the time I4 step 6b set out to cut; lockstep,
 //     so that the run waits for it), then the user's start again with the stamp it wrote;
-//   - I4 step 7b: a ride from the lobby to the computer floor (the busiest) and back through the elevator's directory,
-//     as the user rides (no lockstep), cold then warm: the view back within the acceptable row (10 s cold, 3 s warm),
-//     the GPU memory after each ride the destination's (the collection arrays of a start on that floor);
 //   - a start in the computer floor's largest room (--start-room, lockstep): the floor's GPU memory at its peak within
-//     the acceptable 512 MiB, cold then warm;
+//     the acceptable 512 MiB, cold (its covers derived and stored in that run) then warm;
+//   - I4 step 7b: the derived covers emptied, a ride from the lobby to the computer floor (the busiest), to its largest
+//     room through the elevator and the directory, and back to the lobby's elevator with Map, as the user rides (no
+//     lockstep), cold then warm: the view back within the acceptable row (10 s cold, 3 s warm), the GPU memory after
+//     each ride the destination's (the collection arrays of a start on that floor, of the lobby);
 //   - retroverse-cli worldplan update on the unchanged library (the same update code, informative).
 // The figures are printed for docs/i4/step-6b.md (the lines starting "Real building:"). The checks hold whatever the
 // collection holds (this machine's figures are not versioned); nothing derived from the user's titles is written
@@ -31,7 +32,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -39,8 +39,10 @@
 
 #include <fmt/format.h>
 
+#include <rv/app/directory_data.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/assets/derived_texture_cache.hpp>
 #include <rv/catalog/import_service.hpp>
 #include <rv/catalog/reconciliation.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
@@ -243,23 +245,70 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
     CHECK(second.world.job->skipped);
     CHECK(third.world.job->skipped);
 
-    // I4 step 7b: a ride from the lobby to the computer floor (the busiest) and back, as the user rides (no lockstep:
-    // the view comes back once the hall, the eye's area, is resident, or after 10 s), cold (the computer floor never
-    // shown in this data directory) then warm; the GPU memory after each ride. The script waits long enough between
-    // the two choices for a cold ride at any frame rate (both rides must have arrived).
+    // The computer floor's largest room: the floor's GPU memory at its peak, cold (nothing but the lobby showed in this
+    // data directory: no cover of the floor derived yet) then warm.
     const auto stored = rv::world::readStoredPlan(rv::world::worldFiles(data, profile.id).plan);
     REQUIRE(stored.has_value());
-    std::vector<rv::world::Floor> floors = stored->plan.floors;
-    std::sort(floors.begin(), floors.end(),
-              [](const rv::world::Floor& a, const rv::world::Floor& b) { return a.order < b.order; });
-    const auto rowOf = [&](std::string_view id) {
-        const auto found = std::find_if(floors.begin(), floors.end(),
-                                        [&](const rv::world::Floor& floor) { return floor.id == id; });
-        REQUIRE(found != floors.end());
-        return static_cast<std::size_t>(found - floors.begin());
+    std::map<std::string, std::size_t> placements;
+    for (const rv::world::Placement& placement : stored->plan.placements) {
+        ++placements[placement.slot.fixture().room().toString()];
+    }
+    std::string largest;
+    std::size_t floorItems = 0;
+    for (const rv::world::Room* room : rv::world::roomsOnFloor(stored->plan, "computer")) {
+        const std::size_t count = placements[room->id.toString()];
+        floorItems += count;
+        if (largest.empty() || count > placements[largest]) {
+            largest = room->id.toString();
+        }
+    }
+    REQUIRE_FALSE(largest.empty());
+    std::uint64_t computerArrays = 0;
+    for (const std::string name : {"computer-cold", "computer-warm"}) {
+        std::vector<std::string> arguments{"--start-room", largest};
+        arguments.insert(arguments.end(), {"--exit-after-frames", "--frames", "120", "--fixed-dt", "0.016667"});
+        const rv::app::RunReport run = runApp(folder, data, name, arguments);
+        INFO(name);
+        CHECK(run.world.state == "room");
+        CHECK(run.world.floor == "computer");
+        CHECK(run.world.items == floorItems);
+        CHECK(run.gpuMemory.peakTotalBytes <= kAcceptableGpuBytes);
+        if (name == "computer-cold") {
+            // Cold: the floor's covers derived from the media and stored in this run.
+            CHECK(run.residency.cacheMisses > 0);
+            CHECK(run.residency.cacheStored > 0);
+        }
+        computerArrays = run.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes;
+        std::cout << fmt::format("Real building: {}: the computer floor ({} rooms, {} items; its largest room {} "
+                                 "items): GPU memory at its peak {:.1f} MiB, collection arrays {:.1f} MiB ({}), "
+                                 "{} of {} fronts resident at the end (the cache: {} hits, {} misses, {} stored); the "
+                                 "job: {}\n",
+                                 name, run.world.rooms.size(), floorItems, placements[largest],
+                                 mib(run.gpuMemory.peakTotalBytes), mib(run.residency.arrayBytes),
+                                 run.residency.format, run.residency.frontsResident, run.residency.items,
+                                 run.residency.cacheHits, run.residency.cacheMisses, run.residency.cacheStored,
+                                 jobLine(run.world));
+    }
+
+    // I4 step 7b: a ride from the lobby to the computer floor (the busiest), to its largest room through the elevator
+    // (the walker turned to its doors, interact, the floor, the room), then back to the lobby's elevator with Map, as the
+    // user rides (no lockstep: the view comes back once the room that holds the eye is resident, a hall at once, or by
+    // 10 s after the request), cold (the derived covers emptied: the room's covers made from the media again) then warm;
+    // the GPU memory after each ride. The script waits long enough between the two choices for a cold ride at any frame
+    // rate (both rides must have ended).
+    const fs::path textures = rv::assets::textureCacheRoot(paths.cacheDir(), profile.id.str()).value();
+    fs::remove_all(textures, removed);
+    REQUIRE_FALSE(removed);
+    const rv::ui::DirectoryBuilding directory = rv::app::directoryBuildingOf(stored->plan, {});
+    const auto rowOf = [](const auto& rows, std::string_view id) {
+        const auto found = std::find_if(rows.begin(), rows.end(), [&](const auto& row) { return row.id == id; });
+        REQUIRE(found != rows.end());
+        return static_cast<std::size_t>(found - rows.begin());
     };
-    const std::size_t groundRow = rowOf(rv::world::kGroundFloor);
-    const std::size_t computerRow = rowOf("computer");
+    const std::size_t groundRow = rowOf(directory.floors, rv::world::kGroundFloor);
+    const std::size_t computerRow = rowOf(directory.floors, "computer");
+    // A floor's list: its hall's row, then its rooms along the hall (the first room selected on another floor).
+    const std::size_t largestRow = 1 + rowOf(directory.floors[computerRow].rooms, largest);
     // Frames before the first choice (the stored lobby reconciled with the building's result: no ride while a floor
     // applies) and between the two (a cold ride at any frame rate).
     constexpr std::uint64_t kStartFrames = 6000;
@@ -270,22 +319,28 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
             script += fmt::format("{}{{\"fromFrame\": {}, \"toFrame\": {}, \"actions\": {{\"{}\": 1}}}}",
                                   script.size() > 1 ? ", " : "", frame, frame, action);
         };
-        // Interact at the lobby's elevator: the floors (the ground floor selected), down to the computer floor, its
-        // rooms, up to its hall's row, chosen. Then the same from the computer floor's elevator back to the ground.
-        std::uint64_t frame = kStartFrames;
-        for (const auto& [from, to, start] :
-             {std::tuple<std::size_t, std::size_t, std::uint64_t>{groundRow, computerRow, kStartFrames},
-              {computerRow, groundRow, kStartFrames + kRideWaitFrames}}) {
-            frame = start;
-            press(frame, "interact");
+        const auto move = [&](std::uint64_t& frame, std::size_t from, std::size_t to) {
             for (std::size_t row = from; row != to; row = row < to ? row + 1 : row - 1) {
-                frame += 3;
-                press(frame, row < to ? "ui_down" : "ui_up");
+                press(frame += 3, row < to ? "ui_down" : "ui_up");
             }
-            press(frame += 3, "ui_activate");
-            press(frame += 3, "ui_up");
-            press(frame += 3, "ui_activate");
-        }
+        };
+        // The lobby's arrival point faces the hall: half a turn to the elevator's doors (10 * 142.8 mouse pixels), its
+        // prompt, interact: the floors (the ground floor selected), down to the computer floor, its rooms, the largest.
+        std::uint64_t frame = kStartFrames;
+        script += fmt::format("{{\"fromFrame\": {}, \"toFrame\": {}, \"actions\": {{\"look_delta_x\": 142.8}}}}", frame,
+                              frame + 9);
+        press(frame += 13, "interact");
+        move(frame, groundRow, computerRow);
+        press(frame += 3, "ui_activate");
+        move(frame, 1, largestRow);
+        press(frame += 3, "ui_activate");
+        // In the room, Map: the floors (the computer floor selected), up to the ground floor, its hall's row, chosen.
+        frame = kStartFrames + kRideWaitFrames;
+        press(frame, "map");
+        move(frame, computerRow, groundRow);
+        press(frame += 3, "ui_activate");
+        press(frame += 3, "ui_up");
+        press(frame += 3, "ui_activate");
         script += "]\n";
         const fs::path file = folder / (name + "-script.json");
         REQUIRE(rv::core::writeTextFileAtomic(file, script).has_value());
@@ -301,65 +356,42 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
         INFO(name);
         REQUIRE(run.world.rides.size() == 2);
         for (const rv::app::RideRecord& ride : run.world.rides) {
-            CHECK(ride.outcome == "arrived");
             CHECK(ride.gpuBytes <= kAcceptableGpuBytes);
-            std::cout << fmt::format("Real building: {}: {} to {}: the view back {} after it was asked (the floor "
-                                     "built at {}, its job {}, the eye's area resident at {}); GPU memory {:.1f} MiB, "
-                                     "collection arrays {:.1f} MiB\n",
-                                     name, ride.from, ride.to, ms(ride.totalMs), ms(ride.builtMs), ms(ride.jobMs),
+            std::cout << fmt::format("Real building: {}: {} to {} ({}{}{}): {}, the view back {} after it was asked "
+                                     "(the floor built at {}, its job {}, the eye's area resident at {}); GPU memory "
+                                     "{:.1f} MiB, collection arrays {:.1f} MiB\n",
+                                     name, ride.from, ride.to, ride.reason, ride.room.empty() ? "" : " ", ride.room,
+                                     ride.outcome, ms(ride.totalMs), ms(ride.builtMs), ms(ride.jobMs),
                                      ms(ride.residentMs), mib(ride.gpuBytes), mib(ride.arrayBytes));
         }
-        CHECK(run.world.rides[0].to == "computer");
-        CHECK(run.world.rides[1].to == rv::world::kGroundFloor);
+        const rv::app::RideRecord& there = run.world.rides[0];
+        const rv::app::RideRecord& back = run.world.rides[1];
+        CHECK(there.to == "computer");
+        CHECK(there.reason == "room");
+        CHECK(there.room == largest);
+        CHECK(back.to == rv::world::kGroundFloor);
+        CHECK(back.reason == "floor");
+        CHECK(back.outcome == "arrived");
+        // Warm, the room's covers in the cache: its every item resident before the view comes back.
+        if (name == "ride-warm") {
+            CHECK(there.outcome == "arrived");
+        } else {
+            CHECK((there.outcome == "arrived" || there.outcome == "timed-out"));
+        }
         CHECK(run.world.floor == rv::world::kGroundFloor);
         CHECK(run.gpuMemory.peakTotalBytes <= kAcceptableGpuBytes);
-    }
-    // The acceptable row (ADR-0013 §13): cold within 10 s, warm within 3 s.
-    CHECK(rides[0].world.rides[0].totalMs.value_or(1e9) <= 10000.0);
-    CHECK(rides[1].world.rides[0].totalMs.value_or(1e9) <= 3000.0);
-    CHECK(rides[1].world.rides[1].totalMs.value_or(1e9) <= 3000.0);
-    // The arrays after the ride back: the lobby's again, as at the unchanged start.
-    for (const rv::app::RunReport& run : rides) {
-        CHECK(run.world.rides[1].arrayBytes == second.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes);
+        // The arrays after each ride: the computer floor's as a start on it has them, then the lobby's again.
+        CHECK(there.arrayBytes == computerArrays);
+        CHECK(back.arrayBytes == second.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes);
         CHECK(run.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes ==
               second.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes);
     }
-
-    // The computer floor's largest room: the floor's GPU memory at its peak, cold then warm.
-    std::map<std::string, std::size_t> placements;
-    for (const rv::world::Placement& placement : stored->plan.placements) {
-        ++placements[placement.slot.fixture().room().toString()];
+    // The acceptable row (ADR-0013 §13): the view back within 10 s cold, within 3 s warm.
+    for (const rv::app::RideRecord& ride : rides[0].world.rides) {
+        CHECK(ride.totalMs.value_or(1e9) <= 10000.0);
     }
-    std::string largest;
-    std::size_t floorItems = 0;
-    for (const rv::world::Room* room : rv::world::roomsOnFloor(stored->plan, "computer")) {
-        const std::size_t count = placements[room->id.toString()];
-        floorItems += count;
-        if (largest.empty() || count > placements[largest]) {
-            largest = room->id.toString();
-        }
-    }
-    REQUIRE_FALSE(largest.empty());
-    for (const std::string name : {"computer-cold", "computer-warm"}) {
-        std::vector<std::string> arguments{"--start-room", largest};
-        arguments.insert(arguments.end(), {"--exit-after-frames", "--frames", "120", "--fixed-dt", "0.016667"});
-        const rv::app::RunReport run = runApp(folder, data, name, arguments);
-        INFO(name);
-        CHECK(run.world.state == "room");
-        CHECK(run.world.floor == "computer");
-        CHECK(run.world.items == floorItems);
-        CHECK(run.gpuMemory.peakTotalBytes <= kAcceptableGpuBytes);
-        // I4 step 7b: a ride to the computer floor left the same arrays as a start on it.
-        for (const rv::app::RunReport& ride : rides) {
-            CHECK(ride.world.rides[0].arrayBytes == run.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes);
-        }
-        std::cout << fmt::format("Real building: {}: the computer floor ({} rooms, {} items; its largest room {} "
-                                 "items): GPU memory at its peak {:.1f} MiB, collection arrays {:.1f} MiB ({}), "
-                                 "{} of {} fronts resident at the end; the job: {}\n",
-                                 name, run.world.rooms.size(), floorItems, placements[largest],
-                                 mib(run.gpuMemory.peakTotalBytes), mib(run.residency.arrayBytes),
-                                 run.residency.format, run.residency.frontsResident, run.residency.items,
-                                 jobLine(run.world));
+    for (const rv::app::RideRecord& ride : rides[1].world.rides) {
+        CHECK(ride.totalMs.value_or(1e9) <= 3000.0);
     }
 
     // The CLI's update on the unchanged library: the same update code, the whole of it (informative).
