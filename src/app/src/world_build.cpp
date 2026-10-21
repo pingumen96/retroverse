@@ -130,7 +130,8 @@ void dropFloor(WorldBuild& build) {
     return {room.id.system()};
 }
 
-/// The room of `plan` that holds `system` in its sections, or nullptr.
+/// The room of `plan` that holds `system` in its sections (its console room, or the shared or arcade room it has a
+/// section of: ADR-0013 §3), or nullptr.
 [[nodiscard]] const world::Room* roomHolding(const world::WorldPlan& plan, const catalog::SystemName& system) {
     for (const world::Room& room : plan.rooms) {
         const std::vector<catalog::SystemName> systems = systemsOf(room);
@@ -302,20 +303,17 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     const Clock::time_point planStart = Clock::now();
     Expected<world::GenerationResult> result = makeError(ErrorCode::Unknown, "no plan made");
     if (stored) {
-        // The update of the building's console rooms, as `retroverse-cli worldplan update` makes it: every room with a
-        // selection updated, the others as they stand; a system without a room waits for I4 step 6a (new systems).
+        // The update of the building's rooms, as `retroverse-cli worldplan update` makes it: each system's selection
+        // goes to the room that holds its section (its console room, or the shared or arcade room it has a section of:
+        // I4 step 4, sticky), a shared or arcade room updated with all its sections' selections (one lacking some is
+        // held as it is: the change report's heldRooms), the rooms without a selection as they stand; a system without
+        // a room waits for I4 step 6a (new systems).
         std::vector<world::RoomSelection> updated;
         for (world::RoomSelection& selection : selections) {
-            const bool hasRoom = std::any_of(stored->plan.rooms.begin(), stored->plan.rooms.end(),
-                                             [&](const world::Room& room) {
-                                                 return room.kind == world::RoomKind::Console &&
-                                                        room.id == selection.room;
-                                             });
-            if (hasRoom) {
+            if (roomHolding(stored->plan, selection.room.system()) != nullptr) {
                 updated.push_back(std::move(selection));
             } else if (!selection.titles.empty()) {
-                spdlog::info("World: {} has no console room in the stored building; new systems enter it with I4 "
-                             "step 6a",
+                spdlog::info("World: {} has no room in the stored building; new systems enter it with I4 step 6a",
                              selection.room.system().str());
             }
         }
@@ -419,6 +417,11 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
         if (input.startRoom && kept.room == *input.startRoom) {
             build.notice = std::string(world_notice::kRegeneration);
         }
+    }
+    // A shared or arcade room some of whose sections had no selection (a system the catalog no longer lists) stands as
+    // it was until every section has one (I4 step 4): said in the log.
+    for (const world::KeptRoom& held : result->changes.heldRooms) {
+        spdlog::warn("World: {} is held as it is: {}", held.room.toString(), held.reason);
     }
     build.plan = std::move(result->plan);
     build.planDigest = result->changes.digestAfter;

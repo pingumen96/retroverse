@@ -17,9 +17,10 @@
 //                                                    read transaction on the catalog's world reader
 //                                                    (takeBuildingSnapshot), the world lock, the plan read again under
 //                                                    it, the selections merged by system, a first building
-//                                                    (generateBuilding) or the update of its console rooms
-//                                                    (updateBuilding), the validation, savePlan, each system's room
-//                                                    items written when they changed (room_items.hpp)
+//                                                    (generateBuilding) or the update of its rooms (updateBuilding:
+//                                                    each selection to the room holding its section, a shared or
+//                                                    arcade room lacking one held), the validation, savePlan, each
+//                                                    system's room items written when they changed (room_items.hpp)
 //   the building planned ------------------------>  buildFloor (the floor-build job, keyed (floor, plan digest)): the
 //                                                    floor's static scene (world::toFloorSceneFile) in the scene's
 //                                                    frame, each collection room's layout in that frame and its cover
