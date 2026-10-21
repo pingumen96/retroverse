@@ -149,11 +149,12 @@ through both doorways); the walk into it: `tests/input_scripts/floor_walk_into_s
 
 The directory (I4 step 7a; not wired into the app until step 7b) shows from a fixed model through `rv_ui_probe`, over
 the test room: `build/msvc-x64-debug/bin/rv_ui_probe.exe --input-script tests/input_scripts/directory_panel.json
---probe-shots build/screenshots/directory --exit-after-frames --frames 200 --hidden --fixed-dt 0.016667 --width 1920
+--probe-shots build/screenshots/directory --exit-after-frames --frames 240 --hidden --fixed-dt 0.016667 --width 1920
 --height 1080 --data-dir build/rvdata` writes `floors.png` (gen4 selected, "Sei qui"), `rooms.png` (gen4's hall and
-rooms, room:snes selected), `games.png` (the favourites and recent games) and `card.png` (a game's card with Avvia and
-"Mostra nella stanza"); `--width 1280 --height 720` shows the compact theme. The model is
-`tests/ui_probe/directory_fixture.hpp`'s (invented systems and titles).
+rooms, room:snes selected, the shared room's five long system names wrapped), `games.png` (the favourites and recent
+games, the long title selected and ending in an ellipsis) and `card.png` (a game's card with Avvia and "Mostra nella
+stanza", beside the favourites: a long system name after its date); `--width 1280 --height 720` shows the compact
+theme. The model is `tests/ui_probe/directory_fixture.hpp`'s (invented systems and titles).
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),
