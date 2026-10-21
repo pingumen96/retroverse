@@ -16,6 +16,10 @@
 //     incremental rules move none: LayoutDifference::moved is 0);
 //   - no plan (the stored plan refused under the world's lock, the room's data unreadable): the empty room's shell
 //     with its notice, as when no plan was stored (Shell).
+//
+// Since I4 step 5a the room is the start floor (ShownFloor, world_live_plan.hpp): the same plan and floor with every
+// collection room's collection the same is Textures, anything else Rebuild of the whole floor. Reconciling room by
+// room is I4 step 6b's.
 
 #include <cstddef>
 #include <cstdint>

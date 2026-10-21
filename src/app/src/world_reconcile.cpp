@@ -2,6 +2,8 @@
 
 #include <map>
 
+#include <rv/app/world_live_plan.hpp>
+
 namespace rv::app {
 
 LayoutDifference compareLayouts(const world::CollectionLayout& before, const world::CollectionLayout& after) {
@@ -44,21 +46,27 @@ std::string_view toString(Reconciliation reconciliation) noexcept {
 
 ReconcilePlan planReconciliation(const WorldBuild& shown, const WorldBuild& build) {
     ReconcilePlan plan;
-    if (!build.plan || !build.scene || !build.sceneData || !build.layout) {
+    if (!build.plan || !build.scene) {
         plan.kind = Reconciliation::Shell;
         return plan;
     }
-    if (shown.layout) {
-        plan.difference = compareLayouts(*shown.layout, *build.layout);
+    const std::optional<ShownFloor> before = shownFloorOf(shown);
+    if (before) {
+        plan.difference = compareFloors(*before, build);
     } else {
-        plan.difference.added = build.layout->items.size();
+        plan.difference.added = build.itemCount();
     }
-    if (!shown.plan || !shown.layout || build.planDigest != shown.planDigest || !plan.difference.same()) {
+    if (!before || build.planDigest != shown.planDigest || build.floor != shown.floor || !plan.difference.same()) {
         plan.kind = Reconciliation::Rebuild;
         return plan;
     }
     plan.kind = Reconciliation::Textures;
-    plan.reloadCovers = build.covers != shown.covers || build.mediaRoot.has_value();
+    bool coversDiffer = build.rooms.size() != shown.rooms.size();
+    for (std::size_t index = 0; !coversDiffer && index < build.rooms.size(); ++index) {
+        coversDiffer = build.rooms[index].room != shown.rooms[index].room ||
+                       build.rooms[index].covers != shown.rooms[index].covers;
+    }
+    plan.reloadCovers = coversDiffer || build.mediaRoot.has_value();
     return plan;
 }
 

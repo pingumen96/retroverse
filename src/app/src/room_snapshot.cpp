@@ -1,7 +1,13 @@
 #include <rv/app/room_snapshot.hpp>
 
 #include <algorithm>
+#include <set>
 #include <utility>
+
+#include <spdlog/spdlog.h>
+
+#include <rv/catalog_db/database.hpp>
+#include <rv/esde/settings.hpp>
 
 namespace rv::app {
 namespace {
@@ -75,6 +81,108 @@ RoomSnapshotResult takeRoomSnapshot(catalog::ICatalogQuery& query, catalog::ICat
     result.milliseconds = millisecondsSince(start);
     result.at = std::chrono::system_clock::now();
     return result;
+}
+
+const RoomSnapshotResult* BuildingSnapshot::find(const catalog::SystemName& system) const noexcept {
+    for (const RoomSnapshotResult& result : systems) {
+        if (result.system == system) {
+            return &result;
+        }
+    }
+    return nullptr;
+}
+
+bool BuildingSnapshot::mediaKnown() const noexcept {
+    bool any = false;
+    for (const RoomSnapshotResult& result : systems) {
+        if (result.error) {
+            continue;
+        }
+        if (!result.snapshot.mediaKnown) {
+            return false;
+        }
+        any = true;
+    }
+    return any;
+}
+
+BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader, std::span<const catalog::GameId> placedGames,
+                                      const SystemFilter& wanted) {
+    const Clock::time_point start = Clock::now();
+    BuildingSnapshot building;
+    building.library = reader.profile.id;
+    const auto finish = [&]() -> BuildingSnapshot {
+        building.milliseconds = millisecondsSince(start);
+        building.at = std::chrono::system_clock::now();
+        return std::move(building);
+    };
+    if (!reader.query) {
+        building.error = Error{ErrorCode::Unavailable, "the catalog has no reader for the building", {}};
+        return finish();
+    }
+    catalog_db::SqliteCatalogQuery& query = *reader.query;
+    // One read transaction: every snapshot and alias reads the same state of the catalog (ADR-0013 §9).
+    catalog_db::Transaction transaction;
+    if (!query.connection().inTransaction()) {
+        auto begun = catalog_db::Transaction::begin(query.connection(), catalog_db::Transaction::Mode::Deferred);
+        if (!begun) {
+            building.error = begun.error();
+            return finish();
+        }
+        transaction = std::move(*begun);
+    }
+    auto summaries = query.systems();
+    if (!summaries) {
+        building.error = summaries.error();
+        return finish();
+    }
+    // ES-DE's settings as they are now: the media root it would use (library.json's override over them).
+    const auto settings = esde::readSettings(reader.profile.esdeHome);
+    const esde::ResolvedRoot mediaRoot =
+        esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, reader.profile);
+    std::set<catalog::GameId> listed;
+    for (const catalog_db::SystemSummary& summary : *summaries) {
+        if (summary.library != reader.profile.id) {
+            continue;
+        }
+        if (wanted && !wanted(summary.system.name, summary.system.platforms)) {
+            continue;
+        }
+        RoomSnapshotRequest request;
+        request.system = summary.system.name;
+        RoomSnapshotResult result =
+            takeRoomSnapshot(query, nullptr, mediaRoot, reader.profile.id, summary.system.fullName, request);
+        result.platformTags = summary.system.platforms;
+        for (const catalog::RoomEntry& entry : result.snapshot.entries) {
+            listed.insert(entry.id);
+        }
+        building.systems.push_back(std::move(result));
+    }
+    std::sort(building.systems.begin(), building.systems.end(),
+              [](const RoomSnapshotResult& a, const RoomSnapshotResult& b) { return a.system < b.system; });
+    std::set<catalog::GameId> missing;
+    for (const catalog::GameId& game : placedGames) {
+        if (!listed.contains(game)) {
+            missing.insert(game);
+        }
+    }
+    for (const catalog::GameId& game : missing) {
+        auto alias = query.aliasTarget(game);
+        if (!alias) {
+            building.aliasError = alias.error();
+            building.aliases.clear();
+            break;
+        }
+        if (*alias) {
+            building.aliases.push_back(world::GameAlias{game, **alias});
+        }
+    }
+    if (transaction.active()) {
+        if (Status ended = transaction.commit(); !ended) {
+            spdlog::warn("Building snapshot: the read transaction did not end cleanly: {}", ended.error().toString());
+        }
+    }
+    return finish();
 }
 
 std::string coverPathOf(std::span<const esde::RoomMediaPaths> paths, const catalog::GameId& game) {

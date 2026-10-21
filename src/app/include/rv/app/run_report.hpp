@@ -569,8 +569,21 @@ struct ObjectFallbackRecord {
     bool operator==(const ObjectFallbackRecord&) const = default;
 };
 
-/// The generated room of the run (I3 step 10b): what showed, from which plan, how it came to be and when. Empty ({})
-/// in runs that ask for no room (--scene, --model, --mock-catalog, the asset preview).
+/// A room of the floor shown (I4 step 5a, ADR-0013 §7): its id, its floor and its place on the floor (the plan's: x and
+/// z of its frame's origin in millimetres in the floor's frame, its yaw in half turns).
+struct WorldRoomRecord {
+    std::string id;
+    std::string floor;
+    std::int64_t xMm = 0;
+    std::int64_t zMm = 0;
+    std::uint32_t yawHalfTurns = 0;
+
+    bool operator==(const WorldRoomRecord&) const = default;
+};
+
+/// The generated building of the run (I3 step 10b's room, the floor shown since I4 step 5a): what showed, from which
+/// plan, how it came to be and when. Empty ({}) in runs that ask for no room (--scene, --model, --mock-catalog, the
+/// asset preview).
 struct WorldRecord {
     /// The run asked for the generated room (retroverse.exe without --scene, --model or --mock-catalog).
     bool bound = false;
@@ -582,9 +595,13 @@ struct WorldRecord {
     std::string reason;
     /// The catalog's state when the test room showed for want of a catalog ("no-library", ...).
     std::string catalogState;
-    /// The room ("room:snes") and the library.
+    /// The room that held the walker's eye at the end ("room:snes"; "" in a hall, or before a floor showed: I4 step 5a),
+    /// and the library.
     std::string room;
     std::string library;
+    /// The floor shown ("ground", "gen4", ...; "" before one showed) and its rooms (I4 step 5a).
+    std::string floor;
+    std::vector<WorldRoomRecord> rooms;
     /// app::toString(WorldOutcome): "generated", "updated", "unchanged", "kept", "no-plan"; and the change report's
     /// outcome and rebuild level when a generation or update ran.
     std::string outcome;
@@ -675,8 +692,25 @@ struct HeroRecord {
     bool operator==(const HeroRecord&) const = default;
 };
 
+/// One collection room's layers on the floor shown (I4 step 5a): its items, the layers of each class resident and
+/// pending, its arrays' bytes, its arrays and how many of them its layered materials sample (all of them: its own
+/// arrays, never another room's, ADR-0013 §9's registry keys carrying the room id).
+struct RoomResidencyRecord {
+    std::string room;
+    std::uint64_t items = 0;
+    std::uint64_t frontsResident = 0;
+    std::uint64_t spinesResident = 0;
+    std::uint64_t pending = 0;
+    std::uint64_t arrayBytes = 0;
+    std::uint64_t arrays = 0;
+    std::uint64_t ownArrays = 0;
+
+    bool operator==(const RoomResidencyRecord&) const = default;
+};
+
 /// The collection's textures (I3 step 10b's loader; step 12 orders it): layers resident and pending, the cache's hits
-/// and misses, when the room was shown and when its last layer became resident. Empty ({}) without a room.
+/// and misses, when the room was shown and when its last layer became resident. Empty ({}) without a room. Since I4
+/// step 5a the floor's: its counts the totals of its collection rooms, each room's in `rooms`.
 struct ResidencyRecord {
     bool bound = false;
     /// The arrays' format ("bc1-srgb", "rgba8-srgb") and their bytes.
@@ -745,6 +779,8 @@ struct ResidencyRecord {
     std::uint64_t adoptedChanged = 0;
     /// The hero textures (ADR-0011 §8).
     HeroRecord hero;
+    /// Each collection room's (I4 step 5a), in the floor's room order.
+    std::vector<RoomResidencyRecord> rooms;
 
     bool operator==(const ResidencyRecord&) const = default;
 };

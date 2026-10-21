@@ -14,13 +14,14 @@ namespace rv::app {
 
 void WorldSession::commitPreview(WorldBuild preview) {
     const Clock::time_point start = Clock::now();
-    if (!preview.plan || !preview.scene || !preview.sceneData || !preview.layout) {
-        // The room waits for the snapshot (the shell and its notice stay); the flow asks for it at once.
-        spdlog::warn("World: the stored plan's room is not shown before the catalog's snapshot: {}", preview.reason);
+    if (!preview.plan || !preview.scene) {
+        // The floor waits for the building (the shell and its notice stay); the flow asks for it at once.
+        spdlog::warn("World: the stored plan's floor is not shown before the building's result: {}",
+                     preview.startRoomMissing ? std::string("the start room is not in it") : preview.reason);
         return;
     }
     recordBuild(preview);
-    if (!showRoom(preview, false)) {
+    if (!showFloor(preview, false)) {
         return;
     }
     m_record.firstFrame = m_context.frameIndex();
@@ -29,16 +30,16 @@ void WorldSession::commitPreview(WorldBuild preview) {
     record.committedAtMs = sinceProcessStart(std::chrono::system_clock::now());
     record.buildMs = preview.milliseconds;
     record.planDigest = preview.planDigest;
-    record.items = preview.layout->items.size();
+    record.items = preview.itemCount();
     record.itemsKnown = preview.itemsRead;
     record.commitMs = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
     m_record.preview = record;
     m_record.state = m_state;
-    // The room is usable: no notice while the snapshot is asked for.
-    setNotice(WorldNoticeContent{std::string(world_notice::kNone), {}, m_options.system.str()}, true);
-    spdlog::info("Frame {}: the stored plan's room is shown before the catalog's snapshot ({} item(s), {} with their "
-                 "pictures from the cache); committed in {:.1f} ms",
-                 m_context.frameIndex(), record.items, record.itemsKnown, *record.commitMs);
+    // The floor is usable: no notice while the building is made.
+    setNotice(WorldNoticeContent{std::string(world_notice::kNone), {}, noticeSystem()}, true);
+    spdlog::info("Frame {}: the stored plan's floor {} is shown before the building's result ({} item(s), {} with "
+                 "their pictures from the cache); committed in {:.1f} ms",
+                 m_context.frameIndex(), preview.floor, record.items, record.itemsKnown, *record.commitMs);
     preview.scene.reset();
     m_shownPreview = std::move(preview);
     m_previewAwaitingFrame = true;
@@ -53,6 +54,10 @@ void WorldSession::reconcile(WorldResult result) {
         return;
     }
     WorldBuild& build = *result.build;
+    if (build.startRoomMissing) {
+        commit(std::move(result));
+        return;
+    }
     const ReconcilePlan plan = planReconciliation(shown, build);
     recordBuild(build);
     WorldReconcileRecord record;
@@ -65,10 +70,10 @@ void WorldSession::reconcile(WorldResult result) {
     record.removed = plan.difference.removed;
     switch (plan.kind) {
     case Reconciliation::Shell: {
-        // A plan that cannot be used now (ADR-0010 §11): the empty room and its notice, as without a stored plan.
+        // A plan that cannot be used now (ADR-0010 §11): the empty shell and its notice, as without a stored plan.
         dropCollection();
-        if (auto shell = shellScene(m_options.paths.assetRoot, m_options.system)) {
-            if (Status shownShell = m_host.showScene(std::move(*shell)); !shownShell) {
+        if (auto shell = shellScene(m_options.paths.assetRoot, m_options.startRoom)) {
+            if (Status shownShell = m_host.showScene(std::move(*shell), SceneShow{}); !shownShell) {
                 spdlog::error("World: the room's shell cannot be shown: {}", shownShell.error().toString());
             }
         } else {
@@ -78,7 +83,7 @@ void WorldSession::reconcile(WorldResult result) {
         m_record.state = m_state;
         setNotice(WorldNoticeContent{build.notice.empty() ? std::string(world_notice::kFailed) : build.notice,
                                      {},
-                                     m_options.system.str()},
+                                     noticeSystem()},
                   false);
         break;
     }
@@ -92,7 +97,7 @@ void WorldSession::reconcile(WorldResult result) {
         if (live.kind == LiveUpdateKind::Items && applyItems(build, live, applied)) {
             record.kind = std::string(toString(LiveUpdateKind::Items));
             finishCommit(build, start);
-        } else if (showRoom(build, true)) {
+        } else if (showFloor(build, true)) {
             finishCommit(build, start);
         }
         break;
@@ -102,7 +107,7 @@ void WorldSession::reconcile(WorldResult result) {
         // be checked now, and the hero CRT gets the room's games.
         record.coversReloaded = plan.reloadCovers;
         if (plan.reloadCovers) {
-            startCoverLoader(build.covers, build.mediaRoot, build.library);
+            startCoverLoader(build);
         }
         keepShown(build); // I3 step 15b: the next live update compares with the snapshot's room
         if (m_host.setScreenGames) {
@@ -112,7 +117,7 @@ void WorldSession::reconcile(WorldResult result) {
         break;
     }
     m_record.reconcile = record;
-    spdlog::info("Frame {}: the stored plan's room reconciled with the catalog's snapshot ({}): {} item(s) kept, {} "
+    spdlog::info("Frame {}: the stored plan's floor reconciled with the building's result ({}): {} item(s) kept, {} "
                  "moved, {} with other flags, {} added, {} removed{}",
                  m_context.frameIndex(), record.kind, record.kept, record.moved, record.flagsChanged, record.added,
                  record.removed, record.coversReloaded ? "; the covers served again" : "");

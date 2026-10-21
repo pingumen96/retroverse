@@ -38,10 +38,12 @@ struct HeroScreen {
 /// The first object of `description` built from the `crt` prefab whose screen shows a picture (its "screen" role has a
 /// scene texture, so that its material has a base colour texture to override), with its screen's material in
 /// `materials` (registered by SceneInstance under "<object id>/screen...") and the bounds of its first instance;
-/// nothing when the scene has none (the model viewer, scenes without a TV).
+/// nothing when the scene has none (the model viewer, scenes without a TV). With `idPrefix` (I4 step 5a: a floor's start
+/// room, "room:snes/") only an object whose id starts with it counts; an empty prefix finds none.
 [[nodiscard]] std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& description,
                                                        const SceneInstance& instance,
-                                                       const gl::MaterialRegistry& materials);
+                                                       const gl::MaterialRegistry& materials,
+                                                       const std::optional<std::string>& idPrefix = std::nullopt);
 
 struct ScreenServiceOptions {
     /// --video-freeze-pts: every clip opens paused, seeks to this time and holds that frame (the frame is waited for

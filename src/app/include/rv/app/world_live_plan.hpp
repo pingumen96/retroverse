@@ -25,6 +25,11 @@
 //
 // An item never moves in Items: an item of the same game at another pick id or transform (which the incremental rules
 // never give) makes it a Rebuild.
+//
+// Since I4 step 5a the room shown is a floor (world_build.hpp): its collections are compared room by room (matched by
+// room id, the items by game within them), the static part is the floor's scene file, and Items applies each room's
+// collection in place. Per-room reconciliation (a room rebuilt while the others stand) is I4 step 6b's: here any change
+// of the floor's static part commits the whole floor again, the walker kept.
 
 #include <cstddef>
 #include <cstdint>
@@ -42,21 +47,34 @@
 
 namespace rv::app {
 
-/// What the session keeps of the room it shows, to compare the next build with (a WorldBuild without its scene, scene
-/// data or plan).
-struct ShownRoom {
-    std::string planDigest;
-    /// The SHA-256 of the static part's scene file (WorldBuild::sceneDigest); empty when unknown (never equal).
-    std::string sceneDigest;
+/// A collection room of the floor shown: its layout and its cover requests.
+struct ShownCollection {
+    world::RoomId room;
     world::CollectionLayout layout;
     std::vector<CoverItem> covers;
+};
+
+/// What the session keeps of the floor it shows, to compare the next build with (a WorldBuild without its scene, scene
+/// data or plan).
+struct ShownFloor {
+    std::string planDigest;
+    std::string floor;
+    /// The SHA-256 of the static part's scene file (WorldBuild::sceneDigest); empty when unknown (never equal).
+    std::string sceneDigest;
+    std::vector<ShownCollection> rooms;
     /// The covers were read under a media root (none: the cache alone served them).
     bool mediaKnown = false;
     std::vector<ScreenGame> screenGames;
+
+    /// The room `room`, or nullptr.
+    [[nodiscard]] const ShownCollection* find(const world::RoomId& room) const noexcept;
 };
 
-/// What `build` (with a plan, a scene and a layout) shows; nullopt for a build with nothing to show.
-[[nodiscard]] std::optional<ShownRoom> shownRoomOf(const WorldBuild& build);
+/// What `build` (with a plan; its scene may have been given away) shows; nullopt for a build without a plan.
+[[nodiscard]] std::optional<ShownFloor> shownFloorOf(const WorldBuild& build);
+
+/// The floor shown against `build`'s collections, by room and by game (a room in one only: its items added or removed).
+[[nodiscard]] LayoutDifference compareFloors(const ShownFloor& shown, const WorldBuild& build);
 
 enum class LiveUpdateKind : std::uint8_t {
     Unchanged, ///< nothing to do
@@ -87,6 +105,6 @@ struct LiveUpdatePlan {
 };
 
 /// What to do with `build` while `shown` shows (see the file comment).
-[[nodiscard]] LiveUpdatePlan planLiveUpdate(const ShownRoom& shown, const WorldBuild& build);
+[[nodiscard]] LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build);
 
 } // namespace rv::app

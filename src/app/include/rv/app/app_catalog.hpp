@@ -111,15 +111,13 @@ public:
                               LaunchEndCause /*cause*/, bool /*stoppedAwaiting*/) {}
     virtual void sessionRefused(std::uint64_t /*token*/) {}
 
-    /// The generated room's part of the catalog (I3 step 10b): where the catalog stands (Opening until its worker
-    /// answered; a catalog without rooms, the mock, says Unavailable), its library, whether it has games of a system,
-    /// the room's snapshot asked of its worker (false, and nothing asked, unless the catalog is open: room_snapshot.hpp)
-    /// and taken once answered (collected by poll()), and whether its worker ended (nothing asked will be answered).
+    /// The generated building's part of the catalog (I3 step 10b, I4 step 5a): where the catalog stands (Opening until
+    /// its worker answered; a catalog without rooms, the mock, says Unavailable), its library, the read-only connection
+    /// the building job reads every system's snapshot on (room_snapshot.hpp; none until the catalog opened Ready), and
+    /// whether its worker ended.
     [[nodiscard]] virtual CatalogState roomCatalogState() const noexcept { return CatalogState::Unavailable; }
     [[nodiscard]] virtual catalog::LibraryId roomLibrary() const { return {}; }
-    [[nodiscard]] virtual bool hasGamesOf(const catalog::SystemName& /*system*/) const { return false; }
-    virtual bool requestRoomSnapshot(RoomSnapshotRequest /*request*/) { return false; }
-    [[nodiscard]] virtual std::optional<RoomSnapshotResult> takeRoomSnapshot() { return std::nullopt; }
+    [[nodiscard]] virtual std::shared_ptr<WorldCatalogReader> worldReader() const { return nullptr; }
     [[nodiscard]] virtual bool workerEnded() const noexcept { return true; }
 
     /// The catalog's row of `game` as the quick catalog shows it (its readiness and first blocker included), read at
@@ -214,9 +212,7 @@ public:
 
     [[nodiscard]] CatalogState roomCatalogState() const noexcept override { return m_source.state(); }
     [[nodiscard]] catalog::LibraryId roomLibrary() const override { return m_source.library(); }
-    [[nodiscard]] bool hasGamesOf(const catalog::SystemName& system) const override;
-    bool requestRoomSnapshot(RoomSnapshotRequest request) override;
-    [[nodiscard]] std::optional<RoomSnapshotResult> takeRoomSnapshot() override { return std::exchange(m_room, {}); }
+    [[nodiscard]] std::shared_ptr<WorldCatalogReader> worldReader() const override { return m_worldReader; }
     [[nodiscard]] bool workerEnded() const noexcept override { return m_stopped || m_source.ended(); }
 
     [[nodiscard]] std::optional<ui::CatalogEntry> gameEntry(const catalog::GameId& game) override {
@@ -269,8 +265,8 @@ private:
     std::optional<TimeSummary> m_lastRefreshLists;
     /// How long shutdown() waited for the worker to stop.
     std::optional<double> m_stopMs;
-    /// The room's snapshot answered and not taken yet (I3 step 10b).
-    std::optional<RoomSnapshotResult> m_room;
+    /// The building job's reader (I4 step 5a), from the catalog's opening.
+    std::shared_ptr<WorldCatalogReader> m_worldReader;
     /// Every list's wait (CatalogRecord::lists), at most kMaxListWaits.
     static constexpr std::size_t kMaxListWaits = 100000;
     std::vector<double> m_listWaits;

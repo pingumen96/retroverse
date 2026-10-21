@@ -443,6 +443,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     summary.highSeverityGlMessages = (*device)->debugMessageCount(gl::DebugSeverity::High);
     summary.selfTest = selfTest;
     summary.logicFailed = context.m_failure.has_value();
+    summary.logicFailureCode = context.m_failureCode;
     const ExitCode exitCode = exitCodeForCompletedRun(summary);
     if (m_options.smoke) {
         const std::uint64_t provoked = selfTest ? selfTest->highSeverityCaptured : 0;

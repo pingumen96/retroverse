@@ -14,7 +14,6 @@
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/material_registry.hpp>
-#include <rv/world/room_template.hpp>
 #include <rv/world/world_config.hpp>
 
 #include "collection_instance.hpp"
@@ -45,14 +44,14 @@ const gl::UploadBudget kIdleUploadBudget{std::chrono::milliseconds(8), 512};
 
 } // namespace
 
-/// The placements per section and the unplaced games per reason of the plan shown, into `record` (the counts of a
-/// room shown before replaced).
+/// The placements per section of the floor shown and the unplaced games per reason of the building's plan, into
+/// `record` (the counts of a floor shown before replaced).
 void countPlan(const WorldBuild& build, WorldRecord& record) {
     record.featured = record.band = record.spine = 0;
     record.placements = record.unplaced = 0;
     record.duplicateTitle = record.noCover = record.unavailable = record.capacity = record.roomKept = 0;
-    if (build.layout) {
-        for (const world::CollectionItem& item : build.layout->items) {
+    for (const RoomCollection& room : build.rooms) {
+        for (const world::CollectionItem& item : room.layout.items) {
             switch (item.section) {
             case world::Section::Featured:
                 ++record.featured;
@@ -110,13 +109,10 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
     m_interaction = std::make_unique<WorldHover>(context, interaction);
     m_record.bound = true;
     m_record.state = m_state;
-    m_record.room = world::RoomId::forSystem(m_options.system)
-                        .map([](const world::RoomId& room) { return room.toString(); })
-                        .value_or(std::string());
     if (!m_decided) {
         WorldFlow::Options flow;
         flow.paths = m_options.paths;
-        flow.system = m_options.system;
+        flow.startRoom = m_options.startRoom;
         flow.writer = m_options.writer;
         flow.wake = context.wakeCallback();
         m_flow = std::make_unique<WorldFlow>(std::move(flow), pool);
@@ -125,26 +121,18 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
 }
 
 WorldSession::~WorldSession() {
-    // The loader's and the flow's jobs are cancelled before the collection they would feed goes; the interaction lets
-    // go of it first.
+    // The loader's and the flow's jobs are cancelled before the collections they would feed go; the interaction lets
+    // go of them first.
     m_heroes.reset();
     m_loader.reset();
     m_flow.reset();
     m_interaction.reset();
-    m_collection.reset();
+    m_rooms.clear();
 }
 
 Expected<scene::SceneDescription> WorldSession::shellScene(const std::filesystem::path& assetRoot,
-                                                           const catalog::SystemName& system) {
-    auto room = world::RoomId::forSystem(system);
-    if (!room) {
-        return propagate(room.error());
-    }
-    auto roomTemplate = world::loadRoomTemplate(assetRoot, world::kDefaultRoomTemplate);
-    if (!roomTemplate) {
-        return propagate(roomTemplate.error());
-    }
-    return world::shellSceneDescription(*room, *roomTemplate);
+                                                           const std::optional<world::RoomId>& startRoom) {
+    return worldShellScene(assetRoot, startRoom);
 }
 
 std::optional<double> WorldSession::sinceProcessStart(std::chrono::system_clock::time_point at) const {
@@ -153,6 +141,10 @@ std::optional<double> WorldSession::sinceProcessStart(std::chrono::system_clock:
         return std::nullopt;
     }
     return static_cast<double>(ticks - m_options.processCreated) / 10'000.0;
+}
+
+std::string WorldSession::noticeSystem() const {
+    return m_options.startRoom ? m_options.startRoom->system().str() : std::string();
 }
 
 void WorldSession::setNotice(WorldNoticeContent notice, bool timed) {
@@ -177,7 +169,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     if (idleWake && !m_waitSince) {
         m_waitSince = Clock::now();
     }
-    // The coverLoad phase opens after the room's first two frames (commit()).
+    // The coverLoad phase opens after the floor's first two frames (commit()).
     if (!idleWake && m_coverPhasePending && m_nextFrame > m_coverPhaseAfter) {
         m_coverPhasePending = false;
         if (m_loader && !m_loader->done()) {
@@ -187,8 +179,8 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     }
     if (m_flow) {
         m_flow->update(product.catalog());
-        // I3 step 10c: the stored plan's room shows first (world_start.cpp); the snapshot's result waits until a frame
-        // has shown it, then reconciles it.
+        // I3 step 10c: the stored plan's floor shows first (world_start.cpp); the building's result waits until a
+        // frame has shown it, then reconciles it.
         if (std::optional<WorldBuild> preview = m_flow->takePreview()) {
             commitPreview(std::move(*preview));
         }
@@ -213,6 +205,45 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     showNotice(product, timeSeconds);
 }
 
+std::optional<std::size_t> WorldSession::eyeRoom() const {
+    if (!m_host.eyeArea) {
+        return m_rooms.size() == 1 ? std::optional<std::size_t>(0) : std::nullopt;
+    }
+    const std::string area = m_host.eyeArea();
+    for (std::size_t index = 0; index < m_rooms.size(); ++index) {
+        if (m_rooms[index].id.toString() == area) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
+CollectionInstance* WorldSession::activeCollection() const {
+    return m_interaction ? m_interaction->collection() : nullptr;
+}
+
+std::optional<WorldSession::FloorItem> WorldSession::floorItemOf(world::PickId pickId) const {
+    CollectionInstance* collection = activeCollection();
+    if (collection == nullptr || pickId == world::kNoPick || !m_loader) {
+        return std::nullopt;
+    }
+    const std::optional<std::size_t> item = collection->itemOfPick(pickId);
+    const std::optional<catalog::GameId> game = collection->gameOf(pickId);
+    if (!item || !game) {
+        return std::nullopt;
+    }
+    const std::optional<std::size_t> loaderItem = m_loader->itemOfGame(*game);
+    if (!loaderItem) {
+        return std::nullopt;
+    }
+    for (std::size_t room = 0; room < m_rooms.size(); ++room) {
+        if (m_rooms[room].collection.get() == collection) {
+            return FloorItem{room, *item, *loaderItem};
+        }
+    }
+    return std::nullopt;
+}
+
 CoverView WorldSession::currentView() const {
     if (!m_host.camera) {
         return CoverView{};
@@ -222,11 +253,35 @@ CoverView WorldSession::currentView() const {
     if (options.screenshot && options.screenshotHeight > 0) {
         screenshotAspect = static_cast<float>(options.screenshotWidth) / static_cast<float>(options.screenshotHeight);
     }
-    return CoverView::of(m_host.camera(), screenshotAspect);
+    CoverView view = CoverView::of(m_host.camera(), screenshotAspect);
+    // ADR-0013 §9: the view is the items of the room that holds the eye and of the rooms whose doorway the frustum
+    // meets; a floor of one room sees it whole (as I3's room).
+    if (m_rooms.size() > 1) {
+        const std::optional<std::size_t> eye = eyeRoom();
+        view.groups.assign(m_rooms.size(), 0);
+        for (std::size_t index = 0; index < m_rooms.size(); ++index) {
+            const bool doorway = coverInView(m_rooms[index].doorway, CoverView{view.eye, view.frusta, {}});
+            view.groups[index] = eye == index || doorway ? 1 : 0;
+        }
+    }
+    return view;
+}
+
+void WorldSession::syncCollections() {
+    m_collections.clear();
+    m_groups.clear();
+    for (const FloorRoom& room : m_rooms) {
+        m_collections.push_back(room.collection.get());
+        if (room.collection) {
+            for (const gl::StaticInstanceGroup* group : room.collection->groups()) {
+                m_groups.push_back(group);
+            }
+        }
+    }
 }
 
 void WorldSession::coverRound(ProductUi& product, const gl::UploadBudget& budget, bool frame) {
-    if (!m_collection || !m_loader) {
+    if (m_rooms.empty() || !m_loader) {
         return;
     }
     // ADR-0012 §6: while a launched game runs nothing is made or uploaded.
@@ -240,21 +295,21 @@ void WorldSession::coverRound(ProductUi& product, const gl::UploadBudget& budget
         }
         std::vector<std::string> pinned;
         if (m_heroShown) {
-            pinned.push_back(m_loader->items()[*m_heroShown].game.toString());
+            pinned.push_back(m_loader->items()[m_heroShown->loaderItem].game.toString());
         }
         heroMs = m_heroes->update(paused, pinned);
     }
     const bool wasDone = m_loader->done();
     CoverLoader::Round round;
     round.view = currentView();
-    round.focused = m_heroItem;
+    round.focused = m_heroItem ? std::optional<std::size_t>(m_heroItem->loaderItem) : std::nullopt;
     round.paused = paused;
     round.budget = budget;
     round.spent =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double, std::milli>(heroMs));
     round.frame = frame;
     round.frameIndex = m_context.frameIndex();
-    if (const Status updated = m_loader->update(*m_collection, round); !updated) {
+    if (const Status updated = m_loader->update(m_collections, round); !updated) {
         spdlog::error("Cover loader: {}", updated.error().toString());
     }
     if (!wasDone && m_loader->done() && std::exchange(m_coverPhaseOpen, false)) {
@@ -283,37 +338,46 @@ void WorldSession::followRefresh(ProductUi& product) {
 }
 
 void WorldSession::setHeroItem(world::PickId pickId) {
-    m_heroItem = m_collection ? m_collection->itemOfPick(pickId) : std::nullopt;
+    m_heroItem = floorItemOf(pickId);
     showHero();
 }
 
 void WorldSession::showHero() {
-    if (!m_collection) {
+    if (m_rooms.empty()) {
         return;
     }
     const gl::Texture2D* texture = nullptr;
     if (m_heroItem && m_heroes && m_loader) {
-        const CoverItem& item = m_loader->items()[*m_heroItem];
+        const CoverItem& item = m_loader->items()[m_heroItem->loaderItem];
         m_heroes->request(item);
         texture = m_heroes->find(item.game);
     }
-    const std::optional<std::size_t> shown = texture != nullptr ? m_heroItem : std::nullopt;
+    const std::optional<FloorItem> shown = texture != nullptr ? m_heroItem : std::nullopt;
     if (shown != m_heroShown) {
-        if (m_heroShown) {
-            if (Status restored = m_collection->setFrontHidden(*m_heroShown, false); !restored) {
+        if (m_heroShown && m_rooms[m_heroShown->room].collection) {
+            if (Status restored = m_rooms[m_heroShown->room].collection->setFrontHidden(m_heroShown->item, false);
+                !restored) {
                 spdlog::error("World: the hero's front: {}", restored.error().toString());
             }
         }
-        if (shown) {
-            if (Status hidden = m_collection->setFrontHidden(*shown, true); !hidden) {
+        if (shown && m_rooms[shown->room].collection) {
+            if (Status hidden = m_rooms[shown->room].collection->setFrontHidden(shown->item, true); !hidden) {
                 spdlog::error("World: the hero's front: {}", hidden.error().toString());
             }
         }
         m_heroShown = shown;
     }
+    // The hero material of the room that shows the hero texture holds it; the room that showed it before lets it go.
+    const std::optional<std::size_t> textureRoom = shown ? std::optional<std::size_t>(shown->room) : m_heroTextureRoom;
     const unsigned textureId = texture != nullptr ? texture->id() : 0u;
-    if (textureId != m_heroTexture) {
-        if (Status set = m_graphics.materials().setTextureOverride(m_collection->heroMaterial(),
+    if (m_heroTextureRoom && textureRoom != m_heroTextureRoom && m_rooms[*m_heroTextureRoom].collection) {
+        static_cast<void>(m_graphics.materials().setTextureOverride(
+            m_rooms[*m_heroTextureRoom].collection->heroMaterial(), gl::MaterialTextureSlot::BaseColor, 0u));
+        m_heroTexture = 0;
+    }
+    m_heroTextureRoom = textureRoom;
+    if (textureRoom && textureId != m_heroTexture && m_rooms[*textureRoom].collection) {
+        if (Status set = m_graphics.materials().setTextureOverride(m_rooms[*textureRoom].collection->heroMaterial(),
                                                                    gl::MaterialTextureSlot::BaseColor, textureId);
             !set) {
             spdlog::error("World: the hero texture: {}", set.error().toString());
@@ -321,9 +385,10 @@ void WorldSession::showHero() {
         m_heroTexture = textureId;
     }
     m_dynamicItems.clear();
-    if (shown) {
+    if (shown && m_rooms[shown->room].collection) {
         // Its attributes as the front record has them now (the hover's highlight), drawn by the dynamic path.
-        if (auto item = m_collection->frontRenderItem(*shown, m_collection->heroMaterial())) {
+        CollectionInstance& collection = *m_rooms[shown->room].collection;
+        if (auto item = collection.frontRenderItem(shown->item, collection.heroMaterial())) {
             m_dynamicItems.push_back(*item);
         }
     }
@@ -333,14 +398,14 @@ bool WorldSession::settled(bool all) const {
     if (m_loader && !(all ? m_loader->done() : m_loader->viewDone())) {
         return false;
     }
-    if (m_heroItem && m_heroes && m_loader && m_heroes->loading(m_loader->items()[*m_heroItem].game)) {
+    if (m_heroItem && m_heroes && m_loader && m_heroes->loading(m_loader->items()[m_heroItem->loaderItem].game)) {
         return false;
     }
     return true;
 }
 
 void WorldSession::settle(ProductUi& product) {
-    if (!m_options.lockstep || !m_collection || !m_loader) {
+    if (!m_options.lockstep || m_rooms.empty() || !m_loader) {
         return;
     }
     const std::optional<std::uint32_t> limit = m_context.options().frameLimit;
@@ -367,10 +432,10 @@ void WorldSession::settle(ProductUi& product) {
 }
 
 std::vector<std::string> WorldSession::statusLines() const {
-    if (!m_collection || !m_loader) {
+    if (m_rooms.empty() || !m_loader) {
         return {};
     }
-    std::vector<std::string> lines = m_loader->statusLines(*m_collection);
+    std::vector<std::string> lines = m_loader->statusLines(m_collections);
     if (m_heroes) {
         lines.push_back(
             fmt::format("Hero textures: {} of {} held ({:.1f} MiB){}", m_heroes->resident(), HeroLru::kDefaultCapacity,
@@ -382,7 +447,7 @@ std::vector<std::string> WorldSession::statusLines() const {
 void WorldSession::commit(WorldResult result) {
     const Clock::time_point start = Clock::now();
     if (result.testRoom) {
-        spdlog::info("World: the test room instead of the generated one: {}", result.reason);
+        spdlog::info("World: the test room instead of the generated building: {}", result.reason);
         dropCollection();
         if (m_state != "test-room") {
             if (Status shown = m_host.showTestRoom(); !shown) {
@@ -392,7 +457,7 @@ void WorldSession::commit(WorldResult result) {
         m_state = "test-room";
         m_record.reason = result.reason;
         m_record.catalogState = result.catalogState;
-        setNotice(WorldNoticeContent{result.notice, result.catalogState, m_options.system.str()}, true);
+        setNotice(WorldNoticeContent{result.notice, result.catalogState, noticeSystem()}, true);
         m_record.state = m_state;
         return;
     }
@@ -401,17 +466,26 @@ void WorldSession::commit(WorldResult result) {
     }
     WorldBuild& build = *result.build;
     recordBuild(build);
-    if (!build.plan || !build.scene || !build.layout || !build.sceneData) {
+    if (build.startRoomMissing) {
+        // ADR-0013 §9: a start room the building lacks ends the run (exit 2), the shell shown meanwhile.
+        m_context.failRun(Error{ErrorCode::NotFound, "the building has no such room",
+                                "--start-room=" + build.startRoom->toString()},
+                          ExitCode::InitializationFailed);
+        m_state = "shell";
+        m_record.state = m_state;
+        return;
+    }
+    if (!build.plan || !build.scene) {
         // Nothing to show: the shell stays, with its notice for as long as it shows.
         m_state = "shell";
         setNotice(WorldNoticeContent{build.notice.empty() ? std::string(world_notice::kFailed) : build.notice,
                                      {},
-                                     m_options.system.str()},
+                                     noticeSystem()},
                   false);
         m_record.state = m_state;
         return;
     }
-    if (!showRoom(build, false)) {
+    if (!showFloor(build, false)) {
         return;
     }
     m_record.firstFrame = m_context.frameIndex();
@@ -458,27 +532,34 @@ void WorldSession::recordBuild(const WorldBuild& build) {
                  build.planDigest.empty() ? std::string() : ", plan " + build.planDigest);
 }
 
-bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
-    // I3 step 15b: a room committed again over the one shown (the walker kept) keeps its items' pictures: the arrays
-    // pass to the new collection and the cover loader's work is adopted, so only new or changed pictures go up.
-    std::optional<CollectionPictures> pictures;
+bool WorldSession::showFloor(WorldBuild& build, bool keepWalker) {
+    // I3 step 15b: a floor committed again over the one shown (the walker kept) keeps its items' pictures: each room's
+    // arrays pass to its new collection and the cover loader's work is adopted, so only new or changed pictures go up.
+    std::map<world::RoomId, CollectionPictures> pictures;
     std::unique_ptr<CoverLoader> shownLoader;
-    if (keepWalker && m_collection) {
-        pictures = m_collection->takePictures();
+    if (keepWalker) {
+        for (FloorRoom& room : m_rooms) {
+            if (room.collection) {
+                pictures.emplace(room.id, room.collection->takePictures());
+            }
+        }
         shownLoader = std::move(m_loader);
     }
     dropCollection();
     const std::size_t objects = build.scene->objects.size();
     const std::size_t lights = build.scene->lights.size();
-    const auto& show = keepWalker && m_host.showSceneKeepingWalker ? m_host.showSceneKeepingWalker : m_host.showScene;
-    if (Status shown = show(std::move(*build.scene)); !shown) {
-        spdlog::error("World: the room's scene cannot be shown: {}; the test room instead", shown.error().toString());
+    SceneShow show;
+    show.keepWalker = keepWalker;
+    // The hero CRT: the start room's (I4 step 5a; rebinding it to the room of the eye is step 6b's), none without one.
+    show.heroScreenPrefix = build.startRoom ? build.startRoom->toString() + "/" : std::string();
+    if (Status shown = m_host.showScene(std::move(*build.scene), show); !shown) {
+        spdlog::error("World: the floor's scene cannot be shown: {}; the test room instead", shown.error().toString());
         if (Status fallback = m_host.showTestRoom(); !fallback) {
             spdlog::error("World: the test room cannot be shown: {}", fallback.error().toString());
         }
         m_state = "test-room";
         m_record.state = m_state;
-        setNotice(WorldNoticeContent{std::string(world_notice::kFailed), {}, m_options.system.str()}, true);
+        setNotice(WorldNoticeContent{std::string(world_notice::kFailed), {}, noticeSystem()}, true);
         return false;
     }
     m_state = "room";
@@ -486,36 +567,64 @@ bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
     m_record.objects = objects;
     m_record.lights = lights;
     m_record.undressed = build.undressed.size();
-    m_record.items = build.layout->items.size();
-    m_record.clusters = build.layout->clusters.size();
-    m_record.skipped = build.layout->skipped.size();
+    m_record.floor = build.floor;
+    m_record.rooms.clear();
+    if (build.plan) {
+        for (const world::Room* room : world::roomsOnFloor(*build.plan, build.floor)) {
+            m_record.rooms.push_back(WorldRoomRecord{room->id.toString(), room->floor, room->placement.xMm,
+                                                     room->placement.zMm, room->placement.yawHalfTurns});
+        }
+    }
+    m_record.items = 0;
+    m_record.clusters = 0;
+    m_record.skipped = 0;
     m_record.staticRecords = 0;
     m_record.pickTargets = 0;
 
-    // A room of no title (every game without a cover, say) has the static part alone.
-    if (!build.layout->items.empty()) {
-        auto collection =
-            CollectionInstance::create(*build.layout, *build.sceneData, m_graphics,
-                                       m_context.device().caps().uniformBufferOffsetAlignment, std::move(pictures));
-        if (collection) {
-            m_collection = std::move(*collection);
-            m_record.staticRecords = m_collection->group().layout().instances().size();
-        } else {
-            spdlog::error("World: the room's collection cannot be drawn: {}", collection.error().toString());
+    // A collection per room (a room of no title, every game without a cover say, has its static part alone), and the
+    // hover, the pull-out and Focus over each (I3 step 13a: its pick targets and navigation; a copy, as the persisted
+    // start keeps the shown build's layouts to reconcile them, I3 step 10c).
+    std::size_t interactionRooms = 0;
+    for (RoomCollection& room : build.rooms) {
+        FloorRoom floorRoom;
+        floorRoom.id = room.room;
+        floorRoom.doorway = room.doorway;
+        m_record.items += room.layout.items.size();
+        m_record.clusters += room.layout.clusters.size();
+        m_record.skipped += room.layout.skipped.size();
+        if (!room.layout.items.empty()) {
+            std::optional<CollectionPictures> kept;
+            if (auto found = pictures.find(room.room); found != pictures.end()) {
+                kept = std::move(found->second);
+                pictures.erase(found);
+            }
+            auto collection =
+                CollectionInstance::create(room.layout, room.sceneData, m_graphics,
+                                           m_context.device().caps().uniformBufferOffsetAlignment, std::move(kept));
+            if (collection) {
+                floorRoom.collection = std::move(*collection);
+                m_record.staticRecords += floorRoom.collection->group().layout().instances().size();
+            } else {
+                spdlog::error("World: the collection of {} cannot be drawn: {}", room.room.toString(),
+                              collection.error().toString());
+            }
         }
+        // The interaction's rooms are those with a collection, in the floor's order.
+        if (floorRoom.collection) {
+            floorRoom.interactionRoom = interactionRooms++;
+            m_record.pickTargets += m_interaction->addRoom(room.layout, floorRoom.collection.get());
+        }
+        m_rooms.push_back(std::move(floorRoom));
     }
-    // The hover, the pull-out and Focus over its items (I3 step 13a): the layout's pick targets and navigation, once
-    // they are drawn (a copy: the persisted start keeps the shown build's layout to reconcile it, I3 step 10c).
-    if (m_collection) {
-        m_record.pickTargets = m_interaction->setRoom(*build.layout, m_collection.get());
+    syncCollections();
+    const std::optional<std::size_t> eye = eyeRoom();
+    m_interaction->setActiveRoom(eye ? m_rooms[*eye].interactionRoom : std::nullopt);
+    if (!m_groups.empty()) {
         m_card.bind();
     }
-    if (m_collection && shownLoader) {
-        m_loader = std::move(shownLoader); // adopted by the new loader (startCoverLoader)
-    }
-    startCoverLoader(build.covers, build.mediaRoot, build.library);
+    startCoverLoader(build, std::move(shownLoader));
     keepShown(build); // I3 step 15b: the next live update compares with it
-    // The hero CRT of the scene just shown plays the room's games (I3 step 10c; none for a preview).
+    // The hero CRT of the scene just shown plays the start room's games (I3 step 10c; none for a preview).
     if (m_host.setScreenGames) {
         m_host.setScreenGames(build.screenGames);
     }
@@ -523,30 +632,51 @@ bool WorldSession::showRoom(WorldBuild& build, bool keepWalker) {
     return true;
 }
 
-void WorldSession::startCoverLoader(std::vector<CoverItem> covers,
-                                    const std::optional<std::filesystem::path>& mediaRoot,
-                                    const catalog::LibraryId& library) {
-    std::unique_ptr<CoverLoader> previous = std::move(m_loader);
-    auto cacheRoot = assets::textureCacheRoot(m_options.paths.cacheDir, library.str());
+void WorldSession::startCoverLoader(const WorldBuild& build, std::unique_ptr<CoverLoader> previous) {
+    if (!previous) {
+        previous = std::move(m_loader);
+    }
+    m_loader.reset();
+    auto cacheRoot = assets::textureCacheRoot(m_options.paths.cacheDir, build.library.str());
     if (!cacheRoot) {
         // The items keep the pending picture (nothing is written outside the user data directory's cache).
         spdlog::error("World: the texture cache: {}; the covers are not loaded", cacheRoot.error().toString());
         return;
     }
-    if (!m_collection || covers.empty()) {
+    // The floor's items, room after room: each cover with its item's box in the scene and its room (the loader's group).
+    std::vector<CoverItem> covers;
+    std::vector<core::Aabb> bounds;
+    std::vector<std::uint32_t> groups;
+    for (std::size_t index = 0; index < m_rooms.size() && index < build.rooms.size(); ++index) {
+        if (!m_rooms[index].collection) {
+            continue;
+        }
+        const RoomCollection& room = build.rooms[index];
+        for (const CoverItem& cover : room.covers) {
+            const world::CollectionItem* item = room.layout.findGame(cover.game);
+            if (item == nullptr) {
+                continue;
+            }
+            covers.push_back(cover);
+            bounds.push_back(item->worldBounds());
+            groups.push_back(static_cast<std::uint32_t>(index));
+        }
+    }
+    if (covers.empty()) {
         return;
     }
     CoverLoader::Options loader;
     loader.assetRoot = m_options.paths.assetRoot;
     loader.cacheRoot = std::move(*cacheRoot);
     loader.format = m_graphics.collectionArrayFormat();
-    loader.mediaRoot = mediaRoot;
+    loader.mediaRoot = build.mediaRoot;
     loader.wake = m_context.wakeCallback();
-    // Each item's box in the room: the loader ranks by it (in view, projected size, distance).
-    m_loader = std::make_unique<CoverLoader>(std::move(loader), m_pool, std::move(covers), m_collection->itemBounds());
+    // Each item's box on the floor: the loader ranks by it (in view, projected size, distance).
+    m_loader = std::make_unique<CoverLoader>(std::move(loader), m_pool, std::move(covers), std::move(bounds),
+                                             std::move(groups));
     if (previous) {
-        // The same collection served again (I3 step 10c's textures reconciliation): only the pictures that changed go
-        // up again.
+        // The same collections served again (I3 step 10c's textures reconciliation): only the pictures that changed
+        // go up again.
         m_loader->adoptShown(*previous);
         previous.reset();
     }
@@ -557,11 +687,11 @@ void WorldSession::startCoverLoader(std::vector<CoverItem> covers,
         m_heroes = std::make_unique<HeroTextures>(std::move(heroes), m_pool);
         m_heroesKnowRoot = false;
     }
-    if (mediaRoot) {
-        m_heroes->setMediaRoot(mediaRoot);
+    if (build.mediaRoot) {
+        m_heroes->setMediaRoot(build.mediaRoot);
         m_heroesKnowRoot = true;
     }
-    // The coverLoad phase opens after the room's first two frames (update()): the frame that commits it and the next,
+    // The coverLoad phase opens after the floor's first two frames (update()): the frame that commits it and the next,
     // which waits for the new scene's first GPU work (300 to 350 ms measured on snes-stress in either array format),
     // are the commit's hitch, as the run's first 30 frames are its warm-up.
     if (!m_coverPhaseOpen && !m_coverPhasePending) {
@@ -578,14 +708,19 @@ void WorldSession::finishCommit(const WorldBuild& build, Clock::time_point start
         m_record.snapshotToCommitMs = *m_record.committedAtMs - *m_record.snapshotAtMs;
     }
     m_record.state = m_state;
-    setNotice(WorldNoticeContent{build.notice, {}, m_options.system.str()}, true);
-    spdlog::info("Frame {}: the room is shown ({} object(s), {} light(s), {} item(s) in {} cluster(s)); committed in "
-                 "{:.1f} ms",
-                 m_context.frameIndex(), m_record.objects, m_record.lights, m_record.items, m_record.clusters,
-                 *m_record.commitMs);
+    setNotice(WorldNoticeContent{build.notice, {}, noticeSystem()}, true);
+    spdlog::info("Frame {}: the room is shown: the floor {} ({} object(s), {} light(s), {} item(s) in {} cluster(s) "
+                 "of {} collection(s)); committed in {:.1f} ms",
+                 m_context.frameIndex(), build.floor, m_record.objects, m_record.lights, m_record.items,
+                 m_record.clusters, m_groups.size(), *m_record.commitMs);
 }
 
 InteractionResult WorldSession::interact(const WorldHover::Frame& frame) {
+    // The interaction works in the room that holds the eye (ADR-0013 §9: a pick index per room; none in a hall).
+    if (!m_rooms.empty()) {
+        const std::optional<std::size_t> eye = eyeRoom();
+        m_interaction->setActiveRoom(eye ? m_rooms[*eye].interactionRoom : std::nullopt);
+    }
     InteractionResult result = m_interaction->update(frame);
     // The hero item (I3 step 12): the focused item (Focus, Inspect), else the hovered one.
     const WorldInteraction& interaction = m_interaction->interaction();
@@ -596,13 +731,15 @@ InteractionResult WorldSession::interact(const WorldHover::Frame& frame) {
 std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene::RenderItem> sceneItems,
                                                            const scene::Camera& camera) {
     // The held item's front shows the hero texture when it is the hero item shown (I3 step 13b's record).
-    const world::PickId heroPick = m_heroShown && m_collection ? m_collection->pickOf(*m_heroShown) : world::kNoPick;
+    CollectionInstance* active = activeCollection();
+    const bool heroInActive =
+        m_heroShown && active != nullptr && m_rooms[m_heroShown->room].collection.get() == active;
+    const world::PickId heroPick = heroInActive ? active->pickOf(m_heroShown->item) : world::kNoPick;
     m_interaction->inspection().setHeroFront(heroPick != world::kNoPick &&
                                              heroPick == m_interaction->interaction().focused());
     const std::span<const scene::RenderItem> items = m_interaction->viewItems(sceneItems, camera);
     // The hero texture's front at the item's static pose; a pulled hero item's front travels with its dynamic copy.
-    const bool heroPulled = m_heroShown && m_collection &&
-                            m_interaction->isPulled(m_collection->pickOf(*m_heroShown));
+    const bool heroPulled = heroInActive && m_interaction->isPulled(heroPick);
     if (m_dynamicItems.empty() || heroPulled) {
         return items;
     }
@@ -623,11 +760,10 @@ void WorldSession::showCard(const InteractionResult& result, ProductUi& product)
     const WorldInteraction& interaction = m_interaction->interaction();
     const world::CollectionItem* item = m_interaction->item(interaction.focused());
     const gl::Texture2D* hero = item != nullptr && m_heroes ? m_heroes->find(item->game) : nullptr;
-    // The shape its hero picture was made at (the room's family's label, ADR-0013 §4).
+    // The shape its hero picture was made at (its room's family's label, ADR-0013 §4).
     assets::LabelAspect coverShape;
-    if (item != nullptr && m_collection && m_loader) {
-        if (const std::optional<std::size_t> index = m_collection->itemOfPick(interaction.focused());
-            index && *index < m_loader->items().size()) {
+    if (item != nullptr && m_loader) {
+        if (const std::optional<std::size_t> index = m_loader->itemOfGame(item->game)) {
             coverShape = m_loader->items()[*index].label;
         }
     }
@@ -661,42 +797,42 @@ std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera
 
 void WorldSession::frameRendered() {
     if (m_waitSince && Clock::now() - *m_waitSince >= kLockstepWaitLimit && !m_waitWarned) {
-        spdlog::warn("Frame {}: the room did not come within {} s; frames go on without it", m_context.frameIndex(),
-                     kLockstepWaitLimit.count());
+        spdlog::warn("Frame {}: the building did not come within {} s; frames go on without it",
+                     m_context.frameIndex(), kLockstepWaitLimit.count());
         m_waitWarned = true;
     }
     m_waitSince.reset();
     m_nextFrame = m_context.frameIndex() + 1;
     if (std::exchange(m_previewAwaitingFrame, false) && m_record.preview) {
-        // The stored plan's room as its first frame showed it (I3 step 10c); the snapshot's result may come now.
-        m_record.preview->frontsResident =
-            m_collection ? m_collection->arrays().residentLayers(gl::CollectionClass::Front) : 0;
-        m_record.preview->spinesResident =
-            m_collection ? m_collection->arrays().residentLayers(gl::CollectionClass::Spine) : 0;
+        // The stored plan's floor as its first frame showed it (I3 step 10c); the building's result may come now.
+        std::uint64_t fronts = 0;
+        std::uint64_t spines = 0;
+        for (const CollectionInstance* collection : m_collections) {
+            if (collection != nullptr) {
+                fronts += collection->arrays().residentLayers(gl::CollectionClass::Front);
+                spines += collection->arrays().residentLayers(gl::CollectionClass::Spine);
+            }
+        }
+        m_record.preview->frontsResident = fronts;
+        m_record.preview->spinesResident = spines;
     }
-}
-
-std::span<const gl::StaticInstanceGroup* const> WorldSession::staticGroups() const noexcept {
-    if (!m_collection) {
-        return {};
-    }
-    return m_collection->groups();
 }
 
 bool WorldSession::waits() const {
     if (!m_options.lockstep) {
         return false;
     }
-    // Before the run's last frame the whole room, before the others the frame's view (ADR-0011 §6).
+    // Before the run's last frame the whole floor, before the others the frame's view (ADR-0011 §6).
     const std::optional<std::uint32_t> limit = m_context.options().frameLimit;
     const bool lastFrameNext = limit && m_nextFrame + 1 >= *limit;
     const bool pending = m_decided.has_value() || (m_flow && m_flow->phase() != WorldPhase::Done) ||
-                         (m_collection && !settled(lastFrameNext));
+                         (!m_rooms.empty() && !settled(lastFrameNext));
     if (!pending) {
         return false;
     }
-    // The stored plan's room, its layers in, is shown by a frame before its reconciliation is waited for (I3 step 10c).
-    if (m_previewAwaitingFrame && (!m_collection || settled(lastFrameNext))) {
+    // The stored plan's floor, its layers in, is shown by a frame before its reconciliation is waited for (I3 step
+    // 10c).
+    if (m_previewAwaitingFrame && (m_rooms.empty() || settled(lastFrameNext))) {
         return false;
     }
     return !m_waitSince || Clock::now() - *m_waitSince < kLockstepWaitLimit;
@@ -708,10 +844,12 @@ void WorldSession::dropCollection() {
     m_heroItem.reset();
     m_heroShown.reset();
     m_heroTexture = 0;
+    m_heroTextureRoom.reset();
     m_heroes.reset();
     m_loader.reset();
     m_interaction->clear();
-    m_collection.reset();
+    m_rooms.clear();
+    syncCollections();
     m_shown.reset();
     m_launch.setPlan(nullptr);
     if (std::exchange(m_coverPhaseOpen, false)) {
@@ -722,22 +860,51 @@ void WorldSession::dropCollection() {
 void WorldSession::record(RunReport& report) const {
     WorldRecord world = m_record;
     world.state = m_state;
+    // The room that holds the eye at the end (I4 step 5a), "" in a hall or before a floor showed.
+    world.room.clear();
+    if (m_state == "room" && m_host.eyeArea) {
+        const std::string area = m_host.eyeArea();
+        for (const WorldRoomRecord& room : m_record.rooms) {
+            if (room.id == area) {
+                world.room = area;
+            }
+        }
+    }
     world.hoverChanges = m_interaction->hoverChanges();
     m_interaction->record(world.interaction);
     world.card = m_card.record();
     world.launch = m_launch.record();
-    if (m_collection) {
-        if (const world::PickId hovered = m_collection->hovered(); hovered != world::kNoPick) {
+    if (CollectionInstance* collection = activeCollection()) {
+        if (const world::PickId hovered = collection->hovered(); hovered != world::kNoPick) {
             world.hoveredPickId = fmt::format("{:08X}", hovered);
-            if (const std::optional<catalog::GameId> game = m_collection->gameOf(hovered)) {
+            if (const std::optional<catalog::GameId> game = collection->gameOf(hovered)) {
                 world.hoveredGame = game->toString();
             }
         }
     }
     report.world = std::move(world);
-    if (m_collection && m_loader) {
+    if (!m_rooms.empty() && m_loader) {
         ResidencyRecord residency;
-        m_loader->record(residency, *m_collection);
+        m_loader->record(residency, m_collections);
+        // Each collection room's own (ADR-0013 §9: every room samples its own arrays).
+        for (const FloorRoom& room : m_rooms) {
+            if (!room.collection) {
+                continue;
+            }
+            RoomResidencyRecord record;
+            record.room = room.id.toString();
+            record.items = room.collection->itemCount();
+            const gl::CollectionArrays& arrays = room.collection->arrays();
+            record.frontsResident = arrays.residentLayers(gl::CollectionClass::Front);
+            record.spinesResident = arrays.residentLayers(gl::CollectionClass::Spine);
+            record.pending = 2 * record.items -
+                             std::min<std::uint64_t>(2 * record.items, record.frontsResident + record.spinesResident);
+            record.arrayBytes = arrays.estimatedBytes();
+            const CollectionArraysSampled sampled = room.collection->sampledArrays(m_graphics.materials());
+            record.arrays = sampled.arrays;
+            record.ownArrays = sampled.own;
+            residency.rooms.push_back(std::move(record));
+        }
         if (m_shownAt) {
             residency.shownAtMs = sinceProcessStart(*m_shownAt);
         }
@@ -757,7 +924,7 @@ void WorldSession::record(RunReport& report) const {
         if (m_heroes) {
             m_heroes->record(residency.hero);
             if (m_heroShown) {
-                residency.hero.shownGame = m_loader->items()[*m_heroShown].game.toString();
+                residency.hero.shownGame = m_loader->items()[m_heroShown->loaderItem].game.toString();
             }
         }
         report.residency = std::move(residency);

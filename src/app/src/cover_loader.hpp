@@ -14,14 +14,21 @@
 // (after the catalog's refresh) and, once it can be read, serves again every item whose front did not come from its
 // cover, uploading only the pictures that changed. Once every layer is resident the cache is trimmed on a worker to its
 // bound, never an entry this room uses. Main thread only, but for its jobs.
+//
+// Since I4 step 5a one loader serves a floor (ADR-0013 §9): its items are every collection room's, each in its group
+// (its collection's index on the floor), each layer going up into its own room's arrays within the one frame budget;
+// the view (CoverView::groups) is the items of the room that holds the eye and of the rooms whose doorway the frustum
+// meets.
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -69,17 +76,21 @@ public:
         std::uint64_t frameIndex = 0;
     };
 
-    /// Starts serving `items` (the collection's item order) whose boxes in the room are `bounds` (one per item).
-    CoverLoader(Options options, core::WorkerPool& pool, std::vector<CoverItem> items, std::vector<core::Aabb> bounds);
+    /// Starts serving `items` (the collections' items, collection after collection) whose boxes in the scene are
+    /// `bounds` and whose collections are `groups` (indices into update()'s collections; none: every item in the
+    /// first), one per item.
+    CoverLoader(Options options, core::WorkerPool& pool, std::vector<CoverItem> items, std::vector<core::Aabb> bounds,
+                std::vector<std::uint32_t> groups = {});
     /// Cancels its jobs (their results go nowhere).
     ~CoverLoader();
     CoverLoader(const CoverLoader&) = delete;
     CoverLoader& operator=(const CoverLoader&) = delete;
 
     /// One round, every frame (and every idle wake or wait of a lockstep run): the finished layers taken, the made ones
-    /// submitted to `collection`'s arrays in the schedule's order, the queue uploaded within the budget, each upload
-    /// written into its item's record, more jobs submitted. Errors: those of the record writes.
-    [[nodiscard]] Status update(CollectionInstance& collection, const Round& round);
+    /// submitted to their collection's arrays in the schedule's order, the queues uploaded within the budget, each
+    /// upload written into its item's record, more jobs submitted. `collections`: the floor's, by group (null for a
+    /// group without one: its items are never served). Errors: those of the record writes.
+    [[nodiscard]] Status update(std::span<CollectionInstance* const> collections, const Round& round);
 
     /// Every item's layers are resident (or could not be made), and no retry is on its way.
     [[nodiscard]] bool done() const noexcept;
@@ -101,8 +112,8 @@ public:
     /// The items it serves (the collection's order).
     [[nodiscard]] const std::vector<CoverItem>& items() const noexcept { return m_items; }
 
-    /// The run report's residency (the arrays' counts from `collection`).
-    void record(ResidencyRecord& record, const CollectionInstance& collection) const;
+    /// The run report's residency: the floor's totals (the arrays' counts summed over `collections`).
+    void record(ResidencyRecord& record, std::span<CollectionInstance* const> collections) const;
     /// When the last layer became resident (none yet), and when every item of the first view was.
     [[nodiscard]] std::optional<std::chrono::system_clock::time_point> allResidentAt() const noexcept {
         return m_allResidentAt;
@@ -111,7 +122,17 @@ public:
         return m_viewResidentAt;
     }
     /// The Stats panel's lines (its "Collection" section).
-    [[nodiscard]] std::vector<std::string> statusLines(const CollectionInstance& collection) const;
+    [[nodiscard]] std::vector<std::string> statusLines(std::span<CollectionInstance* const> collections) const;
+    /// The group (collection) of item `index`.
+    [[nodiscard]] std::uint32_t groupOf(std::size_t index) const noexcept {
+        return index < m_groups.size() ? m_groups[index] : 0u;
+    }
+    /// The item of the layer key `key` ("<GameId>/front", "<GameId>/spine"), if any.
+    [[nodiscard]] std::optional<std::size_t> itemOfKey(const std::string& key) const;
+    /// The item of `game` (its front's key), if any.
+    [[nodiscard]] std::optional<std::size_t> itemOfGame(const catalog::GameId& game) const {
+        return itemOfKey(game.toString() + "/front");
+    }
 
     /// What the jobs and the loader share (cover_loader.cpp).
     struct Shared;
@@ -121,8 +142,8 @@ private:
     void takeFinished();
     /// Submits jobs for the schedule's next items while fewer than the bound run and the made layers stay few.
     void submitJobs();
-    /// Submits the schedule's next made items to the arrays (up to `maxLayers` layers).
-    void submitUploads(CollectionInstance& collection, std::size_t maxLayers);
+    /// Submits the schedule's next made items to their collections' arrays (up to `maxLayers` layers).
+    void submitUploads(std::span<CollectionInstance* const> collections, std::size_t maxLayers);
     void takeRootCheck();
     void startTrim();
     void noteArrivals();
@@ -132,6 +153,9 @@ private:
     core::JobGeneration m_generation;
     std::shared_ptr<Shared> m_shared;
     std::vector<CoverItem> m_items;
+    std::vector<std::uint32_t> m_groups;
+    /// Every item's layer keys, to its index.
+    std::map<std::string, std::size_t, std::less<>> m_byKey;
     CoverSchedule m_schedule;
     /// Per item: the layers made and waiting for their upload, the front's source and the cache entries served for it
     /// (the trim's in-use set; a retry compares them).

@@ -650,17 +650,33 @@ TEST_CASE("app/command_line: --no-texture-compression keeps the collection's arr
     CHECK(help.find("Not implemented yet (I3 step 6)") == std::string::npos);
 }
 
-TEST_CASE("app/command_line: --room-system shows another system's room (I4 step 2)", "[app][command_line]") {
-    CHECK(parse({"--smoke"})->roomSystem.empty());
-    const auto psx = parse({"--smoke", "--room-system", "psx"});
-    REQUIRE(psx.has_value());
-    CHECK(psx->roomSystem == "psx");
-    for (const char* value : {"bad/name", "a:b"}) {
+TEST_CASE("app/command_line: --start-room starts in a room of the building (I4 step 5a)", "[app][command_line]") {
+    CHECK(parse({"--smoke"})->startRoom.empty());
+    for (const char* value : {"room:snes", "room:psx:2", "area:arcade", "area:shared:gen7"}) {
         INFO(value);
-        const auto refused = parse({"--smoke", "--room-system", value});
+        const auto room = parse({"--smoke", "--start-room", value});
+        REQUIRE(room.has_value());
+        CHECK(room->startRoom == value);
+    }
+    for (const char* value : {"snes", "room:", "room:bad/name", "hall:gen4", "area:shared"}) {
+        INFO(value);
+        const auto refused = parse({"--smoke", "--start-room", value});
         REQUIRE_FALSE(refused.has_value());
         CHECK(refused.error().code == ErrorCode::InvalidArgument);
     }
-    CHECK_FALSE(parse({"--smoke", "--room-system", ""}).has_value());
-    CHECK(helpListsOption(rv::app::commandLineHelp(), "--room-system"));
+    CHECK_FALSE(parse({"--smoke", "--start-room", ""}).has_value());
+    // Only in the generated building's runs.
+    for (const std::vector<std::string>& other :
+         {std::vector<std::string>{"--scene", "m0_testroom"}, std::vector<std::string>{"--model", "a.glb"},
+          std::vector<std::string>{"--mock-catalog", "games.json"}}) {
+        std::vector<std::string> arguments{"--smoke", "--start-room", "room:snes"};
+        arguments.insert(arguments.end(), other.begin(), other.end());
+        INFO(other.front());
+        const auto refused = parse(arguments);
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().code == ErrorCode::InvalidArgument);
+    }
+    CHECK(helpListsOption(rv::app::commandLineHelp(), "--start-room"));
+    CHECK_FALSE(helpListsOption(rv::app::commandLineHelp(), "--room-system"));
+    CHECK_FALSE(parse({"--smoke", "--room-system", "psx"}).has_value());
 }

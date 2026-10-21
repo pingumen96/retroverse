@@ -65,17 +65,12 @@ struct SessionJob {
 };
 /// The catalog's refresh (I3 step 13r): one at a time.
 struct RefreshJob {};
-/// The room's snapshot (I3 step 10b): the latest request only.
-struct RoomJob {
-    RoomSnapshotRequest request;
-};
-using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob, RoomJob>;
+using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob>;
 
-/// What a slice boundary of a refresh may answer: never the refresh itself nor the room's snapshot (which waits for the
-/// catalog the refresh makes); while the import's write transaction is open, only reads (lists on the worker's reader,
-/// readiness), as launches and session writes use the writer.
+/// What a slice boundary of a refresh may answer: never the refresh itself; while the import's write transaction is
+/// open, only reads (lists on the worker's reader, readiness), as launches and session writes use the writer.
 [[nodiscard]] bool servableDuringRefresh(const Job& job, bool writing) noexcept {
-    if (std::holds_alternative<RefreshJob>(job) || std::holds_alternative<RoomJob>(job)) {
+    if (std::holds_alternative<RefreshJob>(job)) {
         return false;
     }
     return !writing || std::holds_alternative<QueryJob>(job) || std::holds_alternative<ReadinessJob>(job);
@@ -346,6 +341,19 @@ private:
             return propagate(pages.error());
         }
         opened.pages = std::move(*pages);
+        // The building job's own reader (I4 step 5a, ADR-0013 §9): every system's snapshot within one read
+        // transaction on the worker pool, so that this worker keeps answering the lists meanwhile.
+        auto worldReader = m_database->openReader();
+        if (!worldReader) {
+            return propagate(worldReader.error());
+        }
+        auto world = catalog_db::SqliteCatalogQuery::open(std::move(*worldReader));
+        if (!world) {
+            return propagate(world.error());
+        }
+        opened.world = std::make_shared<WorldCatalogReader>();
+        opened.world->query = std::move(*world);
+        opened.world->profile = m_profile;
 
         // ADR-0008 §9: the sessions left open by owners that are gone are closed as interrupted, and only those.
         const catalog_db::OwnerAlive alive =
@@ -792,48 +800,6 @@ private:
         m_shared->importWriter = open ? &m_database->writer() : nullptr;
     }
 
-    // --- The room's snapshot (I3 step 10b) ------------------------------------------------------------------------
-
-    void handle(RoomJob& job) {
-        std::string fullName;
-        std::vector<std::string> platforms;
-        if (const auto system = m_systems.find(job.request.system.str()); system != m_systems.end()) {
-            fullName = system->second.fullName;
-            platforms = system->second.platforms;
-        }
-        // ES-DE's settings as they are now: the media root it would use (library.json's override over them).
-        const auto settings = esde::readSettings(m_profile.esdeHome);
-        const esde::ResolvedRoot mediaRoot =
-            esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, m_profile);
-        std::unique_ptr<catalog_db::SqliteCatalogStore> store;
-        if (!job.request.placedGames.empty()) {
-            if (auto opened = catalog_db::SqliteCatalogStore::open(*m_database)) {
-                store = std::move(*opened);
-            } else {
-                spdlog::warn("Room snapshot: the aliases of the placed games cannot be read: {}",
-                             opened.error().toString());
-            }
-        }
-        RoomSnapshotResult result =
-            takeRoomSnapshot(*m_query, store.get(), mediaRoot, m_profile.id, std::move(fullName), job.request);
-        result.platformTags = std::move(platforms);
-        if (result.error) {
-            spdlog::warn("Room snapshot of {} failed: {}", job.request.system.str(), result.error->toString());
-        } else {
-            spdlog::info("Room snapshot of {}: {} entries in {:.1f} ms (query {:.1f} ms, media {:.1f} ms, aliases "
-                         "{:.1f} ms), media {}, {} with media paths, {} alias(es)",
-                         job.request.system.str(), result.snapshot.entries.size(), result.milliseconds,
-                         result.queryMs, result.mediaMs, result.aliasMs,
-                         result.snapshot.mediaKnown ? "known" : "unknown", result.mediaPaths.size(),
-                         result.aliases.size());
-            if (!result.snapshot.mediaKnown) {
-                // The reason names the media root, one of the user's folders: at debug level only.
-                spdlog::debug("Room snapshot: media unknown: {}", result.snapshot.mediaUnknownReason);
-            }
-        }
-        m_shared->post([&](CatalogResults& results) { results.room = std::move(result); });
-    }
-
     // --- Play sessions -------------------------------------------------------------------------------------------
 
     struct Recording {
@@ -1106,18 +1072,6 @@ bool CatalogWorker::refresh() {
     }
     m_shared->work.notify_one();
     return true;
-}
-
-void CatalogWorker::roomSnapshot(RoomSnapshotRequest request) {
-    {
-        const std::lock_guard lock(m_shared->mutex);
-        if (m_shared->stopping || m_shared->finished) {
-            return;
-        }
-        std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<RoomJob>(job); });
-        m_shared->jobs.emplace_back(RoomJob{std::move(request)});
-    }
-    m_shared->work.notify_one();
 }
 
 CatalogResults CatalogWorker::take() {

@@ -89,11 +89,18 @@ Expected<assets::ImageData> loadStill(const std::filesystem::path& path, std::st
 } // namespace
 
 std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& description, const SceneInstance& instance,
-                                         const gl::MaterialRegistry& materials) {
+                                         const gl::MaterialRegistry& materials,
+                                         const std::optional<std::string>& idPrefix) {
+    if (idPrefix && idPrefix->empty()) {
+        return std::nullopt;
+    }
     for (std::size_t index = 0; index < description.objects.size(); ++index) {
         const scene::SceneObject& object = description.objects[index];
         if (object.source != scene::SceneObject::Source::Prefab || object.kind != "crt" ||
             !object.texturesByRole.contains("screen") || index >= instance.objectBounds().size()) {
+            continue;
+        }
+        if (idPrefix && !object.id.starts_with(*idPrefix)) {
             continue;
         }
         // SceneInstance registers the screen's picture instance as "<object id>/screen", "@<w>x<h>" for a pattern.

@@ -8,6 +8,7 @@
 #include <glm/vec2.hpp>
 
 #include <rv/app/command_line.hpp>
+#include <rv/app/exit_code.hpp>
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/core/expected.hpp>
@@ -56,10 +57,12 @@ public:
     /// Ends the main loop once the current frame is done and makes the run exit with ExitCode::RuntimeFailure, for
     /// failures that must not pass silently, such as a --screenshot that was not written. Also honored from
     /// IAppLogic::onShutdown when the main loop ended normally: the host calls it before deciding the exit code. The
-    /// host logs the error; only the first one is kept.
-    void failRun(Error error) {
+    /// host logs the error; only the first one is kept, with its `code` (ExitCode::InitializationFailed for a start the
+    /// run could not make after its initialization: I4 step 5a's --start-room of a room the building lacks).
+    void failRun(Error error, ExitCode code = ExitCode::RuntimeFailure) {
         if (!m_failure) {
             m_failure = std::move(error);
+            m_failureCode = code;
         }
         m_quitRequested = true;
     }
@@ -111,6 +114,7 @@ private:
     std::uint32_t m_wakeEvent = 0;
     std::function<void()> m_wake = [] {};
     std::optional<Error> m_failure;
+    ExitCode m_failureCode = ExitCode::RuntimeFailure;
 };
 
 /// Application behavior driven by AppHost. Call order: onInit once; then per frame onEvent for each pending event,

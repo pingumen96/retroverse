@@ -12,10 +12,19 @@
 // over to). Everything else (the selection, the generation or the update, the plan's write, the scene) runs on the
 // worker pool (world_build.hpp), never here, so that the quick catalog's lists and a launch's resolution never queue
 // behind it.
+//
+// Since I4 step 5a (ADR-0013 §9) the app plans the whole building: the building job (world_build.hpp) reads every
+// system's snapshot within one read transaction on a read-only connection of its own (WorldCatalogReader, opened by the
+// catalog worker when the catalog opens), so that the catalog worker keeps answering the quick catalog's lists
+// meanwhile: takeBuildingSnapshot() runs takeRoomSnapshot() for each system of the library (the aliases of the stored
+// plan's placed games that no snapshot lists read on the same reader). The catalog worker's own room job is gone.
 
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -24,7 +33,9 @@
 #include <rv/catalog/catalog_query.hpp>
 #include <rv/catalog/catalog_store.hpp>
 #include <rv/catalog/ids.hpp>
+#include <rv/catalog/library.hpp>
 #include <rv/catalog/room_entry.hpp>
+#include <rv/catalog_db/catalog_query.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/esde/media_resolver.hpp>
 #include <rv/esde/settings.hpp>
@@ -83,6 +94,51 @@ struct RoomSnapshotResult {
                                                   const esde::ResolvedRoot& mediaRoot,
                                                   const catalog::LibraryId& library, std::string systemFullName,
                                                   const RoomSnapshotRequest& request);
+
+/// The building job's read-only connection on the catalog (I4 step 5a, ADR-0013 §9), opened by the catalog worker when
+/// the catalog opened (CatalogOpened::world) and lent to one building job at a time on the worker pool (its mutex held
+/// for the job's reads), with the library profile library.json records (the media root is resolved from ES-DE's
+/// settings at every snapshot).
+struct WorldCatalogReader {
+    std::mutex mutex;
+    std::unique_ptr<catalog_db::SqliteCatalogQuery> query;
+    catalog::LibraryProfile profile;
+};
+
+/// Every system's snapshot of the library, taken within one read transaction (takeBuildingSnapshot()).
+struct BuildingSnapshot {
+    catalog::LibraryId library;
+    /// The catalog could not be read (its systems, a transaction): nothing else is said then.
+    std::optional<Error> error;
+    /// The library's systems the job was asked for, by name: each its snapshot (or the error of its own read: NotFound
+    /// for a system without entries), its media checked, its paths, its full name and platform tags; no aliases (those
+    /// are the building's, below).
+    std::vector<RoomSnapshotResult> systems;
+    /// The aliases of the placed games asked for that no system's snapshot lists, in GameId order.
+    std::vector<world::GameAlias> aliases;
+    std::optional<Error> aliasError;
+    /// Milliseconds of the whole read, and when it was done.
+    double milliseconds = 0.0;
+    std::chrono::system_clock::time_point at;
+
+    /// The snapshot of `system`, or nullptr.
+    [[nodiscard]] const RoomSnapshotResult* find(const catalog::SystemName& system) const noexcept;
+    /// Every system read without an error had its media known (the media root could be read); false when none was.
+    [[nodiscard]] bool mediaKnown() const noexcept;
+};
+
+/// Which systems of the library a building snapshot reads (classify()'s systems with a room): a system's name and its
+/// ES-DE platform tags.
+using SystemFilter = std::function<bool(const catalog::SystemName& system, std::span<const std::string> platforms)>;
+
+/// The job (on the worker pool, `reader`'s mutex held by the caller): within one deferred read transaction on
+/// `reader.query`, the library's systems (SqliteCatalogQuery::systems) that `wanted` keeps, each one's snapshot as
+/// takeRoomSnapshot() takes it (its media checked against the media root ES-DE's settings give now, its paths), then the
+/// aliases of `placedGames` that no snapshot lists (SqliteCatalogQuery::aliasTarget). Never fails as a whole: an error
+/// is in the result.
+[[nodiscard]] BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader,
+                                                    std::span<const catalog::GameId> placedGames,
+                                                    const SystemFilter& wanted);
 
 /// The cover's media path of `game` among `paths` (sorted by GameId, as roomMediaPaths gives them); empty when it has
 /// none.

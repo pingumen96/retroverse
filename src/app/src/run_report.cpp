@@ -829,6 +829,16 @@ Json worldToJson(const WorldRecord& world) {
     json["catalogState"] = world.catalogState;
     json["room"] = world.room;
     json["library"] = world.library;
+    json["floor"] = world.floor;
+    Json rooms = Json::array();
+    for (const WorldRoomRecord& room : world.rooms) {
+        rooms.push_back(Json{{"id", room.id},
+                             {"floor", room.floor},
+                             {"x", room.xMm},
+                             {"z", room.zMm},
+                             {"yaw", room.yawHalfTurns}});
+    }
+    json["rooms"] = std::move(rooms);
     json["outcome"] = world.outcome;
     json["changeOutcome"] = world.changeOutcome;
     json["rebuild"] = world.rebuild;
@@ -951,6 +961,16 @@ WorldRecord readWorld(FieldReader& fields) {
     world.catalogState = fields.string("catalogState");
     world.room = fields.string("room");
     world.library = fields.string("library");
+    world.floor = fields.optionalString("floor").value_or(std::string());
+    for (FieldReader& room : fields.optionalObjectArray("rooms")) {
+        WorldRoomRecord record;
+        record.id = room.string("id");
+        record.floor = room.string("floor");
+        record.xMm = room.integer("x");
+        record.zMm = room.integer("z");
+        record.yawHalfTurns = static_cast<std::uint32_t>(room.count("yaw", 1));
+        world.rooms.push_back(std::move(record));
+    }
     world.outcome = fields.string("outcome");
     world.changeOutcome = fields.string("changeOutcome");
     world.rebuild = fields.string("rebuild");
@@ -1118,6 +1138,18 @@ Json residencyToJson(const ResidencyRecord& residency) {
         Json{{"requests", hero.requests},   {"loaded", hero.loaded},           {"failed", hero.failed},
              {"evicted", hero.evicted},     {"resident", hero.resident},       {"bytes", hero.bytes},
              {"peakBytes", hero.peakBytes}, {"maxUploadMs", hero.maxUploadMs}, {"shownGame", hero.shownGame}};
+    Json rooms = Json::array();
+    for (const RoomResidencyRecord& room : residency.rooms) {
+        rooms.push_back(Json{{"room", room.room},
+                             {"items", room.items},
+                             {"frontsResident", room.frontsResident},
+                             {"spinesResident", room.spinesResident},
+                             {"pending", room.pending},
+                             {"arrayBytes", room.arrayBytes},
+                             {"arrays", room.arrays},
+                             {"ownArrays", room.ownArrays}});
+    }
+    json["rooms"] = std::move(rooms);
     return json;
 }
 
@@ -1196,6 +1228,18 @@ ResidencyRecord readResidency(FieldReader& fields) {
         record.peakBytes = hero->count("peakBytes");
         record.maxUploadMs = hero->number("maxUploadMs");
         record.shownGame = hero->string("shownGame");
+    }
+    for (FieldReader& room : fields.optionalObjectArray("rooms")) {
+        RoomResidencyRecord record;
+        record.room = room.string("room");
+        record.items = room.count("items");
+        record.frontsResident = room.count("frontsResident");
+        record.spinesResident = room.count("spinesResident");
+        record.pending = room.count("pending");
+        record.arrayBytes = room.count("arrayBytes");
+        record.arrays = room.count("arrays");
+        record.ownArrays = room.count("ownArrays");
+        residency.rooms.push_back(std::move(record));
     }
     return residency;
 }
