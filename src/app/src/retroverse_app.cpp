@@ -92,9 +92,6 @@ constexpr bool kDeveloperBuild = false;
 constexpr std::string_view kOverlayLayoutFile = "imgui.ini";
 /// Reference grid of --debug-draw in scenes: 1 m cells over 20 x 20 m around the origin.
 constexpr DebugGrid kSceneDebugGrid{10.0f, 1.0f};
-/// The exposure's factor at the bottom of the elevator ride's fade (I4 step 7b): the brightest emitter of a floor
-/// (about 10 units of radiance) tonemaps below one 8-bit step.
-constexpr float kRideFadeFloor = 1e-5f;
 
 /// Width / height of a viewport, 16:9 for an empty one.
 float aspectOf(glm::ivec2 size) noexcept {
@@ -552,10 +549,8 @@ struct RetroverseApp::State {
             // step 12).
             view.items = world->viewItems(view.items, camera);
             world->applyInspection(view);
-            // The elevator ride's fade (I4 step 7b): the exposure down to nearly nothing, black once tonemapped.
-            if (const float fade = world->fade(); fade > 0.0f) {
-                view.post.exposure *= std::max(1.0f - fade, kRideFadeFloor);
-            }
+            // The elevator ride's fade (I4 step 7b): after the tonemap, every pixel dimmed alike (the UI above it).
+            view.post.fade = world->fade();
         }
         return view;
     }
@@ -1326,9 +1321,14 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
                 state.openCatalog();
             }
             // I4 step 7b: the directory, at the elevator by interact (its prompt shows there), anywhere in free roam
-            // by Map (M, the pad's Back/Select); never in Focus, Inspect, a launch or a ride.
-            if (state.product && !riding && worldContext == WorldContext::FreeRoam &&
-                !state.product->launchActive() && !state.product->hasInput()) {
+            // by Map (M, the pad's Back/Select); never in Focus, Inspect, a launch or a ride: the frame began in free
+            // roam and its interaction left it there, no ease driving the walker (an interact that took an item in this
+            // frame, with Map pressed too, opens nothing).
+            const bool freeRoamNow =
+                worldContext == WorldContext::FreeRoam && state.world->context() == WorldContext::FreeRoam &&
+                !worldResult.walker;
+            if (state.product && !riding && freeRoamNow && !state.product->launchActive() &&
+                !state.product->hasInput()) {
                 if (actions.pressed(input::Action::Map)) {
                     state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "map");
                 } else if (actions.pressed(input::Action::Interact) && state.world->idleAtElevator()) {

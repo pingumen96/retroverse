@@ -10,9 +10,12 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/app/app_catalog.hpp>
 #include <rv/app/app_logic.hpp>
+#include <rv/app/elevator_prompt_ui.hpp>
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/world_launch_ui.hpp>
+#include <rv/app/world_notice_ui.hpp>
 #include <rv/render/gpu_memory.hpp>
 
 #include "cover_loader.hpp"
@@ -38,9 +41,8 @@ bool WorldSession::atElevator() const {
     if (m_state != "room" || m_floor.empty() || !m_host.walker || m_elevatorZone.isEmpty()) {
         return false;
     }
-    const glm::vec3 feet = m_host.walker().feet;
-    return feet.x >= m_elevatorZone.min.x && feet.x <= m_elevatorZone.max.x && feet.z >= m_elevatorZone.min.z &&
-           feet.z <= m_elevatorZone.max.z;
+    const scene::WalkerPose walker = m_host.walker();
+    return facesElevator(walker.feet, walker.yaw, m_elevatorZone, m_elevatorDoors);
 }
 
 bool WorldSession::idleAtElevator() const {
@@ -83,6 +85,7 @@ std::optional<std::size_t> WorldSession::interactionRoomOf(std::string_view room
 void WorldSession::keepPlan(const WorldBuild& build) {
     m_floor = build.floor;
     m_elevatorZone = build.elevatorZone;
+    m_elevatorDoors = build.elevatorDoors;
     m_arrival = build.arrival;
     m_doorways.clear();
     for (const RoomCollection& room : build.rooms) {
@@ -180,6 +183,10 @@ void WorldSession::executeMove(ProductUi& product, const WorldMove& move,
         }
         if (game) {
             m_launch.showInRoomRefused(*game, move.notice, frame);
+            if (!command) {
+                // The quick catalog closed on it: the world says the room cannot be reached now (ADR-0013 §10).
+                setNotice(WorldNoticeContent{std::string(world_notice::kRoomUnreachable), {}, {}}, true);
+            }
         }
         break;
     case WorldMoveKind::ShowHere:
@@ -195,7 +202,7 @@ void WorldSession::executeMove(ProductUi& product, const WorldMove& move,
         }
         break;
     case WorldMoveKind::Ride:
-        startRide(move, command);
+        startRide(product, move, command);
         break;
     }
 }
@@ -227,7 +234,8 @@ void WorldSession::teleportTo(const std::string& room, RideReason reason) {
     m_record.teleports.push_back(std::move(record));
 }
 
-void WorldSession::startRide(const WorldMove& move, const std::optional<ui::DirectoryCommand>& command) {
+void WorldSession::startRide(ProductUi& product, const WorldMove& move,
+                             const std::optional<ui::DirectoryCommand>& command) {
     const std::uint64_t frame = m_context.frameIndex();
     RideRequest request;
     request.from = m_floor;
@@ -253,12 +261,12 @@ void WorldSession::startRide(const WorldMove& move, const std::optional<ui::Dire
     skeleton.outcome = WorldOutcome::Kept;
     skeleton.planDigest = m_planState->digest;
     skeleton.reason = "a ride's destination";
-    requestFloor(std::move(skeleton), false);
+    requestFloor(std::move(skeleton), false, product.catalog().worldReader());
     spdlog::info("Frame {}: the elevator rides from {} to {} ({}{}{})", frame, m_ride->request().from, move.floor,
                  toString(move.reason), move.room.empty() ? "" : ", ", move.room);
 }
 
-void WorldSession::requestFloor(WorldBuild skeleton, bool retarget) {
+void WorldSession::requestFloor(WorldBuild skeleton, bool retarget, std::shared_ptr<WorldCatalogReader> reader) {
     // At most one floor-build job: the latest asked wins.
     m_pool.cancel(m_floorGeneration);
     const std::uint64_t generation = m_floorGeneration.current();
@@ -276,7 +284,7 @@ void WorldSession::requestFloor(WorldBuild skeleton, bool retarget) {
     auto shared = std::make_shared<WorldBuild>(std::move(skeleton));
     const Status submitted = m_pool.submit(
         [box = m_floorBox, paths = m_options.paths, plan = m_planState->plan, sources = std::move(sources), shared,
-         generation, retarget](const core::JobContext& job) {
+         generation, retarget, reader = std::move(reader)](const core::JobContext& job) {
             if (job.cancelled()) {
                 return;
             }
@@ -284,7 +292,13 @@ void WorldSession::requestFloor(WorldBuild skeleton, bool retarget) {
             if (!build.plan) {
                 build.plan = *plan;
             }
-            buildFloor(paths, build, sources);
+            // The CRTs' games with the catalog's sessions now: a game played since the items files were written (a
+            // launch before the ride) is the start choice its room's CRT makes, as a start there would (ADR-0012 §7).
+            FloorSources floorSources = sources;
+            if (reader) {
+                floorSources.lastPlayed = catalogLastPlayed(*reader);
+            }
+            buildFloor(paths, build, floorSources);
             if (job.cancelled()) {
                 return;
             }
@@ -319,7 +333,7 @@ std::optional<WorldBuild> WorldSession::takeFloorBuild(bool& retarget) {
     return std::exchange(m_floorBox->build, std::nullopt);
 }
 
-bool WorldSession::retargetResult(WorldResult& result) {
+bool WorldSession::retargetResult(WorldResult& result, std::shared_ptr<WorldCatalogReader> reader) {
     if (result.testRoom || !result.build || !result.build->plan || result.build->startRoomMissing ||
         m_floor.empty() || result.build->floor.empty() || result.build->floor == m_floor || m_state != "room") {
         return false;
@@ -348,7 +362,7 @@ bool WorldSession::retargetResult(WorldResult& result) {
     m_planState = std::move(state);
     m_planIndex.emplace(*skeleton.plan);
     m_record.floors = floorRecordsOf(*skeleton.plan);
-    requestFloor(std::move(skeleton), true);
+    requestFloor(std::move(skeleton), true, std::move(reader));
     return true;
 }
 
@@ -365,12 +379,11 @@ void WorldSession::followRide(ProductUi& product, bool idleWake, double deltaSec
     bool retarget = false;
     if (std::optional<WorldBuild> built = takeFloorBuild(retarget)) {
         if (retarget) {
-            m_retargetPending = false;
             WorldResult result;
             result.notice = built->notice;
             result.reason = built->reason;
             result.build = std::move(*built);
-            applyLive(std::move(result));
+            m_retargetResult = std::move(result);
         } else if (m_ride) {
             const bool ok = built->plan.has_value() && built->scene.has_value() && !built->startRoomMissing;
             if (!ok) {
@@ -383,19 +396,22 @@ void WorldSession::followRide(ProductUi& product, bool idleWake, double deltaSec
             }
         }
     }
-    if (!m_ride) {
-        return;
+    // A building's result built again for the floor shown applies as a live update: never while a launched game runs
+    // (ADR-0012 §6), so one that comes meanwhile waits for its end (the floor still "applying" until then).
+    if (m_retargetResult && !product.launchActive()) {
+        m_retargetPending = false;
+        applyLive(std::move(*std::exchange(m_retargetResult, std::nullopt)));
     }
-    // An idle wake (a lockstep wait) only takes the destination once it is built: the fades and the view's wait move
-    // with frames, so that a scripted run's frames are the same every time.
-    if (idleWake && m_ride->phase() != RidePhase::AwaitingFloor) {
+    // An idle wake (a lockstep wait) only hands the job's answer over: the fades, the swap and the view's wait move with
+    // frames, so that a scripted run's frames (the swap's among them) are the same every time.
+    if (!m_ride || idleWake) {
         return;
     }
     RideFrame frame;
     frame.frame = m_context.frameIndex();
-    frame.deltaSeconds = idleWake ? 0.0 : deltaSeconds;
+    frame.deltaSeconds = deltaSeconds;
     frame.elapsedMs = millisecondsSince(m_rideStart);
-    frame.viewResident = !idleWake && m_ride->hasSwapped() && m_updates > m_swapUpdate && rideViewResident();
+    frame.viewResident = m_ride->hasSwapped() && m_updates > m_swapUpdate && rideViewResident();
     switch (m_ride->update(frame)) {
     case RideAction::None:
         break;
@@ -405,9 +421,12 @@ void WorldSession::followRide(ProductUi& product, bool idleWake, double deltaSec
         m_swapUpdate = m_updates;
         break;
     case RideAction::Fail:
-        // The walker stays where it was; the directory says so when it asked.
+        // The walker stays where it was; the directory says so when it asked, the world when the quick catalog's
+        // "Mostra nella stanza" did (its catalog closed).
         if (m_rideCommand) {
             product.refuseDirectory(*m_rideCommand, kNoticeRideUnavailable);
+        } else if (m_ride->request().reason == RideReason::ShowInRoom) {
+            setNotice(WorldNoticeContent{std::string(world_notice::kRoomUnreachable), {}, {}}, true);
         }
         m_rideBuild.reset();
         break;
@@ -453,6 +472,9 @@ void WorldSession::finishRide() {
     const GpuMemoryRecord memory = gpuMemoryRecord(gl::gpuMemoryLedger());
     record.arrayBytes = memory.usage(gl::GpuMemoryKind::CollectionArrays).bytes;
     record.gpuBytes = memory.totalBytes;
+    for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+        record.kindBytes[static_cast<std::size_t>(kind)] = memory.usage(kind).bytes;
+    }
     m_context.frameTiming().closePhase(kPhaseElevator);
     spdlog::info("Frame {}: the ride from {} to {} {}: the view back {:.0f} ms after it was asked (the floor built at "
                  "{:.0f} ms, its job {:.0f} ms){}; GPU memory {:.1f} MiB, arrays {:.1f} MiB",

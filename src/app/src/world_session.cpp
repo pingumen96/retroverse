@@ -216,7 +216,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
         // for it first.
         if (!m_previewAwaitingFrame && !(m_liveFlow && product.launchActive()) && !m_ride && !m_retargetPending) {
             if (std::optional<WorldResult> result = m_flow->takeResult()) {
-                if (retargetResult(*result)) {
+                if (retargetResult(*result, product.catalog().worldReader())) {
                     m_liveFlow = false;
                 } else if (std::exchange(m_liveFlow, false)) {
                     applyLive(std::move(*result));
@@ -997,7 +997,8 @@ bool WorldSession::waits() const {
     }
     // Before the run's last frame the whole floor, before the others the frame's view (ADR-0011 §6). I4 step 7b: a
     // ride's destination being built once the view faded out, then the eye's area on it (the waits replace the ride's
-    // timeout), and a building's result built again for the floor shown.
+    // timeout), and a building's result built again for the floor shown (once built, it waits for a launch's end: no
+    // reason to wait).
     const std::optional<std::uint32_t> limit = m_context.options().frameLimit;
     const bool lastFrameNext = limit && m_nextFrame + 1 >= *limit;
     const bool ridePending =
@@ -1006,7 +1007,7 @@ bool WorldSession::waits() const {
     const bool flowPending =
         m_flow && m_flow->phase() != WorldPhase::Done && !(m_ride && m_flow->phase() == WorldPhase::Ready);
     const bool pending = m_decided.has_value() || flowPending || (!m_rooms.empty() && !settled(lastFrameNext)) ||
-                         ridePending || m_retargetPending;
+                         ridePending || (m_retargetPending && !m_retargetResult);
     if (!pending) {
         return false;
     }
@@ -1035,6 +1036,7 @@ void WorldSession::dropCollection() {
     // I4 step 7b: no floor shown (the plan's state stays for the next one: keepShown()).
     m_floor.clear();
     m_elevatorZone = core::Aabb{};
+    m_elevatorDoors = glm::vec3(0.0f);
     m_doorways.clear();
     if (std::exchange(m_coverPhaseOpen, false)) {
         m_context.frameTiming().closePhase(kPhaseCoverLoad);
