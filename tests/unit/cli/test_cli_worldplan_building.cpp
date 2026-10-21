@@ -530,6 +530,27 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     CHECK(contains(pocket.out, "Entered:         pocketlab in area:shared:handheld (a new section)\n"));
     CHECK(contains(pocket.out, "Changes:         6 added, "));
     CHECK(readText(session.files.plan) == generatedText);
+    // A full floor: with an asset root whose building.json holds one room per row, gb and pocketlab fill the handheld
+    // floor (gb's room in the north row, the shared room in the south one).
+    const std::filesystem::path narrowRoot = session.dir.file("narrow-assets");
+    std::filesystem::create_directories(narrowRoot);
+    for (const std::string_view folder : {"world", "manifests"}) {
+        std::filesystem::copy(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR) / folder, narrowRoot / folder,
+                              std::filesystem::copy_options::recursive);
+    }
+    std::string buildingJson = readText(narrowRoot / "world" / "building.json");
+    const std::string_view rowLimit = "\"maxRoomsPerRow\": 12";
+    const std::size_t limitAt = buildingJson.find(rowLimit);
+    REQUIRE(limitAt != std::string::npos);
+    buildingJson.replace(limitAt, rowLimit.size(), "\"maxRoomsPerRow\": 1");
+    REQUIRE(rv::core::writeTextFileAtomic(narrowRoot / "world" / "building.json", buildingJson).has_value());
+    const std::string narrow = rv::core::pathToUtf8(narrowRoot);
+    const std::string full = rv::core::pathToUtf8(session.dir.file("full.json"));
+    const RunResult fullBuilding = session.run({"--asset-root", narrow, "worldplan", "generate", "--system", "gb",
+                                                "--system", "pocketlab", "--plan", full, "--seed", "102938"});
+    INFO(fullBuilding.out << fullBuilding.err);
+    REQUIRE(fullBuilding.code == ExitCode::Ok);
+    CHECK(contains(fullBuilding.out, "Generated the plan of area:shared:handheld, room:gb: "));
 
     // additions/: five titles more for snes and psx, 24 for pokemini (past 30), and the new megadrive.
     REQUIRE(fixture->applyOverlay("additions"));
@@ -561,6 +582,19 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         sharedPlaced += placement.slot.fixture().room() == sharedId ? 1 : 0;
     }
     CHECK(sharedPlaced == 14 + 24);
+    // On the full handheld floor pokemini, past 30 titles now and without a room there, finds no place for a console
+    // room of its own: it joins the floor's shared room (ADR-0013 §7), whose other sections the update reads from the
+    // catalog, so that it does not wait for them.
+    const RunResult joinsFull = session.run({"--asset-root", narrow, "worldplan", "update", "--system", "pokemini",
+                                             "--previous", full, "--plan", full, "--seed", "102938"});
+    INFO(joinsFull.out << joinsFull.err);
+    REQUIRE(joinsFull.code == ExitCode::Ok);
+    CHECK(contains(joinsFull.out, "Entered:         pokemini in area:shared:handheld (a new section)\n"));
+    CHECK(contains(joinsFull.out, "Changes:         32 added, "));
+    CHECK_FALSE(contains(joinsFull.out, "Waiting:"));
+    auto joinedFull = rv::world::readPlan(readText(session.dir.file("full.json")), "full");
+    REQUIRE(joinedFull.has_value());
+    CHECK(joinedFull->rooms.size() == 2);
     // An update of the whole building (every room's sections and every other system of the catalog) enters megadrive
     // (I4 step 6a): its 12 titles, under 30, open gen4's shared room in the south row (snes stands in the north row's
     // first place); nothing that stands moves; again, it writes nothing, nor does an update of megadrive alone.

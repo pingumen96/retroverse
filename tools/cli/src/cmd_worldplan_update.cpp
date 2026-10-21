@@ -1,26 +1,26 @@
-// retroverse-cli worldplan update: the incremental update of a previous building (ADR-0010 §10, ADR-0013 §3, §5, §7;
-// I3 step 9, I4 steps 1 and 6a): in each room every placement kept, the new titles added in the spine-out section next
-// to their alphabetical predecessors (a dressed level, a new side-wall module, the room's growth when the section is
-// full; capacity beyond the template's limit), the face-out set unchanged, pins protected, a room whose template, prefab
+// retroverse-cli worldplan update: the incremental update of a previous building (ADR-0010 §10, ADR-0013 §3, §5, §7; I3
+// step 9, I4 steps 1 and 6a): in each room every placement kept, the new titles added in the spine-out section next to
+// their alphabetical predecessors (a dressed level, a new side-wall module, the room's growth when the section is full;
+// capacity beyond the template's limit), the face-out set unchanged, pins protected, a room whose template, prefab
 // levels or generator major changed kept as it is (its new games unplaced as room-kept), and the change report (--diff
 // lists every change). A system no room holds enters the building (I4 step 6a): its own room at the east end of the
 // shorter row of its floor, or a section appended to its floor's shared room or to the arcade room (the room opened
 // when absent); nothing that stands moves. The rooms updated are those of the systems --system names (repeatable; a
-// system without a room enters), else every room of the plan and every other system of the catalog that gets a room
-// and has a placeable title (those whose data the asset root cannot give left out with a note). A shared or arcade room
-// is updated with the selections of all its sections (I4 step 4): naming one of its systems updates the whole room,
-// naming a new system that would take a section of a standing room reads that room's sections too, and selection
-// files must give every section (a system entering such a room without them waits, as the report says). The rooms'
-// selections are the catalog's as `worldplan generate` makes them (the aliases of placed games they no longer list
-// asked from the catalog), or canonical selection files (--selection, repeatable: the rooms updated are the files',
-// and --system given with them names the same systems). An update of some rooms only that changes nothing keeps the
-// plan's inputDigest, so it writes nothing (incremental.hpp); nothing is updated while the media are unknown (exit 1:
-// unknown media change nothing). The previous plan is the world's (<user data>/worlds/<library id>/world-plan.json,
-// read and saved again under the world's lock, the plan it replaces kept in backups/) or the file --previous names, of
-// schema 2 or of schema 1 (lifted); a plan edited by hand or written by a newer Retroverse is refused, and one of
-// another seed, preset or generator major version needs the explicit regeneration (`worldplan generate --replace`):
-// exit 1, nothing written. The updated plan is validated (a hard rule broken: exit 3, nothing written) and written to
-// the world's plan or to --plan.
+// system without a room enters), else every room of the plan and every other system of the catalog that gets a room and
+// has a placeable title (the others left out with a note on stderr: excluded, no entries, no placeable title, no data
+// yet). A shared or arcade room is updated with the selections of all its sections (I4 step 4): naming one of its
+// systems updates the whole room, a new system named that would take a section of a standing room has that room's
+// sections read too (the update runs again with them), and selection files must give every section (a system entering
+// such a room without them waits, as the report says). The rooms' selections are the catalog's as `worldplan generate`
+// makes them (the aliases of placed games they no longer list asked from the catalog), or canonical selection files
+// (--selection, repeatable: the rooms updated are the files', and --system given with them names the same systems). An
+// update of some rooms only that changes nothing keeps the plan's inputDigest, so it writes nothing (incremental.hpp);
+// nothing is updated while the media are unknown (exit 1: unknown media change nothing). The previous plan is the
+// world's (<user data>/worlds/<library id>/world-plan.json, read and saved again under the world's lock, the plan it
+// replaces kept in backups/) or the file --previous names, of schema 2 or of schema 1 (lifted); a plan edited by hand
+// or written by a newer Retroverse is refused, and one of another seed, preset or generator major version needs the
+// explicit regeneration (`worldplan generate --replace`): exit 1, nothing written. The updated plan is validated (a
+// hard rule broken: exit 3, nothing written) and written to the world's plan or to --plan.
 
 #include <algorithm>
 #include <chrono>
@@ -216,14 +216,6 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
         }
         return nullptr;
     };
-    const auto roomById = [&](const world::RoomId& id) -> const world::Room* {
-        for (const world::Room& room : previous->plan.rooms) {
-            if (room.id == id) {
-                return &room;
-            }
-        }
-        return nullptr;
-    };
     const bool whole = systems.empty() && selectionFiles.empty();
     if (whole) {
         for (const world::Room& room : previous->plan.rooms) {
@@ -253,52 +245,6 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
                                                     "no update", *info, whole);
     if (!selected.ok) {
         return selected.failure;
-    }
-    // A system entering a shared or arcade room that stands takes its section only with every section's selection
-    // (else it waits): from the catalog, that room's sections are read too.
-    if (selected.fromCatalog) {
-        std::vector<catalog::SystemName> sections;
-        for (const world::RoomSelection& selection : selected.selections) {
-            const catalog::SystemName& system = selection.room.system();
-            if (roomOf(system) != nullptr) {
-                continue;
-            }
-            const auto tags = selected.platformTags.find(system);
-            const world::Classification classification =
-                world::classify(system,
-                                tags != selected.platformTags.end() ? std::span<const std::string>(tags->second)
-                                                                    : std::span<const std::string>(),
-                                info->systems, info->building);
-            const bool arcade = classification.kind() == world::SystemKind::Arcade;
-            const bool small = selection.distinctTitles < static_cast<std::uint64_t>(config->sharedRoomMinTitles);
-            if (!classification.hasRoom() || (!arcade && !small)) {
-                continue;
-            }
-            const auto id = arcade ? world::RoomId::arcadeArea() : world::RoomId::sharedArea(classification.floor);
-            if (const world::Room* room = id ? roomById(*id) : nullptr) {
-                for (const catalog::SystemName& section : room->sections) {
-                    const bool read = std::any_of(selected.selections.begin(), selected.selections.end(),
-                                                  [&](const world::RoomSelection& other) {
-                                                      return other.room.system() == section;
-                                                  });
-                    if (!read && std::find(sections.begin(), sections.end(), section) == sections.end()) {
-                        sections.push_back(section);
-                    }
-                }
-            }
-        }
-        if (!sections.empty()) {
-            Selected more =
-                selectionsFromCatalog(context, kName, sections, args->value("library"), *config, "no update", *info);
-            if (!more.ok) {
-                return more.failure;
-            }
-            for (world::RoomSelection& selection : more.selections) {
-                selected.selections.push_back(std::move(selection));
-            }
-            selected.platformTags.insert(more.platformTags.begin(), more.platformTags.end());
-            selected.snapshotGames.insert(more.snapshotGames.begin(), more.snapshotGames.end());
-        }
     }
     if (!selectionFiles.empty() && !systems.empty()) {
         // The rooms updated are the files' systems': --system, given with them, names the same ones.
@@ -399,6 +345,47 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
 
     const auto started = std::chrono::steady_clock::now();
     auto result = world::updateBuilding(input, info->building, info->systems, rooms);
+    // A system entering a standing shared or arcade room takes its section only with every section's selection, else it
+    // waits (incremental.hpp): an arcade system, one under the shared threshold, or a console system its full floor
+    // sends to the shared room. From the catalog, the sections of the rooms systems wait for are read too and the
+    // update runs again, so that a named new system never waits there (the rooms' data, of their recorded family and
+    // theme pack, needs no platform tags of theirs); selection files must give them.
+    if (result && selected.fromCatalog && !result->changes.systemsWaiting.empty()) {
+        std::vector<catalog::SystemName> sections;
+        for (const world::SystemRoom& waiting : result->changes.systemsWaiting) {
+            for (const world::Room& room : input.previous.rooms) {
+                if (room.id != waiting.room) {
+                    continue;
+                }
+                for (const catalog::SystemName& section : room.sections) {
+                    const bool read =
+                        std::any_of(input.selections.begin(), input.selections.end(),
+                                    [&](const world::RoomSelection& other) { return other.room.system() == section; });
+                    if (!read && std::find(sections.begin(), sections.end(), section) == sections.end()) {
+                        sections.push_back(section);
+                    }
+                }
+            }
+        }
+        if (!sections.empty()) {
+            Selected more = selectionsFromCatalog(context, kName, sections, args->value("library"), input.config,
+                                                  "no update", *info);
+            if (!more.ok) {
+                return more.failure;
+            }
+            for (world::RoomSelection& selection : more.selections) {
+                input.selections.push_back(std::move(selection));
+            }
+            input.platformTags.insert(more.platformTags.begin(), more.platformTags.end());
+            selected.snapshotGames.insert(more.snapshotGames.begin(), more.snapshotGames.end());
+            auto aliases = catalogAliases(context.paths, input.previous, selected.snapshotGames);
+            if (!aliases) {
+                return catalogFailure(context, aliases.error());
+            }
+            input.aliases = std::move(*aliases);
+            result = world::updateBuilding(input, info->building, info->systems, rooms);
+        }
+    }
     if (!result) {
         if (result.error().code == ErrorCode::Unsupported) {
             context.err.writeLine(fmt::format("{}: the plan is refused, nothing written: {}", kName,
