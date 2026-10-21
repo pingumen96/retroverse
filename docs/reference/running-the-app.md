@@ -169,20 +169,23 @@ build/rvdata`).
   plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every
   system's snapshot within one read transaction on a read-only connection of its own (the catalog worker keeps
   answering the quick catalog; a refresh running is waited for first), plans the building as `retroverse-cli worldplan
-  generate` does (every system with a room and a placeable title; excluded systems out) or updates its console rooms
-  (new systems enter with I4 step 6a), saves it under `<user data>/worlds/<library id>/` (generator 1.3, schema 2; a
+  generate` does (every system with a room and a placeable title; excluded systems out; a system under
+  `sharedRoomMinTitles` a section of its floor's `area:shared:<floor>`, every arcade system a section of `area:arcade`)
+  or updates its rooms as `worldplan update` does (each system's selection to the room that holds its section; a shared
+  or arcade room lacking a section's selection held as it is, logged; new systems enter with I4 step 6a), saves it under `<user data>/worlds/<library id>/` (generator 1.3, schema 2; a
   stored schema-1 plan of I3 is read lifted and written in schema 2 by its first update, the schema-1 file kept in
   `backups/`; a room the update keeps as it is shows with the regeneration's notice and its new games unplaced as
   `room-kept`) and writes, only when they changed, each system's room items
   (`<user data>/cache/world/<library id>/room-<system>.json`: titles, cover paths, years, the system's full name and
-  platform tags), from which the floor-build job makes the floor without the catalog: its static part (`worldplan show
+  platform tags; a system of a shared room has its own, its section's games with their text), from which the floor-build job makes the floor without the catalog: its static part (`worldplan show
   --floor`'s scene: its rooms and its derived hall), each collection room's collection on a static group of its own
   (every `collection/<room id>/...` registry key carrying the room id, so that two rooms of one family sample their own
   arrays) and their covers and spines through the derived-texture cache `<user data>/cache/textures/<library id>` (one
   cover loader for the floor: the view is the room that holds the eye and the rooms whose doorway the frustum meets).
   The run starts in the ground floor's lobby, at the elevator's arrival point facing east down the hall (no hero CRT
   bound); `--start-room <room id>` (`room:snes`, `area:arcade`, ...) starts at that room's doorway camera on its floor,
-  its CRT the hero CRT (a room the plan lacks once it exists ends the run: exit 2). The scene's frame is the start
+  its CRT the hero CRT (a shared or arcade room's playing all its sections' games; a room the plan lacks once it
+  exists ends the run: exit 2). The scene's frame is the start
   room's when one is given, else the floor's (building.hpp: x east from the elevator, the hall's centre line on z 0):
   `--spawn`, the input scripts' poses and the run report's walker poses are in that frame, and the start room's own
   objects keep the very coordinates of its standalone scene. Hover, pull-out, Focus, Inspect, the card and launches

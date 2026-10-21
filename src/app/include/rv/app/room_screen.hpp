@@ -11,8 +11,11 @@
 // gathered from its versions, as the selection gathers them); they are the start candidates (the most recently played
 // placed game with a video, else the first featured one with one). The other games with media follow by GameId, played
 // only when selected (the quick catalog's selection until I3 steps 13a and 13b). Nothing while the media are unknown
-// (ADR-0010 §3: an unreachable media root is never read for them) or without a media root.
+// (ADR-0010 §3: an unreachable media root is never read for them) or without a media root. A shared or arcade room's
+// CRT plays the games of all its sections (I4 step 4, ADR-0013 §9): their snapshots taken together, its placed games in
+// the room's featured order whatever their section.
 
+#include <span>
 #include <vector>
 
 #include <rv/app/room_snapshot.hpp>
@@ -27,5 +30,10 @@ namespace rv::app {
 [[nodiscard]] std::vector<ScreenGame> roomScreenGames(const world::WorldPlan& plan,
                                                       const world::CollectionLayout& layout,
                                                       const RoomSnapshotResult& snapshot);
+/// The same over the snapshots of the room's sections (a shared or arcade room's), each section's media under its
+/// snapshot's media root; a section whose media are unknown, or whose snapshot failed, gives none.
+[[nodiscard]] std::vector<ScreenGame> roomScreenGames(const world::WorldPlan& plan,
+                                                      const world::CollectionLayout& layout,
+                                                      std::span<const RoomSnapshotResult* const> snapshots);
 
 } // namespace rv::app

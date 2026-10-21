@@ -2,7 +2,7 @@
 // rv/app/room_snapshot.hpp and world_build.hpp): a system's snapshot (the bulk query, the media root checked, the media
 // paths, the aliases of the placed games it lacks) and the building's (every system's within one read transaction on a
 // reader of its own), the building job on the pool (the world lock, the stored plan, a first building or the update of
-// its console rooms, savePlan, each system's room items) and the floor's build (the floor's scene in the scene's frame,
+// its rooms, savePlan, each system's room items) and the floor's build (the floor's scene in the scene's frame,
 // each collection room's layout and cover requests) with their outcomes and notices, and the main thread's flow over a
 // catalog and a worker pool (the test room without a catalog or without a room for any system, the stored plan read,
 // the preview first, the building and the floor built once). I3 step 10c: the stored plan's floor previewed before the
@@ -10,7 +10,8 @@
 // object fallback warned once. I4 step 1: a stored schema-1 plan lifted and saved once in schema 2, a building of two
 // rooms (the snes room updated, the other as it stood), one plan for the app and retroverse-cli's catalog commands, a
 // room kept as it is with the regeneration's notice. I4 step 5a: the start room's frame (its scene numbers those of its
-// standalone scene), a start room the building lacks, the building fixture's floors. On the snes-room fixture
+// standalone scene), a start room the building lacks, the building fixture's floors; at the merge with step 4 its shared
+// and arcade rooms (their sections' covers and CRT games, the update by sections, a room held). On the snes-room fixture
 // (tests/fixtures/esde/snes-room: 50 titles with covers) and the building fixture imported into a user data directory.
 
 #include <catch2/catch_test_macros.hpp>
@@ -19,8 +20,10 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -1284,4 +1287,192 @@ TEST_CASE("app/world_build: a room kept as it is (its prefab levels changed): sh
     const WorldBuild again = rv::app::buildWorld(input, rv::core::JobContext{});
     CHECK(again.notice == rv::app::world_notice::kRegeneration);
     CHECK_FALSE(again.written);
+}
+
+TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sections' covers and CRT games, the update "
+          "by sections, a room held for want of a section's selection",
+          "[app][world_build]") {
+    // I4 step 4 at the merge with step 5a: the building fixture under the shipped threshold (30 distinct titles), so
+    // pocketlab (6) and pokemini (8) take the sections of area:shared:handheld and mame the arcade room's. The app plans
+    // the building the CLI plans; each section's items file serves its own games' text; the shared room's collection
+    // shows both sections' covers, its CRT plays both sections' games.
+    const ImportedFixture imported("world-build-shared", true, "esde/building");
+    const rv::world::RoomId shared = rv::world::RoomId::parse("area:shared:handheld").value();
+    const rv::world::RoomId arcade = rv::world::RoomId::parse("area:arcade").value();
+    const rv::catalog::SystemName pocketlab = rv::catalog::SystemName::parse("pocketlab").value();
+    const rv::catalog::SystemName pokemini = rv::catalog::SystemName::parse("pokemini").value();
+    const rv::catalog::SystemName mame = rv::catalog::SystemName::parse("mame").value();
+    const rv::app::WorldBuildInput input = inputOf(imported, buildingSnapshotOf(imported), shared);
+    const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
+    INFO(first.reason);
+    REQUIRE(first.outcome == WorldOutcome::Generated);
+    REQUIRE(first.plan.has_value());
+    const auto roomInPlan = [&](const rv::world::RoomId& id) -> const rv::world::Room& {
+        const auto found = std::find_if(first.plan->rooms.begin(), first.plan->rooms.end(),
+                                        [&](const rv::world::Room& room) { return room.id == id; });
+        INFO(id.toString());
+        REQUIRE(found != first.plan->rooms.end());
+        return *found;
+    };
+    const rv::world::Room& sharedInPlan = roomInPlan(shared);
+    CHECK(sharedInPlan.kind == rv::world::RoomKind::Shared);
+    CHECK(sharedInPlan.sections == std::vector<rv::catalog::SystemName>{pocketlab, pokemini});
+    CHECK(sharedInPlan.floor == "handheld");
+    CHECK(sharedInPlan.mediaFamily == rv::world::kSharedRoomFamily);
+    const rv::world::Room& arcadeInPlan = roomInPlan(arcade);
+    CHECK(arcadeInPlan.kind == rv::world::RoomKind::Arcade);
+    CHECK(arcadeInPlan.sections == std::vector<rv::catalog::SystemName>{mame});
+    CHECK(arcadeInPlan.floor == "ground");
+
+    // The shared room on its floor: its 14 items, each with its own section's text and cover.
+    CHECK(first.floor == "handheld");
+    const RoomCollection& room = roomOf(first, shared);
+    CHECK(room.scenePlacement == rv::world::RoomPlacement{});
+    CHECK(room.sceneData.platform.signText == "MORE GAMES");
+    CHECK_FALSE(room.sceneData.platform.console.has_value());
+    REQUIRE(room.layout.items.size() == 14);
+    REQUIRE(room.covers.size() == 14);
+    std::map<std::string, std::size_t> bySection;
+    for (const rv::app::CoverItem& cover : room.covers) {
+        INFO(cover.game.toString() << " " << cover.systemName << " " << cover.coverPath);
+        CHECK_FALSE(cover.title.empty());
+        CHECK_FALSE(cover.fallbackTitle.empty());
+        if (cover.systemName == "Pocket Lab Homebrew") {
+            CHECK(cover.coverPath.starts_with("pocketlab/covers/"));
+        } else {
+            CHECK(cover.systemName == "Pico Pocket");
+            CHECK(cover.coverPath.starts_with("pokemini/covers/"));
+        }
+        ++bySection[cover.systemName];
+    }
+    CHECK(bySection == std::map<std::string, std::size_t>{{"Pico Pocket", 8}, {"Pocket Lab Homebrew", 6}});
+    for (const rv::world::CollectionItem& item : room.layout.items) {
+        CHECK_FALSE(item.title.empty());
+    }
+    // Each section's items file: every item of the room that holds it, the text of its own games only.
+    for (const auto& [system, own] : {std::pair{pocketlab, std::size_t{6}}, std::pair{pokemini, std::size_t{8}}}) {
+        INFO(system.str());
+        const auto items =
+            rv::app::readRoomItems(rv::app::roomItemsFile(imported.paths.cacheDir(), input.library, system));
+        REQUIRE(items.has_value());
+        CHECK(items->items.size() == 14);
+        const auto withText = std::count_if(items->items.begin(), items->items.end(),
+                                            [](const rv::app::RoomItemText& text) { return !text.coverPath.empty(); });
+        CHECK(static_cast<std::size_t>(withText) == own);
+    }
+    // Its CRT plays both sections' games, the placed ones first in the room's featured order.
+    std::set<std::string> screenGames;
+    std::size_t candidates = 0;
+    for (const rv::app::ScreenGame& game : first.screenGames) {
+        screenGames.insert(game.id);
+        CHECK(game.startCandidate == (room.layout.findGame(rv::catalog::GameId::parse(game.id).value()) != nullptr));
+        candidates += game.startCandidate ? 1 : 0;
+    }
+    CHECK(first.screenGames.size() == 14);
+    CHECK(candidates == 14);
+    std::set<std::string> placed;
+    for (const rv::world::CollectionItem& item : room.layout.items) {
+        placed.insert(item.game.toString());
+    }
+    CHECK(screenGames == placed);
+
+    // The next start's preview of the stored floor, from the items files alone: the same covers.
+    const auto stored = rv::world::readStoredPlan(planFileOf(imported));
+    REQUIRE(stored.has_value());
+    const WorldBuild preview = rv::app::previewWorld(worldPathsOf(imported), input.library, *stored, shared);
+    REQUIRE(preview.scene.has_value());
+    CHECK(preview.sceneDigest == first.sceneDigest);
+    const RoomCollection& previewed = roomOf(preview, shared);
+    REQUIRE(previewed.covers.size() == room.covers.size());
+    for (std::size_t index = 0; index < room.covers.size(); ++index) {
+        CHECK(previewed.covers[index].title == room.covers[index].title);
+        CHECK(previewed.covers[index].coverPath == room.covers[index].coverPath);
+        CHECK(previewed.covers[index].systemName == room.covers[index].systemName);
+    }
+
+    // The arcade room from its doorway: the ground floor, mame's 15 sets with a cover, its CRT their games.
+    const WorldBuild arcadeBuild =
+        rv::app::buildWorld(inputOf(imported, buildingSnapshotOf(imported), arcade), rv::core::JobContext{});
+    CHECK(arcadeBuild.outcome == WorldOutcome::Unchanged);
+    CHECK(arcadeBuild.floor == "ground");
+    const RoomCollection& arcadeRoom = roomOf(arcadeBuild, arcade);
+    CHECK(arcadeRoom.sceneData.platform.signText == "ARCADE");
+    CHECK_FALSE(arcadeRoom.sceneData.platform.console.has_value());
+    REQUIRE(arcadeRoom.covers.size() == 15);
+    for (const rv::app::CoverItem& cover : arcadeRoom.covers) {
+        CHECK(cover.systemName == "Arcade Board Library");
+        CHECK(cover.coverPath.starts_with("mame/covers/"));
+    }
+    CHECK(arcadeBuild.screenGames.size() == 15);
+
+    // The CLI's whole building is the app's, and its update finds it up to date.
+    const fs::path planFile = planFileOf(imported);
+    const std::string text = rv::core::readTextFile(planFile).value();
+    const CliRun updated = runCli(imported, {"worldplan", "update"});
+    INFO(updated.err);
+    CHECK(updated.code == rv::cli::ExitCode::Ok);
+    CHECK(updated.out.find("is up to date") != std::string::npos);
+    CHECK(rv::core::readTextFile(planFile).value() == text);
+    fs::remove(planFile);
+    const CliRun generated = runCli(imported, {"worldplan", "generate"});
+    INFO(generated.err);
+    REQUIRE(generated.code == rv::cli::ExitCode::Ok);
+    CHECK(rv::core::readTextFile(planFile).value() == text);
+
+    // A section the catalog no longer lists (its snapshot NotFound): the shared room held as it is, said in the log,
+    // its other section's selection not read; the floor shows as it stood, its covers from the items files.
+    {
+        BuildingSnapshot snapshot = buildingSnapshotOf(imported);
+        for (RoomSnapshotResult& system : snapshot.systems) {
+            if (system.system == pokemini) {
+                system.error = rv::Error{rv::ErrorCode::NotFound, "no entries", {}};
+            }
+        }
+        rv::test::LogCapture log;
+        const WorldBuild held =
+            rv::app::buildWorld(inputOf(imported, std::move(snapshot), shared), rv::core::JobContext{});
+        INFO(held.reason);
+        CHECK(held.outcome == WorldOutcome::Unchanged);
+        CHECK_FALSE(held.written);
+        REQUIRE(held.changes.has_value());
+        REQUIRE(held.changes->heldRooms.size() == 1);
+        CHECK(held.changes->heldRooms.front().room == shared);
+        CHECK(held.changes->heldRooms.front().reason.find("pokemini") != std::string::npos);
+        CHECK(log.count("area:shared:handheld is held as it is") == 1);
+        CHECK(rv::core::readTextFile(planFile).value() == text);
+        const RoomCollection& heldRoom = roomOf(held, shared);
+        REQUIRE(heldRoom.covers.size() == 14);
+        for (std::size_t index = 0; index < room.covers.size(); ++index) {
+            CHECK(heldRoom.covers[index].coverPath == room.covers[index].coverPath);
+        }
+    }
+
+    // additions/ imported: the shared room updated with both sections' selections (pokemini's 24 new titles in its
+    // section, past 30 titles and sticky), snes's and psx's rooms with theirs, nothing moved; megadrive has no room
+    // yet (I4 step 6a). The CLI's update then finds the app's plan up to date.
+    REQUIRE(imported.fixture.applyOverlay("additions").has_value());
+    imported.importLibrary();
+    const WorldBuild added =
+        rv::app::buildWorld(inputOf(imported, buildingSnapshotOf(imported), shared), rv::core::JobContext{});
+    INFO(added.reason);
+    REQUIRE(added.outcome == WorldOutcome::Updated);
+    CHECK(added.written);
+    REQUIRE(added.changes.has_value());
+    REQUIRE(added.plan.has_value());
+    CHECK(added.changes->heldRooms.empty());
+    CHECK(added.changes->added.size() == 34);
+    for (const rv::world::Placement& placement : first.plan->placements) {
+        INFO(placement.game.toString());
+        CHECK(std::find(added.plan->placements.begin(), added.plan->placements.end(), placement) !=
+              added.plan->placements.end());
+    }
+    CHECK(roomOf(added, shared).covers.size() == 38);
+    const auto sharedAfter = std::find_if(added.plan->rooms.begin(), added.plan->rooms.end(),
+                                          [&](const rv::world::Room& candidate) { return candidate.id == shared; });
+    REQUIRE(sharedAfter != added.plan->rooms.end());
+    CHECK(sharedAfter->sections == std::vector<rv::catalog::SystemName>{pocketlab, pokemini});
+    const CliRun again = runCli(imported, {"worldplan", "update"});
+    INFO(again.err);
+    CHECK(again.code == rv::cli::ExitCode::Ok);
+    CHECK(again.out.find("is up to date") != std::string::npos);
 }

@@ -58,31 +58,54 @@ void gather(world::RoomTitle& title, const catalog::RoomEntry& entry) {
 
 std::vector<ScreenGame> roomScreenGames(const world::WorldPlan& plan, const world::CollectionLayout& layout,
                                         const RoomSnapshotResult& snapshot) {
+    const RoomSnapshotResult* const snapshots[] = {&snapshot};
+    return roomScreenGames(plan, layout, snapshots);
+}
+
+std::vector<ScreenGame> roomScreenGames(const world::WorldPlan& plan, const world::CollectionLayout& layout,
+                                        std::span<const RoomSnapshotResult* const> snapshots) {
     std::vector<ScreenGame> games;
-    if (snapshot.error || !snapshot.snapshot.mediaKnown || !snapshot.mediaRoot) {
+    // The sections whose media are known (each its own entries by GameId; a game is of one system).
+    std::vector<const RoomSnapshotResult*> known;
+    for (const RoomSnapshotResult* snapshot : snapshots) {
+        if (snapshot != nullptr && !snapshot->error && snapshot->snapshot.mediaKnown && snapshot->mediaRoot) {
+            known.push_back(snapshot);
+        }
+    }
+    if (known.empty()) {
         return games;
     }
-    const std::filesystem::path& root = *snapshot.mediaRoot;
+    const auto findEntry = [&](const catalog::GameId& game) -> const catalog::RoomEntry* {
+        for (const RoomSnapshotResult* snapshot : known) {
+            if (const catalog::RoomEntry* entry = entryOf(snapshot->snapshot, game)) {
+                return entry;
+            }
+        }
+        return nullptr;
+    };
     std::map<catalog::GameId, ScreenGame> withMedia;
-    for (const esde::RoomMediaPaths& paths : snapshot.mediaPaths) {
-        const catalog::RoomEntry* entry = entryOf(snapshot.snapshot, paths.game);
-        if (entry == nullptr || entry->state != catalog::EntryState::Game) {
-            continue;
+    for (const RoomSnapshotResult* snapshot : known) {
+        const std::filesystem::path& root = *snapshot->mediaRoot;
+        for (const esde::RoomMediaPaths& paths : snapshot->mediaPaths) {
+            const catalog::RoomEntry* entry = entryOf(snapshot->snapshot, paths.game);
+            if (entry == nullptr || entry->state != catalog::EntryState::Game) {
+                continue;
+            }
+            ScreenGame game;
+            game.id = paths.game.toString();
+            game.media.video = below(root, paths[catalog::MediaKind::Video]);
+            game.media.screenshot = below(root, paths[catalog::MediaKind::Screenshot]);
+            game.media.titleScreen = below(root, paths[catalog::MediaKind::TitleScreen]);
+            game.media.cover = below(root, paths[catalog::MediaKind::Cover]);
+            if (game.media == ScreenMedia{}) {
+                continue;
+            }
+            if (entry->lastSession) {
+                game.lastPlayed =
+                    std::chrono::duration_cast<std::chrono::seconds>(entry->lastSession->time_since_epoch()).count();
+            }
+            withMedia.emplace(paths.game, std::move(game));
         }
-        ScreenGame game;
-        game.id = paths.game.toString();
-        game.media.video = below(root, paths[catalog::MediaKind::Video]);
-        game.media.screenshot = below(root, paths[catalog::MediaKind::Screenshot]);
-        game.media.titleScreen = below(root, paths[catalog::MediaKind::TitleScreen]);
-        game.media.cover = below(root, paths[catalog::MediaKind::Cover]);
-        if (game.media == ScreenMedia{}) {
-            continue;
-        }
-        if (entry->lastSession) {
-            game.lastPlayed =
-                std::chrono::duration_cast<std::chrono::seconds>(entry->lastSession->time_since_epoch()).count();
-        }
-        withMedia.emplace(paths.game, std::move(game));
     }
 
     // The placed games in the featured order, each title's priority gathered from its versions.
@@ -95,7 +118,7 @@ std::vector<ScreenGame> roomScreenGames(const world::WorldPlan& plan, const worl
         Placed entry;
         entry.section = sectionRank(item.section);
         entry.title.game = item.game;
-        if (const catalog::RoomEntry* found = entryOf(snapshot.snapshot, item.game)) {
+        if (const catalog::RoomEntry* found = findEntry(item.game)) {
             entry.title.sortKey = found->sortKey;
             gather(entry.title, *found);
         }
@@ -106,7 +129,7 @@ std::vector<ScreenGame> roomScreenGames(const world::WorldPlan& plan, const worl
             continue;
         }
         const auto representative = placed.find(unplaced.representative);
-        const catalog::RoomEntry* version = entryOf(snapshot.snapshot, unplaced.game);
+        const catalog::RoomEntry* version = findEntry(unplaced.game);
         if (representative != placed.end() && version != nullptr) {
             gather(representative->second.title, *version);
         }

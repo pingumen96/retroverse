@@ -142,6 +142,56 @@ void dropFloor(WorldBuild& build) {
     return nullptr;
 }
 
+/// Whether `text` holds what its system's snapshot said of the game. A placed game the snapshot does not list has none
+/// (snapshotRoomItems()): one no snapshot lists any more, and in a shared or arcade room every game of its other
+/// sections, which each section's items file holds so.
+[[nodiscard]] bool hasText(const RoomItemText& text) noexcept {
+    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty();
+}
+
+/// The text of `game` among the items of a room's `systems` (its sections, in order) and the items it is of: the first
+/// section's that knows its text (hasText()), else the first that holds it at all (a game no snapshot lists any more
+/// keeps its slot with no text); {nullptr, nullptr} when none holds it.
+[[nodiscard]] std::pair<const RoomItemText*, const RoomItems*>
+itemTextOf(const std::map<catalog::SystemName, RoomItems>& items, std::span<const catalog::SystemName> systems,
+           const catalog::GameId& game) {
+    std::pair<const RoomItemText*, const RoomItems*> first{nullptr, nullptr};
+    for (const catalog::SystemName& system : systems) {
+        const auto known = items.find(system);
+        if (known == items.end()) {
+            continue;
+        }
+        if (const RoomItemText* text = known->second.find(game)) {
+            if (hasText(*text)) {
+                return {text, &known->second};
+            }
+            if (first.first == nullptr) {
+                first = {text, &known->second};
+            }
+        }
+    }
+    return first;
+}
+
+/// Every system's items of `items` in one list by GameId, each game once: the text its own system's snapshot gave it
+/// when one did (hasText()).
+[[nodiscard]] RoomItems mergedItems(const std::map<catalog::SystemName, RoomItems>& items) {
+    RoomItems merged;
+    for (const auto& [system, known] : items) {
+        merged.items.insert(merged.items.end(), known.items.begin(), known.items.end());
+    }
+    std::stable_sort(merged.items.begin(), merged.items.end(), [](const RoomItemText& a, const RoomItemText& b) {
+        if (a.game != b.game) {
+            return a.game < b.game;
+        }
+        return hasText(a) && !hasText(b);
+    });
+    merged.items.erase(std::unique(merged.items.begin(), merged.items.end(),
+                                   [](const RoomItemText& a, const RoomItemText& b) { return a.game == b.game; }),
+                       merged.items.end());
+    return merged;
+}
+
 } // namespace
 
 RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan) {
@@ -875,13 +925,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
 
         // Each collection room's layout in the scene's frame and its cover requests (ADR-0011 §1).
         const Clock::time_point layoutStart = Clock::now();
-        RoomItems merged;
-        for (const auto& [system, known] : items) {
-            merged.items.insert(merged.items.end(), known.items.begin(), known.items.end());
-        }
-        std::sort(merged.items.begin(), merged.items.end(),
-                  [](const RoomItemText& a, const RoomItemText& b) { return a.game < b.game; });
-        const std::vector<world::CollectionTitle> titles = collectionTitlesOf(merged, plan);
+        const std::vector<world::CollectionTitle> titles = collectionTitlesOf(mergedItems(items), plan);
         for (const world::Room* room : rooms) {
             const auto roomData = data->rooms.find(room->id);
             if (roomData == data->rooms.end()) {
@@ -907,18 +951,9 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             const std::vector<catalog::SystemName> held = systemsOf(*room);
             collection.covers.reserve(collection.layout.items.size());
             for (const world::CollectionItem& item : collection.layout.items) {
-                const RoomItemText* text = nullptr;
-                const RoomItems* source = nullptr;
-                for (const catalog::SystemName& system : held) {
-                    const auto known = items.find(system);
-                    if (known != items.end()) {
-                        if (const RoomItemText* found = known->second.find(item.game)) {
-                            text = found;
-                            source = &known->second;
-                            break;
-                        }
-                    }
-                }
+                // A shared or arcade room's game: its own section's text (each section's items hold the others' games
+                // with none).
+                const auto [text, source] = itemTextOf(items, held, item.game);
                 if (text == nullptr) {
                     continue; // nothing known of it: it keeps the pending picture
                 }
@@ -937,16 +972,17 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 collection.covers.push_back(std::move(cover));
             }
             build.itemsRead += collection.covers.size();
-            // The start room's hero CRT plays its systems' games (I3 step 10c; none for a preview).
+            // The start room's hero CRT plays its systems' games (I3 step 10c; none for a preview): a shared or arcade
+            // room's, its sections' in the room's featured order (ADR-0013 §9).
             if (build.startRoom && room->id == *build.startRoom) {
+                std::vector<const RoomSnapshotResult*> snapshots;
                 for (const catalog::SystemName& system : held) {
                     const auto snapshot = sources.snapshots.find(system);
                     if (snapshot != sources.snapshots.end() && snapshot->second) {
-                        std::vector<ScreenGame> games = roomScreenGames(plan, collection.layout, *snapshot->second);
-                        build.screenGames.insert(build.screenGames.end(), std::make_move_iterator(games.begin()),
-                                                 std::make_move_iterator(games.end()));
+                        snapshots.push_back(snapshot->second.get());
                     }
                 }
+                build.screenGames = roomScreenGames(plan, collection.layout, snapshots);
             }
             collection.sceneData = std::move(roomData->second);
             build.rooms.push_back(std::move(collection));
