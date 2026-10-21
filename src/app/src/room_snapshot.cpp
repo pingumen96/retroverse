@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -149,11 +151,13 @@ BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader, std::span<cons
     const esde::ResolvedRoot mediaRoot =
         esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, reader.profile);
     std::set<catalog::GameId> listed;
+    std::vector<std::string> roomless;
     for (const catalog_db::SystemSummary& summary : *summaries) {
         if (summary.library != reader.profile.id) {
             continue;
         }
         if (wanted && !wanted(summary.system.name, summary.system.platforms)) {
+            roomless.push_back(summary.system.name.str());
             continue;
         }
         RoomSnapshotRequest request;
@@ -184,6 +188,21 @@ BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader, std::span<cons
                  slowest != nullptr ? fmt::format("; the slowest {} ({} entries) {:.0f} ms", slowest->system.str(),
                                                   slowest->snapshot.entries.size(), slowest->milliseconds)
                                     : std::string());
+    // The systems left out of the building because they give no room (classify(): excluded, no family), as
+    // `worldplan update` notes them: in one line, the first kListedRoomless by name.
+    if (!roomless.empty()) {
+        constexpr std::size_t kListedRoomless = 24;
+        std::sort(roomless.begin(), roomless.end());
+        const std::size_t listedCount = std::min(roomless.size(), kListedRoomless);
+        std::string names;
+        for (std::size_t index = 0; index < listedCount; ++index) {
+            names += (index == 0 ? "" : ", ") + roomless[index];
+        }
+        spdlog::info("World: {} system(s) of the catalog left out of the building, no room: {}{}", roomless.size(),
+                     names,
+                     roomless.size() > listedCount ? fmt::format(" and {} more", roomless.size() - listedCount)
+                                                   : std::string());
+    }
     std::sort(building.systems.begin(), building.systems.end(),
               [](const RoomSnapshotResult& a, const RoomSnapshotResult& b) { return a.system < b.system; });
     std::set<catalog::GameId> missing;

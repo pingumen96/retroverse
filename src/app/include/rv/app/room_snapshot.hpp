@@ -135,10 +135,10 @@ struct BuildingSnapshot {
 using SystemFilter = std::function<bool(const catalog::SystemName& system, std::span<const std::string> platforms)>;
 
 /// The job (on the worker pool, `reader`'s mutex held by the caller): within one deferred read transaction on
-/// `reader.query`, the library's systems (SqliteCatalogQuery::systems) that `wanted` keeps, each one's snapshot as
-/// takeRoomSnapshot() takes it (its media checked against the media root ES-DE's settings give now, its paths), then the
-/// aliases of `placedGames` that no snapshot lists (SqliteCatalogQuery::aliasTarget). Never fails as a whole: an error
-/// is in the result.
+/// `reader.query`, the library's systems (SqliteCatalogQuery::systems) that `wanted` keeps (the others named in one log
+/// line: left out of the building, no room), each one's snapshot as takeRoomSnapshot() takes it (its media checked
+/// against the media root ES-DE's settings give now, its paths), then the aliases of `placedGames` that no snapshot
+/// lists (SqliteCatalogQuery::aliasTarget). Never fails as a whole: an error is in the result.
 [[nodiscard]] BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader,
                                                     std::span<const catalog::GameId> placedGames,
                                                     const SystemFilter& wanted);

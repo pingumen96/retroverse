@@ -1836,6 +1836,7 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     // megadrive enters the building (below).
     REQUIRE(imported.fixture.applyOverlay("additions").has_value());
     imported.importLibrary();
+    rv::test::LogCapture addedLog;
     const WorldBuild added =
         rv::app::buildWorld(inputOf(imported, buildingSnapshotOf(imported), shared), rv::core::JobContext{});
     INFO(added.reason);
@@ -1868,6 +1869,10 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     CHECK(added.changes->systemsEntered.front().system.str() == "megadrive");
     CHECK(added.changes->roomsAdded.size() == 1);
     CHECK(added.changes->systemsWaiting.empty());
+    INFO(addedLog.text());
+    CHECK(addedLog.count("World: megadrive enters the building in area:shared:gen4 (a new room)") == 1);
+    // kodi, excluded (no room), left out with a log line, as `worldplan update` notes it.
+    CHECK(addedLog.count("system(s) of the catalog left out of the building, no room: kodi") == 1);
     // The CLI's update then finds the app's plan up to date.
     const std::string addedText = rv::core::readTextFile(planFile).value();
     const CliRun again = runCli(imported, {"worldplan", "update"});
