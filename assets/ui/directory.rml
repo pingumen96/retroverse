@@ -1,0 +1,193 @@
+<rml>
+<head>
+	<!--
+		The directory (I4 step 7a; ADR-0013 §10): the building's one panel, opened at the elevator and with M or Select in
+		free roam. Two tabs: "Piani" (the plan's floors in the elevator's order; a floor opens its hall and its rooms) and
+		"Preferiti e recenti" (the catalog's favourites, then its most recently played games; a game opens its card, the
+		quick catalog's card with Avvia and "Mostra nella stanza").
+		Bound to the data model "directory" of rv::ui::DirectoryScreen (src/ui/src/directory_screen.cpp), which also names
+		the ids below: keep them in step (src/ui/include/rv/ui/directory_model.hpp, tests/unit/ui/test_directory.cpp).
+		Every string is written here: the screen binds data and keys only (the floors by their building.json id, the rooms
+		by their kind and their systems' names), and an empty field reads "n.d." (non disponibile). The card's readiness,
+		blocker and room sentences are the quick catalog's (quick_catalog.rml), but for the building's 'not-in-room', and
+		its outcome sentences the world card's (game_card.rml), line for line: the test compares them. The focus is the model's (DirectoryModel): the screen
+		focuses the tab, row or button it names; the input stays with the application, a click selects a row or presses
+		a button. The rows' bindings sit one level below their data-for element, as in the quick catalog.
+	-->
+	<title>Indice dell'edificio</title>
+	<link type="text/rcss" href="directory.rcss"/>
+</head>
+<body data-model="directory">
+	<div id="directory" class="panel">
+		<div class="panel-header">
+			<h1 id="dir-title">Indice dell'edificio</h1>
+			<span class="count" data-if="tab == 'floors' && floorCount == 1">1 piano</span>
+			<span class="count" data-if="tab == 'floors' && floorCount != 1">{{ floorCount }} piani</span>
+			<span class="count" data-if="tab == 'games' && gamesState == 'ready' && gameCount == 1">1 gioco</span>
+			<span class="count" data-if="tab == 'games' && gamesState == 'ready' && gameCount != 1">{{ gameCount }} giochi</span>
+		</div>
+		<!-- The tabs: Up past a list's first row reaches them, Left and Right switch, Down returns (the shoulders switch
+		     from the lists). -->
+		<div id="dir-tabs">
+			<button id="dir-tab-floors" class="tab" data-class-active="tab == 'floors'" data-event-click="tab('floors')">Piani</button>
+			<button id="dir-tab-games" class="tab" data-class-active="tab == 'games'" data-event-click="tab('games')">Preferiti e recenti</button>
+		</div>
+		<!-- The rooms' header: the floor whose rooms are listed. -->
+		<div id="dir-floor-header" data-if="view == 'rooms'">
+			<span class="badge"><span data-if="shown.order == 0">T</span><span data-if="shown.order != 0">{{ shown.order }}</span></span>
+			<p class="header-title"><span data-if="shown.id == 'ground'">Piano terra</span><span data-if="shown.id == 'gen2'">Prime console</span><span data-if="shown.id == 'gen3'">Console a 8 bit</span><span data-if="shown.id == 'gen4'">Console a 16 bit</span><span data-if="shown.id == 'gen5'">Console a 32 e 64 bit</span><span data-if="shown.id == 'gen6'">Sesta generazione</span><span data-if="shown.id == 'gen7'">Console moderne</span><span data-if="shown.id == 'handheld'">Console portatili</span><span data-if="shown.id == 'computer'">Computer e altro</span><span data-if="!shown.known">Piano {{ shown.id }}</span></p>
+		</div>
+		<div id="dir-list">
+			<!-- Piani: the floors, the walker's marked. -->
+			<div class="rows" data-if="view == 'floors'">
+				<p class="empty" data-if="floorCount == 0">I piani compaiono appena l'edificio è pronto.</p>
+				<div class="slot" data-for="floor : floors">
+					<div class="row floor" data-attr-id="floor.elementId" data-event-click="row(floor.index)">
+						<span class="badge"><span data-if="floor.order == 0">T</span><span data-if="floor.order != 0">{{ floor.order }}</span></span>
+						<div class="row-text">
+							<p class="row-title"><span data-if="floor.id == 'ground'">Piano terra</span><span data-if="floor.id == 'gen2'">Prime console</span><span data-if="floor.id == 'gen3'">Console a 8 bit</span><span data-if="floor.id == 'gen4'">Console a 16 bit</span><span data-if="floor.id == 'gen5'">Console a 32 e 64 bit</span><span data-if="floor.id == 'gen6'">Sesta generazione</span><span data-if="floor.id == 'gen7'">Console moderne</span><span data-if="floor.id == 'handheld'">Console portatili</span><span data-if="floor.id == 'computer'">Computer e altro</span><span data-if="!floor.known">Piano {{ floor.id }}</span></p>
+							<p class="row-meta"><span data-if="floor.id == 'ground'">Atrio e sala giochi<span class="dot">·</span></span><span data-if="floor.id == 'gen2'">1ª e 2ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen3'">3ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen4'">4ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen5'">5ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen6'">Console a 128 bit<span class="dot">·</span></span><span data-if="floor.id == 'gen7'">Dalla 7ª generazione in poi<span class="dot">·</span></span><span data-if="floor.id == 'handheld'">Di ogni generazione<span class="dot">·</span></span><span data-if="floor.id == 'computer'">Computer, motori di gioco e altro<span class="dot">·</span></span><span data-if="floor.rooms == 1">1 stanza</span><span data-if="floor.rooms != 1">{{ floor.rooms }} stanze</span><span class="dot">·</span><span data-if="floor.games == 1">1 gioco</span><span data-if="floor.games != 1">{{ floor.games }} giochi</span></p>
+						</div>
+						<span class="here" data-if="floor.current">Sei qui</span>
+					</div>
+				</div>
+			</div>
+			<!-- A floor: its hall with the elevator (row 0, which rides to the floor), then its rooms. -->
+			<div class="rows" data-if="view == 'rooms'">
+				<div id="dir-room-0" class="row hall" data-event-click="row(0)">
+					<!-- The elevator's doors (the bundled fonts have no arrow). -->
+					<span class="badge"><span class="door"></span><span class="door"></span></span>
+					<div class="row-text">
+						<p class="row-title">Corridoio e ascensore</p>
+						<p class="row-meta"><span data-if="shown.current">Torna davanti all'ascensore di questo piano</span><span data-if="!shown.current">Scendi a questo piano, davanti all'ascensore</span></p>
+					</div>
+					<span class="here" data-if="hallCurrent">Sei qui</span>
+				</div>
+				<div class="slot" data-for="room : rooms">
+					<div class="row room" data-attr-id="room.elementId" data-event-click="row(room.index)">
+						<span class="badge room-badge">{{ room.index }}</span>
+						<div class="row-text">
+							<p class="row-title"><span data-if="room.kind == 'console'">{{ room.title }}</span><span data-if="room.kind == 'shared'">Sala condivisa</span><span data-if="room.kind == 'arcade'">Sala giochi arcade</span></p>
+							<p class="row-meta"><span data-if="room.kind != 'console'"><span data-for="system, i : room.systems"><span data-if="i > 0">, </span>{{ system }}</span><span class="dot">·</span></span><span data-if="room.games == 0">nessun gioco esposto</span><span data-if="room.games == 1">1 gioco</span><span data-if="room.games > 1">{{ room.games }} giochi</span></p>
+						</div>
+						<span class="here" data-if="room.current">Sei qui</span>
+					</div>
+				</div>
+			</div>
+			<!-- Preferiti e recenti: the favourites first, then the most recently played; beside the card, the game
+			     chosen stays marked. -->
+			<div class="rows" data-if="view == 'games' || view == 'card'">
+				<p class="empty" data-if="gamesState == 'loading' && gameCount == 0">Lettura dei preferiti e dei giochi recenti dal catalogo...</p>
+				<p class="empty" data-if="gamesState == 'failed'">Il catalogo non si legge: preferiti e giochi recenti non sono disponibili.</p>
+				<p class="empty" data-if="gamesState == 'ready' && gameCount == 0">Nessun preferito e nessun gioco avviato di recente: qui compaiono i preferiti di ES-DE e i giochi avviati.</p>
+				<div class="slot" data-if="gamesState != 'failed'" data-for="game : games">
+					<div class="row game" data-attr-id="game.elementId" data-class-chosen="game.chosen" data-event-click="row(game.index)">
+						<div class="row-text">
+							<p class="row-title"><span data-if="game.title != ''">{{ game.title }}</span><span data-if="game.title == ''">Gioco senza titolo</span></p>
+							<p class="row-meta">{{ game.systemName }}<span data-if="game.played != ''"><span class="dot">·</span>Giocato il {{ game.played }}</span></p>
+						</div>
+						<span class="favorite" data-if="game.favorite">Preferito</span>
+					</div>
+				</div>
+			</div>
+		</div>
+		<p id="dir-notice" class="notice" data-if="notice == 'ride-unavailable'">Ora non si può cambiare piano: riprova tra poco.</p>
+		<p class="notice" data-if="notice == 'building-pending'">L'edificio si sta aggiornando: piani e stanze cambiano appena è pronto.</p>
+	</div>
+
+	<!-- A game's card (the quick catalog's, with Avvia and "Mostra nella stanza"), beside the list. -->
+	<div id="dir-card" class="panel" data-if="view == 'card'">
+		<h2 id="dir-card-title"><span data-if="card.title != ''">{{ card.title }}</span><span data-if="card.title == ''">Gioco senza titolo</span></h2>
+		<p class="subtitle"><span data-if="card.platform != ''">{{ card.platform }}</span><span data-if="card.platform == ''">n.d.</span>, <span data-if="card.year != ''">{{ card.year }}</span><span data-if="card.year == ''">n.d.</span></p>
+		<p class="note" data-if="!card.details">Lettura dei dettagli dal catalogo...</p>
+		<!-- The quick catalog's lines (quick_catalog.rml), unchanged: the readiness as a one-line label, then a sentence
+		     for its first blocker's code. -->
+		<p class="state" data-if="card.readiness == '' && card.state == 'unavailable'">Non disponibile: il file del gioco non si trova</p>
+		<p class="state" data-if="card.readiness == '' && card.state == 'needs-configuration'">Da configurare: l'emulatore non è impostato</p>
+		<p class="state" data-if="card.readiness == '' && card.state == 'emulator-missing'">Emulatore non trovato</p>
+		<p class="state" data-if="card.readiness == 'source-unavailable'">Non disponibile: cartella non raggiungibile</p>
+		<p class="state" data-if="card.readiness == 'rom-missing'">Non disponibile: file del gioco assente</p>
+		<p class="state" data-if="card.readiness == 'requires-configuration'">Da configurare</p>
+		<p class="state" data-if="card.readiness == 'emulator-not-found'">Emulatore non trovato</p>
+		<p class="state" data-if="card.readiness == 'core-not-found'">Core dell'emulatore non trovato</p>
+		<p class="ready" data-if="card.readiness == 'ready' && !card.verified">Pronto</p>
+		<p class="ready" data-if="card.readiness == 'ready' && card.verified">Pronto: già avviato e tornato senza errori</p>
+		<p class="blocker" data-if="card.blocker == 'source-unavailable'">La cartella del sistema o del gioco non è raggiungibile: controlla che il disco sia collegato.</p>
+		<p class="blocker" data-if="card.blocker == 'rom-missing'">Il file del gioco non c'è più: forse è stato spostato o cancellato.</p>
+		<p class="blocker" data-if="card.blocker == 'rom-folder-unresolved'">La cartella dei giochi del sistema non è definita: controlla ROMDirectory in ES-DE.</p>
+		<p class="blocker" data-if="card.blocker == 'rom-root-unknown'">La cartella principale dei giochi (ROMDirectory) non è nota.</p>
+		<p class="blocker" data-if="card.blocker == 'system-unknown' || card.blocker == 'system-not-configured'">ES-DE non configura più questo sistema.</p>
+		<p class="blocker" data-if="card.blocker == 'library-unreadable'">La configurazione di ES-DE non si legge: controlla che ES-DE sia dove library.json lo indica.</p>
+		<p class="blocker" data-if="card.blocker == 'no-command'">Il sistema non ha nessun comando di avvio.</p>
+		<p class="blocker" data-if="card.blocker == 'choice-stale'">Il comando scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
+		<p class="blocker" data-if="card.blocker == 'profile-unknown'">Il profilo d'emulatore scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
+		<p class="blocker" data-if="card.blocker == 'profile-template'">Il profilo dell'emulatore contiene argomenti scritti male.</p>
+		<p class="blocker" data-if="card.blocker == 'profile-variable-missing'">Il profilo dell'emulatore usa una variabile che non ha un valore.</p>
+		<p class="blocker" data-if="card.blocker == 'profile-invalid-request' || card.blocker == 'invalid-request'">Windows non può avviare l'emulatore così com'è configurato.</p>
+		<p class="blocker" data-if="card.blocker == 'program-not-allowed'">Il comando non avvia un emulatore che Retroverse sappia trovare: serve un profilo d'emulatore.</p>
+		<p class="blocker" data-if="card.blocker == 'program-refused'">Il comando avvia un interprete di comandi o un programma di avvio, che Retroverse non esegue mai.</p>
+		<p class="blocker" data-if="card.blocker == 'program-repeated'">Il comando indica più di un emulatore.</p>
+		<p class="blocker" data-if="card.blocker == 'program-missing'">Il comando non indica l'emulatore in modo leggibile.</p>
+		<p class="blocker" data-if="card.blocker == 'install-unknown'">La cartella di ES-DE non è nota: indicala con "retroverse-cli library create --install".</p>
+		<p class="blocker" data-if="card.blocker == 'token-unsupported'">Il comando usa una funzione di ES-DE che Retroverse non esegue.</p>
+		<p class="blocker" data-if="card.blocker == 'token-malformed'">Il comando contiene un segnaposto scritto male.</p>
+		<p class="blocker" data-if="card.blocker == 'command-placeholder'">Il comando di questo sistema è solo un segnaposto: va configurato in ES-DE.</p>
+		<p class="blocker" data-if="card.blocker == 'inject-file'">ES-DE aggiungerebbe argomenti presi da un file del gioco: scegli un altro comando o un profilo.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-missing'">La cartella di lavoro indicata dal comando non esiste.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-repeated'">Il comando indica più di una cartella di lavoro.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-glued'">Il comando indica la cartella di lavoro dentro un altro argomento.</p>
+		<p class="blocker" data-if="card.blocker == 'start-folder-relative'">La cartella di lavoro indicata dal comando non è un percorso completo.</p>
+		<p class="blocker" data-if="card.blocker == 'find-rules-missing'">Le regole di ricerca di ES-DE non dicono dove cercare l'emulatore o il core.</p>
+		<p class="blocker" data-if="card.blocker == 'find-rule-undecided'">Una regola di ricerca di ES-DE dipende da un programma sostitutivo, che Retroverse non usa.</p>
+		<p class="blocker" data-if="card.blocker == 'emulator-not-found'">L'emulatore non si trova in nessuno dei posti dove ES-DE lo cerca.</p>
+		<p class="blocker" data-if="card.blocker == 'core-not-found'">Il core richiesto dal comando non si trova.</p>
+		<p class="blocker" data-if="card.blocker == 'core-malformed'">Il comando indica il core in modo non leggibile.</p>
+		<p class="blocker" data-if="card.blocker == 'core-repeated'">Il comando indica più di un core.</p>
+		<!-- The last launch from the card, when it did not end normally (the world card's lines, game_card.rml). -->
+		<p class="blocker" data-if="card.outcome == 'not-ready'">Il gioco non è pronto: la scheda dice perché.</p>
+		<p class="blocker" data-if="card.outcome == 'quick-exit'">Il programma si è chiuso subito: se il gioco è ancora aperto, il profilo deve attendere i suoi processi.</p>
+		<p class="blocker" data-if="card.outcome == 'processes-remained'">Il programma si è chiuso, ma il gioco potrebbe essere ancora aperto.</p>
+		<p class="blocker" data-if="card.outcome == 'left-running'">L'emulatore è rimasto aperto.</p>
+		<p class="blocker" data-if="card.outcome == 'crashed'">L'emulatore si è chiuso per un errore.</p>
+		<p class="blocker" data-if="card.outcome == 'failed-to-start'">L'emulatore non è partito.</p>
+		<p class="blocker" data-if="card.outcome == 'not-configured'">Il gioco non si può avviare così com'è configurato.</p>
+		<p class="blocker" data-if="card.outcome == 'emulator-missing'">L'emulatore non si trova.</p>
+		<p class="blocker" data-if="card.outcome == 'core-missing'">Il core dell'emulatore non si trova.</p>
+		<p class="blocker" data-if="card.outcome == 'rom-missing'">Il file del gioco non si trova.</p>
+		<p class="blocker" data-if="card.outcome != '' && card.outcomeKnown == false">L'avvio non è andato a buon fine.</p>
+		<div class="info-rows" data-if="card.details">
+			<div class="info"><span class="key">Sviluppatore</span><span class="value"><span data-if="card.developer != ''">{{ card.developer }}</span><span data-if="card.developer == ''">n.d.</span></span></div>
+			<div class="info"><span class="key">Genere</span><span class="value"><span data-if="card.genre != ''">{{ card.genre }}</span><span data-if="card.genre == ''">n.d.</span></span></div>
+			<div class="info"><span class="key">Giocatori</span><span class="value"><span data-if="card.players != ''">{{ card.players }}</span><span data-if="card.players == ''">n.d.</span></span></div>
+			<div class="info" data-if="card.otherVersions == 1"><span class="key">Altre versioni</span><span class="value">1 nel catalogo</span></div>
+			<div class="info" data-if="card.otherVersions > 1"><span class="key">Altre versioni</span><span class="value">{{ card.otherVersions }} nel catalogo</span></div>
+		</div>
+		<div id="dir-card-actions">
+			<button id="dir-card-play" class="action primary" data-event-click="card('play')">Avvia</button>
+			<button id="dir-card-room" class="action" data-if="card.room == 'placed'" data-event-click="card('room')">Mostra nella stanza</button>
+			<button id="dir-card-back" class="action" data-event-click="card('back')">Indietro</button>
+		</div>
+		<!-- Why the game is not in its room (the quick catalog's sentences, rv/ui/quick_catalog_room.hpp's keys), but for
+		     a game the plan does not hold: in the building that is a system without a room (excluded, or no placeable
+		     title yet), not another system's room. -->
+		<p class="room-reason" data-if="card.room == 'duplicate-title'">Non esposto: un'altra versione è sullo scaffale</p>
+		<p class="room-reason" data-if="card.room == 'no-cover'">Non esposto: senza copertina</p>
+		<p class="room-reason" data-if="card.room == 'unavailable'">Non esposto: il file del gioco mancava quando la stanza è stata allestita</p>
+		<p class="room-reason" data-if="card.room == 'capacity'">Non esposto: la stanza è piena</p>
+		<p class="room-reason" data-if="card.room == 'room-kept'">Non esposto: la stanza resta com'era finché non viene generata di nuovo</p>
+		<p class="room-reason" data-if="card.room == 'not-in-room'">Non esposto: il suo sistema non ha una stanza nell'edificio</p>
+	</div>
+
+	<div id="dir-hints">
+		<div class="hint-bar">
+			<span class="hint" data-if="view == 'floors'"><span class="pad pad-a">A</span>Apri il piano</span>
+			<span class="hint" data-if="view == 'rooms'"><span class="pad pad-a">A</span>Vai</span>
+			<span class="hint" data-if="view == 'games'"><span class="pad pad-a">A</span>Apri la scheda</span>
+			<span class="hint" data-if="view == 'card'"><span class="pad pad-a">A</span>Conferma</span>
+			<span class="hint" data-if="view != 'card'"><span class="pad pad-wide">LB RB</span>Cambia elenco</span>
+			<span class="hint" data-if="view == 'floors' || view == 'games'"><span class="pad pad-b">B</span>Chiudi</span>
+			<span class="hint" data-if="view == 'rooms' || view == 'card'"><span class="pad pad-b">B</span>Indietro</span>
+		</div>
+	</div>
+</body>
+</rml>

@@ -3,16 +3,19 @@
 #                commands from the UI actions of the action map (stick hysteresis, repeat timing), focus regions and the
 #                focus history for Back, the paged catalog source (CatalogSource, InMemoryCatalogSource) and the quick
 #                catalog's view model, a window over it; timing percentiles of the UI pass; since I3 (skeletons naming
-#                their steps) the models of the world's card and of the media viewer.
+#                their steps) the models of the world's card and of the media viewer; since I4 step 7a the directory's
+#                (the building's floors and rooms, the favourites and recent games, their card).
 #   rv_ui        RmlUi 6.3 on SDL3 and OpenGL 3: RmlUi's lifetime and interfaces (UiSystem), one context per output
 #                (UiView: input, update, rendering into the window and screenshots, CPU and GPU times), the quick
 #                catalog screen (QuickCatalogScreen, a fixed pool of rows), since I3 (skeletons) the world's card,
-#                the hover label, the media viewer and Informazioni; the RmlUi backends are vendored in
-#                third_party/rmlui_backends on our glad loader (target rv_rmlui_backends, used by rv_ui only).
+#                the hover label, the media viewer and Informazioni, since I4 step 7a the directory (DirectoryScreen);
+#                the RmlUi backends are vendored in third_party/rmlui_backends on our glad loader (target
+#                rv_rmlui_backends, used by rv_ui only).
 #                It never links rv_catalog: rv_app adapts the catalog to CatalogSource.
 
 add_library(rv_ui_model STATIC
     src/catalog_source.cpp
+    src/directory_model.cpp
     src/filter_count_log.cpp
     src/focus_history.cpp
     src/focus_regions.cpp
@@ -34,6 +37,7 @@ rv_forbid_link(rv_ui_model)
 add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/rmlui_backends" "${CMAKE_CURRENT_BINARY_DIR}/rmlui_backends")
 
 add_library(rv_ui STATIC
+    src/directory_screen.cpp
     src/game_card_screen.cpp
     src/game_info_screen.cpp
     src/hover_label_screen.cpp

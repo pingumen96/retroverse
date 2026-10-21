@@ -1,0 +1,450 @@
+/*
+	The directory (directory.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI neutral
+	#171B22 in translucent carbon panels, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green #6EAF93 for
+	what is active and where the walker is). Sizes in dp: the view's dp ratio is the display's content scale times the
+	text scale (rv::ui::UiView). The list on the left, a game's card on the right beside it, the pad's hints below. The
+	focus is always visible and changes at once (style 16.2), and no colour is animated: RmlUi rebuilds the geometry of
+	every animated frame (ADR-0005).
+*/
+
+/* The document covers the whole view: the panels are placed in percentages of it. */
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 24dp;
+	color: #F4EFE6;
+}
+
+div, p, h1, h2 {
+	display: block;
+}
+
+/* Text never takes the focus: a click on it focuses the row or the button around it (or nothing). */
+p, h1, h2, span {
+	focus: none;
+}
+
+h1 {
+	font-size: 34dp;
+	font-weight: bold;
+}
+
+h2 {
+	font-size: 34dp;
+	font-weight: bold;
+	line-height: 1.15em;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-radius: 18dp;
+	padding: 26dp 30dp;
+}
+
+#directory {
+	left: 4%;
+	top: 6%;
+	bottom: 14%;
+	width: 44%;
+	display: flex;
+	flex-direction: column;
+}
+
+.panel-header {
+	display: flex;
+	flex-direction: row;
+	align-items: baseline;
+	justify-content: space-between;
+	margin-bottom: 16dp;
+	flex: 0 0 auto;
+}
+
+.count {
+	font-size: 22dp;
+	color: #F4EFE6A6;
+}
+
+/* The tabs: pills, the active one green. */
+#dir-tabs {
+	flex: 0 0 auto;
+	margin-bottom: 16dp;
+	white-space: nowrap;
+}
+
+.tab {
+	display: inline-block;
+	padding: 7dp 20dp;
+	margin-right: 10dp;
+	font-size: 22dp;
+	color: #F4EFE6CC;
+	background-color: #FFFFFF0F;
+	border: 3dp #00000000;
+	border-radius: 22dp;
+	tab-index: auto;
+}
+
+.tab.active {
+	color: #171B22;
+	background-color: #6EAF93;
+}
+
+/* The floor whose rooms are listed. */
+#dir-floor-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	flex: 0 0 auto;
+	margin-bottom: 12dp;
+}
+
+.header-title {
+	margin-left: 14dp;
+	font-size: 26dp;
+	font-weight: bold;
+}
+
+/* The list scrolls with the focus (RmlUi brings a focused row into view only in an auto or scroll container). */
+#dir-list {
+	position: relative;
+	flex: 1 1 0dp;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding-right: 14dp;
+}
+
+#dir-list scrollbarvertical {
+	width: 8dp;
+}
+
+#dir-list scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 4dp;
+}
+
+#dir-list scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 4dp;
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 9dp 14dp;
+	margin-bottom: 4dp;
+	border: 3dp #00000000;
+	border-left-width: 6dp;
+	border-radius: 10dp;
+	tab-index: auto;
+}
+
+/* The game whose card shows (the focus is on the card's buttons). */
+.row.chosen {
+	background-color: #F4EFE614;
+	border-left-color: #6EAF93;
+}
+
+/* An elevator button: the floor's place in the elevator's order (T the ground floor), a room's place along the hall. */
+.badge {
+	display: block;
+	flex: 0 0 auto;
+	width: 44dp;
+	height: 44dp;
+	line-height: 44dp;
+	border-radius: 22dp;
+	text-align: center;
+	font-size: 22dp;
+	font-weight: bold;
+	color: #F4EFE6;
+	background-color: #F4EFE61F;
+	border: 2dp #F4EFE640;
+}
+
+.room-badge {
+	border-radius: 8dp;
+}
+
+/* The hall's row: the elevator's two doors in its button. */
+.door {
+	display: inline-block;
+	width: 9dp;
+	height: 20dp;
+	margin: 0dp 1dp;
+	vertical-align: middle;
+	border: 2dp #F4EFE6CC;
+	border-radius: 2dp;
+}
+
+.row-text {
+	flex: 1 1 0dp;
+	margin-left: 14dp;
+	overflow: hidden;
+}
+
+.game .row-text {
+	margin-left: 0dp;
+}
+
+/* One line each: a long name ends in an ellipsis. */
+.row-title {
+	font-size: 25dp;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.row-meta {
+	font-size: 19dp;
+	color: #F4EFE6A6;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	margin-top: 2dp;
+}
+
+/* The separator between parts of a line (spaces at the edges of an inline box would collapse). */
+.dot {
+	margin: 0dp 0.35em;
+}
+
+/* Where the walker is, and a favourite. */
+.here, .favorite {
+	flex: 0 0 auto;
+	margin-left: 12dp;
+	padding: 3dp 12dp;
+	border-radius: 14dp;
+	font-size: 18dp;
+	white-space: nowrap;
+}
+
+.here {
+	color: #171B22;
+	background-color: #6EAF93;
+}
+
+.favorite {
+	color: #FFC88A;
+	border: 2dp #FFC88A;
+}
+
+.empty {
+	color: #F4EFE6A6;
+	padding: 12dp 14dp;
+}
+
+.notice {
+	flex: 0 0 auto;
+	margin-top: 12dp;
+	font-size: 20dp;
+	color: #FFC88A;
+}
+
+/* The focus, always visible: a tungsten edge and a warm wash. */
+.row:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A2E;
+	color: #FFFFFF;
+}
+
+.row:focus .row-meta {
+	color: #F4EFE6D9;
+}
+
+.row:focus .badge {
+	border-color: #FFC88A;
+}
+
+.tab:focus {
+	border-color: #FFC88A;
+}
+
+.action:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.action.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+/* A game's card: as tall as its content, at most down to the list's bottom edge. */
+#dir-card {
+	right: 4%;
+	top: 6%;
+	width: 42%;
+	max-height: 80%;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+#dir-card h2, #dir-card p, #dir-card-actions {
+	flex: 0 0 auto;
+}
+
+.subtitle {
+	font-size: 23dp;
+	color: #F4EFE6B3;
+	margin-top: 6dp;
+	margin-bottom: 16dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6A6;
+	margin-bottom: 12dp;
+}
+
+/* What keeps the game from starting, why (its first blocker's sentence), a game ready to start. */
+.state {
+	font-size: 22dp;
+	color: #FFC88A;
+	margin-bottom: 14dp;
+}
+
+.blocker {
+	font-size: 20dp;
+	color: #F4EFE6E6;
+	margin-top: -6dp;
+	margin-bottom: 10dp;
+}
+
+.ready {
+	font-size: 21dp;
+	color: #A8E6B0;
+	margin-bottom: 14dp;
+}
+
+.info-rows {
+	flex: 0 1 auto;
+	overflow: hidden;
+	border-top: 2dp #F4EFE61F;
+	padding-top: 12dp;
+	margin-bottom: 16dp;
+}
+
+.info {
+	display: flex;
+	flex-direction: row;
+	font-size: 21dp;
+	padding: 3dp 0dp;
+}
+
+.key {
+	width: 40%;
+	color: #F4EFE6A6;
+}
+
+.value {
+	width: 60%;
+}
+
+#dir-card-actions {
+	margin-top: 4dp;
+}
+
+.action {
+	display: inline-block;
+	padding: 10dp 22dp;
+	margin-right: 10dp;
+	margin-bottom: 10dp;
+	font-size: 24dp;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.action.primary {
+	background-color: #6EAF9340;
+}
+
+#dir-card-back {
+	margin-right: 0dp;
+}
+
+.room-reason {
+	font-size: 20dp;
+	color: #F4EFE6B3;
+	margin-top: 4dp;
+}
+
+/* The pad's hints (style 16.3). */
+#dir-hints {
+	position: absolute;
+	left: 0%;
+	right: 0%;
+	bottom: 4%;
+	text-align: center;
+}
+
+.hint-bar {
+	display: inline-block;
+	padding: 10dp 26dp;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-radius: 30dp;
+	font-size: 22dp;
+}
+
+.hint {
+	margin: 0dp 14dp;
+}
+
+.pad {
+	display: inline-block;
+	width: 34dp;
+	height: 34dp;
+	line-height: 34dp;
+	border-radius: 17dp;
+	margin-right: 10dp;
+	text-align: center;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.pad-wide {
+	width: auto;
+	padding: 0dp 12dp;
+	background-color: #F4EFE6CC;
+}
+
+.pad-a { background-color: #6EAF93; }
+.pad-b { background-color: #C8645A; }
+
+/* Compact: views under 760 dp of the display's density tall (1280x720 at 125%), as the quick catalog's. */
+@media (theme: compact) {
+	body { font-size: 20dp; }
+	h1 { font-size: 28dp; }
+	h2 { font-size: 28dp; }
+	.panel { padding: 18dp 22dp; }
+	.panel-header { margin-bottom: 10dp; }
+	#dir-tabs { margin-bottom: 10dp; }
+	.tab { font-size: 19dp; padding: 4dp 14dp; }
+	.header-title { font-size: 22dp; }
+	.row { padding: 5dp 10dp; }
+	.badge { width: 34dp; height: 34dp; line-height: 34dp; font-size: 18dp; }
+	.door { width: 7dp; height: 16dp; }
+	.row-title { font-size: 21dp; }
+	.row-meta { font-size: 16dp; }
+	.here, .favorite { font-size: 15dp; padding: 2dp 8dp; }
+	.subtitle { font-size: 19dp; margin-bottom: 10dp; }
+	.state { font-size: 19dp; margin-bottom: 8dp; }
+	.blocker, .ready, .note { font-size: 17dp; margin-bottom: 6dp; }
+	.info { font-size: 18dp; padding: 1dp 0dp; }
+	.action { font-size: 20dp; padding: 7dp 14dp; margin-right: 8dp; margin-bottom: 8dp; }
+	.room-reason { font-size: 17dp; }
+	.notice { font-size: 17dp; }
+	.hint-bar { font-size: 18dp; padding: 6dp 18dp; }
+	.pad { width: 28dp; height: 28dp; line-height: 28dp; border-radius: 14dp; }
+	.pad-wide { width: auto; }
+}
