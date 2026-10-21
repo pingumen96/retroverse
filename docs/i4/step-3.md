@@ -30,7 +30,10 @@ Roadmap row: I4 step 3. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
   - `scene::AreaLighting` follows the eye: the first area holding it, else the last one held.
   - The view packs only that area's lights: its key light (its first caster) shadowed, then its point and spot lights
     nearest the eye up to 16 (`gl::packLights` over a selection). The selection is one pass over the area's lights and
-    is repacked only when it changes.
+    is repacked only when it changes. `gl::PackedLights::keyLight` is the packed key light's index in the scene's
+    lights: the log, the run report, the Lights panel and `requireShadowCasters()`'s note name the eye's area's key
+    light by it, never the scene's first caster.
+  - The log names every area's key light at load (or why it casts no shadow), not only the start area's.
   - `app::SceneInstance::followEye()` runs before every view. A scene without areas packs once, in list order, as
     before.
   - The run report gains `sceneAreas`: the area at the end, its lights and key light, every change of area.
@@ -49,11 +52,16 @@ Roadmap row: I4 step 3. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
   - No existing plan golden, scene digest or G01-G10 pixel moved.
 - **GPU smoke** (`tests/smoke/test_world_floor.cpp`, `gpu.world floor: ...`):
   - `two_areas.json` is rendered from each area and without areas. Only the eye's pool is lit, and it is as the plain
-    scene lights it.
+    scene lights it. Each area's pillar is shadowed by that area's key light; without areas the west spot is the only
+    key light, so seen from the east the east pillar casts no shadow.
   - The building fixture's gen4 floor is walked with `floor_walk_into_room.json` from the elevator into room:snes. In
     the hall only the hall's lights are packed; in the room its own lights with `room:snes/fx:hero.key-light`. The
     walker passes the doorway; there are no high or medium GL messages.
   - The ground floor's lobby is rendered from the elevator.
+- **Walks through the floor's collision** (unit, `world/floor: the walker walks ...`): gen4's north-row room:snes with
+  `floor_walk_into_room.json`, and handheld's south-row, half-turned room:pocketlab with
+  `floor_walk_into_south_room.json` (the same walk turning right), each past its doorway wall with the areas
+  {hall, room}.
 
 ## Decisions
 
@@ -75,8 +83,6 @@ Roadmap row: I4 step 3. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
 - The floor scene draws no cartridges: the collections are step 5a's (`floorCollectionLayout()` gives each room's
   layout in the floor frame).
 - The hall's walls are plain boxes without trim. Their textures restart at every box (uvs in each box's meters).
-- `requireShadowCasters`'s note names the scene's first caster, not the area's. It only matters for a directional
-  key light without casters, which floors do not have.
 
 ## The building API (frozen for steps 4 and 5a)
 
@@ -95,9 +101,9 @@ Roadmap row: I4 step 3. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
     `undressed`);
   - `roomsOnFloor()`, `floorObjectId()`, `floorCollectionLayout(layout, placement)`.
 - `rv/scene/scene_areas.hpp`: `SceneArea`, `areaAt()`, `nearestArea()`, `lightsByArea()`, `AreaLighting`.
-  `gl::packLights(lights, selection, environment)`.
-- `app::SceneInstance::followEye(eye)`, `areaId()`, `areas()`, `areaSelection()`. Step 5a also uses `areaId()` as the
-  area that holds the eye for picking and the cover loader's view.
+  `gl::packLights(lights, selection, environment)`, `gl::PackedLights::keyLight`, `gl::lightName()`.
+- `app::SceneInstance::followEye(eye)`, `areaId()`, `areas()`, `areaSelection()`, `keyLight()`. Step 5a also uses
+  `areaId()` as the area that holds the eye for picking and the cover loader's view.
 - Validation: `rule::kHallOverlap`, `kDoorwayOffHall`, `kFloorUnreachable`, judged with `ValidationContext::building`.
 
 ## Follow-ups

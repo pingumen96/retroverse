@@ -136,11 +136,15 @@ imported (`tests/fixtures/esde/building`, materialized by the tests; the GPU cas
 `build/<preset>/smoke/world_floor/data`), `retroverse-cli --data-dir <dir> worldplan generate --seed 102938`, then
 `worldplan show --floor gen4 --scene build/scenes/gen4.json` and `retroverse.exe --scene build/scenes/gen4.json
 --exit-after-frames --frames 5 --hidden --screenshot build/screenshots/gen4.png --data-dir build/rvdata`: the hall
-from the elevator facing east, the rooms' doorways along it (doors aligned across the hall, no gap in its walls). The
-elevator and the floor's sign: `--spawn 8,0,0,-90,0`; a north-row room from inside, looking out: `--spawn
-7.65,0,-4.5,180,0`; the walk from the elevator into the first room: `--input-script
-tests/input_scripts/floor_walk_into_room.json --fixed-dt 0.016667 --frames 255` (the hall lit by its own lights, the
-room by its own; seen from one, the other shows its ambient only, ADR-0013's accepted cost).
+from the elevator facing east, room:snes's doorway on its north side, no gap in its walls. The elevator and the floor's
+sign: `--spawn 8,0,0,-90,0`; the north-row room from inside, looking out: `--spawn 7.65,0,-4.5,180,0`; the walk from
+the elevator into it: `--input-script tests/input_scripts/floor_walk_into_room.json --fixed-dt 0.016667 --frames 255`
+(the hall lit by its own lights, the room by its own; seen from one, the other shows its ambient only, ADR-0013's
+accepted cost). gen4 holds one room; the fixture's floor with rooms on both rows is `handheld` (`worldplan show --floor
+handheld --scene build/scenes/handheld.json`): from the elevator, room:gb's doorway on the north side faces
+room:pocketlab's on the south side (doors aligned across the hall, room:pokemini further east); the south-row room,
+turned a half turn, from inside looking out: `--spawn 7.65,0,4.5,0,0` (room:gb's hero wall across the hall through
+both doorways); the walk into it: `tests/input_scripts/floor_walk_into_south_room.json` (the same flags).
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),
