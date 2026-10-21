@@ -30,6 +30,7 @@
 #include <rv/catalog/identity.hpp>
 #include <rv/catalog/import_service.hpp>
 #include <rv/catalog/reconciliation.hpp>
+#include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/core/sha256.hpp>
@@ -569,6 +570,15 @@ TEST_CASE("catalog_db/reconciliation: a review resolved by pairing applies the m
         REQUIRE(alias.has_value());
         CHECK(alias->game == vanished);
         CHECK(alias->reason == MoveReason::ReviewResolved);
+        {
+            // The reader's side (I4 step 5a, the app's building job): the alias's identity, none for an identity.
+            auto reader = library.catalog.database->openReader();
+            REQUIRE(reader.has_value());
+            auto query = rv::catalog_db::SqliteCatalogQuery::open(std::move(*reader));
+            REQUIRE(query.has_value());
+            CHECK((*query)->aliasTarget(chosen).value() == std::optional<GameId>(vanished));
+            CHECK_FALSE((*query)->aliasTarget(vanished).value().has_value());
+        }
         REQUIRE(resolved->leftAtOldPath.has_value());
         CHECK(library.at("Kept (USA).gb").id == *resolved->leftAtOldPath);
         CHECK(*resolved->leftAtOldPath == firstId("Kept (USA).gb", 1));

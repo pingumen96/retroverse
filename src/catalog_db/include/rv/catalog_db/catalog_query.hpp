@@ -181,6 +181,12 @@ public:
     /// such system (hasSystem()); ParseError for a row the catalog cannot read back; those of every read.
     [[nodiscard]] Expected<catalog::RoomSnapshot> roomEntries(const catalog::SystemName& system) override;
 
+    /// The identity the GameId `alias` became an alias of (rv_identity_aliases, ADR-0008 §4), or nothing when it is no
+    /// alias: the reader's side of ICatalogStore::alias(), for the app's building job (I4 step 5a), which reads every
+    /// snapshot and these within one read transaction on its own reader. Errors: SQLite's; ParseError for a row of no
+    /// GameId.
+    [[nodiscard]] Expected<std::optional<catalog::GameId>> aliasTarget(catalog::GameId alias);
+
     /// The connection it reads.
     [[nodiscard]] Connection& connection() noexcept;
 
