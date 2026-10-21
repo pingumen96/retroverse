@@ -15,6 +15,12 @@
 // this machine's run and fails the case (a rewrite is never a pass: run again without it):
 //   $env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden/G02:*"; Remove-Item Env:RV_UPDATE_GOLDEN
 // G10 is also compared with G02's golden: the pixels that differ lie where the ten added items stand.
+//
+// The Gate C goldens of the building (I4 step 8; ADR-0013, style §5.2 as ADR-0013 amends it), on tests/fixtures/esde/
+// building under the shipped threshold (no world.json: its small systems share their floors' rooms), each run as the
+// user starts the app (no --start-room) or in a room (--start-room, its doorway camera): G11 the ground floor's lobby
+// from the elevator's arrival point, G12 the jewel-case room (psx, the disc_case_cd family) from its doorway, G13 the
+// handheld floor's shared room (pocketlab's and pokemini's sections, generic cases) from its doorway.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -45,6 +51,7 @@
 #include <rv/geometry/socket.hpp>
 #include <rv/screenshot_diff/screenshot_diff.hpp>
 #include <rv/world/collection_layout.hpp>
+#include <rv/world/floor_layout.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_store.hpp>
@@ -213,13 +220,28 @@ struct GoldenRoom {
     }
 };
 
-/// A lockstep run of the room: `frames` frames at a fixed step, a screenshot at 1920x1080 at the end.
-std::vector<std::string> roomArguments(std::uint32_t frames, const fs::path& shot, std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--start-room", "room:snes", "--exit-after-frames", "--frames",           std::to_string(frames),
-                                       "--fixed-dt",          "0.016667",           "--screenshot",
-                                       arg(shot),             "--screenshot-size", "1920x1080"};
+/// A lockstep run of the building: `frames` frames at a fixed step, a screenshot at 1920x1080 at the end; at
+/// `startRoom`'s doorway camera, or without one in the ground floor's lobby at the elevator's arrival point.
+std::vector<std::string> startArguments(std::optional<std::string_view> startRoom, std::uint32_t frames,
+                                        const fs::path& shot, std::vector<std::string> extra = {}) {
+    std::vector<std::string> arguments;
+    if (startRoom) {
+        arguments.insert(arguments.end(), {"--start-room", std::string(*startRoom)});
+    }
+    arguments.insert(arguments.end(), {"--exit-after-frames", "--frames", std::to_string(frames), "--fixed-dt",
+                                       "0.016667", "--screenshot", arg(shot), "--screenshot-size", "1920x1080"});
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     return arguments;
+}
+
+/// A lockstep run of the SNES room (G02 to G10): startArguments() in room:snes.
+std::vector<std::string> roomArguments(std::uint32_t frames, const fs::path& shot, std::vector<std::string> extra = {}) {
+    return startArguments("room:snes", frames, shot, std::move(extra));
+}
+
+/// The stored plan's file of the run's library.
+fs::path planFileOf(const GoldenRoom& room, const rv::app::RunReport& report) {
+    return rv::world::worldFiles(room.data, rv::catalog::LibraryId::parse(report.world.library).value()).plan;
 }
 
 /// The plan the run showed and the room's scene and collection, as retroverse.exe made them from it.
@@ -232,8 +254,7 @@ struct ShownRoom {
 };
 
 ShownRoom shownRoom(const GoldenRoom& room, const rv::app::RunReport& report) {
-    const fs::path planFile =
-        rv::world::worldFiles(room.data, rv::catalog::LibraryId::parse(report.world.library).value()).plan;
+    const fs::path planFile = planFileOf(room, report);
     auto stored = rv::world::readStoredPlan(planFile);
     REQUIRE(stored.has_value());
     const rv::world::RoomId roomId = rv::world::RoomId::parse(report.world.room).value();
@@ -267,9 +288,11 @@ void requireGoldenRun(const AppRun& run) {
 
 /// The first run of a golden's room: the plan generated and written, the covers made into the derived-texture cache.
 /// 300 frames, so that the room comes even when a loaded machine makes the first frame's wait for it (10 s) run out:
-/// the golden's own run then starts from the stored plan, like every later start of the app.
-rv::app::RunReport firstRun(GoldenRoom& room) {
-    const AppRun first = runApp(retroverseExe(), room.dir, "first", roomArguments(300, room.dir / "first.png"));
+/// the golden's own run then starts from the stored plan, like every later start of the app. `startRoom`: the golden's
+/// (none: the lobby).
+rv::app::RunReport firstRun(GoldenRoom& room, std::optional<std::string_view> startRoom = "room:snes") {
+    const AppRun first =
+        runApp(retroverseExe(), room.dir, "first", startArguments(startRoom, 300, room.dir / "first.png"));
     skipWithoutOpenGl(first);
     requireRoomRun(first);
     INFO(first.describe());
@@ -356,7 +379,7 @@ void compareWithGolden(const GoldenSpec& spec, const GoldenRoom& room, const App
     const fs::path golden = goldenDir() / (std::string(spec.stem) + ".png");
     const fs::path verdictFile = room.dir / "comparison.txt";
     const rv::app::RunReportContext& context = *run.report->context;
-    const ShownRoom shown = shownRoom(room, *run.report);
+    const fs::path planFile = planFileOf(room, *run.report);
 
     if (updatingGoldens()) {
         std::error_code error;
@@ -370,7 +393,7 @@ void compareWithGolden(const GoldenSpec& spec, const GoldenRoom& room, const App
                       {"rule", "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path"}}},
                     {"plan",
                      {{"digest", run.report->world.planDigest},
-                      {"fileSha256", fileSha256(shown.planFile)},
+                      {"fileSha256", fileSha256(planFile)},
                       {"placements", run.report->world.placements},
                       {"items", run.report->world.items}}},
                     {"worldData", {{"path", "assets/world"}, {"sha256", treeSha256(sourceDir() / "assets/world")}}}};
@@ -727,4 +750,143 @@ TEST_CASE("golden/G10: G02 after 10 games added, which stand where nothing stood
                    << ")");
     CHECK(differing > 0);
     CHECK(outside == 0);
+}
+
+namespace {
+
+/// The checks of a building golden's run (G11 to G13): the stored plan's floor `floor` shown unchanged at the first frame
+/// (requireGoldenRun()), `room` holding the eye ("" the hall), every item of the floor resident at the end, the floor's
+/// GPU memory within the acceptable 512 MiB.
+void requireBuildingRun(const AppRun& run, std::string_view floor, std::string_view room) {
+    requireGoldenRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.world.outcome == "unchanged");
+    CHECK(report.world.floor == floor);
+    CHECK(report.world.room == room);
+    CHECK(report.world.items > 0);
+    CHECK(report.residency.items > 0);
+    CHECK(report.residency.frontsResident == report.residency.items);
+    CHECK(report.residency.pending == 0);
+    CHECK(report.gpuMemory.peakTotalBytes <= 512ull * 1024ull * 1024ull);
+}
+
+/// The room of `plan` whose sections hold `system` (REQUIREd).
+const rv::world::Room& roomHolding(const rv::world::WorldPlan& plan, std::string_view system) {
+    const auto found = std::find_if(plan.rooms.begin(), plan.rooms.end(), [&](const rv::world::Room& room) {
+        return std::any_of(room.sections.begin(), room.sections.end(),
+                           [&](const rv::catalog::SystemName& section) { return section.str() == system; });
+    });
+    INFO("the room of " << system);
+    REQUIRE(found != plan.rooms.end());
+    return *found;
+}
+
+/// The plan the run showed.
+rv::world::WorldPlan planOf(const GoldenRoom& room, const rv::app::RunReport& report) {
+    auto stored = rv::world::readStoredPlan(planFileOf(room, report));
+    REQUIRE(stored.has_value());
+    return std::move(stored->plan);
+}
+
+} // namespace
+
+TEST_CASE("golden/G11: the building's lobby from the elevator's arrival point", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g11", "esde/building");
+    const rv::app::RunReport first = firstRun(room, std::nullopt);
+    CHECK(first.world.floor == rv::world::kGroundFloor);
+    const fs::path shot = room.dir / "g11.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run = room.app(
+        "g11", startArguments(std::nullopt, kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    requireBuildingRun(run, rv::world::kGroundFloor, "");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    // The lobby holds the arcade room (mame's section, every arcade system's: ADR-0013 §3), the eye in the hall: no hero
+    // CRT is bound until the eye stays in a room.
+    const rv::world::WorldPlan plan = planOf(room, report);
+    CHECK(roomHolding(plan, "mame").id.toString() == "area:arcade");
+    REQUIRE(report.sceneAreas.has_value());
+    CHECK(report.sceneAreas->area == rv::world::hallAreaId(rv::world::kGroundFloor));
+    CHECK_FALSE(report.video.bound);
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G11", "g11_lobby_golden",
+                       "Gate C golden of the building's hub (style 5.2 as ADR-0013 amends it: the hub is the ground "
+                       "floor's lobby): the esde/building fixture planned under the shipped threshold, the walker as "
+                       "every start without --start-room stands, at the elevator's arrival point facing east down the "
+                       "6 m wide lobby, the elevator and its sign behind: the hall's ceiling light, the arcade game "
+                       "room's open doorway on the north side with its lamp seen through it, the closed entrance doors "
+                       "at the east end (I4's functional look: plain boxes, lit by the hall's own lights).",
+                       "the floor scene's camera at the elevator's arrival point (no --start-room, no --spawn)",
+                       std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G12: the building's jewel-case room from its doorway", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g12", "esde/building");
+    const rv::app::RunReport first = firstRun(room, "room:psx");
+    const rv::world::WorldPlan plan = planOf(room, first);
+    const rv::world::Room& psx = roomHolding(plan, "psx");
+    CHECK(psx.id.toString() == "room:psx");
+    CHECK(psx.mediaFamily == "disc_case_cd");
+    const fs::path shot = room.dir / "g12.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run =
+        room.app("g12", startArguments("room:psx", kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    requireBuildingRun(run, psx.floor, "room:psx");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    // Every placed game of the fixture's psx has a cover (square or portrait), fitted to the jewel case's square label.
+    CHECK(report.residency.labels == 0);
+    CHECK(report.residency.coverFailures == 0);
+    // The room's CRT is the hero CRT, its clip held at 1.0 s.
+    REQUIRE(report.video.bound);
+    CHECK(report.video.screen == "room:psx/fx:hero.crt");
+    CHECK(report.video.picture == "video");
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G12", "g12_jewel_case_room_golden",
+                       "Gate C golden of a console room of another media family (at most one golden per new kind of "
+                       "room): the esde/building fixture's psx room on gen5 under its CD HOME sign, its 40 invented "
+                       "titles (two of them multi-disc games) as CD jewel cases (disc_case_cd), every one face-out "
+                       "(fewer than the display slots and the hero band hold: ADR-0010 §3) in the display cases, the "
+                       "featured wall shelf and the hero band, their square and portrait covers fitted to the square "
+                       "label, from the doorway (the room's doorway camera), the hero CRT's clip held at 1.0 s.",
+                       "--start-room room:psx: the room's doorway camera (no --spawn)", std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G13: the handheld floor's shared room from its doorway", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g13", "esde/building");
+    const rv::app::RunReport first = firstRun(room, "area:shared:handheld");
+    const rv::world::WorldPlan plan = planOf(room, first);
+    // The systems under 30 distinct titles share their floor's room (ADR-0013 §3): pocketlab (6) and pokemini (8).
+    const rv::world::Room& shared = roomHolding(plan, "pokemini");
+    CHECK(shared.id.toString() == "area:shared:handheld");
+    CHECK(roomHolding(plan, "pocketlab").id.toString() == shared.id.toString());
+    CHECK(shared.mediaFamily == "generic_case");
+    CHECK(shared.sections.size() == 2);
+    const fs::path shot = room.dir / "g13.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run = room.app("g13", startArguments("area:shared:handheld", kFrames, shot,
+                                                      {"--video-freeze-pts", std::string(kFreezePts)}));
+    requireBuildingRun(run, shared.floor, "area:shared:handheld");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.residency.labels == 0);
+    CHECK(report.residency.coverFailures == 0);
+    // The shared room's CRT is the hero CRT with both sections' games; they have no clip: its colour bars.
+    REQUIRE(report.video.bound);
+    CHECK(report.video.screen == "area:shared:handheld/fx:hero.crt");
+    CHECK(report.world.screenGames == 14);
+    CHECK(report.video.picture == "idle-pattern");
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G13", "g13_shared_room_golden",
+                       "Gate C golden of a shared room (style 5.6 as ADR-0013 amends it: a section of the shared room "
+                       "under 30 titles): the esde/building fixture's handheld floor's shared room under its MORE GAMES "
+                       "sign, its two sections (pocketlab's 6 and pokemini's 8 invented titles) as generic cases in one "
+                       "collection ordered by section, every one face-out in the display cases and the featured wall "
+                       "shelf, no console beside the CRT (shared rooms have none), from the doorway (the room's "
+                       "doorway camera), the hero CRT showing its colour bars (no section has a clip).",
+                       "--start-room area:shared:handheld: the room's doorway camera (no --spawn)", std::nullopt},
+                      room, run, shot, kFrames);
 }
