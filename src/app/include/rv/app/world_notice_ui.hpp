@@ -13,7 +13,8 @@ namespace rv::app::world_notice {
 inline constexpr std::string_view kDocumentPath = "ui/world_notice.rml";
 inline constexpr std::string_view kStyleSheetPath = "ui/world_notice.rcss";
 /// The data model: "notice" (one of the keys below), "state" (the catalog's state for kNoCatalog: catalog_worker.hpp's
-/// toString(CatalogState)), "system" (the room's system, ES-DE's name, for kNoGames).
+/// toString(CatalogState)), "system" (the start room's system, ES-DE's name, for kNoGames; empty without
+/// --start-room).
 inline constexpr std::string_view kDataModel = "world_notice";
 inline constexpr std::string_view kPanelId = "world-notice";
 
@@ -21,8 +22,8 @@ inline constexpr std::string_view kPanelId = "world-notice";
 inline constexpr std::string_view kNone = "";
 /// The room is being made: the empty shell shows.
 inline constexpr std::string_view kGenerating = "generating";
-/// The test room instead of the generated one: the ES-DE catalog did not open ("state" says why), or it has no games
-/// of the room's system.
+/// The test room instead of the generated one: the ES-DE catalog did not open ("state" says why), or no system of it
+/// gives the building a room (and no plan is stored: I4 step 5a; "system" names the start room's when one is asked).
 inline constexpr std::string_view kNoCatalog = "no-catalog";
 inline constexpr std::string_view kNoGames = "no-games";
 /// The media root is out of reach: no plan yet (the shell), or the stored plan shown as it was.

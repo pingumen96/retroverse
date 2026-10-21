@@ -541,4 +541,16 @@ TEST_CASE("world: without a catalog, or without a system that gives a room, the 
     CHECK_FALSE(otherRun.report->residency.bound);
     CHECK_FALSE(fs::exists(other.data / "worlds"));
     requireScreenshot(otherRun, otherShot, kShotSize);
+
+    // The same catalog in the default start (the lobby, no --start-room): the test room with the building's notice.
+    const fs::path lobbyShot = other.dir / "no_games_lobby.png";
+    const AppRun lobbyRun = runApp(retroverseExe(), other.dir, "no_games_lobby",
+                                   {"--exit-after-frames", "--frames", "5", "--fixed-dt", "0.016667", "--screenshot",
+                                    arg(lobbyShot)});
+    requireCleanRun(lobbyRun);
+    INFO(lobbyRun.describe());
+    CHECK(lobbyRun.report->world.state == "test-room");
+    CHECK(lobbyRun.report->world.notice == "no-games");
+    CHECK_FALSE(fs::exists(other.data / "worlds"));
+    requireScreenshot(lobbyRun, lobbyShot, kShotSize);
 }

@@ -3,15 +3,16 @@
 	<!--
 		The world's notice (I3 step 10b; ADR-0010 §11, §12): a band over the room telling why the room shows as it does
 		when it is not the generated room of the catalog: being made (the empty room), the test room instead (no ES-DE
-		catalog, no games of the room's system), the empty room (the media folder out of reach before a first plan, a
-		plan that cannot be used or made), the room as it was (the media folder out of reach, a plan to regenerate).
-		Bound to the data model "world_notice" of rv::app::WorldNoticePanel (src/app/src/world_notice_panel.cpp), which
-		also names the ids below: keep them in step (src/app/include/rv/app/world_notice_ui.hpp,
-		tests/unit/app/test_world_notice_document.cpp).
+		catalog, no system of the catalog with a room), the empty room (the media folder out of reach before a first
+		plan, a plan that cannot be used or made), the room as it was (the media folder out of reach, a plan to
+		regenerate). Bound to the data model "world_notice" of rv::app::WorldNoticePanel
+		(src/app/src/world_notice_panel.cpp), which also names the ids below: keep them in step
+		(src/app/include/rv/app/world_notice_ui.hpp, tests/unit/app/test_world_notice_document.cpp).
 		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed.
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
-		unavailable). system: the room's system, as ES-DE names it. Every string is written here (CLAUDE.md): the panel
-		binds keys only. It takes no input: the quick catalog (Tab) is where to act.
+		unavailable). system: the start room's system (--start-room), as ES-DE names it, for no-games; empty without
+		one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes no input: the quick catalog
+		(Tab) is where to act.
 	-->
 	<title>Stanza</title>
 	<link type="text/rcss" href="world_notice.rcss"/>
@@ -39,8 +40,9 @@
 
 		<div data-if="notice == 'no-games'">
 			<h1>Stanza di prova</h1>
-			<p>Il catalogo non ha giochi del sistema della stanza ({{ system }}): i suoi giochi sono nel catalogo rapido
+			<p>Nessun sistema del catalogo ha una stanza nell'edificio: i giochi sono tutti nel catalogo rapido
 				(Tab).</p>
+			<p data-if="system != ''">Per questo la stanza di partenza richiesta ({{ system }}) non c'è.</p>
 		</div>
 
 		<div data-if="notice == 'media-unknown'">

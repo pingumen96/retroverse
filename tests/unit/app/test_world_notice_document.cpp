@@ -58,3 +58,28 @@ TEST_CASE("app/world_notice_document: the ids, the data model and a sentence for
     const std::string rcss = readAsset(wn::kStyleSheetPath);
     CHECK(contains(rcss, "#" + std::string(wn::kPanelId) + " {"));
 }
+
+TEST_CASE("app/world_notice_document: the test room of a catalog without rooms speaks of the building, a system only "
+          "when the start room names one",
+          "[app][documents]") {
+    // I4 step 5a: no-games is the building's (no system of the catalog gives a room); "system" is the --start-room
+    // room's system, empty in the default lobby start, so its sentence shows only with one (never "()").
+    const std::string rml = readAsset(wn::kDocumentPath);
+    const std::string opening = "<div data-if=\"notice == '" + std::string(wn::kNoGames) + "'\">";
+    const std::size_t begin = rml.find(opening);
+    REQUIRE(begin != std::string::npos);
+    const std::size_t end = rml.find("</div>", begin);
+    REQUIRE(end != std::string::npos);
+    const std::string block = rml.substr(begin, end - begin);
+    CHECK(contains(block, "Nessun sistema del catalogo ha una stanza"));
+    CHECK_FALSE(contains(block, "del sistema della stanza"));
+    // Every {{ system }} of the block is inside the paragraph shown only when there is a system.
+    const std::string guarded = "<p data-if=\"system != ''\">";
+    std::size_t at = block.find("{{ system }}");
+    REQUIRE(at != std::string::npos);
+    for (; at != std::string::npos; at = block.find("{{ system }}", at + 1)) {
+        const std::size_t paragraph = block.rfind("<p", at);
+        REQUIRE(paragraph != std::string::npos);
+        CHECK(block.compare(paragraph, guarded.size(), guarded) == 0);
+    }
+}
