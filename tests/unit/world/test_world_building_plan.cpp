@@ -3,7 +3,7 @@
 // the building (its contents equal to the system's room alone), the entry order (floor order, systems.json order,
 // name), a golden building compared byte for byte in Debug and Release (rewritten only with RV_UPDATE_GOLDEN=1), a full
 // floor's capacity; the update per room: a room updated with its selection while the others stay, a room of another
-// generator major kept, growth moving a room away from the hall, a system without a room refused.
+// generator major kept, growth moving a room away from the hall, a system without a room entering (I4 step 6a).
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -501,19 +501,31 @@ TEST_CASE("world/building plan: the update per room", "[world][building]") {
         CHECK(found->reason == rv::world::UnplacedReason::RoomKept);
         CHECK(updated.validation.passed());
     }
-    SECTION("a system without a room is refused (new systems are I4 step 6a's)") {
+    SECTION("a system without a room enters the building; without its data it is refused (I4 step 6a)") {
         rv::world::BuildingUpdateInput input;
         input.library = building.input.library;
         input.selections = {selectionOf("genesis", 10, 3)};
         input.config = building.input.config;
         input.previous = plan;
         std::vector<WorldData> rooms = building.rooms;
-        rooms.push_back(dataOf("genesis"));
         auto refused = rv::world::updateBuilding(input, snesData().building, testSystems(), rooms);
         REQUIRE_FALSE(refused.has_value());
         CHECK(refused.error().code == rv::ErrorCode::InvalidArgument);
-        CHECK_THAT(refused.error().message, ContainsSubstring("no room room:genesis"));
-        // A room without data is refused too.
+        CHECK_THAT(refused.error().message, ContainsSubstring("no room data for room:genesis"));
+        // With its data it takes the east end of the shorter row of gen4 (north on a tie, after snes); nothing moves.
+        rooms.push_back(dataOf("genesis"));
+        auto entered = rv::world::updateBuilding(input, snesData().building, testSystems(), rooms);
+        INFO((entered ? std::string("updated") : entered.error().toString()));
+        REQUIRE(entered.has_value());
+        CHECK(entered->validation.passed());
+        CHECK(entered->changes.roomsAdded == std::vector<RoomId>{*RoomId::forSystem(name("genesis"))});
+        CHECK(roomOf(entered->plan, "genesis").placement == rv::world::RoomPlacement{16950, -6650, 0});
+        for (const rv::world::Room& room : plan.rooms) {
+            INFO(room.id.toString());
+            CHECK(roomPart(entered->plan, room.id) == roomPart(plan, room.id));
+        }
+        CHECK(entered->changes.added.size() == 10);
+        // A room without data is refused.
         input.selections = building.input.selections;
         rooms = building.rooms;
         rooms.pop_back();

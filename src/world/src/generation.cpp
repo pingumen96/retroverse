@@ -82,30 +82,6 @@ Expected<Json> roomInputJson(const RoomSelection& selection, const WorldData& da
                 {"template", Json{{"id", data.roomTemplate.id}, {"version", data.roomTemplate.version}}}};
 }
 
-/// A system entering a fresh building.
-struct EnteringRoom {
-    const RoomSelection* selection = nullptr;
-    /// The system's own data (its console room's, with the data of the shared or arcade room it may take a section of).
-    const WorldData* data = nullptr;
-    Classification classification;
-    std::uint32_t floorOrder = 0;
-};
-
-/// A room of a fresh building while the systems enter it (ADR-0013 §3, §7).
-struct BuildingRoom {
-    RoomId id;
-    RoomKind kind = RoomKind::Console;
-    std::string floor;
-    /// The data it is generated from: a console room's system's, a shared or arcade room's first section's sharedRoom.
-    const WorldData* data = nullptr;
-    /// Its systems in the order they entered (one for a console room).
-    std::vector<const EnteringRoom*> sections;
-    /// Its record as it stands on its floor while later rooms enter (a shared or arcade room's at the template's base
-    /// size until its sections are known), and its generated contents.
-    Room standing;
-    std::optional<WorldPlan> content;
-};
-
 /// What every room's data of an asset root reads alike, read once for a request and the room its system may take a
 /// section of.
 struct AssetInputs {
@@ -222,13 +198,30 @@ Expected<WorldData> roomData(const std::filesystem::path& assetRoot, const RoomD
 
 /// The unplaced entries of a system whose room its floor had no place for (ADR-0013 §7): every game, for capacity,
 /// naming `room`.
-void unplaceForCapacity(WorldPlan& plan, const RoomSelection& selection, const RoomId& room) {
+void unplaceForCapacity(std::vector<UnplacedGame>& unplaced, const RoomSelection& selection, const RoomId& room) {
     for (const RoomTitle& title : selection.titles) {
-        plan.unplaced.push_back({title.game, room, UnplacedReason::Capacity, {}});
+        unplaced.push_back({title.game, room, UnplacedReason::Capacity, {}});
     }
     for (const UnplacedGame& game : selection.unplaced) {
-        plan.unplaced.push_back({game.game, room, UnplacedReason::Capacity, {}});
+        unplaced.push_back({game.game, room, UnplacedReason::Capacity, {}});
     }
+}
+
+/// A room entering its floor, at the template's base size (its width never changes; its z follows its depth once it is
+/// generated).
+Room enteringRecord(const RoomId& id, RoomKind kind, const std::string& floor, const catalog::SystemName& system,
+                    const RoomTemplate& roomTemplate) {
+    Room room;
+    room.id = id;
+    room.kind = kind;
+    room.floor = floor;
+    room.sections = {system};
+    const Footprint base = interiorFootprint(roomTemplate, 0);
+    room.minXMm = base.minXMm;
+    room.maxXMm = base.maxXMm;
+    room.minZMm = base.minZMm;
+    room.maxZMm = base.maxZMm;
+    return room;
 }
 
 } // namespace
@@ -430,6 +423,162 @@ Expected<WorldPlan> generateRoomContent(const RoomSelection& selection, const Wo
     return plan;
 }
 
+Expected<EnteringSystem> enteringSystem(const RoomSelection& selection, std::span<const WorldData> rooms,
+                                        const std::map<catalog::SystemName, std::vector<std::string>>& tags,
+                                        const SystemsData& systems, const BuildingData& building) {
+    const auto refuse = [](std::string message) {
+        return makeError(ErrorCode::InvalidArgument, std::move(message), "generate");
+    };
+    if (selection.room.kind() != RoomIdKind::System || selection.room.isExpansion()) {
+        return refuse("a selection is of a system's room, room:<system>, not " + selection.room.toString());
+    }
+    const catalog::SystemName& system = selection.room.system();
+    const WorldData* data = dataOf(rooms, system);
+    if (data == nullptr) {
+        return refuse("no room data for " + selection.room.toString());
+    }
+    if (Status status = checkRoomInput(selection, *data, false); !status) {
+        Error error = status.error();
+        error.code = ErrorCode::InvalidArgument;
+        return propagate(std::move(error));
+    }
+    EnteringSystem entering;
+    entering.selection = &selection;
+    entering.data = data;
+    const auto found = tags.find(system);
+    entering.classification = classify(
+        system, found != tags.end() ? std::span<const std::string>(found->second) : std::span<const std::string>(),
+        systems, building);
+    if (!entering.classification.hasRoom()) {
+        return refuse("the system " + system.str() + " gets no room (" +
+                      std::string(toString(entering.classification.kind())) + ")");
+    }
+    entering.floorOrder = building.order(entering.classification.floor).value_or(0);
+    return entering;
+}
+
+Expected<BuildingEntry> enterBuilding(std::vector<BuildingRoom> stored, std::vector<EnteringSystem>& entering,
+                                      const WorldConfig& config, const BuildingData& building) {
+    std::sort(entering.begin(), entering.end(), [](const EnteringSystem& a, const EnteringSystem& b) {
+        return std::tie(a.floorOrder, a.classification.entry.order, a.classification.entry.system) <
+               std::tie(b.floorOrder, b.classification.entry.order, b.classification.entry.system);
+    });
+    BuildingEntry entry;
+    entry.rooms = std::move(stored);
+    const auto rowsOf = [&](std::string_view floor) {
+        std::vector<Room> records;
+        for (const BuildingRoom& room : entry.rooms) {
+            records.push_back(room.record);
+        }
+        return floorRows(records, floor, building.layout);
+    };
+    const auto standing = [&](const RoomId& id) -> BuildingRoom* {
+        const auto found = std::find_if(entry.rooms.begin(), entry.rooms.end(),
+                                        [&](const BuildingRoom& room) { return room.id == id; });
+        return found != entry.rooms.end() ? &*found : nullptr;
+    };
+    // A section of a standing shared or arcade room, appended unless the room is closed (the system then waits).
+    const auto join = [&](BuildingRoom& room, const EnteringSystem& system) {
+        if (room.closed) {
+            entry.waiting.emplace_back(&system, room.id);
+            return;
+        }
+        room.entered.push_back(&system);
+        entry.digest.emplace_back(system.selection, room.data);
+    };
+    // The systems enter in that order (ADR-0013 §3, §7): each takes its own room, or a section of its floor's shared
+    // room or of the arcade room; a room is placed when it enters, so that the rooms after it stand east of it.
+    for (const EnteringSystem& system : entering) {
+        const catalog::SystemName& name = system.selection->room.system();
+        RoomKind kind = RoomKind::Console;
+        Expected<RoomId> id = system.selection->room;
+        std::string floor = system.classification.floor;
+        if (system.classification.kind() == SystemKind::Arcade) {
+            kind = RoomKind::Arcade;
+            id = RoomId::arcadeArea();
+            floor = std::string(kGroundFloor);
+        } else if (system.selection->distinctTitles < static_cast<std::uint64_t>(config.sharedRoomMinTitles)) {
+            kind = RoomKind::Shared;
+            id = RoomId::sharedArea(floor);
+        }
+        if (!id) {
+            return propagate(id.error());
+        }
+
+        if (kind == RoomKind::Console) {
+            Room record = enteringRecord(*id, kind, floor, name, system.data->roomTemplate);
+            if (const auto placement = placeEnteringRoom(record, rowsOf(floor), building.layout)) {
+                record.placement = *placement;
+                entry.rooms.push_back(BuildingRoom{*id, kind, floor, system.data, std::move(record), false, false,
+                                                   {&system}});
+                entry.digest.emplace_back(system.selection, system.data);
+                continue;
+            }
+            // The floor holds no more rooms (ADR-0013 §7): the system joins its floor's shared room when it stands;
+            // else every game of the system is unplaced for capacity, naming the room it would have had.
+            const auto shared = RoomId::sharedArea(floor);
+            if (BuildingRoom* sharedRoom = shared ? standing(*shared) : nullptr) {
+                join(*sharedRoom, system);
+                continue;
+            }
+            unplaceForCapacity(entry.capacity, *system.selection, *id);
+            entry.digest.emplace_back(system.selection, system.data);
+            continue;
+        }
+
+        if (BuildingRoom* room = standing(*id)) {
+            join(*room, system);
+            continue;
+        }
+        // The first section of a shared or arcade room: the room enters its floor.
+        const WorldData* data = system.data->sharedRoom.get();
+        if (data == nullptr || data->kind != kind) {
+            return makeError(ErrorCode::InvalidArgument,
+                             "no data of " + id->toString() + " for " + name.str() +
+                                 " (loadWorldData() of a system reads the room its section would stand in)",
+                             "generate");
+        }
+        Room record = enteringRecord(*id, kind, floor, name, data->roomTemplate);
+        entry.digest.emplace_back(system.selection, data);
+        if (const auto placement = placeEnteringRoom(record, rowsOf(floor), building.layout)) {
+            record.placement = *placement;
+            entry.rooms.push_back(BuildingRoom{*id, kind, floor, data, std::move(record), false, false, {&system}});
+            continue;
+        }
+        unplaceForCapacity(entry.capacity, *system.selection, *id);
+    }
+    return entry;
+}
+
+Expected<WorldPlan> generateEnteredRoom(const BuildingRoom& room, const WorldConfig& config, std::uint64_t worldSeed,
+                                        const BuildingData& building) {
+    std::vector<catalog::SystemName> sections;
+    std::vector<const RoomSelection*> selections;
+    for (const EnteringSystem* system : room.entered) {
+        sections.push_back(system->selection->room.system());
+        selections.push_back(system->selection);
+    }
+    Expected<WorldPlan> content = makeError(ErrorCode::InvalidArgument, "a room without a section", "generate");
+    if (room.kind == RoomKind::Console && selections.size() == 1) {
+        content = generateRoomContent(*selections.front(), config, worldSeed, *room.data);
+    } else {
+        SectionIndex index;
+        const RoomSelection merged = sectionsSelection(room.id, sections, selections, index);
+        content = generateRoomContent(merged, config, worldSeed, *room.data, &index);
+    }
+    if (!content) {
+        return propagate(content.error());
+    }
+    Room& record = content->rooms.front();
+    record.kind = room.kind;
+    record.floor = room.floor;
+    record.sections = std::move(sections);
+    record.generatorVersion = kGeneratorVersion;
+    record.placement = room.record.placement;
+    record.placement = followDepth(record, building.layout);
+    return content;
+}
+
 void appendRoom(WorldPlan& plan, WorldPlan&& room) {
     const auto move = [](auto& into, auto& from) {
         into.insert(into.end(), std::make_move_iterator(from.begin()), std::make_move_iterator(from.end()));
@@ -598,49 +747,22 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
     }
     const std::uint64_t seed = worldSeed(input.config, input.library);
 
-    // The rooms entering the building, in the order (floor order, systems.json order, system name).
-    std::vector<EnteringRoom> entering;
+    // The systems entering the building.
+    std::vector<detail::EnteringSystem> entering;
     std::set<catalog::SystemName> seen;
     for (const RoomSelection& selection : input.selections) {
-        if (selection.room.kind() != RoomIdKind::System || selection.room.isExpansion()) {
-            return refuse("a selection is of a system's room, room:<system>, not " + selection.room.toString());
-        }
-        const catalog::SystemName& system = selection.room.system();
-        if (!seen.insert(system).second) {
-            return refuse("two selections of the system " + system.str());
-        }
-        const WorldData* data = detail::dataOf(rooms, system);
-        if (data == nullptr) {
-            return refuse("no room data for " + selection.room.toString());
-        }
-        if (Status status = detail::checkRoomInput(selection, *data, false); !status) {
-            Error error = status.error();
-            error.code = ErrorCode::InvalidArgument;
-            return propagate(std::move(error));
+        if (selection.room.kind() == RoomIdKind::System && !seen.insert(selection.room.system()).second) {
+            return refuse("two selections of the system " + selection.room.system().str());
         }
         if (selection.titleKeyRule != input.selections.front().titleKeyRule) {
             return refuse("the selections follow different title-key rules");
         }
-        const auto tags = input.platformTags.find(system);
-        EnteringRoom room;
-        room.selection = &selection;
-        room.data = data;
-        room.classification =
-            classify(system,
-                     tags != input.platformTags.end() ? std::span<const std::string>(tags->second)
-                                                      : std::span<const std::string>(),
-                     systems, building);
-        if (!room.classification.hasRoom()) {
-            return refuse("the system " + system.str() + " gets no room (" +
-                          std::string(toString(room.classification.kind())) + ")");
+        auto system = detail::enteringSystem(selection, rooms, input.platformTags, systems, building);
+        if (!system) {
+            return propagate(system.error());
         }
-        room.floorOrder = building.order(room.classification.floor).value_or(0);
-        entering.push_back(std::move(room));
+        entering.push_back(std::move(*system));
     }
-    std::sort(entering.begin(), entering.end(), [](const EnteringRoom& a, const EnteringRoom& b) {
-        return std::tie(a.floorOrder, a.classification.entry.order, a.classification.entry.system) <
-               std::tie(b.floorOrder, b.classification.entry.order, b.classification.entry.system);
-    });
 
     GenerationResult result;
     WorldPlan& plan = result.plan;
@@ -652,129 +774,28 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
     plan.library = input.library;
     plan.seed = seed;
     plan.preset = input.config.preset;
-    // The systems enter in that order (ADR-0013 §3, §7): each takes its own room, or a section of its floor's shared
-    // room or of the arcade room; a room is placed when it enters, so that the rooms after it stand east of it.
-    detail::BuildingDigestInput digestInput;
-    std::vector<BuildingRoom> standing;
-    const auto rowsOf = [&](std::string_view floor) {
-        std::vector<Room> records;
-        for (const BuildingRoom& room : standing) {
-            records.push_back(room.standing);
-        }
-        return floorRows(records, floor, building.layout);
-    };
-    const auto standingRoom = [&](const RoomId& id) -> BuildingRoom* {
-        const auto found = std::find_if(standing.begin(), standing.end(),
-                                        [&](const BuildingRoom& room) { return room.id == id; });
-        return found != standing.end() ? &*found : nullptr;
-    };
-    for (const EnteringRoom& entry : entering) {
-        const catalog::SystemName& system = entry.selection->room.system();
-        RoomKind kind = RoomKind::Console;
-        Expected<RoomId> id = entry.selection->room;
-        std::string floor = entry.classification.floor;
-        if (entry.classification.kind() == SystemKind::Arcade) {
-            kind = RoomKind::Arcade;
-            id = RoomId::arcadeArea();
-            floor = std::string(kGroundFloor);
-        } else if (entry.selection->distinctTitles < static_cast<std::uint64_t>(input.config.sharedRoomMinTitles)) {
-            kind = RoomKind::Shared;
-            id = RoomId::sharedArea(floor);
-        }
-        if (!id) {
-            return propagate(id.error());
-        }
-
-        if (kind == RoomKind::Console) {
-            auto content = detail::generateRoomContent(*entry.selection, input.config, seed, *entry.data);
-            if (!content) {
-                return propagate(content.error());
-            }
-            Room& room = content->rooms.front();
-            room.kind = RoomKind::Console;
-            room.floor = floor;
-            room.sections = {system};
-            room.generatorVersion = kGeneratorVersion;
-            if (const auto placement = placeEnteringRoom(room, rowsOf(floor), building.layout)) {
-                room.placement = *placement;
-                standing.push_back(BuildingRoom{*id, kind, floor, entry.data, {&entry}, room, std::move(*content)});
-                digestInput.rooms.emplace_back(entry.selection, entry.data);
-                continue;
-            }
-            // The floor holds no more rooms (ADR-0013 §7): the system joins its floor's shared room when it stands;
-            // else every game of the system is unplaced for capacity, naming the room it would have had.
-            const auto shared = RoomId::sharedArea(floor);
-            if (BuildingRoom* sharedRoom = shared ? standingRoom(*shared) : nullptr) {
-                sharedRoom->sections.push_back(&entry);
-                digestInput.rooms.emplace_back(entry.selection, sharedRoom->data);
-                continue;
-            }
-            unplaceForCapacity(plan, *entry.selection, *id);
-            digestInput.rooms.emplace_back(entry.selection, entry.data);
-            continue;
-        }
-
-        if (BuildingRoom* room = standingRoom(*id)) {
-            room->sections.push_back(&entry);
-            digestInput.rooms.emplace_back(entry.selection, room->data);
-            continue;
-        }
-        // The first section of a shared or arcade room: the room enters its floor, at the template's base size until
-        // its sections are known (its width, which places the rooms after it, never changes).
-        const WorldData* data = entry.data->sharedRoom.get();
-        if (data == nullptr || data->kind != kind) {
-            return refuse("no data of " + id->toString() + " for " + system.str() +
-                          " (loadWorldData() of a system reads the room its section would stand in)");
-        }
-        Room room;
-        room.id = *id;
-        room.kind = kind;
-        room.floor = floor;
-        room.sections = {system};
-        const Footprint base = interiorFootprint(data->roomTemplate, 0);
-        room.minXMm = base.minXMm;
-        room.maxXMm = base.maxXMm;
-        room.minZMm = base.minZMm;
-        room.maxZMm = base.maxZMm;
-        digestInput.rooms.emplace_back(entry.selection, data);
-        if (const auto placement = placeEnteringRoom(room, rowsOf(floor), building.layout)) {
-            room.placement = *placement;
-            standing.push_back(BuildingRoom{*id, kind, floor, data, {&entry}, room, std::nullopt});
-            continue;
-        }
-        unplaceForCapacity(plan, *entry.selection, *id);
+    // The systems enter in the order (floor order, systems.json order, system name), each taking its own room or a
+    // section of its floor's shared room or of the arcade room (ADR-0013 §3, §7); then every room is generated.
+    auto entry = detail::enterBuilding({}, entering, input.config, building);
+    if (!entry) {
+        return propagate(entry.error());
     }
-    // Each shared and arcade room generated over its sections, its z following its depth.
-    for (BuildingRoom& room : standing) {
-        if (room.content) {
-            continue;
-        }
-        std::vector<catalog::SystemName> sections;
-        std::vector<const RoomSelection*> selections;
-        for (const EnteringRoom* entry : room.sections) {
-            sections.push_back(entry->selection->room.system());
-            selections.push_back(entry->selection);
-        }
-        detail::SectionIndex index;
-        const RoomSelection merged = detail::sectionsSelection(room.id, sections, selections, index);
-        auto content = detail::generateRoomContent(merged, input.config, seed, *room.data, &index);
+    for (const detail::BuildingRoom& room : entry->rooms) {
+        auto content = detail::generateEnteredRoom(room, input.config, seed, building);
         if (!content) {
             return propagate(content.error());
         }
-        Room& record = content->rooms.front();
-        record.kind = room.kind;
-        record.floor = room.floor;
-        record.sections = std::move(sections);
-        record.generatorVersion = kGeneratorVersion;
-        record.placement = room.standing.placement;
-        record.placement = followDepth(record, building.layout);
-        room.content = std::move(*content);
+        detail::appendRoom(plan, std::move(*content));
+        result.changes.roomsAdded.push_back(room.id);
+        for (const detail::EnteringSystem* system : room.entered) {
+            result.changes.systemsEntered.push_back({system->selection->room.system(), room.id});
+        }
     }
-    for (BuildingRoom& room : standing) {
-        detail::appendRoom(plan, std::move(*room.content));
-    }
+    plan.unplaced.insert(plan.unplaced.end(), entry->capacity.begin(), entry->capacity.end());
     detail::setFloors(plan, building);
 
+    detail::BuildingDigestInput digestInput;
+    digestInput.rooms = std::move(entry->digest);
     digestInput.config = input.config;
     digestInput.library = input.library;
     digestInput.seed = seed;
@@ -813,6 +834,8 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
     for (const Fixture& fixture : plan.fixtures) {
         changes.fixturesAdded.push_back(fixture.id);
     }
+    std::sort(changes.roomsAdded.begin(), changes.roomsAdded.end());
+    std::sort(changes.systemsEntered.begin(), changes.systemsEntered.end());
     auto after = planDigest(plan);
     if (!after) {
         return propagate(after.error());

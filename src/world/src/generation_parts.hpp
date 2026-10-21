@@ -1,8 +1,9 @@
 #pragma once
 
 // Private to rv_world (I3 step 9, I4 step 1): what the fresh generation (generation.cpp) and the incremental update
-// (incremental.cpp) share: the room-level generation beneath the building, the checks of their inputs, the building's
-// input digest and the context the validation judges their plans in.
+// (incremental.cpp) share: the room-level generation beneath the building, the systems' entry into the building (I4
+// step 6a), the checks of their inputs, the building's input digest and the context the validation judges their plans
+// in.
 
 #include <cstdint>
 #include <map>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/generation.hpp>
@@ -72,6 +74,78 @@ struct BuildingDigestInput {
 [[nodiscard]] Expected<WorldPlan> generateRoomContent(const RoomSelection& selection, const WorldConfig& config,
                                                       std::uint64_t worldSeed, const WorldData& data,
                                                       const SectionIndex* sections = nullptr);
+
+/// A system entering the building (ADR-0013 §3, §7): its selection, its own data (loadWorldData()'s: its console
+/// room's, with the data of the shared or arcade room it would take a section of), its classification and the order of
+/// its floor.
+struct EnteringSystem {
+    const RoomSelection* selection = nullptr;
+    const WorldData* data = nullptr;
+    Classification classification;
+    std::uint32_t floorOrder = 0;
+};
+
+/// The entering system of `selection` (classify() with its platform tags in `tags`), or why it cannot enter:
+/// InvalidArgument for a selection that is not of a system's room, a system without its own data in `rooms`, an
+/// excluded system or one on no floor, the inputs checkRoomInput() refuses.
+[[nodiscard]] Expected<EnteringSystem> enteringSystem(
+    const RoomSelection& selection, std::span<const WorldData> rooms,
+    const std::map<catalog::SystemName, std::vector<std::string>>& tags, const SystemsData& systems,
+    const BuildingData& building);
+
+/// A room of the building while systems enter it.
+struct BuildingRoom {
+    RoomId id;
+    RoomKind kind = RoomKind::Console;
+    std::string floor;
+    /// The data it is generated or updated from: a new console room's system's, a new shared or arcade room's first
+    /// section's WorldData::sharedRoom, a stored room's own (loadRoomData()).
+    const WorldData* data = nullptr;
+    /// Its record as it stands on its floor: a stored room's as stored; a new room's at the template's base size, placed
+    /// when it entered (its width, which places the rooms after it, never changes; its z follows its depth once it is
+    /// generated: generateEnteredRoom()).
+    Room record;
+    /// It stood in the previous plan.
+    bool stored = false;
+    /// A stored shared or arcade room that takes no section now: the update holds it (a section without a selection).
+    bool closed = false;
+    /// The systems that entered it, in the order they entered: a new room's sections, a stored room's new ones.
+    std::vector<const EnteringSystem*> entered;
+};
+
+/// What the entry of systems into a building decided (enterBuilding()).
+struct BuildingEntry {
+    /// The stored rooms as given, then the new rooms in the order they entered.
+    std::vector<BuildingRoom> rooms;
+    /// The games of the systems their floor had no place for, unplaced for capacity, naming the room each would have
+    /// had (ADR-0013 §7).
+    std::vector<UnplacedGame> capacity;
+    /// The systems whose shared or arcade room is closed, with that room: they do not enter.
+    std::vector<std::pair<const EnteringSystem*, RoomId>> waiting;
+    /// Every system that entered or found no place, with the data of the room it stands in (or would have had), for
+    /// the building's input digest.
+    std::vector<std::pair<const RoomSelection*, const WorldData*>> digest;
+};
+
+/// Enters `entering` (sorted here into the order floor order, systems.json order, system name) into a building whose
+/// rooms are `stored`: an arcade system takes a section of the arcade room on the ground floor; a system with fewer
+/// than config.sharedRoomMinTitles distinct titles a section of its floor's shared room; any other its console room. A
+/// section is appended to its room when the room stands (a closed one makes the system wait), else the room enters its
+/// floor with that first section; a new room is placed by placeEnteringRoom() over the rooms standing then (the stored
+/// ones and those that entered before it); a console room its floor has no place for joins the floor's shared room
+/// when it stands, else its games are unplaced for capacity, as are those of a shared or arcade room that finds no
+/// place. `entering` must outlive the result. Errors: InvalidArgument for a shared or arcade room without its data
+/// (WorldData::sharedRoom).
+[[nodiscard]] Expected<BuildingEntry> enterBuilding(std::vector<BuildingRoom> stored,
+                                                    std::vector<EnteringSystem>& entering, const WorldConfig& config,
+                                                    const BuildingData& building);
+
+/// A new room of an entry generated by I3's room-level rules (ADR-0010 §3 to §8) over its sections' selections (a
+/// shared or arcade room's ordered by section, sectionsSelection()), as a plan of that one room: its record with its
+/// kind, floor, sections, this generator's version and its placement, its z following its depth (followDepth()).
+/// Errors: those of the layout.
+[[nodiscard]] Expected<WorldPlan> generateEnteredRoom(const BuildingRoom& room, const WorldConfig& config,
+                                                      std::uint64_t worldSeed, const BuildingData& building);
 
 /// Moves the room and the elements of `room` (a one-room plan) into `plan`.
 void appendRoom(WorldPlan& plan, WorldPlan&& room);

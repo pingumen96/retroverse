@@ -45,18 +45,37 @@
 //     honour (which the update never applies), and the orphaned pins in orphanedPins.
 // An updated room's unplaced games are its selection's with their reasons (a duplicate's representative being the
 // placed game that represents its title), every placed game keeps its placement and no entry besides; it records this
-// generator's version. A selection for a system that has no room yet is refused (new systems enter the building with I4
-// step 6a). A system's selection goes to the room that holds its section (sticky: whatever its count now); a shared or
-// arcade room is updated with the selections of all its sections (ADR-0013 §6), and one given only some of them is held
-// as it is, as a room without a selection, and listed in the report's heldRooms with the sections it lacks (the plan
-// does not say which section an unplaced game was of). The plan records the highest of its rooms' generator versions,
-// the selections' sort-key version and the inputDigest of the inputs read (generationInputDigest(), over the rooms
-// given a selection; an update that gives some room no selection and changes nothing keeps the previous inputDigest,
-// which named more), so that an update of an unchanged catalog gives the previous plan byte for byte, whichever of its
-// rooms it is given. The change report lists the games added, the placements kept, the games newly unplaced, the
-// fixtures added, removed and moved, the dressing removed, the slots freed, the pins, the rooms kept and held, the
-// rebuild level (NoRebuild when no placement, fixture, light or dressing changed; a slot handed to an alias's identity
-// is a texture swap) and the digests before (the stored file's SHA-256: previousDigest) and after; the validation is
+// generator's version. A system's selection goes to the room that holds its section (sticky: whatever its count now); a
+// shared or arcade room is updated with the selections of all its sections (ADR-0013 §6), and one given only some of
+// them is held as it is, as a room without a selection, and listed in the report's heldRooms with the sections it lacks
+// (the plan does not say which section an unplaced game was of). A room whose system (or one of whose sections) has no
+// selection stands as it is (SC-06: unknown is not empty).
+// A system no room holds enters the building (ADR-0013 §3, §7; I4 step 6a) as it enters a fresh one, among the rooms
+// that stand, in the order (floor order, systems.json order, system name):
+//   - classified (classify(), with its platform tags), an arcade system takes a section of the arcade room, a system
+//     with fewer than sharedRoomMinTitles distinct titles a section of its floor's shared room, any other its console
+//     room;
+//   - a section is appended at the end of its room when the room stands (its titles new titles of that room, placed
+//     after the previous section's by the rules above), unless the room is given no selection of some section (held,
+//     or not updated): the system then waits, its selection not read, and the report lists it (systemsWaiting); a room
+//     kept as it is takes the section, its games room-kept;
+//   - a new room (a console room, or the shared or arcade room its first section opens) is generated as a fresh
+//     building generates it, and placed at the east end of the shorter row of its floor (a floor that held no room
+//     appears), its x fixed, its z following its depth;
+//   - a console room its floor has no place for joins the floor's shared room when that stands, else the system's
+//     games are unplaced for capacity, naming the room it would have had (expansion rooms are I4b's), as are those of a
+//     shared or arcade room that finds no place; such entries of a system entering again give way to its entry now.
+// Nothing that stands moves: the stored rooms' floors, kinds, x, yaws and sections (new ones only appended), their
+// placements, and the hall's lights (derived, only appended as a floor's rooms reach further east).
+// The plan records the highest of its rooms' generator versions, the selections' sort-key version and the inputDigest
+// of the inputs read (generationInputDigest(), over the rooms given a selection and the systems that entered; an update
+// that gives some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an
+// update of an unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given, and an update
+// of the building of no room equals the fresh building of its selections. The change report lists the games added, the
+// placements kept, the games newly unplaced, the fixtures added, removed and moved, the dressing removed, the slots
+// freed, the pins, the rooms kept and held, the rooms added, the systems that entered and those that wait, the rebuild
+// level (NoRebuild when no placement, fixture, light or dressing changed; a slot handed to an alias's identity is a
+// texture swap) and the digests before (the stored file's SHA-256: previousDigest) and after; the validation is
 // validatePlan()'s as for a fresh plan, the pins it judges being the honoured and orphaned ones, the rooms kept judged
 // as kept.
 
@@ -100,8 +119,8 @@ struct UpdateInput {
     std::vector<GameAlias> aliases;
 };
 
-/// What an incremental update of a building reads: UpdateInput's with a selection per system to update (each of its
-/// system's room:<system>) and the systems' platform tags.
+/// What an incremental update of a building reads: UpdateInput's with a selection per system to update or to enter
+/// (each of its system's room:<system>) and the systems' platform tags.
 struct BuildingUpdateInput {
     catalog::LibraryId library;
     std::vector<RoomSelection> selections;
@@ -118,12 +137,14 @@ struct BuildingUpdateInput {
 [[nodiscard]] std::string roomKeepReason(const WorldPlan& plan, const Room& room, const WorldData& data);
 
 /// The previous building updated by the rules of the file's header; `rooms` holds the data of every room of the
-/// previous plan (loadRoomData(): its recorded family, theme pack and template), by its system. Errors:
-/// InvalidArgument for a previous plan of another library, a selection of a system without a room in it, two
-/// selections of one system, a room without data in `rooms` or with data of another family than its recorded one, a
-/// schema-1 plan without its file's digest or that cannot be lifted, the inputs generateBuilding() refuses; Unsupported
-/// for a previous plan of a newer schema or generator version (written by a newer Retroverse); those of the layout (a
-/// side-wall module that does not fit its socket: ValidationFailed).
+/// previous plan (loadRoomData(): its recorded family, theme pack and template), by its system, and of every system
+/// entering the building (loadWorldData() of the system with its platform tags: its console room's with the room its
+/// section would stand in). Errors: InvalidArgument for a previous plan of another library, a selection that is not of
+/// a system's room, two selections of one system, a room without data in `rooms` or with data of another family than
+/// its recorded one, a system entering without its own data or excluded, a schema-1 plan without its file's digest or
+/// that cannot be lifted, the inputs generateBuilding() refuses; Unsupported for a previous plan of a newer schema or
+/// generator version (written by a newer Retroverse); those of the layout (a side-wall module that does not fit its
+/// socket: ValidationFailed).
 [[nodiscard]] Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, const BuildingData& building,
                                                         const SystemsData& systems, std::span<const WorldData> rooms);
 

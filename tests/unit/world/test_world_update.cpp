@@ -874,7 +874,8 @@ TEST_CASE("world/update: another seed, preset or generator major needs an explic
     input.previous.rooms.front().generatorVersion = {0, 9};
     refused(*rv::world::update(input, snesData()), "generator", input.previous);
 
-    // A plan of a newer generator or schema is refused outright, as are a plan of another library or room.
+    // A plan of a newer generator or schema is refused outright, as are a plan of another library and a selection of
+    // no system's room.
     input.previous = plan;
     input.previous.generatorVersion = {rv::world::kGeneratorVersion.major, rv::world::kGeneratorVersion.minor + 1};
     CHECK(rv::world::update(input, snesData()).error().code == rv::ErrorCode::Unsupported);
@@ -885,8 +886,11 @@ TEST_CASE("world/update: another seed, preset or generator major needs an explic
     input.library = *rv::catalog::LibraryId::parse("other");
     CHECK(rv::world::update(input, snesData()).error().code == rv::ErrorCode::InvalidArgument);
     input.library = rv::test::world::library();
-    input.previous.rooms.clear();
+    // A selection of an expansion's room, not of a system's (a system without a room enters the building: I4 step
+    // 6a).
+    input.selection.room = *rv::world::RoomId::forSystem(rv::test::world::snes(), 2);
     CHECK(rv::world::update(input, snesData()).error().code == rv::ErrorCode::InvalidArgument);
+    input.selection = selection;
     // A selection readRoomSelection() would refuse: titles out of priority order, a game twice, a stray representative.
     input.previous = plan;
     std::reverse(input.selection.titles.begin(), input.selection.titles.end());
