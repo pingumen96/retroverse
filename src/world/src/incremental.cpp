@@ -819,12 +819,28 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         selectionsOf[room->id].push_back(&selection);
     }
     // A shared or arcade room is updated with the selections of all its sections: the plan does not say which section
-    // an unplaced game was of. A room some of whose sections have none is left as it is, as a room without a selection
-    // (its sections' selections given are not read).
+    // an unplaced game was of, and a new title's predecessor may be another section's. A room some of whose sections
+    // have none is held as it is, as a room without a selection (its sections' selections given are not read), and
+    // the report says so (heldRooms), naming the sections without one.
+    std::vector<KeptRoom> heldRooms;
     for (auto it = selectionsOf.begin(); it != selectionsOf.end();) {
         const auto room = std::find_if(previous.rooms.begin(), previous.rooms.end(),
                                        [&](const Room& candidate) { return candidate.id == it->first; });
-        it = it->second.size() < room->sections.size() ? selectionsOf.erase(it) : std::next(it);
+        if (it->second.size() == room->sections.size()) {
+            ++it;
+            continue;
+        }
+        std::string missing;
+        std::size_t count = 0;
+        for (const catalog::SystemName& section : room->sections) {
+            if (!selected.contains(section)) {
+                missing += (missing.empty() ? "" : ", ") + section.str();
+                ++count;
+            }
+        }
+        heldRooms.push_back({room->id, std::string("no selection of its section") + (count == 1 ? " " : "s ") +
+                                           missing + ": the selections of its other sections are not read"});
+        it = selectionsOf.erase(it);
     }
     // Every room has its data, of its recorded family.
     std::map<RoomId, const WorldData*> dataOf;
@@ -1046,6 +1062,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     changes.dressingRemoved = sortedUnique(std::move(dressingRemoved));
     changes.slotsFreed = sortedUnique(std::move(slotsFreed));
     changes.keptRooms = std::move(keptRooms);
+    changes.heldRooms = std::move(heldRooms); // by room id (selectionsOf's order)
     // A slot handed to an alias's identity is a texture swap: no geometry changes for it.
     const bool geometry = newItems || !changes.dressingRemoved.empty() || !changes.fixturesAdded.empty() ||
                           !changes.fixturesRemoved.empty() || !changes.fixturesMoved.empty() ||

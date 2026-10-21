@@ -85,7 +85,8 @@ enum class RebuildLevel : std::uint8_t {
 }
 
 /// A room an update kept as it is (ADR-0013 §5), and why: its template version is no longer current, its fixtures'
-/// levels are no longer their prefabs', or another generator major made it.
+/// levels are no longer their prefabs', or another generator major made it. Also a shared or arcade room an update
+/// held as it is (ChangeReport::heldRooms), the reason naming its sections without a selection.
 struct KeptRoom {
     RoomId room;
     std::string reason;
@@ -121,6 +122,11 @@ struct ChangeReport {
     std::string regenerationReason;
     /// The rooms an update kept as they are (their games it does not hold unplaced as room-kept), by room.
     std::vector<KeptRoom> keptRooms;
+    /// The shared and arcade rooms an update left as they are because some of their sections had no selection (the
+    /// selections given for their other sections not read: the plan does not say which section an unplaced game was
+    /// of), by room, each reason naming those sections (I4 step 4). Their entries stand as they were, none of their
+    /// games is unplaced for it, and an update given every section's selection updates them.
+    std::vector<KeptRoom> heldRooms;
     /// The plan digests before (empty without a previous plan) and after.
     std::string digestBefore;
     std::string digestAfter;

@@ -5,7 +5,8 @@
 // generated and updated as a console room's whose sort keys lead with the section (the face-out titles by priority
 // across the sections, each section's titles after the previous section's, a new title after its predecessor in its
 // section); a system crossing the threshold moving nothing (sticky); a shared room updated only with every section's
-// selection; the count rule; a full floor's console room joining the floor's shared room; their scenes' signs.
+// selection (one given only some of them held and reported); the count rule; a full floor's console room joining the
+// floor's shared room; their scenes' signs.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -539,13 +540,45 @@ TEST_CASE("world/shared rooms: a system crossing the threshold moves nothing; an
     }
     CHECK(*rv::world::roomContentDigest(updated.plan, *RoomId::parse("room:gb")) ==
           *rv::world::roomContentDigest(plan, *RoomId::parse("room:gb")));
+    CHECK(unchanged.changes.heldRooms.empty());
+    CHECK(updated.changes.heldRooms.empty());
 
-    // pokemini's selection without pocketlab's: the shared room is left as it is (the plan does not say which section
-    // an unplaced game was of), its selection not read: nothing changes.
+    // pokemini's selection without pocketlab's: the shared room is held as it is (the plan does not say which section
+    // an unplaced game was of), its selection not read, and the report names it with the section it lacks: nothing
+    // changes, nothing is written.
+    const std::string heldReason = "no selection of its section pocketlab: the selections of its other sections are "
+                                   "not read";
     const GenerationResult partial = update(plan, {pokemini}, building.input.config, tags);
     CHECK(partial.validation.passed());
+    CHECK(partial.changes.outcome == rv::world::GenerationOutcome::Updated);
     CHECK(partial.changes.added.empty());
     CHECK(partial.plan == plan);
+    CHECK(partial.changes.digestAfter == partial.changes.digestBefore);
+    CHECK(partial.changes.keptRooms.empty());
+    REQUIRE(partial.changes.heldRooms.size() == 1);
+    CHECK(partial.changes.heldRooms.front().room == shared);
+    CHECK(partial.changes.heldRooms.front().reason == heldReason);
+
+    // With gb's grown selection too: gb's room takes its new titles, the shared room is held and reported alike.
+    RoomSelection gb = building.input.selections[0];
+    REQUIRE(gb.room.system() == name("gb"));
+    rv::core::Random gbRandom(3401);
+    for (int i = 0; i < 3; ++i) {
+        rv::test::world::addTitle(gb, gbRandom, taken);
+    }
+    const GenerationResult mixed = update(plan, {gb, pokemini}, building.input.config, tags);
+    CHECK(mixed.validation.passed());
+    CHECK(mixed.changes.added.size() == 3);
+    for (const rv::world::Placement& placement : mixed.plan.placements) {
+        if (std::find(mixed.changes.added.begin(), mixed.changes.added.end(), placement.game) !=
+            mixed.changes.added.end()) {
+            CHECK(placement.slot.fixture().room() == *RoomId::parse("room:gb"));
+        }
+    }
+    CHECK(*rv::world::roomContentDigest(mixed.plan, shared) == *rv::world::roomContentDigest(plan, shared));
+    REQUIRE(mixed.changes.heldRooms.size() == 1);
+    CHECK(mixed.changes.heldRooms.front().room == shared);
+    CHECK(mixed.changes.heldRooms.front().reason == heldReason);
 }
 
 TEST_CASE("world/shared rooms: on a full floor a console room joins the floor's shared room", "[world][shared_rooms]") {
