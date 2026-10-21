@@ -676,6 +676,49 @@ TEST_CASE("app/catalog_worker: every request is answered: a game the catalog no 
     }
 }
 
+TEST_CASE("app/catalog_worker: the directory's favourites and recent games come from the worker, as the query ranks them",
+          "[app][catalog_worker]") {
+    // I4 step 7b: AppCatalog::requestRecentGames on the catalog worker (SqliteCatalogQuery::favoritesAndRecent, ES-DE's
+    // <lastplayed> in the machine's zone), answered once; a later request replaces one still queued.
+    const ImportedFixture f("rv-catalog-recent");
+    EsdeAppCatalog catalog(f.options());
+    rv::ui::QuickCatalogModel model(catalog.source(), 6);
+    settle(catalog, model);
+    CHECK_FALSE(catalog.takeRecentGames().has_value());
+    REQUIRE(catalog.requestRecentGames(rv::catalog::kDefaultRecentGames));
+    REQUIRE(catalog.requestRecentGames(rv::catalog::kDefaultRecentGames));
+    CHECK(catalog.busy()); // a lockstep frame waits for it
+    settle(catalog, model);
+    auto answer = catalog.takeRecentGames();
+    REQUIRE(answer.has_value());
+    REQUIRE(answer->has_value());
+    CHECK_FALSE(catalog.takeRecentGames().has_value()); // once
+    // The same list the query gives on a reader of the catalog.
+    auto database = f.openDatabase();
+    auto reader = database.openReader();
+    REQUIRE(reader.has_value());
+    auto query = rv::catalog_db::SqliteCatalogQuery::open(std::move(*reader));
+    REQUIRE(query.has_value());
+    rv::catalog::RecentGamesQuery recent;
+    recent.localToUtc =
+        rv::catalog::machineLocalTimeToUtc().value_or(rv::catalog::fixedOffsetLocalTimeToUtc(std::chrono::minutes(0)));
+    auto expected = (*query)->favoritesAndRecent(recent);
+    REQUIRE(expected.has_value());
+    REQUIRE_FALSE(expected->empty());
+    REQUIRE((*answer)->size() == expected->size());
+    for (std::size_t index = 0; index < expected->size(); ++index) {
+        CHECK((**answer)[index].id == (*expected)[index].id);
+        CHECK((**answer)[index].favorite == (*expected)[index].favorite);
+    }
+    CHECK((**answer).front().favorite); // the fixture's favourite first
+    // The systems' full names for the directory's rooms ("" for a system the catalog does not know).
+    CHECK_FALSE(catalog.systemFullName(rv::catalog::SystemName::parse("gb").value()).empty());
+    CHECK(catalog.systemFullName(rv::catalog::SystemName::parse("vectrex").value()).empty());
+    // After the worker stopped, a request asks nothing.
+    catalog.shutdown();
+    CHECK_FALSE(catalog.requestRecentGames(rv::catalog::kDefaultRecentGames));
+}
+
 TEST_CASE("app/catalog_worker: every blocker code the launch resolution reports has the card's sentence",
           "[app][catalog_worker]") {
     // The codes rv_catalog's resolution, rv_esde's translation and the app report: each string literal that follows a

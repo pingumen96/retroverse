@@ -65,15 +65,22 @@ struct SessionJob {
 };
 /// The catalog's refresh (I3 step 13r): one at a time.
 struct RefreshJob {};
-using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob>;
+/// The directory's favourites and recent games (I4 step 7b).
+struct RecentJob {
+    std::uint64_t serial = 0;
+    std::size_t limit = 0;
+};
+using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob, RecentJob>;
 
 /// What a slice boundary of a refresh may answer: never the refresh itself; while the import's write transaction is
-/// open, only reads (lists on the worker's reader, readiness), as launches and session writes use the writer.
+/// open, only reads (lists, the favourites and recent games on the worker's reader, readiness), as launches and session
+/// writes use the writer.
 [[nodiscard]] bool servableDuringRefresh(const Job& job, bool writing) noexcept {
     if (std::holds_alternative<RefreshJob>(job)) {
         return false;
     }
-    return !writing || std::holds_alternative<QueryJob>(job) || std::holds_alternative<ReadinessJob>(job);
+    return !writing || std::holds_alternative<QueryJob>(job) || std::holds_alternative<ReadinessJob>(job) ||
+           std::holds_alternative<RecentJob>(job);
 }
 
 /// The launch state of a resolution, as the card shows it.
@@ -515,6 +522,38 @@ private:
         m_shared->post([&](CatalogResults& results) {
             if (!results.list || results.list->serial <= list.serial) {
                 results.list = std::move(list);
+            }
+        });
+    }
+
+    void handle(RecentJob& job) {
+        const Clock::time_point start = Clock::now();
+        if (!m_localToUtc) {
+            // One converter for the worker's thread (it keeps the zone's intervals it has read).
+            if (auto machine = catalog::machineLocalTimeToUtc()) {
+                m_localToUtc = std::move(*machine);
+            } else {
+                spdlog::warn("Catalog: the machine's time zone cannot be read ({}); ES-DE's <lastplayed> is read as UTC",
+                             machine.error().toString());
+                m_localToUtc = catalog::fixedOffsetLocalTimeToUtc(std::chrono::minutes(0));
+            }
+        }
+        catalog::RecentGamesQuery query;
+        query.limit = job.limit;
+        query.localToUtc = m_localToUtc;
+        RecentGamesList list;
+        list.serial = job.serial;
+        if (auto games = m_query->favoritesAndRecent(query)) {
+            list.games = std::move(*games);
+        } else {
+            list.error = games.error();
+            spdlog::warn("Catalog: the favourites and recent games cannot be read: {}", games.error().toString());
+        }
+        list.milliseconds = millisecondsSince(start);
+        spdlog::debug("Catalog: {} favourite or recent game(s) in {:.1f} ms", list.games.size(), list.milliseconds);
+        m_shared->post([&](CatalogResults& results) {
+            if (!results.recentGames || results.recentGames->serial <= list.serial) {
+                results.recentGames = std::move(list);
             }
         });
     }
@@ -962,6 +1001,8 @@ private:
     std::unique_ptr<catalog_db::SqliteCatalogQuery> m_query;
     std::unique_ptr<CatalogLaunchLibrary> m_library;
     std::optional<Error> m_libraryError;
+    /// ES-DE's <lastplayed> to UTC for the favourites and recent games, made on first use (I4 step 7b).
+    catalog::LocalTimeToUtc m_localToUtc;
     /// The systems with games, by name.
     std::map<std::string, CatalogSystem, std::less<>> m_systems;
     std::map<std::string, launcher::LaunchChoice, std::less<>> m_assigned;
@@ -1020,6 +1061,16 @@ void CatalogWorker::query(std::uint64_t serial, catalog::CatalogQuery query) {
         // Only the latest list matters (typing coalesces): a query still queued is replaced.
         std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<QueryJob>(job); });
         m_shared->jobs.emplace_back(QueryJob{serial, std::move(query), Clock::now()});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::recentGames(std::uint64_t serial, std::size_t limit) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        // Only the latest answer matters: one still queued is replaced.
+        std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<RecentJob>(job); });
+        m_shared->jobs.emplace_back(RecentJob{serial, limit});
     }
     m_shared->work.notify_one();
 }
