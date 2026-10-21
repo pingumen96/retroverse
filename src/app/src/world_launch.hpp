@@ -40,9 +40,9 @@ public:
     /// The plan of the room shown (its where-is index for the quick catalog's card), or none (no room).
     void setPlan(const world::WorldPlan* plan);
 
-    /// Before the frame's interaction: the room's placement given to the quick catalog when it changed, a "Mostra
-    /// nella stanza" taken to its item, the launch's end given to the interaction. `walker`: the walker's pose as the
-    /// frame starts.
+    /// Before the frame's interaction: the room's placement given to the quick catalog when the plan or the room that
+    /// holds the eye changed (the card shown fills again), a "Mostra nella stanza" taken to its item, the launch's end
+    /// given to the interaction. `walker`: the walker's pose as the frame starts.
     void beforeInteraction(ProductUi& product, WorldHover& hover, const scene::WalkerPose& walker, std::uint64_t frame);
     /// After it: Avvia (`result.launch`) asked of the product UI, the restore after a launch recorded. `walker`: the
     /// pose the frame leaves the walker at (the result's, else the frame's start).
@@ -56,9 +56,10 @@ public:
 
 private:
     std::optional<world::PlanIndex> m_index;
-    /// Changes of the plan shown, and the last one given to the product UI.
+    /// Changes of the plan shown, and the last one given to the product UI with the interaction's room it was given in.
     std::uint64_t m_revision = 0;
     std::uint64_t m_given = 0;
+    std::optional<world::RoomId> m_givenRoom;
     /// A launch asked of the product UI and not ended yet.
     bool m_launching = false;
     RoomLaunchLog m_log;
