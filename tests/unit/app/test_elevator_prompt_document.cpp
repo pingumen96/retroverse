@@ -69,3 +69,33 @@ TEST_CASE("app/elevator_prompt_document: the prompt names the interact key or bu
     CHECK(rv::app::gamepadButtonLabel(rv::input::GamepadButton::Back) ==
           rv::input::gamepadButtonName(rv::input::GamepadButton::Back));
 }
+
+TEST_CASE("app/elevator_prompt_document: the prompt shows to a walker in the elevator's zone that faces its doors",
+          "[app][elevator_prompt]") {
+    // A floor's elevator as the floor build gives it (its frame: the hall's west end): the zone 1.5 m deep and 2 m wide
+    // before the doors, whose middle is on the west wall; the arrival point 1.2 m east of it facing east (yaw 90).
+    const rv::core::Aabb zone{glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(1.5f, 2.2f, 1.0f)};
+    const glm::vec3 doors(0.025f, 0.0f, 0.0f);
+    const glm::vec3 arrival(1.2f, 0.0f, 0.0f);
+    constexpr float kDegrees = 3.14159265f / 180.0f;
+    // At the arrival point facing the hall, the doors behind: no prompt; turned to them: the prompt.
+    CHECK_FALSE(rv::app::facesElevator(arrival, 90.0f * kDegrees, zone, doors));
+    CHECK(rv::app::facesElevator(arrival, -90.0f * kDegrees, zone, doors));
+    CHECK(rv::app::facesElevator(arrival, -135.0f * kDegrees, zone, doors));
+    CHECK(rv::app::facesElevator(arrival, -45.0f * kDegrees, zone, doors));
+    // Looking along the wall (north or south), or anywhere behind it: no prompt; 75 degrees off the doors: the prompt.
+    CHECK_FALSE(rv::app::facesElevator(arrival, 0.0f, zone, doors));
+    CHECK_FALSE(rv::app::facesElevator(arrival, 180.0f * kDegrees, zone, doors));
+    CHECK_FALSE(rv::app::facesElevator(arrival, -5.0f * kDegrees, zone, doors));
+    CHECK(rv::app::facesElevator(arrival, -15.0f * kDegrees, zone, doors));
+    // In a corner of the zone, the doors' middle ahead to the left: the prompt.
+    CHECK(rv::app::facesElevator(glm::vec3(0.3f, 0.0f, 0.9f), -90.0f * kDegrees, zone, doors));
+    // Facing the doors from outside the zone: none; the zone of a frame that has none: none.
+    CHECK_FALSE(rv::app::facesElevator(glm::vec3(1.6f, 0.0f, 0.0f), -90.0f * kDegrees, zone, doors));
+    CHECK_FALSE(rv::app::facesElevator(glm::vec3(1.2f, 0.0f, 1.1f), -90.0f * kDegrees, zone, doors));
+    CHECK_FALSE(rv::app::facesElevator(arrival, -90.0f * kDegrees, rv::core::Aabb{}, doors));
+    // A half-turned frame (a start room in the south row): the zone and the doors turned with it, east now -X.
+    const rv::core::Aabb turned{glm::vec3(-1.5f, 0.0f, -1.0f), glm::vec3(0.0f, 2.2f, 1.0f)};
+    CHECK(rv::app::facesElevator(-arrival, 90.0f * kDegrees, turned, -doors));
+    CHECK_FALSE(rv::app::facesElevator(-arrival, -90.0f * kDegrees, turned, -doors));
+}

@@ -528,6 +528,8 @@ TEST_CASE("app/world_build: a ride's floor: any floor of the plan, the elevator'
     CHECK(framed.arrival.yawDeg == 90.0f);
     CHECK(glm::length(framed.elevatorZone.min - (hallOrigin + glm::vec3(0.0f, 0.0f, -1.0f))) < 1e-5f);
     CHECK(glm::length(framed.elevatorZone.max - (hallOrigin + glm::vec3(1.5f, 2.2f, 1.0f))) < 1e-5f);
+    // The doors' middle: the elevator's frame on the west wall, 50 mm proud of it.
+    CHECK(glm::length(framed.elevatorDoors - (hallOrigin + glm::vec3(0.025f, 0.0f, 0.0f))) < 1e-5f);
 
     const rv::app::FloorSources sources;
     const auto floorOf = [&](std::optional<rv::world::RoomId> startRoom, std::string floor) {
@@ -563,6 +565,8 @@ TEST_CASE("app/world_build: a ride's floor: any floor of the plan, the elevator'
     CHECK(ground.rooms.empty());
     CHECK(glm::length(ground.arrival.position - glm::vec3(1.2f, 1.65f, 0.0f)) < 1e-5f);
     CHECK(glm::length(ground.elevatorZone.min - glm::vec3(0.0f, 0.0f, -1.0f)) < 1e-5f);
+    CHECK(glm::length(ground.elevatorDoors - glm::vec3(0.025f, 0.0f, 0.0f)) < 1e-5f);
+    CHECK(glm::length(gen4.elevatorDoors - glm::vec3(0.025f, 0.0f, 0.0f)) < 1e-5f);
     // A floor the plan lacks: nothing to show.
     const WorldBuild missing = floorOf(std::nullopt, "gen7");
     CHECK_FALSE(missing.plan.has_value());

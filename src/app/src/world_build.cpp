@@ -634,6 +634,20 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     return core::Aabb{glm::min(a, b), glm::max(a, b)};
 }
 
+/// The middle of the elevator's doors of `hall` on the floor (its frame on the west wall), in the frame of the room
+/// standing at `start` (none: the floor's).
+[[nodiscard]] glm::vec3 elevatorDoorsPoint(const world::Hall& hall, const std::optional<world::RoomPlacement>& start) {
+    const world::Footprint& frame = hall.elevator;
+    glm::vec3 point(static_cast<float>(meters(frame.minXMm + frame.maxXMm) / 2.0), 0.0f,
+                    static_cast<float>(meters(frame.minZMm + frame.maxZMm) / 2.0));
+    if (start) {
+        const float sign = start->yawHalfTurns % 2 == 0 ? 1.0f : -1.0f;
+        const glm::vec3 origin(static_cast<float>(meters(start->xMm)), 0.0f, static_cast<float>(meters(start->zMm)));
+        point = glm::vec3(sign * (point.x - origin.x), 0.0f, sign * (point.z - origin.z));
+    }
+    return point;
+}
+
 /// A scene file's camera (its position, yaw and pitch; the lens left as the scene's default).
 [[nodiscard]] scene::CameraSetup cameraOf(const Json& camera) {
     scene::CameraSetup setup;
@@ -1212,6 +1226,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         // I4 step 7b: the elevator's zone and the arrival camera (the floor scene's camera, moved with it), in the
         // scene's frame.
         build.elevatorZone = elevatorZoneBox(sceneBuild->hall, startPlacement);
+        build.elevatorDoors = elevatorDoorsPoint(sceneBuild->hall, startPlacement);
         build.arrival = cameraOf(sceneBuild->sceneFile["camera"]);
         if (startPlacement) {
             // The start room's doorway camera, as its standalone scene has it (ADR-0013 §9: --start-room), seeing as
@@ -1397,19 +1412,14 @@ std::optional<std::filesystem::path> readableMediaRoot(const catalog::LibraryPro
 
 // --- The flow -------------------------------------------------------------------------------------------------------
 
-namespace {
-
-/// Each game's latest play session that counts, in seconds since 1970, read on the world's reader (the preview's: the
-/// CRT games' last plays); none when it cannot be read (logged: the items files' own then).
-[[nodiscard]] std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayedOf(WorldCatalogReader& reader) {
+std::optional<std::map<catalog::GameId, std::int64_t>> catalogLastPlayed(WorldCatalogReader& reader) {
     const std::lock_guard lock(reader.mutex);
     if (!reader.query) {
         return std::nullopt;
     }
     auto sessions = catalog_db::lastPlaySessions(reader.query->connection());
     if (!sessions) {
-        spdlog::warn("World: the play sessions cannot be read for the stored floor's CRTs: {}",
-                     sessions.error().toString());
+        spdlog::warn("World: the play sessions cannot be read for the floor's CRTs: {}", sessions.error().toString());
         return std::nullopt;
     }
     std::map<catalog::GameId, std::int64_t> seconds;
@@ -1418,8 +1428,6 @@ namespace {
     }
     return seconds;
 }
-
-} // namespace
 
 struct WorldFlow::Mailbox {
     std::mutex mutex;
@@ -1680,7 +1688,7 @@ void WorldFlow::update(AppCatalog& catalog) {
                     // root when it can be read now, each game's last play the catalog's (the CRT starts on the game
                     // the building's result chooses); the covers come from the cache alone all the same.
                     WorldBuild preview = previewWorld(paths, library, *stored, startRoom, readableMediaRoot(profile),
-                                                      lastPlayedOf(*reader));
+                                                      catalogLastPlayed(*reader));
                     if (job.cancelled()) {
                         return;
                     }

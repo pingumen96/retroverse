@@ -208,6 +208,9 @@ struct WorldBuild {
     /// the prompt shows and where a ride or the directory's own floor puts the walker (I4 step 7b, ADR-0013 §10).
     core::Aabb elevatorZone;
     scene::CameraSetup arrival;
+    /// The middle of the elevator's doors on the floor (y 0), in the scene's frame: the prompt shows to a walker in the
+    /// zone that faces them (elevator_prompt_ui.hpp's facesElevator()).
+    glm::vec3 elevatorDoors{0.0f};
     catalog::LibraryId library;
     /// The plan shown and its digest (the SHA-256 of its canonical text); none for NoPlan.
     std::optional<world::WorldPlan> plan;
@@ -279,9 +282,10 @@ struct FloorSources {
     std::optional<std::filesystem::path> mediaRoot;
     std::optional<std::filesystem::path> mediaRootPath;
     std::optional<std::filesystem::path> screenMediaRoot;
-    /// The preview's: each game's latest play session that counts (seconds since 1970, catalog_db::lastPlaySessions()),
-    /// which the CRT games' last plays take in place of the items files' (a game played since their last write: the CRT
-    /// starts on the game the building's result chooses, ADR-0012 §7). None: the items' own.
+    /// The preview's and a ride's (catalogLastPlayed()): each game's latest play session that counts (seconds since
+    /// 1970, catalog_db::lastPlaySessions()), which the CRT games' last plays take in place of the items files' (a game
+    /// played since their last write: the CRT starts on the game the building's result would choose, ADR-0012 §7).
+    /// None: the items' own.
     std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed;
 };
 
@@ -366,6 +370,12 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                                       const world::StoredPlan& stored, const std::optional<world::RoomId>& startRoom,
                                       const std::optional<std::filesystem::path>& screenMediaRoot = std::nullopt,
                                       std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed = std::nullopt);
+
+/// Each game's latest play session that counts, in seconds since 1970 (catalog_db::lastPlaySessions()), read on the
+/// world's `reader` under its mutex: FloorSources::lastPlayed of the floors built from the items files (the persisted
+/// start's preview; I4 step 7b: a ride's destination, whose games may have been played since the items were written).
+/// None when it cannot be read (logged: the items files' own then). On the worker pool.
+[[nodiscard]] std::optional<std::map<catalog::GameId, std::int64_t>> catalogLastPlayed(WorldCatalogReader& reader);
 
 /// The media root of the library `profile` describes as ES-DE's settings give it now (esde::resolveMediaRoot), when it
 /// can be read (a folder there): the preview's CRT games are read under it (I4 step 6b). On the worker pool: it reads
