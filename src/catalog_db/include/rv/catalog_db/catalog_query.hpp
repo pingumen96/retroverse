@@ -2,7 +2,7 @@
 
 // SqliteCatalogQuery: rv_catalog's ICatalogQuery (rv/catalog/catalog_query.hpp, query.hpp) on the catalog database
 // (ADR-0008 §5), and the other reads of the catalog: its systems with their counts, everything it holds about one game,
-// and a system's room snapshot (I3 step 2).
+// a system's room snapshot (I3 step 2) and the directory's favourites and recent games (I4 step 7a).
 //
 // A query is materialized in one read, on the connection the query object was given (a reader from
 // Database::openReader() on the app's catalog worker, or in retroverse-cli): the GameIds of the entries that pass its
@@ -186,6 +186,16 @@ public:
     /// snapshot and these within one read transaction on its own reader. Errors: SQLite's; ParseError for a row of no
     /// GameId.
     [[nodiscard]] Expected<std::optional<catalog::GameId>> aliasTarget(catalog::GameId alias);
+
+    /// The directory's favourites and recently played games (catalog::RecentGamesQuery, recent_games.hpp's rule;
+    /// src/recent_query.cpp), in one read of every library the catalog holds: the candidate entries (games of state Game,
+    /// not hidden, Available unless asked, that are favourites or were played) with their system's full name, ES-DE's
+    /// <lastplayed> and the start of Retroverse's last session that started each (the room snapshot's sessions), then
+    /// ranked by catalog::rankRecentGames(). idx_games has no index on these flags: the read visits every row once
+    /// (docs/i4/step-7a.md has its cost on 100,000 games). Errors: InvalidArgument for a query without its converter;
+    /// ParseError for a row the catalog cannot read back; those of every read.
+    [[nodiscard]] Expected<std::vector<catalog::RecentGame>>
+    favoritesAndRecent(const catalog::RecentGamesQuery& query) override;
 
     /// The connection it reads.
     [[nodiscard]] Connection& connection() noexcept;

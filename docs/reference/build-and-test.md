@@ -35,7 +35,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   GPU smoke tests' driver of the collection's texture arrays and static instance groups, `tests/collection_probe`:
   `--probe-scenario chunks|growth|groups`, `--probe-view lit|base-color`, `--probe-path static|dynamic`,
   `--probe-camera wall|close|moving`, `--probe-highlight`, `--probe-hide`, then `retroverse.exe`'s options; it logs to
-  `collection-probe.log`), the I1 spike executables
+  `collection-probe.log`), `rv_ui_probe.exe` (I4 step 7a: the product UI's screens from fixed models for the GPU smoke
+  tests, `tests/ui_probe`: the directory over the test room from `directory_fixture.hpp`'s model, driven by
+  `--input-script`; `--probe-shots <dir>` writes its checkpoints' screenshots, `--probe-report <json>` its checkpoints,
+  commands and RmlUi's log counts, then `retroverse.exe`'s options; it logs to `ui-probe.log`), the I1 spike executables
   (`spike_video.exe`, `spike_ui.exe`, `spike_launch.exe`, `spike_launch_tests.exe`) and the vcpkg DLLs (FFmpeg and RmlUi
   included: every preset enables the vcpkg features `video` and `ui`; `pugixml.dll` and `sqlite3.dll`).
   Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the source tree (target
@@ -79,9 +82,12 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   moved or uploaded again (also after an import that changed nothing), then rebuilt live around the fixture's
   `additions/` after "Aggiorna libreria" with room:gb's pictures taken over and the walker, who walked first, where
   the same walk ends without them, gen4 rebuilt as megadrive enters its new shared room with the walker kept in the
-  hall's frame, and gen5's new titles, only saved meanwhile, shown at its next start; the rooms, the doorways, the hall and the arrival point are read from the generated plan and its
-  floors' layout, never named) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
-  few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
+  hall's frame, and gen5's new titles, only saved meanwhile, shown at its next start; the rooms, the doorways, the
+  hall and the arrival point are read from the generated plan and its floors' layout, never named), the room goldens
+  (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
+  (`gpu.directory: ...`, I4 step 7a: `tests/input_scripts/directory_panel.json` over a fixed model, each checkpoint's
+  view and RmlUi focus, the focus's edge in its screenshot, Mostra nella stanza's command); the room's test files
+  repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
   the animations' frame budget and the benchmark path (`[benchmark]`,
   `tests/input_scripts/bench_snes_room.json`: 1,230 frames at 1920 x 1080 with `--no-vsync` and `--fixed-dt 0.016667`,
