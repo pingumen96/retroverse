@@ -2,7 +2,8 @@
 //   - areas: tests/smoke/scenes/two_areas.json, two areas each lit by its own key spot, rendered from a spawn in each
 //     and from a variant without areas: from the west only the west's pool is lit (the east's shows the ambient
 //     alone), from the east the reverse, and without areas both, the run report naming the area, its lights and its
-//     key light;
+//     key light; the pillar of the eye's area shadowed by that area's key light (without areas the west spot is the
+//     only key light, so from the east the east pillar casts no shadow);
 //   - floor: the building fixture (tests/fixtures/esde/building) recorded as the library of the case's data directory,
 //     imported and planned with retroverse-cli (worldplan generate), gen4's floor written with worldplan show --floor
 //     gen4 --scene, and retroverse.exe --scene of it walking tests/input_scripts/floor_walk_into_room.json from the
@@ -205,6 +206,28 @@ TEST_CASE("world floor: areas: the renderer packs the lights of the area that ho
     const glm::dvec2 cool = redBlue(east.image, probe(fromEast, eastPool));
     CHECK(warm.x > warm.y);
     CHECK(cool.y > cool.x);
+
+    // The shadow-mapped light is the eye's area's key light: each pillar's shadow (the shadow of its top's centre, cast
+    // towards the viewer) is dark beside the same point mirrored across its spot's axis, lit alike but unshadowed. The
+    // scene without areas shadow-maps the west spot alone (the first caster of the list): from the east, the east
+    // pillar casts nothing there.
+    const glm::vec3 westShadow(-4.913f, 0.0f, 2.13f);
+    const glm::vec3 westBeside(-3.087f, 0.0f, 2.13f);
+    const glm::vec3 eastShadow(4.913f, 0.0f, 2.13f);
+    const glm::vec3 eastBeside(3.087f, 0.0f, 2.13f);
+    const double westShade = lumaOf(west, fromWest, westShadow) / lumaOf(west, fromWest, westBeside);
+    const double eastShade = lumaOf(east, fromEast, eastShadow) / lumaOf(east, fromEast, eastBeside);
+    const double westShadePlain =
+        lumaOf(bothFromWest, fromWest, westShadow) / lumaOf(bothFromWest, fromWest, westBeside);
+    const double eastShadePlain =
+        lumaOf(bothFromEast, fromEast, eastShadow) / lumaOf(bothFromEast, fromEast, eastBeside);
+    INFO("shadow beside lit floor: from the west " << westShade << " (" << westShadePlain
+                                                   << " without areas), from the east " << eastShade << " ("
+                                                   << eastShadePlain << " without areas)");
+    CHECK(westShade < 0.5);
+    CHECK(eastShade < 0.5);
+    CHECK(westShadePlain < 0.5);
+    CHECK(eastShadePlain > 0.85);
 }
 
 TEST_CASE("world floor: a walk from the elevator along the hall into a room, each area lit by its own lights",

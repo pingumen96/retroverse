@@ -1,8 +1,10 @@
 // I4 step 3's areas (ADR-0013 §9): two areas side by side on one floor, each lit by its own key spot, a warm one in the
 // west and a cool one in the east, neither reaching the other's pool (range 8 m from 3.5 m up, 8 m apart). A view
 // from the west packs the west area's light alone, from the east the east's: the other pool shows the ambient only. A
-// grey floor and a pillar under each spot (whose shadow the area's key light casts). tests/smoke/test_world_floor.cpp
-// renders it from a spawn in each area and from a variant without areas (both lights packed).
+// grey floor and a pillar under each spot, south of it and to the outer side, whose shadow the area's key light casts
+// towards the viewer (about (+-4.91, 0, 2.13): the shadow of its top's centre). Without areas the west spot alone is
+// the key light, so from the east the east pillar casts no shadow. tests/smoke/test_world_floor.cpp renders it from a
+// spawn in each area and from a variant without areas (both lights packed).
 {
   "schemaVersion": 1,
   "name": "two_areas",
@@ -24,9 +26,9 @@
   "objects": [
     {"id": "floor", "primitive": "box", "params": {"size": [24.0, 0.02, 20.0]}, "position": [0.0, -0.01, 2.0],
      "material": "MAT_Concrete_Warm"},
-    {"id": "west pillar", "primitive": "box", "params": {"size": [0.4, 1.2, 0.4]}, "position": [-4.6, 0.6, -1.0],
+    {"id": "west pillar", "primitive": "box", "params": {"size": [0.4, 1.2, 0.4]}, "position": [-4.6, 0.6, 1.4],
      "material": "MAT_Concrete_Warm"},
-    {"id": "east pillar", "primitive": "box", "params": {"size": [0.4, 1.2, 0.4]}, "position": [4.6, 0.6, -1.0],
+    {"id": "east pillar", "primitive": "box", "params": {"size": [0.4, 1.2, 0.4]}, "position": [4.6, 0.6, 1.4],
      "material": "MAT_Concrete_Warm"}
   ]
 }
