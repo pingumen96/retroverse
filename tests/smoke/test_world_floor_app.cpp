@@ -711,10 +711,13 @@ TEST_CASE("world floor app: the arcade room and a floor's shared room show their
         CHECK(report.residency.labels == 0);
         CHECK(report.residency.coverFailures == 0);
         // The room's CRT is the hero CRT (mame's one clip playing in the arcade room; the shared room's sections have
-        // no clip: its colour bars).
+        // no clip: its colour bars), not another room's of the floor (the handheld floor's room:gb has a clip), with
+        // every section's placed games.
         CHECK(report.video.bound);
+        CHECK(report.video.screen == id + "/fx:hero.crt");
         if (id == "area:arcade") {
             CHECK(placementsIn(stored.plan, id) == 15);
+            CHECK(report.world.screenGames == 15);
             const auto played = rv::catalog::GameId::parse(report.video.gameId);
             REQUIRE(played.has_value());
             CHECK(std::any_of(stored.plan.placements.begin(), stored.plan.placements.end(),
@@ -724,6 +727,9 @@ TEST_CASE("world floor app: the arcade room and a floor's shared room show their
                               }));
         } else {
             CHECK(placementsIn(stored.plan, id) == 14);
+            CHECK(report.world.screenGames == 14); // both sections' games: pocketlab's 6, pokemini's 8
+            CHECK(report.video.gameId.empty());
+            CHECK(report.video.picture == "idle-pattern");
         }
         (void)requireScreenshot(run, doorway, kShotSize);
 
