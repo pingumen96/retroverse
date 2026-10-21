@@ -145,19 +145,36 @@ inline rv::world::GenerationResult generateBuildingOf(const BuildingWorld& world
     return std::move(*result);
 }
 
-/// The update of `previous` to `selections`: the stored rooms' data (loadRoomData()) and the entering systems'.
+/// How an update's test gives the stored rooms their data.
+enum class StoredRoomData {
+    /// loadRoomData() of each stored room, as the CLI and the app read it.
+    Recorded,
+    /// The data of each stored room's first section entering the building (loadWorldData(), which carries the shared
+    /// or arcade room it would take a section of): updateBuilding() takes a stored room's from it when its family and
+    /// theme pack are the room's (the same data, read once per system).
+    OfItsFirstSection,
+};
+
+/// The update of `previous` to `selections`: the stored rooms' data and the entering systems'.
 inline rv::world::GenerationResult updateBuildingOf(const BuildingWorld& world, const rv::world::WorldPlan& previous,
-                                                    const std::vector<rv::world::RoomSelection>& selections) {
+                                                    const std::vector<rv::world::RoomSelection>& selections,
+                                                    StoredRoomData stored = StoredRoomData::Recorded) {
     std::vector<rv::world::WorldData> rooms;
+    std::set<rv::catalog::SystemName> given;
     for (const rv::world::Room& room : previous.rooms) {
-        rooms.push_back(storedData(world.root, room, world.tagsOf(room.sections.front())));
+        const rv::catalog::SystemName& first = room.sections.front();
+        if (stored == StoredRoomData::Recorded) {
+            rooms.push_back(storedData(world.root, room, world.tagsOf(first)));
+        } else if (given.insert(first).second) {
+            rooms.push_back(enteringData(world.root, first.str(), world.tagsOf(first), world.templateId));
+        }
     }
     for (const rv::world::RoomSelection& selection : selections) {
         const rv::catalog::SystemName& system = selection.room.system();
-        const bool stored = std::any_of(previous.rooms.begin(), previous.rooms.end(), [&](const rv::world::Room& room) {
+        const bool standing = std::any_of(previous.rooms.begin(), previous.rooms.end(), [&](const rv::world::Room& room) {
             return std::find(room.sections.begin(), room.sections.end(), system) != room.sections.end();
         });
-        if (!stored) {
+        if (!standing && given.insert(system).second) {
             rooms.push_back(enteringData(world.root, system.str(), world.tagsOf(system), world.templateId));
         }
     }

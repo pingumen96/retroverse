@@ -26,6 +26,13 @@ the fixture's title counts) on five floors, whose floors' scenes are `../scene/b
 step 4 three console rooms (gb, psx, snes), the arcade room (mame), the handheld floor's shared room (pocketlab,
 pokemini) and the computer floor's (amiga's 20 titles, under the threshold of 30).
 
+`building-update-esde-seed-102938.json` (I4 step 6a) is that building after two updates that
+`tests/unit/world/test_world_building_update.cpp` makes: the fixture's `additions/` (megadrive's 12 titles open gen4's
+shared room, 5 titles more for snes and psx, 24 for pokemini, which stays in its section), then three systems more
+(neogeo, a section after megadrive's; fbneo, a section of the arcade room after mame's; nes, its own room on `gen3`, a
+new floor). Nothing that stood moves; Debug equals Release. The same test proves that the update of the building of no
+room with the fixture's selections gives `building-esde-seed-102938.json` byte for byte.
+
 Since I4 step 4 the configuration's canonical form holds `sharedRoomMinTitles` and a selection its `distinctTitles`:
 every plan's `inputDigest` line moved once, nothing else. The I3 room suites generate with `sharedRoomMinTitles` 0
 (`world_generation_support.hpp`'s `roomConfig()`), so that a room of any size stays a console room.

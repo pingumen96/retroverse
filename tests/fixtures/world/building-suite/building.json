@@ -1,0 +1,23 @@
+// A test copy of assets/world/building.json (I4 step 6a's building property suite): the same nine floors, with at most
+// two rooms per row, so that a floor fills (four rooms) within a few systems and a full floor's rules run.
+{
+  "schemaVersion": 1,
+  "floors": [
+    {"id": "ground", "kinds": ["arcade"], "sign": "LOBBY AND ARCADE"},
+    {"id": "gen2", "kinds": ["home"], "generations": [1, 2], "sign": "EARLY CONSOLES"},
+    {"id": "gen3", "kinds": ["home"], "generations": [3], "sign": "8-BIT CONSOLES"},
+    {"id": "gen4", "kinds": ["home"], "generations": [4], "sign": "16-BIT CONSOLES"},
+    {"id": "gen5", "kinds": ["home"], "generations": [5], "sign": "32 AND 64-BIT CONSOLES"},
+    {"id": "gen6", "kinds": ["home"], "generations": [6], "sign": "SIXTH GENERATION"},
+    {"id": "gen7", "kinds": ["home"], "generations": [7, 8, 9], "sign": "MODERN CONSOLES"},
+    {"id": "handheld", "kinds": ["handheld"], "sign": "HANDHELDS"},
+    {"id": "computer", "kinds": ["computer", "other"], "sign": "COMPUTERS AND MORE"}
+  ],
+  "layout": {
+    "hallWidthMm": 3000,
+    "lobbyWidthMm": 6000,
+    "rowStartXMm": 3000,
+    "wallAllowanceMm": 150,
+    "maxRoomsPerRow": 2
+  }
+}
