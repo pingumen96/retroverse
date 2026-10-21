@@ -76,5 +76,7 @@ On the reference machine, `esde/building` (9 systems):
 - The `handheld` floor (`room:gb`, `room:pocketlab` half-turned across the hall, `room:pokemini`; 44 items): each room
   in 2 arrays of its own (2.4 MiB), GPU memory peak 252.9 MiB. The lobby (`room:mame` on `ground`): 213.5 MiB. The
   acceptable limit is 512 MiB.
+- The benchmark path (`[benchmark]`, `snes-stress`, `--start-room room:snes`) in Release: 1,230 frames, frame p50
+  2.70 ms, p99 3.43 ms; the GPU's total p99 1.50 ms.
 - G01 to G10 are 0 pixels apart in Release and Debug, with their images unchanged. The goldens' metadata were
   rewritten for the command (`--start-room room:snes`) and the building's plan digest.
