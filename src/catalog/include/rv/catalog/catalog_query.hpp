@@ -1,15 +1,17 @@
 #pragma once
 
 // Port ICatalogQuery (ADR-0008 §5): the catalog's lists, as query.hpp describes them, and the room's bulk snapshot of
-// a system (room_entry.hpp, ADR-0010 §2; declared by I3 step 1a, filled by step 2). Implemented on the database by
-// rv_catalog_db (SqliteCatalogQuery, I2 step 9) and by in-memory sources in tests and mock-ups (the quick catalog's
-// 100,000-entry mock of step 6).
+// a system (room_entry.hpp, ADR-0010 §2; declared by I3 step 1a, filled by step 2), and the directory's favourites and
+// recently played games (recent_games.hpp, ADR-0013 §10; I4 step 7a). Implemented on the database by rv_catalog_db
+// (SqliteCatalogQuery, I2 step 9) and by in-memory sources in tests and mock-ups (the quick catalog's 100,000-entry mock
+// of step 6).
 
 #include <span>
 #include <vector>
 
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/query.hpp>
+#include <rv/catalog/recent_games.hpp>
 #include <rv/catalog/room_entry.hpp>
 #include <rv/core/expected.hpp>
 
@@ -36,6 +38,15 @@ public:
     /// needs one.
     [[nodiscard]] virtual Expected<RoomSnapshot> roomEntries(const SystemName& system) {
         return makeError(ErrorCode::Unsupported, "this catalog source gives no room snapshot", system.str());
+    }
+
+    /// The directory's favourites and recently played games across systems (recent_games.hpp gives the rule and the
+    /// order), at most query.limit of them, in one read on the catalog worker. Errors: the source cannot be read
+    /// (IoError, Unavailable), a query without its converter (InvalidArgument). The default answers Unsupported:
+    /// SqliteCatalogQuery implements it (I4 step 7a).
+    [[nodiscard]] virtual Expected<std::vector<RecentGame>> favoritesAndRecent(const RecentGamesQuery& query) {
+        static_cast<void>(query);
+        return makeError(ErrorCode::Unsupported, "this catalog source gives no favourites or recent games");
     }
 };
 

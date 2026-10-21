@@ -15,6 +15,7 @@ add_library(rv_catalog STATIC
     src/launch_resolution.cpp
     src/lookup_key.cpp
     src/metadata.cpp
+    src/recent_games.cpp
     src/reconciliation.cpp
 )
 add_library(rv::catalog ALIAS rv_catalog)
