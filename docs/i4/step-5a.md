@@ -57,7 +57,8 @@ API frozen in [step 3](step-3.md).
 - **The building job waits for a refresh that is running.** It is queued while the catalog's refresh writes, then
   reads the refreshed catalog. Lockstep runs with `--refresh-library` then plan the same building every run.
 - **The update covers the stored building's console rooms only.** A system without a console room in the stored plan is
-  logged and waits for step 6a (new systems, sections and floors).
+  logged and waits for step 6a (new systems, sections and floors). (At the merge with step 4 every room by its
+  sections: see "Integration with step 4".)
 - **One floor at a time**: the start floor. The other floors are planned and saved, not built (step 7's ride).
 - **The active room switches only in free roam**, with nothing hovered or pulled out. A Focus or Inspect never jumps to
   another room's pick index mid-gesture.
@@ -91,3 +92,46 @@ On the reference machine, `esde/building` (9 systems):
   2.70 ms, p99 3.43 ms; the GPU's total p99 1.50 ms.
 - G01 to G10 are 0 pixels apart in Release and Debug, with their images unchanged. The goldens' metadata were
   rewritten for the command (`--start-room room:snes`) and the building's plan digest.
+
+## Integration with step 4
+
+main's step 4 ([step-4.md](step-4.md): `area:shared:<floor>` and `area:arcade`, the threshold `sharedRoomMinTitles`)
+merged into this branch with a merge commit, then adapted (ADR-0013 §3, §6, §9):
+
+- **The update by sections.** The building job gave the update the selections of console rooms only, so a shared or
+  arcade room never took a new title. It now gives every selection whose system a room's sections hold, as
+  `worldplan update` does; a shared or arcade room lacking a section's selection (a system the catalog no longer lists)
+  is held as it is by `updateBuilding`, and the job logs the change report's `heldRooms` ("World: area:shared:handheld
+  is held as it is: no selection of its section pokemini: ..."). Every lookup of a system's room in the app is the room
+  whose sections hold it (`roomHolding()`), never `RoomId::forSystem`; `--start-room` takes the area ids
+  (`RoomId::parse` reads all four forms).
+- **The items files of a shared room's systems.** Each holds every placement of the room that holds its system: its
+  own games with their text, the other sections' games without (`snapshotRoomItems()`, unchanged). The floor's build
+  took a game's first entry among the room's sections, so in `area:shared:handheld` every pokemini item got
+  pocketlab's empty entry: no title, no cover. It now takes the entry of the section that knows the game, for the
+  covers and the layout's titles alike, so the preview from the items files and the building's floor agree (the new
+  unit test fails with 33 assertions without it).
+- **The shared room's CRT** plays its sections' games, their snapshots taken together (`roomScreenGames()` over a
+  room's sections): the placed games in the room's featured order whatever their section, then the others.
+- **The tests.** `gpu.world families: ...`'s mame case starts with `--start-room area:arcade` (its room read from the
+  plan) and expects that room with its 15 flyers; step 4's temporary skip is gone. The floor-app cases keep their two
+  console rooms of one family: their `PlannedBuilding` writes `{"sharedRoomMinTitles": 0}` (step 5a's provision), so
+  the handheld floor holds `room:gb`, `room:pocketlab` and `room:pokemini`. Under the shipped threshold
+  `esde/building` has no floor with two console rooms of one family (handheld: `room:gb` and `area:shared:handheld`),
+  which is why those cases keep the threshold at 0. A new case, `gpu.world floor app: the arcade room and a floor's
+  shared room show their sections' covers`, plans the fixture under the shipped threshold: from `--start-room
+  area:shared:handheld` (14 items, beside `room:gb`'s 30) and `area:arcade` (15) every item's cover resident, the
+  room's CRT the hero CRT (mame's clip in the arcade room, the colour bars in the shared room, whose sections have no
+  clip), and up close a face-out title of each section hovered with its cover as its hero picture. A unit test (`app/
+  world_build: the shared and arcade rooms in the app: ...`) checks the same rooms GPU-free, the preview, the CLI's plan
+  equal to the app's, the held room, and `additions/` updating the shared room by both its sections (34 titles placed,
+  nothing moved).
+- **The goldens.** G02 to G10's metadata re-recorded once from `msvc-x64-debug` with `RV_UPDATE_GOLDEN=1` (the plans'
+  digests moved with step 4's `inputDigest`, the world data's hash with its preset and `systems.json`; G06's plan is
+  step 4's), then compared without it: every image byte for byte as committed.
+
+Measured on the reference machine after the merge: the Release suite (1,882 tests, unit and GPU) passes, the overlay's
+case skipped as in every Release run; the Debug unit suite (1,796) and its 40 `gpu.world*` and `gpu.golden` cases pass;
+G01 to G10 are 0 pixels apart in both. The handheld floor started in its shared room holds 44 covers
+(`area:shared:handheld` 14, `room:gb` 30, each in 2 arrays of 2.4 MiB), GPU memory peak 230.6 MiB in Release; the
+ground floor with the arcade room 219.0 MiB.
