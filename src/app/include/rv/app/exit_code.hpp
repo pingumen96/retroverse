@@ -56,13 +56,17 @@ struct RunSummary {
     /// High-severity GL debug messages over the whole run, the self-test's included.
     std::uint64_t highSeverityGlMessages = 0;
     std::optional<SelfTestOutcome> selfTest;
-    /// The application logic reported a failure that ended the run (AppContext::failRun).
+    /// The application logic reported a failure that ended the run (AppContext::failRun), and the exit code it asked
+    /// for (RuntimeFailure, or InitializationFailed for a start the run could not make: I4 step 5a's --start-room of a
+    /// room the building lacks).
     bool logicFailed = false;
+    ExitCode logicFailureCode = ExitCode::RuntimeFailure;
 };
 
 /// Exit code of a run that initialized and left its main loop normally.
 ///
-/// A failure reported by the application logic gives ExitCode::RuntimeFailure, whatever the kind of run. Otherwise
+/// A failure reported by the application logic gives the code it asked for (ExitCode::RuntimeFailure unless it said
+/// otherwise), whatever the kind of run. Otherwise
 /// only --smoke runs can fail (ExitCode::SmokeCheckFailed), when:
 ///  - fewer than frameLimit frames were rendered (the run was interrupted, so it proves nothing), or
 ///  - High-severity messages exceed the ones the self-test provoked itself (so `--smoke --gl-selftest` exits 0 when

@@ -22,7 +22,7 @@ void WorldSession::requestLiveUpdate() {
         m_liveRequestedAt = Clock::now();
     }
     m_liveRequested = true;
-    spdlog::info("Frame {}: the catalog was refreshed; the room follows it once nothing else is on its way",
+    spdlog::info("Frame {}: the catalog was refreshed; the floor follows it once nothing else is on its way",
                  m_context.frameIndex());
 }
 
@@ -36,18 +36,18 @@ void WorldSession::startLiveFlow(ProductUi& product) {
     m_liveRequested = false;
     WorldFlow::Options flow;
     flow.paths = m_options.paths;
-    flow.system = m_options.system;
+    flow.startRoom = m_options.startRoom;
     flow.writer = m_options.writer;
     flow.wake = m_context.wakeCallback();
-    flow.preview = false; // the room shows already: the snapshot at once
+    flow.preview = false; // the floor shows already: the building job at once
     m_flow = std::make_unique<WorldFlow>(std::move(flow), m_pool);
     m_liveFlow = true;
     m_flow->update(product.catalog());
-    spdlog::info("Frame {}: the room's job runs again for the refreshed catalog", m_context.frameIndex());
+    spdlog::info("Frame {}: the building's job runs again for the refreshed catalog", m_context.frameIndex());
 }
 
 void WorldSession::keepShown(const WorldBuild& build) {
-    m_shown = shownRoomOf(build);
+    m_shown = shownFloorOf(build);
     // The card's other versions of each title (I3 step 14a), from the plan shown.
     m_otherVersions = build.plan ? otherVersionCounts(*build.plan) : std::map<std::uint64_t, std::uint32_t>{};
     // Where each game stands, for "Mostra nella stanza" (I3 step 15a).
@@ -56,8 +56,9 @@ void WorldSession::keepShown(const WorldBuild& build) {
 }
 
 void WorldSession::releaseHero() {
-    if (m_collection && m_heroShown) {
-        if (Status restored = m_collection->setFrontHidden(*m_heroShown, false); !restored) {
+    if (m_heroShown && m_heroShown->room < m_rooms.size() && m_rooms[m_heroShown->room].collection) {
+        if (Status restored = m_rooms[m_heroShown->room].collection->setFrontHidden(m_heroShown->item, false);
+            !restored) {
             spdlog::error("World: the hero's front: {}", restored.error().toString());
         }
     }
@@ -68,45 +69,74 @@ void WorldSession::releaseHero() {
 
 void WorldSession::releaseInteraction() {
     m_interaction->clear();
-    if (m_collection) {
-        // clear() leaves the collection's records as they are: the items it had pulled out go back to their slots.
-        for (const world::PickId id : m_collection->hiddenItems()) {
-            if (Status shown = m_collection->setHidden(id, false); !shown) {
+    for (FloorRoom& room : m_rooms) {
+        if (!room.collection) {
+            continue;
+        }
+        // clear() leaves the collections' records as they are: the items it had pulled out go back to their slots.
+        for (const world::PickId id : room.collection->hiddenItems()) {
+            if (Status shown = room.collection->setHidden(id, false); !shown) {
                 spdlog::error("World: an item back in its slot: {}", shown.error().toString());
             }
         }
-        if (Status cleared = m_collection->setHovered(world::kNoPick); !cleared) {
+        if (Status cleared = room.collection->setHovered(world::kNoPick); !cleared) {
             spdlog::error("World: the hover outline: {}", cleared.error().toString());
         }
     }
 }
 
 bool WorldSession::applyItems(WorldBuild& build, const LiveUpdatePlan& plan, WorldLiveUpdateRecord& record) {
-    if (!m_collection || !build.layout || build.layout->items.empty()) {
+    // Each room's collection applied in place: the same rooms, each with its collection (a room that gained its first
+    // item, or lost its last, is a commit of the floor).
+    if (m_rooms.size() != build.rooms.size()) {
         return false;
+    }
+    for (std::size_t index = 0; index < m_rooms.size(); ++index) {
+        if (m_rooms[index].id != build.rooms[index].room ||
+            (m_rooms[index].collection != nullptr) != !build.rooms[index].layout.items.empty()) {
+            return false;
+        }
     }
     // The hero's front goes back to the static path (the items' indices change); the next hover shows it again. The
     // interaction (I3 step 13a) lets go of its items: a pulled-out item back in its slot, Focus left; it starts again
-    // over the new layout below.
+    // over the new layouts below.
     releaseHero();
     releaseInteraction();
-    auto updated =
-        m_collection->applyLayout(*build.layout, m_graphics, m_context.device().caps().uniformBufferOffsetAlignment);
-    if (!updated) {
-        spdlog::error("World: the room's items cannot be updated in place: {}; the room is committed again",
-                      updated.error().toString());
-        return false;
+    m_record.pickTargets = 0;
+    m_record.items = 0;
+    m_record.clusters = 0;
+    m_record.skipped = 0;
+    m_record.staticRecords = 0;
+    for (std::size_t index = 0; index < m_rooms.size(); ++index) {
+        FloorRoom& room = m_rooms[index];
+        const world::CollectionLayout& layout = build.rooms[index].layout;
+        m_record.items += layout.items.size();
+        m_record.clusters += layout.clusters.size();
+        m_record.skipped += layout.skipped.size();
+        if (!room.collection) {
+            continue;
+        }
+        auto updated =
+            room.collection->applyLayout(layout, m_graphics, m_context.device().caps().uniformBufferOffsetAlignment);
+        if (!updated) {
+            spdlog::error("World: the items of {} cannot be updated in place: {}; the floor is committed again",
+                          room.id.toString(), updated.error().toString());
+            return false;
+        }
+        record.arraysGrown = record.arraysGrown || updated->grown;
+        record.arrayAdded = record.arrayAdded || updated->arraysAdded;
+        // The hover, the pull-out and Focus over the new layout (its pick targets and D-pad steps; the pick ids of the
+        // items that stood are theirs still).
+        m_record.pickTargets += m_interaction->addRoom(layout, room.collection.get());
+        m_record.staticRecords += room.collection->group().layout().instances().size();
     }
-    record.arraysGrown = updated->grown;
-    record.arrayAdded = updated->arraysAdded;
-    // The hover, the pull-out and Focus over the new layout (its pick targets and D-pad steps; the pick ids of the
-    // items that stood are theirs still).
-    m_record.pickTargets = m_interaction->setRoom(*build.layout, m_collection.get());
+    syncCollections();
+    if (const std::optional<std::size_t> eye = eyeRoom()) {
+        m_interaction->setActiveRoom(m_rooms[*eye].interactionRoom);
+    } else {
+        m_interaction->setActiveRoom(std::nullopt);
+    }
     countPlan(build, m_record);
-    m_record.items = build.layout->items.size();
-    m_record.clusters = build.layout->clusters.size();
-    m_record.skipped = build.layout->skipped.size();
-    m_record.staticRecords = m_collection->group().layout().instances().size();
     record.items = m_record.items;
     record.staticRecords = m_record.staticRecords;
     if (m_heroes) {
@@ -116,7 +146,7 @@ bool WorldSession::applyItems(WorldBuild& build, const LiveUpdatePlan& plan, Wor
     }
     // The covers: the items that stood adopted (their pictures uploaded again only when they changed), the new ones
     // made.
-    startCoverLoader(build.covers, build.mediaRoot, build.library);
+    startCoverLoader(build);
     if (plan.screenGamesChanged && m_host.setScreenGames) {
         m_host.setScreenGames(build.screenGames);
     }
@@ -151,7 +181,7 @@ void WorldSession::applyLive(WorldResult result) {
         record.buildMs = build.milliseconds;
     }
     if (!m_shown || m_state != "room") {
-        // No room showed (the shell, the test room): the refreshed catalog's room is committed as at the start.
+        // No floor showed (the shell, the test room): the refreshed catalog's floor is committed as at the start.
         record.kind = std::string(toString(LiveUpdateKind::Rebuild));
         record.reason = "no room showed";
         commit(std::move(result));
@@ -159,10 +189,10 @@ void WorldSession::applyLive(WorldResult result) {
         return;
     }
     if (result.testRoom || !result.build) {
-        // A live update never takes away a room that shows (ADR-0010 §11).
+        // A live update never takes away a floor that shows (ADR-0010 §11).
         record.kind = std::string(toString(LiveUpdateKind::Kept));
         record.reason = result.reason;
-        spdlog::warn("World: the refreshed catalog gives no room ({}); the room shown stays", result.reason);
+        spdlog::warn("World: the refreshed catalog gives no building ({}); the floor shown stays", result.reason);
         finish();
         return;
     }
@@ -177,7 +207,7 @@ void WorldSession::applyLive(WorldResult result) {
     record.removed = plan.difference.removed;
     record.coversChanged = plan.coversChanged.size();
     if (plan.kind == LiveUpdateKind::Kept) {
-        spdlog::warn("World: the refreshed catalog's room cannot be shown ({}); the room shown stays", plan.reason);
+        spdlog::warn("World: the refreshed catalog's floor cannot be shown ({}); the floor shown stays", plan.reason);
         finish();
         return;
     }
@@ -186,7 +216,15 @@ void WorldSession::applyLive(WorldResult result) {
     case LiveUpdateKind::Unchanged:
         break;
     case LiveUpdateKind::Textures:
-        if (m_loader && build.covers == m_shown->covers) {
+        if (m_loader && [&] {
+                for (const RoomCollection& room : build.rooms) {
+                    const ShownCollection* before = m_shown->find(room.room);
+                    if (before == nullptr || before->covers != room.covers) {
+                        return false;
+                    }
+                }
+                return true;
+            }()) {
             // Only the media root is known now: the loader's retry after the refresh (I3 step 12, followRefresh) serves
             // again the items whose fronts did not come from their covers.
             keepShown(build);
@@ -199,7 +237,7 @@ void WorldSession::applyLive(WorldResult result) {
                 m_heroes->forget(game);
             }
         }
-        startCoverLoader(build.covers, build.mediaRoot, build.library);
+        startCoverLoader(build);
         if (plan.screenGamesChanged && m_host.setScreenGames) {
             m_host.setScreenGames(build.screenGames);
         }
@@ -214,14 +252,18 @@ void WorldSession::applyLive(WorldResult result) {
         [[fallthrough]];
     case LiveUpdateKind::Rebuild:
     case LiveUpdateKind::Kept:
-        if (showRoom(build, true)) {
+        if (build.startRoomMissing) {
+            spdlog::warn("World: the refreshed building has no start room; the floor shown stays");
+            break;
+        }
+        if (showFloor(build, true)) {
             record.items = m_record.items;
             record.staticRecords = m_record.staticRecords;
         }
         break;
     }
     if (!build.notice.empty()) {
-        setNotice(WorldNoticeContent{build.notice, {}, m_options.system.str()}, true);
+        setNotice(WorldNoticeContent{build.notice, {}, noticeRoom()}, true);
     }
     m_record.state = m_state;
     finish();

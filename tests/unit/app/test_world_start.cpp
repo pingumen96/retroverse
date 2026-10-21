@@ -1,6 +1,6 @@
 // The persisted start's GPU-free parts (I3 step 10c): the room's items kept for it (rv/app/room_items.hpp: the
 // canonical file, its reading and its rules) and the reconciliation's decision (rv/app/world_reconcile.hpp) on
-// hand-made collections. The fixture-based cases (the preview of a stored plan, the items written by the room's job,
+// hand-made collections (a floor of one room since I4 step 5a). The fixture-based cases (the preview of a stored plan, the items written by the room's job,
 // the hero CRT's games) are in test_world_build.cpp.
 
 #include <filesystem>
@@ -57,15 +57,19 @@ rv::app::CoverItem cover(std::uint64_t game, std::string title) {
     return made;
 }
 
-/// A build with a plan (its digest), a scene, its data and `layout`.
+/// A build with a plan (its digest), a floor's scene and one collection room (the snes room) of `layout`.
 WorldBuild built(std::string digest, rv::world::CollectionLayout layout, std::vector<rv::app::CoverItem> covers = {}) {
     WorldBuild build;
     build.plan = rv::world::WorldPlan{};
     build.planDigest = std::move(digest);
+    build.floor = "gen4";
     build.scene = rv::scene::SceneDescription{};
-    build.sceneData = rv::world::SceneData{};
-    build.layout = std::move(layout);
-    build.covers = std::move(covers);
+    rv::app::RoomCollection room;
+    room.room = rv::world::RoomId::parse("room:snes").value();
+    room.layout = std::move(layout);
+    room.layout.room = room.room;
+    room.covers = std::move(covers);
+    build.rooms.push_back(std::move(room));
     return build;
 }
 
@@ -239,7 +243,7 @@ TEST_CASE("app/world_reconcile: the stored room kept, rebuilt or replaced by the
         WorldBuild build;
         build.outcome = rv::app::WorldOutcome::NoPlan;
         CHECK(rv::app::planReconciliation(shown, build).kind == Reconciliation::Shell);
-        // A plan without its scene is no room either.
+        // A plan without its scene is no floor either.
         WorldBuild sceneless = built("digest-a", layoutOf({item(1, 10)}));
         sceneless.scene.reset();
         CHECK(rv::app::planReconciliation(shown, sceneless).kind == Reconciliation::Shell);

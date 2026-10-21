@@ -10,6 +10,10 @@
 // a launched game runs: the pause of ADR-0012 §6), and records the order in which the items arrived (the run report's
 // check that covers arrive nearest first). HeroLru is the hero textures' least-recently-used set (ADR-0011 §8: 8 of
 // them; the one shown is never evicted). Main thread only, like the loader that owns them.
+//
+// Since I4 step 5a one loader serves a floor's rooms (ADR-0013 §9): each item belongs to a group (its room), and "the
+// view" is the items of the groups the view names (the room that holds the eye, and those whose doorway the frustum
+// meets) that meet a frustum; the other items come by their distance.
 
 #include <cstddef>
 #include <cstdint>
@@ -31,10 +35,17 @@
 namespace rv::app {
 
 /// Where the frame looks from: the walker's eye and the frusta of the frame's views (the window's, and the screenshot's
-/// when its aspect differs). An item is in view when its box meets one of them (Frustum::intersects, conservative).
+/// when its aspect differs). An item is in view when its box meets one of them (Frustum::intersects, conservative) and
+/// its group is one the view sees (`groups`: a flag per group, 0 for one out of sight; empty: every group).
 struct CoverView {
     glm::vec3 eye{0.0f};
     std::vector<scene::Frustum> frusta;
+    std::vector<std::uint8_t> groups;
+
+    /// The view sees the items of `group`.
+    [[nodiscard]] bool seesGroup(std::uint32_t group) const noexcept {
+        return groups.empty() || (group < groups.size() && groups[group] != 0);
+    }
 
     /// The view of `camera` (its aspect), and also of `camera` at `otherAspect` when that differs (a screenshot's).
     [[nodiscard]] static CoverView of(const scene::Camera& camera, std::optional<float> otherAspect = std::nullopt);
@@ -62,14 +73,20 @@ struct CoverPriority {
     [[nodiscard]] bool operator<(const CoverPriority& other) const noexcept;
 };
 
-/// True when `bounds` meets a frustum of `view` (an empty box never does).
-[[nodiscard]] bool coverInView(const core::Aabb& bounds, const CoverView& view) noexcept;
+/// True when `bounds` meets a frustum of `view` (an empty box never does) and `group` is one the view sees.
+[[nodiscard]] bool coverInView(const core::Aabb& bounds, const CoverView& view, std::uint32_t group = 0) noexcept;
+/// The groups (CoverView::groups) `view` sees on a floor whose rooms are the groups, `doorways` each room's doorway
+/// passage in the scene's frame (an empty box for a room without one) and `eyeRoom` the room that holds the eye (none in
+/// a hall): that room and every room whose doorway meets a frustum of `view` (ADR-0013 §9), whatever `view.groups`
+/// says. A floor of one room (or none) sees it whole: empty.
+[[nodiscard]] std::vector<std::uint8_t> coverViewGroups(const CoverView& view, std::span<const core::Aabb> doorways,
+                                                        std::optional<std::size_t> eyeRoom);
 /// The distance from the eye to the box (0 inside it).
 [[nodiscard]] float coverDistance(const core::Aabb& bounds, const glm::vec3& eye) noexcept;
 /// The priority of item `item` with `bounds` under `view`; `focused` puts it first whatever the view. The projected
 /// size of an item in view is its box's half diagonal over its distance from the eye (at least 1 cm).
 [[nodiscard]] CoverPriority coverPriority(std::size_t item, const core::Aabb& bounds, const CoverView& view,
-                                          bool focused) noexcept;
+                                          bool focused, std::uint32_t group = 0) noexcept;
 
 /// One item that arrived (all of its layers resident or given up), in arrival order.
 struct CoverArrival {
@@ -91,8 +108,9 @@ public:
         Done,      ///< every layer resident (or given up)
     };
 
-    /// `bounds`: each item's box in the room (world::CollectionItem::worldBounds). Every item starts Waiting.
-    explicit CoverSchedule(std::vector<core::Aabb> bounds);
+    /// `bounds`: each item's box in the room (world::CollectionItem::worldBounds); `groups`: each item's group (its
+    /// room on the floor; none: every item in group 0). Every item starts Waiting.
+    explicit CoverSchedule(std::vector<core::Aabb> bounds, std::vector<std::uint32_t> groups = {});
 
     [[nodiscard]] std::size_t size() const noexcept { return m_bounds.size(); }
     [[nodiscard]] Stage stage(std::size_t item) const { return m_stage.at(item); }
@@ -148,6 +166,7 @@ private:
     void finish(std::size_t item);
 
     std::vector<core::Aabb> m_bounds;
+    std::vector<std::uint32_t> m_groups;
     std::vector<Stage> m_stage;
     std::vector<unsigned> m_layersLeft;
     std::vector<std::uint8_t> m_inView;

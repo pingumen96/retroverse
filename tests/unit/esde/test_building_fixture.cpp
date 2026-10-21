@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <ostream>
@@ -165,4 +166,15 @@ TEST_CASE("esde/building_fixture: additions/ adds a system and titles to three",
     CHECK(media.at("snes").covers == 47);
     CHECK(media.at("psx").covers == 45);
     CHECK(media.at("pokemini").covers == 32);
+}
+
+// Hidden ([.keep-fixture], by hand): materializes the fixture RV_KEEP_FIXTURE names (esde/building by default) and
+// keeps it, its folder printed, for a look in the app (`retroverse-cli library create --home <folder> --install
+// <folder>/Programs/ES-DE`, then `import` and `retroverse.exe`: docs/reference/visual-verification.md). Remove the
+// folder by hand when done.
+TEST_CASE("esde/building_fixture: materialized and kept for a look", "[.keep-fixture]") {
+    const char* name = std::getenv("RV_KEEP_FIXTURE"); // NOLINT(concurrency-mt-unsafe): read before any thread
+    rv::test::Fixture fixture = materialize(name != nullptr && *name != '\0' ? name : "esde/building");
+    fixture.keep();
+    WARN("fixture kept at " << rv::core::pathToUtf8(fixture.root()));
 }

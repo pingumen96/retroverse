@@ -19,9 +19,15 @@
 // zoomed, the scene behind it dimmed. Avvia comes out as the result's launch, which the application asks of the product
 // UI (I3 step 15a, world_launch.hpp: launchEnded() at its end; "Mostra nella stanza" is showInRoom()). Main thread
 // only.
+//
+// Since I4 step 5a a floor has a collection per room (ADR-0013 §9): each room has its own pick index and D-pad steps
+// (addRoom()), and the interaction works in the room that holds the eye (setActiveRoom(), every frame; none in a hall).
+// The room changes only in free roam, once the room it leaves has let go of every item (nothing hovered, pulled or
+// focused): until then the interaction stays with the room it is in.
 
 #include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <span>
@@ -74,11 +80,21 @@ public:
     WorldHover(const WorldHover&) = delete;
     WorldHover& operator=(const WorldHover&) = delete;
 
-    /// The room's collection, committed at a frame boundary (`collection` must stay until clear() or the next
-    /// setRoom()): its layout's items, navigation and pick targets with its occluders. Returns the pick targets indexed
-    /// (0 when the index or the navigation cannot be built: logged, the room then hovers nothing).
-    std::size_t setRoom(world::CollectionLayout layout, CollectionInstance* collection);
-    /// The collection goes (before the application replaces the scene): no room, nothing pulled.
+    /// A room's collection on the floor, committed at a frame boundary (`collection` must stay until clear()): its
+    /// layout's items, navigation and pick targets with its occluders, as room `addRoom()`'s count so far. Returns the
+    /// pick targets indexed (0 when the index or the navigation cannot be built: logged, the room then hovers nothing).
+    /// The first room added is the active one until setActiveRoom() says otherwise.
+    std::size_t addRoom(world::CollectionLayout layout, CollectionInstance* collection);
+    /// The room that holds the eye (an index of addRoom()'s order; none: a hall, which hovers nothing). It becomes the
+    /// interaction's room once the interaction is in free roam with nothing hovered, pulled or focused in the room it
+    /// leaves (asked again every frame until then).
+    void setActiveRoom(std::optional<std::size_t> room);
+    /// The interaction's room now (none: no room, or a hall), and its id.
+    [[nodiscard]] std::optional<std::size_t> activeRoom() const noexcept { return m_active; }
+    [[nodiscard]] std::optional<world::RoomId> activeRoomId() const {
+        return m_room != nullptr ? std::optional<world::RoomId>(m_room->layout().room) : std::nullopt;
+    }
+    /// The collections go (before the application replaces the scene): no room, nothing pulled.
     void clear();
 
     /// One frame (WorldInteraction::update over the room), its flags written to the collection. The result asks the
@@ -112,10 +128,12 @@ public:
     void launchEnded(const LaunchMessage& outcome) { m_interaction.launchEnded(outcome); }
     [[nodiscard]] world::PickId showInRoom(const catalog::GameId& game, const scene::WalkerPose& walker);
     [[nodiscard]] world::PickId pickOf(const catalog::GameId& game) const noexcept;
-    /// The room's item `id`, or null (no room, no such item).
+    /// The interaction's room's item `id`, or null (no room, no such item).
     [[nodiscard]] const world::CollectionItem* item(world::PickId id) const noexcept {
-        return m_room ? m_room->find(id) : nullptr;
+        return m_room != nullptr ? m_room->find(id) : nullptr;
     }
+    /// The interaction's room's collection, or null.
+    [[nodiscard]] CollectionInstance* collection() const noexcept { return m_collection; }
     /// Changes of the hovered item since the start.
     [[nodiscard]] std::uint64_t hoverChanges() const noexcept { return m_record.hoverChanges; }
 
@@ -131,10 +149,25 @@ private:
     /// The "animation" phase open while an animation of the interaction runs.
     void syncAnimationPhase(bool animating);
 
+    /// One collection room of the floor.
+    struct RoomEntry {
+        std::unique_ptr<CollectionRoom> room;
+        world::PickIndex index;
+        CollectionInstance* collection = nullptr;
+    };
+
+    /// Makes room `room` (none: no room) the interaction's, letting go of the one it leaves first.
+    void bindRoom(std::optional<std::size_t> room);
+
     AppContext& m_context;
     WorldInteraction m_interaction;
-    std::unique_ptr<CollectionRoom> m_room;
-    world::PickIndex m_index;
+    /// A deque: m_index points into an entry, which a later addRoom() must not move.
+    std::deque<RoomEntry> m_rooms;
+    /// The interaction's room (an index into m_rooms), the one asked for (setActiveRoom()), and its parts.
+    std::optional<std::size_t> m_active;
+    std::optional<std::size_t> m_wanted;
+    CollectionRoom* m_room = nullptr;
+    const world::PickIndex* m_index = nullptr;
     CollectionInstance* m_collection = nullptr;
     FocusStepRepeat m_repeat;
     /// The items whose static records are hidden (the pulled ones), ascending.

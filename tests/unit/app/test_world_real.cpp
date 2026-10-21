@@ -58,8 +58,9 @@ std::optional<fs::path> pathVariable(const wchar_t* name) {
 rv::app::RunReport runRoom(const fs::path& folder, const fs::path& data, const std::string& name,
                            std::vector<std::string> arguments) {
     const fs::path report = folder / (name + ".json");
-    arguments.insert(arguments.end(), {"--hidden", "--data-dir", rv::core::pathToUtf8(data), "--run-report",
-                                       rv::core::pathToUtf8(report)});
+    // The snes room (I4 step 5a: the building starts in its lobby otherwise), its frame the --spawn's.
+    arguments.insert(arguments.end(), {"--start-room", "room:snes", "--hidden", "--data-dir",
+                                       rv::core::pathToUtf8(data), "--run-report", rv::core::pathToUtf8(report)});
     rv::test::ChildRequest request;
     request.executable = rv::test::testProgramsDir() / "retroverse.exe";
     request.arguments = std::move(arguments);

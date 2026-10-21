@@ -97,15 +97,25 @@ struct CoverLoader::Shared {
 };
 
 CoverLoader::CoverLoader(Options options, core::WorkerPool& pool, std::vector<CoverItem> items,
-                         std::vector<core::Aabb> bounds)
+                         std::vector<core::Aabb> bounds, std::vector<std::uint32_t> groups)
     : m_options(std::move(options)), m_pool(pool), m_shared(std::make_shared<Shared>(m_options.cacheRoot)),
-      m_items(std::move(items)), m_schedule([&] {
-          bounds.resize(m_items.size());
-          return std::move(bounds);
+      m_items(std::move(items)), m_groups([&] {
+          groups.resize(m_items.size(), 0u);
+          return std::move(groups);
       }()),
+      m_schedule(
+          [&] {
+              bounds.resize(m_items.size());
+              return std::move(bounds);
+          }(),
+          m_groups),
       m_made(m_items.size()), m_front(m_items.size()), m_frontEntry(m_items.size()), m_spineEntry(m_items.size()),
       m_retrying(m_items.size(), 0) {
     m_shared->wake = m_options.wake;
+    for (std::size_t index = 0; index < m_items.size(); ++index) {
+        m_byKey.emplace(m_items[index].frontKey, index);
+        m_byKey.emplace(m_items[index].spineKey, index);
+    }
     if (m_options.jobsInFlight == 0) {
         m_options.jobsInFlight = std::max<std::size_t>(kMinJobsInFlight, 2 * pool.threadCount());
     }
@@ -228,11 +238,23 @@ void CoverLoader::takeFinished() {
     }
 }
 
-void CoverLoader::submitUploads(CollectionInstance& collection, std::size_t maxLayers) {
-    gl::CollectionArrays& arrays = collection.arrays();
+std::optional<std::size_t> CoverLoader::itemOfKey(const std::string& key) const {
+    const auto found = m_byKey.find(key);
+    return found != m_byKey.end() ? std::optional<std::size_t>(found->second) : std::nullopt;
+}
+
+void CoverLoader::submitUploads(std::span<CollectionInstance* const> collections, std::size_t maxLayers) {
     for (const std::size_t index : m_schedule.takeToUpload(maxLayers)) {
         std::optional<ItemLayers> layers = std::exchange(m_made[index], std::nullopt);
         const CoverItem& item = m_items[index];
+        const std::uint32_t group = groupOf(index);
+        if (group >= collections.size() || collections[group] == nullptr) {
+            // No collection to take its layers: the item is done without them.
+            m_schedule.layerDone(index);
+            m_schedule.layerDone(index);
+            continue;
+        }
+        gl::CollectionArrays& arrays = collections[group]->arrays();
         const auto submit = [&](gl::CollectionClass cls, std::optional<gl::LayerImage>& image, const std::string& key) {
             if (!image) {
                 return;
@@ -369,6 +391,15 @@ void CoverLoader::startTrim() {
 void CoverLoader::noteArrivals() {
     if (!m_viewItems) {
         m_viewItems = m_schedule.inViewCount();
+        for (std::size_t item = 0; item < m_items.size(); ++item) {
+            if (m_schedule.inView(item)) {
+                const std::uint32_t group = groupOf(item);
+                if (group >= m_viewItemsByGroup.size()) {
+                    m_viewItemsByGroup.resize(static_cast<std::size_t>(group) + 1, 0u);
+                }
+                ++m_viewItemsByGroup[group];
+            }
+        }
     }
     if (!m_viewResidentAt && m_schedule.viewDone()) {
         m_viewResidentAt = std::chrono::system_clock::now();
@@ -378,7 +409,7 @@ void CoverLoader::noteArrivals() {
     }
 }
 
-Status CoverLoader::update(CollectionInstance& collection, const Round& round) {
+Status CoverLoader::update(std::span<CollectionInstance* const> collections, const Round& round) {
     m_schedule.setView(round.view);
     m_schedule.setFocused(round.focused);
     m_schedule.setPaused(round.paused);
@@ -392,16 +423,41 @@ Status CoverLoader::update(CollectionInstance& collection, const Round& round) {
         ++m_pausedRounds;
         return ok();
     }
-    gl::CollectionArrays& arrays = collection.arrays();
     // The made layers go up in the schedule's order: only a budget's worth is handed to the arrays at a time.
-    const std::size_t queued = arrays.pendingUploads();
+    std::size_t queued = 0;
+    for (const CollectionInstance* collection : collections) {
+        queued += collection != nullptr ? collection->arrays().pendingUploads() : 0;
+    }
     if (queued < round.budget.layers) {
-        submitUploads(collection, round.budget.layers - queued);
+        submitUploads(collections, round.budget.layers - queued);
     }
     gl::UploadBudget budget = round.budget;
     budget.time = round.budget.time > round.spent ? round.budget.time - round.spent : std::chrono::nanoseconds(0);
-    const gl::LayerUploadResult uploads =
-        arrays.pendingUploads() > 0 ? arrays.uploadPending(budget) : gl::LayerUploadResult{};
+    // One budget for the floor: each room's queue in turn while it lasts (the first call always uploads one layer, as
+    // a single room's did).
+    gl::LayerUploadResult uploads;
+    std::vector<std::pair<std::size_t, gl::LayerUpload>> completed;
+    bool first = true;
+    for (std::size_t group = 0; group < collections.size(); ++group) {
+        CollectionInstance* collection = collections[group];
+        if (collection == nullptr || collection->arrays().pendingUploads() == 0) {
+            continue;
+        }
+        if (!first && (budget.time <= std::chrono::nanoseconds(0) || budget.layers == 0)) {
+            break;
+        }
+        first = false;
+        gl::LayerUploadResult part = collection->arrays().uploadPending(budget);
+        budget.time = budget.time > part.elapsed ? budget.time - part.elapsed : std::chrono::nanoseconds(0);
+        budget.layers = budget.layers > part.completed.size() ? budget.layers - part.completed.size() : 0;
+        uploads.elapsed += part.elapsed;
+        uploads.dropped += part.dropped;
+        uploads.pending += part.pending;
+        for (gl::LayerUpload& upload : part.completed) {
+            completed.emplace_back(group, upload);
+            uploads.completed.push_back(std::move(upload));
+        }
+    }
     if (!uploads.completed.empty()) {
         ++m_uploadRounds;
         // The frame's budget bounds a frame's uploads; an idle wake of a lockstep run has a larger budget of its own.
@@ -419,11 +475,11 @@ Status CoverLoader::update(CollectionInstance& collection, const Round& round) {
     if (uploads.dropped > 0) {
         spdlog::warn("Cover loader: {} upload(s) dropped (their layers were given to other keys)", uploads.dropped);
     }
-    for (const gl::LayerUpload& upload : uploads.completed) {
-        if (Status written = collection.layerResident(upload); !written) {
+    for (const auto& [group, upload] : completed) {
+        if (Status written = collections[group]->layerResident(upload); !written) {
             return written;
         }
-        if (const std::optional<std::size_t> item = collection.itemOfKey(upload.key)) {
+        if (const std::optional<std::size_t> item = itemOfKey(upload.key)) {
             m_schedule.layerDone(*item);
         }
     }
@@ -459,14 +515,23 @@ Status CoverLoader::update(CollectionInstance& collection, const Round& round) {
     return ok();
 }
 
-void CoverLoader::record(ResidencyRecord& record, const CollectionInstance& collection) const {
-    const gl::CollectionArrays& arrays = collection.arrays();
+void CoverLoader::record(ResidencyRecord& record, std::span<CollectionInstance* const> collections) const {
     record.bound = true;
-    record.format = std::string(gl::toString(arrays.format()));
-    record.arrayBytes = arrays.estimatedBytes();
+    record.format = std::string(gl::toString(m_options.format));
+    record.arrayBytes = 0;
+    record.frontsResident = 0;
+    record.spinesResident = 0;
+    for (const CollectionInstance* collection : collections) {
+        if (collection == nullptr) {
+            continue;
+        }
+        const gl::CollectionArrays& arrays = collection->arrays();
+        record.format = std::string(gl::toString(arrays.format()));
+        record.arrayBytes += arrays.estimatedBytes();
+        record.frontsResident += arrays.residentLayers(gl::CollectionClass::Front);
+        record.spinesResident += arrays.residentLayers(gl::CollectionClass::Spine);
+    }
     record.items = m_items.size();
-    record.frontsResident = arrays.residentLayers(gl::CollectionClass::Front);
-    record.spinesResident = arrays.residentLayers(gl::CollectionClass::Spine);
     record.pending =
         2 * m_items.size() - std::min<std::size_t>(2 * m_items.size(), record.frontsResident + record.spinesResident);
     record.covers = 0;
@@ -539,8 +604,20 @@ void CoverLoader::record(ResidencyRecord& record, const CollectionInstance& coll
     record.adoptedChanged = m_adoptedChanged;
 }
 
-std::vector<std::string> CoverLoader::statusLines(const CollectionInstance& collection) const {
-    const gl::CollectionArrays& arrays = collection.arrays();
+std::vector<std::string> CoverLoader::statusLines(std::span<CollectionInstance* const> collections) const {
+    std::size_t fronts = 0;
+    std::size_t spines = 0;
+    std::size_t bytes = 0;
+    std::size_t uploading = 0;
+    for (const CollectionInstance* collection : collections) {
+        if (collection == nullptr) {
+            continue;
+        }
+        fronts += collection->arrays().residentLayers(gl::CollectionClass::Front);
+        spines += collection->arrays().residentLayers(gl::CollectionClass::Spine);
+        bytes += collection->arrays().estimatedBytes();
+        uploading += collection->arrays().pendingUploads();
+    }
     std::size_t covers = 0;
     std::size_t cached = 0;
     std::size_t labels = 0;
@@ -551,16 +628,15 @@ std::vector<std::string> CoverLoader::statusLines(const CollectionInstance& coll
     }
     const assets::CacheStats stats = m_shared->cache.stats();
     std::vector<std::string> lines;
-    lines.push_back(fmt::format("{} items: fronts {}, spines {} resident ({}, {:.1f} MiB)", m_items.size(),
-                                arrays.residentLayers(gl::CollectionClass::Front),
-                                arrays.residentLayers(gl::CollectionClass::Spine), gl::toString(arrays.format()),
-                                mebibytes(arrays.estimatedBytes())));
+    lines.push_back(fmt::format("{} items in {} room(s): fronts {}, spines {} resident ({}, {:.1f} MiB)",
+                                m_items.size(), collections.size(), fronts, spines, gl::toString(m_options.format),
+                                mebibytes(bytes)));
     lines.push_back(
         fmt::format("Fronts: {} covers, {} cached without their cover, {} generated labels", covers, cached, labels));
     lines.push_back(fmt::format("Cache: {} hits ({} without their source), {} misses, {} stored", stats.hits,
                                 stats.hitsWithoutSource, stats.misses, stats.stored));
     lines.push_back(fmt::format("Queue: {} making, {} made, {} uploading; in view {} ({} pending){}",
-                                m_schedule.makingCount(), m_schedule.madeCount(), arrays.pendingUploads(),
+                                m_schedule.makingCount(), m_schedule.madeCount(), uploading,
                                 m_schedule.inViewCount(), m_schedule.inViewPending(),
                                 m_schedule.paused() ? "; paused (a game runs)" : ""));
     lines.push_back(fmt::format("Media root {}", m_options.mediaRoot ? "known" : "unknown: the cache alone serves"));

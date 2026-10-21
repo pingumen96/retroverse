@@ -42,7 +42,7 @@ CoverView CoverView::of(const scene::Camera& camera, std::optional<float> otherA
 }
 
 bool CoverView::operator==(const CoverView& other) const noexcept {
-    if (eye != other.eye || frusta.size() != other.frusta.size()) {
+    if (eye != other.eye || frusta.size() != other.frusta.size() || groups != other.groups) {
         return false;
     }
     for (std::size_t index = 0; index < frusta.size(); ++index) {
@@ -75,12 +75,25 @@ bool CoverPriority::operator<(const CoverPriority& other) const noexcept {
     return item < other.item;
 }
 
-bool coverInView(const core::Aabb& bounds, const CoverView& view) noexcept {
-    if (bounds.isEmpty()) {
+bool coverInView(const core::Aabb& bounds, const CoverView& view, std::uint32_t group) noexcept {
+    if (bounds.isEmpty() || !view.seesGroup(group)) {
         return false;
     }
     return std::any_of(view.frusta.begin(), view.frusta.end(),
                        [&](const scene::Frustum& frustum) { return frustum.intersects(bounds); });
+}
+
+std::vector<std::uint8_t> coverViewGroups(const CoverView& view, std::span<const core::Aabb> doorways,
+                                          std::optional<std::size_t> eyeRoom) {
+    if (doorways.size() <= 1) {
+        return {};
+    }
+    const CoverView everyGroup{view.eye, view.frusta, {}};
+    std::vector<std::uint8_t> groups(doorways.size(), 0);
+    for (std::size_t room = 0; room < doorways.size(); ++room) {
+        groups[room] = eyeRoom == room || coverInView(doorways[room], everyGroup) ? 1 : 0;
+    }
+    return groups;
 }
 
 float coverDistance(const core::Aabb& bounds, const glm::vec3& eye) noexcept {
@@ -91,7 +104,8 @@ float coverDistance(const core::Aabb& bounds, const glm::vec3& eye) noexcept {
     return glm::length(nearest - eye);
 }
 
-CoverPriority coverPriority(std::size_t item, const core::Aabb& bounds, const CoverView& view, bool focused) noexcept {
+CoverPriority coverPriority(std::size_t item, const core::Aabb& bounds, const CoverView& view, bool focused,
+                            std::uint32_t group) noexcept {
     CoverPriority priority;
     priority.item = item;
     const float distance = coverDistance(bounds, view.eye);
@@ -100,7 +114,7 @@ CoverPriority coverPriority(std::size_t item, const core::Aabb& bounds, const Co
         priority.order = distance;
         return priority;
     }
-    if (coverInView(bounds, view)) {
+    if (coverInView(bounds, view, group)) {
         priority.rank = CoverRank::InView;
         const float radius = bounds.isEmpty() ? 0.0f : glm::length(bounds.halfExtents());
         priority.order = -radius / std::max(distance, kMinimumDistance);
@@ -113,8 +127,9 @@ CoverPriority coverPriority(std::size_t item, const core::Aabb& bounds, const Co
 
 // --- CoverSchedule ---------------------------------------------------------------------------------------------------
 
-CoverSchedule::CoverSchedule(std::vector<core::Aabb> bounds)
-    : m_bounds(std::move(bounds)), m_stage(m_bounds.size(), Stage::Waiting), m_layersLeft(m_bounds.size(), 0),
+CoverSchedule::CoverSchedule(std::vector<core::Aabb> bounds, std::vector<std::uint32_t> groups)
+    : m_bounds(std::move(bounds)), m_groups(std::move(groups)), m_stage(m_bounds.size(), Stage::Waiting),
+      m_layersLeft(m_bounds.size(), 0),
       m_inView(m_bounds.size(), 0), m_arrived(m_bounds.size(), 0), m_priority(m_bounds.size()) {
     m_waiting.reserve(m_bounds.size());
     for (std::size_t item = 0; item < m_bounds.size(); ++item) {
@@ -136,14 +151,16 @@ CoverPriority CoverSchedule::priorityOf(std::size_t item) const {
         priority.item = item;
         return priority;
     }
-    return coverPriority(item, m_bounds[item], *m_view, m_focused == item);
+    return coverPriority(item, m_bounds[item], *m_view, m_focused == item,
+                         item < m_groups.size() ? m_groups[item] : 0u);
 }
 
 void CoverSchedule::rank() {
     m_inViewCount = 0;
     for (std::size_t item = 0; item < m_bounds.size(); ++item) {
         m_priority[item] = priorityOf(item);
-        const bool shown = m_view && coverInView(m_bounds[item], *m_view);
+        const bool shown =
+            m_view && coverInView(m_bounds[item], *m_view, item < m_groups.size() ? m_groups[item] : 0u);
         m_inView[item] = shown ? 1 : 0;
         m_inViewCount += shown ? 1 : 0;
     }

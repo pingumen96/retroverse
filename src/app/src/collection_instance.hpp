@@ -35,6 +35,10 @@ namespace rv::assets {
 class MaterialLibrary;
 } // namespace rv::assets
 
+namespace rv::gl {
+class MaterialRegistry;
+} // namespace rv::gl
+
 namespace rv::app {
 
 class SceneGraphics;
@@ -48,11 +52,19 @@ struct CollectionUpdate {
     bool arraysAdded = false;
 };
 
+/// How many arrays a collection holds and how many of them its layered materials sample (I4 step 5a: all of them, each
+/// material its own room's array).
+struct CollectionArraysSampled {
+    std::size_t arrays = 0;
+    std::size_t own = 0;
+};
+
 /// A collection's arrays taken over by the next collection of the same room (I3 step 15b: the room committed again
 /// over the one shown keeps the pictures its items hold), with the family they were made for and the layer keys of the
 /// items that held them.
 struct CollectionPictures {
     gl::CollectionArrays arrays;
+    world::RoomId room;
     std::string family;
     std::vector<std::string> frontKeys;
     std::vector<std::string> spineKeys;
@@ -95,6 +107,11 @@ public:
     [[nodiscard]] gl::CollectionArrays& arrays() noexcept { return m_arrays; }
     [[nodiscard]] const gl::CollectionArrays& arrays() const noexcept { return m_arrays; }
     [[nodiscard]] std::size_t itemCount() const noexcept { return m_items.size(); }
+    /// The room it draws (its layout's).
+    [[nodiscard]] const world::RoomId& room() const noexcept { return m_room; }
+    /// Its arrays, and how many of them the layered materials registered for it sample (`materials`: the registry it
+    /// was created in): the check that every room samples its own arrays (the run report's residency.rooms).
+    [[nodiscard]] CollectionArraysSampled sampledArrays(const gl::MaterialRegistry& materials) const;
 
     /// The item of a layer key ("<GameId>/front", "<GameId>/spine"), or nothing.
     [[nodiscard]] std::optional<std::size_t> itemOfKey(const std::string& key) const;
@@ -185,6 +202,9 @@ private:
     /// The media family, its part meshes (shell, front, spine), the shell's material, the label and spine materials'
     /// names and one layered material per array and class (kept for the live update's new items and arrays).
     std::string m_family;
+    /// Its room and its registry keys' prefix ("collection/<room id>/<family>", I4 step 5a).
+    world::RoomId m_room;
+    std::string m_keyPrefix;
     std::array<std::optional<scene::MeshHandle>, 3> m_partMeshes{};
     scene::MaterialHandle m_shellMaterial;
     std::array<std::string, gl::kCollectionClassCount> m_labelMaterials;

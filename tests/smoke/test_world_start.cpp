@@ -95,7 +95,7 @@ struct ImportedRoom {
 /// A lockstep run of the room: `frames` frames at a fixed step, a screenshot at the end when `shot` names one.
 std::vector<std::string> roomArguments(std::string_view frames, const std::optional<fs::path>& shot = std::nullopt,
                                        std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--exit-after-frames", "--frames", std::string(frames), "--fixed-dt",
+    std::vector<std::string> arguments{"--start-room", "room:snes", "--exit-after-frames", "--frames", std::string(frames), "--fixed-dt",
                                        "0.016667"};
     if (shot) {
         arguments.insert(arguments.end(), {"--screenshot", arg(*shot)});

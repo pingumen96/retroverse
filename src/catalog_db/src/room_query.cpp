@@ -281,4 +281,26 @@ Expected<catalog::RoomSnapshot> SqliteCatalogQuery::roomEntries(const catalog::S
     return snapshot;
 }
 
+Expected<std::optional<catalog::GameId>> SqliteCatalogQuery::aliasTarget(catalog::GameId alias) {
+    auto select = connection().prepare("SELECT game FROM rv_identity_aliases WHERE alias = ?1");
+    if (!select) {
+        return propagate(select.error());
+    }
+    select->bindInt(1, static_cast<std::int64_t>(alias.value()));
+    auto row = select->step();
+    if (!row) {
+        return propagate(row.error());
+    }
+    if (!*row) {
+        return std::optional<catalog::GameId>();
+    }
+    const std::int64_t value = select->columnInt(0);
+    auto game = catalog::GameId::fromValue(value < 0 ? 0 : static_cast<std::uint64_t>(value));
+    if (!game) {
+        return makeError(ErrorCode::ParseError, "an alias of no GameId",
+                         fmt::format("rv_identity_aliases row {}", alias.value()));
+    }
+    return std::optional<catalog::GameId>(*game);
+}
+
 } // namespace rv::catalog_db

@@ -280,6 +280,9 @@ CatalogChanges EsdeAppCatalog::poll() {
     if (results.list && !results.list->error && m_listWaits.size() < kMaxListWaits) {
         m_listWaits.push_back(results.list->waitedMs);
     }
+    if (results.opened && results.opened->world) {
+        m_worldReader = std::move(results.opened->world); // the building job's reader (I4 step 5a)
+    }
     const CatalogDatabaseSource::Collected collected = m_source.collect(results);
     const bool refreshEnded = collectRefresh(results, m_source.ended());
     for (ResolvedLaunch& resolved : results.launches) {
@@ -324,28 +327,7 @@ CatalogChanges EsdeAppCatalog::poll() {
         m_resolving.reset();
     }
     collectSessions(results);
-    if (results.room) {
-        m_room = std::move(results.room);
-    }
     return CatalogChanges{collected.opened, collected.rowsChanged, refreshEnded, collected.refreshed};
-}
-
-bool EsdeAppCatalog::hasGamesOf(const catalog::SystemName& system) const {
-    if (m_source.state() != CatalogState::Ready) {
-        return false;
-    }
-    const std::vector<CatalogSystem>& systems = m_source.systems();
-    return std::any_of(systems.begin(), systems.end(),
-                       [&](const CatalogSystem& listed) { return listed.name == system && listed.games > 0; });
-}
-
-bool EsdeAppCatalog::requestRoomSnapshot(RoomSnapshotRequest request) {
-    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
-        return false;
-    }
-    m_room.reset();
-    m_worker.roomSnapshot(std::move(request));
-    return true;
 }
 
 bool EsdeAppCatalog::collectRefresh(CatalogResults& results, bool ended) {

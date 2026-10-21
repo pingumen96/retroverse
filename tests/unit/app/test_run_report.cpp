@@ -327,6 +327,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.state = "room";
     world.notice = "media-unknown-kept";
     world.reason = "the media are unknown";
+    world.noticeRoom = "area:shared:handheld";
     world.catalogState = "";
     world.room = "room:snes";
     world.library = "esde";
@@ -419,6 +420,18 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     residency.hero.peakBytes = 3616280;
     residency.hero.maxUploadMs = 0.75;
     residency.hero.shownGame = "g000000000000b002";
+    // I4 step 5a: each collection room's share, its items in the first view among them.
+    rv::app::RoomResidencyRecord room;
+    room.room = "room:snes";
+    room.items = 51;
+    room.viewItems = 12;
+    room.frontsResident = 51;
+    room.spinesResident = 50;
+    room.pending = 1;
+    room.arrayBytes = 20103168;
+    room.arrays = 2;
+    room.ownArrays = 2;
+    residency.rooms.push_back(room);
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->world == world);

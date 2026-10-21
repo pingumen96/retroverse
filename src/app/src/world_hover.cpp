@@ -40,40 +40,86 @@ WorldHover::~WorldHover() {
     syncAnimationPhase(false);
 }
 
-std::size_t WorldHover::setRoom(world::CollectionLayout layout, CollectionInstance* collection) {
-    clear();
+std::size_t WorldHover::addRoom(world::CollectionLayout layout, CollectionInstance* collection) {
     const auto start = std::chrono::steady_clock::now();
+    const std::string roomId = layout.room.toString();
+    RoomEntry entry;
+    entry.collection = collection;
     auto index = world::PickIndex::build(layout.pickTargets(), layout.occluders);
     if (!index) {
-        spdlog::error("World: the room's pick index cannot be built: {}", index.error().toString());
-        return 0;
+        spdlog::error("World: the pick index of {} cannot be built: {}", roomId, index.error().toString());
+    } else if (auto room = CollectionRoom::build(std::make_shared<const world::CollectionLayout>(std::move(layout)))) {
+        entry.index = std::move(*index);
+        entry.room = std::move(*room);
+    } else {
+        spdlog::error("World: the D-pad steps of {} cannot be built: {}", roomId, room.error().toString());
     }
-    auto room = CollectionRoom::build(std::make_shared<const world::CollectionLayout>(std::move(layout)));
-    if (!room) {
-        spdlog::error("World: the room's D-pad steps cannot be built: {}", room.error().toString());
-        return 0;
+    const std::size_t targets = entry.room ? entry.index.targetCount() : 0;
+    if (entry.room) {
+        spdlog::info("World: the hover, the pull-out and Focus over {} item(s) of {} ({} pick target(s), {} "
+                     "occluder(s)), ready in {:.1f} ms",
+                     entry.room->layout().items.size(), roomId, targets, entry.room->layout().occluders.size(),
+                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
     }
-    m_index = std::move(*index);
-    m_room = std::move(*room);
-    m_collection = collection;
-    m_interaction.setRoom(m_room.get());
+    m_rooms.push_back(std::move(entry));
     m_record.bound = true;
-    spdlog::info("World: the hover, the pull-out and Focus over {} item(s) ({} pick target(s), {} occluder(s)), "
-                 "ready in {:.1f} ms",
-                 m_room->layout().items.size(), m_index.targetCount(), m_room->layout().occluders.size(),
-                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
-    return m_index.targetCount();
+    if (m_rooms.size() == 1) {
+        m_wanted = 0;
+        bindRoom(0);
+    }
+    return targets;
+}
+
+void WorldHover::setActiveRoom(std::optional<std::size_t> room) {
+    if (room && *room >= m_rooms.size()) {
+        room.reset();
+    }
+    m_wanted = room;
+    if (room == m_active) {
+        return;
+    }
+    // The interaction leaves its room only in free roam once it has let go of every item of it: nothing hovered,
+    // pulled or focused (the walker cannot walk out of Focus or Inspect; a pulled item first goes back to its slot).
+    if (m_interaction.state() != WorldState::FreeRoam || m_interaction.hovered() != world::kNoPick ||
+        !m_interaction.pulledItems().empty()) {
+        return;
+    }
+    bindRoom(room);
+}
+
+void WorldHover::bindRoom(std::optional<std::size_t> room) {
+    // The room left lets go of its items (none hovered, focused or pulled; its records' flags as they stand: synced),
+    // a frame of no time absorbing what the interaction would do with it.
+    if (m_room != nullptr) {
+        m_interaction.setRoom(nullptr);
+        static_cast<void>(m_interaction.update(InteractionFrame{}));
+        syncCollection();
+    }
+    m_active = room;
+    const RoomEntry* entry = room ? &m_rooms[*room] : nullptr;
+    m_room = entry != nullptr && entry->room ? entry->room.get() : nullptr;
+    m_index = m_room != nullptr ? &entry->index : nullptr;
+    m_collection = m_room != nullptr ? entry->collection : nullptr;
+    m_hidden.clear();
+    m_lastPulled.clear();
+    m_interaction.setRoom(m_room);
+    if (m_room != nullptr && m_rooms.size() > 1) {
+        spdlog::info("Frame {}: the interaction is in {}", m_context.frameIndex(), m_room->layout().room.toString());
+    }
 }
 
 void WorldHover::clear() {
-    // The interaction lets go of the items first (none hovered, focused or pulled), then the room goes. A walker's ease
+    // The interaction lets go of the items first (none hovered, focused or pulled), then the rooms go. A walker's ease
     // it stops there would place the walker at its next update, in a scene that may be gone: a frame of no time, its
     // result dropped, absorbs it (the application places the walker in the new scene itself).
     m_interaction.setRoom(nullptr);
     static_cast<void>(m_interaction.update(InteractionFrame{}));
     m_collection = nullptr;
-    m_room.reset();
-    m_index = world::PickIndex{};
+    m_room = nullptr;
+    m_index = nullptr;
+    m_rooms.clear();
+    m_active.reset();
+    m_wanted.reset();
     m_hidden.clear();
     m_viewItems.clear();
     m_lastPulled.clear();
@@ -84,7 +130,11 @@ void WorldHover::clear() {
 }
 
 InteractionResult WorldHover::update(const Frame& frame) {
-    if (m_room) {
+    // The room that holds the eye, once the room the interaction is in let go of its items.
+    if (m_wanted != m_active) {
+        setActiveRoom(m_wanted);
+    }
+    if (m_room != nullptr) {
         m_room->setViewer(frame.viewer);
     }
     InteractionFrame input;
@@ -102,9 +152,10 @@ InteractionResult WorldHover::update(const Frame& frame) {
         m_repeat.reset();
         input.actions = frame.actions;
     }
-    const bool fromCursor = m_room && frame.ray && frame.raySource == PickRaySource::Cursor;
-    if (m_room && frame.ray) {
-        input.hover = m_index.sample(*frame.ray, m_interaction.hovered());
+    const bool fromCursor = m_room != nullptr && frame.ray && frame.raySource == PickRaySource::Cursor;
+    if (m_room != nullptr && m_index != nullptr && frame.ray) {
+        // The eye left the interaction's room: its items are hovered no more (a miss), so that it can let go of them.
+        input.hover = m_wanted == m_active ? m_index->sample(*frame.ray, m_interaction.hovered()) : world::HoverSample{};
     }
     const WorldState before = m_interaction.state();
     InteractionResult result = m_interaction.update(input);
@@ -119,7 +170,7 @@ InteractionResult WorldHover::update(const Frame& frame) {
 }
 
 world::PickId WorldHover::pickOf(const catalog::GameId& game) const noexcept {
-    if (!m_room) {
+    if (m_room == nullptr) {
         return world::kNoPick;
     }
     const world::CollectionItem* item = m_room->layout().findGame(game);
@@ -278,7 +329,7 @@ std::span<const scene::RenderItem> WorldHover::viewItems(std::span<const scene::
 std::optional<WorldLabelContent> WorldHover::labelFor(const scene::Camera& camera, glm::ivec2 viewSize) {
     m_record.label.clear();
     const world::PickId id = m_interaction.highlighted();
-    const world::CollectionItem* item = m_room ? m_room->find(id) : nullptr;
+    const world::CollectionItem* item = m_room != nullptr ? m_room->find(id) : nullptr;
     if (item == nullptr || viewSize.x <= 0 || viewSize.y <= 0) {
         return std::nullopt;
     }
@@ -297,7 +348,7 @@ std::optional<WorldLabelContent> WorldHover::labelFor(const scene::Camera& camer
 }
 
 std::string WorldHover::focusedGame() const {
-    const world::CollectionItem* item = m_room ? m_room->find(m_interaction.focused()) : nullptr;
+    const world::CollectionItem* item = m_room != nullptr ? m_room->find(m_interaction.focused()) : nullptr;
     return item != nullptr ? item->game.toString() : std::string();
 }
 
@@ -311,7 +362,7 @@ void WorldHover::record(InteractionRecord& record) const {
     record.hoveredPickId = pickText(m_interaction.hovered());
     record.focusedPickId = pickText(m_interaction.focused());
     record.highlightedPickId = pickText(m_interaction.highlighted());
-    if (const world::CollectionItem* item = m_room ? m_room->find(m_interaction.focused()) : nullptr) {
+    if (const world::CollectionItem* item = m_room != nullptr ? m_room->find(m_interaction.focused()) : nullptr) {
         record.focusedGame = item->game.toString();
     }
     record.pulled.clear();

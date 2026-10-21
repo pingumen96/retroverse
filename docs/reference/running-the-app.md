@@ -44,13 +44,20 @@ build/rvdata`).
   `sceneTextures`, `buffers`; now and peak), `video` (the hero CRT: the game and picture shown, the one decoder, the
   first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings; `{}` without a CRT),
   `world` (`{}` without a room: the state, notice, outcome and rebuild, the plan's digest, placements per section and
-  `unplaced` per reason (`roomKept` since I4 step 1), items, clusters, lights, findings, `times` from the process's creation; `preview`,
+  `unplaced` per reason (`roomKept` since I4 step 1), items, clusters, lights, findings, `times` from the process's
+  creation; since I4 step 5a `floor` (the floor shown), `rooms` (its rooms: `id`, `floor`, `x` and `z` in millimetres
+  and `yaw` in half turns, their placements on the floor) and `room` (the room that held the eye at the end, "" in a
+  hall); the placements per section are the floor's, the placements and unplaced games the building's; `preview`,
   `reconcile`, `itemsWritten`, `screenGames`, `objectFallbacks` of the persisted start; `interaction` (events, counts,
   `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
   `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
-  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown)), `residency` (the collection's layers: format,
-  array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
+  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown)), `residency` (the collection's layers, the
+  floor's totals since I4 step 5a and each collection room's in `rooms`: `room`, `items`, `viewItems` (its items in
+  the cover loader's first view: none for a room that neither holds the eye nor has its doorway in view),
+  `frontsResident`, `spinesResident`, `pending`, `arrayBytes`, `arrays` and `ownArrays`, the arrays its materials
+  sample, all its own:
+  format, array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
   {`shownAtMs`, `allResidentAtMs`, `residentAfterShownMs`}, `arrival`, `uploads`, `lockstep`, `pausedRounds`,
   `retries`, `hero`) and `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
   `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog); also `catalog.refreshes`
@@ -157,31 +164,50 @@ build/rvdata`).
   relative to the file) and `"lastPlayed"`. `--video-freeze-pts <seconds>` (frame-limited
   runs, 0 to 86400) opens every clip paused at that time and holds the frame: two runs give the same screenshot byte for
   byte. NVIDIA's message 131154 (every video upload) is dropped like the informational ids.
-- The generated room (I3, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since I4 step 1,
-  ADR-0013, `docs/i4/step-1.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe` opens the room of
-  its ES-DE catalog's snes games: the plan under `<user data>/worlds/<library id>/` generated or updated and saved
-  (generator 1.3, schema 2: the building, of which the app updates and shows the snes room alone, in its own frame, the
-  other rooms as they stand, until I4 step 5a; a stored schema-1 plan of I3 is read lifted into the building and written
-  in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is, for an older
-  template version, prefab levels that changed or another generator major, shows with the regeneration's notice and its
-  new games unplaced as `room-kept`), the covers and spines through the derived-texture cache
-  `<user data>/cache/textures/<library id>`; the empty room while it is made; the test room with a notice when there is
-  no catalog (no library.json or database) or no snes games; the empty room with a notice when the media root is out of
-  reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
-  command has it). `--room-system <system>` (I4 step 2, until step 5a's floors and `--start-room`) shows another
-  system's room instead of the snes one, its media family's items and fixtures and its covers fitted to their labels
-  (ADR-0013 §4; a data directory with that system's catalog: the `esde/building` fixture's, or any); a system
-  systems.json does not name is classified by the catalog's platform tags of it, as `worldplan` does. With a plan
-  stored, its room shows at the first frame (covers and spines from the cache by the room's items and the system's
-  platform tags, `<user data>/cache/world/<library id>/room-<system>.json`) before the snapshot is asked for, then is
-  reconciled with it (unchanged: nothing moved, rebuilt or written; changed: committed again with the walker kept). A
-  manifest missing from the asset root falls back to its family's prefab, warned once per run. The walker starts at the
-  room's doorway camera (or `--spawn`). Covers come nearest first (the hovered item, the view by projected size, the
-  rest by distance); the hovered item's front shows its hero texture (its cover at its label's shape, up to 1,024 px on
-  the long side and 1,024 x 752 pixels, 8 kept); nothing is loaded while a game runs; after "Aggiorna libreria" the
-  covers the media root could not give are tried again. Lockstep runs (`--fixed-dt`) wait before the first frame and
-  between frames for the room, the layers of the frame's view and the hovered item's hero texture, and for the whole
-  room before their last frame (10 s at a time): a stored room at frame 0, the reconciled one from frame 1.
+- The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
+  I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
+  plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every
+  system's snapshot within one read transaction on a read-only connection of its own (the catalog worker keeps
+  answering the quick catalog; a refresh running is waited for first), plans the building as `retroverse-cli worldplan
+  generate` does (every system with a room and a placeable title; excluded systems out; a system under
+  `sharedRoomMinTitles` a section of its floor's `area:shared:<floor>`, every arcade system a section of `area:arcade`)
+  or updates its rooms as `worldplan update` does (each system's selection to the room that holds its section; a shared
+  or arcade room lacking a section's selection held as it is, logged; new systems enter with I4 step 6a), saves it
+  under `<user data>/worlds/<library id>/` (generator 1.3, schema 2; a stored schema-1 plan of I3 is read lifted and
+  written in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is shows
+  with the regeneration's notice and its new games unplaced as `room-kept`) and writes, only when they changed, each
+  system's room items (`<user data>/cache/world/<library id>/room-<system>.json`: titles, cover paths, years, the
+  system's full name and platform tags; a system of a shared room has its own, its section's games with their text),
+  from which the floor-build job makes the floor without the catalog: its static part (`worldplan show --floor`'s
+  scene: its rooms and its derived hall), each collection room's collection on a static group of its own
+  (every `collection/<room id>/...` registry key carrying the room id, so that two rooms of one family sample their own
+  arrays) and their covers and spines through the derived-texture cache `<user data>/cache/textures/<library id>` (one
+  cover loader for the floor: the view is the room that holds the eye and the rooms whose doorway the frustum meets).
+  The run starts in the ground floor's lobby, at the elevator's arrival point facing east down the hall (no hero CRT
+  bound); `--start-room <room id>` (`room:snes`, `area:arcade`, ...) starts at that room's doorway camera on its floor,
+  its CRT the hero CRT (a shared or arcade room's playing all its sections' games; a room the plan lacks once it
+  exists ends the run: exit 2). The scene's frame is the start
+  room's when one is given, else the floor's (building.hpp: x east from the elevator, the hall's centre line on z 0):
+  `--spawn`, the input scripts' poses and the run report's walker poses are in that frame, and the start room's own
+  objects keep the very coordinates of its standalone scene. Hover, pull-out, Focus, Inspect, the card and launches
+  work in the room that holds the eye (a pick index per room; none in a hall). The empty shell while the building is
+  made (the lobby, or the start room's empty room); the test room with a notice when there is no catalog (no
+  library.json or database) or no system that gives a room (and no plan stored: the notice names the start room's
+  system only when `--start-room` gives one); the empty shell with a notice when the media root is out
+  of reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
+  command has it). A system systems.json does not name is classified by the catalog's platform tags of it, as
+  `worldplan` does. With a plan stored, its start floor shows at the first frame (covers and spines from the cache by
+  the rooms' items) before the building job runs, then is reconciled with its result (unchanged: nothing moved,
+  rebuilt or written; changed: committed again with the walker kept where it stands in the scene's frame; the items
+  compared in their rooms' own frames, so a room that grew moves none; reconciling room by room, and the walker kept
+  in the frame of the room that holds it, are I4 step 6b's). A
+  manifest missing from the asset root falls back to its family's prefab, warned once per run. Covers come nearest
+  first (the hovered item, the view by projected size, the rest by distance); the hovered item's front shows its hero
+  texture (its cover at its label's shape, up to 1,024 px on the long side and 1,024 x 752 pixels, 8 kept); nothing is
+  loaded while a game runs; after "Aggiorna libreria" the covers the media root could not give are tried again.
+  Lockstep runs (`--fixed-dt`) wait before the first frame and between frames for the floor, the layers of the frame's
+  view and the hovered item's hero texture, and for the whole floor before their last frame (10 s at a time): a stored
+  floor at frame 0, the reconciled one from frame 1.
   The item the reticle rests on within 2.5 m is outlined and labelled with its title; after 150 ms it leaves its slot (a
   face-out cartridge tips forward, a spine-out one slides out and turns its cover to the viewer). E, a captured left
   click or the pad's south button focuses a spine-out cartridge (the walker eased to 0.9 m in front of it) or inspects a
@@ -199,11 +225,15 @@ build/rvdata`).
   shows the description, the metadata and the other versions the plan knows with their regions; Up and Down scroll; X
   and Y switch between the two. Avvia launches as the quick catalog's does; after the return the walker stands where it
   stood and the item is in the hand again; the hero CRT's decoder stops before the launch and reopens at the clip's
-  position after it. The quick catalog's card offers "Mostra nella stanza" for a game the room places (the walker eased
-  to its item's Focus pose) and says why for one it does not. After "Aggiorna libreria" or `--refresh-library` the room
-  follows the refreshed catalog live (the room's job again, the plan saved; new titles placed into their slots with
-  their covers, nothing else moved; a dressed level, module or growth commits the room again with the walker and the
-  pictures kept; never during a game). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
+  position after it. The quick catalog's card offers "Mostra nella stanza" for a game the room that holds the eye
+  places (the walker eased to its item's Focus pose) and says why for one it does not: a game the building places in
+  another room, or with the eye in a hall, is "on display elsewhere in the building" (`other-room`; across rooms and
+  floors is I4 step 7's), one of a system without a room is not on display (`not-in-room`). After "Aggiorna
+  libreria" or `--refresh-library` the floor follows the refreshed catalog live (the building job again, the plan
+  saved; new titles placed into their slots with their covers, nothing else moved; a dressed level, module or growth
+  commits the floor again with the pictures kept and the walker where it stands in the scene's frame, the items
+  compared in their rooms' own frames; keeping the walker in the frame of a room that grew around it is I4 step
+  6b's; never during a game). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
   instant) and `"lightingProfile": "evening" | "afternoon"` (`assets/world/lighting`, applied when the room is drawn,
   never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
   featured shelf, `shelf_light`, while the 16 lights leave room); the room's materials come from
@@ -254,7 +284,8 @@ build/rvdata`).
   `--screenshot-include-ui` fails (exit 3) when the overlay cannot start.
 - `--spawn x,y,z[,yaw[,pitch]]` starts the walker with its feet at (x, y, z) meters (the eye 1.65 m above), looking
   along yaw and pitch degrees (0 looks at -Z, positive yaw turns right; the scene camera's when left out), instead of at
-  the scene camera; the final camera that frame-limited runs log reads the same way. The walk scripts start at `--spawn
+  the scene camera; the final camera that frame-limited runs log reads the same way. In the generated building the
+  frame is `--start-room`'s room's, else the floor's. The walk scripts start at `--spawn
   0,0,3.2,0,-6`, on the way in of the test room, so they do not depend on its scene camera.
 - `--input-script <json>` replaces the actions of chosen frames (`rv/input/input_script.hpp`: an array of
   `{"fromFrame": a, "toFrame": b, "actions": {"move_forward": 1.0, "look_delta_x": 20.0}}`, frames counted from 0,

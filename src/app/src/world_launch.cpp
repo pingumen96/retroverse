@@ -31,14 +31,15 @@ std::string WorldLaunch::placementOf(std::string_view gameId, const WorldHover& 
     if (!game) {
         return std::string(ui::quick_catalog::kRoomNotInRoom);
     }
-    return std::string(roomPlacementOf(*m_index, *game, hover.pickOf(*game) != world::kNoPick));
+    return std::string(roomPlacementOf(*m_index, *game, hover.pickOf(*game) != world::kNoPick, hover.activeRoomId()));
 }
 
 void WorldLaunch::beforeInteraction(ProductUi& product, WorldHover& hover, const scene::WalkerPose& walker,
                                     std::uint64_t frame) {
-    // The quick catalog's card asks the room shown (its card fills again when the room changed).
-    if (m_given != m_revision) {
+    // The quick catalog's card asks the room shown (its card fills again when the plan or the eye's room changed).
+    if (std::optional<world::RoomId> room = hover.activeRoomId(); m_given != m_revision || room != m_givenRoom) {
         m_given = m_revision;
+        m_givenRoom = std::move(room);
         if (m_index) {
             product.setRoomPlacement([this, &hover](std::string_view gameId) {
                 std::string key = placementOf(gameId, hover);

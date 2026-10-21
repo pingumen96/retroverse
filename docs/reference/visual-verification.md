@@ -105,23 +105,27 @@ generated label), G07 (an inspected cartridge with its card, `golden_g07_inspect
 at 1.0 s), G08b (the corrupt clip's fallback to the cover, `golden_g08b_corrupt_clip.json`) and G10 (G02 after the ten
 `additions/` imported; also compared with G02's golden: every differing pixel on the level the ten took, heatmap
 `g10_against_g02_heatmap.png`). Each case imports its fixture, makes the plan and fills the cache in a first run of
-300 frames, then renders the stored room hidden and lockstep at 1920 x 1080 (`--video-freeze-pts 1` but for G08b),
+300 frames, then renders the stored room hidden and lockstep at 1920 x 1080 (`--start-room room:snes`, in the room's
+own frame since I4 step 5a, so the floor around it changes no pixel; `--video-freeze-pts 1` but for G08b),
 checks the run report and compares within G01's tolerance (`comparison.txt` and a heatmap in
 `build/<preset>/smoke/golden_room/<case>`), skipped on another GPU or driver. `$env:RV_UPDATE_GOLDEN=1;
 build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden/G02:*"` rewrites one (then the case fails: look at it, run it
 again without the variable, update `docs/testing/gate-b.md`'s checklist). The room's own screenshots: a data directory
 with a fixture recorded and imported (`retroverse-cli --data-dir <dir> library create --home <materialized fixture>
---install <fixture>/Programs/ES-DE`, then `import`), then `retroverse.exe --exit-after-frames --frames 30 --fixed-dt
-0.016667 --hidden --data-dir <dir> --screenshot build/screenshots/room.png` (the doorway); the `gpu.world*` cases leave
-theirs under `build/<preset>/smoke/world*/`. The benchmark path: `--width 1920 --height 1080 --no-vsync
---exit-after-frames --frames 1270 --fixed-dt 0.016667 --input-script tests/input_scripts/bench_snes_room.json` from the
-room's scene camera (the `benchmark` phase of the run report, with its GPU passes).
+--install <fixture>/Programs/ES-DE`, then `import`), then `retroverse.exe --start-room room:snes --exit-after-frames
+--frames 30 --fixed-dt 0.016667 --hidden --data-dir <dir> --screenshot build/screenshots/room.png` (the doorway;
+without `--start-room` the run starts in the ground floor's lobby, at the elevator); the `gpu.world*` cases leave
+theirs under `build/<preset>/smoke/world*/`. The benchmark path: `--start-room room:snes --width 1920 --height 1080
+--no-vsync --exit-after-frames --frames 1270 --fixed-dt 0.016667 --input-script
+tests/input_scripts/bench_snes_room.json` from the room's scene camera (the `benchmark` phase of the run report, with
+its GPU passes).
 
 Another family's room with its items and covers (I4 step 2): a data directory with that system's catalog, then
-`retroverse.exe --room-system psx --exit-after-frames --frames 40 --fixed-dt 0.016667 --hidden --data-dir <dir>
+`retroverse.exe --start-room room:psx --exit-after-frames --frames 40 --fixed-dt 0.016667 --hidden --data-dir <dir>
 --screenshot build/screenshots/psx.png` (with `--spawn -2.45,0,-3.9,0,-8` a hero-wall module up close, `--spawn
--3.3,0,-4.0,-90,-12` the first west side-wall module, `--spawn -0.25,0,1.0,-90,-38` the west display case); the
-`esde/building` fixture's systems or any invented library under `build/`.
+-3.3,0,-4.0,-90,-12` the first west side-wall module, `--spawn -0.25,0,1.0,-90,-38` the west display case; the poses
+are in the start room's frame); the `esde/building` fixture's systems or any invented library under `build/`. The
+start room's floor is drawn around it (I4 step 5a): its other rooms' collections and covers too, and the hall.
 
 A generated room's static part is checked as a scene: `retroverse-cli --data-dir build/rvdata worldplan show
 tests/fixtures/world/golden/plan-890-seed-102938.json --scene build/scenes/room_890.json`, then `retroverse.exe --scene
@@ -146,6 +150,12 @@ aligned across the 12.3 m hall, that of the floor's shared room `area:shared:han
 sections of pocketlab and pokemini, the sign "MORE GAMES", the CRT on its cabinet without a console); the south-row
 room, turned a half turn, from inside looking out: `--spawn 7.65,0,4.5,0,0` (room:gb's hero wall across the hall
 through both doorways); the walk into it: `tests/input_scripts/floor_walk_into_south_room.json` (the same flags).
+The same floors with their collections (I4 step 5a): `retroverse.exe --data-dir <dir> --exit-after-frames --frames 60
+--fixed-dt 0.016667 --hidden --screenshot build/screenshots/lobby.png` starts at the ground floor's elevator (the
+poses in the floor's frame, as the scene files'), `--start-room room:gb` at room:gb's doorway on `handheld` (its
+covers, and through the doorways those of `area:shared:handheld` across the hall; the poses in room:gb's frame),
+`--start-room area:arcade` at the arcade room's doorway on `ground`; `gpu.world floor app: ...` leaves its runs under
+`build/<preset>/smoke/world_floor_app/`.
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),

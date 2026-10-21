@@ -82,8 +82,8 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
     // The plan made and every layer in the cache, as a restart finds them: a run without a lockstep (which would wait
     // only for the layers in view), long enough for the cold cache (8 to 10 s for 2,000 titles, I3 step 12).
     const AppRun prepare = runApp(retroverseExe(), room.dir, "prepare",
-                                  {"--no-vsync", "--width", "1920", "--height", "1080", "--exit-after-frames",
-                                   "--frames", "8000"});
+                                  {"--start-room", "room:snes", "--no-vsync", "--width", "1920", "--height",
+                                   "1080", "--exit-after-frames", "--frames", "8000"});
     skipWithoutOpenGl(prepare);
     requireCleanRun(prepare);
     REQUIRE(prepare.report->world.state == "room");
@@ -92,8 +92,9 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
 
     const AppRun run =
         runApp(retroverseExe(), room.dir, "benchmark",
-               {"--width", "1920", "--height", "1080", "--no-vsync", "--exit-after-frames", "--frames", "1270",
-                "--fixed-dt", "0.016667", "--input-script", arg(inputScript("bench_snes_room.json"))});
+               {"--start-room", "room:snes", "--width", "1920", "--height", "1080", "--no-vsync",
+                "--exit-after-frames", "--frames", "1270", "--fixed-dt", "0.016667", "--input-script",
+                arg(inputScript("bench_snes_room.json"))});
     requireCleanRun(run);
     INFO(run.describe());
     const rv::app::RunReport& report = *run.report;

@@ -17,10 +17,14 @@ inline constexpr std::string_view kShowInRoomEvent = "show_in_room";
 /// sentence of the document each.
 inline constexpr std::string_view kRoomPlaced = "placed";
 /// The plan's unplaced reasons (rv_world's UnplacedReason names, world::toString), and kRoomNotInRoom: a game the plan
-/// does not hold at all (another system's: the room collects one system). tests/unit/app checks that the world's names
-/// are these.
+/// does not hold at all (a system without a room in the building: excluded, or not in it yet). tests/unit/app checks
+/// that the world's names are these.
 inline constexpr std::string_view kRoomNotInRoom = "not-in-room";
 inline constexpr std::array<std::string_view, 6> kRoomUnplacedKeys{"duplicate-title", "no-cover", "unavailable",
                                                                    "capacity",        "room-kept", kRoomNotInRoom};
+/// A game the building places in a room other than the one that holds the eye (or with the eye in a hall): on display
+/// elsewhere, its button absent (I4 step 5a: "Mostra nella stanza" serves the eye's room; across rooms and floors is I4
+/// step 7's).
+inline constexpr std::string_view kRoomOtherRoom = "other-room";
 
 } // namespace rv::ui::quick_catalog

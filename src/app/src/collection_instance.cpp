@@ -57,16 +57,19 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     }
     const geometry::ProceduralPrefab& prefab = *item->prefab;
 
-    // The family's meshes, one per part, shared by every item.
+    // The family's meshes, one per part, shared by every item of the room. Every registry key names the room (I4 step
+    // 5a, ADR-0013 §9): two rooms of one family on a floor never share a material, so each samples its own arrays.
     gl::MeshRegistry& meshes = graphics.meshes();
     instance->m_family = family.mediaFamily;
+    instance->m_room = layout.room;
+    instance->m_keyPrefix = fmt::format("collection/{}/{}", layout.room.toString(), family.mediaFamily);
     auto& partMeshes = instance->m_partMeshes;
     for (std::size_t part = 0; part < kPartRoles.size(); ++part) {
         const geometry::PrefabPart* found = geometry::findPart(prefab, kPartRoles[part]);
         if (found == nullptr) {
             continue;
         }
-        auto handle = meshes.add(fmt::format("collection/{}/{}", family.mediaFamily, kPartRoles[part]), found->mesh);
+        auto handle = meshes.add(fmt::format("{}/{}", instance->m_keyPrefix, kPartRoles[part]), found->mesh);
         if (!handle) {
             return propagate(handle.error());
         }
@@ -87,7 +90,7 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     gl::MaterialRegistry& materials = graphics.materials();
     const assets::MaterialDesc& shellDesc = library.getOrFallback(roleMaterial("plastic_shell"));
     instance->m_shellMaterial =
-        materials.add(fmt::format("collection/{}/shell", family.mediaFamily), "collection shell", shellDesc,
+        materials.add(fmt::format("{}/shell", instance->m_keyPrefix), "collection shell", shellDesc,
                       gl::resolveMaterialTextures(shellDesc, graphics.textures()));
     instance->m_labelMaterials = {roleMaterial("label"), roleMaterial("spine")};
 
@@ -95,12 +98,13 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     desc.format = graphics.collectionArrayFormat();
     const gl::Rgb8 pending = pendingColorOf(shellDesc);
     desc.pendingColors = {pending, pending};
-    desc.debugName = "Collection";
+    desc.debugName = "Collection " + layout.room.toString();
     // Sized to the placements (planArrayLayers rounds them up to 64): 2,000 items take one array of 2,048 layers per
     // class, within ADR-0011 §9's 80 MiB; a placement added later takes a layer of that headroom or grows the arrays by
     // a GPU copy (CollectionArrays::reserve, step 15b).
     const std::size_t slots = layout.items.size();
-    if (pictures && pictures->family == family.mediaFamily && pictures->arrays.format() == desc.format) {
+    if (pictures && pictures->room == layout.room && pictures->family == family.mediaFamily &&
+        pictures->arrays.format() == desc.format) {
         // I3 step 15b: the arrays of the collection shown before, the layers of the games gone released.
         std::set<std::string, std::less<>> keys;
         for (const world::CollectionItem& placed : layout.items) {
@@ -153,7 +157,7 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
         instance->m_heroBase = std::move(*base);
         gl::MaterialTextures textures = gl::resolveMaterialTextures(labelDesc, graphics.textures());
         textures[static_cast<std::size_t>(gl::MaterialTextureSlot::BaseColor)] = &instance->m_heroBase;
-        instance->m_heroMaterial = materials.add(fmt::format("collection/{}/hero", family.mediaFamily),
+        instance->m_heroMaterial = materials.add(fmt::format("{}/hero", instance->m_keyPrefix),
                                                  "collection hero front", labelDesc, textures);
         instance->m_heroShader = materials.material(instance->m_heroMaterial).shader;
     }
@@ -174,8 +178,27 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     return instance;
 }
 
+CollectionArraysSampled CollectionInstance::sampledArrays(const gl::MaterialRegistry& materials) const {
+    CollectionArraysSampled sampled;
+    for (const gl::CollectionClass cls : gl::kCollectionClasses) {
+        const std::size_t count = m_arrays.arrayCount(cls);
+        sampled.arrays += count;
+        for (const scene::MaterialHandle handle : m_layered[gl::toIndex(cls)]) {
+            const gl::Texture2DArray* array = materials.material(handle).layeredBaseColor;
+            for (std::size_t index = 0; index < count; ++index) {
+                if (array == &m_arrays.array(cls, index)) {
+                    ++sampled.own;
+                    break;
+                }
+            }
+        }
+    }
+    return sampled;
+}
+
 CollectionPictures CollectionInstance::takePictures() {
     CollectionPictures pictures;
+    pictures.room = m_room;
     pictures.family = m_family;
     for (const Item& item : m_items) {
         pictures.frontKeys.push_back(item.frontKey);
@@ -193,7 +216,7 @@ void CollectionInstance::addLayeredMaterials(SceneGraphics& graphics) {
         const assets::MaterialDesc& labelDesc = library.getOrFallback(m_labelMaterials[gl::toIndex(cls)]);
         std::vector<scene::MaterialHandle>& layered = m_layered[gl::toIndex(cls)];
         for (std::size_t index = layered.size(); index < m_arrays.arrayCount(cls); ++index) {
-            const std::string key = fmt::format("collection/{}/{}[{}]", m_family, gl::toString(cls), index);
+            const std::string key = fmt::format("{}/{}[{}]", m_keyPrefix, gl::toString(cls), index);
             layered.push_back(materials.addLayered(key, key, labelDesc,
                                                    gl::resolveMaterialTextures(labelDesc, graphics.textures()),
                                                    gl::LayeredBaseColor{&m_arrays.array(cls, index), spine}));
@@ -290,7 +313,7 @@ Status CollectionInstance::setItems(const world::CollectionLayout& layout, Scene
         items.push_back(std::move(entry));
     }
     auto group = gl::StaticInstanceGroup::create(records, static_cast<std::uint32_t>(layout.clusters.size()),
-                                                 graphics.meshes(), materials, "Collection");
+                                                 graphics.meshes(), materials, "Collection " + m_room.toString());
     if (!group) {
         return propagate(group.error());
     }
@@ -310,8 +333,9 @@ Status CollectionInstance::setItems(const world::CollectionLayout& layout, Scene
 Expected<CollectionUpdate> CollectionInstance::applyLayout(const world::CollectionLayout& layout,
                                                            SceneGraphics& graphics,
                                                            int uniformBufferOffsetAlignment) {
-    if (layout.groups.size() != 1 || layout.groups.front().mediaFamily != m_family) {
-        return makeError(ErrorCode::Unsupported, "the collection's media family changed", layout.room.toString());
+    if (layout.groups.size() != 1 || layout.groups.front().mediaFamily != m_family || layout.room != m_room) {
+        return makeError(ErrorCode::Unsupported, "the collection's room or media family changed",
+                         layout.room.toString());
     }
     CollectionUpdate update;
     // The layers of the games the room no longer holds are released (kept with their pictures until reused).

@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "a7ad4b562008111afe7836fa0f2a380715c98126",
+    "gitCommit": "57578bdc4dea09f131b230518740fef13a720fc3",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -50,7 +50,7 @@
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
       "write <case>/data/config/world.json: {\"sharedRoomMinTitles\": 0}",
       "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
-      "build/msvc-x64-debug/bin/retroverse.exe --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g06.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g06.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
     ]
   },
   "schemaVersion": 1,

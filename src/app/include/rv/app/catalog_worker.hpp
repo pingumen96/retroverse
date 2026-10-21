@@ -26,9 +26,9 @@
 // the answers resolved before. stop() sets the import's cancel flag and interrupts the writer while the import writes:
 // the import is rolled back or committed whole, within the stop's bound.
 //
-// Since I3 step 10b it also takes the room's snapshot (roomSnapshot(), room_snapshot.hpp), the database part of making
-// the generated room: the bulk query on its reader, the media root checked, the media paths derived, the aliases of
-// placed games; the selection, the generation and the plan's write run on the app's worker pool, never here.
+// Since I4 step 5a it opens, with the catalog, a third read-only connection for the building job (CatalogOpened::world,
+// room_snapshot.hpp's WorldCatalogReader), which reads every system's snapshot on the app's worker pool: the room's
+// snapshot is no job of this worker any more (I3 step 10b's), so that the lists never queue behind it.
 
 #include <chrono>
 #include <cstddef>
@@ -138,6 +138,8 @@ struct CatalogOpened {
     std::vector<CatalogSystem> systems;
     /// The main thread's queries, on a read-only connection of their own: fetch() of pages only (ADR-0008 §5).
     std::unique_ptr<catalog_db::SqliteCatalogQuery> pages;
+    /// The building job's reader (I4 step 5a): a read-only connection of its own, lent to one job at a time.
+    std::shared_ptr<WorldCatalogReader> world;
     /// The default list (every game, Title order: an empty catalog::CatalogQuery), materialized right after the
     /// opening, so that the quick catalog's first list needs no round trip (NFR-01); none when it could not be read.
     /// Its serial is 0.
@@ -218,15 +220,13 @@ struct CatalogResults {
     /// The refresh running: where it is (the latest), and its end.
     std::optional<RefreshProgress> refreshProgress;
     std::optional<CatalogRefreshed> refreshed;
-    /// The latest room snapshot (I3 step 10b).
-    std::optional<RoomSnapshotResult> room;
     /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
     /// asked of it will be answered any more. Posted last.
     bool ended = false;
 
     [[nodiscard]] bool empty() const noexcept {
         return !opened && !list && readiness.empty() && launches.empty() && sessions.empty() && verified.empty() &&
-               !refreshProgress && !refreshed && !room && !ended;
+               !refreshProgress && !refreshed && !ended;
     }
 };
 
@@ -290,12 +290,6 @@ public:
     /// and nothing asked, while a refresh is queued or runs, or once the worker stops or ended. Only once the catalog
     /// opened Ready: a catalog that did not open answers nothing more.
     bool refresh();
-
-    /// Takes the room's snapshot of `request.system` (room_snapshot.hpp: the bulk query, the media root checked, the
-    /// media paths, the aliases of the requested placed games the snapshot lacks; CatalogResults::room). A request
-    /// still queued is replaced. Queued behind a refresh and never answered during one (the aliases read the writer's
-    /// store). Only once the catalog opened Ready: a catalog that did not open answers nothing more.
-    void roomSnapshot(RoomSnapshotRequest request);
 
     /// What it answered since the last call (main thread).
     [[nodiscard]] CatalogResults take();

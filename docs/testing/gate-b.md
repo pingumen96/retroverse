@@ -238,8 +238,10 @@ isolated alternative). Retroverse only reads the library.
 **Preparation** (once, in PowerShell from the repository root): Gate M1's data directory serves (e.g.
 `D:\RetroverseM1`), or a new one outside the library's folders: `build/msvc-x64-release/bin/retroverse-cli.exe
 --data-dir <data dir> library create` and `... import`. Then `build/msvc-x64-release/bin/retroverse.exe --data-dir
-<data dir> --fullscreen`; the first start generates the SNES room's plan and derives the covers (about 10 s), later
-starts show the stored room at once. For item 11, a spare ROM of a SNES title that is scraped (a cover in ES-DE's media
+<data dir> --start-room room:snes --fullscreen` (since I4 step 5a the app plans the whole building and starts in the
+ground floor's lobby; `--start-room room:snes` starts in the SNES room, on its floor, until I4 step 7's elevator); the
+first start plans the building and derives the SNES room's covers (about 10 s), later starts show the stored room at
+once. For item 11, a spare ROM of a SNES title that is scraped (a cover in ES-DE's media
 folder) but not in the library yet, or a copy of one under a new file name, to place in the snes ROM folder and remove
 afterwards (the one step that writes into the ROM folder: by hand, by the user).
 

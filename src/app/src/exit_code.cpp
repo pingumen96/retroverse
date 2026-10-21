@@ -22,7 +22,7 @@ bool SelfTestOutcome::passed() const noexcept {
 
 ExitCode exitCodeForCompletedRun(const RunSummary& summary) noexcept {
     if (summary.logicFailed) {
-        return ExitCode::RuntimeFailure;
+        return summary.logicFailureCode;
     }
     if (!summary.smoke) {
         return ExitCode::Ok;

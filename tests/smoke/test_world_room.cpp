@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <set>
 #include <string>
@@ -54,15 +55,19 @@ fs::path retroverseCliExe() {
 }
 
 /// A fixture (the snes-room one unless named) recorded as the library of <caseDir>/data and imported with
-/// retroverse-cli.
+/// retroverse-cli (`prepare`, when given, changes the fixture before).
 struct ImportedRoom {
     rv::test::Fixture fixture;
     fs::path dir;
     fs::path data;
 
-    explicit ImportedRoom(std::string_view name, std::string_view fixtureName = "esde/snes-room")
+    explicit ImportedRoom(std::string_view name, std::string_view fixtureName = "esde/snes-room",
+                          const std::function<void(rv::test::Fixture&)>& prepare = {})
         : fixture(rv::test::Fixture::materialize(fixtureName).value()),
           dir(freshCaseDir(std::string("world/") + std::string(name))), data(dir / "data") {
+        if (prepare) {
+            prepare(fixture);
+        }
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
@@ -80,7 +85,7 @@ struct ImportedRoom {
 /// A lockstep run of the room: `frames` frames at a fixed step, a screenshot at the end.
 std::vector<std::string> roomArguments(std::string_view frames, const fs::path& shot,
                                        std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--exit-after-frames", "--frames", std::string(frames), "--fixed-dt", "0.016667",
+    std::vector<std::string> arguments{"--start-room", "room:snes", "--exit-after-frames", "--frames", std::string(frames), "--fixed-dt", "0.016667",
                                        "--screenshot",        arg(shot)};
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     return arguments;
@@ -404,7 +409,8 @@ TEST_CASE("world: without a lockstep the layers go up within their budget per fr
     const AppRun first = runApp(retroverseExe(), room.dir, "first", roomArguments("2", room.dir / "first.png"));
     skipWithoutOpenGl(first);
     requireCleanRun(first);
-    const AppRun run = runApp(retroverseExe(), room.dir, "budget", {"--exit-after-frames", "--frames", "900"});
+    const AppRun run = runApp(retroverseExe(), room.dir, "budget",
+                              {"--start-room", "room:snes", "--exit-after-frames", "--frames", "900"});
     requireCleanRun(run);
     INFO(run.describe());
     const rv::app::WorldRecord& world = run.report->world;
@@ -432,7 +438,8 @@ TEST_CASE("world: the quick catalog's lists are answered within 100 ms while the
     // Without --fixed-dt: the frames never wait, the catalog opens and searches while the room is made.
     const AppRun run = runApp(
         retroverseExe(), room.dir, "lists",
-        {"--input-script", arg(inputScript("world_catalog_search.json")), "--exit-after-frames", "--frames", "600"});
+        {"--start-room", "room:snes", "--input-script", arg(inputScript("world_catalog_search.json")),
+         "--exit-after-frames", "--frames", "600"});
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     INFO(run.describe());
@@ -454,8 +461,8 @@ TEST_CASE("world: the figures of the snes-stress room (2,000 titles)", "[.bench]
     ImportedRoom room("stress", "esde/snes-stress");
     for (const std::string_view name : {"cold", "warm"}) {
         const AppRun run = runApp(retroverseExe(), room.dir, name,
-                                  {"--exit-after-frames", "--frames", "300", "--fixed-dt", "0.016667", "--no-vsync",
-                                   "--width", "1920", "--height", "1080"});
+                                  {"--start-room", "room:snes", "--exit-after-frames", "--frames", "300",
+                                   "--fixed-dt", "0.016667", "--no-vsync", "--width", "1920", "--height", "1080"});
         skipWithoutOpenGl(run);
         requireCleanRun(run);
         INFO(run.describe());
@@ -496,7 +503,7 @@ TEST_CASE("world: the figures of the snes-stress room (2,000 titles)", "[.bench]
     }
 }
 
-TEST_CASE("world: without a catalog, or without games of the room's system, the test room shows with its notice",
+TEST_CASE("world: without a catalog, or without a system that gives a room, the test room shows with its notice",
           "[gpu][world]") {
     // No library.json: the catalog cannot open, the test room shows from the start.
     const fs::path dir = freshCaseDir("world/no_catalog");
@@ -514,8 +521,15 @@ TEST_CASE("world: without a catalog, or without games of the room's system, the 
     CHECK_FALSE(fs::exists(dir / "data" / "worlds"));
     requireScreenshot(run, shot, kShotSize);
 
-    // A catalog whose games are of other systems: the empty room while the catalog opens, then the test room.
-    ImportedRoom other("no_games", "esde/multi-disc");
+    // A catalog whose games are of no system with a room (the building fixture's kodi alone: excluded, ADR-0013 §2;
+    // the other systems' ROM folders and gamelists removed, since a gamelist's entries stay as source unavailable):
+    // the empty shell while the catalog opens, then the test room.
+    ImportedRoom other("no_games", "esde/building", [](rv::test::Fixture& fixture) {
+        for (const std::string_view system : {"amiga", "gb", "mame", "pocketlab", "pokemini", "psx", "snes"}) {
+            fs::remove_all(fixture.path("roms/" + std::string(system)));
+            fs::remove_all(fixture.path("ES-DE/gamelists/" + std::string(system)));
+        }
+    });
     const fs::path otherShot = other.dir / "no_games.png";
     const AppRun otherRun = runApp(retroverseExe(), other.dir, "no_games", roomArguments("5", otherShot));
     requireCleanRun(otherRun);
@@ -524,7 +538,37 @@ TEST_CASE("world: without a catalog, or without games of the room's system, the 
     REQUIRE(otherWorld.bound);
     CHECK(otherWorld.state == "test-room");
     CHECK(otherWorld.notice == "no-games");
+    CHECK(otherWorld.noticeRoom == "room:snes"); // the notice names the start room asked for
     CHECK_FALSE(otherRun.report->residency.bound);
     CHECK_FALSE(fs::exists(other.data / "worlds"));
     requireScreenshot(otherRun, otherShot, kShotSize);
+
+    // The same catalog with an area for the start room (I4 step 4): the notice names it by its id, as it names a
+    // console room (an area's id has no system).
+    for (const std::string_view area : {"area:arcade", "area:shared:handheld"}) {
+        INFO(area);
+        const std::string name = "no_games_" + std::string(area == "area:arcade" ? "arcade" : "shared");
+        const AppRun areaRun = runApp(retroverseExe(), other.dir, name,
+                                      {"--start-room", std::string(area), "--exit-after-frames", "--frames", "5",
+                                       "--fixed-dt", "0.016667"});
+        requireCleanRun(areaRun);
+        INFO(areaRun.describe());
+        CHECK(areaRun.report->world.state == "test-room");
+        CHECK(areaRun.report->world.notice == "no-games");
+        CHECK(areaRun.report->world.noticeRoom == area);
+        CHECK_FALSE(fs::exists(other.data / "worlds"));
+    }
+
+    // The same catalog in the default start (the lobby, no --start-room): the test room with the building's notice.
+    const fs::path lobbyShot = other.dir / "no_games_lobby.png";
+    const AppRun lobbyRun = runApp(retroverseExe(), other.dir, "no_games_lobby",
+                                   {"--exit-after-frames", "--frames", "5", "--fixed-dt", "0.016667", "--screenshot",
+                                    arg(lobbyShot)});
+    requireCleanRun(lobbyRun);
+    INFO(lobbyRun.describe());
+    CHECK(lobbyRun.report->world.state == "test-room");
+    CHECK(lobbyRun.report->world.notice == "no-games");
+    CHECK(lobbyRun.report->world.noticeRoom.empty()); // no start room asked for: its sentence stays hidden
+    CHECK_FALSE(fs::exists(other.data / "worlds"));
+    requireScreenshot(lobbyRun, lobbyShot, kShotSize);
 }

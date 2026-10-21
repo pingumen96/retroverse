@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -81,12 +82,18 @@ TEST_CASE("app/world_launch: where a game stands in the room, as the quick catal
     const rv::world::PlanIndex index(plan);
 
     const rv::catalog::GameId placed = plan.placements.front().game;
-    CHECK(rv::app::roomPlacementOf(index, placed, true) == qc::kRoomPlaced);
-    // Placed by the plan, but the room shown has no item of it: not offered.
-    CHECK(rv::app::roomPlacementOf(index, placed, false) == qc::kRoomNotInRoom);
+    const std::optional<rv::world::RoomId> eye = roomId;
+    CHECK(rv::app::roomPlacementOf(index, placed, true, eye) == qc::kRoomPlaced);
+    // Placed by the plan in the eye's room, but that room has no item of it: not offered.
+    CHECK(rv::app::roomPlacementOf(index, placed, false, eye) == qc::kRoomNotInRoom);
+    // I4 step 5a: placed in another room of the building, or the eye in a hall: on display elsewhere, not offered.
+    const std::optional<rv::world::RoomId> other = rv::world::RoomId::parse("room:gb").value();
+    CHECK(rv::app::roomPlacementOf(index, placed, false, other) == qc::kRoomOtherRoom);
+    CHECK(rv::app::roomPlacementOf(index, placed, false, std::nullopt) == qc::kRoomOtherRoom);
     std::vector<std::string_view> reasons;
     for (const rv::world::UnplacedGame& unplaced : plan.unplaced) {
-        const std::string_view key = rv::app::roomPlacementOf(index, unplaced.game, false);
+        const std::string_view key = rv::app::roomPlacementOf(index, unplaced.game, false, eye);
+        CHECK(rv::app::roomPlacementOf(index, unplaced.game, false, std::nullopt) == key);
         CHECK(key == rv::world::toString(unplaced.reason));
         CHECK(std::find(qc::kRoomUnplacedKeys.begin(), qc::kRoomUnplacedKeys.end(), key) !=
               qc::kRoomUnplacedKeys.end());
@@ -95,8 +102,9 @@ TEST_CASE("app/world_launch: where a game stands in the room, as the quick catal
     for (const std::string_view reason : {"duplicate-title", "no-cover", "unavailable", "capacity", "room-kept"}) {
         CHECK(std::find(reasons.begin(), reasons.end(), reason) != reasons.end());
     }
-    // A game the plan does not hold (another system's).
-    CHECK(rv::app::roomPlacementOf(index, rv::test::testGameId(900003), false) == qc::kRoomNotInRoom);
+    // A game the plan does not hold (a system without a room), wherever the eye stands.
+    CHECK(rv::app::roomPlacementOf(index, rv::test::testGameId(900003), false, eye) == qc::kRoomNotInRoom);
+    CHECK(rv::app::roomPlacementOf(index, rv::test::testGameId(900003), false, std::nullopt) == qc::kRoomNotInRoom);
 
     // The world's reasons are the document's keys, in order, then "not in the room".
     using rv::world::UnplacedReason;
@@ -136,6 +144,13 @@ TEST_CASE("app/world_launch: the quick catalog's card offers Mostra nella stanza
     CHECK(contains(rml, "Non esposto: senza copertina"));
     CHECK(contains(rml, "Non esposto: la stanza è piena"));
     CHECK(contains(rml, "Non esposto: la stanza resta com'era finché non viene generata di nuovo"));
+    // Neither sentence speaks of "this room" (I4 step 5a: the card opens in a hall too): a system without a room, and a
+    // game on display in another room of the building.
+    CHECK(contains(rml, "data-if=\"card.room == '" + std::string(qc::kRoomNotInRoom) +
+                            "'\">Non esposto: l'edificio non ha una stanza per il suo sistema</p>"));
+    CHECK(contains(rml, "data-if=\"card.room == '" + std::string(qc::kRoomOtherRoom) +
+                            "'\">Esposto altrove nell'edificio</p>"));
+    CHECK_FALSE(contains(rml, "questa stanza"));
     CHECK(contains(rcss, ".room-reason"));
     CHECK_FALSE(contains(rcss, "transition:"));
 }

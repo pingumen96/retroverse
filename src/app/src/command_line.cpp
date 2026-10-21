@@ -15,6 +15,7 @@
 #include <rv/catalog/ids.hpp>
 #include <rv/core/arg_parser.hpp>
 #include <rv/core/text.hpp>
+#include <rv/world/ids.hpp>
 
 namespace rv::app {
 namespace {
@@ -96,9 +97,11 @@ core::ArgParser makeParser() {
         .flag("no-texture-compression", "Keep the collection's covers and spines in RGBA8 at half the resolution "
                                         "instead of BC1, as without the S3TC extensions (the log names the format "
                                         "and why).")
-        .option("room-system", "system",
-                "The ES-DE system whose generated room is shown instead of the SNES's (e.g. psx: its media family's "
-                "items and fixtures, its covers fitted to their labels); until the building's floors.");
+        .option("start-room", "room",
+                "Start in this room of the building (its id: room:snes, area:arcade, ...) at its doorway camera, on "
+                "its floor, instead of in the ground floor's lobby; --spawn and the run report's poses are then in "
+                "that room's frame. The run exits 2 when the building's plan lacks the room. Not with --scene, "
+                "--model or --mock-catalog.");
     return parser;
 }
 
@@ -537,15 +540,22 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     }
     options.refreshLibrary = args->has("refresh-library");
     options.noTextureCompression = args->has("no-texture-compression");
-    auto roomSystem = nonEmptyValue(*args, "room-system");
-    if (!roomSystem) {
-        return propagate(roomSystem.error());
+    auto startRoom = nonEmptyValue(*args, "start-room");
+    if (!startRoom) {
+        return propagate(startRoom.error());
     }
-    if (*roomSystem) {
-        if (!catalog::SystemName::parse(**roomSystem)) {
-            return makeError(ErrorCode::InvalidArgument, "not an ES-DE system name", "--room-system=" + **roomSystem);
+    if (*startRoom) {
+        if (!world::RoomId::parse(**startRoom)) {
+            return makeError(ErrorCode::InvalidArgument, "not a room id (room:<system>, area:shared:<floor>, ...)",
+                             "--start-room=" + **startRoom);
         }
-        options.roomSystem = **roomSystem;
+        if (scene->has_value() || model->has_value() || mockCatalog->has_value()) {
+            return makeError(ErrorCode::InvalidArgument,
+                             "the building's start room needs the generated building: not with --scene, --model or "
+                             "--mock-catalog",
+                             "--start-room=" + **startRoom);
+        }
+        options.startRoom = **startRoom;
     }
     if (auto pending = pendingOptionError(options); !pending) {
         return propagate(pending.error());
