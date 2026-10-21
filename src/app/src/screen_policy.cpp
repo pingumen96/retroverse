@@ -129,6 +129,15 @@ void ScreenPolicy::setGames(std::vector<ScreenGame> games) {
     }
 }
 
+void ScreenPolicy::restart(std::vector<ScreenGame> games) {
+    m_games = std::move(games);
+    m_selected = false;
+    m_hoverId.clear();
+    m_hoverSince.reset();
+    const std::optional<std::size_t> start = chooseStartGame(m_games);
+    retarget(start ? m_games[*start].id : std::string());
+}
+
 void ScreenPolicy::hover(std::optional<std::string_view> id, double nowSeconds) {
     if (!id || id->empty()) {
         m_hoverId.clear();

@@ -108,6 +108,9 @@ public:
     /// Replaces the games (the catalog changed): the start choice is made again while nothing was selected; a target
     /// still listed keeps playing, its media updated.
     void setGames(std::vector<ScreenGame> games);
+    /// Another screen with its games (I4 step 6b: the CRT of the room that holds the eye, rebound): nothing selected
+    /// or hovered, the start choice made as at the start (a new target, its picture afresh); the phase kept.
+    void restart(std::vector<ScreenGame> games);
     [[nodiscard]] std::span<const ScreenGame> games() const noexcept { return m_games; }
 
     /// The item focused or inspected on this frame (its id), or nothing, at `nowSeconds` (the run's simulated time).

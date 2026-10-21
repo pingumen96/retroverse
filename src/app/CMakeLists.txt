@@ -32,6 +32,7 @@ add_library(rv_app_cli STATIC
     src/run_report.cpp
     src/scene_content_plan.cpp
     src/screen_policy.cpp
+    src/screen_room.cpp
     src/screenshot_name.cpp
     src/self_check.cpp
     src/world_focus.cpp
