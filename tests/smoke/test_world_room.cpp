@@ -501,11 +501,12 @@ TEST_CASE("world: the figures of the snes-stress room (2,000 titles)", "[.bench]
                   << " ms; uploads p50 " << uploads.p50Ms << " ms max " << uploads.maxMs << " ms; frames p50 "
                   << frames.p50Ms << " ms p99 " << frames.p99Ms << " ms");
 #if defined(NDEBUG)
-        // Row 10b: the room committed within 1 s of the snapshot; planning within 0.3 ms per frame (Release).
+        // Row 10b: the room committed within 1 s of the snapshot; planning within the acceptable 1 ms per frame at
+        // its median (Release; docs/roadmap.md, "Acceptable performance").
         if (world.job && !world.job->skipped) {
             CHECK(world.snapshotToCommitMs.value_or(1e9) <= 1000.0);
         }
-        CHECK(planning.p50Ms <= 0.3);
+        CHECK(planning.p50Ms <= 1.0);
 #endif
     }
 }

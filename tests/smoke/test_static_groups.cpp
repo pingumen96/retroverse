@@ -483,7 +483,9 @@ TEST_CASE("static groups/the outline stays unbroken around the item while the ca
 }
 
 TEST_CASE("static groups/the outline's GPU time at 1080p", "[gpu][static_groups][outline]") {
-    // The budget is 0.1 ms (docs/roadmap.md): the median over the frames that drew it, the window at 1920 x 1080.
+    // Informative (docs/roadmap.md, "Acceptable performance": no per-pass budgets): the median over the frames that
+    // drew it, the window at 1920 x 1080, bounded only loosely so that a broken pass shows (about 0.02 ms on a quiet
+    // reference GPU; a desktop GPU shared with other programs adds their time slices).
     const std::filesystem::path caseDir = freshCaseDir("static_groups_outline_time");
     GroupsRun timed{probe::DrawPath::Static, probe::CameraMode::Close, true};
     timed.window = glm::ivec2(1920, 1080);
@@ -496,5 +498,5 @@ TEST_CASE("static groups/the outline's GPU time at 1080p", "[gpu][static_groups]
     UNSCOPED_INFO(fmt::format("outline GPU time over {} frames: median {} ms, max {} ms", frames, median,
                               match[3].str()));
     CHECK(frames > 100);
-    CHECK(median <= 0.1);
+    CHECK(median <= 2.0);
 }
