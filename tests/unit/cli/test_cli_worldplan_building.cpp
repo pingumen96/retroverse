@@ -405,6 +405,18 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     INFO(checked.out);
     CHECK(checked.code == ExitCode::Ok);
 
+    // Selection files must give every section of a shared room: pokemini's alone is refused (exit 2, naming the
+    // section without one), the plan left as it was.
+    const std::string generatedText = readText(session.files.plan);
+    const std::string pokeminiFile = session.write("pokemini.json", selectionOf("pokemini", 8, 4));
+    const RunResult oneSection =
+        session.run({"worldplan", "update", "--selection", pokeminiFile, "--seed", "102938"});
+    INFO(oneSection.out << oneSection.err);
+    CHECK(oneSection.code == ExitCode::UsageError);
+    CHECK(contains(oneSection.err, "area:shared:handheld is updated with the selections of all its sections: no "
+                                   "--selection file of pocketlab"));
+    CHECK(readText(session.files.plan) == generatedText);
+
     // The shared room's scene: the sign of a room of several systems, without a console (I4 step 4).
     const std::filesystem::path pocketScene = session.dir.file("shared.scene.json");
     const RunResult scene = session.run(
