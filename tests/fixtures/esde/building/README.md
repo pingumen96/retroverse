@@ -84,9 +84,13 @@ The library snapshot (entries, games, disc members; games with a cover; clips):
 | amiga | 20, 20; no media | the same |
 | kodi | 2, 2; no media | the same |
 
-The building `retroverse-cli worldplan generate` makes of it (I4 step 2: every system its own console room; the shared
-rooms and the arcade room are step 4's): the floors ground, gen4, gen5, handheld and computer; kodi left out
-(excluded); the rooms and their placements: room:amiga 20 (computer, big_box), room:gb 30, room:pocketlab 6,
-room:pokemini 8 (handheld, cartridge_handheld), room:mame 15 (ground, generic_case; 10 sets `no-cover`), room:psx 40
-(gen5, disc_case_cd), room:snes 40 (gen4, cartridge_home_16bit). After `additions/` and a new import, an update of
-snes, psx and pokemini places 34 titles and moves nothing; megadrive has no room until the building update of step 6a.
+The building `retroverse-cli worldplan generate` makes of it (I4 step 4, ADR-0013 §3: an arcade system takes a section
+of the arcade room, a system under 30 distinct titles over all its games a section of its floor's shared room, both of
+the generic case without a console): the floors ground, gen4, gen5, handheld and computer; kodi left out (excluded);
+the rooms and their placements: area:arcade 15 (ground, mame, its 10 sets without a cover `no-cover`),
+area:shared:computer 20 (amiga's 20 titles, generated labels), area:shared:handheld 14 (the sections pocketlab 6, by
+gb's row entering first, and pokemini 8), room:gb 30 (handheld, cartridge_handheld), room:psx 40 (gen5, disc_case_cd),
+room:snes 40 (gen4, cartridge_home_16bit). After `additions/` and a new import, an update of snes, psx and pokemini
+(the shared room with both its sections) places 34 titles and moves nothing, pokemini past 30 titles staying in its
+section; megadrive has no room until the building update of step 6a. (Until step 4 every system had its own console
+room: room:amiga, room:mame, room:pocketlab and room:pokemini.)

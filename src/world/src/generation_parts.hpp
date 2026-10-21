@@ -18,6 +18,8 @@
 #include <rv/world/validation.hpp>
 #include <rv/world/world_plan.hpp>
 
+#include "allocation.hpp"
+
 namespace rv::world::detail {
 
 /// The prefabs' slot levels as the generator measured them, for the validation (ValidationContext::prefabSlots): the
@@ -27,9 +29,17 @@ namespace rv::world::detail {
 /// The data of `system`'s room among `rooms` (by its platform's system), or null.
 [[nodiscard]] const WorldData* dataOf(std::span<const WorldData> rooms, const catalog::SystemName& system) noexcept;
 
-/// The selection of the data's room, no game both a title and unplaced and, unless the data carries a stored room's
+/// The selection of the data's room (unless `anySection`: a shared or arcade room's data is its first section's, and
+/// the selection one of its sections'), no game both a title and unplaced and, unless the data carries a stored room's
 /// recorded family (`recordedFamily`), the platform's media family. Errors: InvalidArgument naming the problem.
-[[nodiscard]] Status checkRoomInput(const RoomSelection& selection, const WorldData& data, bool recordedFamily);
+[[nodiscard]] Status checkRoomInput(const RoomSelection& selection, const WorldData& data, bool recordedFamily,
+                                    bool anySection = false);
+
+/// The selection of a shared or arcade room `room` over its sections' (ADR-0013 §6): every section's titles in priority
+/// order (the room's face-out titles are the first D + B of them), every section's unplaced games naming `room`, the
+/// distinct titles summed; `index` gets each title's section, its system's place in `sections`.
+[[nodiscard]] RoomSelection sectionsSelection(const RoomId& room, std::span<const catalog::SystemName> sections,
+                                              std::span<const RoomSelection* const> selections, SectionIndex& index);
 
 /// What the building's inputDigest hashes (generation.hpp's generationInputDigest()).
 struct BuildingDigestInput {
@@ -55,11 +65,13 @@ struct BuildingDigestInput {
                                                           const BuildingData& building, const WorldOverrides& pins,
                                                           std::vector<KeptRoom> keptRooms);
 
-/// One system's room as I3's room-level rules generate it (ADR-0010 §3 to §8): a plan of that one room (its record
-/// with the template's fields, without its building fields) with its fixtures, placements, dressing, lights and
-/// unplaced games (the selection's, and the titles over the template's capacity). Errors: those of the layout.
+/// One room as I3's room-level rules generate it (ADR-0010 §3 to §8): a plan of that one room (its record with the
+/// template's fields, without its building fields) with its fixtures, placements, dressing, lights and unplaced games
+/// (the selection's, and the titles over the template's capacity); a shared or arcade room's collection ordered by
+/// `sections` first (sectionsSelection()). Errors: those of the layout.
 [[nodiscard]] Expected<WorldPlan> generateRoomContent(const RoomSelection& selection, const WorldConfig& config,
-                                                      std::uint64_t worldSeed, const WorldData& data);
+                                                      std::uint64_t worldSeed, const WorldData& data,
+                                                      const SectionIndex* sections = nullptr);
 
 /// Moves the room and the elements of `room` (a one-room plan) into `plan`.
 void appendRoom(WorldPlan& plan, WorldPlan&& room);

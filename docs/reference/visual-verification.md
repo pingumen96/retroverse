@@ -141,10 +141,11 @@ sign: `--spawn 8,0,0,-90,0`; the north-row room from inside, looking out: `--spa
 the elevator into it: `--input-script tests/input_scripts/floor_walk_into_room.json --fixed-dt 0.016667 --frames 255`
 (the hall lit by its own lights, the room by its own; seen from one, the other shows its ambient only, ADR-0013's
 accepted cost). gen4 holds one room; the fixture's floor with rooms on both rows is `handheld` (`worldplan show --floor
-handheld --scene build/scenes/handheld.json`): from the elevator, room:gb's doorway on the north side faces
-room:pocketlab's on the south side (doors aligned across the hall, room:pokemini further east); the south-row room,
-turned a half turn, from inside looking out: `--spawn 7.65,0,4.5,0,0` (room:gb's hero wall across the hall through
-both doorways); the walk into it: `tests/input_scripts/floor_walk_into_south_room.json` (the same flags).
+handheld --scene build/scenes/handheld.json`): from the elevator, room:gb's doorway on the north side faces, doors
+aligned across the 12.3 m hall, that of the floor's shared room `area:shared:handheld` on the south side (I4 step 4: the
+sections of pocketlab and pokemini, the sign "MORE GAMES", the CRT on its cabinet without a console); the south-row
+room, turned a half turn, from inside looking out: `--spawn 7.65,0,4.5,0,0` (room:gb's hero wall across the hall
+through both doorways); the walk into it: `tests/input_scripts/floor_walk_into_south_room.json` (the same flags).
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),

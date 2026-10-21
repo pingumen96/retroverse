@@ -92,6 +92,7 @@ inline rv::world::RoomTitle addTitle(rv::world::RoomSelection& selection, rv::co
     title.playCount = playCount;
     const auto at = std::upper_bound(selection.titles.begin(), selection.titles.end(), title, rv::world::priorityLess);
     selection.titles.insert(at, title);
+    ++selection.distinctTitles;
     return title;
 }
 
@@ -116,7 +117,7 @@ inline rv::world::GenerationResult updateRoom(const rv::world::WorldPlan& previo
     rv::world::UpdateInput input;
     input.library = library();
     input.selection = selection;
-    input.config.seed = worldSeed;
+    input.config = roomConfig(worldSeed);
     input.overrides = std::move(overrides);
     input.previous = previous;
     input.aliases = std::move(aliases);
@@ -134,7 +135,7 @@ inline rv::world::GenerationResult generateSelection(const rv::world::RoomSelect
     rv::world::GenerationInput input;
     input.library = library();
     input.selection = selection;
-    input.config.seed = worldSeed;
+    input.config = roomConfig(worldSeed);
     auto result = rv::world::generate(input, snesData());
     REQUIRE(result.has_value());
     return std::move(*result);

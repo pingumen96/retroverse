@@ -44,6 +44,8 @@ RoomSelection sampleSelection() {
                         title(9, "basket", false, 2, std::nullopt)};
     selection.unplaced = {{game(12), snesRoom(), UnplacedReason::NoCover, {}},
                           {game(11), snesRoom(), UnplacedReason::DuplicateTitle, game(7)}};
+    // The five titles and the game without a cover, a title of its own.
+    selection.distinctTitles = 6;
     return selection;
 }
 
@@ -71,7 +73,7 @@ TEST_CASE("world/room_selection: the canonical form round-trips", "[world][room_
     auto text = rv::world::writeRoomSelection(selection);
     REQUIRE(text.has_value());
     CHECK(*text ==
-          "{\"catalogSortKeyVersion\":1,\"eligibility\":\"covered\",\"room\":\"room:snes\","
+          "{\"catalogSortKeyVersion\":1,\"distinctTitles\":6,\"eligibility\":\"covered\",\"room\":\"room:snes\","
           "\"titleKeyRule\":\"title-key/1\",\"titles\":[\n"
           "{\"favorite\":true,\"game\":\"g0000000000000005\",\"playCount\":3,\"rating\":9,\"sortKey\":\"zelda\","
           "\"titleKey\":\"zelda\"},\n"
@@ -116,6 +118,12 @@ TEST_CASE("world/room_selection: a selection out of priority order is refused", 
     RoomSelection badRating = sampleSelection();
     badRating.titles.front().ratingTenths = 11;
     CHECK_THAT(rv::world::writeRoomSelection(badRating).error().message, ContainsSubstring("/titles/0/rating"));
+
+    // I4 step 4: the distinct titles over all the games are at least the titles.
+    RoomSelection fewer = sampleSelection();
+    fewer.distinctTitles = 4;
+    CHECK_THAT(rv::world::writeRoomSelection(fewer).error().message,
+               ContainsSubstring("/distinctTitles: fewer distinct titles (4) than titles (5)"));
 
     auto text = *rv::world::writeRoomSelection(sampleSelection());
     const std::size_t at = text.find("\"eligibility\":\"covered\"");

@@ -312,6 +312,7 @@ world::RoomSelection selectionOf(const world::WorldPlan& plan) {
     }
     std::sort(selection.titles.begin(), selection.titles.end(), world::priorityLess);
     selection.unplaced = plan.unplaced;
+    selection.distinctTitles = selection.titles.size();
     return selection;
 }
 

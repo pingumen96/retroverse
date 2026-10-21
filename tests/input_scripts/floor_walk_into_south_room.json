@@ -5,8 +5,9 @@
 // Expected (2.5 m/s, 0.0022 rad per mouse pixel, --fixed-dt 0.016667): frames 0-154 walk 6.46 m east, feet
 // (7.659, 0, 0), in the hall; frames 155-164 turn 90 degrees right (10 x 71.4 x 0.0022 rad), yaw 180 (south); frames
 // 165-254 walk 3.75 m south through the doorway (its stop left out on a floor), feet (7.659, 0, 3.75), 2.1 m into the
-// room past its north wall's inner face at z 1.65. On the building fixture's handheld floor that room is
-// room:pocketlab (tests/unit/world/test_floor_scene.cpp).
+// room past its north wall's inner face at z 1.65. On the building fixture's handheld floor that room is the floor's
+// shared room area:shared:handheld, of the sections pocketlab and pokemini (I4 step 4; tests/unit/world/
+// test_floor_scene.cpp).
 //   worldplan show --floor handheld --scene build/scenes/handheld.json, then
 //   retroverse.exe --scene build/scenes/handheld.json --exit-after-frames --frames 255 --fixed-dt 0.016667 --hidden
 //     --input-script tests/input_scripts/floor_walk_into_south_room.json --data-dir build/rvdata

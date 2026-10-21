@@ -383,11 +383,16 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
         return propagate(systems.error());
     }
     const catalog::SystemName system = room->sections.empty() ? roomId.system() : room->sections.front();
-    auto platform = resolvePlatform(assetRoot, system, platformTags, *systems, *building);
-    if (!platform) {
-        return propagate(platform.error());
+    if (room->kind == RoomKind::Console) {
+        auto platform = resolvePlatform(assetRoot, system, platformTags, *systems, *building);
+        if (!platform) {
+            return propagate(platform.error());
+        }
+        data.platform = std::move(*platform);
+    } else {
+        // A shared or arcade room stands as its floor's first kind, without a console (ADR-0013 §6).
+        data.platform = sharedRoomPlatform(room->kind, room->floor, system, *systems, *building);
     }
-    data.platform = std::move(*platform);
     data.platform.mediaFamily = room->mediaFamily;
     data.platform.themePack = room->themePack;
     auto registry = loadMediaFamilies(assetRoot);

@@ -30,7 +30,7 @@
 ],"floors":[
 {"id":"ground","order":0},
 {"id":"gen4","order":3}
-],"generatorVersion":"1.3","inputDigest":"192e8a0c68d37dc8ecbcd9b39d80dc6a5b18a9f339e27a1175d989c59e54771a","library":"esde","lights":[
+],"generatorVersion":"1.3","inputDigest":"76c2205a2ab620158232a6d6763f91f6da1bf2cada242a9a531edfddfb0a1fc9","library":"esde","lights":[
 {"id":"room:snes/fx:e01.washer","role":"wall-washer","spanMm":1900,"targetXMm":4470,"targetYMm":1000,"targetZMm":-3500,"xMm":3430,"yMm":2950,"zMm":-3500},
 {"id":"room:snes/fx:e03.washer","role":"wall-washer","spanMm":1900,"targetXMm":4470,"targetYMm":1000,"targetZMm":-1500,"xMm":3430,"yMm":2950,"zMm":-1500},
 {"id":"room:snes/fx:e06.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":3000,"xMm":4300,"yMm":1379,"zMm":3000},

@@ -149,7 +149,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   compared exactly, or a profile id, the user's replacing the shipped one per system; the shipped file sets none, and a
   stale label or unknown profile makes the system "requires launcher configuration"), and since I3
   `assets/world/presets/<id>.json` under `world.json` (per key: `preset` names another preset, `seed` a seed or null,
-  integers only, millimetres and permille; a broken file is left out whole with one issue). The world's data, read
+  integers only, millimetres and permille, since I4 step 4 `sharedRoomMinTitles`, the distinct titles a system entering
+  the building needs for a room of its own, 30, 0 giving every system one; a broken file is left out whole with one
+  issue). The world's data, read
   strictly (unknown or duplicate keys and fractions refused with their line): `assets/world/templates/` (the room
   template `console_room_9x10.json`), `platforms/`, `media_families.json`, `lighting/` (the profiles `evening` and
   `afternoon`), `themes/` (the room's materials); prefab families in

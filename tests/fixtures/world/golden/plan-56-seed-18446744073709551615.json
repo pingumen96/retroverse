@@ -43,7 +43,7 @@
 ],"floors":[
 {"id":"ground","order":0},
 {"id":"gen4","order":3}
-],"generatorVersion":"1.3","inputDigest":"7efadf6bd268c485694563d500170b14ae80abd83bfb75847922e36e498aaa66","library":"esde","lights":[
+],"generatorVersion":"1.3","inputDigest":"c4fe182f27ac88ea3df77a9fab9e88f4ea7a44305589a361f0796037ee306ed1","library":"esde","lights":[
 {"id":"room:snes/fx:e01.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-4000,"xMm":4300,"yMm":1379,"zMm":-4000},
 {"id":"room:snes/fx:e04.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-1000,"xMm":4300,"yMm":1379,"zMm":-1000},
 {"id":"room:snes/fx:e06.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":3000,"xMm":4300,"yMm":1379,"zMm":3000},

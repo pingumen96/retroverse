@@ -64,6 +64,10 @@ KindDefaults readDefaults(const ObjectReader& reader) {
     defaults.cartridgePlastic = plastic.checkedString("cartridge", isSrgbHexColor, kColourForm);
     defaults.consolePlastic = plastic.checkedString("console", isSrgbHexColor, kColourForm);
     defaults.accentPlastic = plastic.checkedString("accent", isSrgbHexColor, kColourForm);
+    if (!reader.document().failed() && reader.has("sign")) {
+        defaults.sign = reader.checkedString("sign", isSignText,
+                                             "1 to 32 printable ASCII characters without a space at either end");
+    }
     return defaults;
 }
 
@@ -321,7 +325,7 @@ Expected<SystemsData> parseSystemsData(std::string_view text, std::string_view c
     SystemsData data;
     (void)reader.integer("schemaVersion", 1, 1);
     const ObjectReader defaults = reader.object("defaults", {"arcade", "computer", "handheld", "home", "other"});
-    const std::initializer_list<std::string_view> defaultKeys{"console", "plastic", "themePack"};
+    const std::initializer_list<std::string_view> defaultKeys{"console", "plastic", "sign", "themePack"};
     data.home = readDefaults(defaults.object("home", defaultKeys));
     data.handheld = readDefaults(defaults.object("handheld", defaultKeys));
     data.arcade = readDefaults(defaults.object("arcade", defaultKeys));

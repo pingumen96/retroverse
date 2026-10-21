@@ -3,13 +3,14 @@
 // alphabetical predecessors (a dressed level, a new side-wall module, the room's growth when the section is full;
 // capacity beyond the template's limit), the face-out set unchanged, pins protected, a room whose template, prefab
 // levels or generator major changed kept as it is (its new games unplaced as room-kept), and the change report (--diff
-// lists every change). The rooms updated are those of the systems --system names (repeatable), else every console
-// room of the plan; a system without a room is refused (new systems enter the building with I4 step 6a). The rooms'
-// selections are the catalog's as `worldplan generate` makes them (the aliases of placed games they no longer list
-// asked from the catalog), or canonical selection files (--selection, repeatable: the rooms updated are the files',
-// and --system given with them names the same systems). An update of some rooms only that changes nothing keeps the
-// plan's inputDigest, so it writes nothing (incremental.hpp); nothing is updated while the media
-// are unknown (exit 1: unknown media change nothing). The previous plan is the world's
+// lists every change). The rooms updated are those of the systems --system names (repeatable), else every room of the
+// plan; a system without a room is refused (new systems enter the building with I4 step 6a). A shared or arcade room is
+// updated with the selections of all its sections (I4 step 4): naming one of its systems updates the whole room, and
+// selection files must give every section. The rooms' selections are the catalog's as `worldplan generate` makes them
+// (the aliases of placed games they no longer list asked from the catalog), or canonical selection files (--selection,
+// repeatable: the rooms updated are the files', and --system given with them names the same systems). An update of some
+// rooms only that changes nothing keeps the plan's inputDigest, so it writes nothing (incremental.hpp); nothing is
+// updated while the media are unknown (exit 1: unknown media change nothing). The previous plan is the world's
 // (<user data>/worlds/<library id>/world-plan.json, read and saved again under the world's lock, the plan it replaces
 // kept in backups/) or the file --previous names, of schema 2 or of schema 1 (lifted); a plan edited by hand or written
 // by a newer Retroverse is refused, and one of another seed, preset or generator major version needs the explicit
@@ -72,10 +73,11 @@ constexpr std::string_view kUsage =
     "\n"
     "Options:\n"
     "  --system <system>   Update this system's room only, as ES-DE names it (snes); repeatable. Default: every\n"
-    "                      console room of the plan. A system without a room is refused (new systems come later).\n"
+    "                      room of the plan. A system in a shared room (or the arcade room) updates that whole room.\n"
+    "                      A system without a room is refused (new systems come later).\n"
     "  --selection <file>  Take a room's selection from this file (canonical JSON) instead of the catalog;\n"
     "                      repeatable, one per system: the rooms updated are the files' (--system, given too, names\n"
-    "                      the same systems).\n"
+    "                      the same systems); a shared room's need a file for each of its systems.\n"
     "  --previous <plan>   The plan to update (default: <user data>/worlds/<library id>/world-plan.json).\n"
     "  --seed <n>          The world seed, 0 to 18446744073709551615 (default: world.json's, else derived from the\n"
     "                      library id); a plan of another seed needs 'worldplan generate --replace'.\n"
@@ -92,7 +94,8 @@ constexpr std::string_view kUsage =
     "Exit codes: 0 updated, or nothing to change; 1 nothing written: there is no plan to update, the plan is refused\n"
     "(edited by hand or written by a newer Retroverse) or needs an explicit regeneration (another seed, preset or\n"
     "generator major version), the media are unknown, the catalog has no such system, or the plan has no room for it;\n"
-    "2 usage error (--system and --selection files naming other systems); 3 the data, the catalog, the selections or\n"
+    "2 usage error (--system and --selection files naming other systems, or --selection files that leave out a\n"
+    "system of a shared room); 3 the data, the catalog, the selections or\n"
     "the overrides could not be read, the updated plan breaks a hard rule of the validation, the world is locked by\n"
     "another program, or the plan could not be read or written.\n";
 
@@ -193,31 +196,42 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
         }
         return failure(context, "the plan", previous.error());
     }
-    // The systems whose rooms to update: those named, else every console room's.
+    // The systems whose rooms to update: those named, else every room's.
+    const auto roomOf = [&](const catalog::SystemName& system) -> const world::Room* {
+        for (const world::Room& room : previous->plan.rooms) {
+            if (std::find(room.sections.begin(), room.sections.end(), system) != room.sections.end()) {
+                return &room;
+            }
+        }
+        return nullptr;
+    };
     if (systems.empty() && selectionFiles.empty()) {
         for (const world::Room& room : previous->plan.rooms) {
-            if (room.kind == world::RoomKind::Console) {
-                systems.push_back(room.id.system());
-            }
+            systems.insert(systems.end(), room.sections.begin(), room.sections.end());
         }
     }
     for (const catalog::SystemName& system : systems) {
-        const bool hasRoom = std::any_of(previous->plan.rooms.begin(), previous->plan.rooms.end(),
-                                         [&](const world::Room& room) {
-                                             return std::find(room.sections.begin(), room.sections.end(), system) !=
-                                                    room.sections.end();
-                                         });
-        if (!hasRoom) {
+        if (roomOf(system) == nullptr) {
             context.err.writeLine(fmt::format("{}: the plan has no room for {}: nothing written (new systems enter "
                                               "the building with I4 step 6a)",
                                               kName, system.str()));
             return ExitCode::ProblemsFound;
         }
     }
+    // A shared or arcade room is updated with every section's selection (ADR-0013 §6): from the catalog, naming one of
+    // its systems names them all; selection files must give them all.
+    std::vector<catalog::SystemName> roomSystems;
+    for (const catalog::SystemName& system : systems) {
+        for (const catalog::SystemName& section : roomOf(system)->sections) {
+            if (std::find(roomSystems.begin(), roomSystems.end(), section) == roomSystems.end()) {
+                roomSystems.push_back(section);
+            }
+        }
+    }
     Selected selected =
         !selectionFiles.empty()
             ? selectionsFromFiles(context, kName, selectionFiles, args->value("library"))
-            : selectionsFromCatalog(context, kName, systems, args->value("library"), *config, "no update", *info);
+            : selectionsFromCatalog(context, kName, roomSystems, args->value("library"), *config, "no update", *info);
     if (!selected.ok) {
         return selected.failure;
     }
@@ -240,13 +254,23 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
         }
     }
     for (const world::RoomSelection& selection : selected.selections) {
-        const bool hasRoom = std::any_of(previous->plan.rooms.begin(), previous->plan.rooms.end(),
-                                         [&](const world::Room& room) { return room.id == selection.room; });
-        if (!hasRoom) {
+        const world::Room* room = roomOf(selection.room.system());
+        if (room == nullptr) {
             context.err.writeLine(fmt::format("{}: the plan has no room for {}: nothing written (new systems enter "
                                               "the building with I4 step 6a)",
                                               kName, selection.room.system().str()));
             return ExitCode::ProblemsFound;
+        }
+        for (const catalog::SystemName& section : room->sections) {
+            const bool given = std::any_of(selected.selections.begin(), selected.selections.end(),
+                                           [&](const world::RoomSelection& other) {
+                                               return other.room.system() == section;
+                                           });
+            if (!given) {
+                return usageError(context, fmt::format("{} is updated with the selections of all its sections: no "
+                                                       "--selection file of {}",
+                                                       room->id.toString(), section.str()));
+            }
         }
     }
     // The data of every room of the plan, with its recorded family, theme pack and template.

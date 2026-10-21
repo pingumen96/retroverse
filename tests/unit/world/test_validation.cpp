@@ -798,18 +798,25 @@ TEST_CASE("world/validation: the building's rules", "[world][validation]") {
         CHECK(findings[0].subject == "area:arcade");
         CHECK_THAT(findings[0].message, ContainsSubstring("not on the ground floor"));
     }
-    SECTION("room-unknown: games of a console room a full floor did not take may name it, unplaced for capacity") {
+    SECTION("room-unknown: games of a room a full floor did not take may name it, unplaced for capacity") {
         WorldPlan plan = rv::test::validRoomPlan();
         const auto nes = *rv::world::RoomId::forSystem(*rv::catalog::SystemName::parse("nes"));
         plan.unplaced.push_back({testGameId(201), nes, rv::world::UnplacedReason::Capacity, {}});
+        // I4 step 4: a shared room its full floor did not take, like a console room.
+        plan.unplaced.push_back(
+            {testGameId(202), *rv::world::RoomId::sharedArea("gen3"), rv::world::UnplacedReason::Capacity, {}});
         const ValidationReport report = validate(plan);
         INFO(describe(report));
         CHECK(report.passed());
+        // Not an expansion (nothing makes one in I4), nor for another reason.
         plan.unplaced.push_back(
-            {testGameId(202), *rv::world::RoomId::sharedArea("gen3"), rv::world::UnplacedReason::Capacity, {}});
+            {testGameId(203), *rv::world::RoomId::sharedArea("gen3", 2), rv::world::UnplacedReason::Capacity, {}});
+        plan.unplaced.push_back(
+            {testGameId(204), *rv::world::RoomId::sharedArea("gen2"), rv::world::UnplacedReason::NoCover, {}});
         const auto findings = requireOnlyHard(validate(plan), rule::kRoomUnknown);
-        REQUIRE(findings.size() == 1);
-        CHECK(findings[0].subject == "g00000000000000ca");
+        REQUIRE(findings.size() == 2);
+        CHECK(findings[0].subject == "g00000000000000cb");
+        CHECK(findings[1].subject == "g00000000000000cc");
     }
     SECTION("hall-overlap, doorway-off-hall, floor-unreachable: the rooms against their floor's hall (I4 step 3)") {
         WorldPlan plan = rv::test::validRoomPlan();

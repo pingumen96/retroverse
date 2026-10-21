@@ -46,7 +46,7 @@ std::filesystem::path assetRootWith(const rv::test::TempDir& dir, std::string_vi
 constexpr std::string_view kGalleryPreset = R"({
   "schemaVersion": 1, "id": "minimal_gallery", "name": "MinimalGallery",
   "decorationDensityPermille": 100, "growthReservePermille": 200,
-  "mainPassageWidthMm": 1600, "minClearWidthMm": 1300, "placement": {"include": "all"}
+  "mainPassageWidthMm": 1600, "minClearWidthMm": 1300, "placement": {"include": "all"}, "sharedRoomMinTitles": 50
 })";
 
 } // namespace
@@ -63,6 +63,8 @@ TEST_CASE("world/world_config: the shipped preset", "[world][world_config]") {
     CHECK(preset->mainPassageWidthMm == 1400);
     CHECK(preset->minClearWidthMm == 1200);
     CHECK(preset->include == PlacementInclude::Covered);
+    // ADR-0013 §3: a system with fewer than 30 distinct titles takes a section of its floor's shared room.
+    CHECK(preset->sharedRoomMinTitles == 30);
     CHECK_FALSE(preset->seed.has_value());
     CHECK_FALSE(preset->reduceMotion);
 
@@ -100,6 +102,7 @@ TEST_CASE("world/world_config: world.json overrides the preset per key", "[world
   "seed": 102938,              // the room I like
   "growthReservePermille": 250,
   "placement": {"include": "all"},
+  "sharedRoomMinTitles": 0,    // every system its own room
   "reduceMotion": true
 })");
         auto loaded = rv::world::loadWorldConfig(assets, config);
@@ -109,6 +112,7 @@ TEST_CASE("world/world_config: world.json overrides the preset per key", "[world
         expected.seed = 102938;
         expected.growthReservePermille = 250;
         expected.include = PlacementInclude::All;
+        expected.sharedRoomMinTitles = 0;
         expected.reduceMotion = true;
         CHECK(loaded->config == expected);
     }
@@ -123,6 +127,7 @@ TEST_CASE("world/world_config: world.json overrides the preset per key", "[world
         CHECK(loaded->config.growthReservePermille == 200);
         CHECK(loaded->config.mainPassageWidthMm == 1600);
         CHECK(loaded->config.include == PlacementInclude::All);
+        CHECK(loaded->config.sharedRoomMinTitles == 50);
         CHECK_FALSE(loaded->config.seed.has_value());
     }
 }
@@ -144,6 +149,8 @@ TEST_CASE("world/world_config: a broken world.json is left out whole with an iss
         {"{\n  \"seed\": 1,\n  \"seed\": 2\n}", "/seed: the key appears twice", ":3"},
         {"{\n  \"placement\": {\"include\": \"some\"}\n}", "/placement/include: expected one of covered, all", ":2"},
         {"{\n  \"seed\": -5\n}", "/seed: expected an integer from 0", ":2"},
+        {"{\n  \"sharedRoomMinTitles\": -1\n}", "/sharedRoomMinTitles: expected an integer from 0", ":2"},
+        {"{\n  \"sharedRoomMinTitles\": 30.5\n}", "/sharedRoomMinTitles: expected an integer", ":2"},
         {"{\n  \"mainPassageWidthMm\": 900\n}", "minClearWidthMm: expected 600 to the main passage's width", ""},
         {"{\n  \"preset\": \"no_such_preset\"\n}", "the preset \"no_such_preset\" that world.json names", ""},
         {"[1, 2]", "expected an object", ":1"},
@@ -169,7 +176,7 @@ TEST_CASE("world/world_config: presets are checked like world.json", "[world][wo
     const rv::test::TempDir dir;
     auto broken = rv::world::parsePreset(R"({"schemaVersion": 1, "id": "x", "name": "X",
       "decorationDensityPermille": 400, "growthReservePermille": 150, "mainPassageWidthMm": 1400,
-      "placement": {"include": "covered"}})",
+      "placement": {"include": "covered"}, "sharedRoomMinTitles": 30})",
                                          "x.json");
     REQUIRE_FALSE(broken.has_value());
     CHECK_THAT(broken.error().message, ContainsSubstring("/minClearWidthMm: missing"));
@@ -196,7 +203,7 @@ TEST_CASE("world/world_config: the canonical form round-trips and refuses", "[wo
     REQUIRE(text.has_value());
     CHECK(*text == "{\"decorationDensityPermille\":400,\"growthReservePermille\":150,\"lightingProfile\":\"evening\","
                    "\"mainPassageWidthMm\":1400,\"minClearWidthMm\":1200,\"placement\":{\"include\":\"all\"},\"preset\":\"retro_museum_cozy\","
-                   "\"reduceMotion\":true,\"seed\":18446744073709551615}\n");
+                   "\"reduceMotion\":true,\"seed\":18446744073709551615,\"sharedRoomMinTitles\":30}\n");
     auto read = rv::world::readWorldConfig(*text, "config.json");
     REQUIRE(read.has_value());
     CHECK(*read == config);

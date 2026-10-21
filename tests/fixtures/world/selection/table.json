@@ -1,4 +1,4 @@
-{"catalogSortKeyVersion":1,"eligibility":"covered","room":"room:snes","titleKeyRule":"title-key/1","titles":[
+{"catalogSortKeyVersion":1,"distinctTitles":20,"eligibility":"covered","room":"room:snes","titleKeyRule":"title-key/1","titles":[
 {"favorite":true,"game":"g0000000000000001","playCount":0,"rating":null,"sortKey":"pixel quest","titleKey":"pixel quest"},
 {"favorite":false,"game":"g0000000000000006","playCount":7,"rating":null,"sortKey":"thunder lanes","titleKey":"thunder lanes"},
 {"favorite":false,"game":"g0000000000000022","playCount":3,"rating":null,"sortKey":"brass engine","titleKey":"brass engine"},

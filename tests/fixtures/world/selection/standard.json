@@ -1,4 +1,4 @@
-{"catalogSortKeyVersion":1,"eligibility":"covered","room":"room:snes","titleKeyRule":"title-key/1","titles":[
+{"catalogSortKeyVersion":1,"distinctTitles":5,"eligibility":"covered","room":"room:snes","titleKeyRule":"title-key/1","titles":[
 {"favorite":false,"game":"g7dde4199c42eb215","playCount":0,"rating":10,"sortKey":"alpha quest","titleKey":"alpha quest"}
 ],"unplaced":[
 {"game":"g3d7ee009becb38ab","reason":"no-cover","room":"room:snes"},
