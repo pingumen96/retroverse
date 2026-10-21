@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "285d160bad65e2d2a6cc39ece8d27dd4acae4efa",
+    "gitCommit": "57578bdc4dea09f131b230518740fef13a720fc3",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -29,14 +29,14 @@
       "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
     },
     "plan": {
-      "digest": "d82d4f4e57e4eec79b6013b4845c58bbd311808a6356dd12ce54b489f535809e",
-      "fileSha256": "d82d4f4e57e4eec79b6013b4845c58bbd311808a6356dd12ce54b489f535809e",
+      "digest": "e911885412bb893d759c19d434b877bb03e923e6bdc61823cf1ae59a35c0ea49",
+      "fileSha256": "e911885412bb893d759c19d434b877bb03e923e6bdc61823cf1ae59a35c0ea49",
       "items": 60,
       "placements": 60
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "7280edab3b8411039cf59082fc6da98d818450149d1fd2f1c0a54b84c2c50b88"
+      "sha256": "16216a3b5791a37a657607dc253667173bfebca4f8915f4985a384a9af87e6c8"
     }
   },
   "renderedOn": "2026-10-21",

@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "a7ad4b562008111afe7836fa0f2a380715c98126",
+    "gitCommit": "57578bdc4dea09f131b230518740fef13a720fc3",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
