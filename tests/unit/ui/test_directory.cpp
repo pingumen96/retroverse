@@ -694,6 +694,41 @@ TEST_CASE("ui/directory: reopen() shows the panel where a refused command left i
     }
 }
 
+TEST_CASE("ui/directory: every one-line text sits straight in the paragraph that clips it",
+          "[ui][directory][documents]") {
+    // RmlUi ends a line in an ellipsis only for a text whose parent clips it with text-overflow, measured from the
+    // parent's left edge (ElementText::GenerateGeometry): a text in a span, or after another element, is cut through
+    // a glyph instead.
+    const std::string rml = readAsset(dir::kDocumentPath);
+    static const std::regex clipped(R"re(<p class="(row-title|row-meta|header-title|meta-rest)"[^>]*>(.*?)</p>)re");
+    std::size_t lines = 0;
+    for (auto it = std::sregex_iterator(rml.begin(), rml.end(), clipped); it != std::sregex_iterator(); ++it) {
+        ++lines;
+        INFO((*it)[0].str());
+        CHECK((*it)[2].str().find('<') == std::string::npos);
+    }
+    // Every such paragraph was read (none spans lines).
+    std::size_t paragraphs = 0;
+    for (const std::string_view opening :
+         {"<p class=\"row-title\"", "<p class=\"row-meta\"", "<p class=\"header-title\"", "<p class=\"meta-rest\""}) {
+        for (std::size_t at = rml.find(opening); at != std::string::npos; at = rml.find(opening, at + 1)) {
+            ++paragraphs;
+        }
+    }
+    CHECK(lines == paragraphs);
+    CHECK(lines >= 40);
+    const std::string rcss = readAsset(dir::kStyleSheetPath);
+    for (const std::string_view rule : {".row-title {", ".row-meta {", ".header-title {", ".meta-rest {"}) {
+        INFO(rule);
+        const std::size_t begin = rcss.find(rule);
+        REQUIRE(begin != std::string::npos);
+        const std::string body = rcss.substr(begin, rcss.find('}', begin) - begin);
+        CHECK(contains(body, "overflow: hidden"));
+        CHECK(contains(body, "white-space: nowrap"));
+        CHECK(contains(body, "text-overflow: ellipsis"));
+    }
+}
+
 TEST_CASE("ui/directory: the document has the ids, bindings, events and keys its screen uses",
           "[ui][directory][documents]") {
     const std::string rml = readAsset(dir::kDocumentPath);

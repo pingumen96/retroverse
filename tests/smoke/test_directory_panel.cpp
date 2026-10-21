@@ -6,7 +6,9 @@
 // recent games, a game's card with Mostra nella stanza), the focused element lies inside its panel and shows the
 // focus's tungsten edge, the card is never cut, the run ends with the one command the script leads to (Mostra nella
 // stanza) and the panel closed, RmlUi logged no error. The screenshots (floors.png, rooms.png, games.png, card.png in
-// the case's folder) are for the eye: Italian, legible, both tabs.
+// the case's folder) are for the eye: Italian, legible, both tabs, the long names (gen4's shared room's five long
+// systems wrapped after its count, the long title selected and ending in an ellipsis, a favourite's long system name
+// after its date).
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -1,12 +1,13 @@
 // I4 step 7a: the directory driven by its UI actions alone, over rv_ui_probe's fixed model (tests/ui_probe/
 // directory_fixture.hpp: six floors, the walker in room:snes on gen4; twelve favourites and recent games), opened on its
 // floors at frame 0 with gen4 selected. A tap down (gen5) and up (gen4), Activate (gen4's hall and rooms, room:snes
-// selected), Back (the floors, gen4 selected), the right shoulder (the favourites and recent games, the first
-// selected), two taps down and Activate (the third game's card, placed in its room: Avvia focused), Right (Mostra nella
+// selected; the shared room's five long names), Back (the floors, gen4 selected), the right shoulder (the favourites
+// and recent games, the first selected), a page down and a tap up (the eighth game, the long title, selected), a page
+// up and two taps down and Activate (the third game's card, placed in its room: Avvia focused), Right (Mostra nella
 // stanza), Activate: the directory asks to show the game in its room and closes. Expected: directory_fixture.hpp's
 // checkpoints.
 //   rv_ui_probe --input-script tests/input_scripts/directory_panel.json --probe-shots build/screenshots/directory
-//     --exit-after-frames --frames 200 --hidden --fixed-dt 0.016667 --width 1920 --height 1080 --data-dir build/rvdata
+//     --exit-after-frames --frames 240 --hidden --fixed-dt 0.016667 --width 1920 --height 1080 --data-dir build/rvdata
 // tests/unit/ui/test_directory.cpp plays it GPU-free over the same model; tests/smoke/test_directory_panel.cpp on the
 // GPU.
 [
@@ -15,9 +16,12 @@
   {"fromFrame": 50, "toFrame": 50, "actions": {"ui_activate": 1}},
   {"fromFrame": 80, "toFrame": 80, "actions": {"ui_back": 1}},
   {"fromFrame": 90, "toFrame": 90, "actions": {"ui_filter_next": 1}},
-  {"fromFrame": 120, "toFrame": 120, "actions": {"ui_down": 1}},
-  {"fromFrame": 130, "toFrame": 130, "actions": {"ui_down": 1}},
-  {"fromFrame": 140, "toFrame": 140, "actions": {"ui_activate": 1}},
-  {"fromFrame": 170, "toFrame": 170, "actions": {"ui_right": 1}},
-  {"fromFrame": 190, "toFrame": 190, "actions": {"ui_activate": 1}}
+  {"fromFrame": 120, "toFrame": 120, "actions": {"ui_page_down": 1}},
+  {"fromFrame": 130, "toFrame": 130, "actions": {"ui_up": 1}},
+  {"fromFrame": 150, "toFrame": 150, "actions": {"ui_page_up": 1}},
+  {"fromFrame": 160, "toFrame": 160, "actions": {"ui_down": 1}},
+  {"fromFrame": 170, "toFrame": 170, "actions": {"ui_down": 1}},
+  {"fromFrame": 180, "toFrame": 180, "actions": {"ui_activate": 1}},
+  {"fromFrame": 210, "toFrame": 210, "actions": {"ui_right": 1}},
+  {"fromFrame": 230, "toFrame": 230, "actions": {"ui_activate": 1}}
 ]

@@ -106,9 +106,13 @@ h2 {
 }
 
 .header-title {
+	flex: 1 1 0dp;
 	margin-left: 14dp;
 	font-size: 26dp;
 	font-weight: bold;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* The list scrolls with the focus (RmlUi brings a focused row into view only in an auto or scroll container). */
@@ -193,7 +197,8 @@ h2 {
 	margin-left: 0dp;
 }
 
-/* One line each: a long name ends in an ellipsis. */
+/* One line each: a long name ends in an ellipsis. RmlUi draws it only for a text whose parent clips it, measured from
+   the parent's left edge (ElementText): each such text sits straight in its paragraph, alone (directory.rml). */
 .row-title {
 	font-size: 25dp;
 	white-space: nowrap;
@@ -208,6 +213,29 @@ h2 {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	margin-top: 2dp;
+}
+
+/* A shared or arcade room's count and systems: wrapped, so that every section's system shows. */
+.row-meta.wrap {
+	white-space: normal;
+}
+
+/* A line of a lead that always shows (a floor's counts) and the rest, which ends in an ellipsis. */
+.row-meta.split {
+	display: flex;
+	flex-direction: row;
+}
+
+.meta-lead {
+	flex: 0 0 auto;
+	white-space: nowrap;
+}
+
+.meta-rest {
+	flex: 0 1 auto;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* The separator between parts of a line (spaces at the edges of an inline box would collapse). */

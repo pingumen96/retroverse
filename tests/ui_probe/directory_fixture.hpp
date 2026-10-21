@@ -3,8 +3,9 @@
 // GPU-free, header only: the directory's fixed model of rv_ui_probe (I4 step 7a), shared with the tests that check it:
 // tests/smoke/test_directory_panel.cpp reads the probe's report and screenshots, tests/unit/ui/test_directory.cpp plays
 // tests/input_scripts/directory_panel.json on the same model without the GPU. A building of six floors (the walker in
-// room:snes on gen4), twelve favourites and recent games, the card's content the app would give each, and what the
-// script leads to at its checkpoints. Invented systems, titles and companies only.
+// room:snes on gen4, whose shared room has five sections of long names), twelve favourites and recent games (a long
+// title, a favourite on a long system name), the card's content the app would give each, and what the script leads to
+// at its checkpoints. Invented systems, titles and companies only.
 
 #include <array>
 #include <cstddef>
@@ -33,7 +34,8 @@ inline ui::DirectoryRoom room(std::string id, std::string kind,
     return result;
 }
 
-/// Six floors in the elevator's order, the walker in room:snes on gen4 (the third floor of the list).
+/// Six floors in the elevator's order, the walker in room:snes on gen4 (the third floor of the list); gen4's shared
+/// room holds five sections whose full names are long, as ES-DE's are.
 inline ui::DirectoryBuilding building() {
     ui::DirectoryBuilding result;
     result.floors.push_back(
@@ -47,7 +49,13 @@ inline ui::DirectoryBuilding building() {
          3,
          {room("room:megadrive", "console", {{"megadrive", "Corona 16 Drive"}}, 79),
           room("room:snes", "console", {{"snes", "Lumen 16 Home System"}}, 50),
-          room("area:shared:gen4", "shared", {{"neogeo", "Neon Geo Home"}, {"segacd", "Corona Disc Add-on"}}, 3)}});
+          room("area:shared:gen4", "shared",
+               {{"neogeo", "Neon Geo Advanced Entertainment System"},
+                {"segacd", "Corona Compact Disc Expansion for the 16 Drive"},
+                {"lumenchrome", "Lumen TurboChrome Compact Disc Interface"},
+                {"prismnet", "Prism Interactive Multimedia Home Computer"},
+                {"ambrapad", "Ambra Graphics Enhancement Console"}},
+               41)}});
     result.floors.push_back({"gen5", 4, {room("room:psx", "console", {{"psx", "Prism Disc Station"}}, 140)}});
     result.floors.push_back(
         {"handheld",
@@ -72,7 +80,7 @@ struct FixtureGame {
 
 inline constexpr std::array<FixtureGame, 12> kGames{{
     {"Amber Lantern", "snes", "Lumen 16 Home System", true, 19, 10, 2026},
-    {"Bramble Burrow Rally", "megadrive", "Corona 16 Drive", true, 2, 9, 2026},
+    {"Bramble Burrow Rally", "segacd", "Corona Compact Disc Expansion for the 16 Drive", true, 2, 9, 2026},
     {"Cobalt Comet", "psx", "Prism Disc Station", true, 0, 0, 0},
     {"Dusk Harbor", "gb", "Pocket Lumen", true, 0, 0, 0},
     {"Ember Vale", "snes", "Lumen 16 Home System", false, 20, 10, 2026},
@@ -155,23 +163,25 @@ struct Checkpoint {
 };
 
 /// tests/input_scripts/directory_panel.json from the floors opened at frame 0: the floors (gen4 selected), a step down
-/// and back, gen4's rooms (room:snes selected), Back to the floors, the shoulder to the games, two steps down, the
-/// third game's card (placed), Right to Mostra nella stanza, which leaves the panel.
-inline constexpr std::array<Checkpoint, 8> kCheckpoints{{
+/// and back, gen4's rooms (room:snes selected; the shared room's five long names), Back to the floors, the shoulder to
+/// the games (the first selected), a page down and a step up (the long title selected), a page up and two steps down,
+/// the third game's card (placed), Right to Mostra nella stanza, which leaves the panel.
+inline constexpr std::array<Checkpoint, 9> kCheckpoints{{
     {20, true, ui::DirectoryTab::Floors, ui::DirectoryView::Floors, "dir-floor-2", "floors.png"},
     {35, true, ui::DirectoryTab::Floors, ui::DirectoryView::Floors, "dir-floor-3", ""},
     {70, true, ui::DirectoryTab::Floors, ui::DirectoryView::Rooms, "dir-room-2", "rooms.png"},
     {85, true, ui::DirectoryTab::Floors, ui::DirectoryView::Floors, "dir-floor-2", ""},
-    {110, true, ui::DirectoryTab::Games, ui::DirectoryView::Games, "dir-game-0", "games.png"},
-    {160, true, ui::DirectoryTab::Games, ui::DirectoryView::Card, "dir-card-play", "card.png"},
-    {185, true, ui::DirectoryTab::Games, ui::DirectoryView::Card, "dir-card-room", ""},
-    {199, false, ui::DirectoryTab::Games, ui::DirectoryView::Card, "", ""},
+    {110, true, ui::DirectoryTab::Games, ui::DirectoryView::Games, "dir-game-0", ""},
+    {145, true, ui::DirectoryTab::Games, ui::DirectoryView::Games, "dir-game-7", "games.png"},
+    {200, true, ui::DirectoryTab::Games, ui::DirectoryView::Card, "dir-card-play", "card.png"},
+    {225, true, ui::DirectoryTab::Games, ui::DirectoryView::Card, "dir-card-room", ""},
+    {239, false, ui::DirectoryTab::Games, ui::DirectoryView::Card, "", ""},
 }};
 
 /// The frames the script runs (the last checkpoint's, plus one).
-inline constexpr std::uint32_t kFrames = 200;
+inline constexpr std::uint32_t kFrames = 240;
 /// The command the script ends with, and its frame: Mostra nella stanza on the third game.
-inline constexpr std::uint32_t kShowInRoomFrame = 190;
+inline constexpr std::uint32_t kShowInRoomFrame = 230;
 inline constexpr std::size_t kShownGame = 2;
 
 } // namespace rv::probe::directory_fixture

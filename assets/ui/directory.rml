@@ -10,9 +10,14 @@
 		Every string is written here: the screen binds data and keys only (the floors by their building.json id, the rooms
 		by their kind and their systems' names), and an empty field reads "n.d." (non disponibile). The card's readiness,
 		blocker and room sentences are the quick catalog's (quick_catalog.rml), but for the building's 'not-in-room', and
-		its outcome sentences the world card's (game_card.rml), line for line: the test compares them. The focus is the model's (DirectoryModel): the screen
-		focuses the tab, row or button it names; the input stays with the application, a click selects a row or presses
-		a button. The rows' bindings sit one level below their data-for element, as in the quick catalog.
+		its outcome sentences the world card's (game_card.rml), line for line: the test compares them. The focus is the
+		model's (DirectoryModel): the screen focuses the tab, row or button it names; the input stays with the
+		application, a click selects a row or presses a button. The rows' bindings sit one level below their data-for
+		element, as in the quick catalog.
+		A row's lines put the short facts first (the counts, the date), the long names last. A one-line text sits straight
+		in the paragraph that clips it, one text per paragraph (variants as sibling paragraphs): RmlUi ends a line in an
+		ellipsis only for a text whose parent clips it, measured from the parent's left edge. A shared room's systems
+		wrap instead: every section's system shows.
 	-->
 	<title>Indice dell'edificio</title>
 	<link type="text/rcss" href="directory.rcss"/>
@@ -35,7 +40,16 @@
 		<!-- The rooms' header: the floor whose rooms are listed. -->
 		<div id="dir-floor-header" data-if="view == 'rooms'">
 			<span class="badge"><span data-if="shown.order == 0">T</span><span data-if="shown.order != 0">{{ shown.order }}</span></span>
-			<p class="header-title"><span data-if="shown.id == 'ground'">Piano terra</span><span data-if="shown.id == 'gen2'">Prime console</span><span data-if="shown.id == 'gen3'">Console a 8 bit</span><span data-if="shown.id == 'gen4'">Console a 16 bit</span><span data-if="shown.id == 'gen5'">Console a 32 e 64 bit</span><span data-if="shown.id == 'gen6'">Sesta generazione</span><span data-if="shown.id == 'gen7'">Console moderne</span><span data-if="shown.id == 'handheld'">Console portatili</span><span data-if="shown.id == 'computer'">Computer e altro</span><span data-if="!shown.known">Piano {{ shown.id }}</span></p>
+			<p class="header-title" data-if="shown.id == 'ground'">Piano terra</p>
+			<p class="header-title" data-if="shown.id == 'gen2'">Prime console</p>
+			<p class="header-title" data-if="shown.id == 'gen3'">Console a 8 bit</p>
+			<p class="header-title" data-if="shown.id == 'gen4'">Console a 16 bit</p>
+			<p class="header-title" data-if="shown.id == 'gen5'">Console a 32 e 64 bit</p>
+			<p class="header-title" data-if="shown.id == 'gen6'">Sesta generazione</p>
+			<p class="header-title" data-if="shown.id == 'gen7'">Console moderne</p>
+			<p class="header-title" data-if="shown.id == 'handheld'">Console portatili</p>
+			<p class="header-title" data-if="shown.id == 'computer'">Computer e altro</p>
+			<p class="header-title" data-if="!shown.known">Piano {{ shown.id }}</p>
 		</div>
 		<div id="dir-list">
 			<!-- Piani: the floors, the walker's marked. -->
@@ -45,8 +59,29 @@
 					<div class="row floor" data-attr-id="floor.elementId" data-event-click="row(floor.index)">
 						<span class="badge"><span data-if="floor.order == 0">T</span><span data-if="floor.order != 0">{{ floor.order }}</span></span>
 						<div class="row-text">
-							<p class="row-title"><span data-if="floor.id == 'ground'">Piano terra</span><span data-if="floor.id == 'gen2'">Prime console</span><span data-if="floor.id == 'gen3'">Console a 8 bit</span><span data-if="floor.id == 'gen4'">Console a 16 bit</span><span data-if="floor.id == 'gen5'">Console a 32 e 64 bit</span><span data-if="floor.id == 'gen6'">Sesta generazione</span><span data-if="floor.id == 'gen7'">Console moderne</span><span data-if="floor.id == 'handheld'">Console portatili</span><span data-if="floor.id == 'computer'">Computer e altro</span><span data-if="!floor.known">Piano {{ floor.id }}</span></p>
-							<p class="row-meta"><span data-if="floor.id == 'ground'">Atrio e sala giochi<span class="dot">·</span></span><span data-if="floor.id == 'gen2'">1ª e 2ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen3'">3ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen4'">4ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen5'">5ª generazione<span class="dot">·</span></span><span data-if="floor.id == 'gen6'">Console a 128 bit<span class="dot">·</span></span><span data-if="floor.id == 'gen7'">Dalla 7ª generazione in poi<span class="dot">·</span></span><span data-if="floor.id == 'handheld'">Di ogni generazione<span class="dot">·</span></span><span data-if="floor.id == 'computer'">Computer, motori di gioco e altro<span class="dot">·</span></span><span data-if="floor.rooms == 1">1 stanza</span><span data-if="floor.rooms != 1">{{ floor.rooms }} stanze</span><span class="dot">·</span><span data-if="floor.games == 1">1 gioco</span><span data-if="floor.games != 1">{{ floor.games }} giochi</span></p>
+							<p class="row-title" data-if="floor.id == 'ground'">Piano terra</p>
+							<p class="row-title" data-if="floor.id == 'gen2'">Prime console</p>
+							<p class="row-title" data-if="floor.id == 'gen3'">Console a 8 bit</p>
+							<p class="row-title" data-if="floor.id == 'gen4'">Console a 16 bit</p>
+							<p class="row-title" data-if="floor.id == 'gen5'">Console a 32 e 64 bit</p>
+							<p class="row-title" data-if="floor.id == 'gen6'">Sesta generazione</p>
+							<p class="row-title" data-if="floor.id == 'gen7'">Console moderne</p>
+							<p class="row-title" data-if="floor.id == 'handheld'">Console portatili</p>
+							<p class="row-title" data-if="floor.id == 'computer'">Computer e altro</p>
+							<p class="row-title" data-if="!floor.known">Piano {{ floor.id }}</p>
+							<!-- The counts always show; what the floor holds ends in an ellipsis. -->
+							<div class="row-meta split">
+								<span class="meta-lead"><span data-if="floor.rooms == 1">1 stanza</span><span data-if="floor.rooms != 1">{{ floor.rooms }} stanze</span><span class="dot">·</span><span data-if="floor.games == 1">1 gioco</span><span data-if="floor.games != 1">{{ floor.games }} giochi</span><span class="dot" data-if="floor.known">·</span></span>
+								<p class="meta-rest" data-if="floor.id == 'ground'">Atrio e sala giochi</p>
+								<p class="meta-rest" data-if="floor.id == 'gen2'">1ª e 2ª generazione</p>
+								<p class="meta-rest" data-if="floor.id == 'gen3'">3ª generazione</p>
+								<p class="meta-rest" data-if="floor.id == 'gen4'">4ª generazione</p>
+								<p class="meta-rest" data-if="floor.id == 'gen5'">5ª generazione</p>
+								<p class="meta-rest" data-if="floor.id == 'gen6'">Console a 128 bit</p>
+								<p class="meta-rest" data-if="floor.id == 'gen7'">Dalla 7ª generazione in poi</p>
+								<p class="meta-rest" data-if="floor.id == 'handheld'">Di ogni generazione</p>
+								<p class="meta-rest" data-if="floor.id == 'computer'">Computer, motori di gioco e altro</p>
+							</div>
 						</div>
 						<span class="here" data-if="floor.current">Sei qui</span>
 					</div>
@@ -59,7 +94,8 @@
 					<span class="badge"><span class="door"></span><span class="door"></span></span>
 					<div class="row-text">
 						<p class="row-title">Corridoio e ascensore</p>
-						<p class="row-meta"><span data-if="shown.current">Torna davanti all'ascensore di questo piano</span><span data-if="!shown.current">Scendi a questo piano, davanti all'ascensore</span></p>
+						<p class="row-meta" data-if="shown.current">Torna all'ascensore di questo piano</p>
+						<p class="row-meta" data-if="!shown.current">Scendi a questo piano dall'ascensore</p>
 					</div>
 					<span class="here" data-if="hallCurrent">Sei qui</span>
 				</div>
@@ -67,8 +103,14 @@
 					<div class="row room" data-attr-id="room.elementId" data-event-click="row(room.index)">
 						<span class="badge room-badge">{{ room.index }}</span>
 						<div class="row-text">
-							<p class="row-title"><span data-if="room.kind == 'console'">{{ room.title }}</span><span data-if="room.kind == 'shared'">Sala condivisa</span><span data-if="room.kind == 'arcade'">Sala giochi arcade</span></p>
-							<p class="row-meta"><span data-if="room.kind != 'console'"><span data-for="system, i : room.systems"><span data-if="i > 0">, </span>{{ system }}</span><span class="dot">·</span></span><span data-if="room.games == 0">nessun gioco esposto</span><span data-if="room.games == 1">1 gioco</span><span data-if="room.games > 1">{{ room.games }} giochi</span></p>
+							<p class="row-title" data-if="room.kind == 'console'">{{ room.title }}</p>
+							<p class="row-title" data-if="room.kind == 'shared'">Sala condivisa</p>
+							<p class="row-title" data-if="room.kind == 'arcade'">Sala giochi arcade</p>
+							<p class="row-meta" data-if="room.kind == 'console' && room.games == 0">nessun gioco esposto</p>
+							<p class="row-meta" data-if="room.kind == 'console' && room.games == 1">1 gioco</p>
+							<p class="row-meta" data-if="room.kind == 'console' && room.games > 1">{{ room.games }} giochi</p>
+							<!-- A shared or arcade room: its count, then every section's system, on as many lines as they take. -->
+							<p class="row-meta wrap" data-if="room.kind != 'console'"><span data-if="room.games == 0">nessun gioco esposto</span><span data-if="room.games == 1">1 gioco</span><span data-if="room.games > 1">{{ room.games }} giochi</span><span class="dot" data-if="room.systems.size > 0">·</span><span data-for="system, i : room.systems"><span data-if="i > 0">, </span>{{ system }}</span></p>
 						</div>
 						<span class="here" data-if="room.current">Sei qui</span>
 					</div>
@@ -83,8 +125,11 @@
 				<div class="slot" data-if="gamesState != 'failed'" data-for="game : games">
 					<div class="row game" data-attr-id="game.elementId" data-class-chosen="game.chosen" data-event-click="row(game.index)">
 						<div class="row-text">
-							<p class="row-title"><span data-if="game.title != ''">{{ game.title }}</span><span data-if="game.title == ''">Gioco senza titolo</span></p>
-							<p class="row-meta">{{ game.systemName }}<span data-if="game.played != ''"><span class="dot">·</span>Giocato il {{ game.played }}</span></p>
+							<p class="row-title" data-if="game.title != ''">{{ game.title }}</p>
+							<p class="row-title" data-if="game.title == ''">Gioco senza titolo</p>
+							<!-- The date first: a long system name ends in an ellipsis. -->
+							<p class="row-meta" data-if="game.played != ''">Giocato il {{ game.played }} · {{ game.systemName }}</p>
+							<p class="row-meta" data-if="game.played == ''">{{ game.systemName }}</p>
 						</div>
 						<span class="favorite" data-if="game.favorite">Preferito</span>
 					</div>
