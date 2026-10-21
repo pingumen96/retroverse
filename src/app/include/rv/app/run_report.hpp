@@ -590,9 +590,11 @@ struct WorldRecord {
     /// What showed at the end: "room" (the plan's room), "shell" (the empty room: no plan to show), "test-room" (the
     /// fallback: no catalog, no games of the room's system), "generating" (still being made when the run ended).
     std::string state;
-    /// The world notice shown last (world_notice_ui.hpp's keys; "" none) and why, in English.
+    /// The world notice shown last (world_notice_ui.hpp's keys; "" none) and why, in English; and the start room it
+    /// names (the notice's "room": --start-room's id, "" without one).
     std::string notice;
     std::string reason;
+    std::string noticeRoom;
     /// The catalog's state when the test room showed for want of a catalog ("no-library", ...).
     std::string catalogState;
     /// The room that held the walker's eye at the end ("room:snes"; "" in a hall, or before a floor showed: I4 step 5a),

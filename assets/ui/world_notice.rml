@@ -10,9 +10,9 @@
 		(src/app/include/rv/app/world_notice_ui.hpp, tests/unit/app/test_world_notice_document.cpp).
 		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed.
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
-		unavailable). system: the start room's system (--start-room), as ES-DE names it, for no-games; empty without
-		one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes no input: the quick catalog
-		(Tab) is where to act.
+		unavailable). room: the start room's id as --start-room gives it (room:snes, area:arcade, area:shared:<floor>),
+		for no-games; empty without one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
+		no input: the quick catalog (Tab) is where to act.
 	-->
 	<title>Stanza</title>
 	<link type="text/rcss" href="world_notice.rcss"/>
@@ -42,7 +42,7 @@
 			<h1>Stanza di prova</h1>
 			<p>Nessun sistema del catalogo ha una stanza nell'edificio: i giochi sono tutti nel catalogo rapido
 				(Tab).</p>
-			<p data-if="system != ''">Per questo la stanza di partenza richiesta ({{ system }}) non c'è.</p>
+			<p data-if="room != ''">Per questo la stanza di partenza richiesta ({{ room }}) non c'è.</p>
 		</div>
 
 		<div data-if="notice == 'media-unknown'">

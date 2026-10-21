@@ -826,6 +826,7 @@ Json worldToJson(const WorldRecord& world) {
     json["state"] = world.state;
     json["notice"] = world.notice;
     json["reason"] = world.reason;
+    json["noticeRoom"] = world.noticeRoom;
     json["catalogState"] = world.catalogState;
     json["room"] = world.room;
     json["library"] = world.library;
@@ -958,6 +959,7 @@ WorldRecord readWorld(FieldReader& fields) {
     world.state = fields.string("state");
     world.notice = fields.string("notice");
     world.reason = fields.string("reason");
+    world.noticeRoom = fields.optionalString("noticeRoom").value_or(std::string());
     world.catalogState = fields.string("catalogState");
     world.room = fields.string("room");
     world.library = fields.string("library");

@@ -263,7 +263,7 @@ void WorldSession::applyLive(WorldResult result) {
         break;
     }
     if (!build.notice.empty()) {
-        setNotice(WorldNoticeContent{build.notice, {}, noticeSystem()}, true);
+        setNotice(WorldNoticeContent{build.notice, {}, noticeRoom()}, true);
     }
     m_record.state = m_state;
     finish();

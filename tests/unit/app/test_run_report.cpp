@@ -327,6 +327,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.state = "room";
     world.notice = "media-unknown-kept";
     world.reason = "the media are unknown";
+    world.noticeRoom = "area:shared:handheld";
     world.catalogState = "";
     world.room = "room:snes";
     world.library = "esde";

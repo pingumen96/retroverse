@@ -269,8 +269,9 @@ private:
     [[nodiscard]] std::optional<FloorItem> floorItemOf(world::PickId pickId) const;
     /// The collections by room (null for a room without one), as the loader's groups.
     void syncCollections();
-    /// The system the notices name: the start room's (its id's), else none.
-    [[nodiscard]] std::string noticeSystem() const;
+    /// The room the notices name: the start room's id as --start-room gives it ("room:snes", "area:arcade",
+    /// "area:shared:handheld"), else none.
+    [[nodiscard]] std::string noticeRoom() const;
 
     AppContext& m_context;
     Options m_options;

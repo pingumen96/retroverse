@@ -143,8 +143,8 @@ std::optional<double> WorldSession::sinceProcessStart(std::chrono::system_clock:
     return static_cast<double>(ticks - m_options.processCreated) / 10'000.0;
 }
 
-std::string WorldSession::noticeSystem() const {
-    return m_options.startRoom ? m_options.startRoom->system().str() : std::string();
+std::string WorldSession::noticeRoom() const {
+    return m_options.startRoom ? m_options.startRoom->toString() : std::string();
 }
 
 void WorldSession::setNotice(WorldNoticeContent notice, bool timed) {
@@ -152,6 +152,7 @@ void WorldSession::setNotice(WorldNoticeContent notice, bool timed) {
     m_noticeTimed = timed;
     m_noticeSince.reset();
     m_record.notice = m_notice.notice;
+    m_record.noticeRoom = m_notice.startRoom;
 }
 
 void WorldSession::showNotice(ProductUi& product, double timeSeconds) {
@@ -457,7 +458,7 @@ void WorldSession::commit(WorldResult result) {
         m_state = "test-room";
         m_record.reason = result.reason;
         m_record.catalogState = result.catalogState;
-        setNotice(WorldNoticeContent{result.notice, result.catalogState, noticeSystem()}, true);
+        setNotice(WorldNoticeContent{result.notice, result.catalogState, noticeRoom()}, true);
         m_record.state = m_state;
         return;
     }
@@ -480,7 +481,7 @@ void WorldSession::commit(WorldResult result) {
         m_state = "shell";
         setNotice(WorldNoticeContent{build.notice.empty() ? std::string(world_notice::kFailed) : build.notice,
                                      {},
-                                     noticeSystem()},
+                                     noticeRoom()},
                   false);
         m_record.state = m_state;
         return;
@@ -559,7 +560,7 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker) {
         }
         m_state = "test-room";
         m_record.state = m_state;
-        setNotice(WorldNoticeContent{std::string(world_notice::kFailed), {}, noticeSystem()}, true);
+        setNotice(WorldNoticeContent{std::string(world_notice::kFailed), {}, noticeRoom()}, true);
         return false;
     }
     m_state = "room";
@@ -712,7 +713,7 @@ void WorldSession::finishCommit(const WorldBuild& build, Clock::time_point start
         m_record.snapshotToCommitMs = *m_record.committedAtMs - *m_record.snapshotAtMs;
     }
     m_record.state = m_state;
-    setNotice(WorldNoticeContent{build.notice, {}, noticeSystem()}, true);
+    setNotice(WorldNoticeContent{build.notice, {}, noticeRoom()}, true);
     spdlog::info("Frame {}: the room is shown: the floor {} ({} object(s), {} light(s), {} item(s) in {} cluster(s) "
                  "of {} collection(s)); committed in {:.1f} ms",
                  m_context.frameIndex(), build.floor, m_record.objects, m_record.lights, m_record.items,

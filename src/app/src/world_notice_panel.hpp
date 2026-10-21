@@ -17,8 +17,8 @@ struct WorldNoticeContent {
     std::string notice;
     /// The catalog's state, for world_notice::kNoCatalog.
     std::string state;
-    /// The room's system (ES-DE's name), for world_notice::kNoGames.
-    std::string system;
+    /// The start room (its id, as --start-room gives it; empty without one), for world_notice::kNoGames.
+    std::string startRoom;
 
     bool operator==(const WorldNoticeContent&) const = default;
 };

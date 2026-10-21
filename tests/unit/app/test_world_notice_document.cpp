@@ -46,7 +46,8 @@ TEST_CASE("app/world_notice_document: the ids, the data model and a sentence for
         INFO(state);
         CHECK(contains(rml, "data-if=\"state == '" + std::string(state) + "'\""));
     }
-    CHECK(contains(rml, "{{ system }}"));
+    CHECK(contains(rml, "{{ room }}"));
+    CHECK_FALSE(contains(rml, "{{ system }}")); // the panel binds no "system" since the start room may be an area
     // The catalog's states the test room names are the catalog's own words for them.
     for (const rv::app::CatalogState state :
          {rv::app::CatalogState::NoLibrary, rv::app::CatalogState::NoDatabase, rv::app::CatalogState::DataDirectory,
@@ -59,11 +60,12 @@ TEST_CASE("app/world_notice_document: the ids, the data model and a sentence for
     CHECK(contains(rcss, "#" + std::string(wn::kPanelId) + " {"));
 }
 
-TEST_CASE("app/world_notice_document: the test room of a catalog without rooms speaks of the building, a system only "
-          "when the start room names one",
+TEST_CASE("app/world_notice_document: the test room of a catalog without rooms speaks of the building, a start room "
+          "only when --start-room names one",
           "[app][documents]") {
-    // I4 step 5a: no-games is the building's (no system of the catalog gives a room); "system" is the --start-room
-    // room's system, empty in the default lobby start, so its sentence shows only with one (never "()").
+    // I4 step 5a: no-games is the building's (no system of the catalog gives a room); "room" is the --start-room room's
+    // id (a console room's or an area's), empty in the default lobby start, so its sentence shows only with one (never
+    // "()").
     const std::string rml = readAsset(wn::kDocumentPath);
     const std::string opening = "<div data-if=\"notice == '" + std::string(wn::kNoGames) + "'\">";
     const std::size_t begin = rml.find(opening);
@@ -73,11 +75,11 @@ TEST_CASE("app/world_notice_document: the test room of a catalog without rooms s
     const std::string block = rml.substr(begin, end - begin);
     CHECK(contains(block, "Nessun sistema del catalogo ha una stanza"));
     CHECK_FALSE(contains(block, "del sistema della stanza"));
-    // Every {{ system }} of the block is inside the paragraph shown only when there is a system.
-    const std::string guarded = "<p data-if=\"system != ''\">";
-    std::size_t at = block.find("{{ system }}");
+    // Every {{ room }} of the block is inside the paragraph shown only when there is a start room.
+    const std::string guarded = "<p data-if=\"room != ''\">";
+    std::size_t at = block.find("{{ room }}");
     REQUIRE(at != std::string::npos);
-    for (; at != std::string::npos; at = block.find("{{ system }}", at + 1)) {
+    for (; at != std::string::npos; at = block.find("{{ room }}", at + 1)) {
         const std::size_t paragraph = block.rfind("<p", at);
         REQUIRE(paragraph != std::string::npos);
         CHECK(block.compare(paragraph, guarded.size(), guarded) == 0);

@@ -36,7 +36,7 @@ struct WorldNoticePanel::Impl {
         modelCreated = true;
         constructor.Bind("notice", &notice);
         constructor.Bind("state", &state);
-        constructor.Bind("system", &system);
+        constructor.Bind("room", &room);
         handle = constructor.GetModelHandle();
         return ok();
     }
@@ -59,7 +59,7 @@ struct WorldNoticePanel::Impl {
     WorldNoticeContent content;
     Rml::String notice;
     Rml::String state;
-    Rml::String system;
+    Rml::String room;
 };
 
 WorldNoticePanel::WorldNoticePanel(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -89,7 +89,7 @@ void WorldNoticePanel::show(const WorldNoticeContent& content) {
     impl.content = content;
     impl.notice = Rml::String(content.notice);
     impl.state = Rml::String(content.state);
-    impl.system = Rml::String(content.system);
+    impl.room = Rml::String(content.startRoom);
     impl.handle.DirtyAllVariables();
     if (!impl.shown) {
         // Shown without taking the focus: the world and the quick catalog keep theirs.

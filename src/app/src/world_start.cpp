@@ -36,7 +36,7 @@ void WorldSession::commitPreview(WorldBuild preview) {
     m_record.preview = record;
     m_record.state = m_state;
     // The floor is usable: no notice while the building is made.
-    setNotice(WorldNoticeContent{std::string(world_notice::kNone), {}, noticeSystem()}, true);
+    setNotice(WorldNoticeContent{std::string(world_notice::kNone), {}, noticeRoom()}, true);
     spdlog::info("Frame {}: the stored plan's floor {} is shown before the building's result ({} item(s), {} with "
                  "their pictures from the cache); committed in {:.1f} ms",
                  m_context.frameIndex(), preview.floor, record.items, record.itemsKnown, *record.commitMs);
@@ -83,7 +83,7 @@ void WorldSession::reconcile(WorldResult result) {
         m_record.state = m_state;
         setNotice(WorldNoticeContent{build.notice.empty() ? std::string(world_notice::kFailed) : build.notice,
                                      {},
-                                     noticeSystem()},
+                                     noticeRoom()},
                   false);
         break;
     }

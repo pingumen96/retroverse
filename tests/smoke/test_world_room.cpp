@@ -538,9 +538,26 @@ TEST_CASE("world: without a catalog, or without a system that gives a room, the 
     REQUIRE(otherWorld.bound);
     CHECK(otherWorld.state == "test-room");
     CHECK(otherWorld.notice == "no-games");
+    CHECK(otherWorld.noticeRoom == "room:snes"); // the notice names the start room asked for
     CHECK_FALSE(otherRun.report->residency.bound);
     CHECK_FALSE(fs::exists(other.data / "worlds"));
     requireScreenshot(otherRun, otherShot, kShotSize);
+
+    // The same catalog with an area for the start room (I4 step 4): the notice names it by its id, as it names a
+    // console room (an area's id has no system).
+    for (const std::string_view area : {"area:arcade", "area:shared:handheld"}) {
+        INFO(area);
+        const std::string name = "no_games_" + std::string(area == "area:arcade" ? "arcade" : "shared");
+        const AppRun areaRun = runApp(retroverseExe(), other.dir, name,
+                                      {"--start-room", std::string(area), "--exit-after-frames", "--frames", "5",
+                                       "--fixed-dt", "0.016667"});
+        requireCleanRun(areaRun);
+        INFO(areaRun.describe());
+        CHECK(areaRun.report->world.state == "test-room");
+        CHECK(areaRun.report->world.notice == "no-games");
+        CHECK(areaRun.report->world.noticeRoom == area);
+        CHECK_FALSE(fs::exists(other.data / "worlds"));
+    }
 
     // The same catalog in the default start (the lobby, no --start-room): the test room with the building's notice.
     const fs::path lobbyShot = other.dir / "no_games_lobby.png";
@@ -551,6 +568,7 @@ TEST_CASE("world: without a catalog, or without a system that gives a room, the 
     INFO(lobbyRun.describe());
     CHECK(lobbyRun.report->world.state == "test-room");
     CHECK(lobbyRun.report->world.notice == "no-games");
+    CHECK(lobbyRun.report->world.noticeRoom.empty()); // no start room asked for: its sentence stays hidden
     CHECK_FALSE(fs::exists(other.data / "worlds"));
     requireScreenshot(lobbyRun, lobbyShot, kShotSize);
 }
