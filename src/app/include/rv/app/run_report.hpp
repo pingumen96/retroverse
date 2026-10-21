@@ -711,7 +711,13 @@ struct RideRecord {
     /// The renderer's GPU memory when the view came back: the collection arrays' bytes, and every kind's.
     std::uint64_t arrayBytes = 0;
     std::uint64_t gpuBytes = 0;
+    /// The same moment's bytes of each kind, in gl::kGpuMemoryKinds order (the report's "gpuKinds", by kind name): what
+    /// the destination holds besides its arrays (its buffers, its scene's textures and procedural surfaces).
+    std::array<std::uint64_t, gl::kGpuMemoryKindCount> kindBytes{};
 
+    [[nodiscard]] std::uint64_t bytesOf(gl::GpuMemoryKind kind) const noexcept {
+        return kindBytes[static_cast<std::size_t>(kind)];
+    }
     bool operator==(const RideRecord&) const = default;
 };
 

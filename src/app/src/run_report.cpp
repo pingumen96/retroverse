@@ -1127,6 +1127,11 @@ Json worldToJson(const WorldRecord& world) {
         if (ride.walker) {
             record["walker"] = spawnToJson(*ride.walker);
         }
+        Json kinds = Json::object();
+        for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+            kinds[std::string(gl::toString(kind))] = ride.bytesOf(kind);
+        }
+        record["gpuKinds"] = std::move(kinds);
         rides.push_back(std::move(record));
     }
     json["rides"] = std::move(rides);
@@ -1321,6 +1326,12 @@ WorldRecord readWorld(FieldReader& fields) {
         }
         record.arrayBytes = ride.count("arrayBytes");
         record.gpuBytes = ride.count("gpuBytes");
+        if (auto kinds = ride.optionalObject("gpuKinds")) {
+            for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+                record.kindBytes[static_cast<std::size_t>(kind)] =
+                    kinds->optionalCount(std::string(gl::toString(kind))).value_or(0);
+            }
+        }
         world.rides.push_back(std::move(record));
     }
     for (FieldReader& teleport : fields.optionalObjectArray("teleports")) {

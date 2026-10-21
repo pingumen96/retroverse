@@ -600,6 +600,9 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     ride.walker = rv::app::SpawnPoint{glm::vec3(8.5f, 0.0f, -3.2f), 0.0f, -6.0f};
     ride.arrayBytes = 5025792;
     ride.gpuBytes = 150197348;
+    ride.kindBytes = {2097152, 5025792, 0, 0, 120000000, 3074404, 20000000};
+    CHECK(ride.bytesOf(rv::gl::GpuMemoryKind::CollectionArrays) == ride.arrayBytes);
+    CHECK(ride.bytesOf(rv::gl::GpuMemoryKind::Buffers) == 20000000);
     rv::app::RideRecord running;
     running.from = "handheld";
     running.to = "gen4";
@@ -648,6 +651,12 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     CHECK(older->world.floors.empty());
     CHECK(older->world.elevatorPromptFrames == 0);
     CHECK(older->directory == rv::app::DirectoryRecord{});
+    // A ride recorded without its kinds' bytes: none of them.
+    const auto noKinds = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["world"]["rides"][0].erase("gpuKinds"); }), "r.json");
+    REQUIRE(noKinds.has_value());
+    CHECK(noKinds->world.rides.front().kindBytes == std::array<std::uint64_t, rv::gl::kGpuMemoryKindCount>{});
+    CHECK(noKinds->world.rides.front().arrayBytes == ride.arrayBytes);
     report.directory = rv::app::DirectoryRecord{};
     const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
     CHECK(json.at("directory").empty());
