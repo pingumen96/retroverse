@@ -68,6 +68,9 @@ struct ImportedBuilding {
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
+        // Each family's own room, amiga's 20 titles too (I4 step 4: else a section of a shared room).
+        REQUIRE(rv::core::writeTextFileAtomic(data / "config" / "world.json", "{\"sharedRoomMinTitles\": 0}\n")
+                    .has_value());
     }
 
     void cli(std::string_view name, std::vector<std::string> arguments) const {
