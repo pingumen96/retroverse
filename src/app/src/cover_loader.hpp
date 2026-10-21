@@ -96,8 +96,12 @@ public:
     [[nodiscard]] bool done() const noexcept;
     /// Every item in the last round's view (and the focused one) is done.
     [[nodiscard]] bool viewDone() const noexcept { return m_schedule.viewDone(); }
-    /// Every item of group `group` (a room of the floor) is done (I4 step 7b: the eye's area resident after a ride).
+    /// Every item of group `group` (a room of the floor) is done (I4 step 7b; since I4 step 8 the ride's record of when
+    /// the room that holds the walker is resident).
     [[nodiscard]] bool groupDone(std::uint32_t group) const;
+    /// The items of group `group` in the last round's view, and those of them not done (I4 step 8: a ride's view comes
+    /// back once the eye's room has none pending).
+    [[nodiscard]] CoverGroupView groupView(std::uint32_t group) const noexcept { return m_schedule.groupView(group); }
     /// Blocks until a job posts a result, at most `timeout` (a lockstep wait within a frame).
     void waitForResults(std::chrono::milliseconds timeout) const;
 

@@ -1124,6 +1124,13 @@ Json worldToJson(const WorldRecord& world) {
         putOptional(record, "residentMs", ride.residentMs);
         putOptional(record, "totalMs", ride.totalMs);
         putOptional(record, "jobMs", ride.jobMs);
+        if (ride.viewItems) {
+            record["viewItems"] = *ride.viewItems;
+        }
+        if (ride.viewPending) {
+            record["viewPending"] = *ride.viewPending;
+        }
+        putOptional(record, "roomResidentMs", ride.roomResidentMs);
         if (ride.walker) {
             record["walker"] = spawnToJson(*ride.walker);
         }
@@ -1320,6 +1327,9 @@ WorldRecord readWorld(FieldReader& fields) {
         record.residentMs = ride.optionalNumber("residentMs");
         record.totalMs = ride.optionalNumber("totalMs");
         record.jobMs = ride.optionalNumber("jobMs");
+        record.viewItems = ride.optionalCount("viewItems");
+        record.viewPending = ride.optionalCount("viewPending");
+        record.roomResidentMs = ride.optionalNumber("roomResidentMs");
         record.outcome = ride.string("outcome");
         if (auto walker = ride.optionalObject("walker")) {
             record.walker = readSpawn(*walker);

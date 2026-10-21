@@ -96,6 +96,15 @@ struct CoverArrival {
     float distance = 0.0f;
 };
 
+/// The items of one group (a room of the floor) in the current view, and those of them not done yet (I4 step 8: a
+/// ride's view comes back once the eye's room has none pending).
+struct CoverGroupView {
+    std::size_t inView = 0;
+    std::size_t pending = 0;
+
+    bool operator==(const CoverGroupView&) const = default;
+};
+
 /// The stages of every item of the room on their way to the arrays (see the file comment). Items are the indices of the
 /// room's collection (CollectionInstance's item order).
 class CoverSchedule {
@@ -154,6 +163,8 @@ public:
     [[nodiscard]] std::size_t inViewCount() const noexcept { return m_inViewCount; }
     [[nodiscard]] std::size_t inViewPending() const noexcept;
     [[nodiscard]] bool inView(std::size_t item) const { return m_inView.at(item) != 0; }
+    /// The items of group `group` in the current view, and those of them not Done (none before the first setView()).
+    [[nodiscard]] CoverGroupView groupView(std::uint32_t group) const noexcept;
     /// Items Made and waiting for their upload, and the layers they hold.
     [[nodiscard]] std::size_t madeCount() const noexcept { return m_made.size(); }
     [[nodiscard]] std::size_t madeLayers() const noexcept { return m_madeLayers; }

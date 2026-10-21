@@ -50,7 +50,8 @@
 // plan shown, the rooms' items files and the catalog's play sessions, the resident floor is dropped only once it is
 // built and swapped at a frame boundary behind the fade (the hero CRT unbound without a join, bound again by the eye's
 // room tracker), the walker at its elevator's arrival or at the room's doorway, the view fades in once the eye's area is
-// resident (or by 10 s after the request; under lockstep the frames wait instead). A refused or failed "Mostra nella
+// resident (since I4 step 8 the covers in view of the room that holds the eye, or by 3 s after the request; under
+// lockstep the frames wait instead), the rest of the room streaming in after it. A refused or failed "Mostra nella
 // stanza" of the quick catalog is told by the world's notice (the directory tells its own). A building's result or a
 // live update that ends during a ride applies after it (built again for the floor shown when it was built for another,
 // then applied once no launched game runs). Input is suspended during the ride.
@@ -398,11 +399,16 @@ private:
     [[nodiscard]] std::optional<WorldBuild> takeFloorBuild(bool& retarget);
     /// The ride's frame (or idle wake): its floor job answered, its fade moved, the floor swapped, the ride ended.
     void followRide(ProductUi& product, bool idleWake, double deltaSeconds);
+    /// One frame of the ride under way, `elapsedMs` after its request.
+    void stepRide(ProductUi& product, double deltaSeconds, double elapsedMs);
     void swapRide();
     void finishRide();
-    /// The eye's area resident on the ride's destination: every item of the room that holds the eye done (a hall has
-    /// none), the loader having ranked them since the swap.
+    /// The eye's area resident on the ride's destination: every item of the room that holds the eye that is in view done
+    /// (I4 step 8; a hall has none), the loader having ranked them since the swap.
     [[nodiscard]] bool rideViewResident() const;
+    /// I4 step 8: the destination room of the last ride followed until every item of it is resident (its record's
+    /// roomResidentMs, `elapsedMs` after the ride's request), while the walker's floor is the ride's.
+    void followRideRoom(double elapsedMs);
     /// The plan shown's state for the rides' floor jobs, the floor's elevator, arrival and doorways, its floors' record.
     void keepPlan(const WorldBuild& build);
     /// The directory's floors and rooms and where the walker is, given to `product` when they changed.
@@ -505,6 +511,8 @@ private:
     Clock::time_point m_rideStart;
     std::optional<ui::DirectoryCommand> m_rideCommand;
     std::optional<WorldBuild> m_rideBuild;
+    /// I4 step 8: the room the last ride swapped to (reasons room and showInRoom), until it is resident whole.
+    std::optional<std::string> m_rideRoom;
     /// The floor-build job's mailbox and generation (the latest asked wins), and a building's result waiting for its
     /// floor built again for the floor shown (retargetResult()), then, once built, for a launched game's end.
     std::shared_ptr<FloorJobBox> m_floorBox;

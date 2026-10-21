@@ -248,6 +248,7 @@ void WorldSession::startRide(ProductUi& product, const WorldMove& move,
     settings.lockstep = m_options.lockstep;
     m_ride = std::make_unique<ElevatorRide>(std::move(request), settings, frame);
     m_rideStart = Clock::now();
+    m_rideRoom.reset();
     m_rideCommand = command;
     m_rideBuild.reset();
     m_pendingShow.reset();
@@ -371,7 +372,34 @@ bool WorldSession::rideViewResident() const {
     if (!eye || !m_loader) {
         return true; // a hall (no item), or a floor without covers to wait for
     }
-    return m_loader->groupDone(static_cast<std::uint32_t>(*eye));
+    // I4 step 8: the covers in view of the room that holds the eye (the loader ranked them first since the swap); the
+    // rest of the room streams in after the view is back (followRideRoom() records when it is whole).
+    return m_loader->groupView(static_cast<std::uint32_t>(*eye)).pending == 0;
+}
+
+void WorldSession::followRideRoom(double elapsedMs) {
+    if (!m_rideRoom) {
+        return;
+    }
+    // The ride that swapped to the room (a later ride forgets it: startRide()), still running or the last recorded.
+    RideRecord* record = m_ride ? &m_ride->record() : (m_record.rides.empty() ? nullptr : &m_record.rides.back());
+    std::optional<std::uint32_t> group;
+    for (std::size_t index = 0; index < m_rooms.size(); ++index) {
+        if (m_rooms[index].id.toString() == *m_rideRoom) {
+            group = static_cast<std::uint32_t>(index);
+        }
+    }
+    if (record == nullptr || !group || m_floor != record->to) {
+        m_rideRoom.reset(); // the walker's floor is another now: the room is no longer followed
+        return;
+    }
+    if (m_loader && !m_loader->groupDone(*group)) {
+        return;
+    }
+    record->roomResidentMs = elapsedMs;
+    spdlog::info("Frame {}: {} is resident {:.0f} ms after the ride to it was asked", m_context.frameIndex(),
+                 *m_rideRoom, *record->roomResidentMs);
+    m_rideRoom.reset();
 }
 
 void WorldSession::followRide(ProductUi& product, bool idleWake, double deltaSeconds) {
@@ -404,13 +432,22 @@ void WorldSession::followRide(ProductUi& product, bool idleWake, double deltaSec
     }
     // An idle wake (a lockstep wait) only hands the job's answer over: the fades, the swap and the view's wait move with
     // frames, so that a scripted run's frames (the swap's among them) are the same every time.
-    if (!m_ride || idleWake) {
+    if (idleWake) {
         return;
     }
+    // One time for the frame: the room whole is never recorded before the view's covers it holds (I4 step 8).
+    const double elapsedMs = millisecondsSince(m_rideStart);
+    if (m_ride) {
+        stepRide(product, deltaSeconds, elapsedMs);
+    }
+    followRideRoom(elapsedMs);
+}
+
+void WorldSession::stepRide(ProductUi& product, double deltaSeconds, double elapsedMs) {
     RideFrame frame;
     frame.frame = m_context.frameIndex();
     frame.deltaSeconds = deltaSeconds;
-    frame.elapsedMs = millisecondsSince(m_rideStart);
+    frame.elapsedMs = elapsedMs;
     frame.viewResident = m_ride->hasSwapped() && m_updates > m_swapUpdate && rideViewResident();
     switch (m_ride->update(frame)) {
     case RideAction::None:
@@ -459,6 +496,10 @@ void WorldSession::swapRide() {
         return;
     }
     m_record.state = m_state;
+    // I4 step 8: the destination room followed until it is whole (the view comes back once its covers in view are).
+    if (!request.room.empty()) {
+        m_rideRoom = request.room;
+    }
     spdlog::info("Frame {}: the ride swapped {} for {} in {:.1f} ms ({} item(s) in {} room(s))",
                  m_context.frameIndex(), from, build.floor, millisecondsSince(start), m_record.items,
                  build.rooms.size());
@@ -469,6 +510,12 @@ void WorldSession::finishRide() {
     if (m_host.walker) {
         record.walker = spawnOf(m_host.walker());
     }
+    // I4 step 8: the covers in view of the room that holds the eye as the view came back (a hall has none).
+    if (const std::optional<std::size_t> eye = eyeRoom(); eye && m_loader && record.outcome != "failed") {
+        const CoverGroupView view = m_loader->groupView(static_cast<std::uint32_t>(*eye));
+        record.viewItems = view.inView;
+        record.viewPending = view.pending;
+    }
     const GpuMemoryRecord memory = gpuMemoryRecord(gl::gpuMemoryLedger());
     record.arrayBytes = memory.usage(gl::GpuMemoryKind::CollectionArrays).bytes;
     record.gpuBytes = memory.totalBytes;
@@ -477,11 +524,14 @@ void WorldSession::finishRide() {
     }
     m_context.frameTiming().closePhase(kPhaseElevator);
     spdlog::info("Frame {}: the ride from {} to {} {}: the view back {:.0f} ms after it was asked (the floor built at "
-                 "{:.0f} ms, its job {:.0f} ms){}; GPU memory {:.1f} MiB, arrays {:.1f} MiB",
+                 "{:.0f} ms, its job {:.0f} ms){}{}; GPU memory {:.1f} MiB, arrays {:.1f} MiB",
                  m_context.frameIndex(), record.from, record.to, record.outcome, record.totalMs.value_or(0.0),
                  record.builtMs.value_or(0.0), record.jobMs.value_or(0.0),
                  record.residentMs ? fmt::format(", the eye's area resident at {:.0f} ms", *record.residentMs)
                                    : std::string(),
+                 record.viewItems ? fmt::format(", {} item(s) in view, {} pending", *record.viewItems,
+                                                record.viewPending.value_or(0))
+                                  : std::string(),
                  static_cast<double>(record.gpuBytes) / (1024.0 * 1024.0),
                  static_cast<double>(record.arrayBytes) / (1024.0 * 1024.0));
     if (record.outcome != "failed" && m_ride->request().reason == RideReason::ShowInRoom) {

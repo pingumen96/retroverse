@@ -681,8 +681,9 @@ struct WorldFloorRecord {
 };
 
 /// An elevator ride (I4 step 7b, ADR-0013 §10: world.rides): from the floor shown to another, the view faded out, the
-/// destination's floor built on the pool, swapped at a frame boundary, faded in once the eye's area is resident (or
-/// after 10 s; under lockstep the waits replace the timeout).
+/// destination's floor built on the pool, swapped at a frame boundary, faded in once the eye's area is resident (since
+/// I4 step 8 the covers in view of the room that holds the eye, or by 3 s after the request; under lockstep the waits
+/// replace the timeout).
 struct RideRecord {
     std::string from;
     std::string to;
@@ -698,11 +699,20 @@ struct RideRecord {
     std::optional<std::uint64_t> swappedFrame;
     std::optional<std::uint64_t> fadedInFrame;
     /// Milliseconds from the request: to the destination's floor built (its job's result taken), to the eye's area
-    /// resident, to the view back (faded in: the acceptable row's measure, ADR-0013 §13); the floor-build job's own time.
+    /// resident (since I4 step 8 the covers in view of the room that holds the eye), to the view back (faded in: the
+    /// acceptable row's measure, ADR-0013 §13); the floor-build job's own time.
     std::optional<double> builtMs;
     std::optional<double> residentMs;
     std::optional<double> totalMs;
     std::optional<double> jobMs;
+    /// I4 step 8: the items of the room that holds the eye in the view when it came back, and those of them still
+    /// pending (a ride that timed out); none in a hall.
+    std::optional<std::uint64_t> viewItems;
+    std::optional<std::uint64_t> viewPending;
+    /// I4 step 8: milliseconds from the request to every item of the destination room resident (reasons room and
+    /// showInRoom), followed after the view came back while the walker's floor stays (ADR-0013 §13's row of the room
+    /// that holds the walker: 30 s cold, 3 s warm); none for a hall or while it is not.
+    std::optional<double> roomResidentMs;
     /// "arrived"; "timed-out" (faded in after the timeout without the eye's area resident); "failed" (the destination
     /// could not be built: the walker where it was); "running" (the run ended during the ride).
     std::string outcome;

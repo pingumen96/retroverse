@@ -340,6 +340,19 @@ std::size_t CoverSchedule::inViewPending() const noexcept {
     return pending;
 }
 
+CoverGroupView CoverSchedule::groupView(std::uint32_t group) const noexcept {
+    CoverGroupView view;
+    for (std::size_t item = 0; item < m_bounds.size(); ++item) {
+        const std::uint32_t itemGroup = item < m_groups.size() ? m_groups[item] : 0u;
+        if (m_inView[item] == 0 || itemGroup != group) {
+            continue;
+        }
+        ++view.inView;
+        view.pending += m_stage[item] != Stage::Done ? 1 : 0;
+    }
+    return view;
+}
+
 // --- Hero pictures ---------------------------------------------------------------------------------------------------
 
 glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide, const assets::LabelAspect& label) noexcept {

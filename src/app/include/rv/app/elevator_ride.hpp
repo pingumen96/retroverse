@@ -13,10 +13,12 @@
 //                  session drops the resident floor and shows the destination at that frame boundary, the walker at its
 //                  elevator or a room's doorway: swapped()); a job that failed is Fail (the walker stays where it was,
 //                  the view fades back in, a notice);
-//   AwaitingView   the destination shows behind the fade until the eye's area is resident (its layers in), or until the
-//                  view's deadline: RideSettings::viewTimeoutSeconds after the request less the fade-in and a margin
-//                  (viewDeadlineMs()), so that the view is back within the timeout of the request (ADR-0013 §13's 10 s
-//                  cold); under lockstep the frames' waits replace the deadline;
+//   AwaitingView   the destination shows behind the fade until the eye's area is resident (since I4 step 8: the covers
+//                  in view of the room that holds the eye, the rest of the room streaming in after the view is back; a
+//                  hall at once), or until the view's deadline: RideSettings::viewTimeoutSeconds (3 s) after the request
+//                  less the fade-in and a margin (viewDeadlineMs()), so that the view is back within the timeout of the
+//                  request (ADR-0013 §10, §13 as amended at I4 step 8); under lockstep the frames' waits replace the
+//                  deadline;
 //   FadingIn       the view fades back in (as the fade out: by frames under lockstep, by the real clock otherwise, a fade
 //                  begun late shortened to end within the timeout, one begun past it ended at once); Finish once it is
 //                  back (the ride's record complete);
@@ -64,9 +66,10 @@ struct RideRequest {
 struct RideSettings {
     /// Each fade, out and in (ADR-0013 §10: 250 ms).
     double fadeSeconds = 0.25;
-    /// How long after the request the view is back at the latest, the eye's area resident or not (ADR-0013 §10, §13:
-    /// 10 s): the destination waits behind the fade until viewDeadlineMs().
-    double viewTimeoutSeconds = 10.0;
+    /// How long after the request the view is back at the latest, the eye's area resident or not (ADR-0013 §10, §13,
+    /// amended at I4 step 8: 3 s, no longer 10 s, so that a cold ride is never long black): the destination waits behind
+    /// the fade until viewDeadlineMs().
+    double viewTimeoutSeconds = 3.0;
     /// The world's reduceMotion: both fades instant.
     bool reduceMotion = false;
     /// A lockstep run (--fixed-dt): the fades by the frames' times, the frames wait for the floor and the view's layers,
@@ -86,7 +89,8 @@ struct RideFrame {
     double deltaSeconds = 0.0;
     /// Milliseconds since the ride was asked (the real clock: the fades outside lockstep, the deadline, the record).
     double elapsedMs = 0.0;
-    /// The eye's area is resident on the destination (read once swapped).
+    /// The eye's area is resident on the destination (read once swapped): the covers in view of the room that holds the
+    /// eye (a hall at once).
     bool viewResident = false;
 };
 

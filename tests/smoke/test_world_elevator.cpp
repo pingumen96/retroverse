@@ -248,12 +248,25 @@ void requireRide(const rv::app::RideRecord& ride, std::string_view from, std::st
     CHECK(*ride.swappedFrame == *ride.fadedOutFrame + 1);
     CHECK(*ride.fadedInFrame == *ride.swappedFrame + 16);
     CHECK(ride.builtMs.has_value());
-    CHECK(ride.residentMs.has_value());
+    REQUIRE(ride.residentMs.has_value());
     REQUIRE(ride.totalMs.has_value());
     CHECK(*ride.totalMs >= *ride.builtMs);
     CHECK(ride.walker.has_value());
     CHECK(ride.arrayBytes > 0);
     CHECK(ride.gpuBytes >= ride.arrayBytes);
+    // I4 step 8: the view came back once the covers in view of the room that holds the eye were resident (lockstep: the
+    // frames waited for them, none pending), and the room was whole later, still on its floor at the run's end (its
+    // last frame waits for the whole floor); a floor's elevator stands in its hall, no room's covers to wait for.
+    if (reason == "floor") {
+        CHECK_FALSE(ride.viewItems.has_value());
+        CHECK_FALSE(ride.roomResidentMs.has_value());
+    } else {
+        REQUIRE(ride.viewItems.has_value());
+        CHECK(*ride.viewItems > 0);
+        CHECK(ride.viewPending == std::optional<std::uint64_t>(0));
+        REQUIRE(ride.roomResidentMs.has_value());
+        CHECK(*ride.roomResidentMs >= *ride.residentMs);
+    }
 }
 
 /// The walker standing at `room`'s doorway camera (world::doorwayCamera(), moved onto its floor by its placement), its

@@ -65,8 +65,11 @@ build/rvdata`).
   step 7b `floors` (the plan's floors in the elevator's order: `id`, `order`, `rooms`, `placed`), `rides` (each
   elevator ride: `from`, `to`, `reason` `floor`, `room` or `showInRoom`, `room`, `game`, the frames `requestedFrame`,
   `fadedOutFrame`, `swappedFrame`, `fadedInFrame`, the milliseconds from the request `builtMs`, `residentMs`, `totalMs`
-  (the view back: the acceptable row's measure) and the floor job's `jobMs`, `outcome` `arrived`, `timed-out`, `failed`
-  or `running`, the `walker` at the end, `arrayBytes`, `gpuBytes` and `gpuKinds` (each kind's bytes) then), `teleports`
+  (the view back: the acceptable row's measure) and the floor job's `jobMs`, since I4 step 8 `viewItems` and
+  `viewPending` (the covers in view of the room that holds the eye when the view came back, those not resident yet) and
+  `roomResidentMs` (the destination room whole, followed after the view is back while the walker stays on its floor),
+  `outcome` `arrived`, `timed-out`, `failed` or `running`, the `walker` at the end, `arrayBytes`, `gpuBytes` and
+  `gpuKinds` (each kind's bytes) then), `teleports`
   (`frame`, `to` a room or
   `elevator`, `reason`, `walker`) and `elevatorPromptFrames`),
   `residency` (the collection's layers, the
@@ -298,10 +301,12 @@ build/rvdata`).
   resident floor is dropped only once it is built (a failure leaves the walker where it was, the directory saying it
   cannot change floors now) and swapped behind the fade in the frame after it ended (the hero CRT unbound, bound again
   by the room the eye stays in), the walker at its elevator facing the hall or at the room's doorway, and the view
-  fades back in once the room that holds the eye is resident (a hall at once), or so that it is back 10 s after the
-  request (the wait ends at 9.25 s, a fade-in begun late by a long frame shortened to end by 10 s: `timed-out`); the
-  fades follow the real clock; under lockstep the frames' times and the frames wait instead (15 frames out, the swap in
-  the next, the eye's area in the one after, 15 frames in at `--fixed-dt 0.016667`, on every run). The input is
+  fades back in once the covers in view of the room that holds the eye are resident (I4 step 8; a hall at once), or so
+  that it is back 3 s after the request (the wait ends at 2.25 s, a fade-in begun late by a long frame shortened to end
+  by 3 s: `timed-out`); the rest of the room's covers stream in afterwards (the ride's record says when the room was
+  whole, `roomResidentMs`, and how many covers were in view, `viewItems`, `viewPending`); the fades follow the real
+  clock; under lockstep the frames' times and the frames wait instead (15 frames out, the swap in the next, the eye's
+  area in the one after, 15 frames in at `--fixed-dt 0.016667`, on every run). The input is
   suspended meanwhile; a building's result or a live update that ends during a ride applies after it (and never while a
   launched game runs). A ride or teleport is refused while a floor applies (the persisted start's reconciliation, a
   result built again for the floor shown), in Focus or Inspect, or while a launch is active: the directory comes back

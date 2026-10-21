@@ -2,8 +2,8 @@
 // frames at the fixed step), the swap only once faded out with the destination built, always from the frame after the
 // fade ended (whenever the job answered), the eye's area awaited, the fade in, the record's frames and times; a
 // destination that cannot be built (the walker stays, the view comes back), the view's deadline outside lockstep (the
-// view back within the timeout of the request), none under it, reduceMotion's instant fades, frames without time that
-// move no fade.
+// view back within 3 s of the request since I4 step 8), none under it, reduceMotion's instant fades, frames without time
+// that move no fade.
 
 #include <cstdint>
 #include <optional>
@@ -200,13 +200,16 @@ std::uint64_t rideToSwap(ElevatorRide& ride) {
 
 TEST_CASE("app/elevator_ride: the view is back within the timeout of the request outside lockstep, waits under it",
           "[app][elevator_ride]") {
-    // ADR-0013 §13: a ride's view is back within 10 s cold. The wait for the eye's area ends at the deadline: the
-    // timeout after the request less the fade-in (none under reduceMotion) and the margin, 9.25 s; the 250 ms fade-in
-    // then ends by 9.5 s, and a frame that comes late shortens it so that it still ends within the timeout.
+    // ADR-0013 §10, §13 as amended at I4 step 8: a ride's view is back within 3 s of the request whatever the covers
+    // (the eye's area is the covers in view of the room that holds the eye; the rest stream in afterwards). The wait for
+    // it ends at the deadline: the timeout after the request less the fade-in (none under reduceMotion) and the margin,
+    // 2.25 s; the 250 ms fade-in then ends by 2.5 s, and a frame that comes late shortens it so that it still ends within
+    // the timeout.
+    CHECK(RideSettings{}.viewTimeoutSeconds == 3.0);
     for (const bool reduceMotion : {false, true}) {
         RideSettings settings;
         settings.reduceMotion = reduceMotion;
-        const double deadline = reduceMotion ? 9500.0 : 9250.0;
+        const double deadline = reduceMotion ? 2500.0 : 2250.0;
         CHECK(ElevatorRide(request(), settings, 0).viewDeadlineMs() == deadline);
     }
     SECTION("frames on time") {
@@ -216,20 +219,21 @@ TEST_CASE("app/elevator_ride: the view is back within the timeout of the request
             settings.lockstep = lockstep;
             ElevatorRide ride(request(), settings, 0);
             std::uint64_t frame = rideToSwap(ride);
-            // A slow destination: its eye's area still not resident at 9.2 s.
-            CHECK(ride.update(at(++frame, 9000.0)) == RideAction::None);
-            CHECK(ride.update(at(++frame, 9249.0)) == RideAction::None);
+            // A slow destination: the covers in view of its eye's room still not resident at 2.2 s.
+            CHECK(ride.update(at(++frame, 2000.0)) == RideAction::None);
+            CHECK(ride.update(at(++frame, 2249.0)) == RideAction::None);
             CHECK(ride.phase() == RidePhase::AwaitingView);
             // The deadline (outside lockstep): the fade-in starts, the record saying the view timed out.
-            CHECK(ride.update(at(++frame, 9250.0)) == RideAction::None);
+            CHECK(ride.update(at(++frame, 2250.0)) == RideAction::None);
             CHECK(ride.phase() == (lockstep ? RidePhase::AwaitingView : RidePhase::FadingIn));
             if (lockstep) {
+                // Under lockstep the frames wait for the view's covers instead: no timeout, even past the old 10 s.
                 CHECK(ride.update(at(++frame, 20000.0)) == RideAction::None);
                 CHECK(ride.phase() == RidePhase::AwaitingView);
                 continue;
             }
             RideAction action = RideAction::None;
-            double elapsedMs = 9250.0;
+            double elapsedMs = 2250.0;
             while (action != RideAction::Finish) {
                 elapsedMs += kStep * 1000.0;
                 action = ride.update(at(++frame, elapsedMs));
@@ -237,41 +241,53 @@ TEST_CASE("app/elevator_ride: the view is back within the timeout of the request
             CHECK(ride.record().outcome == "timed-out");
             CHECK_FALSE(ride.record().residentMs.has_value());
             REQUIRE(ride.record().totalMs.has_value());
-            CHECK(*ride.record().totalMs >= 9500.0);
-            CHECK(*ride.record().totalMs <= 9520.0);
+            CHECK(*ride.record().totalMs >= 2500.0);
+            CHECK(*ride.record().totalMs <= 2520.0);
         }
     }
     SECTION("a long frame before the deadline's") {
-        // The frame after 9.2 s comes at 9.9 s: the fade-in has 100 ms left, and ends at 10 s.
+        // The frame after 2.2 s comes at 2.9 s: the fade-in has 100 ms left, and ends at 3 s.
         ElevatorRide ride(request(), RideSettings{}, 0);
         std::uint64_t frame = rideToSwap(ride);
-        CHECK(ride.update(at(++frame, 9200.0)) == RideAction::None);
-        CHECK(ride.update(at(++frame, 9900.0, false, 0.1)) == RideAction::None);
+        CHECK(ride.update(at(++frame, 2200.0)) == RideAction::None);
+        CHECK(ride.update(at(++frame, 2900.0, false, 0.1)) == RideAction::None);
         CHECK(ride.phase() == RidePhase::FadingIn);
-        CHECK(ride.update(at(++frame, 9950.0)) == RideAction::None);
+        CHECK(ride.update(at(++frame, 2950.0)) == RideAction::None);
         CHECK(ride.fade() == 0.5f);
-        CHECK(ride.update(at(++frame, 10000.0)) == RideAction::Finish);
-        CHECK(ride.record().totalMs == std::optional<double>(10000.0));
+        CHECK(ride.update(at(++frame, 3000.0)) == RideAction::Finish);
+        CHECK(ride.record().totalMs == std::optional<double>(3000.0));
         CHECK(ride.record().outcome == "timed-out");
     }
     SECTION("a frame past the timeout") {
-        // The frame after 9.2 s comes at 10.05 s: the view back in it, at once.
+        // The frame after 2.2 s comes at 3.05 s: the view back in it, at once.
         ElevatorRide ride(request(), RideSettings{}, 0);
         std::uint64_t frame = rideToSwap(ride);
-        CHECK(ride.update(at(++frame, 9200.0)) == RideAction::None);
-        CHECK(ride.update(at(++frame, 10050.0, false, 0.1)) == RideAction::Finish);
+        CHECK(ride.update(at(++frame, 2200.0)) == RideAction::None);
+        CHECK(ride.update(at(++frame, 3050.0, false, 0.1)) == RideAction::Finish);
         CHECK(ride.fade() == 0.0f);
-        CHECK(ride.record().totalMs == std::optional<double>(10050.0));
+        CHECK(ride.record().totalMs == std::optional<double>(3050.0));
     }
     SECTION("the eye's area resident in a late frame") {
-        // Resident at 9.9 s (its frame late): arrived, the fade-in shortened to end within the timeout.
+        // Resident at 2.9 s (its frame late): arrived, the fade-in shortened to end within the timeout.
         ElevatorRide ride(request(), RideSettings{}, 0);
         std::uint64_t frame = rideToSwap(ride);
-        CHECK(ride.update(at(++frame, 9200.0)) == RideAction::None);
-        CHECK(ride.update(at(++frame, 9900.0, true, 0.1)) == RideAction::None);
-        CHECK(ride.update(at(++frame, 10000.0)) == RideAction::Finish);
+        CHECK(ride.update(at(++frame, 2200.0)) == RideAction::None);
+        CHECK(ride.update(at(++frame, 2900.0, true, 0.1)) == RideAction::None);
+        CHECK(ride.update(at(++frame, 3000.0)) == RideAction::Finish);
         CHECK(ride.record().outcome == "arrived");
-        CHECK(ride.record().residentMs == std::optional<double>(9900.0));
+        CHECK(ride.record().residentMs == std::optional<double>(2900.0));
+    }
+    SECTION("a longer timeout, as RideSettings allows") {
+        // The machine takes any timeout: 10 s (I4 step 7b's) waits until 9.25 s.
+        RideSettings settings;
+        settings.viewTimeoutSeconds = 10.0;
+        ElevatorRide ride(request(), settings, 0);
+        CHECK(ride.viewDeadlineMs() == 9250.0);
+        std::uint64_t frame = rideToSwap(ride);
+        CHECK(ride.update(at(++frame, 9249.0)) == RideAction::None);
+        CHECK(ride.phase() == RidePhase::AwaitingView);
+        CHECK(ride.update(at(++frame, 9250.0)) == RideAction::None);
+        CHECK(ride.phase() == RidePhase::FadingIn);
     }
 }
 
