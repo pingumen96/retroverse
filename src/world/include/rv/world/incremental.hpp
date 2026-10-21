@@ -45,19 +45,20 @@
 //     honour (which the update never applies), and the orphaned pins in orphanedPins.
 // An updated room's unplaced games are its selection's with their reasons (a duplicate's representative being the
 // placed game that represents its title), every placed game keeps its placement and no entry besides; it records this
-// generator's version. A selection for a system that has no room yet is refused (new systems enter the building with
-// I4 step 6a). A system's selection goes to the room that holds its section (sticky: whatever its count now); a shared
-// or arcade room is updated with the selections of all its sections (ADR-0013 §6), and one given only some of them is
-// held as it is, as a room without a selection, and listed in the report's heldRooms with the sections it lacks (the
-// plan does not say which section an unplaced game was of). The plan records the highest of its rooms' generator versions, the selections' sort-key version and
-// the inputDigest of the inputs read (generationInputDigest(), over the rooms given a selection; an update that gives
-// some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an update of an
-// unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given. The change report lists the games added, the placements
-// kept, the games newly unplaced, the fixtures added, removed and moved, the dressing removed, the slots freed, the
-// pins, the rooms kept and held, the rebuild level (NoRebuild when no placement, fixture, light or dressing changed; a slot
-// handed to an alias's identity is a texture swap) and the digests before (the stored file's SHA-256: previousDigest)
-// and after; the validation is validatePlan()'s as for a fresh plan, the pins it judges being the honoured and orphaned
-// ones, the rooms kept judged as kept.
+// generator's version. A selection for a system that has no room yet is refused (new systems enter the building with I4
+// step 6a). A system's selection goes to the room that holds its section (sticky: whatever its count now); a shared or
+// arcade room is updated with the selections of all its sections (ADR-0013 §6), and one given only some of them is held
+// as it is, as a room without a selection, and listed in the report's heldRooms with the sections it lacks (the plan
+// does not say which section an unplaced game was of). The plan records the highest of its rooms' generator versions,
+// the selections' sort-key version and the inputDigest of the inputs read (generationInputDigest(), over the rooms
+// given a selection; an update that gives some room no selection and changes nothing keeps the previous inputDigest,
+// which named more), so that an update of an unchanged catalog gives the previous plan byte for byte, whichever of its
+// rooms it is given. The change report lists the games added, the placements kept, the games newly unplaced, the
+// fixtures added, removed and moved, the dressing removed, the slots freed, the pins, the rooms kept and held, the
+// rebuild level (NoRebuild when no placement, fixture, light or dressing changed; a slot handed to an alias's identity
+// is a texture swap) and the digests before (the stored file's SHA-256: previousDigest) and after; the validation is
+// validatePlan()'s as for a fresh plan, the pins it judges being the honoured and orphaned ones, the rooms kept judged
+// as kept.
 
 #include <map>
 #include <span>

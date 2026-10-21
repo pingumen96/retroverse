@@ -28,11 +28,13 @@ Roadmap row: I4 step 4. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
 - **The data.** `loadWorldData()` of a system also reads the data of the shared or arcade room its section would stand
   in (`WorldData::sharedRoom`, `WorldData::kind`; the prefabs both name measured once), so `generateBuilding()` and its
   callers (the CLI, the app) keep their signatures and inputs. `loadRoomData()` reads a stored shared room by its kind
-  and floor. `updateBuilding()` takes either.
+  and recorded floor alone, whatever its first section's classification is now (a later `systems.json` excluding that
+  system freezes nothing). `updateBuilding()` takes either.
 - **The update.** A selection goes to the room that holds its system's section, whatever its count now (sticky). A
-  shared or arcade room is updated with the selections of all its sections; with some missing it is left as it is, its
-  sections' selections not read, since the plan does not say which section an unplaced game was of. New systems are
-  still refused (step 6a).
+  shared or arcade room is updated with the selections of all its sections; with some missing it is held as it is, its
+  sections' selections not read, since the plan does not say which section an unplaced game was of, and the change
+  report lists it in `heldRooms` with the sections it lacks (the other rooms update). New systems are still refused
+  (step 6a).
 - **CLI.** `worldplan update` updates every room by default; `--system` of a section updates its whole room; selection
   files must give every section of a shared room (exit 2). [cli.md](../reference/cli.md).
 
@@ -55,6 +57,8 @@ Roadmap row: I4 step 4. Decisions: [ADR-0013](../decisions/ADR-0013-the-building
   gb, psx and snes are byte for byte as they were. Debug equals Release.
 - Every other plan golden: its `inputDigest` line only. The selection goldens gain `distinctTitles`. The floors' scene
   digests move for ground, handheld and computer; gen4's scene file is unchanged.
+- G06's metadata re-recorded with its `world.json` step and the plan it now shows; its image is byte for byte the
+  same.
 
 ## Proof by eye
 
@@ -74,14 +78,19 @@ computer --scene`, rendered with `retroverse.exe --scene` (Debug, frame-limited,
 ## Deviations and limits
 
 - **The app until step 5a** shows a system's console room only: a system in a shared or arcade room has no room to show
-  there. The families smoke case of mame (`--room-system mame`, now `area:arcade`) fails on this branch alone; step
-  5a's `--start-room area:arcade` replaces it at the merge.
+  there (a library whose snes has fewer than 30 distinct titles gets the failure notice). **Merge this branch with
+  5a, not alone.** The families smoke case of mame (`--room-system mame`, now `area:arcade`) skips on this branch
+  alone, only when the app's log says the plan has no room:mame; 5a's `--start-room area:arcade` replaces it at the
+  merge.
 - In the building fixture amiga's 20 titles fall under the threshold too: the computer floor's shared room holds them,
   as generic cases (its big-box room shows only with `sharedRoomMinTitles` 0, as the families smoke case writes).
-- G02 to G10's JSON files record plan digests that moved with the `inputDigest` (their test only warns).
+- G02, G02s and G07 to G10's JSON files record plan digests that moved with the `inputDigest` (their test only warns);
+  the merge with 5a, which re-records them, records G06's again too.
 
 ## Follow-ups
 
-- **Step 5a:** `--start-room area:arcade` and `area:shared:<floor>` in the app; the families case of mame.
+- **Step 5a:** `--start-room area:arcade` and `area:shared:<floor>` in the app; the families case of mame (its skip
+  dropped); the building job's update gives a room's selection to the room holding its section and logs the report's
+  `heldRooms`.
 - **Step 6a:** a new small system joins its floor's shared room as the last section.
 - **The styling pass:** a sign per section, the arcade cabinet.

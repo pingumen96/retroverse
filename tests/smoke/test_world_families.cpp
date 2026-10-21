@@ -431,8 +431,8 @@ TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     // A known merge dependency: mame stands in the arcade room, area:arcade, since I4 step 4, and the app shows a
-    // system's console room only until I4 step 5a, so --room-system mame finds no room:mame. Skipped for that alone (the
-    // app's log says so); the merge with step 5a gives the case its --start-room area:arcade and drops this.
+    // system's console room only until I4 step 5a, so --room-system mame finds no room:mame. Skipped for that alone
+    // (the app's log says so); the merge with step 5a gives the case its --start-room area:arcade and drops this.
     if (run.report->world.state != "room") {
         const auto log = rv::core::readTextFile(run.outputFile);
         if (log && log->find("the plan has no such room [room:mame]") != std::string::npos) {
