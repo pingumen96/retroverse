@@ -62,8 +62,9 @@ Roadmap row: I4 step 6b. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
   - `worldplan update` on the unchanged library: 4.3 s (14.3 s in step 6a).
 - **90,000 generated entries** (`rv_tests "[world_build][bench]"`): the unchanged start's job 3.4 s whole, 59 ms by
   the stamp.
-- The CRT's rebind on the floor app's walk: 0.3 ms on the main thread, the previous clip's decoder thread still ending
-  (Debug).
+- The CRT's rebind (`gpu.world floor app: the hero CRT rebound on a floor that runs freely ...`): 0.06 ms on the main
+  thread, the 60 frames after it p99 10.9 ms (limit 50 ms); on the lockstep walk its previous clip's decoder thread
+  was still ending as it returned, never joined there.
 
 ## Deviations and limits
 

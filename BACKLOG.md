@@ -447,3 +447,10 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 - **Light seen through doorways (I4 step 3):** the renderer packs the lights of the area that holds the eye only, so a
   room seen from the hall (and the hall from a room) shows its ambient light alone (ADR-0013 §9's accepted cost). The
   styling pass could add the neighbouring areas' nearest lights through open doorways within the 16.
+- **A floor's build behind its cold covers (I4 step 6b):** the floor-build job shares the worker pool with the cover
+  loader's jobs; on the real computer floor started cold (5,314 covers to make) it took 13 s against 1.2 s warm, while
+  the stored floor showed. A floor build ahead of the covers' jobs (its own thread, or the loader holding back while
+  one is queued) would bring a cold rebuild's commit forward (`docs/i4/step-6b.md`).
+- **A GPU case of a room that grows (I4 step 6b):** no room of `esde/building` grows with its `additions/`, so the
+  walker moved with a grown room (or with a start room grown under the scene's frame) is proven by
+  `walkerMove()`'s unit test only; a fixture variant that fills a room to its growth step would show it end to end.

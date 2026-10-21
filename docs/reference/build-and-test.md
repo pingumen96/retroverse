@@ -72,7 +72,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   within 512 MiB, the cover loader's first view without the items of a room whose doorway it does not see; a walk from
   the hall into one room, out and into the other, a cover of the second inspected; the start in the lobby without
   `--start-room`, and a `--start-room` the plan lacks refused with exit 2; since I4 step 6b the hero CRT rebound on
-  that walk (`video.binds`, the `screenBind` phase's frames within the loading row in Release), the handheld floor
+  that walk (`video.binds`) and on a floor that runs freely (the `screenBind` phase's frames within the loading row in
+  Release), the handheld floor
   previewed and reconciled room by room with nothing moved or uploaded again, then rebuilt live around the fixture's
   `additions/` after "Aggiorna libreria" with room:gb's pictures and the walker kept, gen4 rebuilt as megadrive enters
   its new shared room with the walker kept in the hall's frame, and gen5's new titles, only saved meanwhile, shown at
