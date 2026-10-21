@@ -796,25 +796,28 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     WorldPlan previous = std::move(*lifted);
     sortPlan(previous);
 
-    // Every selection's system has its room or its section (new systems are I4 step 6a's), once; a system that has
-    // grown past the shared threshold stays in its section (ADR-0013 §3: sticky).
+    // Each selection goes to the room that holds its system's section, once: a system that has grown past the shared
+    // threshold stays in its section (ADR-0013 §3: sticky). A system no room holds enters the building (I4 step 6a).
     std::map<RoomId, std::vector<const RoomSelection*>> selectionsOf;
     std::set<catalog::SystemName> selected;
+    std::vector<const RoomSelection*> newSystems;
     for (const RoomSelection& selection : input.selections) {
         if (Status status = checkSelectionForm(selection); !status) {
             return propagate(status.error());
         }
+        if (selection.room.kind() != RoomIdKind::System || selection.room.isExpansion()) {
+            return refuse("a selection is of a system's room, room:<system>, not " + selection.room.toString());
+        }
         const catalog::SystemName& system = selection.room.system();
+        if (!selected.insert(system).second) {
+            return refuse("two selections of the room " + selection.room.toString());
+        }
         const auto room = std::find_if(previous.rooms.begin(), previous.rooms.end(), [&](const Room& candidate) {
             return std::find(candidate.sections.begin(), candidate.sections.end(), system) != candidate.sections.end();
         });
-        if (selection.room.kind() != RoomIdKind::System || selection.room.isExpansion() ||
-            room == previous.rooms.end()) {
-            return refuse("the plan has no room " + selection.room.toString() +
-                          " (new systems enter the building with I4 step 6a)");
-        }
-        if (!selected.insert(system).second) {
-            return refuse("two selections of the room " + selection.room.toString());
+        if (room == previous.rooms.end()) {
+            newSystems.push_back(&selection);
+            continue;
         }
         selectionsOf[room->id].push_back(&selection);
     }
@@ -866,15 +869,15 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         }
     }
 
-    // The applied selections, in the order given.
-    std::vector<RoomSelection> applied;
-    for (const RoomSelection& selection : input.selections) {
-        const bool read = std::any_of(selectionsOf.begin(), selectionsOf.end(), [&](const auto& entry) {
-            return std::find(entry.second.begin(), entry.second.end(), &selection) != entry.second.end();
-        });
-        if (read) {
-            applied.push_back(selection);
+    // The systems entering the building, each with its own data (loadWorldData()'s, with the data of the shared or
+    // arcade room it would take a section of).
+    std::vector<detail::EnteringSystem> entering;
+    for (const RoomSelection* selection : newSystems) {
+        auto system = detail::enteringSystem(*selection, rooms, input.platformTags, systems, building);
+        if (!system) {
+            return propagate(system.error());
         }
+        entering.push_back(std::move(*system));
     }
 
     if (std::string reason = globalRegenerationReason(previous, input); !reason.empty()) {
@@ -889,8 +892,104 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         return result;
     }
 
-    // Each room in id order: kept, updated with its selection, or left as it is.
+    // The inputs read: the selections of the rooms given every section's, each with its room's data (the systems
+    // entering the building are added below with the data of the room they took, as a fresh building hashes them).
+    std::vector<std::pair<const RoomSelection*, const WorldData*>> digestRooms;
+    for (const auto& [room, selections] : selectionsOf) {
+        for (const RoomSelection* selection : selections) {
+            digestRooms.emplace_back(selection, dataOf.at(room));
+        }
+    }
+
+    // The systems no room holds enter the building among its stored rooms (ADR-0013 §3, §7; I4 step 6a), as they enter
+    // a fresh one: a section is appended to its shared or arcade room when that room stands, unless the room is given
+    // no selection of some section (it is held, or not updated at all: the system then waits), a new room takes the
+    // east end of the shorter row of its floor (a floor that held no room appears), and a system its floor has no
+    // place for has its games unplaced for capacity. Nothing that stands moves.
+    std::vector<detail::BuildingRoom> buildingRooms;
+    for (const Room& room : previous.rooms) {
+        detail::BuildingRoom standing;
+        standing.id = room.id;
+        standing.kind = room.kind;
+        standing.floor = room.floor;
+        standing.data = dataOf.at(room.id);
+        standing.record = room;
+        standing.stored = true;
+        standing.closed = !selectionsOf.contains(room.id);
+        buildingRooms.push_back(std::move(standing));
+    }
+    auto entry = detail::enterBuilding(std::move(buildingRooms), entering, input.config, building);
+    if (!entry) {
+        return propagate(entry.error());
+    }
+    digestRooms.insert(digestRooms.end(), entry->digest.begin(), entry->digest.end());
+    std::set<const RoomSelection*> waiting;
+    std::vector<SystemRoom> systemsWaiting;
+    for (const auto& [system, room] : entry->waiting) {
+        waiting.insert(system->selection);
+        systemsWaiting.push_back({system->selection->room.system(), room});
+    }
+    // A stored room's sections now: those it had, then the systems that entered it, whose selections it is updated
+    // with.
+    std::map<RoomId, std::vector<catalog::SystemName>> sectionsNow;
+    std::vector<SystemRoom> systemsEntered;
+    for (const detail::BuildingRoom& room : entry->rooms) {
+        if (!room.stored || room.entered.empty()) {
+            continue;
+        }
+        std::vector<catalog::SystemName>& sections = sectionsNow[room.id];
+        sections = room.record.sections;
+        for (const detail::EnteringSystem* system : room.entered) {
+            sections.push_back(system->selection->room.system());
+            selectionsOf[room.id].push_back(system->selection);
+            systemsEntered.push_back({system->selection->room.system(), room.id});
+        }
+    }
+    // The applied selections, in the order given: those of the rooms updated, of the systems that entered or found no
+    // place; not a waiting system's.
+    std::vector<RoomSelection> applied;
+    for (const RoomSelection& selection : input.selections) {
+        const bool read = std::any_of(selectionsOf.begin(), selectionsOf.end(), [&](const auto& item) {
+            return std::find(item.second.begin(), item.second.end(), &selection) != item.second.end();
+        });
+        const bool entered = std::any_of(entering.begin(), entering.end(), [&](const detail::EnteringSystem& system) {
+            return system.selection == &selection;
+        });
+        if (read || (entered && !waiting.contains(&selection))) {
+            applied.push_back(selection);
+        }
+    }
+
+    // Each stored room in id order: kept, updated with its selection, or left as it is.
     WorldPlan plan = previous;
+    // The capacity entries of a system that found no place before (they name a room the plan does not hold) give way
+    // to what its entry decides now: those naming its console room, room:<system>, are all its own, whatever their
+    // game (a game that left the catalog meanwhile included); those naming a shared or arcade room that found no place
+    // mix the systems of that room, and the plan does not say which an entry was of, so only the entries of the
+    // entering selections' games give way (an entry of a game that left such a system stands: it may as well be of a
+    // system whose selection is unknown, SC-06).
+    std::set<RoomId> storedIds;
+    for (const Room& room : previous.rooms) {
+        storedIds.insert(room.id);
+    }
+    std::set<RoomId> enteringRooms;
+    std::set<GameId> enteringGames;
+    for (const detail::EnteringSystem& system : entering) {
+        if (waiting.contains(system.selection)) {
+            continue;
+        }
+        enteringRooms.insert(system.selection->room);
+        for (const RoomTitle& title : system.selection->titles) {
+            enteringGames.insert(title.game);
+        }
+        for (const UnplacedGame& game : system.selection->unplaced) {
+            enteringGames.insert(game.game);
+        }
+    }
+    std::erase_if(plan.unplaced, [&](const UnplacedGame& game) {
+        return !storedIds.contains(game.room) &&
+               (enteringRooms.contains(game.room) || enteringGames.contains(game.game));
+    });
     std::vector<KeptRoom> keptRooms;
     std::vector<GameId> added;
     std::vector<GameId> handedOver;
@@ -902,6 +1001,16 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     for (const Room& room : previous.rooms) {
         const WorldData& data = *dataOf.at(room.id);
         const auto selections = selectionsOf.find(room.id);
+        const auto now = sectionsNow.find(room.id);
+        const std::vector<catalog::SystemName>& roomSections = now != sectionsNow.end() ? now->second : room.sections;
+        if (now != sectionsNow.end()) {
+            // The new sections are appended to its record whatever becomes of its contents.
+            for (Room& record : plan.rooms) {
+                if (record.id == room.id) {
+                    record.sections = roomSections;
+                }
+            }
+        }
         // The room's selection: its system's, or over its sections in their order (ADR-0013 §6).
         detail::SectionIndex sections;
         std::optional<RoomSelection> merged;
@@ -910,7 +1019,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             if (room.kind == RoomKind::Console) {
                 selection = selections->second.front();
             } else {
-                merged = detail::sectionsSelection(room.id, room.sections, selections->second, sections);
+                merged = detail::sectionsSelection(room.id, roomSections, selections->second, sections);
                 selection = &*merged;
             }
         }
@@ -953,9 +1062,10 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         if (selection == nullptr) {
             continue;
         }
+        WorldPlan part = extractRoom(previous, room.id);
+        part.rooms.front().sections = roomSections;
         auto update = Updater(RoomUpdateInput{*selection, input.config, input.overrides, input.aliases,
-                                              extractRoom(previous, room.id),
-                                              room.kind == RoomKind::Console ? nullptr : &sections},
+                                              std::move(part), room.kind == RoomKind::Console ? nullptr : &sections},
                               data)
                           .run();
         if (!update) {
@@ -973,6 +1083,31 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         grew = grew || update->grew;
         replaceRoom(plan, room.id, std::move(update->plan));
     }
+    // The new rooms, generated as a fresh building generates them (their face-out titles chosen among their own), and
+    // the games of the systems that found no place.
+    std::vector<RoomId> roomsAdded;
+    std::vector<const WorldData*> newRoomData;
+    const std::uint64_t seed = worldSeed(input.config, input.library);
+    for (const detail::BuildingRoom& room : entry->rooms) {
+        if (room.stored) {
+            continue;
+        }
+        auto content = detail::generateEnteredRoom(room, input.config, seed, building);
+        if (!content) {
+            return propagate(content.error());
+        }
+        for (const Placement& placement : content->placements) {
+            added.push_back(placement.game);
+        }
+        newItems = newItems || !content->placements.empty();
+        roomsAdded.push_back(room.id);
+        newRoomData.push_back(room.data);
+        for (const detail::EnteringSystem* system : room.entered) {
+            systemsEntered.push_back({system->selection->room.system(), room.id});
+        }
+        detail::appendRoom(plan, std::move(*content));
+    }
+    plan.unplaced.insert(plan.unplaced.end(), entry->capacity.begin(), entry->capacity.end());
 
     GenerationResult result;
     plan.schemaVersion = kPlanSchemaVersion;
@@ -988,20 +1123,16 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     // whichever rooms it was given (plan still holds the previous inputDigest here).
     const bool partial = std::any_of(previous.rooms.begin(), previous.rooms.end(),
                                      [&](const Room& room) { return !selectionsOf.contains(room.id); });
-    const bool keepProvenance = selectionsOf.empty() || (partial && plan == previous);
+    const bool keepProvenance = digestRooms.empty() || (partial && plan == previous);
     detail::BuildingDigestInput digestInput;
     digestInput.config = input.config;
     digestInput.library = input.library;
-    digestInput.seed = worldSeed(input.config, input.library);
+    digestInput.seed = seed;
     digestInput.building = building;
     digestInput.systems = systems;
     digestInput.platformTags = input.platformTags;
     digestInput.checkedSelections = false; // checkSelectionForm() passed
-    for (const auto& [room, selections] : selectionsOf) {
-        for (const RoomSelection* selection : selections) {
-            digestInput.rooms.emplace_back(selection, dataOf.at(room));
-        }
-    }
+    digestInput.rooms = digestRooms;
     if (!keepProvenance) {
         auto digest = detail::buildingInputDigest(digestInput);
         if (!digest) {
@@ -1063,6 +1194,9 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     changes.slotsFreed = sortedUnique(std::move(slotsFreed));
     changes.keptRooms = std::move(keptRooms);
     changes.heldRooms = std::move(heldRooms); // by room id (selectionsOf's order)
+    changes.roomsAdded = sortedUnique(std::move(roomsAdded));
+    changes.systemsEntered = sortedUnique(std::move(systemsEntered));
+    changes.systemsWaiting = sortedUnique(std::move(systemsWaiting));
     // A slot handed to an alias's identity is a texture swap: no geometry changes for it.
     const bool geometry = newItems || !changes.dressingRemoved.empty() || !changes.fixturesAdded.empty() ||
                           !changes.fixturesRemoved.empty() || !changes.fixturesMoved.empty() ||
@@ -1073,6 +1207,10 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     std::vector<RoomTemplate> templates;
     std::vector<const WorldData*> datas;
     for (const auto& [room, data] : dataOf) {
+        templates.push_back(data->roomTemplate);
+        datas.push_back(data);
+    }
+    for (const WorldData* data : newRoomData) {
         templates.push_back(data->roomTemplate);
         datas.push_back(data);
     }

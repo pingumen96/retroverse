@@ -92,5 +92,6 @@ area:shared:computer 20 (amiga's 20 titles, generated labels), area:shared:handh
 gb's row entering first, and pokemini 8), room:gb 30 (handheld, cartridge_handheld), room:psx 40 (gen5, disc_case_cd),
 room:snes 40 (gen4, cartridge_home_16bit). After `additions/` and a new import, an update of snes, psx and pokemini
 (the shared room with both its sections) places 34 titles and moves nothing, pokemini past 30 titles staying in its
-section; megadrive has no room until the building update of step 6a. (Until step 4 every system had its own console
-room: room:amiga, room:mame, room:pocketlab and room:pokemini.)
+section; an update of the whole building then enters megadrive (I4 step 6a): its 12 titles, under 30, open gen4's
+shared room, `area:shared:gen4`, in the south row, and nothing that stands moves. (Until step 4 every system had its
+own console room: room:amiga, room:mame, room:pocketlab and room:pokemini.)

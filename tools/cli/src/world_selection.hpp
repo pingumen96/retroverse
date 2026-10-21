@@ -8,6 +8,7 @@
 // snapshots no longer hold (ADR-0008 §4, for the update), the world seed option, the world configuration, and the
 // change report as text and JSON. Header only, so that each subcommand keeps one source.
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
@@ -140,14 +141,14 @@ inline Selected selectionsFromFiles(CommandContext& context, std::string_view na
     return selected;
 }
 
-/// The catalog's selections of `systems` (each must be in the catalog: exit 1 "the catalog has no system"), or, with
-/// none named, of every system of the catalog that classify() gives a room and that has a placeable title (ADR-0013
-/// §3); the others are left out, with why. Unknown media decide nothing (ADR-0010 §3): no selection, exit 1,
-/// "<name>: <nothing> while the media are unknown: ...".
+/// The catalog's selections of `systems` (each must be in the catalog: exit 1 "the catalog has no system"), and, with
+/// none named or with `everyOther`, of every other system of the catalog that classify() gives a room and that has a
+/// placeable title (ADR-0013 §3); those others that do not are left out, with why. Unknown media decide nothing
+/// (ADR-0010 §3): no selection, exit 1, "<name>: <nothing> while the media are unknown: ...".
 inline Selected selectionsFromCatalog(CommandContext& context, std::string_view name,
                                       const std::vector<catalog::SystemName>& systems,
                                       const std::optional<std::string>& given, const world::WorldConfig& config,
-                                      std::string_view nothing, const BuildingInfo& info) {
+                                      std::string_view nothing, const BuildingInfo& info, bool everyOther = false) {
     Selected selected;
     selected.fromCatalog = true;
     const auto profile = readRecordedLibrary(context, name, selected.failure);
@@ -178,10 +179,14 @@ inline Selected selectionsFromCatalog(CommandContext& context, std::string_view 
             tags[summary.system.name] = summary.system.platforms;
         }
     }
-    const bool whole = systems.empty();
+    const bool whole = systems.empty() || everyOther;
+    const std::set<catalog::SystemName> named(systems.begin(), systems.end());
     std::vector<catalog::SystemName> wanted = systems;
     if (whole) {
         for (const auto& [system, platforms] : tags) {
+            if (named.contains(system)) {
+                continue;
+            }
             const world::Classification classification =
                 world::classify(system, platforms, info.systems, info.building);
             if (!classification.hasRoom()) {
@@ -194,10 +199,12 @@ inline Selected selectionsFromCatalog(CommandContext& context, std::string_view 
     }
     esde::EsdeMediaResolver resolver(mediaRootOf(*profile));
     for (const catalog::SystemName& system : wanted) {
+        // A system named is required; any other is left out when it cannot be planned.
+        const bool other = !named.contains(system);
         auto snapshot = reader->query->roomEntries(system);
         if (!snapshot) {
             if (snapshot.error().code == ErrorCode::NotFound) {
-                if (whole) {
+                if (other) {
                     selected.leftOut.emplace_back(system, "no entries in the catalog");
                     continue;
                 }
@@ -224,7 +231,7 @@ inline Selected selectionsFromCatalog(CommandContext& context, std::string_view 
                                               selection.error().toString()));
             return selected;
         }
-        if (whole && selection->titles.empty()) {
+        if (other && selection->titles.empty()) {
             selected.leftOut.emplace_back(system, "no placeable title");
             continue;
         }
@@ -323,6 +330,20 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
     for (const world::KeptRoom& kept : changes.keptRooms) {
         line("Room kept", fmt::format("{}: {}", kept.room.toString(), kept.reason));
     }
+    for (const world::KeptRoom& held : changes.heldRooms) {
+        line("Room held", fmt::format("{}: {}", held.room.toString(), held.reason));
+    }
+    // The systems that entered the building (I4 step 6a): each in the room it opened or as a section of one.
+    for (const world::SystemRoom& entered : changes.systemsEntered) {
+        const bool opened = std::find(changes.roomsAdded.begin(), changes.roomsAdded.end(), entered.room) !=
+                            changes.roomsAdded.end();
+        line("Entered", fmt::format("{} in {}{}", entered.system.str(), entered.room.toString(),
+                                    opened ? " (a new room)" : " (a new section)"));
+    }
+    for (const world::SystemRoom& waiting : changes.systemsWaiting) {
+        line("Waiting", fmt::format("{} for {} (held: an update given every section's selection enters it)",
+                                    waiting.system.str(), waiting.room.toString()));
+    }
     line("Digest before", changes.digestBefore.empty() ? std::string("none") : changes.digestBefore);
     line("Digest after", changes.digestAfter);
     if (!detailed) {
@@ -349,6 +370,7 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
     list("Rooms kept", changes.keptRooms, [](const world::KeptRoom& kept) {
         return fmt::format("{}: {}", kept.room.toString(), kept.reason);
     });
+    list("Rooms added", changes.roomsAdded, id);
     list("Orphaned pins", changes.orphanedPins, plain);
     list("Needs confirmation", changes.needsConfirmation, plain);
     return text;
@@ -359,6 +381,15 @@ inline CatalogJson keptRoomsJson(const std::vector<world::KeptRoom>& rooms) {
     CatalogJson array = CatalogJson::array();
     for (const world::KeptRoom& kept : rooms) {
         array.push_back(CatalogJson{{"room", kept.room.toString()}, {"reason", kept.reason}});
+    }
+    return array;
+}
+
+/// Systems with their rooms, as JSON: [{"system", "room"}].
+inline CatalogJson systemRoomsJson(const std::vector<world::SystemRoom>& systems) {
+    CatalogJson array = CatalogJson::array();
+    for (const world::SystemRoom& entry : systems) {
+        array.push_back(CatalogJson{{"system", entry.system.str()}, {"room", entry.room.toString()}});
     }
     return array;
 }
@@ -386,6 +417,10 @@ inline CatalogJson changeReportJson(const world::ChangeReport& changes) {
                        {"orphanedPins", changes.orphanedPins},
                        {"needsConfirmation", changes.needsConfirmation},
                        {"keptRooms", keptRoomsJson(changes.keptRooms)},
+                       {"heldRooms", keptRoomsJson(changes.heldRooms)},
+                       {"roomsAdded", ids(changes.roomsAdded)},
+                       {"systemsEntered", systemRoomsJson(changes.systemsEntered)},
+                       {"systemsWaiting", systemRoomsJson(changes.systemsWaiting)},
                        {"digestBefore", changes.digestBefore},
                        {"digestAfter", changes.digestAfter}};
 }
