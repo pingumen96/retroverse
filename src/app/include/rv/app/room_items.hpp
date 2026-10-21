@@ -15,8 +15,10 @@
 // Since I4 step 6b (ADR-0013 §9) each placed game's item also holds what the hero CRT of its room needs
 // (RoomItemScreen: its clip, screenshot and title screen relative to the media root, when Retroverse last played it,
 // its title's priority data), so that a floor built from the plan and the items files alone (the persisted start's
-// preview, a rebuild) has its CRTs' games without the catalog (room_screen.hpp). A file written before has no such
-// data: its rooms' CRTs have no games until the building job writes it again.
+// preview, a rebuild) has its CRTs' games without the catalog (room_screen.hpp): schema 2. A file of schema 1, written
+// before, is still read (its covers serve the preview) but has no such data: its rooms' CRTs have no games until the
+// building job writes it again. The schema rises with every change of the file's shape (the building stamp holds it,
+// so a stamp of another shape's items is never taken: test_world_start.cpp pins the shape of each).
 
 #include <cstdint>
 #include <filesystem>
@@ -35,7 +37,9 @@
 
 namespace rv::app {
 
-inline constexpr int kRoomItemsSchemaVersion = 1;
+/// The schema the items files are written in; the oldest read (schema 1: I3's, without the CRTs' data).
+inline constexpr int kRoomItemsSchemaVersion = 2;
+inline constexpr int kOldestRoomItemsSchemaVersion = 1;
 
 /// What the hero CRT needs of a placed game ES-DE shows (catalog::EntryState::Game; I4 step 6b): its media relative to
 /// the media root as esde::roomMediaPaths names them (RoomItemText::coverPath is its cover; empty where it has none),

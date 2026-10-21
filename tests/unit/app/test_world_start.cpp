@@ -3,7 +3,9 @@
 // hand-made collections (a floor of one room since I4 step 5a). The fixture-based cases (the preview of a stored plan, the items written by the room's job,
 // the hero CRT's games) are in test_world_build.cpp.
 
+#include <algorithm>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -162,6 +164,71 @@ TEST_CASE("app/room_items: the room's items round trip as canonical JSON, by Gam
     CHECK(rv::app::parseRoomItems(screenedJson, "items.json").value() == screened);
     CHECK(rv::app::writeRoomItems(file, screened).value());
     CHECK(rv::app::readRoomItems(file).value() == screened);
+
+    // A file of schema 1 (I3's, before the CRTs' data) is still read, its covers' text for the preview, without the
+    // CRTs' data.
+    nlohmann::json older = screenedJson;
+    older["schemaVersion"] = 1;
+    RoomItems unscreened = screened;
+    for (RoomItemText& item : unscreened.items) {
+        item.screen.reset();
+    }
+    CHECK(rv::app::parseRoomItems(older, "items.json").value() == unscreened);
+}
+
+TEST_CASE("app/room_items: the items file's shape is that of its schema version", "[app][world_start]") {
+    // The building stamp holds kRoomItemsSchemaVersion (I4 step 6b): a change of the items' shape that keeps the
+    // version would let a stamp written with the old shape stand for files of another. This pins each version's shape
+    // (its keys, every optional field present): a change of roomItemsToJson() fails here until the version is raised
+    // and the new shape recorded under it. Never edit a recorded shape.
+    const std::map<int, std::string> shapes{
+        {2, "items[available,coverPath,fallbackTitle,game,screen{favorite,lastPlayed,playCount,rating,screenshot,sortKey,"
+            "titleScreen,video},title,year],platforms,schemaVersion,systemName"},
+    };
+    RoomItems items;
+    items.systemName = "Lumen 16 Home System";
+    items.platforms = {"snes"};
+    RoomItemText text;
+    text.game = gameId(10);
+    text.title = "Amber Lantern";
+    text.fallbackTitle = "Amber Lantern (USA)";
+    text.year = "1993";
+    text.coverPath = "snes/covers/Amber Lantern (USA).png";
+    rv::app::RoomItemScreen screen;
+    screen.video = "snes/videos/Amber Lantern (USA).mp4";
+    screen.screenshot = "snes/screenshots/Amber Lantern (USA).png";
+    screen.titleScreen = "snes/titlescreens/Amber Lantern (USA).png";
+    screen.lastPlayed = 1790000000;
+    screen.sortKey = "amber lantern";
+    screen.favorite = true;
+    screen.playCount = 3;
+    screen.ratingTenths = 8;
+    text.screen = screen;
+    items.items.push_back(text);
+    const nlohmann::json json = rv::app::roomItemsToJson(items);
+    CHECK(json["schemaVersion"] == rv::app::kRoomItemsSchemaVersion);
+    // The keys, sorted, objects in braces and the first element of arrays in brackets.
+    const auto shapeOf = [](const auto& self, const nlohmann::json& value) -> std::string {
+        if (value.is_object()) {
+            std::vector<std::string> keys;
+            for (const auto& [key, member] : value.items()) {
+                const std::string inner = self(self, member);
+                keys.push_back(key + (member.is_object() ? "{" + inner + "}" : member.is_array() ? inner : ""));
+            }
+            std::sort(keys.begin(), keys.end());
+            std::string joined;
+            for (const std::string& key : keys) {
+                joined += (joined.empty() ? "" : ",") + key;
+            }
+            return joined;
+        }
+        if (value.is_array() && !value.empty() && value.front().is_object()) {
+            return "[" + self(self, value.front()) + "]";
+        }
+        return {};
+    };
+    REQUIRE(shapes.contains(rv::app::kRoomItemsSchemaVersion));
+    CHECK(shapeOf(shapeOf, json) == shapes.at(rv::app::kRoomItemsSchemaVersion));
 }
 
 TEST_CASE("app/room_items: a file of another shape is refused with its JSON pointer", "[app][world_start]") {
@@ -175,7 +242,9 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
         const char* context;
     };
     nlohmann::json newer = good;
-    newer["schemaVersion"] = 2;
+    newer["schemaVersion"] = rv::app::kRoomItemsSchemaVersion + 1;
+    nlohmann::json older = good;
+    older["schemaVersion"] = 0;
     nlohmann::json badGame = good;
     badGame["items"][1]["game"] = "not a game";
     nlohmann::json unordered = good;
@@ -206,6 +275,7 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
     const std::vector<Case> cases{
         {"not an object", nlohmann::json::array(), rv::ErrorCode::ParseError, "items.json:"},
         {"a newer schema", newer, rv::ErrorCode::Unsupported, "items.json:/schemaVersion"},
+        {"a schema before the first", older, rv::ErrorCode::Unsupported, "items.json:/schemaVersion"},
         {"a game that is no GameId", badGame, rv::ErrorCode::ParseError, "items.json:/items/1/game"},
         {"games out of order", unordered, rv::ErrorCode::ParseError, "items.json:/items/1/game"},
         {"a game twice", twice, rv::ErrorCode::ParseError, "items.json:/items/1/game"},

@@ -178,12 +178,14 @@ Expected<RoomItems> parseRoomItems(const Json& document, std::string_view contex
     if (version == document.end() || !version->is_number_integer()) {
         return parseError(context, "/schemaVersion", "expected an integer");
     }
-    if (version->get<std::int64_t>() != kRoomItemsSchemaVersion) {
-        return makeError(
-            ErrorCode::Unsupported,
-            fmt::format("schema version {} is not {}", version->get<std::int64_t>(), kRoomItemsSchemaVersion),
-            fmt::format("{}:/schemaVersion", context));
+    if (version->get<std::int64_t>() < kOldestRoomItemsSchemaVersion ||
+        version->get<std::int64_t>() > kRoomItemsSchemaVersion) {
+        return makeError(ErrorCode::Unsupported,
+                         fmt::format("schema version {} is not {} to {}", version->get<std::int64_t>(),
+                                     kOldestRoomItemsSchemaVersion, kRoomItemsSchemaVersion),
+                         fmt::format("{}:/schemaVersion", context));
     }
+    const bool withScreens = version->get<std::int64_t>() >= 2;
     RoomItems items;
     if (Status read = readString(document, "systemName", context, "", items.systemName); !read) {
         return propagate(read.error());
@@ -231,7 +233,7 @@ Expected<RoomItems> parseRoomItems(const Json& document, std::string_view contex
             return parseError(context, pointer + "/available", "expected true or false");
         }
         item.available = available->get<bool>();
-        if (const auto screen = entry.find("screen"); screen != entry.end()) {
+        if (const auto screen = entry.find("screen"); withScreens && screen != entry.end()) {
             auto read = parseScreen(*screen, context, pointer + "/screen");
             if (!read) {
                 return propagate(read.error());
