@@ -2,8 +2,8 @@
 // building of the building fixture's systems (tests/fixtures/esde/building) compared byte for byte in Debug and
 // Release, its floors' scenes as golden digests (rewritten only with RV_UPDATE_GOLDEN=1), the halls derived from the
 // rooms (walls where no room stands, lights at a fixed pitch, doorways onto the hall), each room's scene moved onto the
-// floor, the areas, a walk from the elevator into a room through the floor's collision, and a room's collection in the
-// floor's frame.
+// floor, the areas, walks from the elevator into a north-row and a south-row (half-turned) room through the floor's
+// collision, and a room's collection in the floor's frame.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -481,16 +481,27 @@ TEST_CASE("world/floor: each room's scene moved onto the floor, its doorway open
           rv::ErrorCode::NotFound);
 }
 
-TEST_CASE("world/floor: the walker walks from the elevator along the hall into a room", "[world][floor]") {
-    // floor_walk_into_room.json on gen4's scene through its collision world (as retroverse.exe plays it).
-    const GoldenBuilding& building = goldenBuilding();
-    const rv::world::FloorSceneData data = floorData(building.plan, "gen4", building.tags);
-    auto scene = rv::world::toFloorSceneDescription(building.plan, "gen4", data);
+namespace {
+
+/// Where a walk on a floor ended: the feet, and the areas that held the eye in turn.
+struct FloorWalk {
+    glm::vec3 feet{0.0f};
+    float capsuleRadius = 0.0f;
+    std::vector<std::string> areas;
+};
+
+/// `scriptName` (tests/input_scripts) played for 255 frames on `floor`'s scene through its collision world, from the
+/// scene's camera, as retroverse.exe plays it; the walker never overlaps a collider, and is in the hall in front of the
+/// first room's doorway (x 7.659) at frame 154.
+FloorWalk walkFloor(const GoldenBuilding& building, std::string_view floor, std::string_view scriptName) {
+    const rv::world::FloorSceneData data = floorData(building.plan, floor, building.tags);
+    auto scene = rv::world::toFloorSceneDescription(building.plan, floor, data);
     REQUIRE(scene.has_value());
     auto materials = rv::assets::MaterialLibrary::loadFromFile(rv::test::world::assetRoot() / "materials" / "base" /
                                                                "materials.json");
     REQUIRE(materials.has_value());
-    const rv::scene::CollisionWorld world = rv::scene::buildCollisionWorld(rv::scene::buildSceneGeometry(*scene, *materials));
+    const rv::scene::CollisionWorld world =
+        rv::scene::buildCollisionWorld(rv::scene::buildSceneGeometry(*scene, *materials));
     rv::scene::FirstPersonController controller;
     rv::scene::Camera camera;
     const glm::vec3 feet = scene->camera.position - glm::vec3(0.0f, controller.settings().eyeHeight, 0.0f);
@@ -498,20 +509,21 @@ TEST_CASE("world/floor: the walker walks from the elevator along the hall into a
                         rv::core::degreesToRadians(scene->camera.pitchDeg));
     REQUIRE_FALSE(world.overlaps(controller.feetPosition(), controller.settings().capsule));
     auto script = rv::input::InputScript::loadFromFile(rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" /
-                                                       "input_scripts" / "floor_walk_into_room.json");
+                                                       "input_scripts" / rv::core::pathFromUtf8(scriptName));
     REQUIRE(script.has_value());
     rv::input::InputSystem system;
     rv::input::InputScriptPlayer player(*script);
     rv::scene::AreaLighting lighting(scene->areas, scene->lights, scene->camera.position, 16);
-    std::vector<std::string> areas{scene->areas[*lighting.area()].id};
+    FloorWalk walk;
+    walk.areas.push_back(scene->areas[*lighting.area()].id);
     for (std::uint64_t frame = 0; frame < 255; ++frame) {
         rv::input::ActionState actions = system.resolve(rv::input::RawInputFrame{});
         player.apply(frame, actions, system.settings().pressThreshold);
         controller.update(actions, kFixedDt, camera, &world);
         REQUIRE_FALSE(world.overlaps(controller.feetPosition(), controller.settings().capsule));
         lighting.update(scene->areas, scene->lights, camera.position());
-        if (scene->areas[*lighting.area()].id != areas.back()) {
-            areas.push_back(scene->areas[*lighting.area()].id);
+        if (scene->areas[*lighting.area()].id != walk.areas.back()) {
+            walk.areas.push_back(scene->areas[*lighting.area()].id);
         }
         if (frame == 154) {
             // At the doorway, in the hall.
@@ -519,10 +531,33 @@ TEST_CASE("world/floor: the walker walks from the elevator along the hall into a
             CHECK(controller.feetPosition().z == Approx(0.0f).margin(1e-3));
         }
     }
-    // Through the doorway: 3.75 m north of the hall's centre line, 2.1 m into the room past its south wall.
-    CHECK(controller.feetPosition().z == Approx(-90.0f * 2.5f * kFixedDt).margin(1e-3));
-    CHECK(controller.feetPosition().z < -1.65f - controller.settings().capsule.radius);
-    CHECK(areas == std::vector<std::string>{"hall:gen4", "room:snes"});
+    walk.feet = controller.feetPosition();
+    walk.capsuleRadius = controller.settings().capsule.radius;
+    return walk;
+}
+
+} // namespace
+
+TEST_CASE("world/floor: the walker walks from the elevator along the hall into a room", "[world][floor]") {
+    const GoldenBuilding& building = goldenBuilding();
+    SECTION("a north-row room: gen4's room:snes") {
+        const FloorWalk walk = walkFloor(building, "gen4", "floor_walk_into_room.json");
+        // Through the doorway: 3.75 m north of the hall's centre line, 2.1 m into the room past its south wall.
+        CHECK(walk.feet.x == Approx(1.2f + 155.0f * 2.5f * kFixedDt).margin(1e-3));
+        CHECK(walk.feet.z == Approx(-90.0f * 2.5f * kFixedDt).margin(1e-3));
+        CHECK(walk.feet.z < -1.65f - walk.capsuleRadius);
+        CHECK(walk.areas == std::vector<std::string>{"hall:gen4", "room:snes"});
+    }
+    SECTION("a south-row room, turned a half turn: handheld's room:pocketlab") {
+        // Across the hall from room:gb, through the turned shell's doorway (its stop left out as well).
+        REQUIRE(roomOf(building.plan, "room:pocketlab").placement.yawHalfTurns == 1);
+        const FloorWalk walk = walkFloor(building, "handheld", "floor_walk_into_south_room.json");
+        // 3.75 m south of the hall's centre line, 2.1 m into the room past its north wall (its doorway wall).
+        CHECK(walk.feet.x == Approx(1.2f + 155.0f * 2.5f * kFixedDt).margin(1e-3));
+        CHECK(walk.feet.z == Approx(90.0f * 2.5f * kFixedDt).margin(1e-3));
+        CHECK(walk.feet.z > 1.65f + walk.capsuleRadius);
+        CHECK(walk.areas == std::vector<std::string>{"hall:handheld", "room:pocketlab"});
+    }
 }
 
 TEST_CASE("world/floor: a room's collection in its floor's frame", "[world][floor]") {
