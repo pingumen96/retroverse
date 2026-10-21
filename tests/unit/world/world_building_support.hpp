@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <set>
@@ -34,6 +35,7 @@
 #include <rv/world/validation.hpp>
 
 #include "world_generation_support.hpp"
+#include "world_update_support.hpp"
 
 namespace rv::test::world {
 
@@ -215,12 +217,16 @@ inline rv::world::Hall hallOf(const rv::world::WorldPlan& plan, std::string_view
     return rv::world::deriveHall(floor, rooms, layout);
 }
 
-/// What every update of a building keeps (rv/world/incremental.hpp, ADR-0013 §5, §7), `result` the update of `before`
-/// to `given`: the outcome Updated and no hard finding; every placement of `before` as it stood; every stored room on its
-/// floor, of its kind, at its x and yaw, its expansion's head and its sections a prefix of its sections now, its z
-/// changed exactly when its growth did (following its depth); the halls' lights only appended; every game of the given
-/// selections placed or unplaced exactly once (a waiting system's nowhere); the rooms added the plan's new rooms; the
-/// plan read back as written, its digest the report's. Failures are appended to `failures`, tagged with `where`.
+/// What every update of a building keeps (rv/world/incremental.hpp, ADR-0010 §10, ADR-0013 §5, §7), `result` the update
+/// of `before` to `given` (without aliases): the outcome Updated and no hard finding; every placement of `before` as it
+/// stood; every stored room on its floor, of its kind, at its x and yaw, its expansion's head and its sections a prefix
+/// of its sections now, its z and depth changed exactly when its growth did (z following its depth), the rest of its
+/// record as it was; every fixture of a stored room but decoration as it stood, but for those a growth moved south
+/// (fixturesMoved); the stored rooms' face-out set unchanged, every placement new in a stored room spine-out, the games
+/// of the new placements the report's added; the halls' lights only appended; every game of the given selections placed
+/// or unplaced exactly once (a waiting system's nowhere), and a system that found no place has entries naming its
+/// console room for the games of its selection only; the rooms added the plan's new rooms; the plan read back as
+/// written, its digest the report's. Failures are appended to `failures`, tagged with `where`.
 inline void checkBuildingUpdate(const rv::world::WorldPlan& before, const rv::world::GenerationResult& result,
                                 std::span<const rv::world::RoomSelection> given, const BuildingWorld& world,
                                 const rv::world::RoomTemplate& roomTemplate, std::vector<std::string>& failures,
@@ -264,7 +270,74 @@ inline void checkBuildingUpdate(const rv::world::WorldPlan& before, const rv::wo
                id + "'s z changes exactly with its growth");
         expect(now->placement == rv::world::followDepth(*now, world.building.layout), id + "'s z follows its depth");
         expect(now->growthSteps >= room.growthSteps, id + " never shrinks");
+        expect((now->maxZMm != room.maxZMm) == (now->growthSteps != room.growthSteps),
+               id + "'s depth changes exactly with its growth");
+        // The rest of its record as it was: its template, interior, seed, family and theme pack.
+        rv::world::Room record = *now;
+        record.sections = room.sections;
+        record.growthSteps = room.growthSteps;
+        record.maxZMm = room.maxZMm;
+        record.placement.zMm = room.placement.zMm;
+        record.generatorVersion = room.generatorVersion;
+        expect(record == room, id + "'s record is as it was but for its sections, growth, depth and generator");
     }
+    // Every fixture of a stored room as it stood (decoration may give way to a module), but for those a growth moved
+    // south with the room's south wall: their z alone changed (both lists sorted by id).
+    std::map<rv::world::FixtureId, const rv::world::Fixture*> fixturesNow;
+    for (const rv::world::Fixture& fixture : plan.fixtures) {
+        fixturesNow.emplace(fixture.id, &fixture);
+    }
+    for (const rv::world::Fixture& fixture : before.fixtures) {
+        if (fixture.role == rv::world::FixtureRole::Decoration) {
+            continue;
+        }
+        const std::string id = fixture.id.toString();
+        const auto found = fixturesNow.find(fixture.id);
+        if (found == fixturesNow.end()) {
+            failures.push_back(fmt::format("{}: the fixture {} is gone", where, id));
+            continue;
+        }
+        if (*found->second == fixture) {
+            continue;
+        }
+        const rv::world::Room* roomThen = findRoom(before, fixture.id.room().toString());
+        const rv::world::Room* roomNow = findRoom(plan, fixture.id.room().toString());
+        rv::world::Fixture moved = *found->second;
+        moved.zMm = fixture.zMm;
+        expect(roomThen != nullptr && roomNow != nullptr && roomNow->growthSteps > roomThen->growthSteps &&
+                   moved == fixture && found->second->zMm > fixture.zMm &&
+                   std::binary_search(result.changes.fixturesMoved.begin(), result.changes.fixturesMoved.end(),
+                                      fixture.id),
+               "the fixture " + id + " stands as it stood, or moved south with its room's growth");
+    }
+    // The stored rooms' face-out set unchanged; every placement new in a stored room spine-out; the new placements'
+    // games the report's added (those of the new rooms included).
+    const auto inStoredRoom = [&](const rv::world::Placement& placement) {
+        return roomsBefore.contains(placement.slot.fixture().room().toString());
+    };
+    std::vector<rv::world::Placement> faceOutNow;
+    for (const rv::world::Placement& placement : faceOutPlacements(plan)) {
+        if (inStoredRoom(placement)) {
+            faceOutNow.push_back(placement);
+        }
+    }
+    expect(faceOutNow == faceOutPlacements(before), "the stored rooms' face-out set is unchanged");
+    std::vector<rv::world::Placement> newPlacements;
+    std::set_difference(plan.placements.begin(), plan.placements.end(), before.placements.begin(),
+                        before.placements.end(), std::back_inserter(newPlacements));
+    const auto sectionsNow = levelSections(plan);
+    std::size_t notSpine = 0;
+    std::vector<rv::catalog::GameId> addedGames;
+    for (const rv::world::Placement& placement : newPlacements) {
+        addedGames.push_back(placement.game);
+        if (inStoredRoom(placement)) {
+            const auto section = sectionsNow.find({placement.slot.fixture(), placement.slot.level()});
+            notSpine += section == sectionsNow.end() || section->second != rv::world::Section::Spine ? 1 : 0;
+        }
+    }
+    expect(notSpine == 0, fmt::format("{} placement(s) new in a stored room stand face-out", notSpine));
+    std::sort(addedGames.begin(), addedGames.end());
+    expect(addedGames == result.changes.added, "the games added are those of the new placements");
     // The floors stay, the halls' lights are only appended.
     for (const rv::world::Floor& floor : before.floors) {
         expect(std::find(plan.floors.begin(), plan.floors.end(), floor) != plan.floors.end(),
@@ -314,6 +387,23 @@ inline void checkBuildingUpdate(const rv::world::WorldPlan& before, const rv::wo
         expect(wrong == 0, fmt::format("{} game(s) of {} {}", wrong, selection.room.system().str(),
                                        waits ? "stand in a plan their system waits to enter"
                                              : "are not placed or unplaced exactly once"));
+        // A system that found no place: its console room, which the plan does not hold, is named by the entries of its
+        // selection's games only (an entry of a game that left it is gone).
+        if (!waits && findRoom(plan, selection.room.toString()) == nullptr) {
+            std::set<rv::catalog::GameId> games;
+            for (const rv::world::RoomTitle& title : selection.titles) {
+                games.insert(title.game);
+            }
+            for (const rv::world::UnplacedGame& game : selection.unplaced) {
+                games.insert(game.game);
+            }
+            const std::size_t stale = static_cast<std::size_t>(
+                std::count_if(plan.unplaced.begin(), plan.unplaced.end(), [&](const rv::world::UnplacedGame& game) {
+                    return game.room == selection.room && !games.contains(game.game);
+                }));
+            expect(stale == 0, fmt::format("{} entr{} name {} for a game its selection does not hold", stale,
+                                           stale == 1 ? "y" : "ies", selection.room.toString()));
+        }
     }
     // The plan reads back as itself, and its digest is the report's.
     auto text = rv::world::writePlan(plan);
