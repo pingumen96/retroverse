@@ -6,6 +6,8 @@
 // library.json naming the real ES-DE home, install, ROM and media roots), then retroverse.exe of this build (hidden,
 // frame-limited) starts on that data directory:
 //   - a first start (no plan): the lobby's shell at once, the whole building planned, generated and written (lockstep);
+//     Gate C: the plans' folder removed and the building planned again from nothing (`again`): one plan digest and one
+//     file SHA-256;
 //   - an unchanged second start, as the user starts (--no-vsync, no lockstep, the quick catalog opened on frame 1):
 //     NFR-01, the stored lobby shown from the plan and the items files and the quick catalog's first page within 5 s
 //     of the process's creation; the building job skipped by its stamp;
@@ -15,10 +17,13 @@
 //     the acceptable 512 MiB, cold (its covers derived and stored in that run) then warm;
 //   - I4 step 7b: the derived covers emptied, a ride from the lobby to the computer floor (the busiest), to its largest
 //     room through the elevator and the directory, and back to the lobby's elevator with Map, as the user rides (no
-//     lockstep), cold then warm: the view back within the acceptable row (10 s cold, 3 s warm), the GPU memory after
-//     each ride the destination's (the collection arrays of a start on that floor, of the lobby);
+//     lockstep), cold then warm: the view back within the acceptable row (10 s cold, 3 s warm; since I4 step 8 the view
+//     comes back once the room's covers in view are resident, by 3 s after the request at the latest), the room whole
+//     within its row (30 s cold, 3 s warm), the GPU memory after each ride the destination's (the collection arrays of a
+//     start on that floor, of the lobby);
 //   - retroverse-cli worldplan update on the unchanged library (the same update code, informative).
-// The figures are printed for docs/i4/step-6b.md (the lines starting "Real building:"). The checks hold whatever the
+// The figures are printed for docs/i4/step-6b.md, step-7b.md and Gate C (the lines starting "Real building:"; the gate
+// reads the runs' reports in build/<preset>/real-library/building). The checks hold whatever the
 // collection holds (this machine's figures are not versioned); nothing derived from the user's titles is written
 // outside the build tree.
 
@@ -30,6 +35,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -50,6 +56,7 @@
 #include <rv/catalog_db/migrator.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/esde/library_source.hpp>
@@ -117,6 +124,12 @@ std::string ms(const std::optional<double>& value) {
 
 double mib(std::uint64_t bytes) {
     return static_cast<double>(bytes) / (1024.0 * 1024.0);
+}
+
+std::string fileSha256(const fs::path& file) {
+    auto bytes = rv::core::readBinaryFile(file);
+    REQUIRE(bytes.has_value());
+    return rv::core::sha256Hex(std::span<const std::byte>(*bytes));
 }
 
 /// The building job's phases of a run, as a line.
@@ -202,6 +215,25 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
     CHECK(first.world.planWritten);
     CHECK(first.world.hardFindings == 0);
     CHECK(first.world.floor == "ground");
+
+    // Gate C: the building planned twice. The plans' folder removed, the same catalog planned again from nothing: one
+    // plan digest and one file SHA-256 (ADR-0010 §8, ADR-0013 §5: plan equality is the file's SHA-256).
+    const fs::path planFile = rv::world::worldFiles(data, profile.id).plan;
+    const std::string firstFileHash = fileSha256(planFile);
+    fs::remove_all(data / "worlds", removed);
+    REQUIRE_FALSE(removed);
+    const rv::app::RunReport again = runApp(folder, data, "again", lockstep);
+    CHECK(again.world.outcome == "generated");
+    CHECK(again.world.planWritten);
+    CHECK(again.world.hardFindings == 0);
+    CHECK(again.world.planDigest == first.world.planDigest);
+    const std::string secondFileHash = fileSha256(planFile);
+    CHECK(secondFileHash == firstFileHash);
+    std::cout << fmt::format("Real building: planned twice: the plan digest {} and the file's SHA-256 {} ({} placements; "
+                             "the jobs {} and {})\n",
+                             again.world.planDigest == first.world.planDigest ? "equal" : "DIFFERENT",
+                             secondFileHash == firstFileHash ? "equal" : "DIFFERENT", again.world.placements,
+                             jobLine(first.world), jobLine(again.world));
 
     // The unchanged start as the user starts (no lockstep): NFR-01, the stored lobby and the first page within 5 s.
     // Enough frames (a few milliseconds each) for the building job's result to arrive: the whole job's takes seconds.
@@ -292,10 +324,11 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
 
     // I4 step 7b: a ride from the lobby to the computer floor (the busiest), to its largest room through the elevator
     // (the walker turned to its doors, interact, the floor, the room), then back to the lobby's elevator with Map, as the
-    // user rides (no lockstep: the view comes back once the room that holds the eye is resident, a hall at once, or by
-    // 10 s after the request), cold (the derived covers emptied: the room's covers made from the media again) then warm;
-    // the GPU memory after each ride. The script waits long enough between the two choices for a cold ride at any frame
-    // rate (both rides must have ended).
+    // user rides (no lockstep: the view comes back once the covers in view of the room that holds the eye are resident,
+    // a hall at once, or by 3 s after the request: I4 step 8), cold (the derived covers emptied: the room's covers made
+    // from the media again) then warm; the GPU memory after each ride, and when the room was whole. The script waits
+    // long enough between the two choices for a cold ride and the room's covers at any frame rate (both rides must have
+    // ended).
     const fs::path textures = rv::assets::textureCacheRoot(paths.cacheDir(), profile.id.str()).value();
     fs::remove_all(textures, removed);
     REQUIRE_FALSE(removed);
@@ -358,11 +391,13 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
         for (const rv::app::RideRecord& ride : run.world.rides) {
             CHECK(ride.gpuBytes <= kAcceptableGpuBytes);
             std::cout << fmt::format("Real building: {}: {} to {} ({}{}{}): {}, the view back {} after it was asked "
-                                     "(the floor built at {}, its job {}, the eye's area resident at {}); GPU memory "
-                                     "{:.1f} MiB, collection arrays {:.1f} MiB\n",
+                                     "(the floor built at {}, its job {}, the eye's area resident at {}; {} cover(s) "
+                                     "in view, {} pending); the room whole at {}; GPU memory {:.1f} MiB, collection "
+                                     "arrays {:.1f} MiB\n",
                                      name, ride.from, ride.to, ride.reason, ride.room.empty() ? "" : " ", ride.room,
                                      ride.outcome, ms(ride.totalMs), ms(ride.builtMs), ms(ride.jobMs),
-                                     ms(ride.residentMs), mib(ride.gpuBytes), mib(ride.arrayBytes));
+                                     ms(ride.residentMs), ride.viewItems.value_or(0), ride.viewPending.value_or(0),
+                                     ms(ride.roomResidentMs), mib(ride.gpuBytes), mib(ride.arrayBytes));
         }
         const rv::app::RideRecord& there = run.world.rides[0];
         const rv::app::RideRecord& back = run.world.rides[1];
@@ -386,13 +421,16 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
         CHECK(run.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes ==
               second.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes);
     }
-    // The acceptable row (ADR-0013 §13): the view back within 10 s cold, within 3 s warm.
+    // The acceptable rows (ADR-0013 §13): the view back within 10 s cold, within 3 s warm; the room that holds the walker
+    // (the largest room, where the first ride leaves it) whole within 30 s cold, within 3 s warm.
     for (const rv::app::RideRecord& ride : rides[0].world.rides) {
         CHECK(ride.totalMs.value_or(1e9) <= 10000.0);
     }
     for (const rv::app::RideRecord& ride : rides[1].world.rides) {
         CHECK(ride.totalMs.value_or(1e9) <= 3000.0);
     }
+    CHECK(rides[0].world.rides[0].roomResidentMs.value_or(1e9) <= 30000.0);
+    CHECK(rides[1].world.rides[0].roomResidentMs.value_or(1e9) <= 3000.0);
 
     // The CLI's update on the unchanged library: the same update code, the whole of it (informative).
     const Clock::time_point cliStart = Clock::now();
