@@ -52,12 +52,40 @@ ElevatorRide::ElevatorRide(RideRequest request, RideSettings settings, std::uint
     m_record.outcome = "running";
 }
 
+double ElevatorRide::fadeMs() const noexcept {
+    return m_settings.reduceMotion || !(m_settings.fadeSeconds > 0.0) ? 0.0 : m_settings.fadeSeconds * 1000.0;
+}
+
+double ElevatorRide::timeoutMs() const noexcept {
+    return std::isfinite(m_settings.viewTimeoutSeconds) ? std::max(0.0, m_settings.viewTimeoutSeconds) * 1000.0 : 0.0;
+}
+
 double ElevatorRide::step(double deltaSeconds) const noexcept {
-    if (m_settings.reduceMotion || !(m_settings.fadeSeconds > 0.0)) {
+    if (!(fadeMs() > 0.0)) {
         return 1.0;
     }
     const double dt = std::isfinite(deltaSeconds) && deltaSeconds > 0.0 ? deltaSeconds : 0.0;
     return dt / m_settings.fadeSeconds;
+}
+
+void ElevatorRide::beginFadeIn(const RideFrame& frame) {
+    m_phase = RidePhase::FadingIn;
+    m_fadeInFrom = m_fade;
+    m_fadeInStartMs = frame.elapsedMs;
+    m_fadeInMs = fadeMs() * m_fade;
+    if (!m_settings.lockstep) {
+        // Begun late (a long frame before this one): faster, so that the view is back within the timeout.
+        m_fadeInMs = std::min(m_fadeInMs, std::max(0.0, timeoutMs() - frame.elapsedMs));
+    }
+}
+
+RideAction ElevatorRide::finish(const RideFrame& frame) {
+    m_fade = 0.0;
+    m_record.fadedInFrame = frame.frame;
+    m_record.totalMs = frame.elapsedMs;
+    m_record.outcome = m_failed ? "failed" : m_timedOut ? "timed-out" : "arrived";
+    m_phase = RidePhase::Done;
+    return RideAction::Finish;
 }
 
 void ElevatorRide::floorAnswered(bool built, double elapsedMs, std::optional<double> jobMs) {
@@ -75,53 +103,65 @@ RideAction ElevatorRide::update(const RideFrame& frame) {
     case RidePhase::FadingOut:
         if (m_failed) {
             // Nothing to ride to: the view comes back from where its fade stands.
-            m_phase = RidePhase::FadingIn;
+            beginFadeIn(frame);
             return RideAction::Fail;
         }
-        m_fade = std::min(1.0, m_fade + step(frame.deltaSeconds));
+        if (m_settings.lockstep) {
+            m_fade = std::min(1.0, m_fade + step(frame.deltaSeconds));
+        } else {
+            // The real clock since the request (a frame's time is clamped in a long frame).
+            const double fade = fadeMs() > 0.0 ? frame.elapsedMs / fadeMs() : 1.0;
+            m_fade = std::clamp(std::max(m_fade, fade), 0.0, 1.0);
+        }
         if (m_fade < 1.0 - kFadeEpsilon) {
             return RideAction::None;
         }
+        // Black from this frame on; the floor swaps from the next one (the same frame whenever the job answered).
         m_fade = 1.0;
         m_record.fadedOutFrame = frame.frame;
         m_phase = RidePhase::AwaitingFloor;
-        [[fallthrough]];
+        return RideAction::None;
     case RidePhase::AwaitingFloor:
         if (m_failed) {
-            m_phase = RidePhase::FadingIn;
+            beginFadeIn(frame);
             return RideAction::Fail;
         }
-        if (!m_built) {
+        return m_built ? RideAction::Swap : RideAction::None;
+    case RidePhase::AwaitingView: {
+        const bool late = !m_settings.lockstep && frame.elapsedMs >= viewDeadlineMs();
+        if (!frame.viewResident && !late) {
             return RideAction::None;
         }
-        m_swapElapsedMs = frame.elapsedMs; // the view's timeout counts from the swap
-        return RideAction::Swap;
-    case RidePhase::AwaitingView: {
-        const double sinceSwapSeconds = (frame.elapsedMs - m_swapElapsedMs.value_or(frame.elapsedMs)) / 1000.0;
         if (frame.viewResident) {
             m_record.residentMs = frame.elapsedMs;
-            m_phase = RidePhase::FadingIn;
-        } else if (!m_settings.lockstep && sinceSwapSeconds >= m_settings.viewTimeoutSeconds) {
+        } else {
             m_timedOut = true;
-            m_phase = RidePhase::FadingIn;
+        }
+        beginFadeIn(frame);
+        if (!m_settings.lockstep && frame.elapsedMs >= timeoutMs()) {
+            return finish(frame); // past the timeout already: the view back at once
         }
         return RideAction::None;
     }
     case RidePhase::FadingIn:
-        m_fade = std::max(0.0, m_fade - step(frame.deltaSeconds));
+        if (m_settings.lockstep) {
+            m_fade = std::max(0.0, m_fade - step(frame.deltaSeconds));
+        } else {
+            const double progress = m_fadeInMs > 0.0 ? (frame.elapsedMs - m_fadeInStartMs) / m_fadeInMs : 1.0;
+            m_fade = m_fadeInFrom * std::clamp(1.0 - progress, 0.0, 1.0);
+        }
         if (m_fade > kFadeEpsilon) {
             return RideAction::None;
         }
-        m_fade = 0.0;
-        m_record.fadedInFrame = frame.frame;
-        m_record.totalMs = frame.elapsedMs;
-        m_record.outcome = m_failed ? "failed" : m_timedOut ? "timed-out" : "arrived";
-        m_phase = RidePhase::Done;
-        return RideAction::Finish;
+        return finish(frame);
     case RidePhase::Done:
         return RideAction::None;
     }
     return RideAction::None;
+}
+
+double ElevatorRide::viewDeadlineMs() const noexcept {
+    return std::max(0.0, timeoutMs() - fadeMs() - kViewDeadlineMarginSeconds * 1000.0);
 }
 
 void ElevatorRide::swapped(std::uint64_t frame) {

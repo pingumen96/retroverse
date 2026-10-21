@@ -5,18 +5,26 @@
 // The elevator ride (I4 step 7b; ADR-0013 §10, §13): the walker goes from the floor shown to another, the one floor
 // resident giving way to the next behind a fade. app::WorldSession drives it frame by frame:
 //
-//   FadingOut      the view fades out in RideSettings::fadeSeconds (instant under reduceMotion); the destination's
+//   FadingOut      the view fades out in RideSettings::fadeSeconds (instant under reduceMotion; by the frames' times
+//                  under lockstep, by the real clock otherwise: a long frame's time is clamped); the destination's
 //                  floor-build job runs meanwhile (asked with the ride);
-//   AwaitingFloor  faded out: once the job answered, Swap (the session drops the resident floor and shows the
-//                  destination at that frame boundary, the walker at its elevator or a room's doorway: swapped()); a
-//                  job that failed is Fail (the walker stays where it was, the view fades back in, a notice);
-//   AwaitingView   the destination shows behind the fade until the eye's area is resident (its layers in), or for
-//                  RideSettings::viewTimeoutSeconds (under lockstep the frames' waits replace the timeout);
-//   FadingIn       the view fades back in; Finish once it is back (the ride's record complete);
+//   AwaitingFloor  faded out (from the frame after the one the fade ended in, so that the frame the floor swaps in is
+//                  the same whenever the job answered: under lockstep always the next): once the job answered, Swap (the
+//                  session drops the resident floor and shows the destination at that frame boundary, the walker at its
+//                  elevator or a room's doorway: swapped()); a job that failed is Fail (the walker stays where it was,
+//                  the view fades back in, a notice);
+//   AwaitingView   the destination shows behind the fade until the eye's area is resident (its layers in), or until the
+//                  view's deadline: RideSettings::viewTimeoutSeconds after the request less the fade-in and a margin
+//                  (viewDeadlineMs()), so that the view is back within the timeout of the request (ADR-0013 §13's 10 s
+//                  cold); under lockstep the frames' waits replace the deadline;
+//   FadingIn       the view fades back in (as the fade out: by frames under lockstep, by the real clock otherwise, a fade
+//                  begun late shortened to end within the timeout, one begun past it ended at once); Finish once it is
+//                  back (the ride's record complete);
 //   Done.
 //
 // Input is suspended for the whole ride. Times come from the session (the steady clock since the request), so the
-// machine is pure and its unit tests drive it frame by frame.
+// machine is pure and its unit tests drive it frame by frame. The session moves it in frames only: a lockstep run's
+// idle wake only gives it the job's answer (floorAnswered()).
 
 #include <cstdint>
 #include <optional>
@@ -56,20 +64,27 @@ struct RideRequest {
 struct RideSettings {
     /// Each fade, out and in (ADR-0013 §10: 250 ms).
     double fadeSeconds = 0.25;
-    /// How long the destination waits behind the fade for the eye's area to be resident (ADR-0013 §10: 10 s).
+    /// How long after the request the view is back at the latest, the eye's area resident or not (ADR-0013 §10, §13:
+    /// 10 s): the destination waits behind the fade until viewDeadlineMs().
     double viewTimeoutSeconds = 10.0;
     /// The world's reduceMotion: both fades instant.
     bool reduceMotion = false;
-    /// A lockstep run (--fixed-dt): the frames wait for the floor and the view's layers, no timeout.
+    /// A lockstep run (--fixed-dt): the fades by the frames' times, the frames wait for the floor and the view's layers,
+    /// no timeout.
     bool lockstep = false;
 };
 
-/// One frame of the ride (or an idle wake of a lockstep run, which moves no fade).
+/// The margin the view's deadline leaves before RideSettings::viewTimeoutSeconds besides the fade-in: the frame that
+/// sees the deadline passed may come late (the swap's frame and the first uploads into a floor's new arrays take up to
+/// half a second on the real library), and the fade-in then shortens to end within the timeout.
+inline constexpr double kViewDeadlineMarginSeconds = 0.5;
+
+/// One frame of the ride.
 struct RideFrame {
     std::uint64_t frame = 0;
-    /// The frame time in seconds (the fixed one under --fixed-dt); 0 for an idle wake.
+    /// The frame time in seconds (the fixed one under --fixed-dt); 0 moves no fade (under lockstep).
     double deltaSeconds = 0.0;
-    /// Milliseconds since the ride was asked.
+    /// Milliseconds since the ride was asked (the real clock: the fades outside lockstep, the deadline, the record).
     double elapsedMs = 0.0;
     /// The eye's area is resident on the destination (read once swapped).
     bool viewResident = false;
@@ -78,7 +93,7 @@ struct RideFrame {
 /// What the session does after an update.
 enum class RideAction : std::uint8_t {
     None,
-    Swap,   ///< faded out with the destination built: show it now, then swapped()
+    Swap,   ///< faded out (since the last frame) with the destination built: show it now, then swapped()
     Fail,   ///< the destination could not be built: the walker stays, the view fades back in, a notice
     Finish, ///< the view is back: the ride is done (its record complete)
 };
@@ -108,18 +123,32 @@ public:
     /// The record so far ("running" until Finish); the session adds the walker and the GPU memory at the end.
     [[nodiscard]] const RideRecord& record() const noexcept { return m_record; }
     [[nodiscard]] RideRecord& record() noexcept { return m_record; }
+    /// Milliseconds after the request at which the view stops waiting for the eye's area (outside lockstep):
+    /// viewTimeoutSeconds less the fade-in (none under reduceMotion) and kViewDeadlineMarginSeconds, at least 0.
+    [[nodiscard]] double viewDeadlineMs() const noexcept;
 
 private:
+    /// A fade's milliseconds (0 under reduceMotion), the timeout's.
+    [[nodiscard]] double fadeMs() const noexcept;
+    [[nodiscard]] double timeoutMs() const noexcept;
+    /// A lockstep frame's share of a fade.
     [[nodiscard]] double step(double deltaSeconds) const noexcept;
+    /// The fade-in from where the fade stands, its length (shortened outside lockstep to end within the timeout).
+    void beginFadeIn(const RideFrame& frame);
+    /// The view back: the record complete, Finish.
+    RideAction finish(const RideFrame& frame);
 
     RideRequest m_request;
     RideSettings m_settings;
     RidePhase m_phase = RidePhase::FadingOut;
     double m_fade = 0.0;
+    /// The fade-in: where the fade stood when it began, when (milliseconds since the request) and how long it takes.
+    double m_fadeInFrom = 1.0;
+    double m_fadeInStartMs = 0.0;
+    double m_fadeInMs = 0.0;
     bool m_built = false;
     bool m_failed = false;
     bool m_timedOut = false;
-    std::optional<double> m_swapElapsedMs;
     RideRecord m_record;
 };
 
