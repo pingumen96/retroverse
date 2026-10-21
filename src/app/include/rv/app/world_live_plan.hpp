@@ -29,9 +29,16 @@
 // Since I4 step 5a the room shown is a floor (world_build.hpp): its collections are compared room by room (matched by
 // room id, the items by game within them), the static part is the floor's scene file, and Items applies each room's
 // collection in place. The items are compared in their room's frame, so that a room moved as a whole (its growth)
-// counts none of its items as moved. Per-room reconciliation (a room rebuilt while the others stand) is I4 step 6b's:
-// here any change of the floor's static part commits the whole floor again, the walker kept where it stands in the
-// scene's frame (in the room's own frame when a room that grew holds it: ADR-0013 §7, I4 step 6b).
+// counts none of its items as moved.
+//
+// Since I4 step 6b (ADR-0013 §5, §7, §9) the decision is made room by room (LiveUpdatePlan::rooms), first by each room's
+// content digest: a room whose digest, covers and place are as they show is Unchanged (its collection's instances and
+// uploads stay as they are, nothing re-uploaded); one whose covers alone changed (or whose covers' sources can be
+// checked now) is Textures; one whose collection changed within the same static part is Items (applied in place, the
+// others untouched). Any change of the floor's static part (a room added, a room grown, a new section's fixtures)
+// commits the whole floor again, the walker (and a Focus or Inspect pose) kept in the frame of the area that holds it,
+// moved with it (walkerMove()); each room's pictures pass to its new collection. The persisted start's reconciliation
+// (world_reconcile.hpp) takes the same decision.
 
 #include <cstddef>
 #include <cstdint>
@@ -41,21 +48,25 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/mat4x4.hpp>
+
 #include <rv/app/collection_layers.hpp>
+#include <rv/app/layout_difference.hpp>
 #include <rv/app/world_build.hpp>
-#include <rv/app/world_reconcile.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/world/collection_layout.hpp>
 
 namespace rv::app {
 
 /// A collection room of the floor shown: its layout (in the scene's frame, its room standing at `scenePlacement` there:
-/// RoomCollection's) and its cover requests.
+/// RoomCollection's), its cover requests, its content digest and its CRT's games.
 struct ShownCollection {
     world::RoomId room;
     world::CollectionLayout layout;
     std::vector<CoverItem> covers;
     world::RoomPlacement scenePlacement;
+    std::string contentDigest;
+    std::vector<ScreenGame> screenGames;
 };
 
 /// What the session keeps of the floor it shows, to compare the next build with (a WorldBuild without its scene, scene
@@ -69,6 +80,8 @@ struct ShownFloor {
     /// The covers were read under a media root (none: the cache alone served them).
     bool mediaKnown = false;
     std::vector<ScreenGame> screenGames;
+    /// The floor's frame in the scene's frame (WorldBuild::floorPlacement): the hall's frame.
+    world::RoomPlacement floorPlacement;
 
     /// The room `room`, or nullptr.
     [[nodiscard]] const ShownCollection* find(const world::RoomId& room) const noexcept;
@@ -93,6 +106,32 @@ enum class LiveUpdateKind : std::uint8_t {
 /// "unchanged", "textures", "items", "rebuild", "kept".
 [[nodiscard]] std::string_view toString(LiveUpdateKind kind) noexcept;
 
+/// What a build does to one collection room of the floor shown (I4 step 6b).
+enum class RoomUpdateKind : std::uint8_t {
+    Unchanged, ///< its digest, covers and place as they show: its collection and its pictures stay as they are
+    Textures,  ///< its covers served again (a cover added, replaced or gone, a title changed, the media root known now)
+    Items,     ///< its collection's items applied in place
+    Added,     ///< a room the floor shown lacks (the floor committed again)
+    Removed,   ///< a room the build lacks (the floor committed again)
+};
+
+/// "unchanged", "textures", "items", "added", "removed".
+[[nodiscard]] std::string_view toString(RoomUpdateKind kind) noexcept;
+
+struct RoomUpdate {
+    world::RoomId room;
+    RoomUpdateKind kind = RoomUpdateKind::Unchanged;
+    /// Its items, compared in its own frame (zero for Added and Removed: their items are the floor's added, removed).
+    LayoutDifference difference;
+    /// Its items whose cover request changed.
+    std::size_t coversChanged = 0;
+    /// Its CRT's games differ.
+    bool screenGamesChanged = false;
+    /// Its content digest (or its place) differs: the plan changed something of it (its items may show the same: a game
+    /// unplaced, say).
+    bool planChanged = false;
+};
+
 struct LiveUpdatePlan {
     LiveUpdateKind kind = LiveUpdateKind::Rebuild;
     /// The room shown against the build's collection, by game (zero for Kept).
@@ -104,13 +143,31 @@ struct LiveUpdatePlan {
     std::vector<catalog::GameId> coversChanged;
     /// The covers are served again (Textures, Items: the new and the changed items, the adopted ones checked).
     bool reloadCovers = false;
-    /// The hero CRT's games differ.
+    /// The hero CRT's games differ (the start room's, or any room's).
     bool screenGamesChanged = false;
     /// Why it is a Rebuild or Kept, in English (the log).
     std::string reason;
+    /// Each collection room (I4 step 6b): the build's in its order, then those it lacks; empty for Kept.
+    std::vector<RoomUpdate> rooms;
+
+    /// The room `room`'s part, or nullptr.
+    [[nodiscard]] const RoomUpdate* find(const world::RoomId& room) const noexcept;
 };
 
 /// What to do with `build` while `shown` shows (see the file comment).
 [[nodiscard]] LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build);
+
+/// How a floor committed again moves what stands in an area (ADR-0013 §7): from the area's frame in the floor shown to
+/// its frame in the build, in the scene's frame (a translation, and a half turn when the frames are turned apart).
+struct FrameMove {
+    glm::mat4 matrix{1.0f};
+    bool halfTurn = false;
+};
+
+/// The move of the walker (and of a Focus or Inspect pose) standing in `area` (the area that holds the eye: a
+/// collection room's id, else the hall) when `build` replaces the floor shown: that room's scene placement before and
+/// after, or the floor's frame for the hall; none when the frame stays (no move) or the room is not in both.
+[[nodiscard]] std::optional<FrameMove> walkerMove(const ShownFloor& shown, const WorldBuild& build,
+                                                  std::string_view area);
 
 } // namespace rv::app

@@ -220,7 +220,8 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     const fs::path planFile = rv::world::worldFiles(room.data, rv::catalog::LibraryId::parse("esde").value()).plan;
     const std::string plan = rv::core::readTextFile(planFile).value();
 
-    // One frame: the stored plan's room alone, whole (every layer from the cache), the CRT's colour bars.
+    // One frame: the stored plan's room alone, whole (every layer from the cache), its CRT already on the start choice
+    // from the room's items (I4 step 6b: its screenshot while the clip opens).
     const fs::path previewShot = room.dir / "preview.png";
     const AppRun preview = runApp(retroverseExe(), room.dir, "preview", roomArguments("1", previewShot));
     requireCleanRun(preview);
@@ -243,7 +244,10 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
             CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
         }
         CHECK_FALSE(world.reconcile.has_value()); // the run ended at the first frame
-        CHECK(preview.report->video.picture == "idle-pattern");
+        CHECK(preview.report->video.gameId == room.gameOf("Amber Lantern"));
+        CHECK(preview.report->video.picture == "screenshot");
+        CHECK(world.screenGames == 50);
+        CHECK(world.screenRoom == "room:snes");
     }
 
     // Forty frames: the same, then reconciled with the catalog unchanged: nothing moved, rebuilt or written; the CRT
@@ -269,6 +273,12 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     CHECK(world.reconcile->added == 0);
     CHECK(world.reconcile->removed == 0);
     CHECK(world.reconcile->coversReloaded); // the media root known: the covers' sources checked
+    // Room by room (I4 step 6b): the one room's covers served again, nothing uploaded over a picture that showed.
+    REQUIRE(world.reconcile->rooms.size() == 1);
+    CHECK(world.reconcile->rooms.front().room == "room:snes");
+    CHECK(world.reconcile->rooms.front().kind == "textures");
+    REQUIRE(reconciled.report->residency.rooms.size() == 1);
+    CHECK(reconciled.report->residency.rooms.front().reuploads == 0);
     REQUIRE(world.snapshotAtMs.has_value());
     CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
     CHECK(world.items == 50);

@@ -17,47 +17,23 @@
 //   - no plan (the stored plan refused under the world's lock, the room's data unreadable): the empty room's shell
 //     with its notice, as when no plan was stored (Shell).
 //
-// Since I4 step 5a the room is the start floor (ShownFloor, world_live_plan.hpp): the same plan and floor with every
-// collection room's collection the same is Textures, anything else Rebuild of the whole floor. Reconciling room by
-// room is I4 step 6b's.
+// Since I4 step 5a the room is the start floor (ShownFloor, world_live_plan.hpp). Since I4 step 6b the decision is the
+// live update's, room by room (planLiveUpdate(): each room by its content digest, its items and its covers): a floor
+// whose collections all stand as they show is Textures (only the rooms whose covers changed, or whose sources can be
+// checked now, served again; the others' instances and pictures untouched), one whose static part stands but some
+// room's items changed is Rebuild with its live plan's Items (those rooms' items applied in place), anything else
+// Rebuild of the whole floor, the walker kept in the frame of the area that holds it.
 
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
 
+#include <rv/app/layout_difference.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/app/world_live_plan.hpp>
 #include <rv/world/collection_layout.hpp>
 
 namespace rv::app {
-
-/// How two collections of a room differ, by game.
-struct LayoutDifference {
-    /// In both, at the same pick id and transform with the same flags.
-    std::size_t kept = 0;
-    /// In both, at another pick id or transform.
-    std::size_t moved = 0;
-    /// In both at the same place, with other flags (scene::instance_flags: its file gone or back).
-    std::size_t flagsChanged = 0;
-    /// In `after` only, in `before` only.
-    std::size_t added = 0;
-    std::size_t removed = 0;
-
-    [[nodiscard]] bool same() const noexcept { return moved == 0 && flagsChanged == 0 && added == 0 && removed == 0; }
-    bool operator==(const LayoutDifference&) const = default;
-};
-
-/// Compares the items of `before` and `after` by game (their GameIds; a game is in a layout once).
-[[nodiscard]] LayoutDifference compareLayouts(const world::CollectionLayout& before,
-                                              const world::CollectionLayout& after);
-/// The same for two layouts of one room in the scene's frame, its room standing at `beforeAt` and at `afterAt` there
-/// (world::floorCollectionLayout): the items compared in the room's own frame, so that a room moved as a whole (its
-/// growth, ADR-0013 §7: followDepth; the start room's growth moving the others in its frame) moves none of its items.
-/// The same placement compares exactly, as compareLayouts(); another one within 0.1 mm and 1e-4 of a rotation (a
-/// slot's place is whole millimetres: the frames' float arithmetic is the only difference).
-[[nodiscard]] LayoutDifference compareLayouts(const world::CollectionLayout& before,
-                                              const world::RoomPlacement& beforeAt,
-                                              const world::CollectionLayout& after,
-                                              const world::RoomPlacement& afterAt);
 
 enum class Reconciliation : std::uint8_t {
     Textures, ///< the room as it shows, its covers served again when they changed, the CRT's games
@@ -74,6 +50,8 @@ struct ReconcilePlan {
     LayoutDifference difference;
     /// Textures: the cover loader starts again on the room's collection with the build's cover requests.
     bool reloadCovers = false;
+    /// The live update's decision it was made from (I4 step 6b: room by room; Items: applied in place).
+    LiveUpdatePlan live;
 };
 
 /// What to do with `build` while `shown` (the preview: a plan, its layout and cover requests) shows (see the file

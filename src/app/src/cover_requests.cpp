@@ -306,6 +306,25 @@ bool CoverSchedule::requeue(std::size_t item) {
     return true;
 }
 
+void CoverSchedule::adoptDone(std::span<const std::size_t> items) {
+    bool any = false;
+    for (const std::size_t item : items) {
+        if (item >= m_bounds.size() || m_stage[item] != Stage::Waiting) {
+            continue;
+        }
+        m_stage[item] = Stage::Done;
+        m_layersLeft[item] = 0;
+        m_arrived[item] = 1; // shown before: not an arrival of this schedule
+        ++m_doneCount;
+        any = true;
+    }
+    if (any) {
+        m_waiting.erase(std::remove_if(m_waiting.begin(), m_waiting.end(),
+                                       [&](std::size_t item) { return m_stage[item] != Stage::Waiting; }),
+                        m_waiting.end());
+    }
+}
+
 bool CoverSchedule::viewDone() const noexcept {
     if (m_focused && m_stage[*m_focused] != Stage::Done) {
         return false;

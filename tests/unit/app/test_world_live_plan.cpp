@@ -18,6 +18,7 @@
 #include <rv/app/room_snapshot.hpp>
 #include <rv/app/world_build.hpp>
 #include <rv/app/world_live_plan.hpp>
+#include <rv/app/world_reconcile.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/core/worker_pool.hpp>
@@ -464,4 +465,120 @@ TEST_CASE("app/world_live_plan: a room moved as a whole on its floor moves none 
     CHECK(rv::app::compareLayouts(rv::world::floorCollectionLayout(inRoom, before),
                                   rv::world::floorCollectionLayout(inRoom, grown))
               .moved == 3);
+}
+
+TEST_CASE("app/world_live_plan: room by room: an unchanged room stays, another's items or covers are applied alone",
+          "[app][world_live]") {
+    // I4 step 6b (ADR-0013 §9): each collection room decided apart, by its content digest, its items and its covers.
+    const rv::world::RoomId gb = rv::world::RoomId::parse("room:gb").value();
+    const auto twoRooms = [&](std::vector<rv::world::CollectionItem> gbItems, std::string gbDigest) {
+        WorldBuild build = threeTitles();
+        build.rooms.front().contentDigest = "snes-a";
+        std::vector<rv::app::CoverItem> covers;
+        for (const rv::world::CollectionItem& made : gbItems) {
+            covers.push_back(cover(made.game.value(), "Pocket " + std::to_string(made.game.value())));
+        }
+        build.rooms.push_back(collectionOf(layoutOf(std::move(gbItems), "cartridge", gb), std::move(covers)));
+        build.rooms.back().contentDigest = std::move(gbDigest);
+        return build;
+    };
+    const ShownFloor shown = shownOf(twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a"));
+    REQUIRE(shown.rooms.size() == 2);
+    CHECK(shown.rooms.back().contentDigest == "gb-a");
+    SECTION("nothing changed: every room unchanged") {
+        const LiveUpdatePlan plan = rv::app::planLiveUpdate(shown, twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a"));
+        CHECK(plan.kind == LiveUpdateKind::Unchanged);
+        REQUIRE(plan.rooms.size() == 2);
+        for (const rv::app::RoomUpdate& room : plan.rooms) {
+            CHECK(room.kind == rv::app::RoomUpdateKind::Unchanged);
+            CHECK_FALSE(room.planChanged);
+        }
+    }
+    SECTION("a title placed in the second room: its items in place, the first room unchanged") {
+        WorldBuild build = twoRooms({item(110, 1), item(115, 5, 0.05f), item(120, 2, 0.1f)}, "gb-b");
+        build.planDigest = "plan-b";
+        const LiveUpdatePlan plan = rv::app::planLiveUpdate(shown, build);
+        CHECK(plan.kind == LiveUpdateKind::Items);
+        REQUIRE(plan.find(kSnesRoom) != nullptr);
+        CHECK(plan.find(kSnesRoom)->kind == rv::app::RoomUpdateKind::Unchanged);
+        CHECK(plan.find(kSnesRoom)->difference == rv::app::LayoutDifference{3, 0, 0, 0, 0});
+        REQUIRE(plan.find(gb) != nullptr);
+        CHECK(plan.find(gb)->kind == rv::app::RoomUpdateKind::Items);
+        CHECK(plan.find(gb)->planChanged);
+        CHECK(plan.find(gb)->difference == rv::app::LayoutDifference{2, 0, 0, 1, 0});
+    }
+    SECTION("a cover of the first room replaced: that room's textures alone") {
+        WorldBuild build = twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a");
+        build.rooms.front().covers[0].coverPath = "snes/covers/Amber Lantern (Europe).png";
+        const LiveUpdatePlan plan = rv::app::planLiveUpdate(shown, build);
+        CHECK(plan.kind == LiveUpdateKind::Textures);
+        CHECK(plan.find(kSnesRoom)->kind == rv::app::RoomUpdateKind::Textures);
+        CHECK(plan.find(kSnesRoom)->coversChanged == 1);
+        CHECK(plan.find(gb)->kind == rv::app::RoomUpdateKind::Unchanged);
+    }
+    SECTION("a game of the other floor's room unplaced: another plan, this floor unchanged") {
+        WorldBuild build = twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a");
+        build.planDigest = "plan-c";
+        CHECK(rv::app::planLiveUpdate(shown, build).kind == LiveUpdateKind::Unchanged);
+    }
+    SECTION("the second room's CRT games changed alone") {
+        WorldBuild build = twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a");
+        build.rooms.back().screenGames.push_back(rv::app::ScreenGame{"x", {}, std::nullopt, true});
+        const LiveUpdatePlan plan = rv::app::planLiveUpdate(shown, build);
+        CHECK(plan.kind == LiveUpdateKind::Unchanged);
+        CHECK(plan.screenGamesChanged);
+        CHECK(plan.find(gb)->screenGamesChanged);
+        CHECK_FALSE(plan.find(kSnesRoom)->screenGamesChanged);
+    }
+    SECTION("a room added on the floor: rebuilt, the room listed as added") {
+        WorldBuild build = twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a");
+        build.sceneDigest = "scene-b";
+        build.rooms.push_back(collectionOf(
+            layoutOf({item(210, 1)}, "cartridge", rv::world::RoomId::parse("area:shared:handheld").value()),
+            {cover(210, "Tiny")}));
+        const LiveUpdatePlan plan = rv::app::planLiveUpdate(shown, build);
+        CHECK(plan.kind == LiveUpdateKind::Rebuild);
+        REQUIRE(plan.rooms.size() == 3);
+        CHECK(plan.rooms.back().kind == rv::app::RoomUpdateKind::Added);
+        CHECK(rv::app::toString(plan.rooms.back().kind) == "added");
+    }
+}
+
+TEST_CASE("app/world_live_plan: the walker kept in the frame of the area that holds it, moved with it",
+          "[app][world_live]") {
+    // ADR-0013 §7: a floor committed again moves the walker with the room (or the hall) that holds it.
+    const rv::world::RoomId gb = rv::world::RoomId::parse("room:gb").value();
+    const auto floorOf = [&](const rv::world::RoomPlacement& gbAt, const rv::world::RoomPlacement& floorAt) {
+        WorldBuild build = threeTitles();
+        build.floorPlacement = floorAt;
+        rv::app::RoomCollection room = collectionOf(layoutOf({item(110, 1)}, "cartridge", gb), {cover(110, "A")});
+        room.scenePlacement = gbAt;
+        build.rooms.push_back(std::move(room));
+        return build;
+    };
+    const rv::world::RoomPlacement gbBefore{14'300, -5'750, 0};
+    const ShownFloor shown = shownOf(floorOf(gbBefore, {}));
+    CHECK(shown.floorPlacement == rv::world::RoomPlacement{});
+    // The room grown 1.2 m away from the hall (north row: towards -z): the walker in it moves 1.2 m with it.
+    const WorldBuild grown = floorOf({14'300, -6'950, 0}, {});
+    const auto inRoom = rv::app::walkerMove(shown, grown, "room:gb");
+    REQUIRE(inRoom.has_value());
+    CHECK_FALSE(inRoom->halfTurn);
+    const glm::vec3 feet = glm::vec3(inRoom->matrix * glm::vec4(15.0f, 0.0f, -7.0f, 1.0f));
+    CHECK(glm::length(feet - glm::vec3(15.0f, 0.0f, -8.2f)) < 1e-4f);
+    // The hall and the other rooms stay: no move.
+    CHECK_FALSE(rv::app::walkerMove(shown, grown, "hall:gen4").has_value());
+    CHECK_FALSE(rv::app::walkerMove(shown, grown, "room:snes").has_value());
+    // The start room grown (the scene's frame is its): the hall moves in the scene's frame, the start room does not.
+    const WorldBuild startGrown = floorOf(gbBefore, {-2'000, 1'200, 0});
+    const auto inHall = rv::app::walkerMove(shown, startGrown, "hall:gen4");
+    REQUIRE(inHall.has_value());
+    const glm::vec3 hallFeet = glm::vec3(inHall->matrix * glm::vec4(3.0f, 0.0f, 1.0f, 1.0f));
+    CHECK(glm::length(hallFeet - glm::vec3(1.0f, 0.0f, 2.2f)) < 1e-4f);
+    // A half-turned frame turns the walker too.
+    const auto turned = rv::app::walkerMove(shown, floorOf({14'300, -5'750, 1}, {}), "room:gb");
+    REQUIRE(turned.has_value());
+    CHECK(turned->halfTurn);
+    // An area neither floor has: none.
+    CHECK_FALSE(rv::app::walkerMove(shown, grown, "room:nes").has_value());
 }

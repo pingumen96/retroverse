@@ -95,22 +95,28 @@ ReconcilePlan planReconciliation(const WorldBuild& shown, const WorldBuild& buil
         return plan;
     }
     const std::optional<ShownFloor> before = shownFloorOf(shown);
-    if (before) {
-        plan.difference = compareFloors(*before, build);
-    } else {
-        plan.difference.added = build.itemCount();
-    }
-    if (!before || build.planDigest != shown.planDigest || build.floor != shown.floor || !plan.difference.same()) {
+    if (!before) {
         plan.kind = Reconciliation::Rebuild;
+        plan.difference.added = build.itemCount();
         return plan;
     }
-    plan.kind = Reconciliation::Textures;
-    bool coversDiffer = build.rooms.size() != shown.rooms.size();
-    for (std::size_t index = 0; !coversDiffer && index < build.rooms.size(); ++index) {
-        coversDiffer = build.rooms[index].room != shown.rooms[index].room ||
-                       build.rooms[index].covers != shown.rooms[index].covers;
+    // The live update's decision, room by room (I4 step 6b): the stored floor in place unless its static part changed.
+    plan.live = planLiveUpdate(*before, build);
+    plan.difference = plan.live.difference;
+    switch (plan.live.kind) {
+    case LiveUpdateKind::Unchanged:
+    case LiveUpdateKind::Textures:
+        plan.kind = Reconciliation::Textures;
+        plan.reloadCovers = plan.live.reloadCovers;
+        break;
+    case LiveUpdateKind::Items:
+    case LiveUpdateKind::Rebuild:
+        plan.kind = Reconciliation::Rebuild;
+        break;
+    case LiveUpdateKind::Kept:
+        plan.kind = Reconciliation::Shell;
+        break;
     }
-    plan.reloadCovers = coversDiffer || build.mediaRoot.has_value();
     return plan;
 }
 

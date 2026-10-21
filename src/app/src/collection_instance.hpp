@@ -117,6 +117,10 @@ public:
     [[nodiscard]] std::optional<std::size_t> itemOfKey(const std::string& key) const;
     /// A layer went up: the record that shows it (the front's or the spine's) names it from now on.
     [[nodiscard]] Status layerResident(const gl::LayerUpload& upload);
+    /// Layers that went up into this collection (layerResident()), and of them those over a layer its item's record
+    /// named already: a picture uploaded again (I4 step 6b: none for a room a reconcile left unchanged).
+    [[nodiscard]] std::uint64_t uploads() const noexcept { return m_uploads; }
+    [[nodiscard]] std::uint64_t reuploads() const noexcept { return m_reuploads; }
 
     /// Highlights the item of `pickId` (kNoPick: none), its records flagged instance_flags::kHighlighted and the
     /// previous item's cleared.
@@ -198,6 +202,8 @@ private:
     std::map<std::string, std::size_t, std::less<>> m_byKey;
     std::map<world::PickId, std::size_t> m_byPick;
     world::PickId m_hovered = world::kNoPick;
+    std::uint64_t m_uploads = 0;
+    std::uint64_t m_reuploads = 0;
     std::optional<scene::MeshHandle> m_frontMesh;
     /// The media family, its part meshes (shell, front, spine), the shell's material, the label and spine materials'
     /// names and one layered material per array and class (kept for the live update's new items and arrays).

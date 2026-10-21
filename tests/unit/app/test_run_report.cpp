@@ -431,6 +431,9 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     room.arrayBytes = 20103168;
     room.arrays = 2;
     room.ownArrays = 2;
+    // I4 step 6b: the layers uploaded into the room's collection and those uploaded over a resident one.
+    room.uploads = 102;
+    room.reuploads = 1;
     residency.rooms.push_back(room);
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
@@ -483,6 +486,10 @@ TEST_CASE("app/run_report: the persisted start, its reconciliation and the objec
     preview.spinesResident = 50;
     world.preview = preview;
     world.reconcile = rv::app::WorldReconcileRecord{"textures", 1, 50, 0, 0, 0, 0, true};
+    // I4 step 6b: each room's part, the walker kept by a rebuild, the room whose CRT is bound.
+    world.reconcile->rooms = {{"room:snes", "textures", 50, 0, 0, 0, 0, 2}, {"room:megadrive", "unchanged", 12}};
+    world.reconcile->walker = rv::app::WalkerKeptRecord{"room:snes", glm::vec3(0.0f, 0.0f, -1.2f), false};
+    world.screenRoom = "room:snes";
     world.itemsWritten = true;
     world.screenGames = 52;
     world.objectFallbacks = {{"furniture.shelf.hero_module.generic", "family generic", "the manifest is missing"},
@@ -543,6 +550,8 @@ TEST_CASE("app/run_report: the persisted start, its reconciliation and the objec
     kept.trigger = "refresh";
     kept.kind = "kept";
     kept.reason = "the stored plan cannot be used";
+    live.rooms = {{"room:snes", "items", 51, 0, 0, 1, 0, 0}, {"area:shared:gen4", "added"}};
+    live.walker = rv::app::WalkerKeptRecord{"hall:gen4", glm::vec3(0.5f, 0.0f, 0.0f), true};
     world.liveUpdates = {live, kept};
     const auto updated = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(updated.has_value());
@@ -551,6 +560,18 @@ TEST_CASE("app/run_report: the persisted start, its reconciliation and the objec
         editedReport(report, [](nlohmann::json& edited) { edited["world"].erase("liveUpdates"); }), "r.json");
     REQUIRE(older.has_value());
     CHECK(older->world.liveUpdates.empty());
+    // Written before I4 step 6b: no rooms, no walker, no CRT room.
+    const auto beforeRooms = rv::app::parseRunReport(editedReport(report,
+                                                                  [](nlohmann::json& edited) {
+                                                                      edited["world"]["liveUpdates"][0].erase("rooms");
+                                                                      edited["world"]["liveUpdates"][0].erase("walker");
+                                                                      edited["world"].erase("screenRoom");
+                                                                  }),
+                                                     "r.json");
+    REQUIRE(beforeRooms.has_value());
+    CHECK(beforeRooms->world.liveUpdates.front().rooms.empty());
+    CHECK_FALSE(beforeRooms->world.liveUpdates.front().walker.has_value());
+    CHECK(beforeRooms->world.screenRoom.empty());
 }
 
 TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 step 11)", "[app][run_report]") {
@@ -588,6 +609,8 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     launch.reopened = true;
     launch.reopenedAtSeconds = 0.625;
     video.launches = {launch, rv::app::VideoLaunchRecord{}};
+    // I4 step 6b: the screens bound after the first (the CRT of the eye's room).
+    video.binds = {{240, "room:megadrive/fx:hero.crt", 12, 0.75, 1}, {420, "room:snes/fx:hero.crt", 50, 0.5, 0}};
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->video == video);

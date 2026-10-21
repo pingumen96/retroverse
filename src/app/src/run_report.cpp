@@ -817,6 +817,60 @@ GameScreensRecord readScreens(FieldReader& fields) {
 }
 
 /// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
+Json roomUpdatesToJson(const std::vector<RoomUpdateRecord>& rooms) {
+    Json array = Json::array();
+    for (const RoomUpdateRecord& room : rooms) {
+        array.push_back(Json{{"room", room.room},
+                             {"kind", room.kind},
+                             {"kept", room.kept},
+                             {"moved", room.moved},
+                             {"flagsChanged", room.flagsChanged},
+                             {"added", room.added},
+                             {"removed", room.removed},
+                             {"coversChanged", room.coversChanged}});
+    }
+    return array;
+}
+
+std::vector<RoomUpdateRecord> readRoomUpdates(FieldReader& fields) {
+    std::vector<RoomUpdateRecord> rooms;
+    for (FieldReader& room : fields.optionalObjectArray("rooms")) {
+        RoomUpdateRecord record;
+        record.room = room.string("room");
+        record.kind = room.string("kind");
+        record.kept = room.count("kept");
+        record.moved = room.count("moved");
+        record.flagsChanged = room.count("flagsChanged");
+        record.added = room.count("added");
+        record.removed = room.count("removed");
+        record.coversChanged = room.count("coversChanged");
+        rooms.push_back(std::move(record));
+    }
+    return rooms;
+}
+
+void putWalker(Json& json, const std::optional<WalkerKeptRecord>& walker) {
+    if (walker) {
+        json["walker"] = Json{{"area", walker->area},
+                              {"shift", Json::array({static_cast<double>(walker->shift.x),
+                                                     static_cast<double>(walker->shift.y),
+                                                     static_cast<double>(walker->shift.z)})},
+                              {"halfTurn", walker->halfTurn}};
+    }
+}
+
+std::optional<WalkerKeptRecord> readWalker(FieldReader& fields) {
+    auto walker = fields.optionalObject("walker");
+    if (!walker) {
+        return std::nullopt;
+    }
+    WalkerKeptRecord record;
+    record.area = walker->string("area");
+    record.shift = walker->vec3("shift");
+    record.halfTurn = walker->boolean("halfTurn");
+    return record;
+}
+
 Json worldToJson(const WorldRecord& world) {
     Json json = Json::object();
     if (!world.bound) {
@@ -829,6 +883,7 @@ Json worldToJson(const WorldRecord& world) {
     json["noticeRoom"] = world.noticeRoom;
     json["catalogState"] = world.catalogState;
     json["room"] = world.room;
+    json["screenRoom"] = world.screenRoom;
     json["library"] = world.library;
     json["floor"] = world.floor;
     Json rooms = Json::array();
@@ -904,14 +959,17 @@ Json worldToJson(const WorldRecord& world) {
     }
     if (world.reconcile) {
         const WorldReconcileRecord& reconcile = *world.reconcile;
-        json["reconcile"] = Json{{"kind", reconcile.kind},
-                                 {"frame", reconcile.frame},
-                                 {"kept", reconcile.kept},
-                                 {"moved", reconcile.moved},
-                                 {"flagsChanged", reconcile.flagsChanged},
-                                 {"added", reconcile.added},
-                                 {"removed", reconcile.removed},
-                                 {"coversReloaded", reconcile.coversReloaded}};
+        Json record{{"kind", reconcile.kind},
+                    {"frame", reconcile.frame},
+                    {"kept", reconcile.kept},
+                    {"moved", reconcile.moved},
+                    {"flagsChanged", reconcile.flagsChanged},
+                    {"added", reconcile.added},
+                    {"removed", reconcile.removed},
+                    {"coversReloaded", reconcile.coversReloaded},
+                    {"rooms", roomUpdatesToJson(reconcile.rooms)}};
+        putWalker(record, reconcile.walker);
+        json["reconcile"] = std::move(record);
     }
     json["itemsWritten"] = world.itemsWritten;
     json["screenGames"] = world.screenGames;
@@ -944,6 +1002,8 @@ Json worldToJson(const WorldRecord& world) {
         putOptional(record, "requestToApplyMs", update.requestToApplyMs);
         putOptional(record, "buildMs", update.buildMs);
         putOptional(record, "applyMs", update.applyMs);
+        record["rooms"] = roomUpdatesToJson(update.rooms);
+        putWalker(record, update.walker);
         live.push_back(std::move(record));
     }
     json["liveUpdates"] = std::move(live);
@@ -962,6 +1022,7 @@ WorldRecord readWorld(FieldReader& fields) {
     world.noticeRoom = fields.optionalString("noticeRoom").value_or(std::string());
     world.catalogState = fields.string("catalogState");
     world.room = fields.string("room");
+    world.screenRoom = fields.optionalString("screenRoom").value_or(std::string());
     world.library = fields.string("library");
     world.floor = fields.optionalString("floor").value_or(std::string());
     for (FieldReader& room : fields.optionalObjectArray("rooms")) {
@@ -1049,6 +1110,8 @@ WorldRecord readWorld(FieldReader& fields) {
         record.added = reconcile->count("added");
         record.removed = reconcile->count("removed");
         record.coversReloaded = reconcile->boolean("coversReloaded");
+        record.rooms = readRoomUpdates(*reconcile);
+        record.walker = readWalker(*reconcile);
         world.reconcile = std::move(record);
     }
     world.itemsWritten = fields.boolean("itemsWritten");
@@ -1080,6 +1143,8 @@ WorldRecord readWorld(FieldReader& fields) {
         record.requestToApplyMs = update.optionalNumber("requestToApplyMs");
         record.buildMs = update.optionalNumber("buildMs");
         record.applyMs = update.optionalNumber("applyMs");
+        record.rooms = readRoomUpdates(update);
+        record.walker = readWalker(update);
         world.liveUpdates.push_back(std::move(record));
     }
     return world;
@@ -1134,7 +1199,9 @@ Json residencyToJson(const ResidencyRecord& residency) {
     json["pausedRounds"] = residency.pausedRounds;
     json["retries"] = Json{
         {"rounds", residency.retryRounds}, {"items", residency.retriedItems}, {"changed", residency.retriedChanged}};
-    json["adopted"] = Json{{"items", residency.adoptedItems}, {"changed", residency.adoptedChanged}};
+    json["adopted"] = Json{{"items", residency.adoptedItems},
+                           {"changed", residency.adoptedChanged},
+                           {"resident", residency.adoptedResident}};
     const HeroRecord& hero = residency.hero;
     json["hero"] =
         Json{{"requests", hero.requests},   {"loaded", hero.loaded},           {"failed", hero.failed},
@@ -1150,7 +1217,9 @@ Json residencyToJson(const ResidencyRecord& residency) {
                              {"pending", room.pending},
                              {"arrayBytes", room.arrayBytes},
                              {"arrays", room.arrays},
-                             {"ownArrays", room.ownArrays}});
+                             {"ownArrays", room.ownArrays},
+                             {"uploads", room.uploads},
+                             {"reuploads", room.reuploads}});
     }
     json["rooms"] = std::move(rooms);
     return json;
@@ -1219,6 +1288,7 @@ ResidencyRecord readResidency(FieldReader& fields) {
     if (auto adopted = fields.object("adopted")) {
         residency.adoptedItems = adopted->count("items");
         residency.adoptedChanged = adopted->count("changed");
+        residency.adoptedResident = adopted->optionalCount("resident").value_or(0);
     }
     if (auto hero = fields.object("hero")) {
         HeroRecord& record = residency.hero;
@@ -1243,6 +1313,8 @@ ResidencyRecord readResidency(FieldReader& fields) {
         record.arrayBytes = room.count("arrayBytes");
         record.arrays = room.count("arrays");
         record.ownArrays = room.count("ownArrays");
+        record.uploads = room.optionalCount("uploads").value_or(0);
+        record.reuploads = room.optionalCount("reuploads").value_or(0);
         residency.rooms.push_back(std::move(record));
     }
     return residency;
@@ -1295,6 +1367,15 @@ Json videoToJson(const VideoRecord& video) {
         launches.push_back(std::move(entry));
     }
     json["launches"] = std::move(launches);
+    Json binds = Json::array();
+    for (const VideoBindRecord& bind : video.binds) {
+        binds.push_back(Json{{"frame", bind.frame},
+                             {"screen", bind.screen},
+                             {"games", bind.games},
+                             {"bindMs", bind.bindMs},
+                             {"threadsRunning", bind.threadsRunning}});
+    }
+    json["binds"] = std::move(binds);
     return json;
 }
 
@@ -1340,6 +1421,15 @@ VideoRecord readVideo(FieldReader& fields) {
         entry.reopened = launch.boolean("reopened");
         entry.reopenedAtSeconds = launch.optionalNumber("reopenedAtSeconds");
         video.launches.push_back(entry);
+    }
+    for (FieldReader& bind : fields.optionalObjectArray("binds")) {
+        VideoBindRecord entry;
+        entry.frame = bind.count("frame");
+        entry.screen = bind.string("screen");
+        entry.games = bind.count("games");
+        entry.bindMs = bind.number("bindMs");
+        entry.threadsRunning = bind.count("threadsRunning");
+        video.binds.push_back(std::move(entry));
     }
     return video;
 }

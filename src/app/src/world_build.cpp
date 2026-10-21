@@ -890,6 +890,8 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 }
             }
         }
+        build.floorPlacement =
+            startPlacement ? relativePlacement(world::RoomPlacement{}, *startPlacement) : world::RoomPlacement{};
         const std::vector<const world::Room*> rooms = world::roomsOnFloor(plan, *floor);
         const std::map<catalog::SystemName, RoomItems> items = floorItems(paths, build, rooms, sources);
         world::PlatformTagsBySystem tags;

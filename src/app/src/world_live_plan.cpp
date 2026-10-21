@@ -5,6 +5,9 @@
 #include <set>
 
 #include <fmt/format.h>
+#include <glm/glm.hpp>
+
+#include <rv/world/floor_layout.hpp>
 
 namespace rv::app {
 namespace {
@@ -35,16 +38,6 @@ template <typename Rooms>
     return true;
 }
 
-/// Every room's covers, room after room, in their order (the floor's cover requests as one list).
-template <typename Rooms>
-[[nodiscard]] std::vector<CoverItem> allCovers(const Rooms& rooms) {
-    std::vector<CoverItem> covers;
-    for (const auto& room : rooms) {
-        covers.insert(covers.end(), room.covers.begin(), room.covers.end());
-    }
-    return covers;
-}
-
 } // namespace
 
 const ShownCollection* ShownFloor::find(const world::RoomId& room) const noexcept {
@@ -66,10 +59,12 @@ std::optional<ShownFloor> shownFloorOf(const WorldBuild& build) {
     shown.floor = build.floor;
     shown.sceneDigest = build.sceneDigest;
     for (const RoomCollection& room : build.rooms) {
-        shown.rooms.push_back(ShownCollection{room.room, room.layout, room.covers, room.scenePlacement});
+        shown.rooms.push_back(ShownCollection{room.room, room.layout, room.covers, room.scenePlacement,
+                                              room.contentDigest, room.screenGames});
     }
     shown.mediaKnown = build.mediaRoot.has_value();
     shown.screenGames = build.screenGames;
+    shown.floorPlacement = build.floorPlacement;
     return shown;
 }
 
@@ -97,6 +92,58 @@ LayoutDifference compareFloors(const ShownFloor& shown, const WorldBuild& build)
         }
     }
     return difference;
+}
+
+const RoomUpdate* LiveUpdatePlan::find(const world::RoomId& room) const noexcept {
+    for (const RoomUpdate& update : rooms) {
+        if (update.room == room) {
+            return &update;
+        }
+    }
+    return nullptr;
+}
+
+std::string_view toString(RoomUpdateKind kind) noexcept {
+    switch (kind) {
+    case RoomUpdateKind::Unchanged:
+        return "unchanged";
+    case RoomUpdateKind::Textures:
+        return "textures";
+    case RoomUpdateKind::Items:
+        return "items";
+    case RoomUpdateKind::Added:
+        return "added";
+    case RoomUpdateKind::Removed:
+        return "removed";
+    }
+    return "unchanged";
+}
+
+std::optional<FrameMove> walkerMove(const ShownFloor& shown, const WorldBuild& build, std::string_view area) {
+    std::optional<world::RoomPlacement> before;
+    std::optional<world::RoomPlacement> after;
+    for (const ShownCollection& room : shown.rooms) {
+        if (room.room.toString() == area) {
+            before = room.scenePlacement;
+        }
+    }
+    for (const RoomCollection& room : build.rooms) {
+        if (room.room.toString() == area) {
+            after = room.scenePlacement;
+        }
+    }
+    if (!before && !after) {
+        // A hall (or an area of no collection room): it moves with the floor's frame.
+        before = shown.floorPlacement;
+        after = build.floorPlacement;
+    }
+    if (!before || !after || *before == *after) {
+        return std::nullopt;
+    }
+    FrameMove move;
+    move.matrix = world::roomToFloorMatrix(*after) * glm::inverse(world::roomToFloorMatrix(*before));
+    move.halfTurn = (before->yawHalfTurns + after->yawHalfTurns) % 2 != 0;
+    return move;
 }
 
 std::string_view toString(LiveUpdateKind kind) noexcept {
@@ -159,6 +206,51 @@ LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build) 
     plan.screenGamesChanged = build.screenGames != shown.screenGames;
     const bool rootNowKnown = build.mediaRoot.has_value() && !shown.mediaKnown;
 
+    // Room by room (I4 step 6b): first by its content digest, then by its items and covers.
+    bool collectionsChanged = false;
+    bool familyChanged = false;
+    std::set<world::RoomId> seen;
+    for (const RoomCollection& room : build.rooms) {
+        seen.insert(room.room);
+        RoomUpdate update;
+        update.room = room.room;
+        const ShownCollection* standing = shown.find(room.room);
+        if (standing == nullptr) {
+            update.kind = RoomUpdateKind::Added;
+            plan.rooms.push_back(std::move(update));
+            continue;
+        }
+        update.difference =
+            compareLayouts(standing->layout, standing->scenePlacement, room.layout, room.scenePlacement);
+        for (const CoverItem& cover : room.covers) {
+            const auto found = earlier.find(cover.game);
+            update.coversChanged += found != earlier.end() && !(*found->second == cover) ? 1 : 0;
+        }
+        update.screenGamesChanged = standing->screenGames != room.screenGames;
+        plan.screenGamesChanged = plan.screenGamesChanged || update.screenGamesChanged;
+        // Its content digest tells whether the plan changed anything of it; its items (their availability is the
+        // catalog's, not the plan's) and covers what shows of it.
+        update.planChanged = room.contentDigest.empty() || room.contentDigest != standing->contentDigest ||
+                             room.scenePlacement != standing->scenePlacement;
+        const bool coversDiffer = room.covers != standing->covers;
+        if (update.difference.same()) {
+            update.kind = coversDiffer || rootNowKnown ? RoomUpdateKind::Textures : RoomUpdateKind::Unchanged;
+        } else {
+            update.kind = RoomUpdateKind::Items;
+        }
+        collectionsChanged = collectionsChanged || standing->layout.items.empty() != room.layout.items.empty();
+        familyChanged = familyChanged || !sameFamilies(standing->layout, room.layout);
+        plan.rooms.push_back(std::move(update));
+    }
+    for (const ShownCollection& room : shown.rooms) {
+        if (!seen.contains(room.room)) {
+            RoomUpdate update;
+            update.room = room.room;
+            update.kind = RoomUpdateKind::Removed;
+            plan.rooms.push_back(std::move(update));
+        }
+    }
+
     if (plan.difference.moved > 0) {
         plan.kind = LiveUpdateKind::Rebuild;
         plan.reason = fmt::format("{} item(s) of the floor shown stand elsewhere in the build", plan.difference.moved);
@@ -169,33 +261,36 @@ LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build) 
         plan.reason = "another floor";
         return plan;
     }
-    if (build.planDigest == shown.planDigest && plan.difference.same() && build.sceneDigest == shown.sceneDigest) {
-        // The floor as it shows; at most its pictures.
-        const bool coversDiffer = allCovers(build.rooms) != allCovers(shown.rooms);
-        plan.reloadCovers = coversDiffer || rootNowKnown;
-        plan.kind = plan.reloadCovers ? LiveUpdateKind::Textures : LiveUpdateKind::Unchanged;
-        return plan;
-    }
     if (shown.sceneDigest.empty() || build.sceneDigest != shown.sceneDigest) {
         plan.kind = LiveUpdateKind::Rebuild;
         plan.reason = "the floor's static part changed (a room's fixtures, dressing or size, a room added)";
         return plan;
     }
-    if (build.rooms.size() != shown.rooms.size()) {
+    const bool roomsChanged = std::any_of(plan.rooms.begin(), plan.rooms.end(), [](const RoomUpdate& update) {
+        return update.kind == RoomUpdateKind::Added || update.kind == RoomUpdateKind::Removed;
+    });
+    if (roomsChanged || collectionsChanged) {
         plan.kind = LiveUpdateKind::Rebuild;
         plan.reason = "the floor's collections changed";
         return plan;
     }
-    for (const RoomCollection& room : build.rooms) {
-        const ShownCollection* standing = shown.find(room.room);
-        if (standing == nullptr || !sameFamilies(standing->layout, room.layout)) {
-            plan.kind = LiveUpdateKind::Rebuild;
-            plan.reason = "a collection's media family changed";
-            return plan;
-        }
+    if (familyChanged) {
+        plan.kind = LiveUpdateKind::Rebuild;
+        plan.reason = "a collection's media family changed";
+        return plan;
     }
-    plan.kind = LiveUpdateKind::Items;
-    plan.reloadCovers = true;
+    const auto any = [&](RoomUpdateKind kind) {
+        return std::any_of(plan.rooms.begin(), plan.rooms.end(),
+                           [kind](const RoomUpdate& update) { return update.kind == kind; });
+    };
+    if (any(RoomUpdateKind::Items)) {
+        plan.kind = LiveUpdateKind::Items;
+        plan.reloadCovers = true;
+        return plan;
+    }
+    // The floor as it shows; at most its pictures.
+    plan.reloadCovers = any(RoomUpdateKind::Textures);
+    plan.kind = plan.reloadCovers ? LiveUpdateKind::Textures : LiveUpdateKind::Unchanged;
     return plan;
 }
 

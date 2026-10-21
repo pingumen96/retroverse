@@ -64,6 +64,7 @@ WorldBuild built(std::string digest, rv::world::CollectionLayout layout, std::ve
     build.planDigest = std::move(digest);
     build.floor = "gen4";
     build.scene = rv::scene::SceneDescription{};
+    build.sceneDigest = "scene-a"; // the floor's static part as the shown one's
     rv::app::RoomCollection room;
     room.room = rv::world::RoomId::parse("room:snes").value();
     room.layout = std::move(layout);

@@ -179,8 +179,10 @@ struct WorldBuild {
     /// The start room (--start-room), and whether the plan lacks it (the run then ends: exit 2).
     std::optional<world::RoomId> startRoom;
     bool startRoomMissing = false;
-    /// The floor built ("ground" without a start room).
+    /// The floor built ("ground" without a start room), and its frame in the scene's frame (the hall's: relative to the
+    /// start room's placement, {0, 0, 0} without a start room).
     std::string floor;
+    world::RoomPlacement floorPlacement;
     catalog::LibraryId library;
     /// The plan shown and its digest (the SHA-256 of its canonical text); none for NoPlan.
     std::optional<world::WorldPlan> plan;

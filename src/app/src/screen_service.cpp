@@ -127,12 +127,15 @@ std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& descript
 struct ScreenService::Impl {
     Impl(HeroScreen heroScreen, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
          ScreenServiceOptions serviceOptions)
-        : screen(std::move(heroScreen)), materials(registry), policy(std::move(games)), options(serviceOptions),
+        : screen(std::move(heroScreen)), lastScreenId(screen->objectId), materials(registry), policy(std::move(games)),
+          options(serviceOptions),
           pool(core::WorkerPoolOptions{
               .threads = 1, .capacity = 8, .belowNormalPriority = true, .name = "rv-screen-stills"}),
           stillSlot(std::make_shared<StillSlot>()) {}
 
-    HeroScreen screen;
+    /// The screen bound (none between unbind() and bind()), and the last one's id (the record's at the end).
+    std::optional<HeroScreen> screen;
+    std::string lastScreenId;
     gl::MaterialRegistry& materials;
     ScreenPolicy policy;
     ScreenServiceOptions options;
@@ -508,10 +511,10 @@ struct ScreenService::Impl {
         } else if (picture != ScreenPicture::IdlePattern) {
             texture = still.id();
         }
-        if (texture == appliedOverride && picture == shownPicture) {
+        if (!screen || (texture == appliedOverride && picture == shownPicture)) {
             return;
         }
-        if (auto set = materials.setTextureOverride(screen.material, gl::MaterialTextureSlot::BaseColor, texture);
+        if (auto set = materials.setTextureOverride(screen->material, gl::MaterialTextureSlot::BaseColor, texture);
             !set) {
             spdlog::error("Hero CRT: the screen's picture cannot be set: {}", set.error().toString());
             return;
@@ -528,9 +531,15 @@ struct ScreenService::Impl {
         if (policy.phase() == ScreenPhase::Quit) {
             return;
         }
+        if (!screen) {
+            // Unbound (a floor being committed again): the previous clip's thread ends on its own meanwhile.
+            reapDraining();
+            counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
+            return;
+        }
         policy.hover(hovered, nowSeconds);
         followTarget();
-        const bool visible = camera.frustum().intersects(screen.bounds);
+        const bool visible = camera.frustum().intersects(screen->bounds);
         policy.setVisible(visible);
         reapDraining();
         if (policy.wantsDecoder() && !playback) {
@@ -593,6 +602,50 @@ struct ScreenService::Impl {
         reopenPending = true;
     }
 
+    /// Lets go of the screen: the clip stops (never waited for), the still goes, the override cleared when asked.
+    void unbind(bool clearOverride) {
+        stopPlayback();
+        pool.cancel(stillJobs);
+        ++stillToken; // a still on its way is dropped
+        stillLoading = false;
+        loadingPicture.reset();
+        still = gl::Texture2D();
+        if (clearOverride && screen && appliedOverride != 0) {
+            if (auto cleared = materials.setTextureOverride(screen->material, gl::MaterialTextureSlot::BaseColor, 0);
+                !cleared) {
+                spdlog::error("Hero CRT: the screen's picture cannot be cleared: {}", cleared.error().toString());
+            }
+        }
+        appliedOverride = 0;
+        shownPicture = ScreenPicture::IdlePattern;
+        if (screen) {
+            spdlog::info("Hero CRT: the screen of '{}' let go{}", screen->objectId,
+                         draining ? "; its clip's decoder ends on its own" : "");
+        }
+        screen.reset();
+    }
+
+    void bind(HeroScreen next, std::vector<ScreenGame> games, std::uint64_t frame) {
+        const Clock::time_point start = Clock::now();
+        if (screen) {
+            unbind(true);
+        }
+        screen = std::move(next);
+        lastScreenId = screen->objectId;
+        policy.restart(std::move(games));
+        followed = false; // the new target is followed at the next update
+        reapDraining();
+        VideoBindRecord record;
+        record.frame = frame;
+        record.screen = screen->objectId;
+        record.games = policy.games().size();
+        record.bindMs = millisecondsSince(start);
+        record.threadsRunning = decoderThreads();
+        spdlog::info("Hero CRT: bound to the screen of '{}' with {} game(s) in {:.2f} ms ({} decoder thread(s) ending)",
+                     record.screen, record.games, record.bindMs, record.threadsRunning);
+        counters.binds.push_back(std::move(record));
+    }
+
     void shutdown() {
         if (policy.phase() == ScreenPhase::Quit && !playback && !draining) {
             return;
@@ -614,7 +667,7 @@ ScreenService::ScreenService(HeroScreen screen, gl::MaterialRegistry& materials,
                              ScreenServiceOptions options)
     : m_impl(std::make_unique<Impl>(std::move(screen), materials, std::move(games), options)) {
     spdlog::info(
-        "Hero CRT: the screen of '{}', {} game(s) with media{}", m_impl->screen.objectId, m_impl->policy.games().size(),
+        "Hero CRT: the screen of '{}', {} game(s) with media{}", m_impl->screen->objectId, m_impl->policy.games().size(),
         options.freezePtsSeconds ? fmt::format(", videos held at {:g} s", *options.freezePtsSeconds) : std::string());
 }
 
@@ -624,9 +677,9 @@ ScreenService::~ScreenService() {
     }
     m_impl->shutdown();
     // The textures go with the service: the material draws its own picture again.
-    if (m_impl->appliedOverride != 0) {
+    if (m_impl->appliedOverride != 0 && m_impl->screen) {
         static_cast<void>(
-            m_impl->materials.setTextureOverride(m_impl->screen.material, gl::MaterialTextureSlot::BaseColor, 0));
+            m_impl->materials.setTextureOverride(m_impl->screen->material, gl::MaterialTextureSlot::BaseColor, 0));
     }
     m_impl->releaseDecoder(m_impl->playback);
     m_impl->releaseDecoder(m_impl->draining);
@@ -634,6 +687,22 @@ ScreenService::~ScreenService() {
 
 void ScreenService::setGames(std::vector<ScreenGame> games) {
     m_impl->policy.setGames(std::move(games));
+}
+
+void ScreenService::unbind(bool clearOverride) {
+    m_impl->unbind(clearOverride);
+}
+
+void ScreenService::bind(HeroScreen screen, std::vector<ScreenGame> games, std::uint64_t frame) {
+    m_impl->bind(std::move(screen), std::move(games), frame);
+}
+
+bool ScreenService::bound() const noexcept {
+    return m_impl->screen.has_value();
+}
+
+std::string ScreenService::screenId() const {
+    return m_impl->screen ? m_impl->screen->objectId : std::string();
 }
 
 void ScreenService::update(double nowSeconds, const scene::Camera& camera, std::optional<std::string_view> hovered) {
@@ -656,7 +725,7 @@ void ScreenService::record(VideoRecord& record) const {
     const Impl& s = *m_impl;
     record = s.counters;
     record.bound = true;
-    record.screen = s.screen.objectId;
+    record.screen = s.screen ? s.screen->objectId : s.lastScreenId;
     record.gameId = s.policy.targetId();
     record.picture = std::string(toString(s.shownPicture));
     record.phase = s.endPhase.value_or(std::string(toString(s.policy.phase())));
@@ -676,7 +745,8 @@ void ScreenService::record(VideoRecord& record) const {
 std::vector<std::string> ScreenService::statusLines() const {
     const Impl& s = *m_impl;
     std::vector<std::string> lines;
-    lines.push_back(fmt::format("Hero CRT '{}': {}{}", s.screen.objectId, toString(s.shownPicture),
+    lines.push_back(fmt::format("Hero CRT '{}': {}{}", s.screen ? s.screen->objectId : std::string("(none)"),
+                                toString(s.shownPicture),
                                 s.policy.targetId().empty() ? std::string() : " of " + s.policy.targetId()));
     lines.push_back(fmt::format("Decoder: {}{}, {} thread(s); {} started, at most {} at once", s.decoderStateName(),
                                 s.policy.visible() ? "" : " (out of view)", s.decoderThreads(),

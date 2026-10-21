@@ -595,7 +595,8 @@ struct RetroverseApp::State {
     }
 
     /// The hero CRT's service on the scene's first CRT (`heroScreenPrefix`: the first whose object id starts with it,
-    /// none for an empty one: I4 step 5a's start room on a floor), if it has one (not in the model viewer).
+    /// none for an empty one: a floor whose eye's room has no CRT bound yet, I4 step 6b), if it has one (not in the
+    /// model viewer); a service kept across a floor committed again (unbound) is bound to it instead.
     void createScreen(const AppContext& context, std::vector<ScreenGame> games,
                       const std::optional<std::string>& heroScreenPrefix = std::nullopt) {
         const CommandLineOptions& options = context.options();
@@ -604,14 +605,18 @@ struct RetroverseApp::State {
         }
         if (std::optional<HeroScreen> hero =
                 findHeroScreen(description, *scene, graphics->materials(), heroScreenPrefix)) {
+            if (screen) {
+                screen->bind(std::move(*hero), std::move(games), context.frameIndex());
+                return;
+            }
             ScreenServiceOptions screenOptions;
             screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
             screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
             screen = std::make_unique<ScreenService>(std::move(*hero), graphics->materials(), std::move(games),
                                                      screenOptions);
         } else if (heroScreenPrefix && heroScreenPrefix->empty()) {
-            spdlog::info("Scene '{}': no hero CRT bound (no start room: the CRT of the room that holds the eye is I4 "
-                         "step 6b's)",
+            spdlog::info("Scene '{}': no hero CRT bound yet (the CRT of the room that holds the eye, once it stays in "
+                         "one)",
                          description.name);
         } else {
             spdlog::info("Scene '{}' has no hero CRT (a crt object with a picture on its screen){}: no video",
@@ -645,7 +650,24 @@ struct RetroverseApp::State {
         // start room's hero CRT plays its games (I4 step 5a).
         host.showScene = [this, &context](scene::SceneDescription next, const WorldSession::SceneShow& show) {
             return replaceScene(context, std::move(next), scene::assetModelLoader(context.paths().assetRoot()),
-                                show.keepWalker, show.heroScreenPrefix);
+                                show.keepWalker, show.heroScreenPrefix, show.walkerMove, show.screenGames);
+        };
+        // I4 step 6b: the CRT of the room that holds the eye, bound once the eye stayed there (never joining the
+        // previous clip's decoder on the render loop).
+        host.bindScreen = [this, &context](const std::string& prefix, std::vector<ScreenGame> games) -> bool {
+            if (!scene || context.options().model) {
+                return false;
+            }
+            std::optional<HeroScreen> hero = findHeroScreen(description, *scene, graphics->materials(), prefix);
+            if (!hero) {
+                return false;
+            }
+            if (screen) {
+                screen->bind(std::move(*hero), std::move(games), context.frameIndex());
+            } else {
+                createScreen(context, std::move(games), prefix);
+            }
+            return true;
         };
         host.setScreenGames = [this](std::vector<ScreenGame> games) {
             if (screen) {
@@ -692,12 +714,29 @@ struct RetroverseApp::State {
     /// instead of it; I3 step 10b): the hero CRT's service, the content of the registries and the scene go, the new
     /// scene is instantiated, the walker stands at its camera (or at --spawn), the camera's lens is its, the CRT's
     /// service starts again on its CRT, the debug lines are made again. The world's collection is gone by then.
-    /// `keepWalker`: the walker stays where it stands (I3 step 10c: a room committed again in place of itself).
+    /// `keepWalker`: the walker stays where it stands (I3 step 10c: a room committed again in place of itself), moved
+    /// by `walkerMove` with the area that holds it (I4 step 6b, ADR-0013 §7), and the hero CRT's service goes on (its
+    /// screen let go, then the new scene's of `heroScreenPrefix` bound with `screenGames`: its decoder never joined
+    /// here).
     Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader,
-                        bool keepWalker = false, const std::optional<std::string>& heroScreenPrefix = std::nullopt) {
-        const std::optional<SpawnPoint> spawn =
+                        bool keepWalker = false, const std::optional<std::string>& heroScreenPrefix = std::nullopt,
+                        const std::optional<FrameMove>& walkerMove = std::nullopt,
+                        std::vector<ScreenGame> screenGames = {}) {
+        std::optional<SpawnPoint> spawn =
             keepWalker ? std::optional<SpawnPoint>(freeRoam->pose()) : context.options().spawn;
-        if (screen) {
+        if (spawn && keepWalker && walkerMove) {
+            spawn->feet = glm::vec3(walkerMove->matrix * glm::vec4(spawn->feet, 1.0f));
+            if (walkerMove->halfTurn && spawn->yawDeg) {
+                float yaw = *spawn->yawDeg + 180.0f;
+                while (yaw > 180.0f) {
+                    yaw -= 360.0f;
+                }
+                spawn->yawDeg = yaw;
+            }
+        }
+        if (screen && keepWalker) {
+            screen->unbind(false); // the registry is cleared below: its material goes with it
+        } else if (screen) {
             screen->shutdown();
             screen->record(context.report().video);
             screen.reset();
@@ -731,7 +770,7 @@ struct RetroverseApp::State {
         camera.setLens(description.camera.lens);
         // The camera takes the walker's new pose now: this frame renders the new scene from it.
         freeRoam->update(input::ActionState{}, 0.0f, camera);
-        createScreen(context, {}, heroScreenPrefix);
+        createScreen(context, std::move(screenGames), heroScreenPrefix);
         shownDebugLines = DebugLineSelection{};
         if (Status shown = syncDebugLines(); !shown) {
             spdlog::error("Debug lines unavailable: {}", shown.error().toString());
