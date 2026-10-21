@@ -44,6 +44,7 @@
 // in the plan, a slot within its level, a game both placed and unplaced): that is the validation's
 // (rv/world/validation.hpp), which judges a plan it can read.
 
+#include <map>
 #include <string>
 #include <string_view>
 
@@ -77,5 +78,8 @@ namespace rv::world {
 /// (its fixtures, placements, dressing, lights and unplaced games), so that two plans' rooms compare without their
 /// other rooms. Computed, never stored. Errors: NotFound for a room the plan lacks; those of core::canonicalJsonDigest.
 [[nodiscard]] Expected<std::string> roomContentDigest(const WorldPlan& plan, const RoomId& room);
+/// Every room's content digest at once (the plan sorted once: what the app's per-room reconcile compares, I4 step 6b).
+/// Errors: those of core::canonicalJsonDigest.
+[[nodiscard]] Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan);
 
 } // namespace rv::world
