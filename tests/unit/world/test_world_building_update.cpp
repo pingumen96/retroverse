@@ -305,6 +305,19 @@ TEST_CASE("world/building update: on a full floor a new console room joins the s
     const GenerationResult same = update(world, capacity.plan, more, "genesis again");
     CHECK(same.plan == capacity.plan);
     CHECK(same.changes.digestAfter == same.changes.digestBefore);
+    // A title that leaves genesis meanwhile leaves no entry behind: the update is the fresh building of the same
+    // selections.
+    std::vector<RoomSelection> fewer = more;
+    RoomSelection& genesis = fewer.back();
+    const GameId gone = genesis.titles.front().game;
+    genesis.titles.erase(genesis.titles.begin());
+    std::erase_if(genesis.unplaced, [&](const rv::world::UnplacedGame& game) {
+        return game.reason == rv::world::UnplacedReason::DuplicateTitle && game.representative == gone;
+    });
+    const GenerationResult left = update(world, capacity.plan, fewer, "a title leaves genesis");
+    CHECK(std::none_of(left.plan.unplaced.begin(), left.plan.unplaced.end(),
+                       [&](const rv::world::UnplacedGame& game) { return game.game == gone; }));
+    CHECK(planText(left.plan) == planText(rv::test::world::generateBuildingOf(world, fewer).plan));
     // A small system there has no shared room to open: its games are unplaced naming the shared room.
     more.push_back(systemSelection("neogeo", 5, 6404));
     const GenerationResult small = update(world, capacity.plan, more, "neogeo finds no place");

@@ -963,16 +963,22 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     // Each stored room in id order: kept, updated with its selection, or left as it is.
     WorldPlan plan = previous;
     // The capacity entries of a system that found no place before (they name a room the plan does not hold) give way
-    // to what its entry decides now.
+    // to what its entry decides now: those naming its console room, room:<system>, are all its own, whatever their
+    // game (a game that left the catalog meanwhile included); those naming a shared or arcade room that found no place
+    // mix the systems of that room, and the plan does not say which an entry was of, so only the entries of the
+    // entering selections' games give way (an entry of a game that left such a system stands: it may as well be of a
+    // system whose selection is unknown, SC-06).
     std::set<RoomId> storedIds;
     for (const Room& room : previous.rooms) {
         storedIds.insert(room.id);
     }
+    std::set<RoomId> enteringRooms;
     std::set<GameId> enteringGames;
     for (const detail::EnteringSystem& system : entering) {
         if (waiting.contains(system.selection)) {
             continue;
         }
+        enteringRooms.insert(system.selection->room);
         for (const RoomTitle& title : system.selection->titles) {
             enteringGames.insert(title.game);
         }
@@ -981,7 +987,8 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         }
     }
     std::erase_if(plan.unplaced, [&](const UnplacedGame& game) {
-        return !storedIds.contains(game.room) && enteringGames.contains(game.game);
+        return !storedIds.contains(game.room) &&
+               (enteringRooms.contains(game.room) || enteringGames.contains(game.game));
     });
     std::vector<KeptRoom> keptRooms;
     std::vector<GameId> added;

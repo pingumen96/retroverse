@@ -64,7 +64,10 @@
 //     appears), its x fixed, its z following its depth;
 //   - a console room its floor has no place for joins the floor's shared room when that stands, else the system's
 //     games are unplaced for capacity, naming the room it would have had (expansion rooms are I4b's), as are those of a
-//     shared or arcade room that finds no place; such entries of a system entering again give way to its entry now.
+//     shared or arcade room that finds no place; when such a system enters again, the entries naming its console room
+//     give way to its entry now (all of them: a game that left its selection has none), those naming a shared or arcade
+//     room that found no place only for the games of its selection (the plan does not say which system such an entry
+//     was of: an entry of a game that left the system stands until a regeneration).
 // Nothing that stands moves: the stored rooms' floors, kinds, x, yaws and sections (new ones only appended), their
 // placements, and the hall's lights (derived, only appended as a floor's rooms reach further east).
 // The plan records the highest of its rooms' generator versions, the selections' sort-key version and the inputDigest
