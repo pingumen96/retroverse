@@ -141,11 +141,9 @@ void dropFloor(WorldBuild& build) {
     return nullptr;
 }
 
-/// The room items of `snapshot`'s system as the building job keeps them for the floors' builds (room_items.hpp): every
-/// placement of `plan` of a game the snapshot lists, and every placement of the system's console room whatever the
-/// snapshot says (a game it no longer lists keeps its slot with no text), each with its catalog title, the title of its
-/// file name, its year, its cover's path and its availability (world::collectionTitles' rule).
-[[nodiscard]] RoomItems itemsOfSnapshot(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan) {
+} // namespace
+
+RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan) {
     RoomItems items;
     items.systemName = snapshot.systemFullName;
     items.platforms = snapshot.platformTags;
@@ -156,11 +154,17 @@ void dropFloor(WorldBuild& build) {
                              [](const world::CollectionTitle& title, const catalog::GameId& id) { return title.game < id; });
         return found != titles.end() && found->game == game ? &*found : nullptr;
     };
-    const auto own = world::RoomId::forSystem(snapshot.system);
+    // The rooms that hold the system (their sections: a shared room holds several systems, an expansion its head's).
+    std::set<world::RoomId> own;
+    for (const world::Room& room : plan.rooms) {
+        const std::vector<catalog::SystemName> held = systemsOf(room);
+        if (std::find(held.begin(), held.end(), snapshot.system) != held.end()) {
+            own.insert(room.id);
+        }
+    }
     for (const world::Placement& placement : plan.placements) {
         const catalog::RoomEntry* entry = entryOf(snapshot.snapshot, placement.game);
-        const bool inOwnRoom = own && placement.slot.fixture().room() == *own;
-        if (entry == nullptr && !inOwnRoom) {
+        if (entry == nullptr && !own.contains(placement.slot.fixture().room())) {
             continue;
         }
         RoomItemText text;
@@ -185,6 +189,8 @@ void dropFloor(WorldBuild& build) {
                       items.items.end());
     return items;
 }
+
+namespace {
 
 /// The plan of `build` from the building's snapshot (see planBuilding()).
 void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBuild& build) {
@@ -745,7 +751,7 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
                 if (system.error || roomHolding(*build.plan, system.system) == nullptr) {
                     continue;
                 }
-                RoomItems items = itemsOfSnapshot(system, *build.plan);
+                RoomItems items = snapshotRoomItems(system, *build.plan);
                 const std::filesystem::path file = roomItemsFile(input.paths.cacheDir, input.library, system.system);
                 if (auto written = writeRoomItems(file, items)) {
                     build.itemsWritten = build.itemsWritten || *written;

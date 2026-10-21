@@ -800,6 +800,71 @@ TEST_CASE("app/world_build: the rooms' items kept for the next start, written on
     CHECK(roomOf(broken).covers.empty());
 }
 
+TEST_CASE("app/world_build: a system's items hold the placements of every room that holds it, a game it no longer "
+          "lists too",
+          "[app][world_build]") {
+    const ImportedFixture imported("world-build-items-rooms", true, "esde/snes-room");
+    const RoomSnapshotResult snapshot = snapshotOf(imported);
+    REQUIRE_FALSE(snapshot.error.has_value());
+    REQUIRE_FALSE(snapshot.snapshot.entries.empty());
+    const rv::catalog::SystemName gb = rv::catalog::SystemName::parse("gb").value();
+
+    // A plan by hand (the rule reads the rooms' sections and the placements alone): a shared room holding snes and gb,
+    // an expansion of the snes room (its id's system), and gb's console room.
+    rv::world::WorldPlan plan;
+    const auto room = [&](rv::world::RoomId id, rv::world::RoomKind kind, std::vector<rv::catalog::SystemName> held) {
+        rv::world::Room made;
+        made.id = std::move(id);
+        made.kind = kind;
+        made.floor = "gen4";
+        made.sections = std::move(held);
+        plan.rooms.push_back(std::move(made));
+        return plan.rooms.back().id;
+    };
+    const rv::world::RoomId shared =
+        room(rv::world::RoomId::sharedArea("gen4").value(), rv::world::RoomKind::Shared, {gb, kSnes});
+    const rv::world::RoomId expansion = room(rv::world::RoomId::forSystem(kSnes, 2).value(),
+                                             rv::world::RoomKind::Console, {});
+    const rv::world::RoomId gbRoom = room(rv::world::RoomId::forSystem(gb).value(), rv::world::RoomKind::Console, {gb});
+    std::uint32_t slot = 0;
+    const auto place = [&](const rv::world::RoomId& in, const rv::catalog::GameId& game) {
+        const rv::world::FixtureId fixture = rv::world::FixtureId::make(in, "w01").value();
+        plan.placements.push_back(rv::world::Placement{rv::world::SlotId::make(fixture, 1, ++slot).value(), game});
+    };
+    const rv::catalog::GameId listed = snapshot.snapshot.entries.front().id;
+    const rv::catalog::GameId goneShared = rv::catalog::GameId::fromValue(900001).value();
+    const rv::catalog::GameId goneExpansion = rv::catalog::GameId::fromValue(900002).value();
+    const rv::catalog::GameId goneOther = rv::catalog::GameId::fromValue(900003).value();
+    place(gbRoom, listed); // a game the snapshot lists, wherever it stands
+    place(shared, goneShared);
+    place(expansion, goneExpansion);
+    place(gbRoom, goneOther); // another system's room: not snes's to keep
+
+    const rv::app::RoomItems items = rv::app::snapshotRoomItems(snapshot, plan);
+    CHECK(items.systemName == "Lumen 16 Home System");
+    std::vector<rv::catalog::GameId> games;
+    for (const rv::app::RoomItemText& item : items.items) {
+        games.push_back(item.game);
+    }
+    std::vector<rv::catalog::GameId> expected{listed, goneShared, goneExpansion};
+    std::sort(expected.begin(), expected.end());
+    CHECK(games == expected);
+    const rv::app::RoomItemText* known = items.find(listed);
+    REQUIRE(known != nullptr);
+    CHECK_FALSE(known->title.empty());
+    CHECK_FALSE(known->coverPath.empty());
+    // The games it no longer lists keep their slots with no text (their items keep the pending picture's label).
+    for (const rv::catalog::GameId& game : {goneShared, goneExpansion}) {
+        const rv::app::RoomItemText* gone = items.find(game);
+        REQUIRE(gone != nullptr);
+        CHECK(gone->title.empty());
+        CHECK(gone->fallbackTitle.empty());
+        CHECK(gone->year.empty());
+        CHECK(gone->coverPath.empty());
+    }
+    CHECK(items.find(goneOther) == nullptr);
+}
+
 TEST_CASE("app/world_build: a game added between two starts: the stored floor previewed, then rebuilt, nothing moved",
           "[app][world_build]") {
     const ImportedFixture imported("world-build-added", true, "esde/snes-room");

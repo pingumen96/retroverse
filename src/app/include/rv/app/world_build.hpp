@@ -248,6 +248,13 @@ struct BuildingResult {
 /// Returns early (NoPlan, "cancelled") once `job` is cancelled.
 [[nodiscard]] BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext& job);
 
+/// The room items of `snapshot`'s system as the building job keeps them for the floors' builds (room_items.hpp): every
+/// placement of `plan` of a game the snapshot lists, and every placement in a room of `plan` that holds the system (its
+/// sections: a console room, an expansion, a shared room) whatever the snapshot says (a game it no longer lists keeps
+/// its slot with no title, year or cover), each with its catalog title, the title of its file name, its year, its
+/// cover's path and its availability (world::collectionTitles' rule); in GameId order, each game once.
+[[nodiscard]] RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan);
+
 /// The floor-build job: `build`'s floor (its start room's, else kStartFloor) of its plan made into its scene, its rooms'
 /// collections and cover requests (`sources`' items, else the items files), the start room's CRT games. A plan that
 /// lacks the start room sets startRoomMissing and builds nothing; a floor that cannot be made leaves the build with no
