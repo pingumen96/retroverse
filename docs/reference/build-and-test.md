@@ -86,7 +86,20 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   hall and the arrival point are read from the generated plan and its floors' layout, never named), the room goldens
   (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
   (`gpu.directory: ...`, I4 step 7a: `tests/input_scripts/directory_panel.json` over a fixed model, each checkpoint's
-  view and RmlUi focus, the focus's edge in its screenshot, Mostra nella stanza's command); the room's test files
+  view and RmlUi focus, the focus's edge in its screenshot, Mostra nella stanza's command), and the elevator and the
+  directory in the app (`gpu.world elevator: ...`, I4 step 7b, `test_world_elevator.cpp`, `[world_elevator]`, on
+  `esde/building` under the shipped threshold, lockstep: a ride from the ground floor to gen4 and back through the
+  elevator's prompt (the walker turned to its doors) and the directory, the walker at each arrival point facing the
+  hall, `world.rides` with their frames (the swap in the frame after the fade), the GPU memory a floor holds after each
+  ride a direct run's of that floor (arrays, buffers, scene textures, procedural surfaces), in Release the first ride
+  within 10 s and the second within 3 s; a room of the handheld floor chosen with Map (the ride, its doorway, its arrays
+  not the lobby's), the floor's other room teleported to, then the floor's own hall (back at its elevator); the quick
+  catalog's "Mostra nella stanza" of a gen4 game from the lobby ending in its Focus pose; the favourites and recent
+  games tab against the fixture's gamelists and a card's room key; Avvia on the directory's card into the fake and
+  back, and one that cannot start with its outcome on the card; interact and Map in one frame inspecting an item and
+  opening nothing, the directory opened once back in free roam; the fade's view against the view before it, each
+  value times the fade's share; a game launched from the lobby starting its room's CRT on another floor after a ride);
+  the room's test files
   repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
   the animations' frame budget and the benchmark path (`[benchmark]`,
@@ -187,8 +200,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   screenshots stay there, never committed: the user's covers); since I4 step 6b `-Filter '[real-library][building]'`
   (the whole library imported under `build/<preset>/real-library/building`, then `retroverse.exe`: the first
   building, the unchanged start as the user starts it with NFR-01 to the lobby and the quick catalog's first page, the
-  whole building job with its stamp removed, a start in the computer floor's largest room within 512 MiB, and
-  `worldplan update`; the figures printed as "Real building:" lines). `-OutDir <dir>`
+  whole building job with its stamp removed, a start in the computer floor's largest room within 512 MiB cold (its
+  covers derived in that run) then warm, since I4 step 7b, the derived covers emptied, a ride from the lobby to that
+  room through the elevator and back to the lobby's elevator with Map as the user rides (no lockstep), cold then warm,
+  within the acceptable row (10 s cold, 3 s warm) and with the destination's arrays, and `worldplan update`; the
+  figures printed as "Real building:" lines). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
   <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python

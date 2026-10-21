@@ -15,14 +15,16 @@ namespace rv::app {
 /// bindings, assets/config/default_bindings.json), so each frame one context reads its own and the other sees nothing.
 enum class InputContext : std::uint8_t {
     World, ///< free roam: walking, looking, Back, QuickCatalog (opens the catalog); the UI actions are not read
-    Ui,    ///< a product UI screen has the input (the quick catalog, its game-session panel): the UI actions, and
-           ///< QuickCatalog (closes the catalog); the world's actions are not read, so the walker stands still
+    Ui,    ///< a product UI screen has the input (the quick catalog, its game-session panel, the directory): the UI
+           ///< actions, QuickCatalog (closes the catalog) and Map (closes the directory, I4 step 7b); the world's
+           ///< actions are not read, so the walker stands still
 };
 
 /// "world", "ui".
 [[nodiscard]] std::string_view toString(InputContext context) noexcept;
 
-/// The context of a frame: Ui while the catalog or the game-session panel is open, World otherwise.
+/// The context of a frame: Ui while the catalog (or the directory, I4 step 7b) or the game-session panel is open, World
+/// otherwise.
 [[nodiscard]] constexpr InputContext inputContextFor(bool catalogOpen, bool panelOpen) noexcept {
     return catalogOpen || panelOpen ? InputContext::Ui : InputContext::World;
 }
@@ -34,7 +36,7 @@ enum class InputContext : std::uint8_t {
 }
 
 /// True when `context` reads `action`: the global actions everywhere; in World every action but the UI ones; in Ui the
-/// UI actions (input::isUiAction) and QuickCatalog.
+/// UI actions (input::isUiAction), QuickCatalog and Map.
 [[nodiscard]] bool readsAction(InputContext context, input::Action action) noexcept;
 
 /// `actions` as `context` reads them: every action it does not read is released (value 0, neither held, pressed nor

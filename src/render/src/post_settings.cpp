@@ -39,6 +39,7 @@ PostUniforms makePostUniforms(const PostSettings& settings) noexcept {
     uniforms.bloomKnee = kBloomKnee;
     uniforms.vignette = unitInterval(settings.vignette);
     uniforms.ditherAmplitude = unitInterval(settings.ditherAmplitude);
+    uniforms.fade = unitInterval(settings.fade);
     return uniforms;
 }
 

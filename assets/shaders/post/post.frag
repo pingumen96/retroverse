@@ -2,7 +2,8 @@
 // Post pass (rv::gl::PostProcessor, common/post.glsl): the HDR scene (uSource and its emitted part uEmission, one
 // texel per fragment: the output target has its size) with the share uBloomMix of its light that blooms (bloomSource)
 // replaced by the bloom (the tent upsampling of the largest bloom level), the vignette, then exposure and the ACES
-// fitted curve (common/tonemap.glsl), dithered against banding. The output is linear; the sRGB target encodes it
+// fitted curve (common/tonemap.glsl), faded to black by uFade (the sRGB encoding scaled, so every pixel dims alike: the
+// elevator ride's fade), dithered against banding. The output is linear; the sRGB target encodes it
 // (GL_FRAMEBUFFER_SRGB). Its alpha is the perceptual luma of the pixel (the sRGB encoding of its luminance, before
 // dithering), which the anti-aliasing pass finds edges with (post/fxaa.frag). The sRGB self-check takes a grey through
 // this very pass (rv::app::runSrgbSelfCheck).
@@ -51,5 +52,9 @@ void main() {
     }
     radiance *= vignette(vUv);
     vec3 display = tonemap(radiance, uExposure);
+    if (uFade > 0.0) {
+        // Scaled where the target quantizes (its sRGB encoding): the view dims evenly, its brightest lights too.
+        display = srgbToLinear(linearToSrgb(display) * (1.0 - uFade));
+    }
     oColor = vec4(dither(display, gl_FragCoord.xy), linearToSrgb(vec3(luminance(display))).r);
 }

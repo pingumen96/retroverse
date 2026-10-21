@@ -32,8 +32,9 @@
 namespace rv::app {
 
 /// The card's room key of `game` in the plan `index` indexes, with the eye in `eyeRoom` (the interaction's room; none
-/// in a hall): ui::quick_catalog::kRoomPlaced when the plan places it and that room holds its item (`inLayout`),
-/// kRoomOtherRoom when the plan places it in another room (or the eye stands in a hall), its unplaced reason
+/// in a hall): ui::quick_catalog::kRoomPlaced when the plan places it, in the eye's room with its item there
+/// (`inLayout`) or in any other room of the building (I4 step 7b: "Mostra nella stanza" goes there, riding first when
+/// it is on another floor; until then such a game was kRoomOtherRoom, no button); its unplaced reason
 /// (world::toString(UnplacedReason)) when the plan leaves it out, kRoomNotInRoom when the plan does not hold it (a
 /// system without a room) or places it in the eye's room where it shows no item.
 [[nodiscard]] inline std::string_view roomPlacementOf(const world::PlanIndex& index, const catalog::GameId& game,
@@ -46,8 +47,9 @@ namespace rv::app {
         if (inLayout) {
             return ui::quick_catalog::kRoomPlaced;
         }
-        return eyeRoom && location->room == *eyeRoom ? ui::quick_catalog::kRoomNotInRoom
-                                                     : ui::quick_catalog::kRoomOtherRoom;
+        // A room the plan lacks (no floor) cannot be gone to.
+        return (eyeRoom && location->room == *eyeRoom) || location->floor.empty() ? ui::quick_catalog::kRoomNotInRoom
+                                                                                  : ui::quick_catalog::kRoomPlaced;
     }
     if (location->reason) {
         return world::toString(*location->reason);

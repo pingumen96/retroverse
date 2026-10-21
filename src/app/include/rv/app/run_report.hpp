@@ -485,6 +485,58 @@ struct GameScreensRecord {
 
     bool operator==(const GameScreensRecord&) const = default;
 };
+
+/// A game of the directory's favourites and recent games as the run listed it last (I4 step 7b).
+struct DirectoryGameRecord {
+    std::string gameId;
+    std::string title;
+    std::string system;
+    bool favorite = false;
+    /// The local date it was last played, "YYYY-MM-DD"; "" for a favourite never played.
+    std::string played;
+
+    bool operator==(const DirectoryGameRecord&) const = default;
+};
+
+/// A change of the directory (I4 step 7b).
+struct DirectoryEventRecord {
+    std::uint64_t frame = 0;
+    /// "open" (`id` the tab, `detail` "elevator" or "map"), "command" (`id` ui::toString(DirectoryCommandKind), `detail`
+    /// its floor, room or game), "refused" (`id` the notice, `detail` the command refused), "games" (`id` the list's
+    /// state, `detail` its count), "card" (`id` the game, `detail` its room key), "launch-ended" (`id` the game, `detail`
+    /// the outcome's code), "closed".
+    std::string event;
+    std::string id;
+    std::string detail;
+
+    bool operator==(const DirectoryEventRecord&) const = default;
+};
+
+/// The directory (I4 step 7b, ADR-0013 §10): how often it opened, what it showed at the end, its favourites and recent
+/// games as listed last, its card, its changes. Empty ({}) in runs without the generated building.
+struct DirectoryRecord {
+    bool bound = false;
+    std::uint64_t opened = 0;
+    /// At the end: open, its tab and view (ui::toString), its notice, the games list's state.
+    bool open = false;
+    std::string tab;
+    std::string view;
+    std::string notice;
+    std::string gamesState;
+    /// Times the games list was asked of the catalog, and the list as it was last listed.
+    std::uint64_t gamesRequests = 0;
+    std::vector<DirectoryGameRecord> games;
+    /// The card last shown: its game, its room key, the outcome of its last launch ("" none).
+    std::string cardGame;
+    std::string cardRoom;
+    std::string cardOutcome;
+    /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
+    std::vector<DirectoryEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const DirectoryRecord&) const = default;
+};
+
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -617,6 +669,72 @@ struct WorldRoomRecord {
     bool operator==(const WorldRoomRecord&) const = default;
 };
 
+/// A floor of the plan shown (I4 step 7b: world.floors): its id, its order (building.json's index: 0 the ground floor),
+/// its rooms and the games they place.
+struct WorldFloorRecord {
+    std::string id;
+    std::uint32_t order = 0;
+    std::uint64_t rooms = 0;
+    std::uint64_t placed = 0;
+
+    bool operator==(const WorldFloorRecord&) const = default;
+};
+
+/// An elevator ride (I4 step 7b, ADR-0013 §10: world.rides): from the floor shown to another, the view faded out, the
+/// destination's floor built on the pool, swapped at a frame boundary, faded in once the eye's area is resident (or
+/// after 10 s; under lockstep the waits replace the timeout).
+struct RideRecord {
+    std::string from;
+    std::string to;
+    /// app::toString(RideReason): "floor" (its elevator), "room" (a room's doorway), "showInRoom" (a game's Focus pose).
+    std::string reason;
+    /// The room (reasons room and showInRoom) and the game (showInRoom).
+    std::string room;
+    std::string game;
+    /// The frame the ride was asked in, the one its fade-out ended in, the one the floor was swapped in, the one its
+    /// fade-in ended in.
+    std::uint64_t requestedFrame = 0;
+    std::optional<std::uint64_t> fadedOutFrame;
+    std::optional<std::uint64_t> swappedFrame;
+    std::optional<std::uint64_t> fadedInFrame;
+    /// Milliseconds from the request: to the destination's floor built (its job's result taken), to the eye's area
+    /// resident, to the view back (faded in: the acceptable row's measure, ADR-0013 §13); the floor-build job's own time.
+    std::optional<double> builtMs;
+    std::optional<double> residentMs;
+    std::optional<double> totalMs;
+    std::optional<double> jobMs;
+    /// "arrived"; "timed-out" (faded in after the timeout without the eye's area resident); "failed" (the destination
+    /// could not be built: the walker where it was); "running" (the run ended during the ride).
+    std::string outcome;
+    /// Where the walker stood when the view came back (the destination's frame).
+    std::optional<SpawnPoint> walker;
+    /// The renderer's GPU memory when the view came back: the collection arrays' bytes, and every kind's.
+    std::uint64_t arrayBytes = 0;
+    std::uint64_t gpuBytes = 0;
+    /// The same moment's bytes of each kind, in gl::kGpuMemoryKinds order (the report's "gpuKinds", by kind name): what
+    /// the destination holds besides its arrays (its buffers, its scene's textures and procedural surfaces).
+    std::array<std::uint64_t, gl::kGpuMemoryKindCount> kindBytes{};
+
+    [[nodiscard]] std::uint64_t bytesOf(gl::GpuMemoryKind kind) const noexcept {
+        return kindBytes[static_cast<std::size_t>(kind)];
+    }
+    bool operator==(const RideRecord&) const = default;
+};
+
+/// A teleport on the floor shown (I4 step 7b: world.teleports): the directory's room on the walker's floor (to its
+/// doorway), the walker's own floor (to its elevator), "Mostra nella stanza" of a game in another room of the floor (to
+/// that room's doorway, then the ease to the Focus pose).
+struct TeleportRecord {
+    std::uint64_t frame = 0;
+    /// The room's id, or "elevator".
+    std::string to;
+    /// "floor", "room", "showInRoom" (as RideRecord::reason).
+    std::string reason;
+    SpawnPoint walker;
+
+    bool operator==(const TeleportRecord&) const = default;
+};
+
 /// The building job's phases, in milliseconds on its worker (I4 step 6b: WorldBuild's times): the world's lock and the
 /// plan read under it, the selections, the rooms' data, the generation or update with its validation, the plan's
 /// write, the rooms' items files, and the whole job (the floor's build included); `skipped`: the job found the
@@ -731,6 +849,12 @@ struct WorldRecord {
     /// I3 step 15b: the live updates applied to the room shown, in order (after a reconciliation of the start that
     /// applied its items in place, `reconcile.kind` is "items").
     std::vector<WorldLiveUpdateRecord> liveUpdates;
+    /// I4 step 7b: the plan's floors in the elevator's order, the rides and teleports in order, the frames the
+    /// elevator's prompt showed.
+    std::vector<WorldFloorRecord> floors;
+    std::vector<RideRecord> rides;
+    std::vector<TeleportRecord> teleports;
+    std::uint64_t elevatorPromptFrames = 0;
 
     bool operator==(const WorldRecord&) const = default;
 };
@@ -1138,6 +1262,8 @@ struct RunReport {
     VideoRecord video;
     /// The media viewer and Informazioni (I3 step 14b; the product UI), always written ("screens").
     GameScreensRecord screens;
+    /// The directory (I4 step 7b; the product UI), always written ("directory").
+    DirectoryRecord directory;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

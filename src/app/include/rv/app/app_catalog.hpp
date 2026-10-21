@@ -134,6 +134,18 @@ public:
         return std::nullopt;
     }
 
+    /// The directory's favourites and recently played games (I4 step 7b, ADR-0013 §10): asked of the catalog worker (at
+    /// most `limit`; a request still queued is replaced), answered once by takeRecentGames(): the list, or the error of
+    /// a list that could not be read (also when the worker ended before it answered). False, and nothing asked, for a
+    /// catalog without such a list (the mock catalog).
+    virtual bool requestRecentGames(std::size_t /*limit*/) { return false; }
+    [[nodiscard]] virtual std::optional<Expected<std::vector<catalog::RecentGame>>> takeRecentGames() {
+        return std::nullopt;
+    }
+    /// The full name of `system` as the catalog has it (its <fullname>); "" when it has none or the catalog does not know
+    /// the system (the directory then shows its name).
+    [[nodiscard]] virtual std::string systemFullName(const catalog::SystemName& /*system*/) const { return {}; }
+
     /// A frame showed a page of the catalog (the quick catalog open with rows bound).
     virtual void pageShown() {}
     /// The end of the run: what is pending is finished within a bound (the worker ends: CatalogWorker::stop).
@@ -197,7 +209,9 @@ public:
     [[nodiscard]] std::optional<LaunchDecision> takeDecision() override { return std::exchange(m_decision, {}); }
     [[nodiscard]] bool deciding() const noexcept override { return m_resolving.has_value() || m_decision.has_value(); }
     CatalogChanges poll() override;
-    [[nodiscard]] bool busy() const noexcept override { return m_source.waiting() || m_resolving.has_value(); }
+    [[nodiscard]] bool busy() const noexcept override {
+        return m_source.waiting() || m_resolving.has_value() || m_recentAsked.has_value();
+    }
     [[nodiscard]] bool supportsRefresh() const noexcept override { return true; }
     bool requestRefresh() override;
     [[nodiscard]] RefreshState refreshState() const override;
@@ -221,6 +235,11 @@ public:
     [[nodiscard]] std::optional<catalog_db::GameDetails> gameDetails(const catalog::GameId& game) override {
         return m_source.detailsOf(game);
     }
+    bool requestRecentGames(std::size_t limit) override;
+    [[nodiscard]] std::optional<Expected<std::vector<catalog::RecentGame>>> takeRecentGames() override {
+        return std::exchange(m_recentAnswer, std::nullopt);
+    }
+    [[nodiscard]] std::string systemFullName(const catalog::SystemName& system) const override;
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;
     [[nodiscard]] const CatalogDatabaseSource& databaseSource() const noexcept { return m_source; }
@@ -267,6 +286,10 @@ private:
     std::optional<double> m_stopMs;
     /// The building job's reader (I4 step 5a), from the catalog's opening.
     std::shared_ptr<WorldCatalogReader> m_worldReader;
+    /// The favourites and recent games asked of the worker (its serial) and its answer until taken (I4 step 7b).
+    std::uint64_t m_recentSerial = 0;
+    std::optional<std::uint64_t> m_recentAsked;
+    std::optional<Expected<std::vector<catalog::RecentGame>>> m_recentAnswer;
     /// Every list's wait (CatalogRecord::lists), at most kMaxListWaits.
     static constexpr std::size_t kMaxListWaits = 100000;
     std::vector<double> m_listWaits;

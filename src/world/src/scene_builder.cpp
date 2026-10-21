@@ -190,37 +190,12 @@ json lightJson(const PlanLight& light, const LightingProfile& profile) {
     return object;
 }
 
-/// The camera inside the doorway at eye height, looking into the room.
+/// The camera inside the doorway at eye height, looking into the room (doorwayCamera()).
 json cameraJson(const Room& room, const RoomTemplate& roomTemplate) {
-    const Doorway& door = roomTemplate.doorway;
-    double x = 0.0;
-    double z = 0.0;
-    double yaw = 0.0;
-    switch (door.wall) {
-    case Wall::North:
-        x = meters(door.offsetMm);
-        z = meters(room.minZMm) + kCameraInsideDoorway;
-        yaw = 180.0;
-        break;
-    case Wall::East:
-        x = meters(room.maxXMm) - kCameraInsideDoorway;
-        z = meters(door.offsetMm);
-        yaw = -90.0;
-        break;
-    case Wall::West:
-        x = meters(room.minXMm) + kCameraInsideDoorway;
-        z = meters(door.offsetMm);
-        yaw = 90.0;
-        break;
-    case Wall::South:
-    case Wall::None:
-        x = meters(door.offsetMm);
-        z = meters(room.maxZMm) - kCameraInsideDoorway;
-        break;
-    }
-    return json{{"position", vec3Json(x, kEyeHeight, z)},
-                {"yawDeg", yaw},
-                {"pitchDeg", kCameraPitchDeg},
+    const DoorwayCamera camera = doorwayCamera(room, roomTemplate);
+    return json{{"position", vec3Json(camera.x, camera.eyeY, camera.z)},
+                {"yawDeg", camera.yawDeg},
+                {"pitchDeg", camera.pitchDeg},
                 {"horizontalFovDeg", 75.0},
                 {"near", 0.05},
                 {"far", 100.0}};
@@ -598,6 +573,36 @@ Expected<scene::SceneDescription> shellSceneDescription(const RoomId& roomId, co
     data.roomTemplate = roomTemplate;
     data.lighting = lighting;
     return toSceneDescription(plan, roomId, data);
+}
+
+DoorwayCamera doorwayCamera(const Room& room, const RoomTemplate& roomTemplate) noexcept {
+    const Doorway& door = roomTemplate.doorway;
+    DoorwayCamera camera;
+    camera.eyeY = kEyeHeight;
+    camera.pitchDeg = kCameraPitchDeg;
+    switch (door.wall) {
+    case Wall::North:
+        camera.x = meters(door.offsetMm);
+        camera.z = meters(room.minZMm) + kCameraInsideDoorway;
+        camera.yawDeg = 180.0;
+        break;
+    case Wall::East:
+        camera.x = meters(room.maxXMm) - kCameraInsideDoorway;
+        camera.z = meters(door.offsetMm);
+        camera.yawDeg = -90.0;
+        break;
+    case Wall::West:
+        camera.x = meters(room.minXMm) + kCameraInsideDoorway;
+        camera.z = meters(door.offsetMm);
+        camera.yawDeg = 90.0;
+        break;
+    case Wall::South:
+    case Wall::None:
+        camera.x = meters(door.offsetMm);
+        camera.z = meters(room.maxZMm) - kCameraInsideDoorway;
+        break;
+    }
+    return camera;
 }
 
 namespace room_frames {

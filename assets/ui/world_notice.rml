@@ -8,7 +8,8 @@
 		regenerate). Bound to the data model "world_notice" of rv::app::WorldNoticePanel
 		(src/app/src/world_notice_panel.cpp), which also names the ids below: keep them in step
 		(src/app/include/rv/app/world_notice_ui.hpp, tests/unit/app/test_world_notice_document.cpp).
-		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed.
+		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed,
+		room-unreachable (I4 step 7b: the quick catalog's "Mostra nella stanza" could not go to the game's room now).
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
 		unavailable). room: the start room's id as --start-room gives it (room:snes, area:arcade, area:shared:<floor>),
 		for no-games; empty without one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
@@ -73,6 +74,11 @@
 		<div data-if="notice == 'failed'">
 			<h1>La stanza non si può generare</h1>
 			<p>Il registro di Retroverse dice perché. Intanto il catalogo rapido (Tab) elenca tutti i giochi.</p>
+		</div>
+
+		<div data-if="notice == 'room-unreachable'">
+			<h1>Ora non si può andare nella stanza del gioco</h1>
+			<p>Riprova tra poco: "Mostra nella stanza" del catalogo rapido (Tab) ti porterà davanti al gioco.</p>
 		</div>
 	</div>
 </body>

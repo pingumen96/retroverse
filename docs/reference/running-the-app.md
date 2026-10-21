@@ -61,7 +61,14 @@ build/rvdata`).
   `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
   `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
-  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s)),
+  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
+  step 7b `floors` (the plan's floors in the elevator's order: `id`, `order`, `rooms`, `placed`), `rides` (each
+  elevator ride: `from`, `to`, `reason` `floor`, `room` or `showInRoom`, `room`, `game`, the frames `requestedFrame`,
+  `fadedOutFrame`, `swappedFrame`, `fadedInFrame`, the milliseconds from the request `builtMs`, `residentMs`, `totalMs`
+  (the view back: the acceptable row's measure) and the floor job's `jobMs`, `outcome` `arrived`, `timed-out`, `failed`
+  or `running`, the `walker` at the end, `arrayBytes`, `gpuBytes` and `gpuKinds` (each kind's bytes) then), `teleports`
+  (`frame`, `to` a room or
+  `elevator`, `reason`, `walker`) and `elevatorPromptFrames`),
   `residency` (the collection's layers, the
   floor's totals since I4 step 5a and each collection room's in `rooms`: `room`, `items`, `viewItems` (its items in
   the cover loader's first view: none for a room that neither holds the eye nor has its doorway in view),
@@ -71,8 +78,12 @@ build/rvdata`).
   cover loader took over as they showed, nothing served again:
   format, array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
   {`shownAtMs`, `allResidentAtMs`, `residentAfterShownMs`}, `arrival`, `uploads`, `lockstep`, `pausedRounds`,
-  `retries`, `hero`) and `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
-  `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog); also `catalog.refreshes`
+  `retries`, `hero`), `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
+  `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog) and, since I4 step 7b,
+  `directory` (`{}` without the building: `opened`, at the end `open`, `tab`, `view`, `notice`, `gamesState`;
+  `gamesRequests`, the `games` last listed with `gameId`, `title`, `system`, `favorite`, `played` "YYYY-MM-DD"; the card
+  last shown `cardGame`, `cardRoom`, `cardOutcome`; `events` `open` (tab, `elevator` or `map`), `command`, `refused`,
+  `games`, `card`, `launch-ended`, `closed`); also `catalog.refreshes`
   (one per refresh: trigger, outcome, times, the longest slice, counts, the lists asked meanwhile, `before` and
   `after`), `catalog.lists` (the waits of the lists), `gpuPasses` in `frameTimes` and in every phase (`shadow`,
   `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
@@ -80,7 +91,8 @@ build/rvdata`).
   `gpuMilliseconds.outline`, only when the view has them; since I4 step 3, for a scene with areas, `sceneAreas`
   (`areas`, the `area` that held the eye at the last view, the `lights` packed for it by name and its `keyLight`, and
   `changes`, the area at the first view and each change with its frame). Phases opened by the code: `refresh`,
-  `coverLoad`, `animation`, and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
+  `coverLoad`, `animation`, `screenBind`, `elevator` (each ride, I4 step 7b: its frames behind the fade are exempt from
+  the limits), and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
   phases, CPU sections and GPU memory at the end. Read it instead of the log in scripts and tests.
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
@@ -255,10 +267,10 @@ build/rvdata`).
   shows the description, the metadata and the other versions the plan knows with their regions; Up and Down scroll; X
   and Y switch between the two. Avvia launches as the quick catalog's does; after the return the walker stands where it
   stood and the item is in the hand again; the hero CRT's decoder stops before the launch and reopens at the clip's
-  position after it. The quick catalog's card offers "Mostra nella stanza" for a game the room that holds the eye
-  places (the walker eased to its item's Focus pose) and says why for one it does not: a game the building places in
-  another room, or with the eye in a hall, is "on display elsewhere in the building" (`other-room`; across rooms and
-  floors is I4 step 7's), one of a system without a room is not on display (`not-in-room`). After "Aggiorna
+  position after it. The quick catalog's card offers "Mostra nella stanza" for a game the building places (the walker
+  eased to its item's Focus pose; since I4 step 7b in any room: teleported to the room's doorway first on the same
+  floor, a ride first to another floor, below) and says why for one it does not: one of a system without a room is not
+  on display (`not-in-room`), an unplaced one gives its reason. After "Aggiorna
   libreria" or `--refresh-library` the floor follows the refreshed catalog live (the building job again, the plan
   saved, the other floors only saved; room by room as at the start: new titles placed into their slots with their
   covers, nothing else moved; a dressed level, module, growth or a room entering commits the floor again with the
@@ -268,12 +280,43 @@ build/rvdata`).
   never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
   featured shelf, `shelf_light`, while the 16 lights leave room); the room's materials come from
   `assets/world/themes/classic_16bit_warm.json`. With the mouse free (the developer overlay open) the cursor picks.
+- The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its
+  proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it), facing its doors (their middle less than 80
+  degrees off the view: the arrival point faces the hall, so the walker turns to them first), a prompt names the
+  interact key ("Ascensore", E or the pad's A: "Scegli il piano"), which opens the directory on its floors; M (the pad's
+  Back/Select) opens it anywhere in free roam (not in Focus, Inspect, a launch or a ride, nor in the frame an interact
+  takes an item) and closes it again. It has the UI's input (the world stands still) and Esc / B leaves one level (the
+  card to the games, a floor's rooms to the floors, then it closes). "Piani" lists the plan's floors in the elevator's order (the walker's marked), a floor its hall
+  ("Corridoio e ascensore") and its rooms along the hall with their games; "Preferiti e recenti" (the shoulders, or Left
+  and Right on the tabs) the catalog's favourites, then its most recently played games (Retroverse's sessions and
+  ES-DE's `<lastplayed>`, at most 30), a game its card with Avvia (the quick catalog's launch, its outcome on the card)
+  and "Mostra nella stanza". Choosing another floor's hall rides there, the walker's own floor's hall puts the walker
+  back at its elevator; a room of the walker's floor teleports to its doorway, one of another floor rides there first.
+  A ride: the view fades out in 250 ms (instant with `reduceMotion`; the post pass dims the tonemapped view's sRGB
+  values alike, its lights too, the UI above it), the destination floor is built on the pool from the plan, the rooms'
+  items files and the catalog's play sessions (a game played since the items were written starts its room's CRT), the
+  resident floor is dropped only once it is built (a failure leaves the walker where it was, the directory saying it
+  cannot change floors now) and swapped behind the fade in the frame after it ended (the hero CRT unbound, bound again
+  by the room the eye stays in), the walker at its elevator facing the hall or at the room's doorway, and the view
+  fades back in once the room that holds the eye is resident (a hall at once), or so that it is back 10 s after the
+  request (the wait ends at 9.25 s, a fade-in begun late by a long frame shortened to end by 10 s: `timed-out`); the
+  fades follow the real clock; under lockstep the frames' times and the frames wait instead (15 frames out, the swap in
+  the next, the eye's area in the one after, 15 frames in at `--fixed-dt 0.016667`, on every run). The input is
+  suspended meanwhile; a building's result or a live update that ends during a ride applies after it (and never while a
+  launched game runs). A ride or teleport is refused while a floor applies (the persisted start's reconciliation, a
+  result built again for the floor shown), in Focus or Inspect, or while a launch is active: the directory comes back
+  where it was with its notice (`ride-unavailable`; `building-pending` before the building is planned); the quick
+  catalog's "Mostra nella stanza" refused or failed so says the world's notice (`room-unreachable`, 12 s), and in the
+  room the walker is in it is taken while a floor applies, as before I4. After a ride the scene's frame is the
+  destination floor's (the start room's on its own floor): `--spawn` applies to the start only.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
-  gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); Esc (gamepad B)
+  gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
+  directory, E (gamepad A) at an elevator too (above); Esc (gamepad B)
   leaves one level: it closes a popup of the developer overlay (a combo's list, a color picker), else the game-session
-  panel, else steps back through the quick catalog and closes it, else releases the mouse, else closes the overlay, else
-  quits; F1 toggles the overlay; F5 reloads the shaders, F12 saves `<user data>/screenshots/retroverse-<timestamp>.png`.
+  panel, else steps back through the quick catalog or the directory and closes it, else releases the mouse, else closes
+  the overlay, else quits; F1 toggles the overlay; F5 reloads the shaders, F12 saves
+  `<user data>/screenshots/retroverse-<timestamp>.png`.
   Interactive runs capture the mouse when the window has focus and on a click into it; frame-limited runs only on a
   click. Alt+Enter toggles fullscreen: the host handles it before the action map (fixed, not rebindable, never seen as
   Enter). The walker collides with walls and furniture and can step into a doorway but not leave the room. Developer
@@ -286,9 +329,9 @@ build/rvdata`).
   End, the stick clicks), `ui_activate` (Enter, A), `ui_back` (Esc, B), `ui_media` (Y), `ui_info` (X),
   `ui_filter_previous`/`ui_filter_next` (the shoulders). They share keys and buttons with the world's actions; letters,
   digits, space, Backspace, Delete and Tab stay with RmlUi's text fields. A user's `bindings.json` overrides them per
-  action like any other. `spike_ui` reads them, and so does `retroverse.exe` while the quick catalog or the game-session
-  panel is open, the world's actions while both are closed (`rv/app/input_context.hpp`: the walker stands still under
-  the catalog).
+  action like any other. `spike_ui` reads them, and so does `retroverse.exe` while the quick catalog, the directory or
+  the game-session panel is open (and `map`, which closes the directory), the world's actions while they are closed
+  (`rv/app/input_context.hpp`: the walker stands still under the catalog and the directory).
 - Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about the
   two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation, screenshots).
   Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the shadow map, the

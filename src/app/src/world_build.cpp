@@ -618,6 +618,70 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     return core::Aabb{};
 }
 
+/// The elevator's proximity zone of `hall` as a box from the floor to the doors' top, in the frame of the room standing
+/// at `start` (none: the floor's).
+[[nodiscard]] core::Aabb elevatorZoneBox(const world::Hall& hall, const std::optional<world::RoomPlacement>& start) {
+    const world::Footprint& zone = hall.elevatorZone;
+    glm::vec3 a(static_cast<float>(meters(zone.minXMm)), 0.0f, static_cast<float>(meters(zone.minZMm)));
+    glm::vec3 b(static_cast<float>(meters(zone.maxXMm)), static_cast<float>(meters(world::kElevatorDoorHeightMm)),
+                static_cast<float>(meters(zone.maxZMm)));
+    if (start) {
+        const float sign = start->yawHalfTurns % 2 == 0 ? 1.0f : -1.0f;
+        const glm::vec3 origin(static_cast<float>(meters(start->xMm)), 0.0f, static_cast<float>(meters(start->zMm)));
+        a = glm::vec3(sign * (a.x - origin.x), a.y, sign * (a.z - origin.z));
+        b = glm::vec3(sign * (b.x - origin.x), b.y, sign * (b.z - origin.z));
+    }
+    return core::Aabb{glm::min(a, b), glm::max(a, b)};
+}
+
+/// The middle of the elevator's doors of `hall` on the floor (its frame on the west wall), in the frame of the room
+/// standing at `start` (none: the floor's).
+[[nodiscard]] glm::vec3 elevatorDoorsPoint(const world::Hall& hall, const std::optional<world::RoomPlacement>& start) {
+    const world::Footprint& frame = hall.elevator;
+    glm::vec3 point(static_cast<float>(meters(frame.minXMm + frame.maxXMm) / 2.0), 0.0f,
+                    static_cast<float>(meters(frame.minZMm + frame.maxZMm) / 2.0));
+    if (start) {
+        const float sign = start->yawHalfTurns % 2 == 0 ? 1.0f : -1.0f;
+        const glm::vec3 origin(static_cast<float>(meters(start->xMm)), 0.0f, static_cast<float>(meters(start->zMm)));
+        point = glm::vec3(sign * (point.x - origin.x), 0.0f, sign * (point.z - origin.z));
+    }
+    return point;
+}
+
+/// A scene file's camera (its position, yaw and pitch; the lens left as the scene's default).
+[[nodiscard]] scene::CameraSetup cameraOf(const Json& camera) {
+    scene::CameraSetup setup;
+    if (const auto position = camera.find("position"); position != camera.end() && position->is_array() &&
+                                                         position->size() == 3) {
+        setup.position = glm::vec3((*position)[0].get<float>(), (*position)[1].get<float>(), (*position)[2].get<float>());
+    }
+    setup.yawDeg = camera.value("yawDeg", 0.0f);
+    setup.pitchDeg = camera.value("pitchDeg", 0.0f);
+    return setup;
+}
+
+/// The doorway camera of `room` (world::doorwayCamera(), its own frame) in the scene's frame, where the room stands at
+/// `scenePlacement`: its position moved, its yaw turned with the room (within (-180, 180]).
+[[nodiscard]] scene::CameraSetup doorwayCameraIn(const world::Room& room, const world::RoomTemplate& roomTemplate,
+                                                 const world::RoomPlacement& scenePlacement) {
+    const world::DoorwayCamera camera = world::doorwayCamera(room, roomTemplate);
+    const glm::vec4 position = world::roomToFloorMatrix(scenePlacement) *
+                               glm::vec4(static_cast<float>(camera.x), static_cast<float>(camera.eyeY),
+                                         static_cast<float>(camera.z), 1.0f);
+    double yaw = camera.yawDeg + (scenePlacement.yawHalfTurns % 2 != 0 ? 180.0 : 0.0);
+    while (yaw > 180.0) {
+        yaw -= 360.0;
+    }
+    while (yaw <= -180.0) {
+        yaw += 360.0;
+    }
+    scene::CameraSetup setup;
+    setup.position = glm::vec3(position);
+    setup.yawDeg = static_cast<float>(yaw);
+    setup.pitchDeg = static_cast<float>(camera.pitchDeg);
+    return setup;
+}
+
 /// The rooms' items `build`'s floor shows: `sources`' for the systems it has, the items files' for the others.
 [[nodiscard]] std::map<catalog::SystemName, RoomItems> floorItems(const WorldPaths& paths, const WorldBuild& build,
                                                                   std::span<const world::Room* const> rooms,
@@ -1103,15 +1167,25 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
     const Clock::time_point start = Clock::now();
     try {
         const world::WorldPlan& plan = *build.plan;
-        const std::optional<std::string> floor = startFloorOf(plan, build.startRoom);
-        if (!floor) {
+        const std::optional<std::string> startFloor = startFloorOf(plan, build.startRoom);
+        if (!startFloor && !build.requestedFloor) {
             build.startRoomMissing = true;
             spdlog::error("World: the building has no room {} (--start-room)", build.startRoom->toString());
             return;
         }
+        // I4 step 7b: a ride's destination (or the floor the walker is on), else the start room's.
+        const std::optional<std::string> floor = build.requestedFloor ? build.requestedFloor : startFloor;
+        if (std::none_of(plan.floors.begin(), plan.floors.end(),
+                         [&](const world::Floor& known) { return known.id == *floor; })) {
+            spdlog::error("World: the building has no floor {}", *floor);
+            dropFloor(build);
+            noPlan(build, world_notice::kFailed, "the building has no floor " + *floor);
+            return;
+        }
         build.floor = *floor;
+        // The scene's frame: the start room's on its own floor, the floor's on any other.
         std::optional<world::RoomPlacement> startPlacement;
-        if (build.startRoom) {
+        if (build.startRoom && startFloor == floor) {
             for (const world::Room& room : plan.rooms) {
                 if (room.id == *build.startRoom) {
                     startPlacement = room.placement;
@@ -1148,6 +1222,13 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         }
         if (startPlacement) {
             moveSceneFileToRoom(sceneBuild->sceneFile, *startPlacement);
+        }
+        // I4 step 7b: the elevator's zone and the arrival camera (the floor scene's camera, moved with it), in the
+        // scene's frame.
+        build.elevatorZone = elevatorZoneBox(sceneBuild->hall, startPlacement);
+        build.elevatorDoors = elevatorDoorsPoint(sceneBuild->hall, startPlacement);
+        build.arrival = cameraOf(sceneBuild->sceneFile["camera"]);
+        if (startPlacement) {
             // The start room's doorway camera, as its standalone scene has it (ADR-0013 §9: --start-room), seeing as
             // far as the floor's.
             const auto roomData = data->rooms.find(*build.startRoom);
@@ -1223,6 +1304,8 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 startPlacement ? relativePlacement(room->placement, *startPlacement) : room->placement;
             collection.layout = world::floorCollectionLayout(std::move(*layout), collection.scenePlacement);
             collection.doorway = doorwayBox(sceneBuild->hall, room->id, startPlacement);
+            collection.doorwayCamera =
+                doorwayCameraIn(*room, roomData->second.roomTemplate, collection.scenePlacement);
             const std::vector<catalog::SystemName> held = systemsOf(*room);
             collection.covers.reserve(collection.layout.items.size());
             for (const world::CollectionItem& item : collection.layout.items) {
@@ -1281,6 +1364,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             build.mediaRoot = sources.mediaRoot;
         }
         build.mediaRootPath = sources.mediaRootPath;
+        build.screenMediaRoot = sources.screenMediaRoot;
     } catch (const std::exception& error) {
         dropFloor(build);
         noPlan(build, world_notice::kFailed, std::string("the floor could not be made: ") + error.what());
@@ -1328,19 +1412,14 @@ std::optional<std::filesystem::path> readableMediaRoot(const catalog::LibraryPro
 
 // --- The flow -------------------------------------------------------------------------------------------------------
 
-namespace {
-
-/// Each game's latest play session that counts, in seconds since 1970, read on the world's reader (the preview's: the
-/// CRT games' last plays); none when it cannot be read (logged: the items files' own then).
-[[nodiscard]] std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayedOf(WorldCatalogReader& reader) {
+std::optional<std::map<catalog::GameId, std::int64_t>> catalogLastPlayed(WorldCatalogReader& reader) {
     const std::lock_guard lock(reader.mutex);
     if (!reader.query) {
         return std::nullopt;
     }
     auto sessions = catalog_db::lastPlaySessions(reader.query->connection());
     if (!sessions) {
-        spdlog::warn("World: the play sessions cannot be read for the stored floor's CRTs: {}",
-                     sessions.error().toString());
+        spdlog::warn("World: the play sessions cannot be read for the floor's CRTs: {}", sessions.error().toString());
         return std::nullopt;
     }
     std::map<catalog::GameId, std::int64_t> seconds;
@@ -1349,8 +1428,6 @@ namespace {
     }
     return seconds;
 }
-
-} // namespace
 
 struct WorldFlow::Mailbox {
     std::mutex mutex;
@@ -1509,6 +1586,12 @@ void WorldFlow::submitBuilding(AppCatalog& catalog) {
 }
 
 void WorldFlow::submitFloor(BuildingResult result) {
+    // I4 step 7b: the floor the walker is on now (a ride may have taken it off the start room's floor).
+    if (m_options.floor) {
+        if (std::optional<std::string> floor = m_options.floor()) {
+            result.build.requestedFloor = std::move(floor);
+        }
+    }
     const std::uint64_t generation = m_generation.current();
     core::JobOptions jobOptions;
     jobOptions.priority = core::WorkerPool::kHighestPriority;
@@ -1605,7 +1688,7 @@ void WorldFlow::update(AppCatalog& catalog) {
                     // root when it can be read now, each game's last play the catalog's (the CRT starts on the game
                     // the building's result chooses); the covers come from the cache alone all the same.
                     WorldBuild preview = previewWorld(paths, library, *stored, startRoom, readableMediaRoot(profile),
-                                                      lastPlayedOf(*reader));
+                                                      catalogLastPlayed(*reader));
                     if (job.cancelled()) {
                         return;
                     }

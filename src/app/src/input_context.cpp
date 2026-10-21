@@ -22,7 +22,7 @@ bool readsAction(InputContext context, input::Action action) noexcept {
     case InputContext::World:
         return !input::isUiAction(action);
     case InputContext::Ui:
-        return input::isUiAction(action) || action == input::Action::QuickCatalog;
+        return input::isUiAction(action) || action == input::Action::QuickCatalog || action == input::Action::Map;
     }
     return false;
 }

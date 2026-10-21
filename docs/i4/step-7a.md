@@ -26,7 +26,9 @@ the teleport). Decisions: [ADR-0013](../decisions/ADR-0013-the-building.md) §10
   the short facts first: a floor's rooms and games, then what it holds; a room's games, then (shared, arcade) every
   section's system, wrapped onto as many lines as they take; a game's "Giocato il <date>", then its system. The card is
   the quick catalog's: its readiness, blocker and room sentences (the test compares them line for line; since the
-  merge with step 5a both say `not-in-room` and `other-room` of the building alike).
+  merge with step 5a both say `not-in-room` and `other-room` of the building alike; since step 7b the app gives a game
+  placed in another room or floor `placed`, so `other-room` is unused: its sentence stays for an application that
+  cannot go there).
 - **`rv_ui_probe`** (`tests/ui_probe`): the panel over the test room from a fixed model (`directory_fixture.hpp`: six
   floors, gen4's shared room of five long system names, twelve games with a long title and a favourite on a long
   system name, invented names), driven by `tests/input_scripts/directory_panel.json` (the long title selected for
@@ -76,9 +78,11 @@ the teleport). Decisions: [ADR-0013](../decisions/ADR-0013-the-building.md) §10
   user has moved since.
 - **Card.** When `cardRequest()` changes while `view() == Card` (a card opened, the same game's again included), the
   app gives `cardGameId()`'s `GameCardContent` (the quick catalog's readiness, blocker, details) and its standing in
-  the plan (`quick_catalog::kRoomPlaced`, an unplaced reason, `not-in-room` for a system with no room, `other-room`
-  for a game placed elsewhere) with `setCard()` (an answer for another game is ignored). A launch's outcome comes
-  back through `setCard()` too.
+  the plan (`quick_catalog::kRoomPlaced` for a game placed anywhere in the building, whose "Mostra nella stanza" goes
+  there; an unplaced reason; `not-in-room` for a system with no room) with `setCard()` (an answer for another game is
+  ignored). A launch's outcome comes back through `setCard()` too. (Amended by step 7b: this contract first gave
+  `other-room` for a game placed elsewhere; the app gives `placed`, so that both cards offer the button there, and
+  nothing gives `other-room` now.)
 - **Commands.** `ChooseFloor(id)`: ride to that floor's elevator; the walker's own floor (the hall row of the floor
   the walker is on): back to its elevator without a ride. `ChooseRoom(id)`: teleport to its doorway, riding first
   when it is on another floor. `ShowInRoom(gameId)`: leave Focus, ride if needed, then the Focus pose (ADR-0012 §8).

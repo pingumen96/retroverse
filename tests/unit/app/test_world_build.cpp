@@ -52,6 +52,7 @@
 #include <rv/esde/media_resolver.hpp>
 #include <rv/ui/in_memory_catalog_source.hpp>
 #include <rv/world/building.hpp>
+#include <rv/world/floor_layout.hpp>
 #include <rv/world/floor_scene.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/plan_json.hpp>
@@ -501,6 +502,76 @@ TEST_CASE("app/world_build: the start room's frame: the room's scene numbers its
     CHECK(missing.plan.has_value());
     CHECK(missing.startRoomMissing);
     CHECK_FALSE(missing.scene.has_value());
+}
+
+TEST_CASE("app/world_build: a ride's floor: any floor of the plan, the elevator's zone and arrival, each room's doorway",
+          "[app][world_build]") {
+    // I4 step 7b: the floor-build job of a ride builds the floor asked for (WorldBuild::requestedFloor) in the floor's
+    // frame, or in the start room's on the start room's floor; with its elevator's proximity zone, its arrival camera
+    // and every room's doorway camera in that frame.
+    const ImportedFixture imported("world-build-ride", true, "esde/snes-room");
+    const rv::app::WorldBuildInput input = inputOf(imported);
+    const WorldBuild framed = rv::app::buildWorld(input, rv::core::JobContext{});
+    REQUIRE(framed.plan.has_value());
+    REQUIRE(framed.scene.has_value());
+    const rv::world::Room& snes = framed.plan->rooms.front();
+    REQUIRE(snes.id == kSnesRoom);
+    // The start room's doorway camera is its standalone scene's (the start's camera).
+    REQUIRE(framed.rooms.size() == 1);
+    CHECK(framed.rooms.front().doorwayCamera.position == framed.scene->camera.position);
+    CHECK(framed.rooms.front().doorwayCamera.yawDeg == framed.scene->camera.yawDeg);
+    CHECK(framed.rooms.front().doorwayCamera.pitchDeg == framed.scene->camera.pitchDeg);
+    // The arrival camera and the zone: in front of the elevator at the hall's west end, moved into the room's frame.
+    const glm::vec3 hallOrigin(-static_cast<float>(snes.placement.xMm) / 1000.0f, 0.0f,
+                               -static_cast<float>(snes.placement.zMm) / 1000.0f);
+    CHECK(glm::length(framed.arrival.position - (hallOrigin + glm::vec3(1.2f, 1.65f, 0.0f))) < 1e-5f);
+    CHECK(framed.arrival.yawDeg == 90.0f);
+    CHECK(glm::length(framed.elevatorZone.min - (hallOrigin + glm::vec3(0.0f, 0.0f, -1.0f))) < 1e-5f);
+    CHECK(glm::length(framed.elevatorZone.max - (hallOrigin + glm::vec3(1.5f, 2.2f, 1.0f))) < 1e-5f);
+    // The doors' middle: the elevator's frame on the west wall, 50 mm proud of it.
+    CHECK(glm::length(framed.elevatorDoors - (hallOrigin + glm::vec3(0.025f, 0.0f, 0.0f))) < 1e-5f);
+
+    const rv::app::FloorSources sources;
+    const auto floorOf = [&](std::optional<rv::world::RoomId> startRoom, std::string floor) {
+        WorldBuild build;
+        build.library = framed.library;
+        build.plan = framed.plan;
+        build.planDigest = framed.planDigest;
+        build.startRoom = std::move(startRoom);
+        build.requestedFloor = std::move(floor);
+        rv::app::buildFloor(input.paths, build, sources);
+        return build;
+    };
+    // gen4 without a start room: the floor's frame, the room's doorway moved by its placement.
+    const WorldBuild gen4 = floorOf(std::nullopt, snes.floor);
+    CHECK(gen4.floor == snes.floor);
+    CHECK(gen4.floorPlacement == rv::world::RoomPlacement{});
+    REQUIRE(gen4.scene.has_value());
+    REQUIRE(gen4.rooms.size() == 1);
+    const glm::vec3 doorway = glm::vec3(rv::world::roomToFloorMatrix(snes.placement) *
+                                        glm::vec4(framed.scene->camera.position, 1.0f));
+    CHECK(glm::length(gen4.rooms.front().doorwayCamera.position - doorway) < 1e-5f);
+    CHECK(gen4.rooms.front().doorwayCamera.yawDeg == framed.scene->camera.yawDeg);
+    CHECK(glm::length(gen4.arrival.position - glm::vec3(1.2f, 1.65f, 0.0f)) < 1e-5f);
+    CHECK(gen4.scene->camera.position == gen4.arrival.position);
+    // The same floor asked with the start room: the start room's frame, as the start built it.
+    const WorldBuild again = floorOf(kSnesRoom, snes.floor);
+    CHECK(again.sceneDigest == framed.sceneDigest);
+    CHECK(again.rooms.front().doorwayCamera.position == framed.rooms.front().doorwayCamera.position);
+    // Another floor with a start room: the floor's frame (the lobby).
+    const WorldBuild ground = floorOf(kSnesRoom, std::string(rv::world::kGroundFloor));
+    CHECK(ground.floor == rv::world::kGroundFloor);
+    CHECK(ground.floorPlacement == rv::world::RoomPlacement{});
+    CHECK(ground.rooms.empty());
+    CHECK(glm::length(ground.arrival.position - glm::vec3(1.2f, 1.65f, 0.0f)) < 1e-5f);
+    CHECK(glm::length(ground.elevatorZone.min - glm::vec3(0.0f, 0.0f, -1.0f)) < 1e-5f);
+    CHECK(glm::length(ground.elevatorDoors - glm::vec3(0.025f, 0.0f, 0.0f)) < 1e-5f);
+    CHECK(glm::length(gen4.elevatorDoors - glm::vec3(0.025f, 0.0f, 0.0f)) < 1e-5f);
+    // A floor the plan lacks: nothing to show.
+    const WorldBuild missing = floorOf(std::nullopt, "gen7");
+    CHECK_FALSE(missing.plan.has_value());
+    CHECK_FALSE(missing.scene.has_value());
+    CHECK(missing.notice == rv::app::world_notice::kFailed);
 }
 
 TEST_CASE("app/world_build: moving a floor's scene file into a half-turned room's frame and back is exact",

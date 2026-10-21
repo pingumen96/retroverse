@@ -33,6 +33,12 @@
 #include <rv/ui/ui_system.hpp>
 #include <rv/ui/ui_view.hpp>
 
+#include <rv/app/directory_data.hpp>
+#include <rv/app/world_card_ui.hpp>
+#include <rv/catalog/recent_games.hpp>
+#include <rv/ui/directory_screen.hpp>
+
+#include "elevator_prompt_panel.hpp"
 #include "game_screens_panel.hpp"
 #include "game_session_panel.hpp"
 #include "world_label_panel.hpp"
@@ -157,20 +163,42 @@ struct ProductUi::Impl {
     std::optional<std::chrono::steady_clock::time_point> lastFrame;
     static constexpr std::size_t kMaxFrameSamples = 100000;
 
+    /// I4 step 7b: the directory (its screen made when it first opens), the world's commands it gave and not taken
+    /// yet, the games list and the card asked of the app (the requests answered last), a launch from its card and how
+    /// it ended, its run report record; the elevator's prompt and the key it names.
+    std::unique_ptr<ui::DirectoryScreen> directoryScreen;
+    ui::DirectoryModel directory;
+    std::vector<ui::DirectoryCommand> directoryCommands;
+    std::uint64_t directoryGamesAsked = 0;
+    std::uint64_t directoryCardServed = 0;
+    std::uint64_t directoryCardRevision = 0;
+    std::optional<std::uint64_t> directoryToken;
+    std::string directoryLaunchGame;
+    std::optional<LaunchMessage> directoryEnded;
+    DirectoryRecord directoryRecord;
+    std::unique_ptr<ElevatorPromptPanel> prompt;
+    std::optional<std::string> wantedPrompt;
+
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
-               (card && card->visible()) || screensOpen();
+               (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible());
     }
 
     /// The media viewer or Informazioni shows (I3 step 14b).
     [[nodiscard]] bool screensOpen() const noexcept { return screens && screens->visible(); }
+    /// The directory shows (I4 step 7b).
+    [[nodiscard]] bool directoryShown() const noexcept { return directoryScreen && directory.isOpen(); }
+    /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
+    [[nodiscard]] bool overWorld() const noexcept {
+        return catalogOpen || panel->visible() || screensOpen() || directoryShown();
+    }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
     void syncNotice() {
         if (!notice) {
             return;
         }
-        if (wantedNotice.notice.empty() || catalogOpen || panel->visible() || screensOpen()) {
+        if (wantedNotice.notice.empty() || overWorld()) {
             notice->hide();
         } else {
             notice->show(wantedNotice);
@@ -182,7 +210,7 @@ struct ProductUi::Impl {
         if (!label) {
             return;
         }
-        if (!wantedLabel || catalogOpen || panel->visible() || screensOpen()) {
+        if (!wantedLabel || overWorld()) {
             label->hide();
         } else {
             label->show(*wantedLabel, context.framebufferSize());
@@ -194,10 +222,160 @@ struct ProductUi::Impl {
         if (!card) {
             return;
         }
-        if (!wantedCard || catalogOpen || panel->visible() || screensOpen()) {
+        if (!wantedCard || overWorld()) {
             card->hide();
         } else {
             card->show(*wantedCard, wantedCardFocus);
+        }
+    }
+
+    /// The elevator's prompt likewise (I4 step 7b).
+    void syncPrompt() {
+        if (!prompt) {
+            return;
+        }
+        if (!wantedPrompt || overWorld()) {
+            prompt->hide();
+        } else {
+            prompt->show(*wantedPrompt);
+        }
+    }
+
+    // --- The directory (I4 step 7b) ------------------------------------------------------------------------------
+
+    void addDirectoryEvent(std::string event, std::string id = {}, std::string detail = {}) {
+        if (directoryRecord.events.size() >= kMaxInteractionEvents) {
+            ++directoryRecord.eventsDropped;
+            return;
+        }
+        directoryRecord.events.push_back(
+            DirectoryEventRecord{context.frameIndex(), std::move(event), std::move(id), std::move(detail)});
+    }
+
+    /// A command of the directory's model: Avvia launched here, Close recorded, the world's handed over.
+    void directoryCommand(const std::optional<ui::DirectoryCommand>& command) {
+        if (!command) {
+            return;
+        }
+        spdlog::info("Frame {}: the directory asks {} '{}'", context.frameIndex(), ui::toString(command->kind),
+                     command->id);
+        addDirectoryEvent("command", std::string(ui::toString(command->kind)), command->id);
+        switch (command->kind) {
+        case ui::DirectoryCommandKind::Launch:
+            launchFromDirectory(command->id);
+            break;
+        case ui::DirectoryCommandKind::Close:
+            addDirectoryEvent("closed");
+            break;
+        case ui::DirectoryCommandKind::ChooseFloor:
+        case ui::DirectoryCommandKind::ChooseRoom:
+        case ui::DirectoryCommandKind::ShowInRoom:
+            directoryCommands.push_back(*command);
+            break;
+        }
+    }
+
+    /// The title the games list shows for `gameId` ("" when it does not list it).
+    [[nodiscard]] std::string directoryTitleOf(std::string_view gameId) const {
+        for (const ui::DirectoryGame& game : directory.games()) {
+            if (game.gameId == gameId) {
+                return game.title;
+            }
+        }
+        return {};
+    }
+
+    /// Avvia on the directory's card: the quick catalog's launch of `gameId` (its outcome back on the card).
+    void launchFromDirectory(const std::string& gameId) {
+        ui::CatalogEntry entry;
+        entry.id = gameId;
+        entry.title = directoryTitleOf(gameId);
+        directoryEnded.reset();
+        directoryLaunchGame = gameId;
+        if (const std::optional<std::uint64_t> token = launch(entry)) {
+            directoryToken = token;
+            spdlog::info("Frame {}: Avvia in the directory on '{}' ({}): launch {} asked", context.frameIndex(),
+                         entry.title, gameId, *token);
+            return;
+        }
+        // Another launch is decided, waits or runs: nothing starts, the card says so.
+        directoryEnded = LaunchMessage{std::string(launch_outcome::kNotReady), "busy",
+                                       "another launch is being decided or runs"};
+        addDirectoryEvent("launch-ended", gameId, directoryEnded->code);
+        fillDirectoryCard();
+    }
+
+    /// The card of the game the directory shows: the catalog's row (readiness, blocker, details), where the game stands
+    /// in the building (the room key), the outcome of its last launch from the card.
+    void fillDirectoryCard() {
+        if (directory.view() != ui::DirectoryView::Card || directory.cardGameId().empty()) {
+            return;
+        }
+        const std::string& gameId = directory.cardGameId();
+        const auto game = catalog::GameId::parse(gameId);
+        if (!game) {
+            return;
+        }
+        const LaunchMessage outcome = directoryEnded && directoryLaunchGame == gameId ? *directoryEnded : LaunchMessage{};
+        ui::GameCardContent content =
+            cardContentOf(*game, directoryTitleOf(gameId), false, catalog->gameEntry(*game), 0, false,
+                          outcome.code.empty() ? InteractionNotice::None : InteractionNotice::LaunchOutcome, outcome);
+        std::string room = roomPlacement ? roomPlacement(gameId) : std::string();
+        if (directoryRecord.cardGame != gameId || directoryRecord.cardRoom != room) {
+            addDirectoryEvent("card", gameId, room);
+        }
+        directoryRecord.cardGame = gameId;
+        directoryRecord.cardRoom = room;
+        directoryRecord.cardOutcome = content.outcome;
+        directory.setCard(std::move(content), std::move(room));
+        directoryCardRevision = catalogRevision;
+    }
+
+    /// The directory's requests of the app: its games list (the catalog worker's favourites and recent games), its
+    /// card; and the screen shown or hidden as the model is.
+    void syncDirectory() {
+        if (directory.gamesRequest() != directoryGamesAsked) {
+            directoryGamesAsked = directory.gamesRequest();
+            if (catalog->requestRecentGames(catalog::kDefaultRecentGames)) {
+                ++directoryRecord.gamesRequests;
+                directory.setGamesState(ui::DirectoryGamesState::Loading);
+            } else {
+                directory.setGamesState(ui::DirectoryGamesState::Failed);
+            }
+        }
+        if (std::optional<Expected<std::vector<catalog::RecentGame>>> answer = catalog->takeRecentGames()) {
+            if (*answer) {
+                std::vector<ui::DirectoryGame> games;
+                directoryRecord.games.clear();
+                for (const catalog::RecentGame& recent : **answer) {
+                    ui::DirectoryGame game = directoryGameOf(recent, machineLocalDate);
+                    directoryRecord.games.push_back(DirectoryGameRecord{game.gameId, game.title, game.system,
+                                                                        game.favorite, dateText(game.played)});
+                    games.push_back(std::move(game));
+                }
+                addDirectoryEvent("games", "ready", std::to_string(games.size()));
+                spdlog::info("Frame {}: the directory lists {} favourite or recent game(s)", context.frameIndex(),
+                             games.size());
+                directory.setGames(std::move(games));
+            } else {
+                spdlog::warn("The directory's favourites and recent games cannot be read: {}",
+                             answer->error().toString());
+                addDirectoryEvent("games", "failed");
+                directory.setGamesState(ui::DirectoryGamesState::Failed);
+            }
+        }
+        if (directory.view() == ui::DirectoryView::Card &&
+            (directory.cardRequest() != directoryCardServed || directoryCardRevision != catalogRevision)) {
+            directoryCardServed = directory.cardRequest();
+            fillDirectoryCard();
+        }
+        if (!directoryScreen) {
+            return;
+        }
+        if (directory.isOpen()) {
+            directoryScreen->show(directory);
+        } else {
+            directoryScreen->hide();
         }
     }
 
@@ -232,11 +410,19 @@ struct ProductUi::Impl {
         return token;
     }
 
-    /// The room's launch `token` ended with `message` (I3 step 15a).
+    /// The room's launch `token` ended with `message` (I3 step 15a); or the directory's (I4 step 7b): its card tells it.
     void worldLaunchEnded(std::uint64_t token, const LaunchMessage& message) {
         if (worldToken == token) {
             worldEnded = message;
             worldToken.reset();
+        }
+        if (directoryToken == token) {
+            directoryToken.reset();
+            directoryEnded = message;
+            addDirectoryEvent("launch-ended", directoryLaunchGame, message.code);
+            spdlog::info("Frame {}: the directory's launch of {} ended ({})", context.frameIndex(),
+                         directoryLaunchGame, message.code);
+            fillDirectoryCard();
         }
     }
 
@@ -607,6 +793,11 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
     } else {
         spdlog::error("Hover label unavailable: {}", label.error().toString());
     }
+    if (auto prompt = ElevatorPromptPanel::create(*s.view)) {
+        s.prompt = std::move(*prompt);
+    } else {
+        spdlog::error("Elevator prompt unavailable: {}", prompt.error().toString());
+    }
     if (auto card = ui::GameCardScreen::create(*s.view)) {
         s.card = std::move(*card);
     } else {
@@ -700,9 +891,87 @@ void ProductUi::closeCatalog() {
     spdlog::info("Quick catalog closed");
 }
 
+bool ProductUi::directoryOpen() const noexcept {
+    return m_impl->directory.isOpen();
+}
+
+void ProductUi::openDirectory(ui::DirectoryTab tab, std::string_view via) {
+    Impl& s = *m_impl;
+    if (s.directory.isOpen() || s.catalogOpen) {
+        return;
+    }
+    if (!s.directoryScreen) {
+        auto screen = ui::DirectoryScreen::create(*s.view);
+        if (!screen) {
+            spdlog::error("Directory unavailable: {}", screen.error().toString());
+            return;
+        }
+        s.directoryScreen = std::move(*screen);
+    } else if (Rml::Element* root = s.view->context().GetRootElement()) {
+        // As the quick catalog's: the focus the screen applies starts from the context's root.
+        root->Focus();
+    }
+    s.directoryRecord.bound = true;
+    // A stick or direction still held from walking must not move in the panel that just opened.
+    s.nav.reset();
+    s.directory.open(tab);
+    ++s.directoryRecord.opened;
+    s.addDirectoryEvent("open", std::string(ui::toString(tab)), std::string(via));
+    spdlog::info("Frame {}: the directory opened on {} ({}): {} floor(s)", s.context.frameIndex(), ui::toString(tab),
+                 via, s.directory.building().floors.size());
+}
+
+void ProductUi::directoryBack() {
+    Impl& s = *m_impl;
+    if (s.directory.isOpen()) {
+        s.directoryCommand(s.directory.apply(ui::UiCommand::Back));
+    }
+}
+
+void ProductUi::closeDirectory() {
+    Impl& s = *m_impl;
+    if (!s.directory.isOpen() || panelOpen()) {
+        return;
+    }
+    s.directory.close();
+    s.addDirectoryEvent("closed");
+    spdlog::info("Frame {}: the directory closed", s.context.frameIndex());
+}
+
+void ProductUi::setDirectoryBuilding(ui::DirectoryBuilding building) {
+    Impl& s = *m_impl;
+    s.directoryRecord.bound = true;
+    if (s.directory.building() != building) {
+        s.directory.setBuilding(std::move(building));
+    }
+}
+
+std::vector<ui::DirectoryCommand> ProductUi::takeDirectoryCommands() {
+    return std::exchange(m_impl->directoryCommands, {});
+}
+
+void ProductUi::refuseDirectory(const ui::DirectoryCommand& command, std::string_view notice) {
+    Impl& s = *m_impl;
+    s.directory.reopen();
+    s.directory.setNotice(std::string(notice));
+    s.nav.reset();
+    s.addDirectoryEvent("refused", std::string(notice), std::string(ui::toString(command.kind)));
+    spdlog::info("Frame {}: the directory's {} '{}' refused for now ({})", s.context.frameIndex(),
+                 ui::toString(command.kind), command.id, notice);
+}
+
+void ProductUi::setElevatorPrompt(std::optional<std::string> key) {
+    m_impl->wantedPrompt = std::move(key);
+}
+
 bool ProductUi::handleEvent(const SDL_Event& event) {
     if (!hasInput()) {
         return false;
+    }
+    // The directory (I4 step 7b): only the mouse reaches it (its commands come from the UI actions), unless the
+    // game-session panel or the media screens show over it.
+    if (m_impl->directoryShown() && !m_impl->panel->visible() && !m_impl->screensOpen()) {
+        return m_impl->directoryScreen->handlePointer(event);
     }
     // Over the media viewer and Informazioni only the mouse reaches RmlUi (their buttons, the wheel): keys and text
     // must not reach the quick catalog's search field under them (I3 step 14b).
@@ -872,7 +1141,16 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 s.switchScreen(s.screens->apply(command, s.context.frameIndex()));
             } else if (s.catalogOpen && s.screen) {
                 s.screen->apply(command);
+            } else if (s.directoryShown()) {
+                s.directoryCommand(s.directory.apply(command));
             }
+        }
+    }
+    // The directory's clicks (I4 step 7b): a tab, a row, a card's button.
+    if (s.directoryScreen) {
+        if (const std::optional<ui::DirectoryClick> click = s.directoryScreen->takeClicked();
+            click && s.directoryShown() && !s.panel->visible()) {
+            s.directoryCommand(s.directory.click(*click));
         }
     }
     if (std::exchange(s.refreshRequested, false)) {
@@ -888,9 +1166,11 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         s.switchScreen(s.screens->update(s.context.frameIndex()));
     }
     s.syncPanel();
+    s.syncDirectory();
     s.syncNotice();
     s.syncLabel();
     s.syncCard();
+    s.syncPrompt();
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);
@@ -898,6 +1178,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         s.view->update();
         if (s.screens) {
             s.screens->afterUpdate();
+        }
+        if (s.directoryShown()) {
+            s.directoryScreen->afterUpdate();
         }
         if (s.screen) {
             s.screen->setNotice(s.catalog->notice());
@@ -1031,6 +1314,15 @@ void ProductUi::finish() {
     report.launches = s.flow.records();
     if (s.screens) {
         report.screens = s.screens->record();
+    }
+    if (s.directoryRecord.bound) {
+        DirectoryRecord directory = std::move(s.directoryRecord);
+        directory.open = s.directory.isOpen();
+        directory.tab = std::string(ui::toString(s.directory.tab()));
+        directory.view = std::string(ui::toString(s.directory.view()));
+        directory.notice = s.directory.notice();
+        directory.gamesState = std::string(ui::toString(s.directory.gamesState()));
+        report.directory = std::move(directory);
     }
     for (std::size_t index = 0; index < report.launches.size(); ++index) {
         s.catalog->recordLaunch(index, report.launches[index]);

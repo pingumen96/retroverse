@@ -326,6 +326,20 @@ CatalogChanges EsdeAppCatalog::poll() {
         m_decision = std::move(decision);
         m_resolving.reset();
     }
+    // The directory's favourites and recent games (I4 step 7b): the answer to the latest request only.
+    if (results.recentGames && m_recentAsked && results.recentGames->serial == *m_recentAsked) {
+        m_recentAsked.reset();
+        if (results.recentGames->error) {
+            m_recentAnswer = Expected<std::vector<catalog::RecentGame>>(propagate(*results.recentGames->error));
+        } else {
+            m_recentAnswer = Expected<std::vector<catalog::RecentGame>>(std::move(results.recentGames->games));
+        }
+    }
+    if (m_recentAsked && m_source.ended()) {
+        m_recentAsked.reset();
+        m_recentAnswer = Expected<std::vector<catalog::RecentGame>>(
+            makeError(ErrorCode::Unavailable, "the catalog worker ended before it answered"));
+    }
     collectSessions(results);
     return CatalogChanges{collected.opened, collected.rowsChanged, refreshEnded, collected.refreshed};
 }
@@ -436,6 +450,21 @@ void EsdeAppCatalog::shutdown() {
     collectSessions(results);
     // A refresh the stop cancelled answers with its summary; a worker left to end by itself answers nothing.
     static_cast<void>(collectRefresh(results, joined));
+}
+
+bool EsdeAppCatalog::requestRecentGames(std::size_t limit) {
+    if (m_stopped) {
+        return false;
+    }
+    m_recentAsked = ++m_recentSerial;
+    m_recentAnswer.reset();
+    m_worker.recentGames(*m_recentAsked, limit);
+    return true;
+}
+
+std::string EsdeAppCatalog::systemFullName(const catalog::SystemName& system) const {
+    const CatalogSystem* known = m_source.findSystem(system.str());
+    return known != nullptr ? known->fullName : std::string();
 }
 
 void EsdeAppCatalog::pageShown() {

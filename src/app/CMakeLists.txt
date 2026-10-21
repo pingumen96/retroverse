@@ -10,7 +10,8 @@
 # UI tells it; since I3 (skeletons naming their steps) the frame timing of the run report, the world's interaction
 # states, what the hero CRT plays, the cover loader's order, a collection item's layers through the derived-texture
 # cache and the world notice's keys (step 10b), the room's items kept for the persisted start (step 10c), the room's
-# side of the hover, the pull-out and Focus and the hover label's keys (step 13a), the held item's pose (step 13b).
+# side of the hover, the pull-out and Focus and the hover label's keys (step 13a), the held item's pose (step 13b); since
+# I4 step 7b the elevator ride's state machine and the directory's data and command routing.
 # Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the
 # reports of the runs they start.
 add_library(rv_app_cli STATIC
@@ -19,6 +20,8 @@ add_library(rv_app_cli STATIC
     src/command_line.cpp
     src/cover_requests.cpp
     src/debug_line_selection.cpp
+    src/directory_data.cpp
+    src/elevator_ride.cpp
     src/exit_code.cpp
     src/frame_stats_log.cpp
     src/frame_timing.cpp
@@ -84,6 +87,7 @@ add_library(rv_app STATIC
     src/bloom_self_check.cpp
     src/collection_instance.cpp
     src/cover_loader.cpp
+    src/elevator_prompt_panel.cpp
     src/free_roam.cpp
     src/fxaa_self_check.cpp
     src/game_screens_panel.cpp
@@ -103,6 +107,7 @@ add_library(rv_app STATIC
     src/world_launch.cpp
     src/world_live_update.cpp
     src/world_notice_panel.cpp
+    src/world_ride.cpp
     src/world_session.cpp
     src/world_start.cpp
 )

@@ -50,6 +50,7 @@
 #include <rv/catalog/library_source.hpp>
 #include <rv/catalog/play_session.hpp>
 #include <rv/catalog/query.hpp>
+#include <rv/catalog/recent_games.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/session_store.hpp>
 #include <rv/core/expected.hpp>
@@ -207,11 +208,24 @@ struct CatalogRefreshed {
     std::optional<Error> libraryError;
 };
 
+/// The directory's favourites and recently played games (CatalogWorker::recentGames, I4 step 7b): the catalog's
+/// SqliteCatalogQuery::favoritesAndRecent on the worker's connection.
+struct RecentGamesList {
+    std::uint64_t serial = 0;
+    /// The query failed (the list is then empty).
+    std::optional<Error> error;
+    std::vector<catalog::RecentGame> games;
+    /// How long the query took on the worker.
+    double milliseconds = 0.0;
+};
+
 /// What the worker answered since the last CatalogWorker::take().
 struct CatalogResults {
     std::optional<CatalogOpened> opened;
     /// The latest list.
     std::optional<CatalogList> list;
+    /// The latest favourites and recent games (I4 step 7b).
+    std::optional<RecentGamesList> recentGames;
     std::vector<GameReadiness> readiness;
     std::vector<ResolvedLaunch> launches;
     std::vector<StoredSession> sessions;
@@ -225,8 +239,8 @@ struct CatalogResults {
     bool ended = false;
 
     [[nodiscard]] bool empty() const noexcept {
-        return !opened && !list && readiness.empty() && launches.empty() && sessions.empty() && verified.empty() &&
-               !refreshProgress && !refreshed && !ended;
+        return !opened && !list && !recentGames && readiness.empty() && launches.empty() && sessions.empty() &&
+               verified.empty() && !refreshProgress && !refreshed && !ended;
     }
 };
 
@@ -273,6 +287,11 @@ public:
 
     /// Materializes `query`; a query still queued is replaced (only the latest list matters). Answered with `serial`.
     void query(std::uint64_t serial, catalog::CatalogQuery query);
+    /// The directory's favourites and recent games, at most `limit` (catalog::RecentGamesQuery, ES-DE's <lastplayed>
+    /// read in the machine's time zone: catalog::machineLocalTimeToUtc(), made once on the worker; UTC when the time
+    /// zone database cannot be read, logged); one still queued is replaced. Answered with `serial`
+    /// (CatalogResults::recentGames). I4 step 7b.
+    void recentGames(std::uint64_t serial, std::size_t limit);
     /// The launch readiness of `games` (CatalogResults::readiness): their system's, or resolved for each game where it
     /// can differ (its availability, its <altemulator>, Retroverse's choice for it, a folder game, a system whose
     /// resolution leaves something to each game).

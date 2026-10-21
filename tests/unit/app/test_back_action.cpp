@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <rv/app/back_action.hpp>
+#include <rv/app/world_interaction.hpp>
 
 using rv::app::BackAction;
 using rv::app::backAction;
@@ -52,6 +53,25 @@ TEST_CASE("app/back_action: the product UI's levels come before the mouse, the o
     CHECK(backAction(BackState{.overlayVisible = true}) == BackAction::CloseOverlay);
     // A captured mouse with the catalog open (it never is: opening the catalog frees it) still leaves the catalog.
     CHECK(backAction(BackState{.mouseCaptured = true, .catalogOpen = true}) == BackAction::CatalogBack);
+}
+
+TEST_CASE("app/back_action: the directory is a level of the product UI's, under its game-session panel",
+          "[app][back_action]") {
+    // I4 step 7b: Esc or B leaves the directory one level at a time (the card, the rooms, then it closes).
+    CHECK(backAction(BackState{.directoryOpen = true}) == BackAction::DirectoryBack);
+    CHECK(backAction(BackState{.mouseCaptured = true, .overlayVisible = true, .directoryOpen = true}) ==
+          BackAction::DirectoryBack);
+    // A launch from its card: the game-session panel over it first.
+    CHECK(backAction(BackState{.panelOpen = true, .directoryOpen = true}) == BackAction::PanelBack);
+    // The overlay's field and popup stay the innermost levels.
+    CHECK(backAction(BackState{.overlayVisible = true, .overlayHasKeyboard = true, .directoryOpen = true}) ==
+          BackAction::Ignore);
+    CHECK(rv::app::toString(BackAction::DirectoryBack) == "directory back");
+    // In the world, the shell's level: the world's own levels (Focus, Inspect) wait (the directory opens in free roam).
+    const rv::app::WorldBackDecision decision =
+        rv::app::worldBackAction(BackState{.directoryOpen = true}, rv::app::WorldBack::LeaveFocus);
+    CHECK(decision.level == rv::app::WorldBack::Shell);
+    CHECK(decision.shell == BackAction::DirectoryBack);
 }
 
 TEST_CASE("app/back_action: every level has a name for the log", "[app][back_action]") {

@@ -17,6 +17,7 @@ layout(std140, binding = 3) uniform PostUniforms {
     float uBloomKnee;       // [0, uBloomThreshold]: half width of the soft knee around the threshold
     float uVignette;        // [0, 1]: darkening of the corners
     float uDitherAmplitude; // [0, 1]: peak-to-peak noise added to the sRGB-encoded output (1/255: one 8-bit step)
+    float uFade;            // [0, 1]: the view faded to black after the tonemap (its sRGB encoding times 1 - uFade)
 };
 
 // The image a pass filters: the radiance of the HDR scene or a bloom level (PostTextureUnit::Source), or the tonemapped

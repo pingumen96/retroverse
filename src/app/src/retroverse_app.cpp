@@ -24,6 +24,7 @@
 #include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/debug_line_selection.hpp>
+#include <rv/app/elevator_prompt_ui.hpp>
 #include <rv/app/input_context.hpp>
 #include <rv/app/mock_catalog.hpp>
 #include <rv/app/model_viewer.hpp>
@@ -548,6 +549,8 @@ struct RetroverseApp::State {
             // step 12).
             view.items = world->viewItems(view.items, camera);
             world->applyInspection(view);
+            // The elevator ride's fade (I4 step 7b): after the tonemap, every pixel dimmed alike (the UI above it).
+            view.post.fade = world->fade();
         }
         return view;
     }
@@ -651,7 +654,17 @@ struct RetroverseApp::State {
         // start room's hero CRT plays its games (I4 step 5a).
         host.showScene = [this, &context](scene::SceneDescription next, const WorldSession::SceneShow& show) {
             return replaceScene(context, std::move(next), scene::assetModelLoader(context.paths().assetRoot()),
-                                show.keepWalker, show.heroScreenPrefix, show.walkerMove, show.screenGames);
+                                show.keepWalker, show.heroScreenPrefix, show.walkerMove, show.screenGames,
+                                show.atCamera);
+        };
+        // I4 step 7b: the teleports on the floor shown (the walker at a room's doorway, at the elevator).
+        host.teleport = [this](const scene::CameraSetup& at) {
+            freeRoam->teleportToCamera(at);
+            freeRoam->update(input::ActionState{}, 0.0f, camera);
+        };
+        host.walker = [this]() -> scene::WalkerPose {
+            const scene::FirstPersonController& walker = freeRoam->controller();
+            return scene::WalkerPose{walker.feetPosition(), walker.yaw(), walker.pitch()};
         };
         // I4 step 6b: the CRT of the room that holds the eye, bound once the eye stayed there (never joining the
         // previous clip's decoder on the render loop).
@@ -722,9 +735,11 @@ struct RetroverseApp::State {
     Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader,
                         bool keepWalker = false, const std::optional<std::string>& heroScreenPrefix = std::nullopt,
                         const std::optional<FrameMove>& walkerMove = std::nullopt,
-                        std::vector<ScreenGame> screenGames = {}) {
-        std::optional<SpawnPoint> spawn =
-            keepWalker ? std::optional<SpawnPoint>(freeRoam->pose()) : context.options().spawn;
+                        std::vector<ScreenGame> screenGames = {}, bool atCamera = false) {
+        // A ride's destination puts the walker at its camera (I4 step 7b), whatever --spawn said for the start.
+        std::optional<SpawnPoint> spawn = keepWalker ? std::optional<SpawnPoint>(freeRoam->pose())
+                                          : atCamera ? std::nullopt
+                                                     : context.options().spawn;
         if (spawn && keepWalker && walkerMove) {
             spawn->feet = glm::vec3(walkerMove->matrix * glm::vec4(spawn->feet, 1.0f));
             if (walkerMove->halfTurn && spawn->yawDeg) {
@@ -818,13 +833,16 @@ struct RetroverseApp::State {
         if (product) {
             levels.panelOpen = product->panelOpen();
             levels.catalogOpen = product->catalogOpen();
+            levels.directoryOpen = product->directoryOpen();
         }
         return levels;
     }
 
-    /// Who reads this frame's actions: the product UI while its catalog or panel is open, the world otherwise.
+    /// Who reads this frame's actions: the product UI while its catalog, the directory or its panel is open, the world
+    /// otherwise.
     [[nodiscard]] InputContext inputContext() const noexcept {
-        return product ? inputContextFor(product->catalogOpen(), product->panelOpen()) : InputContext::World;
+        return product ? inputContextFor(product->catalogOpen() || product->directoryOpen(), product->panelOpen())
+                       : InputContext::World;
     }
 
     /// Hands the mouse over when the layers over the scene change: the first to open (the developer overlay, the
@@ -840,7 +858,7 @@ struct RetroverseApp::State {
             layersOpen = open;
             if (open) {
                 if (captureHandover.open(input->mouseCaptured())) {
-                    input->releaseMouse(productOpen ? "quick catalog opened; Esc or B leaves it"
+                    input->releaseMouse(productOpen ? "the quick catalog or the directory opened; Esc or B leaves it"
                                                     : "developer overlay opened; F1 or Esc closes it");
                 }
             } else if (captureHandover.close(input->mouseCaptured())) {
@@ -915,6 +933,9 @@ struct RetroverseApp::State {
             break;
         case BackAction::CatalogBack:
             product->catalogBack();
+            break;
+        case BackAction::DirectoryBack:
+            product->directoryBack();
             break;
         case BackAction::ReleaseMouse:
             input->releaseMouse(overlayVisible() ? "Back pressed; press it again to close the developer overlay"
@@ -1272,14 +1293,20 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     // what the walker gets.
     const WorldContext worldContext = state.world ? state.world->context() : WorldContext::FreeRoam;
     InteractionResult worldResult;
+    // I4 step 7b: an elevator ride suspends the input (ADR-0013 §10): the world, the walker and the product UI read
+    // nothing until it ends (a ride the frame's commands start included).
+    bool riding = false;
     if (state.world) {
-        // I3 step 15a: "Mostra nella stanza" and a launch's end before the interaction, Avvia after it.
+        // I3 step 15a: "Mostra nella stanza" and a launch's end before the interaction, Avvia after it; I4 step 7b: the
+        // directory's commands (a ride, a teleport) there too.
         const scene::FirstPersonController& walker = state.freeRoam->controller();
         const scene::WalkerPose walkerNow{walker.feetPosition(), walker.yaw(), walker.pitch()};
         if (state.product) {
             state.world->beforeInteraction(*state.product, walkerNow);
         }
-        worldResult = state.interactWorld(context, inputContext == InputContext::World ? &actions : nullptr,
+        riding = state.world->riding();
+        worldResult = state.interactWorld(context,
+                                          inputContext == InputContext::World && !riding ? &actions : nullptr,
                                           static_cast<float>(deltaSeconds));
         if (state.product) {
             state.world->afterInteraction(worldResult, *state.product, worldResult.walker.value_or(walkerNow));
@@ -1293,6 +1320,22 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
             if (worldResult.openCatalog) {
                 state.openCatalog();
             }
+            // I4 step 7b: the directory, at the elevator by interact (its prompt shows there), anywhere in free roam
+            // by Map (M, the pad's Back/Select); never in Focus, Inspect, a launch or a ride: the frame began in free
+            // roam and its interaction left it there, no ease driving the walker (an interact that took an item in this
+            // frame, with Map pressed too, opens nothing).
+            const bool freeRoamNow =
+                worldContext == WorldContext::FreeRoam && state.world->context() == WorldContext::FreeRoam &&
+                !worldResult.walker;
+            if (state.product && !riding && freeRoamNow && !state.product->launchActive() &&
+                !state.product->hasInput()) {
+                if (actions.pressed(input::Action::Map)) {
+                    state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "map");
+                } else if (actions.pressed(input::Action::Interact) && state.world->idleAtElevator()) {
+                    state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "elevator");
+                }
+                state.syncCaptureLayers();
+            }
         } else {
             if (actions.pressed(input::Action::Back)) {
                 state.back(context);
@@ -1303,6 +1346,9 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         }
     } else if (catalogToggleRequested(inputContext, actions) && !state.product->panelOpen()) {
         state.product->closeCatalog();
+    } else if (actions.pressed(input::Action::Map) && state.product->directoryOpen() && !riding) {
+        // Map closes the directory it opens (I4 step 7b).
+        state.product->closeDirectory();
     }
 
 #if defined(RV_DEV_UI)
@@ -1314,6 +1360,8 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     state.freeRoam->setCollisionEnabled(state.collision);
     if (worldResult.walker) {
         state.placeWalker(*worldResult.walker); // an ease of the world drives the walker: no actions this frame
+    } else if (riding) {
+        state.freeRoam->update(input::ActionState{}, static_cast<float>(deltaSeconds), state.camera);
     } else if (state.world) {
         state.freeRoam->update(walkerActionsFor(worldContext, actionsFor(inputContext, actions)),
                                static_cast<float>(deltaSeconds), state.camera);
@@ -1322,11 +1370,18 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     }
     if (state.world && state.product) {
         // The hover's title label over the item as this frame's camera shows it (none under the product UI).
-        state.product->setWorldLabel(inputContext == InputContext::World
-                                         ? state.world->label(state.camera, context.window().drawableSize())
-                                         : std::nullopt);
+        const bool worldShown = inputContext == InputContext::World && !riding;
+        state.product->setWorldLabel(worldShown ? state.world->label(state.camera, context.window().drawableSize())
+                                                : std::nullopt);
         // The card beside the inspected item (I3 step 14a).
         state.world->showCard(worldResult, *state.product);
+        // The elevator's prompt in front of a floor's elevator (I4 step 7b), naming the interact key of the device
+        // used last.
+        std::optional<std::string> prompt;
+        if (worldShown && !state.product->hasInput() && state.world->idleAtElevator()) {
+            prompt = promptKeyLabel(state.input->system().map(), input::Action::Interact, actions.activeDevice());
+        }
+        state.world->elevatorPrompt(*state.product, std::move(prompt));
     }
     if (state.product) {
         // Text an --input-script types on this frame, into the product UI's focused field (the catalog's search).
@@ -1335,9 +1390,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
                 state.product->typeText(text);
             }
         }
-        // The UI commands only when the frame began in the UI's context (UI Back goes through back()).
+        // The UI commands only when the frame began in the UI's context (UI Back goes through back()); none during a
+        // ride (I4 step 7b).
         const input::ActionState uiActions = actionsFor(InputContext::Ui, actions);
-        state.product->update(inputContext == InputContext::Ui ? &uiActions : nullptr, deltaSeconds,
+        state.product->update(inputContext == InputContext::Ui && !riding ? &uiActions : nullptr, deltaSeconds,
                               state.simulatedSeconds);
         // After this frame is presented the host waits: a launch starts, or an emulator has the screen.
         if (state.product->wantsIdle()) {

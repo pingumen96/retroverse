@@ -134,6 +134,15 @@ bool CoverLoader::done() const noexcept {
     return m_schedule.done() && !m_rootCheckPending;
 }
 
+bool CoverLoader::groupDone(std::uint32_t group) const {
+    for (std::size_t item = 0; item < m_schedule.size(); ++item) {
+        if (groupOf(item) == group && m_schedule.stage(item) != CoverSchedule::Stage::Done) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void CoverLoader::waitForResults(std::chrono::milliseconds timeout) const {
     std::unique_lock lock(m_shared->mutex);
     const std::uint64_t seen = m_shared->posts;

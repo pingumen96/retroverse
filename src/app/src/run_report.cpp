@@ -816,6 +816,85 @@ GameScreensRecord readScreens(FieldReader& fields) {
     return screens;
 }
 
+/// An unbound record (no generated building) is an empty object (I4 step 7b).
+Json directoryToJson(const DirectoryRecord& directory) {
+    Json json = Json::object();
+    if (!directory.bound) {
+        return json;
+    }
+    json["bound"] = true;
+    json["opened"] = directory.opened;
+    json["open"] = directory.open;
+    json["tab"] = directory.tab;
+    json["view"] = directory.view;
+    json["notice"] = directory.notice;
+    json["gamesState"] = directory.gamesState;
+    json["gamesRequests"] = directory.gamesRequests;
+    Json games = Json::array();
+    for (const DirectoryGameRecord& game : directory.games) {
+        games.push_back(Json{{"gameId", game.gameId},
+                             {"title", game.title},
+                             {"system", game.system},
+                             {"favorite", game.favorite},
+                             {"played", game.played}});
+    }
+    json["games"] = std::move(games);
+    json["cardGame"] = directory.cardGame;
+    json["cardRoom"] = directory.cardRoom;
+    json["cardOutcome"] = directory.cardOutcome;
+    Json events = Json::array();
+    for (const DirectoryEventRecord& event : directory.events) {
+        Json entry{{"frame", event.frame}, {"event", event.event}};
+        if (!event.id.empty()) {
+            entry["id"] = event.id;
+        }
+        if (!event.detail.empty()) {
+            entry["detail"] = event.detail;
+        }
+        events.push_back(std::move(entry));
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = directory.eventsDropped;
+    return json;
+}
+
+DirectoryRecord readDirectory(FieldReader& fields) {
+    DirectoryRecord directory;
+    if (!fields.has("bound")) {
+        return directory;
+    }
+    directory.bound = fields.boolean("bound");
+    directory.opened = fields.count("opened");
+    directory.open = fields.boolean("open");
+    directory.tab = fields.string("tab");
+    directory.view = fields.string("view");
+    directory.notice = fields.string("notice");
+    directory.gamesState = fields.string("gamesState");
+    directory.gamesRequests = fields.count("gamesRequests");
+    for (FieldReader& game : fields.objectArray("games")) {
+        DirectoryGameRecord entry;
+        entry.gameId = game.string("gameId");
+        entry.title = game.string("title");
+        entry.system = game.string("system");
+        entry.favorite = game.boolean("favorite");
+        entry.played = game.string("played");
+        directory.games.push_back(std::move(entry));
+    }
+    directory.cardGame = fields.string("cardGame");
+    directory.cardRoom = fields.string("cardRoom");
+    directory.cardOutcome = fields.string("cardOutcome");
+    for (FieldReader& event : fields.objectArray("events")) {
+        DirectoryEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.id = event.optionalString("id").value_or(std::string());
+        entry.detail = event.optionalString("detail").value_or(std::string());
+        directory.events.push_back(std::move(entry));
+    }
+    directory.eventsDropped = fields.count("eventsDropped");
+    return directory;
+}
+
 /// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
 Json roomUpdatesToJson(const std::vector<RoomUpdateRecord>& rooms) {
     Json array = Json::array();
@@ -1014,6 +1093,57 @@ Json worldToJson(const WorldRecord& world) {
         live.push_back(std::move(record));
     }
     json["liveUpdates"] = std::move(live);
+    // I4 step 7b: the floors, the rides, the teleports, the elevator's prompt.
+    Json floors = Json::array();
+    for (const WorldFloorRecord& floor : world.floors) {
+        floors.push_back(
+            Json{{"id", floor.id}, {"order", floor.order}, {"rooms", floor.rooms}, {"placed", floor.placed}});
+    }
+    json["floors"] = std::move(floors);
+    Json rides = Json::array();
+    for (const RideRecord& ride : world.rides) {
+        Json record{{"from", ride.from},
+                    {"to", ride.to},
+                    {"reason", ride.reason},
+                    {"room", ride.room},
+                    {"game", ride.game},
+                    {"requestedFrame", ride.requestedFrame},
+                    {"outcome", ride.outcome},
+                    {"arrayBytes", ride.arrayBytes},
+                    {"gpuBytes", ride.gpuBytes}};
+        if (ride.fadedOutFrame) {
+            record["fadedOutFrame"] = *ride.fadedOutFrame;
+        }
+        if (ride.swappedFrame) {
+            record["swappedFrame"] = *ride.swappedFrame;
+        }
+        if (ride.fadedInFrame) {
+            record["fadedInFrame"] = *ride.fadedInFrame;
+        }
+        putOptional(record, "builtMs", ride.builtMs);
+        putOptional(record, "residentMs", ride.residentMs);
+        putOptional(record, "totalMs", ride.totalMs);
+        putOptional(record, "jobMs", ride.jobMs);
+        if (ride.walker) {
+            record["walker"] = spawnToJson(*ride.walker);
+        }
+        Json kinds = Json::object();
+        for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+            kinds[std::string(gl::toString(kind))] = ride.bytesOf(kind);
+        }
+        record["gpuKinds"] = std::move(kinds);
+        rides.push_back(std::move(record));
+    }
+    json["rides"] = std::move(rides);
+    Json teleports = Json::array();
+    for (const TeleportRecord& teleport : world.teleports) {
+        teleports.push_back(Json{{"frame", teleport.frame},
+                                 {"to", teleport.to},
+                                 {"reason", teleport.reason},
+                                 {"walker", spawnToJson(teleport.walker)}});
+    }
+    json["teleports"] = std::move(teleports);
+    json["elevatorPromptFrames"] = world.elevatorPromptFrames;
     return json;
 }
 
@@ -1167,6 +1297,54 @@ WorldRecord readWorld(FieldReader& fields) {
         record.walker = readWalker(update);
         world.liveUpdates.push_back(std::move(record));
     }
+    for (FieldReader& floor : fields.optionalObjectArray("floors")) {
+        WorldFloorRecord record;
+        record.id = floor.string("id");
+        record.order = static_cast<std::uint32_t>(floor.count("order"));
+        record.rooms = floor.count("rooms");
+        record.placed = floor.count("placed");
+        world.floors.push_back(std::move(record));
+    }
+    for (FieldReader& ride : fields.optionalObjectArray("rides")) {
+        RideRecord record;
+        record.from = ride.string("from");
+        record.to = ride.string("to");
+        record.reason = ride.string("reason");
+        record.room = ride.string("room");
+        record.game = ride.string("game");
+        record.requestedFrame = ride.count("requestedFrame");
+        record.fadedOutFrame = ride.optionalCount("fadedOutFrame");
+        record.swappedFrame = ride.optionalCount("swappedFrame");
+        record.fadedInFrame = ride.optionalCount("fadedInFrame");
+        record.builtMs = ride.optionalNumber("builtMs");
+        record.residentMs = ride.optionalNumber("residentMs");
+        record.totalMs = ride.optionalNumber("totalMs");
+        record.jobMs = ride.optionalNumber("jobMs");
+        record.outcome = ride.string("outcome");
+        if (auto walker = ride.optionalObject("walker")) {
+            record.walker = readSpawn(*walker);
+        }
+        record.arrayBytes = ride.count("arrayBytes");
+        record.gpuBytes = ride.count("gpuBytes");
+        if (auto kinds = ride.optionalObject("gpuKinds")) {
+            for (const gl::GpuMemoryKind kind : gl::kGpuMemoryKinds) {
+                record.kindBytes[static_cast<std::size_t>(kind)] =
+                    kinds->optionalCount(std::string(gl::toString(kind))).value_or(0);
+            }
+        }
+        world.rides.push_back(std::move(record));
+    }
+    for (FieldReader& teleport : fields.optionalObjectArray("teleports")) {
+        TeleportRecord record;
+        record.frame = teleport.count("frame");
+        record.to = teleport.string("to");
+        record.reason = teleport.string("reason");
+        if (auto walker = teleport.object("walker")) {
+            record.walker = readSpawn(*walker);
+        }
+        world.teleports.push_back(std::move(record));
+    }
+    world.elevatorPromptFrames = fields.optionalCount("elevatorPromptFrames").value_or(0);
     return world;
 }
 
@@ -1900,6 +2078,7 @@ std::string formatRunReport(const RunReport& report) {
     json["residency"] = residencyToJson(report.residency);
     json["video"] = videoToJson(report.video);
     json["screens"] = screensToJson(report.screens);
+    json["directory"] = directoryToJson(report.directory);
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -2013,6 +2192,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto screens = fields.optionalObject("screens")) {
         report.screens = readScreens(*screens);
+    }
+    if (auto directory = fields.optionalObject("directory")) {
+        report.directory = readDirectory(*directory);
     }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");

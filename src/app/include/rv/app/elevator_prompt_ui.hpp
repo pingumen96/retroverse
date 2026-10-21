@@ -1,0 +1,99 @@
+#pragma once
+
+// GPU-free (part of rv_app_cli, header only): the asset paths, element ids and data model that the elevator's prompt
+// (rv_app's ElevatorPromptPanel, I4 step 7b; ADR-0013 §10: "a proximity zone with a prompt") shares with its RmlUi
+// document (assets/ui/elevator_prompt.rml), so that GPU-free tests check the document against them
+// (tests/unit/app/test_elevator_prompt_document.cpp); the name of the key or button the prompt shows; and where the
+// walker must stand and look for it (facesElevator()). The words are the document's: the code passes the key's name.
+
+#include <cctype>
+#include <cmath>
+#include <span>
+#include <string>
+#include <string_view>
+#include <variant>
+
+#include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+
+#include <rv/core/aabb.hpp>
+#include <rv/input/action.hpp>
+#include <rv/input/action_map.hpp>
+#include <rv/input/binding.hpp>
+#include <rv/input/codes.hpp>
+
+namespace rv::app {
+
+namespace elevator_prompt {
+
+inline constexpr std::string_view kDocumentPath = "ui/elevator_prompt.rml";
+inline constexpr std::string_view kStyleSheetPath = "ui/elevator_prompt.rcss";
+/// The data model: "key" (the name of the interact key or button to press: "E", "A").
+inline constexpr std::string_view kDataModel = "elevator_prompt";
+inline constexpr std::string_view kPanelId = "elevator-prompt";
+
+} // namespace elevator_prompt
+
+/// The name of a gamepad button as the prompt shows it: the face buttons by their Xbox letters (South "A", East "B",
+/// West "X", North "Y"), the others by their binding name.
+[[nodiscard]] inline std::string gamepadButtonLabel(input::GamepadButton button) {
+    switch (button) {
+    case input::GamepadButton::South:
+        return "A";
+    case input::GamepadButton::East:
+        return "B";
+    case input::GamepadButton::West:
+        return "X";
+    case input::GamepadButton::North:
+        return "Y";
+    default:
+        return std::string(input::gamepadButtonName(button));
+    }
+}
+
+/// The key (`device` KeyboardMouse: the first key bound to Interact, its name in capitals) or button (Gamepad: the first
+/// button bound to it) the prompt names for `action` in `map`; "" when nothing of that device is bound to it.
+[[nodiscard]] inline std::string promptKeyLabel(const input::ActionMap& map, input::Action action,
+                                                input::DeviceKind device) {
+    for (const input::Binding& binding : map.bindings(action)) {
+        if (device == input::DeviceKind::KeyboardMouse) {
+            if (const auto* key = std::get_if<input::KeyBinding>(&binding)) {
+                std::string name(input::keyName(key->key));
+                for (char& c : name) {
+                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                }
+                return name;
+            }
+        } else if (const auto* button = std::get_if<input::GamepadButtonBinding>(&binding)) {
+            return gamepadButtonLabel(button->button);
+        }
+    }
+    return {};
+}
+
+/// The cosine of the widest angle between the walker's view on the floor and the direction to the elevator's doors at
+/// which the prompt shows (80 degrees).
+inline constexpr float kFacesElevatorCosine = 0.17f;
+
+/// The walker whose feet stand at `feet`, looking along `yawRadians` (scene::Camera's convention: yaw 0 looks towards
+/// -Z, positive turns towards +X), is in front of the elevator: its feet in the proximity zone `zone` (x and z), and the
+/// middle of the doors `doors` in front of it (less than 80 degrees off its view on the floor). The arrival point is in
+/// the zone facing the hall, the doors behind: the prompt waits until the walker turns to them (I4 step 7b's review: a
+/// prompt over the lobby's entrance read as those doors' prompt). All in one frame (the scene's).
+[[nodiscard]] inline bool facesElevator(const glm::vec3& feet, float yawRadians, const core::Aabb& zone,
+                                        const glm::vec3& doors) noexcept {
+    if (zone.isEmpty() || feet.x < zone.min.x || feet.x > zone.max.x || feet.z < zone.min.z || feet.z > zone.max.z ||
+        !std::isfinite(yawRadians)) {
+        return false;
+    }
+    const glm::vec2 toDoors(doors.x - feet.x, doors.z - feet.z);
+    const float distance = glm::length(toDoors);
+    if (!(distance > 1e-4f)) {
+        return true; // on the doors' middle: nothing to turn to
+    }
+    const glm::vec2 view(std::sin(yawRadians), -std::cos(yawRadians));
+    return glm::dot(toDoors / distance, view) > kFacesElevatorCosine;
+}
+
+} // namespace rv::app

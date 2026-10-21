@@ -14,12 +14,14 @@ enum class BackAction : std::uint8_t {
     PanelBack,    ///< the product UI's game-session panel is open: its Back (back to the game while it runs, or the
                   ///< outcome's message dismissed)
     CatalogBack,  ///< the quick catalog is open: its Back (along its focus history, then it closes)
+    DirectoryBack, ///< the directory is open (I4 step 7b): its Back (the card to the games, the rooms to the floors,
+                   ///< then it closes)
     ReleaseMouse, ///< the mouse was captured for first-person look: free it
     CloseOverlay, ///< hide the developer overlay (which gives a capture it took back to first-person look)
     Quit,         ///< nothing left to leave
 };
 
-/// "ignore", "close popup", "panel back", "catalog back", "release mouse", "close overlay", "quit".
+/// "ignore", "close popup", "panel back", "catalog back", "directory back", "release mouse", "close overlay", "quit".
 [[nodiscard]] std::string_view toString(BackAction action) noexcept;
 
 /// What Back can leave when it is pressed. Builds without the developer overlay leave its fields false, runs without a
@@ -36,13 +38,16 @@ struct BackState {
     bool panelOpen = false;
     /// The quick catalog is open.
     bool catalogOpen = false;
+    /// The directory is open (I4 step 7b).
+    bool directoryOpen = false;
 };
 
 /// Back pressed in `state`, the first level that applies:
 ///  1. Ignore while the overlay has the keyboard (the pad's B included, so that leaving a field never quits);
 ///  2. ClosePopup while one of its popups is open;
-///  3. PanelBack while the product UI's panel is shown, then CatalogBack while the catalog is open: the product UI's
-///     levels come before the mouse and the overlay, so that Back walks out of the catalog before it can quit;
+///  3. PanelBack while the product UI's panel is shown, then CatalogBack while the catalog is open, then DirectoryBack
+///     while the directory is: the product UI's levels come before the mouse and the overlay, so that Back walks out of
+///     the catalog and the directory before it can quit;
 ///  4. ReleaseMouse while the mouse is captured;
 ///  5. CloseOverlay while the overlay is visible;
 ///  6. Quit.

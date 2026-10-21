@@ -89,6 +89,9 @@ public:
     /// interaction's room once the interaction is in free roam with nothing hovered, pulled or focused in the room it
     /// leaves (asked again every frame until then).
     void setActiveRoom(std::optional<std::size_t> room);
+    /// Makes `room` the interaction's room at once (I4 step 7b: the walker teleported into it, "Mostra nella stanza" of
+    /// a game there): Focus left first (WorldInteraction::leaveFocusNow), the room left letting go of its items.
+    void bindNow(std::optional<std::size_t> room);
     /// The interaction's room now (none: no room, or a hall), and its id.
     [[nodiscard]] std::optional<std::size_t> activeRoom() const noexcept { return m_active; }
     [[nodiscard]] std::optional<world::RoomId> activeRoomId() const {

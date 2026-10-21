@@ -37,10 +37,15 @@ inline constexpr std::string_view kRegeneration = "regeneration";
 inline constexpr std::string_view kRefused = "refused";
 /// The room cannot be made (a plan that breaks a hard rule, an error): the shell.
 inline constexpr std::string_view kFailed = "failed";
+/// I4 step 7b: the quick catalog's "Mostra nella stanza" could not take the walker to its game's room (refused for now:
+/// a floor being applied, a launch; or its ride's floor could not be built): the walker stays where it was. Shown over
+/// the floor for kShownSeconds.
+inline constexpr std::string_view kRoomUnreachable = "room-unreachable";
 
 /// Every key with a sentence of its own.
-inline constexpr std::array<std::string_view, 8> kNotices{kGenerating,       kNoCatalog,    kNoGames, kMediaUnknown,
-                                                          kMediaUnknownKept, kRegeneration, kRefused, kFailed};
+inline constexpr std::array<std::string_view, 9> kNotices{kGenerating,   kNoCatalog, kNoGames,
+                                                          kMediaUnknown, kMediaUnknownKept, kRegeneration,
+                                                          kRefused,      kFailed,    kRoomUnreachable};
 /// The catalog states kNoCatalog has a sentence for (CatalogState but Ready and Opening).
 inline constexpr std::array<std::string_view, 5> kCatalogStates{"no-library", "no-database", "data-directory",
                                                                 "library-mismatch", "unavailable"};

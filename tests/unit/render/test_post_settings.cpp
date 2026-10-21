@@ -3,6 +3,7 @@
 
 #include <array>
 #include <limits>
+#include <utility>
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -56,8 +57,8 @@ TEST_CASE("render/post_settings: the default settings change nothing but the ton
     CHECK(uniforms.ditherAmplitude == 0.0f);
     CHECK(uniforms.bloomThreshold == rv::gl::kBloomThreshold);
     CHECK(uniforms.bloomKnee == rv::gl::kBloomKnee);
-    CHECK(uniforms.padding[0] == 0.0f);
-    CHECK(uniforms.padding[1] == 0.0f);
+    CHECK(uniforms.fade == 0.0f);
+    CHECK(uniforms.padding == 0.0f);
 }
 
 TEST_CASE("render/post_settings: the post block keeps every value in its documented range", "[render][post]") {
@@ -96,6 +97,12 @@ TEST_CASE("render/post_settings: the post block keeps every value in its documen
     CHECK(uniforms.bloomMix == 0.0f);
     CHECK(uniforms.vignette == 0.0f);
     CHECK(uniforms.ditherAmplitude == 0.0f);
+    // The fade to black (the elevator ride's, I4 step 7b): a share too.
+    for (const auto& [fade, expected] : {std::pair{0.4f, 0.4f}, std::pair{1.0f, 1.0f}, std::pair{1.5f, 1.0f},
+                                         std::pair{-0.2f, 0.0f}, std::pair{nan, 0.0f}, std::pair{infinity, 0.0f}}) {
+        settings.fade = fade;
+        CHECK(rv::gl::makePostUniforms(settings).fade == expected);
+    }
 
     // The soft knee starts above 0 and never beyond the threshold.
     CHECK(rv::gl::kBloomThreshold > 0.0f);

@@ -1,0 +1,23 @@
+<rml>
+<head>
+	<!--
+		The elevator's prompt (I4 step 7b; ADR-0013 §10: a proximity zone with a prompt): shown while the walker stands
+		in front of a floor's elevator in free roam, it names the key or button that opens the directory there (the
+		interact action's: E, the pad's A). Bound to the data model "elevator_prompt" of rv::app::ElevatorPromptPanel
+		(src/app/src/elevator_prompt_panel.cpp), which also names the ids below: keep them in step
+		(src/app/include/rv/app/elevator_prompt_ui.hpp, tests/unit/app/test_elevator_prompt_document.cpp).
+		key: the key's or the button's name (data, not a sentence of the UI). It takes no input and never the focus.
+	-->
+	<title>Ascensore</title>
+	<link type="text/rcss" href="elevator_prompt.rcss"/>
+</head>
+<body data-model="elevator_prompt">
+	<div id="elevator-prompt">
+		<span class="prompt">
+			<span class="name">Ascensore</span>
+			<span class="key">{{ key }}</span>
+			<span class="action">Scegli il piano</span>
+		</span>
+	</div>
+</body>
+</rml>

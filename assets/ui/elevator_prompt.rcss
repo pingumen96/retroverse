@@ -1,0 +1,56 @@
+/*
+	The elevator's prompt (elevator_prompt.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI
+	neutral #171B22, ivory text #F4EFE6, tungsten #FFC88A). Sizes in dp. One line centred low in the view, over the hall;
+	it takes no input. No color transitions (RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 20dp;
+	color: #F4EFE6;
+}
+
+div, span {
+	focus: none;
+}
+
+#elevator-prompt {
+	display: block;
+	position: absolute;
+	left: 0dp;
+	width: 100%;
+	bottom: 36%;
+	text-align: center;
+	white-space: nowrap;
+}
+
+.prompt {
+	display: inline-block;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-radius: 12dp;
+	padding: 8dp 18dp 9dp 18dp;
+}
+
+.name {
+	font-weight: bold;
+	color: #FFC88A;
+	margin-right: 14dp;
+}
+
+.key {
+	display: inline-block;
+	min-width: 18dp;
+	text-align: center;
+	font-weight: bold;
+	border: 2dp #F4EFE6B3;
+	border-radius: 6dp;
+	padding: 0dp 7dp 1dp 7dp;
+	margin-right: 8dp;
+}

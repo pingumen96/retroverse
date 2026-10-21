@@ -178,6 +178,9 @@ struct RoomCollection {
     /// Its hero CRT's games: its placed games with media, in its featured order (room_screen.hpp, from the rooms'
     /// items; none without a media root for them: FloorSources::screenMediaRoot).
     std::vector<ScreenGame> screenGames;
+    /// Its doorway camera in the scene's frame (world::doorwayCamera() moved by scenePlacement: the eye inside the
+    /// doorway, looking into the room), where the directory's teleport to the room stands the walker (I4 step 7b).
+    scene::CameraSetup doorwayCamera;
 };
 
 /// The floor to commit (an immutable value made on the pool, ADR-0010 §12), with the building it shows.
@@ -193,10 +196,21 @@ struct WorldBuild {
     /// The start room (--start-room), and whether the plan lacks it (the run then ends: exit 2).
     std::optional<world::RoomId> startRoom;
     bool startRoomMissing = false;
+    /// The floor to build (I4 step 7b: a ride's destination, the floor the walker is on for a building's result); none:
+    /// the start room's floor, else kStartFloor. The scene's frame is the start room's only on the start room's floor.
+    std::optional<std::string> requestedFloor;
     /// The floor built ("ground" without a start room), and its frame in the scene's frame (the hall's: relative to the
     /// start room's placement, {0, 0, 0} without a start room).
     std::string floor;
     world::RoomPlacement floorPlacement;
+    /// The elevator's proximity zone (the hall's, world::Hall::elevatorZone, from the floor to the doors' top) and the
+    /// arrival camera in front of the elevator facing east (the floor scene's camera), both in the scene's frame: where
+    /// the prompt shows and where a ride or the directory's own floor puts the walker (I4 step 7b, ADR-0013 §10).
+    core::Aabb elevatorZone;
+    scene::CameraSetup arrival;
+    /// The middle of the elevator's doors on the floor (y 0), in the scene's frame: the prompt shows to a walker in the
+    /// zone that faces them (elevator_prompt_ui.hpp's facesElevator()).
+    glm::vec3 elevatorDoors{0.0f};
     catalog::LibraryId library;
     /// The plan shown and its digest (the SHA-256 of its canonical text); none for NoPlan.
     std::optional<world::WorldPlan> plan;
@@ -224,6 +238,9 @@ struct WorldBuild {
     /// The media root the paths are relative to, also while it is out of reach (I3 step 12: the cover loader tries it
     /// again after the catalog's refresh); none when it could not be resolved.
     std::optional<std::filesystem::path> mediaRootPath;
+    /// The media root the CRTs' games were read under (FloorSources::screenMediaRoot), which a ride's floor-build job
+    /// reads them under again (I4 step 7b).
+    std::optional<std::filesystem::path> screenMediaRoot;
     /// The hero CRT's games at the start: the start room's (RoomCollection::screenGames; none without a start room or
     /// while the media are unknown). Each room's are its RoomCollection's (the CRT of the eye's room, I4 step 6b).
     std::vector<ScreenGame> screenGames;
@@ -265,9 +282,10 @@ struct FloorSources {
     std::optional<std::filesystem::path> mediaRoot;
     std::optional<std::filesystem::path> mediaRootPath;
     std::optional<std::filesystem::path> screenMediaRoot;
-    /// The preview's: each game's latest play session that counts (seconds since 1970, catalog_db::lastPlaySessions()),
-    /// which the CRT games' last plays take in place of the items files' (a game played since their last write: the CRT
-    /// starts on the game the building's result chooses, ADR-0012 §7). None: the items' own.
+    /// The preview's and a ride's (catalogLastPlayed()): each game's latest play session that counts (seconds since
+    /// 1970, catalog_db::lastPlaySessions()), which the CRT games' last plays take in place of the items files' (a game
+    /// played since their last write: the CRT starts on the game the building's result would choose, ADR-0012 §7).
+    /// None: the items' own.
     std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed;
 };
 
@@ -322,10 +340,12 @@ struct BuildingResult {
 /// each game once.
 [[nodiscard]] RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan);
 
-/// The floor-build job: `build`'s floor (its start room's, else kStartFloor) of its plan made into its scene, its rooms'
-/// collections, content digests, cover requests and CRT games (`sources`' items, else the items files). A plan that
-/// lacks the start room sets startRoomMissing and builds nothing; a floor that cannot be made leaves the build with no
-/// plan and its notice (logged). Nothing for a build without a plan.
+/// The floor-build job: `build`'s floor (WorldBuild::requestedFloor, else its start room's, else kStartFloor) of its
+/// plan made into its scene, its rooms' collections, content digests, cover requests, CRT games and doorway cameras, the
+/// elevator's zone and arrival camera (`sources`' items, else the items files). The scene's frame is the start room's
+/// on its floor, the floor's on any other. A plan that lacks the start room (no floor requested) sets startRoomMissing
+/// and builds nothing; a requested floor the plan lacks, or a floor that cannot be made, leaves the build with no plan
+/// and its notice (logged). Nothing for a build without a plan.
 void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& sources);
 
 /// An unchanged start's building job (see the file comment): the stored plan `stored` as it is when the building stamp
@@ -350,6 +370,12 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                                       const world::StoredPlan& stored, const std::optional<world::RoomId>& startRoom,
                                       const std::optional<std::filesystem::path>& screenMediaRoot = std::nullopt,
                                       std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed = std::nullopt);
+
+/// Each game's latest play session that counts, in seconds since 1970 (catalog_db::lastPlaySessions()), read on the
+/// world's `reader` under its mutex: FloorSources::lastPlayed of the floors built from the items files (the persisted
+/// start's preview; I4 step 7b: a ride's destination, whose games may have been played since the items were written).
+/// None when it cannot be read (logged: the items files' own then). On the worker pool.
+[[nodiscard]] std::optional<std::map<catalog::GameId, std::int64_t>> catalogLastPlayed(WorldCatalogReader& reader);
 
 /// The media root of the library `profile` describes as ES-DE's settings give it now (esde::resolveMediaRoot), when it
 /// can be read (a folder there): the preview's CRT games are read under it (I4 step 6b). On the worker pool: it reads
@@ -440,6 +466,9 @@ public:
         /// The stored plan's floor is made before the building job (I3 step 10c's persisted start); false for the live
         /// update after a refresh (I3 step 15b), whose floor already shows: the building job at once.
         bool preview = true;
+        /// The floor the building's result is built for, asked when its floor-build job is submitted (I4 step 7b: the
+        /// floor the walker is on after a ride; WorldBuild::requestedFloor); unset or none: the start room's floor.
+        std::function<std::optional<std::string>()> floor;
     };
 
     WorldFlow(Options options, core::WorkerPool& pool);

@@ -15,6 +15,7 @@
 #include <rv/core/expected.hpp>
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
+#include <rv/ui/directory_model.hpp>
 #include <rv/ui/game_card_model.hpp>
 
 #include <glm/vec2.hpp>
@@ -81,8 +82,34 @@ public:
     /// The game-session panel shows (a game running and asking, an outcome), or the media viewer or Informazioni (I3
     /// step 14b: Back's PanelBack level closes them first).
     [[nodiscard]] bool panelOpen() const noexcept;
-    /// The product UI has the input (InputContext::Ui): the catalog or the panel is open.
-    [[nodiscard]] bool hasInput() const noexcept { return catalogOpen() || panelOpen(); }
+    /// The product UI has the input (InputContext::Ui): the catalog, the directory or the panel is open.
+    [[nodiscard]] bool hasInput() const noexcept { return catalogOpen() || panelOpen() || directoryOpen(); }
+
+    /// The directory (I4 step 7b; ADR-0013 §10; docs/i4/step-7a.md's contract: ui::DirectoryModel on
+    /// assets/ui/directory.rml through ui::DirectoryScreen): open (the UI's input, its Back level), its floors and rooms
+    /// from the world (setDirectoryBuilding), its favourites and recent games from the catalog worker
+    /// (AppCatalog::requestRecentGames, asked whenever the model asks), its card the quick catalog's (the catalog's row,
+    /// readiness and blocker; the room key of setRoomPlacement()), Avvia on it launched here as the quick catalog's
+    /// (its outcome back on the card), the world's commands (ChooseFloor, ChooseRoom, ShowInRoom) handed to the world
+    /// (takeDirectoryCommands()).
+    [[nodiscard]] bool directoryOpen() const noexcept;
+    /// Opens the directory on `tab` (`via`: "elevator" or "map", for the run report); its screen is made the first
+    /// time (a screen that cannot be made is logged and the directory stays closed).
+    void openDirectory(ui::DirectoryTab tab, std::string_view via);
+    /// Its Back level (BackAction::DirectoryBack): one level back, closing it at its root.
+    void directoryBack();
+    /// Closes it (Map pressed while it shows); nothing while the panel shows over it.
+    void closeDirectory();
+    /// The floors and rooms it lists and where the walker is (the same building again changes nothing).
+    void setDirectoryBuilding(ui::DirectoryBuilding building);
+    /// The world's commands the directory gave since the last call, in order (the panel closed itself for each).
+    [[nodiscard]] std::vector<ui::DirectoryCommand> takeDirectoryCommands();
+    /// `command` refused for now by the world (a ride in Focus, a plan not ready): the panel again where it was, with
+    /// `notice` (ui::directory::kNotices) under its list.
+    void refuseDirectory(const ui::DirectoryCommand& command, std::string_view notice);
+    /// The elevator's prompt naming `key` from now on (nothing: none): shown over the scene while neither the quick
+    /// catalog, the directory nor the game-session panel shows. It takes no input.
+    void setElevatorPrompt(std::optional<std::string> key);
 
     /// Opens the quick catalog where it was left (its focus and selection), the UI's held directions forgotten; the
     /// first time, its screen is made (a screen that cannot be made is logged and the catalog stays closed).

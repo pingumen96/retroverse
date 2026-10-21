@@ -12,6 +12,8 @@ std::string_view toString(BackAction action) noexcept {
         return "panel back";
     case BackAction::CatalogBack:
         return "catalog back";
+    case BackAction::DirectoryBack:
+        return "directory back";
     case BackAction::ReleaseMouse:
         return "release mouse";
     case BackAction::CloseOverlay:
@@ -34,6 +36,9 @@ BackAction backAction(const BackState& state) noexcept {
     }
     if (state.catalogOpen) {
         return BackAction::CatalogBack;
+    }
+    if (state.directoryOpen) {
+        return BackAction::DirectoryBack;
     }
     if (state.mouseCaptured) {
         return BackAction::ReleaseMouse;

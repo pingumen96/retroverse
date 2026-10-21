@@ -182,6 +182,7 @@ WorldBackDecision worldBackAction(const BackState& shell, WorldBack world) noexc
     case BackAction::ClosePopup:
     case BackAction::PanelBack:
     case BackAction::CatalogBack:
+    case BackAction::DirectoryBack:
         return WorldBackDecision{WorldBack::Shell, action};
     case BackAction::ReleaseMouse:
     case BackAction::CloseOverlay:
@@ -532,6 +533,12 @@ void WorldInteraction::finishReturn() {
         m_noticeMessage = *outcome;
     } else {
         clearNotice();
+    }
+}
+
+void WorldInteraction::leaveFocusNow() {
+    if (m_state == WorldState::Focus) {
+        leaveFocus();
     }
 }
 

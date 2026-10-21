@@ -241,7 +241,9 @@ struct PostUniforms {
     /// [0, 1]: peak-to-peak noise added to the sRGB-encoded output before the target quantizes it (1/255: one 8-bit
     /// step), against banding in smooth gradients.
     float ditherAmplitude = 0.0f;
-    float padding[2] = {0.0f, 0.0f};
+    /// [0, 1]: the view faded to black after the tonemap: the sRGB-encoded output times 1 - fade (before dithering).
+    float fade = 0.0f;
+    float padding = 0.0f;
 };
 
 static_assert(offsetof(PostUniforms, exposure) == 0);
@@ -250,6 +252,7 @@ static_assert(offsetof(PostUniforms, bloomThreshold) == 8);
 static_assert(offsetof(PostUniforms, bloomKnee) == 12);
 static_assert(offsetof(PostUniforms, vignette) == 16);
 static_assert(offsetof(PostUniforms, ditherAmplitude) == 20);
+static_assert(offsetof(PostUniforms, fade) == 24);
 static_assert(sizeof(PostUniforms) == 32, "std140 block sizes are multiples of 16 bytes");
 
 /// Texture units of the post-processing passes: `layout(binding = N) uniform sampler2D` in common/post.glsl (Source,

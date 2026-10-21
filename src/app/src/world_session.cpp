@@ -110,7 +110,11 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
     if (interaction.reduceMotion) {
         spdlog::info("World: reduceMotion (world.json): every transition of the room is instant");
     }
+    m_reduceMotion = interaction.reduceMotion;
     m_interaction = std::make_unique<WorldHover>(context, interaction);
+    // I4 step 7b: the rides' floor-build jobs post here and wake the host.
+    m_floorBox = std::make_shared<FloorJobBox>();
+    m_floorBox->wake = context.wakeCallback();
     // I4 step 6b: the start room's CRT is bound from the start; the lobby's none until the eye stays in a room.
     m_screenRooms.reset(m_options.startRoom ? std::optional<std::string>(m_options.startRoom->toString())
                                             : std::nullopt);
@@ -122,6 +126,9 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
         flow.startRoom = m_options.startRoom;
         flow.writer = m_options.writer;
         flow.wake = context.wakeCallback();
+        flow.floor = [this]() -> std::optional<std::string> {
+            return m_floor.empty() ? std::nullopt : std::optional<std::string>(m_floor);
+        };
         m_flow = std::make_unique<WorldFlow>(std::move(flow), pool);
         setNotice(WorldNoticeContent{std::string(world_notice::kGenerating), {}, {}}, false);
     }
@@ -133,6 +140,11 @@ WorldSession::~WorldSession() {
     m_heroes.reset();
     m_loader.reset();
     m_flow.reset();
+    m_pool.cancel(m_floorGeneration);
+    if (m_floorBox) {
+        const std::lock_guard lock(m_floorBox->mutex);
+        m_floorBox->wake = nullptr;
+    }
     m_interaction.reset();
     m_rooms.clear();
 }
@@ -177,6 +189,13 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     if (idleWake && !m_waitSince) {
         m_waitSince = Clock::now();
     }
+    // The frame's time step (the ride's fades); an idle wake has none.
+    double deltaSeconds = 0.0;
+    if (!idleWake) {
+        ++m_updates;
+        deltaSeconds = m_lastTime ? timeSeconds - *m_lastTime : 0.0;
+        m_lastTime = timeSeconds;
+    }
     // The coverLoad phase opens after the floor's first two frames (commit()).
     if (!idleWake && m_coverPhasePending && m_nextFrame > m_coverPhaseAfter) {
         m_coverPhasePending = false;
@@ -192,10 +211,14 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
         if (std::optional<WorldBuild> preview = m_flow->takePreview()) {
             commitPreview(std::move(*preview));
         }
-        // I3 step 15b: a live update's result waits while a launched game runs (ADR-0012 §6).
-        if (!m_previewAwaitingFrame && !(m_liveFlow && product.launchActive())) {
+        // I3 step 15b: a live update's result waits while a launched game runs (ADR-0012 §6); I4 step 7b: a result
+        // waits for a ride to end (ADR-0013 §10), and one built for another floor than the one shown is built again
+        // for it first.
+        if (!m_previewAwaitingFrame && !(m_liveFlow && product.launchActive()) && !m_ride && !m_retargetPending) {
             if (std::optional<WorldResult> result = m_flow->takeResult()) {
-                if (std::exchange(m_liveFlow, false)) {
+                if (retargetResult(*result, product.catalog().worldReader())) {
+                    m_liveFlow = false;
+                } else if (std::exchange(m_liveFlow, false)) {
                     applyLive(std::move(*result));
                 } else if (m_shownPreview) {
                     reconcile(std::move(*result));
@@ -207,6 +230,8 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     } else if (m_decided) {
         commit(*std::exchange(m_decided, std::nullopt));
     }
+    // I4 step 7b: the ride (its floor's job, its fade, the floor swapped behind it).
+    followRide(product, idleWake, deltaSeconds);
     followRefresh(product);
     startLiveFlow(product);
     if (!idleWake) {
@@ -214,6 +239,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     }
     coverRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
+    syncDirectory(product);
 }
 
 std::vector<ScreenGame> WorldSession::screenGamesOf(const std::string& room) const {
@@ -618,7 +644,8 @@ void WorldSession::recordBuild(const WorldBuild& build) {
                  build.planDigest.empty() ? std::string() : ", plan " + build.planDigest);
 }
 
-bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<WalkerKeptRecord>* walker) {
+bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<WalkerKeptRecord>* walker,
+                             bool atCamera) {
     // I3 step 15b: a floor committed again over the one shown (the walker kept) keeps its items' pictures: each room's
     // arrays pass to its new collection and the cover loader's work is adopted, so only new or changed pictures go up.
     // I4 step 6b (ADR-0013 §7): the walker (and a Focus or Inspect pose) stays in the frame of the area that holds it,
@@ -658,6 +685,7 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     SceneShow show;
     show.keepWalker = keepWalker;
     show.walkerMove = walkerMoved;
+    show.atCamera = atCamera;
     // The hero CRT: the bound room's (the start room's at first, then the eye's: I4 step 6b) when it is on this floor,
     // with its games; none (the lobby) until the eye stays in a room.
     const std::optional<std::string> screenRoom = floorScreenRoom(build);
@@ -926,6 +954,8 @@ void WorldSession::showCard(const InteractionResult& result, ProductUi& product)
 }
 
 void WorldSession::beforeInteraction(ProductUi& product, const scene::WalkerPose& walker) {
+    // I4 step 7b: the directory's commands and "Mostra nella stanza" taken where they lead (world_ride.cpp).
+    followCommands(product);
     m_launch.beforeInteraction(product, *m_interaction, walker, m_context.frameIndex());
 }
 
@@ -965,11 +995,19 @@ bool WorldSession::waits() const {
     if (!m_options.lockstep) {
         return false;
     }
-    // Before the run's last frame the whole floor, before the others the frame's view (ADR-0011 §6).
+    // Before the run's last frame the whole floor, before the others the frame's view (ADR-0011 §6). I4 step 7b: a
+    // ride's destination being built once the view faded out, then the eye's area on it (the waits replace the ride's
+    // timeout), and a building's result built again for the floor shown (once built, it waits for a launch's end: no
+    // reason to wait).
     const std::optional<std::uint32_t> limit = m_context.options().frameLimit;
     const bool lastFrameNext = limit && m_nextFrame + 1 >= *limit;
-    const bool pending = m_decided.has_value() || (m_flow && m_flow->phase() != WorldPhase::Done) ||
-                         (!m_rooms.empty() && !settled(lastFrameNext));
+    const bool ridePending =
+        m_ride && (m_ride->awaitsFloor() || (m_ride->phase() == RidePhase::AwaitingView && !rideViewResident()));
+    // A result that waits for the ride to end is no reason to wait.
+    const bool flowPending =
+        m_flow && m_flow->phase() != WorldPhase::Done && !(m_ride && m_flow->phase() == WorldPhase::Ready);
+    const bool pending = m_decided.has_value() || flowPending || (!m_rooms.empty() && !settled(lastFrameNext)) ||
+                         ridePending || (m_retargetPending && !m_retargetResult);
     if (!pending) {
         return false;
     }
@@ -995,6 +1033,11 @@ void WorldSession::dropCollection() {
     syncCollections();
     m_shown.reset();
     m_launch.setPlan(nullptr);
+    // I4 step 7b: no floor shown (the plan's state stays for the next one: keepShown()).
+    m_floor.clear();
+    m_elevatorZone = core::Aabb{};
+    m_elevatorDoors = glm::vec3(0.0f);
+    m_doorways.clear();
     if (std::exchange(m_coverPhaseOpen, false)) {
         m_context.frameTiming().closePhase(kPhaseCoverLoad);
     }
@@ -1031,6 +1074,10 @@ void WorldSession::record(RunReport& report) const {
                 world.room = area;
             }
         }
+    }
+    // A ride the run ended in (I4 step 7b): its record so far.
+    if (m_ride) {
+        world.rides.push_back(m_ride->record());
     }
     world.hoverChanges = m_interaction->hoverChanges();
     m_interaction->record(world.interaction);

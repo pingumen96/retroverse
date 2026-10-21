@@ -14,7 +14,8 @@
 //    reads ProductUi::launchActive()).
 //  - "Mostra nella stanza": the quick catalog's card asks where each game stands (ProductUi::setRoomPlacement, the
 //    plan shown's world::PlanIndex: roomPlacementOf()); its button closes the catalog and the next frame eases the
-//    walker to the item's Focus pose, the item pulled out (WorldInteraction::showInRoom).
+//    walker to the item's Focus pose, the item pulled out (WorldInteraction::showInRoom). Since I4 step 7b the session
+//    takes the walker to the game's room first (a teleport on the floor, a ride to another), then calls showInRoom().
 //  - The run report's world.launch record (RoomLaunchLog).
 // Main thread only.
 
@@ -41,9 +42,16 @@ public:
     void setPlan(const world::WorldPlan* plan);
 
     /// Before the frame's interaction: the room's placement given to the quick catalog when the plan or the room that
-    /// holds the eye changed (the card shown fills again), a "Mostra nella stanza" taken to its item, the launch's end
-    /// given to the interaction. `walker`: the walker's pose as the frame starts.
+    /// holds the eye changed (the card shown fills again), the launch's end given to the interaction. `walker`: the
+    /// walker's pose as the frame starts.
     void beforeInteraction(ProductUi& product, WorldHover& hover, const scene::WalkerPose& walker, std::uint64_t frame);
+    /// "Mostra nella stanza" on `game` in the interaction's room (WorldHover::showInRoom from `walker`), recorded: the
+    /// item's pick id, or kNoPick when it was not taken (its reason recorded). Since I4 step 7b the session calls it
+    /// once the walker stands in the game's room (a teleport, a ride).
+    world::PickId showInRoom(const catalog::GameId& game, WorldHover& hover, const scene::WalkerPose& walker,
+                             std::uint64_t frame);
+    /// "Mostra nella stanza" on `game` refused for `failure` (a directory notice, a room key), recorded.
+    void showInRoomRefused(const catalog::GameId& game, std::string_view failure, std::uint64_t frame);
     /// After it: Avvia (`result.launch`) asked of the product UI, the restore after a launch recorded. `walker`: the
     /// pose the frame leaves the walker at (the result's, else the frame's start).
     void afterInteraction(const InteractionResult& result, ProductUi& product, WorldHover& hover,

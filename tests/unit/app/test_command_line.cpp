@@ -554,6 +554,10 @@ TEST_CASE("app/command_line: help lists every option and the exit codes", "[app]
     CHECK_FALSE(helpListsOption(help, "--exi")); // a prefix of a listed option is not an entry
     CHECK(help.find("  --exit\n      Same as --exit-after-frames.") != std::string::npos);
     CHECK(help.find("Exit codes") != std::string::npos);
+    // The controls name the directory (I4 step 7b): M or Select anywhere, E or A at an elevator, and Back's level.
+    CHECK(help.find("M (gamepad Select) opens the directory") != std::string::npos);
+    CHECK(help.find("E (gamepad A) facing an") != std::string::npos);
+    CHECK(help.find("the quick catalog or the directory and closes it") != std::string::npos);
 }
 
 TEST_CASE("app/command_line: the options of I3 are parsed, listed and no longer refused",

@@ -41,12 +41,26 @@
 // their slots, the items that stood unmoved with their pictures, the scene and the walker untouched), or the floor
 // committed again with the walker kept in its area's frame. The other floors are only saved. Never while a launched
 // game runs: a result that arrives meanwhile applies after it.
+//
+// The elevator and the directory (I4 step 7b, world_ride.cpp; ADR-0013 §10): in front of a floor's elevator (in its
+// zone, facing its doors) the prompt shows and interact opens the directory (the product UI's), M or Select anywhere in
+// free roam. Its commands, and the quick catalog's "Mostra nella stanza", lead the walker (directory_data.hpp's
+// routing): a teleport on the floor shown (a room's doorway, the elevator), the Focus pose in the room the interaction
+// is in, or a ride (elevator_ride.hpp): the view fades out, the destination floor is built by a floor-build job from the
+// plan shown, the rooms' items files and the catalog's play sessions, the resident floor is dropped only once it is
+// built and swapped at a frame boundary behind the fade (the hero CRT unbound without a join, bound again by the eye's
+// room tracker), the walker at its elevator's arrival or at the room's doorway, the view fades in once the eye's area is
+// resident (or by 10 s after the request; under lockstep the frames wait instead). A refused or failed "Mostra nella
+// stanza" of the quick catalog is told by the world's notice (the directory tells its own). A building's result or a
+// live update that ends during a ride applies after it (built again for the floor shown when it was built for another,
+// then applied once no launched game runs). Input is suspended during the ride.
 
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <span>
@@ -54,6 +68,8 @@
 #include <vector>
 
 #include <rv/app/cover_requests.hpp>
+#include <rv/app/directory_data.hpp>
+#include <rv/app/elevator_ride.hpp>
 #include <rv/app/game_screens.hpp>
 #include <rv/app/library_refresh.hpp>
 #include <rv/app/run_report.hpp>
@@ -71,6 +87,7 @@
 #include <rv/scene/render_item.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/pick_index.hpp>
+#include <rv/world/where_is.hpp>
 
 #include "world_card.hpp"
 #include "world_hover.hpp"
@@ -100,6 +117,9 @@ public:
         /// With `keepWalker`: the move of the area that holds the walker (I4 step 6b, ADR-0013 §7: the walker kept in
         /// its frame); none: it stays where it stands.
         std::optional<FrameMove> walkerMove;
+        /// Without `keepWalker`: the walker at the scene's camera even when --spawn was given (I4 step 7b: a ride's
+        /// destination, its camera the elevator's arrival or a room's doorway).
+        bool atCamera = false;
         /// The games the hero CRT binds with (its room's).
         std::vector<ScreenGame> screenGames;
     };
@@ -123,6 +143,10 @@ public:
         /// Binds the hero CRT to the scene's CRT whose object id starts with `prefix` (a room's), with `games` (I4
         /// step 6b: the CRT of the eye's room); false when the scene has none.
         std::function<bool(const std::string& prefix, std::vector<ScreenGame> games)> bindScreen;
+        /// I4 step 7b: puts the walker at `camera` (its feet the eye less the walker's eye height, its yaw and pitch),
+        /// the view's camera with it (a teleport on the floor shown); and the walker's pose now.
+        std::function<void(const scene::CameraSetup& camera)> teleport;
+        std::function<scene::WalkerPose()> walker;
     };
 
     struct Options {
@@ -210,8 +234,50 @@ public:
     /// The end of the run: the world and residency records.
     void record(RunReport& report) const;
 
+    // --- I4 step 7b: the elevator, the directory and the ride (world_ride.cpp; ADR-0013 §10) -----------------------
+
+    /// A ride runs: the input is suspended (the walker, the interaction, the product UI read nothing).
+    [[nodiscard]] bool riding() const noexcept { return m_ride != nullptr; }
+    /// How dark the ride's fade makes the view: 0 not at all, 1 black.
+    [[nodiscard]] float fade() const noexcept;
+    /// The walker stands in the elevator's proximity zone of the floor shown, facing its doors (facesElevator()).
+    [[nodiscard]] bool atElevator() const;
+    /// atElevator() in free roam with nothing hovered and no ride: the prompt shows, interact opens the directory (the
+    /// interaction's state of this frame, after interact()).
+    [[nodiscard]] bool idleAtElevator() const;
+    /// Opens the directory on `tab` with the building's floors and rooms and where the walker is (`via`: "elevator" or
+    /// "map", the run report's); nothing without a product UI's catalog of rooms.
+    void openDirectory(ProductUi& product, ui::DirectoryTab tab, std::string_view via);
+    /// The elevator's prompt of this frame: shown naming `key`, or hidden (none); the frames it shows are counted.
+    void elevatorPrompt(ProductUi& product, std::optional<std::string> key);
+
 private:
     using Clock = std::chrono::steady_clock;
+
+    /// What the floor-build jobs of rides read (I4 step 7b): the plan shown, its digest and library, the media roots
+    /// its floor was built with.
+    struct PlanState {
+        std::shared_ptr<const world::WorldPlan> plan;
+        std::string digest;
+        catalog::LibraryId library;
+        std::optional<std::filesystem::path> mediaRoot;
+        std::optional<std::filesystem::path> mediaRootPath;
+        std::optional<std::filesystem::path> screenMediaRoot;
+    };
+    /// What a floor-build job posts (world_ride.cpp): the floor built, the generation it was asked under, whether it is
+    /// a building's result built again for the floor shown; the host's wake.
+    struct FloorJobBox {
+        std::mutex mutex;
+        std::optional<WorldBuild> build;
+        std::uint64_t generation = 0;
+        bool retarget = false;
+        std::function<void()> wake;
+    };
+    /// "Mostra nella stanza" of `game` once the walker stands in `room` (after a teleport or a ride).
+    struct PendingShow {
+        catalog::GameId game;
+        std::string room;
+    };
 
     /// A collection room of the floor shown.
     struct FloorRoom {
@@ -238,11 +304,12 @@ private:
     /// The build's outcome, change report, plan and times into the record (logged).
     void recordBuild(const WorldBuild& build);
     /// Shows `build`'s floor (it has its plan and scene): the scene through the host (the walker kept where it stands
-    /// with `keepWalker`, moved with the area that holds it, I4 step 6b), a collection per room (with `keepWalker` each
-    /// taking its room's pictures), their pick indices, the cover loader, the bound room's CRT. False when the scene
-    /// could not be shown (the test room then, with its notice). `walker`: where the walker was kept, for the record.
-    [[nodiscard]] bool showFloor(WorldBuild& build, bool keepWalker,
-                                 std::optional<WalkerKeptRecord>* walker = nullptr);
+    /// with `keepWalker`, moved with the area that holds it, I4 step 6b; else at the scene's camera, --spawn not
+    /// applied with `atCamera`: a ride's destination), a collection per room (with `keepWalker` each taking its room's
+    /// pictures), their pick indices, the cover loader, the bound room's CRT. False when the scene could not be shown
+    /// (the test room then, with its notice). `walker`: where the walker was kept, for the record.
+    [[nodiscard]] bool showFloor(WorldBuild& build, bool keepWalker, std::optional<WalkerKeptRecord>* walker = nullptr,
+                                 bool atCamera = false);
     /// A cover loader for `build`'s rooms' covers on the collections shown, in place of any (none without collections
     /// or covers); `previous` (else the loader replaced) is adopted. The hero item is let go first (releaseHero()): its
     /// loader index is the replaced loader's.
@@ -307,6 +374,45 @@ private:
     /// The room the notices name: the start room's id as --start-room gives it ("room:snes", "area:arcade",
     /// "area:shared:handheld"), else none.
     [[nodiscard]] std::string noticeRoom() const;
+
+    // I4 step 7b (world_ride.cpp).
+    /// What the world can do now, for the directory's commands and "Mostra nella stanza" (directory_data.hpp).
+    [[nodiscard]] WorldMoveConditions moveConditions(const ProductUi& product) const;
+    /// The directory's commands and the quick catalog's "Mostra nella stanza" taken where they lead (a ride, a teleport,
+    /// the Focus pose), a refusal back to the directory; then a "Mostra nella stanza" a ride or a teleport left pending.
+    void followCommands(ProductUi& product);
+    void executeMove(ProductUi& product, const WorldMove& move, const std::optional<ui::DirectoryCommand>& command,
+                     const std::optional<catalog::GameId>& game);
+    /// A teleport on the floor shown: to `room`'s doorway ("": the elevator's arrival), the interaction in that room.
+    void teleportTo(const std::string& room, RideReason reason);
+    /// A ride for `move` (the directory's `command`, if any: reopened when the ride fails; else "Mostra nella stanza" of
+    /// the quick catalog, whose failure the world's notice tells).
+    void startRide(ProductUi& product, const WorldMove& move, const std::optional<ui::DirectoryCommand>& command);
+    /// The floor-build job of `skeleton` (a WorldBuild with its requested floor, library, start room and digest; its
+    /// plan the plan shown's when it has none), the latest asked winning; `retarget`: a building's result built for
+    /// another floor than the one shown (applied as a live update once built, never while a launched game runs), else a
+    /// ride's destination. `reader` (the catalog's world reader, if any): the CRTs' last plays from its sessions now
+    /// (catalogLastPlayed()), else the items files'.
+    void requestFloor(WorldBuild skeleton, bool retarget, std::shared_ptr<WorldCatalogReader> reader);
+    /// The floor-build job's answer, if one came (its generation the latest).
+    [[nodiscard]] std::optional<WorldBuild> takeFloorBuild(bool& retarget);
+    /// The ride's frame (or idle wake): its floor job answered, its fade moved, the floor swapped, the ride ended.
+    void followRide(ProductUi& product, bool idleWake, double deltaSeconds);
+    void swapRide();
+    void finishRide();
+    /// The eye's area resident on the ride's destination: every item of the room that holds the eye done (a hall has
+    /// none), the loader having ranked them since the swap.
+    [[nodiscard]] bool rideViewResident() const;
+    /// The plan shown's state for the rides' floor jobs, the floor's elevator, arrival and doorways, its floors' record.
+    void keepPlan(const WorldBuild& build);
+    /// The directory's floors and rooms and where the walker is, given to `product` when they changed.
+    void syncDirectory(ProductUi& product);
+    /// The interaction's index of the room `room` of the floor shown, if it has a collection.
+    [[nodiscard]] std::optional<std::size_t> interactionRoomOf(std::string_view room) const;
+    /// A building's result for another floor than the one shown (a ride happened since its floor was asked): its floor
+    /// built again for the floor shown (`reader`: requestFloor()'s), then applied as a live update. True when it was
+    /// taken so.
+    [[nodiscard]] bool retargetResult(WorldResult& result, std::shared_ptr<WorldCatalogReader> reader);
 
     AppContext& m_context;
     Options m_options;
@@ -381,6 +487,39 @@ private:
     std::uint64_t m_liveRequestFrame = 0;
     std::optional<Clock::time_point> m_liveRequestedAt;
     bool m_liveFlow = false;
+
+    /// I4 step 7b: the plan shown (its state for the rides' floor jobs, its where-is index), the floor shown ("" none),
+    /// its elevator's zone, arrival camera and rooms' doorway cameras (the scene's frame), the directory's building made
+    /// from the plan (the digest it was made from).
+    std::optional<PlanState> m_planState;
+    std::optional<world::PlanIndex> m_planIndex;
+    std::string m_floor;
+    core::Aabb m_elevatorZone;
+    glm::vec3 m_elevatorDoors{0.0f};
+    scene::CameraSetup m_arrival;
+    std::map<std::string, scene::CameraSetup> m_doorways;
+    ui::DirectoryBuilding m_directoryBuilding;
+    std::string m_directoryPlan;
+    /// The ride, when it was asked (the steady clock), the directory's command that asked it, the destination built.
+    std::unique_ptr<ElevatorRide> m_ride;
+    Clock::time_point m_rideStart;
+    std::optional<ui::DirectoryCommand> m_rideCommand;
+    std::optional<WorldBuild> m_rideBuild;
+    /// The floor-build job's mailbox and generation (the latest asked wins), and a building's result waiting for its
+    /// floor built again for the floor shown (retargetResult()), then, once built, for a launched game's end.
+    std::shared_ptr<FloorJobBox> m_floorBox;
+    core::JobGeneration m_floorGeneration;
+    bool m_retargetPending = false;
+    std::optional<WorldResult> m_retargetResult;
+    /// "Mostra nella stanza" waiting for the walker to stand in its room (after a ride).
+    std::optional<PendingShow> m_pendingShow;
+    /// The run's time at the last frame's update (the ride's fades), and whether the world's reduceMotion is on.
+    std::optional<double> m_lastTime;
+    bool m_reduceMotion = false;
+    /// Frame updates so far, and the count when the ride swapped its floor: the eye's area is checked from the next
+    /// frame on, whether the swap came in a frame or in a lockstep wait (the same frames on every run).
+    std::uint64_t m_updates = 0;
+    std::uint64_t m_swapUpdate = 0;
 };
 
 /// The placements per section of `build`'s floor and the unplaced games per reason of its plan, into `record`
