@@ -46,6 +46,10 @@ struct PostSettings {
     float vignette = 0.0f;
     /// [0, 1]: peak-to-peak noise added to the sRGB-encoded output (kDitherAmplitude for 8-bit targets).
     float ditherAmplitude = 0.0f;
+    /// [0, 1]: how far the view has faded to black (PostUniforms::fade: its sRGB-encoded output times 1 - fade, after
+    /// the tonemap, so every pixel dims alike, the brightest lights too; the elevator ride's fade, I4 step 7b). 0
+    /// changes nothing.
+    float fade = 0.0f;
     /// Smooths the stair-steps of edges after the tonemap (FXAA, post/fxaa.frag): one more fullscreen pass.
     bool antialiasing = false;
 };
@@ -55,7 +59,7 @@ struct PostSettings {
 [[nodiscard]] PostSettings postSettingsFor(const scene::EnvironmentSetup& environment) noexcept;
 
 /// The PostUniforms block of `settings` with every value in its documented range: a non-finite or non-positive
-/// exposure becomes 1; the bloom strength (the bloom mix), the vignette and the dither amplitude are clamped to
+/// exposure becomes 1; the bloom strength (the bloom mix), the vignette, the dither amplitude and the fade are clamped to
 /// [0, 1], non-finite values becoming 0; the bloom threshold and knee are kBloomThreshold and kBloomKnee.
 [[nodiscard]] PostUniforms makePostUniforms(const PostSettings& settings) noexcept;
 

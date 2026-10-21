@@ -584,6 +584,7 @@ TEST_CASE("integration/shaders: the GLSL post block, texture units and filters m
                     {"float", "uBloomKnee", offsetof(PostUniforms, bloomKnee)},
                     {"float", "uVignette", offsetof(PostUniforms, vignette)},
                     {"float", "uDitherAmplitude", offsetof(PostUniforms, ditherAmplitude)},
+                    {"float", "uFade", offsetof(PostUniforms, fade)},
                 },
                 sizeof(PostUniforms));
     CHECK(rv::gl::toIndex(rv::gl::UniformBinding::Shadow) == rv::gl::toIndex(rv::gl::UniformBinding::Post) + 1);
