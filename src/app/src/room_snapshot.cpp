@@ -4,6 +4,7 @@
 #include <set>
 #include <utility>
 
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/catalog_db/catalog_stamp.hpp>
@@ -165,6 +166,24 @@ BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader, std::span<cons
         }
         building.systems.push_back(std::move(result));
     }
+    // Where the read's time went (I4 step 6b): the bulk queries and the media checks, the slowest system.
+    double queryMs = 0.0;
+    double mediaMs = 0.0;
+    std::size_t entries = 0;
+    const RoomSnapshotResult* slowest = nullptr;
+    for (const RoomSnapshotResult& result : building.systems) {
+        queryMs += result.queryMs;
+        mediaMs += result.mediaMs;
+        entries += result.snapshot.entries.size();
+        if (slowest == nullptr || result.milliseconds > slowest->milliseconds) {
+            slowest = &result;
+        }
+    }
+    spdlog::info("Building snapshot: {} system(s), {} entries: the queries {:.0f} ms, the media {:.0f} ms{}",
+                 building.systems.size(), entries, queryMs, mediaMs,
+                 slowest != nullptr ? fmt::format("; the slowest {} ({} entries) {:.0f} ms", slowest->system.str(),
+                                                  slowest->snapshot.entries.size(), slowest->milliseconds)
+                                    : std::string());
     std::sort(building.systems.begin(), building.systems.end(),
               [](const RoomSnapshotResult& a, const RoomSnapshotResult& b) { return a.system < b.system; });
     std::set<catalog::GameId> missing;
