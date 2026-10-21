@@ -71,8 +71,13 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   a floor, each sampling its own arrays and showing its own covers, the residency per room and the floor's GPU memory
   within 512 MiB, the cover loader's first view without the items of a room whose doorway it does not see; a walk from
   the hall into one room, out and into the other, a cover of the second inspected; the start in the lobby without
-  `--start-room`, and a `--start-room` the plan lacks refused with exit 2; the rooms, the doorways, the hall and the
-  arrival point are read from the generated plan and its floors' layout, never named) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
+  `--start-room`, and a `--start-room` the plan lacks refused with exit 2; since I4 step 6b the hero CRT rebound on
+  that walk (`video.binds`, the `screenBind` phase's frames within the loading row in Release), the handheld floor
+  previewed and reconciled room by room with nothing moved or uploaded again, then rebuilt live around the fixture's
+  `additions/` after "Aggiorna libreria" with room:gb's pictures and the walker kept, gen4 rebuilt as megadrive enters
+  its new shared room with the walker kept in the hall's frame, and gen5's new titles, only saved meanwhile, shown at
+  its next start; the rooms, the doorways, the hall and the arrival point are read from the generated plan and its
+  floors' layout, never named) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
   few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
   the animations' frame budget and the benchmark path (`[benchmark]`,
@@ -133,7 +138,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   rules"). The catalog query benchmarks (I2 step 9: NFR-02 on 10,000 games, a UI page on 100,000, what the search area
   costs the writes) are hidden (`[.bench]`) and run by hand in Release: `build/msvc-x64-release/bin/rv_tests.exe
   "[bench]"` (informative unless the machine is quiet); so are I3's budgets (the room query, generation, validation,
-  the update, picking, the plan's scene, `[bench][covers]`, the static groups' planning, `snes-stress` materialized).
+  the update, picking, the plan's scene, `[bench][covers]`, the static groups' planning, `snes-stress` materialized)
+  and I4 step 6b's `[world_build][bench]` (the building job on 90,000 generated entries: generated, unchanged through
+  the whole job, unchanged through the building stamp).
   `rv_tests.exe "[label-preview]"` writes sample spines, labels and fitted covers to `build/<preset>/label-preview` for
   a visual review (since I4 step 2 also `shape_<family>_*.png`: covers and generated labels made for a jewel case's,
   a keep case's and a big box's label quad, the stored layer beside the same layer stretched back to its quad). Golden files are compared byte for byte and rewritten only with `RV_UPDATE_GOLDEN=1` (the test then
@@ -168,7 +175,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `-Filter '[real-library][room-real]'` (Gate B's: snes imported alone under `build/<preset>/real-library/room`, the
   plan generated twice with one SHA-256, a restart after a second import moving nothing, the covers cold and warm, the
   benchmark path, four screenshots, a refresh of the whole library with the quick catalog open; the runs' reports and
-  screenshots stay there, never committed: the user's covers). `-OutDir <dir>`
+  screenshots stay there, never committed: the user's covers); since I4 step 6b `-Filter '[real-library][building]'`
+  (the whole library imported under `build/<preset>/real-library/building`, then `retroverse.exe`: the first
+  building, the unchanged start as the user starts it with NFR-01 to the lobby and the quick catalog's first page, the
+  whole building job with its stamp removed, a start in the computer floor's largest room within 512 MiB, and
+  `worldplan update`; the figures printed as "Real building:" lines). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
   <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python

@@ -666,9 +666,10 @@ struct ScreenService::Impl {
 ScreenService::ScreenService(HeroScreen screen, gl::MaterialRegistry& materials, std::vector<ScreenGame> games,
                              ScreenServiceOptions options)
     : m_impl(std::make_unique<Impl>(std::move(screen), materials, std::move(games), options)) {
-    spdlog::info(
-        "Hero CRT: the screen of '{}', {} game(s) with media{}", m_impl->screen->objectId, m_impl->policy.games().size(),
-        options.freezePtsSeconds ? fmt::format(", videos held at {:g} s", *options.freezePtsSeconds) : std::string());
+    spdlog::info("Hero CRT: the screen of '{}', {} game(s) with media{}", m_impl->screen->objectId,
+                 m_impl->policy.games().size(),
+                 options.freezePtsSeconds ? fmt::format(", videos held at {:g} s", *options.freezePtsSeconds)
+                                          : std::string());
 }
 
 ScreenService::~ScreenService() {

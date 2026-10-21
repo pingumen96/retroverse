@@ -631,7 +631,8 @@ Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan
 }
 
 Expected<std::string> roomContentDigest(const WorldPlan& plan, const RoomId& room) {
-    if (std::none_of(plan.rooms.begin(), plan.rooms.end(), [&](const Room& candidate) { return candidate.id == room; })) {
+    if (std::none_of(plan.rooms.begin(), plan.rooms.end(),
+                     [&](const Room& candidate) { return candidate.id == room; })) {
         return makeError(ErrorCode::NotFound, "the plan has no such room", room.toString());
     }
     auto digests = roomContentDigests(plan);

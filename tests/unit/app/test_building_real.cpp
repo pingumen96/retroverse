@@ -1,6 +1,6 @@
 // The real library's building in retroverse.exe (I4 step 6b). Hidden ([.real-library]): ctest never runs it;
-// scripts/real-library.ps1 does, with ES-DE closed, read-only snapshots of the library before and after, and the folders
-// in the RV_REAL_* variables:
+// scripts/real-library.ps1 does, with ES-DE closed, read-only snapshots of the library before and after, and the
+// folders in the RV_REAL_* variables:
 //   ./scripts/real-library.ps1 -Filter '[real-library][building]'
 // The whole library is imported into a new catalog under the build tree (build/<preset>/real-library/building/data,
 // library.json naming the real ES-DE home, install, ROM and media roots), then retroverse.exe of this build (hidden,

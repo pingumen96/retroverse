@@ -486,7 +486,8 @@ TEST_CASE("app/world_live_plan: room by room: an unchanged room stays, another's
     REQUIRE(shown.rooms.size() == 2);
     CHECK(shown.rooms.back().contentDigest == "gb-a");
     SECTION("nothing changed: every room unchanged") {
-        const LiveUpdatePlan plan = rv::app::planLiveUpdate(shown, twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a"));
+        const LiveUpdatePlan plan =
+            rv::app::planLiveUpdate(shown, twoRooms({item(110, 1), item(120, 2, 0.1f)}, "gb-a"));
         CHECK(plan.kind == LiveUpdateKind::Unchanged);
         REQUIRE(plan.rooms.size() == 2);
         for (const rv::app::RoomUpdate& room : plan.rooms) {

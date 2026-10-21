@@ -118,8 +118,8 @@ bool WorldSession::applyItems(WorldBuild& build, const LiveUpdatePlan& plan, Wor
         }
         const RoomUpdate* update = plan.find(room.id);
         if (update != nullptr && update->kind == RoomUpdateKind::Items) {
-            auto updated =
-                room.collection->applyLayout(layout, m_graphics, m_context.device().caps().uniformBufferOffsetAlignment);
+            auto updated = room.collection->applyLayout(layout, m_graphics,
+                                                        m_context.device().caps().uniformBufferOffsetAlignment);
             if (!updated) {
                 spdlog::error("World: the items of {} cannot be updated in place: {}; the floor is committed again",
                               room.id.toString(), updated.error().toString());

@@ -886,10 +886,11 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
         noPlan(build, world_notice::kFailed, std::string("the building could not be made: ") + error.what());
     }
     build.milliseconds = millisecondsSince(start);
-    spdlog::info("World: the building job in {:.0f} ms ({}): lock and plan {:.0f}, selections {:.0f}, rooms' data {:.0f}, "
-                 "plan {:.0f}, save {:.0f}, items {:.0f}",
-                 build.milliseconds, toString(build.outcome), build.lockMs, build.selectMs, build.dataMs, build.planMs,
-                 build.saveMs, build.itemsMs);
+    spdlog::info(
+        "World: the building job in {:.0f} ms ({}): lock and plan {:.0f}, selections {:.0f}, rooms' data {:.0f}, "
+        "plan {:.0f}, save {:.0f}, items {:.0f}",
+        build.milliseconds, toString(build.outcome), build.lockMs, build.selectMs, build.dataMs, build.planMs,
+        build.saveMs, build.itemsMs);
     return result;
 }
 

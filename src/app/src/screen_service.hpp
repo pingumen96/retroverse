@@ -68,11 +68,12 @@ struct ScreenServiceOptions {
 /// shows the new game's still meanwhile), so that no two decoder threads ever run. Files are logged by game, never by
 /// path (the user's folders). Main thread only; the material registry must outlive the service.
 ///
-/// Since I4 step 6b (ADR-0013 §9) the service follows the CRT of the room that holds the eye: bind() moves it to another
-/// screen with that room's games, the clip of the previous one stopping as a clip replacement does (its decoder's thread
-/// ends on its own and is never waited for on the render loop; the next clip opens once it has ended), the previous
-/// screen's picture override cleared (its colour bars back). A floor committed again lets go of its screen first
-/// (unbind(), the scene's registry being cleared) and binds the new scene's: one service, one decoder, for the run.
+/// Since I4 step 6b (ADR-0013 §9) the service follows the CRT of the room that holds the eye: bind() moves it to
+/// another screen with that room's games, the clip of the previous one stopping as a clip replacement does (its
+/// decoder's thread ends on its own and is never waited for on the render loop; the next clip opens once it has ended),
+/// the previous screen's picture override cleared (its colour bars back). A floor committed again lets go of its screen
+/// first (unbind(), the scene's registry being cleared) and binds the new scene's: one service, one decoder, for the
+/// run.
 class ScreenService {
 public:
     /// Rows the video is decoded at, at most (ADR-0012 §7: one 480p decoder).
@@ -90,11 +91,11 @@ public:
     void setGames(std::vector<ScreenGame> games);
 
     /// Lets go of the screen (I4 step 6b): the clip stops as a clip replacement does (never waited for), the still
-    /// goes, and the screen's picture override clears when `clearOverride` (false: the scene's registry was cleared, the
-    /// material is gone). Unbound, the service shows nothing and opens no decoder until bind().
+    /// goes, and the screen's picture override clears when `clearOverride` (false: the scene's registry was cleared,
+    /// the material is gone). Unbound, the service shows nothing and opens no decoder until bind().
     void unbind(bool clearOverride);
-    /// Binds `screen` (another room's CRT, or the same room's in a scene committed again) with `games`, the start choice
-    /// made as at the start; recorded with `frame` (VideoRecord::binds).
+    /// Binds `screen` (another room's CRT, or the same room's in a scene committed again) with `games`, the start
+    /// choice made as at the start; recorded with `frame` (VideoRecord::binds).
     void bind(HeroScreen screen, std::vector<ScreenGame> games, std::uint64_t frame);
     /// A screen is bound, and its object id ("" none).
     [[nodiscard]] bool bound() const noexcept;

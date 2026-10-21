@@ -813,8 +813,8 @@ TEST_CASE("world floor app: the arcade room and a floor's shared room show their
 namespace {
 
 /// "Aggiorna libreria" pressed while the floor shows (tests/input_scripts/catalog_refresh.json's path): the quick
-/// catalog opens on frame 2, Home and Up four times reach the button, A presses it on frame 20, the quick catalog closes
-/// on frame 24.
+/// catalog opens on frame 2, Home and Up four times reach the button, A presses it on frame 20, the quick catalog
+/// closes on frame 24.
 fs::path aggiornaScript(const fs::path& dir) {
     const Json script = Json::array({{{"fromFrame", 2}, {"toFrame", 2}, {"actions", {{"quick_catalog", 1}}}},
                                      {{"fromFrame", 4}, {"toFrame", 4}, {"actions", {{"ui_home", 1}}}},
@@ -830,7 +830,8 @@ fs::path aggiornaScript(const fs::path& dir) {
 }
 
 /// The part of the room `room` in a reconciliation's or a live update's record (REQUIREd).
-const rv::app::RoomUpdateRecord& roomUpdate(const std::vector<rv::app::RoomUpdateRecord>& rooms, std::string_view room) {
+const rv::app::RoomUpdateRecord& roomUpdate(const std::vector<rv::app::RoomUpdateRecord>& rooms,
+                                            std::string_view room) {
     const auto found = std::find_if(rooms.begin(), rooms.end(),
                                     [&](const rv::app::RoomUpdateRecord& record) { return record.room == room; });
     INFO("the room " << room);
@@ -851,7 +852,8 @@ void requireNothingUploadedAgain(const rv::app::RunReport& report) {
 TEST_CASE("world floor app: a stored floor previewed, then reconciled room by room with nothing moved or uploaded "
           "again; the building's additions refreshed while it shows: rebuilt, the rooms' pictures and the walker kept",
           "[gpu][world][world_floor_app]") {
-    // The handheld floor under the shipped threshold (I4 step 4): room:gb and the shared room of pocketlab and pokemini.
+    // The handheld floor under the shipped threshold (I4 step 4): room:gb and the shared room of pocketlab and
+    // pokemini.
     const PlannedBuilding building("world_floor_app/live_handheld", false);
     const std::string gb = building.roomOf("gb");
     const std::string shared = building.roomOf("pokemini");
@@ -910,8 +912,8 @@ TEST_CASE("world floor app: a stored floor previewed, then reconciled room by ro
     REQUIRE(building.fixture.applyOverlay("additions").has_value());
     const fs::path script = aggiornaScript(building.dir);
     const fs::path liveShot = building.dir / "live.png";
-    const AppRun live =
-        runApp(retroverseExe(), building.dir, "live", floorArguments(gb, 240, liveShot, {"--input-script", arg(script)}));
+    const AppRun live = runApp(retroverseExe(), building.dir, "live",
+                               floorArguments(gb, 240, liveShot, {"--input-script", arg(script)}));
     requireCleanRun(live);
     requireFloorShown(live, building, "handheld");
     INFO(live.describe());
@@ -1040,10 +1042,10 @@ TEST_CASE("world floor app: a system entering the resident floor rebuilds it wit
     CHECK(report.video.binds.front().screen.starts_with(snes + "/"));
     CHECK(report.video.maxDecoderThreads <= 1);
 
-    // gen5 at its next start: psx's new titles, saved meanwhile with their items, shown at the first frame from the plan
-    // and the items files, then reconciled with nothing to change but the covers' sources checked. gen5 never showed
-    // before: its covers are not in the cache yet, so the preview shows their generated labels until the reconcile,
-    // the media root known, makes the covers (uploaded over the labels).
+    // gen5 at its next start: psx's new titles, saved meanwhile with their items, shown at the first frame from the
+    // plan and the items files, then reconciled with nothing to change but the covers' sources checked. gen5 never
+    // showed before: its covers are not in the cache yet, so the preview shows their generated labels until the
+    // reconcile, the media root known, makes the covers (uploaded over the labels).
     const std::string psx = building.roomOf("psx");
     const AppRun gen5 = runApp(retroverseExe(), building.dir, "gen5", floorArguments(psx, 40, std::nullopt));
     requireCleanRun(gen5);

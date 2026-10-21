@@ -172,8 +172,8 @@ struct RoomCollection {
     /// Its content digest in the plan (world::roomContentDigest: its record and every element of it), what the per-room
     /// reconcile compares first (I4 step 6b, ADR-0013 §5).
     std::string contentDigest;
-    /// Its hero CRT's games: its placed games with media, in its featured order (room_screen.hpp, from the rooms' items;
-    /// none without a media root for them: FloorSources::screenMediaRoot).
+    /// Its hero CRT's games: its placed games with media, in its featured order (room_screen.hpp, from the rooms'
+    /// items; none without a media root for them: FloorSources::screenMediaRoot).
     std::vector<ScreenGame> screenGames;
 };
 
@@ -232,7 +232,8 @@ struct WorldBuild {
     std::size_t itemsRead = 0;
     /// Milliseconds on the worker: the lock and the plan read under it, the selections, the rooms' data, the
     /// generation or update with its validation (the data included), the plan's write, the rooms' items files, the
-    /// floor's scene data and scene, the layouts and the cover requests, the whole job (the building's and the floor's).
+    /// floor's scene data and scene, the layouts and the cover requests, the whole job (the building's and the
+    /// floor's).
     double lockMs = 0.0;
     double selectMs = 0.0;
     double dataMs = 0.0;

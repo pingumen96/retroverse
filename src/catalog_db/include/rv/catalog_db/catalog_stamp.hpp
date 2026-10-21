@@ -4,10 +4,10 @@
 // snapshot of a library reads (SqliteCatalogQuery::roomEntries, aliasTarget) may have changed, so that the app's
 // building job can tell, without reading every system's snapshot, that the catalog is the one its stored plan was made
 // from. It holds:
-//   - the library's newest import (rv_imports' id, AUTOINCREMENT, and when it finished): every committed import, refresh
-//     or index rebuild records one, also one that changed nothing, and nothing else writes the index tables;
-//   - Retroverse's play sessions that count for a game (roomEntries' rule: no launch test, every outcome but a failure to
-//     start or a launch blocked): how many and the latest start;
+//   - the library's newest import (rv_imports' id, AUTOINCREMENT, and when it finished): every committed import,
+//     refresh or index rebuild records one, also one that changed nothing, and nothing else writes the index tables;
+//   - Retroverse's play sessions that count for a game (roomEntries' rule: no launch test, every outcome but a
+//     failure to start or a launch blocked): how many and the latest start;
 //   - the identities' aliases and history (written outside imports too: their number and newest row);
 //   - the schema's version and the sort keys' version (rv_meta).
 // Read-only; one connection, any role.

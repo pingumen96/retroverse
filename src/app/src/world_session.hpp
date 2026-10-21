@@ -4,15 +4,16 @@
 // §3, ADR-0013 §9): what retroverse.exe shows without --scene, --model or --mock-catalog. While the building is made
 // (app::WorldFlow: the stored plan read, the building job on the worker pool, the floor's build) the empty shell shows
 // with the "generating" notice (the WorldGenerating state); the result is committed at a frame boundary: the floor's
-// static part through the application's scene (SceneHost::showScene: a SceneInstance of its SceneDescription, the walker
-// at its camera: the elevator's arrival point, or --start-room's doorway camera), each collection room's collection on
-// a static instance group of its own (CollectionInstance, its registry keys carrying the room id), one cover loader over
-// the floor that brings their covers and spines in within the upload budget (the view: the room that holds the eye and
-// those whose doorway the frustum meets), the hover, pull-out and Focus of the room that holds the eye (WorldHover, I3
-// step 13a: a pick index per room). A catalog that does not open, or a library that gives no room, gives the test room
-// (SceneHost::showTestRoom), a building that cannot be made now the shell, each with its notice. Lockstep runs
-// (--fixed-dt) wait, at most kLockstepWaitLimit at a time, while the floor is on its way and until the layers of every
-// item in the frame's view are resident (every item of the floor before the run's last frame). Main thread only.
+// static part through the application's scene (SceneHost::showScene: a SceneInstance of its SceneDescription, the
+// walker at its camera: the elevator's arrival point, or --start-room's doorway camera), each collection room's
+// collection on a static instance group of its own (CollectionInstance, its registry keys carrying the room id), one
+// cover loader over the floor that brings their covers and spines in within the upload budget (the view: the room that
+// holds the eye and those whose doorway the frustum meets), the hover, pull-out and Focus of the room that holds the
+// eye (WorldHover, I3 step 13a: a pick index per room). A catalog that does not open, or a library that gives no room,
+// gives the test room (SceneHost::showTestRoom), a building that cannot be made now the shell, each with its notice.
+// Lockstep runs (--fixed-dt) wait, at most kLockstepWaitLimit at a time, while the floor is on its way and until the
+// layers of every item in the frame's view are resident (every item of the floor before the run's last frame). Main
+// thread only.
 //
 // The hero CRT (ADR-0012 §7, ADR-0013 §9) is the CRT of the room that holds the eye, with that room's games (I4 step
 // 6b: ScreenRoomTracker): bound from the start in --start-room's room, none in the lobby until the eye stays in a room;
@@ -21,25 +22,25 @@
 // only when its game stands in the eye's room.
 //
 // The persisted start (I3 step 10c, world_start.cpp): with a plan stored, its start floor shows first, as it is
-// (WorldFlow's preview: its covers and spines from the cache by the rooms' items of the last start, its CRTs' games from
-// them too), before the catalog is even read; once a frame has shown it, the building's result reconciles it room by
-// room (I4 step 6b, world_reconcile.hpp, world_live_plan.hpp): each room by its content digest, an unchanged one keeping
-// its collection and its pictures (nothing uploaded again), one whose items changed applied in place, one whose covers
-// changed served again; a change of the floor's static part commits the floor again with the walker kept in the frame of
-// the area that holds it, moved with it; a plan that cannot be used gives the shell. A lockstep run's first frame shows
-// the stored floor's view whole, the next ones the reconciled floor.
+// (WorldFlow's preview: its covers and spines from the cache by the rooms' items of the last start, its CRTs' games
+// from them too), before the catalog is even read; once a frame has shown it, the building's result reconciles it room
+// by room (I4 step 6b, world_reconcile.hpp, world_live_plan.hpp): each room by its content digest, an unchanged one
+// keeping its collection and its pictures (nothing uploaded again), one whose items changed applied in place, one whose
+// covers changed served again; a change of the floor's static part commits the floor again with the walker kept in the
+// frame of the area that holds it, moved with it; a plan that cannot be used gives the shell. A lockstep run's first
+// frame shows the stored floor's view whole, the next ones the reconciled floor.
 //
 // The covers (I3 step 12) come in the cover loader's order (the hero item, the view by projected size, the rest by
-// distance), the hero item's front shows its hero texture (drawn by the dynamic path), nothing is made or uploaded while
-// a launched game runs, and a refresh of the catalog lets the loader try the media root again.
+// distance), the hero item's front shows its hero texture (drawn by the dynamic path), nothing is made or uploaded
+// while a launched game runs, and a refresh of the catalog lets the loader try the media root again.
 //
 // The live update (I3 step 15b, world_live_update.cpp): after a refresh of the catalog the building job runs again (the
 // snapshots, the update, the plan saved) while the floor shows, and its result is applied at a frame boundary with as
-// little rebuilt as it needs, room by room as at the start (world_live_plan.hpp): nothing, the covers of the rooms whose
-// covers changed served again, the items of the rooms whose items changed applied in place (titles placed into their
-// slots, the items that stood unmoved with their pictures, the scene and the walker untouched), or the floor committed
-// again with the walker kept in its area's frame. The other floors are only saved. Never while a launched game runs: a
-// result that arrives meanwhile applies after it.
+// little rebuilt as it needs, room by room as at the start (world_live_plan.hpp): nothing, the covers of the rooms
+// whose covers changed served again, the items of the rooms whose items changed applied in place (titles placed into
+// their slots, the items that stood unmoved with their pictures, the scene and the walker untouched), or the floor
+// committed again with the walker kept in its area's frame. The other floors are only saved. Never while a launched
+// game runs: a result that arrives meanwhile applies after it.
 
 #include <chrono>
 #include <cstdint>
@@ -93,7 +94,8 @@ public:
         /// committed again over itself), else it stands at the scene's camera (or at --spawn).
         bool keepWalker = false;
         /// The hero CRT the scene's screen service binds: the first crt object whose id starts with this prefix ("" for
-        /// none: a floor whose eye's room has no CRT bound yet); unset, the scene's first CRT (the shell, the test room).
+        /// none: a floor whose eye's room has no CRT bound yet); unset, the scene's first CRT (the shell, the test
+        /// room).
         std::optional<std::string> heroScreenPrefix;
         /// With `keepWalker`: the move of the area that holds the walker (I4 step 6b, ADR-0013 §7: the walker kept in
         /// its frame); none: it stays where it stands.
@@ -274,10 +276,10 @@ private:
     void applyLive(WorldResult result);
     void keepShown(const WorldBuild& build);
     [[nodiscard]] bool applyItems(WorldBuild& build, const LiveUpdatePlan& plan, WorldLiveUpdateRecord& record);
-    /// I4 step 6b: `plan`'s rooms (Unchanged, Textures, Items) applied to the floor shown, room by room: the Items rooms'
-    /// collections in place, the cover loader again (adopting what showed: an unchanged room's pictures stay, nothing
-    /// uploaded again) when some room's covers or items changed, the bound CRT's games when they changed. False when
-    /// the items cannot be applied in place (commit the floor again).
+    /// I4 step 6b: `plan`'s rooms (Unchanged, Textures, Items) applied to the floor shown, room by room: the Items
+    /// rooms' collections in place, the cover loader again (adopting what showed: an unchanged room's pictures stay,
+    /// nothing uploaded again) when some room's covers or items changed, the bound CRT's games when they changed. False
+    /// when the items cannot be applied in place (commit the floor again).
     [[nodiscard]] bool applyRooms(WorldBuild& build, const LiveUpdatePlan& plan, WorldLiveUpdateRecord& record);
     /// The record of each room's part of `plan` (`rebuilt`: the floor was committed again around them).
     [[nodiscard]] static std::vector<RoomUpdateRecord> roomRecords(const LiveUpdatePlan& plan, bool rebuilt);

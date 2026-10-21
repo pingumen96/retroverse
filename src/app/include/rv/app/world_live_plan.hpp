@@ -31,14 +31,14 @@
 // collection in place. The items are compared in their room's frame, so that a room moved as a whole (its growth)
 // counts none of its items as moved.
 //
-// Since I4 step 6b (ADR-0013 §5, §7, §9) the decision is made room by room (LiveUpdatePlan::rooms), first by each room's
-// content digest: a room whose digest, covers and place are as they show is Unchanged (its collection's instances and
-// uploads stay as they are, nothing re-uploaded); one whose covers alone changed (or whose covers' sources can be
-// checked now) is Textures; one whose collection changed within the same static part is Items (applied in place, the
-// others untouched). Any change of the floor's static part (a room added, a room grown, a new section's fixtures)
-// commits the whole floor again, the walker (and a Focus or Inspect pose) kept in the frame of the area that holds it,
-// moved with it (walkerMove()); each room's pictures pass to its new collection. The persisted start's reconciliation
-// (world_reconcile.hpp) takes the same decision.
+// Since I4 step 6b (ADR-0013 §5, §7, §9) the decision is made room by room (LiveUpdatePlan::rooms), first by each
+// room's content digest: a room whose digest, covers and place are as they show is Unchanged (its collection's
+// instances and uploads stay as they are, nothing re-uploaded); one whose covers alone changed (or whose covers'
+// sources can be checked now) is Textures; one whose collection changed within the same static part is Items (applied
+// in place, the others untouched). Any change of the floor's static part (a room added, a room grown, a new section's
+// fixtures) commits the whole floor again, the walker (and a Focus or Inspect pose) kept in the frame of the area that
+// holds it, moved with it (walkerMove()); each room's pictures pass to its new collection. The persisted start's
+// reconciliation (world_reconcile.hpp) takes the same decision.
 
 #include <cstddef>
 #include <cstdint>
