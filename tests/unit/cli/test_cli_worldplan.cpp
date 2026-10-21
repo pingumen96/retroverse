@@ -77,9 +77,15 @@ std::string readText(const std::filesystem::path& path) {
     return *text;
 }
 
-/// world::generate's plan text for the same inputs as the command's.
+/// world::generate's plan text for the same inputs as the command's (the shipped preset's configuration).
 std::string expectedPlan(std::size_t titles, std::uint64_t seed) {
-    return *rv::world::writePlan(rv::test::world::generateRoom(titles, 4242, seed).plan);
+    rv::world::GenerationInput input;
+    input.library = rv::test::world::library();
+    input.selection = rv::test::world::makeSelection(titles, 4242);
+    input.config.seed = seed;
+    auto result = rv::world::generate(input, rv::test::world::snesData());
+    REQUIRE(result.has_value());
+    return *rv::world::writePlan(result->plan);
 }
 
 } // namespace
@@ -305,17 +311,20 @@ TEST_CASE("cli/worldplan generate: the catalog's selection of an imported librar
     CHECK(contains(restricted.err, "--system restricts the building only with --plan or when no plan is stored"));
     CHECK(run({"worldplan", "generate", "--system", "snes", "--plan", rv::core::pathToUtf8(dir.file("small.json"))})
               .code == ExitCode::Ok);
-    // The whole building: every system of the catalog with a room and a placeable title; those whose data the asset
-    // root lacks yet (their families come with I4 step 2) left out with a note.
+    // The whole building: every system of the catalog with a room and a placeable title. The fixture's snes holds
+    // fewer than 30 distinct titles: a section of gen4's shared room (I4 step 4).
     const RunResult whole = run({"worldplan", "generate", "--replace", "--seed", "102938"});
     INFO(whole.err);
     REQUIRE(whole.code == ExitCode::Ok);
     CHECK(contains(whole.out, "Regenerated the plan of "));
-    CHECK(contains(whole.out, "room:snes"));
+    CHECK(contains(whole.out, "area:shared:gen4"));
     auto building = rv::world::readPlan(readText(dir.file("data") / "worlds" / "esde" / "world-plan.json"), "plan");
     REQUIRE(building.has_value());
-    CHECK(std::any_of(building->rooms.begin(), building->rooms.end(),
-                      [](const rv::world::Room& room) { return room.id.toString() == "room:snes"; }));
+    CHECK(std::any_of(building->rooms.begin(), building->rooms.end(), [](const rv::world::Room& room) {
+        return room.id.toString() == "area:shared:gen4" &&
+               std::find(room.sections.begin(), room.sections.end(), *rv::catalog::SystemName::parse("snes")) !=
+                   room.sections.end();
+    }));
     CHECK(std::any_of(building->floors.begin(), building->floors.end(),
                       [](const rv::world::Floor& floor) { return floor.id == "ground"; }));
     // The update of every room of the plan: nothing new.

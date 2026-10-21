@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "285d160bad65e2d2a6cc39ece8d27dd4acae4efa",
+    "gitCommit": "a7ad4b562008111afe7836fa0f2a380715c98126",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -29,14 +29,14 @@
       "sha256": "dab8ebc7c853c9fbf09d99a76a7442d947b0230b0a9365e7e19a50b96b1a61fe"
     },
     "plan": {
-      "digest": "9d2e472153d47c47d451100acc988d22d75e8153094b5a5fb46e4cb17d1c91f0",
-      "fileSha256": "9d2e472153d47c47d451100acc988d22d75e8153094b5a5fb46e4cb17d1c91f0",
+      "digest": "731e0e93dbc71300bf7644605451b7f0025bcc150d3613b24e454f0ee1bd9e10",
+      "fileSha256": "731e0e93dbc71300bf7644605451b7f0025bcc150d3613b24e454f0ee1bd9e10",
       "items": 1,
       "placements": 1
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "7280edab3b8411039cf59082fc6da98d818450149d1fd2f1c0a54b84c2c50b88"
+      "sha256": "16216a3b5791a37a657607dc253667173bfebca4f8915f4985a384a9af87e6c8"
     }
   },
   "renderedOn": "2026-10-21",
@@ -48,6 +48,7 @@
       "materialize tests/fixtures/esde/snes-single into <fixture> (rv::test::Fixture)",
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "write <case>/data/config/world.json: {\"sharedRoomMinTitles\": 0}",
       "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
       "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g06.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
     ]

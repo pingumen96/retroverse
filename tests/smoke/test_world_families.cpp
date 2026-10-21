@@ -55,7 +55,8 @@ constexpr float kEyeHeight = 1.65f;
 /// ADR-0011 §8: 8 hero textures of at most 1,024 px, about 32 MiB.
 constexpr std::uint64_t kHeroBudgetBytes = 32ull * 1024ull * 1024ull;
 
-/// The building fixture of a case under world_families/.
+/// The building fixture of a case under world_families/: each family's own room, amiga's 20 titles too (world.json's
+/// sharedRoomMinTitles 0, PlannedBuilding's default; I4 step 4: else a section of a shared room).
 struct ImportedBuilding : PlannedBuilding {
     explicit ImportedBuilding(std::string_view name) : PlannedBuilding(std::string("world_families/") + std::string(name)) {}
 };
@@ -416,8 +417,9 @@ TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     // The 15 sets with a cover, every one face-out on the display slots; the 10 without one unplaced (no-cover). The
-    // ground floor holds the arcade's room (room:mame until I4 step 4's arcade room) and the lobby.
-    requireRoomShown(building, run, building.roomOf("mame"), 15);
+    // ground floor holds the arcade room (area:arcade since I4 step 4, its one section mame's) and the lobby.
+    CHECK(building.roomOf("mame") == "area:arcade");
+    requireRoomShown(building, run, "area:arcade", 15);
     CHECK(run.report->world.featured == 15);
     CHECK(run.report->residency.covers == 15);
     CHECK(run.report->residency.coverFailures == 0);

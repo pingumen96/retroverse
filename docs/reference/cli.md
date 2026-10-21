@@ -116,13 +116,18 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   the systems whose data the asset root cannot give yet left out with a note ("Left out:", JSON `leftOut`); `--system`
   (repeatable) restricts it, only with `--plan` or when no plan is stored (else exit 2). Selection files given with
   `--system` name the same systems, and with `--replace` over a stored plan they must hold every system of the stored
-  building (else exit 2: `--replace` never drops a room). Each system gets its own console room in I4 step 1 (shared
-  and arcade rooms are step 4's).
+  building (else exit 2: `--replace` never drops a room). Since I4 step 4 (`docs/i4/step-4.md`) every arcade system
+  takes a section of the arcade room `area:arcade` on the ground floor, a system with fewer distinct titles over all
+  its games (with a cover or not) than `world.json`'s `sharedRoomMinTitles` (default 30) a section of its floor's shared
+  room `area:shared:<floor>`, every other system its own console room; the room and section are recorded and sticky.
   `worldplan update [--system <system>]... [--selection <file>]... [--previous <plan>] [--seed <n>] [--library <id>]
-  [--plan <file>] [--diff] [--json]` applies ADR-0010 §10's rules to every console room of the plan, or to the rooms of
-  the systems named or of the selection files (the others stay as they are; `--system` given with files names the same
-  systems, else exit 2; an update of some rooms that changes nothing keeps the plan's `inputDigest`, so it writes
-  nothing): every placement kept, new titles spine-out next to their alphabetical predecessor, then a dressed level, a
+  [--plan <file>] [--diff] [--json]` applies ADR-0010 §10's rules to every room of the plan, or to the rooms of the
+  systems named or of the selection files (the others stay as they are; `--system` given with files names the same
+  systems, else exit 2; a system of a shared or arcade room updates the whole room with every section's selection, and
+  selection files must give every section, else exit 2; an update of some rooms that changes nothing keeps the plan's
+  `inputDigest`, so it writes nothing): every placement kept, new titles spine-out next to their alphabetical
+  predecessor (in a shared or arcade room, within their section: its collection is ordered by section, sort key, title
+  key and GameId), a system grown past the threshold staying in its section, then a dressed level, a
   new module in place of decoration, growth (the room moves away from its hall, its x kept), `capacity`; the face-out
   set unchanged. A room of an older template version, of prefabs whose levels changed or of another generator major is
   kept as it is, its unplaced entries too, the games of its selection it neither places nor lists unplaced as

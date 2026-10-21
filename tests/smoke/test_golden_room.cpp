@@ -495,6 +495,10 @@ TEST_CASE("golden/G02s: the snes-stress room's spine-out shelves, the hero band 
 
 TEST_CASE("golden/G06: the snes-single room, one ROM and no media", "[gpu][golden][golden_room]") {
     GoldenRoom room("g06", "esde/snes-single");
+    // One ROM keeps its console room (ADR-0013 §5: under sharedRoomMinTitles a system takes a shared room's section).
+    REQUIRE(rv::core::writeTextFileAtomic(room.data / "config" / "world.json", "{\"sharedRoomMinTitles\": 0}\n")
+                .has_value());
+    room.steps.push_back("write <case>/data/config/world.json: {\"sharedRoomMinTitles\": 0}");
     static_cast<void>(firstRun(room));
     const fs::path shot = room.dir / "g06.png";
     constexpr std::uint32_t kFrames = 30;

@@ -26,6 +26,7 @@ void readPresetValues(const ObjectReader& reader, WorldConfig& config) {
     config.minClearWidthMm = reader.integer("minClearWidthMm", kMinClearWidthMm, kMaxPassageWidthMm);
     const ObjectReader placement = reader.object("placement", {"include"});
     config.include = placement.enumeration<PlacementInclude>("include", parsePlacementInclude, kIncludeValues);
+    config.sharedRoomMinTitles = reader.integer("sharedRoomMinTitles", 0, kMaxSharedRoomMinTitles);
 }
 
 /// Records checkWorldConfig()'s problem, if any, at its key.
@@ -41,7 +42,8 @@ void checkInDocument(DocumentReader& document, const WorldConfig& config) {
 WorldConfig readCanonicalDocument(DocumentReader& document, const Json& value) {
     const ObjectReader reader(document, value, "",
                               {"decorationDensityPermille", "growthReservePermille", "lightingProfile",
-                               "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed"});
+                               "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed",
+                               "sharedRoomMinTitles"});
     WorldConfig config;
     config.preset = reader.dataId("preset");
     config.lightingProfile = reader.dataId("lightingProfile");
@@ -60,6 +62,7 @@ Json documentJson(const WorldConfig& config) {
                 {"mainPassageWidthMm", config.mainPassageWidthMm},
                 {"minClearWidthMm", config.minClearWidthMm},
                 {"placement", Json{{"include", toString(config.include)}}},
+                {"sharedRoomMinTitles", config.sharedRoomMinTitles},
                 {"reduceMotion", config.reduceMotion},
                 {"lightingProfile", config.lightingProfile}};
 }
@@ -97,6 +100,9 @@ Status checkWorldConfig(const WorldConfig& config) {
     if (config.mainPassageWidthMm < kMinClearWidthMm || config.mainPassageWidthMm > kMaxPassageWidthMm) {
         return outside("mainPassageWidthMm", config.mainPassageWidthMm, kMinClearWidthMm, kMaxPassageWidthMm);
     }
+    if (config.sharedRoomMinTitles < 0 || config.sharedRoomMinTitles > kMaxSharedRoomMinTitles) {
+        return outside("sharedRoomMinTitles", config.sharedRoomMinTitles, 0, kMaxSharedRoomMinTitles);
+    }
     if (config.minClearWidthMm < kMinClearWidthMm || config.minClearWidthMm > config.mainPassageWidthMm) {
         return makeError(ErrorCode::InvalidArgument,
                          "expected " + std::to_string(kMinClearWidthMm) + " to the main passage's width (" +
@@ -115,7 +121,7 @@ Expected<WorldConfig> parsePreset(std::string_view text, std::string_view contex
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
                               {"decorationDensityPermille", "growthReservePermille", "id", "mainPassageWidthMm",
-                               "minClearWidthMm", "name", "placement", "schemaVersion"});
+                               "minClearWidthMm", "name", "placement", "schemaVersion", "sharedRoomMinTitles"});
     WorldConfig config;
     (void)reader.integer("schemaVersion", 1, 1);
     config.preset = reader.dataId("id");
@@ -159,7 +165,8 @@ Expected<WorldConfigOverrides> parseWorldConfigOverrides(std::string_view text, 
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
                               {"decorationDensityPermille", "growthReservePermille", "lightingProfile",
-                               "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed"});
+                               "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed",
+                               "sharedRoomMinTitles"});
     WorldConfigOverrides overrides;
     if (reader.has("preset")) {
         overrides.preset = reader.dataId("preset");
@@ -178,6 +185,7 @@ Expected<WorldConfigOverrides> parseWorldConfigOverrides(std::string_view text, 
                 placement.enumeration<PlacementInclude>("include", parsePlacementInclude, kIncludeValues);
         }
     }
+    overrides.sharedRoomMinTitles = reader.optionalInteger("sharedRoomMinTitles", 0, kMaxSharedRoomMinTitles);
     overrides.reduceMotion = reader.optionalBoolean("reduceMotion");
     if (reader.has("lightingProfile")) {
         overrides.lightingProfile = reader.dataId("lightingProfile");
@@ -209,6 +217,9 @@ Expected<WorldConfig> applyOverrides(WorldConfig base, const WorldConfigOverride
     }
     if (overrides.include) {
         base.include = *overrides.include;
+    }
+    if (overrides.sharedRoomMinTitles) {
+        base.sharedRoomMinTitles = *overrides.sharedRoomMinTitles;
     }
     if (overrides.reduceMotion) {
         base.reduceMotion = *overrides.reduceMotion;

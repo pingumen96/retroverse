@@ -1177,6 +1177,10 @@ TEST_CASE("app/world_build: the building fixture planned whole, as the CLI plans
     const ImportedFixture imported("world-build-custom", true, "esde/building");
     const rv::world::RoomId pocketlabRoom = rv::world::RoomId::parse("room:pocketlab").value();
     const rv::catalog::SystemName pocketlab = rv::catalog::SystemName::parse("pocketlab").value();
+    // Its 6 titles keep a room of their own (I4 step 4: else a section of the handheld floor's shared room, which the
+    // shared-room case below shows).
+    REQUIRE(rv::core::writeTextFileAtomic(imported.paths.configDir() / "world.json", "{\"sharedRoomMinTitles\": 0}\n")
+                .has_value());
     const rv::app::WorldBuildInput input = inputOf(imported, buildingSnapshotOf(imported), pocketlabRoom);
     const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
     INFO(first.reason);
@@ -1187,10 +1191,9 @@ TEST_CASE("app/world_build: the building fixture planned whole, as the CLI plans
                             [&](const rv::world::Room& room) { return room.id == id; });
     };
     const auto pocketlabInPlan = roomInPlan(*first.plan, pocketlabRoom);
-    if (pocketlabInPlan != first.plan->rooms.end()) {
-        CHECK(pocketlabInPlan->mediaFamily == "cartridge_handheld");
-        CHECK(pocketlabInPlan->floor == "handheld");
-    }
+    REQUIRE(pocketlabInPlan != first.plan->rooms.end());
+    CHECK(pocketlabInPlan->mediaFamily == "cartridge_handheld");
+    CHECK(pocketlabInPlan->floor == "handheld");
     for (const rv::world::Room& room : first.plan->rooms) {
         for (const rv::catalog::SystemName& system : room.sections) {
             CHECK(system.str() != "kodi");

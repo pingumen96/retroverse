@@ -55,6 +55,10 @@ tools).
 - A floor of the building (I4 step 3): `retroverse-cli worldplan show --floor <id> --scene <file>` writes its rooms
   and derived hall as a scene with areas, which `--scene <file>` walks from the elevator (each area lit by its own
   lights).
+- Shared rooms (I4 step 4): a system with fewer distinct titles than `world.json`'s `sharedRoomMinTitles` (30) takes a
+  section of its floor's `area:shared:<floor>`, every arcade system a section of `area:arcade`; tests that need a small
+  system's own room (G06's single ROM) write `{"sharedRoomMinTitles": 0}` into their data directory's
+  `config/world.json`.
 - Anything that may launch a game runs with `RV_LAUNCH_ALLOWLIST` naming the build's `rv_fake_emulator.exe` (Safety).
 
 ## Visual verification

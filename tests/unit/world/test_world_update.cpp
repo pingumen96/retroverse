@@ -863,7 +863,7 @@ TEST_CASE("world/update: another seed, preset or generator major needs an explic
     rv::world::UpdateInput input;
     input.library = rv::test::world::library();
     input.selection = selection;
-    input.config.seed = kWorldSeed;
+    input.config = rv::test::world::roomConfig(kWorldSeed);
     input.previous = plan;
     input.config.preset = "another_preset";
     refused(*rv::world::update(input, snesData()), "preset");
@@ -960,7 +960,7 @@ TEST_CASE("world/update: a room of another template version or prefab levels is 
     rv::world::UpdateInput input;
     input.library = rv::test::world::library();
     input.selection = selection;
-    input.config.seed = kWorldSeed;
+    input.config = rv::test::world::roomConfig(kWorldSeed);
     input.previous = plan;
 
     rv::world::WorldData otherTemplate = snesData();
@@ -1085,7 +1085,7 @@ TEST_CASE("world/update: the time of 2000 titles plus one", "[.bench][world][upd
     rv::world::UpdateInput input;
     input.library = rv::test::world::library();
     input.selection = selection;
-    input.config.seed = kWorldSeed;
+    input.config = rv::test::world::roomConfig(kWorldSeed);
     input.previous = plan;
     input.previousDigest = *rv::world::planDigest(plan);
     std::vector<double> times;

@@ -245,7 +245,7 @@ TEST_CASE("world/families: a room of each family generates and validates at a fe
             rv::world::GenerationInput input;
             input.library = rv::test::world::library();
             input.selection = selectionOf(entry.system, titles, 4000 + titles);
-            input.config.seed = 102938;
+            input.config = rv::test::world::roomConfig(102938); // a room of its own at any size
             auto result = rv::world::generate(input, data);
             REQUIRE(result.has_value());
             for (const rv::world::ValidationFinding& finding : result->validation.findings) {

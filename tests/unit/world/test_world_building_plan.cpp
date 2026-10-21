@@ -109,7 +109,7 @@ struct Building {
 Building fiveSystems() {
     Building building;
     building.input.library = rv::test::world::library();
-    building.input.config.seed = kWorldSeed;
+    building.input.config = rv::test::world::roomConfig(kWorldSeed); // console rooms of any size
     const std::vector<std::pair<std::string_view, std::size_t>> systems = {
         {"snes", 890}, {"megadrive", 120}, {"testfive", 60}, {"testpocket", 30}, {"testcomputer", 15}};
     std::uint64_t seed = 1000;
@@ -358,7 +358,7 @@ TEST_CASE("world/building plan: inputs it refuses", "[world][building]") {
     // No selection: the ground floor alone.
     Building none;
     none.input.library = rv::test::world::library();
-    none.input.config.seed = kWorldSeed;
+    none.input.config = rv::test::world::roomConfig(kWorldSeed);
     const GenerationResult empty = generateBuilding(none);
     CHECK(empty.plan.rooms.empty());
     CHECK(empty.plan.floors == std::vector<rv::world::Floor>{{"ground", 0}});
@@ -371,7 +371,7 @@ TEST_CASE("world/building plan: a full floor takes no more rooms, their games un
     small.layout.maxRoomsPerRow = 1;
     Building building;
     building.input.library = rv::test::world::library();
-    building.input.config.seed = kWorldSeed;
+    building.input.config = rv::test::world::roomConfig(kWorldSeed); // console rooms of any size
     std::uint64_t seed = 2000;
     for (const std::string_view system : {"snes", "megadrive", "genesis"}) {
         building.rooms.push_back(dataOf(system));

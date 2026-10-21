@@ -17,18 +17,20 @@ struct LevelRef {
     std::size_t level = 0;
 };
 
-/// The order of titles within a section (ADR-0010 §6).
-bool alphabetical(const RoomTitle* a, const RoomTitle* b) {
-    return std::tie(a->sortKey, a->titleKey, a->game) < std::tie(b->sortKey, b->titleKey, b->game);
-}
-
-std::vector<const RoomTitle*> sortedSection(std::span<const RoomTitle> titles) {
+/// The titles of a section of the collection in their order (ADR-0010 §6; a shared or arcade room's by its systems'
+/// sections first, ADR-0013 §6).
+std::vector<const RoomTitle*> sortedSection(std::span<const RoomTitle> titles, const SectionIndex* sections) {
     std::vector<const RoomTitle*> sorted;
     sorted.reserve(titles.size());
     for (const RoomTitle& title : titles) {
         sorted.push_back(&title);
     }
-    std::sort(sorted.begin(), sorted.end(), alphabetical);
+    std::sort(sorted.begin(), sorted.end(), [&](const RoomTitle* a, const RoomTitle* b) {
+        const std::uint32_t sectionA = sectionOf(sections, a->game);
+        const std::uint32_t sectionB = sectionOf(sections, b->game);
+        return std::tie(sectionA, a->sortKey, a->titleKey, a->game) <
+               std::tie(sectionB, b->sortKey, b->titleKey, b->game);
+    });
     return sorted;
 }
 
@@ -132,7 +134,7 @@ private:
     /// ledge, framed by the dressing on both sides, instead of at its end), the first of them left of the centre when
     /// the free slots do not split evenly.
     void fillFaceOut(const std::vector<std::size_t>& fixtures, std::span<const RoomTitle> titles) {
-        const std::vector<const RoomTitle*> sorted = sortedSection(titles);
+        const std::vector<const RoomTitle*> sorted = sortedSection(titles, m_input.sections);
         std::size_t next = 0;
         for (const std::size_t fixture : fixtures) {
             for (const LevelRef& ref : readingOrder(fixture, LevelFacing::FaceOut)) {
@@ -190,7 +192,7 @@ private:
             remaining -= taken[i];
         }
         // The titles in the alphabet's order, as one reads: module after module, its used levels top first.
-        const std::vector<const RoomTitle*> sorted = sortedSection(titles);
+        const std::vector<const RoomTitle*> sorted = sortedSection(titles, m_input.sections);
         std::size_t next = 0;
         for (const std::size_t module : m_input.layout.modules) {
             for (const LevelRef& ref : readingOrder(module, LevelFacing::SpineOut)) {
@@ -219,6 +221,14 @@ private:
 };
 
 } // namespace
+
+std::uint32_t sectionOf(const SectionIndex* sections, const catalog::GameId& game) noexcept {
+    if (sections == nullptr) {
+        return 0;
+    }
+    const auto found = sections->find(game);
+    return found != sections->end() ? found->second : 0;
+}
 
 std::vector<std::size_t> bandOrder(std::span<const SlotLevelInfo> levels, std::span<const LevelFacing> facings,
                                    std::int64_t eyeHeightMm) {

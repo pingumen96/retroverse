@@ -24,7 +24,9 @@
 //
 // The defaults per kind give a room's theme pack, its console prefab (none for arcade, computer and other: the hero
 // corner stands without one) and its plastics (sRGB hex codes); assets/world/platforms/<system>.json, when it exists,
-// overrides them for its system (snes.json).
+// overrides them for its system (snes.json). A floor's shared room and the arcade room (ADR-0013 §6) take the defaults
+// of their floor's first kind without a console, and that kind's "sign" (the arcade room's "ARCADE"), else the
+// fallback's.
 {
   "schemaVersion": 1,
   "defaults": {
@@ -41,7 +43,8 @@
     "arcade": {
       "themePack": "classic_16bit_warm",
       "console": null,
-      "plastic": {"cartridge": "#3A3A3E", "console": "#2E2E33", "accent": "#B0503C"}
+      "plastic": {"cartridge": "#3A3A3E", "console": "#2E2E33", "accent": "#B0503C"},
+      "sign": "ARCADE"
     },
     "computer": {
       "themePack": "classic_16bit_warm",

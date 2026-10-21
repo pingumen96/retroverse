@@ -2,7 +2,8 @@
 // format), the default of every world. <user data>/config/world.json overrides it per key. Integers in the plan's
 // units: decoration density 0.4 and growth reserve 0.15 (style §18.2) in permille, the main passage 1.4 m wide (style
 // §18.2) and every passage at least 1.2 m clear (specification §7.5) in millimetres; the room holds the games of the
-// system that have a cover (ADR-0010 §3).
+// system that have a cover (ADR-0010 §3); a system with fewer than 30 distinct titles over all its games takes a
+// section of its floor's shared room rather than a room of its own (ADR-0013 §3).
 {
   "schemaVersion": 1,
   "id": "retro_museum_cozy",
@@ -11,5 +12,6 @@
   "growthReservePermille": 150,
   "mainPassageWidthMm": 1400,
   "minClearWidthMm": 1200,
-  "placement": {"include": "covered"}
+  "placement": {"include": "covered"},
+  "sharedRoomMinTitles": 30
 }

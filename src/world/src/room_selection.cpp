@@ -41,6 +41,7 @@ Json documentJson(const RoomSelection& selection, std::vector<UnplacedGame> unpl
         games.push_back(detail::unplacedJson(game));
     }
     return Json{{"room", selection.room.toString()},
+                {"distinctTitles", selection.distinctTitles},
                 {"eligibility", toString(selection.eligibility)},
                 {"titleKeyRule", selection.titleKeyRule},
                 {"catalogSortKeyVersion", selection.catalogSortKeyVersion},
@@ -63,7 +64,8 @@ RoomTitle readTitle(const ObjectReader& reader) {
 
 RoomSelection readDocument(DocumentReader& document, const Json& value) {
     const ObjectReader reader(document, value, "",
-                              {"catalogSortKeyVersion", "eligibility", "room", "titleKeyRule", "titles", "unplaced"});
+                              {"catalogSortKeyVersion", "distinctTitles", "eligibility", "room", "titleKeyRule",
+                               "titles", "unplaced"});
     RoomSelection selection;
     selection.room = reader.parsed<RoomId>("room", RoomId::parse, "a room id (room:<system>)");
     selection.eligibility =
@@ -86,6 +88,13 @@ RoomSelection readDocument(DocumentReader& document, const Json& value) {
                           "out of order: titles are in priority order (favourites, play count, rating, sort key, "
                           "GameId)");
         }
+    }
+
+    selection.distinctTitles = reader.unsignedInteger("distinctTitles");
+    if (!document.failed() && selection.distinctTitles < selection.titles.size()) {
+        document.fail(reader.pointer("distinctTitles"),
+                      "fewer distinct titles (" + std::to_string(selection.distinctTitles) + ") than titles (" +
+                          std::to_string(selection.titles.size()) + ")");
     }
 
     selection.unplaced = detail::readUnplacedList(reader, "unplaced");
@@ -159,8 +168,11 @@ Expected<RoomSelection> selectRoom(const RoomInput& input, const WorldConfig& co
         selection.unplaced.push_back(UnplacedGame{entry.id, *room, reason, representative});
     };
 
-    // The eligible games by title key (an ordered map: nothing depends on a hash order).
+    // The eligible games by title key (an ordered map: nothing depends on a hash order), and the title keys of every
+    // game with a cover or not (ADR-0013 §3: the count measures the collection, not the scraping).
     std::map<std::string, std::vector<Version>> titles;
+    std::set<std::string> allKeys;
+    std::uint64_t keyless = 0;
     for (const catalog::RoomEntry* entry : games) {
         if (entry->state == catalog::EntryState::MissingFile) {
             unplace(*entry, UnplacedReason::Unavailable, {});
@@ -168,6 +180,11 @@ Expected<RoomSelection> selectRoom(const RoomInput& input, const WorldConfig& co
         }
         if (selection.eligibility == Eligibility::Covered && !entry->media[catalog::MediaKind::Cover].present) {
             unplace(*entry, UnplacedReason::NoCover, {});
+            if (auto key = titleKey(entry->title)) {
+                allKeys.insert(std::move(*key));
+            } else {
+                ++keyless; // never placed: a title of its own, and no reason to refuse the selection
+            }
             continue;
         }
         auto key = titleKey(entry->title);
@@ -176,8 +193,10 @@ Expected<RoomSelection> selectRoom(const RoomInput& input, const WorldConfig& co
             error.message = "the title of " + entry->id.toString() + ": " + error.message;
             return propagate(std::move(error));
         }
+        allKeys.insert(*key);
         titles[std::move(*key)].push_back(Version{entry, readVersionTags(fileNameOf(entry->key.relativePath()))});
     }
+    selection.distinctTitles = allKeys.size() + keyless;
 
     for (auto& [key, versions] : titles) {
         std::sort(versions.begin(), versions.end(), versionLess);

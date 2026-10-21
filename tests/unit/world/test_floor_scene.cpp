@@ -91,16 +91,18 @@ SystemName name(std::string_view text) {
     return *SystemName::parse(text);
 }
 
-/// The systems of the building fixture (tests/fixtures/esde/building/README.md) with the titles its rooms place there;
-/// pocketlab, a custom system, with gb's ES-DE platform tag (kodi is excluded: no room).
+/// The systems of the building fixture (tests/fixtures/esde/building/README.md) with the titles its rooms place there
+/// and its distinct titles over all its games (mame's 10 sets without a cover counted; 0: the titles); pocketlab, a
+/// custom system, with gb's ES-DE platform tag (kodi is excluded: no room).
 struct SystemCase {
     std::string_view system;
     std::size_t titles = 0;
     std::vector<std::string> tags;
+    std::size_t distinctTitles = 0;
 };
 
 const std::vector<SystemCase>& fixtureSystems() {
-    static const std::vector<SystemCase> systems{{"amiga", 20, {}},     {"gb", 30, {}},    {"mame", 15, {}},
+    static const std::vector<SystemCase> systems{{"amiga", 20, {}},        {"gb", 30, {}},       {"mame", 15, {}, 25},
                                                 {"pocketlab", 6, {"gb"}}, {"pokemini", 8, {}}, {"psx", 40, {}},
                                                 {"snes", 40, {}}};
     return systems;
@@ -130,6 +132,7 @@ GoldenBuilding generateGoldenBuilding() {
         REQUIRE(data.has_value());
         rooms.push_back(std::move(*data));
         rv::world::RoomSelection selection = rv::test::world::makeSelection(entry.titles, seed++);
+        selection.distinctTitles = std::max(entry.distinctTitles, entry.titles);
         selection.room = *RoomId::forSystem(name(entry.system));
         for (rv::world::UnplacedGame& game : selection.unplaced) {
             game.room = selection.room;
@@ -217,23 +220,35 @@ TEST_CASE("world/floor: the golden building of the building fixture's systems, t
         UNSCOPED_INFO(finding.rule << " " << finding.subject << ": " << finding.message);
     }
     CHECK(building.validation.passed());
-    // Seven console rooms on five floors (shared and arcade rooms are I4 step 4's), each with its family.
+    // Three console rooms and three rooms of sections on five floors (I4 step 4, ADR-0013 §3): mame in the arcade room,
+    // the custom pocketlab (gb's row, so before pokemini) and pokemini in the handheld floor's shared room, amiga's 20
+    // titles under the threshold of 30 in the computer floor's.
     std::vector<std::string> floors;
     for (const rv::world::Floor& floor : building.plan.floors) {
         floors.push_back(floor.id);
     }
     CHECK(floors == std::vector<std::string>{"ground", "gen4", "gen5", "handheld", "computer"});
     std::map<std::string, std::string> roomFloors;
+    std::map<std::string, std::vector<std::string>> roomSections;
     for (const rv::world::Room& room : building.plan.rooms) {
         roomFloors[room.id.toString()] = room.floor;
+        for (const SystemName& system : room.sections) {
+            roomSections[room.id.toString()].push_back(system.str());
+        }
     }
-    CHECK(roomFloors == std::map<std::string, std::string>{{"room:amiga", "computer"},
+    CHECK(roomFloors == std::map<std::string, std::string>{{"area:arcade", "ground"},
+                                                           {"area:shared:computer", "computer"},
+                                                           {"area:shared:handheld", "handheld"},
                                                            {"room:gb", "handheld"},
-                                                           {"room:mame", "ground"},
-                                                           {"room:pocketlab", "handheld"},
-                                                           {"room:pokemini", "handheld"},
                                                            {"room:psx", "gen5"},
                                                            {"room:snes", "gen4"}});
+    CHECK(roomSections == std::map<std::string, std::vector<std::string>>{
+                              {"area:arcade", {"mame"}},
+                              {"area:shared:computer", {"amiga"}},
+                              {"area:shared:handheld", {"pocketlab", "pokemini"}},
+                              {"room:gb", {"gb"}},
+                              {"room:psx", {"psx"}},
+                              {"room:snes", {"snes"}}});
     CHECK(generateGoldenBuilding().text == building.text);
     checkGolden(kGoldenPlanDir / (std::string(kGoldenBuilding) + ".json"), building.text);
 }
@@ -383,7 +398,7 @@ TEST_CASE("world/floor: each room's scene moved onto the floor, its doorway open
           "[world][floor]") {
     const GoldenBuilding& building = goldenBuilding();
     const WorldPlan& plan = building.plan;
-    // The handheld floor: gb in the north row, then pocketlab south and pokemini north (the shorter row first).
+    // The handheld floor: gb in the north row, then the shared room of pocketlab and pokemini in the south row.
     const rv::world::FloorSceneData data = floorData(plan, "handheld", building.tags);
     const rv::world::FloorSceneBuild build = floorScene(plan, "handheld", data);
     const nlohmann::json& scene = build.sceneFile;
@@ -548,15 +563,15 @@ TEST_CASE("world/floor: the walker walks from the elevator along the hall into a
         CHECK(walk.feet.z < -1.65f - walk.capsuleRadius);
         CHECK(walk.areas == std::vector<std::string>{"hall:gen4", "room:snes"});
     }
-    SECTION("a south-row room, turned a half turn: handheld's room:pocketlab") {
+    SECTION("a south-row room, turned a half turn: handheld's shared room") {
         // Across the hall from room:gb, through the turned shell's doorway (its stop left out as well).
-        REQUIRE(roomOf(building.plan, "room:pocketlab").placement.yawHalfTurns == 1);
+        REQUIRE(roomOf(building.plan, "area:shared:handheld").placement.yawHalfTurns == 1);
         const FloorWalk walk = walkFloor(building, "handheld", "floor_walk_into_south_room.json");
         // 3.75 m south of the hall's centre line, 2.1 m into the room past its north wall (its doorway wall).
         CHECK(walk.feet.x == Approx(1.2f + 155.0f * 2.5f * kFixedDt).margin(1e-3));
         CHECK(walk.feet.z == Approx(90.0f * 2.5f * kFixedDt).margin(1e-3));
         CHECK(walk.feet.z > 1.65f + walk.capsuleRadius);
-        CHECK(walk.areas == std::vector<std::string>{"hall:handheld", "room:pocketlab"});
+        CHECK(walk.areas == std::vector<std::string>{"hall:handheld", "area:shared:handheld"});
     }
 }
 
