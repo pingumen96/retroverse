@@ -69,9 +69,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   its key light's shadow; gen4's walk from the elevator into room:snes; the ground floor's lobby), the floor in the app
   (`gpu.world floor app: ...`, I4 step 5a, `test_world_floor_app.cpp`, `[world_floor_app]`: two rooms of one family on
   a floor, each sampling its own arrays and showing its own covers, the residency per room and the floor's GPU memory
-  within 512 MiB; a walk from the hall into one room, out and into the other, a cover of the second inspected; the
-  start in the lobby without `--start-room`, and a `--start-room` the plan lacks refused with exit 2; the rooms are read
-  from the generated plan, never named) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
+  within 512 MiB, the cover loader's first view without the items of a room whose doorway it does not see; a walk from
+  the hall into one room, out and into the other, a cover of the second inspected; the start in the lobby without
+  `--start-room`, and a `--start-room` the plan lacks refused with exit 2; the rooms, the doorways, the hall and the
+  arrival point are read from the generated plan and its floors' layout, never named) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
   few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
   the animations' frame budget and the benchmark path (`[benchmark]`,

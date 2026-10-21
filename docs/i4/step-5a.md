@@ -12,7 +12,9 @@ API frozen in [step 3](step-3.md).
   are those with a room (`roomSystemsFilter()`: systems.json's classification). The selections are merged by system and
   planned as `retroverse-cli worldplan generate` and `update` do: a first building from every system with a placeable
   title, or the update of the stored building's console rooms. The plan is validated and saved under the world lock.
-  Each system's room items file (`cache/world/<library>/room-<system>.json`) is written only when it changed.
+  Each system's room items file (`cache/world/<library>/room-<system>.json`: every placement of its games, and every
+  placement of a room that holds the system, by the rooms' sections, `snapshotRoomItems()`) is written only when it
+  changed.
   `kRoomSystem` and the catalog worker's room job are gone.
 - **The floor-build job** (`buildFloor()`, keyed by floor and plan digest): `toFloorSceneFile()` of the start floor,
   then per collection room its `collectionLayout()` moved into the scene's frame (`floorCollectionLayout()`), its covers
@@ -26,7 +28,9 @@ API frozen in [step 3](step-3.md).
 - **Residency of one floor** (`world_session.cpp`): one `CollectionInstance` and one static group per collection room.
   Every registry key is `collection/<room id>/<family>/...`, and the picture sets carry the room id, so two rooms of
   one family sample their own arrays. One `CoverLoader` serves the floor with one upload budget. Its view groups are
-  the room that holds the eye plus the rooms whose doorway passage the frustum meets; the rest load by distance.
+  the room that holds the eye plus the rooms whose doorway passage the frustum meets (`coverViewGroups()`,
+  `cover_requests.hpp`); the rest load by distance. A loader replaced lets go of the hero item, an index of its
+  list.
   `WorldHover` keeps a pick index per room and switches to the eye's room (`scene::areaAt` on the floor's areas) once
   nothing is hovered or pulled out. Hover, pull-out, Focus, Inspect, the card and launches work in that room.
 - **The start**: the ground floor's lobby at the elevator's arrival point, facing east, with no hero CRT
@@ -35,15 +39,17 @@ API frozen in [step 3](step-3.md).
   with a code). `--room-system` is removed. The shell before a plan is the start room's empty room, else the lobby.
 - **Run report**: `world.floor`; `world.rooms[]` `{id, floor, x, z, yaw}` (the placements on the floor);
   `world.room`, the room holding the eye at the end ("" in a hall); `residency.rooms[]` (`room`, `items`,
-  `frontsResident`, `spinesResident`, `pending`, `arrayBytes`, `arrays`, `ownArrays`), the floor's totals beside them.
+  `viewItems`, `frontsResident`, `spinesResident`, `pending`, `arrayBytes`, `arrays`, `ownArrays`), the floor's
+  totals beside them.
 - **Tests**: every `gpu.world*` case, G02-G10, the benchmark path and the `[real-library]` room tests run with
   `--start-room room:snes`. `gpu.world families: ...` runs through `--start-room <the system's room>` read from the
   plan. `gpu.world floor app: ...` (`test_world_floor_app.cpp`, `building_support.*`) covers four things on
   `esde/building`:
-  - two same-family rooms read from the plan, each sampling its own arrays and showing its own covers up close;
+  - two same-family rooms read from the plan, each sampling its own arrays and showing its own covers up close, and
+    no item of a room whose doorway the first view does not see in that view, though the frustum meets some;
   - a walk from the hall into room A, back out and into room B, and a cover of B inspected through the quick catalog's
     "Mostra nella stanza";
-  - the lobby start, and a `--start-room` the plan lacks refused with exit 2;
+  - the lobby start at the floor's arrival point, and a `--start-room` the plan lacks refused with exit 2;
   - the residency per room and the floor's GPU memory within 512 MiB.
 
 ## Decisions
@@ -60,10 +66,15 @@ API frozen in [step 3](step-3.md).
 
 - The persisted start previews and reconciles the **whole start floor**: the same plan, floor and collections give
   `textures`, anything else rebuilds the floor with the walker kept. Reconciling room by room is 6b's.
-- Live updates after a refresh apply to the whole floor the same way (`ShownFloor`, `planLiveUpdate`). The hero CRT
-  stays bound to the start room's CRT and is not rebound while walking (none in the lobby).
-- "Mostra nella stanza" serves the room that holds the eye. Another room's game says it is not in the room (across
-  rooms and floors is step 7's).
+- Live updates after a refresh apply to the whole floor the same way (`ShownFloor`, `planLiveUpdate`). The items are
+  compared in their rooms' own frames, so a room that grew (followDepth) moves none of its items. The walker, though,
+  stays where it stands in the scene's frame: keeping it in the frame of a room that grew around it (ADR-0013 §7) is
+  6b's. The hero CRT stays bound to the start room's CRT and is not rebound while walking (none in the lobby).
+- "Mostra nella stanza" serves the room that holds the eye. A game placed in another room, or any placed game while
+  the eye is in a hall, is "Esposto altrove nell'edificio" (`other-room`); one the building does not hold "non ha una
+  stanza per il suo sistema" (`not-in-room`). Across rooms and floors is step 7's.
+- The test room's `no-games` notice speaks of the building (no system of the catalog gives a room); it names a
+  system only when `--start-room` gives one.
 - The items files hold no CRT media paths, so the hero CRT's games come from the building job's snapshots, not the
   preview.
 

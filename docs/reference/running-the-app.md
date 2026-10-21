@@ -53,8 +53,10 @@ build/rvdata`).
   `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
   `rebuild` or `kept`, kept, moved, added, removed, the arrays grown)), `residency` (the collection's layers, the
-  floor's totals since I4 step 5a and each collection room's in `rooms`: `room`, `items`, `frontsResident`,
-  `spinesResident`, `pending`, `arrayBytes`, `arrays` and `ownArrays`, the arrays its materials sample, all its own:
+  floor's totals since I4 step 5a and each collection room's in `rooms`: `room`, `items`, `viewItems` (its items in
+  the cover loader's first view: none for a room that neither holds the eye nor has its doorway in view),
+  `frontsResident`, `spinesResident`, `pending`, `arrayBytes`, `arrays` and `ownArrays`, the arrays its materials
+  sample, all its own:
   format, array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
   {`shownAtMs`, `allResidentAtMs`, `residentAfterShownMs`}, `arrival`, `uploads`, `lockstep`, `pausedRounds`,
   `retries`, `hero`) and `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
@@ -186,12 +188,15 @@ build/rvdata`).
   objects keep the very coordinates of its standalone scene. Hover, pull-out, Focus, Inspect, the card and launches
   work in the room that holds the eye (a pick index per room; none in a hall). The empty shell while the building is
   made (the lobby, or the start room's empty room); the test room with a notice when there is no catalog (no
-  library.json or database) or no system that gives a room; the empty shell with a notice when the media root is out
+  library.json or database) or no system that gives a room (and no plan stored: the notice names the start room's
+  system only when `--start-room` gives one); the empty shell with a notice when the media root is out
   of reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
   command has it). A system systems.json does not name is classified by the catalog's platform tags of it, as
   `worldplan` does. With a plan stored, its start floor shows at the first frame (covers and spines from the cache by
   the rooms' items) before the building job runs, then is reconciled with its result (unchanged: nothing moved,
-  rebuilt or written; changed: committed again with the walker kept; reconciling room by room is I4 step 6b's). A
+  rebuilt or written; changed: committed again with the walker kept where it stands in the scene's frame; the items
+  compared in their rooms' own frames, so a room that grew moves none; reconciling room by room, and the walker kept
+  in the frame of the room that holds it, are I4 step 6b's). A
   manifest missing from the asset root falls back to its family's prefab, warned once per run. Covers come nearest
   first (the hovered item, the view by projected size, the rest by distance); the hovered item's front shows its hero
   texture (its cover at its label's shape, up to 1,024 px on the long side and 1,024 x 752 pixels, 8 kept); nothing is
@@ -217,11 +222,14 @@ build/rvdata`).
   and Y switch between the two. Avvia launches as the quick catalog's does; after the return the walker stands where it
   stood and the item is in the hand again; the hero CRT's decoder stops before the launch and reopens at the clip's
   position after it. The quick catalog's card offers "Mostra nella stanza" for a game the room that holds the eye
-  places (the walker eased to its item's Focus pose) and says why for one it does not (another room's game: across
-  rooms and floors is I4 step 7's). After "Aggiorna libreria" or `--refresh-library` the floor follows the refreshed
-  catalog live (the building job again, the plan saved; new titles placed into their slots with their covers, nothing
-  else moved; a dressed level, module or growth commits the floor again with the walker and the pictures kept; never
-  during a game). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
+  places (the walker eased to its item's Focus pose) and says why for one it does not: a game the building places in
+  another room, or with the eye in a hall, is "on display elsewhere in the building" (`other-room`; across rooms and
+  floors is I4 step 7's), one of a system without a room is not on display (`not-in-room`). After "Aggiorna
+  libreria" or `--refresh-library` the floor follows the refreshed catalog live (the building job again, the plan
+  saved; new titles placed into their slots with their covers, nothing else moved; a dressed level, module or growth
+  commits the floor again with the pictures kept and the walker where it stands in the scene's frame, the items
+  compared in their rooms' own frames; keeping the walker in the frame of a room that grew around it is I4 step
+  6b's; never during a game). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
   instant) and `"lightingProfile": "evening" | "afternoon"` (`assets/world/lighting`, applied when the room is drawn,
   never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
   featured shelf, `shelf_light`, while the 16 lights leave room); the room's materials come from

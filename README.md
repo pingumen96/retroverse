@@ -72,7 +72,8 @@ executable), `msvc-x64-profile` (Tracy). The scripts enter the Visual Studio dev
 ```powershell
 ./build/msvc-x64-release/bin/retroverse-cli.exe library create  # once: find ES-DE and record the library
 ./build/msvc-x64-release/bin/retroverse-cli.exe import          # import its catalog (again to refresh)
-./build/msvc-x64-release/bin/retroverse.exe                     # the room of your SNES games (else the test room)
+./build/msvc-x64-release/bin/retroverse.exe                     # your collection's building: the ground floor's lobby
+./build/msvc-x64-release/bin/retroverse.exe --start-room room:snes  # in your SNES games' room (until the elevator)
 ./build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom   # the M0 test room; Esc releases the mouse, again quits
 ./build/msvc-x64-debug/bin/retroverse.exe --scene material_test
 ./build/msvc-x64-debug/bin/retroverse.exe --model path/to/model.glb
