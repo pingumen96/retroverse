@@ -56,7 +56,9 @@ TEST_CASE("app/input_context: each context reads its own actions and the global 
         const bool global = rv::app::isGlobalAction(action);
         const bool ui = rv::input::isUiAction(action);
         CHECK(rv::app::readsAction(InputContext::World, action) == (global || !ui));
-        CHECK(rv::app::readsAction(InputContext::Ui, action) == (global || ui || action == Action::QuickCatalog));
+        // I4 step 7b: Map closes the directory it opens.
+        CHECK(rv::app::readsAction(InputContext::Ui, action) ==
+              (global || ui || action == Action::QuickCatalog || action == Action::Map));
     }
     CHECK(rv::app::isGlobalAction(Action::ToggleDevUI));
     CHECK(rv::app::isGlobalAction(Action::ReloadShaders));

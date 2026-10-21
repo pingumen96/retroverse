@@ -575,6 +575,84 @@ TEST_CASE("app/run_report: the persisted start, its reconciliation and the objec
     CHECK(beforeRooms->world.screenRoom.empty());
 }
 
+TEST_CASE("app/run_report: the floors, the rides, the teleports and the directory read back (I4 step 7b)",
+          "[app][run_report]") {
+    RunReport report = measuredReport();
+    rv::app::WorldRecord& world = report.world;
+    world.bound = true;
+    world.state = "room";
+    world.floor = "ground";
+    world.floors = {{"ground", 0, 1, 15}, {"gen4", 3, 1, 40}, {"handheld", 7, 2, 44}};
+    rv::app::RideRecord ride;
+    ride.from = "ground";
+    ride.to = "handheld";
+    ride.reason = "room";
+    ride.room = "room:gb";
+    ride.requestedFrame = 18;
+    ride.fadedOutFrame = 32;
+    ride.swappedFrame = 33;
+    ride.fadedInFrame = 48;
+    ride.builtMs = 311.5;
+    ride.residentMs = 735.25;
+    ride.totalMs = 825.125;
+    ride.jobMs = 308.75;
+    ride.outcome = "arrived";
+    ride.walker = rv::app::SpawnPoint{glm::vec3(8.5f, 0.0f, -3.2f), 0.0f, -6.0f};
+    ride.arrayBytes = 5025792;
+    ride.gpuBytes = 150197348;
+    rv::app::RideRecord running;
+    running.from = "handheld";
+    running.to = "gen4";
+    running.reason = "showInRoom";
+    running.room = "room:snes";
+    running.game = "g0000000000001234";
+    running.requestedFrame = 90;
+    running.outcome = "running";
+    world.rides = {ride, running};
+    world.teleports = {{60, "area:shared:handheld", "room", rv::app::SpawnPoint{glm::vec3(8.5f, 0.0f, 3.2f), 180.0f,
+                                                                                -6.0f}},
+                       {75, "elevator", "floor", rv::app::SpawnPoint{glm::vec3(1.2f, 0.0f, 0.0f), 90.0f, -6.0f}}};
+    world.elevatorPromptFrames = 42;
+    rv::app::DirectoryRecord& directory = report.directory;
+    directory.bound = true;
+    directory.opened = 2;
+    directory.open = true;
+    directory.tab = "games";
+    directory.view = "card";
+    directory.notice = "ride-unavailable";
+    directory.gamesState = "ready";
+    directory.gamesRequests = 1;
+    directory.games = {{"g0000000000001234", "Clover Nook", "psx", true, "2026-10-11"},
+                       {"g0000000000005678", "Briny Loom", "gb", false, ""}};
+    directory.cardGame = "g0000000000001234";
+    directory.cardRoom = "placed";
+    directory.cardOutcome = "crashed";
+    directory.events = {{5, "open", "floors", "elevator"}, {17, "command", "choose-floor", "gen4"}, {40, "closed", "", ""}};
+    directory.eventsDropped = 1;
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->world == world);
+    CHECK(parsed->directory == directory);
+    // A report written before I4 step 7b (no keys) reads as none; a run without the building writes the directory empty.
+    const auto older = rv::app::parseRunReport(editedReport(report,
+                                                            [](nlohmann::json& edited) {
+                                                                edited["world"].erase("floors");
+                                                                edited["world"].erase("rides");
+                                                                edited["world"].erase("teleports");
+                                                                edited["world"].erase("elevatorPromptFrames");
+                                                                edited.erase("directory");
+                                                            }),
+                                               "r.json");
+    REQUIRE(older.has_value());
+    CHECK(older->world.rides.empty());
+    CHECK(older->world.floors.empty());
+    CHECK(older->world.elevatorPromptFrames == 0);
+    CHECK(older->directory == rv::app::DirectoryRecord{});
+    report.directory = rv::app::DirectoryRecord{};
+    const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK(json.at("directory").empty());
+}
+
 TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 step 11)", "[app][run_report]") {
     RunReport report = measuredReport();
     rv::app::VideoRecord& video = report.video;

@@ -29,7 +29,8 @@ void WorldSession::requestLiveUpdate() {
 void WorldSession::startLiveFlow(ProductUi& product) {
     // One flow at a time; the persisted start's reconciliation first (its snapshot may already follow the refresh, the
     // live update then finds nothing to do).
-    if (!m_liveRequested || m_decided || m_shownPreview || m_previewAwaitingFrame ||
+    // I4 step 7b: not during a ride, nor while a result is built again for the floor shown.
+    if (!m_liveRequested || m_decided || m_shownPreview || m_previewAwaitingFrame || m_ride || m_retargetPending ||
         (m_flow && m_flow->phase() != WorldPhase::Done)) {
         return;
     }
@@ -40,6 +41,10 @@ void WorldSession::startLiveFlow(ProductUi& product) {
     flow.writer = m_options.writer;
     flow.wake = m_context.wakeCallback();
     flow.preview = false; // the floor shows already: the building job at once
+    // The floor the walker is on (I4 step 7b: a ride may have taken it off the start room's floor).
+    flow.floor = [this]() -> std::optional<std::string> {
+        return m_floor.empty() ? std::nullopt : std::optional<std::string>(m_floor);
+    };
     m_flow = std::make_unique<WorldFlow>(std::move(flow), m_pool);
     m_liveFlow = true;
     m_flow->update(product.catalog());
@@ -48,6 +53,8 @@ void WorldSession::startLiveFlow(ProductUi& product) {
 
 void WorldSession::keepShown(const WorldBuild& build) {
     m_shown = shownFloorOf(build);
+    // I4 step 7b: the plan for the rides, the floor's elevator, arrival and doorways, the floors' record.
+    keepPlan(build);
     // The card's other versions of each title (I3 step 14a), from the plan shown.
     m_otherVersions = build.plan ? otherVersionCounts(*build.plan) : std::map<std::uint64_t, std::uint32_t>{};
     // Where each game stands, for "Mostra nella stanza" (I3 step 15a).

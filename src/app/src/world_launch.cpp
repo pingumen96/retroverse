@@ -51,28 +51,9 @@ void WorldLaunch::beforeInteraction(ProductUi& product, WorldHover& hover, const
         }
     }
 
-    // "Mostra nella stanza", pressed in the catalog that closed at the end of the last frame.
-    if (const std::optional<std::string> asked = product.takeShowInRoom()) {
-        const auto game = catalog::GameId::parse(*asked);
-        if (!game) {
-            spdlog::warn("Frame {}: Mostra nella stanza on '{}': not a GameId", frame, *asked);
-        } else {
-            const world::PickId id = hover.showInRoom(*game, walker);
-            std::string failure;
-            if (id == world::kNoPick) {
-                const std::string placement = placementOf(*asked, hover);
-                failure = placement != ui::quick_catalog::kRoomPlaced ? placement
-                          : hover.interaction().notice() == InteractionNotice::ItemUnavailable
-                              ? std::string("item-unavailable")
-                              : std::string("state");
-                spdlog::warn("Frame {}: Mostra nella stanza on {}: not taken ({})", frame, game->toString(), failure);
-            } else {
-                spdlog::info("Frame {}: Mostra nella stanza on {}: the walker goes to item {:08X}", frame,
-                             game->toString(), id);
-            }
-            m_log.showInRoom(*game, id, frame, failure);
-        }
-    }
+    static_cast<void>(walker);
+    // "Mostra nella stanza" is the session's since I4 step 7b (across rooms and floors: WorldSession::showInRoom,
+    // world_ride.cpp), which records it here (showInRoom()).
 
     // The launch's end: the interaction restores the pose and Inspect of the item on this frame's update.
     if (m_launching) {
@@ -84,6 +65,29 @@ void WorldLaunch::beforeInteraction(ProductUi& product, WorldHover& hover, const
             hover.launchEnded(*ended);
         }
     }
+}
+
+world::PickId WorldLaunch::showInRoom(const catalog::GameId& game, WorldHover& hover, const scene::WalkerPose& walker,
+                                      std::uint64_t frame) {
+    const world::PickId id = hover.showInRoom(game, walker);
+    std::string failure;
+    if (id == world::kNoPick) {
+        const std::string placement = placementOf(game.toString(), hover);
+        failure = placement != ui::quick_catalog::kRoomPlaced ? placement
+                  : hover.interaction().notice() == InteractionNotice::ItemUnavailable
+                      ? std::string("item-unavailable")
+                      : std::string("state");
+        spdlog::warn("Frame {}: Mostra nella stanza on {}: not taken ({})", frame, game.toString(), failure);
+    } else {
+        spdlog::info("Frame {}: Mostra nella stanza on {}: the walker goes to item {:08X}", frame, game.toString(), id);
+    }
+    m_log.showInRoom(game, id, frame, failure);
+    return id;
+}
+
+void WorldLaunch::showInRoomRefused(const catalog::GameId& game, std::string_view failure, std::uint64_t frame) {
+    spdlog::warn("Frame {}: Mostra nella stanza on {}: not taken ({})", frame, game.toString(), failure);
+    m_log.showInRoom(game, world::kNoPick, frame, failure);
 }
 
 void WorldLaunch::afterInteraction(const InteractionResult& result, ProductUi& product, WorldHover& hover,

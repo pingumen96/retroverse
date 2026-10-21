@@ -87,6 +87,17 @@ void WorldHover::setActiveRoom(std::optional<std::size_t> room) {
     bindRoom(room);
 }
 
+void WorldHover::bindNow(std::optional<std::size_t> room) {
+    if (room && *room >= m_rooms.size()) {
+        room.reset();
+    }
+    m_interaction.leaveFocusNow();
+    m_wanted = room;
+    if (room != m_active) {
+        bindRoom(room);
+    }
+}
+
 void WorldHover::bindRoom(std::optional<std::size_t> room) {
     // The room left lets go of its items (none hovered, focused or pulled; its records' flags as they stand: synced),
     // a frame of no time absorbing what the interaction would do with it.

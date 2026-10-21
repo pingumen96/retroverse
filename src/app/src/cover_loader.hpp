@@ -96,6 +96,8 @@ public:
     [[nodiscard]] bool done() const noexcept;
     /// Every item in the last round's view (and the focused one) is done.
     [[nodiscard]] bool viewDone() const noexcept { return m_schedule.viewDone(); }
+    /// Every item of group `group` (a room of the floor) is done (I4 step 7b: the eye's area resident after a ride).
+    [[nodiscard]] bool groupDone(std::uint32_t group) const;
     /// Blocks until a job posts a result, at most `timeout` (a lockstep wait within a frame).
     void waitForResults(std::chrono::milliseconds timeout) const;
 

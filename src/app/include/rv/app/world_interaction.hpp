@@ -330,6 +330,11 @@ public:
     /// result.
     bool showInRoom(world::PickId id, const scene::WalkerPose& walker);
 
+    /// Focus left at once, its item put back and the walker's ease stopped where it is, with no notice (I4 step 7b:
+    /// "Mostra nella stanza" of a game in another room or on another floor leaves Focus first); nothing in other
+    /// states.
+    void leaveFocusNow();
+
     /// The launch Avvia asked for ended (A1's LaunchFlow, its outcome as the game-session panel tells it): Returning;
     /// the next update restores the walker's pose and the inspection of the item. An outcome other than
     /// launch_outcome::kReturned (refused, not ready, failed, crashed) becomes the notice. Ignored outside Launching.

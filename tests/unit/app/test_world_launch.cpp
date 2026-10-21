@@ -86,10 +86,16 @@ TEST_CASE("app/world_launch: where a game stands in the room, as the quick catal
     CHECK(rv::app::roomPlacementOf(index, placed, true, eye) == qc::kRoomPlaced);
     // Placed by the plan in the eye's room, but that room has no item of it: not offered.
     CHECK(rv::app::roomPlacementOf(index, placed, false, eye) == qc::kRoomNotInRoom);
-    // I4 step 5a: placed in another room of the building, or the eye in a hall: on display elsewhere, not offered.
+    // I4 step 7b: placed in another room of the building, or the eye in a hall: offered ("Mostra nella stanza" goes
+    // there, riding first to another floor; I4 step 5a's kRoomOtherRoom left it out).
     const std::optional<rv::world::RoomId> other = rv::world::RoomId::parse("room:gb").value();
-    CHECK(rv::app::roomPlacementOf(index, placed, false, other) == qc::kRoomOtherRoom);
-    CHECK(rv::app::roomPlacementOf(index, placed, false, std::nullopt) == qc::kRoomOtherRoom);
+    CHECK(rv::app::roomPlacementOf(index, placed, false, other) == qc::kRoomPlaced);
+    CHECK(rv::app::roomPlacementOf(index, placed, false, std::nullopt) == qc::kRoomPlaced);
+    // A placement in a room the plan lacks (no floor: a schema-1 plan not lifted) cannot be gone to.
+    rv::world::WorldPlan roomless = plan;
+    roomless.rooms.clear();
+    const rv::world::PlanIndex roomlessIndex(roomless);
+    CHECK(rv::app::roomPlacementOf(roomlessIndex, placed, false, other) == qc::kRoomNotInRoom);
     std::vector<std::string_view> reasons;
     for (const rv::world::UnplacedGame& unplaced : plan.unplaced) {
         const std::string_view key = rv::app::roomPlacementOf(index, unplaced.game, false, eye);
