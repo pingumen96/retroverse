@@ -1584,6 +1584,94 @@ TEST_CASE("app/world_flow: a start room kept until a regeneration shows its noti
     CHECK(again.notice == rv::app::world_notice::kRegeneration);
 }
 
+TEST_CASE("app/world_flow: the preview's CRT starts on the game the building chooses, a game played since the items "
+          "were written included",
+          "[app][world_build]") {
+    // ADR-0012 §7, I4 step 6b: the start choice is the most recently played placed game with a clip. The items files
+    // hold each game's last play as their last write saw it; the preview takes the catalog's sessions as they are now
+    // (catalog_db::lastPlaySessions()), so a session recorded after them (a game played, Retroverse quit, started
+    // again) starts the stored floor's CRT on that game, and the building's result never retargets it.
+    const ImportedFixture imported("world-flow-played", true, "esde/snes-room");
+    rv::core::WorkerPool pool(rv::core::WorkerPoolOptions{2});
+    rv::app::WorldFlow::Options options;
+    options.paths = worldPathsOf(imported);
+    options.startRoom = kSnesRoom;
+    options.writer = "retroverse (test)";
+    FakeCatalog catalog;
+    catalog.state = rv::app::CatalogState::Ready;
+    catalog.reader = readerOf(imported);
+    std::vector<rv::app::ScreenGame> games;
+    {
+        rv::app::WorldFlow first(options, pool);
+        const auto built = runFlow(first, catalog);
+        REQUIRE(built.has_value());
+        REQUIRE(built->build.has_value());
+        games = built->build->screenGames;
+    }
+    const std::optional<std::size_t> before = rv::app::chooseStartGame(games);
+    REQUIRE(before.has_value());
+    // Another placed game with a clip, played now (a session that counts).
+    const auto other = std::find_if(games.begin(), games.end(), [&](const rv::app::ScreenGame& game) {
+        return game.id != games[*before].id && rv::app::isPlayableVideoFile(game.media.video);
+    });
+    REQUIRE(other != games.end());
+    const rv::catalog::GameId played = rv::catalog::GameId::parse(other->id).value();
+    const auto startedAt = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+    {
+        auto database = imported.openDatabase();
+        auto store = rv::catalog_db::SessionStore::open(database.writer()).value();
+        rv::catalog::PlaySession session;
+        session.game = played;
+        session.started = startedAt;
+        REQUIRE(store->insertSession(session).has_value());
+    }
+    {
+        const auto reader = readerOf(imported);
+        const auto sessions = rv::catalog_db::lastPlaySessions(reader->query->connection());
+        REQUIRE(sessions.has_value());
+        REQUIRE(sessions->size() == 1);
+        CHECK(sessions->at(played) == startedAt);
+    }
+    // The items files as the first building left them: the game never played there.
+    const fs::path itemsFile = rv::app::roomItemsFile(options.paths.cacheDir, catalog.library, kSnes);
+    const auto items = rv::app::readRoomItems(itemsFile);
+    REQUIRE(items.has_value());
+    REQUIRE(items->find(played) != nullptr);
+    REQUIRE(items->find(played)->screen.has_value());
+    CHECK_FALSE(items->find(played)->screen->lastPlayed.has_value());
+    catalog.reader = readerOf(imported);
+    rv::app::WorldFlow second(options, pool);
+    std::optional<WorldBuild> preview;
+    const auto result = runFlow(second, catalog, &preview);
+    REQUIRE(preview.has_value());
+    REQUIRE(result.has_value());
+    REQUIRE(result->build.has_value());
+    CHECK_FALSE(result->build->skipped); // a session counts: the catalog's stamp moved
+    const std::int64_t seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(startedAt.time_since_epoch()).count();
+    const auto previewedGame =
+        std::find_if(preview->screenGames.begin(), preview->screenGames.end(),
+                     [&](const rv::app::ScreenGame& game) { return game.id == other->id; });
+    REQUIRE(previewedGame != preview->screenGames.end());
+    CHECK(previewedGame->lastPlayed == std::optional<std::int64_t>(seconds)); // the catalog's, not the items'
+    // The building rewrote the items with it.
+    CHECK(rv::app::readRoomItems(itemsFile).value().find(played)->screen->lastPlayed ==
+          std::optional<std::int64_t>(seconds));
+    const std::optional<std::size_t> previewed = rv::app::chooseStartGame(preview->screenGames);
+    const std::optional<std::size_t> reconciled = rv::app::chooseStartGame(result->build->screenGames);
+    REQUIRE(previewed.has_value());
+    REQUIRE(reconciled.has_value());
+    CHECK(preview->screenGames[*previewed].id == other->id);
+    CHECK(result->build->screenGames[*reconciled].id == other->id);
+    // Without the catalog's sessions the preview would have started on the old choice (the items' last plays).
+    for (const rv::app::ScreenGame& game : preview->screenGames) {
+        const auto found = std::find_if(result->build->screenGames.begin(), result->build->screenGames.end(),
+                                        [&](const rv::app::ScreenGame& built) { return built.id == game.id; });
+        REQUIRE(found != result->build->screenGames.end());
+        CHECK(found->lastPlayed == game.lastPlayed);
+    }
+}
+
 TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sections' covers and CRT games, the update "
           "by sections, a room held for want of a section's selection",
           "[app][world_build]") {

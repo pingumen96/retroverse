@@ -183,7 +183,8 @@ struct RoomCollection {
 /// The floor to commit (an immutable value made on the pool, ADR-0010 §12), with the building it shows.
 struct WorldBuild {
     /// The stored plan's floor shown before the building job answers (previewWorld(), I3 step 10c: outcome Kept, the
-    /// covers of the items the rooms' items files know, no media root, no CRT games); else the building's.
+    /// covers of the items the rooms' items files know, no media root, the CRTs' games from the items files since I4
+    /// step 6b); else the building's.
     bool preview = false;
     WorldOutcome outcome = WorldOutcome::NoPlan;
     /// The world notice it shows (world_notice), and why, in English (the log, the run report).
@@ -264,6 +265,10 @@ struct FloorSources {
     std::optional<std::filesystem::path> mediaRoot;
     std::optional<std::filesystem::path> mediaRootPath;
     std::optional<std::filesystem::path> screenMediaRoot;
+    /// The preview's: each game's latest play session that counts (seconds since 1970, catalog_db::lastPlaySessions()),
+    /// which the CRT games' last plays take in place of the items files' (a game played since their last write: the CRT
+    /// starts on the game the building's result chooses, ADR-0012 §7). None: the items' own.
+    std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed;
 };
 
 /// What the building job's last plan was made from (see the file comment): SHA-256 digests of the plan, of the
@@ -338,11 +343,13 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
 /// The preview job (I3 step 10c, the persisted start): `stored`'s start floor as it is, before the catalog is read:
 /// buildFloor() with the rooms' items files (room_items.hpp, read from <cache>/world/<library>/), its covers served from
 /// the derived-texture cache alone (no media root), its rooms' CRT games from the items under `screenMediaRoot` (none
-/// without it). Outcome Kept, `preview` set, no change report, nothing written. Never fails as a whole: a floor that
-/// cannot be made has no scene (logged).
+/// without it), their last plays `lastPlayed`'s when given (FloorSources::lastPlayed: the catalog's play sessions, read
+/// before the snapshot). Outcome Kept, `preview` set, no change report, nothing written. Never fails as a whole: a
+/// floor that cannot be made has no scene (logged).
 [[nodiscard]] WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library,
                                       const world::StoredPlan& stored, const std::optional<world::RoomId>& startRoom,
-                                      const std::optional<std::filesystem::path>& screenMediaRoot = std::nullopt);
+                                      const std::optional<std::filesystem::path>& screenMediaRoot = std::nullopt,
+                                      std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed = std::nullopt);
 
 /// The media root of the library `profile` describes as ES-DE's settings give it now (esde::resolveMediaRoot), when it
 /// can be read (a folder there): the preview's CRT games are read under it (I4 step 6b). On the worker pool: it reads

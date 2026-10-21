@@ -1258,6 +1258,16 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                     [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
                     *sources.screenMediaRoot);
             }
+            if (sources.lastPlayed) {
+                // The catalog's sessions now, as the building's items will hold them (a game played since they were
+                // written: the CRT's start choice is the building's).
+                for (ScreenGame& game : collection.screenGames) {
+                    const auto id = catalog::GameId::parse(game.id);
+                    const auto played = id ? sources.lastPlayed->find(*id) : sources.lastPlayed->end();
+                    game.lastPlayed = played != sources.lastPlayed->end() ? std::optional<std::int64_t>(played->second)
+                                                                          : std::nullopt;
+                }
+            }
             if (build.startRoom && room->id == *build.startRoom) {
                 build.screenGames = collection.screenGames;
             }
@@ -1286,7 +1296,8 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
 
 WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library, const world::StoredPlan& stored,
                         const std::optional<world::RoomId>& startRoom,
-                        const std::optional<std::filesystem::path>& screenMediaRoot) {
+                        const std::optional<std::filesystem::path>& screenMediaRoot,
+                        std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed) {
     WorldBuild build;
     build.preview = true;
     build.library = library;
@@ -1294,6 +1305,7 @@ WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& libra
     keep(build, stored, world_notice::kNone, "the stored plan, shown before the catalog is read");
     FloorSources sources;
     sources.screenMediaRoot = screenMediaRoot;
+    sources.lastPlayed = std::move(lastPlayed);
     buildFloor(paths, build, sources);
     if (!build.scene && !build.startRoomMissing) {
         spdlog::error("World: the stored plan's floor cannot be shown before the catalog is read: {}", build.reason);
@@ -1315,6 +1327,30 @@ std::optional<std::filesystem::path> readableMediaRoot(const catalog::LibraryPro
 }
 
 // --- The flow -------------------------------------------------------------------------------------------------------
+
+namespace {
+
+/// Each game's latest play session that counts, in seconds since 1970, read on the world's reader (the preview's: the
+/// CRT games' last plays); none when it cannot be read (logged: the items files' own then).
+[[nodiscard]] std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayedOf(WorldCatalogReader& reader) {
+    const std::lock_guard lock(reader.mutex);
+    if (!reader.query) {
+        return std::nullopt;
+    }
+    auto sessions = catalog_db::lastPlaySessions(reader.query->connection());
+    if (!sessions) {
+        spdlog::warn("World: the play sessions cannot be read for the stored floor's CRTs: {}",
+                     sessions.error().toString());
+        return std::nullopt;
+    }
+    std::map<catalog::GameId, std::int64_t> seconds;
+    for (const auto& [game, started] : *sessions) {
+        seconds.emplace(game, std::chrono::duration_cast<std::chrono::seconds>(started.time_since_epoch()).count());
+    }
+    return seconds;
+}
+
+} // namespace
 
 struct WorldFlow::Mailbox {
     std::mutex mutex;
@@ -1560,13 +1596,16 @@ void WorldFlow::update(AppCatalog& catalog) {
             jobOptions.generation = &m_generation;
             const Status submitted = m_pool.submit(
                 [mailbox = m_mailbox, paths = m_options.paths, library = m_library, startRoom = m_options.startRoom,
-                 stored = m_stored->stored, profile = m_reader->profile, generation](const core::JobContext& job) {
+                 stored = m_stored->stored, profile = m_reader->profile, reader = m_reader,
+                 generation](const core::JobContext& job) {
                     if (job.cancelled()) {
                         return;
                     }
                     // The rooms' CRTs play their games from the start (I4 step 6b), read under the library's media
-                    // root when it can be read now; the covers come from the cache alone all the same.
-                    WorldBuild preview = previewWorld(paths, library, *stored, startRoom, readableMediaRoot(profile));
+                    // root when it can be read now, each game's last play the catalog's (the CRT starts on the game
+                    // the building's result chooses); the covers come from the cache alone all the same.
+                    WorldBuild preview = previewWorld(paths, library, *stored, startRoom, readableMediaRoot(profile),
+                                                      lastPlayedOf(*reader));
                     if (job.cancelled()) {
                         return;
                     }
