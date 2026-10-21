@@ -9,11 +9,13 @@
 // A preset file (JSON with comments; every key required):
 //   {"schemaVersion": 1, "id": "retro_museum_cozy", "name": "RetroMuseumCozy", "decorationDensityPermille": 400,
 //    "growthReservePermille": 150, "mainPassageWidthMm": 1400, "minClearWidthMm": 1200,
-//    "placement": {"include": "covered"}}
+//    "placement": {"include": "covered"}, "sharedRoomMinTitles": 30}
 // world.json (JSON with comments; every key optional): "preset", "seed" (an integer from 0 to 2^64 - 1, or null for the
 // default), "decorationDensityPermille", "growthReservePermille", "mainPassageWidthMm", "minClearWidthMm",
-// "placement": {"include"}, "reduceMotion" (ADR-0012 §3; until I7's settings screen), "lightingProfile" (a lighting
-// profile's id under assets/world/lighting, I3 step 16: how the room is lit when drawn, never what it holds).
+// "placement": {"include"}, "sharedRoomMinTitles" (ADR-0013 §3, I4 step 4: the distinct titles a system entering the
+// building needs for a room of its own; 0 gives every system its own room), "reduceMotion" (ADR-0012 §3; until I7's
+// settings screen), "lightingProfile" (a lighting profile's id under assets/world/lighting, I3 step 16: how the room is
+// lit when drawn, never what it holds).
 // The canonical form (worldConfigToJson()) holds every key, "seed" null when it is not set.
 
 #include <cstdint>
@@ -60,6 +62,9 @@ enum class PlacementInclude : std::uint8_t {
 inline constexpr std::int64_t kMaxPermille = 1000;
 inline constexpr std::int64_t kMinClearWidthMm = 600;
 inline constexpr std::int64_t kMaxPassageWidthMm = 5000;
+inline constexpr std::int64_t kMaxSharedRoomMinTitles = 1'000'000;
+/// The shipped presets' sharedRoomMinTitles (ADR-0013 §3).
+inline constexpr std::int64_t kDefaultSharedRoomMinTitles = 30;
 
 struct WorldConfig {
     /// The preset the values came from (a data id).
@@ -74,6 +79,10 @@ struct WorldConfig {
     std::int64_t mainPassageWidthMm = 1400;
     std::int64_t minClearWidthMm = 1200;
     PlacementInclude include = PlacementInclude::Covered;
+    /// The distinct titles a system needs, over every game of it with or without a cover (selectRoom() under include
+    /// "all": RoomSelection::distinctTitles), for a console room of its own when it enters the building (ADR-0013 §3);
+    /// with fewer it takes a section of its floor's shared room. Sticky: a system's room never changes with its count.
+    std::int64_t sharedRoomMinTitles = kDefaultSharedRoomMinTitles;
     /// Every transition instant (ADR-0012 §3). How the room is shown, not what it holds: the generator reads it never.
     bool reduceMotion = false;
     /// The lighting profile the room is drawn with (a data id; room_look.hpp). How the room is shown, like
@@ -88,7 +97,8 @@ struct WorldConfig {
 [[nodiscard]] std::uint64_t worldSeed(const WorldConfig& config, const catalog::LibraryId& library);
 
 /// The values within their ranges: permilles from 0 to 1000, the minimum clear width from kMinClearWidthMm to the main
-/// passage's width, which is at most kMaxPassageWidthMm; the preset and the lighting profile data ids. Errors:
+/// passage's width, which is at most kMaxPassageWidthMm, sharedRoomMinTitles from 0 to kMaxSharedRoomMinTitles; the
+/// preset and the lighting profile data ids. Errors:
 /// InvalidArgument naming the key.
 [[nodiscard]] Status checkWorldConfig(const WorldConfig& config);
 
@@ -109,6 +119,7 @@ struct WorldConfigOverrides {
     std::optional<std::int64_t> mainPassageWidthMm;
     std::optional<std::int64_t> minClearWidthMm;
     std::optional<PlacementInclude> include;
+    std::optional<std::int64_t> sharedRoomMinTitles;
     std::optional<bool> reduceMotion;
     std::optional<std::string> lightingProfile;
 

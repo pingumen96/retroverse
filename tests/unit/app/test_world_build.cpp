@@ -926,6 +926,9 @@ TEST_CASE("app/world_build: a custom system is classified by the catalog's platf
         }
     }
     CHECK(snapshot.platformTags == std::vector<std::string>{"gb"});
+    // Its 6 titles keep a room of their own (I4 step 4: else a section of the handheld floor's shared room).
+    REQUIRE(rv::core::writeTextFileAtomic(imported.paths.configDir() / "world.json", "{\"sharedRoomMinTitles\": 0}\n")
+                .has_value());
     const rv::app::WorldBuildInput input = inputOf(imported, snapshot);
     const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
     INFO(first.reason);

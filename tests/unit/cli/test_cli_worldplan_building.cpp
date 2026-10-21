@@ -319,10 +319,12 @@ TEST_CASE("cli/worldplan: a stored building is regenerated whole; --system and -
 }
 
 TEST_CASE("cli/worldplan: the building fixture's whole building, then its additions", "[cli][worldplan]") {
-    // I4 step 2 (tests/fixtures/esde/building/README.md): every system of the catalog gets its console room on its
-    // floor with its media family (shared rooms and the arcade room are step 4's), kodi is excluded, the custom system
-    // takes gb's row by its platform tag (its scene too); then additions/ brings titles to three rooms, which an update
-    // places without moving anything, and a new system, which the update cannot place yet (step 6a).
+    // I4 steps 2 and 4 (tests/fixtures/esde/building/README.md): every system of the catalog gets its room on its floor
+    // with its media family, or a section: mame of the arcade room, the systems under 30 distinct titles of their
+    // floor's shared room (amiga's 20 on the computer floor; the custom system, on the handheld floor by gb's platform
+    // tag, and pokemini); kodi is excluded; then additions/ brings titles to three systems (pokemini past 30: it stays
+    // in its section), which an update places without moving anything, and a new system, which the update cannot place
+    // yet (step 6a).
     auto fixture = rv::test::Fixture::materialize("esde/building");
     INFO((fixture ? "materialized" : fixture.error().toString()));
     REQUIRE(fixture.has_value());
@@ -350,13 +352,12 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         std::size_t placed;
     };
     const Expected expected[] = {
-        {"room:amiga", "computer", "big_box", 20},          // no media at all: every game, generated labels
-        {"room:gb", "handheld", "cartridge_handheld", 30},  // 32 games, 2 second releases
-        {"room:mame", "ground", "generic_case", 15},        // 25 sets, 15 with a cover
-        {"room:pocketlab", "handheld", "cartridge_handheld", 6}, // gb's row by its platform tag
-        {"room:pokemini", "handheld", "cartridge_handheld", 8},
-        {"room:psx", "gen5", "disc_case_cd", 40},           // two of them multi-disc
-        {"room:snes", "gen4", "cartridge_home_16bit", 40},  // 42 games, 2 second releases
+        {"area:arcade", "ground", "generic_case", 15},           // mame: 25 sets, 15 with a cover
+        {"area:shared:computer", "computer", "generic_case", 20}, // amiga: no media at all, generated labels
+        {"area:shared:handheld", "handheld", "generic_case", 14}, // pocketlab (gb's row by its tag) 6, pokemini 8
+        {"room:gb", "handheld", "cartridge_handheld", 30},       // 32 games, 2 second releases
+        {"room:psx", "gen5", "disc_case_cd", 40},                // two of them multi-disc
+        {"room:snes", "gen4", "cartridge_home_16bit", 40},       // 42 games, 2 second releases
     };
     REQUIRE(plan->rooms.size() == std::size(expected));
     std::vector<std::string> floors;
@@ -376,8 +377,21 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         }
         CHECK(placed == expected[i].placed);
     }
+    const auto sectionsOf = [&](std::string_view id) {
+        std::vector<std::string> sections;
+        for (const rv::world::Room& room : plan->rooms) {
+            if (room.id.toString() == id) {
+                for (const rv::catalog::SystemName& system : room.sections) {
+                    sections.push_back(system.str());
+                }
+            }
+        }
+        return sections;
+    };
+    CHECK(sectionsOf("area:arcade") == std::vector<std::string>{"mame"});
+    CHECK(sectionsOf("area:shared:handheld") == std::vector<std::string>{"pocketlab", "pokemini"});
     // The arcade sets without a cover: unplaced, no-cover (the room places only the covered ones).
-    const rv::world::RoomId mame = *rv::world::RoomId::parse("room:mame");
+    const rv::world::RoomId mame = *rv::world::RoomId::parse("area:arcade");
     std::size_t noCover = 0;
     std::size_t otherwise = 0;
     for (const rv::world::UnplacedGame& unplaced : plan->unplaced) {
@@ -391,33 +405,32 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     INFO(checked.out);
     CHECK(checked.code == ExitCode::Ok);
 
-    // The custom system's scene: gb's row by the catalog's platform tag, as its generation classified it (its sign,
-    // not the fallback's).
-    const std::filesystem::path pocketScene = session.dir.file("pocketlab.scene.json");
-    const RunResult scene =
-        session.run({"worldplan", "show", "--scene", rv::core::pathToUtf8(pocketScene), "--room", "room:pocketlab"});
+    // The shared room's scene: the sign of a room of several systems, without a console (I4 step 4).
+    const std::filesystem::path pocketScene = session.dir.file("shared.scene.json");
+    const RunResult scene = session.run(
+        {"worldplan", "show", "--scene", rv::core::pathToUtf8(pocketScene), "--room", "area:shared:handheld"});
     INFO(scene.err);
     REQUIRE(scene.code == ExitCode::Ok);
     const nlohmann::json pocketObjects = nlohmann::json::parse(readText(pocketScene))["objects"];
     std::vector<std::string> signs;
     for (const nlohmann::json& object : pocketObjects) {
+        CHECK(object["id"] != "fx:hero.console");
         const auto textures = object.find("textures");
         if (textures != object.end() && textures->contains("picture") &&
             (*textures)["picture"].value("pattern", "") == "sign") {
             signs.push_back((*textures)["picture"].value("title", ""));
         }
     }
-    CHECK(signs == std::vector<std::string>{"POCKET GAMES"});
+    CHECK(signs == std::vector<std::string>{"MORE GAMES"});
 
-    // I4 step 3: a floor's hall and rooms, and its scene: the handheld floor's three rooms on two rows along its hall.
+    // I4 step 3: a floor's hall and rooms, and its scene: the handheld floor's two rooms on two rows along its hall.
     const RunResult floor = session.run({"worldplan", "show", "--floor", "handheld"});
     INFO(floor.err);
     REQUIRE(floor.code == ExitCode::Ok);
-    CHECK(contains(floor.out, "Floor handheld: hall 21600 x 3000 mm, 3200 mm high, 4 light(s) every 6000 mm, the "
-                              "elevator at its west end; 3 room(s)\n"));
+    CHECK(contains(floor.out, "Floor handheld: hall 12300 x 3000 mm, 3200 mm high, 2 light(s) every 6000 mm, the "
+                              "elevator at its west end; 2 room(s)\n"));
     CHECK(contains(floor.out, "  room:gb  north row, doorway x 6850 to 8450 mm onto the hall\n"));
-    CHECK(contains(floor.out, "  room:pocketlab  south row, doorway x 6850 to 8450 mm onto the hall\n"));
-    CHECK(contains(floor.out, "  room:pokemini  north row, doorway x 16150 to 17750 mm onto the hall\n"));
+    CHECK(contains(floor.out, "  area:shared:handheld  south row, doorway x 6850 to 8450 mm onto the hall\n"));
     const std::filesystem::path floorScene = session.dir.file("handheld.scene.json");
     const RunResult floorJson =
         session.run({"worldplan", "show", "--floor", "handheld", "--scene", rv::core::pathToUtf8(floorScene), "--json"});
@@ -425,11 +438,11 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     REQUIRE(floorJson.code == ExitCode::Ok);
     const nlohmann::json shownFloor = nlohmann::json::parse(floorJson.out);
     CHECK(shownFloor["sceneFloor"] == "handheld");
-    CHECK(shownFloor["floorScene"]["hall"]["lengthMm"] == 21600);
-    CHECK(shownFloor["floorScene"]["rooms"].size() == 3);
+    CHECK(shownFloor["floorScene"]["hall"]["lengthMm"] == 12300);
+    CHECK(shownFloor["floorScene"]["rooms"].size() == 2);
     const nlohmann::json handheldScene = nlohmann::json::parse(readText(floorScene));
     CHECK(handheldScene["name"] == "floor:handheld");
-    CHECK(handheldScene["areas"].size() == 4);
+    CHECK(handheldScene["areas"].size() == 3);
     std::vector<std::string> floorSigns;
     for (const nlohmann::json& object : handheldScene["objects"]) {
         const auto textures = object.find("textures");
@@ -438,9 +451,9 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
             floorSigns.push_back((*textures)["picture"].value("title", ""));
         }
     }
-    // The rooms' signs (gb's, the custom system's by gb's row, pokemini's) and the floor's by its elevator.
+    // The rooms' signs (gb's, the shared room's) and the floor's by its elevator.
     std::sort(floorSigns.begin(), floorSigns.end());
-    CHECK(floorSigns == std::vector<std::string>{"HANDHELDS", "POCKET GAMES", "POCKET GAMES", "POCKET GAMES"});
+    CHECK(floorSigns == std::vector<std::string>{"HANDHELDS", "MORE GAMES", "POCKET GAMES"});
     // --floor names a floor of the plan, and not with --room.
     CHECK(session.run({"worldplan", "show", "--floor", "gen7"}).code == ExitCode::UsageError);
     const RunResult both = session.run(
@@ -453,6 +466,7 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     const RunResult again = session.run({"import"});
     INFO(again.out << again.err);
     REQUIRE(again.code == ExitCode::Ok);
+    // pokemini's room is the shared one: naming it updates the room with its sections' selections (pocketlab's too).
     const RunResult updated = session.run({"worldplan", "update", "--system", "snes", "--system", "psx", "--system",
                                            "pokemini", "--seed", "102938"});
     INFO(updated.out << updated.err);
@@ -460,15 +474,35 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     CHECK(contains(updated.out, "Changes:         34 added, "));
     auto after = rv::world::readPlan(readText(session.files.plan), "after");
     REQUIRE(after.has_value());
-    // Nothing placed before moved; the rooms not updated are as they were.
+    // Nothing placed before moved; the rooms not updated are as they were; pokemini past 30 distinct titles stays in
+    // its section (ADR-0013 §3: sticky), its 24 new titles in the shared room.
     for (const rv::world::Placement& placement : plan->placements) {
         const auto kept = std::find(after->placements.begin(), after->placements.end(), placement);
         CHECK(kept != after->placements.end());
     }
-    for (const std::string_view room : {"room:amiga", "room:gb", "room:mame", "room:pocketlab"}) {
+    for (const std::string_view room : {"area:arcade", "area:shared:computer", "room:gb"}) {
         const rv::world::RoomId id = *rv::world::RoomId::parse(room);
         CHECK(*rv::world::roomContentDigest(*after, id) == *rv::world::roomContentDigest(*plan, id));
     }
+    CHECK(after->rooms.size() == plan->rooms.size());
+    const rv::world::RoomId sharedId = *rv::world::RoomId::parse("area:shared:handheld");
+    std::size_t sharedPlaced = 0;
+    for (const rv::world::Placement& placement : after->placements) {
+        sharedPlaced += placement.slot.fixture().room() == sharedId ? 1 : 0;
+    }
+    CHECK(sharedPlaced == 14 + 24);
+    // An update of the whole building (every room's sections) records the inputs of every room once, places nothing;
+    // again, it writes nothing.
+    const RunResult whole = session.run({"worldplan", "update", "--seed", "102938"});
+    INFO(whole.out << whole.err);
+    REQUIRE(whole.code == ExitCode::Ok);
+    CHECK(contains(whole.out, "Changes:         0 added, "));
+    const std::string wholeText = readText(session.files.plan);
+    const RunResult same = session.run({"worldplan", "update", "--seed", "102938"});
+    INFO(same.out << same.err);
+    CHECK(same.code == ExitCode::Ok);
+    CHECK(contains(same.out, "is up to date"));
+    CHECK(readText(session.files.plan) == wholeText);
     const RunResult megadrive = session.run({"worldplan", "update", "--system", "megadrive", "--seed", "102938"});
     CHECK(megadrive.code == ExitCode::ProblemsFound);
     CHECK(contains(megadrive.err, "the plan has no room for megadrive"));

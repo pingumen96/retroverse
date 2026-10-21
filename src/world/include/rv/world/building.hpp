@@ -23,15 +23,17 @@
 //   {"schemaVersion": 1,
 //    "defaults": {"home": {"themePack": "classic_16bit_warm", "console": <prefab> or null,
 //                          "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"}},
-//                 "handheld": {...}, "arcade": {...}, "computer": {...}, "other": {...}},
+//                 "handheld": {...}, "arcade": {..., "sign": "ARCADE"}, "computer": {...}, "other": {...}},
 //    "fallback": {"family": "generic_case", "order": 9999, "sign": "MORE GAMES"},
 //    "systems": [{"system": "snes", "kind": "home", "generation": 4, "family": "cartridge_home_16bit",
 //                 "order": 400, "sign": "16-BIT CORNER", "platforms": ["snes"]}, ...,
 //                {"system": "desktop", "kind": "excluded", "platforms": ["pcwindows"]}]}
-// A system's kind, its generation (1 to 9, exactly for home and handheld), its media family (a data id; the registry
-// is checked where both are read), its entry order on its floor, a generic sign (1 to 32 printable ASCII characters)
-// and its ES-DE platform tags (lowercase, at least one). An excluded system names its kind and platform tags only. No
-// system twice. classify() reads it with building.json.
+// A system's kind, its generation (1 to 9, exactly for home and handheld), its media family (a data id; the registry is
+// checked where both are read), its entry order on its floor, a generic sign (1 to 32 printable ASCII characters) and
+// its ES-DE platform tags (lowercase, at least one). An excluded system names its kind and platform tags only. No
+// system twice. A kind's defaults may name a "sign" (I4 step 4), the sign of the shared room of a floor whose first
+// kind it is and, for "arcade", of the arcade room (generation.hpp's sharedRoomPlatform(); the fallback's when absent).
+// classify() reads it with building.json.
 //
 // The floor's frame (ADR-0013 §7): millimetres, +X east, +Y up, north = -Z, the origin on the hall's centre line at its
 // west end, where the elevator stands; the hall (the ground floor's lobby) runs along +X between z = -width / 2 and
@@ -164,13 +166,15 @@ struct SystemEntry {
     bool operator==(const SystemEntry&) const = default;
 };
 
-/// A kind's defaults: the theme pack, the console prefab (none: the hero corner stands without one) and the plastics.
+/// A kind's defaults: the theme pack, the console prefab (none: the hero corner stands without one), the plastics and
+/// the sign of a shared or arcade room standing as this kind (empty: the fallback's).
 struct KindDefaults {
     std::string themePack;
     std::optional<PrefabRef> console;
     std::string cartridgePlastic;
     std::string consolePlastic;
     std::string accentPlastic;
+    std::string sign;
 
     bool operator==(const KindDefaults&) const = default;
 };

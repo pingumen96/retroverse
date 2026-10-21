@@ -7,12 +7,14 @@
 // Its canonical JSON (core::writeCanonicalJson) is what the plan's inputDigest hashes (with the configuration and the
 // data files, I3 step 3) and what tests compare; it holds the catalog's sort keys and the title keys, so it is never
 // written into a plan or under the user's data:
-//   {"catalogSortKeyVersion": 1, "eligibility": "covered", "room": "room:snes", "titleKeyRule": "title-key/1",
+//   {"catalogSortKeyVersion": 1, "distinctTitles": 1, "eligibility": "covered", "room": "room:snes",
+//    "titleKeyRule": "title-key/1",
 //    "titles": [{"game": "g...", "titleKey": "...", "sortKey": "...", "favorite": true, "playCount": 12,
 //                "rating": 8}, ...],
 //    "unplaced": [{"game": "g...", "room": "room:snes", "reason": "duplicate-title", "representative": "g..."}]}
 // "rating" is null for an unrated game. The titles are in priority order (priorityLess()), no game twice; the unplaced
-// games as in a plan (sorted, "representative" exactly for duplicate-title), all of the selection's room.
+// games as in a plan (sorted, "representative" exactly for duplicate-title), all of the selection's room;
+// "distinctTitles" (I4 step 4) at least the titles' count.
 
 #include <cstdint>
 #include <optional>
@@ -85,6 +87,11 @@ struct RoomSelection {
     std::vector<RoomTitle> titles;
     /// The other games of the system, sorted as a plan sorts them.
     std::vector<UnplacedGame> unplaced;
+    /// The distinct titles over every game of the system the room could place, with or without a cover: the titles
+    /// selectRoom() gives under include "all" (ADR-0013 §3, I4 step 4). It decides whether a system entering the
+    /// building gets a room of its own (WorldConfig::sharedRoomMinTitles), so that it measures the collection, not the
+    /// scraping; at least titles.size().
+    std::uint64_t distinctTitles = 0;
 
     bool operator==(const RoomSelection&) const = default;
 };
@@ -103,7 +110,9 @@ struct RoomSelection {
 ///    are unplaced, reason DuplicateTitle, with the representative;
 ///  - each title's priority data is its versions': a favourite when one of them is, the play counts (ES-DE's plus
 ///    Retroverse's sessions) summed, the highest rating; its sort key is the representative's. The titles are in
-///    priority order (priorityLess()), the unplaced games sorted as a plan sorts them.
+///    priority order (priorityLess()), the unplaced games sorted as a plan sorts them;
+///  - distinctTitles: the title keys of every game that is not MissingFile, with a cover or not (the titles under
+///    include "all"; a game without a cover whose title has no title key counts as a title of its own).
 /// Nothing is decided from unknown media: while the snapshot's mediaKnown is false there is no selection. Errors:
 /// Unavailable when the media are not known, its message holding RoomSnapshot::mediaUnknownReason; InvalidArgument
 /// for a snapshot without a system or with a GameId twice; those of titleKey() (a title that is not UTF-8), naming the
@@ -117,7 +126,7 @@ struct RoomSelection {
 [[nodiscard]] Expected<std::string> writeRoomSelection(const RoomSelection& selection);
 /// Reads a canonical text back. Errors (context and line): ParseError, ValidationFailed (not canonical, a field
 /// missing, unknown, of another type or range, the titles out of priority order or a game twice, an unplaced game of
-/// another room, out of order or twice).
+/// another room, out of order or twice, fewer distinct titles than titles).
 [[nodiscard]] Expected<RoomSelection> readRoomSelection(std::string_view text, std::string_view context);
 
 } // namespace rv::world

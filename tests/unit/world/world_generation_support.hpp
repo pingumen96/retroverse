@@ -72,7 +72,8 @@ inline std::string inventedTitle(rv::core::Random& random) {
 }
 
 /// A selection of `titles` titles for the SNES room and titles / 20 unplaced games (duplicate titles and games without
-/// a cover), from `seed`: about 1 in 20 titles a favourite, 1 in 3 played, 7 in 10 rated.
+/// a cover), from `seed`: about 1 in 20 titles a favourite, 1 in 3 played, 7 in 10 rated; `titles` distinct titles over
+/// all its games (the games without a cover counted as versions of titles).
 inline rv::world::RoomSelection makeSelection(std::size_t titles, std::uint64_t seed) {
     rv::core::Random random(rv::core::deriveSeed("test-selection", seed));
     rv::world::RoomSelection selection;
@@ -120,16 +121,26 @@ inline rv::world::RoomSelection makeSelection(std::size_t titles, std::uint64_t 
         selection.unplaced.push_back(game);
     }
     std::sort(selection.unplaced.begin(), selection.unplaced.end());
+    selection.distinctTitles = selection.titles.size();
     return selection;
 }
 
-/// A fresh plan of `titles` titles of the selection of `selectionSeed`, with the world seed `worldSeed`.
+/// The configuration of the room suites (I3's, ADR-0013 §5): every room a console room of its own whatever its size.
+inline rv::world::WorldConfig roomConfig(std::uint64_t worldSeed) {
+    rv::world::WorldConfig config;
+    config.seed = worldSeed;
+    config.sharedRoomMinTitles = 0;
+    return config;
+}
+
+/// A fresh plan of `titles` titles of the selection of `selectionSeed`, with the world seed `worldSeed`, in a console
+/// room whatever its size (roomConfig()).
 inline rv::world::GenerationResult generateRoom(std::size_t titles, std::uint64_t selectionSeed,
                                                 std::uint64_t worldSeed) {
     rv::world::GenerationInput input;
     input.library = library();
     input.selection = makeSelection(titles, selectionSeed);
-    input.config.seed = worldSeed;
+    input.config = roomConfig(worldSeed);
     auto result = rv::world::generate(input, snesData());
     REQUIRE(result.has_value());
     return std::move(*result);

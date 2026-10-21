@@ -1,4 +1,4 @@
-{"catalogSortKeyVersion":1,"eligibility":"all","room":"room:snes","titleKeyRule":"title-key/1","titles":[
+{"catalogSortKeyVersion":1,"distinctTitles":5,"eligibility":"all","room":"room:snes","titleKeyRule":"title-key/1","titles":[
 {"favorite":false,"game":"g7dde4199c42eb215","playCount":0,"rating":10,"sortKey":"alpha quest","titleKey":"alpha quest"},
 {"favorite":false,"game":"g57179a6b091f8b71","playCount":0,"rating":3,"sortKey":"gamma hack","titleKey":"gamma hack"},
 {"favorite":false,"game":"g53652e67a8092176","playCount":0,"rating":null,"sortKey":"beta run (europe)","titleKey":"beta run"},

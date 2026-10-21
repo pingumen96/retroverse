@@ -11,15 +11,20 @@
 //     each to its quota of floor(slots / (1 + reserve)) titles, its last slots kept free; when the quotas cannot hold
 //     the section's titles, every quota rises by one until they do (never past a level's slots);
 //   - within each section the titles stand in the order (catalog sort key, title key, GameId), as one reads a page: a
-//     fixture's top used level first, left to right (slot 0 first), then the level below, fixture after fixture;
+//     fixture's top used level first, left to right (slot 0 first), then the level below, fixture after fixture; a
+//     shared or arcade room's in the order (its system's section, catalog sort key, title key, GameId) (ADR-0013 §6,
+//     I4 step 4), so that each system's titles follow the previous system's;
 //   - every level no title needs holds one dressing prop, chosen from the level's prop seed (no bare board).
 // A placement's offset comes from its own seed (seeds.hpp): spine-out pushed in by 0 to kMaxInsetMm, face-out turned by
 // at most kMaxFaceOutYawCdeg either way.
 
 #include <cstdint>
+#include <map>
 #include <span>
 #include <string_view>
 #include <vector>
+
+#include <rv/catalog/ids.hpp>
 
 #include <rv/world/capacity.hpp>
 #include <rv/world/room_selection.hpp>
@@ -32,6 +37,13 @@ namespace rv::world::detail {
 inline constexpr std::int64_t kMaxInsetMm = 4;
 inline constexpr std::int64_t kMaxFaceOutYawCdeg = 150;
 
+/// The section of each title of a shared or arcade room: its system's index in the room's sections (ADR-0013 §6). A
+/// title it does not name (every title of a console room) is of section 0.
+using SectionIndex = std::map<catalog::GameId, std::uint32_t>;
+
+/// A title's section in `sections` (null: 0).
+[[nodiscard]] std::uint32_t sectionOf(const SectionIndex* sections, const catalog::GameId& game) noexcept;
+
 struct AllocationInput {
     const RoomLayout& layout;
     /// The placed titles in priority order: the first counts.featured are featured, the next counts.band stand in the
@@ -43,6 +55,8 @@ struct AllocationInput {
     const MediaFamily& family;
     std::uint64_t roomSeed = 0;
     std::span<const PrefabRef> shelfDressing;
+    /// A shared or arcade room's sections; null for a console room.
+    const SectionIndex* sections = nullptr;
 };
 
 struct Allocation {

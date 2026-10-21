@@ -27,8 +27,8 @@ using catalog::GameId;
 
 constexpr std::array<ValidationRule, 37> kRules{{
     {rule::kRoomUnknown, Severity::Hard,
-     "Every fixture and unplaced entry names a room the plan lists (a console room's games unplaced for capacity may "
-     "name the room its full floor did not take)."},
+     "Every fixture and unplaced entry names a room the plan lists (games unplaced for capacity may name the room, or "
+     "the shared or arcade room, their full floor did not take)."},
     {rule::kGroundFloorMissing, Severity::Hard, "The plan holds the ground floor."},
     {rule::kFloorUnknown, Severity::Hard,
      "Every room stands on a floor of the plan, and every floor of the plan is the building's, at its order."},
@@ -452,8 +452,7 @@ private:
             room->second.fixtures.push_back(fixture);
         }
         for (const UnplacedGame& unplaced : m_plan.unplaced) {
-            const bool notTaken = unplaced.reason == UnplacedReason::Capacity &&
-                                  unplaced.room.kind() == RoomIdKind::System && !unplaced.room.isExpansion();
+            const bool notTaken = unplaced.reason == UnplacedReason::Capacity && !unplaced.room.isExpansion();
             if (!m_rooms.contains(unplaced.room) && !notTaken) {
                 m_findings.add(rule::kRoomUnknown, unplaced.game.toString(),
                                fmt::format("the game is listed as unplaced in {}, which the plan does not list",

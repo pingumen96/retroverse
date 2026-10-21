@@ -1,8 +1,9 @@
 // world::selectRoom (rv/world/room_selection.hpp, ADR-0010 §3, I3 step 2) beyond the oracle's table
-// (test_title_key.cpp): the eligibility rules (include "all", no cover in the system, a single ROM without media),
-// unknown media deciding nothing, the games the room considers (hidden games, missing files, folders that could not be
-// listed), each title's priority from its versions, the ties of the version choice, a selection independent of the
-// snapshot's order, and the snapshots refused.
+// (test_title_key.cpp): the eligibility rules (include "all", no cover in the system, a single ROM without media), the
+// distinct titles over every game with a cover or not (I4 step 4, ADR-0013 §3's count), unknown media deciding
+// nothing, the games the room considers (hidden games, missing files, folders that could not be listed), each title's
+// priority from its versions, the ties of the version choice, a selection independent of the snapshot's order, and
+// the snapshots refused.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -104,6 +105,34 @@ TEST_CASE("world/select_room: the covered games, by default", "[world][select_ro
     CHECK(selection->unplaced.front().game == game(2));
     CHECK(selection->unplaced.front().representative == game(1));
     CHECK_FALSE(selection->unplaced.back().representative.isValid());
+    // Pixel Quest (the hack a version of it), Star Harbor and Moon Garden: the titles under include "all".
+    CHECK(selection->distinctTitles == 3);
+}
+
+TEST_CASE("world/select_room: the distinct titles count every game with a cover or not", "[world][select_room]") {
+    // ADR-0013 §3: the count measures the collection, not the scraping: 1 game with a cover, 40 distinct titles.
+    std::vector<RoomEntry> entries{entry(1, "Title 00 (USA).sfc", "Title 00")};
+    for (std::uint64_t i = 1; i < 40; ++i) {
+        const std::string title = "Title " + std::string(i < 10 ? "0" : "") + std::to_string(i);
+        entries.push_back(entry(1 + i, title + " (USA).sfc", title, false));
+    }
+    entries.push_back(entry(100, "Title 07 (Europe).sfc", "Title 07", false)); // a version: no title more
+    RoomEntry missing = entry(101, "Gone (USA).sfc", "Gone", false);              // its file gone: none
+    missing.state = rv::catalog::EntryState::MissingFile;
+    missing.availability = rv::catalog::Availability::Missing;
+    entries.push_back(missing);
+    RoomEntry hidden = entry(102, "Secret (USA).sfc", "Secret", false); // hidden as ES-DE hides it: none
+    hidden.hidden = true;
+    entries.push_back(hidden);
+    const auto selection = rv::world::selectRoom(inputOf(entries), rv::world::WorldConfig{});
+    REQUIRE(selection.has_value());
+    CHECK(selection->eligibility == Eligibility::Covered);
+    CHECK(titleIds(*selection) == std::vector<std::uint64_t>{1});
+    CHECK(selection->distinctTitles == 40);
+    const auto all = rv::world::selectRoom(inputOf(entries), includeAll());
+    REQUIRE(all.has_value());
+    CHECK(all->titles.size() == 40);
+    CHECK(all->distinctTitles == 40);
 }
 
 TEST_CASE("world/select_room: include all makes every game eligible", "[world][select_room]") {
@@ -125,6 +154,7 @@ TEST_CASE("world/select_room: the small-library rule: no cover in the system mak
         CHECK(selection->eligibility == Eligibility::NoCoverInSystem);
         CHECK(titleIds(*selection) == std::vector<std::uint64_t>{7});
         CHECK(selection->unplaced.empty());
+        CHECK(selection->distinctTitles == 1);
     }
     SECTION("several games, none covered: one per title all the same") {
         std::vector<RoomEntry> entries{entry(1, "Pixel Quest (USA).sfc", "Pixel Quest", false),
@@ -164,6 +194,7 @@ TEST_CASE("world/select_room: the small-library rule: no cover in the system mak
         CHECK(selection->eligibility == Eligibility::NoCoverInSystem);
         CHECK(selection->titles.empty());
         CHECK(selection->unplaced.empty());
+        CHECK(selection->distinctTitles == 0);
     }
 }
 
