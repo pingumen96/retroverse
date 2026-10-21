@@ -36,7 +36,7 @@ Nine GPU-free sub-targets keep testable policy out of the GPU-side libraries and
 | Sub-target | Part of | Content |
 |---|---|---|
 | `rv_app_cli` | app | Command line options and validation (the host's options shared with the tools: `addHostOptions`, `applyHostOptions`; the walker's start of `--spawn`: `SpawnPoint`, `parseSpawnPoint`), scene selection (`resolveScenePath`), screenshot file names, exit-code policy, the Back action (`backAction` over a `BackState`: close the overlay's topmost popup, else the game-session panel, `PanelBack`, else step back through the quick catalog and close it, `CatalogBack`, else release the mouse, else close the overlay, else quit), the input contexts (`input_context.hpp`: World or Ui from the state the frame began in, `actionsFor` releasing the actions a context does not read, `catalogToggleRequested`), the launch shell of the quick catalog (`mock_catalog.hpp`: `--mock-catalog`'s games and profiles; `launch_flow.hpp`: `LaunchFlow`, one launch from Avvia to the return around a `LaunchSession`, its panel questions, the come-back delay, the wait limit and the quit; `launch_outcome.hpp`: the outcome codes and reasons the panel tells, `messageForOutcome`, `messageForBlocker`; `game_session_ui.hpp`: the panel document's ids and data model), when a run needs the overlay and which frames draw it into screenshots (`overlayRequired`, `overlayCaptureSize`), the debug line kinds shown (`DebugLineSelection`, `composeDebugLines`), self-check verdicts (`evaluateSrgbCheck`, `evaluateBloomCheck`, `evaluateFxaaCheck`), the scene content plan (`planSceneContent`: distinct meshes, materials and picture instances, render items, model instances; the size of a pattern picture on its surface, `patternSizeFor`), the model viewer scene (`makeInspectionScene` of any object, `makeModelViewerScene`: framing, three-point light rig, background; `modelViewerGrid`; the model summary `describeModel`), the frame statistics log (`FrameStatsLog`), the run report (`RunReport`, with the quick catalog's `CatalogRecord` and a `LaunchRecord` per launch since I2 step A1; since I3 the sections `frameTimes`, `phases`, `cpuSections`, `gpuMemory`, `video`, `world` and `residency`, written by every report, and the catalog's `RefreshRecord`s; `formatRunReport`, `parseRunReport`, `writeRunReport`, `readRunReport`), which the GPU smoke tests read back; since I3 the frame timing (`frame_timing.hpp`, step 0d: `FrameTiming`, swap-to-swap times past a 30-frame warm-up, named phases opened by the code or an input script), the interaction model of the world (`world_interaction.hpp`, step 7: `WorldInteraction`, ADR-0012's states FreeRoam, Focus, Inspect, Launching and Returning, their input contexts inside the World context and their Back levels between the shell's, the `InteractionRoom` port; driven by the app's `WorldHover` since step 13a) and the hero screen's policy (`screen_policy.hpp`, step 11: `ScreenPolicy`, the start choice, the 300 ms dwell, the fallback chain to the screenshot, title screen, cover and the idle pattern, the launch's stop and resume); the room's GPU-free parts (`collection_layers`, `world_notice_ui.hpp`, `room_items`, `cover_requests`: the loader's order and the hero set's LRU, `world_focus`, `world_label_ui.hpp`, `world_inspect`, `world_card_ui.hpp`, `world_launch_ui.hpp`; steps 10b to 15a) and `FrameTiming::recordGpuPasses` (step 17b) |
-| `rv_app_catalog` | app | Since I2 step 13, the ES-DE catalog in the app, tools-free (on `rv_app_cli`, `rv_catalog`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_ui_model`): the catalog worker (`catalog_worker.hpp`: `CatalogWorker`, a job queue on one thread owning the database's writer and a `SqliteCatalogQuery` on its reader; the opening (`library.json`, the data-directory guard, `openCatalogDatabase` without creating, `closeInterrupted`, `systems()`, each system's readiness, the default list materialized with it), lists (a queued query replaced by a newer one), a game's own readiness where it can differ, Avvia's resolution right before the launch, the session writes with `SessionRecorder`; `CatalogState` and its notices; every request answered, also when the thread fails, `CatalogResults::ended`; stopped with `sqlite3_interrupt` within a bound), `CatalogDatabaseSource` (`ui::CatalogSource` over the worker; pages fetched on the main thread's own reader), the app's copy of the CLI's launch library (`catalog_launch_library.hpp`: `CatalogLaunchLibrary`, `resolveCatalogLaunch`, `resolveSystemLaunch`), `AppCatalog`, `EsdeAppCatalog`, `MockAppCatalog` and the play session mapping (`app_catalog.hpp`: `startedPlaySession`, `finishedPlaySession`, `blockedPlaySession`); since I3 step 13r the refresh (`library_refresh.hpp`: `runSlicedImport`, `ImportService` over ports wrapped so that every port call is a slice boundary, `RefreshHost`, `summarizeImport`; `CatalogWorker::refresh`, `AppCatalog::requestRefresh`, readiness generations); since I3 step 10b the room's flow up to its commit, GPU-free (`room_snapshot`: the worker's room job; `world_build`: `readWorldPlan`, `buildWorld`, `WorldFlow`; `world_reconcile`, `room_screen` (10c); `game_screens.hpp` (14b); `world_live_plan` (15b): see "The room in the app" under Threading) |
+| `rv_app_catalog` | app | Since I2 step 13, the ES-DE catalog in the app, tools-free (on `rv_app_cli`, `rv_catalog`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_ui_model`): the catalog worker (`catalog_worker.hpp`: `CatalogWorker`, a job queue on one thread owning the database's writer and a `SqliteCatalogQuery` on its reader; the opening (`library.json`, the data-directory guard, `openCatalogDatabase` without creating, `closeInterrupted`, `systems()`, each system's readiness, the default list materialized with it), lists (a queued query replaced by a newer one), a game's own readiness where it can differ, Avvia's resolution right before the launch, the session writes with `SessionRecorder`; `CatalogState` and its notices; every request answered, also when the thread fails, `CatalogResults::ended`; stopped with `sqlite3_interrupt` within a bound), `CatalogDatabaseSource` (`ui::CatalogSource` over the worker; pages fetched on the main thread's own reader), the app's copy of the CLI's launch library (`catalog_launch_library.hpp`: `CatalogLaunchLibrary`, `resolveCatalogLaunch`, `resolveSystemLaunch`), `AppCatalog`, `EsdeAppCatalog`, `MockAppCatalog` and the play session mapping (`app_catalog.hpp`: `startedPlaySession`, `finishedPlaySession`, `blockedPlaySession`); since I3 step 13r the refresh (`library_refresh.hpp`: `runSlicedImport`, `ImportService` over ports wrapped so that every port call is a slice boundary, `RefreshHost`, `summarizeImport`; `CatalogWorker::refresh`, `AppCatalog::requestRefresh`, readiness generations); since I3 step 10b the room's flow up to its commit, GPU-free (`room_snapshot`: the building's snapshot on the world's own reader, I4 step 5a; `world_build`: `readWorldPlan`, `planBuilding`, `buildFloor`, `WorldFlow`; `world_reconcile`, `room_screen` (10c); `game_screens.hpp` (14b); `world_live_plan` (15b): see "The room in the app" under Threading) |
 | `rv_preview_core` | tools/asset-preview | Built in every configuration: the asset preview's command line and targets (`parsePreviewCommandLine`, `parsePreviewTarget`), the subject loaded from a target (`loadPreviewSubject`: a glTF model, a manifest's model or procedural prefab, a prefab with parameters; the manifest next to a model, `sidecarManifestPaths`; manifest checks with `scaleIssue`; messages; watched files; when the Manifest panel comes forward, `bringsManifestForward`), its scene (`makePreviewScene`, `prefabRoleMaterials`, `prefabRoleTextures`, `screenSurfaces` with the screens' sizes as placed), statistics (`buildAssetReport`), overlay lines and labels (`buildPreviewOverlay`, `gridHeight`, `projectToViewport`, `placeLabelPlates`), what the camera frames (`framingBounds`), orbit controls and shortcuts (`orbitInputFrom`, `previewShortcutsFrom`), view modes (`ViewMode`), the CRT-like fixture (`makeCrtFixture`) |
 | `rv_cli_core` | tools/cli | Built in every configuration: the command table of `retroverse-cli` (`commands`, `findCommand`: name, one-line summary, the step that implements the command (`I2 step 9`, `I3 step 3`), its run function in `cmd_<name>.cpp`; until that step a stub, `notImplemented`, which exits 2), the dispatcher (`parseInvocation`: global options up to the command's name; `run`: `--help`, `--version`, directories, logging on stderr and `<user data>/logs/retroverse-cli.log`, exit codes as the app's; the data-directory rule: nothing, the log file included, is written before the user data directory has passed `core::checkUserDataDirectory` against the library's folders, `esde::readOnlyFolders`, those that `discover` and `library` find themselves (`Command::checksDataDirectory`, which then start the log file, `startFileLog`) or, for every other command, those of `<user data>/config/library.json` when there is one, refused with exit 2), the output contract (`Output`: stdout, stderr, the file of a command's `--output` written atomically by `finish`, memory for tests; `ConsoleSession`: stdout in binary mode and the console's output code page UTF-8 while the program runs) |
 | `rv_screenshot_diff_core` | tools/screenshot-diff | The golden comparison (`Tolerance`: 6/255 per channel, at most 0.5% of the pixels; `compareImages` with the count, share, largest difference and bounds of the differing pixels, alpha ignored; `makeHeatmap`; `compareFiles`, which writes the heatmap on a mismatch), shared by the tool and the GPU smoke tests |
@@ -883,50 +883,51 @@ thread has ended (polled each frame, never waited for on the main thread), befor
 joined within 1 s, and at exit every decoder thread is waited for (`media::waitForStoppedDecoders`).
 `rv::core::assertMainThread` guards main-thread-only code.
 
-### The room in the app (I3)
+### The room in the app (I3; the floor since I4 step 5a)
 
-The generated room (I3 steps 10b to 15b; `docs/i3/step-10b.md` and the steps after it) is built off the main thread and
-committed at a frame boundary. The catalog worker runs only the database part (the room's snapshot and media paths,
-queued like a list, behind a refresh and never during one); the shared `WorkerPool` (5 threads on the reference
-machine, below normal without dynamic boosts) runs the world's jobs at the highest priority, then the covers; the main
-thread never waits but in lockstep runs (`--fixed-dt`), which idle before the first frame and between frames while the
-room or a layer of the view is on its way (`WorldSession::waits()`, at most 10 s at a time; their idle wakes move the
-flow, commit and upload).
+The generated building (I3 steps 10b to 15b, I4 step 5a; `docs/i3/step-10b.md` and the steps after it,
+`docs/i4/step-5a.md`) is planned and built off the main thread and committed at a frame boundary. The catalog worker
+opens a read-only connection for the world with the catalog (`CatalogOpened::world`), on which the building job reads
+every system's snapshot within one read transaction; the shared `WorkerPool` (5 threads on the reference machine,
+below normal without dynamic boosts) runs the world's jobs at the highest priority, then the covers; the main thread
+never waits but in lockstep runs (`--fixed-dt`), which idle before the first frame and between frames while the floor
+or a layer of the view is on its way (`WorldSession::waits()`, at most 10 s at a time; their idle wakes move the flow,
+commit and upload).
 
 ```text
-main thread                                     worker pool (the world's jobs first,  catalog worker
-                                                then the covers)                     (one thread)
-----------------------------------------------  -----------------------------------  ----------------------------
-the empty room (shell) shown, the surfaces made
-the catalog Ready, with snes games ---------->  readWorldPlan: world-plan.json and
-                                                its digest
-a plan stored ------------------------------->  previewWorld: the stored plan's
-                                                scene and collection, the items'
-                                                text from <cache>/world/<library>
-commitPreview: the stored room shown, covers
-and spines from the cache alone (step 10c)
-requestRoomSnapshot ------------------------------------------------------------>  takeRoomSnapshot: the bulk
-                                                                                   query, the media root's check,
-                                                                                   the media paths
-the snapshot taken ------------------------>    buildWorld: the world lock, the
-                                                selection, generate or update, the
-                                                validation, savePlan, the scene,
-                                                the collection's layout, the cover
-                                                requests, the CRT's games
-WorldSession::commit (a fresh room) or
+main thread                                     worker pool (the world's jobs first, then the covers)
+----------------------------------------------  -----------------------------------------------------------
+the empty shell shown (the start room's, or the
+lobby), the surfaces made
+the catalog Ready --------------------------->  readWorldPlan: world-plan.json and its digest
+a plan stored ------------------------------->  previewWorld: the start floor of the stored plan
+                                                (buildFloor from the items files <cache>/world/<library>)
+commitPreview: the stored floor shown, covers
+and spines from the cache alone
+no refresh running -------------------------->  planBuilding: every system's snapshot in one read
+                                                transaction (the world's reader), the world lock, the
+                                                selections, generateBuilding or updateBuilding, the
+                                                validation, savePlan, the items files written when changed
+the building planned ------------------------>  buildFloor (keyed by floor and plan digest): the floor's
+                                                scene in the start room's frame (or the floor's), each
+                                                collection room's layout, covers and doorway passage
+WorldSession::commit (a fresh floor) or
 reconcile (the preview against the result:
-unchanged, textures, items in place, or a
-rebuild with the walker kept); the
-CollectionInstance (arrays, materials, static
-group), WorldHover::setRoom, the CoverLoader -> serveItemLayers per item (the cache,
-                                                the cover or a generated label, the
-                                                spine), nearest first (CoverSchedule)
+textures, or a rebuild of the floor with the
+walker kept); a CollectionInstance per
+collection room (arrays, materials, static
+group, keys collection/<room id>/...),
+WorldHover::addRoom per room, one CoverLoader
+for the floor -------------------------------->  serveItemLayers per item (the cache, the cover or a
+                                                generated label, the spine), nearest first
+                                                (CoverSchedule: the eye's room and the rooms whose
+                                                doorway the frustum meets, the rest by distance)
 every frame: finished layers uploaded within
-1 ms; the hero texture of the hovered item
-after "Aggiorna libreria" (a refresh done) ->   the room's job again, without its
-                                                preview (step 15b): its result
-                                                applied in place (world_live_plan),
-                                                never during a game
+1 ms; the hero texture of the hovered item;
+WorldHover::setActiveRoom(the eye's area)
+after "Aggiorna libreria" (a refresh done) ->   planBuilding and buildFloor again, without a preview:
+                                                the result applied to the floor (world_live_plan), never
+                                                during a game
 ```
 
 - **The scene is replaced at a frame boundary** (`RetroverseApp::State::replaceScene`): the hero CRT's service stops,
@@ -951,7 +952,7 @@ after "Aggiorna libreria" (a refresh done) ->   the room's job again, without it
     WorldSession::afterInteraction: Avvia -> ProductUi::launchWorldGame (the quick catalog's LaunchFlow and token)
     result.showMedia / showInfo -> the media viewer or Informazioni (game_screens_panel)
     the walker placed at the interaction's pose (an ease, a skip) or moved by the controller; the label; the card
-    ProductUi::update; WorldSession::update (a commit or a live update replaces the room: WorldHover::setRoom)
+    ProductUi::update; WorldSession::update (a commit or a live update replaces the floor: WorldHover::addRoom)
   onRender
     the scene's items, then each pulled or held item's parts at its own transform (its layers, its highlight); the
     static group draws every other record, the hidden ones nothing; the outline pass marks the highlighted records and,

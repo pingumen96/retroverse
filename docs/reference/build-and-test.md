@@ -64,10 +64,14 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   focus: ...`), inspection (`gpu.world inspect: ...`), the card (`gpu.world card: ...`), the media viewer and
   Informazioni (`gpu.media viewer: ...`), launching from the room and "Mostra nella stanza" (`gpu.world launch: ...`),
   the look's probes (`gpu.world look: ...`), the media families' rooms of the `esde/building` fixture through
-  `--room-system` (`gpu.world families: ...`, I4 step 2), the floors of the `esde/building` fixture (`gpu.world
+  `--start-room` (`gpu.world families: ...`, I4 step 2), the floors of the `esde/building` fixture (`gpu.world
   floor: ...`, I4 step 3: `tests/smoke/scenes/two_areas.json` from each area and without areas, each area's lights and
-  its key light's shadow; gen4's walk from the elevator into room:snes; the ground floor's lobby) and the room
-  goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
+  its key light's shadow; gen4's walk from the elevator into room:snes; the ground floor's lobby), the floor in the app
+  (`gpu.world floor app: ...`, I4 step 5a, `test_world_floor_app.cpp`, `[world_floor_app]`: two rooms of one family on
+  a floor, each sampling its own arrays and showing its own covers, the residency per room and the floor's GPU memory
+  within 512 MiB; a walk from the hall into one room, out and into the other, a cover of the second inspected; the
+  start in the lobby without `--start-room`, and a `--start-room` the plan lacks refused with exit 2; the rooms are read
+  from the generated plan, never named) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
   few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
   the animations' frame budget and the benchmark path (`[benchmark]`,

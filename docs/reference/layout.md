@@ -35,7 +35,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   LRU; 12), `world_focus.hpp` (the room's side of the hover, the pull-out and Focus) and `world_label_ui.hpp` (13a),
   `world_inspect.hpp` (the held pose, the dimming, the CRT's selection; 13b), `world_card_ui.hpp` (14a),
   `world_launch_ui.hpp` (15a). `rv_app_catalog` holds the room's flow up to its commit: `room_snapshot` and
-  `world_build` (10b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp` (14b), `world_live_plan` (15b).
+  `world_build` (10b; the building job and the floor's build since I4 step 5a), `world_reconcile` and `room_screen`
+  (10c), `game_screens.hpp` (14b), `world_live_plan` (15b).
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
   `world_hover` and `world_label_panel` (13a), `world_inspection` (13b), `world_card` (14a), `game_screens_panel`

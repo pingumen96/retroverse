@@ -46,10 +46,12 @@ tools).
 `--input-script <json>` make scripted runs reproducible; `--run-report <file.json>` writes what scripts and tests read
 (read it instead of the log). Exit codes: 0 ok, 1 smoke check failed, 2 initialization failure, 3 runtime failure.
 
-- Without `--scene`, `--model` or `--mock-catalog` the app opens the generated room of its data directory's ES-DE
-  catalog (made with `retroverse-cli --data-dir <dir> library create ...` and `import`); `--scene m0_testroom` shows
-  the test room; `--room-system <system>` shows another system's room (its media family). Fixtures for rooms:
-  `tests/fixtures/esde/snes-room`, `snes-single`, `snes-stress`, and `building` (I4: every kind of system).
+- Without `--scene`, `--model` or `--mock-catalog` the app plans the building of its data directory's ES-DE catalog
+  (made with `retroverse-cli --data-dir <dir> library create ...` and `import`) and starts in the ground floor's lobby;
+  `--start-room <room id>` (`room:snes`, `room:psx`, ...) starts at that room's doorway on its floor, and `--spawn`,
+  input scripts and the report's poses are then in that room's frame (I4 step 5a); `--scene m0_testroom` shows the
+  test room. Fixtures for rooms: `tests/fixtures/esde/snes-room`, `snes-single`, `snes-stress`, and `building` (I4:
+  every kind of system).
 - A floor of the building (I4 step 3): `retroverse-cli worldplan show --floor <id> --scene <file>` writes its rooms
   and derived hall as a scene with areas, which `--scene <file>` walks from the elevator (each area lit by its own
   lights).
