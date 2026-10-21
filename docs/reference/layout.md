@@ -78,6 +78,11 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   the texture arrays (`Texture2DArray`, `CollectionArrays`; their layout, allocator and budget in
   `rv_render_uniforms`'s `texture_array_layout.hpp`; 6), the static instance groups and the outline pass (8), a
   material's texture override (11), and in `rv_render_uniforms` the GPU memory accounting (`gpu_memory.hpp`, 0d).
+  I4 step 7a: `rv_catalog` `recent_games.hpp` (the directory's favourites and recent games, their order and the
+  conversion of ES-DE's local `<lastplayed>` to UTC) and `ICatalogQuery::favoritesAndRecent`, which `SqliteCatalogQuery`
+  answers in one read (`src/catalog_db/src/recent_query.cpp`); `rv_ui_model` `directory_model` (the directory's
+  floors, rooms, games, card and commands, from plain data the app fills) and `rv_ui` `directory_screen`
+  (`assets/ui/directory.rml`).
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.
@@ -132,7 +137,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   counts the tests assert; for I4 `esde/building` (step 2: nine systems with invented full names over the ground
   floor and four floors, every family's covers, a custom system, an excluded one, `additions/` with a new system); `tests/fixtures/world/` the golden selections, plans and scenes), `tests/fake_emulator`
   (`rv_fake_emulator`, built with the tests or the spikes), `tests/collection_probe` (`rv_collection_probe`, built with
-  the tests; its `probe_layout.hpp` shared with the smoke tests),
+  the tests; its `probe_layout.hpp` shared with the smoke tests), `tests/ui_probe` (`rv_ui_probe`, built with the
+  tests, I4 step 7a: the directory from a fixed model; its `directory_fixture.hpp` shared with the unit and smoke
+  tests),
   `tests/input_scripts` (scripted verification runs),
   `tests/smoke/*.cpp` GPU smoke tests (globbed into `rv_smoke_tests`, label `gpu`: GPU-free itself, it starts the
   executables of its build with `tests/support/child_process.hpp` and reads their run reports and screenshots;
