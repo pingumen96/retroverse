@@ -672,10 +672,51 @@ TEST_CASE("world floor app: a walk from the hall into one room, then into anothe
     REQUIRE(bindPhase != report.phases.end());
     CHECK(bindPhase->opened == 1);
     CHECK(bindPhase->frames >= 60);
+    // The frames' times of a lockstep run hold its deliberate waits (the second room's layers, the quick catalog's
+    // still): the next case measures a rebind on a floor that runs freely.
+}
+
+TEST_CASE("world floor app: the hero CRT rebound on a floor that runs freely, its frames within the loading row",
+          "[gpu][world][world_floor_app]") {
+    // I4 step 6b: no lockstep, so that the frames' times are the app's own. The run starts in the second room (its CRT
+    // bound from the start, no clip), the walker at the first room's doorway camera (in the scene's frame, the second
+    // room's): once the floor shows and the eye has stayed 0.3 s in the first room, its CRT is bound and its clip opens.
+    const PlannedBuilding building("world_floor_app/rebind");
+    const rv::world::StoredPlan stored = building.plan();
+    const RoomPair pair = sameFamilyRooms(stored.plan);
+    // A first run keeps the rooms' items and makes their covers.
+    const AppRun first = runApp(retroverseExe(), building.dir, "first", floorArguments(pair.second, 40, std::nullopt));
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    const std::vector<FloorRoom> rooms = floorRooms(stored.plan, pair.floor, first.report->assetRoot);
+    const FloorRoom& roomA = roomNamed(rooms, pair.first);
+    const FloorRoom& roomB = roomNamed(rooms, pair.second);
+    const rv::world::RoomPlacement aInB = relativeTo(roomA.placement, roomB.placement);
+    const glm::vec3 eye = glm::vec3(rv::world::roomToFloorMatrix(aInB) * glm::vec4(roomA.camera.position, 1.0f));
+    const rv::app::SpawnPoint spawn{eye - glm::vec3(0.0f, kEyeHeight, 0.0f),
+                                    static_cast<float>(wrapped(roomA.camera.yawDeg + 180.0 * aInB.yawHalfTurns)),
+                                    roomA.camera.pitchDeg};
+    const AppRun run = runApp(retroverseExe(), building.dir, "free",
+                              {"--start-room", pair.second, "--exit-after-frames", "--frames", "900", "--no-vsync",
+                               "--spawn", spawnArgument(spawn)});
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.world.room == pair.first);
+    CHECK(report.world.screenRoom == pair.first);
+    REQUIRE(report.video.bound);
+    CHECK(report.video.screen.starts_with(pair.first + "/"));
+    REQUIRE(report.video.binds.size() == 1);
+    CHECK(report.video.binds.front().screen.starts_with(pair.first + "/"));
+    CHECK(report.video.maxDecoderThreads <= 1);
+    const auto bindPhase = std::find_if(report.phases.begin(), report.phases.end(),
+                                        [](const rv::app::PhaseRecord& phase) { return phase.name == "screenBind"; });
+    REQUIRE(bindPhase != report.phases.end());
+    CHECK(bindPhase->frames >= 60);
     REQUIRE(bindPhase->times.has_value());
-    WARN("the hero CRT's rebind: " << bind.bindMs << " ms on the main thread, " << bind.threadsRunning
-                                    << " decoder thread(s) still ending; its frames p99 " << bindPhase->times->p99Ms
-                                    << " ms, max " << bindPhase->times->maxMs << " ms");
+    WARN("the hero CRT's rebind: " << report.video.binds.front().bindMs << " ms on the main thread at frame "
+                                    << report.video.binds.front().frame << "; the 60 frames after it: p99 "
+                                    << bindPhase->times->p99Ms << " ms, max " << bindPhase->times->maxMs << " ms");
 #if defined(NDEBUG)
     // The acceptable loading row (docs/roadmap.md): frames while loading at most 50 ms at the 99th percentile.
     CHECK(bindPhase->times->p99Ms <= 50.0);

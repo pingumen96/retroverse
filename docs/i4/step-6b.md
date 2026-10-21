@@ -52,9 +52,9 @@ Roadmap row: I4 step 6b. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
 
 - **The real library** (`./scripts/real-library.ps1 -Filter '[real-library][building]'`, ES-DE closed, 0 differences
   among the snapshots' 542,120 entries; 192 systems, 105,130 entries, 44 rooms on 9 floors, 19,985 placements):
-  - the unchanged start's building job: **0.5 s** with the stamp (0.45 s of it the lobby's floor), against about
-    18 s before this step (the snapshot 14.4 s, the rest 3.5 s); the whole job when something changed: 2.9 s (the
-    snapshot 1.1 s, the update 1.4 s);
+  - the unchanged start's building job: **0.5 s** with the stamp (0.45 s of it the lobby's floor), against 16 to 18 s
+    before this step (the snapshot alone 13 to 15 s, the planning about 3 s); the whole job when something changed:
+    2.9 s (the snapshot 1.1 s, the update 1.4 s);
   - NFR-01: the stored lobby shown 2.3 to 2.7 s after the process's creation, the quick catalog's first page 1.4 to
     1.6 s (limit 5 s);
   - the computer floor (10 rooms, 5,314 items, its largest room 1,646): GPU memory at its peak 407.3 MiB (arrays

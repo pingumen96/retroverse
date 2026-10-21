@@ -279,8 +279,13 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     CHECK(world.reconcile->rooms.front().kind == "textures");
     REQUIRE(reconciled.report->residency.rooms.size() == 1);
     CHECK(reconciled.report->residency.rooms.front().reuploads == 0);
-    REQUIRE(world.snapshotAtMs.has_value());
-    CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
+    // Nothing changed since the first run: the building job planned nothing, its stamp as the plan was made (I4 step
+    // 6b), and its result was committed after the stored room showed.
+    REQUIRE(world.job.has_value());
+    CHECK(world.job->skipped);
+    CHECK_FALSE(world.snapshotAtMs.has_value());
+    REQUIRE(world.committedAtMs.has_value());
+    CHECK(*world.committedAtMs > *world.preview->committedAtMs);
     CHECK(world.items == 50);
     CHECK(world.staticRecords == 150);
     CHECK(world.screenGames == 50);

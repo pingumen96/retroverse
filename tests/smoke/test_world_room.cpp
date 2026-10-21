@@ -212,7 +212,11 @@ void requireRoomShown(const AppRun& run, std::uint64_t items) {
     CHECK(world.pickTargets == items);
     CHECK(world.firstFrame == std::optional<std::uint64_t>(0));
     REQUIRE(world.committedAtMs.has_value());
-    REQUIRE(world.snapshotToCommitMs.has_value());
+    // A building job skipped by its stamp (I4 step 6b: an unchanged start) reads no snapshot.
+    REQUIRE(world.job.has_value());
+    if (!world.job->skipped) {
+        REQUIRE(world.snapshotToCommitMs.has_value());
+    }
     const rv::app::ResidencyRecord& residency = run.report->residency;
     REQUIRE(residency.bound);
     CHECK(residency.items == items);
@@ -279,8 +283,9 @@ TEST_CASE("world: the snes-room fixture opens its generated room, its covers res
         runApp(retroverseExe(), room.dir, "shelf", roomArguments("12", shelf, {"--spawn", spawnArgument(close.spawn)}));
     requireCleanRun(closeRun);
     requireRoomShown(closeRun, 50);
-    // The restart reused the plan as it was: nothing written.
+    // The restart reused the plan as it was: nothing written, nothing planned (I4 step 6b: the building stamp).
     CHECK(closeRun.report->world.outcome == "unchanged");
+    CHECK(closeRun.report->world.job->skipped);
     CHECK_FALSE(closeRun.report->world.planWritten);
     CHECK(closeRun.report->world.planDigest == world.planDigest);
     // The warm cache served every layer (the two covers that are no usable image are looked for again, and fail).
@@ -497,7 +502,9 @@ TEST_CASE("world: the figures of the snes-stress room (2,000 titles)", "[.bench]
                   << frames.p50Ms << " ms p99 " << frames.p99Ms << " ms");
 #if defined(NDEBUG)
         // Row 10b: the room committed within 1 s of the snapshot; planning within 0.3 ms per frame (Release).
-        CHECK(world.snapshotToCommitMs.value_or(1e9) <= 1000.0);
+        if (world.job && !world.job->skipped) {
+            CHECK(world.snapshotToCommitMs.value_or(1e9) <= 1000.0);
+        }
         CHECK(planning.p50Ms <= 0.3);
 #endif
     }
