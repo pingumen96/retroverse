@@ -10,6 +10,8 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -258,6 +260,32 @@ TEST_CASE("app/directory_data: Mostra nella stanza across rooms and floors", "[a
         CHECK(move.kind == WorldMoveKind::Refuse);
         CHECK(move.notice == rv::app::kNoticeRideUnavailable);
     }
+    // A floor being applied (the persisted start's preview before its reconciliation): the Focus pose in the room the
+    // walker is in as I3 took it, a teleport or a ride refused.
+    WorldMoveConditions applying = ready();
+    applying.applying = true;
+    move = rv::app::routeShowInRoom(snes, applying, &index, "gen4", "room:snes");
+    CHECK(move.kind == WorldMoveKind::ShowHere);
+    CHECK(move.game == snes.toString());
+    applying.state = WorldState::Focus;
+    CHECK(rv::app::routeShowInRoom(snes, applying, &index, "gen4", "room:snes").kind == WorldMoveKind::ShowHere);
+    for (const auto& [floor, eye] : {std::pair<std::string_view, std::string_view>{"handheld", "room:gb"},
+                                     std::pair<std::string_view, std::string_view>{"ground", ""}}) {
+        move = rv::app::routeShowInRoom(pokemini, applying, &index, floor, eye);
+        CHECK(move.kind == WorldMoveKind::Refuse);
+        CHECK(move.notice == rv::app::kNoticeRideUnavailable);
+    }
+    // ... but Inspect, an active launch or a ride refuse it there too.
+    WorldMoveConditions busy = ready(WorldState::Inspect);
+    busy.applying = true;
+    CHECK(rv::app::routeShowInRoom(snes, busy, &index, "gen4", "room:snes").kind == WorldMoveKind::Refuse);
+    busy = ready();
+    busy.applying = true;
+    busy.launchActive = true;
+    CHECK(rv::app::routeShowInRoom(snes, busy, &index, "gen4", "room:snes").kind == WorldMoveKind::Refuse);
+    busy = ready();
+    busy.riding = true;
+    CHECK(rv::app::routeShowInRoom(snes, busy, &index, "gen4", "room:snes").kind == WorldMoveKind::Refuse);
     // The directory's ShowInRoom routes the same.
     move = rv::app::routeDirectoryCommand(DirectoryCommand{DirectoryCommandKind::ShowInRoom, gb.toString()},
                                           ready(WorldState::Focus), &plan, &index, "ground", "");

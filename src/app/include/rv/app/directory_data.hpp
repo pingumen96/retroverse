@@ -62,8 +62,8 @@ using LocalDate = std::function<std::optional<ui::DirectoryDate>(catalog::UtcTim
 struct WorldMoveConditions {
     /// A floor of a plan shows (not the shell, the test room or a building still being made).
     bool planReady = false;
-    /// The floor shown is being applied: the persisted start's preview awaits its reconciliation (ADR-0013 §10: no ride
-    /// while a floor applies).
+    /// The floor shown is being applied: the persisted start's preview awaits its reconciliation, or a building's result
+    /// is built again for the floor shown (ADR-0013 §10: no ride while a floor applies; no teleport either).
     bool applying = false;
     /// A ride runs.
     bool riding = false;
@@ -113,8 +113,9 @@ struct WorldMove {
 /// "Mostra nella stanza" of `game` (the quick catalog's card or the directory's): the plan places it in a room of the
 /// floor shown, the room the interaction is in (`eyeRoom`): ShowHere; another room there: Teleport to its doorway, then
 /// the Focus pose; a room of another floor: Ride there, then the same. Focus does not refuse it (it is left first);
-/// Inspect, Launching and Returning, an active launch, a ride or a floor applying refuse it (kNoticeRideUnavailable);
-/// no plan: kNoticeBuildingPending. A game the plan does not place (or whose room it lacks): Ignore.
+/// Inspect, Launching and Returning, an active launch or a ride refuse it (kNoticeRideUnavailable), and so does a floor
+/// applying, but for ShowHere (I3's "Mostra nella stanza" in the room the walker is in, which the persisted start's
+/// preview allowed); no plan: kNoticeBuildingPending. A game the plan does not place (or whose room it lacks): Ignore.
 [[nodiscard]] WorldMove routeShowInRoom(const catalog::GameId& game, const WorldMoveConditions& conditions,
                                         const world::PlanIndex* index, std::string_view currentFloor,
                                         std::string_view eyeRoom);

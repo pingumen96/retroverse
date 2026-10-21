@@ -83,12 +83,14 @@ namespace {
 }
 
 /// The refusal common to every move (none: the world can move now), `stateOk` whether the interaction's state allows
-/// it.
-[[nodiscard]] std::optional<WorldMove> refusalOf(const WorldMoveConditions& conditions, bool havePlan, bool stateOk) {
+/// it, `applyingRefuses` whether a floor being applied does (a ride or a teleport: yes; the Focus pose in the room the
+/// interaction is in: no, as I3's "Mostra nella stanza" went there while the persisted start's preview showed).
+[[nodiscard]] std::optional<WorldMove> refusalOf(const WorldMoveConditions& conditions, bool havePlan, bool stateOk,
+                                                 bool applyingRefuses = true) {
     if (!havePlan || !conditions.planReady) {
         return refuse(kNoticeBuildingPending, "the building is not planned yet");
     }
-    if (conditions.applying) {
+    if (conditions.applying && applyingRefuses) {
         return refuse(kNoticeRideUnavailable, "the floor shown is being applied");
     }
     if (conditions.riding) {
@@ -252,9 +254,8 @@ WorldMove routeDirectoryCommand(const ui::DirectoryCommand& command, const World
 
 WorldMove routeShowInRoom(const catalog::GameId& game, const WorldMoveConditions& conditions,
                           const world::PlanIndex* index, std::string_view currentFloor, std::string_view eyeRoom) {
-    const bool stateOk = conditions.state == WorldState::FreeRoam || conditions.state == WorldState::Focus;
-    if (std::optional<WorldMove> refused = refusalOf(conditions, index != nullptr, stateOk)) {
-        return *refused;
+    if (index == nullptr || !conditions.planReady) {
+        return refuse(kNoticeBuildingPending, "the building is not planned yet");
     }
     const std::optional<world::GameLocation> location = index->find(game);
     if (!location || !location->placed() || location->floor.empty()) {
@@ -274,6 +275,13 @@ WorldMove routeShowInRoom(const catalog::GameId& game, const WorldMoveConditions
     } else {
         move.kind = WorldMoveKind::ShowHere;
         move.why = "the game's room is the one the interaction is in";
+    }
+    // Focus is left first; a floor being applied refuses the ride and the teleport, not the Focus pose where the walker
+    // is (I3's "Mostra nella stanza").
+    const bool stateOk = conditions.state == WorldState::FreeRoam || conditions.state == WorldState::Focus;
+    if (std::optional<WorldMove> refused =
+            refusalOf(conditions, true, stateOk, move.kind != WorldMoveKind::ShowHere)) {
+        return *refused;
     }
     return move;
 }
