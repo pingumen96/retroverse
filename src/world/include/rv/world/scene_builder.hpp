@@ -152,6 +152,20 @@ struct SceneBuild {
 [[nodiscard]] Expected<scene::SceneDescription> shellSceneDescription(
     const RoomId& room, const RoomTemplate& roomTemplate, const LightingProfile& lighting = eveningLightingProfile());
 
+/// The camera a room's scene starts at, its doorway camera (inside the doorway at eye height, looking into the room), in
+/// the room's own frame: the eye's position in meters, the yaw and pitch in degrees. The app's teleport to a room's
+/// doorway stands there too (I4 step 7b, ADR-0013 §10).
+struct DoorwayCamera {
+    double x = 0.0;
+    double eyeY = 0.0;
+    double z = 0.0;
+    double yawDeg = 0.0;
+    double pitchDeg = 0.0;
+
+    bool operator==(const DoorwayCamera&) const = default;
+};
+[[nodiscard]] DoorwayCamera doorwayCamera(const Room& room, const RoomTemplate& roomTemplate) noexcept;
+
 /// Where an item, a dressing prop and a fixture of a room stand: the room's frame in meters (ADR-0002), shared by the
 /// scene and the collection layout.
 namespace room_frames {
