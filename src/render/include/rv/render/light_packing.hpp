@@ -2,7 +2,9 @@
 
 // GPU-free (target rv_render_uniforms): no OpenGL header is included.
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -31,6 +33,10 @@ struct PackedLights {
     /// The key light: the first scene light with castsShadows, when it is in the block and is a spot or the
     /// directional light; casts() is false otherwise.
     ShadowLight shadowLight;
+    /// The index in the scene's lights of the key light: the first light with castsShadows in the order packed (of a
+    /// selection, the first it names), whether or not it casts (shadowLight.casts(), shadowNote); nothing when no light
+    /// packed asks for shadows. The logs, the run report and the developer overlay name the key light by it.
+    std::optional<std::size_t> keyLight;
     /// Why the first light with castsShadows casts no shadow (a point light, a light left out of the block, a
     /// directional light with nothing to cast: requireShadowCasters()); empty when it casts one or no light asks to.
     std::string shadowNote;
@@ -56,11 +62,16 @@ struct PackedLights {
 [[nodiscard]] PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
                                       const scene::EnvironmentSetup& environment);
 
+/// The name of `light`, the light at `index` of the scene's lights, as the logs, reports and the developer overlay
+/// show it: Light::name, or "#<index>" when the light has none (as DroppedLight::name).
+[[nodiscard]] std::string lightName(const scene::Light& light, std::size_t index);
+
 /// What packLights() cannot know: whether anything casts a shadow. A directional key light's map is fitted to the
 /// shadow casters (directionalShadowProjection), so with `casterBounds` empty (no item casts shadows) it has no map to
 /// draw: PackedLights::shadowLight is cleared and shadowNote says why, as for a key light that cannot cast. `lights` are
-/// the lights `packed` was made from (for the key light's name). A spot key light keeps its map, whose frustum does not
-/// depend on the casters; nothing changes when there is no key light.
+/// the lights `packed` was made from: the note names its key light (PackedLights::keyLight, the selection's first
+/// caster when packed from a selection). A spot key light keeps its map, whose frustum does not depend on the casters;
+/// nothing changes when there is no key light.
 void requireShadowCasters(PackedLights& packed, std::span<const scene::Light> lights, const core::Aabb& casterBounds);
 
 /// PunctualLightUniforms::spotScale and spotOffset (x, y) of a spot cone with half-angles `innerConeDeg` <=

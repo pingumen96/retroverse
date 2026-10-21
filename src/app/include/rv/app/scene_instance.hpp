@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -56,8 +58,9 @@ struct SceneResources {
 ///  - Areas (I4 step 3, ADR-0013 §9): in a scene with areas (a floor: its rooms and its hall), the lights block holds
 ///    the lights of the area that holds the eye (scene::AreaLighting: the first area holding it, else the last one
 ///    held), its key light shadowed and its point and spot lights nearest the eye up to the block's capacity; the
-///    application calls followEye() every frame with the camera's eye. A scene without areas packs its lights once, in
-///    list order, as before.
+///    application calls followEye() every frame with the camera's eye. The log names every area's key light at load
+///    (or why it casts none), and the area the eye enters. A scene without areas packs its lights once, in list order,
+///    as before.
 ///  - Collision: scene::buildCollisionWorld of the content, for first-person navigation.
 ///  - Debug lines: the bounds of every object instance (scene::addSceneBoundsLines) and the axes of its sockets
 ///    (scene::addSceneSocketLines), kept apart so that each kind can be shown on its own.
@@ -112,6 +115,10 @@ public:
     [[nodiscard]] const std::vector<gl::DroppedLight>& droppedLights() const noexcept { return m_droppedLights; }
     /// The key light of the last packing: the light that casts the views' shadow (casts() is false for none).
     [[nodiscard]] const gl::ShadowLight& shadowLight() const noexcept { return m_shadowLight; }
+    /// The index in sceneLights() of the last packing's key light (gl::PackedLights::keyLight: the first light with
+    /// castsShadows in the order packed; in a scene with areas, of the area that holds the eye), whether or not it
+    /// casts; nothing when no light packed asks for shadows.
+    [[nodiscard]] const std::optional<std::size_t>& keyLight() const noexcept { return m_keyLight; }
     /// Why the first light that asks for shadows casts none in the last packing (a point light, a dropped light, a
     /// directional light while no item casts shadows); empty otherwise.
     [[nodiscard]] const std::string& shadowNote() const noexcept { return m_shadowNote; }
@@ -131,6 +138,7 @@ private:
     gl::LightsUniforms m_lights;
     std::vector<gl::DroppedLight> m_droppedLights;
     gl::ShadowLight m_shadowLight;
+    std::optional<std::size_t> m_keyLight;
     std::string m_shadowNote;
     core::Aabb m_shadowCasterBounds;
     std::vector<scene::SceneArea> m_areas;

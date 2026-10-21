@@ -18,10 +18,6 @@ namespace {
 /// Shortest range a light may have; avoids a division by zero in the window.
 constexpr float kMinRange = 0.001f;
 
-std::string lightName(const scene::Light& light, std::size_t index) {
-    return light.name.empty() ? fmt::format("#{}", index) : light.name;
-}
-
 bool isFiniteNonNegative(float value) noexcept {
     return std::isfinite(value) && value >= 0.0f;
 }
@@ -78,6 +74,10 @@ ShadowLight keyLightOf(const scene::Light& light, std::int32_t index, const glm:
 
 } // namespace
 
+std::string lightName(const scene::Light& light, std::size_t index) {
+    return light.name.empty() ? fmt::format("#{}", index) : light.name;
+}
+
 glm::vec2 spotConeScaleOffset(float innerConeDeg, float outerConeDeg) noexcept {
     const float cosOuter = std::cos(core::degreesToRadians(outerConeDeg));
     const float cosInner = std::max(std::cos(core::degreesToRadians(innerConeDeg)), cosOuter);
@@ -112,6 +112,9 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
         // The first light that asks for shadows is the key light, whether or not it can have them.
         const bool key = light.castsShadows && !keyLightSeen;
         keyLightSeen = keyLightSeen || light.castsShadows;
+        if (key) {
+            packed.keyLight = index;
+        }
         if (const auto reason = rejection(light)) {
             drop(light, index, *reason, key);
             continue;
@@ -185,10 +188,8 @@ void requireShadowCasters(PackedLights& packed, std::span<const scene::Light> li
         !casterBounds.isEmpty()) {
         return;
     }
-    const auto key =
-        std::find_if(lights.begin(), lights.end(), [](const scene::Light& light) { return light.castsShadows; });
-    const std::string name =
-        key != lights.end() ? lightName(*key, static_cast<std::size_t>(key - lights.begin())) : std::string("?");
+    const std::optional<std::size_t> key = packed.keyLight;
+    const std::string name = key && *key < lights.size() ? lightName(lights[*key], *key) : std::string("?");
     packed.shadowNote = fmt::format("directional light '{}' casts shadows but no object does: its map is fitted to "
                                     "the objects that cast shadows",
                                     name);

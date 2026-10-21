@@ -51,6 +51,7 @@
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/gpu_memory.hpp>
+#include <rv/render/light_packing.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/shadow_settings.hpp>
 #include <rv/render/texture_cache.hpp>
@@ -518,17 +519,13 @@ struct RetroverseApp::State {
         record.areas = scene->areas().size();
         record.area = std::string(scene->areaId());
         const std::span<const scene::Light> lights = scene->sceneLights();
-        bool keySeen = false;
         for (const std::uint32_t index : scene->areaSelection()) {
-            const scene::Light& light = lights[index];
-            const std::string name = light.name.empty() ? fmt::format("#{}", index) : light.name;
-            record.lights.push_back(name);
-            if (light.castsShadows && !keySeen) {
-                keySeen = true;
-                if (scene->shadowLight().casts()) {
-                    record.keyLight = name;
-                }
-            }
+            record.lights.push_back(gl::lightName(lights[index], index));
+        }
+        // The light the views' shadow map came from: the packed key light, when it casts.
+        if (const std::optional<std::size_t> key = scene->keyLight();
+            key && *key < lights.size() && scene->shadowLight().casts()) {
+            record.keyLight = gl::lightName(lights[*key], *key);
         }
         record.changes = areaChanges;
         return record;
@@ -905,7 +902,7 @@ struct RetroverseApp::State {
         // Tabs of one node; the first is shown.
         devUi->addPanel(devui::makeLightsPanel({[this] { return scene->sceneLights(); }, scene->environment(),
                                                 scene->droppedLights(),
-                                                scene->shadowLight(), scene->shadowNote(),
+                                                scene->shadowLight(), scene->keyLight(), scene->shadowNote(),
                                                 [this] { scene->applyLighting(); }}),
                         devui::DockSlot::Right);
         devUi->addPanel(devui::makeMaterialsPanel(

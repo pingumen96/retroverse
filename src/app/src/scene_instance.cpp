@@ -1,14 +1,15 @@
 #include <rv/app/scene_instance.hpp>
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
-#include <iterator>
 #include <map>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -41,34 +42,64 @@ const gl::Texture2D& pictureTexture(const PlannedMaterial& planned, gl::TextureC
     return textures.pattern(source.pattern, source.title, source.seed, planned.patternSize, gl::ColorSpace::Srgb);
 }
 
-void logLights(std::string_view scene, const gl::LightsUniforms& block, std::span<const gl::DroppedLight> dropped,
-               const scene::EnvironmentSetup& environment) {
+/// Logs the lights left out and the lights block; `area` names the area whose lights it holds (empty: the whole scene).
+void logLights(std::string_view scene, std::string_view area, const gl::LightsUniforms& block,
+               std::span<const gl::DroppedLight> dropped, const scene::EnvironmentSetup& environment) {
     for (const gl::DroppedLight& light : dropped) {
         spdlog::warn("Scene '{}': light '{}' is not drawn: {}", scene, light.name, light.reason);
     }
-    spdlog::info("Scene lights: {} point/spot, {} directional; ambient intensity {:g}; exposure {:g}, bloom strength "
-                 "{:g}, bloom radius {:g}, vignette {:g}",
-                 block.punctualLightCount, block.directionalIntensity > 0.0f ? 1 : 0, block.ambientIntensity,
+    const std::string whose = area.empty() ? std::string("Scene lights") : fmt::format("Lights of the area '{}'", area);
+    spdlog::info("{}: {} point/spot, {} directional; ambient intensity {:g}; exposure {:g}, bloom strength {:g}, bloom "
+                 "radius {:g}, vignette {:g}",
+                 whose, block.punctualLightCount, block.directionalIntensity > 0.0f ? 1 : 0, block.ambientIntensity,
                  environment.exposure, environment.bloomStrength, environment.bloomRadius, environment.vignette);
 }
 
-/// Logs the key light (the first light with castsShadows) and its shadow, or why there is none, and the ambient
-/// occlusion.
-void logShadows(std::string_view scene, std::span<const scene::Light> lights, const gl::ShadowLight& key,
-                std::string_view note, const scene::SsaoSetup& ssao) {
-    const auto first =
-        std::find_if(lights.begin(), lights.end(), [](const scene::Light& light) { return light.castsShadows; });
-    if (key.casts() && first != lights.end()) {
-        const std::string name =
-            first->name.empty() ? fmt::format("#{}", std::distance(lights.begin(), first)) : first->name;
-        spdlog::info("Scene '{}': key light '{}' ({}) casts the shadows, strength {:g}, {}x{} shadow map", scene,
-                     name, scene::toString(key.type), key.strength, gl::kShadowMapResolution,
-                     gl::kShadowMapResolution);
-    } else if (!note.empty()) {
-        spdlog::warn("Scene '{}': no shadows: {}", scene, note);
+/// Logs the key light of `packed` (made from `lights`) and its shadow, or why there is none; `area` names the area
+/// whose lights were packed (empty: the whole scene).
+void logKeyLight(std::string_view scene, std::string_view area, std::span<const scene::Light> lights,
+                 const gl::PackedLights& packed) {
+    const std::string where =
+        area.empty() ? fmt::format("Scene '{}'", scene) : fmt::format("Scene '{}', area '{}'", scene, area);
+    const gl::ShadowLight& key = packed.shadowLight;
+    if (key.casts() && packed.keyLight && *packed.keyLight < lights.size()) {
+        spdlog::info("{}: key light '{}' ({}) casts the shadows, strength {:g}, {}x{} shadow map", where,
+                     gl::lightName(lights[*packed.keyLight], *packed.keyLight), scene::toString(key.type),
+                     key.strength, gl::kShadowMapResolution, gl::kShadowMapResolution);
+    } else if (!packed.shadowNote.empty()) {
+        spdlog::warn("{}: no shadows: {}", where, packed.shadowNote);
     } else {
-        spdlog::info("Scene '{}': no light casts shadows", scene);
+        spdlog::info("{}: no light casts shadows", where);
     }
+}
+
+/// Logs the key light of every area (its first light with castsShadows) as when the eye is in that area: what it
+/// casts, or why it casts nothing (a point light, a dropped one, a directional light without casters). A view packs an
+/// area's directional lights and its key light before its other lights (scene::AreaLighting), so packing those alone
+/// gives the key light's fate in every view from the area.
+void logAreaKeyLights(std::string_view scene, std::span<const scene::SceneArea> areas,
+                      std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment,
+                      const core::Aabb& casterBounds) {
+    const std::vector<std::vector<std::uint32_t>> byArea = scene::lightsByArea(lights, areas);
+    std::vector<std::uint32_t> selection;
+    for (std::size_t area = 0; area < areas.size(); ++area) {
+        selection.clear();
+        bool keySeen = false;
+        for (const std::uint32_t index : byArea[area]) {
+            const scene::Light& light = lights[index];
+            if ((light.castsShadows && !keySeen) || light.type == scene::LightType::Directional) {
+                selection.push_back(index);
+            }
+            keySeen = keySeen || light.castsShadows;
+        }
+        gl::PackedLights packed = gl::packLights(lights, selection, environment);
+        gl::requireShadowCasters(packed, lights, casterBounds);
+        logKeyLight(scene, areas[area].id, lights, packed);
+    }
+}
+
+/// Logs the ambient occlusion.
+void logAmbientOcclusion(std::string_view scene, const scene::SsaoSetup& ssao) {
     if (ssao.enabled) {
         spdlog::info("Scene '{}': ambient occlusion radius {:g} m, intensity {:g}", scene, ssao.radius,
                      ssao.intensity);
@@ -166,18 +197,20 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
                      description.name, instance.m_areas.size(), instance.areaId());
     }
     instance.applyLighting();
-    logLights(description.name, instance.m_lights, instance.m_droppedLights, instance.m_environment);
+    logLights(description.name, instance.areaId(), instance.m_lights, instance.m_droppedLights,
+              instance.m_environment);
     if (instance.m_areas.empty()) {
-        logShadows(description.name, instance.m_sceneLights, instance.m_shadowLight, instance.m_shadowNote,
-                   instance.m_environment.ssao);
+        gl::PackedLights packed;
+        packed.shadowLight = instance.m_shadowLight;
+        packed.keyLight = instance.m_keyLight;
+        packed.shadowNote = instance.m_shadowNote;
+        logKeyLight(description.name, {}, instance.m_sceneLights, packed);
     } else {
-        std::vector<scene::Light> packed;
-        for (const std::uint32_t index : instance.areaSelection()) {
-            packed.push_back(instance.m_sceneLights[index]);
-        }
-        logShadows(description.name, packed, instance.m_shadowLight, instance.m_shadowNote,
-                   instance.m_environment.ssao);
+        // Every area's key light, not only the start area's: a view shadow-maps the key light of the eye's area.
+        logAreaKeyLights(description.name, instance.m_areas, instance.m_sceneLights, instance.m_environment,
+                         instance.m_shadowCasterBounds);
     }
+    logAmbientOcclusion(description.name, instance.m_environment.ssao);
     instance.m_collision = scene::buildCollisionWorld(geometry);
     scene::addSceneBoundsLines(geometry, instance.m_boundsLines);
     scene::addSceneSocketLines(geometry, instance.m_socketLines);
@@ -216,6 +249,7 @@ void SceneInstance::packLighting() {
     m_lights = packed.uniforms;
     m_droppedLights = std::move(packed.dropped);
     m_shadowLight = packed.shadowLight;
+    m_keyLight = packed.keyLight;
     m_shadowNote = std::move(packed.shadowNote);
 }
 
@@ -236,9 +270,13 @@ bool SceneInstance::followEye(const glm::vec3& eye) {
     packLighting();
     const bool areaChanged = before != m_areaLighting.area();
     if (areaChanged) {
+        // What each area's key light casts was logged at load (logAreaKeyLights).
         spdlog::debug("Scene '{}': the eye entered the area '{}': {} light(s) packed, {}", m_name, areaId(),
-                      m_lights.punctualLightCount, m_shadowLight.casts() ? "its key light casts the shadows"
-                                                                         : "no shadow");
+                      m_lights.punctualLightCount,
+                      m_shadowLight.casts() && m_keyLight && *m_keyLight < m_sceneLights.size()
+                          ? fmt::format("the key light '{}' casts the shadows",
+                                        gl::lightName(m_sceneLights[*m_keyLight], *m_keyLight))
+                          : std::string("no shadow"));
     }
     return areaChanged;
 }

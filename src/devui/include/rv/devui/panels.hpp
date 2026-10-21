@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -86,9 +87,9 @@ struct CameraPanelModel {
 
 /// "Lights": the key light that casts the shadows (or why there is none), every scene light (position, direction, color
 /// shown in sRGB and stored linear, intensity, range, cone angles, whether it casts shadows and how strongly: the first
-/// that does is the key light) and the environment (background radiance, ambient sky, ground and intensity), edited
-/// live; the lights the renderer leaves out are listed with the reason. The exposure and the ambient occlusion are the
-/// Rendering panel's.
+/// that does is the key light, in a scene with areas the first of the area that holds the eye) and the environment
+/// (background radiance, ambient sky, ground and intensity), edited live; the lights the renderer leaves out are listed
+/// with the reason. The exposure and the ambient occlusion are the Rendering panel's.
 struct LightsPanelModel {
     /// The scene's lights as described (linear colors), edited in place: asked each time the panel is drawn, since the
     /// application may replace its scene (the generated room after its shell, I3 step 10b).
@@ -97,8 +98,10 @@ struct LightsPanelModel {
     scene::EnvironmentSetup& environment;
     /// Lights left out of the lights block by the last apply().
     const std::vector<gl::DroppedLight>& dropped;
-    /// The key light of the last apply(), and why the first light that asks for shadows has none.
+    /// The key light of the last apply(), its index in lights() (gl::PackedLights::keyLight: the first light packed
+    /// that asks for shadows, of the area of the eye in a scene with areas), and why that light has none.
     const gl::ShadowLight& shadowLight;
+    const std::optional<std::size_t>& keyLight;
     const std::string& shadowNote;
     /// Repacks the lights block and the background after an edit.
     std::function<void()> apply;

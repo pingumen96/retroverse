@@ -1,7 +1,8 @@
-#include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -67,15 +68,15 @@ private:
             return;
         }
         const gl::ShadowLight& key = m_model.shadowLight;
-        const auto first = std::find_if(lights.begin(), lights.end(),
-                                        [](const scene::Light& light) { return light.castsShadows; });
-        if (!key.casts() || first == lights.end()) {
+        const std::optional<std::size_t>& index = m_model.keyLight;
+        if (!key.casts() || !index || *index >= lights.size()) {
             ImGui::TextDisabled("No light casts shadows");
             return;
         }
-        const char* name = first->name.empty() ? "(unnamed)" : first->name.c_str();
-        ImGui::Text("Key light: %s", name);
-        ImGui::SetItemTooltip("The first light that casts shadows; its shadow map darkens what it cannot see");
+        const std::string name = gl::lightName(lights[*index], *index);
+        ImGui::Text("Key light: %s", name.c_str());
+        ImGui::SetItemTooltip("The first light that casts shadows (in a scene with areas, the first of the area that "
+                              "holds the eye); its shadow map darkens what it cannot see");
     }
 
     bool drawEnvironment() {
@@ -130,7 +131,8 @@ private:
                                         "%.1f deg", ImGuiSliderFlags_AlwaysClamp);
         }
         changed |= ImGui::Checkbox("Casts shadows", &light.castsShadows);
-        ImGui::SetItemTooltip("The first light that casts shadows is the key light: spot and directional lights are "
+        ImGui::SetItemTooltip("The first light that casts shadows is the key light (in a scene with areas, the "
+                              "first of the area that holds the eye): spot and directional lights are "
                               "shadow-mapped, point lights cast none");
         if (light.castsShadows) {
             changed |= ImGui::SliderFloat("Shadow", &light.shadowStrength, 0.0f, 1.0f, "%.2f",
