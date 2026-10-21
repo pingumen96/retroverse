@@ -274,7 +274,8 @@ struct RoomDataRequest {
 /// they name (a missing or broken manifest falls back to its family's prefab, logged once). A console room's request
 /// without a recorded family or theme pack (a system entering the building) also reads the data of the shared or arcade
 /// room its system would take a section of (WorldData::sharedRoom). Errors: those of the readers, those of
-/// resolvePlatform() (an excluded system or one on no floor: InvalidArgument, for a shared or arcade room too),
+/// resolvePlatform() (an excluded system or one on no floor: InvalidArgument, for a shared or arcade room without a
+/// floor too: a request with one, a stored room's, is read whatever its first section's classification is now),
 /// NotFound for a media family the registry lacks, ValidationFailed for an item that disagrees with its manifest.
 [[nodiscard]] Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const RoomDataRequest& request);
 /// loadWorldData() of `system`'s room, with the system's own family and theme pack.
@@ -282,7 +283,7 @@ struct RoomDataRequest {
                                                 const catalog::SystemName& system,
                                                 std::string_view templateId = kDefaultRoomTemplate);
 /// loadWorldData() of a stored room: its kind and floor, its first section's system, its recorded family, theme pack
-/// and template.
+/// and template (a shared or arcade room's data needs no classification of its systems: ADR-0013 §3, sticky).
 [[nodiscard]] Expected<WorldData> loadRoomData(const std::filesystem::path& assetRoot, const Room& room,
                                                std::span<const std::string> platformTags = {});
 

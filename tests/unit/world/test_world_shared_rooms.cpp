@@ -6,13 +6,16 @@
 // across the sections, each section's titles after the previous section's, a new title after its predecessor in its
 // section); a system crossing the threshold moving nothing (sticky); a shared room updated only with every section's
 // selection (one given only some of them held and reported); the count rule; a full floor's console room joining the
-// floor's shared room; their scenes' signs.
+// floor's shared room; their scenes' signs; a stored shared or arcade room's data read whatever its first section's
+// classification is now.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <iterator>
 #include <map>
 #include <set>
@@ -26,6 +29,8 @@
 #include <rv/catalog/entry.hpp>
 #include <rv/catalog/lookup_key.hpp>
 #include <rv/catalog/metadata.hpp>
+#include <rv/core/expected.hpp>
+#include <rv/core/file_io.hpp>
 #include <rv/core/random.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/generation.hpp>
@@ -34,6 +39,7 @@
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/validation.hpp>
 
+#include "support/temp_dir.hpp"
 #include "world_generation_support.hpp"
 #include "world_update_support.hpp"
 
@@ -654,4 +660,116 @@ TEST_CASE("world/shared rooms: a shared room's data comes with its system's", "[
     CHECK(stored->mediaFamily == shared.mediaFamily);
     CHECK(rv::world::prefabCatalogToJson(stored->prefabs) == rv::world::prefabCatalogToJson(shared.prefabs));
     CHECK(stored->roomTemplate == shared.roomTemplate);
+}
+
+TEST_CASE("world/shared rooms: a stored shared or arcade room's data whatever its first section's classification now",
+          "[world][shared_rooms]") {
+    // gb and pokemini: pokemini's 8 titles take the first section of the handheld floor's shared room.
+    Building building;
+    building.input.library = rv::test::world::library();
+    building.input.config = defaultConfig();
+    building.rooms = {dataOf("gb"), dataOf("pokemini")};
+    building.input.selections = {selectionOf("gb", 30, 3400), selectionOf("pokemini", 8, 3500)};
+    const GenerationResult generated = generate(building);
+    REQUIRE(generated.validation.passed());
+    const WorldPlan& plan = generated.plan;
+    const RoomId sharedId = *RoomId::sharedArea("handheld");
+    const Room& stored = roomOf(plan, sharedId.toString());
+    REQUIRE(sectionsOf(stored) == std::vector<std::string>{"pokemini"});
+
+    // A later systems.json excludes pokemini (a copy of the asset root's world data and manifests).
+    const rv::test::TempDir dir("rv-world-shared-excluded");
+    const std::filesystem::path root = dir.path() / "assets";
+    std::filesystem::create_directories(root);
+    for (const std::string_view folder : {"world", "manifests"}) {
+        std::filesystem::copy(rv::test::world::assetRoot() / folder, root / folder,
+                              std::filesystem::copy_options::recursive);
+    }
+    const std::filesystem::path systemsFile = root / "world" / "systems.json";
+    auto text = rv::core::readTextFile(systemsFile);
+    REQUIRE(text.has_value());
+    const std::size_t from = text->find(R"({"system": "pokemini", "kind": "handheld")");
+    REQUIRE(from != std::string::npos);
+    const std::size_t to = text->find("]},", from);
+    REQUIRE(to != std::string::npos);
+    text->replace(from, to + 3 - from, R"({"system": "pokemini", "kind": "excluded", "platforms": ["pokemini"]},)");
+    REQUIRE(rv::core::writeTextFileAtomic(systemsFile, *text).has_value());
+    auto systems = rv::world::loadSystemsData(root);
+    REQUIRE(systems.has_value());
+    CHECK(rv::world::classify(name("pokemini"), {}, *systems, building.rooms.front().building).kind() ==
+          rv::world::SystemKind::Excluded);
+
+    // Entering the building, pokemini gets no room now.
+    rv::world::RoomDataRequest entering;
+    entering.system = name("pokemini");
+    entering.kind = RoomKind::Shared;
+    auto refused = rv::world::loadWorldData(root, entering);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().code == rv::ErrorCode::InvalidArgument);
+    CHECK_THAT(refused.error().message, ContainsSubstring("the system pokemini gets no room (excluded)"));
+
+    // The stored shared room's data is read as before: its kind and recorded floor decide its platform (ADR-0013 §3: a
+    // data change never moves or freezes a room).
+    auto now = rv::world::loadRoomData(root, stored);
+    INFO((now ? std::string("loaded") : now.error().toString()));
+    REQUIRE(now.has_value());
+    auto before = rv::world::loadRoomData(rv::test::world::assetRoot(), stored);
+    REQUIRE(before.has_value());
+    CHECK(now->kind == RoomKind::Shared);
+    CHECK(now->platform == before->platform);
+    CHECK(now->mediaFamily == before->mediaFamily);
+    CHECK(rv::world::prefabCatalogToJson(now->prefabs) == rv::world::prefabCatalogToJson(before->prefabs));
+    CHECK(now->roomTemplate == before->roomTemplate);
+
+    // So the building updates with that data: gb's new titles placed, the shared room as it stood.
+    std::vector<WorldData> rooms;
+    for (const Room& room : plan.rooms) {
+        auto data = rv::world::loadRoomData(root, room);
+        INFO(room.id.toString() << ": " << (data ? std::string("loaded") : data.error().toString()));
+        REQUIRE(data.has_value());
+        rooms.push_back(std::move(*data));
+    }
+    RoomSelection gb = building.input.selections[0];
+    std::set<std::uint64_t> taken;
+    for (const RoomSelection& selection : building.input.selections) {
+        const std::set<std::uint64_t> values = rv::test::world::gameValuesOf(selection);
+        taken.insert(values.begin(), values.end());
+    }
+    rv::core::Random random(3402);
+    for (int i = 0; i < 2; ++i) {
+        rv::test::world::addTitle(gb, random, taken);
+    }
+    rv::world::BuildingUpdateInput input;
+    input.library = rv::test::world::library();
+    input.selections = {gb, building.input.selections[1]};
+    input.config = building.input.config;
+    input.previous = plan;
+    auto updated = rv::world::updateBuilding(input, rooms.front().building, *systems, std::span(rooms));
+    INFO((updated ? std::string("updated") : updated.error().toString()));
+    REQUIRE(updated.has_value());
+    CHECK(updated->validation.passed());
+    CHECK(updated->changes.added.size() == 2);
+    CHECK(updated->changes.keptRooms.empty());
+    CHECK(updated->changes.heldRooms.empty());
+    CHECK(*rv::world::roomContentDigest(updated->plan, sharedId) == *rv::world::roomContentDigest(plan, sharedId));
+
+    // The arcade room alike: a stored one whose first section gets no room now (kodi, excluded in the shipped data).
+    const WorldData mame = dataOf("mame");
+    REQUIRE(mame.sharedRoom != nullptr);
+    Room arcade;
+    arcade.id = *RoomId::arcadeArea();
+    arcade.kind = RoomKind::Arcade;
+    arcade.floor = "ground";
+    arcade.sections = {name("kodi"), name("mame")};
+    arcade.templateId = std::string(rv::world::kDefaultRoomTemplate);
+    arcade.mediaFamily = mame.sharedRoom->mediaFamily.id;
+    arcade.themePack = mame.sharedRoom->platform.themePack;
+    auto arcadeData = rv::world::loadRoomData(rv::test::world::assetRoot(), arcade);
+    INFO((arcadeData ? std::string("loaded") : arcadeData.error().toString()));
+    REQUIRE(arcadeData.has_value());
+    CHECK(arcadeData->kind == RoomKind::Arcade);
+    CHECK(arcadeData->platform.system == name("kodi"));
+    CHECK(arcadeData->platform.signText == "ARCADE");
+    CHECK_FALSE(arcadeData->platform.console.has_value());
+    CHECK(arcadeData->mediaFamily == mame.sharedRoom->mediaFamily);
 }

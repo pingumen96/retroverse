@@ -163,17 +163,21 @@ Expected<WorldData> roomData(const std::filesystem::path& assetRoot, const RoomD
         }
         data.platform = std::move(*platform);
     } else {
-        const Classification classification =
-            classify(request.system, request.platformTags, data.systems, data.building);
-        if (!classification.hasRoom()) {
-            return makeError(ErrorCode::InvalidArgument,
-                             "the system " + request.system.str() + " gets no room (" +
-                                 std::string(toString(classification.kind())) + ")",
-                             "world/systems.json");
+        // A stored room's floor is recorded (sticky): its kind and floor decide its platform, whatever its first
+        // section's classification is now (ADR-0013 §3: a data change never moves or freezes a room). Without a floor
+        // the system is classified for one, and a system that gets no room is refused.
+        std::string floor = request.floor;
+        if (floor.empty()) {
+            const Classification classification =
+                classify(request.system, request.platformTags, data.systems, data.building);
+            if (!classification.hasRoom()) {
+                return makeError(ErrorCode::InvalidArgument,
+                                 "the system " + request.system.str() + " gets no room (" +
+                                     std::string(toString(classification.kind())) + ")",
+                                 "world/systems.json");
+            }
+            floor = request.kind == RoomKind::Arcade ? std::string(kGroundFloor) : classification.floor;
         }
-        const std::string floor = !request.floor.empty()                ? request.floor
-                                  : request.kind == RoomKind::Arcade ? std::string(kGroundFloor)
-                                                                       : classification.floor;
         data.platform = sharedRoomPlatform(request.kind, floor, request.system, data.systems, data.building);
     }
     // A stored room's family and theme pack are authoritative (ADR-0013 §3).
