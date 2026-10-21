@@ -6,27 +6,36 @@ Roadmap row: I4 step 6b. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
 
 - **New systems from the app.** The building job's update gives `updateBuilding()` every catalog system that gets a
   room and has a placeable title, as `worldplan update` does (step 6a): a system without a room enters with its own
-  `loadWorldData()` data; the others are left out with a log line; entered, waiting and held systems are logged. The
-  building fixture's `additions/` put megadrive in gen4's new shared room, and the CLI finds the app's plan up to date.
+  `loadWorldData()` data; the others are left out with a log line (those without a room, excluded, in one line per
+  job); entered, waiting and held systems are logged. The building fixture's `additions/` put megadrive in gen4's new
+  shared room, and the CLI finds the app's plan up to date.
 - **The items files hold the CRT's data** (`RoomItemScreen`: a placed game's clip, screenshot and title screen relative
   to the media root, its last play, its title's priority gathered from its versions). Every collection room of a floor
   gets its CRT games and content digest in `buildFloor()`, from the items alone; the preview reads them under the
-  library's media root when it can be read (its covers still from the cache alone). A room's CRT plays its placed games
-  only (ADR-0013 §9).
+  library's media root when it can be read (its covers still from the cache alone), each game's last play the
+  catalog's sessions now (`catalog_db::lastPlaySessions()`), so a CRT starts on the game the building's result chooses
+  also after a game was played since the items were written. A room's CRT plays its placed games only (ADR-0013 §9).
+  The items files' schema is 2 (schema 1 still read, without the CRTs' data).
 - **Room by room** (`planLiveUpdate()`'s `RoomUpdate`, used by the persisted start's reconcile and by the live update):
-  each room by its content digest (`world::roomContentDigests()`), its items and its covers. An unchanged room keeps its
+  each room by its content digest (`world::roomContentDigests()`), its items and its covers. At the persisted start
+  every room is reconciled as `textures`: its covers served again from the cache to check their sources (the media
+  root known now), nothing uploaded over a picture that showed. In a live update an unchanged room keeps its
   collection and pictures (the new cover loader takes its items over as they show: `adopted.resident`, nothing served
   or uploaded again); a room whose items changed has them applied in place, the others untouched; a static change of
-  the floor commits it again, every room's pictures kept, the walker (and a Focus or Inspect pose) moved with the area
-  that holds it (`walkerMove()`: the room's scene placement, or the floor's frame for the hall). Other floors are only
-  saved. The report gives each room's part (`reconcile.rooms`, `liveUpdates[].rooms`), the `walker` kept, and each
-  room's `uploads` and `reuploads`.
+  the floor commits it again, every room's pictures kept, the walker moved with the area that holds it
+  (`walkerMove()`: the room's scene placement, or the floor's frame for the hall). Other floors are only saved. The
+  report gives each room's part (`reconcile.rooms`, `liveUpdates[].rooms`), the `walker` kept, and each room's
+  `uploads` and `reuploads`.
 - **The hero CRT of the eye's room** (`ScreenRoomTracker`, rv_app_cli): bound after the eye stayed 0.3 s in a room
-  (also the doorway's hysteresis), kept in a hall, never while a game runs. One `ScreenService` for the run: `bind()`
+  (also the doorway's hysteresis), kept in a hall, never while a game runs; from the lobby the service is made on the
+  first room the eye stays in (the run's first screen). One `ScreenService` for the run: `bind()`
   stops the clip as a clip replacement does (its decoder's thread ends on its own, never joined on the render loop),
-  clears the previous screen's override, restarts the choice on the new room's games; a floor committed again unbinds
-  without a join and binds the new scene's CRT. The quick catalog's selection plays only when its game stands in the
-  eye's room. Report: `video.binds`, `world.screenRoom`, the `screenBind` phase (60 frames from the bind).
+  clears the previous screen's override, restarts the choice on the new room's games; any scene shown in place of
+  another (a floor committed again, the shell or the test room after a floor) unbinds without a join and binds the new
+  scene's CRT, if any; `shutdown()` only at the run's end. The quick catalog's selection plays only when its game
+  stands in the eye's room. Report: `video.binds` (the binds after the run's first screen, with `clipStopped`),
+  `video.waitsBeforeExit` (the waits for decoder threads before the run's end: 0), `world.screenRoom`, the
+  `screenBind` phase (60 frames from the bind).
 - **An unchanged start plans nothing.** The job writes a building stamp (`building-stamp.json` beside the items:
   digests of the plan, of the catalog's stamp read with the snapshots, of the world's inputs). At the next start, before
   any snapshot, it compares (`unchangedBuilding()`).
@@ -39,11 +48,14 @@ Roadmap row: I4 step 6b. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
   writer since); the catalog's stamp is the same (`catalog_db::catalogStamp()`: the library's newest `rv_imports` id,
   which every committed import, refresh or index rebuild adds, also one that changed nothing; the count and latest start
   of the play sessions that count; the identities' aliases and history; the schema and sort-key versions); the world's
-  inputs are the same (`worldInputsDigest()`: the program's, generator's, items' and stamp's versions, every file of
-  the asset root's `world/` and `manifests/`, `world.json`, `library.json`, `overrides.json`, the media root's path);
-  the media root can be read now; every room's items file is there. Anything else runs the whole job; a live update
-  after a refresh always does. The stamp is written only for a plan saved or unchanged from known media with every
-  items file kept.
+  inputs are the same (`worldInputsDigest()`: the program, its version banner and its executable's name, size and last
+  write time, so that another build of the same version never takes the stamp; the generator's, items' and stamp's
+  versions; every file of the asset root's `world/` and `manifests/`, `world.json`, `library.json`, `overrides.json`,
+  the media root's path); the media root can be read now; every room's items file is there. Anything else runs the
+  whole job; a live update after a refresh always does. The stamp is written only for a plan saved or unchanged from
+  known media with every items file kept and nothing left to settle: a room kept until a regeneration, a room held, a
+  system waiting to enter one or a notice writes no stamp and removes the one there, so their notice and warnings come
+  at every start. The stamp keeps the plan's soft findings for the skipped start's report.
 - **The CRT plays placed games only**: the snes-room fixture's CRT lists its 50, no longer 53.
 - **Re-uploads count pictures uploaded over a layer the item showed**: a cold room's labels replaced by covers at the
   reconcile count (gen5's first show), an unchanged room's never.
@@ -62,18 +74,23 @@ Roadmap row: I4 step 6b. Decisions: [ADR-0013](../decisions/ADR-0013-the-buildin
   - `worldplan update` on the unchanged library: 4.3 s (14.3 s in step 6a).
 - **90,000 generated entries** in 11 systems (`rv_tests "[world_build][bench]"`): the unchanged start's job 3.4 s
   whole before the snapshot's index fix, 2.8 s after it (the snapshot 1.1 s, then 0.6 s), 58 ms by the stamp.
-- The CRT's rebind (`gpu.world floor app: the hero CRT rebound on a floor that runs freely ...`): 0.06 ms on the main
-  thread, the 60 frames after it p99 10.9 ms (limit 50 ms); on the lockstep walk its previous clip's decoder thread
-  was still ending as it returned, never joined there.
+- The CRT's rebind (`gpu.world floor app: the hero CRT rebound on a floor that runs freely ...`: the walker backs from
+  the first room's playing clip into the second room, whose CRT is bound): 0.07 to 0.08 ms on the main thread, the
+  clip stopped with its decoder's thread still ending (never waited for: `waitsBeforeExit` 0), the 60 frames after it
+  p99 3.9 to 9.8 ms over two runs (limit 50 ms). The lockstep walk's rebind stops the first room's clip, paused out of
+  view, likewise.
 
 ## Deviations and limits
 
 - No room of the building fixture grows with `additions/` (each takes a dressed level), so the GPU cases keep the
-  walker in the start room's frame or the hall's; a room's move is covered by the unit test of `walkerMove()`.
+  walker, who walked before the refresh, where the same walk ends without the additions, in the start room's frame or
+  the hall's; a room's move is covered by the unit test of `walkerMove()`.
+- A floor committed again, or items applied in place, ends a Focus or Inspect (the item back in its slot, as I3's live
+  update did); the walker keeps the pose it had, moved with its area.
 - A system that loses every entry keeps its last items file, so the stamp never matches until its room is updated: the
   whole job runs at each start meanwhile.
-- The skip rule trusts the program's version string for code changes within one version that change the plan or the
-  items: such a change raises the generator's version or `kBuildingStampVersion`.
+- A skipped start reports the plan's soft findings from the stamp but no change report (nothing ran).
+- A rebuild of the executable (even one that changes nothing) runs the whole job once at the next start.
 
 ## Follow-ups
 

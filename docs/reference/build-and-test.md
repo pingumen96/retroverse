@@ -72,12 +72,14 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   within 512 MiB, the cover loader's first view without the items of a room whose doorway it does not see; a walk from
   the hall into one room, out and into the other, a cover of the second inspected; the start in the lobby without
   `--start-room`, and a `--start-room` the plan lacks refused with exit 2; since I4 step 6b the hero CRT rebound on
-  that walk (`video.binds`) and on a floor that runs freely (the `screenBind` phase's frames within the loading row in
-  Release), the handheld floor
-  previewed and reconciled room by room with nothing moved or uploaded again, then rebuilt live around the fixture's
-  `additions/` after "Aggiorna libreria" with room:gb's pictures and the walker kept, gen4 rebuilt as megadrive enters
-  its new shared room with the walker kept in the hall's frame, and gen5's new titles, only saved meanwhile, shown at
-  its next start; the rooms, the doorways, the hall and the arrival point are read from the generated plan and its
+  that walk (`video.binds`, the first room's clip stopped, `waitsBeforeExit` 0) and on a floor that runs freely, the
+  walker backing from the first room's playing clip into the second (the `screenBind` phase's frames within the
+  loading row in Release), from the lobby into the arcade room (its CRT the run's first), the quick catalog's
+  selection played only in its game's room, the handheld floor previewed and reconciled room by room with nothing
+  moved or uploaded again (also after an import that changed nothing), then rebuilt live around the fixture's
+  `additions/` after "Aggiorna libreria" with room:gb's pictures taken over and the walker, who walked first, where
+  the same walk ends without them, gen4 rebuilt as megadrive enters its new shared room with the walker kept in the
+  hall's frame, and gen5's new titles, only saved meanwhile, shown at its next start; the rooms, the doorways, the hall and the arrival point are read from the generated plan and its
   floors' layout, never named) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
   few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,

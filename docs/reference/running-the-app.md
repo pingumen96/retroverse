@@ -43,8 +43,10 @@ build/rvdata`).
   renderer's own accounting per kind: `proceduralSurfaces`, `collectionArrays`, `heroTextures`, `video`, `targets`,
   `sceneTextures`, `buffers`; now and peak), `video` (the hero CRT: the game and picture shown, the one decoder, the
   first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings, since I4 step 6b
-  `binds`, the screens bound after the first: frame, screen, games, `bindMs`, decoder threads still ending; `{}`
-  without a CRT),
+  `binds`, the screens bound after the run's first (at a room change, or a scene shown in place of another; the first,
+  at the start room or the first room the eye stays in, is not one): frame, screen, games, `bindMs`, decoder threads
+  still ending, `clipStopped` (a clip open on the previous screen, stopped, never waited for); `waitsBeforeExit`, the
+  waits for the decoders' threads before the run's end, 0; `{}` without a CRT),
   `world` (`{}` without a room: the state, notice, outcome and rebuild, the plan's digest, placements per section and
   `unplaced` per reason (`roomKept` since I4 step 1), items, clusters, lights, findings, `times` from the process's
   creation; since I4 step 5a `floor` (the floor shown), `rooms` (its rooms: `id`, `floor`, `x` and `z` in millimetres
@@ -194,9 +196,12 @@ build/rvdata`).
   system's room items (`<user data>/cache/world/<library id>/room-<system>.json`: titles, cover paths, years, the
   system's full name and platform tags, and since I4 step 6b each placed game's CRT data: its clip, screenshot and title
   screen, its last play, its title's priority; a system of a shared room has its own, its section's games with their
-  text), and its building stamp (`building-stamp.json` beside them: the digests of the plan, of the catalog's stamp and
-  of the world's inputs; at the next start an unchanged catalog, data, configuration and media root plan nothing, the
-  floor built from the plan and the items files; `docs/i4/step-6b.md`), from which the floor-build job makes the floor
+  text; schema 2, schema 1 still read without the CRTs' data), and its building stamp (`building-stamp.json` beside
+  them: the digests of the plan, of the catalog's stamp and of the world's inputs, the program's executable among them,
+  and the plan's soft findings; at the next start an unchanged catalog, data, configuration, program and media root
+  plan nothing, the floor built from the plan and the items files; a job that leaves a room kept until a regeneration,
+  a room held, a system waiting to enter one or a notice writes none and removes the one there; `docs/i4/step-6b.md`),
+  from which the floor-build job makes the floor
   without the catalog: its static part (`worldplan show --floor`'s
   scene: its rooms and its derived hall), each collection room's collection on a static group of its own
   (every `collection/<room id>/...` registry key carrying the room id, so that two rooms of one family sample their own
@@ -215,13 +220,17 @@ build/rvdata`).
   system only when `--start-room` gives one); the empty shell with a notice when the media root is out
   of reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
   command has it). A system systems.json does not name is classified by the catalog's platform tags of it, as
-  `worldplan` does. With a plan stored, its start floor shows at the first frame (covers and spines from the cache by
-  the rooms' items, its CRTs' games from them under the media root when it can be read) before the building job runs,
-  then is reconciled with its result room by room (I4 step 6b: each room by its content digest; an unchanged room keeps
-  its collection and pictures, nothing uploaded again; a room whose items changed has them applied in place; a change
-  of the floor's static part commits the floor again with every room's pictures kept and the walker, or a Focus or
-  Inspect pose, kept in the frame of the area that holds it, moved with it; the items compared in their rooms' own
-  frames, so a room that grew moves none). A
+  `worldplan` does. The systems left out of the building for want of a room (excluded) are named in one log line per
+  building job. With a plan stored, its start floor shows at the first frame (covers and spines from the cache by
+  the rooms' items, its CRTs' games from them under the media root when it can be read, each game's last play the
+  catalog's play sessions now, so that a CRT starts on the game the building's result chooses) before the building job
+  runs, then is reconciled with its result room by room (I4 step 6b: each room by its content digest; at the start
+  every room's covers are served again from the cache to check their sources, the media root known now, nothing
+  uploaded over a picture that showed; a live update leaves an unchanged room's collection and pictures as they are,
+  its items taken over as they show; a room whose items changed has them applied in place; a change of the floor's
+  static part commits the floor again with every room's pictures kept and the walker kept in the frame of the area that
+  holds it, moved with it; either ends a Focus or Inspect, the walker keeping the pose it had; the items compared in
+  their rooms' own frames, so a room that grew moves none). A
   manifest missing from the asset root falls back to its family's prefab, warned once per run. Covers come nearest
   first (the hovered item, the view by projected size, the rest by distance); the hovered item's front shows its hero
   texture (its cover at its label's shape, up to 1,024 px on the long side and 1,024 x 752 pixels, 8 kept); nothing is
