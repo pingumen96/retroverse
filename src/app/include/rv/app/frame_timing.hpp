@@ -28,6 +28,7 @@ inline constexpr std::string_view kPhaseRefresh = "refresh";     ///< the catalo
 inline constexpr std::string_view kPhaseCoverLoad = "coverLoad"; ///< loading the room's covers (I3 step 12)
 inline constexpr std::string_view kPhaseAnimation = "animation"; ///< a pickup or inspection animation (I3 step 13a)
 inline constexpr std::string_view kPhaseBenchmark = "benchmark"; ///< the benchmark path (I3 step 17b)
+inline constexpr std::string_view kPhaseScreenBind = "screenBind"; ///< a rebind of the hero CRT (I4 step 6b)
 
 /// The GPU passes FrameTiming summarizes (GpuPassRecord's names, in its order; the last one is the sum of the others).
 inline constexpr std::array<std::string_view, 7> kGpuPassNames{"shadow", "depth",   "ssao", "scene",

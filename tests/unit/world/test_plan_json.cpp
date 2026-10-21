@@ -370,6 +370,12 @@ TEST_CASE("world/plan_json: a room's content digest covers its record and its el
     CHECK(*rv::world::roomContentDigest(building, room) == *digest);
     CHECK(*rv::world::roomContentDigest(building, other.id) != *digest);
     CHECK(rv::world::roomContentDigest(plan, other.id).error().code == rv::ErrorCode::NotFound);
+    // Every room's at once: the same digests.
+    const auto all = rv::world::roomContentDigests(building);
+    REQUIRE(all.has_value());
+    CHECK(all->size() == 2);
+    CHECK(all->at(room) == *digest);
+    CHECK(all->at(other.id) == *rv::world::roomContentDigest(building, other.id));
 }
 
 TEST_CASE("world/plan_json: a large plan round-trips byte for byte", "[world][plan_json]") {

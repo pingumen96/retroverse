@@ -468,7 +468,11 @@ Status CollectionInstance::layerResident(const gl::LayerUpload& upload) {
         return ok();
     }
     scene::InstanceAttributes attributes = m_attributes[*source];
-    (front ? attributes.frontLayer : attributes.spineLayer) = upload.layer;
+    std::uint32_t& named = front ? attributes.frontLayer : attributes.spineLayer;
+    // A record that names a layer already shows its item's picture: this one replaces it (I4 step 6b's count).
+    ++m_uploads;
+    m_reuploads += named != gl::kPendingLayer ? 1 : 0;
+    named = upload.layer;
     return writeRecord(*source, attributes);
 }
 

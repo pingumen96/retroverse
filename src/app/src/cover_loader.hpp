@@ -102,8 +102,11 @@ public:
     /// Takes over what `previous` (a loader of the same collection, or of the collection before a live update, now
     /// replaced) showed: each item of a game that it had made is served again as a retry is, its pictures uploaded
     /// only when they changed (I3 step 10c's textures reconciliation serves the stored room's covers again with the
-    /// media root; step 15b's live update the room's items that stood, matched by game).
-    void adoptShown(const CoverLoader& previous);
+    /// media root; step 15b's live update the room's items that stood, matched by game). An item asked as it was, whose
+    /// pictures `collections` (by group) show already and whose front needs no new check (it came from its cover or a
+    /// label for none, or the media root is as it was) is done at once: nothing served or uploaded again (I4 step 6b:
+    /// an unchanged room's items).
+    void adoptShown(const CoverLoader& previous, std::span<CollectionInstance* const> collections = {});
     /// Checks `mediaRoot` on a worker and, when it can be read, serves again every item whose front did not come from
     /// its cover (after the catalog's refresh: ADR-0011 §6). Nothing while a check is on its way.
     void retry(std::filesystem::path mediaRoot);
@@ -182,6 +185,7 @@ private:
     std::uint64_t m_retriedChanged = 0;
     std::uint64_t m_adopted = 0;
     std::uint64_t m_adoptedChanged = 0;
+    std::uint64_t m_adoptedResident = 0;
     /// The first view's items (and their count per group), and when they were all resident (the arrival record).
     std::optional<std::size_t> m_viewItems;
     std::vector<std::uint64_t> m_viewItemsByGroup;

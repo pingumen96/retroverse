@@ -36,6 +36,45 @@ Status readString(const Json& object, std::string_view key, std::string_view con
     return ok();
 }
 
+/// An item's "screen" object (RoomItemScreen).
+Expected<RoomItemScreen> parseScreen(const Json& object, std::string_view context, const std::string& pointer) {
+    if (!object.is_object()) {
+        return parseError(context, pointer, "expected an object");
+    }
+    RoomItemScreen screen;
+    for (const auto& [key, out] : {std::pair<std::string_view, std::string*>{"video", &screen.video},
+                                   std::pair<std::string_view, std::string*>{"screenshot", &screen.screenshot},
+                                   std::pair<std::string_view, std::string*>{"titleScreen", &screen.titleScreen},
+                                   std::pair<std::string_view, std::string*>{"sortKey", &screen.sortKey}}) {
+        if (Status read = readString(object, key, context, pointer, *out); !read) {
+            return propagate(read.error());
+        }
+    }
+    const auto favorite = object.find("favorite");
+    if (favorite == object.end() || !favorite->is_boolean()) {
+        return parseError(context, pointer + "/favorite", "expected true or false");
+    }
+    screen.favorite = favorite->get<bool>();
+    const auto playCount = object.find("playCount");
+    if (playCount == object.end() || !playCount->is_number_unsigned()) {
+        return parseError(context, pointer + "/playCount", "expected an integer of at least 0");
+    }
+    screen.playCount = playCount->get<std::uint64_t>();
+    if (const auto lastPlayed = object.find("lastPlayed"); lastPlayed != object.end()) {
+        if (!lastPlayed->is_number_integer()) {
+            return parseError(context, pointer + "/lastPlayed", "expected an integer");
+        }
+        screen.lastPlayed = lastPlayed->get<std::int64_t>();
+    }
+    if (const auto rating = object.find("rating"); rating != object.end()) {
+        if (!rating->is_number_integer() || rating->get<std::int64_t>() < 0 || rating->get<std::int64_t>() > 10) {
+            return parseError(context, pointer + "/rating", "expected an integer from 0 to 10");
+        }
+        screen.ratingTenths = static_cast<int>(rating->get<std::int64_t>());
+    }
+    return screen;
+}
+
 } // namespace
 
 const RoomItemText* RoomItems::find(const catalog::GameId& game) const noexcept {
@@ -98,12 +137,29 @@ std::filesystem::path roomItemsFile(const std::filesystem::path& cacheDir, const
 Json roomItemsToJson(const RoomItems& items) {
     Json list = Json::array();
     for (const RoomItemText& item : items.items) {
-        list.push_back(Json{{"game", item.game.toString()},
-                            {"title", item.title},
-                            {"fallbackTitle", item.fallbackTitle},
-                            {"year", item.year},
-                            {"coverPath", item.coverPath},
-                            {"available", item.available}});
+        Json entry{{"game", item.game.toString()},
+                   {"title", item.title},
+                   {"fallbackTitle", item.fallbackTitle},
+                   {"year", item.year},
+                   {"coverPath", item.coverPath},
+                   {"available", item.available}};
+        if (item.screen) {
+            const RoomItemScreen& screen = *item.screen;
+            Json data{{"video", screen.video},
+                      {"screenshot", screen.screenshot},
+                      {"titleScreen", screen.titleScreen},
+                      {"sortKey", screen.sortKey},
+                      {"favorite", screen.favorite},
+                      {"playCount", screen.playCount}};
+            if (screen.lastPlayed) {
+                data["lastPlayed"] = *screen.lastPlayed;
+            }
+            if (screen.ratingTenths) {
+                data["rating"] = *screen.ratingTenths;
+            }
+            entry["screen"] = std::move(data);
+        }
+        list.push_back(std::move(entry));
     }
     Json document{
         {"schemaVersion", kRoomItemsSchemaVersion}, {"systemName", items.systemName}, {"items", std::move(list)}};
@@ -122,12 +178,14 @@ Expected<RoomItems> parseRoomItems(const Json& document, std::string_view contex
     if (version == document.end() || !version->is_number_integer()) {
         return parseError(context, "/schemaVersion", "expected an integer");
     }
-    if (version->get<std::int64_t>() != kRoomItemsSchemaVersion) {
-        return makeError(
-            ErrorCode::Unsupported,
-            fmt::format("schema version {} is not {}", version->get<std::int64_t>(), kRoomItemsSchemaVersion),
-            fmt::format("{}:/schemaVersion", context));
+    if (version->get<std::int64_t>() < kOldestRoomItemsSchemaVersion ||
+        version->get<std::int64_t>() > kRoomItemsSchemaVersion) {
+        return makeError(ErrorCode::Unsupported,
+                         fmt::format("schema version {} is not {} to {}", version->get<std::int64_t>(),
+                                     kOldestRoomItemsSchemaVersion, kRoomItemsSchemaVersion),
+                         fmt::format("{}:/schemaVersion", context));
     }
+    const bool withScreens = version->get<std::int64_t>() >= 2;
     RoomItems items;
     if (Status read = readString(document, "systemName", context, "", items.systemName); !read) {
         return propagate(read.error());
@@ -175,6 +233,13 @@ Expected<RoomItems> parseRoomItems(const Json& document, std::string_view contex
             return parseError(context, pointer + "/available", "expected true or false");
         }
         item.available = available->get<bool>();
+        if (const auto screen = entry.find("screen"); withScreens && screen != entry.end()) {
+            auto read = parseScreen(*screen, context, pointer + "/screen");
+            if (!read) {
+                return propagate(read.error());
+            }
+            item.screen = std::move(*read);
+        }
         if (!items.items.empty() && !(items.items.back().game < item.game)) {
             return parseError(context, pointer + "/game", "the games are not in GameId order, each once");
         }

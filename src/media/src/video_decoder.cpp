@@ -1201,8 +1201,20 @@ std::uint32_t VideoDecoder::seek(double seconds) {
     return generation;
 }
 
+namespace {
+
+/// waitForStoppedDecoders()'s calls (stoppedDecoderWaits()).
+std::atomic<std::uint64_t> g_stoppedDecoderWaits{0};
+
+} // namespace
+
 void waitForStoppedDecoders() {
+    g_stoppedDecoderWaits.fetch_add(1, std::memory_order_relaxed);
     stoppedThreads().joinAll();
+}
+
+std::uint64_t stoppedDecoderWaits() noexcept {
+    return g_stoppedDecoderWaits.load(std::memory_order_relaxed);
 }
 
 Expected<StreamInfo> probeVideo(const std::filesystem::path& path, int maxHeight) {

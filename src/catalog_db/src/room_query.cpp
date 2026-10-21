@@ -141,8 +141,11 @@ Expected<RoomEntry> readEntry(const Statement& row) {
 }
 
 /// The statements of the read, `?1` the system's name. rv_libraries drives each join, so that idx_games is read through
-/// idx_games_system (library, system) for each library.
-constexpr std::string_view kSystemGames = "rv_libraries AS l JOIN idx_games AS g ON g.library = l.id AND g.system = ?1";
+/// idx_games_system (library, system) for each library: a CROSS JOIN, which SQLite never reorders (I4 step 6b: with a
+/// plain JOIN its planner, without statistics, scanned the whole of idx_games, or of idx_games_system, for every
+/// system, about 70 ms a system on a catalog of 100,000 entries, whatever the system held).
+constexpr std::string_view kSystemGames =
+    "rv_libraries AS l CROSS JOIN idx_games AS g ON g.library = l.id AND g.system = ?1";
 
 std::string entriesSql() {
     return fmt::format("SELECT g.id, g.relative_path, g.is_directory, g.state, g.availability, g.title, g.sort_key, "
@@ -155,8 +158,9 @@ std::string mediaSql() {
 }
 
 std::string sessionsSql() {
-    return fmt::format("SELECT s.game, count(*), max(s.started_at) FROM {} JOIN rv_play_sessions AS s ON s.game = g.id "
-                       "WHERE {} GROUP BY s.game",
+    // The system's games drive the sessions too, each looked up through rv_play_sessions_game.
+    return fmt::format("SELECT s.game, count(*), max(s.started_at) FROM {} CROSS JOIN rv_play_sessions AS s ON s.game "
+                       "= g.id WHERE {} GROUP BY s.game",
                        kSystemGames, kStartedSessions);
 }
 

@@ -331,6 +331,36 @@ TEST_CASE("app/cover_requests: a done item can be queued again, its first arriva
     CHECK(givenBack.arrivals().empty());
 }
 
+TEST_CASE("app/cover_requests: items taken over as they show are done at once, without an arrival; the others are "
+          "handed out as before",
+          "[app][cover_requests]") {
+    // I4 step 6b: a cover loader that replaces another (a floor committed again, a live update) adopts the items whose
+    // pictures show already in their collection: CoverSchedule::adoptDone(), nothing made or uploaded again.
+    CoverSchedule schedule({box({0, 0, -1}), box({0, 0, -2}), box({0, 0, -3}), box({0, 0, -4})});
+    schedule.setView(viewFrom());
+    REQUIRE(schedule.takeToMake(1) == std::vector<std::size_t>{0}); // item 0 is Making: not adopted
+    schedule.adoptDone(std::vector<std::size_t>{0, 1, 3, 3, 9}); // a repeat and an index past the items: ignored
+    CHECK(schedule.stage(0) == CoverSchedule::Stage::Making);
+    CHECK(schedule.stage(1) == CoverSchedule::Stage::Done);
+    CHECK(schedule.stage(2) == CoverSchedule::Stage::Waiting);
+    CHECK(schedule.stage(3) == CoverSchedule::Stage::Done);
+    CHECK(schedule.doneCount() == 2);
+    CHECK(schedule.arrivals().empty()); // shown before: no arrival of this schedule
+    CHECK_FALSE(schedule.requeue(0));
+    // Only the others are handed out; an adopted item can be queued again (a retry after a refresh).
+    CHECK(schedule.takeToMake(4) == std::vector<std::size_t>{2});
+    arrive(schedule, 0);
+    arrive(schedule, 2);
+    CHECK(schedule.done());
+    CHECK(schedule.viewDone());
+    CHECK(schedule.arrivals().size() == 2);
+    CHECK(schedule.requeue(1));
+    CHECK(schedule.takeToMake(4) == std::vector<std::size_t>{1});
+    CHECK(schedule.made(1, 0));
+    CHECK(schedule.done());
+    CHECK(schedule.arrivals().size() == 2); // shown before the schedule: never an arrival of it
+}
+
 TEST_CASE("app/cover_requests: the hero set keeps 8, the least recently used out first, the shown one pinned",
           "[app][cover_requests]") {
     HeroLru lru;

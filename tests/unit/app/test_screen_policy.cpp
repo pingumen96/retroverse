@@ -321,3 +321,27 @@ TEST_CASE("app/screen_policy: new games replace the start choice until something
     CHECK(rv::app::toString(ScreenPicture::TitleScreen) == "title-screen");
     CHECK(rv::app::toString(ScreenPhase::Launched) == "launched");
 }
+
+TEST_CASE("app/screen_policy: another screen's games restart the choice, a selection forgotten, the phase kept",
+          "[app][screen]") {
+    ScreenPolicy policy({game("a", "a.mp4"), game("b", "b.mp4", 40)});
+    REQUIRE(policy.targetId() == "b");
+    static_cast<void>(hoverFor(policy, "a", 20, 0.0));
+    REQUIRE(policy.selected());
+    const std::uint64_t generation = policy.targetGeneration();
+    // I4 step 6b: the CRT of another room, its own games: its start choice, nothing selected.
+    policy.restart({game("c", "c.mp4"), game("d", "d.mp4", 90)});
+    CHECK(policy.targetId() == "d");
+    CHECK_FALSE(policy.selected());
+    CHECK(policy.targetGeneration() == generation + 1);
+    CHECK(policy.picture() == ScreenPicture::IdlePattern); // its picture afresh
+    // A room without games: the idle pattern.
+    policy.restart({});
+    CHECK(policy.targetId().empty());
+    CHECK(policy.picture() == ScreenPicture::IdlePattern);
+    // Quitting stays quit.
+    policy.quit();
+    policy.restart({game("c", "c.mp4")});
+    CHECK(policy.phase() == ScreenPhase::Quit);
+    CHECK_FALSE(policy.wantsDecoder());
+}

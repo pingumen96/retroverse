@@ -11,8 +11,10 @@
 // rooms (the snes room updated, the other as it stood), one plan for the app and retroverse-cli's catalog commands, a
 // room kept as it is with the regeneration's notice. I4 step 5a: the start room's frame (its scene numbers those of its
 // standalone scene), a start room the building lacks, the building fixture's floors; at the merge with step 4 its shared
-// and arcade rooms (their sections' covers and CRT games, the update by sections, a room held). On the snes-room fixture
-// (tests/fixtures/esde/snes-room: 50 titles with covers) and the building fixture imported into a user data directory.
+// and arcade rooms (their sections' covers and CRT games, the update by sections, a room held). I4 step 6b: the new
+// systems entered by the app's job, the building stamp (an unchanged start plans nothing; none while a room waits for
+// an update), the preview's CRT games. On the snes-room fixture (tests/fixtures/esde/snes-room: 50 titles with covers)
+// and the building fixture imported into a user data directory.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -37,7 +39,9 @@
 #include <rv/app/world_reconcile.hpp>
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
+#include <rv/catalog_db/catalog_stamp.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
+#include <rv/catalog_db/session_store.hpp>
 #include <rv/cli/command.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/canonical_json.hpp>
@@ -698,15 +702,18 @@ TEST_CASE("app/world_flow: the stored plan read, the preview first, the building
     CHECK(roomOf(*preview).layout.items.size() == 50);
     CHECK(roomOf(*preview).covers == roomOf(*built->build).covers); // the room's items the first build kept
     CHECK_FALSE(preview->mediaRoot.has_value());
-    CHECK(preview->screenGames.empty());
+    // Its CRT's games from the room's items, under the library's media root (I4 step 6b).
+    CHECK(preview->screenGames.size() == 50);
     second.update(catalog);
     CHECK(second.phase() == rv::app::WorldPhase::Building);
     const auto again = runFlow(second, catalog);
     REQUIRE(again.has_value());
     REQUIRE(again->build.has_value());
     CHECK(again->build->outcome == WorldOutcome::Unchanged);
+    CHECK(again->build->skipped); // I4 step 6b: the building stamp of the first building
     CHECK_FALSE(again->build->preview);
-    CHECK(again->build->screenGames.size() == 53);
+    CHECK(again->build->screenGames.size() == 50);
+    CHECK(again->build->screenGames == preview->screenGames);
     CHECK(second.times().previewMs.has_value());
     CHECK(second.times().previewJobMs.has_value());
     const rv::app::ReconcilePlan reconciled = rv::app::planReconciliation(*preview, *again->build);
@@ -746,8 +753,15 @@ TEST_CASE("app/world_build: the rooms' items kept for the next start, written on
     REQUIRE(kept.has_value());
     CHECK(kept->systemName == "Lumen 16 Home System");
     CHECK(kept->items.size() == 50);
-    // The items the floor's covers were made from, with the system's platform tags.
-    CHECK(kept->items == rv::app::roomItemsOf(roomOf(first).covers, roomOf(first).layout).items);
+    // The items the floor's covers were made from, with the system's platform tags, and their CRT's data (I4 step 6b).
+    std::vector<rv::app::RoomItemText> withoutScreens = kept->items;
+    std::size_t screens = 0;
+    for (rv::app::RoomItemText& item : withoutScreens) {
+        screens += item.screen ? 1 : 0;
+        item.screen.reset();
+    }
+    CHECK(screens == 50);
+    CHECK(withoutScreens == rv::app::roomItemsOf(roomOf(first).covers, roomOf(first).layout).items);
     CHECK(kept->platforms == std::vector<std::string>{"snes"});
     const std::string text = rv::core::readTextFile(items).value();
     // Only the catalog's text and the covers' paths relative to the media root: no absolute path.
@@ -778,12 +792,24 @@ TEST_CASE("app/world_build: the rooms' items kept for the next start, written on
           rv::world::collectionLayoutToJson(roomOf(second).layout));
     CHECK(roomOf(preview).covers == roomOf(second).covers);
     CHECK_FALSE(preview.mediaRoot.has_value());
-    CHECK(preview.screenGames.empty());
+    CHECK(preview.screenGames.empty()); // no media root for the CRT's games
     CHECK(preview.objectFallbacks.empty());
     const rv::app::ReconcilePlan unchanged = rv::app::planReconciliation(preview, second);
     CHECK(unchanged.kind == rv::app::Reconciliation::Textures);
     CHECK(unchanged.difference == rv::app::LayoutDifference{50, 0, 0, 0, 0});
     CHECK(unchanged.reloadCovers);
+    // With the media root for the CRT (I4 step 6b), the preview's CRT games are the building's, from the items alone;
+    // its covers still come from the cache alone.
+    REQUIRE(second.mediaRoot.has_value());
+    CHECK(rv::app::readableMediaRoot(rv::test::fixtureLibrary(imported.fixture)) == second.mediaRoot);
+    const WorldBuild withScreen =
+        rv::app::previewWorld(worldPathsOf(imported), input.library, *stored, kSnesRoom, second.mediaRoot);
+    CHECK_FALSE(withScreen.mediaRoot.has_value());
+    CHECK(withScreen.screenGames.size() == 50);
+    CHECK(withScreen.screenGames == second.screenGames);
+    CHECK(roomOf(withScreen).screenGames == roomOf(second).screenGames);
+    CHECK(roomOf(withScreen).contentDigest == roomOf(second).contentDigest);
+    CHECK(roomOf(withScreen).contentDigest == rv::world::roomContentDigest(*second.plan, kSnesRoom).value());
 
     // Without the items (a cleared cache): the same floor, its items pending (no cover request), none flagged.
     REQUIRE(fs::remove(items));
@@ -870,6 +896,112 @@ TEST_CASE("app/world_build: a system's items hold the placements of every room t
     CHECK(items.find(goneOther) == nullptr);
 }
 
+TEST_CASE("app/world_build: an unchanged start plans nothing (the building stamp); whatever a snapshot or the world's "
+          "inputs could change plans again",
+          "[app][world_build]") {
+    // I4 step 6b: the building job's shortcut. A first building writes its stamp beside the rooms' items.
+    const ImportedFixture imported("world-build-stamp", true, "esde/snes-room");
+    const rv::app::WorldPaths paths = worldPathsOf(imported);
+    const rv::catalog::LibraryProfile profile = rv::test::fixtureLibrary(imported.fixture);
+    const WorldBuild first = rv::app::buildWorld(inputOf(imported), rv::core::JobContext{});
+    REQUIRE(first.outcome == WorldOutcome::Generated);
+    const fs::path stampFile = rv::app::buildingStampFile(paths.cacheDir, profile.id);
+    const auto stamp = rv::app::readBuildingStamp(stampFile);
+    REQUIRE(stamp.has_value());
+    CHECK(stamp->planDigest == first.planDigest);
+    CHECK(rv::world::isSha256Hex(stamp->catalog));
+    CHECK(stamp->inputs == rv::app::worldInputsDigest(paths, profile.id, *first.mediaRoot));
+    CHECK(stamp->softFindings == first.softFindings);
+    const auto catalogStampNow = [&] {
+        const auto reader = readerOf(imported);
+        auto read = rv::catalog_db::catalogStamp(reader->query->connection(), profile.id);
+        REQUIRE(read.has_value());
+        return *read;
+    };
+    const auto stored = [&] {
+        auto read = rv::world::readStoredPlan(planFileOf(imported));
+        REQUIRE(read.has_value());
+        return *read;
+    };
+
+    // Nothing changed: the stored plan as it is, without a snapshot; its floor built from the items files is the
+    // building's, CRT games included.
+    std::optional<rv::app::BuildingResult> unchanged =
+        rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom);
+    REQUIRE(unchanged.has_value());
+    CHECK(unchanged->build.outcome == WorldOutcome::Unchanged);
+    CHECK(unchanged->build.skipped);
+    CHECK_FALSE(unchanged->build.changes.has_value());
+    CHECK(unchanged->build.planDigest == first.planDigest);
+    CHECK(unchanged->build.softFindings == first.softFindings); // as the plan's validation found them
+    CHECK(unchanged->sources.mediaRoot == first.mediaRoot);
+    rv::app::buildFloor(paths, unchanged->build, unchanged->sources);
+    REQUIRE(unchanged->build.scene.has_value());
+    CHECK(unchanged->build.sceneDigest == first.sceneDigest);
+    CHECK(roomOf(unchanged->build).covers == roomOf(first).covers);
+    CHECK(unchanged->build.screenGames == first.screenGames);
+    CHECK(unchanged->build.mediaRoot == first.mediaRoot);
+
+    // A play session that counts (roomEntries' rule): the catalog's stamp moves.
+    const std::string before = catalogStampNow();
+    {
+        auto database = imported.openDatabase();
+        auto store = rv::catalog_db::SessionStore::open(database.writer()).value();
+        rv::catalog::PlaySession session;
+        session.game = first.plan->placements.front().game;
+        session.started = std::chrono::system_clock::now();
+        REQUIRE(store->insertSession(session).has_value());
+    }
+    CHECK(catalogStampNow() != before);
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    // The whole job then runs (no placement moved; the plan's inputDigest records the selections' play counts, the
+    // items their last play) and stamps what it read.
+    const WorldBuild played = rv::app::buildWorld(inputOf(imported), rv::core::JobContext{});
+    CHECK(played.outcome == WorldOutcome::Updated);
+    CHECK(played.plan->placements == first.plan->placements);
+    CHECK_FALSE(played.skipped);
+    CHECK(played.itemsWritten);
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+
+    // An import, even one that changes nothing: another catalog.
+    imported.importLibrary();
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    CHECK_FALSE(rv::app::buildWorld(inputOf(imported), rv::core::JobContext{}).skipped);
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+
+    // The world's configuration changed (world.json): the world's inputs.
+    REQUIRE(rv::core::writeTextFileAtomic(imported.paths.configDir() / "world.json", "{}\n").has_value());
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    static_cast<void>(rv::app::buildWorld(inputOf(imported), rv::core::JobContext{}));
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+
+    // A room's items file gone, the plan file another, the media root out of reach, no stamp, another stamp schema.
+    const fs::path items = rv::app::roomItemsFile(paths.cacheDir, profile.id, kSnes);
+    const std::string itemsText = rv::core::readTextFile(items).value();
+    REQUIRE(fs::remove(items));
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(items, itemsText).has_value());
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    rv::world::StoredPlan other = stored();
+    other.digest = std::string(64, '0');
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, other, catalogStampNow(), kSnesRoom).has_value());
+    {
+        const MediaAway away(imported);
+        CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    }
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), std::string(), kSnesRoom).has_value());
+    const std::string stampText = rv::core::readTextFile(stampFile).value();
+    REQUIRE(rv::core::writeTextFileAtomic(stampFile, "{\"schemaVersion\": 1}\n").has_value());
+    CHECK(rv::app::readBuildingStamp(stampFile).error().code == rv::ErrorCode::Unsupported);
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    REQUIRE(fs::remove(stampFile));
+    CHECK(rv::app::readBuildingStamp(stampFile).error().code == rv::ErrorCode::NotFound);
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    // The stamp is written only when it changes.
+    REQUIRE(rv::core::writeTextFileAtomic(stampFile, stampText).has_value());
+    CHECK_FALSE(rv::app::writeBuildingStamp(stampFile, rv::app::readBuildingStamp(stampFile).value()).value());
+}
+
 TEST_CASE("app/world_build: a game added between two starts: the stored floor previewed, then rebuilt, nothing moved",
           "[app][world_build]") {
     const ImportedFixture imported("world-build-added", true, "esde/snes-room");
@@ -905,7 +1037,7 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     REQUIRE(build.plan.has_value());
     RoomSnapshotResult snapshot = snapshotOf(imported);
     const rv::world::CollectionLayout& layout = roomOf(build).layout;
-    // The build's games are those of the start room's snapshot.
+    // The build's games (from the room's items) are those of the start room's snapshot.
     CHECK(build.screenGames == rv::app::roomScreenGames(*build.plan, layout, snapshot));
     const auto titleOf = [&](const std::string& id) {
         for (const rv::catalog::RoomEntry& entry : snapshot.snapshot.entries) {
@@ -916,22 +1048,14 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
         return std::string();
     };
     const std::vector<rv::app::ScreenGame>& games = build.screenGames;
-    // Every game with a video, a screenshot, a title screen or a cover (the 50 placed, the two other releases, the one
-    // without a cover); the hacks have no media.
-    CHECK(games.size() == 53);
-    std::size_t candidates = 0;
-    for (std::size_t index = 0; index < games.size(); ++index) {
-        const rv::app::ScreenGame& game = games[index];
-        const auto* placed = layout.findGame(rv::catalog::GameId::parse(game.id).value());
-        CHECK(game.startCandidate == (placed != nullptr));
-        // The placed games first.
-        if (game.startCandidate) {
-            CHECK(index == candidates);
-            ++candidates;
-        }
+    // Every placed game, each with a video, a screenshot, a title screen or a cover (ADR-0013 §9: the CRT plays the
+    // games that stand in its room; the two other releases and the one without a cover are not placed).
+    CHECK(games.size() == 50);
+    for (const rv::app::ScreenGame& game : games) {
+        CHECK(layout.findGame(rv::catalog::GameId::parse(game.id).value()) != nullptr);
+        CHECK(game.startCandidate);
         CHECK_FALSE(game.lastPlayed.has_value()); // the fixture has no session of Retroverse
     }
-    CHECK(candidates == 50);
     // Never played: the first featured title with a video, the first by priority (a favourite, 42 plays).
     const std::optional<std::size_t> start = rv::app::chooseStartGame(games);
     REQUIRE(start.has_value());
@@ -941,13 +1065,9 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     CHECK_FALSE(games[*start].media.screenshot.empty());
     CHECK_FALSE(games[*start].media.titleScreen.empty());
     CHECK_FALSE(games[*start].media.cover.empty());
-    // The game without a cover is no start candidate, though it has a clip: played when selected.
-    const auto thistle = std::find_if(games.begin(), games.end(), [&](const rv::app::ScreenGame& game) {
-        return titleOf(game.id) == "Thistle Trellis";
-    });
-    REQUIRE(thistle != games.end());
-    CHECK_FALSE(thistle->startCandidate);
-    CHECK_FALSE(thistle->media.video.empty());
+    // The game without a cover is not placed: the CRT never plays it, though it has a clip.
+    CHECK(std::none_of(games.begin(), games.end(),
+                       [&](const rv::app::ScreenGame& game) { return titleOf(game.id) == "Thistle Trellis"; }));
 
     // The most recently played placed game with a video, by Retroverse's sessions; not an unplaced one.
     const auto played = [&](std::string_view title, int hour) {
@@ -964,6 +1084,13 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     const std::optional<std::size_t> recent = rv::app::chooseStartGame(again);
     REQUIRE(recent.has_value());
     CHECK(titleOf(again[*recent].id) == "Juniper Jamboree");
+    // The same from the items the building job keeps (the CRT's data of each placed game, its last play included).
+    const rv::app::RoomItems items = rv::app::snapshotRoomItems(snapshot, *build.plan);
+    const std::vector<rv::app::ScreenGame> fromItems = rv::app::roomScreenGames(
+        layout, [&](const rv::catalog::GameId& game) { return items.find(game); }, *snapshot.mediaRoot);
+    CHECK(fromItems == again);
+    // The items' text round-trips (canonical JSON).
+    CHECK(rv::app::parseRoomItems(rv::app::roomItemsToJson(items), "items").value() == items);
 
     // The media unknown: nothing to play (the root out of reach is never read for them).
     snapshot.snapshot.mediaKnown = false;
@@ -1037,13 +1164,13 @@ TEST_CASE("app/room_screen: a shared room's CRT plays its sections' placed games
 
     const RoomSnapshotResult* const both[] = {&aaa, &bbb};
     const std::vector<rv::app::ScreenGame> games = rv::app::roomScreenGames(plan, layout, both);
-    // The featured items by priority (the favourite, then by sort key), the band's, then the unplaced game.
-    CHECK(idsOf(games) == std::vector<std::string>{pear.toString(), mango.toString(), zebra.toString(),
-                                                   apple.toString(), spare.toString()});
-    REQUIRE(games.size() == 5);
-    for (std::size_t index = 0; index < games.size(); ++index) {
-        INFO(games[index].id);
-        CHECK(games[index].startCandidate == (index < 4));
+    // The featured items by priority (the favourite, then by sort key), then the band's; never the unplaced game
+    // (ADR-0013 §9: the CRT plays the games that stand in its room).
+    CHECK(idsOf(games) ==
+          std::vector<std::string>{pear.toString(), mango.toString(), zebra.toString(), apple.toString()});
+    REQUIRE(games.size() == 4);
+    for (const rv::app::ScreenGame& screen : games) {
+        CHECK(screen.startCandidate);
     }
     CHECK(games[0].media.video.extension() == ".mp4");
     CHECK(games[0].media.cover.filename() == "pear.png");
@@ -1058,7 +1185,7 @@ TEST_CASE("app/room_screen: a shared room's CRT plays its sections' placed games
     // A section whose media are unknown gives none of its games; the other's keep their order.
     bbb.snapshot.mediaKnown = false;
     const std::vector<rv::app::ScreenGame> known = rv::app::roomScreenGames(plan, layout, both);
-    CHECK(idsOf(known) == std::vector<std::string>{mango.toString(), zebra.toString(), spare.toString()});
+    CHECK(idsOf(known) == std::vector<std::string>{mango.toString(), zebra.toString()});
     const std::optional<std::size_t> knownStart = rv::app::chooseStartGame(known);
     REQUIRE(knownStart.has_value());
     CHECK(known[*knownStart].id == mango.toString());
@@ -1379,10 +1506,170 @@ TEST_CASE("app/world_build: a room kept as it is (its prefab levels changed): sh
     CHECK(kept.plan->unplaced == first.plan->unplaced);
     CHECK(roomOf(kept).layout.items.size() == 50);
     CHECK(log.count("is kept as it is until 'retroverse-cli worldplan generate --replace'") == 1);
+    // No building stamp while a room waits for its regeneration (I4 step 6b): the first build's is removed, so that
+    // every next start runs the job and says so.
+    CHECK_FALSE(fs::exists(rv::app::buildingStampFile(input.paths.cacheDir, input.library)));
+    CHECK(log.count("the building stamp is removed") == 1);
     // The next start: the same notice, nothing written.
     const WorldBuild again = rv::app::buildWorld(input, rv::core::JobContext{});
     CHECK(again.notice == rv::app::world_notice::kRegeneration);
     CHECK_FALSE(again.written);
+    CHECK_FALSE(again.skipped);
+    CHECK_FALSE(fs::exists(rv::app::buildingStampFile(input.paths.cacheDir, input.library)));
+}
+
+TEST_CASE("app/world_flow: a start room kept until a regeneration shows its notice at every start, whichever room the "
+          "last start was in",
+          "[app][world_build]") {
+    // I4 step 6b's shortcut never hides a room kept as it is: its job writes no building stamp, so the next starts run
+    // the whole job again, its notice and warnings with it. The app's flow, three starts after a first building.
+    const ImportedFixture imported("world-flow-kept", true, "esde/snes-room");
+    rv::core::WorkerPool pool(rv::core::WorkerPoolOptions{2});
+    rv::app::WorldFlow::Options options;
+    options.paths = worldPathsOf(imported);
+    options.startRoom = kSnesRoom;
+    options.writer = "retroverse (test)";
+    FakeCatalog catalog;
+    catalog.state = rv::app::CatalogState::Ready;
+    catalog.reader = readerOf(imported);
+    const fs::path stampFile = rv::app::buildingStampFile(options.paths.cacheDir, catalog.library);
+    {
+        rv::app::WorldFlow first(options, pool);
+        const auto built = runFlow(first, catalog);
+        REQUIRE(built.has_value());
+        REQUIRE(built->build.has_value());
+        CHECK(built->build->outcome == WorldOutcome::Generated);
+        CHECK(fs::exists(stampFile));
+    }
+    // The hero-wall module's manifest edited (an eighth level), in a copy of the assets: room:snes is kept as it is.
+    const fs::path assets = imported.dir.file("assets");
+    fs::copy(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR), assets, fs::copy_options::recursive);
+    const fs::path manifest = rv::assets::prefabManifestPath(assets, "furniture.shelf.hero_module.generic");
+    std::string text = rv::core::readTextFile(manifest).value();
+    const std::string levels = R"("levels": 7)";
+    const std::size_t at = text.find(levels);
+    REQUIRE(at != std::string::npos);
+    text.replace(at, levels.size(), R"("levels": 8)");
+    REQUIRE(rv::core::writeTextFileAtomic(manifest, text).has_value());
+    options.paths.assetRoot = assets;
+    const auto start = [&](std::optional<rv::world::RoomId> room) {
+        options.startRoom = std::move(room);
+        rv::app::WorldFlow flow(options, pool);
+        std::optional<WorldBuild> preview;
+        auto result = runFlow(flow, catalog, &preview);
+        REQUIRE(result.has_value());
+        REQUIRE(result->build.has_value());
+        CHECK(preview.has_value()); // the stored floor first
+        return std::move(*result->build);
+    };
+    for (int run = 0; run < 2; ++run) {
+        INFO("start " << run + 2 << " in room:snes");
+        rv::test::LogCapture log;
+        const WorldBuild build = start(kSnesRoom);
+        CHECK_FALSE(build.skipped);
+        CHECK(build.notice == rv::app::world_notice::kRegeneration);
+        REQUIRE(build.changes.has_value());
+        CHECK(build.changes->keptRooms.size() == 1);
+        CHECK(log.count("is kept as it is until 'retroverse-cli worldplan generate --replace'") == 1);
+        CHECK_FALSE(fs::exists(stampFile));
+    }
+    // A start in the lobby (no notice there: the start room is not the room kept) writes no stamp either: the next start
+    // in room:snes shows the notice again.
+    const WorldBuild lobby = start(std::nullopt);
+    CHECK_FALSE(lobby.skipped);
+    CHECK(lobby.notice.empty());
+    CHECK_FALSE(fs::exists(stampFile));
+    const WorldBuild again = start(kSnesRoom);
+    CHECK_FALSE(again.skipped);
+    CHECK(again.notice == rv::app::world_notice::kRegeneration);
+}
+
+TEST_CASE("app/world_flow: the preview's CRT starts on the game the building chooses, a game played since the items "
+          "were written included",
+          "[app][world_build]") {
+    // ADR-0012 §7, I4 step 6b: the start choice is the most recently played placed game with a clip. The items files
+    // hold each game's last play as their last write saw it; the preview takes the catalog's sessions as they are now
+    // (catalog_db::lastPlaySessions()), so a session recorded after them (a game played, Retroverse quit, started
+    // again) starts the stored floor's CRT on that game, and the building's result never retargets it.
+    const ImportedFixture imported("world-flow-played", true, "esde/snes-room");
+    rv::core::WorkerPool pool(rv::core::WorkerPoolOptions{2});
+    rv::app::WorldFlow::Options options;
+    options.paths = worldPathsOf(imported);
+    options.startRoom = kSnesRoom;
+    options.writer = "retroverse (test)";
+    FakeCatalog catalog;
+    catalog.state = rv::app::CatalogState::Ready;
+    catalog.reader = readerOf(imported);
+    std::vector<rv::app::ScreenGame> games;
+    {
+        rv::app::WorldFlow first(options, pool);
+        const auto built = runFlow(first, catalog);
+        REQUIRE(built.has_value());
+        REQUIRE(built->build.has_value());
+        games = built->build->screenGames;
+    }
+    const std::optional<std::size_t> before = rv::app::chooseStartGame(games);
+    REQUIRE(before.has_value());
+    // Another placed game with a clip, played now (a session that counts).
+    const auto other = std::find_if(games.begin(), games.end(), [&](const rv::app::ScreenGame& game) {
+        return game.id != games[*before].id && rv::app::isPlayableVideoFile(game.media.video);
+    });
+    REQUIRE(other != games.end());
+    const rv::catalog::GameId played = rv::catalog::GameId::parse(other->id).value();
+    const auto startedAt = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+    {
+        auto database = imported.openDatabase();
+        auto store = rv::catalog_db::SessionStore::open(database.writer()).value();
+        rv::catalog::PlaySession session;
+        session.game = played;
+        session.started = startedAt;
+        REQUIRE(store->insertSession(session).has_value());
+    }
+    {
+        const auto reader = readerOf(imported);
+        const auto sessions = rv::catalog_db::lastPlaySessions(reader->query->connection());
+        REQUIRE(sessions.has_value());
+        REQUIRE(sessions->size() == 1);
+        CHECK(sessions->at(played) == startedAt);
+    }
+    // The items files as the first building left them: the game never played there.
+    const fs::path itemsFile = rv::app::roomItemsFile(options.paths.cacheDir, catalog.library, kSnes);
+    const auto items = rv::app::readRoomItems(itemsFile);
+    REQUIRE(items.has_value());
+    REQUIRE(items->find(played) != nullptr);
+    REQUIRE(items->find(played)->screen.has_value());
+    CHECK_FALSE(items->find(played)->screen->lastPlayed.has_value());
+    catalog.reader = readerOf(imported);
+    rv::app::WorldFlow second(options, pool);
+    std::optional<WorldBuild> preview;
+    const auto result = runFlow(second, catalog, &preview);
+    REQUIRE(preview.has_value());
+    REQUIRE(result.has_value());
+    REQUIRE(result->build.has_value());
+    CHECK_FALSE(result->build->skipped); // a session counts: the catalog's stamp moved
+    const std::int64_t seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(startedAt.time_since_epoch()).count();
+    const auto previewedGame =
+        std::find_if(preview->screenGames.begin(), preview->screenGames.end(),
+                     [&](const rv::app::ScreenGame& game) { return game.id == other->id; });
+    REQUIRE(previewedGame != preview->screenGames.end());
+    CHECK(previewedGame->lastPlayed == std::optional<std::int64_t>(seconds)); // the catalog's, not the items'
+    // The building rewrote the items with it.
+    CHECK(rv::app::readRoomItems(itemsFile).value().find(played)->screen->lastPlayed ==
+          std::optional<std::int64_t>(seconds));
+    const std::optional<std::size_t> previewed = rv::app::chooseStartGame(preview->screenGames);
+    const std::optional<std::size_t> reconciled = rv::app::chooseStartGame(result->build->screenGames);
+    REQUIRE(previewed.has_value());
+    REQUIRE(reconciled.has_value());
+    CHECK(preview->screenGames[*previewed].id == other->id);
+    CHECK(result->build->screenGames[*reconciled].id == other->id);
+    // Without the catalog's sessions the preview would have started on the old choice (the items' last plays).
+    for (const rv::app::ScreenGame& game : preview->screenGames) {
+        const auto found = std::find_if(result->build->screenGames.begin(), result->build->screenGames.end(),
+                                        [&](const rv::app::ScreenGame& built) { return built.id == game.id; });
+        REQUIRE(found != result->build->screenGames.end());
+        CHECK(found->lastPlayed == game.lastPlayed);
+    }
 }
 
 TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sections' covers and CRT games, the update "
@@ -1545,10 +1832,11 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     }
 
     // additions/ imported: the shared room updated with both sections' selections (pokemini's 24 new titles in its
-    // section, past 30 titles and sticky), snes's and psx's rooms with theirs, nothing moved; megadrive has no room
-    // yet (I4 step 6a). The CLI's update then finds the app's plan up to date.
+    // section, past 30 titles and sticky), snes's and psx's rooms with theirs (34 titles in all), nothing moved;
+    // megadrive enters the building (below).
     REQUIRE(imported.fixture.applyOverlay("additions").has_value());
     imported.importLibrary();
+    rv::test::LogCapture addedLog;
     const WorldBuild added =
         rv::app::buildWorld(inputOf(imported, buildingSnapshotOf(imported), shared), rv::core::JobContext{});
     INFO(added.reason);
@@ -1557,7 +1845,7 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     REQUIRE(added.changes.has_value());
     REQUIRE(added.plan.has_value());
     CHECK(added.changes->heldRooms.empty());
-    CHECK(added.changes->added.size() == 34);
+    CHECK(added.changes->added.size() == 46); // the 34 titles, and megadrive's 12 in its new section
     for (const rv::world::Placement& placement : first.plan->placements) {
         INFO(placement.game.toString());
         CHECK(std::find(added.plan->placements.begin(), added.plan->placements.end(), placement) !=
@@ -1568,13 +1856,29 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
                                           [&](const rv::world::Room& candidate) { return candidate.id == shared; });
     REQUIRE(sharedAfter != added.plan->rooms.end());
     CHECK(sharedAfter->sections == std::vector<rv::catalog::SystemName>{pocketlab, pokemini});
-    // The CLI's whole update also enters the catalog's new systems (I4 step 6a): megadrive, 12 titles, takes a section
-    // of gen4's new shared room. The app's building job enters new systems in step 6b; until then the CLI finds that
-    // one change and nothing else.
+    // The app's building job enters the catalog's new systems as the CLI's whole update does (I4 steps 6a and 6b):
+    // megadrive, 12 titles, takes a section of gen4's new shared room in the south row; the log says so.
+    const auto megadriveRoom = std::find_if(added.plan->rooms.begin(), added.plan->rooms.end(),
+                                            [](const rv::world::Room& candidate) {
+                                                return candidate.id.toString() == "area:shared:gen4";
+                                            });
+    REQUIRE(megadriveRoom != added.plan->rooms.end());
+    CHECK(megadriveRoom->sections ==
+          std::vector<rv::catalog::SystemName>{rv::catalog::SystemName::parse("megadrive").value()});
+    REQUIRE(added.changes->systemsEntered.size() == 1);
+    CHECK(added.changes->systemsEntered.front().system.str() == "megadrive");
+    CHECK(added.changes->roomsAdded.size() == 1);
+    CHECK(added.changes->systemsWaiting.empty());
+    INFO(addedLog.text());
+    CHECK(addedLog.count("World: megadrive enters the building in area:shared:gen4 (a new room)") == 1);
+    // kodi, excluded (no room), left out with a log line, as `worldplan update` notes it.
+    CHECK(addedLog.count("system(s) of the catalog left out of the building, no room: kodi") == 1);
+    // The CLI's update then finds the app's plan up to date.
+    const std::string addedText = rv::core::readTextFile(planFile).value();
     const CliRun again = runCli(imported, {"worldplan", "update"});
     INFO(again.out);
     INFO(again.err);
     CHECK(again.code == rv::cli::ExitCode::Ok);
-    CHECK(again.out.find("megadrive in area:shared:gen4") != std::string::npos);
-    CHECK(again.out.find("is up to date") == std::string::npos);
+    CHECK(again.out.find("is up to date") != std::string::npos);
+    CHECK(rv::core::readTextFile(planFile).value() == addedText);
 }

@@ -42,21 +42,33 @@ build/rvdata`).
   `collectionPlanning`, `layerUploads`, `videoUpload`; p50, p95, p99, max over the frames each ran in), `gpuMemory` (the
   renderer's own accounting per kind: `proceduralSurfaces`, `collectionArrays`, `heroTextures`, `video`, `targets`,
   `sceneTextures`, `buffers`; now and peak), `video` (the hero CRT: the game and picture shown, the one decoder, the
-  first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings; `{}` without a CRT),
+  first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings, since I4 step 6b
+  `binds`, the screens bound after the run's first (at a room change, or a scene shown in place of another; the first,
+  at the start room or the first room the eye stays in, is not one): frame, screen, games, `bindMs`, decoder threads
+  still ending, `clipStopped` (a clip open on the previous screen, stopped, never waited for); `waitsBeforeExit`, the
+  waits for the decoders' threads before the run's end, 0; `{}` without a CRT),
   `world` (`{}` without a room: the state, notice, outcome and rebuild, the plan's digest, placements per section and
   `unplaced` per reason (`roomKept` since I4 step 1), items, clusters, lights, findings, `times` from the process's
   creation; since I4 step 5a `floor` (the floor shown), `rooms` (its rooms: `id`, `floor`, `x` and `z` in millimetres
   and `yaw` in half turns, their placements on the floor) and `room` (the room that held the eye at the end, "" in a
-  hall); the placements per section are the floor's, the placements and unplaced games the building's; `preview`,
-  `reconcile`, `itemsWritten`, `screenGames`, `objectFallbacks` of the persisted start; `interaction` (events, counts,
+  hall); since I4 step 6b `screenRoom` (the room whose CRT was the hero CRT at the end) and `times.job` (the building
+  job's phases: `lockMs`, `selectMs`, `dataMs`, `planMs`, `saveMs`, `itemsMs`, `floorMs`, `totalMs`, and `skipped` when
+  its stamp let it plan nothing); the placements per section are the floor's, the placements and unplaced games the
+  building's; `preview`, `reconcile` (since I4 step 6b with `rooms`, each room's part: `room`, `kind` `unchanged`,
+  `textures`, `items`, `added`, `removed` or `rebuilt`, its items compared in its own frame, `coversChanged`; and
+  `walker`, where a floor committed again kept the walker: `area`, `shift`, `halfTurn`), `itemsWritten`, `screenGames`
+  (the bound CRT's games), `objectFallbacks` of the persisted start; `interaction` (events, counts,
   `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
   `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
-  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown)), `residency` (the collection's layers, the
+  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s)),
+  `residency` (the collection's layers, the
   floor's totals since I4 step 5a and each collection room's in `rooms`: `room`, `items`, `viewItems` (its items in
   the cover loader's first view: none for a room that neither holds the eye nor has its doorway in view),
   `frontsResident`, `spinesResident`, `pending`, `arrayBytes`, `arrays` and `ownArrays`, the arrays its materials
-  sample, all its own:
+  sample, all its own, since I4 step 6b `uploads` and `reuploads` (layers uploaded into its collection, and of them
+  over a picture its item showed already: 0 for a room a reconcile left unchanged); `adopted.resident`, the items a new
+  cover loader took over as they showed, nothing served again:
   format, array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
   {`shownAtMs`, `allResidentAtMs`, `residentAfterShownMs`}, `arrival`, `uploads`, `lockstep`, `pausedRounds`,
   `retries`, `hero`) and `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
@@ -155,9 +167,13 @@ build/rvdata`).
   post-processing (a 2 px ring at 1080p in #F4EFE6, scaled with the output's height, its own GPU timer); one flagged
   hidden is not drawn.
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
-  room's or the generated room's): one 480-row decoder, never two decoder threads. It plays the selected game's clip
-  (the quick catalog's selection, or the room's item focused or inspected, after a 300 ms dwell; before any, the most
-  recently played placed game with a video, else the first featured one), else its screenshot, title screen or cover
+  room's or, on a floor, the CRT of the room that holds the eye since I4 step 6b: bound once the eye has stayed in a
+  room for 300 ms, the last room's kept in a hall, rebound without joining the previous clip's decoder on the render
+  loop, the previous screen's colour bars back): one 480-row decoder, never two decoder threads. It plays the selected
+  game's clip
+  (the quick catalog's selection when the game stands in the eye's room, or the room's item focused or inspected,
+  after a 300 ms dwell; before any, the most recently played placed game with a video, else the first featured one;
+  a room's CRT plays its placed games only), else its screenshot, title screen or cover
   (fitted to 640 x 480 on a worker), else its colour bars; it pauses out of view, stops (joined within 1 s) before a
   launch and reopens at its position after the return. Its games come from the ES-DE catalog (the room's items, since
   I3 step 10c) or from `--mock-catalog`'s `"media"` (`video`, `screenshot`, `titlescreen`, `cover`; absolute or
@@ -172,21 +188,29 @@ build/rvdata`).
   generate` does (every system with a room and a placeable title; excluded systems out; a system under
   `sharedRoomMinTitles` a section of its floor's `area:shared:<floor>`, every arcade system a section of `area:arcade`)
   or updates its rooms as `worldplan update` does (each system's selection to the room that holds its section; a shared
-  or arcade room lacking a section's selection held as it is, logged; new systems enter with I4 step 6a), saves it
+  or arcade room lacking a section's selection held as it is, logged; a new system with a placeable title enters, its
+  own room or a section, logged, since I4 step 6b), saves it
   under `<user data>/worlds/<library id>/` (generator 1.3, schema 2; a stored schema-1 plan of I3 is read lifted and
   written in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is shows
   with the regeneration's notice and its new games unplaced as `room-kept`) and writes, only when they changed, each
   system's room items (`<user data>/cache/world/<library id>/room-<system>.json`: titles, cover paths, years, the
-  system's full name and platform tags; a system of a shared room has its own, its section's games with their text),
-  from which the floor-build job makes the floor without the catalog: its static part (`worldplan show --floor`'s
+  system's full name and platform tags, and since I4 step 6b each placed game's CRT data: its clip, screenshot and title
+  screen, its last play, its title's priority; a system of a shared room has its own, its section's games with their
+  text; schema 2, schema 1 still read without the CRTs' data), and its building stamp (`building-stamp.json` beside
+  them: the digests of the plan, of the catalog's stamp and of the world's inputs, the program's executable among them,
+  and the plan's soft findings; at the next start an unchanged catalog, data, configuration, program and media root
+  plan nothing, the floor built from the plan and the items files; a job that leaves a room kept until a regeneration,
+  a room held, a system waiting to enter one or a notice writes none and removes the one there; `docs/i4/step-6b.md`),
+  from which the floor-build job makes the floor
+  without the catalog: its static part (`worldplan show --floor`'s
   scene: its rooms and its derived hall), each collection room's collection on a static group of its own
   (every `collection/<room id>/...` registry key carrying the room id, so that two rooms of one family sample their own
   arrays) and their covers and spines through the derived-texture cache `<user data>/cache/textures/<library id>` (one
   cover loader for the floor: the view is the room that holds the eye and the rooms whose doorway the frustum meets).
   The run starts in the ground floor's lobby, at the elevator's arrival point facing east down the hall (no hero CRT
-  bound); `--start-room <room id>` (`room:snes`, `area:arcade`, ...) starts at that room's doorway camera on its floor,
-  its CRT the hero CRT (a shared or arcade room's playing all its sections' games; a room the plan lacks once it
-  exists ends the run: exit 2). The scene's frame is the start
+  bound until the eye stays in a room); `--start-room <room id>` (`room:snes`, `area:arcade`, ...) starts at that
+  room's doorway camera on its floor, its CRT the hero CRT from the start (a shared or arcade room's playing all its
+  sections' games; a room the plan lacks once it exists ends the run: exit 2). The scene's frame is the start
   room's when one is given, else the floor's (building.hpp: x east from the elevator, the hall's centre line on z 0):
   `--spawn`, the input scripts' poses and the run report's walker poses are in that frame, and the start room's own
   objects keep the very coordinates of its standalone scene. Hover, pull-out, Focus, Inspect, the card and launches
@@ -196,11 +220,17 @@ build/rvdata`).
   system only when `--start-room` gives one); the empty shell with a notice when the media root is out
   of reach before a first plan or the plan cannot be used. `--scene m0_testroom` shows the test room as before (G01's
   command has it). A system systems.json does not name is classified by the catalog's platform tags of it, as
-  `worldplan` does. With a plan stored, its start floor shows at the first frame (covers and spines from the cache by
-  the rooms' items) before the building job runs, then is reconciled with its result (unchanged: nothing moved,
-  rebuilt or written; changed: committed again with the walker kept where it stands in the scene's frame; the items
-  compared in their rooms' own frames, so a room that grew moves none; reconciling room by room, and the walker kept
-  in the frame of the room that holds it, are I4 step 6b's). A
+  `worldplan` does. The systems left out of the building for want of a room (excluded) are named in one log line per
+  building job. With a plan stored, its start floor shows at the first frame (covers and spines from the cache by
+  the rooms' items, its CRTs' games from them under the media root when it can be read, each game's last play the
+  catalog's play sessions now, so that a CRT starts on the game the building's result chooses) before the building job
+  runs, then is reconciled with its result room by room (I4 step 6b: each room by its content digest; at the start
+  every room's covers are served again from the cache to check their sources, the media root known now, nothing
+  uploaded over a picture that showed; a live update leaves an unchanged room's collection and pictures as they are,
+  its items taken over as they show; a room whose items changed has them applied in place; a change of the floor's
+  static part commits the floor again with every room's pictures kept and the walker kept in the frame of the area that
+  holds it, moved with it; either ends a Focus or Inspect, the walker keeping the pose it had; the items compared in
+  their rooms' own frames, so a room that grew moves none). A
   manifest missing from the asset root falls back to its family's prefab, warned once per run. Covers come nearest
   first (the hovered item, the view by projected size, the rest by distance); the hovered item's front shows its hero
   texture (its cover at its label's shape, up to 1,024 px on the long side and 1,024 x 752 pixels, 8 kept); nothing is
@@ -230,10 +260,10 @@ build/rvdata`).
   another room, or with the eye in a hall, is "on display elsewhere in the building" (`other-room`; across rooms and
   floors is I4 step 7's), one of a system without a room is not on display (`not-in-room`). After "Aggiorna
   libreria" or `--refresh-library` the floor follows the refreshed catalog live (the building job again, the plan
-  saved; new titles placed into their slots with their covers, nothing else moved; a dressed level, module or growth
-  commits the floor again with the pictures kept and the walker where it stands in the scene's frame, the items
-  compared in their rooms' own frames; keeping the walker in the frame of a room that grew around it is I4 step
-  6b's; never during a game). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
+  saved, the other floors only saved; room by room as at the start: new titles placed into their slots with their
+  covers, nothing else moved; a dressed level, module, growth or a room entering commits the floor again with the
+  pictures kept and the walker kept in its area's frame; never during a game: a result arriving meanwhile applies
+  after it). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
   instant) and `"lightingProfile": "evening" | "afternoon"` (`assets/world/lighting`, applied when the room is drawn,
   never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
   featured shelf, `shelf_light`, while the 16 lights leave room); the room's materials come from

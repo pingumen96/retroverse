@@ -3,7 +3,9 @@
 // hand-made collections (a floor of one room since I4 step 5a). The fixture-based cases (the preview of a stored plan, the items written by the room's job,
 // the hero CRT's games) are in test_world_build.cpp.
 
+#include <algorithm>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -64,6 +66,7 @@ WorldBuild built(std::string digest, rv::world::CollectionLayout layout, std::ve
     build.planDigest = std::move(digest);
     build.floor = "gen4";
     build.scene = rv::scene::SceneDescription{};
+    build.sceneDigest = "scene-a"; // the floor's static part as the shown one's
     rv::app::RoomCollection room;
     room.room = rv::world::RoomId::parse("room:snes").value();
     room.layout = std::move(layout);
@@ -138,6 +141,94 @@ TEST_CASE("app/room_items: the room's items round trip as canonical JSON, by Gam
     CHECK(rv::app::parseRoomItems(taggedJson, "items.json").value() == tagged);
     CHECK(rv::app::writeRoomItems(file, tagged).value());
     CHECK(rv::app::readRoomItems(file).value() == tagged);
+
+    // The hero CRT's data of a placed game (I4 step 6b): its media relative to the media root, its last play and its
+    // title's priority; "lastPlayed" and "rating" only when known.
+    RoomItems screened = tagged;
+    rv::app::RoomItemScreen screen;
+    screen.video = "snes/videos/Amber Lantern (USA).mp4";
+    screen.screenshot = "snes/screenshots/Amber Lantern (USA).png";
+    screen.sortKey = "amber lantern";
+    screen.favorite = true;
+    screen.playCount = 42;
+    screened.items[0].screen = screen;
+    screen.lastPlayed = 1790000000;
+    screen.ratingTenths = 8;
+    screened.items[1].screen = screen;
+    const nlohmann::json screenedJson = rv::app::roomItemsToJson(screened);
+    CHECK_FALSE(screenedJson["items"][0]["screen"].contains("lastPlayed"));
+    CHECK_FALSE(screenedJson["items"][0]["screen"].contains("rating"));
+    CHECK(screenedJson["items"][1]["screen"]["lastPlayed"] == 1790000000);
+    CHECK(screenedJson["items"][1]["screen"]["rating"] == 8);
+    CHECK_FALSE(screenedJson["items"][2].contains("screen"));
+    CHECK(rv::app::parseRoomItems(screenedJson, "items.json").value() == screened);
+    CHECK(rv::app::writeRoomItems(file, screened).value());
+    CHECK(rv::app::readRoomItems(file).value() == screened);
+
+    // A file of schema 1 (I3's, before the CRTs' data) is still read, its covers' text for the preview, without the
+    // CRTs' data.
+    nlohmann::json older = screenedJson;
+    older["schemaVersion"] = 1;
+    RoomItems unscreened = screened;
+    for (RoomItemText& item : unscreened.items) {
+        item.screen.reset();
+    }
+    CHECK(rv::app::parseRoomItems(older, "items.json").value() == unscreened);
+}
+
+TEST_CASE("app/room_items: the items file's shape is that of its schema version", "[app][world_start]") {
+    // The building stamp holds kRoomItemsSchemaVersion (I4 step 6b): a change of the items' shape that keeps the
+    // version would let a stamp written with the old shape stand for files of another. This pins each version's shape
+    // (its keys, every optional field present): a change of roomItemsToJson() fails here until the version is raised
+    // and the new shape recorded under it. Never edit a recorded shape.
+    const std::map<int, std::string> shapes{
+        {2, "items[available,coverPath,fallbackTitle,game,screen{favorite,lastPlayed,playCount,rating,screenshot,sortKey,"
+            "titleScreen,video},title,year],platforms,schemaVersion,systemName"},
+    };
+    RoomItems items;
+    items.systemName = "Lumen 16 Home System";
+    items.platforms = {"snes"};
+    RoomItemText text;
+    text.game = gameId(10);
+    text.title = "Amber Lantern";
+    text.fallbackTitle = "Amber Lantern (USA)";
+    text.year = "1993";
+    text.coverPath = "snes/covers/Amber Lantern (USA).png";
+    rv::app::RoomItemScreen screen;
+    screen.video = "snes/videos/Amber Lantern (USA).mp4";
+    screen.screenshot = "snes/screenshots/Amber Lantern (USA).png";
+    screen.titleScreen = "snes/titlescreens/Amber Lantern (USA).png";
+    screen.lastPlayed = 1790000000;
+    screen.sortKey = "amber lantern";
+    screen.favorite = true;
+    screen.playCount = 3;
+    screen.ratingTenths = 8;
+    text.screen = screen;
+    items.items.push_back(text);
+    const nlohmann::json json = rv::app::roomItemsToJson(items);
+    CHECK(json["schemaVersion"] == rv::app::kRoomItemsSchemaVersion);
+    // The keys, sorted, objects in braces and the first element of arrays in brackets.
+    const auto shapeOf = [](const auto& self, const nlohmann::json& value) -> std::string {
+        if (value.is_object()) {
+            std::vector<std::string> keys;
+            for (const auto& [key, member] : value.items()) {
+                const std::string inner = self(self, member);
+                keys.push_back(key + (member.is_object() ? "{" + inner + "}" : member.is_array() ? inner : ""));
+            }
+            std::sort(keys.begin(), keys.end());
+            std::string joined;
+            for (const std::string& key : keys) {
+                joined += (joined.empty() ? "" : ",") + key;
+            }
+            return joined;
+        }
+        if (value.is_array() && !value.empty() && value.front().is_object()) {
+            return "[" + self(self, value.front()) + "]";
+        }
+        return {};
+    };
+    REQUIRE(shapes.contains(rv::app::kRoomItemsSchemaVersion));
+    CHECK(shapeOf(shapeOf, json) == shapes.at(rv::app::kRoomItemsSchemaVersion));
 }
 
 TEST_CASE("app/room_items: a file of another shape is refused with its JSON pointer", "[app][world_start]") {
@@ -151,7 +242,9 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
         const char* context;
     };
     nlohmann::json newer = good;
-    newer["schemaVersion"] = 2;
+    newer["schemaVersion"] = rv::app::kRoomItemsSchemaVersion + 1;
+    nlohmann::json older = good;
+    older["schemaVersion"] = 0;
     nlohmann::json badGame = good;
     badGame["items"][1]["game"] = "not a game";
     nlohmann::json unordered = good;
@@ -166,9 +259,23 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
     platformsObject["platforms"] = nlohmann::json::object();
     nlohmann::json platformNumber = good;
     platformNumber["platforms"] = nlohmann::json::array({"gb", 7});
+    const nlohmann::json screen{{"video", ""},     {"screenshot", ""},   {"titleScreen", ""},
+                                {"sortKey", "a"},  {"favorite", false}, {"playCount", 0u}};
+    nlohmann::json screenArray = good;
+    screenArray["items"][0]["screen"] = nlohmann::json::array();
+    nlohmann::json screenNoFavorite = good;
+    screenNoFavorite["items"][0]["screen"] = screen;
+    screenNoFavorite["items"][0]["screen"].erase("favorite");
+    nlohmann::json screenNegativePlays = good;
+    screenNegativePlays["items"][1]["screen"] = screen;
+    screenNegativePlays["items"][1]["screen"]["playCount"] = -1;
+    nlohmann::json screenRating = good;
+    screenRating["items"][1]["screen"] = screen;
+    screenRating["items"][1]["screen"]["rating"] = 11;
     const std::vector<Case> cases{
         {"not an object", nlohmann::json::array(), rv::ErrorCode::ParseError, "items.json:"},
         {"a newer schema", newer, rv::ErrorCode::Unsupported, "items.json:/schemaVersion"},
+        {"a schema before the first", older, rv::ErrorCode::Unsupported, "items.json:/schemaVersion"},
         {"a game that is no GameId", badGame, rv::ErrorCode::ParseError, "items.json:/items/1/game"},
         {"games out of order", unordered, rv::ErrorCode::ParseError, "items.json:/items/1/game"},
         {"a game twice", twice, rv::ErrorCode::ParseError, "items.json:/items/1/game"},
@@ -176,6 +283,12 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
         {"a title that is no string", numberTitle, rv::ErrorCode::ParseError, "items.json:/items/0/title"},
         {"platforms that are no array", platformsObject, rv::ErrorCode::ParseError, "items.json:/platforms"},
         {"a platform that is no string", platformNumber, rv::ErrorCode::ParseError, "items.json:/platforms/1"},
+        {"a screen that is no object", screenArray, rv::ErrorCode::ParseError, "items.json:/items/0/screen"},
+        {"a screen without favorite", screenNoFavorite, rv::ErrorCode::ParseError,
+         "items.json:/items/0/screen/favorite"},
+        {"a negative play count", screenNegativePlays, rv::ErrorCode::ParseError,
+         "items.json:/items/1/screen/playCount"},
+        {"a rating past 10", screenRating, rv::ErrorCode::ParseError, "items.json:/items/1/screen/rating"},
     };
     for (const Case& c : cases) {
         INFO(c.name);

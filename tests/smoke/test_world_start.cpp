@@ -5,12 +5,14 @@
 // the room's items the last run kept), and reconciles it with the snapshot once that frame is shown: an unchanged
 // catalog moves and rebuilds nothing and writes nothing (the frames differ only on the CRT, which now plays the start
 // choice), a game added rebuilds the room around the items that stood, the walker where it stands. The room's CRT plays
-// the ES-DE catalog's clips: the start choice (the first featured title with a video), and the quick catalog's
-// selection, damaged clips falling back down the chain to the cover. A manifest removed from a scratch copy of the
+// the ES-DE catalog's clips: the start choice (the first featured title with a video; I4 step 6b: from the stored
+// room's first frame, also when a game was played since the last start, never retargeted at the reconcile), and the
+// quick catalog's selection, damaged clips falling back down the chain to the cover. A manifest removed from a scratch copy of the
 // asset root falls back to its family's prefab, warned once, the room built. Every run is hidden and lockstep
 // (--fixed-dt).
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -27,6 +29,9 @@
 #include <rv/app/room_items.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/assets/prefab_resolver.hpp>
+#include <rv/catalog/play_session.hpp>
+#include <rv/catalog_db/database.hpp>
+#include <rv/catalog_db/session_store.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
 #include <rv/geometry/prefabs.hpp>
@@ -214,13 +219,14 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     CHECK_FALSE(first.report->world.preview.has_value());
     CHECK_FALSE(first.report->world.reconcile.has_value());
     CHECK(first.report->world.itemsWritten);
-    CHECK(first.report->world.screenGames == 53);
+    CHECK(first.report->world.screenGames == 50); // its placed games (ADR-0013 §9)
     REQUIRE(fs::exists(room.itemsFile()));
     const std::string items = rv::core::readTextFile(room.itemsFile()).value();
     const fs::path planFile = rv::world::worldFiles(room.data, rv::catalog::LibraryId::parse("esde").value()).plan;
     const std::string plan = rv::core::readTextFile(planFile).value();
 
-    // One frame: the stored plan's room alone, whole (every layer from the cache), the CRT's colour bars.
+    // One frame: the stored plan's room alone, whole (every layer from the cache), its CRT already on the start choice
+    // from the room's items (I4 step 6b: its screenshot while the clip opens).
     const fs::path previewShot = room.dir / "preview.png";
     const AppRun preview = runApp(retroverseExe(), room.dir, "preview", roomArguments("1", previewShot));
     requireCleanRun(preview);
@@ -243,7 +249,10 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
             CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
         }
         CHECK_FALSE(world.reconcile.has_value()); // the run ended at the first frame
-        CHECK(preview.report->video.picture == "idle-pattern");
+        CHECK(preview.report->video.gameId == room.gameOf("Amber Lantern"));
+        CHECK(preview.report->video.picture == "screenshot");
+        CHECK(world.screenGames == 50);
+        CHECK(world.screenRoom == "room:snes");
     }
 
     // Forty frames: the same, then reconciled with the catalog unchanged: nothing moved, rebuilt or written; the CRT
@@ -269,11 +278,22 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     CHECK(world.reconcile->added == 0);
     CHECK(world.reconcile->removed == 0);
     CHECK(world.reconcile->coversReloaded); // the media root known: the covers' sources checked
-    REQUIRE(world.snapshotAtMs.has_value());
-    CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
+    // Room by room (I4 step 6b): the one room's covers served again, nothing uploaded over a picture that showed.
+    REQUIRE(world.reconcile->rooms.size() == 1);
+    CHECK(world.reconcile->rooms.front().room == "room:snes");
+    CHECK(world.reconcile->rooms.front().kind == "textures");
+    REQUIRE(reconciled.report->residency.rooms.size() == 1);
+    CHECK(reconciled.report->residency.rooms.front().reuploads == 0);
+    // Nothing changed since the first run: the building job planned nothing, its stamp as the plan was made (I4 step
+    // 6b), and its result was committed after the stored room showed.
+    REQUIRE(world.job.has_value());
+    CHECK(world.job->skipped);
+    CHECK_FALSE(world.snapshotAtMs.has_value());
+    REQUIRE(world.committedAtMs.has_value());
+    CHECK(*world.committedAtMs > *world.preview->committedAtMs);
     CHECK(world.items == 50);
     CHECK(world.staticRecords == 150);
-    CHECK(world.screenGames == 53);
+    CHECK(world.screenGames == 50);
     CHECK(reconciled.report->residency.frontsResident == 50);
     CHECK(reconciled.report->residency.spinesResident == 50);
     CHECK(reconciled.report->residency.cacheStored == 0);
@@ -330,6 +350,12 @@ TEST_CASE("world: a game added between two starts: the stored room first, then r
         REQUIRE(world.preview.has_value());
         CHECK(world.preview->frame == 0);
         CHECK(world.preview->items == 50);
+        // The catalog changed: the building job runs, its snapshot asked for only once the stored room shows.
+        REQUIRE(world.job.has_value());
+        CHECK_FALSE(world.job->skipped);
+        REQUIRE(world.preview->committedAtMs.has_value());
+        REQUIRE(world.snapshotAtMs.has_value());
+        CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
         REQUIRE(world.reconcile.has_value());
         CHECK(world.reconcile->kind == "rebuild");
         CHECK(world.reconcile->frame == 1);
@@ -357,6 +383,50 @@ TEST_CASE("world: a game added between two starts: the stored room first, then r
     REQUIRE(again.report->finalCamera.has_value());
     CHECK(glm::length(added.report->finalCamera->feet - again.report->finalCamera->feet) < 1e-4f);
     CHECK(glm::length(added.report->finalCamera->feet - first.report->finalCamera.value().feet) > 0.05f);
+}
+
+TEST_CASE("world: a game played between two starts: the stored room's CRT starts on it, never retargeted",
+          "[gpu][world][world_start]") {
+    // ADR-0012 §7: the start choice is the most recently played placed game with a clip. A session recorded after the
+    // room's items were written (a game played, Retroverse quit and started again): the stored room's CRT starts on
+    // that game from the first frame (the preview's last plays are the catalog's, I4 step 6b), and the building's
+    // result, which counts the session, keeps it: one target in the run.
+    ImportedRoom room("played");
+    const AppRun first = runApp(retroverseExe(), room.dir, "first", roomArguments("2"));
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    CHECK(first.report->video.gameId == room.gameOf("Amber Lantern"));
+    const std::string played = room.gameOf("Juniper Jamboree"); // a placed game with a clip
+    {
+        rv::catalog_db::DatabaseOptions options;
+        options.create = false;
+        options.switchToWal = false;
+        auto database = rv::catalog_db::Database::open(room.data / "database" / "retroverse.sqlite", options);
+        REQUIRE(database.has_value());
+        auto store = rv::catalog_db::SessionStore::open(database->writer());
+        REQUIRE(store.has_value());
+        rv::catalog::PlaySession session;
+        session.game = rv::catalog::GameId::parse(played).value();
+        session.started = std::chrono::system_clock::now();
+        REQUIRE((*store)->insertSession(session).has_value());
+    }
+    const AppRun again = runApp(retroverseExe(), room.dir, "again", roomArguments("40"));
+    requireCleanRun(again);
+    INFO(again.describe());
+    const rv::app::WorldRecord& world = again.report->world;
+    REQUIRE(world.preview.has_value());
+    CHECK(world.preview->frame == 0);
+    REQUIRE(world.reconcile.has_value());
+    CHECK(world.reconcile->moved == 0);
+    REQUIRE(world.job.has_value());
+    CHECK_FALSE(world.job->skipped); // the session moved the catalog's stamp
+    const rv::app::VideoRecord& video = again.report->video;
+    REQUIRE(video.bound);
+    CHECK(video.gameId == played);
+    CHECK(video.targets == 1); // the start choice of the first frame, kept by the reconcile
+    CHECK(video.selections == 0);
+    CHECK(video.picture == "video");
+    CHECK(video.decodersStarted == 1);
 }
 
 TEST_CASE("world: the room's CRT plays the quick catalog's selection, damaged clips falling back down the chain",

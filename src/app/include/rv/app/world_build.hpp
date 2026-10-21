@@ -46,6 +46,19 @@
 // WorldBuild::startRoomMissing). Nothing is written but the world's own files (under <user data>/worlds/<library id>/,
 // the data-directory guard having passed when the catalog opened) and the rooms' items (<user data>/cache/world/), and
 // nothing is decided at all while the media are unknown (ADR-0010 §3).
+//
+// An unchanged start (I4 step 6b): the building job writes, beside the rooms' items, its building stamp
+// (<cache>/world/<library>/building-stamp.json: the digest of the plan it left, of the catalog's stamp it read the
+// snapshots with, of the world's inputs). At the next start, before reading any snapshot, the job compares: when the
+// stored plan is that plan (the file's digest), the catalog's stamp and the world's inputs are as they were, the media
+// root can be read and every room's items file is there, nothing a snapshot could change has changed, so it plans
+// nothing (unchangedBuilding(): outcome Unchanged, `skipped`) and the floor is built from the plan and the items files.
+// Anything else runs the whole job. The world's inputs (worldInputsDigest()) are the program (its version and its
+// executable's size and last write time: another build of the same version may plan otherwise), the generator's
+// version, the items files' and the stamp's schemas, every file of the asset root's world/ and manifests/ folders,
+// world.json, overrides.json, library.json and the media root's path. A job that leaves something to settle (a room
+// kept until a regeneration, a room held, a system waiting to enter one, a notice) writes no stamp and removes the one
+// there, so that its notice and warnings come at every start until an update settles them.
 
 #include <chrono>
 #include <cstdint>
@@ -159,12 +172,19 @@ struct RoomCollection {
     /// The passage of its doorway onto the hall, in the scene's frame, from the floor to the doorway's top (the cover
     /// loader's view: a room whose doorway the frustum meets is in view); empty for a room without one.
     core::Aabb doorway;
+    /// Its content digest in the plan (world::roomContentDigest: its record and every element of it), what the per-room
+    /// reconcile compares first (I4 step 6b, ADR-0013 §5).
+    std::string contentDigest;
+    /// Its hero CRT's games: its placed games with media, in its featured order (room_screen.hpp, from the rooms'
+    /// items; none without a media root for them: FloorSources::screenMediaRoot).
+    std::vector<ScreenGame> screenGames;
 };
 
 /// The floor to commit (an immutable value made on the pool, ADR-0010 §12), with the building it shows.
 struct WorldBuild {
     /// The stored plan's floor shown before the building job answers (previewWorld(), I3 step 10c: outcome Kept, the
-    /// covers of the items the rooms' items files know, no media root, no CRT games); else the building's.
+    /// covers of the items the rooms' items files know, no media root, the CRTs' games from the items files since I4
+    /// step 6b); else the building's.
     bool preview = false;
     WorldOutcome outcome = WorldOutcome::NoPlan;
     /// The world notice it shows (world_notice), and why, in English (the log, the run report).
@@ -173,8 +193,10 @@ struct WorldBuild {
     /// The start room (--start-room), and whether the plan lacks it (the run then ends: exit 2).
     std::optional<world::RoomId> startRoom;
     bool startRoomMissing = false;
-    /// The floor built ("ground" without a start room).
+    /// The floor built ("ground" without a start room), and its frame in the scene's frame (the hall's: relative to the
+    /// start room's placement, {0, 0, 0} without a start room).
     std::string floor;
+    world::RoomPlacement floorPlacement;
     catalog::LibraryId library;
     /// The plan shown and its digest (the SHA-256 of its canonical text); none for NoPlan.
     std::optional<world::WorldPlan> plan;
@@ -187,6 +209,8 @@ struct WorldBuild {
     std::size_t softFindings = 0;
     /// The plan was written this run (savePlan), and why it could not be (the plan is shown all the same).
     bool written = false;
+    /// The job planned nothing: the stored plan as the building stamp says it was made (unchangedBuilding()).
+    bool skipped = false;
     std::optional<Error> saveError;
     /// The floor's static part in the scene's frame (its rooms, its hall), the SHA-256 of its scene file's text, the
     /// spans its rooms left bare.
@@ -200,8 +224,8 @@ struct WorldBuild {
     /// The media root the paths are relative to, also while it is out of reach (I3 step 12: the cover loader tries it
     /// again after the catalog's refresh); none when it could not be resolved.
     std::optional<std::filesystem::path> mediaRootPath;
-    /// The hero CRT's games: the start room's (room_screen.hpp; none for a preview, without a start room or while the
-    /// media are unknown).
+    /// The hero CRT's games at the start: the start room's (RoomCollection::screenGames; none without a start room or
+    /// while the media are unknown). Each room's are its RoomCollection's (the CRT of the eye's room, I4 step 6b).
     std::vector<ScreenGame> screenGames;
     /// The floor's prefabs that fell back (each room's scene data's, by the manifest the plan names).
     std::vector<ObjectFallback> objectFallbacks;
@@ -210,15 +234,20 @@ struct WorldBuild {
     bool itemsWritten = false;
     std::optional<Error> itemsError;
     std::size_t itemsRead = 0;
-    /// Milliseconds on the worker: the lock and the plan read under it, the selections, the generation or update with
-    /// its validation, the plan's write, the floor's scene data and scene, the layouts and the cover requests, the
-    /// whole job (the building's and the floor's).
+    /// Milliseconds on the worker: the lock and the plan read under it, the selections, the rooms' data, the
+    /// generation or update with its validation (the data included), the plan's write, the rooms' items files, the
+    /// floor's scene data and scene, the layouts and the cover requests, the whole job (the building's and the
+    /// floor's).
     double lockMs = 0.0;
     double selectMs = 0.0;
+    double dataMs = 0.0;
     double planMs = 0.0;
     double saveMs = 0.0;
+    double itemsMs = 0.0;
     double sceneMs = 0.0;
     double layoutMs = 0.0;
+    /// The floor's build alone (buildFloor()).
+    double floorMs = 0.0;
     double milliseconds = 0.0;
 
     /// The collection room `room`, or nullptr.
@@ -228,13 +257,48 @@ struct WorldBuild {
 };
 
 /// What the floor-build job reads besides the plan: each system's room items (by system: a system it lacks is read from
-/// its items file), the snapshots of the systems (the start room's CRT games), their platform tags, the media root.
+/// its items file), the media root (the covers' and the CRTs', known), the media root the paths are relative to, and
+/// the media root the CRTs' games are read under (I4 step 6b: the building's known media root; the preview's resolved
+/// from the library's settings and found readable, its covers served from the cache alone all the same).
 struct FloorSources {
     std::map<catalog::SystemName, RoomItems> items;
-    std::map<catalog::SystemName, std::shared_ptr<const RoomSnapshotResult>> snapshots;
     std::optional<std::filesystem::path> mediaRoot;
     std::optional<std::filesystem::path> mediaRootPath;
+    std::optional<std::filesystem::path> screenMediaRoot;
+    /// The preview's: each game's latest play session that counts (seconds since 1970, catalog_db::lastPlaySessions()),
+    /// which the CRT games' last plays take in place of the items files' (a game played since their last write: the CRT
+    /// starts on the game the building's result chooses, ADR-0012 §7). None: the items' own.
+    std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed;
 };
+
+/// What the building job's last plan was made from (see the file comment): SHA-256 digests of the plan, of the
+/// catalog's stamp and of the world's inputs.
+struct BuildingStamp {
+    std::string planDigest;
+    std::string catalog;
+    std::string inputs;
+    /// The validation's soft findings of the plan (WorldBuild::softFindings), which a skipped start reports.
+    std::size_t softFindings = 0;
+
+    bool operator==(const BuildingStamp&) const = default;
+};
+
+/// The building stamp's schema (raised whenever what the job writes beside the plan changes: the items files').
+inline constexpr int kBuildingStampVersion = 2;
+
+/// <cacheDir>/world/<library>/building-stamp.json.
+[[nodiscard]] std::filesystem::path buildingStampFile(const std::filesystem::path& cacheDir,
+                                                      const catalog::LibraryId& library);
+/// Reads the stamp. Errors: NotFound when there is none; ParseError for another shape; Unsupported for another schema.
+[[nodiscard]] Expected<BuildingStamp> readBuildingStamp(const std::filesystem::path& file);
+/// Writes the stamp atomically unless the file holds that text already; whether it wrote. Errors: those of the write.
+[[nodiscard]] Expected<bool> writeBuildingStamp(const std::filesystem::path& file, const BuildingStamp& stamp);
+/// Removes the stamp, when there is one (logged; a failure is logged too).
+void removeBuildingStamp(const std::filesystem::path& file);
+/// The digest of the world's inputs besides the catalog and the plan (see the file comment), the media root `mediaRoot`
+/// included. Never fails: a file that cannot be read counts as such.
+[[nodiscard]] std::string worldInputsDigest(const WorldPaths& paths, const catalog::LibraryId& library,
+                                            const std::filesystem::path& mediaRoot);
 
 /// The building job's result: the build with its plan (no floor yet) and what the floor's build reads.
 struct BuildingResult {
@@ -259,20 +323,38 @@ struct BuildingResult {
 [[nodiscard]] RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan);
 
 /// The floor-build job: `build`'s floor (its start room's, else kStartFloor) of its plan made into its scene, its rooms'
-/// collections and cover requests (`sources`' items, else the items files), the start room's CRT games. A plan that
+/// collections, content digests, cover requests and CRT games (`sources`' items, else the items files). A plan that
 /// lacks the start room sets startRoomMissing and builds nothing; a floor that cannot be made leaves the build with no
 /// plan and its notice (logged). Nothing for a build without a plan.
 void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& sources);
+
+/// An unchanged start's building job (see the file comment): the stored plan `stored` as it is when the building stamp
+/// says the catalog (its stamp `catalogStamp`) and the world's inputs are those it was made from, its file still that
+/// plan, the media root of `profile` readable and every room's items file there; none otherwise (the whole job runs).
+[[nodiscard]] std::optional<BuildingResult> unchangedBuilding(const WorldPaths& paths,
+                                                              const catalog::LibraryProfile& profile,
+                                                              const world::StoredPlan& stored,
+                                                              const std::string& catalogStamp,
+                                                              const std::optional<world::RoomId>& startRoom);
 
 /// planBuilding() then buildFloor() (the tests' one call).
 [[nodiscard]] WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job);
 
 /// The preview job (I3 step 10c, the persisted start): `stored`'s start floor as it is, before the catalog is read:
 /// buildFloor() with the rooms' items files (room_items.hpp, read from <cache>/world/<library>/), its covers served from
-/// the derived-texture cache alone (no media root). Outcome Kept, `preview` set, no change report, nothing written. Never
-/// fails as a whole: a floor that cannot be made has no scene (logged).
+/// the derived-texture cache alone (no media root), its rooms' CRT games from the items under `screenMediaRoot` (none
+/// without it), their last plays `lastPlayed`'s when given (FloorSources::lastPlayed: the catalog's play sessions, read
+/// before the snapshot). Outcome Kept, `preview` set, no change report, nothing written. Never fails as a whole: a
+/// floor that cannot be made has no scene (logged).
 [[nodiscard]] WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library,
-                                      const world::StoredPlan& stored, const std::optional<world::RoomId>& startRoom);
+                                      const world::StoredPlan& stored, const std::optional<world::RoomId>& startRoom,
+                                      const std::optional<std::filesystem::path>& screenMediaRoot = std::nullopt,
+                                      std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed = std::nullopt);
+
+/// The media root of the library `profile` describes as ES-DE's settings give it now (esde::resolveMediaRoot), when it
+/// can be read (a folder there): the preview's CRT games are read under it (I4 step 6b). On the worker pool: it reads
+/// es_settings.xml and checks the folder.
+[[nodiscard]] std::optional<std::filesystem::path> readableMediaRoot(const catalog::LibraryProfile& profile);
 
 /// The systems a building snapshot reads (takeBuildingSnapshot()): those world::classify() gives a room (ADR-0013 §2:
 /// never an excluded one), by the asset root's building.json and systems.json; every system when they cannot be read

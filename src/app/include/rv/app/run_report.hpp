@@ -504,6 +504,36 @@ struct WorldPreviewRecord {
     bool operator==(const WorldPreviewRecord&) const = default;
 };
 
+/// How one collection room of the floor shown took a building's result (I4 step 6b, ADR-0013 §9: the per-room
+/// reconcile, by content digest): its room id, app::toString(RoomUpdateKind) ("unchanged": its instances and uploads
+/// kept; "textures": its covers served again; "items": its items applied in place; "added", "removed": a room the floor
+/// gained or lost; "rebuilt": the floor committed again around it, its pictures kept), and its items compared in its
+/// own frame.
+struct RoomUpdateRecord {
+    std::string room;
+    std::string kind;
+    std::uint64_t kept = 0;
+    std::uint64_t moved = 0;
+    std::uint64_t flagsChanged = 0;
+    std::uint64_t added = 0;
+    std::uint64_t removed = 0;
+    /// Items whose cover request changed (a cover added, replaced or gone, a title changed).
+    std::uint64_t coversChanged = 0;
+
+    bool operator==(const RoomUpdateRecord&) const = default;
+};
+
+/// Where a floor committed again put the walker (I4 step 6b, ADR-0013 §7: kept in the frame of the area that holds it,
+/// moved with that area): the area ("room:snes", "hall:gen4") and how far it moved in the scene's frame (meters; a
+/// half turn of the frame turns it too).
+struct WalkerKeptRecord {
+    std::string area;
+    glm::vec3 shift{0.0f};
+    bool halfTurn = false;
+
+    bool operator==(const WalkerKeptRecord&) const = default;
+};
+
 /// What the snapshot's result did to the stored plan's room shown (I3 step 10c, world_reconcile.hpp).
 struct WorldReconcileRecord {
     /// app::toString(Reconciliation): "textures", "rebuild", "shell", or "items" (I3 step 15b: another collection of
@@ -518,6 +548,9 @@ struct WorldReconcileRecord {
     std::uint64_t removed = 0;
     /// "textures": the covers were served again (they changed, or the media root is known: their sources checked).
     bool coversReloaded = false;
+    /// Each collection room's part (I4 step 6b: room by room), and where a floor committed again kept the walker.
+    std::vector<RoomUpdateRecord> rooms;
+    std::optional<WalkerKeptRecord> walker;
 
     bool operator==(const WorldReconcileRecord&) const = default;
 };
@@ -555,6 +588,9 @@ struct WorldLiveUpdateRecord {
     std::optional<double> requestToApplyMs;
     std::optional<double> buildMs;
     std::optional<double> applyMs;
+    /// Each collection room's part (I4 step 6b: room by room), and where a floor committed again kept the walker.
+    std::vector<RoomUpdateRecord> rooms;
+    std::optional<WalkerKeptRecord> walker;
 
     bool operator==(const WorldLiveUpdateRecord&) const = default;
 };
@@ -581,6 +617,24 @@ struct WorldRoomRecord {
     bool operator==(const WorldRoomRecord&) const = default;
 };
 
+/// The building job's phases, in milliseconds on its worker (I4 step 6b: WorldBuild's times): the world's lock and the
+/// plan read under it, the selections, the rooms' data, the generation or update with its validation, the plan's
+/// write, the rooms' items files, and the whole job (the floor's build included); `skipped`: the job found the
+/// catalog and the world's inputs as the stored plan was made from and planned nothing (world_build.hpp).
+struct WorldJobRecord {
+    double lockMs = 0.0;
+    double selectMs = 0.0;
+    double dataMs = 0.0;
+    double planMs = 0.0;
+    double saveMs = 0.0;
+    double itemsMs = 0.0;
+    double floorMs = 0.0;
+    double totalMs = 0.0;
+    bool skipped = false;
+
+    bool operator==(const WorldJobRecord&) const = default;
+};
+
 /// The generated building of the run (I3 step 10b's room, the floor shown since I4 step 5a): what showed, from which
 /// plan, how it came to be and when. Empty ({}) in runs that ask for no room (--scene, --model, --mock-catalog, the
 /// asset preview).
@@ -598,8 +652,10 @@ struct WorldRecord {
     /// The catalog's state when the test room showed for want of a catalog ("no-library", ...).
     std::string catalogState;
     /// The room that held the walker's eye at the end ("room:snes"; "" in a hall, or before a floor showed: I4 step 5a),
-    /// and the library.
+    /// the room whose CRT was the hero CRT at the end (I4 step 6b: the eye's room after the dwell; "" none), and the
+    /// library.
     std::string room;
+    std::string screenRoom;
     std::string library;
     /// The floor shown ("ground", "gen4", ...; "" before one showed) and its rooms (I4 step 5a).
     std::string floor;
@@ -650,6 +706,8 @@ struct WorldRecord {
     std::optional<double> buildMs;
     std::optional<double> commitMs;
     std::optional<double> snapshotToCommitMs;
+    /// The building job's phases (I4 step 6b), the last one committed; none before one answered.
+    std::optional<WorldJobRecord> job;
     /// The frame the room first showed in (its preview's, after a persisted start; none before it showed).
     std::optional<std::uint64_t> firstFrame;
     /// The hover (I3 step 10b's outline on the picked item): changes of the hovered item, and the one hovered at the
@@ -708,6 +766,10 @@ struct RoomResidencyRecord {
     std::uint64_t arrayBytes = 0;
     std::uint64_t arrays = 0;
     std::uint64_t ownArrays = 0;
+    /// Layers uploaded into the room's collection (the one that shows at the end: kept by a per-room reconcile, I4 step
+    /// 6b), and of them those over a layer its item already showed: a picture uploaded again (0 for a room unchanged).
+    std::uint64_t uploads = 0;
+    std::uint64_t reuploads = 0;
 
     bool operator==(const RoomResidencyRecord&) const = default;
 };
@@ -778,9 +840,11 @@ struct ResidencyRecord {
     std::uint64_t retriedItems = 0;
     std::uint64_t retriedChanged = 0;
     /// Items a new loader of the same collection took over from the one it replaced (I3 step 10c's textures
-    /// reconciliation), and those whose pictures changed (uploaded again; the others were not).
+    /// reconciliation), and those whose pictures changed (uploaded again; the others were not); of the items taken
+    /// over, those whose pictures showed as they are asked now (I4 step 6b: done at once, nothing served again).
     std::uint64_t adoptedItems = 0;
     std::uint64_t adoptedChanged = 0;
+    std::uint64_t adoptedResident = 0;
     /// The hero textures (ADR-0011 §8).
     HeroRecord hero;
     /// Each collection room's (I4 step 5a), in the floor's room order.
@@ -821,6 +885,23 @@ struct VideoLaunchRecord {
     std::optional<double> reopenedAtSeconds;
 
     bool operator==(const VideoLaunchRecord&) const = default;
+};
+
+/// The hero CRT bound to a screen after the run's first (I4 step 6b, ADR-0013 §9: the CRT of the room that holds the
+/// eye, after the dwell; a scene shown in place of another, such as a floor committed again, binds its CRT again; the
+/// run's first screen, at the start or the first room the eye stays in, is not one): the frame, the screen's object id,
+/// the room's games, the milliseconds the bind took on the main thread, the decoder threads still running as it
+/// returned, and whether it stopped a clip open on the previous screen (playing, or paused out of view: its thread
+/// ends on its own, never joined there).
+struct VideoBindRecord {
+    std::uint64_t frame = 0;
+    std::string screen;
+    std::uint64_t games = 0;
+    double bindMs = 0.0;
+    std::uint64_t threadsRunning = 0;
+    bool clipStopped = false;
+
+    bool operator==(const VideoBindRecord&) const = default;
 };
 
 /// The hero CRT's video (I3 step 11, ADR-0012 §7: app::ScreenService): what it showed at the end of the run, the one
@@ -865,8 +946,13 @@ struct VideoRecord {
     std::uint64_t stillBytes = 0;
     /// The decoder threads had all ended once the service shut down (media::waitForStoppedDecoders()).
     bool joinedAtExit = false;
+    /// Waits for every stopped decoder's thread (media::stoppedDecoderWaits()) made before the service's shutdown at
+    /// the run's end: 0, none from the render loop (ADR-0004; I4 step 6b).
+    std::uint64_t waitsBeforeExit = 0;
     std::vector<VideoFallbackRecord> fallbacks;
     std::vector<VideoLaunchRecord> launches;
+    /// The screens bound after the first (I4 step 6b), in order.
+    std::vector<VideoBindRecord> binds;
 
     bool operator==(const VideoRecord&) const = default;
 };

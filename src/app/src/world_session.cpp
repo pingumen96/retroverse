@@ -29,6 +29,10 @@ using Clock = std::chrono::steady_clock;
 /// The upload budget of an idle wake of a lockstep run: no frame waits for it, so it takes more at a time.
 const gl::UploadBudget kIdleUploadBudget{std::chrono::milliseconds(8), 512};
 
+/// Frames the screenBind phase holds after a rebind of the hero CRT (I4 step 6b): the rebind's frame, the previous
+/// clip's thread ending and the next clip's first frames (about a second at 60 frames a second).
+constexpr std::uint64_t kScreenBindPhaseFrames = 60;
+
 [[nodiscard]] double millisecondsSince(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
@@ -107,6 +111,9 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
         spdlog::info("World: reduceMotion (world.json): every transition of the room is instant");
     }
     m_interaction = std::make_unique<WorldHover>(context, interaction);
+    // I4 step 6b: the start room's CRT is bound from the start; the lobby's none until the eye stays in a room.
+    m_screenRooms.reset(m_options.startRoom ? std::optional<std::string>(m_options.startRoom->toString())
+                                            : std::nullopt);
     m_record.bound = true;
     m_record.state = m_state;
     if (!m_decided) {
@@ -202,8 +209,74 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     }
     followRefresh(product);
     startLiveFlow(product);
+    if (!idleWake) {
+        followScreenRoom(product, timeSeconds);
+    }
     coverRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
+}
+
+std::vector<ScreenGame> WorldSession::screenGamesOf(const std::string& room) const {
+    if (m_shown) {
+        for (const ShownCollection& collection : m_shown->rooms) {
+            if (collection.room.toString() == room) {
+                return collection.screenGames;
+            }
+        }
+    }
+    return {};
+}
+
+std::optional<std::string> WorldSession::floorScreenRoom(const WorldBuild& build) const {
+    const std::optional<std::string>& bound = m_screenRooms.bound();
+    if (!bound) {
+        return std::nullopt;
+    }
+    for (const RoomCollection& room : build.rooms) {
+        if (room.room.toString() == *bound) {
+            return bound;
+        }
+    }
+    return std::nullopt;
+}
+
+void WorldSession::followScreenRoom(ProductUi& product, double timeSeconds) {
+    const std::uint64_t frame = m_context.frameIndex();
+    if (m_screenPhaseUntil && frame >= *m_screenPhaseUntil) {
+        m_context.frameTiming().closePhase(kPhaseScreenBind);
+        m_screenPhaseUntil.reset();
+    }
+    // ADR-0012 §6: nothing changes on the CRT while a launched game runs.
+    if (m_state != "room" || m_rooms.empty() || !m_shown || !m_host.bindScreen || product.launchActive()) {
+        return;
+    }
+    const std::string area = m_host.eyeArea ? m_host.eyeArea() : std::string();
+    std::optional<std::string_view> room;
+    for (const FloorRoom& floorRoom : m_rooms) {
+        if (floorRoom.id.toString() == area && !m_screenless.contains(area)) {
+            room = area;
+        }
+    }
+    const std::optional<std::string> was = m_screenRooms.bound();
+    const std::optional<std::string> bind = m_screenRooms.update(room, timeSeconds);
+    if (!bind) {
+        return;
+    }
+    std::vector<ScreenGame> games = screenGamesOf(*bind);
+    const std::size_t count = games.size();
+    if (!m_host.bindScreen(*bind + "/", std::move(games))) {
+        spdlog::warn("Frame {}: {} has no CRT to bind; the hero CRT stays {}", frame, *bind, was.value_or("unbound"));
+        m_screenless.insert(*bind);
+        m_screenRooms.reset(was);
+        return;
+    }
+    spdlog::info("Frame {}: the hero CRT is {}'s now, with its {} game(s) (the eye stayed there {:g} s)", frame, *bind,
+                 count, kScreenDwellSeconds);
+    m_record.screenGames = count;
+    if (!m_screenPhaseUntil) {
+        m_context.frameTiming().openPhase(kPhaseScreenBind);
+    }
+    m_screenPhaseUntil = frame + kScreenBindPhaseFrames;
 }
 
 std::optional<std::size_t> WorldSession::eyeRoom() const {
@@ -513,11 +586,23 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.hardFindings = build.hardFindings.size();
     m_record.softFindings = build.softFindings;
     m_record.buildMs = build.milliseconds;
+    if (!build.preview) {
+        WorldJobRecord job;
+        job.lockMs = build.lockMs;
+        job.selectMs = build.selectMs;
+        job.dataMs = build.dataMs;
+        job.planMs = build.planMs;
+        job.saveMs = build.saveMs;
+        job.itemsMs = build.itemsMs;
+        job.floorMs = build.floorMs;
+        job.totalMs = build.milliseconds;
+        job.skipped = build.skipped;
+        m_record.job = job;
+    }
     if (build.mediaRootPath) {
         m_mediaRootPath = build.mediaRootPath; // the cover loader's retry after a refresh (I3 step 12)
     }
     m_record.itemsWritten = build.itemsWritten;
-    m_record.screenGames = build.screenGames.size();
     m_record.objectFallbacks.clear();
     for (const ObjectFallback& fallback : build.objectFallbacks) {
         m_record.objectFallbacks.push_back(ObjectFallbackRecord{fallback.prefab, fallback.source, fallback.reason});
@@ -533,9 +618,30 @@ void WorldSession::recordBuild(const WorldBuild& build) {
                  build.planDigest.empty() ? std::string() : ", plan " + build.planDigest);
 }
 
-bool WorldSession::showFloor(WorldBuild& build, bool keepWalker) {
+bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<WalkerKeptRecord>* walker) {
     // I3 step 15b: a floor committed again over the one shown (the walker kept) keeps its items' pictures: each room's
     // arrays pass to its new collection and the cover loader's work is adopted, so only new or changed pictures go up.
+    // I4 step 6b (ADR-0013 §7): the walker (and a Focus or Inspect pose) stays in the frame of the area that holds it,
+    // moved with it (a room grown, the start room grown under the scene's frame).
+    std::optional<FrameMove> walkerMoved;
+    if (keepWalker && m_shown) {
+        const std::string area = m_host.eyeArea ? m_host.eyeArea() : std::string();
+        walkerMoved = walkerMove(*m_shown, build, area);
+        if (walker != nullptr) {
+            WalkerKeptRecord kept;
+            kept.area = area;
+            if (walkerMoved) {
+                kept.shift = glm::vec3(walkerMoved->matrix[3]);
+                kept.halfTurn = walkerMoved->halfTurn;
+            }
+            *walker = kept;
+        }
+        if (walkerMoved) {
+            spdlog::info("World: the walker moves with {} ({:.3f}, {:.3f}, {:.3f}){}", area, walkerMoved->matrix[3].x,
+                         walkerMoved->matrix[3].y, walkerMoved->matrix[3].z,
+                         walkerMoved->halfTurn ? ", half a turn" : "");
+        }
+    }
     std::map<world::RoomId, CollectionPictures> pictures;
     std::unique_ptr<CoverLoader> shownLoader;
     if (keepWalker) {
@@ -551,8 +657,23 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker) {
     const std::size_t lights = build.scene->lights.size();
     SceneShow show;
     show.keepWalker = keepWalker;
-    // The hero CRT: the start room's (I4 step 5a; rebinding it to the room of the eye is step 6b's), none without one.
-    show.heroScreenPrefix = build.startRoom ? build.startRoom->toString() + "/" : std::string();
+    show.walkerMove = walkerMoved;
+    // The hero CRT: the bound room's (the start room's at first, then the eye's: I4 step 6b) when it is on this floor,
+    // with its games; none (the lobby) until the eye stays in a room.
+    const std::optional<std::string> screenRoom = floorScreenRoom(build);
+    if (!screenRoom) {
+        m_screenRooms.reset(std::nullopt);
+    }
+    std::vector<ScreenGame> screenGames;
+    if (screenRoom) {
+        for (const RoomCollection& room : build.rooms) {
+            if (room.room.toString() == *screenRoom) {
+                screenGames = room.screenGames;
+            }
+        }
+    }
+    show.heroScreenPrefix = screenRoom ? *screenRoom + "/" : std::string();
+    show.screenGames = screenGames;
     if (Status shown = m_host.showScene(std::move(*build.scene), show); !shown) {
         spdlog::error("World: the floor's scene cannot be shown: {}; the test room instead", shown.error().toString());
         if (Status fallback = m_host.showTestRoom(); !fallback) {
@@ -625,9 +746,10 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker) {
     }
     startCoverLoader(build, std::move(shownLoader));
     keepShown(build); // I3 step 15b: the next live update compares with it
-    // The hero CRT of the scene just shown plays the start room's games (I3 step 10c; none for a preview).
-    if (m_host.setScreenGames) {
-        m_host.setScreenGames(build.screenGames);
+    // The hero CRT of the scene just shown plays its room's games (bound with them by the scene's show).
+    m_record.screenGames = screenGames.size();
+    if (m_host.setScreenGames && screenRoom) {
+        m_host.setScreenGames(std::move(screenGames));
     }
     m_shownAt = std::chrono::system_clock::now();
     return true;
@@ -681,8 +803,8 @@ void WorldSession::startCoverLoader(const WorldBuild& build, std::unique_ptr<Cov
                                              std::move(groups));
     if (previous) {
         // The same collections served again (I3 step 10c's textures reconciliation): only the pictures that changed
-        // go up again.
-        m_loader->adoptShown(*previous);
+        // go up again; an unchanged room's items, their pictures showing, are done as they are (I4 step 6b).
+        m_loader->adoptShown(*previous, m_collections);
         previous.reset();
     }
     if (!m_heroes) {
@@ -754,7 +876,23 @@ std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene
 }
 
 std::optional<std::string> WorldSession::screenSelection(const std::optional<std::string>& catalogSelection) const {
-    return app::screenSelection(catalogSelection, m_interaction->interaction().state(), m_interaction->focusedGame());
+    // ADR-0013 §9: the quick catalog's selection plays only when its game stands in the eye's room, whose CRT is the
+    // one bound (I4 step 6b); else the CRT keeps what it plays.
+    std::optional<std::string> catalog;
+    if (catalogSelection && !m_rooms.empty()) {
+        const std::optional<std::size_t> eye = eyeRoom();
+        const std::optional<std::string>& bound = m_screenRooms.bound();
+        if (eye && bound && m_rooms[*eye].id.toString() == *bound && m_shown) {
+            const ShownCollection* room = m_shown->find(m_rooms[*eye].id);
+            const auto game = catalog::GameId::parse(*catalogSelection);
+            if (room != nullptr && game && room->layout.findGame(*game) != nullptr) {
+                catalog = catalogSelection;
+            }
+        }
+    } else {
+        catalog = catalogSelection; // the test room, a scene of no building
+    }
+    return app::screenSelection(catalog, m_interaction->interaction().state(), m_interaction->focusedGame());
 }
 
 std::optional<CardAction> WorldSession::cardPress(const input::ActionState* actions, ProductUi& product) {
@@ -862,9 +1000,28 @@ void WorldSession::dropCollection() {
     }
 }
 
+std::vector<RoomUpdateRecord> WorldSession::roomRecords(const LiveUpdatePlan& plan, bool rebuilt) {
+    std::vector<RoomUpdateRecord> records;
+    for (const RoomUpdate& room : plan.rooms) {
+        RoomUpdateRecord record;
+        record.room = room.room.toString();
+        const bool own = room.kind == RoomUpdateKind::Added || room.kind == RoomUpdateKind::Removed;
+        record.kind = rebuilt && !own ? std::string("rebuilt") : std::string(toString(room.kind));
+        record.kept = room.difference.kept;
+        record.moved = room.difference.moved;
+        record.flagsChanged = room.difference.flagsChanged;
+        record.added = room.difference.added;
+        record.removed = room.difference.removed;
+        record.coversChanged = room.coversChanged;
+        records.push_back(std::move(record));
+    }
+    return records;
+}
+
 void WorldSession::record(RunReport& report) const {
     WorldRecord world = m_record;
     world.state = m_state;
+    world.screenRoom = m_screenRooms.bound().value_or(std::string());
     // The room that holds the eye at the end (I4 step 5a), "" in a hall or before a floor showed.
     world.room.clear();
     if (m_state == "room" && m_host.eyeArea) {
@@ -911,6 +1068,8 @@ void WorldSession::record(RunReport& report) const {
             const CollectionArraysSampled sampled = room.collection->sampledArrays(m_graphics.materials());
             record.arrays = sampled.arrays;
             record.ownArrays = sampled.own;
+            record.uploads = room.collection->uploads();
+            record.reuploads = room.collection->reuploads();
             residency.rooms.push_back(std::move(record));
         }
         if (m_shownAt) {

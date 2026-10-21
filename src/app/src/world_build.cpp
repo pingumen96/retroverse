@@ -18,12 +18,22 @@
 #include <rv/app/room_screen.hpp>
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog/metadata.hpp>
+#include <rv/catalog_db/catalog_stamp.hpp>
+#include <rv/core/canonical_json.hpp>
+#include <rv/core/file_io.hpp>
+#include <rv/core/json.hpp>
+#include <rv/core/paths.hpp>
 #include <rv/core/sha256.hpp>
+#include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
+#include <rv/core/version.hpp>
+#include <rv/esde/settings.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/incremental.hpp>
 #include <rv/world/lift.hpp>
 #include <rv/world/overrides.hpp>
+#include <rv/world/plan_json.hpp>
 #include <rv/world/room_input.hpp>
 #include <rv/world/room_look.hpp>
 #include <rv/world/room_selection.hpp>
@@ -146,7 +156,8 @@ void dropFloor(WorldBuild& build) {
 /// (snapshotRoomItems()): one no snapshot lists any more, and in a shared or arcade room every game of its other
 /// sections, which each section's items file holds so.
 [[nodiscard]] bool hasText(const RoomItemText& text) noexcept {
-    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty();
+    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty() ||
+           text.screen.has_value();
 }
 
 /// The text of `game` among the items of a room's `systems` (its sections, in order) and the items it is of: the first
@@ -213,6 +224,13 @@ RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::Wor
             own.insert(room.id);
         }
     }
+    // The other versions of each placed title of those rooms (the CRT's priority data is gathered from them).
+    std::map<catalog::GameId, std::vector<catalog::GameId>> versions;
+    for (const world::UnplacedGame& unplaced : plan.unplaced) {
+        if (unplaced.reason == world::UnplacedReason::DuplicateTitle && own.contains(unplaced.room)) {
+            versions[unplaced.representative].push_back(unplaced.game);
+        }
+    }
     for (const world::Placement& placement : plan.placements) {
         const catalog::RoomEntry* entry = entryOf(snapshot.snapshot, placement.game);
         if (entry == nullptr && !own.contains(placement.slot.fixture().room())) {
@@ -229,6 +247,11 @@ RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::Wor
             if (entry->year) {
                 text.year = std::to_string(*entry->year);
             }
+            // What its room's hero CRT shows of it (I4 step 6b: the floor's CRTs from the items files).
+            const auto others = versions.find(placement.game);
+            text.screen = roomItemScreen(snapshot, placement.game,
+                                         others != versions.end() ? std::span<const catalog::GameId>(others->second)
+                                                                  : std::span<const catalog::GameId>());
         }
         text.coverPath = coverPathOf(snapshot.mediaPaths, placement.game);
         items.items.push_back(std::move(text));
@@ -353,20 +376,14 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     const Clock::time_point planStart = Clock::now();
     Expected<world::GenerationResult> result = makeError(ErrorCode::Unknown, "no plan made");
     if (stored) {
-        // The update of the building's rooms, as `retroverse-cli worldplan update` makes it: each system's selection
-        // goes to the room that holds its section (its console room, or the shared or arcade room it has a section of:
-        // I4 step 4, sticky), a shared or arcade room updated with all its sections' selections (one lacking some is
-        // held as it is: the change report's heldRooms), the rooms without a selection as they stand; a system without
-        // a room waits for I4 step 6a (new systems).
-        std::vector<world::RoomSelection> updated;
-        for (world::RoomSelection& selection : selections) {
-            if (roomHolding(stored->plan, selection.room.system()) != nullptr) {
-                updated.push_back(std::move(selection));
-            } else if (!selection.titles.empty()) {
-                spdlog::info("World: {} has no room in the stored building; new systems enter it with I4 step 6a",
-                             selection.room.system().str());
-            }
-        }
+        // The update of the whole building, as `retroverse-cli worldplan update` makes it with no system named (I4 step
+        // 6a): each system's selection goes to the room that holds its section (its console room, or the shared or
+        // arcade room it has a section of: I4 step 4, sticky), also one without a placeable title, a shared or arcade
+        // room updated with all its sections' selections (one lacking some is held as it is: the change report's
+        // heldRooms), the rooms without a selection as they stand; every other system with a placeable title and data
+        // of its own enters the building (its console room, or a section of its floor's shared room or of the arcade
+        // room), the others left out (logged).
+        const Clock::time_point dataStart = Clock::now();
         std::vector<world::WorldData> rooms;
         for (const world::Room& room : stored->plan.rooms) {
             const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
@@ -381,6 +398,32 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
             }
             rooms.push_back(std::move(*data));
         }
+        std::vector<world::RoomSelection> updated;
+        for (world::RoomSelection& selection : selections) {
+            const catalog::SystemName system = selection.room.system();
+            if (roomHolding(stored->plan, system) != nullptr) {
+                updated.push_back(std::move(selection));
+                continue;
+            }
+            if (selection.titles.empty()) {
+                spdlog::info("World: {} is left out of the building: no placeable title", system.str());
+                continue;
+            }
+            world::RoomDataRequest request;
+            request.system = system;
+            if (const auto tags = platformTags.find(system); tags != platformTags.end()) {
+                request.platformTags = tags->second;
+            }
+            auto data = world::loadWorldData(input.paths.assetRoot, request);
+            if (!data) {
+                spdlog::warn("World: {} is left out of the building: no data yet: {}", system.str(),
+                             data.error().message);
+                continue;
+            }
+            rooms.push_back(std::move(*data));
+            updated.push_back(std::move(selection));
+        }
+        build.dataMs = millisecondsSince(dataStart);
         world::BuildingUpdateInput update;
         update.library = input.library;
         update.selections = std::move(updated);
@@ -472,6 +515,18 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     // it was until every section has one (I4 step 4): said in the log.
     for (const world::KeptRoom& held : result->changes.heldRooms) {
         spdlog::warn("World: {} is held as it is: {}", held.room.toString(), held.reason);
+    }
+    // The systems that entered the building (I4 step 6a: a room of their own, or a section of a shared or arcade room),
+    // and those that wait for a held room (they enter with the update that has every section's selection).
+    for (const world::SystemRoom& entered : result->changes.systemsEntered) {
+        const bool opened = std::find(result->changes.roomsAdded.begin(), result->changes.roomsAdded.end(),
+                                      entered.room) != result->changes.roomsAdded.end();
+        spdlog::info("World: {} enters the building in {} ({})", entered.system.str(), entered.room.toString(),
+                     opened ? "a new room" : "a new section");
+    }
+    for (const world::SystemRoom& waiting : result->changes.systemsWaiting) {
+        spdlog::warn("World: {} waits to enter {}, held (a section of it has no selection)", waiting.system.str(),
+                     waiting.room.toString());
     }
     build.plan = std::move(result->plan);
     build.planDigest = result->changes.digestAfter;
@@ -791,15 +846,11 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
             if (input.snapshot.mediaKnown()) {
                 result.sources.mediaRoot = result.sources.mediaRootPath;
             }
-            // Each system's room items, kept for the floors' builds and the next start (written when they changed).
-            const world::Room* startRoom = nullptr;
-            if (input.startRoom) {
-                for (const world::Room& room : build.plan->rooms) {
-                    if (room.id == *input.startRoom) {
-                        startRoom = &room;
-                    }
-                }
-            }
+            // The CRTs' games are read under the media root while it is known (ADR-0010 §3).
+            result.sources.screenMediaRoot = result.sources.mediaRoot;
+            // Each system's room items, kept for the floors' builds and the next start (written when they changed):
+            // their text, their covers and their CRT's data (I4 step 6b).
+            const Clock::time_point itemsStart = Clock::now();
             for (const RoomSnapshotResult& system : input.snapshot.systems) {
                 if (system.error || roomHolding(*build.plan, system.system) == nullptr) {
                     continue;
@@ -814,20 +865,234 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
                                  written.error().message);
                 }
                 result.sources.items.emplace(system.system, std::move(items));
-                // The start room's systems' snapshots: its hero CRT's games (room_screen.hpp).
-                if (startRoom != nullptr) {
-                    const std::vector<catalog::SystemName> held = systemsOf(*startRoom);
-                    if (std::find(held.begin(), held.end(), system.system) != held.end()) {
-                        result.sources.snapshots.emplace(system.system,
-                                                         std::make_shared<const RoomSnapshotResult>(system));
-                    }
-                }
             }
+            build.itemsMs = millisecondsSince(itemsStart);
+            // The building stamp (I4 step 6b): what this plan was made from, for the next start's shortcut. Only for a
+            // plan saved (or unchanged) from known media, every items file kept, the catalog's stamp read, and nothing
+            // that waits for another update (a room kept until a regeneration, a room held, a system waiting to enter
+            // one: their notice and warnings come with the whole job, at every start until they are settled).
+            const bool planned = build.outcome == WorldOutcome::Generated || build.outcome == WorldOutcome::Updated ||
+                                 build.outcome == WorldOutcome::Unchanged;
+            const bool settled = !build.changes || (build.changes->keptRooms.empty() &&
+                                                    build.changes->heldRooms.empty() &&
+                                                    build.changes->systemsWaiting.empty());
+            const std::filesystem::path stampFile = buildingStampFile(input.paths.cacheDir, input.library);
+            if (planned && settled && build.notice.empty() && !build.saveError && !build.itemsError &&
+                result.sources.mediaRoot && !input.snapshot.catalogStamp.empty()) {
+                BuildingStamp stamp;
+                stamp.planDigest = build.planDigest;
+                stamp.catalog = core::sha256Hex(input.snapshot.catalogStamp);
+                stamp.inputs = worldInputsDigest(input.paths, input.library, *result.sources.mediaRoot);
+                stamp.softFindings = build.softFindings;
+                if (auto written = writeBuildingStamp(stampFile, stamp); !written) {
+                    spdlog::warn("World: the building stamp cannot be kept: {}", written.error().toString());
+                }
+            } else {
+                removeBuildingStamp(stampFile);
+            }
+        } else if (!job.cancelled()) {
+            removeBuildingStamp(buildingStampFile(input.paths.cacheDir, input.library));
         }
     } catch (const std::exception& error) {
         noPlan(build, world_notice::kFailed, std::string("the building could not be made: ") + error.what());
     }
     build.milliseconds = millisecondsSince(start);
+    spdlog::info(
+        "World: the building job in {:.0f} ms ({}): lock and plan {:.0f}, selections {:.0f}, rooms' data {:.0f}, "
+        "plan {:.0f}, save {:.0f}, items {:.0f}",
+        build.milliseconds, toString(build.outcome), build.lockMs, build.selectMs, build.dataMs, build.planMs,
+        build.saveMs, build.itemsMs);
+    return result;
+}
+
+namespace {
+
+using Json = nlohmann::json;
+
+/// The largest building stamp read back.
+constexpr std::uintmax_t kMaxStampBytes = 64 * 1024;
+/// The largest input file hashed (the asset root's world data and manifests are a few kilobytes each).
+constexpr std::uintmax_t kMaxInputBytes = 16ull * 1024ull * 1024ull;
+
+/// "<name> <sha256 of its bytes>" for one input file, "<name> absent" for none.
+[[nodiscard]] std::string inputLine(std::string_view name, const std::filesystem::path& file) {
+    auto bytes = core::readFileShared(file, kMaxInputBytes);
+    return fmt::format("{} {}\n", name, bytes ? core::sha256Hex(*bytes) : std::string("absent"));
+}
+
+/// The program as built, read once: its version banner and its executable's name, size and last write time, so that
+/// a build of the same version whose code makes other plans or items never finds its predecessor's stamp valid.
+[[nodiscard]] const std::string& programIdentity() {
+    static const std::string identity = [] {
+        const std::filesystem::path executable = core::executablePath();
+        std::error_code sizeError;
+        const std::uintmax_t size = std::filesystem::file_size(executable, sizeError);
+        std::error_code timeError;
+        const std::filesystem::file_time_type written = std::filesystem::last_write_time(executable, timeError);
+        return fmt::format("{} {} {} {}", core::versionBanner(), core::pathToUtf8Lossy(executable.filename()),
+                           sizeError ? std::string("unknown") : std::to_string(size),
+                           timeError ? std::string("unknown") : std::to_string(written.time_since_epoch().count()));
+    }();
+    return identity;
+}
+
+} // namespace
+
+void removeBuildingStamp(const std::filesystem::path& file) {
+    std::error_code error;
+    if (std::filesystem::remove(file, error)) {
+        spdlog::info("World: the building stamp is removed: the next start plans the building again");
+    } else if (error) {
+        spdlog::warn("World: the building stamp cannot be removed: {}", error.message());
+    }
+}
+
+std::filesystem::path buildingStampFile(const std::filesystem::path& cacheDir, const catalog::LibraryId& library) {
+    return cacheDir / "world" / core::pathFromUtf8(library.str()) / "building-stamp.json";
+}
+
+Expected<BuildingStamp> readBuildingStamp(const std::filesystem::path& file) {
+    auto text = core::readTextFile(file, kMaxStampBytes);
+    if (!text) {
+        return propagate(text.error());
+    }
+    const std::string context = core::pathToUtf8Lossy(file);
+    auto document = core::parseJson(*text, context);
+    if (!document) {
+        return propagate(document.error());
+    }
+    const Json& json = *document;
+    if (!json.is_object() || !json.contains("schemaVersion") || !json["schemaVersion"].is_number_integer()) {
+        return makeError(ErrorCode::ParseError, "not a building stamp", context);
+    }
+    if (json["schemaVersion"].get<std::int64_t>() != kBuildingStampVersion) {
+        return makeError(ErrorCode::Unsupported, "another schema of the building stamp", context);
+    }
+    BuildingStamp stamp;
+    for (const auto& [key, out] : {std::pair<const char*, std::string*>{"planDigest", &stamp.planDigest},
+                                   std::pair<const char*, std::string*>{"catalog", &stamp.catalog},
+                                   std::pair<const char*, std::string*>{"inputs", &stamp.inputs}}) {
+        if (!json.contains(key) || !json[key].is_string()) {
+            return makeError(ErrorCode::ParseError, fmt::format("the building stamp has no {}", key), context);
+        }
+        *out = json[key].get<std::string>();
+    }
+    if (!json.contains("softFindings") || !json["softFindings"].is_number_unsigned()) {
+        return makeError(ErrorCode::ParseError, "the building stamp has no softFindings", context);
+    }
+    stamp.softFindings = json["softFindings"].get<std::size_t>();
+    return stamp;
+}
+
+Expected<bool> writeBuildingStamp(const std::filesystem::path& file, const BuildingStamp& stamp) {
+    auto text = core::writeCanonicalJson(Json{{"schemaVersion", kBuildingStampVersion},
+                                              {"planDigest", stamp.planDigest},
+                                              {"catalog", stamp.catalog},
+                                              {"inputs", stamp.inputs},
+                                              {"softFindings", stamp.softFindings}});
+    if (!text) {
+        return propagate(text.error());
+    }
+    if (auto existing = core::readTextFile(file, kMaxStampBytes); existing && *existing == *text) {
+        return false;
+    }
+    if (Status written = core::writeTextFileAtomic(file, *text); !written) {
+        return propagate(written.error());
+    }
+    return true;
+}
+
+std::string worldInputsDigest(const WorldPaths& paths, const catalog::LibraryId& library,
+                              const std::filesystem::path& mediaRoot) {
+    std::string text =
+        fmt::format("building-stamp/{}\nprogram {}\ngenerator {}\nitems {}\nmedia {}\n", kBuildingStampVersion,
+                    programIdentity(), world::kGeneratorVersion.toString(), kRoomItemsSchemaVersion,
+                    core::pathToUtf8Lossy(mediaRoot));
+    // The asset root's world data and prefab manifests, file by file in name order.
+    for (const std::string_view folder : {"world", "manifests"}) {
+        std::vector<std::pair<std::string, std::filesystem::path>> files;
+        std::error_code error;
+        for (std::filesystem::recursive_directory_iterator it(paths.assetRoot / folder, error), end;
+             !error && it != end; it.increment(error)) {
+            if (it->is_regular_file(error)) {
+                files.emplace_back(core::pathToUtf8Lossy(std::filesystem::relative(it->path(), paths.assetRoot)),
+                                   it->path());
+            }
+        }
+        if (error) {
+            text += fmt::format("{} unreadable\n", folder);
+        }
+        std::sort(files.begin(), files.end());
+        for (const auto& [name, file] : files) {
+            text += inputLine(name, file);
+        }
+    }
+    text += inputLine("world.json", paths.configDir / "world.json");
+    text += inputLine("library.json", paths.configDir / "library.json");
+    text += inputLine("overrides.json", world::worldFiles(paths.userDataRoot, library).overrides);
+    return core::sha256Hex(text);
+}
+
+std::optional<BuildingResult> unchangedBuilding(const WorldPaths& paths, const catalog::LibraryProfile& profile,
+                                                const world::StoredPlan& stored, const std::string& catalogStamp,
+                                                const std::optional<world::RoomId>& startRoom) {
+    const Clock::time_point start = Clock::now();
+    if (catalogStamp.empty()) {
+        return std::nullopt;
+    }
+    auto stamp = readBuildingStamp(buildingStampFile(paths.cacheDir, profile.id));
+    if (!stamp) {
+        if (stamp.error().code != ErrorCode::NotFound) {
+            spdlog::info("World: the building stamp is not used: {}", stamp.error().toString());
+        }
+        return std::nullopt;
+    }
+    const auto miss = [](std::string_view why) {
+        spdlog::info("World: the building is planned again: {}", why);
+        return std::nullopt;
+    };
+    if (stamp->planDigest != stored.digest) {
+        return miss("the stored plan is not the one the last building job left");
+    }
+    if (stamp->catalog != core::sha256Hex(catalogStamp)) {
+        return miss("the catalog changed since (an import, a play session, an identity)");
+    }
+    // The plan file as it was read (another program may have written it since).
+    const world::WorldFiles files = world::worldFiles(paths.userDataRoot, profile.id);
+    auto text = core::readTextFile(files.plan, kMaxInputBytes * 8);
+    if (!text || core::sha256Hex(*text) != stored.digest) {
+        return miss("the plan's file changed");
+    }
+    const std::optional<std::filesystem::path> mediaRoot = readableMediaRoot(profile);
+    if (!mediaRoot) {
+        return miss("the media root cannot be read now");
+    }
+    if (stamp->inputs != worldInputsDigest(paths, profile.id, *mediaRoot)) {
+        return miss("the world's data, configuration or media root changed");
+    }
+    for (const world::Room& room : stored.plan.rooms) {
+        for (const catalog::SystemName& system : systemsOf(room)) {
+            std::error_code error;
+            if (!std::filesystem::is_regular_file(roomItemsFile(paths.cacheDir, profile.id, system), error)) {
+                return miss("a room's items file is missing");
+            }
+        }
+    }
+    BuildingResult result;
+    WorldBuild& build = result.build;
+    build.library = profile.id;
+    build.startRoom = startRoom;
+    build.outcome = WorldOutcome::Unchanged;
+    build.plan = stored.plan;
+    build.planDigest = stored.digest;
+    build.softFindings = stamp->softFindings;
+    build.reason = "the catalog and the world's inputs as the stored plan was made from";
+    build.skipped = true;
+    result.sources.mediaRoot = mediaRoot;
+    result.sources.mediaRootPath = mediaRoot;
+    result.sources.screenMediaRoot = mediaRoot;
+    build.milliseconds = millisecondsSince(start);
+    spdlog::info("World: the building as stored ({:.1f} ms): {}", build.milliseconds, build.reason);
     return result;
 }
 
@@ -853,6 +1118,8 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 }
             }
         }
+        build.floorPlacement =
+            startPlacement ? relativePlacement(world::RoomPlacement{}, *startPlacement) : world::RoomPlacement{};
         const std::vector<const world::Room*> rooms = world::roomsOnFloor(plan, *floor);
         const std::map<catalog::SystemName, RoomItems> items = floorItems(paths, build, rooms, sources);
         world::PlatformTagsBySystem tags;
@@ -923,9 +1190,17 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         }
         build.sceneMs = millisecondsSince(sceneStart);
 
-        // Each collection room's layout in the scene's frame and its cover requests (ADR-0011 §1).
+        // Each collection room's layout in the scene's frame, its cover requests (ADR-0011 §1), its content digest and
+        // its CRT's games (I4 step 6b).
         const Clock::time_point layoutStart = Clock::now();
         const std::vector<world::CollectionTitle> titles = collectionTitlesOf(mergedItems(items), plan);
+        std::map<world::RoomId, std::string> digests;
+        if (auto computed = world::roomContentDigests(plan)) {
+            digests = std::move(*computed);
+        } else {
+            spdlog::warn("World: the rooms' content digests: {}; every room is compared whole",
+                         computed.error().toString());
+        }
         for (const world::Room* room : rooms) {
             const auto roomData = data->rooms.find(room->id);
             if (roomData == data->rooms.end()) {
@@ -972,22 +1247,35 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 collection.covers.push_back(std::move(cover));
             }
             build.itemsRead += collection.covers.size();
-            // The start room's hero CRT plays its systems' games (I3 step 10c; none for a preview): a shared or arcade
-            // room's, its sections' in the room's featured order (ADR-0013 §9).
-            if (build.startRoom && room->id == *build.startRoom) {
-                std::vector<const RoomSnapshotResult*> snapshots;
-                for (const catalog::SystemName& system : held) {
-                    const auto snapshot = sources.snapshots.find(system);
-                    if (snapshot != sources.snapshots.end() && snapshot->second) {
-                        snapshots.push_back(snapshot->second.get());
-                    }
+            if (const auto digest = digests.find(room->id); digest != digests.end()) {
+                collection.contentDigest = digest->second;
+            }
+            // Its hero CRT plays its placed games (I3 step 10c; ADR-0013 §9): a shared or arcade room's, its sections'
+            // in the room's featured order, each game's data from its own section's items.
+            if (sources.screenMediaRoot) {
+                collection.screenGames = roomScreenGames(
+                    collection.layout,
+                    [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
+                    *sources.screenMediaRoot);
+            }
+            if (sources.lastPlayed) {
+                // The catalog's sessions now, as the building's items will hold them (a game played since they were
+                // written: the CRT's start choice is the building's).
+                for (ScreenGame& game : collection.screenGames) {
+                    const auto id = catalog::GameId::parse(game.id);
+                    const auto played = id ? sources.lastPlayed->find(*id) : sources.lastPlayed->end();
+                    game.lastPlayed = played != sources.lastPlayed->end() ? std::optional<std::int64_t>(played->second)
+                                                                          : std::nullopt;
                 }
-                build.screenGames = roomScreenGames(plan, collection.layout, snapshots);
+            }
+            if (build.startRoom && room->id == *build.startRoom) {
+                build.screenGames = collection.screenGames;
             }
             collection.sceneData = std::move(roomData->second);
             build.rooms.push_back(std::move(collection));
         }
         build.layoutMs = millisecondsSince(layoutStart);
+        build.floorMs = millisecondsSince(start);
         build.scene = std::move(*description);
         if (sources.mediaRoot) {
             build.mediaRoot = sources.mediaRoot;
@@ -1007,20 +1295,62 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
 }
 
 WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library, const world::StoredPlan& stored,
-                        const std::optional<world::RoomId>& startRoom) {
+                        const std::optional<world::RoomId>& startRoom,
+                        const std::optional<std::filesystem::path>& screenMediaRoot,
+                        std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed) {
     WorldBuild build;
     build.preview = true;
     build.library = library;
     build.startRoom = startRoom;
     keep(build, stored, world_notice::kNone, "the stored plan, shown before the catalog is read");
-    buildFloor(paths, build, FloorSources{});
+    FloorSources sources;
+    sources.screenMediaRoot = screenMediaRoot;
+    sources.lastPlayed = std::move(lastPlayed);
+    buildFloor(paths, build, sources);
     if (!build.scene && !build.startRoomMissing) {
         spdlog::error("World: the stored plan's floor cannot be shown before the catalog is read: {}", build.reason);
     }
     return build;
 }
 
+std::optional<std::filesystem::path> readableMediaRoot(const catalog::LibraryProfile& profile) {
+    const auto settings = esde::readSettings(profile.esdeHome);
+    const esde::ResolvedRoot root = esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, profile);
+    if (!root.path) {
+        return std::nullopt;
+    }
+    std::error_code error;
+    if (!std::filesystem::is_directory(std::filesystem::path(core::extendedLengthPath(*root.path)), error) || error) {
+        return std::nullopt;
+    }
+    return root.path;
+}
+
 // --- The flow -------------------------------------------------------------------------------------------------------
+
+namespace {
+
+/// Each game's latest play session that counts, in seconds since 1970, read on the world's reader (the preview's: the
+/// CRT games' last plays); none when it cannot be read (logged: the items files' own then).
+[[nodiscard]] std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayedOf(WorldCatalogReader& reader) {
+    const std::lock_guard lock(reader.mutex);
+    if (!reader.query) {
+        return std::nullopt;
+    }
+    auto sessions = catalog_db::lastPlaySessions(reader.query->connection());
+    if (!sessions) {
+        spdlog::warn("World: the play sessions cannot be read for the stored floor's CRTs: {}",
+                     sessions.error().toString());
+        return std::nullopt;
+    }
+    std::map<catalog::GameId, std::int64_t> seconds;
+    for (const auto& [game, started] : *sessions) {
+        seconds.emplace(game, std::chrono::duration_cast<std::chrono::seconds>(started.time_since_epoch()).count());
+    }
+    return seconds;
+}
+
+} // namespace
 
 struct WorldFlow::Mailbox {
     std::mutex mutex;
@@ -1119,12 +1449,33 @@ void WorldFlow::submitBuilding(AppCatalog& catalog) {
     core::JobOptions jobOptions;
     jobOptions.priority = core::WorkerPool::kHighestPriority;
     jobOptions.generation = &m_generation;
+    std::shared_ptr<const world::StoredPlan> stored;
+    if (m_stored && m_stored->stored && m_options.preview) {
+        stored = std::make_shared<const world::StoredPlan>(*m_stored->stored);
+    }
     const Status submitted = m_pool.submit(
         [mailbox = m_mailbox, paths = m_options.paths, library = m_library, reader = m_reader,
-         writer = m_options.writer, startRoom = m_options.startRoom, placed = std::move(placed),
+         writer = m_options.writer, startRoom = m_options.startRoom, placed = std::move(placed), stored,
          generation](const core::JobContext& job) {
             if (job.cancelled()) {
                 return;
+            }
+            // I4 step 6b: an unchanged start plans nothing (the building stamp), before any snapshot is read.
+            if (stored) {
+                std::string catalogStamp;
+                {
+                    const std::lock_guard lock(reader->mutex);
+                    if (reader->query) {
+                        if (auto read = catalog_db::catalogStamp(reader->query->connection(), library)) {
+                            catalogStamp = std::move(*read);
+                        }
+                    }
+                }
+                if (std::optional<BuildingResult> unchanged =
+                        unchangedBuilding(paths, reader->profile, *stored, catalogStamp, startRoom)) {
+                    mailbox->post(generation, [&](Mailbox& box) { box.building = std::move(*unchanged); });
+                    return;
+                }
             }
             // The systems that get a room (ADR-0013 §2: classify(); excluded ones never), read in one transaction.
             const SystemFilter wanted = roomSystemsFilter(paths.assetRoot);
@@ -1245,11 +1596,16 @@ void WorldFlow::update(AppCatalog& catalog) {
             jobOptions.generation = &m_generation;
             const Status submitted = m_pool.submit(
                 [mailbox = m_mailbox, paths = m_options.paths, library = m_library, startRoom = m_options.startRoom,
-                 stored = m_stored->stored, generation](const core::JobContext& job) {
+                 stored = m_stored->stored, profile = m_reader->profile, reader = m_reader,
+                 generation](const core::JobContext& job) {
                     if (job.cancelled()) {
                         return;
                     }
-                    WorldBuild preview = previewWorld(paths, library, *stored, startRoom);
+                    // The rooms' CRTs play their games from the start (I4 step 6b), read under the library's media
+                    // root when it can be read now, each game's last play the catalog's (the CRT starts on the game
+                    // the building's result chooses); the covers come from the cache alone all the same.
+                    WorldBuild preview = previewWorld(paths, library, *stored, startRoom, readableMediaRoot(profile),
+                                                      lastPlayedOf(*reader));
                     if (job.cancelled()) {
                         return;
                     }

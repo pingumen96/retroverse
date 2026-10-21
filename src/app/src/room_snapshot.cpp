@@ -2,10 +2,14 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/catalog_db/catalog_stamp.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/esde/settings.hpp>
 
@@ -136,16 +140,24 @@ BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader, std::span<cons
         building.error = summaries.error();
         return finish();
     }
+    // What the snapshots below are read from (I4 step 6b): the building stamp's catalog part, in the same transaction.
+    if (auto stamp = catalog_db::catalogStamp(query.connection(), reader.profile.id)) {
+        building.catalogStamp = std::move(*stamp);
+    } else {
+        spdlog::warn("Building snapshot: the catalog's stamp cannot be read: {}", stamp.error().toString());
+    }
     // ES-DE's settings as they are now: the media root it would use (library.json's override over them).
     const auto settings = esde::readSettings(reader.profile.esdeHome);
     const esde::ResolvedRoot mediaRoot =
         esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, reader.profile);
     std::set<catalog::GameId> listed;
+    std::vector<std::string> roomless;
     for (const catalog_db::SystemSummary& summary : *summaries) {
         if (summary.library != reader.profile.id) {
             continue;
         }
         if (wanted && !wanted(summary.system.name, summary.system.platforms)) {
+            roomless.push_back(summary.system.name.str());
             continue;
         }
         RoomSnapshotRequest request;
@@ -157,6 +169,39 @@ BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader, std::span<cons
             listed.insert(entry.id);
         }
         building.systems.push_back(std::move(result));
+    }
+    // Where the read's time went (I4 step 6b): the bulk queries and the media checks, the slowest system.
+    double queryMs = 0.0;
+    double mediaMs = 0.0;
+    std::size_t entries = 0;
+    const RoomSnapshotResult* slowest = nullptr;
+    for (const RoomSnapshotResult& result : building.systems) {
+        queryMs += result.queryMs;
+        mediaMs += result.mediaMs;
+        entries += result.snapshot.entries.size();
+        if (slowest == nullptr || result.milliseconds > slowest->milliseconds) {
+            slowest = &result;
+        }
+    }
+    spdlog::info("Building snapshot: {} system(s), {} entries: the queries {:.0f} ms, the media {:.0f} ms{}",
+                 building.systems.size(), entries, queryMs, mediaMs,
+                 slowest != nullptr ? fmt::format("; the slowest {} ({} entries) {:.0f} ms", slowest->system.str(),
+                                                  slowest->snapshot.entries.size(), slowest->milliseconds)
+                                    : std::string());
+    // The systems left out of the building because they give no room (classify(): excluded, no family), as
+    // `worldplan update` notes them: in one line, the first kListedRoomless by name.
+    if (!roomless.empty()) {
+        constexpr std::size_t kListedRoomless = 24;
+        std::sort(roomless.begin(), roomless.end());
+        const std::size_t listedCount = std::min(roomless.size(), kListedRoomless);
+        std::string names;
+        for (std::size_t index = 0; index < listedCount; ++index) {
+            names += (index == 0 ? "" : ", ") + roomless[index];
+        }
+        spdlog::info("World: {} system(s) of the catalog left out of the building, no room: {}{}", roomless.size(),
+                     names,
+                     roomless.size() > listedCount ? fmt::format(" and {} more", roomless.size() - listedCount)
+                                                   : std::string());
     }
     std::sort(building.systems.begin(), building.systems.end(),
               [](const RoomSnapshotResult& a, const RoomSnapshotResult& b) { return a.system < b.system; });

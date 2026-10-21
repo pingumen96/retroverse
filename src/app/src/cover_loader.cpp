@@ -273,8 +273,10 @@ void CoverLoader::submitUploads(std::span<CollectionInstance* const> collections
     }
 }
 
-void CoverLoader::adoptShown(const CoverLoader& previous) {
+void CoverLoader::adoptShown(const CoverLoader& previous, std::span<CollectionInstance* const> collections) {
     std::size_t adopted = 0;
+    std::vector<std::size_t> resident;
+    const bool sameRoot = previous.m_options.mediaRoot == m_options.mediaRoot;
     // By game: the live update (I3 step 15b) adopts the items of a collection that gained or lost some.
     std::map<catalog::GameId, std::size_t> before;
     for (std::size_t index = 0; index < previous.m_items.size(); ++index) {
@@ -293,12 +295,28 @@ void CoverLoader::adoptShown(const CoverLoader& previous) {
         m_front[index] = previous.m_front[was];
         m_frontEntry[index] = previous.m_frontEntry[was];
         m_spineEntry[index] = previous.m_spineEntry[was];
-        m_retrying[index] = kAdopted;
         ++adopted;
+        // I4 step 6b: asked as it was, its pictures in its collection, its front needing no new check: done as it is.
+        const FrontSource front = *previous.m_front[was];
+        const bool settled = sameRoot || front == FrontSource::Cover || front == FrontSource::Label;
+        const std::uint32_t group = groupOf(index);
+        const CollectionInstance* collection = group < collections.size() ? collections[group] : nullptr;
+        if (settled && previous.m_items[was] == m_items[index] && collection != nullptr) {
+            const auto frontSlot = collection->arrays().find(gl::CollectionClass::Front, m_items[index].frontKey);
+            const auto spineSlot = collection->arrays().find(gl::CollectionClass::Spine, m_items[index].spineKey);
+            if (frontSlot && frontSlot->resident && spineSlot && spineSlot->resident) {
+                resident.push_back(index);
+                continue;
+            }
+        }
+        m_retrying[index] = kAdopted;
     }
+    m_schedule.adoptDone(resident);
     m_adopted += adopted;
-    spdlog::info("Cover loader: {} of {} item(s) shown before; their pictures are uploaded again only if they changed",
-                 adopted, m_items.size());
+    m_adoptedResident += resident.size();
+    spdlog::info("Cover loader: {} of {} item(s) shown before, {} of them as they show (nothing served again); the "
+                 "others' pictures are uploaded again only if they changed",
+                 adopted, m_items.size(), resident.size());
 }
 
 void CoverLoader::retry(std::filesystem::path mediaRoot) {
@@ -602,6 +620,7 @@ void CoverLoader::record(ResidencyRecord& record, std::span<CollectionInstance* 
     record.retriedChanged = m_retriedChanged;
     record.adoptedItems = m_adopted;
     record.adoptedChanged = m_adoptedChanged;
+    record.adoptedResident = m_adoptedResident;
 }
 
 std::vector<std::string> CoverLoader::statusLines(std::span<CollectionInstance* const> collections) const {

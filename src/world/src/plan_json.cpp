@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <initializer_list>
+#include <map>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -568,50 +569,77 @@ Expected<WorldPlan> readPlan(std::string_view text, std::string_view context) {
     return plan;
 }
 
-Expected<std::string> roomContentDigest(const WorldPlan& plan, const RoomId& room) {
+Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan) {
     WorldPlan sorted = plan;
     sortPlan(sorted);
-    const auto found = std::find_if(sorted.rooms.begin(), sorted.rooms.end(),
-                                    [&](const Room& candidate) { return candidate.id == room; });
-    if (found == sorted.rooms.end()) {
+    // Each room's elements, in the plan's order (sorted: each list keeps it within a room).
+    struct Elements {
+        Json fixtures = Json::array();
+        Json placements = Json::array();
+        Json dressing = Json::array();
+        Json lights = Json::array();
+        Json unplaced = Json::array();
+    };
+    std::map<RoomId, Elements> byRoom;
+    for (const Room& room : sorted.rooms) {
+        byRoom.emplace(room.id, Elements{});
+    }
+    const auto of = [&](const RoomId& room) -> Elements* {
+        const auto found = byRoom.find(room);
+        return found != byRoom.end() ? &found->second : nullptr;
+    };
+    for (const Fixture& fixture : sorted.fixtures) {
+        if (Elements* elements = of(fixture.id.room())) {
+            elements->fixtures.push_back(fixtureJson(fixture));
+        }
+    }
+    for (const Placement& placement : sorted.placements) {
+        if (Elements* elements = of(placement.slot.fixture().room())) {
+            elements->placements.push_back(placementJson(placement));
+        }
+    }
+    for (const DressedLevel& dressed : sorted.dressing) {
+        if (Elements* elements = of(dressed.level.fixture().room())) {
+            elements->dressing.push_back(dressingJson(dressed));
+        }
+    }
+    for (const PlanLight& light : sorted.lights) {
+        if (Elements* elements = of(light.id.room())) {
+            elements->lights.push_back(lightJson(light));
+        }
+    }
+    for (const UnplacedGame& game : sorted.unplaced) {
+        if (Elements* elements = of(game.room)) {
+            elements->unplaced.push_back(detail::unplacedJson(game));
+        }
+    }
+    std::map<RoomId, std::string> digests;
+    for (const Room& room : sorted.rooms) {
+        Elements& elements = byRoom.at(room.id);
+        auto digest = core::canonicalJsonDigest(Json{{"room", roomJson(room)},
+                                                     {"fixtures", std::move(elements.fixtures)},
+                                                     {"placements", std::move(elements.placements)},
+                                                     {"dressing", std::move(elements.dressing)},
+                                                     {"lights", std::move(elements.lights)},
+                                                     {"unplaced", std::move(elements.unplaced)}});
+        if (!digest) {
+            return propagate(digest.error());
+        }
+        digests.emplace(room.id, std::move(*digest));
+    }
+    return digests;
+}
+
+Expected<std::string> roomContentDigest(const WorldPlan& plan, const RoomId& room) {
+    if (std::none_of(plan.rooms.begin(), plan.rooms.end(),
+                     [&](const Room& candidate) { return candidate.id == room; })) {
         return makeError(ErrorCode::NotFound, "the plan has no such room", room.toString());
     }
-    Json fixtures = Json::array();
-    for (const Fixture& fixture : sorted.fixtures) {
-        if (fixture.id.room() == room) {
-            fixtures.push_back(fixtureJson(fixture));
-        }
+    auto digests = roomContentDigests(plan);
+    if (!digests) {
+        return propagate(digests.error());
     }
-    Json placements = Json::array();
-    for (const Placement& placement : sorted.placements) {
-        if (placement.slot.fixture().room() == room) {
-            placements.push_back(placementJson(placement));
-        }
-    }
-    Json dressing = Json::array();
-    for (const DressedLevel& dressed : sorted.dressing) {
-        if (dressed.level.fixture().room() == room) {
-            dressing.push_back(dressingJson(dressed));
-        }
-    }
-    Json lights = Json::array();
-    for (const PlanLight& light : sorted.lights) {
-        if (light.id.room() == room) {
-            lights.push_back(lightJson(light));
-        }
-    }
-    Json unplaced = Json::array();
-    for (const UnplacedGame& game : sorted.unplaced) {
-        if (game.room == room) {
-            unplaced.push_back(detail::unplacedJson(game));
-        }
-    }
-    return core::canonicalJsonDigest(Json{{"room", roomJson(*found)},
-                                          {"fixtures", std::move(fixtures)},
-                                          {"placements", std::move(placements)},
-                                          {"dressing", std::move(dressing)},
-                                          {"lights", std::move(lights)},
-                                          {"unplaced", std::move(unplaced)}});
+    return std::move(digests->at(room));
 }
 
 } // namespace rv::world

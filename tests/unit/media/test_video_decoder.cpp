@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <thread>
 #include <vector>
@@ -306,8 +307,10 @@ TEST_CASE("media/video_decoder: decoders destroyed while they open or decode nev
         }
         decoder.reset(); // stop() without waiting; the thread keeps the shared state alive until it ends
     }
+    const std::uint64_t waits = rv::media::stoppedDecoderWaits();
     rv::media::waitForStoppedDecoders(); // every thread has ended
     rv::media::waitForStoppedDecoders(); // nothing left: returns at once
+    CHECK(rv::media::stoppedDecoderWaits() == waits + 2); // counted (I4 step 6b: the hero CRT's report)
 }
 
 TEST_CASE("media/video_decoder: unusable files fail with their reason and never crash", "[media][video_decoder]") {

@@ -117,6 +117,9 @@ struct BuildingSnapshot {
     /// The aliases of the placed games asked for that no system's snapshot lists, in GameId order.
     std::vector<world::GameAlias> aliases;
     std::optional<Error> aliasError;
+    /// The catalog's stamp in the same read (catalog_db::catalogStamp: I4 step 6b, the building stamp); empty when it
+    /// could not be read (logged: no stamp is written then).
+    std::string catalogStamp;
     /// Milliseconds of the whole read, and when it was done.
     double milliseconds = 0.0;
     std::chrono::system_clock::time_point at;
@@ -132,10 +135,10 @@ struct BuildingSnapshot {
 using SystemFilter = std::function<bool(const catalog::SystemName& system, std::span<const std::string> platforms)>;
 
 /// The job (on the worker pool, `reader`'s mutex held by the caller): within one deferred read transaction on
-/// `reader.query`, the library's systems (SqliteCatalogQuery::systems) that `wanted` keeps, each one's snapshot as
-/// takeRoomSnapshot() takes it (its media checked against the media root ES-DE's settings give now, its paths), then the
-/// aliases of `placedGames` that no snapshot lists (SqliteCatalogQuery::aliasTarget). Never fails as a whole: an error
-/// is in the result.
+/// `reader.query`, the library's systems (SqliteCatalogQuery::systems) that `wanted` keeps (the others named in one log
+/// line: left out of the building, no room), each one's snapshot as takeRoomSnapshot() takes it (its media checked
+/// against the media root ES-DE's settings give now, its paths), then the aliases of `placedGames` that no snapshot
+/// lists (SqliteCatalogQuery::aliasTarget). Never fails as a whole: an error is in the result.
 [[nodiscard]] BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader,
                                                     std::span<const catalog::GameId> placedGames,
                                                     const SystemFilter& wanted);

@@ -141,6 +141,9 @@ public:
     void giveBack(std::size_t item);
     /// Queues a Done item again (a retry after the catalog's refresh, ADR-0011 §6); false for one on its way already.
     bool requeue(std::size_t item);
+    /// Waiting items whose layers show already (I4 step 6b: taken over from a loader replaced, as they are asked now):
+    /// Done at once, no arrival recorded. Others are left as they are.
+    void adoptDone(std::span<const std::size_t> items);
 
     /// Every item is Done.
     [[nodiscard]] bool done() const noexcept { return m_doneCount == m_bounds.size(); }

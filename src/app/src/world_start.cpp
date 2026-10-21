@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/app/app_logic.hpp>
+#include <rv/app/world_live_plan.hpp>
 #include <rv/app/world_reconcile.hpp>
 
 #include "collection_instance.hpp"
@@ -88,33 +89,32 @@ void WorldSession::reconcile(WorldResult result) {
         break;
     }
     case Reconciliation::Rebuild: {
-        // I3 step 15b: another collection of the same static part has its items applied in place (nothing that stood
-        // is rebuilt or loaded again); else committed again, the walker where it stands. Either way the items that
-        // stood keep their places (the incremental rules move none).
-        const LiveUpdatePlan live =
-            m_shown ? planLiveUpdate(*m_shown, build) : LiveUpdatePlan{};
+        // I3 step 15b, I4 step 6b: the same static part has the rooms whose items changed applied in place (nothing
+        // that stood is rebuilt or loaded again, the other rooms untouched); else the floor is committed again, the
+        // walker kept in the frame of the area that holds it. Either way the items that stood keep their places (the
+        // incremental rules move none).
         WorldLiveUpdateRecord applied;
-        if (live.kind == LiveUpdateKind::Items && applyItems(build, live, applied)) {
+        if (plan.live.kind == LiveUpdateKind::Items && applyRooms(build, plan.live, applied)) {
             record.kind = std::string(toString(LiveUpdateKind::Items));
+            record.rooms = roomRecords(plan.live, false);
             finishCommit(build, start);
-        } else if (showFloor(build, true)) {
+        } else if (showFloor(build, true, &record.walker)) {
+            record.rooms = roomRecords(plan.live, true);
             finishCommit(build, start);
         }
         break;
     }
-    case Reconciliation::Textures:
-        // Nothing moves and nothing is rebuilt: the covers are served again when they changed or their sources can
-        // be checked now, and the hero CRT gets the room's games.
+    case Reconciliation::Textures: {
+        // Room by room (I4 step 6b): an unchanged room keeps its collection and its pictures, a room whose covers
+        // changed (or whose sources can be checked now) has them served again, uploading only what changed; the hero
+        // CRT gets its room's games.
         record.coversReloaded = plan.reloadCovers;
-        if (plan.reloadCovers) {
-            startCoverLoader(build);
-        }
-        keepShown(build); // I3 step 15b: the next live update compares with the snapshot's room
-        if (m_host.setScreenGames) {
-            m_host.setScreenGames(build.screenGames);
-        }
+        WorldLiveUpdateRecord applied;
+        static_cast<void>(applyRooms(build, plan.live, applied));
+        record.rooms = roomRecords(plan.live, false);
         finishCommit(build, start);
         break;
+    }
     }
     m_record.reconcile = record;
     spdlog::info("Frame {}: the stored plan's floor reconciled with the building's result ({}): {} item(s) kept, {} "
