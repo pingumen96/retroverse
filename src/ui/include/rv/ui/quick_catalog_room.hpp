@@ -22,10 +22,11 @@ inline constexpr std::string_view kRoomPlaced = "placed";
 inline constexpr std::string_view kRoomNotInRoom = "not-in-room";
 inline constexpr std::array<std::string_view, 6> kRoomUnplacedKeys{"duplicate-title", "no-cover", "unavailable",
                                                                    "capacity",        "room-kept", kRoomNotInRoom};
-/// A game the building places in a room other than the one that holds the eye (or with the eye in a hall): on display
-/// elsewhere, its button absent (I4 step 5a: "Mostra nella stanza" served the eye's room). Since I4 step 7b the app
-/// gives such a game kRoomPlaced ("Mostra nella stanza" goes there across rooms and floors): the documents keep the
-/// key's sentence for an application that cannot go there.
+/// Unused since I4 step 7b. A game the building places in a room other than the one that holds the eye (or with the
+/// eye in a hall): on display elsewhere, its button absent (I4 step 5a: "Mostra nella stanza" served the eye's room).
+/// Since step 7b the app gives such a game kRoomPlaced ("Mostra nella stanza" goes there across rooms and floors;
+/// docs/i4/step-7a.md's contract amended): the documents keep the key's sentence for an application that cannot go
+/// there.
 inline constexpr std::string_view kRoomOtherRoom = "other-room";
 
 } // namespace rv::ui::quick_catalog

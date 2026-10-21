@@ -66,7 +66,8 @@ build/rvdata`).
   elevator ride: `from`, `to`, `reason` `floor`, `room` or `showInRoom`, `room`, `game`, the frames `requestedFrame`,
   `fadedOutFrame`, `swappedFrame`, `fadedInFrame`, the milliseconds from the request `builtMs`, `residentMs`, `totalMs`
   (the view back: the acceptable row's measure) and the floor job's `jobMs`, `outcome` `arrived`, `timed-out`, `failed`
-  or `running`, the `walker` at the end, `arrayBytes` and `gpuBytes` then), `teleports` (`frame`, `to` a room or
+  or `running`, the `walker` at the end, `arrayBytes`, `gpuBytes` and `gpuKinds` (each kind's bytes) then), `teleports`
+  (`frame`, `to` a room or
   `elevator`, `reason`, `walker`) and `elevatorPromptFrames`),
   `residency` (the collection's layers, the
   floor's totals since I4 step 5a and each collection room's in `rooms`: `room`, `items`, `viewItems` (its items in
@@ -280,27 +281,34 @@ build/rvdata`).
   featured shelf, `shelf_light`, while the 16 lights leave room); the room's materials come from
   `assets/world/themes/classic_16bit_warm.json`. With the mouse free (the developer overlay open) the cursor picks.
 - The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its
-  proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it) a prompt names the interact key ("Ascensore",
-  E or the pad's A: "Scegli il piano"), which opens the directory on its floors; M (the pad's Back/Select) opens it
-  anywhere in free roam (not in Focus, Inspect, a launch or a ride) and closes it again. It has the UI's input (the
-  world stands still) and Esc / B leaves one level (the card to the games, a floor's rooms to the floors, then it
-  closes). "Piani" lists the plan's floors in the elevator's order (the walker's marked), a floor its hall
+  proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it), facing its doors (their middle less than 80
+  degrees off the view: the arrival point faces the hall, so the walker turns to them first), a prompt names the
+  interact key ("Ascensore", E or the pad's A: "Scegli il piano"), which opens the directory on its floors; M (the pad's
+  Back/Select) opens it anywhere in free roam (not in Focus, Inspect, a launch or a ride, nor in the frame an interact
+  takes an item) and closes it again. It has the UI's input (the world stands still) and Esc / B leaves one level (the
+  card to the games, a floor's rooms to the floors, then it closes). "Piani" lists the plan's floors in the elevator's order (the walker's marked), a floor its hall
   ("Corridoio e ascensore") and its rooms along the hall with their games; "Preferiti e recenti" (the shoulders, or Left
   and Right on the tabs) the catalog's favourites, then its most recently played games (Retroverse's sessions and
   ES-DE's `<lastplayed>`, at most 30), a game its card with Avvia (the quick catalog's launch, its outcome on the card)
   and "Mostra nella stanza". Choosing another floor's hall rides there, the walker's own floor's hall puts the walker
   back at its elevator; a room of the walker's floor teleports to its doorway, one of another floor rides there first.
-  A ride: the view fades out in 250 ms (instant with `reduceMotion`), the destination floor is built on the pool from
-  the plan and the rooms' items files, the resident floor is dropped only once it is built (a failure leaves the walker
-  where it was, the directory saying it cannot change floors now) and swapped behind the fade (the hero CRT unbound,
-  bound again by the room the eye stays in), the walker at its elevator facing the hall or at the room's doorway, and
-  the view fades back in once the room that holds the eye is resident (a hall at once), or after 10 s; under lockstep
-  the frames wait instead (15 frames out, the swap, 15 frames in at `--fixed-dt 0.016667`). The input is suspended
-  meanwhile; a building's result or a live update that ends during a ride applies after it. A ride or teleport is
-  refused while a floor applies (the persisted start's reconciliation), in Focus or Inspect, or while a launch is
-  active: the directory comes back where it was with its notice (`ride-unavailable`; `building-pending` before the
-  building is planned). After a ride the scene's frame is the destination floor's (the start room's on its own floor):
-  `--spawn` applies to the start only.
+  A ride: the view fades out in 250 ms (instant with `reduceMotion`; the post pass dims the tonemapped view's sRGB
+  values alike, its lights too, the UI above it), the destination floor is built on the pool from the plan, the rooms'
+  items files and the catalog's play sessions (a game played since the items were written starts its room's CRT), the
+  resident floor is dropped only once it is built (a failure leaves the walker where it was, the directory saying it
+  cannot change floors now) and swapped behind the fade in the frame after it ended (the hero CRT unbound, bound again
+  by the room the eye stays in), the walker at its elevator facing the hall or at the room's doorway, and the view
+  fades back in once the room that holds the eye is resident (a hall at once), or so that it is back 10 s after the
+  request (the wait ends at 9.25 s, a fade-in begun late by a long frame shortened to end by 10 s: `timed-out`); the
+  fades follow the real clock; under lockstep the frames' times and the frames wait instead (15 frames out, the swap in
+  the next, the eye's area in the one after, 15 frames in at `--fixed-dt 0.016667`, on every run). The input is
+  suspended meanwhile; a building's result or a live update that ends during a ride applies after it (and never while a
+  launched game runs). A ride or teleport is refused while a floor applies (the persisted start's reconciliation, a
+  result built again for the floor shown), in Focus or Inspect, or while a launch is active: the directory comes back
+  where it was with its notice (`ride-unavailable`; `building-pending` before the building is planned); the quick
+  catalog's "Mostra nella stanza" refused or failed so says the world's notice (`room-unreachable`, 12 s), and in the
+  room the walker is in it is taken while a floor applies, as before I4. After a ride the scene's frame is the
+  destination floor's (the start room's on its own floor): `--spawn` applies to the start only.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
