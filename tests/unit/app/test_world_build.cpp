@@ -11,8 +11,10 @@
 // rooms (the snes room updated, the other as it stood), one plan for the app and retroverse-cli's catalog commands, a
 // room kept as it is with the regeneration's notice. I4 step 5a: the start room's frame (its scene numbers those of its
 // standalone scene), a start room the building lacks, the building fixture's floors; at the merge with step 4 its shared
-// and arcade rooms (their sections' covers and CRT games, the update by sections, a room held). On the snes-room fixture
-// (tests/fixtures/esde/snes-room: 50 titles with covers) and the building fixture imported into a user data directory.
+// and arcade rooms (their sections' covers and CRT games, the update by sections, a room held). I4 step 6b: the new
+// systems entered by the app's job, the building stamp (an unchanged start plans nothing; none while a room waits for
+// an update), the preview's CRT games. On the snes-room fixture (tests/fixtures/esde/snes-room: 50 titles with covers)
+// and the building fixture imported into a user data directory.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -909,6 +911,7 @@ TEST_CASE("app/world_build: an unchanged start plans nothing (the building stamp
     CHECK(stamp->planDigest == first.planDigest);
     CHECK(rv::world::isSha256Hex(stamp->catalog));
     CHECK(stamp->inputs == rv::app::worldInputsDigest(paths, profile.id, *first.mediaRoot));
+    CHECK(stamp->softFindings == first.softFindings);
     const auto catalogStampNow = [&] {
         const auto reader = readerOf(imported);
         auto read = rv::catalog_db::catalogStamp(reader->query->connection(), profile.id);
@@ -930,6 +933,7 @@ TEST_CASE("app/world_build: an unchanged start plans nothing (the building stamp
     CHECK(unchanged->build.skipped);
     CHECK_FALSE(unchanged->build.changes.has_value());
     CHECK(unchanged->build.planDigest == first.planDigest);
+    CHECK(unchanged->build.softFindings == first.softFindings); // as the plan's validation found them
     CHECK(unchanged->sources.mediaRoot == first.mediaRoot);
     rv::app::buildFloor(paths, unchanged->build, unchanged->sources);
     REQUIRE(unchanged->build.scene.has_value());
@@ -987,7 +991,7 @@ TEST_CASE("app/world_build: an unchanged start plans nothing (the building stamp
     }
     CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), std::string(), kSnesRoom).has_value());
     const std::string stampText = rv::core::readTextFile(stampFile).value();
-    REQUIRE(rv::core::writeTextFileAtomic(stampFile, "{\"schemaVersion\": 2}\n").has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(stampFile, "{\"schemaVersion\": 1}\n").has_value());
     CHECK(rv::app::readBuildingStamp(stampFile).error().code == rv::ErrorCode::Unsupported);
     CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
     REQUIRE(fs::remove(stampFile));
@@ -1502,10 +1506,82 @@ TEST_CASE("app/world_build: a room kept as it is (its prefab levels changed): sh
     CHECK(kept.plan->unplaced == first.plan->unplaced);
     CHECK(roomOf(kept).layout.items.size() == 50);
     CHECK(log.count("is kept as it is until 'retroverse-cli worldplan generate --replace'") == 1);
+    // No building stamp while a room waits for its regeneration (I4 step 6b): the first build's is removed, so that
+    // every next start runs the job and says so.
+    CHECK_FALSE(fs::exists(rv::app::buildingStampFile(input.paths.cacheDir, input.library)));
+    CHECK(log.count("the building stamp is removed") == 1);
     // The next start: the same notice, nothing written.
     const WorldBuild again = rv::app::buildWorld(input, rv::core::JobContext{});
     CHECK(again.notice == rv::app::world_notice::kRegeneration);
     CHECK_FALSE(again.written);
+    CHECK_FALSE(again.skipped);
+    CHECK_FALSE(fs::exists(rv::app::buildingStampFile(input.paths.cacheDir, input.library)));
+}
+
+TEST_CASE("app/world_flow: a start room kept until a regeneration shows its notice at every start, whichever room the "
+          "last start was in",
+          "[app][world_build]") {
+    // I4 step 6b's shortcut never hides a room kept as it is: its job writes no building stamp, so the next starts run
+    // the whole job again, its notice and warnings with it. The app's flow, three starts after a first building.
+    const ImportedFixture imported("world-flow-kept", true, "esde/snes-room");
+    rv::core::WorkerPool pool(rv::core::WorkerPoolOptions{2});
+    rv::app::WorldFlow::Options options;
+    options.paths = worldPathsOf(imported);
+    options.startRoom = kSnesRoom;
+    options.writer = "retroverse (test)";
+    FakeCatalog catalog;
+    catalog.state = rv::app::CatalogState::Ready;
+    catalog.reader = readerOf(imported);
+    const fs::path stampFile = rv::app::buildingStampFile(options.paths.cacheDir, catalog.library);
+    {
+        rv::app::WorldFlow first(options, pool);
+        const auto built = runFlow(first, catalog);
+        REQUIRE(built.has_value());
+        REQUIRE(built->build.has_value());
+        CHECK(built->build->outcome == WorldOutcome::Generated);
+        CHECK(fs::exists(stampFile));
+    }
+    // The hero-wall module's manifest edited (an eighth level), in a copy of the assets: room:snes is kept as it is.
+    const fs::path assets = imported.dir.file("assets");
+    fs::copy(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR), assets, fs::copy_options::recursive);
+    const fs::path manifest = rv::assets::prefabManifestPath(assets, "furniture.shelf.hero_module.generic");
+    std::string text = rv::core::readTextFile(manifest).value();
+    const std::string levels = R"("levels": 7)";
+    const std::size_t at = text.find(levels);
+    REQUIRE(at != std::string::npos);
+    text.replace(at, levels.size(), R"("levels": 8)");
+    REQUIRE(rv::core::writeTextFileAtomic(manifest, text).has_value());
+    options.paths.assetRoot = assets;
+    const auto start = [&](std::optional<rv::world::RoomId> room) {
+        options.startRoom = std::move(room);
+        rv::app::WorldFlow flow(options, pool);
+        std::optional<WorldBuild> preview;
+        auto result = runFlow(flow, catalog, &preview);
+        REQUIRE(result.has_value());
+        REQUIRE(result->build.has_value());
+        CHECK(preview.has_value()); // the stored floor first
+        return std::move(*result->build);
+    };
+    for (int run = 0; run < 2; ++run) {
+        INFO("start " << run + 2 << " in room:snes");
+        rv::test::LogCapture log;
+        const WorldBuild build = start(kSnesRoom);
+        CHECK_FALSE(build.skipped);
+        CHECK(build.notice == rv::app::world_notice::kRegeneration);
+        REQUIRE(build.changes.has_value());
+        CHECK(build.changes->keptRooms.size() == 1);
+        CHECK(log.count("is kept as it is until 'retroverse-cli worldplan generate --replace'") == 1);
+        CHECK_FALSE(fs::exists(stampFile));
+    }
+    // A start in the lobby (no notice there: the start room is not the room kept) writes no stamp either: the next start
+    // in room:snes shows the notice again.
+    const WorldBuild lobby = start(std::nullopt);
+    CHECK_FALSE(lobby.skipped);
+    CHECK(lobby.notice.empty());
+    CHECK_FALSE(fs::exists(stampFile));
+    const WorldBuild again = start(kSnesRoom);
+    CHECK_FALSE(again.skipped);
+    CHECK(again.notice == rv::app::world_notice::kRegeneration);
 }
 
 TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sections' covers and CRT games, the update "

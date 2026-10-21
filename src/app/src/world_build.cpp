@@ -22,6 +22,7 @@
 #include <rv/core/canonical_json.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/json.hpp>
+#include <rv/core/paths.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
@@ -867,20 +868,30 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
             }
             build.itemsMs = millisecondsSince(itemsStart);
             // The building stamp (I4 step 6b): what this plan was made from, for the next start's shortcut. Only for a
-            // plan saved (or unchanged) from known media, every items file kept, the catalog's stamp read.
+            // plan saved (or unchanged) from known media, every items file kept, the catalog's stamp read, and nothing
+            // that waits for another update (a room kept until a regeneration, a room held, a system waiting to enter
+            // one: their notice and warnings come with the whole job, at every start until they are settled).
             const bool planned = build.outcome == WorldOutcome::Generated || build.outcome == WorldOutcome::Updated ||
                                  build.outcome == WorldOutcome::Unchanged;
-            if (planned && !build.saveError && !build.itemsError && result.sources.mediaRoot &&
-                !input.snapshot.catalogStamp.empty()) {
+            const bool settled = !build.changes || (build.changes->keptRooms.empty() &&
+                                                    build.changes->heldRooms.empty() &&
+                                                    build.changes->systemsWaiting.empty());
+            const std::filesystem::path stampFile = buildingStampFile(input.paths.cacheDir, input.library);
+            if (planned && settled && build.notice.empty() && !build.saveError && !build.itemsError &&
+                result.sources.mediaRoot && !input.snapshot.catalogStamp.empty()) {
                 BuildingStamp stamp;
                 stamp.planDigest = build.planDigest;
                 stamp.catalog = core::sha256Hex(input.snapshot.catalogStamp);
                 stamp.inputs = worldInputsDigest(input.paths, input.library, *result.sources.mediaRoot);
-                if (auto written = writeBuildingStamp(buildingStampFile(input.paths.cacheDir, input.library), stamp);
-                    !written) {
+                stamp.softFindings = build.softFindings;
+                if (auto written = writeBuildingStamp(stampFile, stamp); !written) {
                     spdlog::warn("World: the building stamp cannot be kept: {}", written.error().toString());
                 }
+            } else {
+                removeBuildingStamp(stampFile);
             }
+        } else if (!job.cancelled()) {
+            removeBuildingStamp(buildingStampFile(input.paths.cacheDir, input.library));
         }
     } catch (const std::exception& error) {
         noPlan(build, world_notice::kFailed, std::string("the building could not be made: ") + error.what());
@@ -909,7 +920,32 @@ constexpr std::uintmax_t kMaxInputBytes = 16ull * 1024ull * 1024ull;
     return fmt::format("{} {}\n", name, bytes ? core::sha256Hex(*bytes) : std::string("absent"));
 }
 
+/// The program as built, read once: its version banner and its executable's name, size and last write time, so that
+/// a build of the same version whose code makes other plans or items never finds its predecessor's stamp valid.
+[[nodiscard]] const std::string& programIdentity() {
+    static const std::string identity = [] {
+        const std::filesystem::path executable = core::executablePath();
+        std::error_code sizeError;
+        const std::uintmax_t size = std::filesystem::file_size(executable, sizeError);
+        std::error_code timeError;
+        const std::filesystem::file_time_type written = std::filesystem::last_write_time(executable, timeError);
+        return fmt::format("{} {} {} {}", core::versionBanner(), core::pathToUtf8Lossy(executable.filename()),
+                           sizeError ? std::string("unknown") : std::to_string(size),
+                           timeError ? std::string("unknown") : std::to_string(written.time_since_epoch().count()));
+    }();
+    return identity;
+}
+
 } // namespace
+
+void removeBuildingStamp(const std::filesystem::path& file) {
+    std::error_code error;
+    if (std::filesystem::remove(file, error)) {
+        spdlog::info("World: the building stamp is removed: the next start plans the building again");
+    } else if (error) {
+        spdlog::warn("World: the building stamp cannot be removed: {}", error.message());
+    }
+}
 
 std::filesystem::path buildingStampFile(const std::filesystem::path& cacheDir, const catalog::LibraryId& library) {
     return cacheDir / "world" / core::pathFromUtf8(library.str()) / "building-stamp.json";
@@ -941,6 +977,10 @@ Expected<BuildingStamp> readBuildingStamp(const std::filesystem::path& file) {
         }
         *out = json[key].get<std::string>();
     }
+    if (!json.contains("softFindings") || !json["softFindings"].is_number_unsigned()) {
+        return makeError(ErrorCode::ParseError, "the building stamp has no softFindings", context);
+    }
+    stamp.softFindings = json["softFindings"].get<std::size_t>();
     return stamp;
 }
 
@@ -948,7 +988,8 @@ Expected<bool> writeBuildingStamp(const std::filesystem::path& file, const Build
     auto text = core::writeCanonicalJson(Json{{"schemaVersion", kBuildingStampVersion},
                                               {"planDigest", stamp.planDigest},
                                               {"catalog", stamp.catalog},
-                                              {"inputs", stamp.inputs}});
+                                              {"inputs", stamp.inputs},
+                                              {"softFindings", stamp.softFindings}});
     if (!text) {
         return propagate(text.error());
     }
@@ -965,7 +1006,7 @@ std::string worldInputsDigest(const WorldPaths& paths, const catalog::LibraryId&
                               const std::filesystem::path& mediaRoot) {
     std::string text =
         fmt::format("building-stamp/{}\nprogram {}\ngenerator {}\nitems {}\nmedia {}\n", kBuildingStampVersion,
-                    core::versionBanner(), world::kGeneratorVersion.toString(), kRoomItemsSchemaVersion,
+                    programIdentity(), world::kGeneratorVersion.toString(), kRoomItemsSchemaVersion,
                     core::pathToUtf8Lossy(mediaRoot));
     // The asset root's world data and prefab manifests, file by file in name order.
     for (const std::string_view folder : {"world", "manifests"}) {
@@ -1044,6 +1085,7 @@ std::optional<BuildingResult> unchangedBuilding(const WorldPaths& paths, const c
     build.outcome = WorldOutcome::Unchanged;
     build.plan = stored.plan;
     build.planDigest = stored.digest;
+    build.softFindings = stamp->softFindings;
     build.reason = "the catalog and the world's inputs as the stored plan was made from";
     build.skipped = true;
     result.sources.mediaRoot = mediaRoot;

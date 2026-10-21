@@ -53,9 +53,12 @@
 // stored plan is that plan (the file's digest), the catalog's stamp and the world's inputs are as they were, the media
 // root can be read and every room's items file is there, nothing a snapshot could change has changed, so it plans
 // nothing (unchangedBuilding(): outcome Unchanged, `skipped`) and the floor is built from the plan and the items files.
-// Anything else runs the whole job. The world's inputs (worldInputsDigest()) are the program's version and the
-// generator's, the items files' and the stamp's schemas, every file of the asset root's world/ and manifests/ folders,
-// world.json, overrides.json, library.json and the media root's path.
+// Anything else runs the whole job. The world's inputs (worldInputsDigest()) are the program (its version and its
+// executable's size and last write time: another build of the same version may plan otherwise), the generator's
+// version, the items files' and the stamp's schemas, every file of the asset root's world/ and manifests/ folders,
+// world.json, overrides.json, library.json and the media root's path. A job that leaves something to settle (a room
+// kept until a regeneration, a room held, a system waiting to enter one, a notice) writes no stamp and removes the one
+// there, so that its notice and warnings come at every start until an update settles them.
 
 #include <chrono>
 #include <cstdint>
@@ -269,12 +272,14 @@ struct BuildingStamp {
     std::string planDigest;
     std::string catalog;
     std::string inputs;
+    /// The validation's soft findings of the plan (WorldBuild::softFindings), which a skipped start reports.
+    std::size_t softFindings = 0;
 
     bool operator==(const BuildingStamp&) const = default;
 };
 
 /// The building stamp's schema (raised whenever what the job writes beside the plan changes: the items files').
-inline constexpr int kBuildingStampVersion = 1;
+inline constexpr int kBuildingStampVersion = 2;
 
 /// <cacheDir>/world/<library>/building-stamp.json.
 [[nodiscard]] std::filesystem::path buildingStampFile(const std::filesystem::path& cacheDir,
@@ -283,6 +288,8 @@ inline constexpr int kBuildingStampVersion = 1;
 [[nodiscard]] Expected<BuildingStamp> readBuildingStamp(const std::filesystem::path& file);
 /// Writes the stamp atomically unless the file holds that text already; whether it wrote. Errors: those of the write.
 [[nodiscard]] Expected<bool> writeBuildingStamp(const std::filesystem::path& file, const BuildingStamp& stamp);
+/// Removes the stamp, when there is one (logged; a failure is logged too).
+void removeBuildingStamp(const std::filesystem::path& file);
 /// The digest of the world's inputs besides the catalog and the plan (see the file comment), the media root `mediaRoot`
 /// included. Never fails: a file that cannot be read counts as such.
 [[nodiscard]] std::string worldInputsDigest(const WorldPaths& paths, const catalog::LibraryId& library,
