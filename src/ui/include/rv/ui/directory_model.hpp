@@ -5,8 +5,9 @@
 // The directory (I4 step 7a; ADR-0013 §10): the building's one panel, opened at the elevator and with M or Select in
 // free roam, pad-navigable. Two tabs:
 //  - "Piani": the plan's floors in the elevator's order (the walker's floor marked); a floor opens the list of its
-//    rooms (the walker's room marked), whose first row is the floor's hall with the elevator. Choosing the hall rides to
-//    the floor (ChooseFloor), choosing a room goes to its doorway (ChooseRoom), riding first when it is on another floor.
+//    rooms (the walker's room marked), whose first row is the floor's hall with the elevator. Choosing the hall rides
+//    to the floor (ChooseFloor), choosing a room goes to its doorway (ChooseRoom), riding first when it is on another
+//    floor.
 //  - "Preferiti e recenti": the catalog's favourites, then its most recently played games (catalog::RecentGame's
 //    rule), each row a title and its system; a game opens its card, the quick catalog's card (GameCardContent, the
 //    same readiness and blocker sentences) with Avvia (Launch) and "Mostra nella stanza" (ShowInRoom, only for a game
@@ -21,7 +22,13 @@
 // Right move between the card's buttons. Back leaves one level: the card to the games, the rooms to the floors (Left
 // too), the floors or the games list closes the panel (Close). The commands that leave the panel (ChooseFloor,
 // ChooseRoom, ShowInRoom, Close) close the model; Launch keeps it open on the card, which tells the outcome. A click on
-// a tab, a row or a card button does what its key would (DirectoryClick).
+// a tab, a row or a card button does what its key would (DirectoryClick); a click on the row of the game whose card
+// shows leaves the card as it is.
+//
+// What the model asks of the app (step 7b) besides its commands: a new gamesRequest() asks for the games list (the
+// panel opened on the games, or the games tab entered), a new cardRequest() asks for the content of cardGameId()'s
+// card (a card opened, the same game's again included). A command the app refuses for now (a ride) is undone with
+// reopen(), which shows the panel where the command left it.
 
 #include <array>
 #include <cstddef>
@@ -175,7 +182,7 @@ enum class DirectoryCardButton : std::uint8_t { Play, ShowInRoom, Back };
 
 /// What the directory asks of the app.
 enum class DirectoryCommandKind : std::uint8_t {
-    ChooseFloor, ///< ride to the floor `id` (its elevator)
+    ChooseFloor, ///< ride to the floor `id` (its elevator); the walker's own floor: back to its elevator, no ride
     ChooseRoom,  ///< go to the doorway of room `id`, riding first when it is on another floor
     Launch,      ///< launch game `id` (the quick catalog's Avvia)
     ShowInRoom,  ///< show game `id` in its room (ADR-0012 §8, across floors: ADR-0013 §10)
@@ -210,7 +217,8 @@ public:
     /// The floors and rooms (the plan's summary; step 7b fills it). The selections follow their floor and room by id;
     /// a rooms list whose floor is gone goes back to the floors.
     void setBuilding(DirectoryBuilding building);
-    /// The games list (Ready): the selection follows its game by id, else stays at its index within the list.
+    /// The games list (Ready): the first game selected while the user has not moved since the panel opened (open()),
+    /// else the selection follows its game by id, else stays at its index within the list.
     void setGames(std::vector<DirectoryGame> games);
     /// The list's state without a new list (Loading while the catalog worker answers, Failed).
     void setGamesState(DirectoryGamesState state);
@@ -221,9 +229,14 @@ public:
     /// A line under the list (directory::kNotices; empty: none), until the panel opens again.
     void setNotice(std::string key);
 
-    /// Opens the panel on `tab`: the floors with the walker's floor selected, or the games with the first one selected
-    /// (the list's own order: favourites, then the most recent). The list has the focus.
+    /// Opens the panel on `tab`, both tabs from their start: the floors with the walker's floor selected, the games
+    /// with the first one selected (the list's own order: favourites, then the most recent), also once the list asked
+    /// for comes (setGames()). The list has the focus. On the games: a new gamesRequest().
     void open(DirectoryTab tab);
+    /// Opens the panel again where it closed (the command that left it refused, ADR-0013 §10's ride): its tab, view,
+    /// selections and card, the list focused, the notice cleared. Nothing when it is open; a panel never opened opens
+    /// on the floors (open()).
+    void reopen();
     void close() noexcept;
     [[nodiscard]] bool isOpen() const noexcept { return m_open; }
 
@@ -255,9 +268,15 @@ public:
     [[nodiscard]] const std::vector<DirectoryGame>& games() const noexcept { return m_games; }
     [[nodiscard]] DirectoryGamesState gamesState() const noexcept { return m_gamesState; }
     [[nodiscard]] std::size_t selectedGame() const noexcept { return m_game; }
+    /// Counts the times the games list was asked for (the panel opened on the games, the games tab entered): when it
+    /// changes, the app reads the list again (setGamesState(Loading), then setGames() or Failed).
+    [[nodiscard]] std::uint64_t gamesRequest() const noexcept { return m_gamesRequest; }
 
     /// The game the card shows ("" outside the card), its content and where it stands (setCard).
     [[nodiscard]] const std::string& cardGameId() const noexcept { return m_cardGameId; }
+    /// Counts the cards opened (the same game's again too, its content then reset to the row's): when it changes while
+    /// the card shows, the app gives cardGameId()'s content with setCard().
+    [[nodiscard]] std::uint64_t cardRequest() const noexcept { return m_cardRequest; }
     [[nodiscard]] const GameCardContent& cardContent() const noexcept { return m_cardContent; }
     [[nodiscard]] const std::string& cardRoom() const noexcept { return m_cardRoom; }
     [[nodiscard]] DirectoryCardButton cardButton() const noexcept { return m_cardButton; }
@@ -282,6 +301,8 @@ private:
     std::optional<DirectoryCommand> activateRow();
     std::optional<DirectoryCommand> press(DirectoryCardButton button);
     std::optional<DirectoryCommand> leave(DirectoryCommandKind kind, std::string id);
+    /// Closes the panel, keeping what reopen() restores.
+    void closePanel() noexcept;
     /// The list shown has no row: the tab bar takes the focus; once rows come, the list takes it back (unless the
     /// user moved it since).
     void followRows() noexcept;
@@ -290,6 +311,8 @@ private:
     [[nodiscard]] std::size_t startRoomRow(std::size_t floor) const noexcept;
 
     bool m_open = false;
+    /// The panel was opened once (reopen() has a place to go back to).
+    bool m_opened = false;
     DirectoryTab m_tab = DirectoryTab::Floors;
     DirectoryView m_view = DirectoryView::Floors;
     /// The view the Piani tab shows when it comes back (Floors or Rooms).
@@ -306,11 +329,17 @@ private:
     std::vector<DirectoryGame> m_games;
     DirectoryGamesState m_gamesState = DirectoryGamesState::Loading;
     std::size_t m_game = 0;
+    /// The games list starts on its first game: set by open(), cleared by the user's first move in it or a card.
+    bool m_gamesFromTop = true;
+    std::uint64_t m_gamesRequest = 0;
 
     std::string m_cardGameId;
     GameCardContent m_cardContent;
     std::string m_cardRoom;
     DirectoryCardButton m_cardButton = DirectoryCardButton::Play;
+    std::uint64_t m_cardRequest = 0;
+    /// The card's game when the panel closed on it (reopen()).
+    std::string m_closedCardGameId;
 
     std::string m_notice;
     std::uint64_t m_revision = 0;

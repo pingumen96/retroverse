@@ -128,19 +128,15 @@ inline std::pair<ui::GameCardContent, std::string> card(std::size_t index) {
     return {content, std::string(index % 2 == 0 ? ui::quick_catalog::kRoomPlaced : "duplicate-title")};
 }
 
-/// What the app does once a frame's commands are applied: a card that shows another game than `shownCard` gets that
-/// game's content (card()); `shownCard` follows the card ("" while none shows).
-inline void fillCard(ui::DirectoryModel& model, std::string& shownCard) {
-    if (model.view() != ui::DirectoryView::Card || !model.isOpen()) {
-        shownCard.clear();
+/// What the app does once a frame's commands are applied (the contract of step 7b): a card request it has not served
+/// (`served`, the last cardRequest() answered) gets the content of the card's game (card()).
+inline void fillCard(ui::DirectoryModel& model, std::uint64_t& served) {
+    if (model.view() != ui::DirectoryView::Card || !model.isOpen() || model.cardRequest() == served) {
         return;
     }
-    if (model.cardGameId() == shownCard) {
-        return;
-    }
-    shownCard = model.cardGameId();
+    served = model.cardRequest();
     for (std::size_t index = 0; index < kGames.size(); ++index) {
-        if (gameId(index) == shownCard) {
+        if (gameId(index) == model.cardGameId()) {
             auto [content, room] = card(index);
             model.setCard(std::move(content), std::move(room));
         }

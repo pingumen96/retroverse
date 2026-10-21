@@ -151,7 +151,10 @@ void DirectoryModel::setGames(std::vector<DirectoryGame> games) {
     m_gamesState = DirectoryGamesState::Ready;
     const auto it = std::find_if(m_games.begin(), m_games.end(),
                                  [&](const DirectoryGame& game) { return game.gameId == selected; });
-    if (it != m_games.end()) {
+    if (m_gamesFromTop) {
+        // The panel opened on the list's first game, the user has not moved since: the new list's first one.
+        m_game = 0;
+    } else if (it != m_games.end()) {
         m_game = static_cast<std::size_t>(it - m_games.begin());
     } else {
         m_game = m_games.empty() ? 0 : std::min(m_game, m_games.size() - 1);
@@ -191,22 +194,53 @@ void DirectoryModel::setNotice(std::string key) {
 
 void DirectoryModel::open(DirectoryTab tab) {
     m_open = true;
+    m_opened = true;
     m_notice.clear();
     m_tabsFocused = false;
     m_tabsForEmpty = false;
     m_tab = tab;
     m_cardGameId.clear();
+    m_closedCardGameId.clear();
     m_cardRoom.clear();
     m_cardButton = DirectoryCardButton::Play;
+    // Both tabs from their start: the walker's floor, the first game.
+    m_floorsView = DirectoryView::Floors;
+    const std::size_t current = floorIndexOf(m_building.currentFloor);
+    m_floor = current < m_building.floors.size() ? current : 0;
+    m_game = 0;
+    m_gamesFromTop = true;
     if (tab == DirectoryTab::Floors) {
         m_view = DirectoryView::Floors;
-        m_floorsView = DirectoryView::Floors;
-        const std::size_t current = floorIndexOf(m_building.currentFloor);
-        m_floor = current < m_building.floors.size() ? current : 0;
     } else {
         m_view = DirectoryView::Games;
-        m_game = 0;
+        ++m_gamesRequest;
     }
+    followRows();
+    changed();
+}
+
+void DirectoryModel::reopen() {
+    if (m_open) {
+        return;
+    }
+    if (!m_opened) {
+        open(DirectoryTab::Floors);
+        return;
+    }
+    m_open = true;
+    m_notice.clear();
+    m_tabsFocused = false;
+    m_tabsForEmpty = false;
+    if (m_view == DirectoryView::Card) {
+        if (m_closedCardGameId.empty()) {
+            m_view = DirectoryView::Games;
+            m_cardButton = DirectoryCardButton::Play;
+        } else {
+            // The card as it was: its content and standing are kept while the panel is closed.
+            m_cardGameId = std::move(m_closedCardGameId);
+        }
+    }
+    m_closedCardGameId.clear();
     followRows();
     changed();
 }
@@ -215,8 +249,13 @@ void DirectoryModel::close() noexcept {
     if (!m_open) {
         return;
     }
+    closePanel();
+}
+
+void DirectoryModel::closePanel() noexcept {
     m_open = false;
     m_tabsFocused = false;
+    m_closedCardGameId = std::move(m_cardGameId);
     m_cardGameId.clear();
     changed();
 }
@@ -342,7 +381,11 @@ std::optional<DirectoryCommand> DirectoryModel::click(const DirectoryClick& clic
         return std::nullopt;
     case DirectoryClick::Kind::Row:
         if (m_view == DirectoryView::Card) {
-            // A row of the games list beside the card: its own card.
+            if (click.row < m_games.size() && m_games[click.row].gameId == m_cardGameId) {
+                // The row of the game whose card shows: the card stays as it is.
+                return std::nullopt;
+            }
+            // Another row of the games list beside the card: its own card.
             m_view = DirectoryView::Games;
             m_cardGameId.clear();
             changed();
@@ -457,6 +500,7 @@ void DirectoryModel::selectRow(std::size_t row) {
     case DirectoryView::Games:
     case DirectoryView::Card:
         m_game = row;
+        m_gamesFromTop = false;
         break;
     }
     changed();
@@ -475,6 +519,7 @@ void DirectoryModel::switchTab(DirectoryTab tab) {
                      : DirectoryView::Floors;
     } else {
         m_view = DirectoryView::Games;
+        ++m_gamesRequest;
     }
     followRows();
     changed();
@@ -504,6 +549,8 @@ void DirectoryModel::openCard() {
     m_cardRoom.clear();
     m_cardButton = DirectoryCardButton::Play;
     m_view = DirectoryView::Card;
+    m_gamesFromTop = false;
+    ++m_cardRequest;
     changed();
 }
 
@@ -580,10 +627,7 @@ std::optional<DirectoryCommand> DirectoryModel::press(DirectoryCardButton button
 }
 
 std::optional<DirectoryCommand> DirectoryModel::leave(DirectoryCommandKind kind, std::string id) {
-    m_open = false;
-    m_tabsFocused = false;
-    m_cardGameId.clear();
-    changed();
+    closePanel();
     return DirectoryCommand{kind, std::move(id)};
 }
 

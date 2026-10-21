@@ -107,7 +107,8 @@ struct UiProbeApp::State {
     std::unique_ptr<ui::UiView> view;
     std::unique_ptr<ui::DirectoryScreen> screen;
     ui::DirectoryModel model;
-    std::string cardGame;
+    /// The last card request answered (directory_fixture::fillCard).
+    std::uint64_t cardServed = 0;
     double simulatedSeconds = 0.0;
     nlohmann::json checkpoints = nlohmann::json::array();
     nlohmann::json commands = nlohmann::json::array();
@@ -224,7 +225,7 @@ void UiProbeApp::onUpdate(app::AppContext& context, double deltaSeconds) {
     if (const std::optional<ui::DirectoryClick> click = s.screen->takeClicked()) {
         s.record(frame, s.model.click(*click));
     }
-    fixture::fillCard(s.model, s.cardGame);
+    fixture::fillCard(s.model, s.cardServed);
     if (s.model.isOpen()) {
         s.screen->show(s.model);
     } else {

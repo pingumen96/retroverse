@@ -517,6 +517,183 @@ TEST_CASE("ui/directory: the notice lasts until the panel opens again; every cha
     CHECK(model.notice().empty());
 }
 
+TEST_CASE("ui/directory: a click on the shown card's own row keeps the card; a card opened again asks again",
+          "[ui][directory]") {
+    SECTION("the model") {
+        DirectoryModel model;
+        model.setGames(games(3));
+        model.open(DirectoryTab::Games);
+        const std::uint64_t requests = model.cardRequest();
+        model.apply(UiCommand::Activate);
+        CHECK(model.cardRequest() == requests + 1);
+        GameCardContent content = model.cardContent();
+        content.details = true;
+        content.readiness = "ready";
+        model.setCard(content, std::string(qc::kRoomPlaced));
+        model.apply(UiCommand::Right);
+        CHECK(model.cardButton() == DirectoryCardButton::ShowInRoom);
+        // The chosen row beside the card is the card's game: nothing changes, nothing is asked.
+        const std::uint64_t revision = model.revision();
+        CHECK_FALSE(model.click({DirectoryClick::Kind::Row, DirectoryTab::Floors, 0, DirectoryCardButton::Play})
+                        .has_value());
+        CHECK(model.view() == DirectoryView::Card);
+        CHECK(model.cardGameId() == games(3)[0].gameId);
+        CHECK(model.cardContent().details);
+        CHECK(model.cardShowsRoom());
+        CHECK(model.cardButton() == DirectoryCardButton::ShowInRoom);
+        CHECK(model.cardRequest() == requests + 1);
+        CHECK(model.revision() == revision);
+        // Back and Activate in one frame: the same game's card again, from the row, asked for again.
+        model.apply(UiCommand::Back);
+        model.apply(UiCommand::Activate);
+        CHECK(model.cardGameId() == games(3)[0].gameId);
+        CHECK_FALSE(model.cardContent().details);
+        CHECK(model.cardRoom().empty());
+        CHECK(model.cardRequest() == requests + 2);
+        // Another game's row: its card, asked for.
+        model.click({DirectoryClick::Kind::Row, DirectoryTab::Floors, 1, DirectoryCardButton::Play});
+        CHECK(model.cardGameId() == games(3)[1].gameId);
+        CHECK(model.cardRequest() == requests + 3);
+    }
+    SECTION("the app's side (directory_fixture's fillCard): the card filled again") {
+        namespace fixture = rv::probe::directory_fixture;
+        DirectoryModel model;
+        model.setGames(fixture::games());
+        model.open(DirectoryTab::Games);
+        std::uint64_t served = 0;
+        model.apply(UiCommand::Activate);
+        fixture::fillCard(model, served);
+        CHECK(model.cardContent().details);
+        model.apply(UiCommand::Back);
+        model.apply(UiCommand::Activate);
+        fixture::fillCard(model, served);
+        CHECK(model.cardContent().details);
+        CHECK(model.cardRoom() == qc::kRoomPlaced);
+    }
+}
+
+TEST_CASE("ui/directory: the games list is asked for on entering it, and opens on its first game", "[ui][directory]") {
+    // A list read when the panel was last open: [1, 2, 3, 4].
+    DirectoryModel model;
+    model.setBuilding(building());
+    model.setGames(games(4));
+    std::uint64_t requests = model.gamesRequest();
+    // Opened on the games: a request; the stale list shows meanwhile, its first game selected.
+    model.open(DirectoryTab::Games);
+    CHECK(model.gamesRequest() == ++requests);
+    model.setGamesState(DirectoryGamesState::Loading);
+    CHECK(model.selectedGame() == 0);
+    // The answer: game 5 played since, first. The selection stays on the first row, not on game 1.
+    std::vector<DirectoryGame> fresh = games(5);
+    fresh.insert(fresh.begin(), fresh.back());
+    fresh.pop_back();
+    model.setGames(fresh);
+    CHECK(model.selectedGame() == 0);
+    CHECK(model.games()[0].gameId == games(5)[4].gameId);
+    CHECK(model.focusedElement() == "dir-game-0");
+    // Once the user moved, a new list follows the selected game.
+    model.apply(UiCommand::Down);
+    const std::string selected = model.games()[model.selectedGame()].gameId;
+    model.setGames(games(5));
+    CHECK(model.games()[model.selectedGame()].gameId == selected);
+    // A card follows its game too (the card's row stays chosen).
+    model.apply(UiCommand::Home);
+    model.apply(UiCommand::Activate);
+    model.setGames(fresh);
+    CHECK(model.games()[model.selectedGame()].gameId == model.cardGameId());
+    // Back to the list: no request; the floors and the games again: a request each time the games are entered.
+    model.apply(UiCommand::Back);
+    CHECK(model.gamesRequest() == requests);
+    model.apply(UiCommand::FilterPrevious);
+    CHECK(model.gamesRequest() == requests);
+    model.apply(UiCommand::FilterNext);
+    CHECK(model.gamesRequest() == ++requests);
+    model.apply(UiCommand::Home);
+    model.apply(UiCommand::Up);
+    model.apply(UiCommand::Left);
+    model.apply(UiCommand::Right);
+    CHECK(model.gamesRequest() == ++requests);
+    model.click({DirectoryClick::Kind::Tab, DirectoryTab::Floors, 0, DirectoryCardButton::Play});
+    model.click({DirectoryClick::Kind::Tab, DirectoryTab::Games, 0, DirectoryCardButton::Play});
+    CHECK(model.gamesRequest() == ++requests);
+    // Opened on the floors: no request, but the games start from their first one when the tab is entered.
+    model.apply(UiCommand::Down);
+    CHECK(model.selectedGame() == 1);
+    model.close();
+    model.open(DirectoryTab::Floors);
+    CHECK(model.gamesRequest() == requests);
+    CHECK(model.selectedFloor() == 1);
+    model.apply(UiCommand::FilterNext);
+    CHECK(model.gamesRequest() == ++requests);
+    CHECK(model.selectedGame() == 0);
+    model.setGames(games(5));
+    CHECK(model.selectedGame() == 0);
+}
+
+TEST_CASE("ui/directory: reopen() shows the panel where a refused command left it", "[ui][directory]") {
+    SECTION("a room chosen: its floor's rooms, the room selected") {
+        DirectoryModel model = floorsModel();
+        model.apply(UiCommand::Activate);
+        model.apply(UiCommand::Down);
+        CHECK(model.apply(UiCommand::Activate) == command(DirectoryCommandKind::ChooseRoom, "area:shared:gen4"));
+        CHECK_FALSE(model.isOpen());
+        model.reopen();
+        CHECK(model.isOpen());
+        CHECK(model.view() == DirectoryView::Rooms);
+        REQUIRE(model.openedFloor() != nullptr);
+        CHECK(model.openedFloor()->id == "gen4");
+        CHECK(model.focusedElement() == "dir-room-3");
+        CHECK(model.notice().empty());
+        model.setNotice(std::string(dir::kNotices[0]));
+        CHECK(model.notice() == dir::kNotices[0]);
+        // Open, reopen() does nothing.
+        const std::uint64_t revision = model.revision();
+        model.reopen();
+        CHECK(model.revision() == revision);
+        // open() starts again from the walker's floor.
+        model.close();
+        model.open(DirectoryTab::Floors);
+        CHECK(model.view() == DirectoryView::Floors);
+        CHECK(model.focusedElement() == "dir-floor-1");
+    }
+    SECTION("the walker's own floor's hall: ChooseFloor names the walker's floor; reopen() comes back to the hall") {
+        DirectoryModel model = floorsModel();
+        model.apply(UiCommand::Activate);
+        model.apply(UiCommand::Home);
+        CHECK(model.apply(UiCommand::Activate) == command(DirectoryCommandKind::ChooseFloor, "gen4"));
+        model.reopen();
+        CHECK(model.focusedElement() == "dir-room-0");
+    }
+    SECTION("Mostra nella stanza: the card as it was, nothing asked again") {
+        DirectoryModel model = cardModel(std::string(qc::kRoomPlaced));
+        const std::uint64_t requests = model.cardRequest();
+        model.apply(UiCommand::Right);
+        CHECK(model.apply(UiCommand::Activate) == command(DirectoryCommandKind::ShowInRoom, games(5)[0].gameId));
+        CHECK(model.cardGameId().empty());
+        model.reopen();
+        CHECK(model.view() == DirectoryView::Card);
+        CHECK(model.cardGameId() == games(5)[0].gameId);
+        CHECK(model.cardContent().details);
+        CHECK(model.cardShowsRoom());
+        CHECK(model.cardButton() == DirectoryCardButton::ShowInRoom);
+        CHECK(model.focusedElement() == dir::kCardRoomId);
+        CHECK(model.cardRequest() == requests);
+        // The card's game's answers are taken again.
+        GameCardContent content = model.cardContent();
+        content.outcome = "crashed";
+        model.setCard(content, std::string(qc::kRoomPlaced));
+        CHECK(model.cardContent().outcome == "crashed");
+    }
+    SECTION("never opened: the floors, the walker's floor selected") {
+        DirectoryModel model;
+        model.setBuilding(building());
+        model.reopen();
+        CHECK(model.isOpen());
+        CHECK(model.view() == DirectoryView::Floors);
+        CHECK(model.focusedElement() == "dir-floor-1");
+    }
+}
+
 TEST_CASE("ui/directory: the document has the ids, bindings, events and keys its screen uses",
           "[ui][directory][documents]") {
     const std::string rml = readAsset(dir::kDocumentPath);
@@ -639,7 +816,7 @@ TEST_CASE("ui/directory: tests/input_scripts/directory_panel.json on rv_ui_probe
     rv::input::InputSystem input;
     rv::input::InputScriptPlayer player(std::move(*script));
     rv::ui::NavInput nav;
-    std::string shownCard;
+    std::uint64_t servedCard = 0;
     std::vector<std::pair<std::uint64_t, DirectoryCommand>> commands;
     std::size_t checked = 0;
     for (std::uint64_t frame = 0; frame < fixture::kFrames; ++frame) {
@@ -652,7 +829,7 @@ TEST_CASE("ui/directory: tests/input_scripts/directory_panel.json on rv_ui_probe
                 commands.emplace_back(frame, *asked);
             }
         }
-        fixture::fillCard(model, shownCard);
+        fixture::fillCard(model, servedCard);
         for (const fixture::Checkpoint& checkpoint : fixture::kCheckpoints) {
             if (checkpoint.frame != frame) {
                 continue;
@@ -664,6 +841,10 @@ TEST_CASE("ui/directory: tests/input_scripts/directory_panel.json on rv_ui_probe
                 CHECK(model.tab() == checkpoint.tab);
                 CHECK(model.view() == checkpoint.view);
                 CHECK(model.focusedElement() == checkpoint.focus);
+                if (checkpoint.view == DirectoryView::Card) {
+                    // Filled by the app's answer to the card's request.
+                    CHECK(model.cardContent().details);
+                }
             }
         }
     }
