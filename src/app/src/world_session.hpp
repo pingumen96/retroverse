@@ -206,7 +206,7 @@ private:
     };
 
     /// An item of the floor: its room (an index into m_rooms), its index in the room's collection, its index among the
-    /// cover loader's items.
+    /// cover loader's items (valid for that loader only: startCoverLoader() lets go of the hero items).
     struct FloorItem {
         std::size_t room = 0;
         std::size_t item = 0;
@@ -223,7 +223,8 @@ private:
     /// scene could not be shown (the test room then, with its notice).
     [[nodiscard]] bool showFloor(WorldBuild& build, bool keepWalker);
     /// A cover loader for `build`'s rooms' covers on the collections shown, in place of any (none without collections
-    /// or covers); the loader replaced is adopted when `adopt`.
+    /// or covers); `previous` (else the loader replaced) is adopted. The hero item is let go first (releaseHero()): its
+    /// loader index is the replaced loader's.
     void startCoverLoader(const WorldBuild& build, std::unique_ptr<CoverLoader> previous = nullptr);
     /// The commit's times, state, notice and log.
     void finishCommit(const WorldBuild& build, Clock::time_point start);

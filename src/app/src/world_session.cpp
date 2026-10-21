@@ -633,6 +633,10 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker) {
 }
 
 void WorldSession::startCoverLoader(const WorldBuild& build, std::unique_ptr<CoverLoader> previous) {
+    // The hero item and the one shown are indices of the loader replaced (FloorItem::loaderItem): the new loader's
+    // list may be ordered and sized otherwise (only the items whose text is known have covers), so the hero's front
+    // goes back to the static path and the next frame's interact() picks the hero again from the new list.
+    releaseHero();
     if (!previous) {
         previous = std::move(m_loader);
     }
