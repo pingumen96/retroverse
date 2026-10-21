@@ -25,6 +25,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -44,6 +45,7 @@
 #include <rv/core/log.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/worker_pool.hpp>
+#include <rv/esde/media_resolver.hpp>
 #include <rv/ui/in_memory_catalog_source.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/floor_scene.hpp>
@@ -968,6 +970,100 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     CHECK(rv::app::roomScreenGames(*build.plan, layout, snapshot).empty());
 }
 
+TEST_CASE("app/room_screen: a shared room's CRT plays its sections' placed games in the room's featured order, "
+          "whatever their section, then the others",
+          "[app][world_build]") {
+    // I4 step 4 (ADR-0013 §9): the sections' snapshots taken together, never one section's games after another's. Two
+    // invented sections, each with a clip among its placed games: the room's featured-first game is the second
+    // section's favourite, so a per-section concatenation would start the CRT on the first section's clip.
+    using rv::catalog::GameId;
+    using rv::catalog::MediaKind;
+    const auto game = [](std::uint64_t value) { return GameId::fromValue(value).value(); };
+    const GameId mango = game(0x01);  // aaa: placed, featured, a clip
+    const GameId zebra = game(0x02);  // aaa: placed, featured, a cover
+    const GameId spare = game(0x03);  // aaa: not placed, a clip
+    const GameId pear = game(0x11);   // bbb: placed, featured, a favourite, a clip
+    const GameId apple = game(0x12);  // bbb: placed, in the band, played often, a cover
+    const auto sectionSnapshot = [](std::string_view system, const fs::path& root) {
+        RoomSnapshotResult result;
+        result.system = rv::catalog::SystemName::parse(system).value();
+        result.snapshot.system = result.system;
+        result.snapshot.mediaKnown = true;
+        result.mediaRoot = root;
+        return result;
+    };
+    // Entries and media paths by GameId, as a snapshot holds them.
+    const auto add = [](RoomSnapshotResult& section, const GameId& id, std::string_view sortKey, bool clip) {
+        rv::catalog::RoomEntry entry;
+        entry.id = id;
+        entry.title = std::string(sortKey);
+        entry.sortKey = std::string(sortKey);
+        section.snapshot.entries.push_back(entry);
+        rv::esde::RoomMediaPaths paths;
+        paths.game = id;
+        const std::string stem = section.system.str() + "/" + std::string(sortKey);
+        paths.relativePaths[static_cast<std::size_t>(MediaKind::Cover)] = stem + ".png";
+        if (clip) {
+            paths.relativePaths[static_cast<std::size_t>(MediaKind::Video)] = stem + ".mp4";
+        }
+        section.mediaPaths.push_back(paths);
+        return &section.snapshot.entries.back();
+    };
+    RoomSnapshotResult aaa = sectionSnapshot("aaa", fs::path(L"Z:\\invented\\media"));
+    add(aaa, mango, "mango", true);
+    add(aaa, zebra, "zebra", false);
+    add(aaa, spare, "spare", true);
+    RoomSnapshotResult bbb = sectionSnapshot("bbb", fs::path(L"Z:\\invented\\media"));
+    add(bbb, pear, "pear", true)->favorite = true;
+    add(bbb, apple, "apple", false)->esdePlayCount = 7;
+    // The room's items in slot order: each section's together, as a shared room places them.
+    rv::world::CollectionLayout layout;
+    for (const auto& [id, section] :
+         {std::pair{mango, rv::world::Section::Featured}, std::pair{zebra, rv::world::Section::Featured},
+          std::pair{pear, rv::world::Section::Featured}, std::pair{apple, rv::world::Section::Band}}) {
+        rv::world::CollectionItem item;
+        item.game = id;
+        item.section = section;
+        layout.items.push_back(item);
+    }
+    const rv::world::WorldPlan plan{};
+    const auto idsOf = [](const std::vector<rv::app::ScreenGame>& games) {
+        std::vector<std::string> ids;
+        for (const rv::app::ScreenGame& screen : games) {
+            ids.push_back(screen.id);
+        }
+        return ids;
+    };
+
+    const RoomSnapshotResult* const both[] = {&aaa, &bbb};
+    const std::vector<rv::app::ScreenGame> games = rv::app::roomScreenGames(plan, layout, both);
+    // The featured items by priority (the favourite, then by sort key), the band's, then the unplaced game.
+    CHECK(idsOf(games) == std::vector<std::string>{pear.toString(), mango.toString(), zebra.toString(),
+                                                   apple.toString(), spare.toString()});
+    REQUIRE(games.size() == 5);
+    for (std::size_t index = 0; index < games.size(); ++index) {
+        INFO(games[index].id);
+        CHECK(games[index].startCandidate == (index < 4));
+    }
+    CHECK(games[0].media.video.extension() == ".mp4");
+    CHECK(games[0].media.cover.filename() == "pear.png");
+    // Never played: the room's featured-first game with a clip, the second section's, not the first section's clip.
+    const std::optional<std::size_t> start = rv::app::chooseStartGame(games);
+    REQUIRE(start.has_value());
+    CHECK(games[*start].id == pear.toString());
+    // The sections given in the other order: the same games in the same order.
+    const RoomSnapshotResult* const swapped[] = {&bbb, &aaa};
+    CHECK(rv::app::roomScreenGames(plan, layout, swapped) == games);
+
+    // A section whose media are unknown gives none of its games; the other's keep their order.
+    bbb.snapshot.mediaKnown = false;
+    const std::vector<rv::app::ScreenGame> known = rv::app::roomScreenGames(plan, layout, both);
+    CHECK(idsOf(known) == std::vector<std::string>{mango.toString(), zebra.toString(), spare.toString()});
+    const std::optional<std::size_t> knownStart = rv::app::chooseStartGame(known);
+    REQUIRE(knownStart.has_value());
+    CHECK(known[*knownStart].id == mango.toString());
+}
+
 TEST_CASE("app/world_build: a manifest removed from a scratch asset root falls back to its family's prefab, warned "
           "once, the room built",
           "[app][world_build]") {
@@ -1360,7 +1456,8 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
                                             [](const rv::app::RoomItemText& text) { return !text.coverPath.empty(); });
         CHECK(static_cast<std::size_t>(withText) == own);
     }
-    // Its CRT plays both sections' games, the placed ones first in the room's featured order.
+    // Its CRT plays both sections' games, every one placed (their featured order across the sections: the test
+    // "app/room_screen: a shared room's CRT plays its sections' placed games ...").
     std::set<std::string> screenGames;
     std::size_t candidates = 0;
     for (const rv::app::ScreenGame& game : first.screenGames) {
