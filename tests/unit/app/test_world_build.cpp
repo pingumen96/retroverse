@@ -1568,8 +1568,13 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
                                           [&](const rv::world::Room& candidate) { return candidate.id == shared; });
     REQUIRE(sharedAfter != added.plan->rooms.end());
     CHECK(sharedAfter->sections == std::vector<rv::catalog::SystemName>{pocketlab, pokemini});
+    // The CLI's whole update also enters the catalog's new systems (I4 step 6a): megadrive, 12 titles, takes a section
+    // of gen4's new shared room. The app's building job enters new systems in step 6b; until then the CLI finds that
+    // one change and nothing else.
     const CliRun again = runCli(imported, {"worldplan", "update"});
+    INFO(again.out);
     INFO(again.err);
     CHECK(again.code == rv::cli::ExitCode::Ok);
-    CHECK(again.out.find("is up to date") != std::string::npos);
+    CHECK(again.out.find("megadrive in area:shared:gen4") != std::string::npos);
+    CHECK(again.out.find("is up to date") == std::string::npos);
 }
