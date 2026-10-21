@@ -21,6 +21,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/gate.ps1 -Gate B                            # Gate B: Gate A + every golden, the I3 checks, the benchmark path
 ./scripts/gate.ps1 -Gate B -RealLibrary               # also the real SNES room (ES-DE closed), acceptable limits
 ./scripts/gate.ps1 -Gate B -Benchmarks                # also every hidden benchmark, informative
+./scripts/gate.ps1 -Gate C                            # Gate C: Gate A + every golden, the I4 checks, the benchmark path
+./scripts/gate.ps1 -Gate C -RealLibrary               # also the real library's building and SNES room (ES-DE closed)
 ./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
@@ -84,7 +86,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   the same walk ends without them, gen4 rebuilt as megadrive enters its new shared room with the walker kept in the
   hall's frame, and gen5's new titles, only saved meanwhile, shown at its next start; the rooms, the doorways, the
   hall and the arrival point are read from the generated plan and its floors' layout, never named), the room goldens
-  (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
+  (`gpu.golden/G02` ... `G13`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
   (`gpu.directory: ...`, I4 step 7a: `tests/input_scripts/directory_panel.json` over a fixed model, each checkpoint's
   view and RmlUi focus, the focus's edge in its screenshot, Mostra nella stanza's command), and the elevator and the
   directory in the app (`gpu.world elevator: ...`, I4 step 7b, `test_world_elevator.cpp`, `[world_elevator]`, on
@@ -150,6 +152,17 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   generated twice, the restart after a second import (no rebuild, 0 moves), the time to the room (the restart within 5
   s), the covers resident cold (30 s) and warm (3 s), the frames while they load (p99 50 ms), the benchmark path's
   acceptable limits, the refresh of the whole library (p99 50 ms, 0 moves) and NFR-01 with the room.
+- `scripts/gate.ps1 -Gate C` (`docs/testing/gate-c.md`, logs in `build/gate-c`) runs Gate B's steps on the fixtures
+  (Gate A's, every golden with the building's G11, G12 and G13, the benchmark path in Release against the acceptable
+  limits; `-Benchmarks` as Gate B's) with, per Debug and Release, a row per I4 area counted from the unit and GPU runs
+  (the world's building, the floors, the shared rooms, the update suite, the directory, the elevator, the floor in the
+  app, the persisted start and live updates), the whole gate under `scripts/focus_watch.py`. `-RealLibrary` adds
+  `scripts/real-library.ps1 -Filter '[real-library][building],[real-library][room-real]'` (one pair of snapshots, 0
+  differences) and reads the tests' run reports (`build/msvc-x64-release/real-library/building/<run>.json` and
+  `.../room/<run>.json`): the building planned twice with one plan, an unchanged restart's building job skipped by its
+  stamp within 3 s, NFR-01 to the lobby (5 s), the busiest floor's GPU memory (512 MiB), the rides cold and warm (the
+  view back within 10 s and 3 s, the room that holds the walker within 30 s and 3 s), then Gate B's rows of the SNES
+  room.
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`, built by the
   vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
   restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure
@@ -203,8 +216,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   whole building job with its stamp removed, a start in the computer floor's largest room within 512 MiB cold (its
   covers derived in that run) then warm, since I4 step 7b, the derived covers emptied, a ride from the lobby to that
   room through the elevator and back to the lobby's elevator with Map as the user rides (no lockstep), cold then warm,
-  within the acceptable row (10 s cold, 3 s warm) and with the destination's arrays, and `worldplan update`; the
-  figures printed as "Real building:" lines). `-OutDir <dir>`
+  within the acceptable row (10 s cold, 3 s warm) and with the destination's arrays, and `worldplan update`; since I4
+  step 8 the building planned a second time from nothing with one plan digest and file SHA-256, and the room that
+  holds the walker after each ride within its row (30 s cold, 3 s warm); the figures printed as "Real building:"
+  lines, the runs' reports left for Gate C). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
   <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python

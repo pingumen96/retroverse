@@ -431,6 +431,15 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 
 ## Follow-ups from I4
 
+Consolidated at the close of I4 (Gate C, `docs/testing/gate-c.md`) from the steps' notes (`docs/i4/step-<n>.md`) and
+ADR-0013's "Deferred". Each item names where the current behavior is documented.
+
+### The plan and its update
+
+- **Expansion rooms and per-room regeneration (I4b; ADR-0013 §8, I4 step 6a):** no reference system overflows a room
+  grown to its limit (step 2's census), so `unplaced: capacity` stays and the ids `room:<system>:<n>` and the
+  `expands` field stay reserved; "Rigenera stanza / piano / mondo" with an impact preview, backup and undo is the only
+  way to move a system between rooms or floors (`docs/i4/step-6a.md`).
 - **`worldplan check` and kept rooms (I4 step 1):** the check judges a room made from an older template version or by
   another generator major as kept (`room-kept`, soft), but a room whose prefabs' levels changed still fails
   `prefab-slots` there, while `world::updateBuilding` keeps such a room and saves the plan (`docs/i4/step-1.md`). The
@@ -440,17 +449,53 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
   reads the template's current version and the prefabs as they are, so the app shows the shell with the `failed`
   notice (as I3 did for the same changes). ADR-0013 §4 keeps an old template version's file while a plan names it;
   `loadRoomTemplate` could read the version a room names (`docs/i4/step-1.md`).
-- **The halls' look (I4 step 3):** a floor's hall is plain boxes (walls, floor, ceiling) without baseboards or trim,
-  their textures restarting at each box, lit by the lighting profile's pendant style at a fixed 6 m pitch; it reads
-  dim but legible. The styling pass: trim and baseboards, a hall light role in the profiles, the lobby's displays
-  (`docs/i4/step-3.md`).
-- **Light seen through doorways (I4 step 3):** the renderer packs the lights of the area that holds the eye only, so a
-  room seen from the hall (and the hall from a room) shows its ambient light alone (ADR-0013 §9's accepted cost). The
-  styling pass could add the neighbouring areas' nearest lights through open doorways within the 16.
+- **A system waiting for a held room (I4 step 6a):** it has no entry in the plan meanwhile, so the quick catalog cannot
+  say where it will stand; and on a full floor without a shared room a capacity entry of a small system's game that
+  left the catalog stays until a regeneration (the plan does not say which section an entry was of;
+  `docs/i4/step-6a.md`).
+
+### The app
+
 - **A floor's build behind its cold covers (I4 step 6b):** the floor-build job shares the worker pool with the cover
   loader's jobs; on the real computer floor started cold (5,314 covers to make) it took 13 s against 1.2 s warm, while
   the stored floor showed. A floor build ahead of the covers' jobs (its own thread, or the loader holding back while
   one is queued) would bring a cold rebuild's commit forward (`docs/i4/step-6b.md`).
+- **The building stamp's misses (I4 step 6b):** a system that loses every entry keeps its last items file, so the stamp
+  never matches until its room is updated and the whole job runs at each start meanwhile; a rebuild of the executable
+  (even one that changes nothing) runs the whole job once; a start skipped by the stamp reports the plan's soft
+  findings but no change report (`docs/i4/step-6b.md`).
+- **A background warm-up of the building's covers (ADR-0013 "Deferred"):** a floor visited for the first time derives
+  its covers then (the view comes back within about 3 s since I4 step 8, the room's last covers later); a low-priority
+  pass over the other floors' covers while the walker stands still would make every first ride warm.
+- **The favourites and recent games query scans (I4 step 7a):** `idx_games` has no index on the favourite flag or
+  `<lastplayed>`, so the directory's tab reads every row (140 to 190 ms median on 100,000 generated games, Release,
+  on the catalog worker; the tab says it is reading); an index would be a migration (`docs/i4/step-7a.md`).
+
+### The look (the styling pass, I6)
+
+- **The halls (I4 step 3):** a floor's hall is plain boxes (walls, floor, ceiling) without baseboards or trim, their
+  textures restarting at each box, lit by the lighting profile's pendant style at a fixed 6 m pitch; it reads dim but
+  legible (G11). Trim and baseboards, a hall light role in the profiles, the lobby's 3D displays, stairs
+  (`docs/i4/step-3.md`, ADR-0013 "Deferred").
+- **Light seen through doorways (I4 step 3):** the renderer packs the lights of the area that holds the eye only, so a
+  room seen from the hall (and the hall from a room) shows its ambient light alone (ADR-0013 §9's accepted cost). The
+  neighbouring areas' nearest lights could be added through open doorways within the 16.
+- **The media families' faces (I4 step 2):** cases and boxes stand spine-out with their height in the shelf's depth
+  until a side-face facing exists; a face-out item shows its spine label on its top face, upside down seen from the
+  front (visible on the big boxes' 45 mm tops); the jewel cases' spine labels are 7 mm wide and the handheld
+  cartridges' 4.8 mm, too small to read beyond arm's length. Side-face spines, face-out items without a top label and
+  the faithful families are I6's (`docs/i4/step-2.md`).
+- **Shared and arcade rooms (I4 step 4):** a sign per section of a shared room, the arcade cabinet in place of the
+  arcade room's CRT, theme packs per floor, L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
+  "Deferred").
+
+### Tests
+
 - **A GPU case of a room that grows (I4 step 6b):** no room of `esde/building` grows with its `additions/`, so the
-  walker moved with a grown room (or with a start room grown under the scene's frame) is proven by
-  `walkerMove()`'s unit test only; a fixture variant that fills a room to its growth step would show it end to end.
+  walker moved with a grown room (or with a start room grown under the scene's frame) is proven by `walkerMove()`'s
+  unit test only; a fixture variant that fills a room to its growth step would show it end to end.
+- **The ride's refusals end to end (I4 step 7b):** a ride refused while a floor applies (a start that does not wait) or
+  while a launch is being decided, so the world's `room-unreachable` notice of the quick catalog's, and a building's
+  result built again for the floor shown after a ride (`retargetResult()`) with its wait for a launch's end, have no
+  GPU case: a lockstep run reconciles at its second frame and waits for both jobs. The routing's unit tests cover
+  them (`docs/i4/step-7b.md`).
