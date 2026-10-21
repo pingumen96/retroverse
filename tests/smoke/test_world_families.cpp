@@ -1,9 +1,11 @@
 // The media families' rooms in retroverse.exe (I4 step 2, ADR-0013 §4): the building fixture
-// (tests/fixtures/esde/building) recorded as the library of the case's data directory and imported with retroverse-cli;
-// retroverse.exe --room-system psx then opens its jewel-case room (disc_case_cd: the family's item and fixtures, every
-// cover fitted to the square label quad, its cache entry named with the shape) and --room-system amiga its big-box
-// room without any media (every front a generated label laid out at the box's shape), --room-system mame its arcade
-// room of portrait flyers (generic_case). The checks: the run report's world and residency records, the plan's room and
+// (tests/fixtures/esde/building) recorded as the library of the case's data directory, imported and planned with
+// retroverse-cli (building_support.hpp);
+// retroverse.exe --start-room room:psx then opens its jewel-case room on its floor (disc_case_cd: the family's item and
+// fixtures, every cover fitted to the square label quad, its cache entry named with the shape), --start-room room:amiga
+// its big-box room without any media (every front a generated label laid out at the box's shape), --start-room the
+// mame system's room its arcade room of portrait flyers (generic_case). (I4 step 2 had --room-system; step 5a's
+// --start-room replaced it.) The checks: the run report's world and residency records, the plan's room and
 // fixtures, the cache's entries, the band's fronts showing their pictures up close, and the card of an inspected item
 // (tests/input_scripts/golden_g07_inspect.json from the item's Focus pose): its cover at the family's label shape, the
 // hero picture made at that shape, unstretched (ADR-0011 §5), the hero textures within ADR-0011 §8's budget.
@@ -34,6 +36,7 @@
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_store.hpp>
 
+#include "building_support.hpp"
 #include "image_checks.hpp"
 #include "launch_support.hpp"
 #include "smoke_support.hpp"
@@ -52,43 +55,25 @@ constexpr float kEyeHeight = 1.65f;
 /// ADR-0011 §8: 8 hero textures of at most 1,024 px, about 32 MiB.
 constexpr std::uint64_t kHeroBudgetBytes = 32ull * 1024ull * 1024ull;
 
-fs::path retroverseCliExe() {
-    return retroverseExe().parent_path() / "retroverse-cli.exe";
-}
-
-/// The building fixture recorded as the library of <caseDir>/data and imported with retroverse-cli.
-struct ImportedBuilding {
-    rv::test::Fixture fixture;
-    fs::path dir;
-    fs::path data;
-
-    explicit ImportedBuilding(std::string_view name)
-        : fixture(rv::test::Fixture::materialize("esde/building").value()),
-          dir(freshCaseDir(std::string("world_families/") + std::string(name))), data(dir / "data") {
-        cli("library",
-            {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
-        cli("import", {"import"});
-    }
-
-    void cli(std::string_view name, std::vector<std::string> arguments) const {
-        arguments.insert(arguments.begin(), {"--data-dir", arg(data)});
-        const AppRun run = runCommand(retroverseCliExe(), dir, std::string("cli_") + std::string(name), arguments);
-        INFO(run.describe());
-        REQUIRE(run.exitCode == 0);
-    }
+/// The building fixture of a case under world_families/.
+struct ImportedBuilding : PlannedBuilding {
+    explicit ImportedBuilding(std::string_view name) : PlannedBuilding(std::string("world_families/") + std::string(name)) {}
 };
 
-/// A lockstep run of `system`'s room: `frames` frames at a fixed step, a screenshot at the end.
-std::vector<std::string> roomArguments(std::string_view system, std::string_view frames, const fs::path& shot,
+/// A lockstep run starting in `system`'s room: `frames` frames at a fixed step, a screenshot at the end.
+std::vector<std::string> roomArguments(const ImportedBuilding& building, std::string_view system,
+                                       std::string_view frames, const fs::path& shot,
                                        std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--room-system", std::string(system), "--exit-after-frames", "--frames",
+    std::vector<std::string> arguments{"--start-room", building.roomOf(system), "--exit-after-frames", "--frames",
                                        std::string(frames), "--fixed-dt", "0.016667", "--screenshot", arg(shot)};
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     return arguments;
 }
 
-/// The room every run must show: from the first frame (lockstep), every item's layers resident.
-void requireRoomShown(const AppRun& run, std::string_view room, std::uint64_t items) {
+/// The room every run must show (the floor's only collection room): from the first frame (lockstep), every item's
+/// layers resident.
+void requireRoomShown(const ImportedBuilding& building, const AppRun& run, std::string_view room,
+                      std::uint64_t items) {
     INFO(run.describe());
     const rv::app::WorldRecord& world = run.report->world;
     REQUIRE(world.bound);
@@ -97,7 +82,7 @@ void requireRoomShown(const AppRun& run, std::string_view room, std::uint64_t it
     CHECK(world.notice.empty());
     CHECK(world.hardFindings == 0);
     CHECK(world.items == items);
-    CHECK(world.placements == items);
+    CHECK(placementsIn(building.plan().plan, room) == items);
     CHECK(world.skipped == 0);
     CHECK(world.firstFrame == std::optional<std::uint64_t>(0));
     const rv::app::ResidencyRecord& residency = run.report->residency;
@@ -190,7 +175,7 @@ std::pair<std::size_t, std::size_t> bandFronts(const ImportedBuilding& building,
     const Viewpoint close = viewpointOf(*band, shown.scene.camera);
     const fs::path shelf = building.dir / (std::string(system) + "-band.png");
     const AppRun run = runApp(retroverseExe(), building.dir, std::string(system) + "_band",
-                              roomArguments(system, "12", shelf, {"--spawn", spawnArgument(close.spawn)}));
+                              roomArguments(building, system, "12", shelf, {"--spawn", spawnArgument(close.spawn)}));
     requireCleanRun(run);
     const rv::assets::ImageData image = requireScreenshot(run, shelf, kShotSize);
     std::size_t probed = 0;
@@ -308,7 +293,7 @@ void checkInspectedCard(const ImportedBuilding& building, const ShownRoom& shown
                         const rv::world::CollectionItem& item, const rv::assets::LabelAspect& label) {
     const fs::path shot = building.dir / (std::string(system) + "-card.png");
     const AppRun run = runApp(retroverseExe(), building.dir, std::string(system) + "_card",
-                              roomArguments(system, "60", shot,
+                              roomArguments(building, system, "60", shot,
                                             {"--spawn", spawnArgument(focusSpawn(item, shown.scene.camera)),
                                              "--input-script", arg(inputScript("golden_g07_inspect.json"))}));
     requireCleanRun(run);
@@ -358,15 +343,17 @@ TEST_CASE("world families: the building's jewel-case room with its covers fitted
           "[gpu][world][families]") {
     ImportedBuilding building("psx");
     const fs::path doorway = building.dir / "psx-doorway.png";
-    const AppRun run = runApp(retroverseExe(), building.dir, "psx_doorway", roomArguments("psx", "40", doorway));
+    const AppRun run =
+        runApp(retroverseExe(), building.dir, "psx_doorway", roomArguments(building, "psx", "40", doorway));
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     // 38 single-disc games and the two playlists, every one with a cover: all face-out (38 display slots, then the
-    // band's 2 of 10).
-    requireRoomShown(run, "room:psx", 40);
+    // band's 2 of 10). The building planned by retroverse-cli is the app's: nothing written.
+    requireRoomShown(building, run, "room:psx", 40);
     const rv::app::WorldRecord& world = run.report->world;
-    CHECK(world.outcome == "generated");
-    CHECK(world.planWritten);
+    CHECK(world.outcome == "unchanged");
+    CHECK_FALSE(world.planWritten);
+    CHECK(world.floor == "gen5");
     CHECK(world.featured == 38);
     CHECK(world.band == 2);
     CHECK(world.spine == 0);
@@ -378,7 +365,7 @@ TEST_CASE("world families: the building's jewel-case room with its covers fitted
 
     // The plan's room: the jewel-case family and its own fixtures.
     const ShownRoom shown = shownRoom(building, *run.report);
-    const rv::world::Room& room = shown.stored.plan.rooms.front();
+    const rv::world::Room& room = roomIn(shown.stored.plan, "room:psx");
     CHECK(room.mediaFamily == "disc_case_cd");
     CHECK(room.floor == "gen5");
     std::size_t familyFixtures = 0;
@@ -424,17 +411,19 @@ TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and
           "[gpu][world][families]") {
     ImportedBuilding building("mame");
     const fs::path doorway = building.dir / "mame-doorway.png";
-    const AppRun run = runApp(retroverseExe(), building.dir, "mame_doorway", roomArguments("mame", "40", doorway));
+    const AppRun run =
+        runApp(retroverseExe(), building.dir, "mame_doorway", roomArguments(building, "mame", "40", doorway));
     skipWithoutOpenGl(run);
     requireCleanRun(run);
-    // The 15 sets with a cover, every one face-out on the display slots; the 10 without one unplaced (no-cover).
-    requireRoomShown(run, "room:mame", 15);
+    // The 15 sets with a cover, every one face-out on the display slots; the 10 without one unplaced (no-cover). The
+    // ground floor holds the arcade's room (room:mame until I4 step 4's arcade room) and the lobby.
+    requireRoomShown(building, run, building.roomOf("mame"), 15);
     CHECK(run.report->world.featured == 15);
     CHECK(run.report->residency.covers == 15);
     CHECK(run.report->residency.coverFailures == 0);
     (void)requireScreenshot(run, doorway, kShotSize);
     const ShownRoom shown = shownRoom(building, *run.report);
-    const rv::world::Room& room = shown.stored.plan.rooms.front();
+    const rv::world::Room& room = roomIn(shown.stored.plan, building.roomOf("mame"));
     CHECK(room.mediaFamily == "generic_case");
     CHECK(room.floor == "ground");
     // A flyer inspected: portrait on the card, at the case's 118 x 168 mm label.
@@ -446,11 +435,12 @@ TEST_CASE("world families: the building's big-box room without media shows gener
           "[gpu][world][families]") {
     ImportedBuilding building("amiga");
     const fs::path doorway = building.dir / "amiga-doorway.png";
-    const AppRun run = runApp(retroverseExe(), building.dir, "amiga_doorway", roomArguments("amiga", "40", doorway));
+    const AppRun run =
+        runApp(retroverseExe(), building.dir, "amiga_doorway", roomArguments(building, "amiga", "40", doorway));
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     // No game has a cover: every game placed (ADR-0010 §3), all 20 on the 28 display slots.
-    requireRoomShown(run, "room:amiga", 20);
+    requireRoomShown(building, run, "room:amiga", 20);
     const rv::app::WorldRecord& world = run.report->world;
     CHECK(world.featured == 20);
     CHECK(world.band == 0);
@@ -459,10 +449,12 @@ TEST_CASE("world families: the building's big-box room without media shows gener
     CHECK(residency.labels == 20);
     (void)requireScreenshot(run, doorway, kShotSize);
     const ShownRoom shown = shownRoom(building, *run.report);
-    CHECK(shown.stored.plan.rooms.front().mediaFamily == "big_box");
-    CHECK(shown.stored.plan.rooms.front().floor == "computer");
+    CHECK(roomIn(shown.stored.plan, "room:amiga").mediaFamily == "big_box");
+    CHECK(roomIn(shown.stored.plan, "room:amiga").floor == "computer");
     // No console in a computer room's hero corner (ADR-0013 §2's defaults).
     for (const rv::world::Fixture& fixture : shown.stored.plan.fixtures) {
-        CHECK(fixture.prefab.kind != "console_cartridge");
+        if (fixture.id.room().toString() == "room:amiga") {
+            CHECK(fixture.prefab.kind != "console_cartridge");
+        }
     }
 }
