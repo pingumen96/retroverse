@@ -698,7 +698,8 @@ TEST_CASE("app/world_flow: the stored plan read, the preview first, the building
     CHECK(roomOf(*preview).layout.items.size() == 50);
     CHECK(roomOf(*preview).covers == roomOf(*built->build).covers); // the room's items the first build kept
     CHECK_FALSE(preview->mediaRoot.has_value());
-    CHECK(preview->screenGames.empty());
+    // Its CRT's games from the room's items, under the library's media root (I4 step 6b).
+    CHECK(preview->screenGames.size() == 50);
     second.update(catalog);
     CHECK(second.phase() == rv::app::WorldPhase::Building);
     const auto again = runFlow(second, catalog);
@@ -706,7 +707,8 @@ TEST_CASE("app/world_flow: the stored plan read, the preview first, the building
     REQUIRE(again->build.has_value());
     CHECK(again->build->outcome == WorldOutcome::Unchanged);
     CHECK_FALSE(again->build->preview);
-    CHECK(again->build->screenGames.size() == 53);
+    CHECK(again->build->screenGames.size() == 50);
+    CHECK(again->build->screenGames == preview->screenGames);
     CHECK(second.times().previewMs.has_value());
     CHECK(second.times().previewJobMs.has_value());
     const rv::app::ReconcilePlan reconciled = rv::app::planReconciliation(*preview, *again->build);
@@ -746,8 +748,15 @@ TEST_CASE("app/world_build: the rooms' items kept for the next start, written on
     REQUIRE(kept.has_value());
     CHECK(kept->systemName == "Lumen 16 Home System");
     CHECK(kept->items.size() == 50);
-    // The items the floor's covers were made from, with the system's platform tags.
-    CHECK(kept->items == rv::app::roomItemsOf(roomOf(first).covers, roomOf(first).layout).items);
+    // The items the floor's covers were made from, with the system's platform tags, and their CRT's data (I4 step 6b).
+    std::vector<rv::app::RoomItemText> withoutScreens = kept->items;
+    std::size_t screens = 0;
+    for (rv::app::RoomItemText& item : withoutScreens) {
+        screens += item.screen ? 1 : 0;
+        item.screen.reset();
+    }
+    CHECK(screens == 50);
+    CHECK(withoutScreens == rv::app::roomItemsOf(roomOf(first).covers, roomOf(first).layout).items);
     CHECK(kept->platforms == std::vector<std::string>{"snes"});
     const std::string text = rv::core::readTextFile(items).value();
     // Only the catalog's text and the covers' paths relative to the media root: no absolute path.
@@ -778,12 +787,24 @@ TEST_CASE("app/world_build: the rooms' items kept for the next start, written on
           rv::world::collectionLayoutToJson(roomOf(second).layout));
     CHECK(roomOf(preview).covers == roomOf(second).covers);
     CHECK_FALSE(preview.mediaRoot.has_value());
-    CHECK(preview.screenGames.empty());
+    CHECK(preview.screenGames.empty()); // no media root for the CRT's games
     CHECK(preview.objectFallbacks.empty());
     const rv::app::ReconcilePlan unchanged = rv::app::planReconciliation(preview, second);
     CHECK(unchanged.kind == rv::app::Reconciliation::Textures);
     CHECK(unchanged.difference == rv::app::LayoutDifference{50, 0, 0, 0, 0});
     CHECK(unchanged.reloadCovers);
+    // With the media root for the CRT (I4 step 6b), the preview's CRT games are the building's, from the items alone;
+    // its covers still come from the cache alone.
+    REQUIRE(second.mediaRoot.has_value());
+    CHECK(rv::app::readableMediaRoot(rv::test::fixtureLibrary(imported.fixture)) == second.mediaRoot);
+    const WorldBuild withScreen =
+        rv::app::previewWorld(worldPathsOf(imported), input.library, *stored, kSnesRoom, second.mediaRoot);
+    CHECK_FALSE(withScreen.mediaRoot.has_value());
+    CHECK(withScreen.screenGames.size() == 50);
+    CHECK(withScreen.screenGames == second.screenGames);
+    CHECK(roomOf(withScreen).screenGames == roomOf(second).screenGames);
+    CHECK(roomOf(withScreen).contentDigest == roomOf(second).contentDigest);
+    CHECK(roomOf(withScreen).contentDigest == rv::world::roomContentDigest(*second.plan, kSnesRoom).value());
 
     // Without the items (a cleared cache): the same floor, its items pending (no cover request), none flagged.
     REQUIRE(fs::remove(items));
@@ -905,7 +926,7 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     REQUIRE(build.plan.has_value());
     RoomSnapshotResult snapshot = snapshotOf(imported);
     const rv::world::CollectionLayout& layout = roomOf(build).layout;
-    // The build's games are those of the start room's snapshot.
+    // The build's games (from the room's items) are those of the start room's snapshot.
     CHECK(build.screenGames == rv::app::roomScreenGames(*build.plan, layout, snapshot));
     const auto titleOf = [&](const std::string& id) {
         for (const rv::catalog::RoomEntry& entry : snapshot.snapshot.entries) {
@@ -916,22 +937,14 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
         return std::string();
     };
     const std::vector<rv::app::ScreenGame>& games = build.screenGames;
-    // Every game with a video, a screenshot, a title screen or a cover (the 50 placed, the two other releases, the one
-    // without a cover); the hacks have no media.
-    CHECK(games.size() == 53);
-    std::size_t candidates = 0;
-    for (std::size_t index = 0; index < games.size(); ++index) {
-        const rv::app::ScreenGame& game = games[index];
-        const auto* placed = layout.findGame(rv::catalog::GameId::parse(game.id).value());
-        CHECK(game.startCandidate == (placed != nullptr));
-        // The placed games first.
-        if (game.startCandidate) {
-            CHECK(index == candidates);
-            ++candidates;
-        }
+    // Every placed game, each with a video, a screenshot, a title screen or a cover (ADR-0013 §9: the CRT plays the
+    // games that stand in its room; the two other releases and the one without a cover are not placed).
+    CHECK(games.size() == 50);
+    for (const rv::app::ScreenGame& game : games) {
+        CHECK(layout.findGame(rv::catalog::GameId::parse(game.id).value()) != nullptr);
+        CHECK(game.startCandidate);
         CHECK_FALSE(game.lastPlayed.has_value()); // the fixture has no session of Retroverse
     }
-    CHECK(candidates == 50);
     // Never played: the first featured title with a video, the first by priority (a favourite, 42 plays).
     const std::optional<std::size_t> start = rv::app::chooseStartGame(games);
     REQUIRE(start.has_value());
@@ -941,13 +954,9 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     CHECK_FALSE(games[*start].media.screenshot.empty());
     CHECK_FALSE(games[*start].media.titleScreen.empty());
     CHECK_FALSE(games[*start].media.cover.empty());
-    // The game without a cover is no start candidate, though it has a clip: played when selected.
-    const auto thistle = std::find_if(games.begin(), games.end(), [&](const rv::app::ScreenGame& game) {
-        return titleOf(game.id) == "Thistle Trellis";
-    });
-    REQUIRE(thistle != games.end());
-    CHECK_FALSE(thistle->startCandidate);
-    CHECK_FALSE(thistle->media.video.empty());
+    // The game without a cover is not placed: the CRT never plays it, though it has a clip.
+    CHECK(std::none_of(games.begin(), games.end(),
+                       [&](const rv::app::ScreenGame& game) { return titleOf(game.id) == "Thistle Trellis"; }));
 
     // The most recently played placed game with a video, by Retroverse's sessions; not an unplaced one.
     const auto played = [&](std::string_view title, int hour) {
@@ -964,6 +973,13 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     const std::optional<std::size_t> recent = rv::app::chooseStartGame(again);
     REQUIRE(recent.has_value());
     CHECK(titleOf(again[*recent].id) == "Juniper Jamboree");
+    // The same from the items the building job keeps (the CRT's data of each placed game, its last play included).
+    const rv::app::RoomItems items = rv::app::snapshotRoomItems(snapshot, *build.plan);
+    const std::vector<rv::app::ScreenGame> fromItems = rv::app::roomScreenGames(
+        layout, [&](const rv::catalog::GameId& game) { return items.find(game); }, *snapshot.mediaRoot);
+    CHECK(fromItems == again);
+    // The items' text round-trips (canonical JSON).
+    CHECK(rv::app::parseRoomItems(rv::app::roomItemsToJson(items), "items").value() == items);
 
     // The media unknown: nothing to play (the root out of reach is never read for them).
     snapshot.snapshot.mediaKnown = false;
@@ -1037,13 +1053,13 @@ TEST_CASE("app/room_screen: a shared room's CRT plays its sections' placed games
 
     const RoomSnapshotResult* const both[] = {&aaa, &bbb};
     const std::vector<rv::app::ScreenGame> games = rv::app::roomScreenGames(plan, layout, both);
-    // The featured items by priority (the favourite, then by sort key), the band's, then the unplaced game.
-    CHECK(idsOf(games) == std::vector<std::string>{pear.toString(), mango.toString(), zebra.toString(),
-                                                   apple.toString(), spare.toString()});
-    REQUIRE(games.size() == 5);
-    for (std::size_t index = 0; index < games.size(); ++index) {
-        INFO(games[index].id);
-        CHECK(games[index].startCandidate == (index < 4));
+    // The featured items by priority (the favourite, then by sort key), then the band's; never the unplaced game
+    // (ADR-0013 §9: the CRT plays the games that stand in its room).
+    CHECK(idsOf(games) ==
+          std::vector<std::string>{pear.toString(), mango.toString(), zebra.toString(), apple.toString()});
+    REQUIRE(games.size() == 4);
+    for (const rv::app::ScreenGame& screen : games) {
+        CHECK(screen.startCandidate);
     }
     CHECK(games[0].media.video.extension() == ".mp4");
     CHECK(games[0].media.cover.filename() == "pear.png");
@@ -1058,7 +1074,7 @@ TEST_CASE("app/room_screen: a shared room's CRT plays its sections' placed games
     // A section whose media are unknown gives none of its games; the other's keep their order.
     bbb.snapshot.mediaKnown = false;
     const std::vector<rv::app::ScreenGame> known = rv::app::roomScreenGames(plan, layout, both);
-    CHECK(idsOf(known) == std::vector<std::string>{mango.toString(), zebra.toString(), spare.toString()});
+    CHECK(idsOf(known) == std::vector<std::string>{mango.toString(), zebra.toString()});
     const std::optional<std::size_t> knownStart = rv::app::chooseStartGame(known);
     REQUIRE(knownStart.has_value());
     CHECK(known[*knownStart].id == mango.toString());

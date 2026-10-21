@@ -214,7 +214,7 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     CHECK_FALSE(first.report->world.preview.has_value());
     CHECK_FALSE(first.report->world.reconcile.has_value());
     CHECK(first.report->world.itemsWritten);
-    CHECK(first.report->world.screenGames == 53);
+    CHECK(first.report->world.screenGames == 50); // its placed games (ADR-0013 §9)
     REQUIRE(fs::exists(room.itemsFile()));
     const std::string items = rv::core::readTextFile(room.itemsFile()).value();
     const fs::path planFile = rv::world::worldFiles(room.data, rv::catalog::LibraryId::parse("esde").value()).plan;
@@ -273,7 +273,7 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
     CHECK(world.items == 50);
     CHECK(world.staticRecords == 150);
-    CHECK(world.screenGames == 53);
+    CHECK(world.screenGames == 50);
     CHECK(reconciled.report->residency.frontsResident == 50);
     CHECK(reconciled.report->residency.spinesResident == 50);
     CHECK(reconciled.report->residency.cacheStored == 0);

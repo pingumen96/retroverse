@@ -18,12 +18,15 @@
 #include <rv/app/room_screen.hpp>
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog/metadata.hpp>
+#include <rv/core/file_io.hpp>
 #include <rv/core/sha256.hpp>
+#include <rv/esde/settings.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/incremental.hpp>
 #include <rv/world/lift.hpp>
 #include <rv/world/overrides.hpp>
+#include <rv/world/plan_json.hpp>
 #include <rv/world/room_input.hpp>
 #include <rv/world/room_look.hpp>
 #include <rv/world/room_selection.hpp>
@@ -146,7 +149,8 @@ void dropFloor(WorldBuild& build) {
 /// (snapshotRoomItems()): one no snapshot lists any more, and in a shared or arcade room every game of its other
 /// sections, which each section's items file holds so.
 [[nodiscard]] bool hasText(const RoomItemText& text) noexcept {
-    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty();
+    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty() ||
+           text.screen.has_value();
 }
 
 /// The text of `game` among the items of a room's `systems` (its sections, in order) and the items it is of: the first
@@ -213,6 +217,13 @@ RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::Wor
             own.insert(room.id);
         }
     }
+    // The other versions of each placed title of those rooms (the CRT's priority data is gathered from them).
+    std::map<catalog::GameId, std::vector<catalog::GameId>> versions;
+    for (const world::UnplacedGame& unplaced : plan.unplaced) {
+        if (unplaced.reason == world::UnplacedReason::DuplicateTitle && own.contains(unplaced.room)) {
+            versions[unplaced.representative].push_back(unplaced.game);
+        }
+    }
     for (const world::Placement& placement : plan.placements) {
         const catalog::RoomEntry* entry = entryOf(snapshot.snapshot, placement.game);
         if (entry == nullptr && !own.contains(placement.slot.fixture().room())) {
@@ -229,6 +240,11 @@ RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::Wor
             if (entry->year) {
                 text.year = std::to_string(*entry->year);
             }
+            // What its room's hero CRT shows of it (I4 step 6b: the floor's CRTs from the items files).
+            const auto others = versions.find(placement.game);
+            text.screen = roomItemScreen(snapshot, placement.game,
+                                         others != versions.end() ? std::span<const catalog::GameId>(others->second)
+                                                                  : std::span<const catalog::GameId>());
         }
         text.coverPath = coverPathOf(snapshot.mediaPaths, placement.game);
         items.items.push_back(std::move(text));
@@ -823,15 +839,10 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
             if (input.snapshot.mediaKnown()) {
                 result.sources.mediaRoot = result.sources.mediaRootPath;
             }
-            // Each system's room items, kept for the floors' builds and the next start (written when they changed).
-            const world::Room* startRoom = nullptr;
-            if (input.startRoom) {
-                for (const world::Room& room : build.plan->rooms) {
-                    if (room.id == *input.startRoom) {
-                        startRoom = &room;
-                    }
-                }
-            }
+            // The CRTs' games are read under the media root while it is known (ADR-0010 §3).
+            result.sources.screenMediaRoot = result.sources.mediaRoot;
+            // Each system's room items, kept for the floors' builds and the next start (written when they changed):
+            // their text, their covers and their CRT's data (I4 step 6b).
             const Clock::time_point itemsStart = Clock::now();
             for (const RoomSnapshotResult& system : input.snapshot.systems) {
                 if (system.error || roomHolding(*build.plan, system.system) == nullptr) {
@@ -847,14 +858,6 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
                                  written.error().message);
                 }
                 result.sources.items.emplace(system.system, std::move(items));
-                // The start room's systems' snapshots: its hero CRT's games (room_screen.hpp).
-                if (startRoom != nullptr) {
-                    const std::vector<catalog::SystemName> held = systemsOf(*startRoom);
-                    if (std::find(held.begin(), held.end(), system.system) != held.end()) {
-                        result.sources.snapshots.emplace(system.system,
-                                                         std::make_shared<const RoomSnapshotResult>(system));
-                    }
-                }
             }
             build.itemsMs = millisecondsSince(itemsStart);
         }
@@ -957,9 +960,17 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         }
         build.sceneMs = millisecondsSince(sceneStart);
 
-        // Each collection room's layout in the scene's frame and its cover requests (ADR-0011 §1).
+        // Each collection room's layout in the scene's frame, its cover requests (ADR-0011 §1), its content digest and
+        // its CRT's games (I4 step 6b).
         const Clock::time_point layoutStart = Clock::now();
         const std::vector<world::CollectionTitle> titles = collectionTitlesOf(mergedItems(items), plan);
+        std::map<world::RoomId, std::string> digests;
+        if (auto computed = world::roomContentDigests(plan)) {
+            digests = std::move(*computed);
+        } else {
+            spdlog::warn("World: the rooms' content digests: {}; every room is compared whole",
+                         computed.error().toString());
+        }
         for (const world::Room* room : rooms) {
             const auto roomData = data->rooms.find(room->id);
             if (roomData == data->rooms.end()) {
@@ -1006,17 +1017,19 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 collection.covers.push_back(std::move(cover));
             }
             build.itemsRead += collection.covers.size();
-            // The start room's hero CRT plays its systems' games (I3 step 10c; none for a preview): a shared or arcade
-            // room's, its sections' in the room's featured order (ADR-0013 §9).
+            if (const auto digest = digests.find(room->id); digest != digests.end()) {
+                collection.contentDigest = digest->second;
+            }
+            // Its hero CRT plays its placed games (I3 step 10c; ADR-0013 §9): a shared or arcade room's, its sections'
+            // in the room's featured order, each game's data from its own section's items.
+            if (sources.screenMediaRoot) {
+                collection.screenGames = roomScreenGames(
+                    collection.layout,
+                    [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
+                    *sources.screenMediaRoot);
+            }
             if (build.startRoom && room->id == *build.startRoom) {
-                std::vector<const RoomSnapshotResult*> snapshots;
-                for (const catalog::SystemName& system : held) {
-                    const auto snapshot = sources.snapshots.find(system);
-                    if (snapshot != sources.snapshots.end() && snapshot->second) {
-                        snapshots.push_back(snapshot->second.get());
-                    }
-                }
-                build.screenGames = roomScreenGames(plan, collection.layout, snapshots);
+                build.screenGames = collection.screenGames;
             }
             collection.sceneData = std::move(roomData->second);
             build.rooms.push_back(std::move(collection));
@@ -1041,17 +1054,33 @@ WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job)
 }
 
 WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library, const world::StoredPlan& stored,
-                        const std::optional<world::RoomId>& startRoom) {
+                        const std::optional<world::RoomId>& startRoom,
+                        const std::optional<std::filesystem::path>& screenMediaRoot) {
     WorldBuild build;
     build.preview = true;
     build.library = library;
     build.startRoom = startRoom;
     keep(build, stored, world_notice::kNone, "the stored plan, shown before the catalog is read");
-    buildFloor(paths, build, FloorSources{});
+    FloorSources sources;
+    sources.screenMediaRoot = screenMediaRoot;
+    buildFloor(paths, build, sources);
     if (!build.scene && !build.startRoomMissing) {
         spdlog::error("World: the stored plan's floor cannot be shown before the catalog is read: {}", build.reason);
     }
     return build;
+}
+
+std::optional<std::filesystem::path> readableMediaRoot(const catalog::LibraryProfile& profile) {
+    const auto settings = esde::readSettings(profile.esdeHome);
+    const esde::ResolvedRoot root = esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, profile);
+    if (!root.path) {
+        return std::nullopt;
+    }
+    std::error_code error;
+    if (!std::filesystem::is_directory(std::filesystem::path(core::extendedLengthPath(*root.path)), error) || error) {
+        return std::nullopt;
+    }
+    return root.path;
 }
 
 // --- The flow -------------------------------------------------------------------------------------------------------
@@ -1279,11 +1308,13 @@ void WorldFlow::update(AppCatalog& catalog) {
             jobOptions.generation = &m_generation;
             const Status submitted = m_pool.submit(
                 [mailbox = m_mailbox, paths = m_options.paths, library = m_library, startRoom = m_options.startRoom,
-                 stored = m_stored->stored, generation](const core::JobContext& job) {
+                 stored = m_stored->stored, profile = m_reader->profile, generation](const core::JobContext& job) {
                     if (job.cancelled()) {
                         return;
                     }
-                    WorldBuild preview = previewWorld(paths, library, *stored, startRoom);
+                    // The rooms' CRTs play their games from the start (I4 step 6b), read under the library's media
+                    // root when it can be read now; the covers come from the cache alone all the same.
+                    WorldBuild preview = previewWorld(paths, library, *stored, startRoom, readableMediaRoot(profile));
                     if (job.cancelled()) {
                         return;
                     }

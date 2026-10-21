@@ -138,6 +138,29 @@ TEST_CASE("app/room_items: the room's items round trip as canonical JSON, by Gam
     CHECK(rv::app::parseRoomItems(taggedJson, "items.json").value() == tagged);
     CHECK(rv::app::writeRoomItems(file, tagged).value());
     CHECK(rv::app::readRoomItems(file).value() == tagged);
+
+    // The hero CRT's data of a placed game (I4 step 6b): its media relative to the media root, its last play and its
+    // title's priority; "lastPlayed" and "rating" only when known.
+    RoomItems screened = tagged;
+    rv::app::RoomItemScreen screen;
+    screen.video = "snes/videos/Amber Lantern (USA).mp4";
+    screen.screenshot = "snes/screenshots/Amber Lantern (USA).png";
+    screen.sortKey = "amber lantern";
+    screen.favorite = true;
+    screen.playCount = 42;
+    screened.items[0].screen = screen;
+    screen.lastPlayed = 1790000000;
+    screen.ratingTenths = 8;
+    screened.items[1].screen = screen;
+    const nlohmann::json screenedJson = rv::app::roomItemsToJson(screened);
+    CHECK_FALSE(screenedJson["items"][0]["screen"].contains("lastPlayed"));
+    CHECK_FALSE(screenedJson["items"][0]["screen"].contains("rating"));
+    CHECK(screenedJson["items"][1]["screen"]["lastPlayed"] == 1790000000);
+    CHECK(screenedJson["items"][1]["screen"]["rating"] == 8);
+    CHECK_FALSE(screenedJson["items"][2].contains("screen"));
+    CHECK(rv::app::parseRoomItems(screenedJson, "items.json").value() == screened);
+    CHECK(rv::app::writeRoomItems(file, screened).value());
+    CHECK(rv::app::readRoomItems(file).value() == screened);
 }
 
 TEST_CASE("app/room_items: a file of another shape is refused with its JSON pointer", "[app][world_start]") {
@@ -166,6 +189,19 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
     platformsObject["platforms"] = nlohmann::json::object();
     nlohmann::json platformNumber = good;
     platformNumber["platforms"] = nlohmann::json::array({"gb", 7});
+    const nlohmann::json screen{{"video", ""},     {"screenshot", ""},   {"titleScreen", ""},
+                                {"sortKey", "a"},  {"favorite", false}, {"playCount", 0u}};
+    nlohmann::json screenArray = good;
+    screenArray["items"][0]["screen"] = nlohmann::json::array();
+    nlohmann::json screenNoFavorite = good;
+    screenNoFavorite["items"][0]["screen"] = screen;
+    screenNoFavorite["items"][0]["screen"].erase("favorite");
+    nlohmann::json screenNegativePlays = good;
+    screenNegativePlays["items"][1]["screen"] = screen;
+    screenNegativePlays["items"][1]["screen"]["playCount"] = -1;
+    nlohmann::json screenRating = good;
+    screenRating["items"][1]["screen"] = screen;
+    screenRating["items"][1]["screen"]["rating"] = 11;
     const std::vector<Case> cases{
         {"not an object", nlohmann::json::array(), rv::ErrorCode::ParseError, "items.json:"},
         {"a newer schema", newer, rv::ErrorCode::Unsupported, "items.json:/schemaVersion"},
@@ -176,6 +212,12 @@ TEST_CASE("app/room_items: a file of another shape is refused with its JSON poin
         {"a title that is no string", numberTitle, rv::ErrorCode::ParseError, "items.json:/items/0/title"},
         {"platforms that are no array", platformsObject, rv::ErrorCode::ParseError, "items.json:/platforms"},
         {"a platform that is no string", platformNumber, rv::ErrorCode::ParseError, "items.json:/platforms/1"},
+        {"a screen that is no object", screenArray, rv::ErrorCode::ParseError, "items.json:/items/0/screen"},
+        {"a screen without favorite", screenNoFavorite, rv::ErrorCode::ParseError,
+         "items.json:/items/0/screen/favorite"},
+        {"a negative play count", screenNegativePlays, rv::ErrorCode::ParseError,
+         "items.json:/items/1/screen/playCount"},
+        {"a rating past 10", screenRating, rv::ErrorCode::ParseError, "items.json:/items/1/screen/rating"},
     };
     for (const Case& c : cases) {
         INFO(c.name);

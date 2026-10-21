@@ -159,6 +159,12 @@ struct RoomCollection {
     /// The passage of its doorway onto the hall, in the scene's frame, from the floor to the doorway's top (the cover
     /// loader's view: a room whose doorway the frustum meets is in view); empty for a room without one.
     core::Aabb doorway;
+    /// Its content digest in the plan (world::roomContentDigest: its record and every element of it), what the per-room
+    /// reconcile compares first (I4 step 6b, ADR-0013 §5).
+    std::string contentDigest;
+    /// Its hero CRT's games: its placed games with media, in its featured order (room_screen.hpp, from the rooms' items;
+    /// none without a media root for them: FloorSources::screenMediaRoot).
+    std::vector<ScreenGame> screenGames;
 };
 
 /// The floor to commit (an immutable value made on the pool, ADR-0010 §12), with the building it shows.
@@ -200,8 +206,8 @@ struct WorldBuild {
     /// The media root the paths are relative to, also while it is out of reach (I3 step 12: the cover loader tries it
     /// again after the catalog's refresh); none when it could not be resolved.
     std::optional<std::filesystem::path> mediaRootPath;
-    /// The hero CRT's games: the start room's (room_screen.hpp; none for a preview, without a start room or while the
-    /// media are unknown).
+    /// The hero CRT's games at the start: the start room's (RoomCollection::screenGames; none without a start room or
+    /// while the media are unknown). Each room's are its RoomCollection's (the CRT of the eye's room, I4 step 6b).
     std::vector<ScreenGame> screenGames;
     /// The floor's prefabs that fell back (each room's scene data's, by the manifest the plan names).
     std::vector<ObjectFallback> objectFallbacks;
@@ -230,12 +236,14 @@ struct WorldBuild {
 };
 
 /// What the floor-build job reads besides the plan: each system's room items (by system: a system it lacks is read from
-/// its items file), the snapshots of the systems (the start room's CRT games), their platform tags, the media root.
+/// its items file), the media root (the covers' and the CRTs', known), the media root the paths are relative to, and
+/// the media root the CRTs' games are read under (I4 step 6b: the building's known media root; the preview's resolved
+/// from the library's settings and found readable, its covers served from the cache alone all the same).
 struct FloorSources {
     std::map<catalog::SystemName, RoomItems> items;
-    std::map<catalog::SystemName, std::shared_ptr<const RoomSnapshotResult>> snapshots;
     std::optional<std::filesystem::path> mediaRoot;
     std::optional<std::filesystem::path> mediaRootPath;
+    std::optional<std::filesystem::path> screenMediaRoot;
 };
 
 /// The building job's result: the build with its plan (no floor yet) and what the floor's build reads.
@@ -261,7 +269,7 @@ struct BuildingResult {
 [[nodiscard]] RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan);
 
 /// The floor-build job: `build`'s floor (its start room's, else kStartFloor) of its plan made into its scene, its rooms'
-/// collections and cover requests (`sources`' items, else the items files), the start room's CRT games. A plan that
+/// collections, content digests, cover requests and CRT games (`sources`' items, else the items files). A plan that
 /// lacks the start room sets startRoomMissing and builds nothing; a floor that cannot be made leaves the build with no
 /// plan and its notice (logged). Nothing for a build without a plan.
 void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& sources);
@@ -271,10 +279,17 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
 
 /// The preview job (I3 step 10c, the persisted start): `stored`'s start floor as it is, before the catalog is read:
 /// buildFloor() with the rooms' items files (room_items.hpp, read from <cache>/world/<library>/), its covers served from
-/// the derived-texture cache alone (no media root). Outcome Kept, `preview` set, no change report, nothing written. Never
-/// fails as a whole: a floor that cannot be made has no scene (logged).
+/// the derived-texture cache alone (no media root), its rooms' CRT games from the items under `screenMediaRoot` (none
+/// without it). Outcome Kept, `preview` set, no change report, nothing written. Never fails as a whole: a floor that
+/// cannot be made has no scene (logged).
 [[nodiscard]] WorldBuild previewWorld(const WorldPaths& paths, const catalog::LibraryId& library,
-                                      const world::StoredPlan& stored, const std::optional<world::RoomId>& startRoom);
+                                      const world::StoredPlan& stored, const std::optional<world::RoomId>& startRoom,
+                                      const std::optional<std::filesystem::path>& screenMediaRoot = std::nullopt);
+
+/// The media root of the library `profile` describes as ES-DE's settings give it now (esde::resolveMediaRoot), when it
+/// can be read (a folder there): the preview's CRT games are read under it (I4 step 6b). On the worker pool: it reads
+/// es_settings.xml and checks the folder.
+[[nodiscard]] std::optional<std::filesystem::path> readableMediaRoot(const catalog::LibraryProfile& profile);
 
 /// The systems a building snapshot reads (takeBuildingSnapshot()): those world::classify() gives a room (ADR-0013 §2:
 /// never an excluded one), by the asset root's building.json and systems.json; every system when they cannot be read

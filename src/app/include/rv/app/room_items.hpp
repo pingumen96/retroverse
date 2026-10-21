@@ -11,9 +11,16 @@
 // picture until the snapshot's reconciliation). It holds the catalog's titles and the covers' paths relative to the
 // media root, never an absolute path. Its text is canonical JSON (core::writeCanonicalJson), so the same items always
 // give the same bytes and an unchanged room rewrites nothing.
+//
+// Since I4 step 6b (ADR-0013 §9) each placed game's item also holds what the hero CRT of its room needs
+// (RoomItemScreen: its clip, screenshot and title screen relative to the media root, when Retroverse last played it,
+// its title's priority data), so that a floor built from the plan and the items files alone (the persisted start's
+// preview, a rebuild) has its CRTs' games without the catalog (room_screen.hpp). A file written before has no such
+// data: its rooms' CRTs have no games until the building job writes it again.
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,6 +37,23 @@ namespace rv::app {
 
 inline constexpr int kRoomItemsSchemaVersion = 1;
 
+/// What the hero CRT needs of a placed game ES-DE shows (catalog::EntryState::Game; I4 step 6b): its media relative to
+/// the media root as esde::roomMediaPaths names them (RoomItemText::coverPath is its cover; empty where it has none),
+/// when Retroverse last played it (seconds since 1970, catalog::RoomEntry::lastSession), and its title's priority data
+/// gathered from its versions as world::selectRoom gathers them (the CRT's featured order: world::priorityLess).
+struct RoomItemScreen {
+    std::string video;
+    std::string screenshot;
+    std::string titleScreen;
+    std::optional<std::int64_t> lastPlayed;
+    std::string sortKey;
+    bool favorite = false;
+    std::uint64_t playCount = 0;
+    std::optional<int> ratingTenths;
+
+    bool operator==(const RoomItemScreen&) const = default;
+};
+
 /// One placed game's text, as the room's snapshot gave it.
 struct RoomItemText {
     catalog::GameId game;
@@ -40,6 +64,8 @@ struct RoomItemText {
     std::string coverPath;
     /// world::CollectionTitle::available.
     bool available = true;
+    /// The hero CRT's data (none for a game the snapshot did not list, or that ES-DE does not show).
+    std::optional<RoomItemScreen> screen;
 
     bool operator==(const RoomItemText&) const = default;
 };
@@ -74,10 +100,12 @@ struct RoomItems {
                                                   const catalog::LibraryId& library, const catalog::SystemName& system);
 
 /// {"schemaVersion": 1, "systemName": "...", "platforms": ["..."], "items": [{"game", "title", "fallbackTitle", "year",
-/// "coverPath", "available"}, ...]}; "platforms" only when there are any.
+/// "coverPath", "available", "screen": {"video", "screenshot", "titleScreen", "lastPlayed", "sortKey", "favorite",
+/// "playCount", "rating"}}, ...]}; "platforms" only when there are any, "screen" only for an item that has it (its
+/// "lastPlayed" and "rating" only when known).
 [[nodiscard]] nlohmann::json roomItemsToJson(const RoomItems& items);
-/// Errors (ParseError, context "<context>:<JSON pointer>"): not that shape ("platforms", optional, an array of
-/// strings), a newer schemaVersion, a GameId that does not parse, a game listed twice or out of order.
+/// Errors (ParseError, context "<context>:<JSON pointer>"): not that shape ("platforms" and "screen" optional), a newer
+/// schemaVersion, a GameId that does not parse, a game listed twice or out of order.
 [[nodiscard]] Expected<RoomItems> parseRoomItems(const nlohmann::json& document, std::string_view context);
 
 /// Reads `file`. Errors: NotFound when there is none, those of the read and of parseRoomItems().
