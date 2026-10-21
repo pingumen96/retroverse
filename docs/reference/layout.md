@@ -34,7 +34,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   the cache) and `world_notice_ui.hpp` (10b), `room_items` (10c), `cover_requests` (the loader's order, the hero set's
   LRU; 12), `world_focus.hpp` (the room's side of the hover, the pull-out and Focus) and `world_label_ui.hpp` (13a),
   `world_inspect.hpp` (the held pose, the dimming, the CRT's selection; 13b), `world_card_ui.hpp` (14a),
-  `world_launch_ui.hpp` (15a), `screen_room.hpp` (I4 step 6b: which room's CRT is the hero CRT). `rv_app_catalog`
+  `world_launch_ui.hpp` (15a), `screen_room.hpp` (I4 step 6b: which room's CRT is the hero CRT), `elevator_ride.hpp`
+  (I4 step 7b: the ride's state machine), `directory_data.hpp` (7b: the directory's building and games, where its
+  commands lead) and `elevator_prompt_ui.hpp` (7b). `rv_app_catalog`
   holds the room's flow up to its commit: `room_snapshot` and `world_build` (10b; the building job and the floor's
   build since I4 step 5a, the building stamp since 6b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp`
   (14b), `world_live_plan` (15b; room by room since I4 step 6b, `layout_difference.hpp` its comparison of a room's
@@ -42,7 +44,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
   `world_hover` and `world_label_panel` (13a), `world_inspection` (13b), `world_card` (14a), `game_screens_panel`
-  (14b), `world_launch` (15a), `world_live_update` (15b); the outline pass's dimming shader
+  (14b), `world_launch` (15a), `world_live_update` (15b), `world_ride` (I4 step 7b: the directory's commands, the
+  teleports, the ride's floor swap) and `elevator_prompt_panel` (7b); the outline pass's dimming shader
   `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
   `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
