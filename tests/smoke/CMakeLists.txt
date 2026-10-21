@@ -26,6 +26,7 @@ target_link_libraries(rv_smoke_tests PRIVATE
     rv_assets
     rv_scene
     rv_app_cli               # the run report
+    rv_ui_model              # the directory's model (test_directory_panel.cpp, through the UI probe's fixture)
     rv_screenshot_diff_core  # the golden comparison
     rv_test_support          # the child runner (tests/support/child_process.hpp)
     Catch2::Catch2)
@@ -50,6 +51,11 @@ endif()
 add_dependencies(rv_smoke_tests rv_collection_probe)
 target_include_directories(rv_smoke_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests/collection_probe")
 target_compile_definitions(rv_smoke_tests PRIVATE RV_SMOKE_COLLECTION_PROBE="$<TARGET_FILE:rv_collection_probe>")
+
+# The directory's test (test_directory_panel.cpp, I4 step 7a) runs the UI probe and shares its fixed model.
+add_dependencies(rv_smoke_tests rv_ui_probe)
+target_include_directories(rv_smoke_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests/ui_probe")
+target_compile_definitions(rv_smoke_tests PRIVATE RV_SMOKE_UI_PROBE="$<TARGET_FILE:rv_ui_probe>")
 
 # The catalog tests (test_catalog.cpp) import the standard fixture with retroverse-cli, started as a process.
 if(TARGET retroverse-cli)
