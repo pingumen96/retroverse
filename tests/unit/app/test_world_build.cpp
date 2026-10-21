@@ -1545,8 +1545,8 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     }
 
     // additions/ imported: the shared room updated with both sections' selections (pokemini's 24 new titles in its
-    // section, past 30 titles and sticky), snes's and psx's rooms with theirs, nothing moved; megadrive has no room
-    // yet (I4 step 6a). The CLI's update then finds the app's plan up to date.
+    // section, past 30 titles and sticky), snes's and psx's rooms with theirs (34 titles in all), nothing moved;
+    // megadrive enters the building (below).
     REQUIRE(imported.fixture.applyOverlay("additions").has_value());
     imported.importLibrary();
     const WorldBuild added =
@@ -1557,7 +1557,7 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     REQUIRE(added.changes.has_value());
     REQUIRE(added.plan.has_value());
     CHECK(added.changes->heldRooms.empty());
-    CHECK(added.changes->added.size() == 34);
+    CHECK(added.changes->added.size() == 46); // the 34 titles, and megadrive's 12 in its new section
     for (const rv::world::Placement& placement : first.plan->placements) {
         INFO(placement.game.toString());
         CHECK(std::find(added.plan->placements.begin(), added.plan->placements.end(), placement) !=
@@ -1568,13 +1568,25 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
                                           [&](const rv::world::Room& candidate) { return candidate.id == shared; });
     REQUIRE(sharedAfter != added.plan->rooms.end());
     CHECK(sharedAfter->sections == std::vector<rv::catalog::SystemName>{pocketlab, pokemini});
-    // The CLI's whole update also enters the catalog's new systems (I4 step 6a): megadrive, 12 titles, takes a section
-    // of gen4's new shared room. The app's building job enters new systems in step 6b; until then the CLI finds that
-    // one change and nothing else.
+    // The app's building job enters the catalog's new systems as the CLI's whole update does (I4 steps 6a and 6b):
+    // megadrive, 12 titles, takes a section of gen4's new shared room in the south row; the log says so.
+    const auto megadriveRoom = std::find_if(added.plan->rooms.begin(), added.plan->rooms.end(),
+                                            [](const rv::world::Room& candidate) {
+                                                return candidate.id.toString() == "area:shared:gen4";
+                                            });
+    REQUIRE(megadriveRoom != added.plan->rooms.end());
+    CHECK(megadriveRoom->sections ==
+          std::vector<rv::catalog::SystemName>{rv::catalog::SystemName::parse("megadrive").value()});
+    REQUIRE(added.changes->systemsEntered.size() == 1);
+    CHECK(added.changes->systemsEntered.front().system.str() == "megadrive");
+    CHECK(added.changes->roomsAdded.size() == 1);
+    CHECK(added.changes->systemsWaiting.empty());
+    // The CLI's update then finds the app's plan up to date.
+    const std::string addedText = rv::core::readTextFile(planFile).value();
     const CliRun again = runCli(imported, {"worldplan", "update"});
     INFO(again.out);
     INFO(again.err);
     CHECK(again.code == rv::cli::ExitCode::Ok);
-    CHECK(again.out.find("megadrive in area:shared:gen4") != std::string::npos);
-    CHECK(again.out.find("is up to date") == std::string::npos);
+    CHECK(again.out.find("is up to date") != std::string::npos);
+    CHECK(rv::core::readTextFile(planFile).value() == addedText);
 }

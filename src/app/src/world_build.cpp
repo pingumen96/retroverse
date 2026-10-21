@@ -353,20 +353,14 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     const Clock::time_point planStart = Clock::now();
     Expected<world::GenerationResult> result = makeError(ErrorCode::Unknown, "no plan made");
     if (stored) {
-        // The update of the building's rooms, as `retroverse-cli worldplan update` makes it: each system's selection
-        // goes to the room that holds its section (its console room, or the shared or arcade room it has a section of:
-        // I4 step 4, sticky), a shared or arcade room updated with all its sections' selections (one lacking some is
-        // held as it is: the change report's heldRooms), the rooms without a selection as they stand; a system without
-        // a room waits for I4 step 6a (new systems).
-        std::vector<world::RoomSelection> updated;
-        for (world::RoomSelection& selection : selections) {
-            if (roomHolding(stored->plan, selection.room.system()) != nullptr) {
-                updated.push_back(std::move(selection));
-            } else if (!selection.titles.empty()) {
-                spdlog::info("World: {} has no room in the stored building; new systems enter it with I4 step 6a",
-                             selection.room.system().str());
-            }
-        }
+        // The update of the whole building, as `retroverse-cli worldplan update` makes it with no system named (I4 step
+        // 6a): each system's selection goes to the room that holds its section (its console room, or the shared or
+        // arcade room it has a section of: I4 step 4, sticky), also one without a placeable title, a shared or arcade
+        // room updated with all its sections' selections (one lacking some is held as it is: the change report's
+        // heldRooms), the rooms without a selection as they stand; every other system with a placeable title and data
+        // of its own enters the building (its console room, or a section of its floor's shared room or of the arcade
+        // room), the others left out (logged).
+        const Clock::time_point dataStart = Clock::now();
         std::vector<world::WorldData> rooms;
         for (const world::Room& room : stored->plan.rooms) {
             const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
@@ -381,6 +375,32 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
             }
             rooms.push_back(std::move(*data));
         }
+        std::vector<world::RoomSelection> updated;
+        for (world::RoomSelection& selection : selections) {
+            const catalog::SystemName system = selection.room.system();
+            if (roomHolding(stored->plan, system) != nullptr) {
+                updated.push_back(std::move(selection));
+                continue;
+            }
+            if (selection.titles.empty()) {
+                spdlog::info("World: {} is left out of the building: no placeable title", system.str());
+                continue;
+            }
+            world::RoomDataRequest request;
+            request.system = system;
+            if (const auto tags = platformTags.find(system); tags != platformTags.end()) {
+                request.platformTags = tags->second;
+            }
+            auto data = world::loadWorldData(input.paths.assetRoot, request);
+            if (!data) {
+                spdlog::warn("World: {} is left out of the building: no data yet: {}", system.str(),
+                             data.error().message);
+                continue;
+            }
+            rooms.push_back(std::move(*data));
+            updated.push_back(std::move(selection));
+        }
+        build.dataMs = millisecondsSince(dataStart);
         world::BuildingUpdateInput update;
         update.library = input.library;
         update.selections = std::move(updated);
@@ -472,6 +492,18 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     // it was until every section has one (I4 step 4): said in the log.
     for (const world::KeptRoom& held : result->changes.heldRooms) {
         spdlog::warn("World: {} is held as it is: {}", held.room.toString(), held.reason);
+    }
+    // The systems that entered the building (I4 step 6a: a room of their own, or a section of a shared or arcade room),
+    // and those that wait for a held room (they enter with the update that has every section's selection).
+    for (const world::SystemRoom& entered : result->changes.systemsEntered) {
+        const bool opened = std::find(result->changes.roomsAdded.begin(), result->changes.roomsAdded.end(),
+                                      entered.room) != result->changes.roomsAdded.end();
+        spdlog::info("World: {} enters the building in {} ({})", entered.system.str(), entered.room.toString(),
+                     opened ? "a new room" : "a new section");
+    }
+    for (const world::SystemRoom& waiting : result->changes.systemsWaiting) {
+        spdlog::warn("World: {} waits to enter {}, held (a section of it has no selection)", waiting.system.str(),
+                     waiting.room.toString());
     }
     build.plan = std::move(result->plan);
     build.planDigest = result->changes.digestAfter;
@@ -800,6 +832,7 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
                     }
                 }
             }
+            const Clock::time_point itemsStart = Clock::now();
             for (const RoomSnapshotResult& system : input.snapshot.systems) {
                 if (system.error || roomHolding(*build.plan, system.system) == nullptr) {
                     continue;
@@ -823,6 +856,7 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
                     }
                 }
             }
+            build.itemsMs = millisecondsSince(itemsStart);
         }
     } catch (const std::exception& error) {
         noPlan(build, world_notice::kFailed, std::string("the building could not be made: ") + error.what());

@@ -210,13 +210,15 @@ struct WorldBuild {
     bool itemsWritten = false;
     std::optional<Error> itemsError;
     std::size_t itemsRead = 0;
-    /// Milliseconds on the worker: the lock and the plan read under it, the selections, the generation or update with
-    /// its validation, the plan's write, the floor's scene data and scene, the layouts and the cover requests, the
-    /// whole job (the building's and the floor's).
+    /// Milliseconds on the worker: the lock and the plan read under it, the selections, the rooms' data, the
+    /// generation or update with its validation (the data included), the plan's write, the rooms' items files, the
+    /// floor's scene data and scene, the layouts and the cover requests, the whole job (the building's and the floor's).
     double lockMs = 0.0;
     double selectMs = 0.0;
+    double dataMs = 0.0;
     double planMs = 0.0;
     double saveMs = 0.0;
+    double itemsMs = 0.0;
     double sceneMs = 0.0;
     double layoutMs = 0.0;
     double milliseconds = 0.0;
