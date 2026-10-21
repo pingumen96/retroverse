@@ -83,14 +83,14 @@ struct ImportedRoom {
 };
 
 std::vector<std::string> lockstep(std::string_view frames, std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--exit-after-frames", "--frames", std::string(frames), "--fixed-dt",
+    std::vector<std::string> arguments{"--start-room", "room:snes", "--exit-after-frames", "--frames", std::string(frames), "--fixed-dt",
                                        "0.016667"};
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     return arguments;
 }
 
 std::vector<std::string> unpaced(std::string_view frames, std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--exit-after-frames", "--frames", std::string(frames)};
+    std::vector<std::string> arguments{"--start-room", "room:snes", "--exit-after-frames", "--frames", std::string(frames)};
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     return arguments;
 }

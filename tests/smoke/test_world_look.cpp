@@ -79,7 +79,7 @@ struct ImportedRoom {
 
 std::vector<std::string> roomArguments(std::string_view frames, const fs::path& shot,
                                        std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--exit-after-frames", "--frames", std::string(frames), "--fixed-dt", "0.016667",
+    std::vector<std::string> arguments{"--start-room", "room:snes", "--exit-after-frames", "--frames", std::string(frames), "--fixed-dt", "0.016667",
                                        "--screenshot",        arg(shot)};
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     return arguments;
@@ -476,7 +476,11 @@ TEST_CASE("world look: the snes-room's light levels, saturation and clear displa
         INFO(run.describe());
         REQUIRE(run.report->world.bound);
         CHECK(run.report->world.state == "room");
-        CHECK(run.report->world.lights <= 16);
+        // The room's lights (the eye's area's on its floor, I4 step 5a: the hall's are the floor's too) within the
+        // renderer's 16.
+        REQUIRE(run.report->sceneAreas.has_value());
+        CHECK(run.report->sceneAreas->area == "room:snes");
+        CHECK(run.report->sceneAreas->lights.size() <= 16);
         // A profile is how the room is drawn: the second run shows the first one's plan unchanged.
         if (firstDigest) {
             CHECK(run.report->world.outcome == "unchanged");

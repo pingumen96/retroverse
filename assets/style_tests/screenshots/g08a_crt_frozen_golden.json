@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "a1f4e0031407d026abde4140827d23a96e6d12f3",
+    "gitCommit": "285d160bad65e2d2a6cc39ece8d27dd4acae4efa",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -29,17 +29,17 @@
       "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
     },
     "plan": {
-      "digest": "15db479dc86e66d7f1cdd8df63aa76249f261ceed6505198e09b5d4d521382a4",
-      "fileSha256": "15db479dc86e66d7f1cdd8df63aa76249f261ceed6505198e09b5d4d521382a4",
+      "digest": "28287d2637d399d400bef3926c97292bcc9b33096ed67df72eee991444752c7b",
+      "fileSha256": "28287d2637d399d400bef3926c97292bcc9b33096ed67df72eee991444752c7b",
       "items": 50,
       "placements": 50
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "1b956a7693a6c4a561a7837dc8ed06dbb3015ff0b7d6bb4ee3d6f4035be50e6c"
+      "sha256": "7280edab3b8411039cf59082fc6da98d818450149d1fd2f1c0a54b84c2c50b88"
     }
   },
-  "renderedOn": "2026-10-19",
+  "renderedOn": "2026-10-21",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
@@ -49,7 +49,7 @@
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
       "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
-      "build/msvc-x64-debug/bin/retroverse.exe --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g08a.png --screenshot-size 1920x1080 --spawn -0.805000007,0,-2.82200003,0,-25.539053 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g08a.png --screenshot-size 1920x1080 --spawn -0.805000007,0,-2.82200003,0,-25.539053 --video-freeze-pts 1 --hidden --data-dir <case>/data"
     ]
   },
   "schemaVersion": 1,

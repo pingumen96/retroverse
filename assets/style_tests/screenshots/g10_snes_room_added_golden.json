@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "a1f4e0031407d026abde4140827d23a96e6d12f3",
+    "gitCommit": "285d160bad65e2d2a6cc39ece8d27dd4acae4efa",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -29,17 +29,17 @@
       "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
     },
     "plan": {
-      "digest": "76019299513f68611a5bb5e41c7e11ca53f6718900d259d910ae1609ce982b9f",
-      "fileSha256": "76019299513f68611a5bb5e41c7e11ca53f6718900d259d910ae1609ce982b9f",
+      "digest": "d82d4f4e57e4eec79b6013b4845c58bbd311808a6356dd12ce54b489f535809e",
+      "fileSha256": "d82d4f4e57e4eec79b6013b4845c58bbd311808a6356dd12ce54b489f535809e",
       "items": 60,
       "placements": 60
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "1b956a7693a6c4a561a7837dc8ed06dbb3015ff0b7d6bb4ee3d6f4035be50e6c"
+      "sha256": "7280edab3b8411039cf59082fc6da98d818450149d1fd2f1c0a54b84c2c50b88"
     }
   },
-  "renderedOn": "2026-10-19",
+  "renderedOn": "2026-10-21",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
@@ -51,7 +51,7 @@
       "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
       "lay <fixture>/additions over <fixture> (rv::test::Fixture::applyOverlay)",
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
-      "build/msvc-x64-debug/bin/retroverse.exe --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g10.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g10.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
     ]
   },
   "schemaVersion": 1,

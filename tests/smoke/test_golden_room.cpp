@@ -215,7 +215,7 @@ struct GoldenRoom {
 
 /// A lockstep run of the room: `frames` frames at a fixed step, a screenshot at 1920x1080 at the end.
 std::vector<std::string> roomArguments(std::uint32_t frames, const fs::path& shot, std::vector<std::string> extra = {}) {
-    std::vector<std::string> arguments{"--exit-after-frames", "--frames",           std::to_string(frames),
+    std::vector<std::string> arguments{"--start-room", "room:snes", "--exit-after-frames", "--frames",           std::to_string(frames),
                                        "--fixed-dt",          "0.016667",           "--screenshot",
                                        arg(shot),             "--screenshot-size", "1920x1080"};
     arguments.insert(arguments.end(), extra.begin(), extra.end());

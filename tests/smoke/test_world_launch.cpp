@@ -123,7 +123,7 @@ private:
 std::vector<std::string> roomArguments(std::uint32_t frames, const fs::path& shot,
                                        std::vector<std::string> extra = {}) {
     std::vector<std::string> arguments{
-        "--exit-after-frames", "--frames", std::to_string(frames), "--fixed-dt", "0.016667", "--screenshot", arg(shot)};
+        "--start-room", "room:snes", "--exit-after-frames", "--frames", std::to_string(frames), "--fixed-dt", "0.016667", "--screenshot", arg(shot)};
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     return arguments;
 }
