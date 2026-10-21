@@ -930,6 +930,13 @@ Json worldToJson(const WorldRecord& world) {
     putOptional(times, "buildMs", world.buildMs);
     putOptional(times, "commitMs", world.commitMs);
     putOptional(times, "snapshotToCommitMs", world.snapshotToCommitMs);
+    if (world.job) {
+        times["job"] = Json{{"lockMs", world.job->lockMs},     {"selectMs", world.job->selectMs},
+                            {"dataMs", world.job->dataMs},     {"planMs", world.job->planMs},
+                            {"saveMs", world.job->saveMs},     {"itemsMs", world.job->itemsMs},
+                            {"floorMs", world.job->floorMs},   {"totalMs", world.job->totalMs},
+                            {"skipped", world.job->skipped}};
+    }
     json["times"] = std::move(times);
     if (world.firstFrame) {
         json["firstFrame"] = *world.firstFrame;
@@ -1073,6 +1080,19 @@ WorldRecord readWorld(FieldReader& fields) {
         world.buildMs = times->optionalNumber("buildMs");
         world.commitMs = times->optionalNumber("commitMs");
         world.snapshotToCommitMs = times->optionalNumber("snapshotToCommitMs");
+        if (auto job = times->optionalObject("job")) {
+            WorldJobRecord record;
+            record.lockMs = job->number("lockMs");
+            record.selectMs = job->number("selectMs");
+            record.dataMs = job->number("dataMs");
+            record.planMs = job->number("planMs");
+            record.saveMs = job->number("saveMs");
+            record.itemsMs = job->number("itemsMs");
+            record.floorMs = job->number("floorMs");
+            record.totalMs = job->number("totalMs");
+            record.skipped = job->boolean("skipped");
+            world.job = record;
+        }
     }
     world.firstFrame = fields.optionalCount("firstFrame");
     world.hoverChanges = fields.count("hoverChanges");

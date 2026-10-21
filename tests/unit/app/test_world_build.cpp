@@ -37,7 +37,9 @@
 #include <rv/app/world_reconcile.hpp>
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
+#include <rv/catalog_db/catalog_stamp.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
+#include <rv/catalog_db/session_store.hpp>
 #include <rv/cli/command.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/canonical_json.hpp>
@@ -706,6 +708,7 @@ TEST_CASE("app/world_flow: the stored plan read, the preview first, the building
     REQUIRE(again.has_value());
     REQUIRE(again->build.has_value());
     CHECK(again->build->outcome == WorldOutcome::Unchanged);
+    CHECK(again->build->skipped); // I4 step 6b: the building stamp of the first building
     CHECK_FALSE(again->build->preview);
     CHECK(again->build->screenGames.size() == 50);
     CHECK(again->build->screenGames == preview->screenGames);
@@ -889,6 +892,110 @@ TEST_CASE("app/world_build: a system's items hold the placements of every room t
         CHECK(gone->coverPath.empty());
     }
     CHECK(items.find(goneOther) == nullptr);
+}
+
+TEST_CASE("app/world_build: an unchanged start plans nothing (the building stamp); whatever a snapshot or the world's "
+          "inputs could change plans again",
+          "[app][world_build]") {
+    // I4 step 6b: the building job's shortcut. A first building writes its stamp beside the rooms' items.
+    const ImportedFixture imported("world-build-stamp", true, "esde/snes-room");
+    const rv::app::WorldPaths paths = worldPathsOf(imported);
+    const rv::catalog::LibraryProfile profile = rv::test::fixtureLibrary(imported.fixture);
+    const WorldBuild first = rv::app::buildWorld(inputOf(imported), rv::core::JobContext{});
+    REQUIRE(first.outcome == WorldOutcome::Generated);
+    const fs::path stampFile = rv::app::buildingStampFile(paths.cacheDir, profile.id);
+    const auto stamp = rv::app::readBuildingStamp(stampFile);
+    REQUIRE(stamp.has_value());
+    CHECK(stamp->planDigest == first.planDigest);
+    CHECK(rv::world::isSha256Hex(stamp->catalog));
+    CHECK(stamp->inputs == rv::app::worldInputsDigest(paths, profile.id, *first.mediaRoot));
+    const auto catalogStampNow = [&] {
+        const auto reader = readerOf(imported);
+        auto read = rv::catalog_db::catalogStamp(reader->query->connection(), profile.id);
+        REQUIRE(read.has_value());
+        return *read;
+    };
+    const auto stored = [&] {
+        auto read = rv::world::readStoredPlan(planFileOf(imported));
+        REQUIRE(read.has_value());
+        return *read;
+    };
+
+    // Nothing changed: the stored plan as it is, without a snapshot; its floor built from the items files is the
+    // building's, CRT games included.
+    std::optional<rv::app::BuildingResult> unchanged =
+        rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom);
+    REQUIRE(unchanged.has_value());
+    CHECK(unchanged->build.outcome == WorldOutcome::Unchanged);
+    CHECK(unchanged->build.skipped);
+    CHECK_FALSE(unchanged->build.changes.has_value());
+    CHECK(unchanged->build.planDigest == first.planDigest);
+    CHECK(unchanged->sources.mediaRoot == first.mediaRoot);
+    rv::app::buildFloor(paths, unchanged->build, unchanged->sources);
+    REQUIRE(unchanged->build.scene.has_value());
+    CHECK(unchanged->build.sceneDigest == first.sceneDigest);
+    CHECK(roomOf(unchanged->build).covers == roomOf(first).covers);
+    CHECK(unchanged->build.screenGames == first.screenGames);
+    CHECK(unchanged->build.mediaRoot == first.mediaRoot);
+
+    // A play session that counts (roomEntries' rule): the catalog's stamp moves.
+    const std::string before = catalogStampNow();
+    {
+        auto database = imported.openDatabase();
+        auto store = rv::catalog_db::SessionStore::open(database.writer()).value();
+        rv::catalog::PlaySession session;
+        session.game = first.plan->placements.front().game;
+        session.started = std::chrono::system_clock::now();
+        REQUIRE(store->insertSession(session).has_value());
+    }
+    CHECK(catalogStampNow() != before);
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    // The whole job then runs (no placement moved; the plan's inputDigest records the selections' play counts, the
+    // items their last play) and stamps what it read.
+    const WorldBuild played = rv::app::buildWorld(inputOf(imported), rv::core::JobContext{});
+    CHECK(played.outcome == WorldOutcome::Updated);
+    CHECK(played.plan->placements == first.plan->placements);
+    CHECK_FALSE(played.skipped);
+    CHECK(played.itemsWritten);
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+
+    // An import, even one that changes nothing: another catalog.
+    imported.importLibrary();
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    CHECK_FALSE(rv::app::buildWorld(inputOf(imported), rv::core::JobContext{}).skipped);
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+
+    // The world's configuration changed (world.json): the world's inputs.
+    REQUIRE(rv::core::writeTextFileAtomic(imported.paths.configDir() / "world.json", "{}\n").has_value());
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    static_cast<void>(rv::app::buildWorld(inputOf(imported), rv::core::JobContext{}));
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+
+    // A room's items file gone, the plan file another, the media root out of reach, no stamp, another stamp schema.
+    const fs::path items = rv::app::roomItemsFile(paths.cacheDir, profile.id, kSnes);
+    const std::string itemsText = rv::core::readTextFile(items).value();
+    REQUIRE(fs::remove(items));
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(items, itemsText).has_value());
+    CHECK(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    rv::world::StoredPlan other = stored();
+    other.digest = std::string(64, '0');
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, other, catalogStampNow(), kSnesRoom).has_value());
+    {
+        const MediaAway away(imported);
+        CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    }
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), std::string(), kSnesRoom).has_value());
+    const std::string stampText = rv::core::readTextFile(stampFile).value();
+    REQUIRE(rv::core::writeTextFileAtomic(stampFile, "{\"schemaVersion\": 2}\n").has_value());
+    CHECK(rv::app::readBuildingStamp(stampFile).error().code == rv::ErrorCode::Unsupported);
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    REQUIRE(fs::remove(stampFile));
+    CHECK(rv::app::readBuildingStamp(stampFile).error().code == rv::ErrorCode::NotFound);
+    CHECK_FALSE(rv::app::unchangedBuilding(paths, profile, stored(), catalogStampNow(), kSnesRoom).has_value());
+    // The stamp is written only when it changes.
+    REQUIRE(rv::core::writeTextFileAtomic(stampFile, stampText).has_value());
+    CHECK_FALSE(rv::app::writeBuildingStamp(stampFile, rv::app::readBuildingStamp(stampFile).value()).value());
 }
 
 TEST_CASE("app/world_build: a game added between two starts: the stored floor previewed, then rebuilt, nothing moved",

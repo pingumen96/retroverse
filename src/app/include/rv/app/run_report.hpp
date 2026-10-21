@@ -617,6 +617,24 @@ struct WorldRoomRecord {
     bool operator==(const WorldRoomRecord&) const = default;
 };
 
+/// The building job's phases, in milliseconds on its worker (I4 step 6b: WorldBuild's times): the world's lock and the
+/// plan read under it, the selections, the rooms' data, the generation or update with its validation, the plan's
+/// write, the rooms' items files, and the whole job (the floor's build included); `skipped`: the job found the
+/// catalog and the world's inputs as the stored plan was made from and planned nothing (world_build.hpp).
+struct WorldJobRecord {
+    double lockMs = 0.0;
+    double selectMs = 0.0;
+    double dataMs = 0.0;
+    double planMs = 0.0;
+    double saveMs = 0.0;
+    double itemsMs = 0.0;
+    double floorMs = 0.0;
+    double totalMs = 0.0;
+    bool skipped = false;
+
+    bool operator==(const WorldJobRecord&) const = default;
+};
+
 /// The generated building of the run (I3 step 10b's room, the floor shown since I4 step 5a): what showed, from which
 /// plan, how it came to be and when. Empty ({}) in runs that ask for no room (--scene, --model, --mock-catalog, the
 /// asset preview).
@@ -688,6 +706,8 @@ struct WorldRecord {
     std::optional<double> buildMs;
     std::optional<double> commitMs;
     std::optional<double> snapshotToCommitMs;
+    /// The building job's phases (I4 step 6b), the last one committed; none before one answered.
+    std::optional<WorldJobRecord> job;
     /// The frame the room first showed in (its preview's, after a persisted start; none before it showed).
     std::optional<std::uint64_t> firstFrame;
     /// The hover (I3 step 10b's outline on the picked item): changes of the hovered item, and the one hovered at the

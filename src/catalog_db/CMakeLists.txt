@@ -6,6 +6,7 @@
 
 add_library(rv_catalog_db STATIC
     src/catalog_query.cpp
+    src/catalog_stamp.cpp
     src/catalog_store.cpp
     src/database.cpp
     src/migrator.cpp

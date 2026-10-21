@@ -6,6 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <rv/catalog_db/catalog_stamp.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/esde/settings.hpp>
 
@@ -135,6 +136,12 @@ BuildingSnapshot takeBuildingSnapshot(WorldCatalogReader& reader, std::span<cons
     if (!summaries) {
         building.error = summaries.error();
         return finish();
+    }
+    // What the snapshots below are read from (I4 step 6b): the building stamp's catalog part, in the same transaction.
+    if (auto stamp = catalog_db::catalogStamp(query.connection(), reader.profile.id)) {
+        building.catalogStamp = std::move(*stamp);
+    } else {
+        spdlog::warn("Building snapshot: the catalog's stamp cannot be read: {}", stamp.error().toString());
     }
     // ES-DE's settings as they are now: the media root it would use (library.json's override over them).
     const auto settings = esde::readSettings(reader.profile.esdeHome);

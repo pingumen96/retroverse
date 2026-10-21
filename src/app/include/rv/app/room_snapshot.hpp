@@ -117,6 +117,9 @@ struct BuildingSnapshot {
     /// The aliases of the placed games asked for that no system's snapshot lists, in GameId order.
     std::vector<world::GameAlias> aliases;
     std::optional<Error> aliasError;
+    /// The catalog's stamp in the same read (catalog_db::catalogStamp: I4 step 6b, the building stamp); empty when it
+    /// could not be read (logged: no stamp is written then).
+    std::string catalogStamp;
     /// Milliseconds of the whole read, and when it was done.
     double milliseconds = 0.0;
     std::chrono::system_clock::time_point at;

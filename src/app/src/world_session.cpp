@@ -586,6 +586,19 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.hardFindings = build.hardFindings.size();
     m_record.softFindings = build.softFindings;
     m_record.buildMs = build.milliseconds;
+    if (!build.preview) {
+        WorldJobRecord job;
+        job.lockMs = build.lockMs;
+        job.selectMs = build.selectMs;
+        job.dataMs = build.dataMs;
+        job.planMs = build.planMs;
+        job.saveMs = build.saveMs;
+        job.itemsMs = build.itemsMs;
+        job.floorMs = build.floorMs;
+        job.totalMs = build.milliseconds;
+        job.skipped = build.skipped;
+        m_record.job = job;
+    }
     if (build.mediaRootPath) {
         m_mediaRootPath = build.mediaRootPath; // the cover loader's retry after a refresh (I3 step 12)
     }

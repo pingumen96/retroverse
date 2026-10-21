@@ -46,6 +46,16 @@
 // WorldBuild::startRoomMissing). Nothing is written but the world's own files (under <user data>/worlds/<library id>/,
 // the data-directory guard having passed when the catalog opened) and the rooms' items (<user data>/cache/world/), and
 // nothing is decided at all while the media are unknown (ADR-0010 §3).
+//
+// An unchanged start (I4 step 6b): the building job writes, beside the rooms' items, its building stamp
+// (<cache>/world/<library>/building-stamp.json: the digest of the plan it left, of the catalog's stamp it read the
+// snapshots with, of the world's inputs). At the next start, before reading any snapshot, the job compares: when the
+// stored plan is that plan (the file's digest), the catalog's stamp and the world's inputs are as they were, the media
+// root can be read and every room's items file is there, nothing a snapshot could change has changed, so it plans
+// nothing (unchangedBuilding(): outcome Unchanged, `skipped`) and the floor is built from the plan and the items files.
+// Anything else runs the whole job. The world's inputs (worldInputsDigest()) are the program's version and the
+// generator's, the items files' and the stamp's schemas, every file of the asset root's world/ and manifests/ folders,
+// world.json, overrides.json, library.json and the media root's path.
 
 #include <chrono>
 #include <cstdint>
@@ -195,6 +205,8 @@ struct WorldBuild {
     std::size_t softFindings = 0;
     /// The plan was written this run (savePlan), and why it could not be (the plan is shown all the same).
     bool written = false;
+    /// The job planned nothing: the stored plan as the building stamp says it was made (unchangedBuilding()).
+    bool skipped = false;
     std::optional<Error> saveError;
     /// The floor's static part in the scene's frame (its rooms, its hall), the SHA-256 of its scene file's text, the
     /// spans its rooms left bare.
@@ -229,6 +241,8 @@ struct WorldBuild {
     double itemsMs = 0.0;
     double sceneMs = 0.0;
     double layoutMs = 0.0;
+    /// The floor's build alone (buildFloor()).
+    double floorMs = 0.0;
     double milliseconds = 0.0;
 
     /// The collection room `room`, or nullptr.
@@ -247,6 +261,31 @@ struct FloorSources {
     std::optional<std::filesystem::path> mediaRootPath;
     std::optional<std::filesystem::path> screenMediaRoot;
 };
+
+/// What the building job's last plan was made from (see the file comment): SHA-256 digests of the plan, of the
+/// catalog's stamp and of the world's inputs.
+struct BuildingStamp {
+    std::string planDigest;
+    std::string catalog;
+    std::string inputs;
+
+    bool operator==(const BuildingStamp&) const = default;
+};
+
+/// The building stamp's schema (raised whenever what the job writes beside the plan changes: the items files').
+inline constexpr int kBuildingStampVersion = 1;
+
+/// <cacheDir>/world/<library>/building-stamp.json.
+[[nodiscard]] std::filesystem::path buildingStampFile(const std::filesystem::path& cacheDir,
+                                                      const catalog::LibraryId& library);
+/// Reads the stamp. Errors: NotFound when there is none; ParseError for another shape; Unsupported for another schema.
+[[nodiscard]] Expected<BuildingStamp> readBuildingStamp(const std::filesystem::path& file);
+/// Writes the stamp atomically unless the file holds that text already; whether it wrote. Errors: those of the write.
+[[nodiscard]] Expected<bool> writeBuildingStamp(const std::filesystem::path& file, const BuildingStamp& stamp);
+/// The digest of the world's inputs besides the catalog and the plan (see the file comment), the media root `mediaRoot`
+/// included. Never fails: a file that cannot be read counts as such.
+[[nodiscard]] std::string worldInputsDigest(const WorldPaths& paths, const catalog::LibraryId& library,
+                                            const std::filesystem::path& mediaRoot);
 
 /// The building job's result: the build with its plan (no floor yet) and what the floor's build reads.
 struct BuildingResult {
@@ -275,6 +314,15 @@ struct BuildingResult {
 /// lacks the start room sets startRoomMissing and builds nothing; a floor that cannot be made leaves the build with no
 /// plan and its notice (logged). Nothing for a build without a plan.
 void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& sources);
+
+/// An unchanged start's building job (see the file comment): the stored plan `stored` as it is when the building stamp
+/// says the catalog (its stamp `catalogStamp`) and the world's inputs are those it was made from, its file still that
+/// plan, the media root of `profile` readable and every room's items file there; none otherwise (the whole job runs).
+[[nodiscard]] std::optional<BuildingResult> unchangedBuilding(const WorldPaths& paths,
+                                                              const catalog::LibraryProfile& profile,
+                                                              const world::StoredPlan& stored,
+                                                              const std::string& catalogStamp,
+                                                              const std::optional<world::RoomId>& startRoom);
 
 /// planBuilding() then buildFloor() (the tests' one call).
 [[nodiscard]] WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job);

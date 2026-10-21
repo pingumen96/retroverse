@@ -18,8 +18,14 @@
 #include <rv/app/room_screen.hpp>
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/catalog/metadata.hpp>
+#include <rv/catalog_db/catalog_stamp.hpp>
+#include <rv/core/canonical_json.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/json.hpp>
 #include <rv/core/sha256.hpp>
+#include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
+#include <rv/core/version.hpp>
 #include <rv/esde/settings.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/floor_layout.hpp>
@@ -860,11 +866,190 @@ BuildingResult planBuilding(const WorldBuildInput& input, const core::JobContext
                 result.sources.items.emplace(system.system, std::move(items));
             }
             build.itemsMs = millisecondsSince(itemsStart);
+            // The building stamp (I4 step 6b): what this plan was made from, for the next start's shortcut. Only for a
+            // plan saved (or unchanged) from known media, every items file kept, the catalog's stamp read.
+            const bool planned = build.outcome == WorldOutcome::Generated || build.outcome == WorldOutcome::Updated ||
+                                 build.outcome == WorldOutcome::Unchanged;
+            if (planned && !build.saveError && !build.itemsError && result.sources.mediaRoot &&
+                !input.snapshot.catalogStamp.empty()) {
+                BuildingStamp stamp;
+                stamp.planDigest = build.planDigest;
+                stamp.catalog = core::sha256Hex(input.snapshot.catalogStamp);
+                stamp.inputs = worldInputsDigest(input.paths, input.library, *result.sources.mediaRoot);
+                if (auto written = writeBuildingStamp(buildingStampFile(input.paths.cacheDir, input.library), stamp);
+                    !written) {
+                    spdlog::warn("World: the building stamp cannot be kept: {}", written.error().toString());
+                }
+            }
         }
     } catch (const std::exception& error) {
         noPlan(build, world_notice::kFailed, std::string("the building could not be made: ") + error.what());
     }
     build.milliseconds = millisecondsSince(start);
+    spdlog::info("World: the building job in {:.0f} ms ({}): lock and plan {:.0f}, selections {:.0f}, rooms' data {:.0f}, "
+                 "plan {:.0f}, save {:.0f}, items {:.0f}",
+                 build.milliseconds, toString(build.outcome), build.lockMs, build.selectMs, build.dataMs, build.planMs,
+                 build.saveMs, build.itemsMs);
+    return result;
+}
+
+namespace {
+
+using Json = nlohmann::json;
+
+/// The largest building stamp read back.
+constexpr std::uintmax_t kMaxStampBytes = 64 * 1024;
+/// The largest input file hashed (the asset root's world data and manifests are a few kilobytes each).
+constexpr std::uintmax_t kMaxInputBytes = 16ull * 1024ull * 1024ull;
+
+/// "<name> <sha256 of its bytes>" for one input file, "<name> absent" for none.
+[[nodiscard]] std::string inputLine(std::string_view name, const std::filesystem::path& file) {
+    auto bytes = core::readFileShared(file, kMaxInputBytes);
+    return fmt::format("{} {}\n", name, bytes ? core::sha256Hex(*bytes) : std::string("absent"));
+}
+
+} // namespace
+
+std::filesystem::path buildingStampFile(const std::filesystem::path& cacheDir, const catalog::LibraryId& library) {
+    return cacheDir / "world" / core::pathFromUtf8(library.str()) / "building-stamp.json";
+}
+
+Expected<BuildingStamp> readBuildingStamp(const std::filesystem::path& file) {
+    auto text = core::readTextFile(file, kMaxStampBytes);
+    if (!text) {
+        return propagate(text.error());
+    }
+    const std::string context = core::pathToUtf8Lossy(file);
+    auto document = core::parseJson(*text, context);
+    if (!document) {
+        return propagate(document.error());
+    }
+    const Json& json = *document;
+    if (!json.is_object() || !json.contains("schemaVersion") || !json["schemaVersion"].is_number_integer()) {
+        return makeError(ErrorCode::ParseError, "not a building stamp", context);
+    }
+    if (json["schemaVersion"].get<std::int64_t>() != kBuildingStampVersion) {
+        return makeError(ErrorCode::Unsupported, "another schema of the building stamp", context);
+    }
+    BuildingStamp stamp;
+    for (const auto& [key, out] : {std::pair<const char*, std::string*>{"planDigest", &stamp.planDigest},
+                                   std::pair<const char*, std::string*>{"catalog", &stamp.catalog},
+                                   std::pair<const char*, std::string*>{"inputs", &stamp.inputs}}) {
+        if (!json.contains(key) || !json[key].is_string()) {
+            return makeError(ErrorCode::ParseError, fmt::format("the building stamp has no {}", key), context);
+        }
+        *out = json[key].get<std::string>();
+    }
+    return stamp;
+}
+
+Expected<bool> writeBuildingStamp(const std::filesystem::path& file, const BuildingStamp& stamp) {
+    auto text = core::writeCanonicalJson(Json{{"schemaVersion", kBuildingStampVersion},
+                                              {"planDigest", stamp.planDigest},
+                                              {"catalog", stamp.catalog},
+                                              {"inputs", stamp.inputs}});
+    if (!text) {
+        return propagate(text.error());
+    }
+    if (auto existing = core::readTextFile(file, kMaxStampBytes); existing && *existing == *text) {
+        return false;
+    }
+    if (Status written = core::writeTextFileAtomic(file, *text); !written) {
+        return propagate(written.error());
+    }
+    return true;
+}
+
+std::string worldInputsDigest(const WorldPaths& paths, const catalog::LibraryId& library,
+                              const std::filesystem::path& mediaRoot) {
+    std::string text =
+        fmt::format("building-stamp/{}\nprogram {}\ngenerator {}\nitems {}\nmedia {}\n", kBuildingStampVersion,
+                    core::versionBanner(), world::kGeneratorVersion.toString(), kRoomItemsSchemaVersion,
+                    core::pathToUtf8Lossy(mediaRoot));
+    // The asset root's world data and prefab manifests, file by file in name order.
+    for (const std::string_view folder : {"world", "manifests"}) {
+        std::vector<std::pair<std::string, std::filesystem::path>> files;
+        std::error_code error;
+        for (std::filesystem::recursive_directory_iterator it(paths.assetRoot / folder, error), end;
+             !error && it != end; it.increment(error)) {
+            if (it->is_regular_file(error)) {
+                files.emplace_back(core::pathToUtf8Lossy(std::filesystem::relative(it->path(), paths.assetRoot)),
+                                   it->path());
+            }
+        }
+        if (error) {
+            text += fmt::format("{} unreadable\n", folder);
+        }
+        std::sort(files.begin(), files.end());
+        for (const auto& [name, file] : files) {
+            text += inputLine(name, file);
+        }
+    }
+    text += inputLine("world.json", paths.configDir / "world.json");
+    text += inputLine("library.json", paths.configDir / "library.json");
+    text += inputLine("overrides.json", world::worldFiles(paths.userDataRoot, library).overrides);
+    return core::sha256Hex(text);
+}
+
+std::optional<BuildingResult> unchangedBuilding(const WorldPaths& paths, const catalog::LibraryProfile& profile,
+                                                const world::StoredPlan& stored, const std::string& catalogStamp,
+                                                const std::optional<world::RoomId>& startRoom) {
+    const Clock::time_point start = Clock::now();
+    if (catalogStamp.empty()) {
+        return std::nullopt;
+    }
+    auto stamp = readBuildingStamp(buildingStampFile(paths.cacheDir, profile.id));
+    if (!stamp) {
+        if (stamp.error().code != ErrorCode::NotFound) {
+            spdlog::info("World: the building stamp is not used: {}", stamp.error().toString());
+        }
+        return std::nullopt;
+    }
+    const auto miss = [](std::string_view why) {
+        spdlog::info("World: the building is planned again: {}", why);
+        return std::nullopt;
+    };
+    if (stamp->planDigest != stored.digest) {
+        return miss("the stored plan is not the one the last building job left");
+    }
+    if (stamp->catalog != core::sha256Hex(catalogStamp)) {
+        return miss("the catalog changed since (an import, a play session, an identity)");
+    }
+    // The plan file as it was read (another program may have written it since).
+    const world::WorldFiles files = world::worldFiles(paths.userDataRoot, profile.id);
+    auto text = core::readTextFile(files.plan, kMaxInputBytes * 8);
+    if (!text || core::sha256Hex(*text) != stored.digest) {
+        return miss("the plan's file changed");
+    }
+    const std::optional<std::filesystem::path> mediaRoot = readableMediaRoot(profile);
+    if (!mediaRoot) {
+        return miss("the media root cannot be read now");
+    }
+    if (stamp->inputs != worldInputsDigest(paths, profile.id, *mediaRoot)) {
+        return miss("the world's data, configuration or media root changed");
+    }
+    for (const world::Room& room : stored.plan.rooms) {
+        for (const catalog::SystemName& system : systemsOf(room)) {
+            std::error_code error;
+            if (!std::filesystem::is_regular_file(roomItemsFile(paths.cacheDir, profile.id, system), error)) {
+                return miss("a room's items file is missing");
+            }
+        }
+    }
+    BuildingResult result;
+    WorldBuild& build = result.build;
+    build.library = profile.id;
+    build.startRoom = startRoom;
+    build.outcome = WorldOutcome::Unchanged;
+    build.plan = stored.plan;
+    build.planDigest = stored.digest;
+    build.reason = "the catalog and the world's inputs as the stored plan was made from";
+    build.skipped = true;
+    result.sources.mediaRoot = mediaRoot;
+    result.sources.mediaRootPath = mediaRoot;
+    result.sources.screenMediaRoot = mediaRoot;
+    build.milliseconds = millisecondsSince(start);
+    spdlog::info("World: the building as stored ({:.1f} ms): {}", build.milliseconds, build.reason);
     return result;
 }
 
@@ -1037,6 +1222,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             build.rooms.push_back(std::move(collection));
         }
         build.layoutMs = millisecondsSince(layoutStart);
+        build.floorMs = millisecondsSince(start);
         build.scene = std::move(*description);
         if (sources.mediaRoot) {
             build.mediaRoot = sources.mediaRoot;
@@ -1184,12 +1370,33 @@ void WorldFlow::submitBuilding(AppCatalog& catalog) {
     core::JobOptions jobOptions;
     jobOptions.priority = core::WorkerPool::kHighestPriority;
     jobOptions.generation = &m_generation;
+    std::shared_ptr<const world::StoredPlan> stored;
+    if (m_stored && m_stored->stored && m_options.preview) {
+        stored = std::make_shared<const world::StoredPlan>(*m_stored->stored);
+    }
     const Status submitted = m_pool.submit(
         [mailbox = m_mailbox, paths = m_options.paths, library = m_library, reader = m_reader,
-         writer = m_options.writer, startRoom = m_options.startRoom, placed = std::move(placed),
+         writer = m_options.writer, startRoom = m_options.startRoom, placed = std::move(placed), stored,
          generation](const core::JobContext& job) {
             if (job.cancelled()) {
                 return;
+            }
+            // I4 step 6b: an unchanged start plans nothing (the building stamp), before any snapshot is read.
+            if (stored) {
+                std::string catalogStamp;
+                {
+                    const std::lock_guard lock(reader->mutex);
+                    if (reader->query) {
+                        if (auto read = catalog_db::catalogStamp(reader->query->connection(), library)) {
+                            catalogStamp = std::move(*read);
+                        }
+                    }
+                }
+                if (std::optional<BuildingResult> unchanged =
+                        unchangedBuilding(paths, reader->profile, *stored, catalogStamp, startRoom)) {
+                    mailbox->post(generation, [&](Mailbox& box) { box.building = std::move(*unchanged); });
+                    return;
+                }
             }
             // The systems that get a room (ADR-0013 §2: classify(); excluded ones never), read in one transaction.
             const SystemFilter wanted = roomSystemsFilter(paths.assetRoot);

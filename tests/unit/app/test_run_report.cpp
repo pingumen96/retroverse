@@ -490,6 +490,7 @@ TEST_CASE("app/run_report: the persisted start, its reconciliation and the objec
     world.reconcile->rooms = {{"room:snes", "textures", 50, 0, 0, 0, 0, 2}, {"room:megadrive", "unchanged", 12}};
     world.reconcile->walker = rv::app::WalkerKeptRecord{"room:snes", glm::vec3(0.0f, 0.0f, -1.2f), false};
     world.screenRoom = "room:snes";
+    world.job = rv::app::WorldJobRecord{2.5, 10.25, 0.5, 120.75, 0.0, 3.5, 40.0, 180.5, true};
     world.itemsWritten = true;
     world.screenGames = 52;
     world.objectFallbacks = {{"furniture.shelf.hero_module.generic", "family generic", "the manifest is missing"},
