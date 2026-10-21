@@ -19,13 +19,18 @@
 //     shared room from their doorways (--start-room area:arcade, area:shared:handheld), every item's cover resident,
 //     their CRT the hero CRT, and up close a title of each section hovered with its cover;
 //   - I4 step 6b: the hero CRT rebound on the walk from the first room to the second (after the dwell, the first's clip
-//     never joined on the render loop, the frames of the rebind within the acceptable loading row in Release); a stored
-//     floor previewed at the first frame from the plan and the items files, then reconciled room by room with nothing
-//     moved or uploaded again; the building's additions (tests/fixtures/esde/building/additions) imported by "Aggiorna
-//     libreria" while a floor shows: the handheld floor rebuilt around pokemini's new titles (a dressed level of the
-//     shared room taken) with room:gb's pictures kept and the walker where it stood; gen4 rebuilt as megadrive enters
-//     its new shared room, the walker kept in the hall's frame; gen5's new titles, only saved meanwhile, shown from the
-//     saved plan and the items files at the next start.
+//     stopped and never waited for on the render loop), and on a floor that runs freely, the first room's clip playing
+//     when the walker backs into the second (the frames of the rebind within the acceptable loading row in Release);
+//     from the lobby into the arcade room, its CRT the run's first; the quick catalog's selection played only when its
+//     game stands in the eye's room; a stored floor previewed at the first frame from the plan and the items files,
+//     then reconciled room by room with nothing moved or uploaded again (also after an import that changed nothing:
+//     the building job then runs, after the stored floor showed); the building's additions
+//     (tests/fixtures/esde/building/additions) imported by "Aggiorna libreria" while a floor shows, the walker having
+//     walked first: the handheld floor rebuilt around pokemini's new titles (a dressed level of the shared room taken)
+//     with room:gb's pictures kept (taken over as they showed) and the walker where it stood; gen4 rebuilt as megadrive
+//     enters its new shared room, the walker kept in the hall's frame (each where the same walk ends without the
+//     additions); gen5's new titles, only saved meanwhile, shown from the saved plan and the items files at the next
+//     start.
 // The screenshots stay in build/<preset>/smoke/world_floor_app for a look.
 
 #include <catch2/catch_test_macros.hpp>
@@ -652,17 +657,22 @@ TEST_CASE("world floor app: a walk from the hall into one room, then into anothe
 
     // I4 step 6b (ADR-0013 §9): the hero CRT follows the room that holds the eye: the first room's from the start (its
     // clip playing), the second's once the eye has stayed in it for the dwell (0.3 s: 18 frames), never in the hall or
-    // on the way back through the first. The first room's clip stops as a clip replacement does: its decoder's thread
-    // ends on its own, never joined on the render loop, and never two decoder threads at once.
+    // on the way back through the first. The first room's clip (paused out of view since the walker turned) stops as a
+    // clip replacement does: its decoder's thread ends on its own, never waited for before the run's end, and never two
+    // decoder threads at once.
     CHECK(report.world.screenRoom == pair.second);
     REQUIRE(report.video.bound);
     CHECK(report.video.screen.starts_with(pair.second + "/"));
     CHECK(report.video.decodersStarted >= 1);
     CHECK(report.video.maxDecoderThreads <= 1);
     CHECK(report.video.joinedAtExit);
+    CHECK(report.video.waitsBeforeExit == 0);
     REQUIRE(report.video.binds.size() == 1);
     const rv::app::VideoBindRecord& bind = report.video.binds.front();
     CHECK(bind.screen.starts_with(pair.second + "/"));
+    CHECK(bind.clipStopped);
+    // The quick catalog's selection, a game of the eye's room, then the item inspected: the second room's CRT plays it.
+    CHECK(report.video.gameId == target.game.toString());
     const std::uint64_t enteredB = report.sceneAreas->changes.back().frame;
     CHECK(bind.frame >= enteredB + 18);
     CHECK(bind.frame <= enteredB + 20);
@@ -676,51 +686,211 @@ TEST_CASE("world floor app: a walk from the hall into one room, then into anothe
     // still): the next case measures a rebind on a floor that runs freely.
 }
 
-TEST_CASE("world floor app: the hero CRT rebound on a floor that runs freely, its frames within the loading row",
+TEST_CASE("world floor app: the hero CRT rebound on a floor that runs freely: the clip playing stopped, never waited "
+          "for, the frames within the loading row",
           "[gpu][world][world_floor_app]") {
-    // I4 step 6b: no lockstep, so that the frames' times are the app's own. The run starts in the second room (its CRT
-    // bound from the start, no clip), the walker at the first room's doorway camera (in the scene's frame, the second
-    // room's): once the floor shows and the eye has stayed 0.3 s in the first room, its CRT is bound and its clip opens.
+    // I4 step 6b: no lockstep, so that the frames' times are the app's own. The run starts in the first room (its CRT
+    // bound from the start), the walker in its doorway facing in: its clip plays. From frame 300 the walker backs out,
+    // sprinting and still facing the CRT (its clip playing), across the hall and into the second room, whose doorway
+    // faces the first's (the second room's walls stop it, whatever the frames' times): once the eye has stayed 0.3 s
+    // in it, its CRT is bound and the first room's clip stopped as a clip replacement is, its decoder's thread never
+    // waited for before the run's end.
     const PlannedBuilding building("world_floor_app/rebind");
     const rv::world::StoredPlan stored = building.plan();
     const RoomPair pair = sameFamilyRooms(stored.plan);
     // A first run keeps the rooms' items and makes their covers.
-    const AppRun first = runApp(retroverseExe(), building.dir, "first", floorArguments(pair.second, 40, std::nullopt));
+    const AppRun first = runApp(retroverseExe(), building.dir, "first", floorArguments(pair.first, 40, std::nullopt));
     skipWithoutOpenGl(first);
     requireCleanRun(first);
-    const std::vector<FloorRoom> rooms = floorRooms(stored.plan, pair.floor, first.report->assetRoot);
-    const FloorRoom& roomA = roomNamed(rooms, pair.first);
-    const FloorRoom& roomB = roomNamed(rooms, pair.second);
-    const rv::world::RoomPlacement aInB = relativeTo(roomA.placement, roomB.placement);
-    const glm::vec3 eye = glm::vec3(rv::world::roomToFloorMatrix(aInB) * glm::vec4(roomA.camera.position, 1.0f));
-    const rv::app::SpawnPoint spawn{eye - glm::vec3(0.0f, kEyeHeight, 0.0f),
-                                    static_cast<float>(wrapped(roomA.camera.yawDeg + 180.0 * aInB.yawHalfTurns)),
-                                    roomA.camera.pitchDeg};
+    const rv::world::FloorSceneBuild floorScene = floorSceneOf(stored.plan, pair.floor, first.report->assetRoot);
+    const Doorway doorA = doorwayOf(floorScene.hall, pair.first);
+    const Doorway doorB = doorwayOf(floorScene.hall, pair.second);
+    INFO("doorways at x " << doorA.x << " (into " << doorA.into << ") and " << doorB.x << " (into " << doorB.into
+                          << ")");
+    // The two rooms' doorways face each other across the hall (the floor's two rows, derived from the plan).
+    REQUIRE(std::abs(doorA.x - doorB.x) < 0.05f);
+    REQUIRE(doorA.into * doorB.into < 0.0f);
+    const rv::world::RoomPlacement aAt = roomIn(stored.plan, pair.first).placement;
+    const glm::vec3 feet =
+        inRoomFrame(glm::vec3(doorA.x, 0.0f, hallCentreZ(floorScene.hall) + doorA.into * doorA.depth), aAt);
+    const double yaw = wrapped((doorA.into < 0.0f ? 0.0 : 180.0) + (aAt.yawHalfTurns % 2 == 0 ? 0.0 : 180.0));
+    const rv::app::SpawnPoint spawn{feet, static_cast<float>(yaw), 0.0f};
+    constexpr std::uint32_t kFrames = 2400; // the walk ends against the second room's walls, the rest stands
+    const Json steps = Json::array(
+        {{{"fromFrame", 300}, {"toFrame", kFrames - 1}, {"actions", {{"move_forward", -1.0}, {"sprint", 1}}}}});
+    const fs::path script = building.dir / "back.json";
+    REQUIRE(rv::core::writeTextFileAtomic(script, steps.dump(2) + "\n").has_value());
     const AppRun run = runApp(retroverseExe(), building.dir, "free",
-                              {"--start-room", pair.second, "--exit-after-frames", "--frames", "900", "--no-vsync",
-                               "--spawn", spawnArgument(spawn)});
+                              {"--start-room", pair.first, "--exit-after-frames", "--frames", std::to_string(kFrames),
+                               "--no-vsync", "--spawn", spawnArgument(spawn), "--input-script", arg(script)});
     requireCleanRun(run);
     INFO(run.describe());
     const rv::app::RunReport& report = *run.report;
-    CHECK(report.world.room == pair.first);
-    CHECK(report.world.screenRoom == pair.first);
+    CHECK(report.world.room == pair.second);
+    CHECK(report.world.screenRoom == pair.second);
     REQUIRE(report.video.bound);
-    CHECK(report.video.screen.starts_with(pair.first + "/"));
-    REQUIRE(report.video.binds.size() == 1);
-    CHECK(report.video.binds.front().screen.starts_with(pair.first + "/"));
+    CHECK(report.video.screen.starts_with(pair.second + "/"));
+    CHECK(report.video.decodersStarted >= 1);
     CHECK(report.video.maxDecoderThreads <= 1);
+    CHECK(report.video.joinedAtExit);
+    CHECK(report.video.waitsBeforeExit == 0);
+    REQUIRE(report.video.binds.size() == 1);
+    const rv::app::VideoBindRecord& bind = report.video.binds.front();
+    CHECK(bind.screen.starts_with(pair.second + "/"));
+    CHECK(bind.clipStopped); // the first room's clip, playing as the walker backed away facing it
+    CHECK(bind.bindMs < 50.0);
     const auto bindPhase = std::find_if(report.phases.begin(), report.phases.end(),
                                         [](const rv::app::PhaseRecord& phase) { return phase.name == "screenBind"; });
     REQUIRE(bindPhase != report.phases.end());
+    CHECK(bindPhase->opened == 1);
     CHECK(bindPhase->frames >= 60);
     REQUIRE(bindPhase->times.has_value());
-    WARN("the hero CRT's rebind: " << report.video.binds.front().bindMs << " ms on the main thread at frame "
-                                    << report.video.binds.front().frame << "; the 60 frames after it: p99 "
-                                    << bindPhase->times->p99Ms << " ms, max " << bindPhase->times->maxMs << " ms");
+    WARN("the hero CRT's rebind, its clip stopped: " << bind.bindMs << " ms on the main thread at frame " << bind.frame
+                                                    << " (" << bind.threadsRunning
+                                                    << " decoder thread(s) still ending); the 60 frames after it: p99 "
+                                                    << bindPhase->times->p99Ms << " ms, max "
+                                                    << bindPhase->times->maxMs << " ms");
 #if defined(NDEBUG)
     // The acceptable loading row (docs/roadmap.md): frames while loading at most 50 ms at the 99th percentile.
     CHECK(bindPhase->times->p99Ms <= 50.0);
 #endif
+}
+
+TEST_CASE("world floor app: from the lobby into the arcade room, whose CRT is bound once the eye stays there",
+          "[gpu][world][world_floor_app]") {
+    // I4 step 6b: a start without --start-room binds no hero CRT until the eye has stayed 0.3 s in a room; the service
+    // is made then, on that room's CRT (the run's first screen: not one of video.binds). The walk, in the floor's
+    // frame (the scene's without a start room), derived from the ground floor's hall: from the elevator's arrival point
+    // to the hall's centre line in front of the arcade room's doorway, then into it.
+    const PlannedBuilding building("world_floor_app/lobby_arcade");
+    const rv::world::StoredPlan stored = building.plan();
+    const std::string arcade = building.roomOf("mame");
+    REQUIRE(roomIn(stored.plan, arcade).floor == rv::world::kGroundFloor);
+    const AppRun first = runApp(retroverseExe(), building.dir, "first", floorArguments({}, 2, std::nullopt));
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    const rv::world::FloorSceneBuild lobby =
+        floorSceneOf(stored.plan, rv::world::kGroundFloor, first.report->assetRoot);
+    const Doorway door = doorwayOf(lobby.hall, arcade);
+    const glm::vec3 arrival(meters(lobby.hall.arrival.xMm), 0.0f, meters(lobby.hall.arrival.zMm));
+    const glm::vec3 hallPoint(door.x, 0.0f, hallCentreZ(lobby.hall));
+    double yaw = lobby.sceneFile.at("camera").value("yawDeg", 0.0);
+    Json script = Json::array();
+    std::uint64_t frame = 0;
+    const glm::vec3 toHall = hallPoint - arrival;
+    if (glm::length(toHall) > 0.01f) {
+        // Yaw 0 looks at -Z, positive yaw turns right (towards +X).
+        const double heading = rv::core::radiansToDegrees(static_cast<float>(std::atan2(toHall.x, -toHall.z)));
+        const double by = wrapped(heading - yaw);
+        if (std::abs(by) > 0.01) {
+            script.push_back(turn(frame, 20, by));
+            frame += 20;
+            yaw = heading;
+        }
+        const std::uint64_t along = walkFrames(glm::length(toHall));
+        script.push_back(walk(frame, along));
+        frame += along;
+    }
+    const double into = wrapped((door.into < 0.0f ? 0.0 : 180.0) - yaw);
+    if (std::abs(into) > 0.01) {
+        script.push_back(turn(frame, 20, into));
+        frame += 20;
+    }
+    const std::uint64_t inside = walkFrames(door.depth + 1.0);
+    script.push_back(walk(frame, inside));
+    frame += inside;
+    const std::uint64_t frames = frame + 100; // the dwell (18 frames), then the screenBind phase's 60
+    const fs::path scriptFile = building.dir / "into_arcade.json";
+    REQUIRE(rv::core::writeTextFileAtomic(scriptFile, script.dump(2) + "\n").has_value());
+    const AppRun run = runApp(retroverseExe(), building.dir, "into_arcade",
+                              floorArguments({}, static_cast<std::uint32_t>(frames), std::nullopt,
+                                             {"--input-script", arg(scriptFile)}));
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    REQUIRE(report.sceneAreas.has_value());
+    CHECK(report.sceneAreas->area == arcade);
+    CHECK(report.world.room == arcade);
+    CHECK(report.world.screenRoom == arcade);
+    REQUIRE(report.video.bound);
+    CHECK(report.video.screen == arcade + "/fx:hero.crt");
+    CHECK(report.video.binds.empty()); // the run's first screen
+    CHECK(report.video.waitsBeforeExit == 0);
+    CHECK(report.world.screenGames == placementsIn(stored.plan, arcade));
+    const auto bindPhase = std::find_if(report.phases.begin(), report.phases.end(),
+                                        [](const rv::app::PhaseRecord& phase) { return phase.name == "screenBind"; });
+    REQUIRE(bindPhase != report.phases.end());
+    CHECK(bindPhase->opened == 1);
+    CHECK(bindPhase->frames >= 60);
+}
+
+TEST_CASE("world floor app: the quick catalog's selection plays on the hero CRT only when its game stands in the eye's "
+          "room",
+          "[gpu][world][world_floor_app]") {
+    // ADR-0013 §9 (I4 step 6b): the CRT bound is the eye's room's; a game the quick catalog selects that stands in
+    // another room leaves it as it was. A game of the first room other than its CRT's start choice (its full title,
+    // unique in the fixture: no other release of it), searched in the quick catalog from each room.
+    const PlannedBuilding building("world_floor_app/selection");
+    const rv::world::StoredPlan stored = building.plan();
+    const RoomPair pair = sameFamilyRooms(stored.plan);
+    const AppRun first = runApp(retroverseExe(), building.dir, "first", floorArguments(pair.first, 40, std::nullopt));
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    const std::string startChoice = first.report->video.gameId;
+    const rv::world::Room& planA = roomIn(stored.plan, pair.first);
+    REQUIRE_FALSE(planA.sections.empty());
+    const auto items = rv::app::readRoomItems(rv::app::roomItemsFile(
+        building.data / "cache", rv::catalog::LibraryId::parse("esde").value(), planA.sections.front()));
+    REQUIRE(items.has_value());
+    const auto chosen = std::find_if(items->items.begin(), items->items.end(), [&](const rv::app::RoomItemText& item) {
+        const bool otherRelease = std::any_of(
+            stored.plan.unplaced.begin(), stored.plan.unplaced.end(),
+            [&](const rv::world::UnplacedGame& unplaced) { return unplaced.representative == item.game; });
+        const bool inA = std::any_of(stored.plan.placements.begin(), stored.plan.placements.end(),
+                                     [&](const rv::world::Placement& placement) {
+                                         return placement.game == item.game &&
+                                                placement.slot.fixture().room().toString() == pair.first;
+                                     });
+        return !item.title.empty() && item.game.toString() != startChoice && !otherRelease && inA;
+    });
+    REQUIRE(chosen != items->items.end());
+    const std::string game = chosen->game.toString();
+    std::string search = chosen->title;
+    std::transform(search.begin(), search.end(), search.begin(),
+                   [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); });
+    // The quick catalog opens on frame 2; ui_up on frames 4 and 6 takes the focus to the search field; the search typed
+    // on frame 8 selects its first game, the CRT's after the dwell when it stands in the eye's room.
+    const Json steps = Json::array({{{"fromFrame", 2}, {"toFrame", 2}, {"actions", {{"quick_catalog", 1}}}},
+                                    {{"fromFrame", 4}, {"toFrame", 4}, {"actions", {{"ui_up", 1}}}},
+                                    {{"fromFrame", 6}, {"toFrame", 6}, {"actions", {{"ui_up", 1}}}},
+                                    {{"fromFrame", 8}, {"toFrame", 8}, {"text", search}}});
+    const fs::path script = building.dir / "select.json";
+    REQUIRE(rv::core::writeTextFileAtomic(script, steps.dump(2) + "\n").has_value());
+    INFO("the game " << game << " of " << pair.first);
+    {
+        // From the second room: the first room's game is selected, the second room's CRT keeps its own choice.
+        const AppRun other = runApp(retroverseExe(), building.dir, "other_room",
+                                    floorArguments(pair.second, 120, std::nullopt, {"--input-script", arg(script)}));
+        requireCleanRun(other);
+        INFO(other.describe());
+        REQUIRE(other.report->catalog.has_value());
+        CHECK(other.report->catalog->selectedId == game);
+        REQUIRE(other.report->video.bound);
+        CHECK(other.report->video.screen.starts_with(pair.second + "/"));
+        CHECK(other.report->video.gameId != game);
+        CHECK(other.report->video.selections == 0);
+    }
+    // From the first room: the same selection plays.
+    const AppRun same = runApp(retroverseExe(), building.dir, "same_room",
+                               floorArguments(pair.first, 120, std::nullopt, {"--input-script", arg(script)}));
+    requireCleanRun(same);
+    INFO(same.describe());
+    REQUIRE(same.report->catalog.has_value());
+    CHECK(same.report->catalog->selectedId == game);
+    REQUIRE(same.report->video.bound);
+    CHECK(same.report->video.screen.starts_with(pair.first + "/"));
+    CHECK(same.report->video.gameId == game);
+    CHECK(same.report->video.selections >= 1);
 }
 
 TEST_CASE("world floor app: without --start-room the run starts in the ground floor's lobby; a room the building lacks "
@@ -853,21 +1023,38 @@ TEST_CASE("world floor app: the arcade room and a floor's shared room show their
 
 namespace {
 
-/// "Aggiorna libreria" pressed while the floor shows (tests/input_scripts/catalog_refresh.json's path): the quick
-/// catalog opens on frame 2, Home and Up four times reach the button, A presses it on frame 20, the quick catalog
-/// closes on frame 24.
+/// The walker's steps forward before "Aggiorna libreria" (aggiornaScript()): about 0.25 m at --fixed-dt 0.016667.
+constexpr std::uint64_t kWalkFirst = 6;
+
+/// The walker steps forward on frames 0 to kWalkFirst - 1, then "Aggiorna libreria" is pressed while the floor shows
+/// (tests/input_scripts/catalog_refresh.json's path, kWalkFirst + 2 frames later): the quick catalog opens on frame 10,
+/// Home and Up four times reach the button, A presses it on frame 28, the quick catalog closes on frame 32.
 fs::path aggiornaScript(const fs::path& dir) {
-    const Json script = Json::array({{{"fromFrame", 2}, {"toFrame", 2}, {"actions", {{"quick_catalog", 1}}}},
-                                     {{"fromFrame", 4}, {"toFrame", 4}, {"actions", {{"ui_home", 1}}}},
-                                     {{"fromFrame", 6}, {"toFrame", 6}, {"actions", {{"ui_up", 1}}}},
-                                     {{"fromFrame", 8}, {"toFrame", 8}, {"actions", {{"ui_up", 1}}}},
-                                     {{"fromFrame", 10}, {"toFrame", 10}, {"actions", {{"ui_up", 1}}}},
-                                     {{"fromFrame", 12}, {"toFrame", 12}, {"actions", {{"ui_up", 1}}}},
-                                     {{"fromFrame", 20}, {"toFrame", 20}, {"actions", {{"ui_activate", 1}}}},
-                                     {{"fromFrame", 24}, {"toFrame", 24}, {"actions", {{"quick_catalog", 1}}}}});
+    constexpr std::uint64_t kAfter = kWalkFirst + 2;
+    const auto press = [](std::uint64_t frame, const char* action) {
+        return Json{{"fromFrame", frame}, {"toFrame", frame}, {"actions", {{action, 1}}}};
+    };
+    const Json script =
+        Json::array({{{"fromFrame", 0}, {"toFrame", kWalkFirst - 1}, {"actions", {{"move_forward", 1.0}}}},
+                     press(kAfter + 2, "quick_catalog"), press(kAfter + 4, "ui_home"), press(kAfter + 6, "ui_up"),
+                     press(kAfter + 8, "ui_up"), press(kAfter + 10, "ui_up"), press(kAfter + 12, "ui_up"),
+                     press(kAfter + 20, "ui_activate"), press(kAfter + 24, "quick_catalog")});
     const fs::path file = dir / "aggiorna.json";
     REQUIRE(rv::core::writeTextFileAtomic(file, script.dump(2) + "\n").has_value());
     return file;
+}
+
+/// The walker kept by a floor committed again: where the same script ends on the unchanged collection (`still`), and
+/// moved by the walk from where it stood (`unwalked`: a run without the walk).
+void requireWalkerKept(const rv::app::RunReport& report, const rv::app::RunReport& still,
+                       const glm::vec3& unwalked) {
+    REQUIRE(report.finalCamera.has_value());
+    REQUIRE(still.finalCamera.has_value());
+    INFO("final feet (" << report.finalCamera->feet.x << ", " << report.finalCamera->feet.z << "), without the additions ("
+                        << still.finalCamera->feet.x << ", " << still.finalCamera->feet.z << "), unwalked ("
+                        << unwalked.x << ", " << unwalked.z << ")");
+    CHECK(glm::length(report.finalCamera->feet - still.finalCamera->feet) < 1e-4f);
+    CHECK(std::abs(glm::length(report.finalCamera->feet - unwalked) - kWalkFirst * kStepMeters) < 0.01);
 }
 
 /// The part of the room `room` in a reconciliation's or a live update's record (REQUIREd).
@@ -943,15 +1130,65 @@ TEST_CASE("world floor app: a stored floor previewed, then reconciled room by ro
         CHECK(world.screenRoom == gb);
         CHECK(second.report->video.screen.starts_with(gb + "/"));
         CHECK(second.report->video.binds.empty());
+        // Nothing changed: the building job planned nothing (its stamp), so the snapshot was never read.
+        REQUIRE(world.job.has_value());
+        CHECK(world.job->skipped);
+        CHECK_FALSE(world.snapshotAtMs.has_value());
+    }
+
+    // An import that changed nothing (another catalog for the building stamp): the building job runs whole, after the
+    // stored floor showed, and its result, the same building, is reconciled as the stamp's was: each room's covers
+    // served again to check their sources, nothing moved, nothing uploaded over a picture that showed.
+    static_cast<void>(building.cli("import_again", {"import"}));
+    const AppRun reimported = runApp(retroverseExe(), building.dir, "reimported", floorArguments(gb, 40, std::nullopt));
+    requireCleanRun(reimported);
+    requireFloorShown(reimported, building, "handheld");
+    {
+        INFO(reimported.describe());
+        const rv::app::WorldRecord& world = reimported.report->world;
+        CHECK(world.outcome == "unchanged");
+        CHECK_FALSE(world.planWritten);
+        REQUIRE(world.job.has_value());
+        CHECK_FALSE(world.job->skipped);
+        REQUIRE(world.preview.has_value());
+        REQUIRE(world.preview->committedAtMs.has_value());
+        // The snapshot is asked for only once the stored floor shows: it answered after.
+        REQUIRE(world.snapshotAtMs.has_value());
+        CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
+        REQUIRE(world.reconcile.has_value());
+        CHECK(world.reconcile->kind == "textures");
+        CHECK(world.reconcile->moved == 0);
+        CHECK(world.reconcile->added == 0);
+        CHECK(world.reconcile->removed == 0);
+        CHECK(world.reconcile->kept == world.items);
+        REQUIRE(world.reconcile->rooms.size() == 2);
+        for (const rv::app::RoomUpdateRecord& room : world.reconcile->rooms) {
+            INFO(room.room);
+            CHECK(room.kind == "textures");
+            CHECK(room.moved == 0);
+            CHECK(room.coversChanged == 0);
+        }
+        requireNothingUploadedAgain(*reimported.report);
     }
 
     // The additions laid over the collection, imported by "Aggiorna libreria" while the floor shows: pokemini's titles
     // take a dressed level of the shared room (its static part changes), so the floor is committed again; room:gb,
-    // unchanged, keeps its pictures (its new collection takes its arrays: nothing uploaded again), the walker stands
-    // where it stood (in room:gb's frame, which did not move), the CRT bound again to room:gb's.
+    // unchanged, keeps its pictures (its new collection takes its arrays: nothing uploaded again), the walker, who
+    // walked into room:gb first, stands where it stood (in room:gb's frame, which did not move), the CRT bound again to
+    // room:gb's.
     const rv::world::StoredPlan before = building.plan();
-    REQUIRE(building.fixture.applyOverlay("additions").has_value());
     const fs::path script = aggiornaScript(building.dir);
+    // The walk and "Aggiorna libreria" on the collection as it is: the refresh changes nothing, the walker ends where
+    // it walked to.
+    const AppRun still = runApp(retroverseExe(), building.dir, "still",
+                                floorArguments(gb, 240, std::nullopt, {"--input-script", arg(script)}));
+    requireCleanRun(still);
+    {
+        INFO(still.describe());
+        REQUIRE(still.report->world.liveUpdates.size() == 1);
+        CHECK(still.report->world.liveUpdates.front().kind != "rebuild");
+    }
+    REQUIRE(building.fixture.applyOverlay("additions").has_value());
     const fs::path liveShot = building.dir / "live.png";
     const AppRun live = runApp(retroverseExe(), building.dir, "live",
                                floorArguments(gb, 240, liveShot, {"--input-script", arg(script)}));
@@ -993,9 +1230,11 @@ TEST_CASE("world floor app: a stored floor previewed, then reconciled room by ro
             CHECK(room.uploads == 0); // its pictures passed to its new collection, none made again
         }
     }
+    // Every item that stood taken over by the new cover loader as it showed: nothing served again.
+    CHECK(report.residency.adoptedResident == gbUpdate.kept + sharedUpdate.kept);
+    // The walker where the walk took it (in room:gb's frame, which did not move), as without the additions.
     REQUIRE(second.report->finalCamera.has_value());
-    REQUIRE(report.finalCamera.has_value());
-    CHECK(glm::length(report.finalCamera->feet - second.report->finalCamera->feet) < 1e-4f);
+    requireWalkerKept(report, *still.report, second.report->finalCamera->feet);
     CHECK(world.screenRoom == gb);
     REQUIRE(report.video.binds.size() == 1);
     CHECK(report.video.binds.front().screen.starts_with(gb + "/"));
@@ -1039,8 +1278,12 @@ TEST_CASE("world floor app: a system entering the resident floor rebuilds it wit
     // gen4's new shared room in the south row, snes's new titles take a dressed level of its room: the floor committed
     // again, the walker kept in the hall (its frame, the floor's, did not move under the scene's), nothing that stood
     // moved, room:snes's pictures kept.
-    REQUIRE(building.fixture.applyOverlay("additions").has_value());
     const fs::path script = aggiornaScript(building.dir);
+    const AppRun still = runApp(retroverseExe(), building.dir, "still",
+                                floorArguments(snes, 240, std::nullopt,
+                                               {"--spawn", spawnArgument(spawn), "--input-script", arg(script)}));
+    requireCleanRun(still);
+    REQUIRE(building.fixture.applyOverlay("additions").has_value());
     const AppRun live =
         runApp(retroverseExe(), building.dir, "live",
                floorArguments(snes, 240, building.dir / "live.png",
@@ -1073,10 +1316,12 @@ TEST_CASE("world floor app: a system entering the resident floor rebuilds it wit
     REQUIRE(update.walker.has_value());
     CHECK(update.walker->area == "hall:gen4");
     CHECK(glm::length(update.walker->shift) == 0.0f);
-    REQUIRE(report.finalCamera.has_value());
-    CHECK(glm::length(report.finalCamera->feet - spawn.feet) < 1e-4f);
+    // The walker where the walk took it (towards room:snes's doorway, still in the hall), as without the additions.
+    requireWalkerKept(report, *still.report, spawn.feet);
     CHECK(world.room.empty()); // the eye in the hall
     requireNothingUploadedAgain(report);
+    // room:snes's items taken over by the new cover loader as they showed: nothing served again.
+    CHECK(report.residency.adoptedResident == snesUpdate.kept);
     // The CRT: room:snes's from the start, kept in the hall, bound again to room:snes's in the floor committed again.
     CHECK(world.screenRoom == snes);
     REQUIRE(report.video.binds.size() == 1);

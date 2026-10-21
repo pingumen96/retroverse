@@ -350,6 +350,12 @@ TEST_CASE("world: a game added between two starts: the stored room first, then r
         REQUIRE(world.preview.has_value());
         CHECK(world.preview->frame == 0);
         CHECK(world.preview->items == 50);
+        // The catalog changed: the building job runs, its snapshot asked for only once the stored room shows.
+        REQUIRE(world.job.has_value());
+        CHECK_FALSE(world.job->skipped);
+        REQUIRE(world.preview->committedAtMs.has_value());
+        REQUIRE(world.snapshotAtMs.has_value());
+        CHECK(*world.snapshotAtMs > *world.preview->committedAtMs);
         REQUIRE(world.reconcile.has_value());
         CHECK(world.reconcile->kind == "rebuild");
         CHECK(world.reconcile->frame == 1);
