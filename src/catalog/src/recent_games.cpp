@@ -16,6 +16,9 @@ using Seconds = std::int64_t;
 constexpr Seconds kDay = 86'400;
 /// The most intervals a converter keeps (two a year with daylight saving time: centuries of them).
 constexpr std::size_t kMaxIntervals = 4'096;
+/// A time farther than this from the intervals kept starts them again at its own (a date centuries away, such as a
+/// hand-edited <lastplayed> of 9999, is not worth reading every interval in between).
+constexpr Seconds kMaxGap = 100 * 366 * kDay;
 
 /// A local wall time as seconds since 1970-01-01T00:00:00 of the same wall clock; nothing for a date that does not
 /// exist (a LocalDateTime made by hand: parseEsdeDateTime() refuses them).
@@ -37,7 +40,9 @@ UtcTime utcOf(Seconds seconds) {
 }
 
 /// The intervals of a zone's rules read so far, contiguous and in order: each [begin, end) in UTC seconds with its
-/// offset east of UTC. The zone database is asked only for the intervals a conversion needs that are not read yet.
+/// offset east of UTC. The zone database is asked only for the intervals a conversion needs that are not read yet; a
+/// conversion far from them (kMaxGap), or one that would grow them past kMaxIntervals, starts them again at its own
+/// time, so that no time locks the others out.
 class ZoneIntervals {
 public:
     explicit ZoneIntervals(const std::chrono::time_zone& zone) : m_zone(&zone) {}
@@ -88,29 +93,55 @@ private:
                         std::chrono::duration_cast<std::chrono::seconds>(info.offset).count()};
     }
 
-    /// Reads the intervals that cover [from, to]; false when the zone gives intervals that do not (a database that
-    /// does not join its intervals up), or too many are kept already.
+    enum class Grown : std::uint8_t { Covered, Full, Broken };
+
+    /// Reads the intervals that cover [from, to]: false when the zone gives intervals that do not join up (a broken
+    /// database). The intervals kept start again at [from, to] when it lies farther than kMaxGap from them, or when
+    /// reaching it would keep more than kMaxIntervals.
     [[nodiscard]] bool cover(Seconds from, Seconds to) {
+        // Written so that no difference overflows: the zone's first and last intervals reach the time point's limits.
+        if (!m_intervals.empty() &&
+            ((from > m_intervals.back().end && from - m_intervals.back().end > kMaxGap) ||
+             (to < m_intervals.front().begin && m_intervals.front().begin - to > kMaxGap))) {
+            m_intervals.clear();
+        }
+        switch (grow(from, to)) {
+        case Grown::Covered:
+            return true;
+        case Grown::Broken:
+            return false;
+        case Grown::Full:
+            m_intervals.clear();
+            return grow(from, to) == Grown::Covered;
+        }
+        return false;
+    }
+
+    [[nodiscard]] Grown grow(Seconds from, Seconds to) {
         if (m_intervals.empty()) {
             m_intervals.push_back(read(from));
         }
         while (m_intervals.front().begin > from) {
+            if (m_intervals.size() >= kMaxIntervals) {
+                return Grown::Full;
+            }
             const Interval before = read(m_intervals.front().begin - 1);
-            if (before.end != m_intervals.front().begin || before.begin >= before.end ||
-                m_intervals.size() >= kMaxIntervals) {
-                return false;
+            if (before.end != m_intervals.front().begin || before.begin >= before.end) {
+                return Grown::Broken;
             }
             m_intervals.push_front(before);
         }
         while (m_intervals.back().end <= to) {
+            if (m_intervals.size() >= kMaxIntervals) {
+                return Grown::Full;
+            }
             const Interval after = read(m_intervals.back().end);
-            if (after.begin != m_intervals.back().end || after.begin >= after.end ||
-                m_intervals.size() >= kMaxIntervals) {
-                return false;
+            if (after.begin != m_intervals.back().end || after.begin >= after.end) {
+                return Grown::Broken;
             }
             m_intervals.push_back(after);
         }
-        return true;
+        return Grown::Covered;
     }
 
     const std::chrono::time_zone* m_zone;

@@ -157,6 +157,52 @@ TEST_CASE("catalog/recent_games: a wall time shown twice is its earlier instant,
     CHECK_FALSE(convert(local(2026, 2, 30, 12)).has_value());
 }
 
+TEST_CASE("catalog/recent_games: a date centuries away does not lock the converter's other dates out",
+          "[catalog][recent_games]") {
+    const std::chrono::time_zone* rome = zoneNamed("Europe/Rome");
+    if (rome == nullptr) {
+        SKIP("the machine has no time zone database");
+    }
+    // A hand-edited <lastplayed> of 9999 (parseEsdeDateTime() takes it) between ordinary dates, in both orders, and a
+    // date before the zone's rules: each converts as std::chrono's to_sys does, whatever was converted before it.
+    const auto check = [&](const LocalTimeToUtc& convert, const LocalDateTime& time) {
+        INFO(formatEsdeDateTime(time));
+        std::optional<UtcTime> expected;
+        try {
+            expected = reference(*rome, time);
+        } catch (const std::exception&) {
+            // The zone database does not reach that date: the converter says nothing either.
+        }
+        CHECK(convert(time) == expected);
+    };
+    const LocalDateTime ordinary[]{local(2026, 10, 1, 20), local(2024, 5, 1, 12), local(2026, 3, 29, 2, 30),
+                                   local(1999, 12, 31, 23, 59)};
+    const LocalDateTime far[]{local(9999, 12, 31, 0), local(1850, 6, 1, 12)};
+    for (const LocalDateTime& first : far) {
+        const LocalTimeToUtc farFirst = zoneLocalTimeToUtc(*rome);
+        check(farFirst, first);
+        for (const LocalDateTime& time : ordinary) {
+            check(farFirst, time);
+        }
+        const LocalTimeToUtc farBetween = zoneLocalTimeToUtc(*rome);
+        check(farBetween, ordinary[0]);
+        check(farBetween, first);
+        for (const LocalDateTime& time : ordinary) {
+            check(farBetween, time);
+        }
+        check(farBetween, first);
+        check(farBetween, ordinary[1]);
+    }
+    // Dates walking away less than the restart distance each time, past the intervals a converter keeps (two a year
+    // here), then one before them all: still std::chrono's answers.
+    const LocalTimeToUtc walk = zoneLocalTimeToUtc(*rome);
+    for (int year = 2026; year <= 4400; year += 90) {
+        check(walk, local(year, 7, 1, 12));
+    }
+    check(walk, local(2024, 5, 1, 12));
+    check(walk, local(2026, 10, 25, 2, 30));
+}
+
 TEST_CASE("catalog/recent_games: a fixed offset and the machine's zone", "[catalog][recent_games]") {
     CHECK(fixedOffsetLocalTimeToUtc(120min)(local(2026, 10, 1, 20, 0)) == utc("2026-10-01T18:00:00Z"));
     CHECK(fixedOffsetLocalTimeToUtc(-330min)(local(2026, 10, 1, 20, 0)) == utc("2026-10-02T01:30:00Z"));
