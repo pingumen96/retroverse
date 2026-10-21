@@ -4,8 +4,10 @@
 //   - two rooms of one media family on a floor (derived from the plan: the handheld floor's cartridge rooms), started in
 //     the first with --start-room: each room's collection samples its own texture arrays (the registry keys carry the
 //     room id; the run report's residency.rooms), every room's covers resident, a static group per room, the floor's
-//     GPU memory within the acceptable 512 MiB; up close (--spawn at an item's Focus pose, in the start room's frame)
-//     each room's fronts show their pictures and the reticle's item is hovered in the room that holds the eye;
+//     GPU memory within the acceptable 512 MiB; the cover loader's first view the start room's items and those of the
+//     rooms whose doorway it sees, none of another room's items the frustum meets beyond a wall; up close (--spawn at an
+//     item's Focus pose, in the start room's frame) each room's fronts show their pictures and the reticle's item is
+//     hovered in the room that holds the eye;
 //   - a walk from the hall into the first room, back out, along the hall and into the second, where "Mostra nella
 //     stanza" takes the walker to a title's item and it is inspected: the areas the eye crossed in order, the card of
 //     the second room's game;
@@ -30,13 +32,16 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
+#include <rv/app/cover_requests.hpp>
 #include <rv/app/room_items.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
+#include <rv/scene/camera.hpp>
 #include <rv/world/collection_layout.hpp>
+#include <rv/world/floor_layout.hpp>
 #include <rv/world/floor_scene.hpp>
 #include <rv/world/scene_builder.hpp>
 
@@ -290,16 +295,61 @@ const rv::world::CollectionItem& firstFaceOut(const rv::world::CollectionLayout&
     return *found;
 }
 
-/// The doorway of a room on its floor: the x of its doorway camera and the direction into the room from the hall (-1
-/// for a north-row room, +1 for a south-row one), in the floor's frame.
+/// The scene build of `floor` as the app makes it (its hall, its scene file's camera; the run's assets).
+rv::world::FloorSceneBuild floorSceneOf(const rv::world::WorldPlan& plan, std::string_view floor,
+                                        const fs::path& assetRoot) {
+    auto data = rv::world::loadFloorSceneData(assetRoot, plan, floor);
+    REQUIRE(data.has_value());
+    auto build = rv::world::toFloorSceneFile(plan, floor, *data);
+    REQUIRE(build.has_value());
+    return std::move(*build);
+}
+
+float meters(std::int64_t millimetres) {
+    return static_cast<float>(millimetres) / 1000.0f;
+}
+
+/// The z of the hall's centre line, in the floor's frame.
+float hallCentreZ(const rv::world::Hall& hall) {
+    return meters(hall.interior.minZMm + hall.interior.maxZMm) / 2.0f;
+}
+
+/// The hall's doorway of `room` (which must have one onto the hall).
+const rv::world::FloorDoorway& hallDoorwayOf(const rv::world::Hall& hall, std::string_view room) {
+    const auto found = std::find_if(hall.doorways.begin(), hall.doorways.end(),
+                                    [&](const rv::world::FloorDoorway& doorway) { return doorway.room.toString() == room; });
+    INFO(room);
+    REQUIRE(found != hall.doorways.end());
+    REQUIRE(found->opensOntoHall());
+    return *found;
+}
+
+/// The doorway of a room on its floor, in the floor's frame (derived from the hall, floor_layout.hpp): the x of its
+/// passage's middle, the direction into the room from the hall (-1 for a north-row room, +1 for a south-row one) and
+/// how far the clear area inside it lies from the hall's centre line.
 struct Doorway {
     float x = 0.0f;
     float into = -1.0f;
+    float depth = 0.0f;
 };
 
-Doorway doorwayOf(const FloorRoom& room) {
-    const float sign = room.placement.yawHalfTurns % 2 == 0 ? 1.0f : -1.0f;
-    return Doorway{static_cast<float>(room.placement.xMm) / 1000.0f + sign * room.camera.position.x, -sign};
+Doorway doorwayOf(const rv::world::Hall& hall, std::string_view room) {
+    const rv::world::FloorDoorway& doorway = hallDoorwayOf(hall, room);
+    const float centre = hallCentreZ(hall);
+    const float inside = meters(doorway.clearCentre.zMm);
+    return Doorway{meters(doorway.passage.minXMm + doorway.passage.maxXMm) / 2.0f, inside < centre ? -1.0f : 1.0f,
+                   std::abs(inside - centre)};
+}
+
+/// The passage of `room`'s doorway onto the hall as a box from the floor to the doorway's top, in the frame of the room
+/// standing at `start` (the app's doorway box, the cover loader's view).
+rv::core::Aabb doorwayBoxIn(const rv::world::Hall& hall, std::string_view room,
+                            const rv::world::RoomPlacement& start) {
+    const rv::world::FloorDoorway& doorway = hallDoorwayOf(hall, room);
+    const glm::vec3 a = inRoomFrame(glm::vec3(meters(doorway.passage.minXMm), 0.0f, meters(doorway.passage.minZMm)), start);
+    const glm::vec3 b = inRoomFrame(
+        glm::vec3(meters(doorway.passage.maxXMm), meters(doorway.heightMm), meters(doorway.passage.maxZMm)), start);
+    return rv::core::Aabb{glm::min(a, b), glm::max(a, b)};
 }
 
 /// An input script's turn of `degrees` (positive: right) over `frames` frames from `from`.
@@ -359,6 +409,88 @@ TEST_CASE("world floor app: two rooms of one media family each sample their own 
     // the room that holds the eye (a pick index per room).
     const std::vector<FloorRoom> rooms = floorRooms(stored.plan, pair.floor, run.report->assetRoot);
     const FloorRoom& start = roomNamed(rooms, pair.first);
+
+    // The cover loader's first view (ADR-0013 §9): the start room's items, and those of a room whose doorway the frustum
+    // meets; a room whose doorway it does not see has none in view, even with items in the frustum beyond a wall (they
+    // come by distance). Seen from the doorway camera, then turned (from it, in steps of 5 degrees) until the frustum
+    // meets items of a room whose doorway it misses, so that the rule decides something.
+    {
+        const rv::world::FloorSceneBuild floorScene = floorSceneOf(stored.plan, pair.floor, run.report->assetRoot);
+        // The rooms whose doorway the camera at `yawDeg` misses (a frustum a little wider than the app's, 16:9 like the
+        // window and the screenshot, so that "missed" holds for the app's too), with their items whose middle it shows
+        // well inside the picture.
+        const auto unseenAt = [&](float yawDeg) {
+            rv::scene::CameraSetup setup = start.camera;
+            setup.yawDeg = yawDeg;
+            rv::scene::CameraLens lens = setup.lens;
+            lens.horizontalFovDeg += 2.0f;
+            lens.farPlane = std::max(lens.farPlane, 500.0f);
+            rv::scene::Camera wider;
+            wider.setLens(lens);
+            wider.setAspect(16.0f / 9.0f);
+            wider.setPose(setup.position, rv::core::degreesToRadians(yawDeg),
+                          rv::core::degreesToRadians(setup.pitchDeg));
+            const rv::app::CoverView widerView = rv::app::CoverView::of(wider);
+            std::map<std::string, std::size_t> unseen;
+            for (const FloorRoom& room : rooms) {
+                if (room.id == pair.first || placementsIn(stored.plan, room.id) == 0 ||
+                    rv::app::coverInView(doorwayBoxIn(floorScene.hall, room.id, start.placement), widerView)) {
+                    continue;
+                }
+                const rv::world::CollectionLayout layout =
+                    rv::world::floorCollectionLayout(room.layout, relativeTo(room.placement, start.placement));
+                std::size_t shown = 0;
+                for (const rv::world::CollectionItem& item : layout.items) {
+                    const std::optional<glm::ivec2> pixel = projectToPixel(setup, kShotSize, faceOf(item));
+                    shown += pixel && pixel->x >= 64 && pixel->y >= 64 && pixel->x < kShotSize.x - 64 &&
+                                     pixel->y < kShotSize.y - 64
+                                 ? 1
+                                 : 0;
+                }
+                unseen.emplace(room.id, shown);
+            }
+            return unseen;
+        };
+        const auto viewItemsOf = [](const rv::app::RunReport& report) {
+            std::map<std::string, std::uint64_t> items;
+            for (const rv::app::RoomResidencyRecord& room : report.residency.rooms) {
+                items[room.room] = room.viewItems;
+            }
+            return items;
+        };
+        const std::map<std::string, std::uint64_t> atDoorway = viewItemsOf(*run.report);
+        CHECK(atDoorway.at(pair.first) > 0);
+        CHECK(atDoorway.at(pair.first) <= placementsIn(stored.plan, pair.first));
+        for (const auto& [room, shown] : unseenAt(start.camera.yawDeg)) {
+            INFO(room << ", " << shown << " item(s) in the frustum");
+            CHECK(atDoorway.at(room) == 0);
+        }
+        std::optional<float> turned;
+        for (int step = 1; step < 72 && !turned; ++step) {
+            const float yaw = static_cast<float>(wrapped(start.camera.yawDeg + 5.0 * step));
+            for (const auto& [room, shown] : unseenAt(yaw)) {
+                turned = shown > 0 ? std::optional<float>(yaw) : turned;
+            }
+        }
+        INFO("a turn from the doorway camera that meets items of a room whose doorway it misses");
+        REQUIRE(turned.has_value());
+        const rv::app::SpawnPoint pose{start.camera.position - glm::vec3(0.0f, kEyeHeight, 0.0f), *turned,
+                                       start.camera.pitchDeg};
+        const AppRun turnedRun = runApp(retroverseExe(), building.dir, "first_view",
+                                        floorArguments(pair.first, 2, std::nullopt, {"--spawn", spawnArgument(pose)}));
+        requireCleanRun(turnedRun);
+        INFO(turnedRun.describe());
+        CHECK(turnedRun.report->world.room == pair.first);
+        const std::map<std::string, std::uint64_t> atTurn = viewItemsOf(*turnedRun.report);
+        std::size_t beyondWalls = 0;
+        for (const auto& [room, shown] : unseenAt(*turned)) {
+            INFO("yaw " << *turned << ": " << room << ", " << shown << " item(s) in the frustum");
+            CHECK(atTurn.at(room) == 0);
+            beyondWalls += shown;
+        }
+        CHECK(beyondWalls > 0);
+    }
+
     for (const std::string& id : {pair.first, pair.second}) {
         INFO(id);
         const FloorRoom& room = roomNamed(rooms, id);
@@ -409,23 +541,26 @@ TEST_CASE("world floor app: a walk from the hall into one room, then into anothe
     std::transform(search.begin(), search.end(), search.begin(),
                    [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); });
 
-    // The walk, in the floor's frame (the spawn then moved into the first room's frame, the start room's): from the
-    // hall's centre line in front of the first room's doorway into it, back out, along the hall to the second room's
-    // doorway and into it.
-    const Doorway doorA = doorwayOf(roomA);
-    const Doorway doorB = doorwayOf(roomB);
+    // The walk, in the floor's frame (the spawn then moved into the first room's frame, the start room's), derived from
+    // the floor's hall (floor_layout.hpp): from the hall's centre line in front of the first room's doorway through its
+    // passage to the clear area inside it, back out, along the hall to the second room's doorway and into it.
+    const rv::world::FloorSceneBuild floorScene = floorSceneOf(stored.plan, pair.floor, first.report->assetRoot);
+    const Doorway doorA = doorwayOf(floorScene.hall, pair.first);
+    const Doorway doorB = doorwayOf(floorScene.hall, pair.second);
+    INFO("doorways at x " << doorA.x << " (" << doorA.depth << " m deep) and " << doorB.x << " (" << doorB.depth
+                          << " m deep)");
     const double yawIntoA = doorA.into < 0.0f ? 0.0 : 180.0;
     const double yawIntoB = doorB.into < 0.0f ? 0.0 : 180.0;
     const double alongHall = doorB.x >= doorA.x ? 90.0 : -90.0;
     Json script = Json::array();
     std::uint64_t frame = 0;
-    const std::uint64_t into = walkFrames(3.75);
-    script.push_back(walk(frame, into)); // into the first room
-    frame += into;
+    const std::uint64_t intoA = walkFrames(doorA.depth);
+    script.push_back(walk(frame, intoA)); // into the first room
+    frame += intoA;
     script.push_back(turn(frame, 20, 180.0));
     frame += 20;
-    script.push_back(walk(frame, into)); // back to the hall's centre line
-    frame += into;
+    script.push_back(walk(frame, intoA)); // back to the hall's centre line
+    frame += intoA;
     double yaw = wrapped(yawIntoA + 180.0);
     const std::uint64_t along = walkFrames(doorB.x - doorA.x);
     if (along > 0) {
@@ -441,8 +576,9 @@ TEST_CASE("world floor app: a walk from the hall into one room, then into anothe
         script.push_back(turn(frame, frames, toB));
         frame += frames;
     }
-    script.push_back(walk(frame, into)); // into the second room
-    frame += into;
+    const std::uint64_t intoB = walkFrames(doorB.depth);
+    script.push_back(walk(frame, intoB)); // into the second room
+    frame += intoB;
     const std::uint64_t entered = frame;
     // "Mostra nella stanza" (world_show_in_room.json's path): the quick catalog, the search field, the title typed, the
     // list, the card's actions, the button; the walker eased to the item's Focus pose in 600 ms; then interact: Inspect.
@@ -462,7 +598,7 @@ TEST_CASE("world floor app: a walk from the hall into one room, then into anothe
     REQUIRE(rv::core::writeTextFileAtomic(scriptFile, script.dump(2) + "\n").has_value());
 
     // The spawn: the hall's centre line in front of the first room's doorway, facing it, in the first room's frame.
-    const glm::vec3 hallFeet = inRoomFrame(glm::vec3(doorA.x, 0.0f, 0.0f), roomA.placement);
+    const glm::vec3 hallFeet = inRoomFrame(glm::vec3(doorA.x, 0.0f, hallCentreZ(floorScene.hall)), roomA.placement);
     const double startYaw = wrapped(yawIntoA + (roomA.placement.yawHalfTurns % 2 == 0 ? 0.0 : 180.0));
     const rv::app::SpawnPoint spawn{hallFeet, static_cast<float>(startYaw), 0.0f};
     const fs::path shot = building.dir / "inspected.png";
@@ -507,15 +643,24 @@ TEST_CASE("world floor app: without --start-room the run starts in the ground fl
     requireFloorShown(run, building, "ground");
     INFO(run.describe());
     const rv::app::RunReport& report = *run.report;
-    // In the lobby, in front of the elevator, facing east: no room holds the eye, no hero CRT is bound.
+    // In the lobby, at the elevator's arrival point, facing east (the floor scene's camera, floor_layout.hpp): no room
+    // holds the eye, no hero CRT is bound.
     CHECK(report.world.room.empty());
     REQUIRE(report.sceneAreas.has_value());
-    CHECK(report.sceneAreas->area == "hall:ground");
+    CHECK(report.sceneAreas->area == rv::world::hallAreaId(rv::world::kGroundFloor));
     CHECK_FALSE(report.video.bound);
+    const rv::world::FloorSceneBuild lobby =
+        floorSceneOf(building.plan().plan, rv::world::kGroundFloor, report.assetRoot);
+    const Json& camera = lobby.sceneFile.at("camera");
     REQUIRE(report.finalCamera.has_value());
-    CHECK(std::abs(report.finalCamera->feet.x - 1.2f) < 1e-3f);
-    CHECK(std::abs(report.finalCamera->feet.z) < 1e-3f);
-    CHECK(std::abs(report.finalCamera->yawDeg.value_or(0.0f) - 90.0f) < 1e-3f);
+    CHECK(std::abs(report.finalCamera->feet.x - meters(lobby.hall.arrival.xMm)) < 1e-3f);
+    CHECK(std::abs(report.finalCamera->feet.z - meters(lobby.hall.arrival.zMm)) < 1e-3f);
+    CHECK(std::abs(report.finalCamera->feet.x - camera.at("position")[0].get<float>()) < 1e-3f);
+    CHECK(std::abs(report.finalCamera->feet.z - camera.at("position")[2].get<float>()) < 1e-3f);
+    CHECK(std::abs(report.finalCamera->yawDeg.value_or(0.0f) - camera.value("yawDeg", 0.0f)) < 1e-3f);
+    // East is the floor frame's +X (building.hpp): the walker's forward (yaw 0 looks at -Z, positive turns right).
+    const float yaw = rv::core::degreesToRadians(report.finalCamera->yawDeg.value_or(0.0f));
+    CHECK(std::sin(yaw) > 0.999f);
     const rv::assets::ImageData image = requireScreenshot(run, shot, kShotSize);
     CHECK(lumaSummary(image).mean > 10.0);
 
