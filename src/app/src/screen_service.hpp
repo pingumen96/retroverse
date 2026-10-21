@@ -71,9 +71,10 @@ struct ScreenServiceOptions {
 /// Since I4 step 6b (ADR-0013 §9) the service follows the CRT of the room that holds the eye: bind() moves it to
 /// another screen with that room's games, the clip of the previous one stopping as a clip replacement does (its
 /// decoder's thread ends on its own and is never waited for on the render loop; the next clip opens once it has ended),
-/// the previous screen's picture override cleared (its colour bars back). A floor committed again lets go of its screen
-/// first (unbind(), the scene's registry being cleared) and binds the new scene's: one service, one decoder, for the
-/// run.
+/// the previous screen's picture override cleared (its colour bars back). Any scene shown in place of another (a floor
+/// committed again, the shell or the test room after a floor) lets go of its screen first (unbind(), the scene's
+/// registry being cleared) and binds the new scene's CRT if it has one: one service, one decoder, for the run, and
+/// shutdown() only at its end.
 class ScreenService {
 public:
     /// Rows the video is decoded at, at most (ADR-0012 §7: one 480p decoder).

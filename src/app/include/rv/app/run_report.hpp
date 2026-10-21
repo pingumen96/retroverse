@@ -888,15 +888,18 @@ struct VideoLaunchRecord {
 };
 
 /// The hero CRT bound to a screen after the run's first (I4 step 6b, ADR-0013 §9: the CRT of the room that holds the
-/// eye, after the dwell; a floor committed again binds its CRT again): the frame, the screen's object id, the room's
-/// games, the milliseconds the bind took on the main thread and the decoder threads still running as it returned (the
-/// previous clip's ends on its own: it is never joined there).
+/// eye, after the dwell; a scene shown in place of another, such as a floor committed again, binds its CRT again; the
+/// run's first screen, at the start or the first room the eye stays in, is not one): the frame, the screen's object id,
+/// the room's games, the milliseconds the bind took on the main thread, the decoder threads still running as it
+/// returned, and whether it stopped a clip open on the previous screen (playing, or paused out of view: its thread
+/// ends on its own, never joined there).
 struct VideoBindRecord {
     std::uint64_t frame = 0;
     std::string screen;
     std::uint64_t games = 0;
     double bindMs = 0.0;
     std::uint64_t threadsRunning = 0;
+    bool clipStopped = false;
 
     bool operator==(const VideoBindRecord&) const = default;
 };
@@ -943,6 +946,9 @@ struct VideoRecord {
     std::uint64_t stillBytes = 0;
     /// The decoder threads had all ended once the service shut down (media::waitForStoppedDecoders()).
     bool joinedAtExit = false;
+    /// Waits for every stopped decoder's thread (media::stoppedDecoderWaits()) made before the service's shutdown at
+    /// the run's end: 0, none from the render loop (ADR-0004; I4 step 6b).
+    std::uint64_t waitsBeforeExit = 0;
     std::vector<VideoFallbackRecord> fallbacks;
     std::vector<VideoLaunchRecord> launches;
     /// The screens bound after the first (I4 step 6b), in order.

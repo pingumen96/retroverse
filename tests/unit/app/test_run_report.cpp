@@ -610,8 +610,10 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     launch.reopened = true;
     launch.reopenedAtSeconds = 0.625;
     video.launches = {launch, rv::app::VideoLaunchRecord{}};
-    // I4 step 6b: the screens bound after the first (the CRT of the eye's room).
-    video.binds = {{240, "room:megadrive/fx:hero.crt", 12, 0.75, 1}, {420, "room:snes/fx:hero.crt", 50, 0.5, 0}};
+    // I4 step 6b: the screens bound after the first (the CRT of the eye's room), the waits before the exit.
+    video.binds = {{240, "room:megadrive/fx:hero.crt", 12, 0.75, 1, true},
+                   {420, "room:snes/fx:hero.crt", 50, 0.5, 0, false}};
+    video.waitsBeforeExit = 2;
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->video == video);

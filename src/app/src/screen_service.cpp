@@ -627,6 +627,8 @@ struct ScreenService::Impl {
 
     void bind(HeroScreen next, std::vector<ScreenGame> games, std::uint64_t frame) {
         const Clock::time_point start = Clock::now();
+        // A clip open on the screen let go (playing, or paused out of view): stopped below, never waited for.
+        const bool clipStopped = playback != nullptr;
         if (screen) {
             unbind(true);
         }
@@ -641,8 +643,11 @@ struct ScreenService::Impl {
         record.games = policy.games().size();
         record.bindMs = millisecondsSince(start);
         record.threadsRunning = decoderThreads();
-        spdlog::info("Hero CRT: bound to the screen of '{}' with {} game(s) in {:.2f} ms ({} decoder thread(s) ending)",
-                     record.screen, record.games, record.bindMs, record.threadsRunning);
+        record.clipStopped = clipStopped;
+        spdlog::info("Hero CRT: bound to the screen of '{}' with {} game(s) in {:.2f} ms ({}{} decoder thread(s) "
+                     "ending)",
+                     record.screen, record.games, record.bindMs, clipStopped ? "its clip stopped, " : "",
+                     record.threadsRunning);
         counters.binds.push_back(std::move(record));
     }
 
@@ -655,7 +660,9 @@ struct ScreenService::Impl {
         endDecoderState = decoderStateName();
         policy.quit();
         stopPlayback();
-        // Every stopped decoder's thread (ADR-0004: at shutdown, never from the render loop).
+        // Every stopped decoder's thread (ADR-0004: at shutdown, never from the render loop): the waits made before
+        // this one, which the report shows to be none.
+        counters.waitsBeforeExit = media::stoppedDecoderWaits();
         media::waitForStoppedDecoders();
         reapDraining();
         counters.joinedAtExit = decoderThreads() == 0;

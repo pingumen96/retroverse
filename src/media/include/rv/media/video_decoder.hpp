@@ -220,6 +220,9 @@ private:
 /// Call it at application shutdown, before the logger shuts down, never from the render loop: a thread may still be
 /// finishing a slow read. Threads that have ended are also reclaimed as decoders stop, and at process exit.
 void waitForStoppedDecoders();
+/// How many times waitForStoppedDecoders() was called in the process so far (I4 step 6b: the hero CRT's report shows
+/// that no call came before the run's end, so none from the render loop).
+[[nodiscard]] std::uint64_t stoppedDecoderWaits() noexcept;
 
 /// Opens `path` like a VideoDecoder and describes its video stream without decoding a frame, on the calling thread
 /// (tests, tools, diagnostics). outputSize follows `maxHeight`. Errors: the DecodeFailure of an open that fails, as

@@ -596,7 +596,8 @@ struct RetroverseApp::State {
 
     /// The hero CRT's service on the scene's first CRT (`heroScreenPrefix`: the first whose object id starts with it,
     /// none for an empty one: a floor whose eye's room has no CRT bound yet, I4 step 6b), if it has one (not in the
-    /// model viewer); a service kept across a floor committed again (unbound) is bound to it instead.
+    /// model viewer); the run's service, kept unbound across a scene shown in place of another, is bound to it instead
+    /// (VideoRecord::binds).
     void createScreen(const AppContext& context, std::vector<ScreenGame> games,
                       const std::optional<std::string>& heroScreenPrefix = std::nullopt) {
         const CommandLineOptions& options = context.options();
@@ -711,13 +712,13 @@ struct RetroverseApp::State {
     }
 
     /// Shows `next` in place of the scene shown, at a frame boundary (the generated room after its shell, the test room
-    /// instead of it; I3 step 10b): the hero CRT's service, the content of the registries and the scene go, the new
-    /// scene is instantiated, the walker stands at its camera (or at --spawn), the camera's lens is its, the CRT's
-    /// service starts again on its CRT, the debug lines are made again. The world's collection is gone by then.
-    /// `keepWalker`: the walker stays where it stands (I3 step 10c: a room committed again in place of itself), moved
-    /// by `walkerMove` with the area that holds it (I4 step 6b, ADR-0013 §7), and the hero CRT's service goes on (its
-    /// screen let go, then the new scene's of `heroScreenPrefix` bound with `screenGames`: its decoder never joined
-    /// here).
+    /// instead of it; I3 step 10b): the content of the registries and the scene go, the new scene is instantiated, the
+    /// walker stands at its camera (or at --spawn), the camera's lens is its, the hero CRT's service binds the new
+    /// scene's CRT of `heroScreenPrefix` with `screenGames` (none: it stays unbound), the debug lines are made again.
+    /// The world's collection is gone by then. The service lives on for the run (I4 step 6b): its screen let go first,
+    /// a clip playing stops as a clip replacement does, its decoder's thread never joined here (ADR-0004: only at the
+    /// run's end). `keepWalker`: the walker stays where it stands (I3 step 10c: a room committed again in place of
+    /// itself), moved by `walkerMove` with the area that holds it (I4 step 6b, ADR-0013 §7).
     Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader,
                         bool keepWalker = false, const std::optional<std::string>& heroScreenPrefix = std::nullopt,
                         const std::optional<FrameMove>& walkerMove = std::nullopt,
@@ -734,12 +735,8 @@ struct RetroverseApp::State {
                 spawn->yawDeg = yaw;
             }
         }
-        if (screen && keepWalker) {
+        if (screen) {
             screen->unbind(false); // the registry is cleared below: its material goes with it
-        } else if (screen) {
-            screen->shutdown();
-            screen->record(context.report().video);
-            screen.reset();
         }
         graphics->clearContent();
         // The overlay's panels refer to members of the scene instance (its environment, its lights' packing): the new

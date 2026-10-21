@@ -1369,6 +1369,7 @@ Json videoToJson(const VideoRecord& video) {
     json["videoBytes"] = video.videoBytes;
     json["stillBytes"] = video.stillBytes;
     json["joinedAtExit"] = video.joinedAtExit;
+    json["waitsBeforeExit"] = video.waitsBeforeExit;
     Json fallbacks = Json::array();
     for (const VideoFallbackRecord& fallback : video.fallbacks) {
         fallbacks.push_back(
@@ -1393,7 +1394,8 @@ Json videoToJson(const VideoRecord& video) {
                              {"screen", bind.screen},
                              {"games", bind.games},
                              {"bindMs", bind.bindMs},
-                             {"threadsRunning", bind.threadsRunning}});
+                             {"threadsRunning", bind.threadsRunning},
+                             {"clipStopped", bind.clipStopped}});
     }
     json["binds"] = std::move(binds);
     return json;
@@ -1428,6 +1430,7 @@ VideoRecord readVideo(FieldReader& fields) {
     video.videoBytes = fields.count("videoBytes");
     video.stillBytes = fields.count("stillBytes");
     video.joinedAtExit = fields.boolean("joinedAtExit");
+    video.waitsBeforeExit = fields.optionalCount("waitsBeforeExit").value_or(0);
     for (FieldReader& fallback : fields.objectArray("fallbacks")) {
         video.fallbacks.push_back(
             VideoFallbackRecord{fallback.string("gameId"), fallback.string("picture"), fallback.string("reason")});
@@ -1449,6 +1452,7 @@ VideoRecord readVideo(FieldReader& fields) {
         entry.games = bind.count("games");
         entry.bindMs = bind.number("bindMs");
         entry.threadsRunning = bind.count("threadsRunning");
+        entry.clipStopped = bind.has("clipStopped") && bind.boolean("clipStopped");
         video.binds.push_back(std::move(entry));
     }
     return video;
