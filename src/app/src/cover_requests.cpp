@@ -83,6 +83,19 @@ bool coverInView(const core::Aabb& bounds, const CoverView& view, std::uint32_t 
                        [&](const scene::Frustum& frustum) { return frustum.intersects(bounds); });
 }
 
+std::vector<std::uint8_t> coverViewGroups(const CoverView& view, std::span<const core::Aabb> doorways,
+                                          std::optional<std::size_t> eyeRoom) {
+    if (doorways.size() <= 1) {
+        return {};
+    }
+    const CoverView everyGroup{view.eye, view.frusta, {}};
+    std::vector<std::uint8_t> groups(doorways.size(), 0);
+    for (std::size_t room = 0; room < doorways.size(); ++room) {
+        groups[room] = eyeRoom == room || coverInView(doorways[room], everyGroup) ? 1 : 0;
+    }
+    return groups;
+}
+
 float coverDistance(const core::Aabb& bounds, const glm::vec3& eye) noexcept {
     if (bounds.isEmpty()) {
         return 0.0f;

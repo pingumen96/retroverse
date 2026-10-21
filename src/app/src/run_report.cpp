@@ -1142,6 +1142,7 @@ Json residencyToJson(const ResidencyRecord& residency) {
     for (const RoomResidencyRecord& room : residency.rooms) {
         rooms.push_back(Json{{"room", room.room},
                              {"items", room.items},
+                             {"viewItems", room.viewItems},
                              {"frontsResident", room.frontsResident},
                              {"spinesResident", room.spinesResident},
                              {"pending", room.pending},
@@ -1233,6 +1234,7 @@ ResidencyRecord readResidency(FieldReader& fields) {
         RoomResidencyRecord record;
         record.room = room.string("room");
         record.items = room.count("items");
+        record.viewItems = room.count("viewItems");
         record.frontsResident = room.count("frontsResident");
         record.spinesResident = room.count("spinesResident");
         record.pending = room.count("pending");

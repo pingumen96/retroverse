@@ -391,6 +391,15 @@ void CoverLoader::startTrim() {
 void CoverLoader::noteArrivals() {
     if (!m_viewItems) {
         m_viewItems = m_schedule.inViewCount();
+        for (std::size_t item = 0; item < m_items.size(); ++item) {
+            if (m_schedule.inView(item)) {
+                const std::uint32_t group = groupOf(item);
+                if (group >= m_viewItemsByGroup.size()) {
+                    m_viewItemsByGroup.resize(static_cast<std::size_t>(group) + 1, 0u);
+                }
+                ++m_viewItemsByGroup[group];
+            }
+        }
     }
     if (!m_viewResidentAt && m_schedule.viewDone()) {
         m_viewResidentAt = std::chrono::system_clock::now();

@@ -694,10 +694,12 @@ struct HeroRecord {
 
 /// One collection room's layers on the floor shown (I4 step 5a): its items, the layers of each class resident and
 /// pending, its arrays' bytes, its arrays and how many of them its layered materials sample (all of them: its own
-/// arrays, never another room's, ADR-0013 §9's registry keys carrying the room id).
+/// arrays, never another room's, ADR-0013 §9's registry keys carrying the room id), and its items in the loader's first
+/// view (ResidencyRecord::viewItems' share: none for a room that neither holds the eye nor has its doorway in view).
 struct RoomResidencyRecord {
     std::string room;
     std::uint64_t items = 0;
+    std::uint64_t viewItems = 0;
     std::uint64_t frontsResident = 0;
     std::uint64_t spinesResident = 0;
     std::uint64_t pending = 0;

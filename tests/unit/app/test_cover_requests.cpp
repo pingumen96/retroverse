@@ -153,6 +153,85 @@ TEST_CASE("app/cover_requests: the schedule hands out the layout's order without
     CHECK_FALSE(focused.focused().has_value());
 }
 
+TEST_CASE("app/cover_requests: on a floor the view is the eye's room and the rooms whose doorway it sees; the rest "
+          "comes by distance",
+          "[app][cover_requests]") {
+    // I4 step 5a, ADR-0013 §9: one group per room. The camera at the origin looks at -Z.
+    const CoverView plain = viewFrom();
+    const rv::core::Aabb ahead = box({0.0f, 0.0f, -2.0f});
+    // An empty list of groups sees every group; a list sees the groups it flags, none past its end.
+    CHECK(plain.seesGroup(0));
+    CHECK(plain.seesGroup(7));
+    CoverView seen = plain;
+    seen.groups = {1, 0};
+    CHECK(seen.seesGroup(0));
+    CHECK_FALSE(seen.seesGroup(1));
+    CHECK_FALSE(seen.seesGroup(2));
+    // An item in a frustum is in view only for a group the view sees; out of it, it ranks by its distance.
+    CHECK(rv::app::coverInView(ahead, seen, 0));
+    CHECK_FALSE(rv::app::coverInView(ahead, seen, 1));
+    const CoverPriority unseen = rv::app::coverPriority(3, ahead, seen, false, 1);
+    CHECK(unseen.rank == CoverRank::Rest);
+    CHECK(unseen.order == Catch::Approx(rv::app::coverDistance(ahead, seen.eye)));
+    CHECK(rv::app::coverPriority(3, ahead, seen, false, 0).rank == CoverRank::InView);
+    // The focused item comes first whatever its group.
+    CHECK(rv::app::coverPriority(3, ahead, seen, true, 1).rank == CoverRank::Focused);
+
+    // The groups of a floor of three rooms: room 0 holds the eye, room 1's doorway is ahead (in the frustum), room 2's
+    // behind the camera; a room without a doorway (an empty box) is seen only when it holds the eye.
+    const std::vector<rv::core::Aabb> doorways{
+        rv::core::Aabb{glm::vec3(-0.6f, 0.0f, 0.5f), glm::vec3(0.6f, 2.2f, 0.7f)},
+        rv::core::Aabb{glm::vec3(-0.6f, 0.0f, -8.2f), glm::vec3(0.6f, 2.2f, -8.0f)},
+        rv::core::Aabb{glm::vec3(-0.6f, 0.0f, 6.0f), glm::vec3(0.6f, 2.2f, 6.2f)}};
+    CHECK(rv::app::coverViewGroups(plain, doorways, 0) == std::vector<std::uint8_t>{1, 1, 0});
+    // In a hall (no room holds the eye) only the doorways count; turned around, room 2's is seen and room 1's is not.
+    CHECK(rv::app::coverViewGroups(plain, doorways, std::nullopt) == std::vector<std::uint8_t>{0, 1, 0});
+    CHECK(rv::app::coverViewGroups(viewFrom(glm::vec3(0.0f), 180.0f), doorways, std::nullopt) ==
+          std::vector<std::uint8_t>{1, 0, 1});
+    CHECK(rv::app::coverViewGroups(plain, doorways, 2) == std::vector<std::uint8_t>{0, 1, 1});
+    const std::vector<rv::core::Aabb> withoutDoorway{rv::core::Aabb{}, doorways[1]};
+    CHECK(rv::app::coverViewGroups(plain, withoutDoorway, std::nullopt) == std::vector<std::uint8_t>{0, 1});
+    CHECK(rv::app::coverViewGroups(plain, withoutDoorway, 0) == std::vector<std::uint8_t>{1, 1});
+    // The view's own groups do not hide a doorway; a floor of one room (or none) sees it whole.
+    CHECK(rv::app::coverViewGroups(seen, doorways, 0) == std::vector<std::uint8_t>{1, 1, 0});
+    CHECK(rv::app::coverViewGroups(plain, std::vector<rv::core::Aabb>{doorways[2]}, std::nullopt).empty());
+    CHECK(rv::app::coverViewGroups(plain, {}, std::nullopt).empty());
+
+    // The schedule over three rooms seen from room 0: an item of room 2 in the frustum (beyond a wall, its doorway out
+    // of view) is not in view and comes by its distance after every item in view, before a farther one.
+    const std::vector<rv::core::Aabb> bounds{
+        box({0.0f, 0.0f, -4.0f}),  // 0: room 0, in view
+        box({1.5f, 0.0f, -2.0f}),  // 1: room 2, in the frustum, unseen
+        box({0.0f, 0.0f, -6.0f}),  // 2: room 1, in view through its doorway
+        box({0.0f, 0.0f, 9.0f}),   // 3: room 2, behind
+        box({0.0f, 0.0f, 1.5f})};  // 4: room 0, behind (its group seen, out of the frustum)
+    CoverSchedule schedule(bounds, {0, 2, 1, 2, 0});
+    CoverView floorView = plain;
+    floorView.groups = rv::app::coverViewGroups(plain, doorways, 0);
+    schedule.setView(floorView);
+    CHECK(schedule.inViewCount() == 2);
+    CHECK(schedule.inView(0));
+    CHECK(schedule.inView(2));
+    CHECK_FALSE(schedule.inView(1));
+    CHECK(schedule.rank(1) == CoverRank::Rest);
+    CHECK(makeOrder(schedule) == std::vector<std::size_t>{0, 2, 4, 1, 3});
+    // Every item in view resident is the view done, the unseen room's item still waiting.
+    CoverSchedule settled(bounds, {0, 2, 1, 2, 0});
+    settled.setView(floorView);
+    CHECK(settled.takeToMake(2) == std::vector<std::size_t>{0, 2});
+    CHECK_FALSE(settled.viewDone());
+    arrive(settled, 0);
+    arrive(settled, 2);
+    CHECK(settled.viewDone());
+    CHECK(settled.inViewPending() == 0);
+    CHECK_FALSE(settled.done());
+    // Without groups (the floor of one room, I3's) the same item in the frustum is in view.
+    CoverSchedule whole(bounds);
+    whole.setView(plain);
+    CHECK(whole.inView(1));
+    CHECK(whole.inViewCount() == 3);
+}
+
 TEST_CASE("app/cover_requests: made layers go up best first within the budget; arrivals are recorded in order",
           "[app][cover_requests]") {
     std::vector<rv::core::Aabb> bounds{box({0, 0, 3}), box({0, 0, -3}), box({0, 0, -1}), box({0, 0, 8})};

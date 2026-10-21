@@ -75,6 +75,12 @@ struct CoverPriority {
 
 /// True when `bounds` meets a frustum of `view` (an empty box never does) and `group` is one the view sees.
 [[nodiscard]] bool coverInView(const core::Aabb& bounds, const CoverView& view, std::uint32_t group = 0) noexcept;
+/// The groups (CoverView::groups) `view` sees on a floor whose rooms are the groups, `doorways` each room's doorway
+/// passage in the scene's frame (an empty box for a room without one) and `eyeRoom` the room that holds the eye (none in
+/// a hall): that room and every room whose doorway meets a frustum of `view` (ADR-0013 §9), whatever `view.groups`
+/// says. A floor of one room (or none) sees it whole: empty.
+[[nodiscard]] std::vector<std::uint8_t> coverViewGroups(const CoverView& view, std::span<const core::Aabb> doorways,
+                                                        std::optional<std::size_t> eyeRoom);
 /// The distance from the eye to the box (0 inside it).
 [[nodiscard]] float coverDistance(const core::Aabb& bounds, const glm::vec3& eye) noexcept;
 /// The priority of item `item` with `bounds` under `view`; `focused` puts it first whatever the view. The projected

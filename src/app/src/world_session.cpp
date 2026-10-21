@@ -255,14 +255,14 @@ CoverView WorldSession::currentView() const {
     }
     CoverView view = CoverView::of(m_host.camera(), screenshotAspect);
     // ADR-0013 §9: the view is the items of the room that holds the eye and of the rooms whose doorway the frustum
-    // meets; a floor of one room sees it whole (as I3's room).
+    // meets; a floor of one room sees it whole (as I3's room). The loader's groups are the rooms' indices.
     if (m_rooms.size() > 1) {
-        const std::optional<std::size_t> eye = eyeRoom();
-        view.groups.assign(m_rooms.size(), 0);
-        for (std::size_t index = 0; index < m_rooms.size(); ++index) {
-            const bool doorway = coverInView(m_rooms[index].doorway, CoverView{view.eye, view.frusta, {}});
-            view.groups[index] = eye == index || doorway ? 1 : 0;
+        std::vector<core::Aabb> doorways;
+        doorways.reserve(m_rooms.size());
+        for (const FloorRoom& room : m_rooms) {
+            doorways.push_back(room.doorway);
         }
+        view.groups = coverViewGroups(view, doorways, eyeRoom());
     }
     return view;
 }
@@ -890,14 +890,17 @@ void WorldSession::record(RunReport& report) const {
     if (!m_rooms.empty() && m_loader) {
         ResidencyRecord residency;
         m_loader->record(residency, m_collections);
-        // Each collection room's own (ADR-0013 §9: every room samples its own arrays).
-        for (const FloorRoom& room : m_rooms) {
+        // Each collection room's own (ADR-0013 §9: every room samples its own arrays; the loader's groups are the
+        // rooms' indices).
+        for (std::size_t index = 0; index < m_rooms.size(); ++index) {
+            const FloorRoom& room = m_rooms[index];
             if (!room.collection) {
                 continue;
             }
             RoomResidencyRecord record;
             record.room = room.id.toString();
             record.items = room.collection->itemCount();
+            record.viewItems = m_loader->viewItemsOf(static_cast<std::uint32_t>(index));
             const gl::CollectionArrays& arrays = room.collection->arrays();
             record.frontsResident = arrays.residentLayers(gl::CollectionClass::Front);
             record.spinesResident = arrays.residentLayers(gl::CollectionClass::Spine);

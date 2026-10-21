@@ -127,6 +127,10 @@ public:
     [[nodiscard]] std::uint32_t groupOf(std::size_t index) const noexcept {
         return index < m_groups.size() ? m_groups[index] : 0u;
     }
+    /// The items of group `group` that were in the first view (ResidencyRecord::viewItems' share of a room).
+    [[nodiscard]] std::uint64_t viewItemsOf(std::uint32_t group) const noexcept {
+        return group < m_viewItemsByGroup.size() ? m_viewItemsByGroup[group] : 0u;
+    }
     /// The item of the layer key `key` ("<GameId>/front", "<GameId>/spine"), if any.
     [[nodiscard]] std::optional<std::size_t> itemOfKey(const std::string& key) const;
     /// The item of `game` (its front's key), if any.
@@ -178,8 +182,9 @@ private:
     std::uint64_t m_retriedChanged = 0;
     std::uint64_t m_adopted = 0;
     std::uint64_t m_adoptedChanged = 0;
-    /// The first view's items, and when they were all resident (the arrival record).
+    /// The first view's items (and their count per group), and when they were all resident (the arrival record).
     std::optional<std::size_t> m_viewItems;
+    std::vector<std::uint64_t> m_viewItemsByGroup;
     std::size_t m_residentAtViewResident = 0;
     std::optional<std::chrono::system_clock::time_point> m_viewResidentAt;
     std::optional<std::chrono::system_clock::time_point> m_allResidentAt;
