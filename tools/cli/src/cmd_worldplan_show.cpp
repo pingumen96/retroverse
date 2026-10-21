@@ -4,9 +4,10 @@
 // its versions and digest, its floors, its rooms (kind, floor, sections, placement), the fixtures by role, the slots
 // and titles of each section with the reserve left, the dressing, the lights and the unplaced games by reason; with
 // --placements every fixture with its levels and every placement too. With --scene <file>, the static part of one room
-// written as a scene file (I3 step 10a): the plan's only room, or the one --room names in a building of several (a
-// floor's scene with its hall is I4 step 3's), its sign and plastics classified with the catalog's platform tags of its
-// system when the catalog holds the plan's library (a custom system's, I4 step 2).
+// written as a scene file (I3 step 10a): the plan's only room, or the one --room names in a building of several, its
+// sign and plastics classified with the catalog's platform tags of its system when the catalog holds the plan's
+// library (a custom system's, I4 step 2). With --floor <id> (I4 step 3, ADR-0013 §12), the floor's hall and rooms are
+// summarized and --scene writes the whole floor: its rooms moved onto it, its hall with the elevator, its areas.
 
 #include <algorithm>
 #include <filesystem>
@@ -28,6 +29,8 @@
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/scene/scene_description.hpp>
+#include <rv/world/floor_layout.hpp>
+#include <rv/world/floor_scene.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_plan.hpp>
@@ -44,7 +47,7 @@ constexpr std::string_view kName = "retroverse-cli worldplan show";
 
 constexpr std::string_view kUsage =
     "Usage: retroverse-cli [global options] worldplan show [<plan>] [--library <id>] [--placements] [--json]\n"
-    "                      [--scene <file> [--room <id>]] [--output <file>]\n"
+    "                      [--floor <id>] [--scene <file> [--room <id>]] [--output <file>]\n"
     "\n"
     "Shows a plan: its versions and digest, its floors and rooms (kind, floor, systems, place on the floor), the\n"
     "fixtures by role, the slots and titles of each section (featured and band face-out, spine spine-out) with the\n"
@@ -61,13 +64,17 @@ constexpr std::string_view kUsage =
     "                     as a scene file that 'retroverse --scene <file>' renders (prefabs and lighting from the\n"
     "                     asset root; the collection's items are not part of it): the plan's only room, or --room's.\n"
     "  --room <id>        The room whose scene --scene writes (room:snes); required when the plan holds several.\n"
+    "  --floor <id>       Also summarize a floor: its hall (derived from its rooms: the elevator at its west end,\n"
+    "                     its lights, its walls) and its rooms with their doorways onto it; with --scene, write the\n"
+    "                     floor's static part instead of a room's: every room moved onto the floor, the hall and\n"
+    "                     the elevator, the areas whose lights the app packs (not with --room).\n"
     "  --json             Write the results as JSON.\n"
     "  --output <file>    Write the results to this file (UTF-8) instead of stdout.\n"
     "  -h, --help         Show this help and exit.\n"
     "\n"
-    "Exit codes: 0 ok; 1 there is no plan; 2 usage error (--scene on a plan of several rooms without --room, or a\n"
-    "--room the plan does not hold); 3 the plan could not be read or is refused (written by a newer Retroverse, or\n"
-    "edited by hand), or its scene could not be built or written.\n";
+    "Exit codes: 0 ok; 1 there is no plan; 2 usage error (--scene on a plan of several rooms without --room or\n"
+    "--floor, a --room or --floor the plan does not hold, --room with --floor); 3 the plan could not be read or is\n"
+    "refused (written by a newer Retroverse, or edited by hand), or its scene could not be built or written.\n";
 
 /// The section of every slot level of the plan's fixtures.
 std::map<std::pair<world::FixtureId, std::uint32_t>, world::Section> sectionsOf(const world::WorldPlan& plan) {
@@ -164,6 +171,110 @@ std::vector<std::string> catalogPlatformTags(const core::Paths& paths, const cat
     return {};
 }
 
+/// The ES-DE platform tags of every system the catalog holds for `library` (catalogPlatformTags()'s, all at once).
+world::PlatformTagsBySystem catalogPlatformTagsOf(const core::Paths& paths, const catalog::LibraryId& library) {
+    world::PlatformTagsBySystem tags;
+    auto reader = openCatalogReader(paths);
+    if (!reader) {
+        spdlog::debug("worldplan show: no platform tags from the catalog: {}", reader.error().toString());
+        return tags;
+    }
+    auto summaries = reader->query->systems();
+    if (!summaries) {
+        spdlog::debug("worldplan show: no platform tags from the catalog: {}", summaries.error().toString());
+        return tags;
+    }
+    for (const catalog_db::SystemSummary& summary : *summaries) {
+        if (summary.library == library && !summary.system.platforms.empty()) {
+            tags[summary.system.name] = summary.system.platforms;
+        }
+    }
+    return tags;
+}
+
+/// A floor of the plan as `--floor` shows it: its hall and rooms, and its scene when --scene asks for it.
+struct FloorView {
+    world::FloorSceneBuild build;
+    std::string sceneLine;
+};
+
+/// Builds the floor `floor` of `plan` (its data from the asset root, the rooms' systems classified with the catalog's
+/// platform tags) and writes its scene to `scenePath` when given; nothing after a failure (reported).
+std::optional<FloorView> buildFloor(CommandContext& context, const world::WorldPlan& plan, std::string_view floor,
+                                    const std::optional<std::filesystem::path>& scenePath) {
+    auto data = world::loadFloorSceneData(context.paths.assetRoot(), plan, floor, std::nullopt,
+                                          catalogPlatformTagsOf(context.paths, plan.library));
+    if (!data) {
+        context.err.writeLine(fmt::format("{}: the floor's data: {}", kName, data.error().toString()));
+        return std::nullopt;
+    }
+    auto build = world::toFloorSceneFile(plan, floor, *data);
+    if (!build) {
+        context.err.writeLine(fmt::format("{}: the floor's scene: {}", kName, build.error().toString()));
+        return std::nullopt;
+    }
+    FloorView view{std::move(*build), {}};
+    if (!scenePath) {
+        return view;
+    }
+    // Read back as the app reads it, so that a file written is a scene that loads.
+    if (auto parsed = scene::parseSceneDescription(view.build.sceneFile, "floor:" + std::string(floor)); !parsed) {
+        context.err.writeLine(fmt::format("{}: the floor's scene: {}", kName, parsed.error().toString()));
+        return std::nullopt;
+    }
+    if (Status written = core::writeTextFileAtomic(*scenePath, world::sceneFileText(view.build.sceneFile)); !written) {
+        context.err.writeLine(fmt::format("{}: {}", kName, written.error().toString()));
+        return std::nullopt;
+    }
+    for (const world::UndressedSpan& span : view.build.undressed) {
+        spdlog::info("worldplan show: {} slots {} to {} left bare: {}", span.level.toString(), span.firstSlot,
+                     span.firstSlot + span.count - 1, span.reason);
+    }
+    view.sceneLine = fmt::format("Scene {} of floor {}: {} objects, {} lights ({} in the hall), {} areas, {} dressed "
+                                 "span(s) left bare\n",
+                                 pathText(*scenePath), floor, view.build.sceneFile["objects"].size(),
+                                 view.build.sceneFile["lights"].size(), view.build.hall.lights.size(),
+                                 view.build.sceneFile["areas"].size(), view.build.undressed.size());
+    return view;
+}
+
+std::string_view rowText(world::Row row) {
+    return row == world::Row::North ? "north row" : "south row";
+}
+
+std::string floorText(const world::FloorSceneBuild& build) {
+    const world::Hall& hall = build.hall;
+    std::string text = fmt::format("Floor {}: {} {} x {} mm, {} mm high, {} light(s) every {} mm, the elevator at its "
+                                   "west end; {} room(s)\n",
+                                   hall.floor, hall.lobby ? "lobby" : "hall", hall.interior.maxXMm, hall.widthMm,
+                                   hall.heightMm, hall.lights.size(), world::kHallLightPitchMm, build.rooms.size());
+    for (const world::FloorDoorway& doorway : hall.doorways) {
+        text += fmt::format("  {}  {}, doorway x {} to {} mm{}\n", doorway.room.toString(), rowText(doorway.row),
+                            doorway.minMm, doorway.maxMm, doorway.opensOntoHall() ? " onto the hall" : ", off the hall");
+    }
+    return text;
+}
+
+CatalogJson floorJson(const world::FloorSceneBuild& build) {
+    const world::Hall& hall = build.hall;
+    CatalogJson rooms = CatalogJson::array();
+    for (const world::FloorDoorway& doorway : hall.doorways) {
+        rooms.push_back(CatalogJson{{"id", doorway.room.toString()},
+                                    {"row", std::string(rowText(doorway.row))},
+                                    {"doorway", CatalogJson{{"minXMm", doorway.minMm},
+                                                            {"maxXMm", doorway.maxMm},
+                                                            {"opensOntoHall", doorway.opensOntoHall()}}}});
+    }
+    return CatalogJson{{"floor", hall.floor},
+                       {"lobby", hall.lobby},
+                       {"hall", CatalogJson{{"lengthMm", hall.interior.maxXMm},
+                                            {"widthMm", hall.widthMm},
+                                            {"heightMm", hall.heightMm},
+                                            {"lights", hall.lights.size()},
+                                            {"walls", hall.walls.size()}}},
+                       {"rooms", std::move(rooms)}};
+}
+
 /// Writes the scene file of the plan's room `room`; the line the summary gains, or nothing after a failure (reported).
 std::optional<std::string> writeScene(CommandContext& context, const world::WorldPlan& plan, const world::RoomId& room,
                                       const std::filesystem::path& scenePath) {
@@ -213,6 +324,7 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
     parser.flag("json", "Write the results as JSON.");
     parser.option("scene", "file", "Also write a room's static part as a scene file.");
     parser.option("room", "id", "The room whose scene --scene writes.");
+    parser.option("floor", "id", "Also summarize a floor; with --scene, write the floor's scene.");
     addOutputOption(parser);
     auto args = parser.parse(arguments);
     if (!args) {
@@ -254,6 +366,25 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
     const std::string& digest = read->digest;
     std::optional<std::string> sceneLine;
     std::optional<world::RoomId> sceneRoom;
+    std::optional<FloorView> floorView;
+    if (const auto floorId = args->value("floor")) {
+        if (args->value("room")) {
+            return usageError(context, "--room and --floor exclude each other: --scene writes a room or a floor");
+        }
+        const bool held = std::any_of(plan->floors.begin(), plan->floors.end(),
+                                      [&](const world::Floor& floor) { return floor.id == *floorId; });
+        if (!held) {
+            return usageError(context, fmt::format("--floor: the plan holds no floor {}", *floorId));
+        }
+        std::optional<std::filesystem::path> scenePath;
+        if (const auto scene = args->value("scene")) {
+            scenePath = core::pathFromUtf8(*scene);
+        }
+        floorView = buildFloor(context, *plan, *floorId, scenePath);
+        if (!floorView) {
+            return ExitCode::RuntimeFailure;
+        }
+    }
     if (const auto roomText = args->value("room")) {
         if (!args->value("scene")) {
             return usageError(context, "--room names the room whose scene --scene writes");
@@ -269,7 +400,7 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         }
         sceneRoom = std::move(*room);
     }
-    if (const auto scenePath = args->value("scene")) {
+    if (const auto scenePath = args->value("scene"); scenePath && !floorView) {
         if (!sceneRoom) {
             if (plan->rooms.empty()) {
                 context.err.writeLine(fmt::format("{}: the plan has no room, so no scene", kName));
@@ -296,7 +427,13 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         if (args->has("placements")) {
             json = listingJson(*plan, std::move(json));
         }
-        if (const auto scenePath = args->value("scene")) {
+        if (floorView) {
+            json["floorScene"] = floorJson(floorView->build);
+            if (const auto scenePath = args->value("scene")) {
+                json["scene"] = *scenePath;
+                json["sceneFloor"] = floorView->build.hall.floor;
+            }
+        } else if (const auto scenePath = args->value("scene")) {
             json["scene"] = *scenePath;
             json["sceneRoom"] = sceneRoom->toString();
         }
@@ -307,6 +444,10 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
                                               read->lifted() ? " (schema 1, lifted into the building)" : ""));
         if (args->has("placements")) {
             results += listingText(*plan);
+        }
+        if (floorView) {
+            results += floorText(floorView->build);
+            results += floorView->sceneLine;
         }
         if (sceneLine) {
             results += *sceneLine;

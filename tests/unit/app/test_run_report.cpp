@@ -67,6 +67,13 @@ RunReport fullReport() {
     pose.pitchDeg = -6.0000005f;
     report.finalCamera = pose;
     report.selfCheck = rv::app::SelfCheckRecord{rv::app::SelfCheck::Bloom, true, "emitter keeps 98.6% of its energy"};
+    rv::app::SceneAreasRecord areas;
+    areas.areas = 3;
+    areas.area = "room:snes";
+    areas.lights = {"room:snes/fx:hero.key-light", "room:snes/fx:room.pendant"};
+    areas.keyLight = "room:snes/fx:hero.key-light";
+    areas.changes = {{0, "hall:gen4"}, {170, "room:snes"}};
+    report.sceneAreas = areas;
     return report;
 }
 
@@ -159,6 +166,7 @@ TEST_CASE("app/run_report: a full report reads back field for field", "[app][run
     CHECK(parsed->instanceCapacity == report.instanceCapacity);
     CHECK(parsed->screenshot == report.screenshot);
     CHECK(parsed->selfCheck == report.selfCheck);
+    CHECK(parsed->sceneAreas == report.sceneAreas);
     // The final pose reads back bit for bit, so that --spawn of it reproduces the view.
     CHECK(parsed->finalCamera == report.finalCamera);
 }
@@ -174,7 +182,8 @@ TEST_CASE("app/run_report: optional parts are left out and read back as absent",
     const std::string text = rv::app::formatRunReport(report);
     const nlohmann::json json = nlohmann::json::parse(text);
     for (const char* key :
-         {"failure", "context", "debugMessages", "glSelfTest", "lastView", "screenshot", "finalCamera", "selfCheck"}) {
+         {"failure", "context", "debugMessages", "glSelfTest", "lastView", "screenshot", "finalCamera", "selfCheck",
+          "sceneAreas"}) {
         CAPTURE(key);
         CHECK_FALSE(json.contains(key));
     }
@@ -195,6 +204,7 @@ TEST_CASE("app/run_report: optional parts are left out and read back as absent",
     CHECK_FALSE(parsed->screenshot.has_value());
     CHECK_FALSE(parsed->finalCamera.has_value());
     CHECK_FALSE(parsed->selfCheck.has_value());
+    CHECK_FALSE(parsed->sceneAreas.has_value());
 }
 
 TEST_CASE("app/run_report: unknown keys are ignored, a newer writer may add some", "[app][run_report]") {

@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -180,6 +182,7 @@ TEST_CASE("render/light_packing: the first light that casts shadows is the key l
     PackedLights packed = rv::gl::packLights(lights, rv::scene::EnvironmentSetup{});
     CHECK_FALSE(packed.shadowLight.casts());
     CHECK(packed.shadowNote.empty());
+    CHECK_FALSE(packed.keyLight.has_value());
 
     // A spot light: its index in the block, its geometry for the shadow map and its shadow strength.
     Light key = pointLight("key", glm::vec3(-0.2f, 2.92f, -2.2f));
@@ -197,6 +200,7 @@ TEST_CASE("render/light_packing: the first light that casts shadows is the key l
     packed = rv::gl::packLights(lights, rv::scene::EnvironmentSetup{});
     REQUIRE(packed.shadowLight.casts());
     CHECK(packed.shadowNote.empty());
+    CHECK(packed.keyLight == std::optional<std::size_t>(1));
     CHECK(packed.shadowLight.index == 1);
     CHECK(packed.shadowLight.type == LightType::Spot);
     CHECK(packed.shadowLight.position == key.position);
@@ -234,6 +238,7 @@ TEST_CASE("render/light_packing: a point or dropped key light casts no shadow an
     spot.castsShadows = true;
     PackedLights packed = rv::gl::packLights(std::vector<Light>{bulb, spot}, rv::scene::EnvironmentSetup{});
     CHECK_FALSE(packed.shadowLight.casts());
+    CHECK(packed.keyLight == std::optional<std::size_t>(0)); // the key light, though it casts nothing
     CHECK(packed.shadowNote.find("'bulb'") != std::string::npos);
     CHECK(packed.shadowNote.find("point") != std::string::npos);
     CHECK(packed.dropped.empty()); // the bulb still lights the scene
@@ -306,4 +311,65 @@ TEST_CASE("render/light_packing: a directional key light without shadow casters 
     const std::string pointNote = packed.shadowNote;
     rv::gl::requireShadowCasters(packed, std::vector<Light>{bulb}, rv::core::Aabb{});
     CHECK(packed.shadowNote == pointNote);
+}
+
+TEST_CASE("render/light_packing: a selection packs the lights it names, its first caster the key light",
+          "[render][lights][shadow][areas]") {
+    // I4 step 3: the lights of the area that holds the eye (scene::AreaLighting's selection, in the scene's order).
+    Light otherKey = pointLight("other key", glm::vec3(10.0f, 2.9f, 0.0f));
+    otherKey.type = LightType::Spot;
+    otherKey.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    otherKey.castsShadows = true;
+    Light key = otherKey;
+    key.name = "key";
+    key.position = glm::vec3(-10.0f, 2.9f, 0.0f);
+    const std::vector<Light> lights{otherKey, pointLight("a", glm::vec3(1.0f, 2.0f, 0.0f)), key,
+                                    pointLight("b", glm::vec3(2.0f, 2.0f, 0.0f))};
+    const std::vector<std::uint32_t> selection{1, 2, 3};
+    const PackedLights packed = rv::gl::packLights(lights, selection, rv::scene::EnvironmentSetup{});
+    REQUIRE(packed.uniforms.punctualLightCount == 3);
+    CHECK(packed.uniforms.punctualLights[0].position == lights[1].position);
+    CHECK(packed.uniforms.punctualLights[1].position == key.position);
+    CHECK(packed.uniforms.punctualLights[2].position == lights[3].position);
+    REQUIRE(packed.shadowLight.casts());
+    CHECK(packed.shadowLight.index == 1);
+    CHECK(packed.shadowLight.position == key.position);
+    CHECK(packed.keyLight == std::optional<std::size_t>(2)); // its index in the scene's lights, not in the selection
+    CHECK(packed.dropped.empty());
+
+    // The whole list in its order packs as packLights() of the list; an index past the list is ignored.
+    const std::vector<std::uint32_t> all{0, 1, 2, 3, 9};
+    const PackedLights whole = rv::gl::packLights(lights, all, rv::scene::EnvironmentSetup{});
+    const PackedLights plain = rv::gl::packLights(lights, rv::scene::EnvironmentSetup{});
+    CHECK(whole.uniforms.punctualLightCount == plain.uniforms.punctualLightCount);
+    CHECK(whole.shadowLight.position == plain.shadowLight.position);
+    CHECK(whole.shadowLight.index == plain.shadowLight.index);
+
+    // A dropped light is named by its index in the scene's list.
+    std::vector<Light> broken = lights;
+    broken[3].name.clear();
+    broken[3].intensity = -1.0f;
+    const PackedLights withDropped = rv::gl::packLights(broken, selection, rv::scene::EnvironmentSetup{});
+    REQUIRE(withDropped.dropped.size() == 1);
+    CHECK(withDropped.dropped[0].name == "#3");
+    CHECK(rv::gl::lightName(broken[3], 3) == "#3");
+    CHECK(rv::gl::lightName(lights[3], 3) == "b");
+
+    // A selection whose key light is a directional light without casters: the note names the selection's key light,
+    // not the scene's first caster.
+    Light westSun;
+    westSun.name = "west sun";
+    westSun.type = LightType::Directional;
+    westSun.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    westSun.castsShadows = true;
+    Light eastSun = westSun;
+    eastSun.name = "east sun";
+    const std::vector<Light> suns{westSun, eastSun};
+    const std::vector<std::uint32_t> east{1};
+    PackedLights sunlit = rv::gl::packLights(suns, east, rv::scene::EnvironmentSetup{});
+    CHECK(sunlit.keyLight == std::optional<std::size_t>(1));
+    rv::gl::requireShadowCasters(sunlit, suns, rv::core::Aabb{});
+    CHECK_FALSE(sunlit.shadowLight.casts());
+    CHECK(sunlit.shadowNote.find("'east sun'") != std::string::npos);
+    CHECK(sunlit.shadowNote.find("'west sun'") == std::string::npos);
 }

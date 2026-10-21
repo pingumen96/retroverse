@@ -58,12 +58,27 @@ build/rvdata`).
   `after`), `catalog.lists` (the waits of the lists), `gpuPasses` in `frameTimes` and in every phase (`shadow`,
   `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
   reported them; I3 step 17b), and in `lastView` the static instance groups (`staticGroups`), `outlinedInstances` and
-  `gpuMilliseconds.outline`, only when the view has them. Phases opened by the code: `refresh`, `coverLoad`,
-  `animation`, and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
+  `gpuMilliseconds.outline`, only when the view has them; since I4 step 3, for a scene with areas, `sceneAreas`
+  (`areas`, the `area` that held the eye at the last view, the `lights` packed for it by name and its `keyLight`, and
+  `changes`, the area at the first view and each change with its frame). Phases opened by the code: `refresh`,
+  `coverLoad`, `animation`, and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
   phases, CPU sections and GPU memory at the end. Read it instead of the log in scripts and tests.
 - `--scene <name|file>`: a name loads `<asset root>/style_tests/reference_scenes/<name>.json` (default
   `m0_testroom`; also `material_test`, `instancing_stress`, `instancing_growth`), anything with a path separator or
   `.json` is a file. Scene objects can name glTF models (`"model": "<asset-relative path>"`, loaded once per path).
+  A scene file may hold `"areas"` (I4 step 3, ADR-0013 §9; `rv/scene/scene_description.hpp`): parts of the scene,
+  each an `id` and `boxes` ({`min`, `max`} in meters), whose lights are their own; every light then names its
+  `"area"`. Each frame the app finds the area that holds the walker's eye (the first holding it, else the last one
+  held) and the renderer packs only that area's lights: its key light (its first light with `castsShadows`) shadowed,
+  its other point and spot lights nearest the eye up to the 16 the block holds; the other areas get the ambient only
+  (`rv/scene/scene_areas.hpp`). The log names every area's key light at load, or why it casts no shadow (`Scene
+  '<name>', area '<id>': key light ...`), and each area the eye enters; the run report's `sceneAreas.keyLight` and the
+  developer overlay's Lights panel name the key light of the area that holds the eye. A scene without areas packs all
+  its lights in list order as before. A floor's scene
+  (`retroverse-cli worldplan show --floor <id> --scene <file>`, `docs/reference/cli.md`) has an area per room (its
+  interior and its doorway's passage) and one for the hall (`hall:<floor>`); its camera stands in front of the
+  elevator facing east, and the rooms' doorways are open onto the hall (their stops left out), so the walker can walk
+  from the elevator into any room.
 - `--model <file.gltf|.glb>` (not with `--scene`): model viewer, the model at the origin with a three-point light rig
   and a camera framing its bounds from the front right and above, on a dark mid-grey background (about sRGB 61, so
   dark and light models both stand out), without bloom or vignette; a file that cannot be loaded is shown as the
@@ -219,15 +234,15 @@ build/rvdata`).
   Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the shadow map, the
   depth pre-pass, the ambient occlusion, the scene pass, the post-processing and the outline, what the last view drew
   with its static groups' draw calls, instances and clusters, GPU resources, the GPU memory per kind now and at its
-  peak, the hero CRT's "Video" section, the room's "Collection" section: layers resident, the cache, the hero
-  textures), Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision
-  off = noclip, reset to the scene camera), Lights (the key light, every scene light with its shadow flag and strength,
-  the background and the ambient, live), Materials (base color, metallic, roughness, emissive strength, live and never
-  saved), Rendering (debug line kinds, wireframe, vsync, the key light's shadow on/off with its slope and constant bias
-  and normal offset, ambient occlusion on/off with radius and intensity, post-processing: exposure, bloom strength and
-  radius, vignette, all live and never saved; shader reload with the last compile errors), Log (level filter,
-  autoscroll) and Scene (the objects, with "go to", which frames the object in the part of the view the panels leave
-  visible). The default layout widens its side columns with the display scale (at least 18 and 22 font sizes).
+  peak, the hero CRT's "Video" section, the room's "Collection" section: layers resident, the cache, the hero textures),
+  Camera (feet, yaw, pitch, FOV, speeds, mouse sensitivity, invert Y, collision off = noclip, reset to the scene
+  camera), Lights (the key light, in a scene with areas the eye's area's, every scene light with its shadow flag and
+  strength, the background and the ambient, live), Materials (base color, metallic, roughness, emissive strength, live
+  and never saved), Rendering (debug line kinds, wireframe, vsync, the key light's shadow on/off with its slope and
+  constant bias and normal offset, ambient occlusion on/off with radius and intensity, post-processing: exposure, bloom
+  strength and radius, vignette, all live and never saved; shader reload with the last compile errors), Log (level
+  filter, autoscroll) and Scene (the objects, with "go to", which frames the object in the part of the view the panels
+  leave visible). The default layout widens its side columns with the display scale (at least 18 and 22 font sizes).
   Interactive runs keep the layout in `<user data>/config/imgui.ini` (delete it for the default layout); frame-limited
   runs always start from the default layout and save nothing, so overlay screenshots never depend on earlier runs. The
   overlay sees every event first and keeps what it uses (a click on a panel, keys while a value is edited, so Esc in a

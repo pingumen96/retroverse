@@ -10,6 +10,13 @@ What `tests/unit/world/test_plan_scene.cpp` compares (I3 step 10a), in Debug and
 - `plan-57-seed-102938.scene.json` and `plan-57-seed-102938.collection.json`: the same two documents whole for one plan
   (44 featured titles, 12 in the hero band, one spine-out title; dressing of every kind), for review.
 
+- `building-esde-seed-102938.floors.json` (I4 step 3, `tests/unit/world/test_floor_scene.cpp`): for every floor of the
+  golden building `../golden/building-esde-seed-102938.json`, the SHA-256 of its floor scene (`world::toFloorSceneFile`,
+  written as `world::sceneFileText` writes it) with the counts of objects, lights, areas, rooms, the hall's lights and
+  walls and bare dressed spans; `building-esde-seed-102938.gen4.scene.json` that floor's scene whole (the SNES room on
+  its floor, the hall, the elevator), for review. `$env:RV_UPDATE_GOLDEN = '1'; build/msvc-x64-debug/bin/rv_tests.exe
+  "world/floor: golden*"` rewrites them.
+
 The layouts take invented titles (`tests/unit/world/plan_scene_support.hpp`: "Title <n>" in the games' order, every
 seventh game unavailable, every thirteenth missing). Nothing here comes from a real library.
 

@@ -49,13 +49,16 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   newer schema refused, a hand-edited plan refused; integers only: millimetres, hundredths of a degree, permille), the
   building (I4 step 1: `building.hpp`, `assets/world/building.json` and `systems.json`, `classify`, the floor layout's
   placement functions; `lift.hpp`, the schema-1 lift; `generateBuilding` and `updateBuilding`; since step 2
-  `media_family.hpp`'s label quad, cover fit and family fixtures, `withFamilyFixtures`), `WorldConfig` with the preset
-  and `world.json`, the readers of
+  `media_family.hpp`'s label quad, cover fit and family fixtures, `withFamilyFixtures`; since step 3
+  `floor_layout.hpp`, a floor's derived hall, its rooms' doorways and walls on it, its areas and `roomToFloorMatrix`,
+  and `floor_scene.hpp`, a floor's scene, `loadFloorSceneData`, `toFloorSceneFile`, `floorCollectionLayout`),
+  `WorldConfig` with the preset and `world.json`, the readers of
   `assets/world` (errors name `<file>:<line>` and a JSON pointer; 1a); `selectRoom` and `title_key.hpp` (the room's
   titles, `title-key/1`, representatives by region rank, status and revision, priority; 2); `generation.hpp`
   (`generate`, `loadWorldData`), `capacity.hpp`, `seeds.hpp`, the plan's lights (3); `validation.hpp` (`validatePlan`,
-  34 rules since I4 step 1) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and `slot_navigation.hpp` (the D-pad
-  steps; 7); `world_store.hpp` (the world's files and lock, `savePlan`), `incremental.hpp` (`update`), `overrides.hpp`
+  37 rules since I4 step 3) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and
+  `slot_navigation.hpp` (the D-pad steps; 7); `world_store.hpp` (the world's files and lock, `savePlan`),
+  `incremental.hpp` (`update`), `overrides.hpp`
   (pins: protected, never applied) and `where_is.hpp` (`PlanIndex`; 9); `scene_builder.hpp` (`toSceneFile`,
   `toSceneDescription`, `loadSceneData`) and `collection_layout.hpp` (items with transforms, pick ids, layer keys and
   flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme pack as
@@ -66,7 +69,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   object fallbacks, one warning each; 1b) and the collection's layers (5, GPU-free, safe on the worker pool:
   `cover_fit`, `mip_chain`, `bc1`, `text_raster`,
   `collection_labels`, `rvtex`, `derived_texture_cache`); `rv_scene` the 80-byte `InstanceData` (0c), the eased
-  `PoseAnimator` (7) and the static groups' layout and the outline's geometry (`instance_clusters.hpp`, 8); `rv_catalog`
+  `PoseAnimator` (7) and the static groups' layout and the outline's geometry (`instance_clusters.hpp`, 8), and since
+  I4 step 3 the scene's areas (`scene_areas.hpp`: the area that holds the eye, the lights a view packs there);
+  `rv_catalog`
   `RoomEntry`, `RoomSnapshot` and `ICatalogQuery::roomEntries` (1a), which `SqliteCatalogQuery` answers in one read with
   the media left unknown (2); `rv_esde` `checkRoomMedia` and `roomMediaPaths` (`media_resolver.hpp`, 2); `rv_render`
   the texture arrays (`Texture2DArray`, `CollectionArrays`; their layout, allocator and budget in

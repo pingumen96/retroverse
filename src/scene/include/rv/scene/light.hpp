@@ -55,6 +55,8 @@ struct Light {
     /// [0, 1]: share of the light's radiance its shadows take away (1: none of this light reaches into its shadows,
     /// which the other lights and the ambient still light; 0: no visible shadow).
     float shadowStrength = 1.0f;
+    /// The id of the scene area it lights (scene_description.hpp's "areas"); empty in a scene without areas.
+    std::string area;
 };
 
 } // namespace rv::scene

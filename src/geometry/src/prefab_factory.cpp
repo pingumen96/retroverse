@@ -245,7 +245,7 @@ Expected<ProceduralPrefab> roomShellFromJson(const Json& params) {
             p.doorway.reset();
         } else {
             DoorwayParams door;
-            ParamReader d("room_shell.doorway", *doorway, {"wall", "offset", "width", "height"});
+            ParamReader d("room_shell.doorway", *doorway, {"wall", "offset", "width", "height", "stop"});
             d.readEnum("wall", door.wall,
                        {{"north", WallSide::North},
                         {"south", WallSide::South},
@@ -254,6 +254,7 @@ Expected<ProceduralPrefab> roomShellFromJson(const Json& params) {
             d.read("offset", door.offset);
             d.read("width", door.width);
             d.read("height", door.height);
+            d.read("stop", door.stop);
             if (!d.ok()) {
                 return propagate(d.error());
             }

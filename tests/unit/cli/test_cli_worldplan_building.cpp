@@ -409,6 +409,45 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     }
     CHECK(signs == std::vector<std::string>{"POCKET GAMES"});
 
+    // I4 step 3: a floor's hall and rooms, and its scene: the handheld floor's three rooms on two rows along its hall.
+    const RunResult floor = session.run({"worldplan", "show", "--floor", "handheld"});
+    INFO(floor.err);
+    REQUIRE(floor.code == ExitCode::Ok);
+    CHECK(contains(floor.out, "Floor handheld: hall 21600 x 3000 mm, 3200 mm high, 4 light(s) every 6000 mm, the "
+                              "elevator at its west end; 3 room(s)\n"));
+    CHECK(contains(floor.out, "  room:gb  north row, doorway x 6850 to 8450 mm onto the hall\n"));
+    CHECK(contains(floor.out, "  room:pocketlab  south row, doorway x 6850 to 8450 mm onto the hall\n"));
+    CHECK(contains(floor.out, "  room:pokemini  north row, doorway x 16150 to 17750 mm onto the hall\n"));
+    const std::filesystem::path floorScene = session.dir.file("handheld.scene.json");
+    const RunResult floorJson =
+        session.run({"worldplan", "show", "--floor", "handheld", "--scene", rv::core::pathToUtf8(floorScene), "--json"});
+    INFO(floorJson.err);
+    REQUIRE(floorJson.code == ExitCode::Ok);
+    const nlohmann::json shownFloor = nlohmann::json::parse(floorJson.out);
+    CHECK(shownFloor["sceneFloor"] == "handheld");
+    CHECK(shownFloor["floorScene"]["hall"]["lengthMm"] == 21600);
+    CHECK(shownFloor["floorScene"]["rooms"].size() == 3);
+    const nlohmann::json handheldScene = nlohmann::json::parse(readText(floorScene));
+    CHECK(handheldScene["name"] == "floor:handheld");
+    CHECK(handheldScene["areas"].size() == 4);
+    std::vector<std::string> floorSigns;
+    for (const nlohmann::json& object : handheldScene["objects"]) {
+        const auto textures = object.find("textures");
+        if (textures != object.end() && textures->contains("picture") &&
+            (*textures)["picture"].value("pattern", "") == "sign") {
+            floorSigns.push_back((*textures)["picture"].value("title", ""));
+        }
+    }
+    // The rooms' signs (gb's, the custom system's by gb's row, pokemini's) and the floor's by its elevator.
+    std::sort(floorSigns.begin(), floorSigns.end());
+    CHECK(floorSigns == std::vector<std::string>{"HANDHELDS", "POCKET GAMES", "POCKET GAMES", "POCKET GAMES"});
+    // --floor names a floor of the plan, and not with --room.
+    CHECK(session.run({"worldplan", "show", "--floor", "gen7"}).code == ExitCode::UsageError);
+    const RunResult both = session.run(
+        {"worldplan", "show", "--floor", "gen4", "--room", "room:snes", "--scene", rv::core::pathToUtf8(floorScene)});
+    CHECK(both.code == ExitCode::UsageError);
+    CHECK(contains(both.err, "--room and --floor exclude each other"));
+
     // additions/: five titles more for snes and psx, 24 for pokemini (past 30), and the new megadrive.
     REQUIRE(fixture->applyOverlay("additions"));
     const RunResult again = session.run({"import"});

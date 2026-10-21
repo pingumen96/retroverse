@@ -64,10 +64,13 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   focus: ...`), inspection (`gpu.world inspect: ...`), the card (`gpu.world card: ...`), the media viewer and
   Informazioni (`gpu.media viewer: ...`), launching from the room and "Mostra nella stanza" (`gpu.world launch: ...`),
   the look's probes (`gpu.world look: ...`), the media families' rooms of the `esde/building` fixture through
-  `--room-system` (`gpu.world families: ...`, I4 step 2) and the room goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see
-  "Visual verification"); the room's test files repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run
-  by hand in Release, `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its
-  covers cold and warm, the animations' frame budget and the benchmark path (`[benchmark]`,
+  `--room-system` (`gpu.world families: ...`, I4 step 2), the floors of the `esde/building` fixture (`gpu.world
+  floor: ...`, I4 step 3: `tests/smoke/scenes/two_areas.json` from each area and without areas, each area's lights and
+  its key light's shadow; gen4's walk from the elevator into room:snes; the ground floor's lobby) and the room
+  goldens (`gpu.golden/G02` ... `G10`, `[golden_room]`, see "Visual verification"); the room's test files repeat a
+  few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
+  `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
+  the animations' frame budget and the benchmark path (`[benchmark]`,
   `tests/input_scripts/bench_snes_room.json`: 1,230 frames at 1920 x 1080 with `--no-vsync` and `--fixed-dt 0.016667`,
   frame p99 at most 33.3 ms and p50 at most 16.7 ms in Release, the acceptable limits of `docs/roadmap.md`; the GPU
   passes printed). Every clean run is also

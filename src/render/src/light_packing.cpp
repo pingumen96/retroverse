@@ -18,10 +18,6 @@ namespace {
 /// Shortest range a light may have; avoids a division by zero in the window.
 constexpr float kMinRange = 0.001f;
 
-std::string lightName(const scene::Light& light, std::size_t index) {
-    return light.name.empty() ? fmt::format("#{}", index) : light.name;
-}
-
 bool isFiniteNonNegative(float value) noexcept {
     return std::isfinite(value) && value >= 0.0f;
 }
@@ -78,6 +74,10 @@ ShadowLight keyLightOf(const scene::Light& light, std::int32_t index, const glm:
 
 } // namespace
 
+std::string lightName(const scene::Light& light, std::size_t index) {
+    return light.name.empty() ? fmt::format("#{}", index) : light.name;
+}
+
 glm::vec2 spotConeScaleOffset(float innerConeDeg, float outerConeDeg) noexcept {
     const float cosOuter = std::cos(core::degreesToRadians(outerConeDeg));
     const float cosInner = std::max(std::cos(core::degreesToRadians(innerConeDeg)), cosOuter);
@@ -85,7 +85,12 @@ glm::vec2 spotConeScaleOffset(float innerConeDeg, float outerConeDeg) noexcept {
     return {scale, -cosOuter * scale};
 }
 
-PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment) {
+namespace {
+
+/// packLights() over the lights at `indexOf(0)`, ..., `indexOf(count - 1)` of `lights`.
+template <class IndexOf>
+PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count, IndexOf indexOf,
+                         const scene::EnvironmentSetup& environment) {
     PackedLights packed;
     LightsUniforms& block = packed.uniforms;
     bool directionalUsed = false;
@@ -98,11 +103,18 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
         }
         packed.dropped.push_back({name, std::move(reason)});
     };
-    for (std::size_t index = 0; index < lights.size(); ++index) {
+    for (std::size_t position = 0; position < count; ++position) {
+        const std::size_t index = indexOf(position);
+        if (index >= lights.size()) {
+            continue;
+        }
         const scene::Light& light = lights[index];
         // The first light that asks for shadows is the key light, whether or not it can have them.
         const bool key = light.castsShadows && !keyLightSeen;
         keyLightSeen = keyLightSeen || light.castsShadows;
+        if (key) {
+            packed.keyLight = index;
+        }
         if (const auto reason = rejection(light)) {
             drop(light, index, *reason, key);
             continue;
@@ -157,15 +169,27 @@ PackedLights packLights(std::span<const scene::Light> lights, const scene::Envir
     return packed;
 }
 
+} // namespace
+
+PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment) {
+    return packIndexed(
+        lights, lights.size(), [](std::size_t position) { return position; }, environment);
+}
+
+PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
+                        const scene::EnvironmentSetup& environment) {
+    return packIndexed(
+        lights, selection.size(), [selection](std::size_t position) { return static_cast<std::size_t>(selection[position]); },
+        environment);
+}
+
 void requireShadowCasters(PackedLights& packed, std::span<const scene::Light> lights, const core::Aabb& casterBounds) {
     if (!packed.shadowLight.casts() || packed.shadowLight.type != scene::LightType::Directional ||
         !casterBounds.isEmpty()) {
         return;
     }
-    const auto key =
-        std::find_if(lights.begin(), lights.end(), [](const scene::Light& light) { return light.castsShadows; });
-    const std::string name =
-        key != lights.end() ? lightName(*key, static_cast<std::size_t>(key - lights.begin())) : std::string("?");
+    const std::optional<std::size_t> key = packed.keyLight;
+    const std::string name = key && *key < lights.size() ? lightName(lights[*key], *key) : std::string("?");
     packed.shadowNote = fmt::format("directional light '{}' casts shadows but no object does: its map is fitted to "
                                     "the objects that cast shadows",
                                     name);

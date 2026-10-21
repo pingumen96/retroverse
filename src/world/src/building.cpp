@@ -156,9 +156,18 @@ Expected<BuildingData> parseBuildingData(std::string_view text, std::string_view
     (void)reader.integer("schemaVersion", 1, 1);
     const Json& floors = reader.array("floors");
     detail::forEachElement(floors, "/floors", [&](const Json& element, const std::string& pointer) {
-        const ObjectReader floor(document, element, pointer, {"generations", "id", "kinds"});
+        const ObjectReader floor(document, element, pointer, {"generations", "id", "kinds", "sign"});
         FloorSpec spec;
         spec.id = floor.dataId("id");
+        if (!document.failed() && floor.has("sign")) {
+            spec.sign = floor.checkedString("sign", isSignText,
+                                            "1 to 32 printable ASCII characters without a space at either end");
+        } else if (!document.failed()) {
+            // The id in uppercase (a data id: lowercase letters, digits, '-' and '_'), within a sign's length.
+            spec.sign = spec.id.substr(0, kMaxSignTextLength);
+            std::transform(spec.sign.begin(), spec.sign.end(), spec.sign.begin(),
+                           [](char c) { return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c; });
+        }
         const Json& kinds = floor.array("kinds");
         detail::forEachElement(kinds, floor.pointer("kinds"), [&](const Json& kind, const std::string& kindPointer) {
             const std::string kindText = detail::readString(document, kind, kindPointer);

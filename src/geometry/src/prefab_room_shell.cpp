@@ -293,11 +293,14 @@ ProceduralPrefab assemble(const RoomShellParams& p) {
 
         const float inner = wall.interior;
         const float outer = wall.interior + thickness;
-        // Nothing lies beyond the opening (no floor): a thin stop in its outer face lets the walker step into the
-        // doorway but not out of the room. It is a box of its own, so connecting a room later removes only this one.
-        const Placement stop = onWall(wall, open0, open1, 0.0f, door.height, outer - kDoorStopDepth, outer);
-        colliders.push_back(
-            PrefabCollider{wallId + "_doorway", core::Aabb::fromCenterHalfExtents(stop.center, 0.5f * stop.size)});
+        // Nothing lies beyond the opening of a room standing alone (no floor): a thin stop in its outer face lets the
+        // walker step into the doorway but not out of the room. It is a box of its own, so a doorway onto a hall
+        // (DoorwayParams::stop false) leaves out only this one.
+        if (door.stop) {
+            const Placement stop = onWall(wall, open0, open1, 0.0f, door.height, outer - kDoorStopDepth, outer);
+            colliders.push_back(
+                PrefabCollider{wallId + "_doorway", core::Aabb::fromCenterHalfExtents(stop.center, 0.5f * stop.size)});
+        }
 
         const FaceMask jambFaces = FaceMask::All & ~FaceMask::NegY & ~FaceMask::PosY;
         const Placement leftJamb = onWall(wall, rough0, open0, 0.0f, door.height, inner, outer);

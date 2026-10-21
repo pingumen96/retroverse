@@ -51,6 +51,7 @@
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/gpu_memory.hpp>
+#include <rv/render/light_packing.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/shadow_settings.hpp>
 #include <rv/render/texture_cache.hpp>
@@ -401,6 +402,8 @@ struct RetroverseApp::State {
     /// content and the overlay, which refer to it.
     std::unique_ptr<SceneGraphics> graphics;
     std::optional<SceneInstance> scene;
+    /// The area that held the eye at the first view of a scene with areas, then each change (I4 step 3).
+    std::vector<SceneAreaChange> areaChanges;
     /// The hero CRT's screen service (I3 step 11): its one video decoder and the pictures of its fallback chain on the
     /// scene's first CRT; none without a CRT (the model viewer). Destroyed before the graphics, whose material registry
     /// shows its pictures.
@@ -491,6 +494,41 @@ struct RetroverseApp::State {
                              steps[index].fromFrame, steps[index].toFrame, freeRoam->describePose());
             }
         }
+    }
+
+    /// In a scene with areas (a floor), the lights of the area that holds this frame's eye (I4 step 3); each change of
+    /// area is recorded for the run report.
+    void followSceneAreas(std::uint64_t frame) {
+        if (!scene || scene->areas().empty()) {
+            return;
+        }
+        (void)scene->followEye(camera.position());
+        if (areaChanges.empty() || areaChanges.back().area != scene->areaId()) {
+            areaChanges.push_back(SceneAreaChange{frame, std::string(scene->areaId())});
+            spdlog::info("Frame {}: the eye is in the area '{}' ({} light(s) packed)", frame, scene->areaId(),
+                         scene->lights().punctualLightCount);
+        }
+    }
+
+    /// The scene's areas for the run report: the area that held the eye at the last view and its lights.
+    [[nodiscard]] std::optional<SceneAreasRecord> sceneAreasRecord() const {
+        if (!scene || scene->areas().empty()) {
+            return std::nullopt;
+        }
+        SceneAreasRecord record;
+        record.areas = scene->areas().size();
+        record.area = std::string(scene->areaId());
+        const std::span<const scene::Light> lights = scene->sceneLights();
+        for (const std::uint32_t index : scene->areaSelection()) {
+            record.lights.push_back(gl::lightName(lights[index], index));
+        }
+        // The light the views' shadow map came from: the packed key light, when it casts.
+        if (const std::optional<std::size_t> key = scene->keyLight();
+            key && *key < lights.size() && scene->shadowLight().casts()) {
+            record.keyLight = gl::lightName(lights[*key], *key);
+        }
+        record.changes = areaChanges;
+        return record;
     }
 
     /// The view of the frame: the scene from the walker's camera, with the overlay's rendering toggles.
@@ -864,7 +902,7 @@ struct RetroverseApp::State {
         // Tabs of one node; the first is shown.
         devUi->addPanel(devui::makeLightsPanel({[this] { return scene->sceneLights(); }, scene->environment(),
                                                 scene->droppedLights(),
-                                                scene->shadowLight(), scene->shadowNote(),
+                                                scene->shadowLight(), scene->keyLight(), scene->shadowNote(),
                                                 [this] { scene->applyLighting(); }}),
                         devui::DockSlot::Right);
         devUi->addPanel(devui::makeMaterialsPanel(
@@ -1278,6 +1316,7 @@ void RetroverseApp::onRender(AppContext& context) {
         return;
     }
     State& state = *m_state;
+    state.followSceneAreas(context.frameIndex());
     state.graphics->renderFrame(context, state.view(), state.screenshotRequested);
     state.screenshotRequested = false;
     if (state.world) {
@@ -1336,6 +1375,7 @@ void RetroverseApp::onShutdown(AppContext& context) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }
         context.report().finalCamera = m_state->freeRoam->pose();
+        context.report().sceneAreas = m_state->sceneAreasRecord();
         m_state->graphics->finishRun(context);
     }
     m_state.reset();

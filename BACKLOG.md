@@ -440,3 +440,10 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
   reads the template's current version and the prefabs as they are, so the app shows the shell with the `failed`
   notice (as I3 did for the same changes). ADR-0013 §4 keeps an old template version's file while a plan names it;
   `loadRoomTemplate` could read the version a room names (`docs/i4/step-1.md`).
+- **The halls' look (I4 step 3):** a floor's hall is plain boxes (walls, floor, ceiling) without baseboards or trim,
+  their textures restarting at each box, lit by the lighting profile's pendant style at a fixed 6 m pitch; it reads
+  dim but legible. The styling pass: trim and baseboards, a hall light role in the profiles, the lobby's displays
+  (`docs/i4/step-3.md`).
+- **Light seen through doorways (I4 step 3):** the renderer packs the lights of the area that holds the eye only, so a
+  room seen from the hall (and the hall from a room) shows its ambient light alone (ADR-0013 §9's accepted cost). The
+  styling pass could add the neighbouring areas' nearest lights through open doorways within the 16.

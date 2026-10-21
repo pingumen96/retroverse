@@ -906,6 +906,33 @@ struct GpuMemoryRecord {
 /// The sections that ran, from `timers` (core::CpuTimers::summaries(): by name).
 [[nodiscard]] std::vector<CpuSectionRecord> cpuSectionRecords(const core::CpuTimers& timers);
 
+/// When the eye entered an area of a scene with areas (SceneAreasRecord::changes).
+struct SceneAreaChange {
+    /// The frame whose view first packed the area's lights.
+    std::uint64_t frame = 0;
+    std::string area;
+
+    bool operator==(const SceneAreaChange&) const = default;
+};
+
+/// The areas of a scene with areas (I4 step 3, ADR-0013 §9: a floor's rooms and hall): the area that held the eye at
+/// the last view and the lights packed for it, and every change of area during the run. Absent for a scene without
+/// areas.
+struct SceneAreasRecord {
+    /// The scene's areas.
+    std::size_t areas = 0;
+    /// The area that held the eye at the run's end.
+    std::string area;
+    /// The scene lights packed into the lights block for it (their names, "#<index>" for one without), in the
+    /// scene's order, and the one casting the shadows (empty for none).
+    std::vector<std::string> lights;
+    std::string keyLight;
+    /// The area at the first view, then each change, in order.
+    std::vector<SceneAreaChange> changes;
+
+    bool operator==(const SceneAreasRecord&) const = default;
+};
+
 /// What a run of an application built on AppHost did (retroverse.exe, retroverse-asset-preview), written as JSON by
 /// --run-report <file.json> when the run ends, whether it succeeded or failed (formatRunReport). Only the host writes
 /// it: a command line that does not parse, --help, --version and --write-fixture end before the host starts and write
@@ -971,6 +998,8 @@ struct RunReport {
     std::optional<SpawnPoint> finalCamera;
     /// The --self-check of the run.
     std::optional<SelfCheckRecord> selfCheck;
+    /// The areas of the scene shown (retroverse.exe; absent for a scene without areas).
+    std::optional<SceneAreasRecord> sceneAreas;
     /// The quick catalog; absent in runs without the product UI (the model viewer).
     std::optional<CatalogRecord> catalog;
     /// The launches from the quick catalog, in order.
