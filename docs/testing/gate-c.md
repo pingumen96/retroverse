@@ -21,7 +21,8 @@ RelWithDebInfo and Release without a warning, the unit tests and the GPU checks 
 - **Every golden**, in Debug and Release: G01, the SNES room's G02, G02s, G06, G07, G08a, G08b and G10
   ([gate-b.md](gate-b.md)) and the building's three (`tests/smoke/test_golden_room.cpp`, below): G11 the lobby, G12
   the jewel-case room, G13 a shared room; one row per golden and preset with its case's verdict (`comparison.txt`: a
-  pixel differs when a channel moves by more than 6/255, at most 0.5% may differ).
+  pixel differs when a channel moves by more than 6/255, at most 0.5% may differ), and a failed row for any of the
+  eleven that the run does not report (a case renamed, untagged or not discovered).
 - **The I4 checks**, per Debug and Release, one row per area, counted from the unit and GPU runs (a case counts in one
   area only; `scripts/gate.ps1`'s `$i4Areas`):
 
@@ -51,9 +52,9 @@ RelWithDebInfo and Release without a warning, the unit tests and the GPU checks 
   `build/msvc-x64-release/real-library/building` and runs `retroverse.exe` (Release, hidden) on it: `first` (no plan:
   the building planned), `again` (the plans' folder removed: planned again from nothing), `second` and `third` (the
   user's start, no lockstep, the quick catalog opened on frame 1), `whole` (the building stamp removed: the whole job on
-  the unchanged library), `computer-cold` and `computer-warm` (a start in the computer floor's largest room),
-  `ride-cold` and `ride-warm` (the derived covers emptied, then a ride from the lobby through the elevator and the
-  directory to that room and back with Map, as the user rides). The gate reads their reports into rows against the
+  the unchanged library), `busiest-cold` and `busiest-warm` (a start in the largest room of the busiest floor, the
+  one with the most placements in the plan), `ride-cold` and `ride-warm` (the derived covers emptied, then a ride from
+  the lobby through the elevator and the directory to that room and back with Map, as the user rides). The gate reads their reports into rows against the
   acceptable limits: the building planned twice with one plan (the test compares the files' SHA-256), an unchanged
   restart's building job skipped by its stamp within 3 s, NFR-01 to the lobby (5 s), the busiest floor's GPU memory
   (512 MiB), the rides (the view back within 10 s cold and 3 s warm) and the room that holds the walker after them
@@ -186,7 +187,7 @@ another GPU or driver. Each was looked at:
 |---|---|---|---|
 | G11 `g11_lobby_golden.png` | no `--start-room`: the floor scene's camera at the elevator's arrival point, facing east | The 6 m wide lobby with its oak floor, plain dark walls and one ceiling light in view; on the north side the arcade game room's open doorway, its floor lamp lit inside; the closed entrance doors (two wooden leaves) at the east end. No CRT is bound in the hall. | Functional, nothing broken: the hub reads as a hall with a way into the arcade room and the way out; dim (the hall's pendant style at a 6 m pitch), as I4's functional look accepts (BACKLOG "The halls"). |
 | G12 `g12_jewel_case_room_golden.png` | `--start-room room:psx`: the room's doorway camera on gen5 | The jewel-case room under its "CD HOME" sign: the 40 titles all face-out (fewer than the display slots and the hero band hold) as CD jewel cases with their square and portrait covers fitted to the square label, in the two lit display cases, the featured wall shelf and the hero band; the hero modules' other levels dressed (storage boxes, magazines); the CRT playing the clip held at 1.0 s with the console beside it; armchair, rug, lamps, posters, plant. | Functional and coherent with the SNES room's look (I3's template and theme); every cover in place, nothing interpenetrates. |
-| G13 `g13_shared_room_golden.png` | `--start-room area:shared:handheld`: the room's doorway camera on the handheld floor | The handheld floor's shared room under its "MORE GAMES" sign: pocketlab's 6 and pokemini's 8 titles as generic cases (one large case per display ledge, ten on the featured wall shelf), face-out with their covers; no console beside the CRT (a shared room has none), which shows its colour bars (no section has a clip). | Functional: a shared room reads as a room of its own; the generic cases are large for the ledges (a faithful family is I6's). |
+| G13 `g13_shared_room_golden.png` | `--start-room area:shared:handheld`: the room's doorway camera on the handheld floor | The handheld floor's shared room under its "MORE GAMES" sign: pocketlab's 6 and pokemini's 8 titles as generic cases, face-out with their covers, ten on the featured wall shelf right of the sign and four on the back tier of the left display case (`fx:dc01`, level 1, slots 1 to 4: the plan's 14 placements); the display cases' other spans carry the template's riser cards (I3 step 16: a card as wide as the empty slots, with an invented cover: "PIXEL PILOTS" on the left case's front tier, "TURBO TIDES" and "CRYSTAL CANYON" on the right case, which holds no game); no console beside the CRT (a shared room has none), which shows its colour bars (no section has a clip). | Functional: a shared room reads as a room of its own, its 14 titles in place, nothing interpenetrates. Among so few titles the riser cards' invented covers can be taken for games (BACKLOG "Shared and arcade rooms", I6). |
 
 ## Where ADR-0013's decisions are proven
 
@@ -248,7 +249,8 @@ directory you choose, which may not lie inside ES-DE's folders (the programs ref
 ./scripts/build.ps1 -Preset msvc-x64-release                                       # once
 $data = 'D:\RetroverseData'                                                         # any folder outside ES-DE's
 ./build/msvc-x64-release/bin/retroverse-cli.exe --data-dir $data library create     # finds ES-DE as ES-DE finds itself
-                                                                    # (or --home <ES-DE home> --install <ES-DE install>)
+# or: ... library create --home <dir> --install <ES-DE's install folder>, where <dir> holds ES-DE's home folder ES-DE
+#     (as ES-DE's own --home takes it: C:\Users\me for C:\Users\me\ES-DE)
 ./build/msvc-x64-release/bin/retroverse-cli.exe --data-dir $data import             # the catalog (again to refresh)
 ./build/msvc-x64-release/bin/retroverse.exe --data-dir $data --fullscreen           # the building, from the lobby
 ./build/msvc-x64-release/bin/retroverse-cli.exe --data-dir $data worldplan show     # its floors and rooms as text

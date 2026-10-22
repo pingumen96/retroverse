@@ -493,7 +493,9 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   the faithful families are I6's (`docs/i4/step-2.md`).
 - **Shared and arcade rooms (I4 step 4):** a sign per section of a shared room, the arcade cabinet in place of the
   arcade room's CRT, theme packs per floor, L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
-  "Deferred").
+  "Deferred"). In a shared room of few titles the display cases' riser cards (an invented cover across the empty
+  slots) outnumber the games there and read like games (G13: five cards beside four cases); plainer cards or other
+  dressing on a mostly empty case.
 
 ### Tests
 
