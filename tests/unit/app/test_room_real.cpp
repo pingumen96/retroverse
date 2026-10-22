@@ -195,7 +195,15 @@ void requireRoom(const rv::app::RunReport& report, std::string_view name) {
     REQUIRE(world.bound);
     CHECK(world.state == "room");
     CHECK(world.hardFindings == 0);
-    CHECK(world.items == world.placements);
+    // Every placement of the floor shown drawn (I4: the plan may hold other floors, as after the refresh, whose building
+    // update enters every other system of the library).
+    std::uint64_t floorPlacements = world.placements;
+    for (const rv::app::WorldFloorRecord& floor : world.floors) {
+        if (floor.id == world.floor) {
+            floorPlacements = floor.placed;
+        }
+    }
+    CHECK(world.items == floorPlacements);
     CHECK(world.skipped == 0);
     const rv::app::ResidencyRecord& residency = report.residency;
     REQUIRE(residency.bound);
@@ -380,7 +388,17 @@ TEST_CASE("app/room: the real snes room, its plan reproduced, its covers cold an
 
     // The whole library refreshed while the room shows, the quick catalog open (I3 step 18: NFR-01 with the room, the
     // refresh's frame times). The refresh imports every system of the library into this catalog (the snes rows as
-    // they are): the room's live update keeps every item where it stands.
+    // they are): the room's live update keeps every item where it stands. Since I4 step 6b the building's update after
+    // it enters every other system (new rooms and floors), so the plan file changes; the SNES room's content (its
+    // record, fixtures, placements, dressing, lights and unplaced games: ADR-0013 §5's content digest) must not.
+    const auto snesContent = [&] {
+        auto stored = rv::world::readStoredPlan(planFile);
+        REQUIRE(stored.has_value());
+        auto digest = rv::world::roomContentDigest(stored->plan, rv::world::RoomId::parse("room:snes").value());
+        REQUIRE(digest.has_value());
+        return *digest;
+    };
+    const std::string snesBefore = snesContent();
     std::vector<std::string> refreshArguments = unpacedFor("20000");
     refreshArguments.insert(refreshArguments.end(),
                             {"--refresh-library", "--input-script",
@@ -401,7 +419,11 @@ TEST_CASE("app/room: the real snes room, its plan reproduced, its covers cold an
         CHECK(update.moved == 0);
         CHECK(update.removed == 0);
     }
-    CHECK(fileSha256(planFile) == firstFileHash);
+    CHECK(snesContent() == snesBefore);
+    // The room's own reconciliation after the refresh (the stored room previewed first) moved nothing either.
+    if (refresh.world.reconcile) {
+        CHECK(refresh.world.reconcile->moved == 0);
+    }
 
     // The figures.
     const rv::app::WorldRecord& world = cold.world;

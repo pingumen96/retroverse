@@ -713,9 +713,13 @@ function Add-RealRoomRows([string]$roomDir, [string]$testLog) {
                 (Format-Ms $record.times.ms), $record.entries, $record.added, (@($live | ForEach-Object { $_.kind }) -join ', '),
                 $liveMoved) 0 'p99 <= 50 ms, 0 moves'
         $page = $refresh.catalog.times.firstPageMs
+        # The stored room shows first (the persisted start's preview); since I4 the refresh's building then enters the
+        # library's other systems, whose floor rebuilt around the room is the last shown.
+        $preview = if ($refresh.world.preview) { $refresh.world.preview.committedAtMs } else { $null }
         Add-Result 'NFR-01 with the room' ($(if ($null -ne $page -and [double]$page -lt 5000) { 'passed' } else { 'FAILED' })) `
-            ('the quick catalog''s first page {0} after the process started ({1} games; the room shown at {2})' -f
-                (Format-Ms $page), $refresh.catalog.games, (Format-Ms $refresh.residency.times.shownAtMs)) 0 '< 5,000 ms'
+            ('the quick catalog''s first page {0} after the process started ({1} games; the stored room shown at {2}, the floor last shown at {3})' -f
+                (Format-Ms $page), $refresh.catalog.games, (Format-Ms $preview),
+                (Format-Ms $refresh.residency.times.shownAtMs)) 0 '< 5,000 ms'
     }
     else {
         Add-Result 'Real room: refresh of the library' 'FAILED' "no refresh report, see $testLog" 0 'p99 <= 50 ms, 0 moves'
