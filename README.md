@@ -9,12 +9,15 @@ It is a native Windows application written in C++20 with OpenGL 4.5 and SDL3, wi
 does not emulate anything and never copies or rewrites the collection: ROMs, `gamelist.xml` metadata and media
 stay where ES-DE keeps them.
 
-> **Status:** milestones M0 (native foundations) and M1 (the ES-DE catalog and the launcher) are done but for their
-> manual sign-offs, and so is the I3 vertical slice (milestone M2): Retroverse reads your ES-DE library in place and
-> generates one room for its SNES games, one cartridge per title with its real cover, which you can walk up to, pull
-> out, inspect, read about and launch, while the CRT plays the selected game's clip. Gate B's automated checks pass
-> ([docs/testing/gate-b.md](docs/testing/gate-b.md)); its manual session awaits the user. Multi-room worlds come next
-> (I4, milestone M3). See [docs/roadmap.md](docs/roadmap.md).
+> **Status:** milestones M0 (native foundations), M1 (the ES-DE catalog and the launcher) and M2 (the SNES vertical
+> slice) are done. I4, the first part of milestone M3, builds the whole library into a building
+> ([ADR-0013](docs/decisions/ADR-0013-the-building.md)): every system in a room, one room per console, the small
+> systems sharing their floor's room, the arcade systems in the arcade room; one floor per console generation, a
+> handheld floor and a computer floor, joined by an elevator whose directory also lists your favourites and recent
+> games; the ground floor's lobby as the hub. Every item stands with its real cover, and you can walk up to it, pull it
+> out, inspect it, read about it and launch it, while the room's CRT plays a clip. The look is functional; the styling
+> pass is I6's. Gate C's automated checks pass ([docs/testing/gate-c.md](docs/testing/gate-c.md)); the user walks the
+> building next. See [docs/roadmap.md](docs/roadmap.md).
 
 ![A generated room: golden G02s](assets/style_tests/screenshots/g02s_snes_stress_golden.png)
 
@@ -61,6 +64,7 @@ for the M0 test room (golden G01) in [docs/testing/gate-a.md](docs/testing/gate-
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu      # unit tests and GPU smoke tests
 ./scripts/gate.ps1 -Gate A                         # Debug, RelWithDebInfo, Release builds; tests of Debug and Release
 ./scripts/gate.ps1 -Gate B                         # Gate A, every golden, the I3 checks and the benchmarks
+./scripts/gate.ps1 -Gate C                         # Gate A, every golden, the I4 checks and the benchmark path
 ```
 
 Other presets: `msvc-x64-relwithdebinfo`, `msvc-x64-release` (no developer overlay, assets deployed next to the
@@ -73,7 +77,7 @@ executable), `msvc-x64-profile` (Tracy). The scripts enter the Visual Studio dev
 ./build/msvc-x64-release/bin/retroverse-cli.exe library create  # once: find ES-DE and record the library
 ./build/msvc-x64-release/bin/retroverse-cli.exe import          # import its catalog (again to refresh)
 ./build/msvc-x64-release/bin/retroverse.exe                     # your collection's building: the ground floor's lobby
-./build/msvc-x64-release/bin/retroverse.exe --start-room room:snes  # in your SNES games' room (until the elevator)
+./build/msvc-x64-release/bin/retroverse.exe --start-room room:snes  # straight into your SNES games' room
 ./build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom   # the M0 test room; Esc releases the mouse, again quits
 ./build/msvc-x64-debug/bin/retroverse.exe --scene material_test
 ./build/msvc-x64-debug/bin/retroverse.exe --model path/to/model.glb
@@ -81,10 +85,17 @@ executable), `msvc-x64-profile` (Tracy). The scripts enter the Visual Studio dev
 ./build/msvc-x64-debug/bin/retroverse.exe --help
 ```
 
+The first start plans the building (a few seconds; the library's covers are derived while you walk, a floor's the
+first time you visit it); later starts show the stored lobby at once. `--data-dir <folder>` keeps everything Retroverse
+writes (the catalog, the plan, the derived covers) in a folder of your choice; it never writes into ES-DE's folders.
+How to try the building: [docs/testing/gate-c.md](docs/testing/gate-c.md), "Try the building".
+
 Controls: WASD or the left stick walk (Left Shift sprints), the mouse or the right stick look around; E, a click or
-the pad's A takes the cartridge you point at (Focus, then Inspect with its card: Avvia, Vedi media, Informazioni);
-Tab (gamepad Y) opens the quick catalog; Esc (gamepad B) leaves one level, F1 toggles the developer overlay, F5
-reloads the shaders, F12 saves a screenshot, Alt+Enter toggles fullscreen.
+the pad's A takes the item you point at (Focus, then Inspect with its card: Avvia, Vedi media, Informazioni); facing
+the elevator, E (pad A) opens the directory of floors and rooms, M (pad Back/Select) opens it anywhere: choose a floor
+or a room to ride there, or a favourite or recent game; Tab (gamepad Y) opens the quick catalog ("Mostra nella stanza"
+takes you to a game's item, riding the elevator if needed); Esc (gamepad B) leaves one level, F1 toggles the developer
+overlay, F5 reloads the shaders, F12 saves a screenshot, Alt+Enter toggles fullscreen.
 
 ## Repository layout
 

@@ -25,8 +25,9 @@ tools).
 ./scripts/test.ps1                                    # unit tests (label "unit")
 ./scripts/test.ps1 -Filter aabb                       # ctest -R aabb
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu         # also the GPU smoke tests (label "gpu")
-./scripts/gate.ps1 -Gate B                            # the latest gate: build matrix, tests, goldens, benchmark path
-./scripts/real-library.ps1 -Filter '[real-library][room-real]'   # the real library, ES-DE closed (see Safety)
+./scripts/gate.ps1 -Gate C                            # the latest gate: build matrix, tests, goldens, benchmark path
+./scripts/gate.ps1 -Gate C -RealLibrary               # also the real library's building and SNES room, ES-DE closed
+./scripts/real-library.ps1 -Filter '[real-library][building]'   # the real library, ES-DE closed (see Safety)
 ```
 
 - Outputs in `build/<preset>/bin`: `retroverse.exe`, `retroverse-cli.exe`, `retroverse-asset-preview.exe` (developer
@@ -51,7 +52,9 @@ tools).
   `--start-room <room id>` (`room:snes`, `area:arcade`, `area:shared:handheld`, ...) starts at that room's doorway on
   its floor, and `--spawn`, input scripts and the report's poses are then in that room's frame (I4 step 5a); `--scene
   m0_testroom` shows the test room. Fixtures for rooms: `tests/fixtures/esde/snes-room`, `snes-single`, `snes-stress`,
-  and `building` (I4: every kind of system).
+  and `building` (I4: every kind of system). M (pad Back/Select), or E facing the elevator, opens the directory, whose
+  floors and rooms ride the elevator or teleport (I4 step 7b); a ride's view comes back once the covers in view are
+  resident or 3 s after the request (I4 step 8).
 - A floor of the building (I4 step 3): `retroverse-cli worldplan show --floor <id> --scene <file>` writes its rooms
   and derived hall as a scene with areas, which `--scene <file>` walks from the elevator (each area lit by its own
   lights).

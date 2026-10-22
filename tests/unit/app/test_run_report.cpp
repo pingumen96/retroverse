@@ -596,6 +596,10 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     ride.residentMs = 735.25;
     ride.totalMs = 825.125;
     ride.jobMs = 308.75;
+    // I4 step 8: the eye's room's covers in view at the view back, and the room whole later.
+    ride.viewItems = 27;
+    ride.viewPending = 0;
+    ride.roomResidentMs = 1904.5;
     ride.outcome = "arrived";
     ride.walker = rv::app::SpawnPoint{glm::vec3(8.5f, 0.0f, -3.2f), 0.0f, -6.0f};
     ride.arrayBytes = 5025792;
@@ -657,6 +661,24 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     REQUIRE(noKinds.has_value());
     CHECK(noKinds->world.rides.front().kindBytes == std::array<std::uint64_t, rv::gl::kGpuMemoryKindCount>{});
     CHECK(noKinds->world.rides.front().arrayBytes == ride.arrayBytes);
+    // A ride recorded before I4 step 8 (no view items, no room's residency): none of them.
+    const auto noView = rv::app::parseRunReport(editedReport(report,
+                                                             [](nlohmann::json& edited) {
+                                                                 nlohmann::json& first = edited["world"]["rides"][0];
+                                                                 first.erase("viewItems");
+                                                                 first.erase("viewPending");
+                                                                 first.erase("roomResidentMs");
+                                                             }),
+                                                "r.json");
+    REQUIRE(noView.has_value());
+    CHECK_FALSE(noView->world.rides.front().viewItems.has_value());
+    CHECK_FALSE(noView->world.rides.front().viewPending.has_value());
+    CHECK_FALSE(noView->world.rides.front().roomResidentMs.has_value());
+    CHECK(noView->world.rides.front().residentMs == ride.residentMs);
+    // The running ride wrote none of them.
+    const nlohmann::json written = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK_FALSE(written.at("world").at("rides")[1].contains("viewItems"));
+    CHECK_FALSE(written.at("world").at("rides")[1].contains("roomResidentMs"));
     report.directory = rv::app::DirectoryRecord{};
     const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
     CHECK(json.at("directory").empty());

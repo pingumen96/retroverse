@@ -23,8 +23,9 @@ reads its metadata and media in place and uses generated labels and screenshots 
 Deferred beyond v1: gamelist write-back, legacy EmulationStation/RetroBat/Batocera adapters, VR, hardware video
 decoding, Linux, an OpenGL 3.3 fallback.
 
-Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. In
-progress: I4, the building ([ADR-0013](decisions/ADR-0013-the-building.md)).
+Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. I4, the
+building ([ADR-0013](decisions/ADR-0013-the-building.md)): Gate C passed on October 22, 2026
+([testing/gate-c.md](testing/gate-c.md)); the user walks the building and declares I4 done.
 
 ## Acceptable performance
 
@@ -202,7 +203,7 @@ SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the test
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
 
-## I4: M3 part 1, the building (in progress)
+## I4: M3 part 1, the building (Gate C passed; the user walks the building)
 
 The building of [ADR-0013](decisions/ADR-0013-the-building.md), decided with the user on October 20, 2026:
 - **one room per console**, on **one floor per console generation**, joined by an **elevator**;
@@ -230,10 +231,25 @@ The reference library (a read-only census, `build/i4-survey`) has:
 | 6a | The building update: new systems, sections and floors, compatibility per room, `room-kept`, expansion rooms if step 2 needs them; the building's NFR-08 property suite on a small test template | 4 | The suite; on the real library through the CLI: the building twice with one SHA-256, a second import moving nothing, the lifted SNES room equal to the oracle | done ([step-6a.md](i4/step-6a.md)) |
 | 6b | The persisted start, live updates and the CRT of the eye's room: the items files per system, the floor previewed and reconciled room by room, the CRT rebound without blocking, a refresh applied to the resident floor (the walker kept in its room's frame), other floors saved | 5a, 6a | `gpu.world` start and live cases on `esde/building`'s additions; on the real library NFR-01 to the lobby within 5 s and the busiest floor within 512 MiB | done ([step-6b.md](i4/step-6b.md)): the stored lobby in 2.3 to 2.7 s and the first page in 1.6 s; the computer floor 407 MiB; an unchanged start's job 0.5 s (16 to 18 s before) |
 | 7 | The elevator and the directory: one panel (interact at the elevator, M or Select anywhere) with the floors, their rooms and counts, and favourites and recent games; the ride (fade, swap, failure path, memory given back, lockstep); teleport to a doorway; "Mostra nella stanza" across floors | 6b | A ride from the ground floor to `gen4` and back, a room teleport, `world.rides`, the arrays after a ride the destination's; a quick-catalog game on another floor ends in its Focus pose; on the real library a ride to the busiest floor within the acceptable rows | done ([step-7a.md](i4/step-7a.md): the directory's model, document and screen, `rv_ui_probe`, the favourites and recent games query; [step-7b.md](i4/step-7b.md): the prompt at the elevator, M and Select, the directory in the app, the ride, the teleports, "Mostra nella stanza" across floors; on the real library the lobby to the computer floor's largest room in 9.5 s cold (timed out: its covers made from the media) and 1.9 s warm, back in 0.8 s and 0.7 s, 407 MiB there) |
-| 8 | Gate C: `scripts/gate.ps1 -Gate C`, at most three new goldens (the lobby, a jewel-case room, a shared room), the real-library rows, the documentation | 7 | The gate passes; the user walks the building and declares I4 done | |
+| 8 | Gate C: `scripts/gate.ps1 -Gate C`, at most three new goldens (the lobby, a jewel-case room, a shared room), the real-library rows, the documentation | 7 | The gate passes; the user walks the building and declares I4 done | done but for the user's walk ([testing/gate-c.md](testing/gate-c.md)): the ride's view back once the covers in view of the eye's room are resident, or 3 s after the request (ADR-0013 §10, §13 amended); `scripts/gate.ps1 -Gate C` and `-RealLibrary`; goldens G11 (the lobby), G12 (the jewel-case room), G13 (a shared room); passed on 2026-10-22 under the focus watcher (0 findings): the build matrix without a warning, 1,863 unit tests and 96/93 GPU cases in Debug/Release, the eleven goldens 0 pixels apart in both, on the real library 0 differences among 542,120 entries, the building planned twice with one SHA-256, an unchanged restart's job 0.46 s, the lobby 2.2 s, the busiest floor 407 MiB, the rides 2.5 s cold (the room whole at 17.2 s) and 2.0 s warm (run 4, after the gate's review); fixed at the gate: two checks of `[room-real]` that predated the building's update, the busiest floor picked from the plan, a missing golden a failed row |
 
 Order: 0, 1, 2, 3, then 4 followed by 6a beside 5a, then 6b, 7, 8. Steps 4 and 6a change `rv_world` and step 5a
 changes `rv_app`, with the building API's signatures frozen at the end of step 3.
+
+### Gate C
+
+`scripts/gate.ps1 -Gate C` runs Gate A's build matrix (no warning), the unit tests and the GPU smoke tests in Debug and
+Release, every golden in both (G01, the SNES room's G02 to G10 and the building's G11 to G13), a row per I4 area counted
+from those runs (the world's building, the floors, the shared rooms, the update suite, the directory, the elevator, the
+floor in the app, the persisted start and live updates) and the benchmark path in Release against the acceptable
+limits, prints the summary table (logs in `build/gate-c`) and exits 1 when a step failed; all of it under
+`scripts/focus_watch.py`. `-RealLibrary` adds, with ES-DE closed, one `scripts/real-library.ps1` run of the real
+library's building and SNES room (snapshots before and after, 0 differences) and reads their run reports into rows:
+the building planned twice with one SHA-256, an unchanged restart's building job skipped by its stamp (3 s), NFR-01 to
+the lobby (5 s), the busiest floor's GPU memory (512 MiB), the rides cold and warm (the view back within 10 s and 3 s,
+the room that holds the walker within 30 s and 3 s), and Gate B's rows of the SNES room. `docs/testing/gate-c.md`
+holds the figures, where ADR-0013's decisions and M3 part 1's requirements are proven, the follow-ups and how to try
+the building. The gate passed on October 22, 2026; the user walks the building and declares I4 done.
 
 ## I3: M2 SNES vertical slice (done)
 

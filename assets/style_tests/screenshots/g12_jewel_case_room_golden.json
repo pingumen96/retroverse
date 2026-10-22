@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "ee78cbcaf837e64e7a3db8b5eab49de452d79766",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate C golden of a console room of another media family (at most one golden per new kind of room): the esde/building fixture's psx room on gen5 under its CD HOME sign, its 40 invented titles (two of them multi-disc games) as CD jewel cases (disc_case_cd), every one face-out (fewer than the display slots and the hero band hold: ADR-0010 §3) in the display cases, the featured wall shelf and the hero band, their square and portrait covers fitted to the square label, from the doorway (the room's doorway camera), the hero CRT's clip held at 1.0 s.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G12",
+  "image": {
+    "file": "g12_jewel_case_room_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "22b64db1d40a154653dd34c4df09c6eedeb3546de534e0f4ff9355d5bf431216",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "plan": {
+      "digest": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
+      "fileSha256": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
+      "items": 40,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "16216a3b5791a37a657607dc253667173bfebca4f8915f4985a384a9af87e6c8"
+    }
+  },
+  "renderedOn": "2026-10-21",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G12:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:psx --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g12.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--start-room room:psx: the room's doorway camera (no --spawn)"
+}

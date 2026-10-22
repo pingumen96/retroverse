@@ -11,6 +11,10 @@
   for a shape other than the layer's), not the family id; the hero pictures at the label's shape keep ADR-0011 §8's
   bounds (1,024 px on the long side, at most 1,024 x 752 pixels, so the set of 8 stays within 32 MiB), and the card
   shows them at that shape
+- Amended: 2026-10-21, at I4 step 8 (Gate C): §10's ride and §13's row. The view comes back once the covers in view
+  of the room that holds the eye are resident, or 3 s after the request at the latest, no longer once the whole room
+  is resident or after 10 s: on the reference library a cold ride to the largest computer room stayed black 9.5 s
+  waiting for the whole room's covers. The other covers keep streaming in once the view is back
 
 ## Context
 
@@ -318,6 +322,12 @@ the one it is in, else the last one held.
   3. The floor is swapped at a frame boundary behind the fade.
   4. The walker stands at the destination's elevator, facing the hall.
   5. The view fades in when the eye's area is resident, or after 10 s; under lockstep the waits replace the timeout.
+     **Amended (2026-10-21, I4 step 8):** the eye's area is resident once the covers in view of the room that holds
+     the eye are (the cover loader's view items of that room's group; a hall at once), and the timeout is 3 s counted
+     from the request, whichever comes first: the view is back by then (its wait ends the fade-in and a half-second
+     margin earlier). The rest of the room's covers, and the other rooms', stream in afterwards. Under lockstep the
+     frames wait for the covers in view instead of the timeout, as before. The ride's record gives the covers in view
+     at the view back and when the destination room was whole.
 - **Restrictions.**
   - No ride starts in Focus, Inspect, a launch or while a floor applies. "Mostra nella stanza" leaves Focus first.
   - A building result or a refresh that ends mid-ride applies after it, as during a game.
@@ -353,6 +363,10 @@ The per-room rules apply to collection rooms, except the console rule for the `s
 - **A ride** fades in within 3 s warm and 10 s cold, the frames behind the fade exempt.
 - **The room that holds the walker** is resident within 30 s cold and 3 s warm.
 - **The rest of a floor's covers** are informative.
+
+**Amended (2026-10-21, I4 step 8):** the rows stand as written. Since the view comes back once the covers in view are
+resident or by 3 s after the request (§10), a ride now meets its row within about 3 s cold as well; the room that holds
+the walker is measured from the request to its last cover resident, after the view is back.
 
 ## Amendments to the documents
 

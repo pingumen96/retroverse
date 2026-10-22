@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "ee78cbcaf837e64e7a3db8b5eab49de452d79766",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate C golden of the building's hub (style 5.2 as ADR-0013 amends it: the hub is the ground floor's lobby): the esde/building fixture planned under the shipped threshold, the walker as every start without --start-room stands, at the elevator's arrival point facing east down the 6 m wide lobby, the elevator and its sign behind: the hall's ceiling light, the arcade game room's open doorway on the north side with its lamp seen through it, the closed entrance doors at the east end (I4's functional look: plain boxes, lit by the hall's own lights).",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G11",
+  "image": {
+    "file": "g11_lobby_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "ec7c853b178ff7dd42d36ccd6af9e5ac2c4c3c60a6a72984dbbb19d18ff27929",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "plan": {
+      "digest": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
+      "fileSha256": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
+      "items": 15,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "16216a3b5791a37a657607dc253667173bfebca4f8915f4985a384a9af87e6c8"
+    }
+  },
+  "renderedOn": "2026-10-21",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G11:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g11.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "the floor scene's camera at the elevator's arrival point (no --start-room, no --spawn)"
+}

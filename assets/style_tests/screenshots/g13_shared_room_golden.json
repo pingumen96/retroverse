@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "ee78cbcaf837e64e7a3db8b5eab49de452d79766",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate C golden of a shared room (style 5.6 as ADR-0013 amends it: a section of the shared room under 30 titles): the esde/building fixture's handheld floor's shared room under its MORE GAMES sign, its two sections (pocketlab's 6 and pokemini's 8 invented titles) as generic cases in one collection ordered by section, every one face-out in the display cases and the featured wall shelf, no console beside the CRT (shared rooms have none), from the doorway (the room's doorway camera), the hero CRT showing its colour bars (no section has a clip).",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G13",
+  "image": {
+    "file": "g13_shared_room_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "8006f7d70f993de2d6afcac5b71084a5a22695c55aaf91f38bcd09507dd1053c",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "plan": {
+      "digest": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
+      "fileSha256": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
+      "items": 44,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "16216a3b5791a37a657607dc253667173bfebca4f8915f4985a384a9af87e6c8"
+    }
+  },
+  "renderedOn": "2026-10-21",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G13:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room area:shared:handheld --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g13.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--start-room area:shared:handheld: the room's doorway camera (no --spawn)"
+}

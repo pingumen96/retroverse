@@ -108,9 +108,14 @@ at 1.0 s), G08b (the corrupt clip's fallback to the cover, `golden_g08b_corrupt_
 300 frames, then renders the stored room hidden and lockstep at 1920 x 1080 (`--start-room room:snes`, in the room's
 own frame since I4 step 5a, so the floor around it changes no pixel; `--video-freeze-pts 1` but for G08b),
 checks the run report and compares within G01's tolerance (`comparison.txt` and a heatmap in
-`build/<preset>/smoke/golden_room/<case>`), skipped on another GPU or driver. `$env:RV_UPDATE_GOLDEN=1;
+`build/<preset>/smoke/golden_room/<case>`), skipped on another GPU or driver. The Gate C goldens of the building (I4
+step 8, the same file, `gpu.golden/G11` ... `G13`) are made the same way from `esde/building` under the shipped
+threshold (no `world.json`): G11 (`g11_lobby_golden.png`: the ground floor's lobby from the elevator's arrival point,
+no `--start-room`), G12 (`g12_jewel_case_room_golden.png`: `--start-room room:psx`, the jewel cases of
+`disc_case_cd` from the doorway) and G13 (`g13_shared_room_golden.png`: `--start-room area:shared:handheld`, the
+handheld floor's shared room of two sections, generic cases, from the doorway). `$env:RV_UPDATE_GOLDEN=1;
 build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden/G02:*"` rewrites one (then the case fails: look at it, run it
-again without the variable, update `docs/testing/gate-b.md`'s checklist). The room's own screenshots: a data directory
+again without the variable, update `docs/testing/gate-b.md`'s or `gate-c.md`'s page). The room's own screenshots: a data directory
 with a fixture recorded and imported (`retroverse-cli --data-dir <dir> library create --home <materialized fixture>
 --install <fixture>/Programs/ES-DE`, then `import`), then `retroverse.exe --start-room room:snes --exit-after-frames
 --frames 30 --fixed-dt 0.016667 --hidden --data-dir <dir> --screenshot build/screenshots/room.png` (the doorway;

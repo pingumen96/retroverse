@@ -30,3 +30,16 @@ the benchmark path; the GPU passes at their median within shadow 0.4, depth 0.4,
 post-processing 0.6 and outline 0.1 ms, 5 ms in all; the collection arrays within 80 MiB at 2,048 layers and everything
 the renderer allocates (textures, targets, buffers) within 256 MiB (its own accounting, `gpuMemory`, not the driver's).
 The VRAM the driver reports beyond that (its own overhead, other programs) is not measured yet (I8).
+
+## The building (Gate C, October 22, 2026)
+
+Measured in Release on the real library's building (44 rooms on 9 floors, 19,985 placements; [gate-c.md](gate-c.md)),
+the driver 617.42, the user's desktop programs running (Gate C's runs 3 and 4):
+
+| Measure | Figure | Acceptable limit |
+|---|---|---|
+| The busiest floor (computer: 10 rooms, 5,314 items), all GPU memory at its peak, cold and warm | 407.3 MiB (collection arrays 210.9 MiB, BC1) | 512 MiB |
+| The lobby shown from the stored plan, after the process started | 2.0 to 2.2 s (the quick catalog's first page 1.1 to 1.3 s) | 5 s (NFR-01) |
+| A ride from the lobby to the busiest floor's largest room (1,646 items): the view back, cold / warm | 2.50 s / 1.80 to 1.95 s | 10 s / 3 s |
+| The same room whole after the ride, cold / warm | 16.7 to 17.2 s / 1.55 to 1.70 s | 30 s / 3 s |
+| The SNES room's benchmark path on its floor (890 titles), frame p50 / p99 | 3.34 to 3.37 / 4.04 to 4.36 ms (230 FPS at p99 at worst) | 16.7 / 33.3 ms |

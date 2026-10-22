@@ -6,19 +6,26 @@
 // library.json naming the real ES-DE home, install, ROM and media roots), then retroverse.exe of this build (hidden,
 // frame-limited) starts on that data directory:
 //   - a first start (no plan): the lobby's shell at once, the whole building planned, generated and written (lockstep);
+//     Gate C: the plans' folder removed and the building planned again from nothing (`again`): one plan digest and one
+//     file SHA-256;
 //   - an unchanged second start, as the user starts (--no-vsync, no lockstep, the quick catalog opened on frame 1):
 //     NFR-01, the stored lobby shown from the plan and the items files and the quick catalog's first page within 5 s
 //     of the process's creation; the building job skipped by its stamp;
 //   - the building stamp removed: the whole job on an unchanged library (the time I4 step 6b set out to cut; lockstep,
 //     so that the run waits for it), then the user's start again with the stamp it wrote;
-//   - a start in the computer floor's largest room (--start-room, lockstep): the floor's GPU memory at its peak within
-//     the acceptable 512 MiB, cold (its covers derived and stored in that run) then warm;
-//   - I4 step 7b: the derived covers emptied, a ride from the lobby to the computer floor (the busiest), to its largest
-//     room through the elevator and the directory, and back to the lobby's elevator with Map, as the user rides (no
-//     lockstep), cold then warm: the view back within the acceptable row (10 s cold, 3 s warm), the GPU memory after
-//     each ride the destination's (the collection arrays of a start on that floor, of the lobby);
+//   - a start in the busiest floor's largest room (--start-room, lockstep; the floor with the most placements in the
+//     stored plan, the first in the elevator's order on a tie: the computer floor on the reference machine): the
+//     floor's GPU memory at its peak within the acceptable 512 MiB, cold (its covers derived and stored in that run)
+//     then warm;
+//   - I4 step 7b: the derived covers emptied, a ride from the lobby to the busiest floor (the busiest of the others when
+//     that is the ground floor, where the directory teleports), to its largest room through the elevator and the
+//     directory, and back to the lobby's elevator with Map, as the user rides (no lockstep), cold then warm: the view
+//     back within the acceptable row (10 s cold, 3 s warm; since I4 step 8 the view comes back once the room's covers in
+//     view are resident, by 3 s after the request at the latest), the room whole within its row (30 s cold, 3 s warm),
+//     the GPU memory after each ride the destination's (the collection arrays of a start on that floor, of the lobby);
 //   - retroverse-cli worldplan update on the unchanged library (the same update code, informative).
-// The figures are printed for docs/i4/step-6b.md (the lines starting "Real building:"). The checks hold whatever the
+// The figures are printed for docs/i4/step-6b.md, step-7b.md and Gate C (the lines starting "Real building:"; the gate
+// reads the runs' reports in build/<preset>/real-library/building). The checks hold whatever the
 // collection holds (this machine's figures are not versioned); nothing derived from the user's titles is written
 // outside the build tree.
 
@@ -30,6 +37,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -50,6 +58,7 @@
 #include <rv/catalog_db/migrator.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/esde/library_source.hpp>
@@ -119,6 +128,12 @@ double mib(std::uint64_t bytes) {
     return static_cast<double>(bytes) / (1024.0 * 1024.0);
 }
 
+std::string fileSha256(const fs::path& file) {
+    auto bytes = rv::core::readBinaryFile(file);
+    REQUIRE(bytes.has_value());
+    return rv::core::sha256Hex(std::span<const std::byte>(*bytes));
+}
+
 /// The building job's phases of a run, as a line.
 std::string jobLine(const rv::app::WorldRecord& world) {
     if (!world.job) {
@@ -135,7 +150,7 @@ std::string jobLine(const rv::app::WorldRecord& world) {
 } // namespace
 
 TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to the lobby, an unchanged start, the "
-          "computer floor's memory",
+          "busiest floor's memory",
           "[.real-library][real-library][building]") {
     const auto home = pathVariable(L"RV_REAL_ESDE_HOME");
     const auto install = pathVariable(L"RV_REAL_ESDE_INSTALL");
@@ -203,6 +218,25 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
     CHECK(first.world.hardFindings == 0);
     CHECK(first.world.floor == "ground");
 
+    // Gate C: the building planned twice. The plans' folder removed, the same catalog planned again from nothing: one
+    // plan digest and one file SHA-256 (ADR-0010 §8, ADR-0013 §5: plan equality is the file's SHA-256).
+    const fs::path planFile = rv::world::worldFiles(data, profile.id).plan;
+    const std::string firstFileHash = fileSha256(planFile);
+    fs::remove_all(data / "worlds", removed);
+    REQUIRE_FALSE(removed);
+    const rv::app::RunReport again = runApp(folder, data, "again", lockstep);
+    CHECK(again.world.outcome == "generated");
+    CHECK(again.world.planWritten);
+    CHECK(again.world.hardFindings == 0);
+    CHECK(again.world.planDigest == first.world.planDigest);
+    const std::string secondFileHash = fileSha256(planFile);
+    CHECK(secondFileHash == firstFileHash);
+    std::cout << fmt::format("Real building: planned twice: the plan digest {} and the file's SHA-256 {} ({} placements; "
+                             "the jobs {} and {})\n",
+                             again.world.planDigest == first.world.planDigest ? "equal" : "DIFFERENT",
+                             secondFileHash == firstFileHash ? "equal" : "DIFFERENT", again.world.placements,
+                             jobLine(first.world), jobLine(again.world));
+
     // The unchanged start as the user starts (no lockstep): NFR-01, the stored lobby and the first page within 5 s.
     // Enough frames (a few milliseconds each) for the building job's result to arrive: the whole job's takes seconds.
     const auto userStart = [&](const std::string& name, std::uint32_t frames) {
@@ -245,57 +279,84 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
     CHECK(second.world.job->skipped);
     CHECK(third.world.job->skipped);
 
-    // The computer floor's largest room: the floor's GPU memory at its peak, cold (nothing but the lobby showed in this
-    // data directory: no cover of the floor derived yet) then warm.
+    // The busiest floor (the most placements, the first in the elevator's order on a tie: the floor whose GPU memory
+    // the acceptable row bounds) and its largest room: the floor's GPU memory at its peak, cold (nothing but the lobby
+    // showed in this data directory: no cover of the floor derived yet) then warm.
     const auto stored = rv::world::readStoredPlan(rv::world::worldFiles(data, profile.id).plan);
     REQUIRE(stored.has_value());
     std::map<std::string, std::size_t> placements;
     for (const rv::world::Placement& placement : stored->plan.placements) {
         ++placements[placement.slot.fixture().room().toString()];
     }
-    std::string largest;
-    std::size_t floorItems = 0;
-    for (const rv::world::Room* room : rv::world::roomsOnFloor(stored->plan, "computer")) {
-        const std::size_t count = placements[room->id.toString()];
-        floorItems += count;
-        if (largest.empty() || count > placements[largest]) {
-            largest = room->id.toString();
+    const std::vector<rv::app::WorldFloorRecord> floorRecords = rv::app::floorRecordsOf(stored->plan);
+    REQUIRE(floorRecords.size() > 1);
+    // The busiest floor among the records for which `admits` holds.
+    const auto busiestOf = [&](const auto& admits) {
+        const rv::app::WorldFloorRecord* busiest = nullptr;
+        for (const rv::app::WorldFloorRecord& record : floorRecords) {
+            if (admits(record) && (busiest == nullptr || record.placed > busiest->placed)) {
+                busiest = &record;
+            }
         }
-    }
-    REQUIRE_FALSE(largest.empty());
-    std::uint64_t computerArrays = 0;
-    for (const std::string name : {"computer-cold", "computer-warm"}) {
-        std::vector<std::string> arguments{"--start-room", largest};
+        REQUIRE(busiest != nullptr);
+        return busiest->id;
+    };
+    const std::string busiest = busiestOf([](const rv::app::WorldFloorRecord&) { return true; });
+    // A floor's largest room and the items the floor holds.
+    const auto largestRoomOf = [&](const std::string& floor) {
+        std::string largest;
+        std::size_t floorItems = 0;
+        for (const rv::world::Room* room : rv::world::roomsOnFloor(stored->plan, floor)) {
+            const std::size_t count = placements[room->id.toString()];
+            floorItems += count;
+            if (largest.empty() || count > placements[largest]) {
+                largest = room->id.toString();
+            }
+        }
+        REQUIRE_FALSE(largest.empty());
+        return std::pair<std::string, std::size_t>(largest, floorItems);
+    };
+    const auto [busiestLargest, busiestItems] = largestRoomOf(busiest);
+    std::uint64_t busiestArrays = 0;
+    for (const std::string name : {"busiest-cold", "busiest-warm"}) {
+        std::vector<std::string> arguments{"--start-room", busiestLargest};
         arguments.insert(arguments.end(), {"--exit-after-frames", "--frames", "120", "--fixed-dt", "0.016667"});
         const rv::app::RunReport run = runApp(folder, data, name, arguments);
         INFO(name);
         CHECK(run.world.state == "room");
-        CHECK(run.world.floor == "computer");
-        CHECK(run.world.items == floorItems);
+        CHECK(run.world.floor == busiest);
+        CHECK(run.world.items == busiestItems);
         CHECK(run.gpuMemory.peakTotalBytes <= kAcceptableGpuBytes);
-        if (name == "computer-cold") {
+        if (name == "busiest-cold") {
             // Cold: the floor's covers derived from the media and stored in this run.
             CHECK(run.residency.cacheMisses > 0);
             CHECK(run.residency.cacheStored > 0);
         }
-        computerArrays = run.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes;
-        std::cout << fmt::format("Real building: {}: the computer floor ({} rooms, {} items; its largest room {} "
+        busiestArrays = run.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes;
+        std::cout << fmt::format("Real building: {}: the busiest floor, {} ({} rooms, {} items; its largest room {} "
                                  "items): GPU memory at its peak {:.1f} MiB, collection arrays {:.1f} MiB ({}), "
                                  "{} of {} fronts resident at the end (the cache: {} hits, {} misses, {} stored); the "
                                  "job: {}\n",
-                                 name, run.world.rooms.size(), floorItems, placements[largest],
+                                 name, busiest, run.world.rooms.size(), busiestItems, placements[busiestLargest],
                                  mib(run.gpuMemory.peakTotalBytes), mib(run.residency.arrayBytes),
                                  run.residency.format, run.residency.frontsResident, run.residency.items,
                                  run.residency.cacheHits, run.residency.cacheMisses, run.residency.cacheStored,
                                  jobLine(run.world));
     }
 
-    // I4 step 7b: a ride from the lobby to the computer floor (the busiest), to its largest room through the elevator
-    // (the walker turned to its doors, interact, the floor, the room), then back to the lobby's elevator with Map, as the
-    // user rides (no lockstep: the view comes back once the room that holds the eye is resident, a hall at once, or by
-    // 10 s after the request), cold (the derived covers emptied: the room's covers made from the media again) then warm;
-    // the GPU memory after each ride. The script waits long enough between the two choices for a cold ride at any frame
-    // rate (both rides must have ended).
+    // I4 step 7b: a ride from the lobby to the busiest floor (the busiest of the others when that is the ground floor,
+    // where the directory teleports), to its largest room through the elevator (the walker turned to its doors,
+    // interact, the floor, the room), then back to the lobby's elevator with Map, as the user rides (no lockstep: the
+    // view comes back once the covers in view of the room that holds the eye are resident, a hall at once, or by 3 s
+    // after the request: I4 step 8), cold (the derived covers emptied: the room's covers made from the media again) then
+    // warm; the GPU memory after each ride, and when the room was whole. The script waits long enough between the two
+    // choices for a cold ride and the room's covers at any frame rate (both rides must have ended).
+    const std::string rideFloor = busiest != rv::world::kGroundFloor
+                                      ? busiest
+                                      : busiestOf([](const rv::app::WorldFloorRecord& record) {
+                                            return record.id != rv::world::kGroundFloor;
+                                        });
+    const std::string largest = largestRoomOf(rideFloor).first;
     const fs::path textures = rv::assets::textureCacheRoot(paths.cacheDir(), profile.id.str()).value();
     fs::remove_all(textures, removed);
     REQUIRE_FALSE(removed);
@@ -306,9 +367,9 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
         return static_cast<std::size_t>(found - rows.begin());
     };
     const std::size_t groundRow = rowOf(directory.floors, rv::world::kGroundFloor);
-    const std::size_t computerRow = rowOf(directory.floors, "computer");
+    const std::size_t rideRow = rowOf(directory.floors, rideFloor);
     // A floor's list: its hall's row, then its rooms along the hall (the first room selected on another floor).
-    const std::size_t largestRow = 1 + rowOf(directory.floors[computerRow].rooms, largest);
+    const std::size_t largestRow = 1 + rowOf(directory.floors[rideRow].rooms, largest);
     // Frames before the first choice (the stored lobby reconciled with the building's result: no ride while a floor
     // applies) and between the two (a cold ride at any frame rate).
     constexpr std::uint64_t kStartFrames = 6000;
@@ -325,19 +386,19 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
             }
         };
         // The lobby's arrival point faces the hall: half a turn to the elevator's doors (10 * 142.8 mouse pixels), its
-        // prompt, interact: the floors (the ground floor selected), down to the computer floor, its rooms, the largest.
+        // prompt, interact: the floors (the ground floor selected), down to the ride's floor, its rooms, the largest.
         std::uint64_t frame = kStartFrames;
         script += fmt::format("{{\"fromFrame\": {}, \"toFrame\": {}, \"actions\": {{\"look_delta_x\": 142.8}}}}", frame,
                               frame + 9);
         press(frame += 13, "interact");
-        move(frame, groundRow, computerRow);
+        move(frame, groundRow, rideRow);
         press(frame += 3, "ui_activate");
         move(frame, 1, largestRow);
         press(frame += 3, "ui_activate");
-        // In the room, Map: the floors (the computer floor selected), up to the ground floor, its hall's row, chosen.
+        // In the room, Map: the floors (the ride's floor selected), up to the ground floor, its hall's row, chosen.
         frame = kStartFrames + kRideWaitFrames;
         press(frame, "map");
-        move(frame, computerRow, groundRow);
+        move(frame, rideRow, groundRow);
         press(frame += 3, "ui_activate");
         press(frame += 3, "ui_up");
         press(frame += 3, "ui_activate");
@@ -358,15 +419,17 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
         for (const rv::app::RideRecord& ride : run.world.rides) {
             CHECK(ride.gpuBytes <= kAcceptableGpuBytes);
             std::cout << fmt::format("Real building: {}: {} to {} ({}{}{}): {}, the view back {} after it was asked "
-                                     "(the floor built at {}, its job {}, the eye's area resident at {}); GPU memory "
-                                     "{:.1f} MiB, collection arrays {:.1f} MiB\n",
+                                     "(the floor built at {}, its job {}, the eye's area resident at {}; {} cover(s) "
+                                     "in view, {} pending); the room whole at {}; GPU memory {:.1f} MiB, collection "
+                                     "arrays {:.1f} MiB\n",
                                      name, ride.from, ride.to, ride.reason, ride.room.empty() ? "" : " ", ride.room,
                                      ride.outcome, ms(ride.totalMs), ms(ride.builtMs), ms(ride.jobMs),
-                                     ms(ride.residentMs), mib(ride.gpuBytes), mib(ride.arrayBytes));
+                                     ms(ride.residentMs), ride.viewItems.value_or(0), ride.viewPending.value_or(0),
+                                     ms(ride.roomResidentMs), mib(ride.gpuBytes), mib(ride.arrayBytes));
         }
         const rv::app::RideRecord& there = run.world.rides[0];
         const rv::app::RideRecord& back = run.world.rides[1];
-        CHECK(there.to == "computer");
+        CHECK(there.to == rideFloor);
         CHECK(there.reason == "room");
         CHECK(there.room == largest);
         CHECK(back.to == rv::world::kGroundFloor);
@@ -380,19 +443,25 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
         }
         CHECK(run.world.floor == rv::world::kGroundFloor);
         CHECK(run.gpuMemory.peakTotalBytes <= kAcceptableGpuBytes);
-        // The arrays after each ride: the computer floor's as a start on it has them, then the lobby's again.
-        CHECK(there.arrayBytes == computerArrays);
+        // The arrays after each ride: the busiest floor's as a start on it has them (when the ride went there), then
+        // the lobby's again.
+        if (rideFloor == busiest) {
+            CHECK(there.arrayBytes == busiestArrays);
+        }
         CHECK(back.arrayBytes == second.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes);
         CHECK(run.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes ==
               second.gpuMemory.usage(rv::gl::GpuMemoryKind::CollectionArrays).bytes);
     }
-    // The acceptable row (ADR-0013 §13): the view back within 10 s cold, within 3 s warm.
+    // The acceptable rows (ADR-0013 §13): the view back within 10 s cold, within 3 s warm; the room that holds the walker
+    // (the largest room, where the first ride leaves it) whole within 30 s cold, within 3 s warm.
     for (const rv::app::RideRecord& ride : rides[0].world.rides) {
         CHECK(ride.totalMs.value_or(1e9) <= 10000.0);
     }
     for (const rv::app::RideRecord& ride : rides[1].world.rides) {
         CHECK(ride.totalMs.value_or(1e9) <= 3000.0);
     }
+    CHECK(rides[0].world.rides[0].roomResidentMs.value_or(1e9) <= 30000.0);
+    CHECK(rides[1].world.rides[0].roomResidentMs.value_or(1e9) <= 3000.0);
 
     // The CLI's update on the unchanged library: the same update code, the whole of it (informative).
     const Clock::time_point cliStart = Clock::now();

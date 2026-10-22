@@ -966,6 +966,73 @@ after "Aggiorna libreria" (a refresh done) ->   planBuilding and buildFloor agai
   scene, post, outline and their total, a frame or two late) for the run and its open phases, beside the frame times;
   the run report summarizes them per phase (`gpuPasses`).
 
+## The building (I4)
+
+The building of [ADR-0013](decisions/ADR-0013-the-building.md) (I4 steps 1 to 8, `docs/i4/`): every system of the
+library in a room, one room per console, the systems under 30 distinct titles in their floor's shared room and the
+arcade systems in the arcade room; floors by console generation, a handheld floor and a computer floor, joined by an
+elevator; the ground floor's lobby the hub. One floor is resident at a time; the elevator's directory rides between
+them. Gate C closes it ([testing/gate-c.md](testing/gate-c.md)).
+
+### Modules
+
+| Where | What |
+|---|---|
+| `rv_world` (GPU-free) | The plan's schema 2 (`world_plan.hpp`: floors, rooms with their kind `console`, `shared`, `arcade`, floor, sections, placement, generator version; `plan_json.hpp` reads schema 1 and lifts it, `lift.hpp`); the room ids' four forms (`ids.hpp`); the classification and the floors' data (`building.hpp`: `building.json`, `systems.json`, `classify()` with the platform-tag fallback, the rows of a floor, `placeEnteringRoom()`, `followDepth()`, `roomToFloor()`); the media families' items and fixtures (`media_family.hpp`, step 2); the derived hall and the floor's areas (`floor_layout.hpp`: `deriveHall()`, `floorAreas()`, the elevator's zone and arrival point; step 3); a floor as a scene (`floor_scene.hpp`: `toFloorSceneFile()`, `floorCollectionLayout()`); shared and arcade rooms (sections, `generic_case`, the threshold, step 4); fresh generation and the building update (`generateBuilding()`, `updateBuilding()` in `incremental.hpp`: new systems, sections and floors entered without moving anything, compatibility per room, `room-kept`, step 6a); the building's validation rules (`hall-overlap`, `doorway-off-hall`, `floor-unreachable`, ...); `where-is` with the floor |
+| `rv_app_catalog` (GPU-free) | The flows (`world_build.hpp`): `readWorldPlan`, the building job `planBuilding()` (every system's snapshot in one read transaction on the world's own reader, `room_snapshot.hpp`; the update; `savePlan`; one items file per system, `room_items.hpp`; the building stamp, `unchangedBuilding()`, step 6b), the floor-build job `buildFloor()` (a floor from the plan and the items files, no catalog round trip), `WorldFlow` (the persisted start's preview, then the building's result); the per-room reconcile and live update (`world_live_plan.hpp`, `world_reconcile.hpp`), each room's CRT games (`room_screen.hpp`); the favourites and recent games on the catalog worker (`CatalogWorker::recentGames`) |
+| `rv_app_cli` (GPU-free) | The ride's machine (`elevator_ride.hpp`: fade out, awaiting the floor, swap, awaiting the view, fade in; lockstep frame-exact), the directory's data and routing (`directory_data.hpp`: `directoryBuildingOf()`, `routeDirectoryCommand()`, `routeShowInRoom()`), the elevator prompt's facing (`elevator_prompt_ui.hpp`), the hero CRT's room tracker (`screen_room.hpp`: `ScreenRoomTracker`, the 0.3 s dwell), the cover loader's order per room (`cover_requests.hpp`: `coverViewGroups()`, `CoverSchedule::groupView()`), the run report's `world.floors`, `world.rides`, `world.teleports` and `directory` |
+| `rv_ui_model`, `rv_ui` | The directory (`directory_model.hpp`, `directory_screen.hpp`, `assets/ui/directory.rml`: "Piani" and "Preferiti e recenti", a game's card the quick catalog's), the elevator's prompt (`assets/ui/elevator_prompt.rml`) |
+| `rv_catalog`, `rv_catalog_db` | `favoritesAndRecent` (`recent_games.hpp`, `recent_query.cpp`: ES-DE's favourites and the games played, Retroverse's sessions and ES-DE's `<lastplayed>` read as the machine's local time) |
+| `rv_app` | `WorldSession` (one floor resident: a `CollectionInstance` and a static group per collection room, keys `collection/<room id>/...`, one `CoverLoader` for the floor, a pick index per room through `WorldHover`), the ride and the teleports (`world_ride.cpp`), the post pass's `fade` |
+| `rv_render`, `rv_scene` | The areas of a scene (`scene_areas.hpp`: the area that holds the eye with its hysteresis) and the lights packed per area (`gl::packLights` over a selection: the eye's area's 16 nearest, its key light shadowed) |
+| `retroverse-cli` | `worldplan generate`, `update`, `show` (`--floor`, `--scene`) and `check` of the whole building, `where-is` with the floor |
+
+### The flows
+
+```text
+main thread                                     worker pool (the world's jobs first, then the covers)
+----------------------------------------------  -----------------------------------------------------------
+the lobby's shell (no plan yet) or the stored
+start floor previewed from the plan and the
+items files (persisted start) --------------->  previewWorld: buildFloor of the start floor
+                                                planBuilding: skipped by the building stamp when nothing
+                                                changed; else every snapshot, the update, savePlan, the
+                                                items files written when changed
+reconcile room by room (content digests):  <--  buildFloor of the floor shown (the walker's)
+unchanged rooms keep their pictures, others
+are applied in place or the floor rebuilt with
+the walker kept in the frame of its area
+"Aggiorna libreria" (a refresh done) -------->  planBuilding and buildFloor again: a live update of the
+                                                floor shown, room by room; other floors only saved
+the directory's floor or room on another
+floor: a ride ------------------------------->  buildFloor of the destination (the latest asked wins)
+```
+
+### The ride
+
+The directory (interact at the elevator, M or Select anywhere in free roam) gives a floor, a room or a game's "Mostra
+nella stanza"; `routeDirectoryCommand()` makes it a teleport on the floor shown or a ride (`ElevatorRide`, driven by
+`WorldSession::followRide()` once a frame):
+
+```text
+request  ->  FadingOut (250 ms; instant with reduceMotion)   the destination's buildFloor job runs meanwhile
+         ->  AwaitingFloor (black)                           a failed job: the walker stays, the view comes back
+         ->  Swap in the frame after the fade ended           the resident floor dropped, the destination shown,
+                                                             the walker at its elevator or the room's doorway, the
+                                                             hero CRT unbound (bound again by the eye's room)
+         ->  AwaitingView                                    until the covers in view of the room that holds the eye
+                                                             are resident (a hall at once), or the view's deadline:
+                                                             3 s after the request less the fade-in and 0.5 s
+         ->  FadingIn (250 ms, shortened to end within 3 s)  the rest of the room's covers stream in afterwards
+         ->  Done: world.rides[] (the frames, builtMs, residentMs, totalMs, viewItems, viewPending, roomResidentMs,
+             the GPU memory of every kind)
+```
+
+Input is suspended during a ride; no ride starts in Focus, Inspect, a launch or while a floor applies; a building's
+result or a live update that ends mid-ride applies after it, built again for the floor shown when it was asked for
+another. Under lockstep (`--fixed-dt`) the machine moves in frames only and the frames wait for the floor and the view's
+covers instead of the deadline, so a scripted ride has the same frames on every run (I4 steps 7b and 8).
+
 ## Data conventions
 
 See `docs/decisions/ADR-0002-coordinates-units-uv.md`: meters, +Y up, right-handed, +Z front, CCW front faces,

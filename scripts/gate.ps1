@@ -51,7 +51,21 @@
          of the whole library with the quick catalog open; the figures read from the test's run reports (time to the
          room, covers resident cold and warm, frame p99 on the benchmark path and over the refresh, NFR-01 with the
          room) against the acceptable limits.
-    Gates M1 and B run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
+    Gate C (milestone M3 part 1, the building of ADR-0013; docs/testing/gate-c.md): everything Gate A runs, with every
+    golden (G01, G02 to G10 and the building's G11, G12 and G13) and Gate B's benchmark path in Release against the
+    acceptable limits (Gate B's step 6; not its step 5: the I3 cases count in the unit and GPU totals, without rows of
+    their own), and
+      5. per Debug and Release, rows for the I4 test cases counted from the unit and GPU runs, one per area (the
+         world's building, the floors, the shared rooms, the update suite, the directory, the elevator, the floor in
+         the app, the persisted start and live updates);
+      6. with -RealLibrary, scripts/real-library.ps1 -Filter '[real-library][building],[real-library][room-real]'
+         (ES-DE closed, read-only snapshots before and after, RV_LAUNCH_ALLOWLIST naming the fake emulator alone): the
+         whole library's building (tests/unit/app/test_building_real.cpp) and I3's SNES room, their figures read from
+         the tests' run reports against the acceptable limits: the building planned twice with one plan, an unchanged
+         restart's building job skipped by its stamp (3 s), NFR-01 to the lobby (5 s), the busiest floor's GPU memory
+         (512 MiB), the rides cold and warm (the view back within 10 s cold and 3 s warm, the room within 30 s and 3 s),
+         and Gate B's rows of the SNES room.
+    Gates M1, B and C run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
     shows a window where the user sees it, or a system error dialog during the run, fails the gate. The watcher counts
     a failing program of the user's (a WerFault or loader box) against the run too: its row names the rule that
     matched, so such a finding can be told from a test's.
@@ -70,10 +84,12 @@
     ./scripts/gate.ps1 -Gate B
     ./scripts/gate.ps1 -Gate B -RealLibrary     # the folders from the RV_REAL_* variables, or the options above
     ./scripts/gate.ps1 -Gate B -Benchmarks      # also every hidden benchmark, informative
+    ./scripts/gate.ps1 -Gate C
+    ./scripts/gate.ps1 -Gate C -RealLibrary     # the real library's building and SNES room, ES-DE closed
 #>
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('A', 'M1', 'B')]
+    [ValidateSet('A', 'M1', 'B', 'C')]
     [string]$Gate,
     [switch]$Clean,
     [switch]$RealLibrary,
@@ -96,11 +112,11 @@ $resultsFile = Join-Path $logDir 'results.json'
 $focusReport = Join-Path $logDir 'focus_watch.json'
 
 if (($RealLibrary -and $Gate -eq 'A') -or ($FullHashPass -and $Gate -ne 'M1')) {
-    Write-Host 'gate: -RealLibrary belongs to -Gate M1 and B, -FullHashPass to -Gate M1' -ForegroundColor Red
+    Write-Host 'gate: -RealLibrary belongs to -Gate M1, B and C, -FullHashPass to -Gate M1' -ForegroundColor Red
     exit 2
 }
-if ($Benchmarks -and $Gate -ne 'B') {
-    Write-Host 'gate: -Benchmarks belongs to -Gate B' -ForegroundColor Red
+if ($Benchmarks -and $Gate -notin @('B', 'C')) {
+    Write-Host 'gate: -Benchmarks belongs to -Gate B and C' -ForegroundColor Red
     exit 2
 }
 if ($FullHashPass -and -not $RealLibrary) {
@@ -151,10 +167,10 @@ function Write-Summary {
 
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
 
-# --- Gates M1 and B under the focus watcher ----------------------------------------------------------------------------
+# --- Gates M1, B and C under the focus watcher -------------------------------------------------------------------------
 # The outer run starts the gate again under scripts/focus_watch.py, with RV_GATE_INNER set; the inner run does the work
 # and leaves its rows in results.json, which the outer one prints with the watcher's verdict.
-if ($Gate -in @('M1', 'B') -and $env:RV_GATE_INNER -ne '1') {
+if ($Gate -in @('M1', 'B', 'C') -and $env:RV_GATE_INNER -ne '1') {
     $python = Get-Command python -ErrorAction SilentlyContinue
     if (-not $python) {
         Write-Host 'gate: Python 3.10 or later (python) is not on PATH: scripts/focus_watch.py needs it.' -ForegroundColor Red
@@ -172,6 +188,7 @@ if ($Gate -in @('M1', 'B') -and $env:RV_GATE_INNER -ne '1') {
         }
     }
     if ($FullHashPass) { $arguments += '-FullHashPass' }
+    if ($Benchmarks) { $arguments += '-Benchmarks' }
     $shell = (Get-Process -Id $PID).Path
     Write-Host "Gate $Gate under scripts/focus_watch.py (logs in $logDir)"
     $env:RV_GATE_INNER = '1'
@@ -279,9 +296,10 @@ function Invoke-Tests([string]$Step, [string]$Name, [string]$Preset, [string[]]$
     return [pscustomobject]@{ Result = $result; Cases = $cases }
 }
 
-# The golden comparisons (G01 alone for Gates A and M1, every golden for Gate B): one row per golden, its ctest result
+# The golden comparisons (G01 alone for Gates A and M1, every golden for Gates B and C): one row per golden, its ctest result
 # with the verdict its case writes next to its screenshot (G01's in smoke/golden_g01, the rooms' in
-# smoke/golden_room/<case>); the run's own row stays only when it holds no golden case (a failure before any ran).
+# smoke/golden_room/<case>), and a failed row for each golden the gate expects that the run does not report; the run's
+# own row stays only when it holds no golden case (a failure before any ran).
 function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     $smokeDir = Join-Path $root "build/$Preset/smoke"
     $verdictOf = { param($id) if ($id -eq 'G01') { Join-Path $smokeDir 'golden_g01/comparison.txt' }
@@ -289,7 +307,14 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     Remove-Item -ErrorAction SilentlyContinue (Join-Path $smokeDir 'golden_g01/comparison.txt')
     Get-ChildItem -ErrorAction SilentlyContinue -Path (Join-Path $smokeDir 'golden_room') -Filter comparison.txt -Recurse |
         Remove-Item
-    $pattern = if ($Gate -eq 'B') { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
+    $pattern = if ($Gate -in @('B', 'C')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
+    # The goldens the gate's page promises: one that the run does not report (renamed, untagged, not discovered) is a
+    # failed row, never a row that silently disappears.
+    $expected = switch ($Gate) {
+        'B' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10') }
+        'C' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13') }
+        default { @('G01') }
+    }
     $run = Invoke-Tests "Goldens $Preset" "golden-$Preset" $TestPreset @('-R', $pattern)
     $cases = @($run.Cases | Where-Object { $_.name -match '^gpu\.golden/(\w+):' })
     if ($cases.Count -eq 0) { return }
@@ -302,6 +327,13 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
         $details = if (Test-Path $verdictFile) { (Get-Content -Raw $verdictFile).Trim() }
                    else { "no comparison written, see $(Join-Path $logDir "golden-$Preset.log")" }
         Add-Result "Golden $id $Preset" $result $details ([double]$case.time) '<= 0.5% of the pixels'
+    }
+    $seen = @($cases | ForEach-Object { [regex]::Match($_.name, '^gpu\.golden/(\w+):').Groups[1].Value })
+    foreach ($id in $expected) {
+        if ($id -cnotin $seen) {
+            Add-Result "Golden $id $Preset" 'FAILED' ("not run: no case gpu.golden/${id}: in the run, see " +
+                (Join-Path $logDir "golden-$Preset.log")) 0 '<= 0.5% of the pixels'
+        }
     }
 }
 
@@ -634,70 +666,232 @@ function Invoke-RealRoom {
     $realCode = $LASTEXITCODE
     $firstRow = $results.Count
     if (Add-RealLibraryCheckRows $preset $realLog $testLog $realCode $timer.Elapsed.TotalSeconds '[room-real]') {
-        $cold = Read-Report (Join-Path $roomDir 'cold.json')
-        $again = Read-Report (Join-Path $roomDir 'again.json')
-        $restart = Read-Report (Join-Path $roomDir 'restart.json')
-        $refresh = Read-Report (Join-Path $roomDir 'refresh.json')
-        if (-not ($cold -and $again -and $restart)) {
-            Add-Result 'Real room' 'FAILED' "the runs' reports are missing, see $testLog" 0
-        }
-        else {
-            $w = $cold.world
-            $same = $w.planDigest -and $w.planDigest -eq $again.world.planDigest -and $w.planDigest -eq $restart.world.planDigest
-            Add-Result 'Real room: the plan generated twice' ($(if ($same) { 'passed' } else { 'FAILED' })) `
-                ('{0} placements ({1} featured, {2} band, {3} spine), {4} unplaced; {5} lights, {6} clusters; plan {7}' -f
-                    $w.placements.total, $w.placements.featured, $w.placements.band, $w.placements.spine,
-                    $w.unplaced.total, $w.lights, $w.clusters, $w.planDigest) 0 'one SHA-256'
-            $r = $restart.world
-            $moved = if ($r.reconcile) { [int]$r.reconcile.moved } else { 0 }
-            $restartOk = [string]$r.outcome -in @('unchanged', 'updated') -and [string]$r.rebuild -in @('', 'no-rebuild') -and $moved -eq 0
-            Add-Result 'Real room: restart after a second import' ($(if ($restartOk) { 'passed' } else { 'FAILED' })) `
-                ('outcome {0}, rebuild {1}, plan written {2}; reconciliation {3}: {4} kept, {5} moved' -f $r.outcome,
-                    $(if ($r.rebuild) { $r.rebuild } else { '-' }), $r.planWritten, $r.reconcile.kind, $r.reconcile.kept,
-                    $moved) 0 'NoRebuild, 0 moves'
-            $shown = [double]$restart.residency.times.shownAtMs
-            Add-Result 'Real room: time to the room' ($(if ($shown -gt 0 -and $shown -le 5000) { 'passed' } else { 'FAILED' })) `
-                ('shown {0} (restart, the stored plan), {1} (cold: the plan generated), {2} (again) after the process started' -f
-                    (Format-Ms $restart.residency.times.shownAtMs), (Format-Ms $cold.residency.times.shownAtMs),
-                    (Format-Ms $again.residency.times.shownAtMs)) 0 'restart <= 5 s (NFR-01)'
-            $coldMs = $cold.residency.times.residentAfterShownMs
-            Add-Result 'Real room: covers resident, cold' ($(if ($null -ne $coldMs -and [double]$coldMs -le 30000) { 'passed' } else { 'FAILED' })) `
-                ('{0} after the room showed ({1} items; {2} cache misses, {3} stored); coverLoad p99 {4}' -f
-                    (Format-Ms $coldMs), $cold.residency.items, $cold.residency.cache.misses, $cold.residency.cache.stored,
-                    (Format-Ms (Get-Phase $cold 'coverLoad').p99Ms)) 0 '<= 30 s'
-            $warm = @($again.residency.times.residentAfterShownMs, $restart.residency.times.residentAfterShownMs)
-            $warmOk = @($warm | Where-Object { $null -eq $_ -or [double]$_ -gt 3000 }).Count -eq 0
-            Add-Result 'Real room: covers resident, warm' ($(if ($warmOk) { 'passed' } else { 'FAILED' })) `
-                ('{0} (the plan generated again), {1} (restart) after the room showed ({2} cache hits)' -f
-                    (Format-Ms $warm[0]), (Format-Ms $warm[1]), $restart.residency.cache.hits) 0 '<= 3 s'
-            $loads = @(@($cold, $again, $restart) | ForEach-Object { Get-Phase $_ 'coverLoad' } | Where-Object { $_ -and [int]$_.count -gt 0 })
-            $loadP99 = ($loads | ForEach-Object { [double]$_.p99Ms } | Measure-Object -Maximum).Maximum
-            Add-Result 'Real room: frames while covers load' ($(if ($loads.Count -gt 0 -and $loadP99 -le 50) { 'passed' } else { 'FAILED' })) `
-                ('coverLoad p99 {0} (cold), {1} (again), {2} (restart)' -f (Format-Ms (Get-Phase $cold 'coverLoad').p99Ms),
-                    (Format-Ms (Get-Phase $again 'coverLoad').p99Ms), (Format-Ms (Get-Phase $restart 'coverLoad').p99Ms)) 0 'p99 <= 50 ms'
-        }
-        Add-BenchmarkRows 'Real room: benchmark path' (Join-Path $roomDir 'benchmark.json')
-        $phase = Get-Phase $refresh 'refresh'
-        if ($refresh -and $phase -and $refresh.catalog) {
-            $record = @($refresh.catalog.refreshes)[0]
-            $live = @($refresh.world.liveUpdates)
-            $liveMoved = ($live | ForEach-Object { [int]$_.moved } | Measure-Object -Sum).Sum
-            Add-Result 'Real room: refresh of the library' ($(if ($record.outcome -eq 'done' -and [double]$phase.p99Ms -le 50 -and $live.Count -gt 0 -and $liveMoved -eq 0) { 'passed' } else { 'FAILED' })) `
-                ('refresh phase {0} frames p50 {1}, p99 {2}, max {3}; the import {4} in {5} ({6} entries, {7} added); the room''s live update {8}, {9} moved' -f
-                    $phase.frames, (Format-Ms $phase.p50Ms), (Format-Ms $phase.p99Ms), (Format-Ms $phase.maxMs), $record.outcome,
-                    (Format-Ms $record.times.ms), $record.entries, $record.added, (@($live | ForEach-Object { $_.kind }) -join ', '),
-                    $liveMoved) 0 'p99 <= 50 ms, 0 moves'
-            $page = $refresh.catalog.times.firstPageMs
-            Add-Result 'NFR-01 with the room' ($(if ($null -ne $page -and [double]$page -lt 5000) { 'passed' } else { 'FAILED' })) `
-                ('the quick catalog''s first page {0} after the process started ({1} games; the room shown at {2})' -f
-                    (Format-Ms $page), $refresh.catalog.games, (Format-Ms $refresh.residency.times.shownAtMs)) 0 '< 5,000 ms'
-        }
-        else {
-            Add-Result 'Real room: refresh of the library' 'FAILED' "no refresh report, see $testLog" 0 'p99 <= 50 ms, 0 moves'
-        }
+        Add-RealRoomRows $roomDir $testLog
     }
     if ($realCode -ne 0 -and -not (@($results | Select-Object -Skip $firstRow) | Where-Object { $_.Result -eq 'FAILED' })) {
         Add-Result 'Real library' 'FAILED' "scripts/real-library.ps1 exited $realCode, see $realLog" 0
+    }
+}
+
+# The real SNES room's rows (Gates B and C): the reports [real-library][room-real] leaves in $roomDir.
+function Add-RealRoomRows([string]$roomDir, [string]$testLog) {
+    $cold = Read-Report (Join-Path $roomDir 'cold.json')
+    $again = Read-Report (Join-Path $roomDir 'again.json')
+    $restart = Read-Report (Join-Path $roomDir 'restart.json')
+    $refresh = Read-Report (Join-Path $roomDir 'refresh.json')
+    if (-not ($cold -and $again -and $restart)) {
+        Add-Result 'Real room' 'FAILED' "the runs' reports are missing, see $testLog" 0
+    }
+    else {
+        $w = $cold.world
+        $same = $w.planDigest -and $w.planDigest -eq $again.world.planDigest -and $w.planDigest -eq $restart.world.planDigest
+        Add-Result 'Real room: the plan generated twice' ($(if ($same) { 'passed' } else { 'FAILED' })) `
+            ('{0} placements ({1} featured, {2} band, {3} spine), {4} unplaced; {5} lights, {6} clusters; one plan digest in the cold, again and restart runs (the test compares the files'' SHA-256; never written here: it derives from the user''s titles)' -f
+                $w.placements.total, $w.placements.featured, $w.placements.band, $w.placements.spine,
+                $w.unplaced.total, $w.lights, $w.clusters) 0 'one SHA-256'
+        $r = $restart.world
+        $moved = if ($r.reconcile) { [int]$r.reconcile.moved } else { 0 }
+        $restartOk = [string]$r.outcome -in @('unchanged', 'updated') -and [string]$r.rebuild -in @('', 'no-rebuild') -and $moved -eq 0
+        Add-Result 'Real room: restart after a second import' ($(if ($restartOk) { 'passed' } else { 'FAILED' })) `
+            ('outcome {0}, rebuild {1}, plan written {2}; reconciliation {3}: {4} kept, {5} moved' -f $r.outcome,
+                $(if ($r.rebuild) { $r.rebuild } else { '-' }), $r.planWritten, $r.reconcile.kind, $r.reconcile.kept,
+                $moved) 0 'NoRebuild, 0 moves'
+        $shown = [double]$restart.residency.times.shownAtMs
+        Add-Result 'Real room: time to the room' ($(if ($shown -gt 0 -and $shown -le 5000) { 'passed' } else { 'FAILED' })) `
+            ('shown {0} (restart, the stored plan), {1} (cold: the plan generated), {2} (again) after the process started' -f
+                (Format-Ms $restart.residency.times.shownAtMs), (Format-Ms $cold.residency.times.shownAtMs),
+                (Format-Ms $again.residency.times.shownAtMs)) 0 'restart <= 5 s (NFR-01)'
+        $coldMs = $cold.residency.times.residentAfterShownMs
+        Add-Result 'Real room: covers resident, cold' ($(if ($null -ne $coldMs -and [double]$coldMs -le 30000) { 'passed' } else { 'FAILED' })) `
+            ('{0} after the room showed ({1} items; {2} cache misses, {3} stored); coverLoad p99 {4}' -f
+                (Format-Ms $coldMs), $cold.residency.items, $cold.residency.cache.misses, $cold.residency.cache.stored,
+                (Format-Ms (Get-Phase $cold 'coverLoad').p99Ms)) 0 '<= 30 s'
+        $warm = @($again.residency.times.residentAfterShownMs, $restart.residency.times.residentAfterShownMs)
+        $warmOk = @($warm | Where-Object { $null -eq $_ -or [double]$_ -gt 3000 }).Count -eq 0
+        Add-Result 'Real room: covers resident, warm' ($(if ($warmOk) { 'passed' } else { 'FAILED' })) `
+            ('{0} (the plan generated again), {1} (restart) after the room showed ({2} cache hits)' -f
+                (Format-Ms $warm[0]), (Format-Ms $warm[1]), $restart.residency.cache.hits) 0 '<= 3 s'
+        $loads = @(@($cold, $again, $restart) | ForEach-Object { Get-Phase $_ 'coverLoad' } | Where-Object { $_ -and [int]$_.count -gt 0 })
+        $loadP99 = ($loads | ForEach-Object { [double]$_.p99Ms } | Measure-Object -Maximum).Maximum
+        Add-Result 'Real room: frames while covers load' ($(if ($loads.Count -gt 0 -and $loadP99 -le 50) { 'passed' } else { 'FAILED' })) `
+            ('coverLoad p99 {0} (cold), {1} (again), {2} (restart)' -f (Format-Ms (Get-Phase $cold 'coverLoad').p99Ms),
+                (Format-Ms (Get-Phase $again 'coverLoad').p99Ms), (Format-Ms (Get-Phase $restart 'coverLoad').p99Ms)) 0 'p99 <= 50 ms'
+    }
+    Add-BenchmarkRows 'Real room: benchmark path' (Join-Path $roomDir 'benchmark.json')
+    $phase = Get-Phase $refresh 'refresh'
+    if ($refresh -and $phase -and $refresh.catalog) {
+        $record = @($refresh.catalog.refreshes)[0]
+        $live = @($refresh.world.liveUpdates)
+        $liveMoved = ($live | ForEach-Object { [int]$_.moved } | Measure-Object -Sum).Sum
+        Add-Result 'Real room: refresh of the library' ($(if ($record.outcome -eq 'done' -and [double]$phase.p99Ms -le 50 -and $live.Count -gt 0 -and $liveMoved -eq 0) { 'passed' } else { 'FAILED' })) `
+            ('refresh phase {0} frames p50 {1}, p99 {2}, max {3}; the import {4} in {5} ({6} entries, {7} added); the room''s live update {8}, {9} moved' -f
+                $phase.frames, (Format-Ms $phase.p50Ms), (Format-Ms $phase.p99Ms), (Format-Ms $phase.maxMs), $record.outcome,
+                (Format-Ms $record.times.ms), $record.entries, $record.added, (@($live | ForEach-Object { $_.kind }) -join ', '),
+                $liveMoved) 0 'p99 <= 50 ms, 0 moves'
+        $page = $refresh.catalog.times.firstPageMs
+        # The stored room shows first (the persisted start's preview); since I4 the refresh's building then enters the
+        # library's other systems, whose floor rebuilt around the room is the last shown.
+        $preview = if ($refresh.world.preview) { $refresh.world.preview.committedAtMs } else { $null }
+        Add-Result 'NFR-01 with the room' ($(if ($null -ne $page -and [double]$page -lt 5000) { 'passed' } else { 'FAILED' })) `
+            ('the quick catalog''s first page {0} after the process started ({1} games; the stored room shown at {2}, the floor last shown at {3})' -f
+                (Format-Ms $page), $refresh.catalog.games, (Format-Ms $preview),
+                (Format-Ms $refresh.residency.times.shownAtMs)) 0 '< 5,000 ms'
+    }
+    else {
+        Add-Result 'Real room: refresh of the library' 'FAILED' "no refresh report, see $testLog" 0 'p99 <= 50 ms, 0 moves'
+    }
+}
+
+# --- Gate C: the I4 checks -----------------------------------------------------------------------------------------------
+# The I4 test cases among the unit tests (ctest names "unit.<case>") and the GPU cases ("gpu.<case>"), by area. A case
+# counts in one area only; the rows are counts of the runs' results (the GPU cases of the I3 room, its goldens and the
+# I4 goldens have their own rows).
+$i4Areas = [ordered]@{
+    'world building' = '^unit\.(world/(building|building plan|lift|ids|families):|assets/families:|' +
+        'esde/building_fixture:|cli/worldplan|cli/where-is:|world/where-is:)|^gpu\.world families:'
+    'floors'         = '^unit\.(world/floor:|scene/areas:|render/light_packing:)|^gpu\.world floor:'
+    'shared rooms'   = '^unit\.(world/shared rooms:|app/room_screen: a shared room)|' +
+        '^gpu\.world floor app: the arcade room and a floor''s shared room'
+    'update suite'   = '^unit\.world/(building update|building suite):'
+    'directory'      = '^unit\.(ui/directory:|app/directory_data:|catalog/recent_games:|catalog_db/recent_query:)|' +
+        '^gpu\.directory:'
+    'elevator'       = '^unit\.(app/elevator_ride:|app/elevator_prompt_document:|app/world_build: a ride''s floor|' +
+        'app/run_report: the floors, the rides)|^gpu\.world elevator:'
+    'floor app'      = '^unit\.(app/world_build: (?!a ride''s floor|an unchanged start)|app/room_snapshot:|' +
+        'app/room_items:|app/cover_requests: (on a floor|a room''s items))|' +
+        '^gpu\.world floor app: (two rooms|a walk|without --start-room)'
+    'start and live' = '^unit\.(app/world_flow:|app/world_live_plan:|app/world_reconcile:|app/screen_room:|' +
+        'app/world_build: an unchanged start|app/room_screen: the room)|' +
+        '^gpu\.world floor app: (a stored floor|a system entering|the hero CRT rebound|from the lobby|' +
+        'the quick catalog''s selection)'
+}
+
+# A row per I4 area: its unit and GPU cases of the preset's runs.
+function Add-I4Rows([string]$Preset, $UnitCases, $GpuCases) {
+    foreach ($area in $i4Areas.Keys) {
+        $pattern = $i4Areas[$area]
+        $unit = @($UnitCases | Where-Object { $_.name -match $pattern })
+        $gpu = @($GpuCases | Where-Object { $_.name -match $pattern })
+        $counts = Get-CaseCounts (@($unit) + @($gpu))
+        $result = if ($counts.Total -eq 0 -or $counts.Failed -gt 0) { 'FAILED' }
+                  elseif ($counts.Passed -eq 0) { 'skipped' }
+                  else { 'passed' }
+        $time = (@($unit) + @($gpu) | ForEach-Object { [double]$_.time } | Measure-Object -Sum).Sum
+        $failedNames = @(@($unit) + @($gpu) | Where-Object { $_.status -eq 'fail' -or $_.failure -or $_.error } |
+                ForEach-Object { $_.name })
+        $details = '{0} passed, {1} failed, {2} skipped ({3} unit, {4} GPU)' -f $counts.Passed, $counts.Failed,
+            $counts.Skipped, $unit.Count, $gpu.Count
+        if ($failedNames.Count -gt 0) { $details += ': ' + ($failedNames -join '; ') }
+        Add-Result "I4 $area $Preset" $result $details $time
+    }
+}
+
+# The real library's building (tests/unit/app/test_building_real.cpp, [real-library][building]) and I3's SNES room
+# ([real-library][room-real]) through one scripts/real-library.ps1 run (one pair of snapshots), their figures read from
+# the run reports the tests leave in build/msvc-x64-release/real-library/building and .../room.
+function Invoke-RealBuilding {
+    $preset = 'msvc-x64-release'
+    $realDir = Join-Path $logDir 'real-library'
+    $buildingDir = Join-Path $root "build/$preset/real-library/building"
+    $roomDir = Join-Path $root "build/$preset/real-library/room"
+    $realLog = Join-Path $logDir 'real-library.log'
+    $testLog = Join-Path $realDir 'tests.log'
+    # An earlier run's reports must not stand for this run's.
+    Remove-Item -LiteralPath $testLog -ErrorAction SilentlyContinue
+    foreach ($dir in @($buildingDir, $roomDir)) {
+        Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue | Remove-Item
+    }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    & (Join-Path $PSScriptRoot 'real-library.ps1') -EsdeHome $EsdeHome -EsdeInstall $EsdeInstall -RomRoot $RomRoot `
+        -MediaRoot $MediaRoot -RetroArchExe $RetroArchExe -Preset $preset -OutDir $realDir `
+        -Filter '[real-library][building],[real-library][room-real]' *> $realLog
+    $realCode = $LASTEXITCODE
+    $firstRow = $results.Count
+    if (Add-RealLibraryCheckRows $preset $realLog $testLog $realCode $timer.Elapsed.TotalSeconds '[building] and [room-real]') {
+        Add-RealBuildingRows $buildingDir $testLog
+        Add-RealRoomRows $roomDir $testLog
+    }
+    if ($realCode -ne 0 -and -not (@($results | Select-Object -Skip $firstRow) | Where-Object { $_.Result -eq 'FAILED' })) {
+        Add-Result 'Real library' 'FAILED' "scripts/real-library.ps1 exited $realCode, see $realLog" 0
+    }
+}
+
+function Format-Seconds2($Ms) { if ($null -eq $Ms) { 'n/a' } else { '{0:N2} s' -f ([double]$Ms / 1000.0) } }
+
+# The real building's rows: the reports of its runs (first, again, second, whole, third, busiest-cold, busiest-warm,
+# ride-cold, ride-warm) against the acceptable limits (docs/roadmap.md; ADR-0013 §13).
+function Add-RealBuildingRows([string]$buildingDir, [string]$testLog) {
+    $names = @('first', 'again', 'second', 'whole', 'third', 'busiest-cold', 'busiest-warm', 'ride-cold', 'ride-warm')
+    $runs = [ordered]@{}
+    foreach ($name in $names) { $runs[$name] = Read-Report (Join-Path $buildingDir "$name.json") }
+    $missing = @($names | Where-Object { -not $runs[$_] })
+    if ($missing.Count -gt 0) {
+        Add-Result 'Real building' 'FAILED' ("the reports of {0} are missing, see $testLog" -f ($missing -join ', ')) 0
+        return
+    }
+    # Planned twice: the first start and again from nothing give one plan (the test compares the files' SHA-256); every
+    # later run shows that plan. The digest itself is never written here: it derives from the user's titles.
+    $first = $runs['first'].world
+    $floors = @($first.floors)
+    $placed = ($floors | ForEach-Object { [int]$_.placed } | Measure-Object -Sum).Sum
+    $rooms = ($floors | ForEach-Object { [int]$_.rooms } | Measure-Object -Sum).Sum
+    $digests = @($names | ForEach-Object { [string]$runs[$_].world.planDigest } | Select-Object -Unique)
+    $twiceOk = $first.outcome -eq 'generated' -and $runs['again'].world.outcome -eq 'generated' -and
+        $runs['again'].world.planWritten -and $digests.Count -eq 1 -and $digests[0]
+    Add-Result 'Real building: planned twice' ($(if ($twiceOk) { 'passed' } else { 'FAILED' })) `
+        ('{0} placements in {1} rooms on {2} floors; one plan digest over the {3} runs (first and again generated it, the test compares the files'' SHA-256); the jobs {4} and {5}' -f
+            $placed, $rooms, $floors.Count, $names.Count, (Format-Seconds2 $first.times.job.totalMs),
+            (Format-Seconds2 $runs['again'].world.times.job.totalMs)) 0 'one SHA-256'
+    # An unchanged restart: the building job skipped by its stamp, within 3 s.
+    $restarts = @($runs['second'], $runs['third'])
+    $skipOk = @($restarts | Where-Object { -not $_.world.times.job.skipped -or [double]$_.world.times.job.totalMs -gt 3000 -or
+            $_.world.outcome -ne 'unchanged' -or $_.world.planWritten }).Count -eq 0
+    Add-Result 'Real building: unchanged restart' ($(if ($skipOk) { 'passed' } else { 'FAILED' })) `
+        ('the job skipped by its stamp in {0} and {1}, nothing written (the whole job on the unchanged library, its stamp removed: {2})' -f
+            (Format-Seconds2 $runs['second'].world.times.job.totalMs), (Format-Seconds2 $runs['third'].world.times.job.totalMs),
+            (Format-Seconds2 $runs['whole'].world.times.job.totalMs)) 0 'skipped, <= 3 s'
+    # NFR-01 to the lobby: the stored lobby and the quick catalog's first page within 5 s of the process's creation.
+    $lobby = @($restarts | ForEach-Object { $_.world.preview.committedAtMs })
+    $pages = @($restarts | ForEach-Object { $_.catalog.times.firstPageMs })
+    $nfrOk = @(@($lobby) + @($pages) | Where-Object { $null -eq $_ -or [double]$_ -ge 5000 }).Count -eq 0
+    Add-Result 'NFR-01 to the lobby' ($(if ($nfrOk) { 'passed' } else { 'FAILED' })) `
+        ('the stored lobby shown {0} and {1}, the quick catalog''s first page {2} and {3} after the process started ({4} games)' -f
+            (Format-Ms $lobby[0]), (Format-Ms $lobby[1]), (Format-Ms $pages[0]), (Format-Ms $pages[1]),
+            $runs['second'].catalog.games) 0 '< 5,000 ms'
+    # The busiest floor's GPU memory, cold (its covers derived in that run) and warm: the runs started on a floor that
+    # holds the most placements of the plan (the test picks it; a tie may name either).
+    $most = ($floors | ForEach-Object { [int]$_.placed } | Measure-Object -Maximum).Maximum
+    $measured = @($runs['busiest-cold'], $runs['busiest-warm'])
+    $floor = $floors | Where-Object { $_.id -eq $measured[0].world.floor } | Select-Object -First 1
+    $memoryOk = $floor -and [int]$floor.placed -eq $most -and @($measured | Where-Object {
+            [double]$_.gpuMemory.peakTotalBytes -le 0 -or [double]$_.gpuMemory.peakTotalBytes -gt 512MB -or
+            $_.world.floor -ne $floor.id }).Count -eq 0
+    Add-Result 'Real building: the busiest floor''s GPU memory' ($(if ($memoryOk) { 'passed' } else { 'FAILED' })) `
+        ('the {0} floor ({1} rooms, {2} items; {3} placements, the most of the {4} floors: {5}): at most {6} cold, {7} warm (collection arrays {8}, {9})' -f
+            $measured[0].world.floor, @($measured[0].world.rooms).Count, $measured[0].world.items, $floor.placed,
+            $floors.Count, $(if ($floor -and [int]$floor.placed -eq $most) { 'yes' } else { "NO, the most is $most" }),
+            (Format-MiB $measured[0].gpuMemory.peakTotalBytes), (Format-MiB $measured[1].gpuMemory.peakTotalBytes),
+            (Format-MiB $measured[0].residency.arrayBytes), $measured[0].residency.format) 0 'all <= 512 MiB'
+    # The rides, cold (the derived covers emptied) and warm: the view back, then the room that holds the walker whole.
+    foreach ($ride in @(@('cold', 10000, 30000), @('warm', 3000, 3000))) {
+        $kind, $viewLimit, $roomLimit = $ride
+        $records = @($runs["ride-$kind"].world.rides)
+        if ($records.Count -ne 2) {
+            Add-Result "Real building: rides $kind" 'FAILED' "$($records.Count) ride(s) recorded, 2 expected" 0
+            continue
+        }
+        $there, $back = $records
+        $viewOk = @($records | Where-Object { $null -eq $_.totalMs -or [double]$_.totalMs -gt $viewLimit -or
+                $_.outcome -notin @('arrived', 'timed-out') -or [double]$_.gpuBytes -gt 512MB }).Count -eq 0
+        Add-Result "Real building: rides $kind" ($(if ($viewOk) { 'passed' } else { 'FAILED' })) `
+            ('the lobby to {0} ({1}): the view back {2} ({3}; the floor built at {4}; its {5} covers in view resident at {6}, {7} pending), {8} GPU memory; back to the lobby''s elevator {9} ({10})' -f
+                $there.room, $there.to, (Format-Seconds2 $there.totalMs), $there.outcome, (Format-Seconds2 $there.builtMs),
+                $there.viewItems, (Format-Seconds2 $there.residentMs), $there.viewPending, (Format-MiB $there.gpuBytes),
+                (Format-Seconds2 $back.totalMs), $back.outcome) 0 ("view back <= {0} s" -f ($viewLimit / 1000))
+        $roomOk = $null -ne $there.roomResidentMs -and [double]$there.roomResidentMs -le $roomLimit
+        Add-Result "Real building: the room after the $kind ride" ($(if ($roomOk) { 'passed' } else { 'FAILED' })) `
+            ('{0} whole {1} after the ride was asked (the room that holds the walker, ADR-0013 section 13)' -f $there.room,
+                (Format-Seconds2 $there.roomResidentMs)) 0 ("<= {0} s" -f ($roomLimit / 1000))
     }
 }
 
@@ -728,8 +922,11 @@ try {
             Add-CaseRow "I3 unit tests $preset" $unit.Cases $i3UnitPattern 'world, the room in the app, covers, interaction, card and screens; of the unit run'
             Add-CaseRow "I3 GPU cases $preset" $gpu.Cases $i3GpuPattern 'gpu.world*, covers, media viewer, refresh, arrays, static groups, video; of the GPU run'
         }
+        if ($Gate -eq 'C') {
+            Add-I4Rows $preset $unit.Cases $gpu.Cases
+        }
     }
-    if ($Gate -eq 'B') {
+    if ($Gate -in @('B', 'C')) {
         if ($built['msvc-x64-release']) {
             try { Invoke-Benchmarks }
             catch { Add-Result 'Benchmarks (Release)' 'FAILED' "stopped: $($_.Exception.Message)" 0 }
@@ -739,7 +936,13 @@ try {
     if ($RealLibrary) {
         if ($built['msvc-x64-release']) {
             # An exception must not lose the rows of the steps before it (the inner run writes them at its end).
-            try { if ($Gate -eq 'M1') { Invoke-RealLibrary } else { Invoke-RealRoom } }
+            try {
+                switch ($Gate) {
+                    'M1' { Invoke-RealLibrary }
+                    'B' { Invoke-RealRoom }
+                    'C' { Invoke-RealBuilding }
+                }
+            }
             catch { Add-Result 'Real library' 'FAILED' "stopped: $($_.Exception.Message)" 0 }
         }
         else { Add-Result 'Real library' 'not run' 'the Release build failed' 0 }

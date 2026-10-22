@@ -232,6 +232,44 @@ TEST_CASE("app/cover_requests: on a floor the view is the eye's room and the roo
     CHECK(whole.inViewCount() == 3);
 }
 
+TEST_CASE("app/cover_requests: a room's items in view and those pending, what a ride's view waits for (I4 step 8)",
+          "[app][cover_requests]") {
+    // Room 0 holds the eye: two items in view (ahead), one behind; room 1's item in view through its doorway.
+    const CoverView plain = viewFrom();
+    const std::vector<rv::core::Aabb> doorways{
+        rv::core::Aabb{glm::vec3(-0.6f, 0.0f, 0.5f), glm::vec3(0.6f, 2.2f, 0.7f)},
+        rv::core::Aabb{glm::vec3(-0.6f, 0.0f, -8.2f), glm::vec3(0.6f, 2.2f, -8.0f)}};
+    const std::vector<rv::core::Aabb> bounds{box({0.0f, 0.0f, -2.0f}), box({0.3f, 0.0f, -3.0f}),
+                                             box({0.0f, 0.0f, 2.0f}), box({0.0f, 0.0f, -9.0f})};
+    CoverSchedule schedule(bounds, {0, 0, 0, 1});
+    // Before any view nothing is in view (the session checks the view only from the frame after its floor showed).
+    CHECK(schedule.groupView(0) == rv::app::CoverGroupView{0, 0});
+    CoverView view = plain;
+    view.groups = rv::app::coverViewGroups(plain, doorways, 0);
+    schedule.setView(view);
+    CHECK(schedule.groupView(0) == rv::app::CoverGroupView{2, 2});
+    CHECK(schedule.groupView(1) == rv::app::CoverGroupView{1, 1});
+    CHECK(schedule.groupView(7) == rv::app::CoverGroupView{0, 0});
+    // The covers in view of the eye's room resident: none pending, while room 0's item behind and room 1's wait.
+    REQUIRE(schedule.takeToMake(2) == std::vector<std::size_t>{0, 1});
+    arrive(schedule, 0);
+    CHECK(schedule.groupView(0) == rv::app::CoverGroupView{2, 1});
+    arrive(schedule, 1);
+    CHECK(schedule.groupView(0) == rv::app::CoverGroupView{2, 0});
+    CHECK(schedule.groupView(1).pending == 1);
+    CHECK_FALSE(schedule.viewDone()); // the whole view holds room 1's item too
+    CHECK(schedule.stage(2) == CoverSchedule::Stage::Waiting);
+    // Turned around, the room's item behind is in view and pending.
+    CoverView back = viewFrom(glm::vec3(0.0f), 180.0f);
+    back.groups = rv::app::coverViewGroups(back, doorways, 0);
+    schedule.setView(back);
+    CHECK(schedule.groupView(0) == rv::app::CoverGroupView{1, 1});
+    // Without groups every item is group 0's.
+    CoverSchedule single(bounds);
+    single.setView(plain);
+    CHECK(single.groupView(0) == rv::app::CoverGroupView{3, 3});
+}
+
 TEST_CASE("app/cover_requests: made layers go up best first within the budget; arrivals are recorded in order",
           "[app][cover_requests]") {
     std::vector<rv::core::Aabb> bounds{box({0, 0, 3}), box({0, 0, -3}), box({0, 0, -1}), box({0, 0, 8})};
