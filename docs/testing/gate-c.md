@@ -121,8 +121,15 @@ the SNES room's content digest (ADR-0013 §5) is unchanged by the refresh, its r
 differences among the snapshots' 542,120 entries; its logs are in `build/gate-c-run2`.
 
 **Run 3**, `./scripts/gate.ps1 -Gate C -RealLibrary` at commit 27b9ced, after the fix (72 steps, 5,133 s): **PASSED**,
-0 failed, 0 skipped. Its fixture rows are run 1's (the same counts, every golden 0 pixels apart in Debug and Release;
-the benchmark path's p50 3.29 ms, p99 4.81 ms, 208 FPS at p99; 252.2 MiB at most); the focus watch saw 0 foreground
+0 failed, 0 skipped (logs in `build/gate-c-run3`). Its rows were run 4's within the machine's noise (the rides' view
+back 2.50 s cold and 1.80 s warm, the room whole 16.65 s cold; the lobby shown at 2,066 ms; the busiest floor 407.3
+MiB).
+
+**Run 4**, `./scripts/gate.ps1 -Gate C -RealLibrary` at commit d42bdc7, after the gate's review (the real building's
+test picks the busiest floor from the plan and the gate's row checks that the floor measured holds the most
+placements; a golden the run does not report is a failed row; 72 steps, 5,186 s): **PASSED**, 0 failed, 0 skipped.
+Its fixture rows are run 1's (the same counts, the 22 golden comparisons 0 pixels apart, largest difference 0/255; the
+benchmark path's p50 3.27 ms, p99 3.83 ms, 261 FPS at p99; 252.2 MiB at most); the focus watch saw 0 foreground
 changes and 2 windows shown, both hidden or off-screen (the fake emulator's). The real library's rows, ES-DE closed
 (ES-DE 3.4.1, 45 gamelists; the catalog of 105,130 entries, 90,246 games; the building of 44 rooms on 9 floors,
 19,985 placements; logs in `build/gate-c`):
@@ -130,28 +137,28 @@ changes and 2 windows shown, both hidden or off-screen (the fake emulator's). Th
 | Step | Result | Limit | Details |
 |---|---|---|---|
 | Real library: snapshots (NFR-10) | passed | 0 differences | **0 differences among 542,120 entries** (the ES-DE home and install hashed, the ROM and media roots listed) |
-| Real library: `[building]` and `[room-real]` tests, Release | passed | | 322 assertions in 2 test cases |
-| Real building: planned twice | passed | one SHA-256 | the first start and `again` (the plans' folder removed) generated one plan: the same digest over the nine runs and the same file SHA-256 (the test compares them; never written here); the jobs 3.11 s and 3.02 s (the snapshot of every system 0.99 s and 0.93 s, the planning 1.5 s) |
-| Real building: unchanged restart | passed | skipped, <= 3 s | the building job skipped by its stamp in **0.45 s** at both starts, nothing written; the whole job on the unchanged library, its stamp removed: 2.68 s |
-| NFR-01 to the lobby | passed | < 5,000 ms | the stored lobby shown **2,066 ms** and 1,976 ms after the process started (its preview built in 0.4 s), the quick catalog's first page 1,190 ms and 1,061 ms (90,246 games) |
-| Real building: the busiest floor's GPU memory | passed | <= 512 MiB | the computer floor (10 rooms, 5,314 items, the most placements of the 9 floors): at most **407.3 MiB** cold and warm (collection arrays 210.9 MiB, BC1) |
-| Real building: rides cold | passed | view back <= 10 s | the derived covers emptied, the lobby to the computer floor's largest room (1,646 items) through the elevator: the view back **2.50 s** after the request (`timed-out`: the floor built at 0.68 s, 150 of the room's 1,646 covers in view resident by then, 1,496 still coming; 9.51 s in I4 step 7b), 407.3 MiB; back to the lobby's elevator 1.33 s |
-| Real building: the room after the cold ride | passed | <= 30 s | the room whole **16.65 s** after the request |
-| Real building: rides warm | passed | view back <= 3 s | the same ride warm: the view back **1.80 s** (`arrived`: the floor built at 0.68 s, the covers in view resident at 1.55 s), 407.3 MiB; back 0.82 s |
-| Real building: the room after the warm ride | passed | <= 3 s | the room whole 1.55 s after the request |
+| Real library: `[building]` and `[room-real]` tests, Release | passed | | 325 assertions in 2 test cases |
+| Real building: planned twice | passed | one SHA-256 | the first start and `again` (the plans' folder removed) generated one plan: the same digest over the nine runs and the same file SHA-256 (the test compares them; never written here); the jobs 3.43 s and 3.10 s (the snapshot of every system 0.95 s and 0.97 s, the planning 1.6 s) |
+| Real building: unchanged restart | passed | skipped, <= 3 s | the building job skipped by its stamp in **0.46 s** and 0.51 s, nothing written; the whole job on the unchanged library, its stamp removed: 2.74 s |
+| NFR-01 to the lobby | passed | < 5,000 ms | the stored lobby shown **2,162 ms** and 2,088 ms after the process started (its preview built in 0.4 s and 0.45 s), the quick catalog's first page 1,265 ms and 1,130 ms (90,246 games) |
+| Real building: the busiest floor's GPU memory | passed | <= 512 MiB | the computer floor (10 rooms, 5,314 items; its 5,314 placements the most of the 9 floors, which the row checks): at most **407.3 MiB** cold and warm (collection arrays 210.9 MiB, BC1) |
+| Real building: rides cold | passed | view back <= 10 s | the derived covers emptied, the lobby to the busiest floor's largest room (room:amstradcpc on the computer floor, 1,646 items) through the elevator: the view back **2.50 s** after the request (`timed-out`: the floor built at 0.79 s, 145 of the room's 1,646 covers in view resident by then, 1,501 still coming; 9.51 s in I4 step 7b), 407.3 MiB; back to the lobby's elevator 1.12 s |
+| Real building: the room after the cold ride | passed | <= 30 s | the room whole **17.16 s** after the request |
+| Real building: rides warm | passed | view back <= 3 s | the same ride warm: the view back **1.95 s** (`arrived`: the floor built at 0.72 s, the covers in view resident at 1.70 s), 407.3 MiB; back 0.82 s |
+| Real building: the room after the warm ride | passed | <= 3 s | the room whole 1.70 s after the request |
 | Real room: the plan generated twice | passed | one SHA-256 | 890 placements (44 featured, 12 band, 834 spine), 6,907 unplaced; 18 lights, 35 clusters; one plan digest in the cold, again and restart runs |
 | Real room: restart after a second import | passed | NoRebuild, 0 moves | unchanged, `no-rebuild`, the plan not written; the reconciliation `textures`: 890 kept, 0 moved |
-| Real room: time to the room | passed | restart <= 5 s | shown 1,282 ms (restart), 1,775 ms (cold, the plan generated), 1,416 ms (again) after the process started |
-| Real room: covers resident, cold / warm | passed | 30 s / 3 s | **7.88 s** cold (1,780 layers derived and stored; 23.7 s at Gate B on a busier machine), 0.43 s and 0.54 s warm |
-| Real room: frames while covers load | passed | p99 <= 50 ms | coverLoad p99 7.55 ms cold, 6.25 and 15.92 ms warm |
-| Real room: benchmark path | passed | p99 <= 33.3 ms, p50 <= 16.7 ms; 512 MiB | p50 3.34 ms, p99 **4.04 ms** (248 FPS at p99), max 4.96 ms; GPU total p50 1.35 ms, p99 1.52 ms; arrays 33.6 MiB, all textures at most 215.2 MiB |
-| Real room: refresh of the library | passed | p99 <= 50 ms, 0 moves | the whole library imported while the room showed (105,130 entries, 97,295 added) in 14.8 s; the refresh phase 4,137 frames, p50 3.43 ms, **p99 5.03 ms**, max 333 ms; the room's live update `unchanged`, 1,671 kept, 0 moved; the SNES room's content digest unchanged |
-| NFR-01 with the room | passed | < 5,000 ms | the quick catalog's first page **1,099 ms** after the process started (90,246 games), the stored room shown at 1,234 ms (the floor rebuilt at 21.0 s with the gen4 rooms that the refresh's building brought) |
+| Real room: time to the room | passed | restart <= 5 s | shown 1,188 ms (restart), 1,675 ms (cold, the plan generated), 1,512 ms (again) after the process started |
+| Real room: covers resident, cold / warm | passed | 30 s / 3 s | **8.21 s** cold (1,780 layers derived and stored; 23.7 s at Gate B on a busier machine), 0.45 s and 0.55 s warm |
+| Real room: frames while covers load | passed | p99 <= 50 ms | coverLoad p99 6.75 ms cold, 5.65 and 16.16 ms warm |
+| Real room: benchmark path | passed | p99 <= 33.3 ms, p50 <= 16.7 ms; 512 MiB | p50 3.37 ms, p99 **4.36 ms** (230 FPS at p99), max 5.49 ms; GPU total p50 1.36 ms, p99 1.52 ms; arrays 33.6 MiB, all textures at most 215.2 MiB |
+| Real room: refresh of the library | passed | p99 <= 50 ms, 0 moves | the whole library imported while the room showed (105,130 entries, 97,295 added) in 14.4 s; the refresh phase 4,012 frames, p50 3.44 ms, **p99 5.11 ms**, max 16.5 ms; the room's live update `unchanged`, 1,671 kept, 0 moved; the SNES room's content digest unchanged |
+| NFR-01 with the room | passed | < 5,000 ms | the quick catalog's first page **1,182 ms** after the process started (90,246 games), the stored room shown at 1,293 ms (the floor rebuilt at 20.2 s with the gen4 rooms that the refresh's building brought) |
 
 The rides on the real library meet their rows with room to spare; cold, the view now comes back by the 3 s timeout
 rather than with the room's covers in view: from the largest room's doorway every one of its 1,646 items meets the
 view's frustum (the cover loader's view tests frusta, not occlusion), so the covers in view are the whole room, which
-cold takes about 16 s to derive. The view is back at 2.5 s with the nearest and largest covers first, the rest arriving
+cold takes about 17 s to derive. The view is back at 2.5 s with the nearest and largest covers first, the rest arriving
 while the walker looks (BACKLOG "The ride's covers in view").
 
 ## What step 8 changed
@@ -169,9 +176,10 @@ while the walker looks (BACKLOG "The ride's covers in view").
 - **The gate** (`scripts/gate.ps1 -Gate C`, above), a thin extension of Gate B's script; on the way, `-Benchmarks`
   now reaches the gate's inner run (the outer run did not pass it on), and the real room's row no longer prints its
   plan digest (it derives from the user's titles).
-- **The real building's test** plans the building a second time from nothing (`again`) and checks the room that
-  holds the walker after each ride; **the real SNES room's test** checks its refresh for a plan that holds the other
-  rooms too (run 2, below).
+- **The real building's test** plans the building a second time from nothing (`again`), measures the busiest floor of
+  the plan (the most placements; it named the computer floor before the gate's review) and checks the room that holds
+  the walker after each ride; **the real SNES room's test** checks its refresh for a plan that holds the other rooms
+  too (run 2, above).
 - **Three goldens** of the building, below.
 
 ## The goldens of the building

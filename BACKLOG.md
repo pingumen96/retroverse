@@ -467,7 +467,7 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
 - **The ride's covers in view (I4 step 8):** a ride's view comes back once the covers in view of the room that holds
   the eye are resident, or 3 s after the request; "in view" is the cover loader's frustum test, without occlusion, so
   from a doorway it holds the whole room (the real library's largest room: 1,646 of 1,646 items), and a cold ride comes
-  back by the timeout (2.5 s, the room whole at 16.7 s; `docs/testing/gate-c.md`). The view's items could be those
+  back by the timeout (2.5 s, the room whole at about 17 s; `docs/testing/gate-c.md`). The view's items could be those
   whose projected size passes a bound, or those not behind a shelf's back panel, so that the wait means "what the eye
   can read".
 - **A background warm-up of the building's covers (ADR-0013 "Deferred"):** a floor visited for the first time derives
