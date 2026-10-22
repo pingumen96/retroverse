@@ -464,6 +464,12 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   never matches until its room is updated and the whole job runs at each start meanwhile; a rebuild of the executable
   (even one that changes nothing) runs the whole job once; a start skipped by the stamp reports the plan's soft
   findings but no change report (`docs/i4/step-6b.md`).
+- **The ride's covers in view (I4 step 8):** a ride's view comes back once the covers in view of the room that holds
+  the eye are resident, or 3 s after the request; "in view" is the cover loader's frustum test, without occlusion, so
+  from a doorway it holds the whole room (the real library's largest room: 1,646 of 1,646 items), and a cold ride comes
+  back by the timeout (2.5 s, the room whole at 16.7 s; `docs/testing/gate-c.md`). The view's items could be those
+  whose projected size passes a bound, or those not behind a shelf's back panel, so that the wait means "what the eye
+  can read".
 - **A background warm-up of the building's covers (ADR-0013 "Deferred"):** a floor visited for the first time derives
   its covers then (the view comes back within about 3 s since I4 step 8, the room's last covers later); a low-priority
   pass over the other floors' covers while the walker stands still would make every first ride warm.
