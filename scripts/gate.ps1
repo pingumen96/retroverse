@@ -51,9 +51,10 @@
          of the whole library with the quick catalog open; the figures read from the test's run reports (time to the
          room, covers resident cold and warm, frame p99 on the benchmark path and over the refresh, NFR-01 with the
          room) against the acceptable limits.
-    Gate C (milestone M3 part 1, the building of ADR-0013; docs/testing/gate-c.md): everything Gate B runs on the
-    fixtures (Gate A's steps, every golden: G01, G02 to G10 and the building's G11, G12 and G13; the benchmark path in
-    Release against the acceptable limits), and
+    Gate C (milestone M3 part 1, the building of ADR-0013; docs/testing/gate-c.md): everything Gate A runs, with every
+    golden (G01, G02 to G10 and the building's G11, G12 and G13) and Gate B's benchmark path in Release against the
+    acceptable limits (Gate B's step 6; not its step 5: the I3 cases count in the unit and GPU totals, without rows of
+    their own), and
       5. per Debug and Release, rows for the I4 test cases counted from the unit and GPU runs, one per area (the
          world's building, the floors, the shared rooms, the update suite, the directory, the elevator, the floor in
          the app, the persisted start and live updates);

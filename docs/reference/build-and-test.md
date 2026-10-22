@@ -152,9 +152,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   generated twice, the restart after a second import (no rebuild, 0 moves), the time to the room (the restart within 5
   s), the covers resident cold (30 s) and warm (3 s), the frames while they load (p99 50 ms), the benchmark path's
   acceptable limits, the refresh of the whole library (p99 50 ms, 0 moves) and NFR-01 with the room.
-- `scripts/gate.ps1 -Gate C` (`docs/testing/gate-c.md`, logs in `build/gate-c`) runs Gate B's steps on the fixtures
-  (Gate A's, every golden with the building's G11, G12 and G13, the benchmark path in Release against the acceptable
-  limits; `-Benchmarks` as Gate B's) with, per Debug and Release, a row per I4 area counted from the unit and GPU runs
+- `scripts/gate.ps1 -Gate C` (`docs/testing/gate-c.md`, logs in `build/gate-c`) runs Gate A's steps, every golden (G01
+  to G13, the building's G11, G12 and G13 among them) and the benchmark path in Release against the acceptable limits
+  (`-Benchmarks` as Gate B's; Gate B's I3 rows are not repeated: those cases count in the unit and GPU totals) with,
+  per Debug and Release, a row per I4 area counted from the unit and GPU runs
   (the world's building, the floors, the shared rooms, the update suite, the directory, the elevator, the floor in the
   app, the persisted start and live updates), the whole gate under `scripts/focus_watch.py`. `-RealLibrary` adds
   `scripts/real-library.ps1 -Filter '[real-library][building],[real-library][room-real]'` (one pair of snapshots, 0
