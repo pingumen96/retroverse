@@ -802,10 +802,10 @@ function Invoke-RealBuilding {
 
 function Format-Seconds2($Ms) { if ($null -eq $Ms) { 'n/a' } else { '{0:N2} s' -f ([double]$Ms / 1000.0) } }
 
-# The real building's rows: the reports of its runs (first, again, second, whole, third, computer-cold, computer-warm,
+# The real building's rows: the reports of its runs (first, again, second, whole, third, busiest-cold, busiest-warm,
 # ride-cold, ride-warm) against the acceptable limits (docs/roadmap.md; ADR-0013 §13).
 function Add-RealBuildingRows([string]$buildingDir, [string]$testLog) {
-    $names = @('first', 'again', 'second', 'whole', 'third', 'computer-cold', 'computer-warm', 'ride-cold', 'ride-warm')
+    $names = @('first', 'again', 'second', 'whole', 'third', 'busiest-cold', 'busiest-warm', 'ride-cold', 'ride-warm')
     $runs = [ordered]@{}
     foreach ($name in $names) { $runs[$name] = Read-Report (Join-Path $buildingDir "$name.json") }
     $missing = @($names | Where-Object { -not $runs[$_] })
@@ -842,16 +842,20 @@ function Add-RealBuildingRows([string]$buildingDir, [string]$testLog) {
         ('the stored lobby shown {0} and {1}, the quick catalog''s first page {2} and {3} after the process started ({4} games)' -f
             (Format-Ms $lobby[0]), (Format-Ms $lobby[1]), (Format-Ms $pages[0]), (Format-Ms $pages[1]),
             $runs['second'].catalog.games) 0 '< 5,000 ms'
-    # The busiest floor's GPU memory, cold (its covers derived in that run) and warm.
-    $busiest = $floors | Sort-Object { [int]$_.placed } -Descending | Select-Object -First 1
-    $computer = @($runs['computer-cold'], $runs['computer-warm'])
-    $memoryOk = @($computer | Where-Object { [double]$_.gpuMemory.peakTotalBytes -le 0 -or
-            [double]$_.gpuMemory.peakTotalBytes -gt 512MB -or $_.world.floor -ne 'computer' }).Count -eq 0
+    # The busiest floor's GPU memory, cold (its covers derived in that run) and warm: the runs started on a floor that
+    # holds the most placements of the plan (the test picks it; a tie may name either).
+    $most = ($floors | ForEach-Object { [int]$_.placed } | Measure-Object -Maximum).Maximum
+    $measured = @($runs['busiest-cold'], $runs['busiest-warm'])
+    $floor = $floors | Where-Object { $_.id -eq $measured[0].world.floor } | Select-Object -First 1
+    $memoryOk = $floor -and [int]$floor.placed -eq $most -and @($measured | Where-Object {
+            [double]$_.gpuMemory.peakTotalBytes -le 0 -or [double]$_.gpuMemory.peakTotalBytes -gt 512MB -or
+            $_.world.floor -ne $floor.id }).Count -eq 0
     Add-Result 'Real building: the busiest floor''s GPU memory' ($(if ($memoryOk) { 'passed' } else { 'FAILED' })) `
-        ('the computer floor ({0} rooms, {1} items; the busiest is {2} with {3} placements): at most {4} cold, {5} warm (collection arrays {6}, {7})' -f
-            @($runs['computer-cold'].world.rooms).Count, $runs['computer-cold'].world.items, $busiest.id, $busiest.placed,
-            (Format-MiB $computer[0].gpuMemory.peakTotalBytes), (Format-MiB $computer[1].gpuMemory.peakTotalBytes),
-            (Format-MiB $computer[0].residency.arrayBytes), $computer[0].residency.format) 0 'all <= 512 MiB'
+        ('the {0} floor ({1} rooms, {2} items; {3} placements, the most of the {4} floors: {5}): at most {6} cold, {7} warm (collection arrays {8}, {9})' -f
+            $measured[0].world.floor, @($measured[0].world.rooms).Count, $measured[0].world.items, $floor.placed,
+            $floors.Count, $(if ($floor -and [int]$floor.placed -eq $most) { 'yes' } else { "NO, the most is $most" }),
+            (Format-MiB $measured[0].gpuMemory.peakTotalBytes), (Format-MiB $measured[1].gpuMemory.peakTotalBytes),
+            (Format-MiB $measured[0].residency.arrayBytes), $measured[0].residency.format) 0 'all <= 512 MiB'
     # The rides, cold (the derived covers emptied) and warm: the view back, then the room that holds the walker whole.
     foreach ($ride in @(@('cold', 10000, 30000), @('warm', 3000, 3000))) {
         $kind, $viewLimit, $roomLimit = $ride
