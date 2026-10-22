@@ -297,7 +297,8 @@ function Invoke-Tests([string]$Step, [string]$Name, [string]$Preset, [string[]]$
 
 # The golden comparisons (G01 alone for Gates A and M1, every golden for Gates B and C): one row per golden, its ctest result
 # with the verdict its case writes next to its screenshot (G01's in smoke/golden_g01, the rooms' in
-# smoke/golden_room/<case>); the run's own row stays only when it holds no golden case (a failure before any ran).
+# smoke/golden_room/<case>), and a failed row for each golden the gate expects that the run does not report; the run's
+# own row stays only when it holds no golden case (a failure before any ran).
 function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     $smokeDir = Join-Path $root "build/$Preset/smoke"
     $verdictOf = { param($id) if ($id -eq 'G01') { Join-Path $smokeDir 'golden_g01/comparison.txt' }
@@ -306,6 +307,13 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     Get-ChildItem -ErrorAction SilentlyContinue -Path (Join-Path $smokeDir 'golden_room') -Filter comparison.txt -Recurse |
         Remove-Item
     $pattern = if ($Gate -in @('B', 'C')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
+    # The goldens the gate's page promises: one that the run does not report (renamed, untagged, not discovered) is a
+    # failed row, never a row that silently disappears.
+    $expected = switch ($Gate) {
+        'B' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10') }
+        'C' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13') }
+        default { @('G01') }
+    }
     $run = Invoke-Tests "Goldens $Preset" "golden-$Preset" $TestPreset @('-R', $pattern)
     $cases = @($run.Cases | Where-Object { $_.name -match '^gpu\.golden/(\w+):' })
     if ($cases.Count -eq 0) { return }
@@ -318,6 +326,13 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
         $details = if (Test-Path $verdictFile) { (Get-Content -Raw $verdictFile).Trim() }
                    else { "no comparison written, see $(Join-Path $logDir "golden-$Preset.log")" }
         Add-Result "Golden $id $Preset" $result $details ([double]$case.time) '<= 0.5% of the pixels'
+    }
+    $seen = @($cases | ForEach-Object { [regex]::Match($_.name, '^gpu\.golden/(\w+):').Groups[1].Value })
+    foreach ($id in $expected) {
+        if ($id -cnotin $seen) {
+            Add-Result "Golden $id $Preset" 'FAILED' ("not run: no case gpu.golden/${id}: in the run, see " +
+                (Join-Path $logDir "golden-$Preset.log")) 0 '<= 0.5% of the pixels'
+        }
     }
 }
 
