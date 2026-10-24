@@ -20,7 +20,8 @@
 //      "doorwayFill": {"color": "#FFD6AE", "intensity": 3.5, "range": 6, "minOuterConeDeg": 28, "coneMarginDeg": 6,
 //                      "innerConeRatio": 0.7},   // a low spot in the hall before each doorway, aimed into the room
 //      "environment": {"exposure": 1.5, "ambientSky": "#8A8078", "ambientGround": "#BCA08A",
-//                      "ambientIntensity": 0.45, "fillColor": "#FFDCC0", "fillIntensity": 0.15}},  // its area's terms
+//                      "ambientIntensity": 0.38, "fillColor": "#FFDCC0", "fillIntensity": 0.15},  // its area's terms
+//      "lobbyEnvironment": {...}},   // optional, the same keys: the ground floor's lobby's (default: the hall's)
 //    "accents": [                    // optional: lights of the look alone, anchored on a hero corner's part
 //      {"name": "crt-glow", "anchor": "crt", "type": "spot", "position": [0, 0.35, 0.4], "target": [0, 0, 1.4],
 //       "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80},
@@ -40,8 +41,10 @@
 //   (floor_scene.hpp), a kind of the pack's own whose roles name what the hall is built of: floor, wall (the plaster
 //   above the wainscot), ceiling, trim (casings, lintels, the wainscot's rail and battens, the sconces' backplates, the
 //   portal signs' frames), baseboard, wainscot (its panels), runner (the rug down its middle), beam, bench (the frame),
-//   cushion, plant (the pot; the rest the "plant" kind's), picture (the prints' frames), sconce (the lit shade) and
-//   sign (the portal signs' lettering). A role the pack lacks is the built-in pack's.
+//   cushion, plant (the pot; the rest the "plant" kind's), saucer (the plant's), picture (the prints' frames; the
+//   print the "poster_frame" kind's picture), sconce (the lit shade), wash (the sconce's light on its wall) and sign
+//   (the portal and blade signs' lettering). A role the pack lacks is the built-in pack's (so is a role of the
+//   "plant" and "poster_frame" kinds the hall uses).
 
 #include <cstdint>
 #include <filesystem>
@@ -116,11 +119,12 @@ struct AreaLook {
 };
 
 /// How a floor's hall is lit (the profile's "hall" role, I6 step 1): its ceiling lights, the fill spot before each
-/// doorway, its area's environment.
+/// doorway, its area's environment, and the ground floor's lobby's (the hall's when the profile names none).
 struct HallLook {
     LightStyle light;
     LightStyle doorwayFill;
     AreaLook environment;
+    AreaLook lobbyEnvironment;
 
     bool operator==(const HallLook&) const = default;
 };

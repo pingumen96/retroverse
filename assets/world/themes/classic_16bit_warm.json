@@ -37,13 +37,15 @@
     // The collection's item.
     "cartridge": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Cover", "spine": "MAT_Label_Cover"},
     // The floor's hall (I6 step 2, read by floor_scene.hpp): oak planks under a medallion runner, a dark varnished
-    // wainscot under warm plaster, walnut trim, casings and beams, walnut benches with bordeaux cushions, oak-framed
-    // prints, glazed pots, lit sconces and the portals' amber lettering.
-    "hall": {"floor": "MAT_Floor_OakPlanks", "wall": "MAT_Plaster_Warm", "ceiling": "MAT_Plaster_Warm",
+    // wainscot under a dark warm plaster and a darker ceiling, walnut trim, casings and beams, walnut benches with
+    // bordeaux cushions, walnut-framed prints, glazed pots on dark saucers, lit sconces with their wash on the wall and
+    // the portals' amber lettering.
+    "hall": {"floor": "MAT_Floor_OakPlanks", "wall": "MAT_Plaster_Warm", "ceiling": "MAT_Plaster_Ceiling",
              "trim": "MAT_Wood_Walnut", "baseboard": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark",
              "runner": "MAT_Carpet_Ornate", "beam": "MAT_Wood_Walnut", "bench": "MAT_Wood_Walnut",
-             "cushion": "MAT_Fabric_Sofa", "plant": "MAT_Ceramic_Glazed", "picture": "MAT_Wood_Oak",
-             "sconce": "MAT_Sconce_Shade", "sign": "MAT_Sign_Tungsten"}
+             "cushion": "MAT_Fabric_Sofa", "plant": "MAT_Ceramic_Glazed", "saucer": "MAT_Ceramic_Saucer",
+             "picture": "MAT_Wood_Walnut", "sconce": "MAT_Sconce_Shade", "wash": "MAT_Wall_Wash",
+             "sign": "MAT_Sign_Tungsten"}
   },
   "heroParts": {
     // The room's sign: the platform's lettering on the neon diffuser in a walnut frame.

@@ -95,7 +95,7 @@ TEST_CASE("world/room_look: the profiles' hall role and environments light halls
         CHECK(hall.doorwayFill.intensity < hall.light.intensity);
         CHECK(hall.doorwayFill.range <= 8.0);
         // Upper walls and ceilings above black: some ambient from below (the floor's bounce) and an even fill.
-        for (const rv::world::AreaLook& look : {profile->roomLook(), hall.environment}) {
+        for (const rv::world::AreaLook& look : {profile->roomLook(), hall.environment, hall.lobbyEnvironment}) {
             const auto ground = *rv::core::hexToLinearRgb(look.ambientGround);
             CHECK(ground.r * look.ambientIntensity + look.fillIntensity > 0.05);
             CHECK(ground.r >= ground.b); // warm
@@ -107,6 +107,12 @@ TEST_CASE("world/room_look: the profiles' hall role and environments light halls
     REQUIRE(evening.has_value());
     const rv::world::LightingProfile& builtIn = rv::world::eveningLightingProfile();
     CHECK(builtIn.hall == evening->hall);
+    // The lobby keeps step 1's ambient until the hub (I6 step 5), the halls a little dimmer; a profile without a
+    // lobby of its own lights it as its halls.
+    CHECK(evening->hall.lobbyEnvironment.ambientIntensity > evening->hall.environment.ambientIntensity);
+    const auto afternoon = rv::world::loadLightingProfile(assets(), "afternoon");
+    REQUIRE(afternoon.has_value());
+    CHECK(afternoon->hall.lobbyEnvironment == afternoon->hall.environment);
     CHECK(builtIn.roomLook() == evening->roomLook());
     CHECK(builtIn.clearColor == evening->clearColor);
 
