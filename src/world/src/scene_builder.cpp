@@ -82,13 +82,13 @@ json coverTexture(std::uint64_t seed) {
 }
 
 /// The textures of a prefab kind's roles: the CRT's idle colour bars, a poster's or a magazine's invented cover, the
-/// sign's lettering.
+/// sign's neon lettering (I6 step 3: a neon panel in the pack's accent, its material's colour).
 json themeTextures(std::string_view kind, bool sign, const PlatformManifest& platform, std::uint64_t seed) {
     if (kind == "crt") {
         return json{{"screen", json{{"pattern", "color_bars"}}}};
     }
     if (kind == "poster_frame") {
-        return sign ? json{{"picture", json{{"pattern", "sign"}, {"title", platform.signText}}}}
+        return sign ? json{{"picture", json{{"pattern", "neon"}, {"title", platform.signText}}}}
                     : json{{"picture", coverTexture(seed)}};
     }
     if (kind == "magazine_stack") {
@@ -126,7 +126,13 @@ json prefabObject(std::string id, const ScenePrefab& prefab, const json* params,
     }
     object["prefab"] = prefab.generator;
     object["params"] = params != nullptr ? *params : prefab.params;
-    object["materials"] = materialsJson(data.theme.materials(prefab.generator, heroPart));
+    const std::map<std::string, std::string> materials = data.theme.materials(prefab.generator, heroPart);
+    // A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside.
+    if ((prefab.generator == "shelf" || prefab.generator == "wall_shelf") && materials.contains("board_light") &&
+        object["params"].is_object()) {
+        object["params"]["boardLight"] = true;
+    }
+    object["materials"] = materialsJson(materials);
     if (json textures = themeTextures(prefab.generator, sign, data.platform, seed); !textures.empty()) {
         object["textures"] = std::move(textures);
     }
@@ -350,7 +356,8 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
     }
     data.roomTemplate = std::move(*roomTemplate);
     // The platform of the room's first system (its manifest, or what systems.json gives it, by its platform tags for a
-    // system without a row), with the room's recorded family and theme pack, which are authoritative (ADR-0013 §3).
+    // system without a row), with the room's recorded family, which is authoritative (ADR-0013 §3), and the theme pack
+    // resolved now on the room's floor (ADR-0014 §1: a look, never the plan's record).
     auto building = loadBuildingData(assetRoot);
     if (!building) {
         return propagate(building.error());
@@ -361,7 +368,7 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
     }
     const catalog::SystemName system = room->sections.empty() ? roomId.system() : room->sections.front();
     if (room->kind == RoomKind::Console) {
-        auto platform = resolvePlatform(assetRoot, system, platformTags, *systems, *building);
+        auto platform = resolvePlatform(assetRoot, system, platformTags, *systems, *building, room->floor);
         if (!platform) {
             return propagate(platform.error());
         }
@@ -371,7 +378,6 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
         data.platform = sharedRoomPlatform(room->kind, room->floor, system, *systems, *building);
     }
     data.platform.mediaFamily = room->mediaFamily;
-    data.platform.themePack = room->themePack;
     auto registry = loadMediaFamilies(assetRoot);
     if (!registry) {
         return propagate(registry.error());
@@ -409,6 +415,8 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
                      kDefaultLightingProfile, profile.error().toString());
         data.lighting = eveningLightingProfile();
     }
+    // The pack's light: its tints of the profile's roles, the sign's accent in its neon (I6 step 3).
+    data.lighting = themedLighting(data.lighting, data.theme);
     return data;
 }
 

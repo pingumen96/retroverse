@@ -273,11 +273,11 @@
     {
       "id": "room",
       "materials": {
-        "ceiling": "MAT_Wall_Painted",
+        "ceiling": "MAT_Wall_Warm",
         "floor": "MAT_Floor_Parquet",
         "trim": "MAT_Wood_Walnut",
         "wainscot": "MAT_Wood_Varnished_Dark",
-        "wall": "MAT_Wall_Painted"
+        "wall": "MAT_Wall_Warm"
       },
       "params": {
         "baseboardHeight": 0.1,
@@ -587,10 +587,13 @@
     {
       "id": "fx:fs01",
       "materials": {
+        "board_light": "MAT_Shelf_Light",
         "wood_primary": "MAT_Wood_Walnut",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "boardLight": true
+      },
       "position": [
         1.275,
         0.0,
@@ -712,7 +715,7 @@
       "id": "fx:hero.sign",
       "materials": {
         "frame": "MAT_Wood_Walnut",
-        "picture": "MAT_Neon_Diffuser"
+        "picture": "MAT_Neon_Magenta"
       },
       "params": {
         "depth": 0.04,
@@ -733,7 +736,7 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "sign",
+          "pattern": "neon",
           "title": "16-BIT CORNER"
         }
       }
@@ -761,11 +764,14 @@
     {
       "id": "fx:hw-e",
       "materials": {
+        "board_glow": "MAT_Shelf_Glow",
+        "board_light": "MAT_Shelf_Light",
         "wood_primary": "MAT_Wood_Walnut",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {
         "back": true,
+        "boardLight": true,
         "boardThickness": 0.025,
         "depth": 0.24,
         "displayLevels": [
@@ -806,11 +812,14 @@
     {
       "id": "fx:hw-w",
       "materials": {
+        "board_glow": "MAT_Shelf_Glow",
+        "board_light": "MAT_Shelf_Light",
         "wood_primary": "MAT_Wood_Walnut",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {
         "back": true,
+        "boardLight": true,
         "boardThickness": 0.025,
         "depth": 0.24,
         "displayLevels": [

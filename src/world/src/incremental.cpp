@@ -712,13 +712,14 @@ std::vector<T> sortedUnique(std::vector<T> list) {
 }
 
 /// The data of `room` among `rooms` (by the system of its first section): a shared or arcade room's when that system's
-/// data is a console room's that carries it with the room's recorded family and theme pack (WorldData::sharedRoom).
+/// data is a console room's that carries it with the room's recorded family (WorldData::sharedRoom; the theme pack is a
+/// look, resolved, never a reason to choose: ADR-0014 §1).
 const WorldData* roomDataOf(std::span<const WorldData> rooms, const Room& room) noexcept {
     const catalog::SystemName& system = room.sections.empty() ? room.id.system() : room.sections.front();
     const WorldData* data = detail::dataOf(rooms, system);
     const WorldData* shared = data != nullptr ? data->sharedRoom.get() : nullptr;
     if (data != nullptr && data->kind != room.kind && shared != nullptr && shared->kind == room.kind &&
-        shared->mediaFamily.id == room.mediaFamily && shared->platform.themePack == room.themePack) {
+        shared->mediaFamily.id == room.mediaFamily) {
         return shared;
     }
     return data;
@@ -1108,6 +1109,13 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         detail::appendRoom(plan, std::move(*content));
     }
     plan.unplaced.insert(plan.unplaced.end(), entry->capacity.begin(), entry->capacity.end());
+    // Every stored room records the theme pack its data resolves now (ADR-0014 §1, I6 step 3), kept or updated, given a
+    // selection or not: a look, never a reason to keep or regenerate a room, and no placement moves for it.
+    for (Room& room : plan.rooms) {
+        if (const auto data = dataOf.find(room.id); data != dataOf.end()) {
+            room.themePack = data->second->platform.themePack;
+        }
+    }
 
     GenerationResult result;
     plan.schemaVersion = kPlanSchemaVersion;

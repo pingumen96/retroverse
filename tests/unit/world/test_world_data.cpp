@@ -145,7 +145,8 @@ TEST_CASE("world/data: every file under assets/world is read", "[world][data]") 
         }
         ++read;
     }
-    CHECK(read == 9); // I3 step 16: the two lighting profiles and the theme pack; I4 step 1: building and systems
+    // I3 step 16: the two lighting profiles and the theme pack; I4 step 1: building and systems; I6 step 3: six packs.
+    CHECK(read == 15);
 }
 
 TEST_CASE("world/data: no model path anywhere in assets/world", "[world][data]") {

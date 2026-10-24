@@ -274,10 +274,12 @@ TEST_CASE("world/building plan: platform tags count only when they place a syste
     CHECK(byOtherTags.plan.inputDigest != byTag.plan.inputDigest);
 }
 
-TEST_CASE("world/building plan: a stored room's recorded family and theme pack are authoritative", "[world][building]") {
+TEST_CASE("world/building plan: a stored room's recorded family is authoritative, its theme pack resolved",
+          "[world][building]") {
     // ADR-0013 §3, §5: the data a room was made with may change (systems.json names nes's family cartridge_home_8bit
-    // since I4 step 2); a room recorded with another family and theme pack is read and updated with its own, never
-    // refused nor kept for it, and keeps them.
+    // since I4 step 2); a room recorded with another family is read and updated with its own, never refused nor kept
+    // for it, and keeps it. Its theme pack is a look (ADR-0014 §1, I6 step 3): resolved on its floor whatever the plan
+    // records, and the update writes the resolved one.
     const std::filesystem::path assets = rv::test::world::assetRoot();
     const auto now = rv::world::loadWorldData(assets, name("nes"));
     REQUIRE(now.has_value());
@@ -285,7 +287,6 @@ TEST_CASE("world/building plan: a stored room's recorded family and theme pack a
     rv::world::RoomDataRequest request;
     request.system = name("nes");
     request.mediaFamily = "cartridge_home_16bit";
-    request.themePack = "classic_8bit_cool";
     auto made = rv::world::loadWorldData(assets, request);
     REQUIRE(made.has_value());
     rv::world::BuildingInput input;
@@ -294,20 +295,24 @@ TEST_CASE("world/building plan: a stored room's recorded family and theme pack a
     input.selections = {selectionOf("nes", 40, 4000)};
     auto generated = rv::world::generateBuilding(input, made->building, made->systems, std::span(&*made, 1));
     REQUIRE(generated.has_value());
+    // A plan written before I6 step 3 may record another pack: it is no reason for anything.
+    for (rv::world::Room& stored : generated->plan.rooms) {
+        stored.themePack = "classic_8bit_cool";
+    }
     const rv::world::Room& room = roomOf(generated->plan, "nes");
     CHECK(room.floor == "gen3");
     CHECK(room.mediaFamily == "cartridge_home_16bit");
-    CHECK(room.themePack == "classic_8bit_cool");
 
-    // loadRoomData() reads the stored room with its recorded family and theme pack.
+    // loadRoomData() reads the stored room with its recorded family, its pack its floor's.
     auto data = rv::world::loadRoomData(assets, room);
     REQUIRE(data.has_value());
     CHECK(data->mediaFamily.id == "cartridge_home_16bit");
     CHECK(data->platform.mediaFamily == "cartridge_home_16bit");
-    CHECK(data->platform.themePack == "classic_8bit_cool");
+    CHECK(data->platform.themePack == "classic_16bit_warm");
     CHECK(data->platform.system == name("nes"));
 
-    // The update with new titles: the room updated with that data, not kept, its family and theme pack as recorded.
+    // The update with new titles: the room updated with that data, not kept, its family as recorded, its pack the
+    // resolved one.
     RoomSelection more = input.selections.front();
     std::set<std::uint64_t> taken = rv::test::world::gameValuesOf(more);
     rv::core::Random random(4001);
@@ -326,7 +331,7 @@ TEST_CASE("world/building plan: a stored room's recorded family and theme pack a
     CHECK(updated->changes.added.size() == 3);
     CHECK(updated->validation.passed());
     CHECK(roomOf(updated->plan, "nes").mediaFamily == "cartridge_home_16bit");
-    CHECK(roomOf(updated->plan, "nes").themePack == "classic_8bit_cool");
+    CHECK(roomOf(updated->plan, "nes").themePack == "classic_16bit_warm");
 }
 
 TEST_CASE("world/building plan: inputs it refuses", "[world][building]") {

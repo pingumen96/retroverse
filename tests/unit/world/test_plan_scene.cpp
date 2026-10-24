@@ -161,7 +161,13 @@ TEST_CASE("world/plan_scene: every fixture's prefab built with its parameters, a
             REQUIRE(prefab != nullptr);
             REQUIRE(object.source == rv::scene::SceneObject::Source::Prefab);
             CHECK(object.kind == fixture.prefab.kind);
-            CHECK(object.params == prefab->params);
+            // The prefab's parameters, a shelf's lit by the pack (I6 step 3, boardLight) without changing its size.
+            nlohmann::json params = prefab->params;
+            if ((object.kind == "shelf" || object.kind == "wall_shelf") &&
+                entry.data.theme.materials(object.kind).contains("board_light")) {
+                params["boardLight"] = true;
+            }
+            CHECK(object.params == params);
             auto built = rv::geometry::buildPrefab(object.kind, object.params);
             REQUIRE(built.has_value());
             // The prefab the plan measured: its bounds in whole millimetres.
@@ -406,9 +412,9 @@ TEST_CASE("world/plan_scene: the scene file reads back as the scene description,
         CHECK(loaded->objects[i].transform == scene.objects[i].transform);
     }
     CHECK(loaded->lights.size() == scene.lights.size());
-    // The sign shows the platform's text; the CRT its idle colour bars.
+    // The sign shows the platform's text as neon tubes (I6 step 3); the CRT its idle colour bars.
     const rv::scene::SceneObject& sign = *loaded->findObject("fx:hero.sign");
-    CHECK(sign.texturesByRole.at("picture").pattern == "sign");
+    CHECK(sign.texturesByRole.at("picture").pattern == "neon");
     CHECK(sign.texturesByRole.at("picture").title == entry.data.platform.signText);
     CHECK(loaded->findObject("fx:hero.crt")->texturesByRole.at("screen").pattern == "color_bars");
     CHECK(loaded->findObject("fx:hero.crt")->materialNameForRole("screen") == "MAT_Screen_CRT_Room");

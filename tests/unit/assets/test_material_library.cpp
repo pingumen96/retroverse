@@ -39,7 +39,14 @@ const std::vector<std::string> kSharedNames = {
     "MAT_Label_Cover",
     // The halls' (I6 step 2).
     "MAT_Plaster_Warm", "MAT_Sconce_Shade", "MAT_Sign_Tungsten", "MAT_Plaster_Ceiling", "MAT_Metal_Brass",
-    "MAT_Ceramic_Saucer", "MAT_Wall_Wash"};
+    "MAT_Ceramic_Saucer", "MAT_Wall_Wash",
+    // The theme packs' (I6 step 3): the rooms' walls, the optical era's hall plaster, a dark parquet, the neon signs,
+    // the lit shelves, seats, display linings and the green-shaded lamp.
+    "MAT_Wall_Warm", "MAT_Wall_Caramel", "MAT_Wall_Slate", "MAT_Wall_Cream", "MAT_Wall_Study", "MAT_Wall_Night",
+    "MAT_Plaster_Slate", "MAT_Floor_Parquet_Dark", "MAT_Neon_Magenta", "MAT_Neon_Red", "MAT_Neon_Blue",
+    "MAT_Neon_Cyan", "MAT_Neon_Green", "MAT_Neon_Pink", "MAT_Neon_Amber", "MAT_Shelf_Light", "MAT_Shelf_Glow",
+    "MAT_Fabric_Leather", "MAT_Fabric_Teal", "MAT_Fabric_Display_Navy", "MAT_Fabric_Display_Green",
+    "MAT_Lamp_Shade_Green"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.

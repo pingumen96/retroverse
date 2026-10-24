@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <rv/assets/collection_labels.hpp>
 #include <rv/assets/derived_texture_cache.hpp>
@@ -38,6 +39,8 @@ struct CoverItem {
     std::string year;
     /// The placement's seed (world::placementSeed): the palette's colour of a spine or label without a cover.
     std::uint64_t seed = 0;
+    /// Its room's theme pack's label palette (I6 step 3; empty: assets::kDefaultLabelPalette).
+    std::vector<assets::Rgb8> palette;
     /// Its cover's path relative to the media root, as the catalog derives it ("snes/covers/Game (USA).png"); empty
     /// when the catalog records none.
     std::string coverPath;

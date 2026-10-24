@@ -14,7 +14,8 @@
 // reader requires every kind but "excluded" to land on exactly one floor at every generation from 1 to 9. A floor's
 // "sign" (optional; 1 to 32 printable ASCII characters, a generic text, never a trade name; default its id in
 // uppercase) is the text by its elevator (I4 step 3): it only draws the floor, so the plans' inputDigest leaves it out
-// (buildingDataToJson()). Layout:
+// (buildingDataToJson()). A floor's "themePack" (optional, a data id; I6 step 3, ADR-0014 §1, §5) is the look of its
+// rooms and its hall (themePackOf()); a look, never a plan fact, it is left out of the inputDigest too. Layout:
 // the hall's and the ground floor's lobby's widths (even), the x where the rooms' rows start east of the hall's west
 // end (the elevator's landing), the allowance a room's walls add around its interior on the floor, and the rooms a row
 // holds at most.
@@ -108,6 +109,8 @@ struct FloorSpec {
     std::vector<std::uint32_t> generations;
     /// The sign by its elevator (I4 step 3): a generic text, 1 to 32 printable ASCII characters.
     std::string sign;
+    /// The theme pack of its rooms and hall (I6 step 3); empty: its kinds' defaults (themePackOf()).
+    std::string themePack;
 
     bool operator==(const FloorSpec&) const = default;
 };
@@ -250,6 +253,21 @@ struct Classification {
 /// its kind and generation).
 [[nodiscard]] Classification classify(const catalog::SystemName& system, std::span<const std::string> platformTags,
                                       const SystemsData& systems, const BuildingData& building);
+
+// --- The look of a room (ADR-0014 §1, §5) ---------------------------------------------------------------------------
+
+/// The theme pack a room is drawn with, resolved when its scene is built and written into Room::themePack by an update
+/// (never a reason to keep or regenerate a room, never a placement moved): the arcade room's is its kind's default
+/// (systems.json's "arcade", wherever it stands); any other room's is its floor's (building.json's "themePack"), else
+/// the defaults of `defaultsKind` (a console room's system's kind, a shared room's floor's first kind). A console room's
+/// platform manifest, when its system has one, overrides it (generation.hpp's resolvePlatform()).
+[[nodiscard]] std::string themePackOf(RoomKind kind, std::string_view floor, SystemKind defaultsKind,
+                                      const SystemsData& systems, const BuildingData& building);
+
+/// The theme pack of a floor's hall (I6 step 3): the floor's, else the defaults of its first kind (Other's for a floor
+/// the building does not hold).
+[[nodiscard]] std::string floorThemePack(std::string_view floor, const SystemsData& systems,
+                                         const BuildingData& building);
 
 // --- The floor's layout ---------------------------------------------------------------------------------------------
 

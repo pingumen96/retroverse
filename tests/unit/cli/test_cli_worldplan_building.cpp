@@ -471,7 +471,7 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         CHECK(object["id"] != "fx:hero.console");
         const auto textures = object.find("textures");
         if (textures != object.end() && textures->contains("picture") &&
-            (*textures)["picture"].value("pattern", "") == "sign") {
+            (*textures)["picture"].value("pattern", "") == "neon") { // the room's neon sign (I6 step 3)
             signs.push_back((*textures)["picture"].value("title", ""));
         }
     }
@@ -501,7 +501,8 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     for (const nlohmann::json& object : handheldScene["objects"]) {
         const auto textures = object.find("textures");
         if (textures != object.end() && textures->contains("picture") &&
-            (*textures)["picture"].value("pattern", "") == "sign") {
+            ((*textures)["picture"].value("pattern", "") == "sign" ||
+             (*textures)["picture"].value("pattern", "") == "neon")) {
             floorSigns.push_back((*textures)["picture"].value("title", ""));
         }
     }
