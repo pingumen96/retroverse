@@ -305,8 +305,13 @@ build/rvdata`).
   after it). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
   instant) and `"lightingProfile": "evening" | "afternoon"` (`assets/world/lighting`, applied when the room is drawn,
   never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
-  featured shelf, `shelf_light`, while the 16 lights leave room); the room's materials come from
-  `assets/world/themes/classic_16bit_warm.json`. With the mouse free (the developer overlay open) the cursor picks.
+  featured shelf, `shelf_light`, while the 16 lights leave room); the room's look comes from its theme pack
+  (`assets/world/themes`, I6 step 3, `docs/i6/step-3.md`): its floor's (`building.json`'s `themePack`: the 16-bit
+  floors `classic_16bit_warm`, gen5 `console_90s_collector`, gen6 and gen7 `optical_era_lounge`, the handhelds
+  `handheld_archive`, the computers `computer_studio`, the ground floor's hall `retro_library_hub`), the arcade room's
+  `arcade_after_dark` wherever it stands, a platform manifest's when it names one; resolved when the room is drawn
+  (materials, the neon sign's colour, the lit shelves, the generated spines' and labels' palette, light tints), never
+  a reason to move anything. With the mouse free (the developer overlay open) the cursor picks.
 - The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its
   proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it), facing its doors (their middle less than 80
   degrees off the view: the arrival point faces the hall, so the walker turns to them first), a prompt names the
