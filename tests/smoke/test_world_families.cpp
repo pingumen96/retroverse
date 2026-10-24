@@ -9,20 +9,14 @@
 // fixtures, the cache's entries, the band's fronts showing their pictures up close, and the card of an inspected item
 // (tests/input_scripts/golden_g07_inspect.json from the item's Focus pose): its cover at the family's label shape, the
 // hero picture made at that shape, unstretched (ADR-0011 §5), the hero textures within ADR-0011 §8's budget.
+// I6 step 4 (ADR-0014 §2): the esde/case-shelves fixture's jewel-case room of 160 titles, most of them spine-out on
+// their side (disc_case_cd_v2), seen up close: every spine label upright on its case, a picture resident on it.
 
-#include <catch2/catch_test_macros.hpp>
-
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <filesystem>
-#include <optional>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <vector>
-
-#include <glm/glm.hpp>
+#include "building_support.hpp"
+#include "image_checks.hpp"
+#include "launch_support.hpp"
+#include "smoke_support.hpp"
+#include "support/fixture.hpp"
 
 #include <rv/app/cover_requests.hpp>
 #include <rv/app/run_report.hpp>
@@ -36,11 +30,19 @@
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_store.hpp>
 
-#include "building_support.hpp"
-#include "image_checks.hpp"
-#include "launch_support.hpp"
-#include "smoke_support.hpp"
-#include "support/fixture.hpp"
+#include <catch2/catch_test_macros.hpp>
+#include <glm/glm.hpp>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 using namespace rv::smoke;
 namespace fs = std::filesystem;
@@ -61,8 +63,15 @@ struct ImportedBuilding : PlannedBuilding {
     explicit ImportedBuilding(std::string_view name) : PlannedBuilding(std::string("world_families/") + std::string(name)) {}
 };
 
+/// The esde/case-shelves fixture of a case under world_families/ (I6 step 4: rooms of cases and boxes, most of them
+/// spine-out), each system in a room of its own.
+struct ShelvesBuilding : PlannedBuilding {
+    explicit ShelvesBuilding(std::string_view name)
+        : PlannedBuilding(std::string("world_families/") + std::string(name), true, "esde/case-shelves") {}
+};
+
 /// A lockstep run starting in `system`'s room: `frames` frames at a fixed step, a screenshot at the end.
-std::vector<std::string> roomArguments(const ImportedBuilding& building, std::string_view system,
+std::vector<std::string> roomArguments(const PlannedBuilding& building, std::string_view system,
                                        std::string_view frames, const fs::path& shot,
                                        std::vector<std::string> extra = {}) {
     std::vector<std::string> arguments{"--start-room", building.roomOf(system), "--exit-after-frames", "--frames",
@@ -73,8 +82,7 @@ std::vector<std::string> roomArguments(const ImportedBuilding& building, std::st
 
 /// The room every run must show (the floor's only collection room): from the first frame (lockstep), every item's
 /// layers resident.
-void requireRoomShown(const ImportedBuilding& building, const AppRun& run, std::string_view room,
-                      std::uint64_t items) {
+void requireRoomShown(const PlannedBuilding& building, const AppRun& run, std::string_view room, std::uint64_t items) {
     INFO(run.describe());
     const rv::app::WorldRecord& world = run.report->world;
     REQUIRE(world.bound);
@@ -104,7 +112,7 @@ struct ShownRoom {
     rv::world::CollectionLayout layout;
 };
 
-ShownRoom shownRoom(const ImportedBuilding& building, const rv::app::RunReport& report) {
+ShownRoom shownRoom(const PlannedBuilding& building, const rv::app::RunReport& report) {
     auto stored = rv::world::readStoredPlan(
         rv::world::worldFiles(building.data, rv::catalog::LibraryId::parse(report.world.library).value()).plan);
     REQUIRE(stored.has_value());
@@ -367,11 +375,14 @@ TEST_CASE("world families: the building's jewel-case room with its covers fitted
     // The plan's room: the jewel-case family and its own fixtures.
     const ShownRoom shown = shownRoom(building, *run.report);
     const rv::world::Room& room = roomIn(shown.stored.plan, "room:psx");
-    CHECK(room.mediaFamily == "disc_case_cd");
+    CHECK(room.mediaFamily == "disc_case_cd_v2");
     CHECK(room.floor == "gen5");
     std::size_t familyFixtures = 0;
     for (const rv::world::Fixture& fixture : shown.stored.plan.fixtures) {
-        familyFixtures += fixture.prefab.manifest.find(".cd_jewel.") != std::string::npos ? 1 : 0;
+        familyFixtures += (fixture.prefab.manifest.find(".cd_jewel.") != std::string::npos ||
+                           fixture.prefab.manifest.find(".cd_jewel_side.") != std::string::npos)
+                              ? 1
+                              : 0;
     }
     CHECK(familyFixtures == 5); // the two hero-wall modules, the featured wall shelf and the two display cases
 
@@ -408,6 +419,132 @@ TEST_CASE("world families: the building's jewel-case room with its covers fitted
     checkInspectedCard(building, shown, "psx", *band, {120, 120});
 }
 
+TEST_CASE("world families: jewel cases stand on their side on the shelves, their spines upright",
+          "[gpu][world][families]") {
+    ShelvesBuilding building("side_spines");
+    const fs::path doorway = building.dir / "psx-doorway.png";
+    const AppRun run =
+        runApp(retroverseExe(), building.dir, "psx_doorway", roomArguments(building, "psx", "40", doorway));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    // 160 titles: 38 featured, the band's 10, 112 spine-out in the hero-wall modules.
+    requireRoomShown(building, run, "room:psx", 160);
+    const rv::app::WorldRecord& world = run.report->world;
+    CHECK(world.featured == 38);
+    CHECK(world.band == 10);
+    CHECK(world.spine == 112);
+    (void)requireScreenshot(run, doorway, kShotSize);
+
+    const ShownRoom shown = shownRoom(building, *run.report);
+    const rv::world::Room& room = roomIn(shown.stored.plan, "room:psx");
+    CHECK(room.mediaFamily == "disc_case_cd_v2");
+    std::size_t sideModules = 0;
+    for (const rv::world::Fixture& fixture : shown.stored.plan.fixtures) {
+        sideModules += fixture.prefab.manifest.find(".cd_jewel_side.") != std::string::npos ? 1 : 0;
+    }
+    CHECK(sideModules == 2); // the two hero-wall modules
+
+    // Up close: the spine-out case nearest the eye's height on the first hero-wall module, from 0.6 m.
+    const rv::world::CollectionItem* target = nullptr;
+    for (const rv::world::CollectionItem& item : shown.layout.items) {
+        if (item.stance != rv::world::ItemStance::SpineOut) {
+            continue;
+        }
+        const float y = (item.slotFrame * glm::vec4(item.slotBox.center(), 1.0f)).y;
+        const float best = target == nullptr
+                               ? 1e9f
+                               : std::abs((target->slotFrame * glm::vec4(target->slotBox.center(), 1.0f)).y - 1.3f);
+        if (std::abs(y - 1.3f) < best - 1e-4f) {
+            target = &item;
+        }
+    }
+    REQUIRE(target != nullptr);
+    Viewpoint close = viewpointOf(*target, shown.scene.camera);
+    {
+        // 0.6 m out rather than 0.9 m: the spines' text fills more pixels.
+        const glm::vec3 eye = close.camera.position;
+        const glm::vec3 toward = glm::normalize(glm::vec3(close.face.x - eye.x, 0.0f, close.face.z - eye.z));
+        const glm::vec3 nearer = eye + toward * 0.3f;
+        close.spawn.feet = glm::vec3(nearer.x, 0.0f, nearer.z);
+        close.camera.position = nearer;
+        const glm::vec3 look = close.face - nearer;
+        close.spawn.pitchDeg =
+            rv::core::radiansToDegrees(std::atan2(look.y, std::sqrt(look.x * look.x + look.z * look.z)));
+        close.camera.pitchDeg = *close.spawn.pitchDeg;
+    }
+    const fs::path shelf = building.dir / "psx-spines.png";
+    const AppRun near = runApp(retroverseExe(), building.dir, "psx_spines",
+                               roomArguments(building, "psx", "12", shelf, {"--spawn", spawnArgument(close.spawn)}));
+    requireCleanRun(near);
+    CHECK(near.report->residency.spinesResident == 160);
+    const rv::assets::ImageData image = requireScreenshot(near, shelf, kShotSize);
+
+    // Each spine-out case in view: its spine label (the Spine socket of the item's prefab, on its -X face) upright on
+    // the screen, taller than wide (40 x 256: 6.4 times; lying on its side it would be 6 times wider), and a picture on
+    // it (the title's text).
+    // The label's edges' middles in the item's space: on its -X face, 7 x 44.8 mm, behind the front pocket. Upright on
+    // the screen: its long axis (bottom to top) within 45 degrees of vertical and at least twice its short axis (a camera
+    // looking down leans the verticals off the view's centre, so its box would not tell).
+    const float spineX = -0.071f;
+    const float spineZ = -0.5f * (0.0008f + 0.0005f);
+    const std::array<glm::vec3, 4> edges{glm::vec3(spineX, -0.0224f, spineZ), glm::vec3(spineX, 0.0224f, spineZ),
+                                         glm::vec3(spineX, 0.0f, spineZ - 0.0035f),
+                                         glm::vec3(spineX, 0.0f, spineZ + 0.0035f)};
+    std::size_t probed = 0;
+    std::size_t upright = 0;
+    std::size_t textured = 0;
+    float leastRatio = 1e9f;
+    for (const rv::world::CollectionItem& item : shown.layout.items) {
+        if (item.stance != rv::world::ItemStance::SpineOut) {
+            continue;
+        }
+        std::array<glm::vec2, 4> pixels{};
+        bool visible = true;
+        for (std::size_t i = 0; i < edges.size(); ++i) {
+            const std::optional<glm::ivec2> pixel =
+                projectToPixel(close.camera, kShotSize, glm::vec3(item.transform * glm::vec4(edges[i], 1.0f)));
+            if (!pixel) {
+                visible = false;
+                break;
+            }
+            pixels[i] = glm::vec2(*pixel);
+        }
+        if (!visible) {
+            continue;
+        }
+        ++probed;
+        const glm::vec2 along = pixels[0] - pixels[1]; // bottom minus top: down the screen
+        const glm::vec2 across = pixels[3] - pixels[2];
+        const float ratio = glm::length(along) / std::max(1.0f, glm::length(across));
+        leastRatio = std::min(leastRatio, ratio);
+        upright += along.y > std::abs(along.x) && ratio > 2.0f ? 1 : 0;
+        const glm::ivec2 centre((pixels[0] + pixels[1]) * 0.5f);
+        const double spread = lumaSpread(image, centre, std::max(1, static_cast<int>(glm::length(across) * 0.3f)));
+        textured += spread >= 4.0 ? 1 : 0;
+        if (probed <= 3) {
+            WARN("spine of " << item.game.toString() << ": " << glm::length(across) << " x " << glm::length(along)
+                             << " px at (" << centre.x << ", " << centre.y << "), luma spread " << spread);
+        }
+    }
+    WARN("side spines in view: " << probed << ", upright " << upright << " (the least height / width " << leastRatio
+                                  << "), with a picture " << textured);
+    CHECK(probed >= 20);
+    CHECK(upright == probed);
+    CHECK(textured * 10 >= probed * 9);
+
+    // The big boxes of the same building on their side (big_box_v2): 120 titles, 36 face-out, 84 spine-out.
+    const fs::path boxes = building.dir / "amiga-doorway.png";
+    const AppRun amiga =
+        runApp(retroverseExe(), building.dir, "amiga_doorway", roomArguments(building, "amiga", "40", boxes));
+    requireCleanRun(amiga);
+    requireRoomShown(building, amiga, "room:amiga", 120);
+    CHECK(amiga.report->world.featured == 28);
+    CHECK(amiga.report->world.band == 8);
+    CHECK(amiga.report->world.spine == 84);
+    CHECK(roomIn(building.plan().plan, "room:amiga").mediaFamily == "big_box_v2");
+    (void)requireScreenshot(amiga, boxes, kShotSize);
+}
+
 TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and on the card, at their label's shape",
           "[gpu][world][families]") {
     ImportedBuilding building("mame");
@@ -426,7 +563,7 @@ TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and
     (void)requireScreenshot(run, doorway, kShotSize);
     const ShownRoom shown = shownRoom(building, *run.report);
     const rv::world::Room& room = roomIn(shown.stored.plan, building.roomOf("mame"));
-    CHECK(room.mediaFamily == "generic_case");
+    CHECK(room.mediaFamily == "generic_case_v2");
     CHECK(room.floor == "ground");
     // A flyer inspected: portrait on the card, at the case's 118 x 168 mm label.
     REQUIRE_FALSE(shown.layout.items.empty());
@@ -451,7 +588,7 @@ TEST_CASE("world families: the building's big-box room without media shows gener
     CHECK(residency.labels == 20);
     (void)requireScreenshot(run, doorway, kShotSize);
     const ShownRoom shown = shownRoom(building, *run.report);
-    CHECK(roomIn(shown.stored.plan, "room:amiga").mediaFamily == "big_box");
+    CHECK(roomIn(shown.stored.plan, "room:amiga").mediaFamily == "big_box_v2");
     CHECK(roomIn(shown.stored.plan, "room:amiga").floor == "computer");
     // No console in a computer room's hero corner (ADR-0013 §2's defaults).
     for (const rv::world::Fixture& fixture : shown.stored.plan.fixtures) {
