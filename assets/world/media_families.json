@@ -35,6 +35,13 @@
 //   case_handheld_v2      7 levels x 44, band level 4 (case_handheld: 8 x 44)
 //   big_box_v2            4 levels x 16, band level 2 (big_box: 5 x 16)
 //   generic_case_v2       6 levels x 41, band level 4 (generic_case: 8 x 41)
+// Their spine labels cover the flat part of the face, top to bottom ("spineLabelWidthMm", "spineLabelHeightMm": the
+// manifest's spineLabelSize; the big box's widened to its face's flat part), a printed spine of the title on the cover's
+// colour drawn at that shape, so that a shelf reads as a rack of coloured spines (example.png, panels 2 and 4); their
+// shells are dark ("shellMaterial": the jewel case's smoky plastic, the keep case's black, the other cases' dark
+// plastic, the big box's cardboard), the cartridges' the theme's plastic.
+// generic_case_v2 succeeds generic_case in console and shared rooms only ("succeedsIn"; ADR-0014 §2, amended on
+// 2026-10-24): the arcade room keeps generic_case, migrated once when I6 step 6's arcade_cabinet succeeds it there.
 // The cartridge families keep I3's spine on the top face and have no successor.
 {
   "schemaVersion": 1,
@@ -206,6 +213,9 @@
       "labelHeightMm": 120,
       "coverFit": "label",
       "spineFacing": "side",
+      "spineLabelWidthMm": 7.1,
+      "spineLabelHeightMm": 123.4,
+      "shellMaterial": "MAT_Case_Jewel_Smoke",
       "spineOut": {"widthMm": 10, "heightMm": 125, "depthMm": 142, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "faceOut": {"widthMm": 142, "heightMm": 125, "depthMm": 10, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "fixtures": {
@@ -226,6 +236,9 @@
       "labelHeightMm": 178,
       "coverFit": "label",
       "spineFacing": "side",
+      "spineLabelWidthMm": 9.7,
+      "spineLabelHeightMm": 186.9,
+      "shellMaterial": "MAT_Case_Keep_Black",
       "spineOut": {"widthMm": 14, "heightMm": 190, "depthMm": 135, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "faceOut": {"widthMm": 135, "heightMm": 190, "depthMm": 14, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "fixtures": {
@@ -246,6 +259,9 @@
       "labelHeightMm": 130,
       "coverFit": "label",
       "spineFacing": "side",
+      "spineLabelWidthMm": 9.7,
+      "spineLabelHeightMm": 137,
+      "shellMaterial": "MAT_Case_Plastic_Dark",
       "spineOut": {"widthMm": 14, "heightMm": 140, "depthMm": 125, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "faceOut": {"widthMm": 125, "heightMm": 140, "depthMm": 14, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "fixtures": {
@@ -266,6 +282,9 @@
       "labelHeightMm": 230,
       "coverFit": "label",
       "spineFacing": "side",
+      "spineLabelWidthMm": 40.7,
+      "spineLabelHeightMm": 236.9,
+      "shellMaterial": "MAT_Cardboard_BigBox",
       "spineOut": {"widthMm": 45, "heightMm": 240, "depthMm": 190, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "faceOut": {"widthMm": 190, "heightMm": 240, "depthMm": 45, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "fixtures": {
@@ -278,6 +297,7 @@
     {
       "id": "generic_case_v2",
       "succeeds": "generic_case",
+      "succeedsIn": ["console", "shared"],
       "item": {"manifest": "media.case.plain_side.generic", "kind": "cartridge"},
       "itemWidthMm": 130,
       "itemHeightMm": 180,
@@ -286,6 +306,9 @@
       "labelHeightMm": 168,
       "coverFit": "label",
       "spineFacing": "side",
+      "spineLabelWidthMm": 10.7,
+      "spineLabelHeightMm": 177,
+      "shellMaterial": "MAT_Case_Plastic_Dark",
       "spineOut": {"widthMm": 15, "heightMm": 180, "depthMm": 130, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "faceOut": {"widthMm": 130, "heightMm": 180, "depthMm": 15, "gapMm": 4, "marginMm": 30, "headroomMm": 20},
       "fixtures": {

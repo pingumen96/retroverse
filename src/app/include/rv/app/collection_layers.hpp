@@ -47,6 +47,9 @@ struct CoverItem {
     /// The shape of its room's family's label quad (world::MediaFamily::coverAspect(), ADR-0013 §4): its cover, its
     /// generated label and its hero picture are made for it; the layer's own shape (I3's fit) for the 16-bit family.
     assets::LabelAspect label;
+    /// The shape of its family's spine label quad (world::MediaFamily::spineAspect(), I6 step 4's review): a printed
+    /// spine drawn at that shape (assets::SpineRequest::spine); the spine layer's own shape for the cartridges.
+    assets::LabelAspect spine;
 
     bool operator==(const CoverItem&) const = default;
 };

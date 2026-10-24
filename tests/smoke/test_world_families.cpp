@@ -26,6 +26,7 @@
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
 #include <rv/world/collection_layout.hpp>
+#include <rv/world/generation.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_store.hpp>
@@ -563,7 +564,7 @@ TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and
     (void)requireScreenshot(run, doorway, kShotSize);
     const ShownRoom shown = shownRoom(building, *run.report);
     const rv::world::Room& room = roomIn(shown.stored.plan, building.roomOf("mame"));
-    CHECK(room.mediaFamily == "generic_case_v2");
+    CHECK(room.mediaFamily == "generic_case"); // the arcade room keeps it until I6 step 6 (ADR-0014 §2)
     CHECK(room.floor == "ground");
     // A flyer inspected: portrait on the card, at the case's 118 x 168 mm label.
     REQUIRE_FALSE(shown.layout.items.empty());
@@ -596,4 +597,62 @@ TEST_CASE("world families: the building's big-box room without media shows gener
             CHECK(fixture.prefab.kind != "console_cartridge");
         }
     }
+}
+
+TEST_CASE("world families: a stored building of generator 1.3 is migrated once", "[gpu][world][families]") {
+    // I6 step 4 (ADR-0014 §2): main's golden building as generator 1.3 wrote it (tests/fixtures/world/legacy/: the
+    // building fixture's systems, the cases standing on their end) as the stored plan of a data directory of the
+    // building fixture, the world seed its own. The first start updates it: the jewel-case room and the two shared
+    // rooms migrated once, in the run report and with the notice; the arcade room keeps its generic case. The second
+    // start migrates nothing and shows no notice.
+    PlannedBuilding building("world_families/legacy_migration", false);
+    REQUIRE(rv::core::writeTextFileAtomic(building.data / "config" / "world.json", "{\"seed\": 102938}\n").has_value());
+    const rv::world::WorldFiles files =
+        rv::world::worldFiles(building.data, rv::catalog::LibraryId::parse("esde").value());
+    const auto legacy = rv::core::readTextFile(sourceDir() / "tests" / "fixtures" / "world" / "legacy" /
+                                               "building-esde-seed-102938-generator-1.3.json");
+    REQUIRE(legacy.has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(files.plan, *legacy).has_value());
+    std::error_code ignored;
+    fs::remove(files.meta, ignored);
+    REQUIRE(building.plan().plan.generatorVersion == rv::world::GeneratorVersion{1, 3});
+
+    const auto start = [&](std::string_view name) {
+        const fs::path shot = building.dir / (std::string(name) + ".png");
+        const std::vector<std::string> arguments{"--start-room",    "room:psx", "--exit-after-frames", "--frames", "30",
+                                                 "--fixed-dt",      "0.016667", "--screenshot",        arg(shot)};
+        AppRun run = runApp(retroverseExe(), building.dir, std::string(name), arguments);
+        skipWithoutOpenGl(run);
+        requireCleanRun(run);
+        INFO(run.describe());
+        REQUIRE(run.report.has_value());
+        REQUIRE(run.report->world.bound);
+        CHECK(run.report->world.hardFindings == 0);
+        CHECK(run.report->world.room == "room:psx");
+        return run;
+    };
+    const AppRun first = start("migrate");
+    const rv::app::WorldRecord& migrated = first.report->world;
+    CHECK(migrated.outcome == "updated");
+    CHECK(migrated.planWritten);
+    CHECK(migrated.notice == "rooms-migrated");
+    const std::vector<rv::app::MigratedRoomRecord> expected{
+        {"area:shared:computer", "generic_case", "generic_case_v2", 0},
+        {"area:shared:handheld", "generic_case", "generic_case_v2", 0},
+        {"room:psx", "disc_case_cd", "disc_case_cd_v2", 0},
+    };
+    CHECK(migrated.migratedRooms == expected);
+    CHECK(migrated.needsConfirmation.empty());
+    const rv::world::StoredPlan stored = building.plan();
+    CHECK(stored.plan.generatorVersion == rv::world::kGeneratorVersion);
+    CHECK(roomIn(stored.plan, "room:psx").mediaFamily == "disc_case_cd_v2");
+    CHECK(roomIn(stored.plan, "area:arcade").mediaFamily == "generic_case");
+
+    const AppRun second = start("again");
+    const rv::app::WorldRecord& again = second.report->world;
+    CHECK(again.outcome == "unchanged");
+    CHECK_FALSE(again.planWritten);
+    CHECK(again.notice.empty());
+    CHECK(again.migratedRooms.empty());
+    CHECK(again.needsConfirmation.empty());
 }

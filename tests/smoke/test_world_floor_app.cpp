@@ -948,7 +948,7 @@ TEST_CASE("world floor app: the arcade room and a floor's shared room show their
     for (const std::string id : {"area:shared:handheld", "area:arcade"}) {
         INFO(id);
         const rv::world::Room& planned = roomIn(stored.plan, id);
-        CHECK(planned.mediaFamily == "generic_case_v2");
+        CHECK(planned.mediaFamily == (id == "area:arcade" ? "generic_case" : "generic_case_v2"));
         const fs::path doorway = building.dir / (fileStem(id) + "-doorway.png");
         const AppRun run =
             runApp(retroverseExe(), building.dir, fileStem(id) + "_doorway", floorArguments(id, 40, doorway));

@@ -768,6 +768,8 @@ struct MigratedRoomRecord {
     std::string room;
     std::string from;
     std::string to;
+    /// Its titles its new room holds no slot for (unplaced for capacity).
+    std::uint64_t unplacedForCapacity = 0;
 
     bool operator==(const MigratedRoomRecord&) const = default;
 };
@@ -823,6 +825,9 @@ struct WorldRecord {
     std::uint64_t kept = 0;
     /// The rooms the update migrated to their families' successors (I6 step 4), by room.
     std::vector<MigratedRoomRecord> migratedRooms;
+    /// What the update left undone because it would have moved something pinned (world::ChangeReport's
+    /// needsConfirmation: an unhonoured pin, a pinned room not migrated), as the report words it.
+    std::vector<std::string> needsConfirmation;
     /// The validation's findings of the plan made (a hard one keeps the plan from showing).
     std::uint64_t hardFindings = 0;
     std::uint64_t softFindings = 0;

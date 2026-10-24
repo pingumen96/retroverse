@@ -39,7 +39,9 @@ const std::vector<std::string> kSharedNames = {
     "MAT_Label_Cover",
     // The halls' (I6 step 2).
     "MAT_Plaster_Warm", "MAT_Sconce_Shade", "MAT_Sign_Tungsten", "MAT_Plaster_Ceiling", "MAT_Metal_Brass",
-    "MAT_Ceramic_Saucer", "MAT_Wall_Wash"};
+    "MAT_Ceramic_Saucer", "MAT_Wall_Wash",
+    // The shells of cases and boxes on their side (I6 step 4's review).
+    "MAT_Case_Jewel_Smoke", "MAT_Case_Keep_Black", "MAT_Case_Plastic_Dark", "MAT_Cardboard_BigBox"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.

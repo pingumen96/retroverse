@@ -601,14 +601,17 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.added = 0;
     m_record.kept = 0;
     m_record.migratedRooms.clear();
+    m_record.needsConfirmation.clear();
     if (build.changes) {
         m_record.changeOutcome = std::string(world::toString(build.changes->outcome));
         m_record.rebuild = std::string(world::toString(build.changes->rebuild));
         m_record.added = build.changes->added.size();
         m_record.kept = build.changes->kept;
         for (const world::MigratedRoom& migrated : build.changes->migratedRooms) {
-            m_record.migratedRooms.push_back({migrated.room.toString(), migrated.from, migrated.to});
+            m_record.migratedRooms.push_back(
+                {migrated.room.toString(), migrated.from, migrated.to, migrated.unplacedForCapacity});
         }
+        m_record.needsConfirmation = build.changes->needsConfirmation;
     }
     m_record.planDigest = build.planDigest;
     m_record.planWritten = build.written;

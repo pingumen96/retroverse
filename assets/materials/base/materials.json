@@ -122,6 +122,31 @@
       "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
       "normalTexture": "procedural:aged_plastic/normal"
     },
+    // The shells of cases and boxes standing on their side (I6 step 4's review, media_families.json's shellMaterial):
+    // dark, so that a shelf of them reads as its printed spines (example.png, panels 2 and 4), not as pale plastic.
+    // A CD jewel case: smoky dark plastic, glossy.
+    "MAT_Case_Jewel_Smoke": {
+      "baseColor": "#2A2D33", "metallic": 0.0, "roughness": 0.3,
+      "baseColorTexture": "procedural:aged_plastic/baseColor",
+      "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
+      "normalTexture": "procedural:aged_plastic/normal"
+    },
+    // A DVD keep case: black, satin.
+    "MAT_Case_Keep_Black": {
+      "baseColor": "#17181A", "metallic": 0.0, "roughness": 0.55,
+      "baseColorTexture": "procedural:aged_plastic/baseColor",
+      "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
+      "normalTexture": "procedural:aged_plastic/normal"
+    },
+    // The handheld and generic cases: dark grey plastic.
+    "MAT_Case_Plastic_Dark": {
+      "baseColor": "#2C2E31", "metallic": 0.0, "roughness": 0.48,
+      "baseColorTexture": "procedural:aged_plastic/baseColor",
+      "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
+      "normalTexture": "procedural:aged_plastic/normal"
+    },
+    // A big box: printed cardboard, a dark warm grey (its print is the spine and the cover).
+    "MAT_Cardboard_BigBox": { "baseColor": "#3E3732", "metallic": 0.0, "roughness": 0.8 },
     // Desaturated purple accent for console buttons.
     "MAT_Plastic_Accent": { "baseColor": "#7D6E9E", "metallic": 0.0, "roughness": 0.4 },
 

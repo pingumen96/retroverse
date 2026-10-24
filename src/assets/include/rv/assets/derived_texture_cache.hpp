@@ -70,8 +70,14 @@ struct CacheKey {
                                          std::span<const std::string_view> texts, Rgb8 colour,
                                          std::span<const std::string_view> fontSha256s);
 
+/// The style of a printed spine (SpineRequest::spine of another shape than the layer's, I6 step 4's review), part of
+/// its key only: raised when its drawing changes, so that its entries are made anew while the cartridges' spines keep
+/// theirs (kCoverPipelineVersion untouched).
+inline constexpr std::uint32_t kPrintedSpineStyleVersion = 1;
+
 /// The keys of a spine and a generated front label: every input that changes their pixels (the label's shape as a
-/// last element "label=<w>x<h>" for a shape other than the layer's).
+/// last element "label=<w>x<h>" for a shape other than the layer's; a printed spine's shape and style likewise,
+/// "spine=<w>x<h>;style=<kPrintedSpineStyleVersion>").
 [[nodiscard]] CacheKey spineCacheKey(const SpineRequest& request, TextureFormat format, const LabelFonts& fonts);
 [[nodiscard]] CacheKey frontLabelCacheKey(const FrontLabelRequest& request, TextureFormat format,
                                           const LabelFonts& fonts);

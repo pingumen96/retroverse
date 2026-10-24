@@ -2,6 +2,8 @@
 // cm: the 'cartridge' prefab at the family's size, its front label (the cover, a 115 x 130 mm cover) and its spine
 // label upright on its -X face (spineFace "side"), shown when it stands spine-out on its side in a 1.4 x 14 x 12.5 cm
 // slot, as a book stands on a shelf. case_handheld's item with the spine moved; functional, of no real model.
+// Its spine label covers the flat part of that face top to bottom (I6 step 4's review: a printed spine, the title on
+// the cover's colour drawn at the label's shape, the family's spineLabelWidthMm x spineLabelHeightMm).
 {
   "schemaVersion": 1,
   "id": "media.case.handheld_side.generic",
@@ -22,7 +24,7 @@
     "generator": "cartridge",
     "params": {
       "size": [0.125, 0.14, 0.014], "chamfer": 0.0015, "labelMargin": [0.005, 0.005], "labelInset": 0.0008,
-      "gripRidges": false, "spineLabel": true, "spineLabelSize": [0.0095, 0.0608], "spineFace": "side"
+      "gripRidges": false, "spineLabel": true, "spineLabelSize": [0.0097, 0.137], "spineFace": "side"
     },
     "scaleMeters": [0.125, 0.14, 0.014],
     "lods": [],

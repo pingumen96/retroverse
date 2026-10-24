@@ -335,7 +335,11 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
     }
     // The rooms migrated once to their families' successors (I6 step 4, ADR-0014 §2).
     for (const world::MigratedRoom& migrated : changes.migratedRooms) {
-        line("Room migrated", fmt::format("{}: {} -> {}", migrated.room.toString(), migrated.from, migrated.to));
+        line("Room migrated",
+             migrated.unplacedForCapacity == 0
+                 ? fmt::format("{}: {} -> {}", migrated.room.toString(), migrated.from, migrated.to)
+                 : fmt::format("{}: {} -> {}, {} unplaced for capacity", migrated.room.toString(), migrated.from,
+                               migrated.to, migrated.unplacedForCapacity));
     }
     // The systems that entered the building (I4 step 6a): each in the room it opened or as a section of one.
     for (const world::SystemRoom& entered : changes.systemsEntered) {
@@ -393,7 +397,10 @@ inline CatalogJson keptRoomsJson(const std::vector<world::KeptRoom>& rooms) {
 inline CatalogJson migratedRoomsJson(const std::vector<world::MigratedRoom>& rooms) {
     CatalogJson array = CatalogJson::array();
     for (const world::MigratedRoom& migrated : rooms) {
-        array.push_back(CatalogJson{{"room", migrated.room.toString()}, {"from", migrated.from}, {"to", migrated.to}});
+        array.push_back(CatalogJson{{"room", migrated.room.toString()},
+                                    {"from", migrated.from},
+                                    {"to", migrated.to},
+                                    {"unplacedForCapacity", migrated.unplacedForCapacity}});
     }
     return array;
 }

@@ -11,6 +11,15 @@
         <theme>psx</theme>
     </system>
     <system>
+        <name>ps2</name>
+        <fullname>Prism Disc Console</fullname>
+        <path>%ROMPATH%\ps2</path>
+        <extension>.iso .ISO .chd .CHD</extension>
+        <command label="Fake Emulator">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>
+        <platform>ps2</platform>
+        <theme>ps2</theme>
+    </system>
+    <system>
         <name>gb</name>
         <fullname>Pocket Lumen</fullname>
         <path>%ROMPATH%\gb</path>

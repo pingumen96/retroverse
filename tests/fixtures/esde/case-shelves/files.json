@@ -14,6 +14,9 @@
         {"seed": 4600, "titles": 120, "duplicates": 0, "videos": 0, "coverSizes": [[600, 760]],
          "romFolder": "roms/amiga", "romExtension": ".adf", "romSize": 2048,
          "gamelist": "ES-DE/gamelists/amiga/gamelist.xml", "mediaFolder": "media/amiga"},
+        {"seed": 4700, "titles": 100, "duplicates": 0, "videos": 0, "coverSizes": [[512, 728]],
+         "romFolder": "roms/ps2", "romExtension": ".iso", "romSize": 2048,
+         "gamelist": "ES-DE/gamelists/ps2/gamelist.xml", "mediaFolder": "media/ps2"},
         {"seed": 4400, "titles": 40, "duplicates": 0, "videos": 0, "coverSizes": [[600, 610]],
          "romFolder": "roms/gb", "romExtension": ".gb", "romSize": 1024,
          "gamelist": "ES-DE/gamelists/gb/gamelist.xml", "mediaFolder": "media/gb"}

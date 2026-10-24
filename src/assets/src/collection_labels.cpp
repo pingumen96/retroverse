@@ -19,6 +19,10 @@ constexpr float kSpineTwoLinesMax = 0.45F;
 constexpr float kSpineTwoLinesMin = 0.34F;
 constexpr float kSpineEndMargin = 0.05F;
 constexpr float kSpineLinePitch = 0.92F; ///< the distance between the two baselines, in pixel heights
+/// A printed spine's (I6 step 4's review: a spine of another shape than the layer's, cases and boxes standing on their
+/// side) darker band at its top, as a share of its length, and how far its colour is mixed towards black.
+constexpr float kSpineBandShare = 0.12F;
+constexpr float kSpineBandShade = 0.45F;
 
 /// The front label's geometry at 256 x 188 (scaled with the layer's width).
 constexpr float kFrontReference = 256.0F;
@@ -467,10 +471,19 @@ std::u32string chooseTitleText(const FontFace& font, std::string_view title, std
 
 TitleLayout layoutSpineTitle(const FontFace& font, std::string_view title, std::string_view fallbackTitle,
                              TextureFormat format) {
+    return layoutSpineTitle(font, title, fallbackTitle, format, LabelAspect{});
+}
+
+TitleLayout layoutSpineTitle(const FontFace& font, std::string_view title, std::string_view fallbackTitle,
+                             TextureFormat format, const LabelAspect& spine) {
     const LayerSize size = layerSize(TextureClass::Spine, format);
-    const auto thickness = static_cast<float>(size.width);
-    const auto length = static_cast<float>(size.height);
-    const float available = length - 2.0F * std::round(length * kSpineEndMargin);
+    // On a canvas of the spine's shape (the layer's own for I3's spine): its thickness the canvas's width, its length
+    // the canvas's height, less a printed spine's band.
+    const CanvasSize canvas = labelCanvas(spine, size.width, size.height);
+    const auto thickness = static_cast<float>(canvas.width);
+    const auto length = static_cast<float>(canvas.height);
+    const float band = spine.isLayer() ? 0.0F : std::round(length * kSpineBandShare);
+    const float available = length - band - 2.0F * std::round(length * kSpineEndMargin);
     bool usedFallback = false;
     const std::u32string text = chooseTitleText(font, title, fallbackTitle, &usedFallback);
     return layoutTwoLines(font, text, available, kSpineOneLineMax * thickness, kSpineOneLineMin * thickness,
@@ -600,12 +613,22 @@ Expected<GeneratedPicture> drawSpine(const LabelFonts& fonts, const SpineRequest
     const LayerSize size = layerSize(TextureClass::Spine, format);
     GeneratedPicture result;
     result.colours = labelColours(spineBaseColour(request));
-    result.layout = layoutSpineTitle(font, request.title, request.fallbackTitle, format);
+    result.layout = layoutSpineTitle(font, request.title, request.fallbackTitle, format, request.spine);
 
-    // Set horizontally on a canvas as long as the spine and as wide as it is thick, then turned clockwise.
-    const int length = size.height;
-    const int thickness = size.width;
+    // Set horizontally on a canvas as long as the spine and as wide as it is thick, then turned clockwise. A printed
+    // spine (I6 step 4's review) is drawn at its own shape, a darker band of its colour at its top, and resampled once
+    // into the layer, which its quad stretches back.
+    const bool printed = !request.spine.isLayer();
+    const CanvasSize shape = labelCanvas(request.spine, size.width, size.height);
+    const int length = shape.height;
+    const int thickness = shape.width;
     ImageData canvas = filledImage(length, thickness, result.colours.background);
+    float bandEnd = 0.0F;
+    if (printed) {
+        bandEnd = std::round(static_cast<float>(length) * kSpineBandShare);
+        const Rgb8 band = toSrgb8(mixLinear(result.colours.background, Rgb8{0, 0, 0}, kSpineBandShade));
+        fillRect(canvas, 0.0F, 0.0F, bandEnd, static_cast<float>(thickness), band);
+    }
     const float pixelHeight = result.layout.pixelHeight;
     const float cap = font.capHeight(pixelHeight);
     std::vector<PlacedRun> runs;
@@ -618,7 +641,7 @@ Expected<GeneratedPicture> drawSpine(const LabelFonts& fonts, const SpineRequest
         run.font = &font;
         run.text = decodeUtf8(line);
         run.pixelHeight = pixelHeight;
-        run.x = (static_cast<float>(length) - widthAt(font, run.text, pixelHeight)) / 2.0F;
+        run.x = bandEnd + (static_cast<float>(length) - bandEnd - widthAt(font, run.text, pixelHeight)) / 2.0F;
         run.baseline = baseline;
         runs.push_back(std::move(run));
         baseline += pitch;
@@ -626,7 +649,7 @@ Expected<GeneratedPicture> drawSpine(const LabelFonts& fonts, const SpineRequest
     drawText(canvas, result.colours.text, runs);
 
     // Turned 90 degrees clockwise: the canvas's (u, v) lands at (thickness - 1 - v, u).
-    result.picture = filledImage(size.width, size.height, result.colours.background);
+    result.picture = filledImage(thickness, length, result.colours.background);
     for (int u = 0; u < length; ++u) {
         for (int v = 0; v < thickness; ++v) {
             const std::uint8_t* in =
@@ -638,6 +661,13 @@ Expected<GeneratedPicture> drawSpine(const LabelFonts& fonts, const SpineRequest
                                     4;
             std::copy(in, in + 4, out);
         }
+    }
+    if (printed) {
+        auto squeezed = resampleSrgb(result.picture, size.width, size.height);
+        if (!squeezed) {
+            return propagate(squeezed.error());
+        }
+        result.picture = std::move(*squeezed);
     }
     return result;
 }
