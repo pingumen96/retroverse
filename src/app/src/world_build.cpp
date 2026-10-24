@@ -48,17 +48,17 @@ namespace {
 using Clock = std::chrono::steady_clock;
 using Json = nlohmann::json;
 
-/// A theme pack's label palette (sRGB "#RRGGBB", checked by its reader) as the label requests take it; a colour that
-/// does not parse is left out (an empty palette is the default one).
-[[nodiscard]] std::vector<assets::Rgb8> labelPaletteOf(const world::ThemeMaterials& theme) {
-    std::vector<assets::Rgb8> palette;
+/// A theme pack's label palette (sRGB "#RRGGBB", checked by its reader) as the label requests take it, one for its
+/// room's items; a colour that does not parse is left out (an empty palette is the default one).
+[[nodiscard]] RoomPalette labelPaletteOf(const world::ThemeMaterials& theme) {
+    auto palette = std::make_shared<std::vector<assets::Rgb8>>();
     for (const std::string& hex : theme.labelPalette) {
         if (auto colour = core::parseHexColor(hex)) {
             const auto byte = [](float value) { return static_cast<std::uint8_t>(std::lround(value * 255.0f)); };
-            palette.push_back(assets::Rgb8{byte(colour->r), byte(colour->g), byte(colour->b)});
+            palette->push_back(assets::Rgb8{byte(colour->r), byte(colour->g), byte(colour->b)});
         }
     }
-    return palette;
+    return RoomPalette{std::move(palette)};
 }
 
 [[nodiscard]] double millisecondsSince(Clock::time_point start) {
@@ -1322,7 +1322,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 doorwayCameraIn(*room, roomData->second.roomTemplate, collection.scenePlacement);
             const std::vector<catalog::SystemName> held = systemsOf(*room);
             // The room's pack's label palette (I6 step 3) for its generated spines and labels.
-            const std::vector<assets::Rgb8> palette = labelPaletteOf(roomData->second.theme);
+            const RoomPalette palette = labelPaletteOf(roomData->second.theme);
             collection.covers.reserve(collection.layout.items.size());
             for (const world::CollectionItem& item : collection.layout.items) {
                 // A shared or arcade room's game: its own section's text (each section's items hold the others' games

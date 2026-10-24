@@ -136,8 +136,9 @@ struct SpineRequest {
     /// The cover's dominant colour (its layer's RvTexture::dominant); none without a cover.
     std::optional<Rgb8> coverColour;
     std::uint64_t seed = 0; ///< the placement's seed: the palette colour without a cover
-    /// The room's theme pack's label palette (I6 step 3); empty: kDefaultLabelPalette.
-    std::vector<Rgb8> palette;
+    /// The room's theme pack's label palette (I6 step 3), not owned (the caller's, alive while the request is served);
+    /// empty: kDefaultLabelPalette.
+    std::span<const Rgb8> palette;
 };
 
 struct FrontLabelRequest {
@@ -146,8 +147,8 @@ struct FrontLabelRequest {
     std::string systemName; ///< the system's full name (catalog data; an invented one in committed fixtures)
     std::string year;       ///< "1994", or empty
     std::uint64_t seed = 0;
-    /// The room's theme pack's label palette (I6 step 3); empty: kDefaultLabelPalette.
-    std::vector<Rgb8> palette;
+    /// The room's theme pack's label palette (I6 step 3), not owned; empty: kDefaultLabelPalette.
+    std::span<const Rgb8> palette;
     /// The label quad's shape (ADR-0013 §4): the label is laid out on a canvas of that shape (labelCanvas(): the
     /// frame, the stripes and the title at the layer's scale, the title's band taller or the lines wider), then
     /// resampled once into the layer; the layer's own shape by default (I3's label).

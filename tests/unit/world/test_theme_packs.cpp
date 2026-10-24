@@ -462,6 +462,6 @@ TEST_CASE("world/theme packs: each pack's label palette colours its rooms' gener
     spine.seed = 7;
     CHECK(rv::assets::spineBaseColour(spine) == rv::assets::paletteColour(7));
     rv::assets::SpineRequest classic = spine;
-    classic.palette.assign(rv::assets::kDefaultLabelPalette.begin(), rv::assets::kDefaultLabelPalette.end());
+    classic.palette = rv::assets::kDefaultLabelPalette;
     CHECK(rv::assets::spineBaseColour(classic) == rv::assets::spineBaseColour(spine));
 }
