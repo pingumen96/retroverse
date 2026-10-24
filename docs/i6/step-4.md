@@ -74,7 +74,11 @@ room within 1,561): see the real library below.
   ps2 2,134, gc 450, amiga 1,055 (the room grown one step, its z -6.65 to -8.65 m: big boxes take 4 levels of 16 rather
   than 5), amstradcpc 1,646, atari800 1,207, apple2 494, c64 408, atarist 295, switch 229; the seven shared rooms and the
   arcade room unchanged in their counts. The busiest floor (computer) peaks at 421.0 MiB (407.3 at Gate C), within
-  512.
+  512; NFR-01 to the lobby 2.3 s; the warm ride's view back 1.81 s (a first run under another worktree's GPU tests
+  timed out at 2.5 s with 596 covers pending; alone it arrives).
+- **Suites**: 1,887 unit tests in Debug and in Release; the 102 GPU cases in Release (the eight goldens regenerated on
+  purpose, then all eleven room goldens matching in Debug and Release); the benchmark path (Release, `--no-vsync`,
+  1,230 frames) p50 3.31 ms, p99 4.55 ms, within the acceptable 16.7 and 33.3 ms.
 
 ## Screenshots and judgement
 
