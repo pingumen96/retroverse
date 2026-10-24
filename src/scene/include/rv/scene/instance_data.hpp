@@ -16,6 +16,9 @@ inline constexpr std::uint32_t kHighlighted = 1u << 0;
 inline constexpr std::uint32_t kHidden = 1u << 1;
 /// The item's game is unavailable: drawn dimmed.
 inline constexpr std::uint32_t kUnavailable = 1u << 2;
+/// The item's spine label is not drawn (I6 step 4, ADR-0014 §2: a face-out item): the fragments of a spine-layer
+/// material (gl::material_flags::kSpineLayer) of the instance are discarded in every pass, the shell beneath showing.
+inline constexpr std::uint32_t kNoSpineLabel = 1u << 3;
 } // namespace instance_flags
 
 /// The per-instance values beside the model matrix (ADR-0011 §2), read by the mesh shaders as one `uvec4` at attribute

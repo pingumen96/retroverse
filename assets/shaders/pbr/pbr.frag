@@ -37,6 +37,7 @@ void main() {
 
     vec3 N = shadingNormal();
     materialAlphaTest(baseColor.a);
+    materialInstanceTest(vInstance);
 
     vec3 V = safeNormalize(uCameraPosition - vWorldPosition, N);
     BrdfSurface surface = makeBrdfSurface(baseColor.rgb, metallic, roughness);
