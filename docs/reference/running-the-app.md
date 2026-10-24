@@ -133,7 +133,9 @@ build/rvdata`).
   environment: I6 step 1); the hall's lights are the profile's `hall` role, with a low fill spot before each doorway
   aimed into its room (`hall:<floor>/doorway-fill:<room id>`); its camera stands in front of the elevator facing east,
   and the rooms' doorways are open onto the hall (their stops left out), so the walker can walk from the elevator into
-  any room.
+  any room. Since I6 step 2 the hall is dressed (`docs/i6/step-2.md`): wainscot and plaster, a signed portal and a beam
+  at each doorway, sconces (lit fixtures, no lights of their own) and prints in turn, benches and plants that the
+  walker walks around (they collide), a runner down the middle.
 - `--model <file.gltf|.glb>` (not with `--scene`): model viewer, the model at the origin with a three-point light rig
   and a camera framing its bounds from the front right and above, on a dark mid-grey background (about sRGB 61, so
   dark and light models both stand out), without bloom or vignette; a file that cannot be loaded is shown as the

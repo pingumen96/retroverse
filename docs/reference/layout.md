@@ -57,6 +57,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   placement functions; `lift.hpp`, the schema-1 lift; `generateBuilding` and `updateBuilding`; since step 2
   `media_family.hpp`'s label quad, cover fit and family fixtures, `withFamilyFixtures`; since step 3
   `floor_layout.hpp`, a floor's derived hall, its rooms' doorways and walls on it, its areas and `roomToFloorMatrix`,
+  since I6 step 2 the hall's dressing (`HallPiece`: sconces, prints, benches, plants at fixed slots),
   and `floor_scene.hpp`, a floor's scene, `loadFloorSceneData`, `toFloorSceneFile`, `floorCollectionLayout`),
   `WorldConfig` with the preset and `world.json`, the readers of
   `assets/world` (errors name `<file>:<line>` and a JSON pointer; 1a); `selectRoom` and `title_key.hpp` (the room's
