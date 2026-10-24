@@ -168,6 +168,19 @@ struct ShelfParams {
 /// the Spine socket's frame has +X along the item's +Z (right as one faces the spine), +Y along the item's +X (up) and
 /// +Z along the item's +Y (out of the face), its bounds [-across/2, -along/2, 0] .. [across/2, along/2, 0]; the quad's
 /// uv (0, 0) is its top-left corner in that view, so a spine texture (40 x 256, ADR-0011 §4) is drawn upright.
+///
+/// With `spineFace` Side (I6 step 4, ADR-0014 §2: cases and boxes standing on their side, SlotFacing::SideOut) the
+/// label lies on the -X face instead, upright: a quad 0.5 mm outside the shell's -X face (the shell is 0.5 mm narrower
+/// on that side, so the bounds stay `size`), centered along Y and on the flat part of the face across Z (behind the
+/// front pocket), with no label on the top face. The Spine socket's frame has +X along the item's +Z (right as one
+/// faces the spine), +Y along the item's +Y (up) and +Z along the item's -X (out of the face); `spineLabelSize` is
+/// (across Z, along Y), across at most d - labelInset - 0.5 mm - 2 * chamfer, along at most h - 2 * chamfer, and the
+/// label's x border then takes the extra 0.5 mm instead of its y border.
+enum class SpineFace {
+    Top,  ///< on the top face (+Y): the item stands on its end (SlotFacing::SpineOut)
+    Side, ///< on the -X face, upright: the item stands on its side (SlotFacing::SideOut)
+};
+
 struct CartridgeParams {
     glm::vec3 size{0.125f, 0.085f, 0.020f}; ///< (w, h, d): w, h in [0.02, 0.5], d in [0.004, 0.2]
     float chamfer = 0.002f;                 ///< [0, min(size) / 4]
@@ -181,6 +194,8 @@ struct CartridgeParams {
     /// Spine label (across Z, along X), each at least 4 mm; across at most the flat top (d - labelInset - 0.5 mm -
     /// 2 * chamfer), along at most w - 2 * chamfer. The default keeps the spine texture's 40 x 256 aspect.
     glm::vec2 spineLabelSize{0.0135f, 0.0864f};
+    /// The face the spine label lies on (JSON "top" or "side").
+    SpineFace spineFace = SpineFace::Top;
 };
 
 /// How an item stands in a slot (ADR-0010 §5). Slot sockets ("Slot_<level>_<index>", SocketKind::ShelfSlot) have
@@ -192,6 +207,10 @@ enum class SlotFacing {
     /// On its end, its top face (+Y, a cartridge's spine) towards the slot's +Z, its +X up and its front (+Z) towards
     /// the slot's +X: the slot is the item's (d, w, h), a 12.5 x 8.5 x 2.0 cm cartridge 2.0 x 12.5 x 8.5 cm.
     SpineOut,
+    /// On its side, upright (I6 step 4, ADR-0014 §2): turned a quarter about +Y, its -X face (a case's spine,
+    /// SpineFace::Side) towards the slot's +Z, its +Y up and its front (+Z) towards the slot's +X: the slot is the
+    /// item's (d, h, w), a 14.2 x 12.5 x 1.0 cm jewel case 1.0 x 12.5 x 14.2 cm, as a book stands on a shelf.
+    SideOut,
 };
 
 /// The slot volume (w, h, d) an item of `itemSize` (w, h, d) fills standing with `facing`.

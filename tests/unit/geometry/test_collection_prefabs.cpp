@@ -212,11 +212,86 @@ TEST_CASE("geometry/collection: the cartridge's spine is an end label on its top
     }
 }
 
+TEST_CASE("geometry/collection: a case's side spine stands upright on its -X face", "[geometry][collection]") {
+    // I6 step 4 (ADR-0014 §2): the CD jewel case of disc_case_cd_v2, its spine on the side.
+    const glm::vec3 jewel(0.142f, 0.125f, 0.01f);
+    const json params{{"size", {0.142, 0.125, 0.01}},
+                      {"chamfer", 0.0008},
+                      {"labelMargin", {0.011, 0.0025}},
+                      {"labelInset", 0.0008},
+                      {"gripRidges", false},
+                      {"spineLabel", true},
+                      {"spineLabelSize", {0.007, 0.0448}}};
+    json sideParams = params;
+    sideParams["spineFace"] = "side";
+    const ProceduralPrefab top = buildOk("cartridge", params);
+    const ProceduralPrefab side = buildOk("cartridge", sideParams);
+    checkValid(side);
+    CHECK(side.bounds == top.bounds);
+    // The front label does not move; the shell keeps its top and gives its -X side 0.5 mm.
+    CHECK(rv::geometry::hashMesh(part(side, "label").mesh) == rv::geometry::hashMesh(part(top, "label").mesh));
+    const Aabb shell = part(side, "plastic_shell").mesh.bounds;
+    CHECK(shell.max.y == Approx(0.0625f));
+    CHECK(shell.min.x == Approx(-0.071f + 0.0005f));
+    CHECK(shell.max.x == Approx(0.071f));
+
+    // The quad: 7 x 44.8 mm, upright (along Y) on the nominal -X face, its normal -X, behind the front pocket.
+    const MeshData& spine = part(side, "spine").mesh;
+    REQUIRE(spine.vertices.size() == 4);
+    const glm::vec3 size = spine.bounds.size();
+    CHECK(size.x == Approx(0.0f).margin(1e-6f));
+    CHECK(size.y == Approx(0.0448f));
+    CHECK(size.z == Approx(0.007f));
+    for (const rv::geometry::Vertex& v : spine.vertices) {
+        CHECK(closeTo(v.normal, glm::vec3(-1.0f, 0.0f, 0.0f)));
+        CHECK(v.position.x == Approx(-0.071f));
+    }
+    CHECK(spine.bounds.max.z <= 0.005f - 0.0013f - 0.0008f + 1e-6f);
+    CHECK(spine.bounds.min.z >= -0.005f + 0.0008f - 1e-6f);
+    const Socket& s = socket(side, "Spine");
+    CHECK(closeTo(position(s.transform), spine.bounds.center()));
+    CHECK(closeTo(axis(s.transform, 2), glm::vec3(-1.0f, 0.0f, 0.0f)));
+    CHECK(closeTo(rv::geometry::socketSize(s), glm::vec3(0.007f, 0.0448f, 0.0f)));
+
+    // Standing on its side, the spine faces the slot's +Z upright, and uv (0, 0) is its top-left corner seen from the
+    // front: the spine texture is drawn upright, its text reading down.
+    const glm::mat4 stand = rv::geometry::slotItemTransform(SlotFacing::SideOut, jewel);
+    CHECK(closeTo(glm::mat3(stand) * axis(s.transform, 2), glm::vec3(0.0f, 0.0f, 1.0f)));
+    CHECK(closeTo(glm::mat3(stand) * axis(s.transform, 1), glm::vec3(0.0f, 1.0f, 0.0f)));
+    CHECK(closeTo(glm::mat3(stand) * axis(s.transform, 0), glm::vec3(1.0f, 0.0f, 0.0f)));
+    for (const rv::geometry::Vertex& v : spine.vertices) {
+        const glm::vec3 p = glm::vec3(stand * glm::vec4(v.position, 1.0f));
+        const glm::vec3 c = glm::vec3(stand * glm::vec4(spine.bounds.center(), 1.0f));
+        INFO(v.uv0.x << ", " << v.uv0.y);
+        CHECK((p.x < c.x) == (v.uv0.x < 0.5f));
+        CHECK((p.y > c.y) == (v.uv0.y < 0.5f));
+        CHECK(p.z == Approx(0.071f)); // on the slot's front face
+    }
+
+    // The side spine's limits: across the flat side behind the pocket, along the height inside the chamfers; the
+    // label's x border takes the side's 0.5 mm.
+    json wide = sideParams;
+    wide["spineLabelSize"] = {0.0075, 0.048};
+    CHECK_FALSE(rv::geometry::buildPrefab("cartridge", wide).has_value());
+    json tall = sideParams;
+    tall["spineLabelSize"] = {0.007, 0.124};
+    CHECK_FALSE(rv::geometry::buildPrefab("cartridge", tall).has_value());
+    json narrowBorder = sideParams;
+    narrowBorder["labelMargin"] = {0.0014, 0.0025};
+    CHECK_FALSE(rv::geometry::buildPrefab("cartridge", narrowBorder).has_value());
+    narrowBorder["labelMargin"] = {0.0019, 0.0025};
+    CHECK(rv::geometry::buildPrefab("cartridge", narrowBorder).has_value());
+    json unknown = sideParams;
+    unknown["spineFace"] = "bottom";
+    CHECK_FALSE(rv::geometry::buildPrefab("cartridge", unknown).has_value());
+}
+
 TEST_CASE("geometry/collection: items fill their slots face-out and spine-out", "[geometry][collection]") {
     CHECK(rv::geometry::slotSizeFor(SlotFacing::FaceOut, kCartridge) == kCartridge);
     CHECK(rv::geometry::slotSizeFor(SlotFacing::SpineOut, kCartridge) == glm::vec3(0.02f, 0.125f, 0.085f));
+    CHECK(rv::geometry::slotSizeFor(SlotFacing::SideOut, kCartridge) == glm::vec3(0.02f, 0.085f, 0.125f));
     const Aabb item = Aabb::fromMinMax(-0.5f * kCartridge, 0.5f * kCartridge);
-    for (const SlotFacing facing : {SlotFacing::FaceOut, SlotFacing::SpineOut}) {
+    for (const SlotFacing facing : {SlotFacing::FaceOut, SlotFacing::SpineOut, SlotFacing::SideOut}) {
         const glm::mat4 transform = rv::geometry::slotItemTransform(facing, kCartridge);
         const glm::mat3 rotation(transform);
         CHECK(glm::determinant(rotation) == Approx(1.0f));
@@ -233,6 +308,11 @@ TEST_CASE("geometry/collection: items fill their slots face-out and spine-out", 
     CHECK(closeTo(spineOut * glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)));
     CHECK(closeTo(spineOut * glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
     CHECK(closeTo(spineOut * glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)));
+    // Side-out the -X face does, upright, the front to the right (I6 step 4).
+    const glm::mat3 sideOut(rv::geometry::slotItemTransform(SlotFacing::SideOut, kCartridge));
+    CHECK(closeTo(sideOut * glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)));
+    CHECK(closeTo(sideOut * glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+    CHECK(closeTo(sideOut * glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)));
 }
 
 TEST_CASE("geometry/collection: slot ids and the slots of each level", "[geometry][collection][slots]") {
