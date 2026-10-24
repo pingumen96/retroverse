@@ -21,8 +21,9 @@ using namespace rv::smoke;
 
 namespace {
 
-/// Every map of every procedural surface, RGBA8 with its full chain (each map uploaded once, in its own color space):
-/// the bytes and the count of the textures gl::TextureCache generates for a scene that uses every surface.
+/// Every map of every procedural surface the test room uses (all but the halls' wall wash, I6 step 2), RGBA8 with its
+/// full chain (each map uploaded once, in its own color space): the bytes and the count of the textures
+/// gl::TextureCache generates for it.
 struct SurfaceMaps {
     std::uint64_t bytes = 0;
     std::uint64_t maps = 0;
@@ -31,6 +32,9 @@ struct SurfaceMaps {
 SurfaceMaps proceduralSurfaceMaps() {
     SurfaceMaps total;
     for (const rv::assets::ProceduralSurfaceInfo& surface : rv::assets::proceduralSurfaces()) {
+        if (surface.name == "wallwash") {
+            continue;
+        }
         const std::uint64_t maps = surface.hasNormalMap ? 3 : 2;
         total.maps += maps;
         total.bytes += maps * rv::gl::textureBytes(rv::gl::GpuFormat::Rgba8, surface.size,
@@ -112,8 +116,8 @@ TEST_CASE("measurements/the test room reports its frame times, scripted phases, 
     CHECK(findSection(report, rv::core::cpu_section::kLayerUploads) == nullptr);
     CHECK(findSection(report, rv::core::cpu_section::kVideoUpload) == nullptr);
 
-    // The GPU memory: the test room uses every procedural surface, whose maps take exactly what their formats and
-    // sizes give (about 80 MiB); nothing of the collection arrays, the hero textures or the video exists yet.
+    // The GPU memory: the test room uses every procedural surface but the wall wash, whose maps take exactly what
+    // their formats and sizes give (about 80 MiB); nothing of the collection arrays, the hero textures or the video exists yet.
     const rv::app::GpuMemoryRecord& memory = report.gpuMemory;
     const SurfaceMaps surfaces = proceduralSurfaceMaps();
     CHECK(memory.usage(rv::gl::GpuMemoryKind::ProceduralSurfaces) ==
