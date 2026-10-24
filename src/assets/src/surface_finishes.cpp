@@ -127,4 +127,26 @@ ProceduralSurface makeWallWash(const ProceduralSurfaceInfo& info) {
     });
 }
 
+ProceduralSurface makeShelfGlow(const ProceduralSurfaceInfo& info) {
+    // The light of a strip under a shelf's board on the back panel of the compartment below it (I6 step 3), as the
+    // coverage of a white picture: strongest along the top edge, falling off towards the board below (never quite to
+    // nothing: the strip lights the whole compartment a little), fading at the sides. u across, v down.
+    CanvasDesc desc;
+    desc.size = info.size;
+    desc.meters = info.meters;
+    desc.tiles = false;
+    desc.samplesPerAxis = 2;
+    desc.normalMap = false;
+    return renderSurface(desc, [&](float u, float v) {
+        const float fall = 0.12f + 0.88f * std::exp(-3.2f * v);
+        const float sides = smoothStep(0.0f, 0.08f, u) * smoothStep(0.0f, 0.08f, 1.0f - u);
+        SurfaceSample sample;
+        sample.albedo = glm::vec3(1.0f);
+        sample.roughness = 1.0f;
+        sample.metallic = 0.0f;
+        sample.coverage = std::clamp(fall * sides, 0.0f, 1.0f);
+        return sample;
+    });
+}
+
 } // namespace rv::assets::detail

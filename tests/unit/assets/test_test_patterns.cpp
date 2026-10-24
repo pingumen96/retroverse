@@ -297,7 +297,7 @@ TEST_CASE("assets/test_patterns: cartridge labels keep long titles legible", "[a
 TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     const auto names = rv::assets::patternNames();
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
-          std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print"});
+          std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print", "neon"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());
@@ -391,6 +391,42 @@ TEST_CASE("assets/test_patterns: sign lettering is white text on black inside a 
     }));
     CHECK(countColor(dark, 0, 32, Rgba(255, 255, 255, 255)) == 0);
     CHECK_FALSE(rv::assets::makeSignLettering(0, 32, "X").isValid());
+}
+
+TEST_CASE("assets/test_patterns: neon lettering: the sign's strokes as lit tubes with a halo on black",
+          "[assets][patterns]") {
+    // I6 step 3 (look.md: a neon panel per room): every stroke of makeSignLettering() stays white, a soft halo of at
+    // most 45% grey surrounds it, the panel away from the letters stays black; grey only (the material colours it).
+    constexpr int kWidth = 512;
+    constexpr int kHeight = 128;
+    const ImageData letters = rv::assets::makeSignLettering(kWidth, kHeight, "16-BIT CORNER");
+    const ImageData neon = rv::assets::makeNeonLettering(kWidth, kHeight, "16-BIT CORNER");
+    REQUIRE(isRgba(neon, kWidth, kHeight));
+    int halo = 0;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            const Rgba stroke = pixel(letters, x, y);
+            const Rgba lit = pixel(neon, x, y);
+            REQUIRE(lit.r == lit.g);
+            REQUIRE(lit.g == lit.b);
+            REQUIRE(lit.a == 255);
+            if (stroke.r == 255) {
+                CHECK(lit.r == 255);
+            } else {
+                CHECK(lit.r <= 115);
+                halo += lit.r > 20 ? 1 : 0;
+            }
+        }
+    }
+    CHECK(halo > 2000);
+    // The corners, far from any letter, stay black; the same text gives the same pixels.
+    CHECK(pixel(neon, 0, 0) == Rgba(0, 0, 0, 255));
+    CHECK(pixel(neon, kWidth - 1, kHeight - 1) == Rgba(0, 0, 0, 255));
+    CHECK(neon.pixels == rv::assets::makeNeonLettering(kWidth, kHeight, "16-BIT CORNER").pixels);
+    const auto named = rv::assets::makeNamedPattern("neon", kWidth, kHeight, "16-BIT CORNER", 3);
+    REQUIRE(named.has_value());
+    CHECK(named->pixels == neon.pixels);
+    CHECK_FALSE(rv::assets::makeNeonLettering(0, 32, "X").isValid());
 }
 
 TEST_CASE("assets/test_patterns: pattern resolution follows the size of the surface", "[assets][patterns]") {

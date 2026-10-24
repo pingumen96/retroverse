@@ -575,6 +575,53 @@ ImageData makeSignLettering(int width, int height, std::string_view text) {
     return image;
 }
 
+ImageData makeNeonLettering(int width, int height, std::string_view text) {
+    ImageData image = makeSignLettering(width, height, text);
+    if (!image.isValid()) {
+        return image;
+    }
+    // The halo: the strokes' coverage blurred by three box passes each way (about a Gaussian), radius ~ shorter / 48.
+    const int radius = std::max(1, std::min(width, height) / 48);
+    std::vector<float> glow(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+    for (std::size_t i = 0; i < glow.size(); ++i) {
+        glow[i] = static_cast<float>(image.pixels[i * 4]) / 255.0f;
+    }
+    std::vector<float> scratch(glow.size());
+    const auto pass = [&](bool horizontal) {
+        const int along = horizontal ? width : height;
+        const int across = horizontal ? height : width;
+        for (int line = 0; line < across; ++line) {
+            const auto at = [&](int i) {
+                const int x = horizontal ? i : line;
+                const int y = horizontal ? line : i;
+                return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+            };
+            float sum = 0.0f;
+            for (int i = -radius; i <= radius; ++i) {
+                sum += glow[at(std::clamp(i, 0, along - 1))];
+            }
+            for (int i = 0; i < along; ++i) {
+                scratch[at(i)] = sum / static_cast<float>(2 * radius + 1);
+                sum += glow[at(std::min(i + radius + 1, along - 1))] - glow[at(std::max(i - radius, 0))];
+            }
+        }
+        glow.swap(scratch);
+    };
+    for (int i = 0; i < 3; ++i) {
+        pass(true);
+        pass(false);
+    }
+    for (std::size_t i = 0; i < glow.size(); ++i) {
+        const float core = static_cast<float>(image.pixels[i * 4]) / 255.0f;
+        const float lit = std::max(core, std::min(0.45f, 1.1f * glow[i]));
+        const auto value = static_cast<std::uint8_t>(std::lround(std::clamp(lit, 0.0f, 1.0f) * 255.0f));
+        image.pixels[i * 4] = value;
+        image.pixels[i * 4 + 1] = value;
+        image.pixels[i * 4 + 2] = value;
+    }
+    return image;
+}
+
 ImageData makeSolid(int width, int height, glm::u8vec4 color) {
     ImageData image = blankImage(width, height);
     if (image.isValid()) {
@@ -584,8 +631,8 @@ ImageData makeSolid(int width, int height, glm::u8vec4 color) {
 }
 
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 5> kNames = {kPatternColorBars, kPatternChecker, kPatternCover,
-                                                               kPatternSign, kPatternPrint};
+    static constexpr std::array<std::string_view, 6> kNames = {kPatternColorBars, kPatternChecker, kPatternCover,
+                                                               kPatternSign, kPatternPrint, kPatternNeon};
     return kNames;
 }
 
@@ -612,7 +659,11 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternPrint) {
         return makePrintPlaceholder(width, height, title, seed);
     }
-    return makeError(ErrorCode::NotFound, "unknown test pattern (expected color_bars, checker, cover, sign or print)",
+    if (name == kPatternNeon) {
+        return makeNeonLettering(width, height, title);
+    }
+    return makeError(ErrorCode::NotFound,
+                     "unknown test pattern (expected color_bars, checker, cover, sign, print or neon)",
                      std::string(name));
 }
 

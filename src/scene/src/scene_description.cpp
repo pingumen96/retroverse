@@ -548,7 +548,7 @@ Expected<TextureSource> parseTexture(const json& value, const Location& at) {
                            kTexturePatternNames.end();
         fields.check(known, "pattern",
                      "unknown texture pattern \"" + texture.pattern +
-                         "\" (expected color_bars, checker, cover or sign)");
+                         "\" (expected color_bars, checker, cover, sign, print or neon)");
     }
     fields.optional("title", texture.title, readString);
     fields.optional("seed", texture.seed, readSeed);

@@ -60,7 +60,7 @@ struct ProceduralSurfaceInfo {
 };
 
 /// The catalog, in a fixed order: oak_planks, walnut, varnished_wood, oak, painted_plaster, ornate_rug,
-/// brushed_metal, aged_plastic, wallwash.
+/// brushed_metal, aged_plastic, wallwash, shelfglow.
 [[nodiscard]] std::span<const ProceduralSurfaceInfo> proceduralSurfaces() noexcept;
 /// The surface called `name`, or nullptr.
 [[nodiscard]] const ProceduralSurfaceInfo* findProceduralSurface(std::string_view name) noexcept;

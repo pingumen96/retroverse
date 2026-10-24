@@ -16,8 +16,8 @@ struct CatalogEntry {
     Generator generate;
 };
 
-const std::array<CatalogEntry, 9>& catalog() {
-    static const std::array<CatalogEntry, 9> entries{{
+const std::array<CatalogEntry, 10>& catalog() {
+    static const std::array<CatalogEntry, 10> entries{{
         {{"oak_planks", {1024, 1024}, {2.0f, 2.0f}, true, true,
           "Oak floor planks 14.3 cm wide running along v, staggered joints with a dark gap and a micro-bevel, a tint "
           "and a slight cup per plank, satin varnish with worn traffic areas. Full surface (white base color, "
@@ -61,6 +61,12 @@ const std::array<CatalogEntry, 9>& catalog() {
           "a 1.0 x 1.5 m quad centred 5 cm above the shade, for an unlit, alpha-blended material (its colour and "
           "strength are the material's); no normal map."},
          &detail::makeWallWash},
+        {{"shelfglow", {128, 64}, {0.8f, 0.4f}, false, false,
+          "The light a shelf's strip throws down the back panel of its compartment (I6 step 3): a white picture whose "
+          "alpha falls from the top edge (under the strip) towards the board below, fading at the sides. A picture over "
+          "uv 0..1 of a compartment's back panel, for an unlit, alpha-blended material (its colour and strength are the "
+          "material's); no normal map."},
+         &detail::makeShelfGlow},
     }};
     return entries;
 }
@@ -105,8 +111,8 @@ std::optional<SurfaceMap> surfaceMapFromString(std::string_view name) noexcept {
 }
 
 std::span<const ProceduralSurfaceInfo> proceduralSurfaces() noexcept {
-    static const std::array<ProceduralSurfaceInfo, 9> infos = [] {
-        std::array<ProceduralSurfaceInfo, 9> list{};
+    static const std::array<ProceduralSurfaceInfo, 10> infos = [] {
+        std::array<ProceduralSurfaceInfo, 10> list{};
         std::transform(catalog().begin(), catalog().end(), list.begin(),
                        [](const CatalogEntry& entry) { return entry.info; });
         return list;

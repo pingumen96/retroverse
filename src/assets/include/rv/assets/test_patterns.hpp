@@ -50,19 +50,26 @@ namespace rv::assets {
 /// makeCoverPlaceholder). Multiplied by an unlit material's color, the letters glow in that color on a dark panel.
 [[nodiscard]] ImageData makeSignLettering(int width, int height, std::string_view text);
 
+/// A room's neon sign (I6 step 3, look.md: a neon panel per room): makeSignLettering()'s lettering as lit tubes, each
+/// stroke white with a soft halo around it (the strokes blurred over about a twenty-fourth of the shorter side, at
+/// most 45% grey) on black. Multiplied by an unlit material's colour, the tubes glow in that colour, their halo blooming
+/// on the dark panel.
+[[nodiscard]] ImageData makeNeonLettering(int width, int height, std::string_view text);
+
 /// Pattern names shared with the scene description files (textures.<role>.pattern).
 inline constexpr std::string_view kPatternColorBars = "color_bars";
 inline constexpr std::string_view kPatternChecker = "checker";
 inline constexpr std::string_view kPatternCover = "cover";
 inline constexpr std::string_view kPatternSign = "sign";
 inline constexpr std::string_view kPatternPrint = "print";
+inline constexpr std::string_view kPatternNeon = "neon";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
 
 /// Builds a pattern by name: "color_bars"; "checker" (8 x 8 cells, ivory #F4EFE6 and wall grey #383735);
 /// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering); "print" (makePrintPlaceholder(), uses
-/// `title` and `seed`). Errors: NotFound for an unknown name,
+/// `title` and `seed`); "neon" (makeNeonLettering(), uses `title`). Errors: NotFound for an unknown name,
 /// InvalidArgument for a side outside [1, kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);
