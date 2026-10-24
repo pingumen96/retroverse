@@ -516,6 +516,16 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     for (const world::KeptRoom& held : result->changes.heldRooms) {
         spdlog::warn("World: {} is held as it is: {}", held.room.toString(), held.reason);
     }
+    // The rooms of cases and boxes migrated once to their families' successors (I6 step 4, ADR-0014 §2): said in the
+    // log and by a notice over the floor (the next update migrates nothing, so it shows once).
+    for (const world::MigratedRoom& migrated : result->changes.migratedRooms) {
+        spdlog::info("World: {} is rearranged once, from the media family {} to {} (its cases or boxes now stand on "
+                     "their side, the spine out)",
+                     migrated.room.toString(), migrated.from, migrated.to);
+    }
+    if (!result->changes.migratedRooms.empty() && build.notice.empty()) {
+        build.notice = std::string(world_notice::kRoomsMigrated);
+    }
     // The systems that entered the building (I4 step 6a: a room of their own, or a section of a shared or arcade room),
     // and those that wait for a held room (they enter with the update that has every section's selection).
     for (const world::SystemRoom& entered : result->changes.systemsEntered) {

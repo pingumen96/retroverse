@@ -992,6 +992,11 @@ Json worldToJson(const WorldRecord& world) {
                             {"roomKept", world.roomKept}};
     json["added"] = world.added;
     json["kept"] = world.kept;
+    Json migrated = Json::array();
+    for (const MigratedRoomRecord& room : world.migratedRooms) {
+        migrated.push_back(Json{{"room", room.room}, {"from", room.from}, {"to", room.to}});
+    }
+    json["migratedRooms"] = std::move(migrated);
     json["hardFindings"] = world.hardFindings;
     json["softFindings"] = world.softFindings;
     json["objects"] = world.objects;
@@ -1200,6 +1205,13 @@ WorldRecord readWorld(FieldReader& fields) {
     }
     world.added = fields.count("added");
     world.kept = fields.count("kept");
+    for (FieldReader& room : fields.optionalObjectArray("migratedRooms")) {
+        MigratedRoomRecord record;
+        record.room = room.string("room");
+        record.from = room.string("from");
+        record.to = room.string("to");
+        world.migratedRooms.push_back(std::move(record));
+    }
     world.hardFindings = fields.count("hardFindings");
     world.softFindings = fields.count("softFindings");
     world.objects = fields.count("objects");

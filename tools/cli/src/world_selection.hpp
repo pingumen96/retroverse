@@ -333,6 +333,10 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
     for (const world::KeptRoom& held : changes.heldRooms) {
         line("Room held", fmt::format("{}: {}", held.room.toString(), held.reason));
     }
+    // The rooms migrated once to their families' successors (I6 step 4, ADR-0014 §2).
+    for (const world::MigratedRoom& migrated : changes.migratedRooms) {
+        line("Room migrated", fmt::format("{}: {} -> {}", migrated.room.toString(), migrated.from, migrated.to));
+    }
     // The systems that entered the building (I4 step 6a): each in the room it opened or as a section of one.
     for (const world::SystemRoom& entered : changes.systemsEntered) {
         const bool opened = std::find(changes.roomsAdded.begin(), changes.roomsAdded.end(), entered.room) !=
@@ -385,6 +389,15 @@ inline CatalogJson keptRoomsJson(const std::vector<world::KeptRoom>& rooms) {
     return array;
 }
 
+/// The rooms an update migrated, as JSON: [{"room", "from", "to"}].
+inline CatalogJson migratedRoomsJson(const std::vector<world::MigratedRoom>& rooms) {
+    CatalogJson array = CatalogJson::array();
+    for (const world::MigratedRoom& migrated : rooms) {
+        array.push_back(CatalogJson{{"room", migrated.room.toString()}, {"from", migrated.from}, {"to", migrated.to}});
+    }
+    return array;
+}
+
 /// Systems with their rooms, as JSON: [{"system", "room"}].
 inline CatalogJson systemRoomsJson(const std::vector<world::SystemRoom>& systems) {
     CatalogJson array = CatalogJson::array();
@@ -421,6 +434,7 @@ inline CatalogJson changeReportJson(const world::ChangeReport& changes) {
                        {"roomsAdded", ids(changes.roomsAdded)},
                        {"systemsEntered", systemRoomsJson(changes.systemsEntered)},
                        {"systemsWaiting", systemRoomsJson(changes.systemsWaiting)},
+                       {"migratedRooms", migratedRoomsJson(changes.migratedRooms)},
                        {"digestBefore", changes.digestBefore},
                        {"digestAfter", changes.digestAfter}};
 }

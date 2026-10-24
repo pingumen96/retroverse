@@ -41,11 +41,15 @@ inline constexpr std::string_view kFailed = "failed";
 /// a floor being applied, a launch; or its ride's floor could not be built): the walker stays where it was. Shown over
 /// the floor for kShownSeconds.
 inline constexpr std::string_view kRoomUnreachable = "room-unreachable";
+/// I6 step 4 (ADR-0014 §2): the update that saved the building migrated rooms of cases and boxes once to their
+/// families' successors (standing on their side, the spine out): shown over the floor for kShownSeconds, once (the next
+/// update migrates nothing).
+inline constexpr std::string_view kRoomsMigrated = "rooms-migrated";
 
 /// Every key with a sentence of its own.
-inline constexpr std::array<std::string_view, 9> kNotices{kGenerating,   kNoCatalog, kNoGames,
-                                                          kMediaUnknown, kMediaUnknownKept, kRegeneration,
-                                                          kRefused,      kFailed,    kRoomUnreachable};
+inline constexpr std::array<std::string_view, 10> kNotices{kGenerating,       kNoCatalog,    kNoGames, kMediaUnknown,
+                                                           kMediaUnknownKept, kRegeneration, kRefused, kFailed,
+                                                           kRoomUnreachable,  kRoomsMigrated};
 /// The catalog states kNoCatalog has a sentence for (CatalogState but Ready and Opening).
 inline constexpr std::array<std::string_view, 5> kCatalogStates{"no-library", "no-database", "data-directory",
                                                                 "library-mismatch", "unavailable"};

@@ -7,21 +7,12 @@
 // it, frame by frame on the 50-title room (snes-room's size): the hover within 6 frames, the pull-out after the dwell
 // and back, a face-out item inspected and Back to Focus, steps along the band, across into the wall shelf and between
 // its ledges, held steps repeating, a still stick held 60 frames, Back to FreeRoam with every item back in its slot,
-// and every transition instant under reduceMotion.
+// and every transition instant under reduceMotion. Since I6 step 4 the pull-out also runs over generated rooms of
+// jewel cases and big boxes standing on their side (disc_case_cd_v2, big_box_v2): pulled out along the slot like a
+// book, turned a quarter so the cover faces the viewer, upright all the way.
 
-#include <catch2/catch_test_macros.hpp>
-
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <cstdint>
-#include <initializer_list>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
-
-#include <glm/glm.hpp>
+#include "../world/plan_scene_support.hpp"
+#include "../world/world_generation_support.hpp"
 
 #include <rv/app/world_focus.hpp>
 #include <rv/app/world_interaction.hpp>
@@ -37,7 +28,20 @@
 #include <rv/world/pick_index.hpp>
 #include <rv/world/scene_builder.hpp>
 
-#include "../world/plan_scene_support.hpp"
+#include <catch2/catch_test_macros.hpp>
+#include <glm/glm.hpp>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <initializer_list>
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 using rv::app::CollectionRoom;
 using rv::app::FocusStepRepeat;
@@ -106,13 +110,55 @@ struct PulledPose {
     return glm::normalize(glm::vec3(item.slotFrame[axis]));
 }
 
+/// A room of `titles` invented titles of `system` generated with the shipped data (I6 step 4: its family's items
+/// standing on their side), as a plan case.
+[[nodiscard]] const rv::test::world::PlanCase& generatedCase(std::string_view system, std::size_t titles) {
+    static std::map<std::string, rv::test::world::PlanCase> cases;
+    const std::string name = std::string(system) + "-" + std::to_string(titles);
+    if (const auto found = cases.find(name); found != cases.end()) {
+        return found->second;
+    }
+    const rv::catalog::SystemName systemName = *rv::catalog::SystemName::parse(system);
+    auto data = rv::world::loadWorldData(rv::test::world::assetRoot(), systemName);
+    REQUIRE(data.has_value());
+    rv::world::GenerationInput input;
+    input.library = rv::test::world::library();
+    input.selection = rv::test::world::makeSelection(titles, 7100 + titles);
+    input.selection.room = *rv::world::RoomId::forSystem(systemName);
+    for (rv::world::UnplacedGame& game : input.selection.unplaced) {
+        game.room = input.selection.room;
+    }
+    input.config = rv::test::world::roomConfig(102938);
+    auto result = rv::world::generate(input, *data);
+    REQUIRE(result.has_value());
+    REQUIRE(result->validation.passed());
+    rv::test::world::PlanCase entry;
+    entry.name = name;
+    entry.room = input.selection.room;
+    auto scene = rv::world::loadSceneData(rv::test::world::sourceAssetRoot(), result->plan, entry.room);
+    REQUIRE(scene.has_value());
+    entry.data = std::move(*scene);
+    entry.titles = rv::test::world::inventedTitles(result->plan);
+    entry.plan = std::move(result->plan);
+    return cases.emplace(name, std::move(entry)).first->second;
+}
+
 } // namespace
 
 TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes through its neighbours",
           "[app][world_focus]") {
+    std::vector<const rv::test::world::PlanCase*> cases;
     for (const std::string& name : kRooms) {
+        cases.push_back(&rv::test::world::planCase(name));
+    }
+    // I6 step 4: cases and boxes standing on their side.
+    cases.push_back(&generatedCase("psx", 400));
+    cases.push_back(&generatedCase("amiga", 200));
+    for (const rv::test::world::PlanCase* entry : cases) {
+        const std::string& name = entry->name;
         INFO(name);
-        const CollectionLayout layout = rv::test::world::layoutOf(rv::test::world::planCase(name));
+        const bool side = entry->data.mediaFamily.spineFacing == rv::world::SpineFacing::Side;
+        const CollectionLayout layout = rv::test::world::layoutOf(*entry);
         auto room = CollectionRoom::build(std::make_shared<const CollectionLayout>(layout));
         REQUIRE(room.has_value());
         std::size_t spineOut = 0;
@@ -143,6 +189,17 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
                 CHECK(std::fabs(glm::dot(out.centre - rest.centre, slotOut) - expected) < 1e-4f);
                 CHECK(glm::dot(out.front, slotOut) > 0.9999f);
                 CHECK(glm::dot(rest.front, slotAxis(item, 0)) > 0.9999f);
+                if (side) {
+                    // On its side, its -X face (the spine) out at rest, upright all the way like a book.
+                    const glm::mat4 restTransform = rv::app::pulledItemTransform(item, 0.0f, reach);
+                    CHECK(glm::dot(glm::normalize(glm::vec3(restTransform * glm::vec4(-1.0f, 0.0f, 0.0f, 0.0f))),
+                                   slotOut) > 0.9999f);
+                    for (const float progress : {0.25f, 0.5f, 0.75f, 1.0f}) {
+                        const glm::mat4 pulled = rv::app::pulledItemTransform(item, progress, reach);
+                        CHECK(glm::dot(glm::normalize(glm::vec3(pulled * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f))),
+                                       slotAxis(item, 1)) > 0.9999f);
+                    }
+                }
             } else {
                 ++faceOut;
                 CHECK(reach == 0.0f);
@@ -151,7 +208,9 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
                 CHECK(glm::dot(out.front - rest.front, slotAxis(item, 1)) < 0.0f);
             }
             // Never through a neighbour, never deeper into a board than standing on it, and no jump (a fiftieth of the
-            // pull moves it less than a centimetre).
+            // pull moves it less than a centimetre, or a sixteenth of its depth for a deeper item: a big box on its side
+            // slides 19 cm out before it turns).
+            const float jump = std::max(0.01f, item.slotBox.size().z / 16.0f);
             glm::vec3 previous = rest.centre;
             const float allowed = item.stance == ItemStance::FaceOut ? 1.7e-3f : 5e-4f;
             for (int step = 1; step <= 50; ++step) {
@@ -182,7 +241,7 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
                     CHECK(depth <= allowed);
                 }
                 const glm::vec3 centre = pulledPose(item, progress, reach).centre;
-                CHECK(glm::length(centre - previous) < 0.01f);
+                CHECK(glm::length(centre - previous) < jump);
                 previous = centre;
             }
         }
@@ -190,6 +249,7 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
         if (name != "plan-50-seed-102938") {
             CHECK(spineOut > 0);
         }
+        CHECK((side || name.starts_with("plan-")));
         // Most spine-out items settle at 70%: only those at the ends of their rows go farther.
         INFO(fartherOut << " of " << spineOut << " spine-out items settle farther out, at most "
                         << farthestShare * 100.0f

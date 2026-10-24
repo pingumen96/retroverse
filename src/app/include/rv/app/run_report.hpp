@@ -763,6 +763,15 @@ struct WorldJobRecord {
     bool operator==(const WorldJobRecord&) const = default;
 };
 
+/// A room the run's update migrated to its family's successor (I6 step 4: world::MigratedRoom).
+struct MigratedRoomRecord {
+    std::string room;
+    std::string from;
+    std::string to;
+
+    bool operator==(const MigratedRoomRecord&) const = default;
+};
+
 /// The generated building of the run (I3 step 10b's room, the floor shown since I4 step 5a): what showed, from which
 /// plan, how it came to be and when. Empty ({}) in runs that ask for no room (--scene, --model, --mock-catalog, the
 /// asset preview).
@@ -812,6 +821,8 @@ struct WorldRecord {
     /// The change report's counts: games added, placements kept.
     std::uint64_t added = 0;
     std::uint64_t kept = 0;
+    /// The rooms the update migrated to their families' successors (I6 step 4), by room.
+    std::vector<MigratedRoomRecord> migratedRooms;
     /// The validation's findings of the plan made (a hard one keeps the plan from showing).
     std::uint64_t hardFindings = 0;
     std::uint64_t softFindings = 0;
