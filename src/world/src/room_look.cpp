@@ -196,21 +196,37 @@ LightingProfile builtInEvening() {
 constexpr std::string_view kTintRoles[] = {"doorwayFill", "hall", "key", "lamp", "pendant", "picture", "wallWasher"};
 constexpr std::size_t kMaxLabelPalette = 16;
 
-/// The label palette, the neon, the light tints and the decoration weights of a pack (I6 step 3).
+/// The label palette, the neon, its glow, the light tints, the bloom and the decoration weights of a pack (I6 step 3);
+/// each optional, a pack without one takes classic_16bit_warm's (ThemeMaterials' defaults).
 void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
     DocumentReader& document = reader.document();
-    const Json& palette = reader.array("labelPalette");
-    detail::forEachElement(palette, reader.pointer("labelPalette"), [&](const Json& element, const std::string& at) {
-        std::string colour = detail::readString(document, element, at);
-        if (!document.failed() && !isSrgbHexColor(colour)) {
-            document.fail(at, std::string("expected ") + std::string(kColourForm));
+    if (!document.failed() && reader.has("labelPalette")) {
+        const Json& palette = reader.array("labelPalette");
+        detail::forEachElement(palette, reader.pointer("labelPalette"),
+                               [&](const Json& element, const std::string& at) {
+                                   std::string colour = detail::readString(document, element, at);
+                                   if (!document.failed() && !isSrgbHexColor(colour)) {
+                                       document.fail(at, std::string("expected ") + std::string(kColourForm));
+                                   }
+                                   theme.labelPalette.push_back(std::move(colour));
+                               });
+        if (!document.failed() && (theme.labelPalette.size() < 2 || theme.labelPalette.size() > kMaxLabelPalette)) {
+            document.fail(reader.pointer("labelPalette"), "expected 2 to 16 colours");
         }
-        theme.labelPalette.push_back(std::move(colour));
-    });
-    if (!document.failed() && (theme.labelPalette.size() < 2 || theme.labelPalette.size() > kMaxLabelPalette)) {
-        document.fail(reader.pointer("labelPalette"), "expected 2 to 16 colours");
     }
-    theme.neon = colour(reader, "neon");
+    if (!document.failed() && reader.has("neon")) {
+        theme.neon = colour(reader, "neon");
+    }
+    if (!document.failed() && reader.has("neonGlow")) {
+        const ObjectReader glow = reader.object("neonGlow", {"intensity", "range"});
+        NeonGlow value;
+        value.intensity = glow.number("intensity", 0.0, 20.0);
+        value.range = glow.number("range", 0.1, 10.0);
+        theme.neonGlow = value;
+    }
+    if (!document.failed() && reader.has("bloomStrength")) {
+        theme.bloomStrength = reader.number("bloomStrength", 0.0, 1.0);
+    }
     if (!document.failed() && reader.has("lightTints")) {
         const Json& tints = reader.value("lightTints");
         if (!tints.is_object()) {
@@ -252,6 +268,27 @@ void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
     }
 }
 
+/// The lit shelves' roles (I6 step 3, geometry::ShelfParams::boardLight): a shelf's strips light its back panel, so it
+/// names "board_light" and "board_glow" together or neither; a wall shelf has no glow (its strips only).
+void checkLitShelves(DocumentReader& document, const ThemeMaterials& theme, const std::string& pointer) {
+    if (document.failed()) {
+        return;
+    }
+    for (const auto& [kind, roles] : theme.kinds) {
+        const bool light = roles.contains("board_light");
+        const bool glow = roles.contains("board_glow");
+        const std::string at = detail::pointerChild(pointer, kind);
+        if (kind == "shelf" && light != glow) {
+            document.fail(at, "a lit shelf names board_light and board_glow together");
+            return;
+        }
+        if (kind != "shelf" && glow) {
+            document.fail(detail::pointerChild(at, "board_glow"), "only a shelf's lit interior has a glow");
+            return;
+        }
+    }
+}
+
 /// A copy of assets/world/themes/classic_16bit_warm.json (unit-tested equal), for when it does not load.
 ThemeMaterials builtInTheme() {
     using Roles = std::map<std::string, std::string>;
@@ -288,7 +325,7 @@ ThemeMaterials builtInTheme() {
                {"plastic_accent", "MAT_Plastic_Accent"}}},
         {"poster_frame", Roles{{"frame", "MAT_Wood_Oak"}, {"picture", "MAT_Paper_Print"}}},
         {"rug", Roles{{"fabric", "MAT_Carpet_Ornate"}}},
-        {"floor_lamp", Roles{{"metal", "MAT_Metal_Graphite"}, {"lamp_shade", "MAT_Lamp_Shade"}}},
+        {"floor_lamp", Roles{{"metal", "MAT_Metal_Graphite"}, {"lamp_shade", "MAT_Lamp_Shade_Warm"}}},
         {"armchair", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}}},
         {"display_case",
          Roles{{"wood_primary", "MAT_Wood_Oak"},
@@ -330,6 +367,7 @@ ThemeMaterials builtInTheme() {
     // assets::kDefaultLabelPalette (the SNES rooms' labels and spines unchanged).
     theme.labelPalette = {"#683D42", "#4C8BC9", "#6EAF93", "#B34DCE", "#76513A", "#252A2E", "#FFC88A", "#F4EFE6"};
     theme.neon = "#B34DCE";
+    theme.neonGlow = NeonGlow{4.0, 3.5};
     theme.decorationWeights = {{"bookends", 0.6}, {"floor_lamp", 0.8}, {"magazine_stack", 1.0}, {"plant", 0.6},
                                {"poster_frame", 1.0}, {"storage_box", 0.8}, {"tv_cabinet", 0.5}};
     return theme;
@@ -519,8 +557,8 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     }
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
-                              {"decorationWeights", "heroParts", "id", "kinds", "labelPalette", "lightTints", "name",
-                               "neon", "schemaVersion"});
+                              {"bloomStrength", "decorationWeights", "heroParts", "id", "kinds", "labelPalette",
+                               "lightTints", "name", "neon", "neonGlow", "schemaVersion"});
     ThemeMaterials theme;
     (void)reader.integer("schemaVersion", 1, 1);
     theme.id = reader.dataId("id");
@@ -529,6 +567,7 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     }
     theme.kinds = readMaterialTable(document, reader.value("kinds"), reader.pointer("kinds"));
     theme.heroParts = readMaterialTable(document, reader.value("heroParts"), reader.pointer("heroParts"));
+    checkLitShelves(document, theme, reader.pointer("kinds"));
     readThemeLook(reader, theme);
     if (document.failed()) {
         return propagate(document.error());
@@ -599,6 +638,25 @@ std::string tintedColour(std::string_view colour, std::string_view tint) {
     return std::string(text);
 }
 
+std::string signLightTint(std::string_view neon) {
+    const auto colour = core::parseHexColor(neon);
+    if (!isSrgbHexColor(neon) || !colour) {
+        return "#FFFFFF";
+    }
+    const float brightest = std::max({colour->r, colour->g, colour->b});
+    if (brightest <= 0.0f) {
+        return "#FFFFFF";
+    }
+    const auto byte = [&](float channel) {
+        const double full = static_cast<double>(channel / brightest);
+        const double mixed = 1.0 - kSignLightNeonShare + kSignLightNeonShare * full;
+        return static_cast<unsigned>(std::lround(std::clamp(mixed, 0.0, 1.0) * 255.0));
+    };
+    char text[8];
+    std::snprintf(text, sizeof(text), "#%02X%02X%02X", byte(colour->r), byte(colour->g), byte(colour->b));
+    return std::string(text);
+}
+
 LightingProfile themedLighting(const LightingProfile& profile, const ThemeMaterials& theme) {
     LightingProfile themed = profile;
     const auto tint = [&](LightStyle& style, std::string_view role) {
@@ -609,6 +667,8 @@ LightingProfile themedLighting(const LightingProfile& profile, const ThemeMateri
     tint(themed.key, "key");
     tint(themed.pendant, "pendant");
     tint(themed.lamp, "lamp");
+    // The sign's picture light takes the neon's hue at the profile's brightness, then the pack's own tint, if any.
+    themed.picture.color = tintedColour(themed.picture.color, signLightTint(theme.neon));
     tint(themed.picture, "picture");
     tint(themed.wallWasher, "wallWasher");
     tint(themed.hall.light, "hall");
@@ -617,8 +677,15 @@ LightingProfile themedLighting(const LightingProfile& profile, const ThemeMateri
         for (AccentLight& accent : themed.accents) {
             if (accent.on == AccentAnchor::HeroCorner && accent.anchor == "sign") {
                 accent.color = theme.neon;
+                if (theme.neonGlow) {
+                    accent.intensity = theme.neonGlow->intensity;
+                    accent.range = theme.neonGlow->range;
+                }
             }
         }
+    }
+    if (theme.bloomStrength) {
+        themed.bloomStrength = *theme.bloomStrength;
     }
     return themed;
 }

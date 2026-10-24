@@ -87,7 +87,7 @@
       "type": "point"
     },
     {
-      "color": "#F0B8E8",
+      "color": "#F0ACE8",
       "innerConeDeg": 31.17,
       "intensity": 8.0,
       "name": "fx:hero.sign-light",
@@ -200,14 +200,14 @@
     },
     {
       "color": "#B34DCE",
-      "intensity": 1.5,
+      "intensity": 4.0,
       "name": "accent:sign_glow",
       "position": [
         -0.625,
         2.5,
         -4.67
       ],
-      "range": 2.5,
+      "range": 3.5,
       "type": "point"
     },
     {
@@ -404,7 +404,7 @@
     {
       "id": "fx:e01",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -535,7 +535,7 @@
     {
       "id": "fx:e06",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -674,7 +674,7 @@
     {
       "id": "fx:hero.lamp",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {},
@@ -886,7 +886,7 @@
     {
       "id": "fx:w02",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -963,7 +963,7 @@
     {
       "id": "fx:w05",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {

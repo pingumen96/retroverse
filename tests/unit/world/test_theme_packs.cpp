@@ -138,30 +138,59 @@ TEST_CASE("world/theme packs: the seven shipped packs, each complete and coheren
     CHECK(classic->lightTints.empty());
 }
 
-TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, tint or weight", "[world][theme_packs]") {
-    const std::string head = R"({"schemaVersion": 1, "id": "t", "name": "T", "kinds": {}, "heroParts": {}, )";
-    const auto parse = [&](const std::string& tail) { return rv::world::parseThemeMaterials(head + tail, "t.json"); };
-    auto good = parse(R"("labelPalette": ["#000000", "#FFFFFF"], "neon": "#4C8BC9", "lightTints": {"picture": "#A0B0FF"},
-                         "decorationWeights": {"plant": 0.5}})");
+TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, glow, bloom, tint, weight or lit shelf",
+          "[world][theme_packs]") {
+    const std::string head = R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, )";
+    const auto parse = [&](const std::string& tail) {
+        return rv::world::parseThemeMaterials(head + R"("kinds": {})" + tail + "}", "t.json");
+    };
+    const auto refusal = [&](const std::string& tail) {
+        auto parsed = parse(tail);
+        REQUIRE_FALSE(parsed.has_value());
+        return parsed.error().message;
+    };
+    auto good = parse(R"(, "labelPalette": ["#000000", "#FFFFFF"], "neon": "#4C8BC9",
+                         "neonGlow": {"intensity": 4.0, "range": 3.5}, "bloomStrength": 0.28,
+                         "lightTints": {"picture": "#A0B0FF"}, "decorationWeights": {"plant": 0.5})");
     REQUIRE(good.has_value());
     CHECK(good->neon == "#4C8BC9");
+    CHECK(good->neonGlow == rv::world::NeonGlow{4.0, 3.5});
+    CHECK(good->bloomStrength == 0.28);
     CHECK(good->lightTints.at("picture") == "#A0B0FF");
     CHECK(good->decorationWeights.at("plant") == 0.5);
-    CHECK_THAT(parse(R"("neon": "#4C8BC9"})").error().message, ContainsSubstring("labelPalette"));
-    CHECK_THAT(parse(R"("labelPalette": ["#000000"], "neon": "#4C8BC9"})").error().message,
-               ContainsSubstring("2 to 16 colours"));
-    CHECK_THAT(parse(R"("labelPalette": ["#000000", "red"], "neon": "#4C8BC9"})").error().message,
-               ContainsSubstring("/labelPalette/1"));
-    CHECK_THAT(parse(R"("labelPalette": ["#000000", "#FFFFFF"]})").error().message, ContainsSubstring("neon"));
-    CHECK_THAT(parse(R"("labelPalette": ["#000000", "#FFFFFF"], "neon": "#4C8BC9", "lightTints": {"sun": "#FFFFFF"}})")
+    // Every look key is optional: a pack without them takes classic_16bit_warm's palette and neon, the profile's glow
+    // and bloom.
+    auto bare = parse("");
+    REQUIRE(bare.has_value());
+    CHECK(bare->labelPalette.empty());
+    CHECK(bare->neon == rv::world::builtInThemeMaterials().neon);
+    CHECK_FALSE(bare->neonGlow.has_value());
+    CHECK_FALSE(bare->bloomStrength.has_value());
+    CHECK(bare->lightTints.empty());
+    CHECK(bare->decorationWeights.empty());
+    CHECK_THAT(refusal(R"(, "labelPalette": ["#000000"])"), ContainsSubstring("2 to 16 colours"));
+    CHECK_THAT(refusal(R"(, "labelPalette": ["#000000", "red"])"), ContainsSubstring("/labelPalette/1"));
+    CHECK_THAT(refusal(R"(, "neon": "#4c8bc9")"), ContainsSubstring("/neon"));
+    CHECK_THAT(refusal(R"(, "neonGlow": {"intensity": 4.0})"), ContainsSubstring("range"));
+    CHECK_THAT(refusal(R"(, "neonGlow": {"intensity": -1, "range": 3})"), ContainsSubstring("/neonGlow/intensity"));
+    CHECK_THAT(refusal(R"(, "bloomStrength": 1.5)"), ContainsSubstring("/bloomStrength"));
+    CHECK_THAT(refusal(R"(, "lightTints": {"sun": "#FFFFFF"})"), ContainsSubstring("/lightTints/sun"));
+    CHECK_THAT(refusal(R"(, "decorationWeights": {"plant": 2})"), ContainsSubstring("from 0 to 1"));
+    // A lit shelf names its strip and its glow together; a wall shelf has no glow.
+    const auto kinds = [&](const std::string& table) {
+        return rv::world::parseThemeMaterials(head + R"("kinds": )" + table + "}", "t.json");
+    };
+    CHECK(kinds(R"({"shelf": {"wood_primary": "MAT_A", "board_light": "MAT_L", "board_glow": "MAT_G"},
+                    "wall_shelf": {"wood_primary": "MAT_A", "board_light": "MAT_L"}})")
+              .has_value());
+    CHECK_THAT(kinds(R"({"shelf": {"wood_primary": "MAT_A", "board_light": "MAT_L"}})").error().message,
+               ContainsSubstring("board_light and board_glow together"));
+    CHECK_THAT(kinds(R"({"shelf": {"wood_primary": "MAT_A", "board_glow": "MAT_G"}})").error().message,
+               ContainsSubstring("/kinds/shelf"));
+    CHECK_THAT(kinds(R"({"wall_shelf": {"wood_primary": "MAT_A", "board_light": "MAT_L", "board_glow": "MAT_G"}})")
                    .error()
                    .message,
-               ContainsSubstring("/lightTints/sun"));
-    CHECK_THAT(
-        parse(R"("labelPalette": ["#000000", "#FFFFFF"], "neon": "#4C8BC9", "decorationWeights": {"plant": 2}})")
-            .error()
-            .message,
-        ContainsSubstring("from 0 to 1"));
+               ContainsSubstring("/kinds/wall_shelf/board_glow"));
 }
 
 TEST_CASE("world/theme packs: a room's pack by its floor, the arcade room's by its kind", "[world][theme_packs]") {
@@ -241,41 +270,74 @@ TEST_CASE("world/theme packs: the pack lights its rooms and halls", "[world][the
     auto afternoon = rv::world::loadLightingProfile(assets(), "afternoon");
     REQUIRE(evening.has_value());
     REQUIRE(afternoon.has_value());
-    // The classic pack leaves the profiles as they are (the SNES rooms' light unchanged).
-    CHECK(rv::world::themedLighting(*evening, rv::world::builtInThemeMaterials()) == *evening);
-    CHECK(rv::world::themedLighting(*afternoon, rv::world::builtInThemeMaterials()) == *afternoon);
     CHECK(rv::world::tintedColour("#FFC88A", "#FFFFFF") == "#FFC88A");
     CHECK(rv::world::tintedColour("#FFC88A", "#000000") == "#000000");
     CHECK(rv::world::tintedColour("#808080", "#808080") == "#3D3D3D");
     CHECK(rv::world::tintedColour("not a colour", "#808080") == "not a colour");
+    // The sign's picture light from the neon: brought to full brightness, mixed with white.
+    CHECK(rv::world::signLightTint("#B34DCE") == "#F0B7FF");
+    CHECK(rv::world::signLightTint("#FFFFFF") == "#FFFFFF");
+    CHECK(rv::world::signLightTint("#000000") == "#FFFFFF");
+    CHECK(rv::world::signLightTint("magenta") == "#FFFFFF");
+
+    for (const std::string& id : rv::world::themePackIds(assets())) {
+        INFO(id);
+        auto theme = rv::world::loadThemeMaterials(assets(), id);
+        REQUIRE(theme.has_value());
+        for (const rv::world::LightingProfile* profile : {&*evening, &*afternoon}) {
+            const rv::world::LightingProfile lit = rv::world::themedLighting(*profile, *theme);
+            // The picture light on the sign in the neon's hue, at the profile's brightness (no pack tints it by hand).
+            CHECK_FALSE(theme->lightTints.contains("picture"));
+            CHECK(lit.picture.color ==
+                  rv::world::tintedColour(profile->picture.color, rv::world::signLightTint(theme->neon)));
+            CHECK(lit.picture.intensity == profile->picture.intensity);
+            // The neon's glow on the wall in its colour, the pack's intensity and range.
+            for (const rv::world::AccentLight& accent : lit.accents) {
+                INFO(accent.name);
+                const auto before =
+                    std::find_if(profile->accents.begin(), profile->accents.end(),
+                                 [&](const rv::world::AccentLight& other) { return other.name == accent.name; });
+                REQUIRE(before != profile->accents.end());
+                if (accent.anchor == "sign") {
+                    CHECK(accent.color == theme->neon);
+                    CHECK(accent.intensity == (theme->neonGlow ? theme->neonGlow->intensity : before->intensity));
+                    CHECK(accent.range == (theme->neonGlow ? theme->neonGlow->range : before->range));
+                } else {
+                    CHECK(accent == *before);
+                }
+            }
+            CHECK(lit.bloomStrength == theme->bloomStrength.value_or(profile->bloomStrength));
+            // Only colours, the glow and the bloom change: intensities, ranges and the environment as the profile's.
+            CHECK(lit.key.intensity == profile->key.intensity);
+            CHECK(lit.picture.range == profile->picture.range);
+            CHECK(lit.roomLook() == profile->roomLook());
+        }
+    }
+    // Classic's sign keeps today's magenta pool (#F0B8E8 before I6 step 3's review), its roles untinted.
+    const rv::world::LightingProfile classic = rv::world::themedLighting(*evening, rv::world::builtInThemeMaterials());
+    const glm::vec3 pool = *rv::core::hexToLinearRgb(classic.picture.color);
+    CHECK(pool.r > pool.g);
+    CHECK(pool.b > pool.g);
+    CHECK(classic.key == evening->key);
+    CHECK(classic.pendant == evening->pendant);
+    CHECK(classic.wallWasher == evening->wallWasher);
+    CHECK(classic.hall == evening->hall);
 
     auto optical = rv::world::loadThemeMaterials(assets(), "optical_era_lounge");
     REQUIRE(optical.has_value());
     const rv::world::LightingProfile lit = rv::world::themedLighting(*evening, *optical);
-    // Its spots a little cooler, its lamps warm for contrast, the sign's picture light and glow blue.
+    // Its spots and fill cooler, its lamps warm for contrast, the sign's picture light blue.
     CHECK(lit.key.color != evening->key.color);
+    CHECK(lit.pendant.color != evening->pendant.color);
     CHECK(lit.wallWasher.color != evening->wallWasher.color);
     CHECK(lit.lamp == evening->lamp);
-    CHECK(lit.pendant == evening->pendant);
     CHECK(lit.hall == evening->hall);
     const glm::vec3 picture = *rv::core::hexToLinearRgb(lit.picture.color);
     CHECK(picture.b > picture.r);
-    for (const rv::world::AccentLight& accent : lit.accents) {
-        INFO(accent.name);
-        CHECK(accent.color == (accent.anchor == "sign" ? optical->neon : [&] {
-                  for (const rv::world::AccentLight& before : evening->accents) {
-                      if (before.name == accent.name) {
-                          return before.color;
-                      }
-                  }
-                  return std::string();
-              }()));
-        CHECK(accent.intensity > 0.0);
-    }
-    // Only colours change: intensities, ranges and cones as the profile's.
-    CHECK(lit.key.intensity == evening->key.intensity);
-    CHECK(lit.picture.range == evening->picture.range);
-    CHECK(lit.roomLook() == evening->roomLook());
+    // The arcade blooms more than every other pack.
+    auto arcade = rv::world::loadThemeMaterials(assets(), "arcade_after_dark");
+    REQUIRE(arcade.has_value());
+    CHECK(rv::world::themedLighting(*evening, *arcade).bloomStrength > evening->bloomStrength);
 }
 
 TEST_CASE("world/theme packs: a room's scene data take the pack its floor resolves, never the plan's record",
@@ -317,6 +379,23 @@ TEST_CASE("world/theme packs: a room's scene data take the pack its floor resolv
         REQUIRE(data.has_value());
         CHECK(data->hallTheme.id == pack);
     }
+    // The arcade room blooms more than its floor's hall: its area carries its own bloom, the scene the hall's.
+    auto ground = rv::world::loadFloorSceneData(assets(), stale, "ground");
+    REQUIRE(ground.has_value());
+    auto groundScene = rv::world::toFloorSceneFile(stale, "ground", *ground);
+    REQUIRE(groundScene.has_value());
+    const nlohmann::json& file = groundScene->sceneFile;
+    CHECK(file["environment"]["bloomStrength"] == ground->lighting.bloomStrength);
+    bool arcadeArea = false;
+    for (const nlohmann::json& area : file["areas"]) {
+        if (area["id"] == "area:arcade") {
+            arcadeArea = true;
+            CHECK(area["environment"]["bloomStrength"] == 0.28);
+        } else {
+            CHECK_FALSE((area.contains("environment") && area["environment"].contains("bloomStrength")));
+        }
+    }
+    CHECK(arcadeArea);
 }
 
 TEST_CASE("world/theme packs: the update writes the resolved pack and moves nothing", "[world][theme_packs]") {

@@ -92,15 +92,17 @@
     },
     // The rooms' walls per theme pack (I6 step 3, docs/i6/look.md): the troweled plaster's relief and sheen in each
     // era's tone. Classic16BitWarm's is warmer than the smoky #383735 (the look review: the rooms read cold beside the
-    // halls); the 90s collector's a warm caramel; the optical era's a dark blue-grey; the handheld archive's a lighter
-    // warm taupe (an exhibition); the computer studio's an olive study; the arcade's a near-black plum.
+    // halls); the 90s collector's a warm mauve-taupe (a caramel until the step's review: with the oak it made the
+    // room 93% orange); the optical era's a dark blue-grey; the handheld archive's a lighter
+    // warm taupe (an exhibition); the computer studio's an olive study; the arcade's a dark plum (lighter since the
+    // step's review: from the hub its doorway read as a black hole).
     "MAT_Wall_Warm": {
       "baseColor": "#3D3430", "metallic": 0.0, "roughness": 1.0,
       "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
       "normalTexture": "procedural:painted_plaster/normal"
     },
-    "MAT_Wall_Caramel": {
-      "baseColor": "#4A3A2F", "metallic": 0.0, "roughness": 1.0,
+    "MAT_Wall_Mauve": {
+      "baseColor": "#45393A", "metallic": 0.0, "roughness": 1.0,
       "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
       "normalTexture": "procedural:painted_plaster/normal"
     },
@@ -120,7 +122,7 @@
       "normalTexture": "procedural:painted_plaster/normal"
     },
     "MAT_Wall_Night": {
-      "baseColor": "#211C25", "metallic": 0.0, "roughness": 1.0,
+      "baseColor": "#40324A", "metallic": 0.0, "roughness": 1.0,
       "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
       "normalTexture": "procedural:painted_plaster/normal"
     },
@@ -193,6 +195,8 @@
     "MAT_Fabric_Leather": { "baseColor": "#2C2522", "metallic": 0.0, "roughness": 0.55 },
     // The 90s collector's seats: a muted teal of the decade's palette.
     "MAT_Fabric_Teal": { "baseColor": "#2F5654", "metallic": 0.0, "roughness": 0.9 },
+    // The handheld archive's seats (the step's review): a slate-blue wool, the exhibition's cool note beside its oak.
+    "MAT_Fabric_Slate": { "baseColor": "#3A4656", "metallic": 0.0, "roughness": 0.9 },
     // Ornamental medallion rug in the style palette (bordeaux #683D42 family, navy, cream, muted gold): a picture over
     // the rug's top face (uv 0..1), designed for the rug prefab's default 2.4 x 1.6 m.
     "MAT_Carpet_Ornate": {
@@ -205,7 +209,7 @@
     "MAT_Fabric_Display": { "baseColor": "#6E3842", "metallic": 0.0, "roughness": 0.95 },
     // The display linings of the other packs (I6 step 3): a navy for the optical era and the arcade, a green baize for
     // the handheld archive and the computer studio.
-    "MAT_Fabric_Display_Navy": { "baseColor": "#1F283A", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Fabric_Display_Navy": { "baseColor": "#283450", "metallic": 0.0, "roughness": 0.95 },
     "MAT_Fabric_Display_Green": { "baseColor": "#34503F", "metallic": 0.0, "roughness": 0.95 },
     // Storage boxes: kraft cardboard a shade darker than raw board, so the boxes stay behind the collection.
     "MAT_Cardboard_Box": { "baseColor": "#8E7151", "metallic": 0.0, "roughness": 0.85 },
@@ -239,10 +243,11 @@
     "MAT_Neon_Green": { "shading": "unlit", "baseColor": "#6EAF93", "emissiveStrength": 2.2 },
     "MAT_Neon_Pink": { "shading": "unlit", "baseColor": "#F0509E", "emissiveStrength": 2.6 },
     "MAT_Neon_Amber": { "shading": "unlit", "baseColor": "#FFB45A", "emissiveStrength": 2.0 },
-    // The lit shelves (I6 step 3, look.md: lit inside): the strip under each board, a warm LED line that blooms a
-    // little, and its light on the compartment's back panel, the shelf glow's picture blended over it (like the halls'
-    // wall wash; no light of their own).
-    "MAT_Shelf_Light": { "shading": "unlit", "baseColor": "#FFE0B4", "emissiveStrength": 2.2 },
+    // The lit shelves (I6 step 3, look.md: lit inside): the strip under each board, a tungsten LED line (style §3's
+    // #FFC88A; since the step's review warmer and dimmer, a glow rather than a white line), and its light on the
+    // compartment's back panel, the shelf glow's picture blended over it (like the halls' wall wash; no light of their
+    // own).
+    "MAT_Shelf_Light": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 1.6 },
     "MAT_Shelf_Glow": {
       "shading": "unlit", "baseColor": "#FFB878", "emissiveStrength": 1.0, "alpha": 0.45, "alphaMode": "blend",
       "baseColorTexture": "procedural:shelfglow/baseColor"
@@ -278,6 +283,16 @@
     // Fabric shade lit from the inside by a warm tungsten bulb; seen from inside and outside.
     "MAT_Lamp_Shade": {
       "baseColor": "#E8D7B9",
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "emissive": "#FFC88A",
+      "emissiveStrength": 1.0,
+      "doubleSided": true
+    },
+    // The generated rooms' lamps (the step's review): the test room's shade a little deeper, a parchment that reads warm
+    // under its own bulb rather than white (MAT_Lamp_Shade stays the test room's, G01).
+    "MAT_Lamp_Shade_Warm": {
+      "baseColor": "#E0C49A",
       "metallic": 0.0,
       "roughness": 0.85,
       "emissive": "#FFC88A",

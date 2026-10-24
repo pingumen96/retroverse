@@ -116,7 +116,8 @@ build/rvdata`).
   the shaders, so no light shines through the wall beside it. A point or spot light whose whole range lies behind the
   eye is left out (it lights nothing in view), with a 1 m margin. The other lights are left out, so light never leaks
   through a wall without a doorway (`rv/scene/scene_areas.hpp`). An area may carry its own `"environment"` (`exposure`,
-  `ambientSky`, `ambientGround`, `ambientIntensity`, `fillColor`, `fillIntensity`, each optional, else the scene's):
+  `ambientSky`, `ambientGround`, `ambientIntensity`, `fillColor`, `fillIntensity`, and since I6 step 3 `bloomStrength`
+  (a room whose theme pack blooms otherwise, the arcade's), each optional, else the scene's):
   the views ease to the eye's area's over 0.5 s when it changes areas, at once under `reduceMotion` and at the first
   frame; `fillColor` and `fillIntensity` (also keys of the scene's `"environment"`, 0 by default) add an even fill to
   the hemispheric ambient's diffuse part. The developer overlay shows and edits the eye's area's environment. The log
@@ -309,9 +310,9 @@ build/rvdata`).
   (`assets/world/themes`, I6 step 3, `docs/i6/step-3.md`): its floor's (`building.json`'s `themePack`: the 16-bit
   floors `classic_16bit_warm`, gen5 `console_90s_collector`, gen6 and gen7 `optical_era_lounge`, the handhelds
   `handheld_archive`, the computers `computer_studio`, the ground floor's hall `retro_library_hub`), the arcade room's
-  `arcade_after_dark` wherever it stands, a platform manifest's when it names one; resolved when the room is drawn
-  (materials, the neon sign's colour, the lit shelves, the generated spines' and labels' palette, light tints), never
-  a reason to move anything. With the mouse free (the developer overlay open) the cursor picks.
+  `arcade_after_dark` wherever it stands, a platform manifest's only when it names one (`snes.json` names none);
+  resolved when the room is drawn (materials, the neon sign and the light on it, the lit shelves, the generated
+  spines' and labels' palette, light tints, the bloom), never a reason to move anything. With the mouse free (the developer overlay open) the cursor picks.
 - The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its
   proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it), facing its doors (their middle less than 80
   degrees off the view: the arrival point faces the hall, so the walker turns to them first), a prompt names the

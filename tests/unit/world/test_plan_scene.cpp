@@ -318,10 +318,12 @@ TEST_CASE("world/plan_scene: the dressing stands in its levels' free volumes; di
 
 TEST_CASE("world/plan_scene: the lights with the lighting profile's colours and intensities",
           "[world][plan_scene]") {
-    // The shipped default profile (assets/world/lighting/evening.json), which the scene data reads.
+    // The shipped default profile (assets/world/lighting/evening.json), which the scene data reads, as the SNES room's
+    // pack lights it (I6 step 3: the sign's light in its neon; classic_16bit_warm, the built-in pack).
     const auto loaded = rv::world::loadLightingProfile(rv::test::world::sourceAssetRoot(), "evening");
     REQUIRE(loaded.has_value());
-    const rv::world::LightingProfile& profile = *loaded;
+    const rv::world::LightingProfile profile =
+        rv::world::themedLighting(*loaded, rv::world::builtInThemeMaterials());
     REQUIRE_FALSE(profile.accents.empty());
     for (const std::string& name : {"plan-0-seed-102938", "plan-890-seed-102938", "plan-8000-seed-102938"}) {
         INFO(name);

@@ -21,7 +21,7 @@
                           "plastic_accent": "MAT_Plastic_Accent"},
     "poster_frame": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
     "rug": {"fabric": "MAT_Carpet_Ornate"},
-    "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade"},
+    "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
     "armchair": {"fabric": "MAT_Fabric_Sofa", "wood": "MAT_Wood_Walnut"},
     "display_case": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
                      "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display", "glass": "MAT_Glass_Display"},
@@ -44,6 +44,7 @@
   },
   "labelPalette": ["#683D42", "#4C8BC9", "#6EAF93", "#B34DCE", "#76513A", "#252A2E", "#FFC88A", "#F4EFE6"],
   "neon": "#FFB45A",
+  "neonGlow": {"intensity": 3.5, "range": 3.5},
   "lightTints": {},
   "decorationWeights": {"bookends": 0.6, "floor_lamp": 0.8, "magazine_stack": 0.8, "plant": 1.0, "poster_frame": 0.8,
                         "storage_box": 0.6, "tv_cabinet": 0.5}

@@ -50,10 +50,15 @@ namespace rv::assets {
 /// makeCoverPlaceholder). Multiplied by an unlit material's color, the letters glow in that color on a dark panel.
 [[nodiscard]] ImageData makeSignLettering(int width, int height, std::string_view text);
 
-/// A room's neon sign (I6 step 3, look.md: a neon panel per room): makeSignLettering()'s lettering as lit tubes, each
-/// stroke white with a soft halo around it (the strokes blurred over about a twenty-fourth of the shorter side, at
-/// most 45% grey) on black. Multiplied by an unlit material's colour, the tubes glow in that colour, their halo blooming
-/// on the dark panel.
+/// A room's neon sign (I6 step 3, look.md: a neon panel per room; tube-like since its review): makeSignLettering()'s
+/// lettering as bent glass tubes: the strokes rounded at their corners and ends, each tube kNeonTubeEdge grey at its
+/// rim rising to a white core over its inner third or so, a soft halo around it (the tubes blurred over about a
+/// stroke's width, so it reaches about twice the stroke's width, at most kNeonHalo grey), on a panel of kNeonBacking
+/// grey. Multiplied by an unlit material's colour, the tubes glow in that colour (their core, the brightest, whitens
+/// under the tonemap), their halo blooming on a panel tinted by the neon rather than black.
+inline constexpr float kNeonTubeEdge = 0.62f;
+inline constexpr float kNeonHalo = 0.40f;
+inline constexpr float kNeonBacking = 0.05f;
 [[nodiscard]] ImageData makeNeonLettering(int width, int height, std::string_view text);
 
 /// Pattern names shared with the scene description files (textures.<role>.pattern).

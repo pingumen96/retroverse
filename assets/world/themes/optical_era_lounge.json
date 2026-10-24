@@ -1,8 +1,8 @@
 // The theme pack OpticalEraLounge (I6 step 3, style §14.3, docs/i6/look.md: the sixth and seventh generations'
 // floors, gen6 and gen7, concept panel 4; read by rv/world/room_look.hpp, which documents the format): an early-2000s
-// lounge. A dark stained parquet under dark blue-grey walls, graphite trim and display frames, walnut shelving lit
-// inside, a black CRT, a dark leather armchair, glass cases lined in navy; the neon a discreet cold blue, the room's
-// spots a little cooler while its lamps stay warm for contrast. Its hall's plaster leans towards its rooms' slate.
+// lounge. A dark stained parquet under dark blue-grey walls, graphite trim, walnut shelving lit inside and walnut
+// cases (graphite until the step's review) lined in navy, a black CRT, a dark leather armchair; the neon a discreet
+// cold blue, the room's spots, fill and washers cooler (the era's colour) while its lamps stay warm for contrast. Its hall's plaster leans towards its rooms' slate.
 {
   "schemaVersion": 1,
   "id": "optical_era_lounge",
@@ -22,9 +22,9 @@
                           "plastic_accent": "MAT_Plastic_Accent"},
     "poster_frame": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Paper_Print"},
     "rug": {"fabric": "MAT_Carpet_Ornate"},
-    "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade"},
+    "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
     "armchair": {"fabric": "MAT_Fabric_Leather", "wood": "MAT_Metal_Graphite"},
-    "display_case": {"wood_primary": "MAT_Metal_Graphite", "wood_secondary": "MAT_Wood_Varnished_Dark",
+    "display_case": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                      "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Navy",
                      "glass": "MAT_Glass_Display"},
     "storage_box": {"cardboard": "MAT_Cardboard_Box", "label": "MAT_Paper_Print"},
@@ -46,7 +46,8 @@
   },
   "labelPalette": ["#2B3A55", "#4C8BC9", "#252A2E", "#5A6470", "#8A93A0", "#683D42", "#1C2430", "#C8CED6"],
   "neon": "#4C8BC9",
-  "lightTints": {"key": "#F2F4FF", "wallWasher": "#E8ECFF", "picture": "#90B0FF"},
+  "neonGlow": {"intensity": 4.0, "range": 3.5},
+  "lightTints": {"key": "#E6EEFF", "pendant": "#C8D6FF", "wallWasher": "#B8C8FF"},
   "decorationWeights": {"bookends": 0.4, "floor_lamp": 0.8, "magazine_stack": 0.6, "plant": 0.7, "poster_frame": 1.0,
                         "storage_box": 0.5, "tv_cabinet": 0.6}
 }

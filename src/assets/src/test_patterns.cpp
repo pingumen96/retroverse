@@ -575,18 +575,12 @@ ImageData makeSignLettering(int width, int height, std::string_view text) {
     return image;
 }
 
-ImageData makeNeonLettering(int width, int height, std::string_view text) {
-    ImageData image = makeSignLettering(width, height, text);
-    if (!image.isValid()) {
-        return image;
-    }
-    // The halo: the strokes' coverage blurred by three box passes each way (about a Gaussian), radius ~ shorter / 48.
-    const int radius = std::max(1, std::min(width, height) / 48);
-    std::vector<float> glow(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
-    for (std::size_t i = 0; i < glow.size(); ++i) {
-        glow[i] = static_cast<float>(image.pixels[i * 4]) / 255.0f;
-    }
-    std::vector<float> scratch(glow.size());
+namespace {
+
+/// A coverage map of `width` x `height` floats, blurred in place by `passes` box passes of `radius` each way (about a
+/// Gaussian of sigma ~ radius for three passes).
+void boxBlur(std::vector<float>& values, int width, int height, int radius, int passes) {
+    std::vector<float> scratch(values.size());
     const auto pass = [&](bool horizontal) {
         const int along = horizontal ? width : height;
         const int across = horizontal ? height : width;
@@ -598,22 +592,101 @@ ImageData makeNeonLettering(int width, int height, std::string_view text) {
             };
             float sum = 0.0f;
             for (int i = -radius; i <= radius; ++i) {
-                sum += glow[at(std::clamp(i, 0, along - 1))];
+                sum += values[at(std::clamp(i, 0, along - 1))];
             }
             for (int i = 0; i < along; ++i) {
                 scratch[at(i)] = sum / static_cast<float>(2 * radius + 1);
-                sum += glow[at(std::min(i + radius + 1, along - 1))] - glow[at(std::max(i - radius, 0))];
+                sum += values[at(std::min(i + radius + 1, along - 1))] - values[at(std::max(i - radius, 0))];
             }
         }
-        glow.swap(scratch);
+        values.swap(scratch);
     };
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < passes; ++i) {
         pass(true);
         pass(false);
     }
-    for (std::size_t i = 0; i < glow.size(); ++i) {
-        const float core = static_cast<float>(image.pixels[i * 4]) / 255.0f;
-        const float lit = std::max(core, std::min(0.45f, 1.1f * glow[i]));
+}
+
+/// The distance (pixels, a 3-4 chamfer) of every pixel of `inside` to the nearest pixel outside it; 0 outside.
+std::vector<float> insideDistance(const std::vector<bool>& inside, int width, int height) {
+    constexpr float kFar = 1.0e6f;
+    std::vector<float> d(inside.size());
+    for (std::size_t i = 0; i < inside.size(); ++i) {
+        d[i] = inside[i] ? kFar : 0.0f;
+    }
+    const auto at = [&](int x, int y) {
+        return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+    };
+    const auto value = [&](int x, int y) { return x < 0 || y < 0 || x >= width || y >= height ? 0.0f : d[at(x, y)]; };
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            float& here = d[at(x, y)];
+            here = std::min({here, value(x - 1, y) + 3.0f, value(x, y - 1) + 3.0f, value(x - 1, y - 1) + 4.0f,
+                             value(x + 1, y - 1) + 4.0f});
+        }
+    }
+    for (int y = height - 1; y >= 0; --y) {
+        for (int x = width - 1; x >= 0; --x) {
+            float& here = d[at(x, y)];
+            here = std::min({here, value(x + 1, y) + 3.0f, value(x, y + 1) + 3.0f, value(x + 1, y + 1) + 4.0f,
+                             value(x - 1, y + 1) + 4.0f});
+        }
+    }
+    for (float& distance : d) {
+        distance /= 3.0f;
+    }
+    return d;
+}
+
+} // namespace
+
+ImageData makeNeonLettering(int width, int height, std::string_view text) {
+    ImageData image = makeSignLettering(width, height, text);
+    if (!image.isValid()) {
+        return image;
+    }
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    std::vector<bool> stroke(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        stroke[i] = image.pixels[i * 4] >= 128;
+    }
+    // The stroke's width: twice the deepest point inside the letters (the pixel font's strokes are all alike).
+    const std::vector<float> depth = insideDistance(stroke, width, height);
+    const float halfWidth = std::max(1.0f, *std::max_element(depth.begin(), depth.end()));
+    const int strokeWidth = std::max(1, static_cast<int>(std::lround(2.0f * halfWidth)));
+    // Rounded tubes: the strokes blurred over a third of their width and cut again, so that corners and the strokes'
+    // ends come round like bent glass: a stroke's pixel stays glass unless it is an outer corner (below 0.40), another
+    // pixel becomes glass only well inside an inner corner (0.62), so the pixel font's diagonal joints hold.
+    std::vector<float> coverage(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        coverage[i] = stroke[i] ? 1.0f : 0.0f;
+    }
+    std::vector<float> rounded = coverage;
+    boxBlur(rounded, width, height, std::max(1, strokeWidth / 3), 2);
+    std::vector<bool> tube(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        tube[i] = rounded[i] >= (stroke[i] ? 0.40f : 0.62f);
+    }
+    // Across a tube, its depth against the strokes' half width (a joint or a filled inner corner, deeper, is all core).
+    const std::vector<float> inTube = insideDistance(tube, width, height);
+    // The halo: the tubes' coverage blurred over about a stroke's width (three passes), so it reaches about twice the
+    // stroke's width around it.
+    std::vector<float> halo(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        halo[i] = tube[i] ? 1.0f : 0.0f;
+    }
+    boxBlur(halo, width, height, strokeWidth, 3);
+    for (std::size_t i = 0; i < count; ++i) {
+        float lit = kNeonBacking;
+        if (tube[i]) {
+            // Across the tube: its glass at kNeonTubeEdge at the rim, rising to the white core over its inner third or
+            // so (from the centre line out to 45% of the half width).
+            const float t = std::clamp(inTube[i] / halfWidth, 0.0f, 1.0f);
+            const float s = std::clamp((t - 0.20f) / 0.35f, 0.0f, 1.0f);
+            lit = kNeonTubeEdge + (1.0f - kNeonTubeEdge) * s * s * (3.0f - 2.0f * s);
+        } else {
+            lit = std::max(lit, std::min(kNeonHalo, 0.9f * halo[i]));
+        }
         const auto value = static_cast<std::uint8_t>(std::lround(std::clamp(lit, 0.0f, 1.0f) * 255.0f));
         image.pixels[i * 4] = value;
         image.pixels[i * 4 + 1] = value;

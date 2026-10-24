@@ -45,7 +45,8 @@
   },
   "labelPalette": ["#6EAF93", "#C8B89A", "#76513A", "#4A6450", "#45547A", "#B8B2A2", "#252A2E", "#8E7151"],
   "neon": "#6EAF93",
-  "lightTints": {"lamp": "#F0FFE6", "picture": "#CCF0DC"},
+  "neonGlow": {"intensity": 3.4, "range": 3.0},
+  "lightTints": {"lamp": "#F0FFE6"},
   "decorationWeights": {"bookends": 1.0, "floor_lamp": 1.0, "magazine_stack": 0.8, "plant": 0.4, "poster_frame": 0.6,
                         "storage_box": 1.0, "tv_cabinet": 0.7}
 }

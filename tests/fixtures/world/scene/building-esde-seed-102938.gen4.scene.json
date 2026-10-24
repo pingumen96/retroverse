@@ -148,7 +148,7 @@
     },
     {
       "area": "room:snes",
-      "color": "#F0B8E8",
+      "color": "#F0ACE8",
       "innerConeDeg": 31.17,
       "intensity": 8.0,
       "name": "room:snes/fx:hero.sign-light",
@@ -268,14 +268,14 @@
     {
       "area": "room:snes",
       "color": "#B34DCE",
-      "intensity": 1.5,
+      "intensity": 4.0,
       "name": "room:snes/accent:sign_glow",
       "position": [
         7.025,
         2.5,
         -11.32
       ],
-      "range": 2.5,
+      "range": 3.5,
       "type": "point"
     },
     {
@@ -522,7 +522,7 @@
     {
       "id": "room:snes/fx:e01",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -653,7 +653,7 @@
     {
       "id": "room:snes/fx:e06",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -792,7 +792,7 @@
     {
       "id": "room:snes/fx:hero.lamp",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {},
@@ -1004,7 +1004,7 @@
     {
       "id": "room:snes/fx:w02",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {
@@ -1081,7 +1081,7 @@
     {
       "id": "room:snes/fx:w05",
       "materials": {
-        "lamp_shade": "MAT_Lamp_Shade",
+        "lamp_shade": "MAT_Lamp_Shade_Warm",
         "metal": "MAT_Metal_Graphite"
       },
       "params": {

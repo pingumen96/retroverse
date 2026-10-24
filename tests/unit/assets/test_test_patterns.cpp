@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -393,16 +394,23 @@ TEST_CASE("assets/test_patterns: sign lettering is white text on black inside a 
     CHECK_FALSE(rv::assets::makeSignLettering(0, 32, "X").isValid());
 }
 
-TEST_CASE("assets/test_patterns: neon lettering: the sign's strokes as lit tubes with a halo on black",
+TEST_CASE("assets/test_patterns: neon lettering: the sign's strokes as glass tubes with a halo on a tinted panel",
           "[assets][patterns]") {
-    // I6 step 3 (look.md: a neon panel per room): every stroke of makeSignLettering() stays white, a soft halo of at
-    // most 45% grey surrounds it, the panel away from the letters stays black; grey only (the material colours it).
+    // I6 step 3 (look.md: a neon panel per room; tube-like since its review): the strokes of makeSignLettering() as
+    // rounded tubes, a white core inside each, its rim kNeonTubeEdge grey, a soft halo of at most kNeonHalo grey
+    // around it, the panel away from the letters kNeonBacking grey (the neon's tint, not black); grey only (the
+    // material colours it).
     constexpr int kWidth = 512;
     constexpr int kHeight = 128;
     const ImageData letters = rv::assets::makeSignLettering(kWidth, kHeight, "16-BIT CORNER");
     const ImageData neon = rv::assets::makeNeonLettering(kWidth, kHeight, "16-BIT CORNER");
     REQUIRE(isRgba(neon, kWidth, kHeight));
+    const auto grey = [](float value) { return static_cast<int>(std::lround(value * 255.0f)); };
+    int core = 0;
+    int strokes = 0;
     int halo = 0;
+    int rounded = 0;
+    int filled = 0;
     for (int y = 0; y < kHeight; ++y) {
         for (int x = 0; x < kWidth; ++x) {
             const Rgba stroke = pixel(letters, x, y);
@@ -410,18 +418,30 @@ TEST_CASE("assets/test_patterns: neon lettering: the sign's strokes as lit tubes
             REQUIRE(lit.r == lit.g);
             REQUIRE(lit.g == lit.b);
             REQUIRE(lit.a == 255);
+            CHECK(lit.r >= grey(rv::assets::kNeonBacking));
             if (stroke.r == 255) {
-                CHECK(lit.r == 255);
+                ++strokes;
+                core += lit.r == 255 ? 1 : 0;
+                // A stroke's pixel is its tube's glass, or the halo at a corner the tube rounds off.
+                rounded += lit.r < grey(rv::assets::kNeonTubeEdge) ? 1 : 0;
+            } else if (lit.r >= grey(rv::assets::kNeonTubeEdge)) {
+                ++filled; // an inner corner the bent tube fills
             } else {
-                CHECK(lit.r <= 115);
-                halo += lit.r > 20 ? 1 : 0;
+                CHECK(lit.r <= grey(rv::assets::kNeonHalo) + 1);
+                halo += lit.r > grey(rv::assets::kNeonBacking) + 10 ? 1 : 0;
             }
         }
     }
-    CHECK(halo > 2000);
-    // The corners, far from any letter, stay black; the same text gives the same pixels.
-    CHECK(pixel(neon, 0, 0) == Rgba(0, 0, 0, 255));
-    CHECK(pixel(neon, kWidth - 1, kHeight - 1) == Rgba(0, 0, 0, 255));
+    // A white core over about a third of the strokes, their corners rounded, a halo around them.
+    CHECK(core > strokes / 10);
+    CHECK(core < strokes * 2 / 3);
+    CHECK(rounded > 0);
+    CHECK(rounded < strokes / 10);
+    CHECK(filled < strokes / 10);
+    CHECK(halo > 4000);
+    // The corners, far from any letter, show the panel; the same text gives the same pixels.
+    CHECK(pixel(neon, 0, 0).r == grey(rv::assets::kNeonBacking));
+    CHECK(pixel(neon, kWidth - 1, kHeight - 1).r == grey(rv::assets::kNeonBacking));
     CHECK(neon.pixels == rv::assets::makeNeonLettering(kWidth, kHeight, "16-BIT CORNER").pixels);
     const auto named = rv::assets::makeNamedPattern("neon", kWidth, kHeight, "16-BIT CORNER", 3);
     REQUIRE(named.has_value());
