@@ -8,14 +8,19 @@
 //     imported and planned with retroverse-cli (worldplan generate), gen4's floor written with worldplan show --floor
 //     gen4 --scene, and retroverse.exe --scene of it walking tests/input_scripts/floor_walk_into_room.json from the
 //     elevator along the hall and through the snes room's doorway (its stop left out on a floor): in the hall the
-//     hall's lights alone are packed, in the room the room's own with its key light, the walker past the doorway, no
+//     hall's lights are packed first (then the room's near its doorway, I6 step 1), in the room the room's own with its
+//     key light first, the walker past the doorway, no
 //     high or medium GL message; the ground floor's lobby from the elevator likewise. The screenshots stay in
-//     build/<preset>/smoke/world_floor for a look.
+//     build/<preset>/smoke/world_floor for a look;
+//   - light through doorways (I6 step 1, ADR-0014 §4): every floor of the building, each room seen from its hall and
+//     the hall from the room, against the same scene lit as I4 lit it (world_floor_light).
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,8 +29,11 @@
 #include <nlohmann/json.hpp>
 
 #include <rv/app/run_report.hpp>
+#include <rv/catalog/ids.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/json.hpp>
 #include <rv/scene/scene_description.hpp>
+#include <rv/world/world_store.hpp>
 
 #include "image_checks.hpp"
 #include "smoke_support.hpp"
@@ -245,9 +253,14 @@ TEST_CASE("world floor: a walk from the elevator along the hall into a room, eac
         CHECK(areas.areas == 2);
         CHECK(areas.area == "hall:gen4");
         REQUIRE_FALSE(areas.lights.empty());
-        for (const std::string& light : areas.lights) {
-            CHECK(startsWith(light, "hall:gen4/light-"));
-        }
+        // The hall's own lights first, then (I6 step 1) the snes room's near its doorway; no key light.
+        CHECK(startsWith(areas.lights.front(), "hall:gen4/light-"));
+        const auto firstRoom = std::find_if(areas.lights.begin(), areas.lights.end(),
+                                            [](const std::string& light) { return startsWith(light, "room:snes/"); });
+        CHECK(std::all_of(areas.lights.begin(), firstRoom,
+                          [](const std::string& light) { return startsWith(light, "hall:gen4/"); }));
+        CHECK(std::all_of(firstRoom, areas.lights.end(),
+                          [](const std::string& light) { return startsWith(light, "room:snes/"); }));
         CHECK(areas.keyLight.empty());
         REQUIRE(hall.report->finalCamera.has_value());
         CHECK(std::abs(hall.report->finalCamera->feet.x - (1.2f + 120.0f * 2.5f * 0.016667f)) < 0.01f);
@@ -262,9 +275,14 @@ TEST_CASE("world floor: a walk from the elevator along the hall into a room, eac
         CHECK(areas.area == "room:snes");
         REQUIRE_FALSE(areas.lights.empty());
         CHECK(areas.lights.size() <= 16);
-        for (const std::string& light : areas.lights) {
-            CHECK(startsWith(light, "room:snes/"));
-        }
+        // The room's own lights first, then (I6 step 1) the hall's near the doorway, if any fit.
+        const auto firstHall = std::find_if(areas.lights.begin(), areas.lights.end(),
+                                            [](const std::string& light) { return startsWith(light, "hall:gen4/"); });
+        CHECK(firstHall != areas.lights.begin());
+        CHECK(std::all_of(areas.lights.begin(), firstHall,
+                          [](const std::string& light) { return startsWith(light, "room:snes/"); }));
+        CHECK(std::all_of(firstHall, areas.lights.end(),
+                          [](const std::string& light) { return startsWith(light, "hall:gen4/"); }));
         CHECK(areas.keyLight == "room:snes/fx:hero.key-light");
         REQUIRE(areas.changes.size() == 2);
         CHECK(areas.changes[0].frame == 0);
@@ -290,4 +308,219 @@ TEST_CASE("world floor: a walk from the elevator along the hall into a room, eac
     CHECK(lobby.report->sceneAreas->area == "hall:ground");
     // The lobby reads lit: its floor ahead and walls well above black.
     CHECK(lumaSummary(image).mean > 20.0);
+}
+
+namespace {
+
+/// The scene of a floor as I4 lit it, for a comparison (I6 step 1): no area neighbours another (each room's doorway
+/// passage drawn back 2 mm from the hall), no doorway fill, no area environment, I4's evening ambient (ground #4A4642,
+/// 0.25, no fill) and the hall's lights in the profile's pendant style.
+void asLitInI4(nlohmann::json& scene) {
+    for (nlohmann::json& area : scene["areas"]) {
+        area.erase("environment");
+        nlohmann::json& boxes = area["boxes"];
+        for (std::size_t i = 1; i < boxes.size(); ++i) {
+            boxes[i]["min"][2] = boxes[i]["min"][2].get<double>() + 0.002;
+            boxes[i]["max"][2] = boxes[i]["max"][2].get<double>() - 0.002;
+        }
+    }
+    nlohmann::json lights = nlohmann::json::array();
+    for (nlohmann::json& light : scene["lights"]) {
+        const std::string name = light["name"].get<std::string>();
+        if (name.find("/doorway-fill:") != std::string::npos) {
+            continue;
+        }
+        if (name.rfind("hall:", 0) == 0) {
+            light["color"] = "#FFD7B0";
+            light["intensity"] = 16.0;
+            light["range"] = 10.0;
+        }
+        lights.push_back(light);
+    }
+    scene["lights"] = std::move(lights);
+    nlohmann::json& environment = scene["environment"];
+    environment["ambientGround"] = "#4A4642";
+    environment["ambientIntensity"] = 0.25;
+    environment.erase("fillColor");
+    environment.erase("fillIntensity");
+}
+
+/// A room of a floor scene seen through its doorway: its area's id, its doorway's passage (floor frame), its doorway's
+/// height and whether it lies north of the hall.
+struct DoorwayView {
+    std::string room;
+    glm::vec3 passageMin{0.0f};
+    glm::vec3 passageMax{0.0f};
+    float doorHeight = 0.0f;
+    bool north = true;
+};
+
+glm::vec3 vec3Of(const nlohmann::json& value) {
+    return {value[0].get<float>(), value[1].get<float>(), value[2].get<float>()};
+}
+
+/// The rooms of a floor scene with a doorway onto its hall (an area of two boxes: the interior, then the passage).
+std::vector<DoorwayView> doorwaysOf(const nlohmann::json& scene) {
+    std::vector<DoorwayView> views;
+    for (const nlohmann::json& area : scene["areas"]) {
+        if (area["boxes"].size() < 2) {
+            continue;
+        }
+        DoorwayView view;
+        view.room = area["id"].get<std::string>();
+        view.passageMin = vec3Of(area["boxes"][1]["min"]);
+        view.passageMax = vec3Of(area["boxes"][1]["max"]);
+        view.north = area["boxes"][0]["min"][2].get<float>() < view.passageMin.z;
+        for (const nlohmann::json& object : scene["objects"]) {
+            if (object["id"] == view.room + "/room") {
+                view.doorHeight = object["params"]["doorway"]["height"].get<float>();
+            }
+        }
+        REQUIRE(view.doorHeight > 1.8f);
+        views.push_back(view);
+    }
+    return views;
+}
+
+/// The mean luma of the doorway's opening between eye height and its head, as `camera` sees it in `image`: through it,
+/// the room's upper walls and ceiling from the hall, the hall's from the room (`faceZ`: the passage's face nearest the
+/// camera).
+double openingLuma(const rv::assets::ImageData& image, const rv::scene::CameraSetup& camera, const DoorwayView& door,
+                   float faceZ) {
+    const glm::ivec2 size(image.width, image.height);
+    const float inset = 0.15f;
+    const auto a = projectToPixel(camera, size, {door.passageMin.x + inset, door.doorHeight - inset, faceZ});
+    const auto b = projectToPixel(camera, size, {door.passageMax.x - inset, kEyeHeight + 0.15f, faceZ});
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const glm::ivec2 low = glm::min(*a, *b);
+    const glm::ivec2 high = glm::max(*a, *b);
+    REQUIRE(high.x - low.x >= 8);
+    REQUIRE(high.y - low.y >= 4);
+    double sum = 0.0;
+    int count = 0;
+    for (int y = low.y; y <= high.y; ++y) {
+        for (int x = low.x; x <= high.x; ++x) {
+            sum += lumaAt(image, x, y);
+            ++count;
+        }
+    }
+    return sum / count;
+}
+
+/// A frame-limited run of a floor's scene at 1920 x 1080 from `feet` (none: the scene's camera, before the elevator).
+Shot renderFloor(const fs::path& dir, const std::string& name, const fs::path& scene,
+                 const std::optional<rv::app::SpawnPoint>& feet) {
+    const fs::path shot = dir / (name + ".png");
+    std::vector<std::string> arguments{"--scene", arg(scene), "--exit-after-frames", "--frames", "3", "--fixed-dt",
+                                       "0.016667", "--screenshot", arg(shot)};
+    if (feet) {
+        arguments.insert(arguments.end(), {"--spawn", spawnArgument(*feet)});
+    }
+    const AppRun run = runApp(retroverseExe(), dir, name, arguments);
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    REQUIRE(run.report->sceneAreas.has_value());
+    return Shot{*run.report, requireScreenshot(run, shot, {1920, 1080})};
+}
+
+} // namespace
+
+TEST_CASE("world floor: light reaches through the doorways: each room glows seen from its hall, the hall from the room",
+          "[gpu][world_floor]") {
+    // I6 step 1 (ADR-0014 §4): every floor of esde/building, from its elevator, then for each room from the hall before
+    // its doorway looking in and from 4.5 m inside looking out, with the step's light and with the same scene lit as
+    // I4 lit it (asLitInI4). Through the doorway, between eye height and its head (the far side's upper walls and
+    // ceiling): I4 showed about 4 to 8 of 255 there (black: the far area had the ambient alone, its ground term a dark
+    // grey); now the far area's lights near the doorway, the fill spot and the warmer ambient light it, at least twice
+    // as bright and above 12 (a dark but readable wall). The key light stays the eye's area's own: none in the hall,
+    // the room's from the room. The screenshots stay in build/<preset>/smoke/world_floor_light for a look.
+    PlannedBuilding building;
+    const fs::path dir = freshCaseDir("world_floor_light");
+    const auto stored = rv::world::readStoredPlan(
+        rv::world::worldFiles(building.data, rv::catalog::LibraryId::parse("esde").value()).plan);
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->plan.floors.size() >= 5);
+    std::size_t rooms = 0;
+    for (const rv::world::Floor& floor : stored->plan.floors) {
+        INFO(floor.id);
+        const fs::path scene = building.floorScene(floor.id);
+        const auto file = rv::core::readJsonFile(scene);
+        REQUIRE(file.has_value());
+        const fs::path old = dir / (floor.id + ".i4.scene.json");
+        writeSceneVariant(scene, old, asLitInI4);
+        const std::string hall = "hall:" + floor.id;
+
+        const Shot elevator = renderFloor(dir, floor.id + "_elevator", scene, std::nullopt);
+        CHECK(elevator.report.sceneAreas->area == hall);
+        CHECK(elevator.report.sceneAreas->keyLight.empty());
+
+        const nlohmann::json* hallArea = nullptr;
+        for (const nlohmann::json& area : (*file)["areas"]) {
+            hallArea = area["id"] == hall ? &area : hallArea;
+        }
+        REQUIRE(hallArea != nullptr);
+        const nlohmann::json& hallBox = (*hallArea)["boxes"][0];
+        for (const DoorwayView& door : doorwaysOf(*file)) {
+            INFO(door.room);
+            ++rooms;
+            const float x = (door.passageMin.x + door.passageMax.x) / 2.0f;
+            // From the hall's far side, facing the doorway; from 4.5 m inside the room, facing out.
+            const float hallZ = door.north ? hallBox["max"][2].get<float>() - 0.4f : hallBox["min"][2].get<float>() + 0.4f;
+            const float roomZ = door.north ? door.passageMin.z - 4.5f : door.passageMax.z + 4.5f;
+            const float inYaw = door.north ? 0.0f : 180.0f;
+            const float outYaw = door.north ? 180.0f : 0.0f;
+            const rv::app::SpawnPoint fromHall{{x, 0.0f, hallZ}, inYaw, -4.0f};
+            const rv::app::SpawnPoint fromRoom{{x, 0.0f, roomZ}, outYaw, -4.0f};
+            std::string tag = floor.id + "_" + door.room;
+            std::replace(tag.begin(), tag.end(), ':', '_');
+            const Shot inward = renderFloor(dir, tag + "_from_hall", scene, fromHall);
+            const Shot inwardI4 = renderFloor(dir, tag + "_from_hall_i4", old, fromHall);
+            const Shot outward = renderFloor(dir, tag + "_looking_out", scene, fromRoom);
+            const Shot outwardI4 = renderFloor(dir, tag + "_looking_out_i4", old, fromRoom);
+
+            const float hallFace = door.north ? door.passageMax.z : door.passageMin.z;
+            const float roomFace = door.north ? door.passageMin.z : door.passageMax.z;
+            const rv::scene::CameraSetup hallCamera = cameraAt(fromHall.feet, inYaw, -4.0f);
+            const rv::scene::CameraSetup roomCamera = cameraAt(fromRoom.feet, outYaw, -4.0f);
+            const double roomSeen = openingLuma(inward.image, hallCamera, door, hallFace);
+            const double roomSeenI4 = openingLuma(inwardI4.image, hallCamera, door, hallFace);
+            const double hallSeen = openingLuma(outward.image, roomCamera, door, roomFace);
+            const double hallSeenI4 = openingLuma(outwardI4.image, roomCamera, door, roomFace);
+            INFO("through the doorway, above eye height: the room from the hall " << roomSeen << " (I4: " << roomSeenI4
+                                                                                 << "), the hall from the room "
+                                                                                 << hallSeen << " (I4: " << hallSeenI4
+                                                                                 << ")");
+            CHECK(roomSeen > 12.0);
+            CHECK(roomSeen > 2.0 * roomSeenI4);
+            CHECK(hallSeen > 12.0);
+            CHECK(hallSeen > 2.0 * hallSeenI4);
+
+            // The hall's view packs the hall's lights, then the room's near its doorway; no key light.
+            const rv::app::SceneAreasRecord& hallView = *inward.report.sceneAreas;
+            CHECK(hallView.area == hall);
+            CHECK(hallView.keyLight.empty());
+            CHECK(std::any_of(hallView.lights.begin(), hallView.lights.end(),
+                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
+            CHECK(std::any_of(hallView.lights.begin(), hallView.lights.end(), [&](const std::string& light) {
+                return light == hall + "/doorway-fill:" + door.room;
+            }));
+            // The room's view: its own lights first with its own key light, then the hall's.
+            const rv::app::SceneAreasRecord& roomView = *outward.report.sceneAreas;
+            CHECK(roomView.area == door.room);
+            CHECK(startsWith(roomView.keyLight, door.room + "/"));
+            CHECK(roomView.lights.size() <= 16);
+            const auto firstHall = std::find_if(roomView.lights.begin(), roomView.lights.end(),
+                                                [&](const std::string& light) { return startsWith(light, hall + "/"); });
+            REQUIRE(firstHall != roomView.lights.end());
+            CHECK(std::all_of(roomView.lights.begin(), firstHall,
+                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
+            CHECK(std::all_of(firstHall, roomView.lights.end(),
+                              [&](const std::string& light) { return startsWith(light, hall + "/"); }));
+            // As I4 lit it, the room's view held its own lights alone.
+            CHECK(std::all_of(outwardI4.report.sceneAreas->lights.begin(), outwardI4.report.sceneAreas->lights.end(),
+                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
+        }
+    }
+    CHECK(rooms >= 6);
 }
