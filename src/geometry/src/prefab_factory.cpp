@@ -502,7 +502,7 @@ Expected<MeshData> boxFromJson(const Json& params) {
     float metersPerTile = 1.0f;
     ParamReader r("box", params, {"size", "uv", "metersPerTile"});
     r.read("size", size);
-    r.readEnum("uv", uv, {{"face", BoxUv::PerFace}, {"meters", BoxUv::WorldMeters}});
+    r.readEnum("uv", uv, {{"face", BoxUv::PerFace}, {"meters", BoxUv::WorldMeters}, {"grain", BoxUv::GrainMeters}});
     r.read("metersPerTile", metersPerTile);
     if (!r.ok()) {
         return propagate(r.error());

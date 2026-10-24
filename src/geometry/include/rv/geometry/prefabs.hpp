@@ -411,7 +411,7 @@ struct PlantParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildPrefab(std::string_view kind, const nlohmann::json& params);
 
 /// Single-material primitive centered on the origin, named after its kind (same error rules as buildPrefab):
-///   "box"      {"size": [1, 1, 1], "uv": "face" | "meters", "metersPerTile": 1.0}
+///   "box"      {"size": [1, 1, 1], "uv": "face" | "meters" | "grain" (BoxUv::GrainMeters), "metersPerTile": 1.0}
 ///   "plane"    {"size": [1, 1] (x, z), "uvTiling": [1, 1]}, facing +Y
 ///   "quad"     {"size": [1, 1] (x, y)}, facing +Z, uv (0, 0) at the top-left corner
 ///   "sphere"   {"radius": 0.5, "segments": 32, "rings": 16}

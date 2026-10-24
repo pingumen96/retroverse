@@ -1424,6 +1424,19 @@ TEST_CASE("geometry/primitives: defaults, overrides and errors", "[geometry][pri
             CHECK(v.uv0.y == Approx(-v.position.y / 0.5f));
         }
     }
+    // "grain": u along each face's longer side (a batten standing up: the grain runs up its front).
+    const auto batten = rv::geometry::buildPrimitive("box", {{"size", {0.04, 0.8, 0.016}}, {"uv", "grain"}});
+    REQUIRE(batten.has_value());
+    glm::vec2 uvMin(1e9f);
+    glm::vec2 uvMax(-1e9f);
+    for (const rv::geometry::Vertex& v : batten->vertices) {
+        if (v.normal == glm::vec3(0.0f, 0.0f, 1.0f)) {
+            uvMin = glm::min(uvMin, v.uv0);
+            uvMax = glm::max(uvMax, v.uv0);
+        }
+    }
+    CHECK(uvMax.x - uvMin.x == Approx(0.8f));
+    CHECK(uvMax.y - uvMin.y == Approx(0.04f));
     const auto plane = rv::geometry::buildPrimitive("plane", {{"size", {4.0, 2.0}}, {"uvTiling", {4.0, 2.0}}});
     REQUIRE(plane.has_value());
     float maxU = 0.0f;
