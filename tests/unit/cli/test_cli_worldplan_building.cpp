@@ -282,6 +282,54 @@ TEST_CASE("cli/worldplan: a frozen schema-1 plan shown, checked, asked and updat
     CHECK(contains(again.out, "is up to date"));
 }
 
+TEST_CASE("cli/worldplan: a stale theme pack shown as resolved, rewritten by the update, nothing moved",
+          "[cli][worldplan]") {
+    // A schema-1 plan recording another pack than its floor's (ADR-0014 §1: a look, resolved; I6 step 3).
+    const Session session;
+    const LoggingReset loggingReset;
+    const std::filesystem::path oracle =
+        rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" / "fixtures" / "world" / "v1" / "plan-50-seed-102938.json";
+    std::string v1 = readText(oracle);
+    const std::string recorded = "\"themePack\":\"classic_16bit_warm\"";
+    const std::size_t at = v1.find(recorded);
+    REQUIRE(at != std::string::npos);
+    v1.replace(at, recorded.size(), "\"themePack\":\"handheld_archive\"");
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.plan, v1).has_value());
+    const std::string planFile = rv::core::pathToUtf8(session.files.plan);
+    auto plan = rv::world::readPlan(v1, "v1");
+    REQUIRE(plan.has_value());
+    REQUIRE(plan->rooms.size() == 1);
+    CHECK(plan->rooms.front().themePack == "handheld_archive"); // lifted as it is
+
+    const RunResult shown = session.run({"worldplan", "show", planFile});
+    INFO(shown.err);
+    REQUIRE(shown.code == ExitCode::Ok);
+    CHECK(contains(shown.out, "cartridge_home_16bit, classic_16bit_warm (recorded handheld_archive until the next "
+                              "update)"));
+
+    const std::string selectionFile = session.write("selection.json", rv::test::world::makeSelection(50, 20261018));
+    const RunResult updated =
+        session.run({"worldplan", "update", "--selection", selectionFile, "--library", "esde", "--seed", "102938"});
+    INFO(updated.err);
+    REQUIRE(updated.code == ExitCode::Ok);
+    CHECK(contains(updated.out, "Changes:         0 added, 50 kept, 0 newly unplaced"));
+    auto rewritten = rv::world::readPlan(readText(session.files.plan), "rewritten");
+    REQUIRE(rewritten.has_value());
+    REQUIRE(rewritten->rooms.size() == 1);
+    CHECK(rewritten->rooms.front().themePack == "classic_16bit_warm");
+    CHECK(rewritten->placements == plan->placements);
+    CHECK(rewritten->fixtures == plan->fixtures);
+    CHECK(rewritten->lights == plan->lights);
+    const rv::world::Room& before = plan->rooms.front();
+    const rv::world::Room& after = rewritten->rooms.front();
+    CHECK(after.id == before.id); // the schema-1 room read as it is (no floor yet), lifted and stored on gen4
+    CHECK(after.floor == "gen4");
+    CHECK(after.seed == before.seed);
+    CHECK(after.mediaFamily == before.mediaFamily);
+    const RunResult again = session.run({"worldplan", "show", planFile});
+    CHECK(contains(again.out, "cartridge_home_16bit, classic_16bit_warm\n"));
+}
+
 TEST_CASE("cli/worldplan: a stored building is regenerated whole; --system and --selection agree; --scene's room",
           "[cli][worldplan]") {
     const Session session;

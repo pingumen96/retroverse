@@ -270,7 +270,7 @@ TEST_CASE("world/data: the platform manifest and the media family", "[world][dat
     REQUIRE(platform.has_value());
     CHECK(platform->system.str() == "snes");
     CHECK(platform->mediaFamily == "cartridge_home_16bit");
-    CHECK(platform->themePack == "classic_16bit_warm");
+    CHECK(platform->themePack.empty()); // it names none (I6 step 3): its room takes its floor's (resolvePlatform())
     CHECK(platform->console == rv::world::PrefabRef{"hardware.console.cartridge.generic", "console_cartridge"});
     CHECK(platform->signText == "16-BIT CORNER");
     CHECK(rv::world::isSrgbHexColor(platform->cartridgePlastic));
@@ -443,8 +443,12 @@ TEST_CASE("world/data: malformed platform manifests and families are refused", "
              Case{"\"text\": \"16-BIT CORNER\"", "\"text\": \" 16-BIT\"", "/sign/text"},
              Case{"\"text\": \"16-BIT CORNER\"", "\"text\": \"16-BIT CORNER OF THE ROOM WITH THE TV\"", "/sign/text"},
              Case{"\"system\": \"snes\"", "\"system\": \"sn/es\"", "/system: expected an ES-DE system name"},
-             Case{"\"themePack\": \"classic_16bit_warm\"", "\"themePack\": \"Classic16BitWarm\"", "/themePack"},
-             Case{"\"themePack\"", "\"theme\"", "/theme: unknown key"},
+             // The optional theme pack (I6 step 3), a data id when given.
+             Case{"\"mediaFamily\": \"cartridge_home_16bit\",",
+                  "\"mediaFamily\": \"cartridge_home_16bit\", \"themePack\": \"Classic16BitWarm\",", "/themePack"},
+             Case{"\"mediaFamily\": \"cartridge_home_16bit\",",
+                  "\"mediaFamily\": \"cartridge_home_16bit\", \"theme\": \"classic_16bit_warm\",",
+                  "/theme: unknown key"},
              Case{"\"kind\": \"console_cartridge\"", "\"kind\": \"console cartridge\"", "/console/kind"},
          }) {
         INFO(test.to);

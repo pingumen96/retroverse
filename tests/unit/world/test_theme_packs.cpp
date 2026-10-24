@@ -201,7 +201,9 @@ TEST_CASE("world/theme packs: a room's pack by its floor, the arcade room's by i
         REQUIRE(platform.has_value());
         return platform->themePack;
     };
-    CHECK(platformOf(assets(), "snes", {}) == "classic_16bit_warm"); // snes.json names it
+    // snes.json names no pack (ADR-0014 §1 as amended): its room takes its floor's, wherever it stands.
+    CHECK(platformOf(assets(), "snes", {}) == "classic_16bit_warm");
+    CHECK(platformOf(assets(), "snes", "gen5") == "console_90s_collector");
     CHECK(platformOf(assets(), "psx", {}) == "console_90s_collector");
     CHECK(platformOf(assets(), "ps2", {}) == "optical_era_lounge");
     CHECK(platformOf(assets(), "gb", {}) == "handheld_archive");
@@ -218,7 +220,20 @@ TEST_CASE("world/theme packs: a room's pack by its floor, the arcade room's by i
               R"({"schemaVersion": 1, "system": "psx", "mediaFamily": "disc_case_cd", "themePack": "handheld_archive",
                   "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"}, "console": null,
                   "sign": {"text": "GREY DISCS"}})");
+    // A manifest naming a pack overrides the floor's, on any floor.
     CHECK(platformOf(dir.path(), "psx", {}) == "handheld_archive");
+    CHECK(platformOf(dir.path(), "psx", "gen4") == "handheld_archive");
+    // One naming none keeps its floor's: the rest of the manifest is still its own.
+    writeText(dir.path() / "world" / "platforms" / "psx.json",
+              R"({"schemaVersion": 1, "system": "psx", "mediaFamily": "disc_case_cd",
+                  "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"}, "console": null,
+                  "sign": {"text": "GREY DISCS"}})");
+    CHECK(platformOf(dir.path(), "psx", {}) == "console_90s_collector");
+    CHECK(platformOf(dir.path(), "psx", "gen6") == "optical_era_lounge");
+    auto unnamed = rv::world::resolvePlatform(dir.path(), rv::test::world::systemName("psx"), {}, systems(),
+                                              building(), "gen6");
+    REQUIRE(unnamed.has_value());
+    CHECK(unnamed->signText == "GREY DISCS");
 }
 
 TEST_CASE("world/theme packs: the pack lights its rooms and halls", "[world][theme_packs]") {
@@ -345,6 +360,71 @@ TEST_CASE("world/theme packs: the update writes the resolved pack and moves noth
     const rv::world::GenerationResult again = rv::test::world::updateBuildingOf(world, updated.plan, selections);
     CHECK(again.plan == updated.plan);
     CHECK(again.changes.digestAfter == again.changes.digestBefore);
+}
+
+TEST_CASE("world/theme packs: the update rewrites the pack of a kept, a held and an unselected room, nothing moved",
+          "[world][theme_packs]") {
+    rv::test::world::BuildingWorld world = rv::test::world::shippedWorld(102938);
+    const std::vector<rv::world::RoomSelection> selections = {
+        rv::test::world::systemSelection("snes", 40, 31), rv::test::world::systemSelection("psx", 40, 32),
+        rv::test::world::systemSelection("gb", 30, 33), rv::test::world::systemSelection("pokemini", 8, 34),
+        rv::test::world::systemSelection("gamegear", 8, 35)};
+    const rv::world::GenerationResult generated = rv::test::world::generateBuildingOf(world, selections);
+    const rv::world::Room* shared = rv::test::world::findRoom(generated.plan, "area:shared:handheld");
+    REQUIRE(shared != nullptr);
+    REQUIRE(shared->sections.size() == 2);
+    // A stored plan of the old packs, its psx room of another generator major (kept as it is, ADR-0013 §5).
+    rv::world::WorldPlan stored = generated.plan;
+    for (rv::world::Room& room : stored.rooms) {
+        room.themePack = "classic_16bit_warm";
+        if (room.id.toString() == "room:psx") {
+            room.generatorVersion = {0, 9};
+        }
+    }
+    const auto packsResolved = [&](const rv::world::WorldPlan& plan) {
+        REQUIRE(plan.rooms.size() == generated.plan.rooms.size());
+        for (const rv::world::Room& room : plan.rooms) {
+            INFO(room.id.toString());
+            CHECK(room.themePack == rv::test::world::findRoom(generated.plan, room.id.toString())->themePack);
+            CHECK(room.themePack == *rv::world::roomThemePack(assets(), room, {}, systems(), building()));
+        }
+    };
+    const auto nothingMoved = [&](const rv::world::GenerationResult& updated) {
+        CHECK(updated.plan.placements == stored.placements);
+        CHECK(updated.plan.fixtures == stored.fixtures);
+        CHECK(updated.plan.lights == stored.lights);
+        CHECK(updated.plan.dressing == stored.dressing);
+        CHECK(updated.changes.rebuild == rv::world::RebuildLevel::NoRebuild);
+        CHECK(updated.validation.passed());
+    };
+    SECTION("kept and held rooms") {
+        // Every selection but gamegear's: the shared room is held, room:psx kept, the others updated.
+        const std::vector<rv::world::RoomSelection> some(selections.begin(), selections.end() - 1);
+        const rv::world::GenerationResult updated = rv::test::world::updateBuildingOf(world, stored, some);
+        CHECK(updated.changes.outcome == rv::world::GenerationOutcome::Updated);
+        REQUIRE(updated.changes.keptRooms.size() == 1);
+        CHECK(updated.changes.keptRooms.front().room.toString() == "room:psx");
+        REQUIRE(updated.changes.heldRooms.size() == 1);
+        CHECK(updated.changes.heldRooms.front().room.toString() == "area:shared:handheld");
+        packsResolved(updated.plan);
+        CHECK(rv::test::world::findRoom(updated.plan, "room:psx")->themePack == "console_90s_collector");
+        CHECK(rv::test::world::findRoom(updated.plan, "area:shared:handheld")->themePack == "handheld_archive");
+        nothingMoved(updated);
+    }
+    SECTION("a partial update") {
+        // One room given its selection: every other room is left as it stands, its pack rewritten all the same; only
+        // packs changed, so the plan keeps its provenance (which named more rooms).
+        const rv::world::GenerationResult updated =
+            rv::test::world::updateBuildingOf(world, stored, {selections.front()});
+        CHECK(updated.changes.outcome == rv::world::GenerationOutcome::Updated);
+        packsResolved(updated.plan);
+        nothingMoved(updated);
+        CHECK(updated.plan.inputDigest == stored.inputDigest);
+        // Then the same update writes nothing.
+        const rv::world::GenerationResult again =
+            rv::test::world::updateBuildingOf(world, updated.plan, {selections.front()});
+        CHECK(again.plan == updated.plan);
+    }
 }
 
 TEST_CASE("world/theme packs: each pack's label palette colours its rooms' generated spines and labels",

@@ -154,7 +154,8 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   hard rule broken, the world locked by another program, a failed write.
   `worldplan show [<plan>] [--library <id>] [--placements] [--floor <id>] [--scene <file> [--room <id>]] [--json]`
   summarizes a plan: its floors (order, rooms), each room with its kind, floor, sections, row and place on the floor
-  and generator (JSON `floors`, `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`,
+  and generator, and the theme pack it is drawn with (resolved on its floor, I6 step 3: "<pack> (recorded <old> until
+  the next update)" when the plan records another; JSON `floors`, `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`,
   `fileSchemaVersion`, `lifted`); exit 1 no plan, 2 usage (`--scene` on a plan of several rooms without `--room` or
   `--floor`, a `--room` or `--floor` the plan lacks, `--room` with `--floor`), 3 a plan refused or a scene not
   written; `--scene` also writes the static part of one room (shell, fixtures, dressing, lights; no collection items)

@@ -179,8 +179,11 @@ inline std::string countsText(const std::map<std::string, std::uint64_t>& counts
     return text.empty() ? "none" : text;
 }
 
-/// The summary as lines of text, after a first line naming the plan (`heading`).
-inline std::string planSummaryText(const world::WorldPlan& plan, std::string_view digest, std::string_view heading) {
+/// The summary as lines of text, after a first line naming the plan (`heading`). A room's theme pack is the one
+/// `resolvedPacks` gives it (the pack it is drawn with now, world::roomThemePack(): ADR-0014 §1), its recorded one
+/// named beside when they differ (the next update rewrites it); the recorded one for a room `resolvedPacks` lacks.
+inline std::string planSummaryText(const world::WorldPlan& plan, std::string_view digest, std::string_view heading,
+                                   const std::map<world::RoomId, std::string>& resolvedPacks = {}) {
     const PlanSummary summary = summarizePlan(plan);
     std::string text = fmt::format("{}\n", heading);
     const auto line = [&](std::string_view label, std::string_view value) {
@@ -201,10 +204,15 @@ inline std::string planSummaryText(const world::WorldPlan& plan, std::string_vie
     }
     line("Floors", floors.empty() ? std::string("none") : floors);
     for (const world::Room& room : plan.rooms) {
+        const auto resolved = resolvedPacks.find(room.id);
+        const std::string pack =
+            resolved == resolvedPacks.end() || resolved->second == room.themePack
+                ? room.themePack
+                : fmt::format("{} (recorded {} until the next update)", resolved->second, room.themePack);
         line("Room", fmt::format("{} ({} v{}): {} x {} x {} mm, {} growth step{}, {}, {}", room.id.toString(),
                                  room.templateId, room.templateVersion, room.maxXMm - room.minXMm,
                                  room.maxZMm - room.minZMm, room.heightMm, room.growthSteps,
-                                 room.growthSteps == 1 ? "" : "s", room.mediaFamily, room.themePack));
+                                 room.growthSteps == 1 ? "" : "s", room.mediaFamily, pack));
         std::string sections;
         for (const catalog::SystemName& system : room.sections) {
             sections += (sections.empty() ? "" : ", ") + system.str();

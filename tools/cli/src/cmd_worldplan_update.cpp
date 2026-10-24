@@ -281,7 +281,8 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
             }
         }
     }
-    // The data of every room of the plan, with its recorded family, theme pack and template.
+    // The data of every room of the plan, with its recorded family and template (its theme pack resolved on its floor:
+    // ADR-0014 §1; the update records it).
     std::vector<world::WorldData> rooms;
     for (const world::Room& room : previous->plan.rooms) {
         const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
@@ -349,7 +350,7 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
     // waits (incremental.hpp): an arcade system, one under the shared threshold, or a console system its full floor
     // sends to the shared room. From the catalog, the sections of the rooms systems wait for are read too and the
     // update runs again, so that a named new system never waits there (the rooms' data, of their recorded family and
-    // theme pack, needs no platform tags of theirs); selection files must give them.
+    // their floor's theme pack, needs no platform tags of theirs); selection files must give them.
     if (result && selected.fromCatalog && !result->changes.systemsWaiting.empty()) {
         std::vector<catalog::SystemName> sections;
         for (const world::SystemRoom& waiting : result->changes.systemsWaiting) {

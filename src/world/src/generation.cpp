@@ -627,22 +627,46 @@ Expected<PlatformManifest> resolvePlatform(const std::filesystem::path& assetRoo
                              std::string(toString(classification.kind())) + ")",
                          "world/systems.json");
     }
+    // The pack of the floor its room stands on (a stored room's recorded one; else its classification's), unless its
+    // manifest names one (ADR-0014 §1 as amended).
+    const std::string floorPack =
+        themePackOf(RoomKind::Console, floor.empty() ? std::string_view(classification.floor) : floor,
+                    classification.kind(), systems, building);
     auto manifest = loadPlatformManifest(assetRoot, system);
-    if (manifest || manifest.error().code != ErrorCode::NotFound) {
+    if (manifest) {
+        if (manifest->themePack.empty()) {
+            manifest->themePack = floorPack;
+        }
+        return manifest;
+    }
+    if (manifest.error().code != ErrorCode::NotFound) {
         return manifest;
     }
     const KindDefaults& defaults = systems.defaultsOf(classification.kind());
     PlatformManifest platform;
     platform.system = system;
     platform.mediaFamily = classification.entry.family;
-    platform.themePack = themePackOf(RoomKind::Console, floor.empty() ? std::string_view(classification.floor) : floor,
-                                     classification.kind(), systems, building);
+    platform.themePack = floorPack;
     platform.cartridgePlastic = defaults.cartridgePlastic;
     platform.consolePlastic = defaults.consolePlastic;
     platform.accentPlastic = defaults.accentPlastic;
     platform.console = defaults.console;
     platform.signText = classification.entry.sign;
     return platform;
+}
+
+Expected<std::string> roomThemePack(const std::filesystem::path& assetRoot, const Room& room,
+                                    std::span<const std::string> platformTags, const SystemsData& systems,
+                                    const BuildingData& building) {
+    const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
+    if (room.kind != RoomKind::Console) {
+        return sharedRoomPlatform(room.kind, room.floor, system, systems, building).themePack;
+    }
+    auto platform = resolvePlatform(assetRoot, system, platformTags, systems, building, room.floor);
+    if (!platform) {
+        return propagate(platform.error());
+    }
+    return std::move(platform->themePack);
 }
 
 PlatformManifest sharedRoomPlatform(RoomKind kind, std::string_view floor, const catalog::SystemName& firstSection,
